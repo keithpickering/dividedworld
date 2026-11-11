@@ -134,6 +134,17 @@ export interface ApologySettings {
   readonly apologyRulingMaxWords: number;
 }
 
+/**
+ * The code of conduct's numbers (`Settings.conduct`; the conduct design, sections 5 and 7). Not the code itself, which is the instance's UI content
+ * (`InstanceUi.conduct`); the seed carries its version and section keys beside these (`conductVersion`, `conductSections`).
+ */
+export interface ConductSettings {
+  /** The most reports to admins one account holds open at once; an admin's decision closes one. A whole number, at least 1. */
+  readonly openReportsMost: number;
+  /** The address replies to a moderation email go to, so an appeal reaches a person; null until the owner sets it at deploy. A string with an "@". */
+  readonly adminAddress: string | null;
+}
+
 /** The settings the engine itself reads. A class's own numbers live with the class. */
 export interface Settings {
   /** The most a wallet holds; Aura past it leaves the wallet and stays in the standing. */
@@ -275,6 +286,8 @@ export interface Settings {
   readonly warnBar: WarnBarSettings;
   /** The apology's numbers: how often a barred character may apologize, how many the judge hears at once, how long a ruling runs. */
   readonly apology: ApologySettings;
+  /** The code of conduct's numbers: how many reports to admins an account holds open, and where replies to a moderation email go. */
+  readonly conduct: ConductSettings;
   /** The longest a board's name may be, in characters, whether The System or a player proposes it. */
   readonly boardNameMaxLength: number;
   /** The most days any move may last, whatever its phase allows. A starting point. */

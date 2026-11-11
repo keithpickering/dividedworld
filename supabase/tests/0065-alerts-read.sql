@@ -405,8 +405,14 @@ begin
   end if;
   -- my_alerts names a thread's title under its owner's rights, which is right while every signed-in player may read every thread and
   -- board (0001). A feature that hides one fails this, and must null the title where the caller cannot read the thread (0060's header).
-  if exists (select 1 from pg_policies where schemaname = 'public' and tablename in ('threads', 'boards', 'acts') and (permissive <> 'PERMISSIVE' or qual is distinct from 'true')) then
-    raise exception 'a thread, board or Act can be hidden from a player now: my_alerts must null the titles of those the caller cannot read';
+  if exists (select 1 from pg_policies where schemaname = 'public' and tablename in ('threads', 'boards') and (permissive <> 'PERMISSIVE' or qual is distinct from 'true')) then
+    raise exception 'a thread or board can be hidden from a player now: my_alerts must null the titles of those the caller cannot read';
+  end if;
+  -- The one policy on acts (0146) hides a hidden version's own row from a player (its words are an admin's alone). It hides no thread and no title: the
+  -- thread a hidden version is in stays as readable as any, so my_alerts, which names threads, is unaffected. Any other way to hide an Act fails this.
+  if exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'acts'
+             and (permissive <> 'PERMISSIVE' or (qual is distinct from 'true' and qual not like '%version_hidden(%'))) then
+    raise exception 'an Act can be hidden from a player in a way 0146 did not review: my_alerts must null the titles of those the caller cannot read';
   end if;
 end $$;
 

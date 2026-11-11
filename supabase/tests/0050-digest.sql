@@ -53,7 +53,7 @@ begin
   where relnamespace = 'public'::regnamespace and relkind in ('v', 'r') and has_table_privilege('kayfabb_digest', oid, 'insert,update,delete,truncate,references,trigger');
   if bad is not null then raise exception 'the digest role writes %', bad; end if;
   -- The role's reach, whole: it cannot create in the schema (the owner change takes the grant and gives it back), no client
-  -- role can become it, and the functions it may execute are exactly the eighteen reviewed here: a new grant fails this.
+  -- role can become it, and the functions it may execute are exactly the twenty reviewed here: a new grant fails this.
   if has_schema_privilege('kayfabb_digest', 'public', 'create') then raise exception 'the digest role can create in public'; end if;
   foreach t in array array['anon', 'authenticated', 'service_role'] loop
     if pg_has_role(t, 'kayfabb_digest', 'member') then raise exception '% is a member of the digest role', t; end if;
@@ -73,8 +73,10 @@ begin
       -- Pure predicates a CHECK calls, granted to PUBLIC by 0080 so a direct writer is not refused; each reads no table.
       'tip_keys_ok(text[])', 'update_payload_problem(jsonb)', 'reaches_hold(text[])', 'pronouns_hold(jsonb)',
       -- The same kind for a pack's pulls (0139): pure, reading no table.
-      'pack_pulls_problem(jsonb)']) x) then
-    raise exception 'the functions the digest role may execute are not the reviewed eighteen: %', fns;
+      'pack_pulls_problem(jsonb)',
+      -- What acts_public calls as its reader (0146): whether a version is hidden and what a payload shows of it, so a digest never reads a hidden version's words.
+      'version_hidden(uuid,uuid)', 'public_payload(jsonb,boolean)']) x) then
+    raise exception 'the functions the digest role may execute are not the reviewed twenty: %', fns;
   end if;
   if (select r.rolcanlogin or r.rolsuper or r.rolbypassrls from pg_roles r where r.rolname = 'kayfabb_digest') then raise exception 'the digest role logs in, is a superuser or bypasses row-level security'; end if;
 

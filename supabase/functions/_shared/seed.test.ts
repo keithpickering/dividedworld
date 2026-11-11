@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { instanceSeed } from './seed.ts';
-import { chooseInstance, instance } from './instance.ts';
+import { chooseInstance, conduct, instance } from './instance.ts';
 import { MOVE_KINDS } from '../../../engine/system/moves.ts';
 import { BBCODE_TAGS } from '../../../engine/bbcode/parse.ts';
 import { PREDICATES } from '../../../engine/rules/predicates.ts';
@@ -10,8 +10,11 @@ import { PRONOUN_PRESETS } from '../../../engine/rules/pronouns.ts';
 import type { Persona } from '../../../engine/rules/types.ts';
 
 test('the seed carries every setting, class, reaction, card and board of the instance, in the shape seed_instance() reads', () => {
-  const seed = instanceSeed(instance);
-  assert.deepEqual(Object.keys(seed.settings).sort(), [...Object.keys(instance.settings), 'copy', 'systemLines', 'systemMoveWords'].sort());
+  const seed = instanceSeed(instance, conduct);
+  assert.deepEqual(Object.keys(seed.settings).sort(), [...Object.keys(instance.settings), 'copy', 'systemLines', 'systemMoveWords', 'conductVersion', 'conductSections'].sort());
+  assert.equal(seed.settings.conductVersion, conduct.version, 'the version an account must have accepted (0146)');
+  assert.deepEqual(seed.settings.conductSections, conduct.sections.map((c) => c.key), 'the sections a report may name, by key (0146)');
+  assert.deepEqual(seed.settings.conduct, instance.settings.conduct, 'the open-report limit and the admin address ride with the instance\'s settings');
   assert.deepEqual(seed.settings.systemLines, instance.system.stockLines, 'the tick (0048) fills these lines in SQL');
   assert.deepEqual(seed.settings.systemMoveWords, Object.fromEntries(MOVE_KINDS.map((m) => [m.key, m.plain])), '{move}, in plain words, by kind');
   assert.equal(seed.system.announcementsTitle, instance.system.announcementsTitle, 'the thread where moves land is made from the seed');
@@ -42,7 +45,7 @@ test('the seed carries every setting, class, reaction, card and board of the ins
 });
 
 test('the seed carries the groups: the ladder with its rung indexes and conditions, then the conferred groups with their tones (0128)', () => {
-  const { groups } = instanceSeed(instance);
+  const { groups } = instanceSeed(instance, conduct);
   const ladder = groups.filter((g) => g.source === 'ladder');
   assert.deepEqual(ladder.map((g) => [g.key, 'rung' in g ? g.rung : null, 'condition' in g ? g.condition : null]),
     instance.groups.ladder.map((r, i) => [r.key, i, r.when.kind]), 'lowest first, each rung numbered by its place');
@@ -52,7 +55,7 @@ test('the seed carries the groups: the ladder with its rung indexes and conditio
 });
 
 test('the seed carries the roster as staff characters, one kind of persona, the first staff named, and no prompt', () => {
-  const seed = instanceSeed(instance);
+  const seed = instanceSeed(instance, conduct);
   const { roster, firstStaff } = instance.system;
   assert.deepEqual(seed.system.staff.map((s) => s.key), roster.map((p) => p.key));
   assert.equal('staffGroup' in seed.system, false, 'the staff rung is a group of the ladder (seed.groups), not a setting');
@@ -81,15 +84,15 @@ test('a roster entry carries pronouns only when its persona declares them, and t
   const seed = instanceSeed({
     ...instance,
     system: { ...instance.system, roster: [{ ...first!, pronouns: PRONOUN_PRESETS.she }, undeclared as unknown as Persona, ...instance.system.roster.slice(2)] },
-  });
+  }, conduct);
   const [a, b] = seed.system.staff as { pronouns?: unknown }[];
   assert.deepEqual(a!.pronouns, PRONOUN_PRESETS.she, 'she/her travels on the entry that declares it');
   assert.ok(!('pronouns' in b!), 'an entry whose persona names none carries no key, so the instance default applies in SQL');
-  assert.ok(!('pronouns' in instanceSeed({ ...instance, developer: { name: 'Dev', tagline: 'Hi.' } }).developer), 'a developer who names none carries none');
+  assert.ok(!('pronouns' in instanceSeed({ ...instance, developer: { name: 'Dev', tagline: 'Hi.' } }, conduct).developer), 'a developer who names none carries none');
 });
 
 test('the seed carries the engine\'s catalogs of moves (with whether each is structural, shapes a board, and which offices make it, and the tokens SQL derives for its words) and demands', () => {
-  const { moves, demands } = instanceSeed(instance).system;
+  const { moves, demands } = instanceSeed(instance, conduct).system;
   assert.deepEqual(moves, MOVE_KINDS.map((m) => ({ key: m.key, structural: m.structural, shapesBoard: m.shapesBoard, offices: m.offices, derived: m.derived ?? [] })));
   assert.deepEqual(moves, [
     { key: 'renameBoard', structural: true, shapesBoard: true, offices: ['boss'], derived: [] },
@@ -105,7 +108,7 @@ test('the seed carries the engine\'s catalogs of moves (with whether each is str
 });
 
 test('the seed carries the rule predicates, each with its parameter kind, its bounds and its words as a template', () => {
-  const { predicates } = instanceSeed(instance).system;
+  const { predicates } = instanceSeed(instance, conduct).system;
   assert.deepEqual(predicates.map((p) => p.key), PREDICATES.map((p) => p.key));
   const by = Object.fromEntries(predicates.map((p) => [p.key, p]));
   assert.deepEqual(by['minLength'], { key: 'minLength', param: 'count', least: 1, most: 200, plain: 'posts of at least {param} characters' });
@@ -126,16 +129,16 @@ test('a card\'s trap, ward and time up travel in the seed as the engine holds th
   const trap = { trigger: { on: 'cast' as const }, outcome: { do: 'payout' as const } };
   const set = { ...instance.cards[0]!, key: 'test-trap', play: 'set' as const, rarity: 'uncommon' as const, trap };
   const ward = { ...instance.cards[0]!, key: 'test-ward', play: 'use' as const, rarity: 'uncommon' as const, ward: true as const, lasts: { unit: 'day' as const, count: 7 } };
-  const seed = instanceSeed({ ...instance, cards: [set, ward] });
+  const seed = instanceSeed({ ...instance, cards: [set, ward] }, conduct);
   assert.deepEqual(JSON.parse(JSON.stringify(seed.cards[0])).trap, trap);
   assert.equal('lasts' in JSON.parse(JSON.stringify(seed.cards[0])), false, 'seed_instance reads a missing time up as none');
   assert.deepEqual([seed.cards[1]!.play, seed.cards[1]!.ward, seed.cards[1]!.lasts], ['use', true, { unit: 'day', count: 7 }]);
 });
 
 test('the seed carries the developer persona: the instance\'s, or the engine\'s plain default, and no prompt (a model never writes it)', () => {
-  assert.deepEqual(instanceSeed(instance).developer, { name: 'Gabe', title: 'Made this. Sorry.', avatar: 'gabe', pronouns: PRONOUN_PRESETS.he }, 'Divided World\'s is Gabe, with his tagline as the profile title');
-  assert.deepEqual(instanceSeed({ ...instance, developer: undefined }).developer, { name: 'The developers', title: '' }, 'an instance with no persona gets the engine\'s plain one, with no avatar key');
-  assert.deepEqual(instanceSeed({ ...instance, developer: { name: 'Dev', tagline: 'Hi.' } }).developer, { name: 'Dev', title: 'Hi.' });
-  assert.ok(!instanceSeed(instance).system.staff.some((s) => s.key === 'developer'), 'the developer is not in the roster a model is handed');
-  assert.ok(!('developer' in instanceSeed(instance).system), 'nothing under `system`, which is all the Director reads, names the developer');
+  assert.deepEqual(instanceSeed(instance, conduct).developer, { name: 'Gabe', title: 'Made this. Sorry.', avatar: 'gabe', pronouns: PRONOUN_PRESETS.he }, 'Divided World\'s is Gabe, with his tagline as the profile title');
+  assert.deepEqual(instanceSeed({ ...instance, developer: undefined }, conduct).developer, { name: 'The developers', title: '' }, 'an instance with no persona gets the engine\'s plain one, with no avatar key');
+  assert.deepEqual(instanceSeed({ ...instance, developer: { name: 'Dev', tagline: 'Hi.' } }, conduct).developer, { name: 'Dev', title: 'Hi.' });
+  assert.ok(!instanceSeed(instance, conduct).system.staff.some((s) => s.key === 'developer'), 'the developer is not in the roster a model is handed');
+  assert.ok(!('developer' in instanceSeed(instance, conduct).system), 'nothing under `system`, which is all the Director reads, names the developer');
 });

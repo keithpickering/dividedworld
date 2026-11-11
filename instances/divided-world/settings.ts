@@ -115,6 +115,11 @@ export const defaults: Settings = deepFreeze<Settings>({
    * at most 80 words.
    */
   apology: { apologyEveryHours: 24, apologyJudgeBatch: 10, apologyRulingMaxWords: 80 },
+  /**
+   * The code of conduct's numbers (the conduct design, sections 5 and 7): an account holds at most three reports to admins open at once. The admin
+   * address, where replies to a moderation email go so an appeal reaches a person, is the owner's to set when the instance deploys: null until then.
+   */
+  conduct: { openReportsMost: 3, adminAddress: null },
   /** A board's name is at most 60 characters, whoever proposes it. */
   boardNameMaxLength: 60,
   /** A starting point: no move runs longer than six weeks. */
