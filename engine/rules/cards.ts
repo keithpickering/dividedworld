@@ -371,7 +371,7 @@ export interface DecidedDraw { readonly payload: Record<string, unknown>; readon
 const noSurface = (rules: Pick<CardRules, 'name'>) => refuse(`${rules.name} has no surface to draw on`);
 
 /** The most cells a surface card's layer may cover: its limit, whole percent of the grid, from the card settings. A limit the settings do not hold is a fault of the instance, which instanceProblems refuses first. */
-function surfaceMost(key: string, limitKey: string, settings: Settings): number {
+export function surfaceMost(key: string, limitKey: string, settings: Settings): number {
   const limit = settings.cardSettings[limitKey];
   if (typeof limit !== 'number' || !Number.isFinite(limit)) throw new Error(`card ${key} reads the limit "${limitKey}", which the settings do not hold`);
   return Math.round((limit / 100) * GRID * GRID);
@@ -625,7 +625,7 @@ export function drawnInMoment(rules: Pick<CardRules, 'validateState' | 'stack' |
  * carries at most its stack of it (one unless the card says more) that are still up, each its own play, counting only the
  * effects on that same target, never those above it. A board carries one board card at a time, of any card, until it ends.
  */
-export function landsOn(rules: Pick<CardRules, 'key' | 'stack' | 'reaches'>, target: CardTarget, effects: readonly CardEffect[], now: Date = new Date()): Verdict {
+export function landsOn(rules: Pick<CardRules, 'key' | 'stack' | 'reaches'> & { readonly surface?: unknown }, target: CardTarget, effects: readonly CardEffect[], now: Date = new Date()): Verdict {
   const reaches = reachesOf(rules);
   if (!reaches.includes(target.reach)) return refuse(`this card lands on ${listed(reaches)}`);
   if (target.reach === 'post' && target.kind !== 'post') return refuse('a card lands on a post');
@@ -637,6 +637,8 @@ export function landsOn(rules: Pick<CardRules, 'key' | 'stack' | 'reaches'>, tar
   }
   const stack = rules.stack ?? 1;
   if (here.filter((e) => e.card === rules.key).length >= stack) {
+    // A surface card's play is the post's wall: a second says so, in the database's words (place_cast).
+    if (rules.surface !== undefined && target.reach === 'post') return refuse('This post is already a wall. Draw on it instead.');
     const where = target.reach === 'post' ? 'this post' : `this ${target.reach}`;
     return refuse(stack === 1 ? `${where} already carries that card` : `${where} already carries ${stack} of that card, the most it takes`);
   }

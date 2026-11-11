@@ -53,6 +53,46 @@ begin
   end loop;
 end $$;
 
+-- ---- 4b. A draw racing a wash on a full wall: the wash always lands; the draw is refused with the full wall's figures, or lands on the cells the wash freed, and the row is what the Acts rebuild ----
+do $$
+declare
+  ann uuid := gen_random_uuid(); bob uuid := gen_random_uuid();
+  a uuid := gen_random_uuid(); b uuid := gen_random_uuid();
+  t uuid := gen_random_uuid(); p uuid; pl uuid; said text[]; landed integer := 0; refused integer := 0; r surfaces%rowtype; s surfaces%rowtype;
+  payload text := '{"strokes": [{"width": 0.01, "points": [[0.1, 0.1]]}]}';
+begin
+  perform tests.commit(format($sql$
+    insert into auth.users (id, email) values (%1$L, 'sf-rw-ann@test.invalid'), (%2$L, 'sf-rw-bob@test.invalid');
+    insert into accounts (id) values (%1$L), (%2$L);
+    insert into characters (id, owner, name, debuted_at) values (%3$L, %1$L, 'Sf Rw Ann', now()), (%4$L, %2$L, 'Sf Rw Bob', now());
+    insert into class_history (character, class_key) values (%3$L, 'alpha'), (%4$L, 'alpha');
+    insert into threads (id, board, title) select %5$L, id, 'Sf rw' from boards where slug = 'general';
+  $sql$, ann, bob, a, b, t));
+  for i in 1..10 loop
+    p := gen_random_uuid(); pl := gen_random_uuid();
+    perform tests.commit(format($sql$
+      insert into acts (id, character, kind, thread, payload) values (%1$L, %2$L, 'post', %3$L, '{"body": "Race me."}');
+      insert into acts (id, character, kind, thread, target_act_id, payload) values (%4$L, %2$L, 'card', %3$L, %1$L, '{"card": "sfracewall", "message": "", "config": {}, "layer": 1}');
+      do $x$ begin perform open_surface(%4$L); perform draw_on_surface(%5$L, %6$L, %4$L, %7$L, %8$L, 4000); end $x$;
+    $sql$, p, a, t, pl, bob, b, payload, (repeat('1', 4000) || repeat('0', 6000))));
+    said := tests.race_service(
+      format('select wash_surface(%L, %L, %L, %L, %L)', ann, a, pl, payload, (repeat('1', 1000) || repeat('0', 9000))),
+      format('select draw_on_surface(%L, %L, %L, %L, %L, 4000)', bob, b, pl, payload, (repeat('0', 4000) || repeat('1', 500) || repeat('0', 5500))));
+    if said[1] is not null then raise exception 'round %: the wash is never refused: %', i, said[1]; end if;
+    if said[2] is null then
+      landed := landed + 1;
+      if (select bit_count(cover) from surfaces where play = pl) is distinct from 3500 then raise exception 'round %: the draw landed on the freed cells: %', i, (select bit_count(cover) from surfaces where play = pl); end if;
+    else
+      refused := refused + 1;
+      if said[2] is distinct from 'this wall is 40% covered, and its limit is 40%; this tag would take it to 45%' then raise exception 'round %: the draw before the wash is refused with the full wall''s figures: %', i, said[2]; end if;
+      if (select bit_count(cover) from surfaces where play = pl) is distinct from 3000 then raise exception 'round %: the wash alone leaves 3,000 cells', i; end if;
+    end if;
+    select * into s from surfaces where play = pl;
+    r := rebuild_surface(pl);
+    if r.cover is distinct from s.cover or r.owners is distinct from s.owners or r.live is distinct from s.live then raise exception 'round %: the stored row is what the Acts rebuild', i; end if;
+  end loop;
+end $$;
+
 insert into card_kinds (key, name, alignment, rarity, play, trap, reaches, stack, surface)
 values ('sfwall', 'Sf Wall', 'pepperoni', 'rare', 'cast', null, '{post}', 1, true);
 
@@ -167,7 +207,7 @@ begin
   if length(s.cover::text) <> 10000 then raise exception 'the cover is 10,000 cells'; end if;
   -- A second wall on the post is refused by the card's stack, in the stack's words.
   played := pg_temp.as_val(null, format('select play_card(%L, %L, %L, %L, %L, 0, %L)::text', bob, 'sfwall', b, p, '{}', ''));
-  if played is distinct from 'ERROR: this post already carries that card' then raise exception 'a second wall is refused by the stack: %', played; end if;
+  if played is distinct from 'ERROR: This post is already a wall. Draw on it instead.' then raise exception 'a second wall is refused in the wall''s words: %', played; end if;
 end $$;
 
 -- ---- 2 and 3. A draw covers its cells; over a covered cell it adds nothing; past the limit it is refused with the wall's figures ----
@@ -502,4 +542,86 @@ begin
     raise exception 'a player does not call draw_on_surface';
   end if;
   if pg_temp.as_val(bob, format('select open_surface(%L)', w.play)) not like 'ERROR: permission denied%' then raise exception 'a player does not open a surface'; end if;
+end $$;
+
+-- ---- 14. A retired author still washes (the effect save allows the same) ----
+do $$
+declare
+  ann uuid := tests.account('sf-14-ann'); bob uuid := tests.account('sf-14-bob');
+  a uuid := tests.character(ann, 'Sf Fourteen Ann'); b uuid := tests.character(bob, 'Sf Fourteen Bob');
+  t uuid := tests.thread('Sf fourteen'); w record := pg_temp.wall(a, t);
+  got text;
+begin
+  perform pg_temp.draw(bob, b, w.play, pg_temp.cells(0, 100));
+  update characters set retired_at = now() where id = a;
+  got := pg_temp.wash(ann, a, w.play, pg_temp.cells(0, 50));
+  if got like 'ERROR:%' or pg_temp.covered(w.play) is distinct from 50 then raise exception 'a retired author washes their own wall: %', got; end if;
+  -- A retired character does not draw.
+  got := pg_temp.draw(ann, a, w.play, pg_temp.cells(500, 10));
+  if got not like 'ERROR:%' then raise exception 'a retired character draws nothing: %', got; end if;
+end $$;
+
+-- ---- 15. Many small disjoint washes on one drawing all stay live while it owns cells, and all leave with it ----
+do $$
+declare
+  ann uuid := tests.account('sf-15-ann'); bob uuid := tests.account('sf-15-bob');
+  a uuid := tests.character(ann, 'Sf Fifteen Ann'); b uuid := tests.character(bob, 'Sf Fifteen Bob');
+  t uuid := tests.thread('Sf fifteen'); w record := pg_temp.wall(a, t); w2 record := pg_temp.wall(a, t);
+begin
+  perform pg_temp.draw(bob, b, w.play, pg_temp.cells(0, 1000));
+  perform pg_temp.draw(bob, b, w2.play, pg_temp.cells(0, 1000));
+  for i in 0..39 loop
+    perform pg_temp.wash(ann, a, w.play, pg_temp.cells(i * 5, 1));
+    perform pg_temp.wash(ann, a, w2.play, pg_temp.cells(i * 5, 1));
+  end loop;
+  if pg_temp.live(w.play) is distinct from 41 then raise exception 'disjoint washes each cut the drawing and stay live: %', pg_temp.live(w.play); end if;
+  -- Washed off entirely: the drawing and every wash leave.
+  perform pg_temp.wash(ann, a, w.play, pg_temp.cells(0, 1000));
+  if pg_temp.live(w.play) is distinct from 0 then raise exception 'washed off entirely, nothing is live: %', pg_temp.live(w.play); end if;
+  -- Painted over: the drawing leaves, its washes with it, and the painter is all that is live.
+  perform pg_temp.draw(bob, b, w2.play, pg_temp.cells(0, 1000));
+  if pg_temp.live(w2.play) is distinct from 1 then raise exception 'painted over, only the painter is live: %', pg_temp.live(w2.play); end if;
+end $$;
+
+-- ---- 16. Readers get the strokes, never the cells ----
+do $$
+declare
+  ann uuid := tests.account('sf-16-ann'); bob uuid := tests.account('sf-16-bob');
+  a uuid := tests.character(ann, 'Sf Sixteen Ann'); b uuid := tests.character(bob, 'Sf Sixteen Bob');
+  t uuid := tests.thread('Sf sixteen'); w record := pg_temp.wall(a, t);
+  d text; wsh text; listed jsonb;
+begin
+  d := pg_temp.draw(bob, b, w.play, pg_temp.cells(0, 100));
+  wsh := pg_temp.wash(ann, a, w.play, pg_temp.cells(0, 10));
+  if d like '%"cells"%' or wsh like '%"cells"%' or d not like '%"strokes"%' then raise exception 'a write answers with the strokes and no cells'; end if;
+  perform tests.become(bob);
+  listed := surface_acts(w.play);
+  perform tests.unbecome();
+  if listed::text like '%"cells"%' or listed::text not like '%"strokes"%' then raise exception 'surface_acts carries the strokes and no cells: %', left(listed::text, 200); end if;
+  if (select payload ->> 'cells' from acts where target_act_id = w.play and kind = 'draw') is null then raise exception 'but the Act keeps its cells for rebuild_surface'; end if;
+end $$;
+
+-- ---- 17. A face-down draft does not outlive its card ----
+do $$
+declare
+  ann uuid := tests.account('sf-17-ann');
+  a uuid := tests.character(ann, 'Sf Seventeen Ann');
+  t uuid := tests.thread('Sf seventeen'); p1 uuid := tests.post(a, t, 'To be taken back.'); p2 uuid := tests.post(a, t, 'To run out.'); p3 uuid := tests.post(a, t, 'Set after.');
+  set1 uuid; set2 uuid; got text;
+  draft text := '{"strokes": [{"width": 0.01, "points": [[0.1, 0.1]]}]}';
+begin
+  insert into card_ledger (account, card, kind, price) values (ann, 'sfwall', 'bought', 0), (ann, 'sfwall', 'bought', 0), (ann, 'sfwall', 'bought', 0);
+  got := pg_temp.as_val(null, format('select set_surface_card(%L, %L, %L, %L, %L, 0, null, null, null, null, null, %L, %L, 4000, 48)::text', ann, 'sfwall', a, p1, '{}', draft, pg_temp.cells(0, 10)::text));
+  set1 := (got::jsonb ->> 'id')::uuid;
+  got := pg_temp.as_val(null, format('select take_back(%L, %L, %L)::text', ann, a, set1));
+  if got like 'ERROR:%' then raise exception 'the back is taken back: %', got; end if;
+  if exists (select 1 from face_down_draws where play = set1) then raise exception 'a taken-back card takes its draft with it'; end if;
+  -- A back that ran out writes nothing; the next surface card set sweeps the drafts of backs past their time.
+  insert into acts (character, kind, thread, target_act_id, payload) values (a, 'set', t, p2, '{}') returning id into set2;
+  insert into face_down (play, account, card, config, post, thread, round, ends_at) values (set2, ann, 'sfwall', '{}', p2, t, 9, now() - interval '1 hour');
+  insert into face_down_draws (play, payload, cells, most) values (set2, draft::jsonb, pg_temp.cells(0, 10), 4000);
+  got := pg_temp.as_val(null, format('select set_surface_card(%L, %L, %L, %L, %L, 0, null, null, null, null, null, %L, %L, 4000, 48)::text', ann, 'sfwall', a, p3, '{}', draft, pg_temp.cells(0, 10)::text));
+  if got like 'ERROR:%' then raise exception 'a card is set: %', got; end if;
+  if exists (select 1 from face_down_draws where play = set2) then raise exception 'the draft of a back past its time is swept'; end if;
+  if (select count(*) from face_down_draws) is distinct from 1 then raise exception 'only the live back keeps its draft'; end if;
 end $$;

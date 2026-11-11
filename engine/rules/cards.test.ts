@@ -615,3 +615,11 @@ test('a surface card is played with its first draw, and refused without it; othe
   const set = decideSet(wall, walled, post, [], {}, [plain], { first: dab });
   assert.equal(set.ok && set.value.draw?.cells.indexOf('1'), 5050);
 });
+
+test('a second play of a surface card is refused as a wall, in the words the database uses; other cards keep the stack\'s words', () => {
+  const post: CardTarget = { reach: 'post', act: 'p', kind: 'post', length: 1, body: 'x', version: 'v', effects: [] } as unknown as CardTarget;
+  const up = [{ card: 'wall', act: 'k1' }] as unknown as CardEffect[];
+  assert.deepEqual(landsOn({ key: 'wall', surface: true }, post, up), { ok: false, why: 'This post is already a wall. Draw on it instead.' });
+  assert.deepEqual(landsOn({ key: 'wall' }, post, up), { ok: false, why: 'this post already carries that card' });
+  assert.equal(landsOn({ key: 'wall', surface: true }, post, []).ok, true);
+});

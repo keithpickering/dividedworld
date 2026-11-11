@@ -20,6 +20,10 @@
 -- covers all of its cells: it is needed by a renderer that draws the live Acts in order, and by nothing else. A wash that uncovers no cell is written and never enters the list. (The plan's "owns a cell under the
 -- wash's cells" cannot be read of the owners as they stand after the wash: the wash has just taken them. It is read of the draws' own cells.) Indices in `owners` are renumbered with `live` after a prune.
 --
+-- Bound on the live list. Every live wash is the last live wash over at least one cell (a later live wash that covers all of its cells replaces it), so the live washes each own a cell the others do not, and at most
+-- 10,000 washes are live: the case where the author washes one cell at a time and each wash cuts a drawing that is still live. Only the post's own character writes a wash, so only the author's own washes, of one
+-- cell or more each, can reach that bound; draws are held to 48 live. Every live wash leaves the list once the draws it cut do.
+--
 -- The limits. A draw is refused past the wall's limit in cells (`most`, which the server function computes from the instance's setting), with the wall's own figures in whole percents, and past the 48th live draw
 -- (surfaces.most_live), counted after the draw has painted over what it covers, so painting over a tag is the way out of a full wall. A draw that adds no cell is never refused for the limit. A wash is never refused for
 -- the limit or the live count. Both are checked under the row's lock, from the row's own cells, so the refusal is the same for everyone and reads nothing of who owns a character.
@@ -134,7 +138,7 @@ begin
   if new.character is not null and exists (select 1 from characters c where c.id = new.character and c.debuted_at is null) then
     raise exception 'that character debuts at the next settlement' using hint = 'kayfabb.refusal', errcode = '55000';
   end if;
-  if new.character is not null and exists (select 1 from characters c where c.id = new.character and c.retired_at is not null) then
+  if new.character is not null and exists (select 1 from characters c where c.id = new.character and c.retired_at is not null) and new.kind <> 'wash' then
     raise exception 'that character is retired; an admin can restore it' using hint = 'kayfabb.refusal', errcode = '55000';
   end if;
   if new.kind = 'announce' then
@@ -326,7 +330,7 @@ begin
   values (written, by_character, in_kind, in_thread, on_play, (in_payload - 'cells') || jsonb_build_object('cells', in_cells::text), at);
   perform set_config('kayfabb.surface_writer', flag, true);
   update surfaces set cover = st.cover, owners = st.owners, live = st.live, updated_at = at where play = on_play;
-  return act_projection(written) || jsonb_build_object('covered', bit_count(st.cover), 'live', to_jsonb(st.live));
+  return (act_projection(written) #- '{payload,cells}' #- '{current_payload,cells}') || jsonb_build_object('covered', bit_count(st.cover), 'live', to_jsonb(st.live));
 end $$;
 revoke execute on function surface_apply(uuid, uuid, text, jsonb, bit, integer) from public, anon, authenticated, service_role;
 
@@ -454,6 +458,8 @@ begin
     raise exception 'that card has no surface to draw on' using hint = 'kayfabb.refusal', errcode = '22023';
   end if;
   perform surface_check_payload(draft);
+  -- A back that ran out writes no Act, so nothing ends its draft; each surface card set sweeps the drafts of backs past their time, which nobody can read or spring.
+  delete from face_down_draws d using face_down f where f.play = d.play and f.ends_at <= now();
   set_made := set_card(who, card, through, target, config, price, catches, phrase, passage, named, who_except);
   insert into face_down_draws (play, payload, cells, most, most_live)
   values ((set_made ->> 'id')::uuid, draft - 'cells', draft_cells, most, coalesce(set_surface_card.most_live, 48));
@@ -461,6 +467,48 @@ begin
 end $$;
 revoke execute on function set_surface_card(uuid, text, uuid, uuid, jsonb, integer, text, text, text, uuid[], boolean, jsonb, bit, integer, integer) from public, anon, authenticated;
 grant execute on function set_surface_card(uuid, text, uuid, uuid, jsonb, integer, text, text, text, uuid[], boolean, jsonb, bit, integer, integer) to service_role;
+
+-- take_back (0148), also deleting the back's draft, if it holds one. Everything else as 0148 wrote it.
+create or replace function take_back(who uuid, through uuid, set_act uuid) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  on_post uuid;
+  fd face_down%rowtype;
+  author uuid;
+  written uuid;
+  nothing constant text := 'there is no face-down card to take back there';
+begin
+  perform played_by(through, take_back.who);
+  perform not_banned(through);
+  -- 1. The account's row, as set_card takes it.
+  perform 1 from accounts a0 where a0.id = take_back.who for no key update;
+  -- The caller's own back, found without a lock; anything else is no back to them, and takes no more.
+  select f.post into on_post from face_down f where f.play = take_back.set_act and f.account = take_back.who;
+  if on_post is not null then
+    -- 2. The post's row, as set_card takes it, then 3. the back's, as a spring does; read again under the lock, so a spring or a take-back that landed while this waited is seen.
+    perform 1 from acts a where a.id = on_post for no key update;
+    select f.* into fd from face_down f where f.play = take_back.set_act for update;
+    select a.character into author from acts a where a.id = take_back.set_act;
+  end if;
+  -- A set Act that is not the caller's own back, by the character the caller acts through.
+  if on_post is null or author is distinct from through then
+    raise exception '%', nothing using hint = 'kayfabb.refusal', errcode = 'P0002';
+  end if;
+  -- A back already sprung, taken back or past its time.
+  if fd.ends_at <= now()
+     or exists (select 1 from acts s where s.kind = 'spring' and (s.payload ->> 'set') = fd.play::text)
+     or exists (select 1 from acts s where s.kind = 'take_back' and (s.payload ->> 'set') = fd.play::text) then
+    raise exception '%', nothing using hint = 'kayfabb.refusal', errcode = 'P0002';
+  end if;
+  insert into acts (character, kind, thread, target_act_id, payload)
+  values (author, 'take_back', fd.thread, fd.post, jsonb_build_object('set', fd.play::text)) returning id into written;
+  insert into card_ledger (account, card, kind, act, price) values (take_back.who, fd.card, 'returned', written, 0);
+  -- A surface card's draft goes with the back: nothing can spring it now.
+  delete from face_down_draws d where d.play = fd.play;
+  return act_projection(written);
+end $$;
+revoke execute on function take_back(uuid, uuid, uuid) from public, anon, authenticated;
+grant execute on function take_back(uuid, uuid, uuid) to service_role;
 
 -- Whether a back's draft fits the wall it will land on, which opens bare: its cells within its limit. Null for a back with no draft. spring_traps writes it into the spring before lay_sprung lays the card.
 create function surface_draft_fits(set_play uuid) returns boolean
@@ -477,7 +525,7 @@ create function surface_acts(play uuid) returns jsonb
 language sql stable security invoker set search_path = public, pg_temp as $$
   select case when s.play is null then null else jsonb_build_object(
     'covered', bit_count(s.cover),
-    'acts', coalesce((select jsonb_agg(to_jsonb(a) || case when a.kind = 'draw' then jsonb_build_object('share', (select count(*) from unnest(s.owners) o where o = u.ord)) else '{}'::jsonb end order by u.ord)
+    'acts', coalesce((select jsonb_agg((to_jsonb(a) #- '{payload,cells}' #- '{current_payload,cells}') || case when a.kind = 'draw' then jsonb_build_object('share', (select count(*) from unnest(s.owners) o where o = u.ord)) else '{}'::jsonb end order by u.ord)
                       from unnest(s.live) with ordinality u(id, ord) join acts_public a on a.id = u.id), '[]'::jsonb),
     'older', (select count(*) from acts_public d where d.target_act_id = s.play and d.kind = 'draw' and d.id <> all (s.live))) end
   from (select 1) x left join surfaces s on s.play = surface_acts.play
@@ -620,6 +668,7 @@ begin
         and (k.payload ->> 'ends' is null or (k.payload ->> 'ends')::timestamptz > now()) and not card_ended(k.id);
       if up >= 1 then raise exception 'this post already carries that card for that quadrant' using hint = 'kayfabb.refusal', errcode = '23505'; end if;
     elsif up >= kind_of.stack then
+      if kind_of.surface then raise exception 'This post is already a wall. Draw on it instead.' using hint = 'kayfabb.refusal', errcode = '23505'; end if;
       if kind_of.stack = 1 then raise exception 'this post already carries that card' using hint = 'kayfabb.refusal', errcode = '23505'; end if;
       raise exception 'this post already carries % of that card, the most it takes', kind_of.stack using hint = 'kayfabb.refusal', errcode = '23505';
     end if;
