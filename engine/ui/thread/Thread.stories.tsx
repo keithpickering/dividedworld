@@ -88,23 +88,3 @@ export const TheSystemsTally: Story = {
     path: '/t/x',
   },
 };
-
-/**
- * A post under a no-quote card: it has no Quote link, its neighbors do, and its mark and Lens say why. The card is the instance's
- * first whose gimmick stops quotes (the story names none); an instance with none draws the thread as it is. Light and dark are
- * the toolbar's theme switch.
- */
-export const NoQuotePost: Story = {
-  args: { title: 'Say it where it can be heard' },
-  parameters: {
-    world: ((fake, instance) => {
-      const w = cast(fake, instance);
-      const t = fake.seed.thread(w.general, w.spritey, 'Say it where it can be heard', 'Quote me if you can.', { at: T0 });
-      const reply = fake.seed.post(t.thread, w.spritey, 'The last word is mine.', { at: T0 + MIN });
-      fake.seed.post(t.thread, w.mine, 'Noted.', { at: T0 + 2 * MIN });
-      const stopper = instance.cards.find((c) => c.gimmick?.kind === 'noQuote');
-      if (stopper) fake.seed.card(w.spritey, reply, stopper.key, { at: T0 + 3 * MIN, ends: new Date(Date.now() + 7 * 86_400_000).toISOString() });
-    }) satisfies World,
-    path: '/t/x',
-  },
-};
