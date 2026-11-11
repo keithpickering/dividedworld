@@ -73,6 +73,10 @@ export const defaults: Settings = deepFreeze<Settings>({
   microEventDailyCalls: 20,
   /** A starting point: the Boss's digest holds the ten hottest threads. */
   digestThreads: 10,
+  /** A starting point: the digest lines thirty boards, and the busiest half and the quietest half when there are more, so a Boss can see a forum with five posts in it. */
+  digestBoards: 30,
+  /** A starting point: a board line counts its posts over the last three weeks. */
+  digestBoardDays: 21,
   /** A starting point: the digest quotes the eight top posts. */
   digestExcerpts: 8,
   /** A starting point: each quoted post is cut to 280 characters. */

@@ -50,6 +50,8 @@ const settings: Settings = {
   structuralHoldHours: 24,
   microEventDailyCalls: 20,
   digestThreads: 10,
+  digestBoards: 30,
+  digestBoardDays: 21,
   digestExcerpts: 8,
   digestExcerptChars: 280,
   memoryOpinions: 40,
@@ -559,7 +561,7 @@ test('the new settings are checked like the others', () => {
   assert.match(bad('meetingCron', 'daily'), /meetingCron/);
   assert.match(bad('phases', { ...settings.phases, reign: { weeklyMoves: 0, bankCap: 10, moveExpiryMostDays: 28 } }), /phases/);
   assert.match(bad('phases', { ...settings.phases, honeymoon: { weeklyMoves: 2, bankCap: 4, moveExpiryMostDays: 7 } }), /phases/);
-  for (const k of ['inheritanceGraceDays', 'rosterRecentExcluded', 'structuralHoldHours', 'microEventDailyCalls', 'digestThreads', 'digestExcerpts', 'digestExcerptChars', 'memoryOpinions', 'memoryGrudges', 'memoryWheelhouse', 'memoryRealWorld', 'boardNameMaxLength', 'moveExpiryMostDays', 'moveExpiryLeastHours', 'demandCheckMinutes', 'demandChecksPerTick']) {
+  for (const k of ['inheritanceGraceDays', 'rosterRecentExcluded', 'structuralHoldHours', 'microEventDailyCalls', 'digestThreads', 'digestBoards', 'digestBoardDays', 'digestExcerpts', 'digestExcerptChars', 'memoryOpinions', 'memoryGrudges', 'memoryWheelhouse', 'memoryRealWorld', 'boardNameMaxLength', 'moveExpiryMostDays', 'moveExpiryLeastHours', 'demandCheckMinutes', 'demandChecksPerTick']) {
     assert.match(bad(k, -1), new RegExp(k), k);
     assert.match(bad(k, 1.5), new RegExp(k), k);
   }
@@ -568,7 +570,7 @@ test('the new settings are checked like the others', () => {
     assert.match(bad(k, 2.5), new RegExp(k), k);
   }
   // The digest settings have a ceiling too: an admin setting cannot grow the meeting's prompt without bound.
-  for (const [k, most] of [['digestThreads', DIGEST_MOST.threads], ['digestExcerpts', DIGEST_MOST.excerpts], ['digestExcerptChars', DIGEST_MOST.excerptChars]] as const) {
+  for (const [k, most] of [['digestThreads', DIGEST_MOST.threads], ['digestBoards', DIGEST_MOST.boards], ['digestBoardDays', DIGEST_MOST.boardDays], ['digestExcerpts', DIGEST_MOST.excerpts], ['digestExcerptChars', DIGEST_MOST.excerptChars]] as const) {
     assert.match(bad(k, most + 1), new RegExp(k), k);
     assert.deepEqual(settingsProblems({ ...settings, [k]: most }), [], `${k} may be its ceiling`);
   }

@@ -101,7 +101,7 @@ function fakeDb(w: World = {}) {
         case 'meeting_context':
           return { season: { startsAt: NOW - 30 * DAY, endsAt: NOW + (w.endsIn ?? 60 * DAY) }, boss: w.boss ?? BOSS, lastSlot: '2026-10-31T09:23:00.000Z', boards: [{ id: BOARD, name: 'Mario Fan Games' }, { id: BOARD2, name: 'Off Topic' }], successors: w.successors ?? dividedWorld.system.roster.map((b) => b.key).filter((k) => k !== (w.boss ?? BOSS)), ...(w.inheritanceDue ? { inheritanceDue: w.inheritanceDue } : {}), ...(w.mods ? { mods: w.mods } : {}), ...(w.rules ? { rules: w.rules } : {}), ...(w.groups ? { groups: w.groups } : {}), ...(w.machine ? { machine: w.machine } : {}) } as T;
         case 'system_digest':
-          return { since: args.since, until: args.until, threads: [{ thread: HOT, title: 'Pineapple', board: 'Mario Fan Games', posts: 4, heat: 1, controversy: 0.5, length: 9 }], standings: [], moves: [], quotes: [], bossReactions: [], excerpts: [], characters: w.digestCharacters ?? [{ id: ANN, name: 'Ann the Great', staff: false, pronouns: null }] } as T;
+          return { since: args.since, until: args.until, threads: [{ thread: HOT, title: 'Pineapple', board: 'Mario Fan Games', posts: 4, heat: 1, controversy: 0.5, length: 9 }], boards: [{ id: HOT, name: 'Mario Fan Games', premise: 'Games by fans.', posts: 4 }], boardDays: 21, standings: [], moves: [], quotes: [], bossReactions: [], excerpts: [], characters: w.digestCharacters ?? [{ id: ANN, name: 'Ann the Great', staff: false, pronouns: null }] } as T;
         case 'character_groups': return (args.ids as string[]).map((id) => ({ id, group: id === ANN ? 'Trial Members' : 'Members' })) as T;
         case 'staff_notes_recent': return (w.notes ?? []) as T;
         case 'staff_career': return (w.career ?? { led: [], offices: [] }) as T;
@@ -190,6 +190,7 @@ test('the call is a strong-tier meeting call for the Boss, naming the meeting, w
   assert.match(r.system, /Pointless Post Palace/, 'the name style, in the instance\'s own words');
   assert.match(r.messages[0]!.content, new RegExp(BOARD), 'the model is given the ids it may name');
   assert.match(r.messages[0]!.content, /Pineapple/);
+  assert.match(r.messages[0]!.content, /Mario Fan Games \(Games by fans\.\): 4 posts in 21 days\./);
   assert.ok(d.calls.findIndex((c) => c.fn === 'begin_meeting') < d.calls.findIndex((c) => c.fn === 'system_digest'));
   const digest = d.calls.find((c) => c.fn === 'system_digest')!;
   assert.equal(digest.args.since, '2026-10-31T09:23:00.000Z', 'the window starts where the last meeting\'s ended');

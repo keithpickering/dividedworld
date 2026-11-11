@@ -263,6 +263,10 @@ export interface Settings {
   readonly microEventDailyCalls: number;
   /** How many threads the Boss's digest of public play holds. A starting point. */
   readonly digestThreads: number;
+  /** How many boards the Boss's digest lines: when there are more open boards, the busiest half and the quietest half. A starting point. */
+  readonly digestBoards: number;
+  /** How many days back, from the digest's end, a board line counts its posts. A starting point. */
+  readonly digestBoardDays: number;
   /** How many top posts the digest quotes. A starting point. */
   readonly digestExcerpts: number;
   /** How many characters of a post the digest quotes. A starting point. */
