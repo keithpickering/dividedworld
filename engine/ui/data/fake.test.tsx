@@ -3720,6 +3720,22 @@ describe('a surface, as the server keeps it', () => {
     expect(sayings.limit).toBe('this wall is %s%% covered, and its limit is %s%%; this tag would take it to %s%%');
   });
 
+  test('a limit that is not a whole percent is shown rounded down, as the database shows it (4060 cells say 40%), and the figure after the tag is rounded up', async () => {
+    const fake = createFake({ instance: { ...surfaced, settings: { ...settings, cardSettings: { 'slab.limit': 40.6 } } } });
+    const ana = fake.seed.account('ana');
+    const face = fake.seed.character(ana, 'Ana Face', 'face');
+    const { thread } = fake.seed.thread('general', face, 'Hello', 'First post');
+    const play = fake.seed.card(face, fake.seed.post(thread, face, 'a post'), 'slab');
+    fake.signInAs(ana);
+    const first = [stroke(0.5, 0.25)];
+    const before = count(cellsOf(first));
+    expect(await fake.draw(play, face, { strokes: first })).toMatchObject({ ok: true });
+    const second = [stroke(0.1, 0.25)];
+    const together = count(cellsOf([...first, ...second]));
+    expect(together).toBeGreaterThan(4060);
+    expect(await fake.draw(play, face, { strokes: second })).toEqual(refused(said(sayings.limit, Math.floor(before / 100), Math.floor(4060 / 100.0), Math.ceil(together / 100))));
+  });
+
   test('the live count\'s refusal says what the database says, and painting over a tag is the way out', async () => {
     const { fake, anaFace, anaHeel, play } = wall();
     expect(await fake.draw(play, anaHeel, { strokes: [dab(0.1)] })).toMatchObject({ ok: true });

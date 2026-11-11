@@ -668,6 +668,17 @@ export function staffConfigOf(card: CardRules, rng: () => number): unknown | nul
   return chosen.ok ? chosen.value : null;
 }
 
+/**
+ * A Mod Bot's first draw on a surface card where its own pick fails or it gave none: one of the card's `staffConfigs` that the card's `surface.validateDraw`
+ * accepts, picked by `rng` (in [0, 1)); null for a card with no surface or with no such entry. `staffConfigOf` cannot give it: a surface card's `validateConfig({})`
+ * accepts, so the play's configuration is `{}` and its `staffConfigs` are never read there. They are draws, and are read here.
+ */
+export function staffDrawOf(card: CardRules, rng: () => number): unknown | null {
+  if (card.surface === undefined) return null;
+  const draws = (card.staffConfigs ?? []).filter((c) => card.surface!.validateDraw(c).ok);
+  return draws.length === 0 ? null : draws[Math.floor(rng() * draws.length)];
+}
+
 /** A color as a post's [color] tag reads one (engine/bbcode/parse.ts), surrounding spaces aside. */
 export function color(value: unknown): string | null {
   return typeof value === 'string' ? safeColor(value.trim()) : null;
@@ -682,5 +693,7 @@ export function staffOffers(card: CardRules): boolean {
   if (card.trap?.trigger.on === 'visit') return false;
   // A persona plays a card with no caster message, so a card that needs one could never land.
   if (card.needsMessage !== undefined) return false;
+  // A surface card is played with a first draw, which a persona names (`staffOptions`) or code picks (`staffDrawOf`); a persona never sets one.
+  if (card.surface !== undefined) return playOf(card) === 'cast' && (staffDrawOf(card, () => 0) !== null || card.staffOptions !== undefined);
   return staffConfigOf(card, () => 0) !== null || card.staffOptions !== undefined;
 }

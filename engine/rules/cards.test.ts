@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { RARITIES, quadrantFree, faceUpOnly, openDrive, giftSplit, wardTurnsAway, SET_PHRASE_MOST, atOrBelow, drawnInMoment, refusalTime, spanMs, decidePlay, decideSet, decideDraw, decideWash, decideUse, effectsOnTarget, landsOn, ok, staffConfigOf, staffOffers, refuse, type CardEffect, type CardRules, type CardTarget } from './cards.ts';
+import { RARITIES, quadrantFree, faceUpOnly, openDrive, giftSplit, wardTurnsAway, SET_PHRASE_MOST, atOrBelow, drawnInMoment, refusalTime, spanMs, decidePlay, decideSet, decideDraw, decideWash, decideUse, effectsOnTarget, landsOn, ok, staffConfigOf, staffDrawOf, staffOffers, refuse, type CardEffect, type CardRules, type CardTarget } from './cards.ts';
 import type { Settings } from './types.ts';
 
 // The engine's own test cards: no instance's names (the engine/instance boundary).
@@ -622,4 +622,19 @@ test('a second play of a surface card is refused as a wall, in the words the dat
   assert.deepEqual(landsOn({ key: 'wall', surface: true }, post, up), { ok: false, why: 'This post is already a wall. Draw on it instead.' });
   assert.deepEqual(landsOn({ key: 'wall' }, post, up), { ok: false, why: 'this post already carries that card' });
   assert.equal(landsOn({ key: 'wall', surface: true }, post, []).ok, true);
+});
+
+// A Mod Bot's first draw on a surface card: staffConfigOf returns {} where validateConfig({}) accepts, so it never reaches staffConfigs; staffDrawOf does.
+test('a surface card\'s fallback first draw is one of its staffConfigs that the card\'s own validateDraw accepts, chosen by the seed', () => {
+  const stencils = [{ strokes: [{ width: 0.012, aspect: 1, points: [[0.505, 0.505]] }] }, { strokes: [{ width: 0.012, aspect: 1, points: [[0.205, 0.205]] }] }];
+  const staffed: CardRules = { ...wall, staffConfigs: [...stencils, { strokes: 'junk' } as never] };
+  assert.deepEqual(staffConfigOf(staffed, () => 0), {}, 'the play\'s configuration is still the default');
+  assert.deepEqual(staffDrawOf(staffed, () => 0), stencils[0]);
+  assert.deepEqual(staffDrawOf(staffed, () => 0.99), stencils[1], 'the junk entry is never chosen');
+  assert.equal(staffDrawOf({ ...wall, staffConfigs: [{ strokes: 'junk' } as never] }, () => 0), null);
+  assert.equal(staffDrawOf(plain, () => 0), null, 'a card with no surface has no draw');
+  assert.equal(staffOffers(staffed), true);
+  assert.equal(staffOffers({ ...wall }), false, 'a surface card with no draw to fall back on and no options is not offered');
+  assert.equal(staffOffers({ ...wall, staffOptions: { prompt: 'p', schema: { type: 'object' } } }), true);
+  assert.equal(staffOffers({ ...staffed, play: 'set' }), false, 'a surface card is played, never set');
 });

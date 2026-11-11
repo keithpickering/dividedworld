@@ -470,9 +470,18 @@ test('each card that lets the model set options gives an object schema its own v
   assert.equal(staffConfigOf(autocorrect, () => 0), null, 'Autocorrect has no fallback');
 });
 
-test('every property a staffOptions schema names survives that card\'s validateConfig (a field it drops would be asked for and thrown away)', () => {
+test('every property a staffOptions schema names survives that card\'s validateConfig, or for a surface card its validateDraw (a field it drops would be asked for and thrown away)', () => {
   for (const card of cards) {
     if (!card.staffOptions) continue;
+    // A surface card's options are its first draw, not its configuration (its play's configuration is {}): a field the draw drops would be asked for and thrown away just the same.
+    if (card.surface) {
+      const drawn = card.surface.validateDraw(answers[card.key]);
+      assert.equal(drawn.ok, true, card.key);
+      if (!drawn.ok) continue;
+      for (const name of Object.keys(card.staffOptions.schema.properties as object)) assert.ok(name in drawn.value.payload, `${card.key}: "${name}" is dropped by validateDraw`);
+      assert.equal(card.validateConfig({}).ok, true, `${card.key}: the play itself is configured with {}`);
+      continue;
+    }
     const result = card.validateConfig(answers[card.key]);
     assert.equal(result.ok, true, card.key);
     if (!result.ok) continue;

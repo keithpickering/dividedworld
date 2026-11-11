@@ -1325,7 +1325,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const before = count(s.cover);
       const after = count(next.cover);
       if (after > most && after > before) {
-        return refuse(`this wall is ${Math.floor(before / 100)}% covered, and its limit is ${Math.round(most / 100)}%; this tag would take it to ${Math.ceil(after / 100)}%`);
+        return refuse(`this wall is ${Math.floor(before / 100)}% covered, and its limit is ${Math.floor(most / 100)}%; this tag would take it to ${Math.ceil(after / 100)}%`);
       }
       const mostLive = rules.surface!.mostLive;
       if (new Set([...next.owners].filter((o) => o !== 0)).size > mostLive) return refuse(`this wall holds ${mostLive} tags; paint over one or wait for a wash`);
