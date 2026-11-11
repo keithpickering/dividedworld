@@ -12,33 +12,36 @@ import { lazy } from 'react';
 import type { CardUi } from '../../../engine/ui/cards/types.ts';
 import type { Settings } from '../../../engine/rules/types.ts';
 import type { GimmickEffect } from '../../../engine/rules/cards.ts';
-import stickAroundCanvas from './cards/stick-around/art.svg?url';
+import stickAroundCanvas from './cards/stick-around/art.webp?url';
 import stickAroundMark from './cards/stick-around/mark.svg?url';
 import stickAroundArt from './cards/stick-around/art.json';
-import whoopsCanvas from './cards/whoops/art.svg?url';
+import whoopsCanvas from './cards/whoops/art.webp?url';
 import whoopsMark from './cards/whoops/mark.svg?url';
 import whoopsArt from './cards/whoops/art.json';
-import cardCollectorCanvas from './cards/card-collector/art.svg?url';
+import cardCollectorCanvas from './cards/card-collector/art.webp?url';
 import cardCollectorMark from './cards/card-collector/mark.svg?url';
 import cardCollectorArt from './cards/card-collector/art.json';
-import forceFieldCanvas from './cards/force-field/art.svg?url';
+import forceFieldCanvas from './cards/force-field/art.webp?url';
 import forceFieldMark from './cards/force-field/mark.svg?url';
 import forceFieldArt from './cards/force-field/art.json';
-import glitterBombCanvas from './cards/glitter-bomb/art.svg?url';
+import glitterBombCanvas from './cards/glitter-bomb/art.webp?url';
 import glitterBombMark from './cards/glitter-bomb/mark.svg?url';
 import glitterBombArt from './cards/glitter-bomb/art.json';
-import mainEventCanvas from './cards/main-event/art.svg?url';
+import mainEventCanvas from './cards/main-event/art.webp?url';
 import mainEventMark from './cards/main-event/mark.svg?url';
 import mainEventArt from './cards/main-event/art.json';
-import autocorrectCanvas from './cards/autocorrect/art.svg?url';
+import autocorrectCanvas from './cards/autocorrect/art.webp?url';
 import autocorrectMark from './cards/autocorrect/mark.svg?url';
 import autocorrectArt from './cards/autocorrect/art.json';
-import feelinFabCanvas from './cards/feelin-fab/art.svg?url';
+import feelinFabCanvas from './cards/feelin-fab/art.webp?url';
 import feelinFabMark from './cards/feelin-fab/mark.svg?url';
 import feelinFabArt from './cards/feelin-fab/art.json';
-import hallPassCanvas from './cards/hall-pass/art.svg?url';
+import hallPassCanvas from './cards/hall-pass/art.webp?url';
 import hallPassMark from './cards/hall-pass/mark.svg?url';
 import hallPassArt from './cards/hall-pass/art.json';
+import belowTheFoldCanvas from './cards/below-the-fold/art.webp?url';
+import belowTheFoldMark from './cards/below-the-fold/mark.svg?url';
+import belowTheFoldArt from './cards/below-the-fold/art.json';
 import youWereSayingCanvas from './cards/you-were-saying/art.svg?url';
 import youWereSayingMark from './cards/you-were-saying/mark.svg?url';
 import youWereSayingArt from './cards/you-were-saying/art.json';
@@ -49,22 +52,23 @@ import { glitterBomb } from '../cards/glitter-bomb.ts';
 import { mainEvent } from '../cards/main-event.ts';
 import { forceField } from '../cards/force-field.ts';
 import { feelinFab } from '../cards/feelin-fab.ts';
+import { belowTheFold } from '../cards/below-the-fold.ts';
 import { ConfigForm as CardCollectorConfigForm } from '../cards/card-collector/ConfigForm.tsx';
 import { cardCollector } from '../cards/card-collector.ts';
 import { publicityTour } from '../cards/publicity-tour.ts';
 import { heatMagnet } from '../cards/heat-magnet.ts';
 import { classClown } from '../cards/class-clown.ts';
 import { goodVibes } from '../cards/good-vibes.ts';
-import publicityTourCanvas from './cards/publicity-tour/art.svg?url';
+import publicityTourCanvas from './cards/publicity-tour/art.webp?url';
 import publicityTourMark from './cards/publicity-tour/mark.svg?url';
 import publicityTourArt from './cards/publicity-tour/art.json';
-import heatMagnetCanvas from './cards/heat-magnet/art.svg?url';
+import heatMagnetCanvas from './cards/heat-magnet/art.webp?url';
 import heatMagnetMark from './cards/heat-magnet/mark.svg?url';
 import heatMagnetArt from './cards/heat-magnet/art.json';
-import classClownCanvas from './cards/class-clown/art.svg?url';
+import classClownCanvas from './cards/class-clown/art.webp?url';
 import classClownMark from './cards/class-clown/mark.svg?url';
 import classClownArt from './cards/class-clown/art.json';
-import goodVibesCanvas from './cards/good-vibes/art.svg?url';
+import goodVibesCanvas from './cards/good-vibes/art.webp?url';
 import goodVibesMark from './cards/good-vibes/mark.svg?url';
 import goodVibesArt from './cards/good-vibes/art.json';
 import { ConfigForm as WhoopsConfigForm } from '../cards/whoops/ConfigForm.tsx';
@@ -100,6 +104,7 @@ const StickAroundEffect = lazy(() => import('./stick-around/Effect.tsx').then((m
 const AutocorrectEffect = lazy(() => import('../cards/autocorrect/Effect.tsx').then((m) => ({ default: m.AutocorrectEffect })));
 const FeelinFabEffect = lazy(() => import('./feelin-fab/Effect.tsx').then((m) => ({ default: m.FeelinFabEffect })));
 const GlitterBombEffect = lazy(() => import('./glitter-bomb/Effect.tsx').then((m) => ({ default: m.GlitterBombEffect })));
+const BelowTheFoldEffect = lazy(() => import('./below-the-fold/Effect.tsx').then((m) => ({ default: m.BelowTheFoldEffect })));
 const YouWereSayingEffect = lazy(() => import('../cards/you-were-saying/Effect.tsx').then((m) => ({ default: m.YouWereSayingEffect })));
 const WhoopsEffect = lazy(() => import('../cards/whoops/Effect.tsx').then((m) => ({ default: m.Effect })));
 
@@ -149,6 +154,20 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
     logSave: (state: unknown) => (typeof state === 'object' && state !== null && (state as { clean?: unknown }).clean === true
       ? { what: 'Washed clean', said: 'The layer is washed clean, for every reader.' }
       : undefined),
+  },
+  /*
+   * Below the Fold (docs/plans/2026-11-11-card-notes-design.md, section 2): Salty's pink. The post is one bar until a reader presses it;
+   * the effect draws the bar (ui/below-the-fold/Effect.tsx), and nothing about the fold is saved or sent.
+   */
+  {
+    key: 'below-the-fold',
+    Effect: BelowTheFoldEffect,
+    art: { color: '#ff3d7f', ink: '#14030a', canvas: belowTheFoldCanvas, mark: belowTheFoldMark, credit: belowTheFoldArt.credit, tagline: 'Fold a post away.' },
+    summary: 'Folds a post behind a bar. Any reader opens it with one press.',
+    status: 'Folded behind a bar',
+    hint: 'Press the bar to read the post.',
+    describe: () =>
+      `A Salty card, ${belowTheFold.rarity}. It folds a post behind a bar, for every reader alike: the post's words are still there, and anyone opens them with one press of the bar, which lasts until they leave the page. One fold fits on a post. ${setMoveWords('the quoting post')} It costs nothing more to play.`,
   },
   /*
    * The card mechanic's first plays (docs/plans/2026-11-01-card-mechanic-design.md, section 6). Pepperoni's color is the
