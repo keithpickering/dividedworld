@@ -34,6 +34,12 @@ export const youWereSaying: CardRules<YouWereSayingConfig> = {
     { key: 'youWereSaying.stepPrice', whole: true, min: 0 },
     { key: 'youWereSaying.mostTokens', whole: true, min: 1 },
   ],
+  // The tail's own clock on the screens (you-were-saying/erase.ts): characters erased a second while held, the wait before it types itself back in, characters typed a second.
+  screenReads: [
+    { key: 'youWereSaying.eraseCps', min: 1, max: 60 },
+    { key: 'youWereSaying.retypeMs', whole: true, min: 500, max: 10_000 },
+    { key: 'youWereSaying.typeCps', min: 5, max: 400 },
+  ],
   writes: {
     // Never above the most, even where an override puts the most below the base.
     tokens: (config, settings) =>

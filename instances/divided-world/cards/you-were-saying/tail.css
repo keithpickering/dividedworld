@@ -1,0 +1,97 @@
+/*
+ * You Were Saying?'s tail (Effect.tsx): the old voice's words as terminal output bleeding into the post (the design's section 5, look B of
+ * docs/research/2026-11-07-you-were-saying/look.html, which the owner chose). Courier, green on a faint green wash, inline after the post's
+ * words (the engine's body is inline where a tail follows: engine/ui/bbcode/bbcode.css), each play's words a span of its own in the same run.
+ *
+ * The tail carries its own ground, as a piece of the game laid on the 2003 page does (Autocorrect's tape), so it reads on every board and every
+ * theme, Silver, Blue Steel, Fan Site and Hot Rod alike: the ink and the ground are set together, and tail.test's colors hold each pair at 4.5:1
+ * or better. The light pair is the mock's #0a6b2a on its wash made opaque; the dark pair is a terminal's phosphor, switched as the themes switch
+ * (the device's dark unless the player chose light, and a player's chosen dark).
+ */
+.dw-ywst {
+  --dw-ywst-ink: #0a6b2a;
+  --dw-ywst-ground: #eaf4ed;
+  font-family: 'Courier New', Courier, 'Liberation Mono', monospace;
+  color: var(--dw-ywst-ink);
+  background: var(--dw-ywst-ground);
+  position: relative;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-kb-mode='light']) .dw-ywst {
+    --dw-ywst-ink: #7ee69a;
+    --dw-ywst-ground: #0d2615;
+  }
+}
+:root[data-kb-mode='dark'] .dw-ywst {
+  --dw-ywst-ink: #7ee69a;
+  --dw-ywst-ground: #0d2615;
+}
+
+/* One control, held anywhere on it: no text selection, no long-press menu or tap flash, and a finger's swipe is still the page's. */
+.dw-ywst[role='button'] {
+  cursor: pointer;
+  touch-action: pan-x pan-y pinch-zoom;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.dw-ywst[data-kb-tail]:focus-visible {
+  outline: 2px solid var(--kb-focus, #000);
+  outline-offset: 2px;
+}
+
+/* The block cursor, one at the end of the run: it blinks, and holds still where it is told to (a moment, reduced motion). */
+.dw-ywst-cursor {
+  display: inline-block;
+  width: 0.55em;
+  height: 1.05em;
+  margin-left: 1px;
+  vertical-align: -0.15em;
+  background: currentColor;
+  animation: dw-ywst-blink 1s steps(1) infinite;
+}
+.dw-ywst-cursor[data-kb-still] {
+  animation: none;
+}
+@keyframes dw-ywst-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+/* A horizontal tear, like a vsync slip, while it types: a short jolt and a red and cyan split, then at rest again. It stops when the typing does. */
+.dw-ywst[data-kb-typing] {
+  animation: dw-ywst-tear 0.42s steps(1) infinite;
+}
+@keyframes dw-ywst-tear {
+  0%,
+  60% {
+    left: 0;
+    text-shadow: none;
+  }
+  70% {
+    left: 6px;
+    text-shadow: -2px 0 rgb(255 0 60 / 0.7), 2px 0 rgb(0 200 255 / 0.7);
+  }
+  85% {
+    left: -3px;
+    text-shadow: none;
+  }
+  100% {
+    left: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-kb-motion='full']) .dw-ywst[data-kb-typing],
+  :root:not([data-kb-motion='full']) .dw-ywst-cursor {
+    animation: none;
+  }
+}
+:root[data-kb-motion='reduce'] .dw-ywst[data-kb-typing],
+:root[data-kb-motion='reduce'] .dw-ywst-cursor {
+  animation: none;
+}

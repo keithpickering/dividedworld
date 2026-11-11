@@ -75,6 +75,7 @@ const StickAroundEffect = lazy(() => import('./stick-around/Effect.tsx').then((m
 const AutocorrectEffect = lazy(() => import('../cards/autocorrect/Effect.tsx').then((m) => ({ default: m.AutocorrectEffect })));
 const FeelinFabEffect = lazy(() => import('./feelin-fab/Effect.tsx').then((m) => ({ default: m.FeelinFabEffect })));
 const GlitterBombEffect = lazy(() => import('./glitter-bomb/Effect.tsx').then((m) => ({ default: m.GlitterBombEffect })));
+const YouWereSayingEffect = lazy(() => import('../cards/you-were-saying/Effect.tsx').then((m) => ({ default: m.YouWereSayingEffect })));
 const WhoopsEffect = lazy(() => import('../cards/whoops/Effect.tsx').then((m) => ({ default: m.Effect })));
 
 export const cardsUi: readonly CardUi[] = Object.freeze([
@@ -193,6 +194,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
     summary: 'Hands a post to a chatbot from 2021, which keeps writing after the author stops.',
     /* Up to the rules' `stack` chain on a post, each continuing the last. */
     status: (plays) => `Typing on, ${Math.min(plays.length, youWereSaying.stack!)} of ${youWereSaying.stack} chained`,
+    Effect: YouWereSayingEffect,
     ConfigForm: YouWereSayingConfigForm,
     surcharge: (settings: Settings) => {
       const e = settings.economy;
