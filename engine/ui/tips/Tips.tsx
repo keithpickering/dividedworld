@@ -61,7 +61,9 @@ export function TipsProvider({ children }: { readonly children: ReactNode }) {
 
   /* The tilt choice is saved the way Settings saves it (a refusal puts it back), merged onto the choices the page holds now, so a setting changed
      in Settings after the page loaded is never put back to boot's; and the account's choice is read for the tilt state with it. */
-  const { prefs, change } = usePreferenceSaves(session.account, account);
+  const { prefs, change, refusal } = usePreferenceSaves(session.account, account);
+  /* Whether the tip's own tilt save was made: only its refusal is said here, never a settings read that failed. */
+  const [tiltAsked, setTiltAsked] = useState(false);
   const changeRef = useRef(change);
   changeRef.current = change;
   const read = prefs !== null;
@@ -94,6 +96,7 @@ export function TipsProvider({ children }: { readonly children: ReactNode }) {
           run: () => {
             /* Synchronously, in the tap: iOS asks for the orientation only here. Then the same choice, saved the way Settings saves it. */
             void allowTilt();
+            setTiltAsked(true);
             changeRef.current({ tilt: 'on' });
           },
         },
@@ -123,6 +126,8 @@ export function TipsProvider({ children }: { readonly children: ReactNode }) {
           onSkip={store.skip}
         />
       )}
+      {/* The action sees the tip as it is tapped, so a refused save is said where the tip was, in the same persona's line. */}
+      {tiltAsked && refusal !== null && <p className="kb-tips-refusal" role="alert">{refusal}</p>}
     </TipsCtx.Provider>
   );
 }

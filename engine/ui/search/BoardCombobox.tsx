@@ -4,7 +4,7 @@
  * as a bar, a row's detail muted at its right, the active row ringed (the ring is an outline, never color alone).
  */
 import type { ReactNode } from 'react';
-import { useSearchCombobox, type ComboOption, type ComboRow, type UseSearchComboboxOptions } from './useSearchCombobox.ts';
+import { SUGGESTIONS_FAILED, useSearchCombobox, type ComboOption, type ComboRow, type UseSearchComboboxOptions } from './useSearchCombobox.ts';
 import './board-search.css';
 
 export interface BoardComboboxProps<O extends ComboOption = ComboOption> extends UseSearchComboboxOptions<O> {
@@ -41,6 +41,7 @@ export function BoardCombobox<O extends ComboOption = ComboOption>({ label, show
               {g.rows.map((r) => <Row key={r.id} row={r} render={render} />)}
             </div>
           ))}
+          {view.failed && <div className="kb-search-empty">{SUGGESTIONS_FAILED}</div>}
           {view.trailing && <Row row={view.trailing} render={render} extra="kb-search-all" />}
         </div>
       )}

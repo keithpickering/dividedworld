@@ -265,6 +265,19 @@ describe('the shine tip', () => {
     expect(tiltState(), 'the page is not left on while the account says off').toBe('off');
   });
 
+  test('a refused save shows the refusal\'s own words in an alert', async () => {
+    phone();
+    const fake = signedIn();
+    open(fake);
+    await settle();
+    shiny();
+    const tip = await screen.findByRole('dialog', { name: 'Title of shine' });
+    expect(screen.queryByRole('alert')).toBeNull();
+    fake.seed.offline(true);
+    fireEvent.click(within(tip).getByRole('button', { name: 'Action of shine' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent("You're offline, so this was not sent.");
+  });
+
   test('a grant or a choice made elsewhere withdraws the tip', async () => {
     phone();
     open(signedIn());

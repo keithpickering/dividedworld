@@ -257,3 +257,15 @@
   .kb-tips-ring { border-color: CanvasText; }
   .kb-tips .kb-tips-panel { outline: 1px solid CanvasText; }
 }
+
+/* A refused tilt save, said after the tip has closed (Tips.tsx): a line above the page's bottom edge, in the tip's own colors. */
+.kb-tips-refusal {
+  position: fixed;
+  inset: auto 1rem 1rem 1rem;
+  z-index: 60;
+  margin: 0;
+  padding: 0.75rem 1rem;
+  border: 1.5px solid var(--kb-border, currentColor);
+  background: var(--kb-surface, Canvas);
+  color: var(--kb-text, CanvasText);
+}
