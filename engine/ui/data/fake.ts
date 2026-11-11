@@ -118,7 +118,7 @@ export interface Seed {
    * dated `at` (else now). Season news then holds the Boss's arrival and departure, quoting the first post each wrote in the announcements thread dated
    * at exactly `at` (`staffPost`), as the server finds it; a later remark is not its words. A change of Boss is also a to-do in the admin queue
    * (`how` rotation unless said, `bossWas` the new Boss's office before, `outgoingOffice` member unless said), until an update is seeded or posted
-   * after `at` or an admin dismisses it. The to-do carries the outgoing Boss's handoff `note` (null: none) and the season's `facts` (empty lists unless said), as admin_queue does (0180). The season is the next number: the first season is the seed's, and each handover opens the one after.
+   * after `at` or an admin dismisses it. The to-do carries the outgoing Boss's handoff `note` (null: none) and the season's `facts` (empty lists unless said), as admin_queue does (0169). The season is the next number: the first season is the seed's, and each handover opens the one after.
    */
   handover(handover: { outgoing?: string | null; boss: string; at?: number; how?: 'nomination' | 'rotation'; bossWas?: string | null; outgoingOffice?: string | null; note?: string | null; facts?: Partial<HandoffFacts> }): void;
   /**

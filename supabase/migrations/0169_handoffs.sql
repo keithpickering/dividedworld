@@ -78,7 +78,7 @@ $$;
 --   merged    boards a mergeBoard of the season sent into another, where the merge is still in force
 --   closed    boards a createBoard made that its move's end has since closed (reversed or superseded) in the season
 --   beats     the beats the Boss played
---   moves     the moves in force now (open_moves), at most 20, oldest first
+--   moves     the moves in force now (open_moves) that landed by the season's end, at most 20, oldest first
 --   busiest   the five open boards that are not The System's with the most posts in the season; quietest the five fewest of the rest, fewest first
 -- A season that does not exist is empty lists.
 create function handoff_facts(in_season bigint) returns jsonb
@@ -110,7 +110,8 @@ language sql stable security definer set search_path = public, pg_temp as $$
   ),
   in_force as (
     select a.id, a.created_at, a.payload, c.name as by_name, (select b.name from boards b where lower(a.payload #>> '{params,board}') = b.id::text) as board_name
-    from open_moves o join acts a on a.id = o.move_act left join characters c on c.id = a.character
+    from open_moves o join acts a on a.id = o.move_act left join characters c on c.id = a.character, s
+    where a.created_at <= s.ends_at
     order by a.created_at, a.id limit 20
   ),
   posts as (
@@ -392,7 +393,7 @@ language sql stable security definer set search_path = public, pg_temp as $$
       from (select x.* from machine_slots x order by x.position limit 60) s), '[]'))
 $$;
 
--- apply_meeting (0166), also keeping the farewell and the handoff. Everything else as 0166 wrote it.
+-- apply_meeting (0167), also keeping the farewell and the handoff. Everything else as 0167 wrote it.
 create or replace function apply_meeting(meeting bigint, payload jsonb) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
@@ -449,8 +450,10 @@ declare
   pat_most integer;
   pat_n integer := 0;
   pat_skipped integer := 0;
-  season_id bigint := (select x.id from seasons x where x.ends_at is null);
-  held text[] := held_back_kinds(boss, (select x.id from seasons x where x.ends_at is null));
+  -- The season the meeting was held in, which is not the open one when the season turned between the meeting and this apply: the beat's events and the kinds it holds back are that season's.
+  season_id bigint := coalesce(meeting_season(apply_meeting.meeting), (select x.id from seasons x where x.ends_at is null));
+  held text[] := held_back_kinds(boss, coalesce(meeting_season(apply_meeting.meeting), (select x.id from seasons x where x.ends_at is null)));
+  beats_played text[] := '{}';
   held_skipped jsonb := '[]';
   bundles_skipped jsonb := '[]';
   bnd jsonb;
@@ -628,6 +631,7 @@ begin
       end loop;
       if authored then
         insert into arc_beat_events (season, staff, beat, event, bundle) values (season_id, boss, bnd ->> 'beat', 'played', bundle_id);
+        beats_played := beats_played || (bnd ->> 'beat');
       end if;
       spent := spent + charged;
       queued_n := queued_n + parts_n;
@@ -786,12 +790,17 @@ begin
       'rulesSkipped', rules_skipped,
       'machineSkipped', machine_skipped,
       'lastingSkipped', lasting_skipped,
+      -- What was actually played (0167): the engine's `beatsDefaulted` and its `playedWithDefaults` trims say what it meant to play, and are kept only for the beats this transaction played.
+      'beatsPlayed', to_jsonb(beats_played),
+      'beatsDefaulted', coalesce((select jsonb_agg(d.k) from jsonb_array_elements_text(case when jsonb_typeof(payload #> '{record,beatsDefaulted}') = 'array' then payload #> '{record,beatsDefaulted}' else '[]'::jsonb end) d(k) where d.k = any (beats_played)), '[]'::jsonb),
+      'trims', coalesce((select jsonb_agg(x.t order by x.n) from jsonb_array_elements(case when jsonb_typeof(payload #> '{record,trims}') = 'array' then payload #> '{record,trims}' else '[]'::jsonb end) with ordinality x(t, n)
+                         where not (x.t ->> 'predicate' = 'playedWithDefaults' and not ((regexp_replace(coalesce(x.t ->> 'path', ''), '^beats\.', '')) = any (beats_played)))), '[]'::jsonb),
       'heldBackSkipped', held_skipped,
       'bundlesSkipped', bundles_skipped,
       'handoffTrims', hf_trims,
       'handoffSkipped', hf_skipped,
       'patrolsWritten', jsonb_build_object('written', pat_n, 'skipped', pat_skipped)));
-  return jsonb_build_object('status', 'applied', 'meeting', apply_meeting.meeting, 'queued', jsonb_array_length(kept_moves) + queued_n, 'bank_before', bal, 'bank_after', bal2 - spent - handed,
+  return jsonb_build_object('status', 'applied', 'meeting', apply_meeting.meeting, 'queued', jsonb_array_length(kept_moves) + queued_n, 'beats_played', to_jsonb(beats_played), 'bank_before', bal, 'bank_after', bal2 - spent - handed,
     'returned', returned, 'handed', handed);
 end $$;
 

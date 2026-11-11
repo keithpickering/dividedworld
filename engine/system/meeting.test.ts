@@ -1069,6 +1069,8 @@ test('a malformed bundle or beat is dropped or repaired and recorded; the answer
   assert.deepEqual(schema.properties['bundle'].required, ['name', 'parts']);
   assert.ok(schema.properties['bundle'].properties.parts.items.required.includes('kind') && schema.properties['beats'].items.required.includes('beat'));
 
+});
+
 /* ---------------------------------------------------------------- the farewell and the handoff ---- */
 
 const handoffFacts: HandoffFacts = {

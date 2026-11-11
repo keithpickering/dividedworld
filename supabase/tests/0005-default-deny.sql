@@ -162,7 +162,7 @@ begin
   end if;
   if bad <> '' then raise exception 'arc_beat_events can be changed:%', bad; end if;
 
-  -- A Boss's farewell and handoff (0180) are insert-only too, and no client's: it is out of character and never shown to players. Three guards (update, delete, truncate), each firing
+  -- A Boss's farewell and handoff (0169) are insert-only too, and no client's: it is out of character and never shown to players. Three guards (update, delete, truncate), each firing
   -- always, and no grant to an API role on the table or on the view that reads its latest row.
   for r in select t.tgname from pg_trigger t where t.tgrelid = 'public.handoffs'::regclass and not t.tgisinternal and t.tgenabled <> 'A'
   loop bad := bad || format(E'\n  trigger %s does not fire always', r.tgname); end loop;

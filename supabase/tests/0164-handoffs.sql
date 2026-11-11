@@ -1,4 +1,4 @@
--- The farewell and the handoff (supabase/migrations/0180_handoffs.sql; docs/plans/2026-11-06-fangame-split-plan.md, Task 8; design section 6).
+-- The farewell and the handoff (supabase/migrations/0169_handoffs.sql; docs/plans/2026-11-06-fangame-split-plan.md, Task 8; design section 6).
 --
 -- The season's end and the handover are one transaction, and no model runs inside it, so the Boss's last words are written at its last meeting: a farewell, in character, and a handoff
 -- note, out of character. apply_meeting stores them in `handoffs` (insert-only; the latest row of a season stands) when the meeting is within farewellWindowHours of the season's end, and
@@ -327,4 +327,20 @@ begin
   perform pg_temp.expect((select boss from seasons where ends_at is null) is not null, 'the handover did not land');
   perform pg_temp.expect('Stock farewell.' = any (pg_temp.said_by(boss3)), 'a blank farewell did not leave the stock line: ' || pg_temp.said_by(boss3)::text);
   perform tests.unbecome();
+end $$;
+
+-- ---- 10. A closed season's facts are bounded by its end: a move made after it closed is not in them ----
+do $$
+declare
+  s1 bigint := (select min(id) from seasons);
+  before_f jsonb;
+  after_f jsonb;
+begin
+  before_f := handoff_facts(s1);
+  perform pg_temp.expect(jsonb_array_length(before_f -> 'created') = 1 and jsonb_array_length(before_f -> 'moves') >= 2, 'setup: season 1 does not hold its two lasting moves: ' || before_f::text);
+  -- The season is made to have closed before those moves landed: everything they did is after its end.
+  update seasons set ends_at = now() - interval '1 hour' where id = s1;
+  after_f := handoff_facts(s1);
+  perform pg_temp.expect(after_f -> 'created' = '[]'::jsonb and after_f -> 'merged' = '[]'::jsonb, 'a move made after the season closed is in its facts: ' || after_f::text);
+  perform pg_temp.expect(not exists (select 1 from jsonb_array_elements(after_f -> 'moves') e where e ->> 'kind' in ('createBoard', 'mergeBoard')), 'a move in force that landed after the season closed is in its facts: ' || (after_f -> 'moves')::text);
 end $$;

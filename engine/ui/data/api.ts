@@ -772,7 +772,7 @@ export interface HandoverTodo {
   readonly how: string;
   readonly landedAt: string;
   /**
-   * The outgoing Boss's handoff note (0180): out of character, written at its last meeting, for the next Boss and for admins; players never see it. Null where none stands (the last meeting failed).
+   * The outgoing Boss's handoff note (0169): out of character, written at its last meeting, for the next Boss and for admins; players never see it. Null where none stands (the last meeting failed).
    * It is the Boss's own words, shown as its note and never as the glass's.
    */
   readonly note: string | null;

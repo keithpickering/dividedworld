@@ -227,7 +227,7 @@ test('an instance exported and imported into a fresh database is the same instan
       -- An arc (0164): a persona's plan (the catalog of conditions is the seed's), and a beat's events (insert-only, guards firing always), carried across with the rows they name.
       insert into persona_arcs (staff, beats, holds_back, phase_days) values ('exp-boss', '[{"key": "split", "mini": false, "repeatable": false, "unlock": [{"kind": "phase", "phase": "reign"}], "due": null}]', '[{"kind": "createBoard", "until": "split"}]', '{"honeymoon": 3}');
       insert into arc_beat_events (season, staff, beat, event) select id, 'exp-boss', 'split', 'unlocked' from seasons where ends_at is null;
-      -- A farewell and a handoff note (0180): insert-only, no client's, carried across like the rest.
+      -- A farewell and a handoff note (0169): insert-only, no client's, carried across like the rest.
       insert into handoffs (season, staff, farewell, note) select id, 'exp-boss', 'So long, and thanks for the posts.', 'Mind the fangame board.' from seasons where ends_at is null;
       perform write_staff_act('exp-boss', 'post', t, null, '{"body": "Carried across, with no account behind it."}');
       -- A note the Boss wrote with that post (0085).

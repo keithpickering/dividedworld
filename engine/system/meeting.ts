@@ -57,7 +57,7 @@ export const BUNDLE_NAME_MOST = 120;
 export const NO_REASON = 'No reason given.';
 /** Characters of a Mod's order, one line in the Boss's voice: queued by `apply_meeting` into staff_orders.order_line. */
 export const ORDER_MOST = 200;
-/** Characters of the handoff note, out of character: stored by `apply_meeting` into handoffs.note (0180). */
+/** Characters of the handoff note, out of character: stored by `apply_meeting` into handoffs.note (0169). */
 export const HANDOFF_MOST = 2000;
 
 /* --------------------------------------------------------------------------------- the rule ---- */
@@ -1164,7 +1164,7 @@ export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
 /* ------------------------------------------------------------------ the farewell and the handoff ---- */
 
 /**
- * What the code knows of a season, for the Boss that leaves it to write its handoff from and for the Boss that follows to read (`handoff_facts`, 0180). Public play only: boards
+ * What the code knows of a season, for the Boss that leaves it to write its handoff from and for the Boss that follows to read (`handoff_facts`, 0169). Public play only: boards
  * made, merged and closed, beats played, moves in force, and the busiest and quietest boards. It reads no owner, account, class or reaction, and it cannot be wrong.
  */
 export interface HandoffFacts {
