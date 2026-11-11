@@ -109,3 +109,36 @@ test('an any rule passes a value of any type unchanged, and an absent optional o
   assert.deepEqual(repair({ words: 'x' }, rule), { ok: true, value: { words: 'x' }, trims: [] });
   assert.deepEqual(repair({ words: 'x', extra: null }, rule), { ok: true, value: { words: 'x' }, trims: [] });
 });
+
+test('a completion asked for many lines keeps them; one line stays the default', () => {
+  const three = 'first line\nsecond line\nthird line';
+  assert.deepEqual(cutCompletion(three, [], 200), { ok: true, text: 'first line', trims: [] });
+  assert.deepEqual(cutCompletion(three, [], 200, 'one'), { ok: true, text: 'first line', trims: [] });
+  assert.deepEqual(cutCompletion(three, [], 200, 'many'), { ok: true, text: three, trims: [] });
+});
+
+test('under many lines a stop sequence still cuts, long runs of newlines collapse to two, and the end is trimmed', () => {
+  assert.deepEqual(cutCompletion('one\ntwo\nQuote: three', ['\nQuote:'], 200, 'many'), { ok: true, text: 'one\ntwo', trims: [] });
+  assert.deepEqual(cutCompletion('one\n\n\n\n\ntwo\n \n\t\n\nthree \n\n', [], 200, 'many'), { ok: true, text: 'one\n\ntwo\n\nthree', trims: [] });
+  // A stop that opens the answer is found before the leading newline is dropped: the model began a new post.
+  assert.deepEqual(cutCompletion('\nQuote: someone else', ['\nQuote:'], 200, 'many'), { ok: false, predicate: 'nonEmpty' });
+});
+
+test('under many lines a leading space is kept as one space, never a newline, so a continuation joins its sentence', () => {
+  assert.deepEqual(cutCompletion('   \n\n\n\nfoo', [], 200, 'many'), { ok: true, text: ' foo', trims: [] });
+  assert.deepEqual(cutCompletion(' and so on', [], 200, 'many'), { ok: true, text: ' and so on', trims: [] });
+  assert.deepEqual(cutCompletion('\n\nfoo', [], 200, 'many'), { ok: true, text: 'foo', trims: [] });
+  assert.deepEqual(cutCompletion('ing it', [], 200, 'many'), { ok: true, text: 'ing it', trims: [] });
+});
+
+test('an answer that is only newlines is rejected under one line and under many', () => {
+  assert.deepEqual(cutCompletion('\n\n\n', [], 200, 'one'), { ok: false, predicate: 'nonEmpty' });
+  assert.deepEqual(cutCompletion('\n\n\n', [], 200, 'many'), { ok: false, predicate: 'nonEmpty' });
+  assert.deepEqual(cutCompletion(' \n \n', [], 200, 'many'), { ok: false, predicate: 'nonEmpty' });
+});
+
+test('under many lines the cap counts the kept leading space, and CRLF runs collapse as newlines do', () => {
+  const capped = cutCompletion(` ${'x'.repeat(300)}`, [], 200, 'many');
+  assert.deepEqual(capped, { ok: true, text: ` ${'x'.repeat(199)}`, trims: [{ path: '', predicate: 'maxLength(200)', before: 301, after: 200 }] });
+  assert.deepEqual(cutCompletion('a\r\n\r\n\r\n\r\nb', [], 200, 'many'), { ok: true, text: 'a\n\nb', trims: [] });
+});

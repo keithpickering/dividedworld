@@ -12,8 +12,8 @@
  * predicate that failed, so the ledger says which bound cost a paid answer, and carries the trims
  * made before it.
  *
- * `cutCompletion` is the same for a raw completion: cut at the first stop sequence or newline,
- * cap the length, and reject only empty output.
+ * `cutCompletion` is the same for a raw completion: cut at the first stop sequence or newline
+ * (a slot that asks for many lines keeps its newlines), cap the length, and reject only empty output.
  *
  * Pure: the input is never changed; a repaired copy is returned.
  */
@@ -123,18 +123,28 @@ export type Cut =
   | { readonly ok: true; readonly text: string; readonly trims: readonly Trim[] }
   | { readonly ok: false; readonly predicate: string };
 
-/** Cuts at the first stop sequence or newline, whichever comes first, trims space, caps at `most`; only nothing is rejected. */
-export function cutCompletion(text: string, stop: readonly string[], most: number): Cut {
+/**
+ * Cuts at the first stop sequence or newline, whichever comes first, trims space, caps at `most`; only nothing is rejected.
+ *
+ * With `lines` of `'many'` (a slot that continues a text over several lines) a newline is no stop: the stops are
+ * looked for in the answer as it came, so one that opens the answer cuts it to nothing; runs of more than two
+ * newlines collapse to two; the end is trimmed; and of the leading whitespace one space is kept when the answer
+ * began with a space (the continuation of "i think" needs it), never a newline.
+ */
+export function cutCompletion(text: string, stop: readonly string[], most: number, lines: 'one' | 'many' = 'one'): Cut {
+  const many = lines === 'many';
   // A raw completion often begins with a newline; leading whitespace is dropped before looking for the cut.
-  const body = text.trimStart();
+  const body = many ? text : text.trimStart();
   let end = body.length;
-  for (const s of [...stop, '\n']) {
+  for (const s of many ? stop : [...stop, '\n']) {
     if (s === '') continue;
     const at = body.indexOf(s);
     if (at !== -1 && at < end) end = at;
   }
-  let cut = body.slice(0, end).trim();
+  let cut = many ? body.slice(0, end).replace(/(?:[ \t\r]*\n){3,}/g, '\n\n').trim() : body.slice(0, end).trim();
   if (cut === '') return { ok: false, predicate: 'nonEmpty' };
+  // The one leading space a continuation keeps is part of the text the cap counts.
+  if (many && text.startsWith(' ')) cut = ` ${cut}`;
   const trims: Trim[] = [];
   if (cut.length > most) {
     const before = cut.length;

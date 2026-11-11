@@ -128,7 +128,7 @@ function inkOn(color: string): string {
   return hex === null || bestInk(hex) === 'black' ? 'var(--kb-ink-black)' : 'var(--kb-ink-white)';
 }
 
-/** Whether a quote has nothing in it: either the server emptied it (`conceal_quotes`, 0148) or a player wrote it empty. */
+/** Whether a quote has nothing in it: either the server emptied it (`conceal_quotes`, 0150) or a player wrote it empty. */
 const concealed = (children: readonly BbNode[]): boolean => children.every((c) => (c.type === 'text' || c.type === 'noparse') && c.text.trim() === '');
 
 /**

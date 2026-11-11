@@ -19,7 +19,7 @@ function fakeLive(behavior: { reject?: boolean } = {}) {
   const factory = ((_env: unknown, record: (row: ModelCallRow) => Promise<void>): Models => {
     const row = (duty: string, outcome: ModelCallRow['outcome'], predicate: string | null): ModelCallRow => ({
       duty, staff: null, provider: 'anthropic', model: 'big-model', serviceTier: 'standard', inputTokens: 10, outputTokens: 5, cacheReadTokens: null,
-      cacheWrite5mTokens: null, cacheWrite1hTokens: null, gpuSeconds: null, costMicrodollars: 2_000_000, outcome, predicate, trims: [], retries: 0, meeting: null,
+      cacheWrite5mTokens: null, cacheWrite1hTokens: null, gpuSeconds: null, costMicrodollars: 2_000_000, outcome, predicate, trims: [], retries: 0, meeting: null, play: null,
     });
     return {
       async chat(r) {

@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { testSystem } from '../rules/test-system.ts';
 import { chatterCompletion, chatterPrompt, chatterSchema, repairChatter, CHATTER_RULE, type OfferedCard, type RepairFacts } from './chatter.ts';
+import { personaPrompt } from './prompt.ts';
 import { noteMost } from './memory.ts';
 import { PRONOUN_PRESETS } from '../rules/pronouns.ts';
 import { repair } from './validate.ts';
@@ -10,7 +11,7 @@ const persona = testSystem.roster[0]!;
 const she = PRONOUN_PRESETS.she;
 const they = PRONOUN_PRESETS.they;
 const CAST: OfferedCard = { key: 'whoops', name: 'Whoops!', play: 'cast' };
-const SET: OfferedCard = { key: 'bluffy', name: 'Bluffy', play: 'set' };
+const SET: OfferedCard = { key: 'dud', name: 'Dud', play: 'set' };
 const facts = (change: Partial<RepairFacts> = {}): RepairFacts => ({ postMaxLength: 200, titleMaxLength: 40, askedTitle: false, offered: [CAST, SET], ...change });
 const ok = (raw: unknown, change: Partial<RepairFacts> = {}) => {
   const r = repairChatter(raw, facts(change));
@@ -81,10 +82,10 @@ test('a Cast on its own post is dropped: a Cast lands on the post replied to', (
 });
 
 test('a Set on the reply is dropped: a Set lands on its own post', () => {
-  const r = ok({ words: 'Hi.', card: { key: 'bluffy', on: 'reply' } });
+  const r = ok({ words: 'Hi.', card: { key: 'dud', on: 'reply' } });
   assert.equal(r.answer.card, undefined);
   assert.equal(r.trims[0]!.predicate, 'setOnOwn');
-  assert.deepEqual(ok({ words: 'Hi.', card: { key: 'bluffy', on: 'own' } }).answer.card, { key: 'bluffy', on: 'own' });
+  assert.deepEqual(ok({ words: 'Hi.', card: { key: 'dud', on: 'own' } }).answer.card, { key: 'dud', on: 'own' });
 });
 
 test('a card whose shape is wrong is dropped, not the answer', () => {
@@ -151,7 +152,7 @@ test('the provider schema asks for a title only for a thread start, and offers o
   assert.equal('card' in plain.properties, false);
   const full = chatterSchema({ askedTitle: true, offered: [CAST, SET] }) as any;
   assert.deepEqual(full.required, ['words', 'title']);
-  assert.deepEqual(full.properties.card.properties.key.enum, ['whoops', 'bluffy']);
+  assert.deepEqual(full.properties.card.properties.key.enum, ['whoops', 'dud']);
   assert.deepEqual(full.properties.card.properties.on.enum, ['reply', 'own']);
   assert.equal(full.additionalProperties, false);
 });
@@ -159,6 +160,8 @@ test('the provider schema asks for a title only for a thread start, and offers o
 const base = {
   premise: 'You are posting on your own today. Nobody asked you to.',
   persona,
+  office: 'boss' as const,
+  offices: testSystem.offices,
   pronouns: PRONOUN_PRESETS.he,
   career: { led: [], offices: [] },
   memory: null,
@@ -177,7 +180,7 @@ test('the prompt carries the persona, the premise, the thread cut to excerptChar
     notes: ['Ann is up to something.'],
     thread: { title: 'Pineapple', posts: Array.from({ length: 12 }, (_, i) => ({ name: `P${i}`, pronouns: she, body: `post number ${i} ${'y'.repeat(60)}` })) },
   });
-  assert.ok(p.system.includes(persona.persona));
+  assert.ok(p.system.includes(personaPrompt(testSystem, persona, 'boss')));
   assert.ok(p.system.includes(base.premise));
   assert.ok(p.system.includes('Ann is up to something.'), 'the notes');
   assert.ok(p.system.includes('Whoops!') && p.system.includes('whoops'), 'the offer');
@@ -191,8 +194,15 @@ test('the prompt carries the persona, the premise, the thread cut to excerptChar
 
 test('the prompt tells the persona its own pronouns after its persona, and tags each thread post and the quoted post with its author\'s', () => {
   const p = chatterPrompt({ ...base, names: (id) => (id === 'x' ? 'Cy (she/her)' : id) });
-  assert.ok(p.system.includes(`${persona.persona}\n\nYour pronouns are he/him (he, him, his, his, himself).`), 'the self line follows the persona');
+  assert.ok(p.system.includes(`${personaPrompt(testSystem, persona, 'boss')}\n\nYour pronouns are he/him (he, him, his, his, himself).`), 'the self line follows the persona');
   assert.ok(p.message.includes('Ann (she/her): Pineapple is fine.') && p.message.includes('Bob (they/them): It is not.'), 'the thread posts');
+});
+
+test('a member\'s prompt is its member frame and line, never the Boss\'s', () => {
+  const p = chatterPrompt({ ...base, office: 'member' });
+  assert.ok(p.system.startsWith(testSystem.offices.member.premise), 'opens with the member premise');
+  assert.ok(p.system.includes(persona.officeLines!.member!), 'the member line');
+  assert.ok(!p.system.includes(testSystem.offices.boss.premise) && !p.system.includes(persona.officeLines!.boss!), 'not the Boss premise or line');
 });
 
 test('the prompt says no card is on offer when none is, and asks for a title only for a thread start', () => {
@@ -231,7 +241,7 @@ test('the schema carries card.config.<key> only for an offered card with options
 
 test('the prompt puts a card\'s options on the line after it, and names where they go', () => {
   const { system } = chatterPrompt({
-    premise: 'p', persona, pronouns: she, career: { led: [], offices: [] } as any, memory: null, notes: [], thread: null, quoting: { name: 'Ann', pronouns: she, body: 'Hello.' },
+    premise: 'p', persona, office: 'boss', offices: testSystem.offices, pronouns: she, career: { led: [], offices: [] } as any, memory: null, notes: [], thread: null, quoting: { name: 'Ann', pronouns: she, body: 'Hello.' },
     trigger: 'named', offeredCards: [INKED, PLAIN], startThread: false, limits: { threadPosts: 3, excerptChars: 100, postMaxLength: 200, titleMaxLength: 40 },
   });
   const lines = system.split('\n');

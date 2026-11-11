@@ -92,6 +92,8 @@ const BROADCASTS: Record<string, (answer: Row) => Broadcast[]> = {
   },
   // A card back: the set Act names no card, so neither does what is sent.
   set_card: (a) => act(a),
+  // A take-back is an Act of the back's post's author, on that post, naming the set and no card.
+  take_back: (a) => act(a),
   start_thread: (a) => [...thread(a.thread), ...act(a.act)],
   spin: (a) => [...thread(a.thread), ...act(a.act)],
   // An apology is the spin of a move's Act (0130), and is heard as one.
@@ -171,7 +173,7 @@ export async function runAction(dbs: { player: Db; service: Db }, instance: Inst
       const effects = effectsOnTarget(target, own ?? [], above);
       const rules = instance.cards.find((c) => c.key === decision.args.card)!;
       if (decision.play === 'set') {
-        // The card's own rules decide the configuration, the card a Trap Card names and the phrase a Move waits for; none of them is read from the request but the configuration.
+        // The card's own rules decide the configuration, the card a catching set card names and the phrase a Move waits for; none of them is read from the request but the configuration.
         const { conditions, ...rest } = args as { conditions?: SetConditions };
         const set = decideSet(rules, tuned.settings, target, effects, decision.args.config, tuned.cards, conditions);
         if (!set.ok) return refused('config', set.why);
@@ -186,6 +188,8 @@ export async function runAction(dbs: { player: Db; service: Db }, instance: Inst
           : decidePlay(rules, tuned.settings, target, effects, decision.args.config, said.value, { nameOf });
         if (!play.ok) return refused('config', play.why);
         args = { ...args, config: play.value.config, message: play.value.message, price: play.value.price };
+        // A card that writes buys its tokens at this decision, from the settings as the rows hold them now; the database writes them with the play and the worker and the log read them there.
+        if (play.value.tokens !== undefined) args = { ...args, tokens: play.value.tokens };
         // The version the play was decided against goes back with it; play_card refuses it once the post has another (0070).
         if (target.reach === 'post' && target.version) args = { ...args, reach: 'post', from_post: null, version: target.version };
       }
@@ -306,6 +310,8 @@ export async function handleAction(o: {
   readonly send: (messages: readonly Broadcast[]) => Promise<unknown>;
   readonly drain: () => Promise<void>;
   readonly after: (work: () => Promise<void>) => void;
+  /** Writes the waiting card texts of one post (the write function's runWrites, with the connection and models the edge holds); absent where none is wired. */
+  readonly write?: (post: string) => Promise<unknown>;
 }): Promise<ActionAnswer> {
   const out = await runAction(o.dbs, o.instance, o.body);
   // A request that named no account schedules nothing (ActionAnswer.nobodyNamed says why).
@@ -313,15 +319,31 @@ export async function handleAction(o: {
   // A reaction that was written may have earned its Act's player a hint; read from the answer's own Act, after the answer.
   const decision = decide(o.body, o.instance);
   const reacted = out.status === 200 && decision.ok && decision.rpc === 'react' && typeof (out.body as Row | null)?.act === 'string' ? (out.body as Row).act as string : null;
+  const kicked = out.status === 200 && decision.ok ? postThatMayWrite(decision, o.instance) : null;
   o.after(async () => {
     if (out.broadcasts?.length) await o.send(out.broadcasts).catch((e) => console.error('broadcast threw', e));
     // The reaction's own alerts and broadcasts first, never held by the hint's reads; then the hint, and one more drain for the alert it
     // wrote. What the hint work throws is logged and never stops a drain.
     await o.drain();
     if (reacted && await fireHints(o.dbs.service, o.instance, reacted).catch((e) => { console.error('hint check threw', e); return false; })) await o.drain();
+    // The kick: a tail types in seconds after the play. The claim itself answers nothing for a post with no jobs, and the cron's sweep
+    // finds what a kick misses; nothing it throws escapes.
+    if (kicked && o.write) await o.write(kicked).catch((e) => console.error('card text kick threw', e));
   });
   return out;
 }
+/**
+ * The post a successful action may have queued card texts on, from the request alone (public: the card's rules and the post named): a play
+ * on a post of a card that writes, or an edit, which any post may have a tail waiting for. Null for everything else, which then makes no claim.
+ */
+function postThatMayWrite(decision: { readonly rpc: string; readonly args: Record<string, unknown> }, instance: Instance): string | null {
+  const post = decision.args.target;
+  if (typeof post !== 'string') return null;
+  if (decision.rpc === 'edit_post') return post;
+  if (decision.rpc !== 'play_card' || (decision.args.reach ?? 'post') !== 'post') return null;
+  return instance.cards.find((c) => c.key === decision.args.card)?.writes ? post : null;
+}
+
 /**
  * Makes a drain of the outbox one at a time per isolate. Every write starts a drain (so that none differs by what was queued), which
  * at a busy instance is a drain per write, each a database call and, when it finds something, a send. With one in flight, a write

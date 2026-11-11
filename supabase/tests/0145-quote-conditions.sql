@@ -45,8 +45,8 @@ begin
   end if;
   insert into card_kinds (key, name, alignment, rarity, play, trap, reaches, lasts) values
     ('fdqmove', 'Cond Move', 'salty', 'common', 'cast', null, '{post}', null),
-    ('fdqbluff', 'Cond Bluff', 'pepperoni', 'common', 'set', null, '{post}', null);
-  insert into card_ledger (account, card, kind, price) select ann, k, 'bought', 0 from unnest(array['fdqmove', 'fdqbluff']) k, generate_series(1, 14);
+    ('fdqidle', 'Cond Idle', 'pepperoni', 'common', 'set', '{"trigger": {"on": "visit"}}', '{post}', null);
+  insert into card_ledger (account, card, kind, price) select ann, k, 'bought', 0 from unnest(array['fdqmove', 'fdqidle']) k, generate_series(1, 14);
   -- A character that has not debuted, one account's and another's; and one retired.
   insert into characters (owner, name) values (ann, 'Quote Waiting Ann') returning id into waiting_ann;
   insert into characters (owner, name) values (bob, 'Quote Waiting Bob') returning id into waiting_bob;
@@ -86,10 +86,10 @@ begin
   perform tests.become(bob);
   if exists (select 1 from my_face_down f where f.play = (placed ->> 'id')::uuid) then raise exception 'another account read a back through my_face_down'; end if;
   perform tests.unbecome();
-  if (select array_agg(column_name::text order by ordinal_position) from information_schema.columns where table_name = 'my_face_down' and column_name in ('catches', 'phrase', 'passage', 'who', 'who_except'))
-     is distinct from array['catches', 'phrase', 'passage', 'who', 'who_except'] then raise exception 'my_face_down does not end catches, phrase, passage, who, who_except'; end if;
-  if (select max(ordinal_position) from information_schema.columns where table_name = 'my_face_down' and column_name = 'who_except') is distinct from (select max(ordinal_position) from information_schema.columns where table_name = 'my_face_down') then
-    raise exception 'who_except is not my_face_down''s last column';
+  if (select array_agg(column_name::text order by ordinal_position) from information_schema.columns where table_name = 'my_face_down' and column_name in ('catches', 'phrase', 'passage', 'who', 'who_except', 'ended_by'))
+     is distinct from array['catches', 'phrase', 'passage', 'who', 'who_except', 'ended_by'] then raise exception 'my_face_down does not end catches, phrase, passage, who, who_except, ended_by'; end if;
+  if (select max(ordinal_position) from information_schema.columns where table_name = 'my_face_down' and column_name = 'who_except') is distinct from (select max(ordinal_position) - 1 from information_schema.columns where table_name = 'my_face_down') then
+    raise exception 'who_except is not my_face_down''s last column but one, ended_by being the last';
   end if;
 
   -- A passage is held to the post's current words: one the original held and an edit removed is refused, and one an edit added is accepted.
@@ -103,10 +103,10 @@ begin
   n := card_held(ann, 'fdqmove');
   why := pg_temp.refusal(format('select set_card(%L, %L, %L, %L, %L, 0, passage => %L)', ann, 'fdqmove', a, p8, '{}', 'not in the post'));
   if why is distinct from 'that passage is not in this post''s words' then raise exception 'a passage not in the post was accepted: %', why; end if;
-  why := pg_temp.refusal(format('select set_card(%L, %L, %L, %L, %L, 0, passage => %L)', ann, 'fdqbluff', a, p6, '{}', 'the punchline'));
-  if why is distinct from 'Cond Bluff takes no conditions' then raise exception 'a Gimmick took a passage: %', why; end if;
-  why := pg_temp.refusal(format('select set_card(%L, %L, %L, %L, %L, 0, named => %L, who_except => false)', ann, 'fdqbluff', a, p6, '{}', array[b]));
-  if why is distinct from 'Cond Bluff takes no conditions' then raise exception 'a Gimmick took a Who: %', why; end if;
+  why := pg_temp.refusal(format('select set_card(%L, %L, %L, %L, %L, 0, passage => %L)', ann, 'fdqidle', a, p6, '{}', 'the punchline'));
+  if why is distinct from 'Cond Idle takes no conditions' then raise exception 'a Gimmick took a passage: %', why; end if;
+  why := pg_temp.refusal(format('select set_card(%L, %L, %L, %L, %L, 0, named => %L, who_except => false)', ann, 'fdqidle', a, p6, '{}', array[b]));
+  if why is distinct from 'Cond Idle takes no conditions' then raise exception 'a Gimmick took a Who: %', why; end if;
   why := pg_temp.refusal(format('select set_card(%L, %L, %L, %L, %L, 0, passage => %L)', ann, 'fdqmove', a, p8, '{}', '   '));
   if why is null then raise exception 'a blank passage was accepted'; end if;
   why := pg_temp.refusal(format('select set_card(%L, %L, %L, %L, %L, 0, passage => %L)', ann, 'fdqmove', a, p8, '{}', '!!!'));

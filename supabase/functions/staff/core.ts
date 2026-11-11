@@ -306,7 +306,7 @@ export async function runFilings(db: Db, models: Models, instance: Instance, slo
         ...(groups ? { groups: groups.facts } : {}),
       });
       const input = (): FilingInput => ({
-        persona, pronouns: mod.pronouns, order: standing.order, career: mod.career!, memory: mod.memory, notes: mod.notes, rules, allowance: standing.allowance, beat: standing.beat,
+        persona, office: 'mod', offices: tuned.system.offices, pronouns: mod.pronouns, order: standing.order, career: mod.career!, memory: mod.memory, notes: mod.notes, rules, allowance: standing.allowance, beat: standing.beat,
         ruleDaysMost: settings.modBots.ruleDaysMost, expiryLeastHours: settings.moveExpiryLeastHours, names: (id) => mod.names[id] ?? 'a character',
         ...(groups ? { conferred: groups.conferred } : {}),
         board: v.board, thread: threadFor(read, fallback), post, charges,

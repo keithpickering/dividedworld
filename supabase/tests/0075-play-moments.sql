@@ -340,15 +340,15 @@ declare
   one_play uuid; top uuid; small bigint; big bigint; stacked bigint; aged bigint;
 begin
   perform pg_temp.cards();
-  insert into card_kinds (key, name, alignment, play) values ('bluffy', 'Bluffy', 'pepperoni', 'set') on conflict (key) do nothing;
+  insert into card_kinds (key, name, alignment, play, trap) values ('idle', 'Idle', 'pepperoni', 'set', '{"trigger": {"on": "visit"}}') on conflict (key) do nothing;
   perform pg_temp.hand(ann, 'blot', 'blot', 'blot', 'blot', 'sweetie');
-  perform pg_temp.hand(bob, 'bluffy');
+  perform pg_temp.hand(bob, 'idle');
   perform pg_temp.fill(t, b, 2000);
   one_play := (play_card(ann, 'blot', a, lone, '{}', 0, '') ->> 'id')::uuid;
   perform play_card(ann, 'blot', a, stacked_post, '{}', 0, '');
   perform play_card(ann, 'blot', a, stacked_post, '{}', 0, '');
   perform play_card(ann, 'sweetie', a, stacked_post, '{}', 0, '');
-  perform set_card(bob, 'bluffy', b, stacked_post, '{}', 0);
+  perform set_card(bob, 'idle', b, stacked_post, '{}', 0);
   top := (play_card(ann, 'blot', a, stacked_post, '{}', 0, '') ->> 'id')::uuid;
   small := pg_temp.buffers_of(format('select play_moment(%L)', one_play));
   perform pg_temp.fill(t, b, 20000);

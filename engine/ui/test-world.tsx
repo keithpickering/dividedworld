@@ -83,15 +83,15 @@ export const testGlass = {
 
 /** A reason's words as an instance gives them: its name, then what it pays for (the log names each by the part before the colon). */
 const COUNTS = ['zero', 'one', 'two', 'three', 'four', 'five'];
-const REASONS: Readonly<Record<string, string | ((n: Readonly<Record<string, number>>) => string)>> = {
+const REASONS: Readonly<Record<string, string | ((n: Readonly<Record<string, number | string>>) => string)>> = {
   /* A reason whose words state a tunable number (the core loop design, section 6): said with the numbers it is given. */
-  'heel.postedTooMuch': (n) => `Posted too much: a post past ${COUNTS[n['heel.postsAllowed'] ?? 0] ?? n['heel.postsAllowed']} in one day`,
+  'heel.postedTooMuch': (n) => `Posted too much: a post past ${COUNTS[Number(n['heel.postsAllowed'] ?? 0)] ?? n['heel.postsAllowed']} in one day`,
   'heel.drewHeat': 'Drew heat: excited, negative reactions to the character\'s posts and cards',
   'heel.stoleThunder': 'Stole the thunder: a Salty card the character played on another\'s post drew more votes than the post this window',
   'heel.shrugged': 'Shrugged off: calm, positive reactions to the character\'s posts and cards',
   'face.cheered': 'Cheered: excited, positive reactions to the character\'s posts and cards',
 };
-const reasonWords = (reason: string, params: Readonly<Record<string, number>>) => {
+const reasonWords = (reason: string, params: Readonly<Record<string, number | string>>) => {
   const w = REASONS[reason];
   return w === undefined ? `Settled under "${reason}"` : typeof w === 'string' ? w : w(params ?? {});
 };

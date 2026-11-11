@@ -282,7 +282,7 @@ export function ThreadHead({ pager }: { readonly pager: ReactNode }) {
         {shown && <span className="kb-thread-head-marks">
           <PostMarks
             post={thread} plays={plays} compare={false} to={to} nameOf={nameOf} faceOf={faceOf} tallies={tallies} mine={mine}
-            reachAt={{ reach: 'thread', target: thread, name: `“${summary.title}”`, fromPost: null, thread: null, board: summary.board, title: summary.title, to, plays, know: know ?? (async () => {}), focusBack: () => title.current }}
+            reachAt={{ reach: 'thread', target: thread, name: `“${summary.title}”`, fromPost: null, thread: null, board: summary.board, starter: summary.firstCharacter, title: summary.title, to, plays, know: know ?? (async () => {}), focusBack: () => title.current }}
             onSpin={(play, label, opener) => setSpinOrigin({ id: play.id, label, opener })}
           />
         </span>}

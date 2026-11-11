@@ -24,7 +24,7 @@ const none: Record<Quadrant, number> = { excitedPositive: 0, excitedNegative: 0,
 const input = (over: Partial<ClassInput>): ClassInput => ({
   character: 'c', from: 0, to: 100, posts: [], received: [], given: [], held: [], cardsPlayed: [], cardsLanded: [], threadsSpun: [], standings: [], ...over,
 });
-const got = (quadrant: Quadrant, votes = 1, actKind: 'post' | 'card' = 'post', act = 'a1', actAt = 0): ReceivedReaction => ({ act, actKind, quadrant, at: 10, actAt, votes });
+const got = (quadrant: Quadrant, votes = 1, actKind: 'post' | 'card' = 'post', act = 'a1', actAt = 0, kind = 'reaction'): ReceivedReaction => ({ act, actKind, quadrant, at: 10, actAt, kind, votes });
 const card = (over: Partial<PlayedCard>): PlayedCard => ({
   act: 'k1', card: 'whoops', alignment: 'salty', at: 5, target: 'p9', onOthers: true, votes: 0, targetVotes: 0, targetAfter: none, drawnAfter: null, ...over,
   readsAs: over.readsAs ?? over.alignment ?? 'salty',
@@ -176,7 +176,7 @@ test('a calm vote withdrawn from an old post takes the bonus back; from a young 
 });
 test('Evergreen names the Act, the quadrant and the reaction\'s time, for the log and the estimate', () => {
   const e = technician.earn(input({ received: [calmAged(4 * DAY)] }), settings).find((x) => x.reason === 'technician.evergreen');
-  assert.deepEqual(e, { reason: 'technician.evergreen', amount: 5, act: 'a1', quadrant: 'calmPositive', at: 10 });
+  assert.deepEqual(e, { reason: 'technician.evergreen', amount: 5, act: 'a1', quadrant: 'calmPositive', at: 10, kind: 'reaction' });
 });
 test('an override of the Technician\'s numbers changes the age and the amount', () => {
   const sooner = withOverrides(settings, { economy: { 'technician.evergreenDays': 1 } });
@@ -601,6 +601,38 @@ test('settled whole: a Pepperoni card drawing heat that outdraws the post pays a
   assert.equal(paid(settle(cast('fa', 'facepalm', true), pepWorld), 'fa', 'face.liftedAPost'), 0, 'groaned at, it reads as Salty: no lift');
 });
 
+/* A spring settles on what sprang it (`by`): the cast it caught, or a staff visit. */
+test('settled whole: a Salty spring catching another player\'s cast that it outdraws pays a Heel; catching its own other mask\'s cast pays nothing', () => {
+  const b = board();
+  const spring = (castBy: string): SettlementInput => ({
+    ...b,
+    characters: [...b.characters, { id: 'he2', player: 'ph', classes: [{ class: 'face', from: -1 }] }],
+    acts: [...b.acts,
+      { id: 'hp', character: 'he', kind: 'post', at: 5 * H, thread: 't' },
+      { id: 'cast', character: castBy, kind: 'card', at: 6 * H, thread: 't', target: 'hp', card: 'whoops' },
+      { id: 'sp', character: 'he', kind: 'spring', at: 7 * H, thread: 't', target: 'hp', card: 'whoops', by: 'cast' }],
+    reactions: [...b.reactions, { act: 'sp', player: 'pl', character: 'lu', kind: 'tomato', at: 8 * H }, { act: 'sp', player: 'pj', character: 'ja', kind: 'tomato', at: 8 * H }],
+  });
+  const stole = (r: ReturnType<typeof settle>) => r.entries.filter((e) => e.character === 'he' && e.reason === 'heel.stoleThunder').length;
+  assert.equal(stole(settle(spring('fa'), world)), 1, 'another player\'s cast, outdrawn by the spring');
+  assert.equal(stole(settle(spring('he2'), world)), 0, 'the setter\'s own other mask\'s cast');
+});
+test('settled whole: a Sweet spring on a staff visit that draws hype pays a Face, and its estimate values the visit\'s reactions', () => {
+  const b = board();
+  const sweet = { key: 'sweetie', name: 'Sweetie', alignment: 'sweet' as const, rarity: 'common' as const, playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) };
+  const sweetWorld = { ...world, cards: [...world.cards, sweet] };
+  const input: SettlementInput = {
+    ...b,
+    acts: [...b.acts, { id: 'fp', character: 'fa', kind: 'post', at: 5 * H, thread: 't' }, { id: 'sp', character: 'fa', kind: 'spring', at: 6 * H, thread: 't', target: 'fp', card: 'sweetie', by: 'visit1' }],
+    unscoredTargets: [{ id: 'visit1', kind: 'post', at: 4 * H, thread: 't', staff: true }],
+    reactions: [...b.reactions, { act: 'visit1', player: 'pl', character: 'lu', kind: 'fire', at: 7 * H }, { act: 'visit1', player: 'pj', character: 'ja', kind: 'fire', at: 8 * H }],
+  };
+  const r = settle(input, sweetWorld);
+  assert.equal(r.entries.filter((e) => e.character === 'fa' && e.reason === 'face.liftedAPost').reduce((t, e) => t + e.amount, 0), 2 * settings.vote);
+  const lines = estimateForOwner(input, sweetWorld, 'pf').lines.filter((l) => l.reason === 'face.liftedAPost');
+  assert.deepEqual(lines.map((l) => l.at), [7 * H, 8 * H], 'one line per cheer on the visit, so the lift is valued on the Act its reactions are on');
+});
+
 /* ---- Tweener ---- */
 const lean = (q: 'excitedPositive' | 'excitedNegative', n: number, share = 1): Standing[] =>
   Array.from({ length: n }, () => ({ ...none, [q]: share }));
@@ -684,4 +716,13 @@ test('settled whole: a Tweener\'s card pays twice the smaller side of the player
     ],
   }, world);
   assert.equal(twPaid(r, 'tweener.stirredThePot'), 2 * settings.vote);
+});
+
+test('every earning a class builds from a single reaction names that reaction\'s kind, for an Earn Gimmick that names reactions', () => {
+  const one = (quadrant: Quadrant, over: Partial<ReceivedReaction> = {}) => input({ received: [{ ...got(quadrant, 1, 'post', 'a1', 0, 'laughing'), at: 4 * 86_400_000, ...over }] });
+  const kinds = (rules: ClassRules, i: ClassInput) => rules.earn(i, settings).filter((e) => e.quadrant !== undefined).map((e) => e.kind);
+  assert.deepEqual(kinds(face, one('excitedPositive')), ['laughing']);
+  assert.deepEqual(kinds(technician, one('calmPositive')), ['laughing', 'laughing'], 'Respected and Evergreen');
+  assert.deepEqual(kinds(tweener, one('calmPositive')), ['laughing']);
+  assert.deepEqual(kinds(lurker, input({ received: [got('excitedPositive', 1, 'card', 'k1', 0, 'laughing')] })), ['laughing']);
 });

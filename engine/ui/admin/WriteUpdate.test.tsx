@@ -42,13 +42,13 @@ describe('Write an update', () => {
     const onWritten = vi.fn<(u: Update) => void>();
     renderIn(fake, <WriteUpdate onWritten={onWritten} />, { instance });
     await fill('Traps bite', 'The trap was offended.');
-    await userEvent.type(within(form()).getByRole('textbox', { name: 'Change 1 label' }), 'Trap Card');
+    await userEvent.type(within(form()).getByRole('textbox', { name: 'Change 1 label' }), 'Card Collector');
     await userEvent.type(within(form()).getByRole('textbox', { name: 'Change 1 text' }), 'catches more.');
     await userEvent.click(within(form()).getByRole('button', { name: 'Add a change' }));
     await userEvent.type(within(form()).getByRole('textbox', { name: 'Change 2 text' }), 'No label here.');
     await userEvent.click(within(form()).getByRole('button', { name: 'Post update' }));
     await waitFor(() => expect(onWritten).toHaveBeenCalledTimes(1));
-    expect(onWritten.mock.calls[0]![0]).toMatchObject({ title: 'Traps bite', body: 'The trap was offended.', name: 'Gabe', changes: [{ label: 'Trap Card', text: 'catches more.' }, { label: '', text: 'No label here.' }] });
+    expect(onWritten.mock.calls[0]![0]).toMatchObject({ title: 'Traps bite', body: 'The trap was offended.', name: 'Gabe', changes: [{ label: 'Card Collector', text: 'catches more.' }, { label: '', text: 'No label here.' }] });
     expect((await fake.updates()).map((u) => u.title)).toEqual(['Traps bite']);
     expect(await screen.findByText('Posted. Every player has it in their alerts.')).toBeInTheDocument();
     expect(within(form()).getByLabelText('Title')).toHaveValue('');

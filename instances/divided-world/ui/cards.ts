@@ -11,42 +11,66 @@
 import { lazy } from 'react';
 import type { CardUi } from '../../../engine/ui/cards/types.ts';
 import type { Settings } from '../../../engine/rules/types.ts';
-import stickAroundCanvas from './cards/stick-around/art.svg?url';
+import type { GimmickEffect } from '../../../engine/rules/cards.ts';
+import stickAroundCanvas from './cards/stick-around/art.webp?url';
 import stickAroundMark from './cards/stick-around/mark.svg?url';
 import stickAroundArt from './cards/stick-around/art.json';
-import whoopsCanvas from './cards/whoops/art.svg?url';
+import whoopsCanvas from './cards/whoops/art.webp?url';
 import whoopsMark from './cards/whoops/mark.svg?url';
 import whoopsArt from './cards/whoops/art.json';
-import trapCardCanvas from './cards/trap-card/art.svg?url';
-import trapCardMark from './cards/trap-card/mark.svg?url';
-import trapCardArt from './cards/trap-card/art.json';
-import forceFieldCanvas from './cards/force-field/art.svg?url';
+import cardCollectorCanvas from './cards/card-collector/art.webp?url';
+import cardCollectorMark from './cards/card-collector/mark.svg?url';
+import cardCollectorArt from './cards/card-collector/art.json';
+import forceFieldCanvas from './cards/force-field/art.webp?url';
 import forceFieldMark from './cards/force-field/mark.svg?url';
 import forceFieldArt from './cards/force-field/art.json';
-import bluffCanvas from './cards/bluff/art.svg?url';
-import bluffMark from './cards/bluff/mark.svg?url';
-import bluffArt from './cards/bluff/art.json';
-import glitterBombCanvas from './cards/glitter-bomb/art.svg?url';
+import glitterBombCanvas from './cards/glitter-bomb/art.webp?url';
 import glitterBombMark from './cards/glitter-bomb/mark.svg?url';
 import glitterBombArt from './cards/glitter-bomb/art.json';
-import mainEventCanvas from './cards/main-event/art.svg?url';
+import mainEventCanvas from './cards/main-event/art.webp?url';
 import mainEventMark from './cards/main-event/mark.svg?url';
 import mainEventArt from './cards/main-event/art.json';
-import autocorrectCanvas from './cards/autocorrect/art.svg?url';
+import autocorrectCanvas from './cards/autocorrect/art.webp?url';
 import autocorrectMark from './cards/autocorrect/mark.svg?url';
 import autocorrectArt from './cards/autocorrect/art.json';
-import feelinFabCanvas from './cards/feelin-fab/art.svg?url';
+import feelinFabCanvas from './cards/feelin-fab/art.webp?url';
 import feelinFabMark from './cards/feelin-fab/mark.svg?url';
 import feelinFabArt from './cards/feelin-fab/art.json';
-import hallPassCanvas from './cards/hall-pass/art.svg?url';
+import hallPassCanvas from './cards/hall-pass/art.webp?url';
 import hallPassMark from './cards/hall-pass/mark.svg?url';
 import hallPassArt from './cards/hall-pass/art.json';
+import belowTheFoldCanvas from './cards/below-the-fold/art.webp?url';
+import belowTheFoldMark from './cards/below-the-fold/mark.svg?url';
+import belowTheFoldArt from './cards/below-the-fold/art.json';
+import youWereSayingCanvas from './cards/you-were-saying/art.svg?url';
+import youWereSayingMark from './cards/you-were-saying/mark.svg?url';
+import youWereSayingArt from './cards/you-were-saying/art.json';
+import { ConfigForm as YouWereSayingConfigForm } from '../cards/you-were-saying/ConfigForm.tsx';
+import { mostSteps, youWereSaying } from '../cards/you-were-saying.ts';
 import { ConfigForm as AutocorrectConfigForm } from '../cards/autocorrect/ConfigForm.tsx';
 import { glitterBomb } from '../cards/glitter-bomb.ts';
 import { mainEvent } from '../cards/main-event.ts';
 import { forceField } from '../cards/force-field.ts';
 import { feelinFab } from '../cards/feelin-fab.ts';
-import { ConfigForm as TrapCardConfigForm } from '../cards/trap-card/ConfigForm.tsx';
+import { belowTheFold } from '../cards/below-the-fold.ts';
+import { ConfigForm as CardCollectorConfigForm } from '../cards/card-collector/ConfigForm.tsx';
+import { cardCollector } from '../cards/card-collector.ts';
+import { publicityTour } from '../cards/publicity-tour.ts';
+import { heatMagnet } from '../cards/heat-magnet.ts';
+import { classClown } from '../cards/class-clown.ts';
+import { goodVibes } from '../cards/good-vibes.ts';
+import publicityTourCanvas from './cards/publicity-tour/art.webp?url';
+import publicityTourMark from './cards/publicity-tour/mark.svg?url';
+import publicityTourArt from './cards/publicity-tour/art.json';
+import heatMagnetCanvas from './cards/heat-magnet/art.webp?url';
+import heatMagnetMark from './cards/heat-magnet/mark.svg?url';
+import heatMagnetArt from './cards/heat-magnet/art.json';
+import classClownCanvas from './cards/class-clown/art.webp?url';
+import classClownMark from './cards/class-clown/mark.svg?url';
+import classClownArt from './cards/class-clown/art.json';
+import goodVibesCanvas from './cards/good-vibes/art.webp?url';
+import goodVibesMark from './cards/good-vibes/mark.svg?url';
+import goodVibesArt from './cards/good-vibes/art.json';
 import { ConfigForm as WhoopsConfigForm } from '../cards/whoops/ConfigForm.tsx';
 import { rgbOf } from '../cards/whoops/splat.ts';
 
@@ -57,7 +81,17 @@ import { rgbOf } from '../cards/whoops/splat.ts';
 const setMoveWords = (lands: string) => `You can also set it face down on one of your own posts: it springs on the next quote of that post and lands on ${lands} at no further cost, using up the card.`;
 
 /** A span in words: "a week", "3 days". */
-const spanWords = (s: { readonly unit: string; readonly count: number }) => (s.unit === 'day' && s.count === 7 ? 'a week' : s.count === 1 ? `a ${s.unit}` : `${s.count} ${s.unit}s`);
+export const spanWords = (s: { readonly unit: string; readonly count: number }) => (s.unit === 'day' && s.count === 7 ? 'a week' : s.count === 1 ? `${s.unit === 'hour' ? 'an' : 'a'} ${s.unit}` : `${s.count} ${s.unit}s`);
+
+/** What an Earn Gimmick adds to a reaction's count, and what a Price Gimmick adds to a cast, read from the card's own rules: "10%", "0.25". */
+const earnBy = (c: { readonly gimmick?: GimmickEffect }) => {
+  if (c.gimmick?.kind !== 'earn') throw new Error('card has no earn gimmick');
+  return `${Math.round(c.gimmick.by * 100)}%`;
+};
+const priceAdd = (c: { readonly gimmick?: GimmickEffect }) => {
+  if (c.gimmick?.kind !== 'price') throw new Error('card has no price gimmick');
+  return orbs(c.gimmick.add);
+};
 
 /** A price of a whole number of hundredths, as the shop says it: "1.00". */
 const orbs = (hundredths: number) => (hundredths / 100).toFixed(2);
@@ -70,6 +104,8 @@ const StickAroundEffect = lazy(() => import('./stick-around/Effect.tsx').then((m
 const AutocorrectEffect = lazy(() => import('../cards/autocorrect/Effect.tsx').then((m) => ({ default: m.AutocorrectEffect })));
 const FeelinFabEffect = lazy(() => import('./feelin-fab/Effect.tsx').then((m) => ({ default: m.FeelinFabEffect })));
 const GlitterBombEffect = lazy(() => import('./glitter-bomb/Effect.tsx').then((m) => ({ default: m.GlitterBombEffect })));
+const BelowTheFoldEffect = lazy(() => import('./below-the-fold/Effect.tsx').then((m) => ({ default: m.BelowTheFoldEffect })));
+const YouWereSayingEffect = lazy(() => import('../cards/you-were-saying/Effect.tsx').then((m) => ({ default: m.YouWereSayingEffect })));
 const WhoopsEffect = lazy(() => import('../cards/whoops/Effect.tsx').then((m) => ({ default: m.Effect })));
 
 export const cardsUi: readonly CardUi[] = Object.freeze([
@@ -120,18 +156,32 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
       : undefined),
   },
   /*
-   * The card mechanic's first plays (docs/plans/2026-11-01-card-mechanic-design.md, section 6). Bluff is Pepperoni's color, the
+   * Below the Fold (docs/plans/2026-11-11-card-notes-design.md, section 2): Salty's pink. The post is one bar until a reader presses it;
+   * the effect draws the bar (ui/below-the-fold/Effect.tsx), and nothing about the fold is saved or sent.
+   */
+  {
+    key: 'below-the-fold',
+    Effect: BelowTheFoldEffect,
+    art: { color: '#ff3d7f', ink: '#14030a', canvas: belowTheFoldCanvas, mark: belowTheFoldMark, credit: belowTheFoldArt.credit, tagline: 'Fold a post away.' },
+    summary: 'Folds a post behind a bar. Any reader opens it with one press.',
+    status: 'Folded behind a bar',
+    hint: 'Press the bar to read the post.',
+    describe: () =>
+      `A Salty card, ${belowTheFold.rarity}. It folds a post behind a bar, for every reader alike: the post's words are still there, and anyone opens them with one press of the bar, which lasts until they leave the page. One fold fits on a post. ${setMoveWords('the quoting post')} It costs nothing more to play.`,
+  },
+  /*
+   * The card mechanic's first plays (docs/plans/2026-11-01-card-mechanic-design.md, section 6). Pepperoni's color is the
    * board's --kb-pepperoni, with the dark ink the other faces set on theirs.
    */
   {
-    key: 'trap-card',
-    art: { color: '#ff3d7f', ink: '#14030a', canvas: trapCardCanvas, mark: trapCardMark, credit: trapCardArt.credit, tagline: 'Take a named card off your post.' },
-    summary: 'Set face down on your post, naming a card. Catches that card when it is cast there, and takes it into your hand.',
+    key: 'card-collector',
+    art: { color: '#ff3d7f', ink: '#14030a', canvas: cardCollectorCanvas, mark: cardCollectorMark, credit: cardCollectorArt.credit, tagline: 'Take a named card off your post.' },
+    summary: `Set face down on your post, naming a card up to ${cardCollector.rarity}. Catches that card when it is cast there, and takes it into your hand.`,
     /* Shown only for a play that names this card; a Set is a card back, whose words are the engine's ("Face down on this post"). */
     status: 'Set, face down to everyone else',
-    ConfigForm: TrapCardConfigForm,
+    ConfigForm: CardCollectorConfigForm,
     describe: (settings: Settings) =>
-      `A Salty card, uncommon, set face down on one of your own posts. Everyone sees a card back there, the same as any card set face down. You name the one card it catches, from the cards cast on a post, at any rarity. When that card is cast on your post, it is caught: it lands as caught and does nothing, and you take it into your hand. Any other card passes over it. It springs once, or ends by itself after ${settings.setLasts.count} ${settings.setLasts.unit}${settings.setLasts.count === 1 ? '' : 's'}. It costs nothing more to set.`,
+      `A Salty card, ${cardCollector.rarity}, set face down on one of your own posts. Everyone sees a card back there, the same as any card set face down. You name the one card it catches, from the cards cast on a post, ${cardCollector.rarity} or commoner. When that card is cast on your post, it is caught: it lands as caught and does nothing, and you take it into your hand. Any other card passes over it. It springs once, or ends by itself after ${settings.setLasts.count} ${settings.setLasts.unit}${settings.setLasts.count === 1 ? '' : 's'}. It costs nothing more to set.`,
   },
   {
     key: 'force-field',
@@ -141,17 +191,47 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
     describe: (settings: Settings) =>
       `A Sweet card, ${forceField.rarity}, used on one of your own posts. For ${spanWords(forceField.lasts!)}, every card cast there that is ${forceField.rarity} or commoner is turned away before it lands, and its caster is told so; a rarer card lands as usual. It never stops a card set face down. It costs nothing more to use.`,
   },
+  /*
+   * The Gimmicks of the card types design (docs/plans/2026-11-11-card-types-design.md, section 8). Their art is placeholder, in each card's flavor's color.
+   */
   {
-    key: 'bluff',
-    art: { color: '#d24a2c', ink: '#1a0602', canvas: bluffCanvas, mark: bluffMark, credit: bluffArt.credit, tagline: 'A card back that does nothing.' },
-    summary: 'Set face down on your post. Might be any card, and does nothing.',
-    /* As every set card's: the same words, so none can be told from another. */
-    status: 'Set, face down to everyone else',
+    key: 'publicity-tour',
+    art: { color: '#2ee6ff', ink: '#03141a', canvas: publicityTourCanvas, mark: publicityTourMark, credit: publicityTourArt.credit, tagline: 'Earn more from positive reactions.' },
+    summary: `Used on your own character. For ${spanWords(publicityTour.lasts!)}, what it earns from positive reactions is ${earnBy(publicityTour)} higher. A loss is never made worse.`,
+    status: 'Earns more from positive reactions',
     describe: (settings: Settings) =>
-      `A Pepperoni card, common, set face down on one of your own posts. Everyone sees a card back there, the same as any card set face down, so it might be any card. It does nothing, and ends by itself after ${settings.setLasts.count} ${settings.setLasts.unit}${settings.setLasts.count === 1 ? '' : 's'} with nothing revealed. It costs nothing more to set.`,
+      `A Sweet card, ${publicityTour.rarity}, used on your own character, the one playing it. For ${spanWords(publicityTour.lasts!)}, whatever that character earns from a positive reaction (excited or calm) to its posts is ${earnBy(publicityTour)} higher, and then it stops by itself. It never makes a loss worse. It costs nothing more to use.`,
+    logPlay: () => `What that character earns from positive reactions is ${earnBy(publicityTour)} higher until it ends.`,
+  },
+  {
+    key: 'heat-magnet',
+    art: { color: '#ff3d7f', ink: '#14030a', canvas: heatMagnetCanvas, mark: heatMagnetMark, credit: heatMagnetArt.credit, tagline: 'Earn more from negative reactions.' },
+    summary: `Used on your own character. For ${spanWords(heatMagnet.lasts!)}, what it earns from negative reactions is ${earnBy(heatMagnet)} higher. A loss is never made worse.`,
+    status: 'Earns more from negative reactions',
+    describe: (settings: Settings) =>
+      `A Salty card, ${heatMagnet.rarity}, used on your own character, the one playing it. For ${spanWords(heatMagnet.lasts!)}, whatever that character earns from a negative reaction (excited or bored) to its posts is ${earnBy(heatMagnet)} higher, and then it stops by itself. It never makes a loss worse. It costs nothing more to use.`,
+    logPlay: () => `What that character earns from negative reactions is ${earnBy(heatMagnet)} higher until it ends.`,
+  },
+  {
+    key: 'class-clown',
+    art: { color: '#d24a2c', ink: '#1a0602', canvas: classClownCanvas, mark: classClownMark, credit: classClownArt.credit, tagline: 'Earn more from laughs and eye rolls.' },
+    summary: `Used on your own character. For ${spanWords(classClown.lasts!)}, what it earns from 😂 and 🙄 is ${earnBy(classClown)} higher. A loss is never made worse.`,
+    status: 'Earns more from laughs',
+    describe: (settings: Settings) =>
+      `A Pepperoni card, ${classClown.rarity}, used on your own character, the one playing it. For ${spanWords(classClown.lasts!)}, whatever that character earns from a 😂 or a 🙄 on its posts is ${earnBy(classClown)} higher, and then it stops by itself. It never makes a loss worse. It costs nothing more to use.`,
+    logPlay: () => `What that character earns from 😂 and 🙄 is ${earnBy(classClown)} higher until it ends.`,
+  },
+  {
+    key: 'good-vibes',
+    art: { color: '#2ee6ff', ink: '#03141a', canvas: goodVibesCanvas, mark: goodVibesMark, credit: goodVibesArt.credit, tagline: 'Salty cards cost more here.' },
+    summary: `Used on a thread your own character started. For ${spanWords(goodVibes.lasts!)}, casting a Salty card there costs ${priceAdd(goodVibes)} more.`,
+    status: `Salty cards cost ${priceAdd(goodVibes)} more here`,
+    describe: (settings: Settings) =>
+      `A Sweet card, ${goodVibes.rarity}, used on a thread your own character started. For ${spanWords(goodVibes.lasts!)}, casting a Salty card in that thread, or on a post in it, costs ${priceAdd(goodVibes)} more, for everyone, and then it stops by itself. It costs nothing more to use.`,
+    logPlay: () => `Casting a Salty card in that thread costs ${priceAdd(goodVibes)} more until it ends.`,
   },
   /*
-   * Autocorrect (docs/plans/2026-11-03-autocorrect-design.md): Pepperoni's color, as Bluff and Glitter Bomb are. Its effect is masking
+   * Autocorrect (docs/plans/2026-11-03-autocorrect-design.md): Pepperoni's color, as Glitter Bomb is. Its effect is masking
    * tape, written on in marker.
    */
   {
@@ -182,8 +262,34 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
     },
   },
   /*
-   * The first cards beyond a post (docs/plans/2026-11-01-card-mechanic-design.md, section 8). Glitter Bomb is Pepperoni's color, as
-   * Bluff is; Main Event is Sweet's, as Force Field is.
+   * You Were Saying? (docs/plans/2026-11-07-you-were-saying-design.md): Pepperoni's color. Its face is a terminal with a blinking cursor, and
+   * its price is a range: the machine's price at the base length, each step on top of it.
+   */
+  {
+    key: 'you-were-saying',
+    art: { color: '#d24a2c', ink: '#1a0602', canvas: youWereSayingCanvas, mark: youWereSayingMark, credit: youWereSayingArt.credit, tagline: 'Let an old chatbot keep going.' },
+    summary: 'Hands a post to a chatbot from 2021, which keeps writing after the author stops.',
+    /* Up to the rules' `stack` chain on a post, each continuing the last. */
+    status: (plays) => `Typing on, ${Math.min(plays.length, youWereSaying.stack!)} of ${youWereSaying.stack} chained`,
+    Effect: YouWereSayingEffect,
+    ConfigForm: YouWereSayingConfigForm,
+    surcharge: (settings: Settings) => {
+      const e = settings.economy;
+      return `Longer costs more: +${orbs(e['youWereSaying.stepPrice'] ?? 0)} per step, ${orbs(mostSteps(settings) * (e['youWereSaying.stepPrice'] ?? 0))} at most`;
+    },
+    describe: (settings: Settings) => {
+      const e = settings.economy;
+      return `A Pepperoni card, ${youWereSaying.rarity}, cast on a post with words of its own. A chatbot from 2021 reads the post and keeps going after the author stops, and its words type themselves in after the post's. You choose how much it writes, from about ${e['youWereSaying.baseTokens'] ?? 0} tokens, a sentence, up to ${e['youWereSaying.mostTokens'] ?? 0}, a rant. The base length costs nothing more to play; each step longer costs ${orbs(e['youWereSaying.stepPrice'] ?? 0)} more. The author can erase it, but all at once, and an edit to the post gets a fresh take. Its words are the chatbot's, never the author's, and the post's own words are always there.`;
+    },
+    /* The caster's play line says the length the play bought, as the play recorded it (the server wrote it with the play), so it is true after any retune. */
+    logPlay: (_config, { tokens }) => (tokens === undefined ? undefined : `It was played for ${tokens} ${tokens === 1 ? 'token' : 'tokens'}.`),
+    /* The author's erase is the state `{ cleared }` (the rules' validateState): said as the author's own act. */
+    logSave: (state: unknown) => (typeof state === 'object' && state !== null && typeof (state as { cleared?: unknown }).cleared === 'string' ? { what: 'Tail erased', verb: 'erased' } : undefined),
+    /* What it did to the author's post: its first text, a new text made for an edit, and a generation that did not come. */
+    logWritten: { continued: 'continued it', again: (card: string) => `made its ${card} again`, failed: "didn't take" },
+  },
+  /*
+   * The first cards beyond a post (docs/plans/2026-11-01-card-mechanic-design.md, section 8). Glitter Bomb is Pepperoni's color; Main Event is Sweet's, as Force Field is.
    */
   {
     key: 'glitter-bomb',
@@ -219,13 +325,13 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
   },
   /*
    * Hall Pass (docs/plans/2026-11-07-face-down-moves-design.md, section 4): Sweet's cyan, as Force Field is. A Gimmick, set face down
-   * like a Trap Card; what it springs on is a Mod Bot's visit, so it names no card.
+   * like Card Collector; what it springs on is a Mod Bot's visit, so it names no card.
    */
   {
     key: 'hall-pass',
     art: { color: '#2ee6ff', ink: '#03141a', canvas: hallPassCanvas, mark: hallPassMark, credit: hallPassArt.credit, tagline: "Wave a Mod Bot's visit away." },
     summary: "Set face down on your post. Ends the next Mod Bot visit to it when the visit starts.",
-    /* As the Trap Card's and Bluff's: the same words, so none can be told from another. */
+    /* As Card Collector's: the same words, so none can be told from another. */
     status: 'Set, face down to everyone else',
     describe: (settings: Settings) =>
       `A Sweet card, uncommon, set face down on one of your own posts. Everyone sees a card back there, the same as any card set face down. The next time a Mod Bot's visit to that post starts, the visit ends there and then, before the Mod Bot does anything to the post; the visit's own posts stay. It springs once, or ends by itself after ${settings.setLasts.count} ${settings.setLasts.unit}${settings.setLasts.count === 1 ? '' : 's'} if no visit comes. It costs nothing more to set.`,

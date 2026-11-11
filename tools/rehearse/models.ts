@@ -103,7 +103,7 @@ function save(dir: string, saved: Saved): void {
 
 const emptyRow = (duty: string, request: CompletionRequest | ChatRequest, over: Partial<ModelCallRow>): ModelCallRow => ({
   duty, staff: request.staff ?? null, provider: 'stub', model: 'stub', serviceTier: null, inputTokens: null, outputTokens: null, cacheReadTokens: null,
-  cacheWrite5mTokens: null, cacheWrite1hTokens: null, gpuSeconds: null, costMicrodollars: 0, outcome: 'ok', predicate: null, trims: [], retries: 0, meeting: request.meeting ?? null, ...over,
+  cacheWrite5mTokens: null, cacheWrite1hTokens: null, gpuSeconds: null, costMicrodollars: 0, outcome: 'ok', predicate: null, trims: [], retries: 0, meeting: request.meeting ?? null, play: request.play ?? null, ...over,
 });
 
 export function rehearsalModels(o: RehearsalModelsOptions): RehearsalModels {

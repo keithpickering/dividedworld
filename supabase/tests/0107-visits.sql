@@ -445,8 +445,8 @@ declare
   setting_ uuid;
   v jsonb;
 begin
-  insert into card_kinds (key, name, alignment, rarity, play, trap, ward, lasts)
-    values ('vs-trap', 'Vs Trap', 'pepperoni', 'common', 'set', '{"trigger": {"on": "visit"}}', false, null) on conflict (key) do nothing;
+  insert into card_kinds (key, name, alignment, rarity, play, trap, gimmick, lasts)
+    values ('vs-trap', 'Vs Trap', 'pepperoni', 'common', 'set', '{"trigger": {"on": "visit"}}', null, null) on conflict (key) do nothing;
   setting_ := tests.act(c, 'set', t, '{}', p);
   insert into face_down (play, account, card, post, thread, round, ends_at) values (setting_, pg_temp.ann(), 'vs-trap', p, t, 1, now() + interval '1 day');
   v := start_visit(p, 'vs-m1', jsonb_build_object('rule_number', 1, 'board', (select board from threads where id = t), 'band', 'minor', 'cause', 'patrol', 'about_act', p));

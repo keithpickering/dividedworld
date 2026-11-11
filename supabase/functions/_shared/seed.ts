@@ -27,7 +27,7 @@ function quizOf(w: Weakness): { quiz: { question: string; choices: string[]; ans
 
 /**
  * What the seed reads of the instance's code of conduct (`InstanceUi.conduct`): its version and each section's key, typed by shape so the seed never imports the
- * engine's UI. SQL reads them as the settings `conductVersion` and `conductSections` (0148): the version an account must have accepted, and the sections a
+ * engine's UI. SQL reads them as the settings `conductVersion` and `conductSections` (0150): the version an account must have accepted, and the sections a
  * report may name.
  */
 export interface ConductSeed {
@@ -44,7 +44,7 @@ export function instanceSeed(instance: Instance, conduct: ConductSeed) {
       ...instance.settings, copy: instance.copy,
       systemLines: instance.system.stockLines,
       systemMoveWords: Object.fromEntries(MOVE_KINDS.map((m) => [m.key, m.plain])),
-      // The code of conduct's version and section keys (0148), from the instance's UI content, so SQL names no section.
+      // The code of conduct's version and section keys (0150), from the instance's UI content, so SQL names no section.
       conductVersion: conduct.version,
       conductSections: conduct.sections.map((c) => c.key),
     } as Record<string, unknown>,
@@ -54,11 +54,13 @@ export function instanceSeed(instance: Instance, conduct: ConductSeed) {
     cards: instance.cards.map((c) => ({
       key: c.key, name: c.name, alignment: c.alignment, stack: c.stack ?? 1, seeded: c.seeded === true,
       reads: (c.reads ?? []).map((r) => (typeof r === 'string' ? r : r.key)),
-      // How it is played and how rare it is, and a Set card's trap, a Use card's ward and time up (0054), which seed_instance
-      // checks as instanceProblems does. A trap or a time up left out travels as none.
-      rarity: c.rarity, play: c.play ?? 'cast', trap: c.trap, ward: c.ward === true, lasts: c.lasts,
+      // How it is played and how rare it is, and a Set card's trap, a Use card's gimmick and time up (0054, 0148), which seed_instance
+      // checks as instanceProblems does. A trap (with its match), a gimmick or a time up left out travels as none.
+      rarity: c.rarity, play: c.play ?? 'cast', trap: c.trap, gimmick: c.gimmick, lasts: c.lasts,
       // Where it reaches and whether a thread play of it pins (0055), which seed_instance checks against reachRarity and reachLasts.
       reaches: c.reaches ?? ['post'], pins: c.pins === true,
+      // Whether its text is generated after it lands (0149): the SQL knows only this flag, never which card.
+      writes: c.writes !== undefined,
     })),
     // The packs the instance sells, replaced each seed (0139), and the machine's slots in grid order: seed_instance adds a slot whose item the
     // database does not hold yet and never changes one that is there, since a slot's place, availability and price are an admin's.

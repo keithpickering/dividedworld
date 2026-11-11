@@ -10,7 +10,7 @@ import { CalmRegion } from '../glass/Calm.tsx';
 import { useKayfa } from '../context.tsx';
 import './account.css';
 
-/** The moment as the email names it ("November 12, 2026 at 14:00 UTC", 0149_conduct_mail.sql), and as the server's refusal does: UTC, so the screen and the email name the same moment. */
+/** The moment as the email names it ("November 12, 2026 at 14:00 UTC", 0151_conduct_mail.sql), and as the server's refusal does: UTC, so the screen and the email name the same moment. */
 const dateOf = (iso: string) => {
   const d = new Date(iso);
   const day = new Intl.DateTimeFormat('en-US', { dateStyle: 'long', timeZone: 'UTC' }).format(d);

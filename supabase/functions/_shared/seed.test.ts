@@ -12,8 +12,8 @@ import type { Persona } from '../../../engine/rules/types.ts';
 test('the seed carries every setting, class, reaction, card and board of the instance, in the shape seed_instance() reads', () => {
   const seed = instanceSeed(instance, conduct);
   assert.deepEqual(Object.keys(seed.settings).sort(), [...Object.keys(instance.settings), 'copy', 'systemLines', 'systemMoveWords', 'conductVersion', 'conductSections'].sort());
-  assert.equal(seed.settings.conductVersion, conduct.version, 'the version an account must have accepted (0148)');
-  assert.deepEqual(seed.settings.conductSections, conduct.sections.map((c) => c.key), 'the sections a report may name, by key (0148)');
+  assert.equal(seed.settings.conductVersion, conduct.version, 'the version an account must have accepted (0150)');
+  assert.deepEqual(seed.settings.conductSections, conduct.sections.map((c) => c.key), 'the sections a report may name, by key (0150)');
   assert.deepEqual(seed.settings.conduct, instance.settings.conduct, 'the open-report limit and the admin address ride with the instance\'s settings');
   assert.deepEqual(seed.settings.systemLines, instance.system.stockLines, 'the tick (0048) fills these lines in SQL');
   assert.deepEqual(seed.settings.systemMoveWords, Object.fromEntries(MOVE_KINDS.map((m) => [m.key, m.plain])), '{move}, in plain words, by kind');
@@ -25,11 +25,11 @@ test('the seed carries every setting, class, reaction, card and board of the ins
   const readKeys = (c: (typeof instance.cards)[number]) => (c.reads ?? []).map((r) => (typeof r === 'string' ? r : r.key));
   assert.deepEqual(seed.cards, instance.cards.map((c) => ({
     key: c.key, name: c.name, alignment: c.alignment, stack: c.stack ?? 1, seeded: c.seeded === true, reads: readKeys(c),
-    rarity: c.rarity, play: c.play ?? 'cast', trap: c.trap, ward: c.ward === true, lasts: c.lasts, reaches: c.reaches ?? ['post'], pins: c.pins === true,
+    rarity: c.rarity, play: c.play ?? 'cast', trap: c.trap, gimmick: c.gimmick, lasts: c.lasts, reaches: c.reaches ?? ['post'], pins: c.pins === true, writes: c.writes !== undefined,
   })));
   assert.deepEqual(seed.cards.find((c) => c.key === 'whoops'), {
     key: 'whoops', name: 'Whoops!', alignment: 'salty', stack: 3, seeded: true, reads: ['whoops.perLength', 'whoops.lengthStep', 'whoops.mostAdded'],
-    rarity: 'common', play: 'cast', trap: undefined, ward: false, lasts: undefined, reaches: ['post'], pins: false,
+    rarity: 'common', play: 'cast', trap: undefined, gimmick: undefined, lasts: undefined, reaches: ['post'], pins: false, writes: false,
   }, 'the stack, the seed, the economy numbers its rules read, its rarity and its play reach the SQL (0039, screen_settings\'s cardEconomy; 0054)');
   // The packs and the machine's slots (0139): the pulls as the instance writes them, a slot's item flattened to `card` or `pack`, in grid order.
   assert.deepEqual(seed.packs.map((p) => [p.key, p.pulls.length, p.leaves]), instance.packs.map((p) => [p.key, p.pulls.length, [...(p.leaves ?? [])]]));
@@ -75,7 +75,7 @@ test('the seed carries the roster as staff characters, one kind of persona, the 
     assert.ok(s.title.length <= 40 && s.signature.length <= 500, 'the SQL cuts these in silence; instanceProblems holds them');
   }
   const bytes = JSON.stringify(seed);
-  for (const b of roster) assert.ok(!bytes.includes(b.persona.slice(0, 80)), `${b.key}'s prompt stays in the instance module`);
+  for (const b of roster) assert.ok(!bytes.includes(b.selfPrompt.slice(0, 80)), `${b.key}'s prompt stays in the instance module`);
 });
 
 test('a roster entry carries pronouns only when its persona declares them, and the developer when he does', () => {
@@ -125,14 +125,17 @@ test('the deployed instance is chosen by profile: the playtest\'s shorter season
   assert.throws(() => chooseInstance('staging'), /profile/);
 });
 
-test('a card\'s trap, ward and time up travel in the seed as the engine holds them, and an absent one is absent in the JSON', () => {
-  const trap = { trigger: { on: 'cast' as const }, outcome: { do: 'payout' as const } };
+test('a card\'s trap (and its match), gimmick and time up travel in the seed as the engine holds them, and an absent one is absent in the JSON', () => {
+  const trap = { trigger: { on: 'cast' as const }, match: { flavors: ['salty' as const], upTo: 'uncommon' as const } };
   const set = { ...instance.cards[0]!, key: 'test-trap', play: 'set' as const, rarity: 'uncommon' as const, trap };
-  const ward = { ...instance.cards[0]!, key: 'test-ward', play: 'use' as const, rarity: 'uncommon' as const, ward: true as const, lasts: { unit: 'day' as const, count: 7 } };
+  const gimmick = { kind: 'ward' as const, upTo: 'uncommon' as const, flavors: ['salty' as const] };
+  const ward = { ...instance.cards[0]!, key: 'test-ward', play: 'use' as const, rarity: 'uncommon' as const, gimmick, lasts: { unit: 'day' as const, count: 7 } };
   const seed = instanceSeed({ ...instance, cards: [set, ward] }, conduct);
-  assert.deepEqual(JSON.parse(JSON.stringify(seed.cards[0])).trap, trap);
+  assert.deepEqual(JSON.parse(JSON.stringify(seed.cards[0])).trap, trap, 'a trap carries its match');
   assert.equal('lasts' in JSON.parse(JSON.stringify(seed.cards[0])), false, 'seed_instance reads a missing time up as none');
-  assert.deepEqual([seed.cards[1]!.play, seed.cards[1]!.ward, seed.cards[1]!.lasts], ['use', true, { unit: 'day', count: 7 }]);
+  assert.equal('gimmick' in JSON.parse(JSON.stringify(seed.cards[0])), false, 'seed_instance reads a missing gimmick as none');
+  assert.equal('ward' in JSON.parse(JSON.stringify(seed.cards[1])), false, 'the ward flag is gone from the seed');
+  assert.deepEqual([seed.cards[1]!.play, seed.cards[1]!.gimmick, seed.cards[1]!.lasts], ['use', gimmick, { unit: 'day', count: 7 }]);
 });
 
 test('the seed carries the developer persona: the instance\'s, or the engine\'s plain default, and no prompt (a model never writes it)', () => {

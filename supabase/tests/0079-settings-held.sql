@@ -236,6 +236,17 @@ insert into poisons (key, value) values
   ('systemEnabled', '0'),
   ('systemEnabled', 'null'),
   ('systemEnabled', '{}'),
+  ('oldVoice', '"true"'),
+  ('oldVoice', '1'),
+  ('oldVoice', '0'),
+  ('oldVoice', 'null'),
+  ('oldVoice', '{}'),
+  ('cardWriteSettleSeconds', '-1'),
+  ('cardWriteSettleSeconds', '601'),
+  ('cardWriteSettleSeconds', '1.5'),
+  ('cardWriteSettleSeconds', '"30"'),
+  ('cardWriteSettleSeconds', 'null'),
+  ('cardWriteSettleSeconds', 'true'),
   ('hints', '{"least": 0, "share": 0.6, "split": 0.3, "window": {"unit": "minute", "count": 360}}'),
   ('hints', '{"least": 10, "share": 0.6, "split": 1e-999, "window": {"unit": "minute", "count": 360}}'),
   ('hints', '{"least": 1.5, "share": 0.6, "split": 0.3, "window": {"unit": "minute", "count": 360}}'),
@@ -781,6 +792,11 @@ insert into goods (key, value) values
   ('cardSettings', '{"whoops.clean": 95}'),
   ('systemEnabled', 'false'),
   ('systemEnabled', 'true'),
+  ('oldVoice', 'false'),
+  ('oldVoice', 'true'),
+  ('cardWriteSettleSeconds', '30'),
+  ('cardWriteSettleSeconds', '0'),
+  ('cardWriteSettleSeconds', '600'),
   ('hints', '{"least": 10, "share": 0.6, "split": 0.3, "window": {"unit": "minute", "count": 360}}'),
   ('hints', '{"least": 1, "share": 1, "split": 0.5, "window": {"unit": "minute", "count": 360}}'),
   ('hints', '{"least": 10, "share": 0.51, "split": 0.01, "window": {"unit": "month", "count": 1000}}'),
@@ -900,7 +916,7 @@ begin
   exception when check_violation then null;
   end;
 
-  -- The two settings the seed writes beside `conduct` (0148) are outside SETTINGS and held all the same: engine/rules/settings-held.test.ts reads only
+  -- The two settings the seed writes beside `conduct` (0150) are outside SETTINGS and held all the same: engine/rules/settings-held.test.ts reads only
   -- the two lists above, so theirs are here.
   for r in select * from (values ('conductVersion', '1'), ('conductVersion', '3'), ('conductSections', '[]'), ('conductSections', '["mask", "hate"]')) g(key, value) loop
     insert into settings (key, value) values (r.key, r.value::jsonb) on conflict (key) do update set value = excluded.value;

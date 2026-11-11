@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { runChatter } from './core.ts';
 import { DatabaseError, type Db } from '../_shared/rpc.ts';
-import { instance as dividedWorld } from '../_shared/instance.ts';
+import { instance as realInstance } from '../_shared/instance.ts';
+import { placeholderWorld } from '../../../instances/divided-world/system/fixtures/index.ts';
 import { AnswerRejected, LedgerWriteFailed, models as realModels } from '../_shared/models/index.ts';
 import type { ModelCallRow } from '../_shared/models/ledger.ts';
 import type { ChatRequest, CompletionRequest, ModelResult, Models } from '../../../engine/system/model.ts';
@@ -10,6 +11,8 @@ import type { Instance } from '../../../engine/rules/types.ts';
 import { autocorrect as autocorrectRules } from '../../../instances/divided-world/cards/autocorrect.ts';
 import { staffOffers } from '../../../engine/rules/cards.ts';
 import { whoops as whoopsRules } from '../../../instances/divided-world/cards/whoops.ts';
+
+const dividedWorld: Instance = placeholderWorld(realInstance);
 
 // A Wednesday: the week's 20 posts over its five days left give an allowance of 4, so three posts and one card slot.
 const SLOT = '2026-11-04T17:37:00.000Z';
@@ -156,17 +159,17 @@ function fakeModels(reply: (r: ChatRequest) => unknown, completion: string | Err
   };
   return { models, chats, completions };
 }
-/** A thread start is the one request that asks for a title; it may play a Set on its own post. A reply may leave a note. */
+/** A thread start is the one request that asks for a title; it may set a set card on its own post (a pool that plays uncommons). A reply may leave a note. */
 const normal = (r: ChatRequest) => {
   const asksTitle = (r.schema as any).required.includes('title');
   return asksTitle
-    ? { words: `Opening words from ${r.staff}.`, title: `A thread by ${r.staff}`, card: { key: 'bluff', on: 'own' }, note: `Started one, ${r.staff}.` }
+    ? { words: `Opening words from ${r.staff}.`, title: `A thread by ${r.staff}`, card: { key: 'card-collector', on: 'own', config: { 'card-collector': { card: 'whoops' } } }, note: `Started one, ${r.staff}.` }
     : { words: `A reply from ${r.staff}.`, note: `Replied, ${r.staff}.` };
 };
 const run = (d: ReturnType<typeof fakeDb>, m: { models: Models }, instance: Instance = dividedWorld, slot = SLOT) => runChatter(d.db, m.models, instance, slot);
 
 test('a day with three picks writes three posts, one card, the notes and three spends', async () => {
-  const d = fakeDb();
+  const d = fakeDb({ pool: { cardRarityMost: 'uncommon' } });
   const m = fakeModels(normal);
   const out = await run(d, m);
   assert.equal(out.status, 'ok');
@@ -181,7 +184,7 @@ test('a day with three picks writes three posts, one card, the notes and three s
   assert.equal(d.count('staff_play_card') + d.count('staff_set_card'), 1, 'one card');
   assert.equal(d.count('staff_set_card'), 1, 'a Set, on the post the thread start wrote');
   const set = d.of('staff_set_card')[0]!;
-  assert.equal(set.card, 'bluff');
+  assert.equal(set.card, 'card-collector');
   assert.equal(set.target, d.state.acts.find((a) => a.kind === 'thread')!.id, 'on its own post');
   assert.equal(d.state.notes.length, 3, 'a note each');
   assert.equal(d.state.spends.length, 3);
@@ -243,6 +246,18 @@ test('a card with no default and no configurations of its own is not offered', a
   const m = fakeModels((r) => ({ words: 'x', card: { key: 'whoops', on: 'reply' } }));
   await run(d, m, bare);
   assert.equal(d.count('staff_play_card'), 0);
+});
+
+test('a persona is asked in the frame of the office it holds now: a member opens with the member premise, a Boss with the Boss premise, a Mod with the Mod premise', async () => {
+  const d = fakeDb({ named: [CLERK, HYPE, SIGH], pool: { threadsWeekly: 0 } });
+  const m = fakeModels((r) => ({ words: `A reply from ${r.staff}.` }));
+  await run(d, m);
+  const offices = dividedWorld.system.offices;
+  const asked = (staff: string) => m.chats.find((c) => c.staff === staff)!.system;
+  assert.ok(asked(CLERK).startsWith(offices.member.premise), 'member');
+  assert.ok(asked(HYPE).startsWith(offices.boss.premise), 'boss');
+  assert.ok(asked(SIGH).startsWith(offices.mod.premise), 'mod');
+  assert.ok(!asked(CLERK).includes(offices.boss.premise), 'a member is never told it is the Boss');
 });
 
 test('a disabled System writes nothing and calls no model', async () => {
@@ -451,6 +466,25 @@ test('a persona on the old voice writes its words in raw completion and gives no
   assert.equal(d.count('write_staff_note') + d.count('staff_play_card') + d.count('staff_set_card'), 0);
 });
 
+test('an old-voice answer that hits the scrubber twice files a rejected pick and writes nothing; one hit is retried', async () => {
+  const withWords = (scrubWords: string[]): Instance => ({ ...dividedWorld, system: { ...dividedWorld.system, scrubWords, roster: dividedWorld.system.roster.map((p) => (p.key === SIGH ? { ...p, voice: 'oldVoice' as const } : p)) } });
+  const d = fakeDb({ pool: { threadsWeekly: 0 }, named: [SIGH] });
+  const m = fakeModels(() => ({ words: 'chat' }), 'you absolute badword');
+  const out = await run(d, m, withWords(['badword']));
+  assert.ok(out.status === 'ok');
+  assert.equal(m.completions.length, 2, 'asked again once');
+  assert.equal(out.picks[0]!.status, 'rejected');
+  assert.equal(d.count('write_staff_act'), 0);
+  const once = fakeDb({ pool: { threadsWeekly: 0 }, named: [SIGH] });
+  const answers = ['you absolute badword', 'a kinder post'];
+  const m2 = fakeModels(() => ({ words: 'chat' }));
+  m2.models.complete = async (r) => { m2.completions.push(r); return result(answers[m2.completions.length - 1]!); };
+  const ok = await run(once, m2, withWords(['badword']));
+  assert.ok(ok.status === 'ok');
+  assert.equal(m2.completions.length, 2);
+  assert.equal(once.of('write_staff_act')[0]!.payload.body, 'a kinder post');
+});
+
 test('a thread start whose persona has no beats board replies in its trigger\'s thread', async () => {
   const d = fakeDb({ boards: { [GENERAL]: 'elsewhere' } });
   const m = fakeModels((r) => ({ words: `A reply from ${r.staff}.` }));
@@ -647,7 +681,7 @@ test('a wrongly typed option costs neither the post nor the card: the ink falls 
 });
 
 test('a Set with options reads its own new post as the target, after it is written, and sets with the decided config', async () => {
-  // The only Divided World Gimmick with options is Trap Card, whose option is the card it names; so the instance here carries a Gimmick on a cast
+  // The only Divided World set card with options is Card Collector, whose option is the card it names; so the instance here carries a set card on a cast
   // with Whoops!'s options and a catch of its own: the persona's ink is checked by the card's own rules, and the named catch goes to SQL.
   const whoops = dividedWorld.cards.find((c) => c.key === 'whoops')!;
   const snare = { ...whoops, key: 'snare', name: 'Snare', play: 'set' as const, trap: { trigger: { on: 'cast' as const } }, catches: () => 'whoops' };
@@ -671,21 +705,56 @@ test('a Set with options reads its own new post as the target, after it is writt
   assert.ok(wrote >= 0 && wrote < read && read < setAt, 'written, then read, then set');
 });
 
-test('a persona\'s Trap Card is offered with its options and stores the card it names; Hall Pass is never offered', async () => {
+test('a persona\'s Card Collector is offered with its options and stores the card it names; Hall Pass is never offered', async () => {
   const hall = dividedWorld.cards.find((c) => c.key === 'hall-pass')!;
-  const trap = dividedWorld.cards.find((c) => c.key === 'trap-card')!;
+  const trap = dividedWorld.cards.find((c) => c.key === 'card-collector')!;
   assert.equal(staffOffers(hall), false, 'a Mod Bot visits only players\' posts');
   assert.equal(staffOffers(trap), true);
-  // Divided World's pool plays commons; an instance that lets it play uncommons offers the Trap Card.
+  // Divided World's pool plays commons; an instance that lets it play uncommons offers the Card Collector.
   const d = fakeDb({ pool: { threadsWeekly: 0, cardRarityMost: 'uncommon' } });
-  const m = fakeModels((r) => ({ words: `A reply from ${r.staff}.`, card: { key: 'trap-card', on: 'own', config: { 'trap-card': { card: 'whoops' } } } }));
+  const m = fakeModels((r) => ({ words: `A reply from ${r.staff}.`, card: { key: 'card-collector', on: 'own', config: { 'card-collector': { card: 'whoops' } } } }));
   const out = await run(d, m);
   assert.ok(out.status === 'ok');
   const set = d.of('staff_set_card')[0]!;
-  assert.ok(set, 'the Trap Card was set: ' + JSON.stringify(out.picks));
-  assert.deepEqual({ card: set.card, config: set.config, catches: set.catches }, { card: 'trap-card', config: { card: 'whoops' }, catches: 'whoops' });
+  assert.ok(set, 'the Card Collector was set: ' + JSON.stringify(out.picks));
+  assert.deepEqual({ card: set.card, config: set.config, catches: set.catches }, { card: 'card-collector', config: { card: 'whoops' }, catches: 'whoops' });
   const hallModels = fakeModels((r) => ({ words: `A reply from ${r.staff}.`, card: { key: 'hall-pass', on: 'own' } }));
   const d2 = fakeDb({ pool: { threadsWeekly: 0, cardRarityMost: 'uncommon' } });
   await run(d2, hallModels);
   assert.equal(d2.count('staff_set_card'), 0, 'a Hall Pass the model names is not set');
+});
+
+test('a card that writes is not offered to the pool where the instance runs no old voice, and is where it does', async () => {
+  const typewriter = { key: 'typewriter', name: 'Test Typewriter', alignment: 'salty' as const, rarity: 'common' as const, playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }), staffConfigs: [{}], writes: { tokens: () => 40, frame: () => ({ prompt: '', stop: [] as string[] }) } };
+  const withVoice = (oldVoice: boolean): Instance => ({ ...dividedWorld, cards: [...dividedWorld.cards, typewriter], settings: { ...dividedWorld.settings, oldVoice } });
+  const offered = async (oldVoice: boolean) => {
+    const d = fakeDb({ pool: { threadsWeekly: 0 } });
+    const m = fakeModels(normal);
+    await run(d, m, withVoice(oldVoice));
+    return m.chats.some((c) => c.system.includes('Test Typewriter') || c.messages.some((x) => x.content.includes('Test Typewriter')));
+  };
+  assert.equal(await offered(true), true, 'the card is on offer where the endpoint runs');
+  assert.equal(await offered(false), false, 'and withheld where there is none');
+});
+
+test('a completion made for a card play is a request with the duty cardText and the play it was made for', () => {
+  const request: CompletionRequest = { duty: 'cardText', play: 'act-1', prompt: 'p', temperature: 1, topP: 1, stop: [], maxTokens: 40, lines: 'many' };
+  assert.equal(request.duty, 'cardText');
+  assert.equal(request.play, 'act-1');
+});
+
+test('a Mod Bot\'s play of a card that writes hands staff_play_card the tokens the card\'s rules decide, from the settings as the rows hold them', async () => {
+  const writing = { ...dividedWorld.cards.find((c) => c.key === 'you-were-saying')!, rarity: 'common' as const };
+  const withVoice: Instance = { ...dividedWorld, settings: { ...dividedWorld.settings, oldVoice: true }, cards: dividedWorld.cards.map((c) => (c.key === writing.key ? writing : c)) };
+  const d = fakeDb({ pool: { threadsWeekly: 0 } });
+  const m = fakeModels((r) => ({ words: `A reply from ${r.staff}.`, card: { key: writing.key, on: 'reply' } }));
+  const out = await run(d, m, withVoice);
+  assert.ok(out.status === 'ok');
+  const play = d.of('staff_play_card')[0];
+  assert.ok(play, 'the writing card was played');
+  assert.equal(play.tokens, writing.writes!.tokens(play.config as never, withVoice.settings));
+  assert.ok(Number.isSafeInteger(play.tokens) && (play.tokens as number) >= 1);
+  const plain = fakeDb({ pool: { threadsWeekly: 0 } });
+  await run(plain, fakeModels((r) => ({ words: `A reply from ${r.staff}.`, card: { key: 'stick-around', on: 'reply' } })));
+  assert.equal('tokens' in plain.of('staff_play_card')[0]!, false, 'a play of any other card carries none');
 });

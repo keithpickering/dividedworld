@@ -46,7 +46,7 @@
  * fail, the trim names the predicate and plain code's seeded configuration is played instead; where code can build none, the card is dropped
  * (`cardRefused`) and the post stands. The database then holds every rule it holds for a player's play.
  */
-import { atOrBelow, decidePlay, decideSet, effectsOnTarget, playOf, postTarget, staffConfigOf, staffOffers, type CardEffect, type CardTarget, type EffectsAbove } from '../../../engine/rules/cards.ts';
+import { withheld, atOrBelow, decidePlay, decideSet, effectsOnTarget, playOf, postTarget, staffConfigOf, staffOffers, type CardEffect, type CardTarget, type EffectsAbove } from '../../../engine/rules/cards.ts';
 import { ENGINE_DEFAULT_PRONOUNS, pronounsOr, taggedName, type PronounSet } from '../../../engine/rules/pronouns.ts';
 import type { Instance, Persona } from '../../../engine/rules/types.ts';
 import type { Career } from '../../../engine/system/career.ts';
@@ -63,6 +63,7 @@ import {
 import { DUTY_SPECS } from '../../../engine/system/duties.ts';
 import type { Memory } from '../../../engine/system/memory.ts';
 import type { Models } from '../../../engine/system/model.ts';
+import { scrubbedComplete } from '../../../engine/system/scrub.ts';
 import {
   allowance,
   candidates,
@@ -73,6 +74,7 @@ import {
   seededRng,
   type PoolPhase,
   type PoolPick,
+  type PostingOffice,
   type PoolSignals,
 } from '../../../engine/system/pool.ts';
 import type { Trim } from '../../../engine/system/validate.ts';
@@ -232,7 +234,7 @@ export async function runChatter(db: Db, models: Models, instance: Instance, slo
   const offerable = settings.pool.cardRarityMost;
   const cardsOnOffer = tuned.cards.filter((c) => {
     const play = playOf(c);
-    return (play === 'cast' || play === 'set') && atOrBelow(c.rarity, offerable) && staffOffers(c);
+    return (play === 'cast' || play === 'set') && atOrBelow(c.rarity, offerable) && staffOffers(c) && !withheld(c, settings);
   });
 
   for (const p of picked.picks) {
@@ -243,7 +245,7 @@ export async function runChatter(db: Db, models: Models, instance: Instance, slo
     if (used + 1 > todays) { records.push({ ...base, status: 'skipped', why: 'the day\'s allowance is spent' }); continue; }
 
     const record = await onePick({
-      db, models, tuned, persona, p, day, slugs, cardsOnOffer,
+      db, models, tuned, persona, office: p.office, p, day, slugs, cardsOnOffer,
       threadsLeft, cardRoom: p.cardSlot && used + 2 <= todays,
     });
     records.push(record);
@@ -263,6 +265,7 @@ interface PickRun {
   readonly models: Models;
   readonly tuned: Instance;
   readonly persona: Persona;
+  readonly office: PostingOffice;
   readonly p: PoolPick;
   readonly day: string;
   readonly slugs: ReadonlySet<string>;
@@ -317,13 +320,13 @@ async function onePick(r: PickRun): Promise<PickRecord> {
     try {
       if (persona.voice === 'oldVoice') {
         const frame = chatterCompletion({ name: persona.name, thread, limits });
-        const out = await models.complete({
+        const out = await scrubbedComplete(models, {
           duty: 'chatter', staff: p.staff, prompt: frame.prompt, temperature: 0.9, topP: 0.95, stop: frame.stop, maxTokens: 400, maxChars: settings.postMaxLength,
-        });
+        }, tuned.system.scrubWords);
         raw = { words: out.value };
       } else {
         const frame = chatterPrompt({
-          premise: POOL_PREMISE, persona, pronouns: pronounsOr(persona.pronouns, instanceSet), career, memory, notes, thread,
+          premise: POOL_PREMISE, persona, office: r.office, offices: tuned.system.offices, pronouns: pronounsOr(persona.pronouns, instanceSet), career, memory, notes, thread,
           quoting: quotedPost,
           trigger: p.trigger, offeredCards: offered, startThread: startsThread, limits, names: (id) => { const f = faces[id]; return f ? taggedName(clip(f.name, 60), pronounsOr(f.pronouns, instanceSet)) : 'a character'; },
         });
@@ -381,10 +384,12 @@ async function onePick(r: PickRun): Promise<PickRecord> {
         record['cardConfig'] = config;
         // Unlike supabase/functions/act/core.ts's play_card, staff_play_card is sent no `version`, so an edit landing between the read
         // above and this play is not refused (as before the options existed).
-        // A Trap Card's named catch is what its own rules read from the configuration the card's rules accepted (SQL holds it to a card cast on a post).
+        // A catching set card's named catch is what its own rules read from the configuration the card's rules accepted (SQL holds it to a card cast on a post).
         const catches = rules?.catches?.(config);
+        // A card that writes buys its tokens at this decision, from the settings as the rows hold them now, as a player's play does (act/core.ts); the database writes them with the play.
+        const tokens = rules?.writes?.tokens(config as never, tuned.settings);
         const played = answer.card.on === 'reply'
-          ? await db.rpc<{ id: string }>('staff_play_card', { staff_key: p.staff, card: answer.card.key, target: p.quoting, config, message: '', pool_day: day })
+          ? await db.rpc<{ id: string }>('staff_play_card', { staff_key: p.staff, card: answer.card.key, target: p.quoting, config, message: '', pool_day: day, ...(tokens === undefined ? {} : { tokens }) })
           : await db.rpc<{ id: string }>('staff_set_card', { staff_key: p.staff, card: answer.card.key, target: post, config, ...(catches === undefined ? {} : { catches }) });
         card = played.id;
       } catch (e) {

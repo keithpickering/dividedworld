@@ -22,7 +22,7 @@ import { ThreadScreen } from '../thread/Thread.tsx';
 import { PostEffects } from './Effects.tsx';
 import { createPlays } from './plays.ts';
 import type { CardUi, EffectProps } from './types.ts';
-import { LoadedThread } from '../loaded.tsx';
+import { LoadedBoard, LoadedThread } from '../loaded.tsx';
 
 const base = { playPrice: () => 0, validateConfig: (c: unknown) => ok(c) };
 const reaching = (key: string, name: string, rarity: CardRules['rarity'], reaches: CardRules['reaches'], extra: Partial<CardRules> = {}): CardRules => ({
@@ -32,11 +32,12 @@ const reaching = (key: string, name: string, rarity: CardRules['rarity'], reache
 const sparkle = reaching('sparkle', 'Sparkle', 'uncommon', ['character']);
 const beacon = reaching('beacon', 'Beacon', 'rare', ['thread']);
 const rumble = reaching('rumble', 'Rumble', 'legendary', ['board']);
+const vibes = reaching('vibes', 'Vibes', 'rare', ['thread', 'board'], { play: 'use', gimmick: { kind: 'price', flavors: ['salty'], add: 25 } });
 const dab = reaching('dab', 'Dab', 'common', ['post'], { lasts: undefined });
-const instance: Instance = { ...testInstance, cards: [sparkle, beacon, rumble, dab], settings: { ...testInstance.settings, economy: { 'test.price': 100 } } };
+const instance: Instance = { ...testInstance, cards: [sparkle, beacon, rumble, dab, vibes], settings: { ...testInstance.settings, economy: { 'test.price': 100 } } };
 /* Each card's effect wraps the words in a box naming it, and the reach it was drawn from. */
 const Wrap = (key: string) => function Effect({ children, reach }: EffectProps) { return <div data-kb-wrap={key} data-kb-reach={reach}>{children}</div>; };
-const cards: CardUi[] = ['sparkle', 'beacon', 'rumble', 'dab'].map((key) => ({ key, art: { color: '#ffd23f', ink: '#1a1300', canvas: '', mark: '', credit: 'Test' }, describe: () => `${key}.`, Effect: Wrap(key) }));
+const cards: CardUi[] = ['sparkle', 'beacon', 'rumble', 'dab', 'vibes'].map((key) => ({ key, art: { color: '#ffd23f', ink: '#1a1300', canvas: '', mark: '', credit: 'Test' }, describe: () => `${key}.`, Effect: Wrap(key) }));
 
 /* The first render of the Frame in a file parses the house CSS, which takes a few seconds under jsdom. */
 vi.setConfig({ testTimeout: 20_000 });
@@ -207,5 +208,41 @@ describe('what a post wears', () => {
     await act(() => vi.advanceTimersByTimeAsync(61_000));
     await waitFor(() => expect(sparkleMark(postbit(1))).toBeNull());
     expect(reads).not.toHaveBeenCalled();
+  });
+});
+
+describe('a use card armed on a thread or a board', () => {
+  async function armed(starter: 'me' | 'other') {
+    const w = world();
+    const mine = w.fake.seed.thread('general', starter === 'me' ? w.pipe : w.spritey, 'Whose thread', 'the opening').thread;
+    w.fake.seed.cards(w.me, { vibes: 1 });
+    renderIn(w.fake, <Frame><LoadedThread thread={mine} /></Frame>, { path: `/t/${mine}`, instance, cards });
+    await screen.findByRole('article', { name: /^Post 1 /u });
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: /^Hand, \d postcards?/u }));
+    await user.click(within(screen.getByRole('region', { name: 'Your hand' })).getAllByRole('button', { name: /^Vibes, .*postcard/u })[0]!);
+    return document.querySelector('.kb-thread-head') as HTMLElement;
+  }
+
+  test('is offered on the head of a thread the acting character started', async () => {
+    const head = await armed('me');
+    expect(await within(head).findByRole('button', { name: 'Use Vibes on “Whose thread”' })).toBeInTheDocument();
+  });
+
+  test('is not offered on a board\'s banner, whoever the reader is', async () => {
+    const w = world();
+    w.fake.seed.cards(w.me, { vibes: 1 });
+    renderIn(w.fake, <Frame><LoadedBoard slug="general" /></Frame>, { path: '/b/general', instance, cards });
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: /^Hand, \d postcards?/u }));
+    await user.click(within(screen.getByRole('region', { name: 'Your hand' })).getAllByRole('button', { name: /^Vibes, .*postcard/u })[0]!);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByRole('button', { name: /^Use Vibes/u })).toBeNull();
+  });
+
+  test('is not offered on another character\'s thread, as the server refuses it there', async () => {
+    const head = await armed('other');
+    await new Promise((r) => setTimeout(r, 50));
+    expect(within(head).queryByRole('button', { name: /^Use Vibes/u })).toBeNull();
   });
 });

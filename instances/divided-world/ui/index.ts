@@ -9,6 +9,7 @@ import type { ClassLook, GlassTheme, InstanceUi } from '../../../engine/ui/types
 import { spanWords } from '../../../engine/ui/characters/format.ts';
 import glassData from './glass.json';
 import { cardsUi } from './cards.ts';
+import { cards as instanceCards } from '../cards/index.ts';
 import { packsUi } from './packs.ts';
 import theme from './theme.css?url';
 import themePreview from './theme.css?preview';
@@ -56,11 +57,11 @@ const COUNTS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', '
   'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen', 'twenty'];
 const count = (n: number) => (Number.isInteger(n) && n >= 0 && n <= 20 ? COUNTS[n]! : String(n));
 /* A number the words state, from the numbers they are told, or the compiled default where they are told none. */
-const num = (n: Readonly<Record<string, number>>, key: string) => n[key] ?? defaults.economy[key]!;
+const num = (n: Readonly<Record<string, number | string>>, key: string) => { const v = n[key]; return typeof v === 'number' ? v : defaults.economy[key]!; };
 const times = (n: number) => (n === 1 ? 'once' : n === 2 ? 'twice' : `${count(n)} times`);
 
 /** Each ledger reason, as the log says it: what the character did or drew, plainly, with the numbers it was settled under. */
-const REASONS: Readonly<Record<string, string | ((n: Readonly<Record<string, number>>) => string)>> = {
+const REASONS: Readonly<Record<string, string | ((n: Readonly<Record<string, number | string>>) => string)>> = {
   'face.cheered': 'Cheered: excited, positive reactions to the character\'s posts and cards',
   'face.liftedAPost': 'Lifted a post: the cheers a post drew after its Sweet card landed there',
   'face.boredTheRoom': 'Bored the room: bored, negative reactions to the character\'s posts and cards',
@@ -86,6 +87,8 @@ const REASONS: Readonly<Record<string, string | ((n: Readonly<Record<string, num
   'technician.draggedIn': 'Dragged in: excited, negative reactions to the character\'s posts and cards',
   'tweener.splitTheRoom': 'Split the room: hype and heat on the character\'s post or card, paid on the smaller side, each player counted once by where they lean',
   'tweener.stirredThePot': 'Stirred the pot: hype and heat drawn to another\'s post by players who came after the character\'s card, paid on the smaller side',
+  /* A card's boost (settlement's `card.boost`, params `{ card }`): the card's key is public (it is on the post), so its name is said; a card this instance does not have is "a card". */
+  'card.boost': (n) => `${instanceCards.find((c) => c.key === n['card'])?.name ?? 'A card'} added: what the card's boost on a reaction earned`,
   'tweener.shrugged': 'Shrugged off: calm or bored reactions to the character\'s posts and cards',
 };
 
@@ -137,7 +140,7 @@ export const instanceUi: InstanceUi = Object.freeze({
     tweener: { color: '#d63ab8', pattern: 'repeating-linear-gradient(45deg, transparent 0 4px, rgb(0 0 0 / 0.25) 4px 6px), repeating-linear-gradient(-45deg, transparent 0 4px, rgb(0 0 0 / 0.25) 4px 6px)', description: () => 'Splits the room. Earns when a post or card draws hype and heat in equal measure, and when the character\'s card sets someone else\'s post arguing.', hurtsBy: () => 'Hurt by the shrug: calm or bored reactions.', marks: { label: 'Earns from a room split between hype and heat, hurt by the shrug', splits: ['excitedNegative', 'excitedPositive'], hurts: ['boredNegative', 'calmPositive'] } },
     lurker: { color: '#7f8c8d', pattern: 'radial-gradient(rgb(0 0 0 / 0.3) 1px, transparent 1.5px) 0 0 / 5px 5px', description: () => `Reads the room. Earns by reacting early in the direction a post ends up, by spinning threads others reply to, and from reactions to the character's cards.`, hurtsBy: (e, span) => `Hurt by ${num(e, 'lurker.postsAllowed') === 0 ? 'posting at all' : `posting more than ${times(num(e, 'lurker.postsAllowed'))} in one settlement window (${spanWords(span)})`}.`, marks: { label: 'Earns by calling where any post ends up', calls: ['excitedNegative', 'excitedPositive', 'boredNegative', 'calmPositive'] } },
   }),
-  reasonWords: (reason: string, params: Readonly<Record<string, number>>) => {
+  reasonWords: (reason: string, params: Readonly<Record<string, number | string>>) => {
     const w = REASONS[reason];
     return w === undefined ? `Settled under "${reason}"` : typeof w === 'string' ? w : w(params);
   },
@@ -151,8 +154,8 @@ export const instanceUi: InstanceUi = Object.freeze({
     staffBoardTag: 'Staff post here; you react and spin',
     // The footer's 80 by 15 badges: pairs of short words, decoration in the footer's pixel face (Silkscreen, fonts/).
     badges: Object.freeze([Object.freeze(['Game', 'On'] as const), Object.freeze(['Masks', 'On'] as const), Object.freeze(['Kilter', 'Off'] as const)]),
-    // A card's kind tag: a Move is cast (or set face down), a Gimmick is only set, a Ward guards your own post.
-    cardKinds: Object.freeze({ cast: 'Move', set: 'Gimmick', use: 'Ward' }),
+    // A card's kind tag: a Move is cast (or set face down), a Reversal is only set face down, a Gimmick is used face up on your own post, character or thread.
+    cardKinds: Object.freeze({ cast: 'Move', set: 'Reversal', use: 'Gimmick' }),
     // What the log and the machine's group label call the shop, in plain words; the sign draws one of `marquees`.
     shopName: 'Vending Machine',
     // The sign's names, one picked each time the Vending screen opens (decoration; none claims anything untrue; at most 20 characters each).

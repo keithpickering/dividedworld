@@ -19,6 +19,8 @@
  * here names a model id as a default, so the setting is the one place a tier's model is chosen.
  */
 import type { CallContext, ChatRequest, CompletionRequest, ModelResult, Models, Tier, Usage } from '../../../../engine/system/model.ts';
+import { AnswerRejected } from '../../../../engine/system/model.ts';
+export { AnswerRejected };
 import { cutCompletion, repair } from '../../../../engine/system/validate.ts';
 import type { Trim } from '../../../../engine/system/validate.ts';
 import { anthropicChat } from './anthropic.ts';
@@ -45,15 +47,6 @@ export interface ModelOptions {
 
 /** At most this many retries after the first attempt. */
 export const MAX_RETRIES = 3;
-
-/** An answer that could not be used: the provider refused, it was not JSON, or a bound could not be repaired. */
-export class AnswerRejected extends Error {
-  readonly predicate: string;
-  constructor(message: string, predicate: string) {
-    super(message);
-    this.predicate = predicate;
-  }
-}
 
 /** The ledger could not be written; the call it was for is not trusted. */
 export class LedgerWriteFailed extends Error {}
@@ -111,7 +104,7 @@ export function models(env: Env, record: RecordModelCall, options: ModelOptions)
           duty: request.duty, staff: request.staff ?? null, provider: call.provider, model: call.model, serviceTier: u.serviceTier ?? null,
           inputTokens: u.inputTokens ?? null, outputTokens: u.outputTokens ?? null, cacheReadTokens: u.cacheReadTokens ?? null,
           cacheWrite5mTokens: u.cacheWrite5mTokens ?? null, cacheWrite1hTokens: u.cacheWrite1hTokens ?? null, gpuSeconds: u.gpuSeconds ?? null,
-          costMicrodollars: call.costMicrodollars, outcome: call.outcome, predicate: call.predicate, trims: call.trims, retries: call.retries, meeting: request.meeting ?? null,
+          costMicrodollars: call.costMicrodollars, outcome: call.outcome, predicate: call.predicate, trims: call.trims, retries: call.retries, meeting: request.meeting ?? null, play: request.play ?? null,
         });
       } catch (e) {
         throw new LedgerWriteFailed(`the model call could not be recorded in the ledger: ${e instanceof Error ? e.message : String(e)}`, threw ? { cause: failure } : { cause: e });
@@ -160,7 +153,7 @@ export function models(env: Env, record: RecordModelCall, options: ModelOptions)
         call.model = raw.model;
         call.usage = raw.usage;
         priced(call, 'completions');
-        const cut = cutCompletion(raw.text, request.stop, request.maxChars ?? request.maxTokens * 6);
+        const cut = cutCompletion(raw.text, request.stop, request.maxChars ?? request.maxTokens * 6, request.lines);
         if (!cut.ok) throw new AnswerRejected('the completion is empty', cut.predicate);
         call.trims = cut.trims;
         return { value: cut.text, usage: raw.usage, provider: 'completions', model: raw.model, trims: cut.trims, retries: call.retries, costMicrodollars: call.costMicrodollars };

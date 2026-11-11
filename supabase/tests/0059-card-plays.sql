@@ -15,15 +15,15 @@ end $$;
 -- The test cards, each priced in the economy (card_kinds_priced, 0006).
 create function pg_temp.cards() returns void language plpgsql as $$
 begin
-  insert into card_kinds (key, name, alignment, rarity, play, trap, ward, lasts) values
-    ('snare', 'Snare', 'salty', 'uncommon', 'set', '{"trigger": {"on": "cast"}}', false, null),
-    ('catcher', 'Catcher', 'salty', 'rare', 'set', '{"trigger": {"on": "cast"}}', false, null),
-    ('bluffy', 'Bluffy', 'pepperoni', 'common', 'set', null, false, null),
-    ('grandie', 'Grandie', 'sweet', 'legendary', 'cast', null, false, null),
-    ('shield', 'Shield', 'sweet', 'uncommon', 'use', null, true, interval '7 days'),
-    ('hook', 'Hook', 'salty', 'uncommon', 'cast', null, false, null),
-    ('quoter', 'Quoter', 'salty', 'uncommon', 'cast', null, false, null),
-    ('lowtrap', 'Low Trap', 'salty', 'common', 'set', '{"trigger": {"on": "visit"}}', false, null)
+  insert into card_kinds (key, name, alignment, rarity, play, trap, gimmick, lasts) values
+    ('snare', 'Snare', 'salty', 'uncommon', 'set', '{"trigger": {"on": "cast"}}', null, null),
+    ('catcher', 'Catcher', 'salty', 'rare', 'set', '{"trigger": {"on": "cast"}}', null, null),
+    ('idle', 'Idle', 'pepperoni', 'common', 'set', '{"trigger": {"on": "visit"}}', null, null),
+    ('grandie', 'Grandie', 'sweet', 'legendary', 'cast', null, null, null),
+    ('shield', 'Shield', 'sweet', 'uncommon', 'use', null, '{"kind": "ward", "upTo": "uncommon"}', interval '7 days'),
+    ('hook', 'Hook', 'salty', 'uncommon', 'cast', null, null, null),
+    ('quoter', 'Quoter', 'salty', 'uncommon', 'cast', null, null, null),
+    ('lowtrap', 'Low Trap', 'salty', 'common', 'set', '{"trigger": {"on": "visit"}}', null, null)
   on conflict (key) do nothing;
 end $$;
 
@@ -85,25 +85,25 @@ begin
   perform tests.commit(format($sql$
     insert into auth.users (id, email) values (%1$L, 'race-pair-a@test.invalid'), (%2$L, 'race-pair-b@test.invalid'), (%3$L, 'race-pair-c@test.invalid');
     insert into accounts (id) values (%1$L), (%2$L), (%3$L);
-    insert into characters (id, owner, name, created_at, debuted_at) values (%4$L, %1$L, 'Pair Setter', now(), now()), (%5$L, %2$L, 'Pair Poster', now(), now()), (%6$L, %3$L, 'Pair Bluffer', now(), now());
+    insert into characters (id, owner, name, created_at, debuted_at) values (%4$L, %1$L, 'Pair Setter', now(), now()), (%5$L, %2$L, 'Pair Poster', now(), now()), (%6$L, %3$L, 'Pair Idler', now(), now());
     insert into class_history (character, class_key, started_at) values (%4$L, 'alpha', now()), (%5$L, 'alpha', now()), (%6$L, 'alpha', now());
     insert into card_kinds (key, name, alignment, rarity, play, trap) values
       ('paircatch', 'Pair Catcher', 'salty', 'rare', 'set', '{"trigger": {"on": "cast"}}'),
       ('pairhook', 'Pair Hook', 'salty', 'uncommon', 'cast', null),
-      ('pairbluff', 'Pair Bluff', 'pepperoni', 'common', 'set', null);
-    insert into card_ledger (account, card, kind, price) values (%1$L, 'paircatch', 'bought', 0), (%1$L, 'pairhook', 'bought', 0), (%2$L, 'sweetie', 'bought', 0), (%3$L, 'pairbluff', 'bought', 0);
+      ('pairidle', 'Pair Idle', 'pepperoni', 'common', 'set', '{"trigger": {"on": "visit"}}');
+    insert into card_ledger (account, card, kind, price) values (%1$L, 'paircatch', 'bought', 0), (%1$L, 'pairhook', 'bought', 0), (%2$L, 'sweetie', 'bought', 0), (%3$L, 'pairidle', 'bought', 0);
     insert into threads (id, board, title) select %7$L, b.id, 'Pair one' from boards b where b.slug = 'general';
     insert into threads (id, board, title) select %8$L, b.id, 'Pair two' from boards b where b.slug = 'general';
     insert into threads (id, board, title) select %12$L, b.id, 'Pair three' from boards b where b.slug = 'general';
     insert into acts (id, character, kind, thread, payload) values
       (%9$L, %4$L, 'post', %7$L, '{"body": "Trapped by a catcher."}'), (%10$L, %4$L, 'post', %8$L, '{"body": "Trapped by a hook."}'),
-      (%11$L, %6$L, 'post', %8$L, '{"body": "Bluffed."}');
+      (%11$L, %6$L, 'post', %8$L, '{"body": "Idled."}');
   $sql$, ann, bob, cat, a, b, c, t, t2, p, pa, pc, t3));
   perform tests.commit(format($sql$
     do $d$ begin
       perform set_card(%1$L, 'paircatch', %2$L, %3$L, '{"card": "sweetie"}', 0, 'sweetie');
       perform set_card(%1$L, 'pairhook', %2$L, %4$L, '{"color": "red"}', 0);
-      perform set_card(%5$L, 'pairbluff', %6$L, %7$L, '{}', 0);
+      perform set_card(%5$L, 'pairidle', %6$L, %7$L, '{}', 0);
     end $d$;
   $sql$, ann, a, p, pa, cat, c, pc));
   -- A writer holds a character's count row for a while after it counts an Act of that character's. (A trigger on the count table,
@@ -194,11 +194,11 @@ declare
   q uuid := tests.post(b, t, 'Not mine.');
   r uuid := tests.post(a, t, 'Also mine.');
   set_snare jsonb;
-  set_bluff jsonb;
+  set_idle jsonb;
   why text;
 begin
   perform pg_temp.cards();
-  perform pg_temp.hand(ann, 'snare', 'snare', 'bluffy');
+  perform pg_temp.hand(ann, 'snare', 'snare', 'idle');
   insert into wallets (account, balance) values (ann, 600);
   perform tests.become_service();
 
@@ -213,9 +213,9 @@ begin
 
   set_snare := set_card(ann, 'snare', a, p, '{"card": "sweetie"}', 0, 'sweetie');
   -- A second Set on the post is refused in plain words, whichever card it is.
-  why := pg_temp.refusal(format('select set_card(%L, %L, %L, %L, %L, 0)', ann, 'bluffy', a, p, '{}'));
+  why := pg_temp.refusal(format('select set_card(%L, %L, %L, %L, %L, 0)', ann, 'idle', a, p, '{}'));
   if why is distinct from 'this post already holds a card face down' then raise exception 'a second Set: %', why; end if;
-  set_bluff := set_card(ann, 'bluffy', a, r, '{}', 0);
+  set_idle := set_card(ann, 'idle', a, r, '{}', 0);
   -- No card left: the second snare was never spent, so one remains; spend it, then a Set with none in hand is refused.
   perform set_card(ann, 'snare', a, (select tests.post(a, t, 'Third.')), '{"card": "sweetie"}', 0, 'sweetie');
   why := pg_temp.refusal(format('select set_card(%L, %L, %L, %L, %L, 0)', ann, 'snare', a, (select tests.post(a, t, 'Fourth.')), '{}'));
@@ -229,8 +229,8 @@ begin
      or (card_target(p) -> 'effects' -> 0 ->> 'ends')::timestamptz <= now() + interval '6 days' then
     raise exception 'card_target shows a live back with its end and no card: %', card_target(p);
   end if;
-  -- A Bluff's set Act and a Snare's are the same bytes but for their ids and times.
-  if pg_temp.shape(set_snare) is distinct from pg_temp.shape(set_bluff) then raise exception 'a Bluff''s set and a trap''s differ: % / %', set_snare, set_bluff; end if;
+  -- An Idle's set Act and a Snare's are the same bytes but for their ids and times.
+  if pg_temp.shape(set_snare) is distinct from pg_temp.shape(set_idle) then raise exception 'an Idle''s set and a trap''s differ: % / %', set_snare, set_idle; end if;
   -- It takes no place in the thread and is no post in its author's counts.
   if set_snare -> 'seq' is distinct from 'null'::jsonb then raise exception 'a set took a place in its thread: %', set_snare; end if;
   if (select posts + spins + cards from character_post_counts where character = a) is distinct from 4 then raise exception 'a set counted as a post'; end if;
@@ -286,7 +286,7 @@ begin
   if (used -> 'payload' ->> 'ends')::timestamptz not between now() + interval '7 days' - interval '1 minute' and now() + interval '7 days' then
     raise exception 'a Use carries its end, written when it lands: %', used;
   end if;
-  if card_target(p) -> 'effects' -> 0 ->> 'ward' is distinct from 'uncommon' then raise exception 'card_target shows the ward and its rarity: %', card_target(p); end if;
+  if card_target(p) -> 'effects' -> 0 -> 'gimmick' is distinct from '{"kind": "ward", "upTo": "uncommon"}'::jsonb then raise exception 'card_target shows the gimmick: %', card_target(p); end if;
   -- A cast at or below the ward's rarity is turned away, in the same words for anyone; a rarer one lands.
   why := pg_temp.refusal(format('select play_card(%L, %L, %L, %L, %L, 0, %L)', bob, 'sweetie', b, p, '{}', ''));
   if why is distinct from 'this post''s Shield turns away cards up to uncommon' then raise exception 'a common cast under an uncommon ward: %', why; end if;
@@ -300,7 +300,7 @@ begin
   perform play_card(bob, 'sweetie', b, o, '{}', 0, '');
   -- And its post can be warded again: an ended Use holds no place in the stack.
   used := play_card(ann, 'shield', a, o, '{}', 0, '');
-  if card_target(o) -> 'effects' @> jsonb_build_array(jsonb_build_object('act', used ->> 'id', 'ward', 'uncommon')) is not true then raise exception 'a post warded again after its ward ended: %', card_target(o); end if;
+  if card_target(o) -> 'effects' @> jsonb_build_array(jsonb_build_object('act', used ->> 'id', 'gimmick', '{"kind": "ward", "upTo": "uncommon"}'::jsonb)) is not true then raise exception 'a post warded again after its ward ended: %', card_target(o); end if;
   perform tests.unbecome();
 end $$;
 
@@ -370,7 +370,7 @@ begin
   perform tests.unbecome();
 end $$;
 
--- ---- A card the trap did not name, a Bluff, a Move, and an ended trap: the cast lands, and the reads are alike ----
+-- ---- A card the trap did not name, an Idle (a visit trap, which no cast springs), a Move, and an ended trap: the cast lands, and the reads are alike ----
 do $$
 declare
   ann uuid := tests.account('pass-ann');
@@ -379,21 +379,21 @@ declare
   b uuid := tests.character(bob, 'Big Caster');
   t uuid := tests.thread();
   p_low uuid := tests.post(a, t, 'A trap naming another card.');
-  p_bluff uuid := tests.post(a, t, 'A bluff.');
+  p_idle uuid := tests.post(a, t, 'An idle.');
   p_hook uuid := tests.post(a, t, 'A Move under this.');
   p_old uuid := tests.post(a, t, 'An ended trap.');
   played jsonb;
   set_old uuid;
-  reads_bluff jsonb;
+  reads_idle jsonb;
   reads_hook jsonb;
   before jsonb;
 begin
   perform pg_temp.cards();
-  perform pg_temp.hand(ann, 'snare', 'bluffy', 'hook');
+  perform pg_temp.hand(ann, 'snare', 'idle', 'hook');
   perform pg_temp.hand(bob, 'grandie', 'sweetie', 'sweetie', 'sweetie');
   perform tests.become_service();
   perform set_card(ann, 'snare', a, p_low, '{"card": "blot"}', 0, 'blot');
-  perform set_card(ann, 'bluffy', a, p_bluff, '{}', 0);
+  perform set_card(ann, 'idle', a, p_idle, '{}', 0);
   perform set_card(ann, 'hook', a, p_hook, '{}', 0);
   perform tests.unbecome();
   -- A trap set eight days ago, ended a day since: written as set_card would have written it then.
@@ -404,21 +404,21 @@ begin
   played := play_card(bob, 'grandie', b, p_low, '{}', 0, '');
   if played ? 'sprung' or played -> 'payload' ? 'caught' then raise exception 'a card the trap did not name was caught: %', played; end if;
   if (card_target(p_low) -> 'effects' -> 0 ->> 'ends')::timestamptz <= now() then raise exception 'the passed-over trap is no longer set'; end if;
-  -- A Bluff, a Move and an ended trap leave a cast untouched.
-  foreach before in array array[to_jsonb(p_bluff), to_jsonb(p_hook), to_jsonb(p_old)] loop
+  -- An Idle (a visit trap, which no cast springs), a Move and an ended trap leave a cast untouched.
+  foreach before in array array[to_jsonb(p_idle), to_jsonb(p_hook), to_jsonb(p_old)] loop
     played := play_card(bob, 'sweetie', b, (before #>> '{}')::uuid, '{}', 0, '');
     if played ? 'sprung' or played -> 'payload' ? 'caught' then raise exception 'a cast was caught by no trap that names it: %', played; end if;
   end loop;
-  if exists (select 1 from acts where kind = 'spring' and target_act_id in (p_low, p_bluff, p_hook, p_old)) then raise exception 'something sprang'; end if;
+  if exists (select 1 from acts where kind = 'spring' and target_act_id in (p_low, p_idle, p_hook, p_old)) then raise exception 'something sprang'; end if;
   perform tests.unbecome();
-  -- The same reads for a Bluff as for a Move: each table read the same number of times, the same way.
+  -- The same reads for an Idle as for a Move: each table read the same number of times, the same way.
   before := (select jsonb_object_agg(relname, jsonb_build_array(seq_scan, idx_scan)) from pg_stat_xact_user_tables where relname in ('face_down', 'card_kinds', 'acts'));
-  perform spring_traps('cast', p_bluff, gen_random_uuid(), 'sweetie');
-  reads_bluff := (select jsonb_object_agg(relname, jsonb_build_array(seq_scan - (before -> relname ->> 0)::bigint, idx_scan - (before -> relname ->> 1)::bigint)) from pg_stat_xact_user_tables where relname in ('face_down', 'card_kinds', 'acts'));
+  perform spring_traps('cast', p_idle, gen_random_uuid(), 'sweetie');
+  reads_idle := (select jsonb_object_agg(relname, jsonb_build_array(seq_scan - (before -> relname ->> 0)::bigint, idx_scan - (before -> relname ->> 1)::bigint)) from pg_stat_xact_user_tables where relname in ('face_down', 'card_kinds', 'acts'));
   before := (select jsonb_object_agg(relname, jsonb_build_array(seq_scan, idx_scan)) from pg_stat_xact_user_tables where relname in ('face_down', 'card_kinds', 'acts'));
   perform spring_traps('cast', p_hook, gen_random_uuid(), 'sweetie');
   reads_hook := (select jsonb_object_agg(relname, jsonb_build_array(seq_scan - (before -> relname ->> 0)::bigint, idx_scan - (before -> relname ->> 1)::bigint)) from pg_stat_xact_user_tables where relname in ('face_down', 'card_kinds', 'acts'));
-  if reads_bluff is distinct from reads_hook then raise exception 'a Bluff and a Move read differently: % / %', reads_bluff, reads_hook; end if;
+  if reads_idle is distinct from reads_hook then raise exception 'an Idle and a Move read differently: % / %', reads_idle, reads_hook; end if;
 end $$;
 
 -- ---- Each trigger springs its back once, and only once, and never refuses the write ----
@@ -439,18 +439,18 @@ declare
   reply jsonb;
 begin
   perform pg_temp.cards();
-  perform pg_temp.hand(ann, 'catcher', 'quoter', 'hook', 'bluffy');
+  perform pg_temp.hand(ann, 'catcher', 'quoter', 'hook', 'idle');
   perform pg_temp.hand(bob, 'sweetie', 'sweetie');
   perform tests.become_service();
   perform set_card(ann, 'catcher', a, p_cast, '{"card": "sweetie"}', 0, 'sweetie');
-  perform set_card(ann, 'bluffy', a, p_react, '{}', 0);
+  perform set_card(ann, 'idle', a, p_react, '{}', 0);
   perform set_card(ann, 'quoter', a, p_quote, '{}', 0);
   perform set_card(ann, 'hook', a, p_reply, '{"color": "green"}', 0);
   -- cast
   answer := play_card(bob, 'sweetie', b, p_cast, '{}', 0, '');
   if answer -> 'sprung' -> 'payload' ->> 'trigger' is distinct from 'cast' then raise exception 'a cast trap on a cast: %', answer; end if;
   perform tests.unbecome();
-  -- reaction: none of them springs anything, a Bluff's or a Move's.
+  -- reaction: none of them springs anything, an Idle's or a Move's.
   perform tests.become(bob);
   answer := react(p_react, b, 'up');
   if answer ? 'sprung' then raise exception 'a reaction sprang a back: %', answer; end if;
@@ -487,7 +487,7 @@ begin
   if answer ? 'sprung' then raise exception 'a Move sprang twice'; end if;
   perform tests.unbecome();
   if (select count(*) from acts where kind = 'spring' and target_act_id in (p_cast, p_react, p_quote, p_reply)) is distinct from 3::bigint then
-    raise exception 'each trigger sprang its back once, and a Bluff never: %', (select count(*) from acts where kind = 'spring' and target_act_id in (p_cast, p_react, p_quote, p_reply));
+    raise exception 'each trigger sprang its back once, and an Idle never: %', (select count(*) from acts where kind = 'spring' and target_act_id in (p_cast, p_react, p_quote, p_reply));
   end if;
   -- A spring is no post: it takes no place and counts nowhere.
   if exists (select 1 from acts where kind = 'spring' and seq is not null) then raise exception 'a spring took a place in its thread'; end if;
@@ -521,12 +521,12 @@ do $$
 declare why text;
 begin
   why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "trap": {"trigger": {"on": "cast"}}, "rarity": "common"}]}')$s$);
-  if why is distinct from 'card "seedling" has a trap, and only a Gimmick does' then raise exception 'a trap on a Cast seeded: %', why; end if;
+  if why is distinct from 'card "seedling" has a trap, and only a set card has one' then raise exception 'a trap on a Cast seeded: %', why; end if;
   why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet"}]}')$s$);
   if why is distinct from 'card "seedling" has no rarity; a rarity is common, uncommon, rare or legendary' then raise exception 'a card with no rarity seeded: %', why; end if;
-  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "rarity": "common", "play": "use", "ward": true, "lasts": {"unit": "day", "count": 7}}]}')$s$);
+  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "rarity": "common", "play": "use", "gimmick": {"kind": "ward", "upTo": "common"}, "lasts": {"unit": "day", "count": 7}}]}')$s$);
   if why is not null then raise exception 'a ward was refused: %', why; end if;
-  if (select lasts from card_kinds where key = 'seedling') is distinct from interval '7 days' or not (select ward from card_kinds where key = 'seedling') then raise exception 'the seed wrote the ward and its time up'; end if;
+  if (select lasts from card_kinds where key = 'seedling') is distinct from interval '7 days' or (select gimmick from card_kinds where key = 'seedling') is distinct from '{"kind": "ward", "upTo": "common"}'::jsonb then raise exception 'the seed wrote the gimmick and its time up'; end if;
   why := pg_temp.refusal($s$insert into settings (key, value) values ('setLasts', '{"unit": "minute", "count": 5}') on conflict (key) do update set value = excluded.value$s$);
   if why is distinct from 'setLasts is a span: a unit of day, week or month and a whole count from 1 to 1000' then raise exception 'a setLasts in minutes: %', why; end if;
 end $$;
@@ -606,16 +606,19 @@ end $$;
 do $$
 declare why text;
 begin
-  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "rarity": "common", "play": "use", "ward": true}]}')$s$);
-  if why is distinct from 'card "seedling" is a ward with no time up (lasts); a ward ends at its time' then raise exception 'a ward with no time up seeded: %', why; end if;
+  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "rarity": "common", "play": "use", "gimmick": {"kind": "ward", "upTo": "common"}}]}')$s$);
+  if why is distinct from 'card "seedling" is a use card with no time up (lasts); a use card ends at its time' then raise exception 'a ward with no time up seeded: %', why; end if;
   why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "rarity": "common", "play": "set", "trap": {"trigger": {"on": "sneeze"}}}]}')$s$);
-  if why is distinct from 'card "seedling" springs on "sneeze"; a Gimmick springs on cast or visit' then raise exception 'a trap on no trigger seeded: %', why; end if;
+  if why is distinct from 'card "seedling" springs on "sneeze"; a set card springs on cast or visit' then raise exception 'a trap on no trigger seeded: %', why; end if;
   -- A Move's trigger is the engine's, never a card's: a trap on a reply, a reaction or a quote is refused as any trigger but a cast or a visit is.
   why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "rarity": "common", "play": "set", "trap": {"trigger": {"on": "reply"}}}]}')$s$);
-  if why is distinct from 'card "seedling" springs on "reply"; a Gimmick springs on cast or visit' then raise exception 'a trap on a reply seeded: %', why; end if;
-  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "rarity": "common", "play": "use", "ward": true, "lasts": {"unit": "day", "count": "seven"}}]}')$s$);
-  if why is distinct from 'card "seedling" lasts {"unit": "day", "count": "seven"}; it must be a span: a unit of day, week or month and a whole count from 1 to 1000' then raise exception 'a time up of no number seeded: %', why; end if;
+  if why is distinct from 'card "seedling" springs on "reply"; a set card springs on cast or visit' then raise exception 'a trap on a reply seeded: %', why; end if;
+  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "rarity": "common", "play": "use", "gimmick": {"kind": "ward", "upTo": "common"}, "lasts": {"unit": "day", "count": "seven"}}]}')$s$);
+  if why is distinct from 'card "seedling" lasts {"unit": "day", "count": "seven"}; it must be a span: a unit of hour, day, week or month and a whole count from 1 to 1000' then raise exception 'a time up of no number seeded: %', why; end if;
   -- An invite's lifetime is still a span of days or more (0020), beside setLasts.
   why := pg_temp.refusal($s$insert into settings (key, value) values ('inviteLifetime', '{"unit": "minute", "count": 5}') on conflict (key) do update set value = excluded.value$s$);
   if why is distinct from 'inviteLifetime is a span: a unit of day, week or month and a whole count from 1 to 1000' then raise exception 'an invite lifetime in minutes: %', why; end if;
+  -- A card's time up may count hours (a Gimmick for 36 hours), and the catalog accepts and reads it.
+  if span_interval('{"unit": "hour", "count": 36}') is distinct from interval '36 hours' then raise exception 'span_interval does not read hours: %', span_interval('{"unit": "hour", "count": 36}'); end if;
+  if card_kinds_problem('[{"key": "tourist", "name": "Tourist", "alignment": "sweet", "rarity": "uncommon", "play": "use", "reaches": ["character"], "lasts": {"unit": "hour", "count": 36}, "gimmick": {"kind": "earn", "by": 0.1}}]'::jsonb) is not null then raise exception 'a use card lasting hours was refused: %', card_kinds_problem('[{"key": "tourist", "name": "Tourist", "alignment": "sweet", "rarity": "uncommon", "play": "use", "reaches": ["character"], "lasts": {"unit": "hour", "count": 36}, "gimmick": {"kind": "earn", "by": 0.1}}]'::jsonb); end if;
 end $$;

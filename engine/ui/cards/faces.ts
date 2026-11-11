@@ -11,7 +11,7 @@
  * much more a long post can cost. A card whose rules refuse the probe is shown at its price alone.
  */
 import type { Slot } from '../data/api.ts';
-import { playOf, type CardRules, type Play, type Rarity } from '../../rules/cards.ts';
+import { playOf, withheld, type CardRules, type Play, type Rarity } from '../../rules/cards.ts';
 import type { Alignment, Settings } from '../../rules/types.ts';
 import type { CardArt, CardUi } from './types.ts';
 
@@ -41,7 +41,7 @@ export interface CardFace {
   readonly rarity: Rarity;
   /** How it is played, as the rules name it (`set`); the face says `kind`. */
   readonly play: Play;
-  /** How it is played as every screen says it, in the instance's words ("Gimmick"): `playWord` of the play. */
+  /** How it is played as every screen says it, in the instance's words ("Reversal"): `playWord` of the play. */
   readonly kind: string;
   /** A card the instance no longer has: its face is plain, claiming no alignment, rarity or way to play (its `alignment`, `tag`, `rarity` and `play` are placeholders, never drawn or said). */
   readonly unknown?: true;
@@ -54,7 +54,7 @@ export const gemOf = (rarity: Rarity): string => GEMS[rarity] ?? GEMS.common;
 export const rarityName = (rarity: Rarity): string => rarity.charAt(0).toUpperCase() + rarity.slice(1);
 /** The instance's words for how a card is played (`UiCopy.cardKinds`): what its kind tag says for each play. */
 export type CardKinds = Readonly<Record<'cast' | 'set' | 'use', string>>;
-/** A play's word on a card's face: the instance's kind word where it gave one ("Move", "Gimmick", "Ward"), else the play capitalized ("Cast", "Set", "Use", "Keep"). */
+/** A play's word on a card's face: the instance's kind word where it gave one ("Move", "Reversal", "Gimmick"), else the play capitalized ("Cast", "Set", "Use", "Keep"). */
 export const playWord = (play: Play, kinds?: CardKinds): string => {
   const said = (kinds as Partial<Record<string, string>> | undefined)?.[play];
   return said ?? play.charAt(0).toUpperCase() + play.slice(1);
@@ -140,5 +140,5 @@ export function withCardEconomy(settings: Settings, cardEconomy: Readonly<Record
 
 /** Every card the instance sells, in the order its rules list them. */
 export function facesOf(cards: readonly CardRules[], uis: readonly CardUi[], settings: Settings, kinds?: CardKinds): readonly CardFace[] {
-  return cards.map((rules) => faceOf(rules, uis.find((u) => u.key === rules.key), settings, kinds));
+  return cards.filter((rules) => !withheld(rules, settings)).map((rules) => faceOf(rules, uis.find((u) => u.key === rules.key), settings, kinds));
 }

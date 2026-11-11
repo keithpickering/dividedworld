@@ -45,6 +45,52 @@ button.kb-postcard {
 }
 
 /*
+ * How a card is played, in its frame (the card types' design, section 9). A Cast is the solid ring above. A Set has a second ring
+ * outside the first and a folded corner at the bottom left; a Use has a dashed ring in place of the solid one. The lines are drawn as a ring
+ * on the pseudo-element, which the armed ring's ::after does not use. A Set's ring is a shadow, a Use's a dashed border: at least 1.5px
+ * at every size, and a shadow keeps its 1.5px at a pixel ratio of 1, where a border of that width is floored to 1px.
+ */
+.kb-postcard[data-kb-play='set']::before,
+.kb-postcard[data-kb-play='use']::before {
+  content: '';
+  position: absolute;
+  inset: -5px;
+  border-radius: calc(var(--kb-pc-radius) + 5px);
+  pointer-events: none;
+}
+
+.kb-postcard[data-kb-play='set']::before {
+  box-shadow: 0 0 0 1.5px var(--kb-card-color);
+}
+
+.kb-postcard[data-kb-play='use'] {
+  box-shadow: 0 0 14px color-mix(in srgb, var(--kb-card-color) 50%, transparent);
+}
+
+.kb-postcard[data-kb-play='use']::before {
+  inset: -3px;
+  border: 2px dashed var(--kb-card-color);
+  border-radius: calc(var(--kb-pc-radius) + 3px);
+}
+
+.kb-postcard[data-kb-play='use'][data-size='sheet']::before {
+  border-width: 3px;
+}
+
+.kb-postcard-fold {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 9cqw;
+  aspect-ratio: 1;
+  border-bottom-left-radius: var(--kb-pc-radius);
+  z-index: 1;
+  background: var(--kb-card-color);
+  clip-path: polygon(0 0, 100% 100%, 0 100%);
+  pointer-events: none;
+}
+
+/*
  * The canvas, inset by the border: the only clip. Under the art, the card's ground and a soft glow in its color, so art with a
  * transparent ground shows both; over it, a 1px inner hairline in the card's color at 50%.
  */
@@ -175,10 +221,22 @@ button.kb-postcard {
 }
 
 .kb-postcard[data-size='slot'] .kb-postcard-plate { top: auto; bottom: 7cqw; width: calc(100% - 9cqw); height: 20cqw; }
-/* instances/divided-world/ui/index.test.tsx reads this rule to hold the longest name legible at the slot. */
+/* instances/divided-world/ui/index.test.tsx reads these name rules and plate heights to hold every name's type at 10px or more at the slot and the phone. */
 .kb-postcard[data-size='slot'] .kb-postcard-name { font-size: max(7px, min(15cqw, calc(165cqw / var(--kb-name-chars, 8)))); }
 .kb-postcard[data-size='phone'] .kb-postcard-plate { top: auto; bottom: 8cqw; width: calc(100% - 9cqw); height: 18cqw; }
 .kb-postcard[data-size='phone'] .kb-postcard-name { font-size: max(7px, min(13.5cqw, calc(165cqw / var(--kb-name-chars, 8)))); }
+
+/*
+ * A long name with a space breaks onto two lines at the slot and the phone (nameLines.ts, Postcard.tsx: data-lines='2', each line its own
+ * block, --kb-name-chars the longer line's length). The plate is anchored at the card's foot, so it grows upward over the art, and only for
+ * these names: its content box (the height less the 0.8cqw top padding) holds two lines of the name's 0.95 line height at the type's cap,
+ * 26cqw: 25.2 >= 2 * 0.95 * 13 = 24.7; 22cqw: 21.2 >= 2 * 0.95 * 11 = 20.9. 13cqw is 11.2px on the slot and 11cqw is 11.4px on the phone.
+ */
+.kb-postcard[data-size='slot'][data-lines='2'] .kb-postcard-plate { height: 26cqw; }
+.kb-postcard[data-size='slot'][data-lines='2'] .kb-postcard-name { font-size: max(7px, min(13cqw, calc(165cqw / var(--kb-name-chars, 8)))); }
+.kb-postcard[data-size='phone'][data-lines='2'] .kb-postcard-plate { height: 22cqw; }
+.kb-postcard[data-size='phone'][data-lines='2'] .kb-postcard-name { font-size: max(7px, min(11cqw, calc(165cqw / var(--kb-name-chars, 8)))); }
+.kb-postcard-name-line { display: block; white-space: nowrap; }
 
 /* The text plate, chamfered at two corners by the glass's cut. */
 .kb-postcard-line {
@@ -359,6 +417,10 @@ button.kb-postcard {
   .kb-postcard,
   .kb-postcard-back { outline: 1px solid CanvasText; }
   .kb-postcard-gem { outline: 1px solid CanvasText; }
+  /* How a card is played is a border, which forced colors keep, in the system's text color. */
+  .kb-postcard[data-kb-play='set']::before { box-shadow: none; border: 2px solid CanvasText; }
+  .kb-postcard[data-kb-play='use']::before { border-color: CanvasText; }
+  .kb-postcard-fold { background: CanvasText; }
   .kb-postcard[data-armed]::after {
     content: '';
     position: absolute;

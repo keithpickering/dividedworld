@@ -25,6 +25,8 @@ export interface ChatMessage {
 export interface CallContext {
   readonly staff?: string;
   readonly meeting?: number;
+  /** The card play a call was made for (a card that writes, `CardRules.writes`), for its ledger row; not a staff member or a meeting. */
+  readonly play?: string;
 }
 
 export interface ChatRequest extends CallContext {
@@ -40,7 +42,8 @@ export interface ChatRequest extends CallContext {
 }
 
 export interface CompletionRequest extends CallContext {
-  readonly duty: Duty;
+  /** A staff duty, or `cardText`: the text a card that writes generates, which is no staff member's work (`DUTIES` stays staff work only). */
+  readonly duty: Duty | 'cardText';
   readonly prompt: string;
   readonly temperature: number;
   readonly topP: number;
@@ -48,6 +51,8 @@ export interface CompletionRequest extends CallContext {
   readonly maxTokens: number;
   /** The most characters kept; a completion's length is capped after the fact (cutCompletion). Six a token when unset. */
   readonly maxChars?: number;
+  /** `'many'` keeps the answer's newlines (a text continued over several lines); `'one'`, cut at the first, when unset. */
+  readonly lines?: 'one' | 'many';
 }
 
 /** What a provider reported, each field as it reported it; a field it did not report is absent. */
@@ -80,4 +85,13 @@ export interface Models {
   /** The answer is parsed JSON; a caller repairs it against its own rules (validate.ts). */
   chat(request: ChatRequest): Promise<ModelResult<unknown>>;
   complete(request: CompletionRequest): Promise<ModelResult<string>>;
+}
+
+/** An answer that could not be used: the provider refused, it was not JSON, or a bound could not be repaired. */
+export class AnswerRejected extends Error {
+  readonly predicate: string;
+  constructor(message: string, predicate: string) {
+    super(message);
+    this.predicate = predicate;
+  }
 }

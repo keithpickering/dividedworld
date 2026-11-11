@@ -125,7 +125,7 @@ async function judge(db: Db, getModels: () => Promise<Models>, instance: Instanc
   };
   const frame = reportPrompt({
     ...(groups ? { conferred: groups.conferred } : {}),
-    persona: mod.persona, pronouns: mod.pronouns, order: standing.order, career: mod.career, memory: mod.memory, notes: mod.notes, rules, allowance: standing.allowance, beat: standing.beat,
+    persona: mod.persona, office: 'mod', offices: tuned.system.offices, pronouns: mod.pronouns, order: standing.order, career: mod.career, memory: mod.memory, notes: mod.notes, rules, allowance: standing.allowance, beat: standing.beat,
     ruleDaysMost: settings.modBots.ruleDaysMost, expiryLeastHours: settings.moveExpiryLeastHours, names: (id) => mod.names[id] ?? 'a character',
     board: opened.board, thread: threadFor(read, fallback), post,
     reporter: { name: opened.reporter.name, pronouns: await pronounsOfCharacter(db, opened.reporter.id, fallback) }, reason: opened.reason,

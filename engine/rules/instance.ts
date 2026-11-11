@@ -2,17 +2,17 @@
  * What makes an instance whole: the checks the engine runs on what an instance hands it,
  * before it is trusted to settle anything. Each returns problems as sentences; [] is whole.
  */
-import { QUADRANTS } from './types.ts';
+import { ALIGNMENTS, QUADRANTS } from './types.ts';
 import { groupsProblems } from './groups.ts';
 import { ALERT_KINDS } from './alerts.ts';
 import type { DeveloperPersona, EconomyRead, Instance, Settings, QuizQuestion, Span, SystemContent } from './types.ts';
 import { DIGEST_MOST } from '../system/digest.ts';
 import { DUTIES } from '../system/duties.ts';
 import { PHASES, PHASE_CAPS, PHASE_KEYS } from '../system/phases.ts';
-import { TRIGGERS as POOL_TRIGGERS } from '../system/pool.ts';
+import { POSTING_OFFICES, TRIGGERS as POOL_TRIGGERS } from '../system/pool.ts';
 import { PRONOUN_FORMS, STAFF_TOKENS, STOCK_LINE_KEYS, STOCK_LINE_TOKENS } from '../system/stock.ts';
 import { pronounProblems } from './pronouns.ts';
-import { BEYOND_POST, INT4_MAX, PLAYS, RARITIES, REACHES, TRIGGERS, atOrBelow, spanMs } from './cards.ts';
+import { BEYOND_POST, GIMMICK_KINDS, INT4_MAX, PLAYS, RARITIES, REACHES, TRIGGERS, atOrBelow, spanMs } from './cards.ts';
 import type { CardRules } from './cards.ts';
 import type { Pull, SlotSeed } from './packs.ts';
 
@@ -23,6 +23,8 @@ import type { Pull, SlotSeed } from './packs.ts';
 export const BRIBE_BOUNDS = { least: 25, most: 500 } as const;
 
 const SPAN_UNITS: readonly Span['unit'][] = ['day', 'week', 'month'];
+/** A card's time up may count hours: a use card for a day and a half. No setting does. */
+const LASTS_UNITS: readonly Span['unit'][] = ['hour', ...SPAN_UNITS];
 /** A grace may be minutes long (editGrace), and so may presence's window; nothing else is. */
 const GRACE_UNITS: readonly Span['unit'][] = ['minute', ...SPAN_UNITS];
 /** The most of a unit a span counts, as settings_spans_hold (0007) holds it: past any instance's life, inside span_interval's integer. */
@@ -245,6 +247,8 @@ const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | nul
   economy: namedNumbers,
   cardSettings: namedNumbers,
   systemEnabled: (v) => (typeof v === 'boolean' ? null : 'true or false'),
+  oldVoice: (v) => (typeof v === 'boolean' ? null : 'true or false'),
+  cardWriteSettleSeconds: whole(0, 'seconds', 600),
   pronouns: (v) => { const p = pronounProblems(v); return p.length ? p.join('; ') : null; },
   meetingCron: (v) => (isCron(v) ? null : 'a five-field cron expression, each field inside its range'),
   phases: phasesRule,
@@ -374,7 +378,7 @@ export function instanceProblems(instance: Instance): string[] {
   for (const k of duplicates(instance.cards, (c) => c.key)) out.push(`card key "${k}" is used twice`);
   for (const c of instance.cards) {
     if (c.stack !== undefined && !isWhole(c.stack, 1)) out.push(`card "${c.key}" stacks ${JSON.stringify(c.stack)}; a stack is a whole number, at least 1`);
-    out.push(...playProblems(c), ...reachProblems(c, instance.settings));
+    out.push(...playProblems(c, new Set(instance.reactions.map((r) => r.key))), ...reachProblems(c, instance.settings));
   }
   if (!instance.boards.length) out.push('the instance has no board');
   for (const s of duplicates(instance.boards, (b) => b.slug)) out.push(`board slug "${s}" is used twice`);
@@ -406,11 +410,12 @@ export function instanceProblems(instance: Instance): string[] {
   const economy = instance.settings?.economy;
   if (economy && typeof economy === 'object' && !Array.isArray(economy)) {
     const check = (who: string, read: EconomyRead) => {
-      const { key, whole = false, min = undefined } = typeof read === 'string' ? { key: read } : read;
+      const { key, whole = false, min = undefined, max = undefined } = typeof read === 'string' ? { key: read } : read;
       const n = economy[key];
       if (typeof n !== 'number' || !Number.isFinite(n)) return `${who} reads economy "${key}", which the settings do not hold`;
       if (whole && !Number.isSafeInteger(n)) return `${who} reads economy "${key}" as ${n}; it must be a whole number`;
       if (min !== undefined && n < min) return `${who} reads economy "${key}" as ${n}; it must be at least ${min}`;
+      if (max !== undefined && n > max) return `${who} reads economy "${key}" as ${n}; it must be at most ${max}`;
       return null;
     };
     for (const c of instance.classes) for (const r of c.reads ?? []) { const why = check(`class "${c.key}"`, r); if (why) out.push(why); }
@@ -438,10 +443,10 @@ export function instanceProblems(instance: Instance): string[] {
 }
 
 /**
- * A card's rarity, play, trap and ward, each refused naming the card (the card mechanic's design,
- * sections 1 to 5). seed_instance (supabase/migrations/0054_card_plays.sql) holds the same pairings.
+ * A card's rarity, play, trap and gimmick, each refused naming the card (the card types design, sections 4 and 5). Only a set card has a
+ * trap, only a use card has a gimmick, and each says its way out. seed_instance holds the same pairings.
  */
-function playProblems(c: CardRules): string[] {
+function playProblems(c: CardRules, reactionKeys: ReadonlySet<string> = new Set()): string[] {
   const out: string[] = [];
   const who = `card "${c.key}"`;
   if (c.rarity === undefined) out.push(`${who} has no rarity; a rarity is ${RARITIES.slice(0, -1).join(', ')} or ${RARITIES.at(-1)}`);
@@ -449,20 +454,77 @@ function playProblems(c: CardRules): string[] {
   const play = c.play ?? 'cast';
   if (!PLAYS.includes(play)) out.push(`${who} is played ${JSON.stringify(play)}; a card is cast, used, set or kept`);
   if (play === 'keep') out.push(`${who} is kept, and Keep is not built until it is designed`);
-  if (c.trap !== undefined && play !== 'set') out.push(`${who} has a trap, and only a Gimmick does`);
-  if (c.ward !== undefined && play !== 'use') out.push(`${who} is a ward, and only a Use card is`);
-  if (c.ward !== undefined && c.ward !== true) out.push(`${who} is a ward of ${JSON.stringify(c.ward)}; a ward is true or left out`);
-  if (c.ward === true && play === 'use' && c.lasts === undefined) out.push(`${who} is a ward with no time up (lasts); a ward ends at its time`);
+  if (c.trap !== undefined && play !== 'set') out.push(`${who} has a trap, and only a set card has one`);
+  if (play === 'set' && c.trap === undefined) out.push(`${who} is a set card with no trap`);
+  if (c.gimmick !== undefined && play !== 'use') out.push(`${who} has a gimmick, and only a use card has one`);
+  if (play === 'use') {
+    if (c.gimmick === undefined) out.push(`${who} is a use card with no gimmick`);
+    else out.push(...gimmickProblems(c.gimmick, who, reactionKeys));
+    if (c.lasts === undefined) out.push(`${who} is a use card with no time up (lasts); a use card ends at its time`);
+    const outside = Array.isArray(c.reaches) ? c.reaches.filter((r) => r !== 'post' && r !== 'character' && r !== 'thread') : [];
+    if (outside.length) out.push(`${who} is a use card and reaches ${outside.map((r) => (r === 'board' ? 'a board' : JSON.stringify(r))).join(' and ')}; a use card reaches a post, a character or a thread`);
+  }
   const beyond = Array.isArray(c.reaches) && c.reaches.some((r) => r !== 'post');
-  if (c.lasts !== undefined && play !== 'use' && !beyond) out.push(`${who} has a time up (lasts), and only a Use card or a card reaching beyond a post does`);
-  if (c.lasts !== undefined && !isSpan(c.lasts)) out.push(`${who} lasts ${JSON.stringify(c.lasts)}; it must be a span: a unit of day, week or month and a whole count from 1 to 1000`);
+  if (c.lasts !== undefined && play !== 'use' && !beyond) out.push(`${who} has a time up (lasts), and only a use card or a card reaching beyond a post does`);
+  if (c.lasts !== undefined && !isSpan(c.lasts, LASTS_UNITS)) out.push(`${who} lasts ${JSON.stringify(c.lasts)}; it must be a span: a unit of hour, day, week or month and a whole count from 1 to 1000`);
   const on = (c.trap?.trigger as { on?: unknown } | undefined)?.on;
-  if (c.trap !== undefined && !TRIGGERS.includes(on as never)) out.push(`${who} springs on ${on === undefined || on === null ? 'nothing' : JSON.stringify(on)}; a Gimmick springs on ${TRIGGERS.join(' or ')}`);
-  if (c.trap !== undefined && c.catches === undefined && on === 'cast') out.push(`${who} springs on a cast and names no card to catch (catches)`);
+  if (c.trap !== undefined && !TRIGGERS.includes(on as never)) out.push(`${who} springs on ${on === undefined || on === null ? 'nothing' : JSON.stringify(on)}; a set card springs on ${TRIGGERS.join(' or ')}`);
+  const match = c.trap?.match;
+  if (c.trap !== undefined && c.catches === undefined && match === undefined && on === 'cast') out.push(`${who} springs on a cast and names no card to catch (catches) or match (match)`);
+  if (match !== undefined && c.catches !== undefined) out.push(`${who} names a card (catches) and has a match; a set card has one of the two`);
+  if (match !== undefined && play === 'set' && on !== 'cast') out.push(`${who} has a match, and only a set card that springs on a cast does`);
+  else if (match !== undefined && play === 'set') out.push(...matchProblems(match, who));
   if (c.catches !== undefined && typeof c.catches !== 'function') out.push(`${who} has a catch that is not a function`);
-  else if (c.catches !== undefined && !(play === 'set' && on === 'cast')) out.push(`${who} has a catch, and only a Gimmick that springs on a cast does`);
+  else if (c.catches !== undefined && !(play === 'set' && on === 'cast')) out.push(`${who} has a catch, and only a set card that springs on a cast does`);
+  if (c.writes !== undefined && (typeof c.writes !== 'object' || c.writes === null || typeof c.writes.tokens !== 'function' || typeof c.writes.frame !== 'function')) out.push(`${who} has writes that are not a tokens function and a frame function`);
+  else if (c.writes !== undefined && Array.isArray(c.reaches) && c.reaches.some((r) => r !== 'post')) out.push(`${who} writes, and a card that writes reaches a post alone`);
+  // A card that writes is a cast card, cast face up: never a set card, which springs later, nor a use card; and decideSet refuses to set it face down.
+  if (c.writes !== undefined && play !== 'cast') out.push(`${who} writes, and only a cast card does: it is cast face up, never set face down`);
   if (c.setPhrase !== undefined && typeof c.setPhrase !== 'function') out.push(`${who} has a set phrase that is not a function`);
-  else if (c.setPhrase !== undefined && play !== 'cast') out.push(`${who} has a set phrase, and only a Move does`);
+  else if (c.setPhrase !== undefined && play !== 'cast') out.push(`${who} has a set phrase, and only a cast card has one`);
+  return out;
+}
+
+const flavorsBad = (v: unknown): boolean => !Array.isArray(v) || v.some((f) => !ALIGNMENTS.includes(f as never));
+
+/** A cast trap's match: at least a flavor list or a rarity, each from the engine's lists. */
+function matchProblems(match: { flavors?: unknown; upTo?: unknown }, who: string): string[] {
+  const out: string[] = [];
+  if (typeof match !== 'object' || match === null) return [`${who} has a match that is not an object`];
+  if (match.flavors === undefined && match.upTo === undefined) out.push(`${who} has a match that names no flavor and no rarity`);
+  if (match.flavors !== undefined && (flavorsBad(match.flavors) || (match.flavors as unknown[]).length === 0)) out.push(`${who} has a match of the flavors ${JSON.stringify(match.flavors)}; a flavor is ${ALIGNMENTS.join(', ')}`);
+  if (match.upTo !== undefined && !RARITIES.includes(match.upTo as never)) out.push(`${who} has a match up to ${JSON.stringify(match.upTo)}; a rarity is ${RARITIES.slice(0, -1).join(', ')} or ${RARITIES.at(-1)}`);
+  return out;
+}
+
+/** A use card's gimmick: one of the engine's kinds, each with the numbers it needs (the card types design, section 5). */
+function gimmickProblems(g: unknown, who: string, reactionKeys: ReadonlySet<string>): string[] {
+  if (typeof g !== 'object' || g === null) return [`${who} has a gimmick that is not an object`];
+  const e = g as Record<string, unknown>;
+  const out: string[] = [];
+  const list = (v: unknown): v is unknown[] => Array.isArray(v) && v.length > 0;
+  if (e.kind === 'ward') {
+    if (e.upTo === undefined && e.flavors === undefined && e.cards === undefined) out.push(`${who} has a ward that names no rarity, flavor or card`);
+    if (e.upTo !== undefined && !RARITIES.includes(e.upTo as never)) out.push(`${who} has a ward up to ${JSON.stringify(e.upTo)}; a rarity is ${RARITIES.slice(0, -1).join(', ')} or ${RARITIES.at(-1)}`);
+    if (e.flavors !== undefined && (!list(e.flavors) || flavorsBad(e.flavors))) out.push(`${who} has a ward of the flavors ${JSON.stringify(e.flavors)}; a flavor is ${ALIGNMENTS.join(', ')}`);
+    if (e.cards !== undefined && (!list(e.cards) || e.cards.some((k) => typeof k !== 'string'))) out.push(`${who} has a ward of the cards ${JSON.stringify(e.cards)}; cards are named by key`);
+  } else if (e.kind === 'earn') {
+    if (typeof e.by !== 'number' || !(e.by > 0 && e.by <= 1)) out.push(e.by === undefined ? `${who} has an earn with no by; by is above 0 and at most 1` : `${who} has an earn of ${JSON.stringify(e.by)}; by is above 0 and at most 1`);
+    if (e.quadrants === undefined && e.reactions === undefined) out.push(`${who} has an earn that names no quadrant and no reaction`);
+    if (e.quadrants !== undefined) {
+      if (!list(e.quadrants)) out.push(`${who} has an earn naming no quadrant; a quadrant is ${QUADRANTS.join(', ')}`);
+      else for (const q of e.quadrants) if (!QUADRANTS.includes(q as never)) out.push(`${who} has an earn naming the quadrant ${JSON.stringify(q)}; a quadrant is ${QUADRANTS.join(', ')}`);
+    }
+    if (e.reactions !== undefined) {
+      if (!list(e.reactions)) out.push(`${who} has an earn naming no reaction`);
+      else for (const r of e.reactions) if (typeof r !== 'string' || !reactionKeys.has(r)) out.push(`${who} has an earn naming the reaction ${JSON.stringify(r)}, which the instance does not have`);
+    }
+  } else if (e.kind === 'price') {
+    if (!list(e.flavors) || flavorsBad(e.flavors)) out.push(`${who} has a price with no flavors; name at least one of ${ALIGNMENTS.join(', ')}`);
+    if (!Number.isSafeInteger(e.add) || (e.add as number) <= 0) out.push(`${who} has a price that adds ${JSON.stringify(e.add)}; add is a positive whole number`);
+  } else {
+    out.push(`${who} has a gimmick of kind ${JSON.stringify(e.kind)}; a gimmick is ${GIMMICK_KINDS.slice(0, -1).join(', ')} or ${GIMMICK_KINDS.at(-1)}`);
+  }
   return out;
 }
 
@@ -482,7 +544,7 @@ function reachProblems(c: CardRules, settings: Settings): string[] {
   }
   const out: string[] = [];
   const beyond = BEYOND_POST.filter((r) => c.reaches!.includes(r));
-  if ((c.play ?? 'cast') === 'set' && beyond.length) out.push(`${who} is set face down, and a Set lands only on a post`);
+  if ((c.play ?? 'cast') === 'set' && beyond.length) out.push(`${who} is a set card, and a set card lands only on a post`);
   if (c.pins !== undefined && (c.pins !== true || !c.reaches.includes('thread'))) out.push(`${who} pins ${JSON.stringify(c.pins)}; only a card that reaches a thread pins, and pins is true or left out`);
   if (beyond.length && c.lasts === undefined) out.push(`${who} reaches beyond a post with no time up (lasts); every effect beyond a post ends at its time`);
   const least = settings?.reachRarity;
@@ -491,7 +553,7 @@ function reachProblems(c: CardRules, settings: Settings): string[] {
     const floor = least?.[r];
     if (RARITIES.includes(floor) && RARITIES.includes(c.rarity) && !atOrBelow(floor, c.rarity)) out.push(`${who} reaches a ${r}, which takes a card of ${floor} or rarer; it is ${c.rarity}`);
     const bound = longest?.[r];
-    if (c.lasts !== undefined && isSpan(c.lasts) && bound !== undefined && isSpan(bound) && spanMs(c.lasts) > spanMs(bound)) {
+    if (c.lasts !== undefined && isSpan(c.lasts, LASTS_UNITS) && bound !== undefined && isSpan(bound) && spanMs(c.lasts) > spanMs(bound)) {
       out.push(`${who} lasts ${spanWords(c.lasts)}, longer than a ${r} effect may (reachLasts.${r}, ${spanWords(bound)})`);
     }
   }
@@ -510,16 +572,29 @@ function systemProblems(instance: Instance): string[] {
   const roster = Array.isArray(sys.roster) ? sys.roster : [];
   if (!roster.length) out.push('the instance\'s roster is empty (system.roster)');
   const rosterKeys = new Set(roster.map((p) => p.key));
+  // Each office that posts has a frame: a premise and answer rules the engine sets around a persona's own words (`personaPrompt`).
+  const frames: Record<string, { premise?: unknown; answerRules?: unknown } | undefined> = sys.offices !== null && typeof sys.offices === 'object' ? sys.offices : {};
+  for (const office of POSTING_OFFICES) {
+    const frame = frames[office];
+    if (frame === undefined || frame === null || typeof frame !== 'object') { out.push(`system.offices has no "${office}" frame`); continue; }
+    for (const part of ['premise', 'answerRules'] as const) if (typeof frame[part] !== 'string' || frame[part].trim() === '') out.push(`system.offices.${office} has a blank ${part}`);
+  }
   for (const k of duplicates(roster, (p) => p.key)) out.push(`persona key "${k}" is used twice`);
   /* The developer persona's staff key is the engine's (0062): a roster member under it would be the character the persona is seeded as, or be left unmade. */
   if (rosterKeys.has(DEVELOPER_STAFF_KEY)) out.push(`persona key "${DEVELOPER_STAFF_KEY}" is reserved for the developer persona, which a model never plays`);
   const text = (v: unknown) => typeof v === 'string' && v.trim() !== '';
   for (const p of roster) {
     const who = `persona "${p.key}"`;
-    for (const part of ['name', 'title', 'signature', 'persona', 'startingHobby', 'temperament', 'persuadedBy'] as const) if (!text(p[part])) out.push(`${who} has no ${part}`);
+    for (const part of ['name', 'title', 'signature', 'selfPrompt', 'startingHobby', 'temperament', 'persuadedBy'] as const) if (!text(p[part])) out.push(`${who} has no ${part}`);
     if (typeof p.title === 'string' && p.title.length > STAFF_TITLE_MAX) out.push(`${who} has a title of ${p.title.length} characters; the seed keeps at most ${STAFF_TITLE_MAX} and cuts the rest in silence`);
     if (typeof p.signature === 'string' && p.signature.length > STAFF_SIGNATURE_MAX) out.push(`${who} has a signature of ${p.signature.length} characters; the seed keeps at most ${STAFF_SIGNATURE_MAX} and cuts the rest in silence`);
     for (const list of ['beats', 'petRules'] as const) if (!Array.isArray(p[list])) out.push(`${who} has no ${list}`);
+    if (p.officeLines !== undefined && p.officeLines !== null && typeof p.officeLines === 'object') {
+      for (const [office, line] of Object.entries(p.officeLines)) {
+        if (!(POSTING_OFFICES as readonly string[]).includes(office)) out.push(`${who} has an office line for "${office}", which is not an office that posts (${POSTING_OFFICES.join(', ')})`);
+        else if (!text(line)) out.push(`${who} has a blank office line for "${office}"`);
+      }
+    }
     if (p.pronouns !== undefined) for (const why of pronounProblems(p.pronouns)) out.push(`${who} has pronouns that fail: ${why}`);
     if (p.strictness === undefined || p.strictness === null) out.push(`${who} has no strictness`);
     if (p.inheritsMemoryOf !== undefined && (p.inheritsMemoryOf === p.key || !rosterKeys.has(p.inheritsMemoryOf))) out.push(`${who} inherits the memory of "${p.inheritsMemoryOf}", who is not another persona in the roster`);
@@ -587,7 +662,13 @@ function systemProblems(instance: Instance): string[] {
   if (typeof sys.nameStyle !== 'function') out.push('system.nameStyle is not a function');
   if (typeof sys.nameStyleBrief !== 'string' || sys.nameStyleBrief.trim() === '') out.push('system.nameStyleBrief is empty; the meeting\'s prompt needs the name style in words');
   if (typeof sys.announcementsTitle !== 'string' || sys.announcementsTitle.trim() === '') out.push('system.announcementsTitle is empty; the seed makes The System\'s announcements thread from it, and with none no move can land');
-  for (const key of ['feeds', 'realWorld', 'wheelhouse'] as const) if (!Array.isArray(sys[key])) out.push(`the instance has no system.${key} list`);
+  for (const key of ['feeds', 'realWorld', 'scrubWords', 'wheelhouse'] as const) if (!Array.isArray(sys[key])) out.push(`the instance has no system.${key} list`);
+  if (Array.isArray(sys.scrubWords)) {
+    for (const w of sys.scrubWords) {
+      if (typeof w !== 'string' || w.trim() === '') out.push('a scrubWords entry is empty; it would hit every text');
+      else if (w !== w.toLowerCase()) out.push(`scrubWords entry "${w}" is not lower case; the scrubber folds the text to lower case, so it could never match`);
+    }
+  }
   // A feed is fetched by the meeting: only over https, so nothing in between reads or rewrites what the Boss is told.
   if (Array.isArray(sys.feeds)) {
     for (const f of sys.feeds) {

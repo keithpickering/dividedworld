@@ -4,7 +4,11 @@ import { PATROLS_PER_RUN, runPatrols, runPatrolsAfterFilings } from './patrol.ts
 import { RUN_BUDGET_MS } from './core.ts';
 import { TransportError } from '../_shared/rpc.ts';
 import { DatabaseError, type Db } from '../_shared/rpc.ts';
-import { instance as dividedWorld } from '../_shared/instance.ts';
+import { instance as realInstance } from '../_shared/instance.ts';
+import { placeholderWorld } from '../../../instances/divided-world/system/fixtures/index.ts';
+import type { Instance as WorldInstance } from '../../../engine/rules/types.ts';
+
+const dividedWorld: WorldInstance = placeholderWorld(realInstance);
 import { AnswerRejected, LedgerWriteFailed } from '../_shared/models/index.ts';
 import type { ChatRequest, ModelResult, Models } from '../../../engine/system/model.ts';
 import type { Instance } from '../../../engine/rules/types.ts';

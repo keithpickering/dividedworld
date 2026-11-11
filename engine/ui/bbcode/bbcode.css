@@ -5,6 +5,16 @@
   min-width: 0;
 }
 
+/*
+ * A card that continues the post's words (a tail: engine/ui/cards/types.ts, EffectProps.written) draws its run right after the words, marked
+ * `data-kb-tail`. The words are a block, which would put the run on a line of its own; where one follows, the words are inline, so the last
+ * line of the words and the tail's first characters share a line and the run flows on from them. A block inside the words (a quote, a rule,
+ * a code box) is still a block, and the run follows it.
+ */
+.kb-bb:has(+ [data-kb-tail]) {
+  display: inline;
+}
+
 .kb-bb ul,
 .kb-bb ol {
   margin: 0.4em 0;

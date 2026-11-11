@@ -1,44 +1,69 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { system } from './index.ts';
-import { BOSS_PREMISE, MOD_BOT_PREMISE, BOSS_ANSWER_RULES, MOD_BOT_ANSWER_RULES, persona } from './persona.ts';
+import { fangame } from './personas/fangame.ts';
+import { placeholderBosses } from './fixtures/index.ts';
+import { BOSS_PREMISE, MOD_BOT_PREMISE, MEMBER_PREMISE, BOSS_ANSWER_RULES, MOD_BOT_ANSWER_RULES, MEMBER_ANSWER_RULES, persona, offices } from './persona.ts';
+import { personaPrompt } from '../../../engine/system/prompt.ts';
 import { instanceProblems } from '../../../engine/rules/instance.ts';
 import { instance } from '../index.ts';
-import { PHASE_CAPS } from '../../../engine/system/phases.ts';
 import { STAFF_TOKENS, STOCK_LINE_KEYS, STOCK_LINE_TOKENS } from '../../../engine/system/stock.ts';
-import { PRONOUN_FORMS } from '../../../engine/rules/pronouns.ts';
+import { PRONOUN_FORMS, PRONOUN_PRESETS } from '../../../engine/rules/pronouns.ts';
 
 test('Divided World\'s System content raises no problem', () => {
   assert.deepEqual(instanceProblems(instance).filter((p) => /Boss|bot|Bot|duty|stock|firstStaff|system/.test(p)), []);
 });
 
-const bosses = system.roster.filter((p) => !system.firstStaff.includes(p.key));
+const staff = system.roster.filter((p) => system.firstStaff.includes(p.key));
 
-test('three placeholder Bosses, each marked as one in its name and title', () => {
-  assert.equal(bosses.length, 3);
-  for (const b of bosses) {
-    assert.match(b.name, /placeholder/i, b.key);
-    assert.match(b.title, /placeholder/i, b.key);
-    assert.match(b.key, /^placeholder-/, b.key);
-  }
-  assert.ok(bosses.some((b) => b.key === system.firstBoss));
+test('the roster\'s only Boss is FanGaME, and he is the first Boss', () => {
+  const bosses = system.roster.filter((p) => !system.firstStaff.includes(p.key));
+  assert.deepEqual(bosses.map((b) => b.key), ['fangame']);
+  assert.equal(system.firstBoss, 'fangame');
 });
 
-test('the Bosses contrast: different temperaments, hobbies and prompts, all on the shared premise', () => {
-  for (const field of ['temperament', 'startingHobby', 'persona', 'signature', 'name'] as const) {
-    assert.equal(new Set(bosses.map((b) => b[field])).size, 3, field);
-  }
-  for (const b of bosses) {
-    assert.ok(b.persona.includes(BOSS_PREMISE), `${b.key} is built on the premise`);
-    assert.ok(b.persona.includes(b.name), b.key);
-  }
+test('FanGaME\'s title and signature fit the engine\'s limits, and his pronouns are he/him', () => {
+  assert.equal(fangame.title, 'Fanatical GML and Mario Expert');
+  assert.ok(fangame.title.length <= 40);
+  assert.ok(fangame.signature.length <= 500);
+  assert.deepEqual(fangame.pronouns, PRONOUN_PRESETS.he);
 });
 
-test('one Boss overrides its phases inside the caps, and none inherits a memory', () => {
-  const overriding = bosses.filter((b) => b.phases !== undefined);
-  assert.equal(overriding.length, 1);
-  assert.ok((overriding[0]!.phases!.honeymoon!.weeklyMoves ?? 0) <= PHASE_CAPS.honeymoon.weeklyMoves);
-  assert.ok(bosses.every((b) => b.inheritsMemoryOf === undefined));
+test('FanGaME has an office line for each of boss, mod and member', () => {
+  for (const o of ['boss', 'mod', 'member'] as const) assert.ok((fangame.officeLines?.[o] ?? '').length > 0, o);
+});
+
+test('FanGaME\'s weakness is a quiz whose every answer is one of its choices', () => {
+  assert.equal(fangame.weakness.kind, 'quiz');
+  if (fangame.weakness.kind !== 'quiz') return;
+  for (const q of fangame.weakness.questions) assert.ok(q.choices.includes(q.answer), q.question);
+});
+
+test('FanGaME\'s pet rules are keys in the predicate catalog', async () => {
+  const { predicate } = await import('../../../engine/rules/predicates.ts');
+  for (const k of fangame.petRules) assert.ok(predicate(k) !== undefined, k);
+});
+
+test('no persona\'s name, key or title says "placeholder" except the first staff, placeholder-monitor', () => {
+  for (const p of system.roster) {
+    const says = [p.name, p.key, p.title].some((t) => /placeholder/i.test(t));
+    assert.equal(says, staff.some((s) => s.key === p.key), p.key);
+  }
+  assert.deepEqual(staff.map((s) => s.key), ['placeholder-monitor']);
+});
+
+test('no key in placeholderBosses is in the roster', () => {
+  const keys = new Set(system.roster.map((p) => p.key));
+  for (const b of placeholderBosses) assert.ok(!keys.has(b.key), b.key);
+});
+
+test('the Boss premise does not call the Boss confident', () => {
+  assert.doesNotMatch(BOSS_PREMISE, /confident/);
+});
+
+test('FanGaME is built on the premise in the Boss\'s office', () => {
+  assert.ok(personaPrompt(system, fangame, 'boss').includes(BOSS_PREMISE));
+  assert.ok(fangame.selfPrompt.includes(fangame.name));
 });
 
 test('the premise holds the design\'s hard facts: it cannot know who is behind a mask, it never takes a side, it reads only the digest', () => {
@@ -77,17 +102,30 @@ test('the content is frozen, so no caller edits the roster in place', () => {
   assert.ok(Object.isFrozen(system) && Object.isFrozen(system.roster) && Object.isFrozen(system.roster[0]));
 });
 
-test('a persona is built on its office: the Boss premise and side-taking rule, or the Mod Bot premise without it', () => {
+test('a persona is its own words only; the office sets the premise and answer rules around it (Boss with the side-taking rule, Mod and member as written)', () => {
   const v = { name: 'Test', title: 'Tester', temperament: 't', voice: 'v', habits: ['h'] };
   const side = 'Never take a side in a real argument. ';
-  const boss = persona(v, 'boss');
-  const bot = persona(v, 'bot');
-  assert.ok(boss.includes(BOSS_PREMISE) && !boss.includes(MOD_BOT_PREMISE));
-  assert.ok(boss.includes(side));
-  assert.ok(bot.includes(MOD_BOT_PREMISE) && !bot.includes(BOSS_PREMISE));
-  assert.ok(!bot.includes(side) && !bot.includes('Never take a side'));
-  assert.ok(bot.endsWith(MOD_BOT_ANSWER_RULES));
+  const own = persona(v);
+  assert.ok(own.startsWith('You are Test, Tester.'));
+  for (const premise of [BOSS_PREMISE, MOD_BOT_PREMISE, MEMBER_PREMISE]) assert.ok(!own.includes(premise));
+  const boss = personaPrompt(system, { selfPrompt: own }, 'boss');
+  const bot = personaPrompt(system, { selfPrompt: own }, 'mod');
+  const member = personaPrompt(system, { selfPrompt: own }, 'member');
+  assert.ok(boss.startsWith(BOSS_PREMISE) && boss.endsWith(BOSS_ANSWER_RULES) && boss.includes(side));
+  assert.ok(bot.startsWith(MOD_BOT_PREMISE) && bot.endsWith(MOD_BOT_ANSWER_RULES) && !bot.includes('Never take a side'));
+  assert.ok(member.startsWith(MEMBER_PREMISE) && member.endsWith(MEMBER_ANSWER_RULES) && member.includes(side), 'a member keeps the no-side rule');
+  assert.match(MEMBER_PREMISE, /You hold no office now\./);
   assert.equal(MOD_BOT_ANSWER_RULES, BOSS_ANSWER_RULES.replace(side, ''));
+  assert.deepEqual(offices.boss, { premise: BOSS_PREMISE, answerRules: BOSS_ANSWER_RULES });
+});
+
+test('no persona\'s selfPrompt holds any office\'s premise or answer rules,', () => {
+  for (const p of system.roster) {
+    for (const frame of Object.values(system.offices)) {
+      assert.ok(!p.selfPrompt.includes(frame.premise), `${p.key} holds a premise`);
+      assert.ok(!p.selfPrompt.includes(frame.answerRules), `${p.key} holds answer rules`);
+    }
+  }
 });
 
 test('the four appeal lines use only the tokens an appeal\'s ruling is given', () => {

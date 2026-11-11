@@ -114,7 +114,7 @@ describe('what the adapter may request', () => {
     });
     const api = h.api;
     await Promise.allSettled([
-      api.settings(), api.boards(), api.board('general'), api.board(C), api.threads(C, { offset: 0, limit: 5 }), api.thread(T), api.acts(T, 1, 5), api.act(A), api.actsById([A]), api.history(A), api.spunFrom(A), api.spunFromMany([A], 10), api.cardsOn(A, 10), api.cardsOnMany([A], 10), api.effectStates([A]), api.playMoment(A), api.myReleases([A]), api.releaseEffect(A),
+      api.settings(), api.boards(), api.board('general'), api.board(C), api.threads(C, { offset: 0, limit: 5 }), api.thread(T), api.acts(T, 1, 5), api.act(A), api.actsById([A]), api.history(A), api.spunFrom(A), api.spunFromMany([A], 10), api.cardsOn(A, 10), api.cardsOnMany([A], 10), api.effectStates([A]), api.tails([A]), api.playMoment(A), api.myReleases([A]), api.releaseEffect(A),
       api.characters([B]), api.characterCounts(B), api.characterStats([B]), api.standingAmounts([B]), api.standingPlace(B), api.characterActs(B, ['post'], { offset: 0, limit: 5 }), api.finishedSeasons(), api.resultsPage(1, 2), api.resultPlace(1, B), api.standingsCount(), api.standingsPage(0, 5), api.tallies([A]), api.viewCounts([T]), api.season(),
       api.boardNames(), api.moveNotice(A), api.movesLog('director'), api.movesLog('director', { at: '2026-10-01T10:00:00+00:00', act: A }), api.staffProfile('director'), api.adminQueue(), api.holdMove(1), api.reverseMove(A), api.updates(), api.updates('2026-10-01T10:00:00+00:00'), api.postUpdate('T', 'B', []),
       api.lastSettledAt(), api.classReveals([B]), api.turnsAnnounced([B]), api.nextSettlementAt(), api.myCharacters(), api.wallet(),
@@ -450,6 +450,13 @@ describe('reads and their rows', () => {
     const [req] = h.to('acts_public');
     expect(req?.url.searchParams.get('or')).toBe(`(id.eq.${A},and(kind.eq.edit,target_act_id.eq.${A}))`);
     expect(req?.url.searchParams.get('order')).toBe('created_at.asc');
+  });
+
+  it('carries `untaken`, the public flag of a play that did not take (acts_public, 0149), onto the Act, and nothing of a play without it', async () => {
+    const h = harness((r) => (r.url.searchParams.get('kind') === 'eq.card_end' ? rows([]) : rows([{ ...ACT_ROW, id: A, kind: 'card', target_act_id: B, untaken: true }, { ...ACT_ROW, id: C, kind: 'card', target_act_id: B, untaken: false }, { ...ACT_ROW, id: B, kind: 'card', target_act_id: B }])));
+    const plays = await h.api.cardsOnMany([B], 10);
+    expect(plays.map((p) => [p.id, p.untaken])).toEqual([[A, true], [B, undefined], [C, undefined]]);
+    expect(plays.slice(1)).toSatisfy((rest: readonly object[]) => rest.every((p) => !('untaken' in p)));
   });
 
   it('reads the threads spun from several Acts in one request, and the card plays on one Act', async () => {
@@ -984,7 +991,7 @@ describe('buying and playing a card', () => {
   });
 
   it('drops a row whose availability it does not know, rather than showing it on sale', async () => {
-    const h = harness((r) => (r.url.pathname === `${REST}/machine_now` ? rows([SLOT_CARD, { ...SLOT_CARD, slot: C, position: 3, card: 'stick', availability: 'hidden' }, { ...SLOT_CARD, slot: B, position: 4, card: 'bluff', availability: 'someday' }, { ...SLOT_CARD, slot: T, position: 5, card: 'trap', availability: null }]) : undefined));
+    const h = harness((r) => (r.url.pathname === `${REST}/machine_now` ? rows([SLOT_CARD, { ...SLOT_CARD, slot: C, position: 3, card: 'stick', availability: 'hidden' }, { ...SLOT_CARD, slot: B, position: 4, card: 'dud', availability: 'someday' }, { ...SLOT_CARD, slot: T, position: 5, card: 'trap', availability: null }]) : undefined));
     expect((await h.api.machine()).map((s) => s.id)).toEqual([A]);
   });
 
@@ -1027,8 +1034,8 @@ describe('buying and playing a card', () => {
   });
 
   it('buys a pack through the act function, and reads what it gave in pull order', async () => {
-    const h = harness((r) => (r.url.pathname === '/functions/v1/act' ? json({ pack: T, kind: 'booster', contents: ['whoops', 'stick', 'whoops', 'bluff', 'trap'], balance: 162 }) : undefined));
-    expect(await h.api.buyPack(await slotOf(SLOT_PACK))).toEqual({ ok: true, value: { pack: T, contents: ['whoops', 'stick', 'whoops', 'bluff', 'trap'], balance: 162 } });
+    const h = harness((r) => (r.url.pathname === '/functions/v1/act' ? json({ pack: T, kind: 'booster', contents: ['whoops', 'stick', 'whoops', 'dud', 'trap'], balance: 162 }) : undefined));
+    expect(await h.api.buyPack(await slotOf(SLOT_PACK))).toEqual({ ok: true, value: { pack: T, contents: ['whoops', 'stick', 'whoops', 'dud', 'trap'], balance: 162 } });
     expect(h.log.filter((r) => r.url.pathname === '/functions/v1/act').map((r) => r.body)).toEqual([{ action: 'buyPack', slot: B, price: 300 }]);
   });
 
@@ -1040,6 +1047,14 @@ describe('buying and playing a card', () => {
     ]);
     const refused = harness((r) => (r.url.pathname === '/functions/v1/act' ? json({ error: 'you hold no "whoops" card; the Vending Machine sells them' }, 400) : undefined));
     expect(await refused.api.playCard('whoops', B, A, {}, '')).toEqual({ ok: false, error: 'you hold no "whoops" card; the Vending Machine sells them' });
+  });
+
+  it('takes a face-down card back through the act function, naming the character and the set, and reads the take-back\'s Act', async () => {
+    const h = harness((r) => (r.url.pathname === '/functions/v1/act' ? json(ACT_ROW) : undefined));
+    expect(await h.api.takeBack(B, A)).toEqual({ ok: true, value: ACT });
+    expect(h.log.filter((r) => r.url.pathname === '/functions/v1/act').map((r) => r.body)).toEqual([{ action: 'takeBack', character: B, set: A }]);
+    const refused = harness((r) => (r.url.pathname === '/functions/v1/act' ? json({ error: 'there is no face-down card to take back there' }, 404) : undefined));
+    expect(await refused.api.takeBack(B, A)).toEqual({ ok: false, error: 'there is no face-down card to take back there' });
   });
 });
 
@@ -1277,7 +1292,8 @@ describe('live', () => {
     const onAct = vi.fn();
     const onTally = vi.fn();
     const onEffect = vi.fn();
-    s.api.subscribeThread(T, { onAct, onTally, onEffect });
+    const onText = vi.fn();
+    s.api.subscribeThread(T, { onAct, onTally, onEffect, onText });
     await settle();
     expect(s.channels).toHaveLength(1);
     expect(s.channels[0]?.topic).toBe(`thread:${T}`);
@@ -1289,6 +1305,8 @@ describe('live', () => {
     expect(onAct).toHaveBeenCalledWith(ACT);
     expect(onTally).toHaveBeenCalledWith(A, { fire: 2 });
     expect(onEffect).toHaveBeenCalledWith(A, '2026-10-29T00:00:00Z');
+    s.channels[0]?.handlers.get('card_text')?.({ payload: { play: A, version: B } });
+    expect(onText).toHaveBeenCalledWith(A, B);
   });
 
   it('shares a channel between listeners on one topic and removes it with the last', async () => {
@@ -1404,21 +1422,24 @@ describe('the log', () => {
       if (name === 'my_card_ledger') {
         return rows([
           { card: 'whoops', kind: 'played', act: C, price: 25, at: '2026-10-29T21:52:00+00:00', springs: null },
-          { card: 'bluffy', kind: 'played', act: SET, price: 0, at: '2026-10-29T18:00:00+00:00', springs: false },
+          { card: 'dud', kind: 'played', act: SET, price: 0, at: '2026-10-29T18:00:00+00:00', springs: false },
           { card: 'whoops', kind: 'bought', act: null, price: 150, at: '2026-10-29T17:30:00+00:00', springs: null, pack: null, repriced: true },
-          { card: 'bluffy', kind: 'pulled', act: null, price: 0, at: '2026-10-29T17:00:00+00:00', springs: null, pack: PACK, repriced: false },
+          { card: 'dud', kind: 'pulled', act: null, price: 0, at: '2026-10-29T17:00:00+00:00', springs: null, pack: PACK, repriced: false },
         ]);
       }
-      if (name === 'my_packs') return rows([{ id: PACK, pack: 'booster', price: 450, repriced: true, contents: ['bluffy', 'whoops'], bought_at: '2026-10-29T17:00:00+00:00' }]);
+      if (name === 'my_packs') return rows([{ id: PACK, pack: 'booster', price: 450, repriced: true, contents: ['dud', 'whoops'], bought_at: '2026-10-29T17:00:00+00:00' }]);
       if (name === 'my_posts_played_on') {
         return r.url.searchParams.get('select') === 'play,post,saved_at'
           ? rows([{ play: C, post: A, saved_at: '2026-10-29T23:00:00+00:00' }])
           : rows([{ play: C, post: A, at: '2026-10-29T21:16:00+00:00', reach: 'post', target_name: null, target_character: B }]);
       }
+      if (name === 'my_posts_written_on') {
+        return rows([{ play: C, post: A, version: A, failed: false, opening: true, over: false, at: '2026-10-29T22:30:00+00:00' }, { play: C, post: A, version: SET, failed: true, opening: false, over: false, at: '2026-10-29T22:20:00+00:00' }]);
+      }
       if (name === 'my_face_down') {
         /* The setter's own back, asked for by the sets in the ledger (what a Trap Card waits for); the ended views are the other read. */
         if (r.url.searchParams.get('select') === 'play,catches,phrase,passage,who,who_except') return rows([{ play: SET, catches: 'whoops', phrase: null }]);
-        return rows([{ play: SET, card: 'bluffy', post: A, spring: null, ended_at: '2026-10-29T20:00:00+00:00' }]);
+        return rows([{ play: SET, card: 'dud', post: A, spring: null, ended_at: '2026-10-29T20:00:00+00:00', ended_by: 'taken back' }]);
       }
       if (name === 'my_caught') return rows([{ play: C, card: 'whoops', post: A, trap: 'snare', spring: SPRING, price: 25, bought_price: 100, at: '2026-10-29T19:00:00+00:00' }]);
       if (name === 'my_cards_ended') return rows([{ card_end: 'e1', play: C, card: 'whoops', at: '2026-10-29T22:00:00+00:00', side: 'onMine', reach: 'post', target_name: null, post_author_name: 'Pipewrench', caster_name: 'Spritey', character: B }]);
@@ -1444,15 +1465,16 @@ describe('the log', () => {
         ],
       }],
       wallet: [{ settlement: 9, kind: 'settlement', change: 15, overflow: 0, floored: 0, balanceAfter: 472, ref: null, at: '2026-10-30T08:17:02.123456+00:00' }],
-      /* A Bluff's row keeps its `springs` (0075); a row that is not a card set face down carries none. */
-      cards: [{ card: 'whoops', kind: 'played', act: C, price: 25, at: '2026-10-29T21:52:00+00:00' }, { card: 'bluffy', kind: 'played', act: SET, price: 0, at: '2026-10-29T18:00:00+00:00', springs: false, catches: 'whoops' },
+      /* A card with no trap keeps its `springs` (0075); a row that is not a card set face down carries none. */
+      cards: [{ card: 'whoops', kind: 'played', act: C, price: 25, at: '2026-10-29T21:52:00+00:00' }, { card: 'dud', kind: 'played', act: SET, price: 0, at: '2026-10-29T18:00:00+00:00', springs: false, catches: 'whoops' },
         /* A purchase keeps whether the Boss had moved its price (0139); a pulled row keeps its pack (0139), and no other row carries either. */
         { card: 'whoops', kind: 'bought', act: null, price: 150, at: '2026-10-29T17:30:00+00:00', repriced: true },
-        { card: 'bluffy', kind: 'pulled', act: null, price: 0, at: '2026-10-29T17:00:00+00:00', pack: PACK }],
-      packs: [{ pack: PACK, kind: 'booster', price: 450, repriced: true, contents: ['bluffy', 'whoops'], at: '2026-10-29T17:00:00+00:00' }],
+        { card: 'dud', kind: 'pulled', act: null, price: 0, at: '2026-10-29T17:00:00+00:00', pack: PACK }],
+      packs: [{ pack: PACK, kind: 'booster', price: 450, repriced: true, contents: ['dud', 'whoops'], at: '2026-10-29T17:00:00+00:00' }],
       playsOnMine: [{ play: C, post: A, at: '2026-10-29T21:16:00+00:00', reach: 'post', targetName: null, targetCharacter: B }],
+      writes: [{ play: C, post: A, version: A, failed: false, opening: true, over: false, at: '2026-10-29T22:30:00+00:00' }, { play: C, post: A, version: SET, failed: true, opening: false, over: false, at: '2026-10-29T22:20:00+00:00' }],
       saves: [{ play: C, post: A, savedAt: '2026-10-29T23:00:00+00:00' }],
-      setEnds: [{ play: SET, card: 'bluffy', post: A, spring: null, endedAt: '2026-10-29T20:00:00+00:00' }],
+      setEnds: [{ play: SET, card: 'dud', post: A, spring: null, endedAt: '2026-10-29T20:00:00+00:00', endedBy: 'taken back' }],
       caught: [{ play: C, card: 'whoops', post: A, trap: 'snare', spring: SPRING, price: 25, boughtPrice: 100, at: '2026-10-29T19:00:00+00:00' }],
       ended: [{ cardEnd: 'e1', play: C, card: 'whoops', at: '2026-10-29T22:00:00+00:00', side: 'onMine', reach: 'post', targetName: null, postAuthorName: 'Pipewrench', casterName: 'Spritey', character: B }],
       infractions: [{ infraction: 'i1', character: B, at: '2026-10-29T20:30:00+00:00', band: 'minor', points: 2, ruleNumber: 2, rule: 'Rule 2: No double posting', mod: 'The Clerk', post: A, postSeq: 41, thread: T, expiresAt: '2026-11-12T20:30:00+00:00', relief: 0, emptiedAt: null }],
@@ -1478,6 +1500,8 @@ describe('the log', () => {
     expect(plays?.url.searchParams.get('order')).toBe('at.desc');
     expect(saves?.url.searchParams.get('order')).toBe('saved_at.desc');
     expect(saves?.url.searchParams.get('saved_at')).toBe('not.is.null');
+    const [written] = h.to('my_posts_written_on');
+    expect([written?.url.searchParams.get('order'), written?.url.searchParams.get('limit')]).toEqual(['at.desc,play.asc,version.asc', '200']);
     const [ends] = h.to('my_face_down');
     expect([ends?.url.searchParams.get('order'), ends?.url.searchParams.get('ended_at'), ends?.url.searchParams.get('limit')]).toEqual(['ended_at.desc', 'not.is.null', '200']);
     const [caught] = h.to('my_caught');
@@ -1504,6 +1528,7 @@ describe('the log', () => {
     expect(plays?.url.searchParams.get('at')).toBe(`lte.${before}`);
     expect(saves?.url.searchParams.getAll('saved_at')).toEqual(['not.is.null', `lte.${before}`]);
     expect(h.to('my_face_down')[0]?.url.searchParams.getAll('ended_at')).toEqual(['not.is.null', `lte.${before}`]);
+    expect(h.to('my_posts_written_on')[0]?.url.searchParams.get('at')).toBe(`lte.${before}`);
     expect(h.to('my_caught')[0]?.url.searchParams.get('at')).toBe(`lte.${before}`);
     expect(h.to('my_cards_ended')[0]?.url.searchParams.get('at')).toBe(`lte.${before}`);
     for (const name of ['my_infractions', 'my_bans', 'my_group_moves', 'my_reports', 'my_appeals']) expect(h.to(name)[0]?.url.searchParams.get('at')).toBe(`lte.${before}`);
@@ -1630,6 +1655,35 @@ describe('reads by many ids', () => {
     const times = above.map((p) => p.act.createdAt);
     expect(times).toEqual([...times].sort());
     expect(await h.api.effectsAbove([], null, null)).toEqual([]);
+  });
+
+  it('tails asks post_tails for a page of posts in one call, in calls of at most 200, and maps its rows', async () => {
+    const asked: string[][] = [];
+    const h = harness((r) => {
+      if (r.url.pathname !== `${REST}/rpc/post_tails`) return undefined;
+      const body = r.body as { posts: string[] };
+      asked.push(body.posts);
+      return json(body.posts.slice(0, 1).flatMap((post) => [
+        { post, play: A, version: post, text: ' and on', failed: false, waiting: false, created_at: '2026-11-07T12:00:00+00:00' },
+        { post, play: B, version: post, text: null, failed: true, waiting: false, created_at: '2026-11-07T12:00:01+00:00' },
+        { post, play: C, version: post, text: null, failed: false, waiting: true, created_at: null },
+      ]));
+    });
+    expect(await h.api.tails([A, A, 'x),y'])).toEqual([
+      { post: A, play: A, version: A, text: ' and on', failed: false, waiting: false, createdAt: '2026-11-07T12:00:00+00:00' },
+      { post: A, play: B, version: A, text: null, failed: true, waiting: false, createdAt: '2026-11-07T12:00:01+00:00' },
+      { post: A, play: C, version: A, text: null, failed: false, waiting: true, createdAt: null },
+    ]);
+    expect(asked).toEqual([[A]]);
+    asked.length = 0;
+    await h.api.tails(ids);
+    expect(asked.map((a) => a.length)).toEqual([200, 200, 50]);
+    expect(await h.api.tails([])).toEqual([]);
+  });
+
+  it('a failed post_tails read is thrown, so the page reads it again', async () => {
+    const h = harness((r) => (r.url.pathname === `${REST}/rpc/post_tails` ? json({ message: 'no' }, 500) : undefined));
+    await expect(h.api.tails([A])).rejects.toThrow();
   });
 
   it('playMoment asks play_moment once, reads its version, layers and plays above, and reads a refusal as null', async () => {
@@ -2367,6 +2421,7 @@ describe('a screen in one call', () => {
       const answer = doc(SRC({
         ledger: [LEDGER_ROW], wallet: [{ settlement: 9, kind: 'settlement', change: 15, overflow: 0, floored: 0, balance_after: 472, ref: null, at: '2026-10-30T08:17:02+00:00' }],
         saves: [{ play: C, post: A, saved_at: '2026-10-29T23:00:00+00:00' }],
+        writes: [{ play: C, post: A, version: A, failed: true, opening: true, over: true, at: '2026-10-29T22:30:00+00:00' }],
         groupMoves: [{ move: 'g1', character: B, at: '2026-10-29T20:32:00+00:00', thread: T, seq: 7, group: 'trialMembers', board: A, board_name: 'General', expires_at: '2026-11-05T20:32:00+00:00', landed_until: '2026-11-04T20:32:00+00:00', check_at: null, demand: 'apologyAccepted', office: 'boss', ended_why: 'met', ended_by: 'demand', ended_at: '2026-10-30T10:00:00+00:00', ruling: 'reduced', ruled_at: '2026-10-29T22:00:00+00:00', ruled_until: '2026-11-05T20:32:00+00:00' }],
       }), {
         shares: [{ settlement: 9, character: B, reason: 'heel.drewHeat', act: A, quadrant: 'excitedNegative', amount: 20 }], acts: [ACT_ROW], states: [{ play: C, state: { n: 1 }, saved_at: '2026-10-29T23:00:00+00:00' }],
@@ -2381,6 +2436,8 @@ describe('a screen in one call', () => {
       }]);
       expect(page.log.wallet).toEqual([{ settlement: 9, kind: 'settlement', change: 15, overflow: 0, floored: 0, balanceAfter: 472, ref: null, at: '2026-10-30T08:17:02+00:00' }]);
       expect(page.log.saves).toEqual([{ play: C, post: A, savedAt: '2026-10-29T23:00:00+00:00' }]);
+      /* The texts cards wrote on the player's posts (log_page, 0149), mapped as log() maps my_posts_written_on. */
+      expect(page.log.writes).toEqual([{ play: C, post: A, version: A, failed: true, opening: true, over: true, at: '2026-10-29T22:30:00+00:00' }]);
       /* The group moves (log_page, 0134), mapped as log() maps my_group_moves. */
       expect(page.log.groupMoves).toEqual([{ move: 'g1', character: B, at: '2026-10-29T20:32:00+00:00', thread: T, seq: 7, group: 'trialMembers', board: A, boardName: 'General', expiresAt: '2026-11-05T20:32:00+00:00', landedUntil: '2026-11-04T20:32:00+00:00', checkAt: null, demand: 'apologyAccepted', office: 'boss', endedWhy: 'met', endedBy: 'demand', endedAt: '2026-10-30T10:00:00+00:00', ruling: 'reduced', ruledAt: '2026-10-29T22:00:00+00:00', ruledUntil: '2026-11-05T20:32:00+00:00' }]);
       expect(page.log.before).toBeNull();

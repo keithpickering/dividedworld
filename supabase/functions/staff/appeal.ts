@@ -142,7 +142,7 @@ async function judge(db: Db, getModels: () => Promise<Models>, instance: Instanc
     ...(opened.kind === 'move' ? { group: d.group ?? 'a group', ...(d.bars != null ? { bars: d.bars } : {}), apology: d.apology === true } : {}),
   };
   const frame = appealPrompt({
-    persona: hearer.persona, pronouns: hearer.pronouns, persuadedBy: hearer.persona.persuadedBy, order: standing.order, career: hearer.career, memory: hearer.memory, notes: hearer.notes, rules,
+    persona: hearer.persona, office: hearer.standing.office, offices: tuned.system.offices, pronouns: hearer.pronouns, persuadedBy: hearer.persona.persuadedBy, order: standing.order, career: hearer.career, memory: hearer.memory, notes: hearer.notes, rules,
     allowance: standing.allowance, beat: standing.beat, ruleDaysMost: settings.modBots.ruleDaysMost, expiryLeastHours: settings.moveExpiryLeastHours,
     names: (id) => hearer.names[id] ?? 'a character',
     board: opened.board, thread: threadFor(read, fallback), post,

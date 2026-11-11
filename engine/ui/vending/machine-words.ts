@@ -6,6 +6,7 @@
  */
 import { RARITIES, type CardRules, type Rarity } from '../../rules/cards.ts';
 import { packOdds, type PackRules } from '../../rules/packs.ts';
+import type { Settings } from '../../rules/types.ts';
 import { demandKind } from '../../system/demands.ts';
 import type { SlotMove } from '../data/api.ts';
 import { dayAndTime } from '../characters/format.ts';
@@ -37,8 +38,8 @@ export interface OddsGroup {
  * A pack's odds as a plain table: the pulls before the last that roll the same weights are one block ("Cards 1 to 4, each"), each row a
  * rarity and its chance; the last pull is the hit and is its own block, each row a card and its chance of that pull.
  */
-export function oddsGroups(pack: PackRules, cards: readonly CardRules[]): OddsGroup[] {
-  const pulls = packOdds(pack, cards);
+export function oddsGroups(pack: PackRules, cards: readonly CardRules[], settings: Pick<Settings, 'oldVoice'>): OddsGroup[] {
+  const pulls = packOdds(pack, cards, settings);
   if (pulls.length === 0) return [];
   const nameOf = (key: string) => cards.find((c) => c.key === key)?.name ?? key;
   const rarityOf = (key: string): Rarity => cards.find((c) => c.key === key)?.rarity ?? 'common';
@@ -65,8 +66,8 @@ export function oddsGroups(pack: PackRules, cards: readonly CardRules[]): OddsGr
 }
 
 /** Every card key a pack can give. */
-export function packCards(pack: PackRules, cards: readonly CardRules[]): string[] {
-  return [...new Set(packOdds(pack, cards).flatMap((pull) => pull.flatMap((r) => r.cards.map((c) => c.card))))];
+export function packCards(pack: PackRules, cards: readonly CardRules[], settings: Pick<Settings, 'oldVoice'>): string[] {
+  return [...new Set(packOdds(pack, cards, settings).flatMap((pull) => pull.flatMap((r) => r.cards.map((c) => c.card))))];
 }
 
 /** "Main Event isn't sold on its own." for the cards a pack can give that the machine is not selling now; null when it sells them all. */
@@ -128,17 +129,17 @@ const WORDS = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eig
 export const countWord = (n: number): string => WORDS[n] ?? String(n);
 
 /** The least rare a pack's last pull can give ("uncommon", in "the last one at least uncommon"); null where it has no pulls. */
-export function hitLeast(pack: PackRules, cards: readonly CardRules[]): Rarity | null {
-  const pulls = packOdds(pack, cards);
+export function hitLeast(pack: PackRules, cards: readonly CardRules[], settings: Pick<Settings, 'oldVoice'>): Rarity | null {
+  const pulls = packOdds(pack, cards, settings);
   const hit = pulls[pulls.length - 1];
   if (!hit || hit.length === 0) return null;
   return hit.map((r) => r.rarity).sort((a, b) => RARITIES.indexOf(a) - RARITIES.indexOf(b))[0]!;
 }
 
 /** What a pack's selection says about opening it: "Five cards, the last one at least uncommon. It opens as soon as you buy it." */
-export function packLine(pack: PackRules, cards: readonly CardRules[]): string {
+export function packLine(pack: PackRules, cards: readonly CardRules[], settings: Pick<Settings, 'oldVoice'>): string {
   const n = pack.pulls.length;
-  const least = hitLeast(pack, cards);
+  const least = hitLeast(pack, cards, settings);
   const head = `${countWord(n).charAt(0).toUpperCase()}${countWord(n).slice(1)} cards`;
   return `${head}${least && least !== 'common' ? `, the last one at least ${least}` : ''}. It opens as soon as you buy it.`;
 }

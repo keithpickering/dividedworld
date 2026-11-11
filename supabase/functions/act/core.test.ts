@@ -267,13 +267,13 @@ const ok = <T>(value: T) => ({ ok: true as const, value });
 const base = { alignment: 'salty' as const, playPrice: () => 0, canApply: () => ok(undefined) };
 const inky = { ...base, key: 'test-inky', name: 'Test Inky', rarity: 'common' as const, validateConfig: (c: unknown) => ((c as { ink?: unknown })?.ink === 'red' ? ok({ ink: 'red' }) : { ok: false as const, why: 'the ink is red' }) };
 const snare = { ...base, key: 'test-snare', name: 'Test Snare', rarity: 'uncommon' as const, play: 'set' as const, trap: { trigger: { on: 'visit' as const } }, validateConfig: inky.validateConfig };
-const bluffy = { ...base, key: 'test-bluffy', name: 'Test Bluffy', rarity: 'common' as const, play: 'set' as const, validateConfig: (c: unknown) => ok(c) };
-const shield = { ...base, key: 'test-shield', name: 'Test Shield', rarity: 'uncommon' as const, play: 'use' as const, ward: true as const, lasts: { unit: 'day' as const, count: 7 }, validateConfig: (c: unknown) => ok(c) };
-const tested = { ...instance, cards: [...instance.cards, inky, snare, bluffy, shield] };
+const move = { ...base, key: 'test-move', name: 'Test Move', rarity: 'common' as const, validateConfig: (c: unknown) => ok(c) };
+const shield = { ...base, key: 'test-shield', name: 'Test Shield', rarity: 'uncommon' as const, play: 'use' as const, gimmick: { kind: 'ward' as const, upTo: 'uncommon' as const }, lasts: { unit: 'day' as const, count: 7 }, validateConfig: (c: unknown) => ok(c) };
+const tested = { ...instance, cards: [...instance.cards, inky, snare, move, shield] };
 const setAct = { id: 'k', kind: 'set', thread: 'th', payload: {} };
 
 test('a Set is decided by its card\'s rules and written by set_card; its answer and its broadcast carry no card key', async () => {
-  for (const card of ['test-snare', 'test-bluffy']) {
+  for (const card of ['test-snare', 'test-move']) {
     const { dbs, calls } = pair({ whoami, card_target_reach: { reach: 'post', act: target, kind: 'post', length: 10, body: 'x'.repeat(10), effects: [] }, set_card: setAct });
     const out = await runAction(dbs, tested, { action: 'setCard', card, character: id, target, config: card === 'test-snare' ? { ink: 'red' } : {} });
     assert.equal(out.status, 200, JSON.stringify(out.body));
@@ -282,6 +282,31 @@ test('a Set is decided by its card\'s rules and written by set_card; its answer 
     assert.deepEqual(out.broadcasts, [{ topic: 'thread:th', event: 'act', payload: setAct }]);
     assert.doesNotMatch(JSON.stringify(out.broadcasts), /test-/, 'the broadcast names no card');
   }
+});
+
+test('a take-back is written by take_back for the account and the character, and its Act is heard on the thread', async () => {
+  const back = { id: 'tb', kind: 'take_back', thread: 'th', payload: { set: target } };
+  const { dbs, calls } = pair({ whoami, take_back: back });
+  const out = await runAction(dbs, instance, { action: 'takeBack', character: id, set: target });
+  assert.equal(out.status, 200, JSON.stringify(out.body));
+  assert.deepEqual(calls, [`player:whoami:{}`, `service:take_back:${JSON.stringify({ through: id, set_act: target, who: whoami })}`]);
+  assert.deepEqual(out.broadcasts, [{ topic: 'thread:th', event: 'act', payload: back }]);
+  assert.doesNotMatch(JSON.stringify(out.body) + JSON.stringify(out.broadcasts), /snare|whoops|test-/, 'the answer and the broadcast name no card');
+});
+
+test('a Salty cast on a post under a live Good Vibes thread is priced 25 above its play price, and a Sweet one is not', async () => {
+  const under = (ends: string) => ({ reach: 'post', act: target, kind: 'post', length: 1200, body: 'x'.repeat(1200), effects: [],
+    above: { thread: [{ card: 'good-vibes', act: 'g', gimmick: { kind: 'price', flavors: ['salty'], add: 25 }, ends }] } });
+  const live = new Date(Date.now() + 86_400_000).toISOString();
+  const salty = pair({ whoami, card_target_reach: under(live), play_card: { id: 'k', kind: 'card' } });
+  assert.equal((await runAction(salty.dbs, instance, { action: 'playCard', card: 'whoops', character: id, target, config: { color: 'red' }, message: '' })).status, 200);
+  assert.ok(salty.calls.some((c) => c.startsWith('service:play_card:') && c.includes('"price":75')), salty.calls.join('\n'));
+  const ended = pair({ whoami, card_target_reach: under(new Date(Date.now() - 1000).toISOString()), play_card: { id: 'k', kind: 'card' } });
+  await runAction(ended.dbs, instance, { action: 'playCard', card: 'whoops', character: id, target, config: { color: 'red' }, message: '' });
+  assert.ok(ended.calls.some((c) => c.startsWith('service:play_card:') && c.includes('"price":50')), 'an ended Good Vibes adds nothing');
+  const sweet = pair({ whoami, card_target_reach: under(live), play_card: { id: 'k', kind: 'card' } });
+  await runAction(sweet.dbs, instance, { action: 'playCard', card: 'stick-around', character: id, target, config: {}, message: '' });
+  assert.ok(sweet.calls.some((c) => c.startsWith('service:play_card:') && !c.includes('"price":75')), 'a Sweet cast pays no surcharge');
 });
 
 const onPost = { whoami, card_target_reach: { reach: 'post', act: target, kind: 'post', length: 10, body: 'x'.repeat(10), effects: [] }, set_card: setAct };
@@ -298,19 +323,19 @@ test('a player sets a Move face down: Whoops! and Glitter Bomb pass the decision
   }
 });
 
-test('a Trap Card naming Whoops! sends the named catch, from the card\'s own rules', async () => {
+test('a catching set card naming Whoops! sends the named catch, from the card\'s own rules', async () => {
   const { dbs, calls } = pair(onPost);
   // A request that also names a catch and a phrase of its own: the act function takes neither.
-  const out = await runAction(dbs, instance, { action: 'setCard', card: 'trap-card', character: id, target, config: { card: 'whoops' }, catches: 'glitter-bomb', phrase: 'smuggled' });
+  const out = await runAction(dbs, instance, { action: 'setCard', card: 'card-collector', character: id, target, config: { card: 'whoops' }, catches: 'glitter-bomb', phrase: 'smuggled' });
   assert.equal(out.status, 200, JSON.stringify(out.body));
   const sent = setCalls(calls);
   assert.ok(sent[0]!.includes('"catches":"whoops"') && sent[0]!.includes('"phrase":null') && !sent[0]!.includes('smuggled') && !sent[0]!.includes('glitter-bomb'), sent[0]);
 });
 
-test('a Trap Card naming Force Field is refused in its own words, before SQL', async () => {
+test('a Card Collector naming Force Field is refused in its own words, before SQL', async () => {
   const { dbs, calls } = pair(onPost);
-  const out = await runAction(dbs, instance, { action: 'setCard', card: 'trap-card', character: id, target, config: { card: 'force-field' } });
-  assert.deepEqual({ status: out.status, body: out.body }, { status: 400, body: { field: 'config', error: 'Trap Card names a card that is cast on a post' } });
+  const out = await runAction(dbs, instance, { action: 'setCard', card: 'card-collector', character: id, target, config: { card: 'force-field' } });
+  assert.deepEqual({ status: out.status, body: out.body }, { status: 400, body: { field: 'config', error: 'Card Collector names a card that is cast on a post' } });
   assert.equal(setCalls(calls).length, 0, calls.join('\n'));
 });
 
@@ -363,7 +388,7 @@ test('a Use is refused by the act function when it is set', async () => {
   assert.equal(setCalls(calls).length, 0);
 });
 
-test('a Gimmick\'s configuration is checked by its own rules before SQL', async () => {
+test('a set card\'s configuration is checked by its own rules before SQL', async () => {
   const { dbs, calls } = pair({ whoami, card_target_reach: { reach: 'post', act: target, kind: 'post', length: 10, body: 'x'.repeat(10), effects: [] } });
   const out = await runAction(dbs, tested, { action: 'setCard', card: 'test-snare', character: id, target, config: { ink: 'blue' } });
   assert.deepEqual({ status: out.status, body: out.body }, { status: 400, body: { field: 'config', error: 'the ink is red' } });
@@ -372,7 +397,7 @@ test('a Gimmick\'s configuration is checked by its own rules before SQL', async 
 
 test('a second card back on a post is refused before SQL, as anyone would see it', async () => {
   const { dbs, calls } = pair({ whoami, card_target_reach: { reach: 'post', act: target, kind: 'post', length: 10, body: 'x'.repeat(10), effects: [{ card: null, act: 'b', faceDown: true, ends: new Date(Date.now() + 1e6).toISOString() }] } });
-  const out = await runAction(dbs, tested, { action: 'setCard', card: 'test-bluffy', character: id, target });
+  const out = await runAction(dbs, tested, { action: 'setCard', card: 'test-move', character: id, target });
   assert.deepEqual({ status: out.status, body: out.body }, { status: 400, body: { field: 'config', error: 'this post already holds a card face down' } });
   assert.ok(!calls.some((c) => c.startsWith('service:set_card:')), calls.join('\n'));
 });
@@ -387,14 +412,14 @@ test('a Use on a post under someone else\'s character is refused by SQL and answ
 
 test('a card is played the way it is played: a Set card is not cast, and a Cast card is not used', async () => {
   const { dbs } = pair({ whoami, card_target_reach: { act: target, kind: 'post', length: 10, body: 'x'.repeat(10), effects: [] } });
-  const cast = await runAction(dbs, tested, { action: 'playCard', card: 'test-bluffy', character: id, target });
-  assert.deepEqual(cast.body, { field: 'config', error: 'Test Bluffy is set face down on your own post' });
+  const cast = await runAction(dbs, tested, { action: 'playCard', card: 'test-snare', character: id, target });
+  assert.deepEqual(cast.body, { field: 'config', error: 'Test Snare is set face down on your own post' });
   const used = await runAction(dbs, tested, { action: 'useCard', card: 'test-inky', character: id, target, config: { ink: 'red' } });
   assert.deepEqual(used.body, { field: 'config', error: 'Test Inky is cast' });
 });
 
 test('a cast under a ward is refused in the ward card\'s name', async () => {
-  const { dbs } = pair({ whoami, card_target_reach: { act: target, kind: 'post', length: 10, body: 'x'.repeat(10), effects: [{ card: 'test-shield', act: 'w', ward: 'uncommon' }] } });
+  const { dbs } = pair({ whoami, card_target_reach: { act: target, kind: 'post', length: 10, body: 'x'.repeat(10), effects: [{ card: 'test-shield', act: 'w', gimmick: { kind: 'ward', upTo: 'uncommon' } }] } });
   const out = await runAction(dbs, tested, { action: 'playCard', card: 'test-inky', character: id, target, config: { ink: 'red' } });
   assert.deepEqual(out.body, { field: 'config', error: 'this post\'s Test Shield turns away cards up to uncommon' });
 });
@@ -817,7 +842,7 @@ test('a request that names no account schedules nothing after: a body refused be
     assert.deepEqual(calls, [], 'nothing is read');
     assert.equal(later, 0, 'a refused body schedules no drain');
   }
-  // A barred account (0148's refuse_if_barred: 28000 with the hint kayfabb.barred): answered with a recognizable hint, so the client reads its session again.
+  // A barred account (0150's refuse_if_barred: 28000 with the hint kayfabb.barred): answered with a recognizable hint, so the client reads its session again.
   {
     const barred: Db = { rpc: async () => { throw new DatabaseError('post: this account is banned', '28000', 401, 'this account is banned', 'kayfabb.barred'); } };
     const out = await handleAction({ dbs: { player: barred, service: barred }, instance, body: { action: 'post', thread: id, character: id, body: 'Hello.' },
@@ -834,4 +859,76 @@ test('a request that names no account schedules nothing after: a body refused be
     assert.deepEqual({ status: out.status, body: out.body }, { status: 401, body: { error: 'sign in to act', code: '28000' } });
     assert.equal(later, 0, 'a caller with no account schedules no drain');
   }
+});
+
+// The kick for a card's written text: after the answer, for the post a play or an edit named, and only where it may have jobs.
+const kicking = {
+  ...instance,
+  settings: { ...instance.settings, oldVoice: true },
+  cards: instance.cards.map((c) => (c.key === 'whoops' ? { ...c, writes: { tokens: () => 10, frame: () => ({ prompt: 'p', stop: [] }) } } : c)),
+} as typeof instance;
+async function kickedBy(body: unknown, answers: Record<string, unknown>, who: typeof instance = kicking) {
+  const { dbs } = pair({ whoami, card_target_reach: { reach: 'post', act: target, kind: 'post', length: 10, body: 'x'.repeat(10), effects: [] }, ...answers });
+  const posts: string[] = [];
+  let later!: () => Promise<void>;
+  const out = await handleAction({ dbs, instance: who, body, send: async () => {}, drain: async () => {}, after: (w) => { later = w; }, write: async (p) => { posts.push(p); } });
+  await later();
+  return { out, posts };
+}
+
+test('the kick: a play of a card that writes kicks the writer for its post, after the answer', async () => {
+  const { out, posts } = await kickedBy({ action: 'playCard', card: 'whoops', character: id, target, config: { color: 'red' } }, { play_card: { id: 'k', kind: 'card' } });
+  assert.equal(out.status, 200);
+  assert.deepEqual(posts, [target]);
+});
+
+test('a play of a card that writes hands play_card the tokens its rules decided, and a play of any other card hands it none', async () => {
+  const writing = { ...kicking, cards: kicking.cards.map((c) => (c.key === 'whoops' ? { ...c, writes: { tokens: () => 37, frame: () => ({ prompt: 'p', stop: [] }) } } : c)) } as typeof instance;
+  const run = async (who: typeof instance) => {
+    const { dbs, calls } = pair({ whoami, card_target_reach: { reach: 'post', act: target, kind: 'post', length: 10, body: 'x'.repeat(10), effects: [] }, play_card: { id: 'k', kind: 'card' } });
+    await runAction(dbs, who, { action: 'playCard', card: 'whoops', character: id, target, config: { color: 'red', tokens: 5000 } });
+    return JSON.parse(calls.find((c) => c.startsWith('service:play_card:'))!.slice('service:play_card:'.length)) as Record<string, unknown>;
+  };
+  assert.equal((await run(writing)).tokens, 37, 'the decision\'s number, never one the request carried');
+  assert.equal('tokens' in (await run(instance)), false);
+});
+
+test('a top-level tokens field of the request is ignored: the play records what the server decided, and a card that does not write gets none', async () => {
+  const writing = { ...kicking, cards: kicking.cards.map((c) => (c.key === 'whoops' ? { ...c, writes: { tokens: () => 37, frame: () => ({ prompt: 'p', stop: [] }) } } : c)) } as typeof instance;
+  const run = async (who: typeof instance) => {
+    const { dbs, calls } = pair({ whoami, card_target_reach: { reach: 'post', act: target, kind: 'post', length: 10, body: 'x'.repeat(10), effects: [] }, play_card: { id: 'k', kind: 'card' } });
+    await runAction(dbs, who, { action: 'playCard', card: 'whoops', character: id, target, config: { color: 'red' }, tokens: 5000 });
+    return JSON.parse(calls.find((c) => c.startsWith('service:play_card:'))!.slice('service:play_card:'.length)) as Record<string, unknown>;
+  };
+  assert.equal((await run(writing)).tokens, 37);
+  assert.equal('tokens' in (await run(instance)), false);
+});
+
+test('the kick: a play of another card makes no claim at all', async () => {
+  // The same play of a card whose rules do not write.
+  const plain = await kickedBy({ action: 'playCard', card: 'whoops', character: id, target, config: { color: 'red' } }, { play_card: { id: 'k', kind: 'card' } }, instance);
+  assert.equal(plain.out.status, 200);
+  assert.deepEqual(plain.posts, []);
+  const other = await kickedBy(reacting, { react: { act: target, thread: id, tally: {} } });
+  assert.deepEqual(other.posts, []);
+});
+
+test('the kick: an edit kicks, since any post may have a tail waiting', async () => {
+  const { posts } = await kickedBy({ action: 'edit', post: target, character: id, body: 'y' }, { edit_post: { id: 'e', thread: id } });
+  assert.deepEqual(posts, [target]);
+});
+
+test('the kick: a refused play or edit kicks nothing, and a kick that throws is logged and never escapes', async () => {
+  const refusing: Db = { rpc: async () => { throw new DatabaseError('x', '55000', 400, 'no', REFUSAL_HINT); } };
+  let later!: () => Promise<void>;
+  const posts: string[] = [];
+  await handleAction({ dbs: { player: refusing, service: refusing }, instance: kicking, body: { action: 'edit', post: target, character: id, body: 'y' }, send: async () => {}, drain: async () => {}, after: (w) => { later = w; }, write: async (p) => { posts.push(p); } });
+  await later();
+  assert.deepEqual(posts, []);
+  const { dbs } = pair({ edit_post: { id: 'e', thread: id } });
+  const was = console.error; console.error = () => {};
+  try {
+    await handleAction({ dbs, instance: kicking, body: { action: 'edit', post: target, character: id, body: 'y' }, send: async () => {}, drain: async () => {}, after: (w) => { later = w; }, write: async () => { throw new Error('endpoint down'); } });
+    await later();
+  } finally { console.error = was; }
 });

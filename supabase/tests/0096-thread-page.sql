@@ -40,15 +40,15 @@ declare
   above_play uuid;
   reveal uuid;
 begin
-  insert into card_kinds (key, name, alignment, rarity, play, trap, ward, lasts) values ('tp-bluff', 'Bluff', 'pepperoni', 'common', 'set', null, false, null);
-  insert into card_ledger (account, card, kind, price) values (ann, 'tp-bluff', 'bought', 0);
+  insert into card_kinds (key, name, alignment, rarity, play, trap, gimmick, lasts) values ('tp-idle', 'Idle', 'pepperoni', 'common', 'set', '{"trigger": {"on": "visit"}}', null, null);
+  insert into card_ledger (account, card, kind, price) values (ann, 'tp-idle', 'bought', 0);
 
   for i in 1..45 loop
     posts := posts || tests.post(case when i % 2 = 0 then a2 else a1 end, t, 'Post ' || i);
   end loop;
   -- On page 2: a play on seq 25 (a card layer, which takes no seq), a set on the same post (Ann's own), a spin from seq 27.
   splat_play := tests.act(a2, 'card', t, '{"card": "splat", "config": {"color": "red"}}', posts[25]);
-  setter := (set_card(ann, 'tp-bluff', a1, posts[25], '{}', 0) ->> 'id')::uuid;
+  setter := (set_card(ann, 'tp-idle', a1, posts[25], '{}', 0) ->> 'id')::uuid;
   spin := tests.thread('Spun from 27');
   update threads set origin_act_id = posts[27] where id = spin;
   -- Ten layers on seq 30, oldest first: only the first eight are a post's plays. And a live play on the whole thread, which sits above every post.
@@ -92,7 +92,7 @@ begin
   if (select array_agg(x ->> 'act' order by x ->> 'act') from jsonb_array_elements(r -> 'mine') x) is distinct from (select array_agg(m.act::text order by m.act::text) from my_reactions m)
      or jsonb_array_length(r -> 'mine') is distinct from 2 then raise exception 'mine: %', r -> 'mine'; end if;
   -- faces: Ann's set.
-  if (r -> 'faces') is distinct from jsonb_build_array(jsonb_build_object('play', setter, 'card', 'tp-bluff')) then raise exception 'faces: %', r -> 'faces'; end if;
+  if (r -> 'faces') is distinct from jsonb_build_array(jsonb_build_object('play', setter, 'card', 'tp-idle')) then raise exception 'faces: %', r -> 'faces'; end if;
   -- spun.
   if (r -> 'spun') is distinct from (select jsonb_agg(to_jsonb(l)) from thread_list l where l.origin_act_id = posts[27]) or jsonb_array_length(r -> 'spun') is distinct from 1 then
     raise exception 'spun: %', r -> 'spun'; end if;

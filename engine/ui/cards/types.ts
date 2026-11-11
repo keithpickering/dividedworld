@@ -41,12 +41,16 @@ export interface CardPlay {
   readonly faceDown?: true;
   /** A card back that sprang: the card it was and its spring, public from then. The back keeps its place among the marks. */
   readonly revealed?: { readonly card: string; readonly spring: Id; readonly at: string };
+  /** A card back its setter took back into their hand (a `take_back` Act): ended then, and it names no card. */
+  readonly takenBack?: { readonly at: string };
   /** A play a back laid when it sprang (a Move landing on a quote), by the spring that laid it: the Lens says who set it and what set it off. */
   readonly spring?: Id;
   /** A play a trap caught, by the set that caught it: it is spent and does nothing, so no effect is drawn for it. */
   readonly caught?: Id;
   /** An admin ended this play (a `card_end` Act names it): its layer is off for everyone, though the play and its layer number stay. */
   readonly reversed?: true;
+  /** The play's first generation failed, so it was refunded and is over (`Act.untaken`): not in force, never counted, though the play stays an Act the room can react to. */
+  readonly untaken?: true;
   /** When a Use's effect ends, as the server wrote it when it landed; a play beyond a post's end, which it is drawn until. */
   readonly ends?: string;
   /**
@@ -109,6 +113,13 @@ export interface CardView {
 }
 
 /**
+ * What a writing card's play has made for one version of its post, as its effect draws it: its text (`text`), a generation still waiting
+ * for the version (`waiting`: the cursor typing nothing), or none (`failed`: the generation failed and there is no earlier text to keep).
+ * A play with no entry has nothing known yet, or nothing for the version drawn (History), and draws nothing. `resolveWritten` (written.ts).
+ */
+export type Written = { readonly text: string } | { readonly waiting: true } | { readonly failed: true };
+
+/**
  * What an effect is given. It wraps `children`, the post's words as they would be drawn without it,
  * and draws whatever it likes around them or over them; with several cards played on a post each
  * card's `Effect` wraps the one played before it, the latest outermost, so a card's `children`
@@ -127,6 +138,16 @@ export interface EffectProps {
   readonly states: Readonly<Record<Id, EffectState>>;
   /** The plays the reader has released themselves from, on every device (their certification). Nothing here is ever broadcast or counted. */
   readonly released: ReadonlySet<Id>;
+  /**
+   * What each play of a card that writes (`CardRules.writes`) has made for the version of the post drawn, by play (written.ts): the text
+   * of the version drawn now (a failed regeneration keeps the tail it had: the text of the play's latest earlier version), or what is still
+   * waiting. In still mode it is the drawn version's own rows alone, so a tail shows in full whatever `states` hold. Empty for any other card.
+   * An effect draws a tail after the words by wrapping `children` (`<>{children}<Tail/></>`), its element marked `data-kb-tail`: the
+   * engine draws the post's words inline before it (bbcode.css), so the last line of the words and the tail's first characters share a line.
+   */
+  readonly written: ReadonlyMap<Id, Written>;
+  /** The version of the post `written` is for (the post's Act, or the edit that made it), where it is known: what an author's save of a version names. */
+  readonly version?: Id;
   readonly reader: EffectReader;
   readonly place: EffectPlace;
   /**
@@ -184,7 +205,7 @@ export interface ConfigFormProps {
   readonly post: Act;
   /** Unique on the page, to hang the form's labels on. */
   readonly id: string;
-  /** Every card of the instance that is cast on a post, as its face draws it (not only the player's hand), for a setting that names one (a Gimmick that waits for a card). */
+  /** Every card of the instance that is cast on a post, as its face draws it (not only the player's hand), for a setting that names one (a set card that waits for a card). */
   readonly castable?: readonly CardFace[];
 }
 
@@ -198,7 +219,10 @@ export interface CardArt {
   readonly color: string;
   /** The ink set on `color`, readable on it. */
   readonly ink: string;
-  /** The card's art: an SVG on the 540 by 840 canvas (TEMPLATE.canvas), a URL the bundler resolved. It is decoration: the card's name and rules say the rest. */
+  /**
+   * The card's art, a URL the bundler resolved: an SVG on the 540 by 840 canvas (TEMPLATE.canvas), or a WebP image of 1080 by 1680
+   * (specs/card-art.md). It is decoration: the card's name and rules say the rest.
+   */
   readonly canvas: string;
   /** The mark: a square SVG drawn to read at 18px, a URL the bundler resolved. */
   readonly mark: string;
@@ -257,14 +281,29 @@ export interface CardUi {
   readonly art: CardArt;
   /**
    * What the player's log says of a state the post's author saved on a play of this card on one of the player's posts, where the
-   * save is worth a line of its own (Whoops!'s layer washed clean): the line's What, and a plain sentence of what it did. A card
-   * gives none, or answers undefined, for a save that is not (a stroke washed away). Out of character and true.
+   * save is worth a line of its own (Whoops!'s layer washed clean): the line's What, and either a plain sentence of what it did (`said`,
+   * read after "<caster>'s <card> on <post>.") or, for a card whose save is the author's own act, the verb of it (`verb`: "erased" makes
+   * "You erased <card> on post #3."). A card gives none, or answers undefined, for a save that is not (a stroke washed away). Out of
+   * character and true.
    */
-  readonly logSave?: (state: unknown) => { readonly what: string; readonly said: string } | undefined;
+  readonly logSave?: (state: unknown) => { readonly what: string; readonly said: string } | { readonly what: string; readonly verb: string } | undefined;
   /**
    * What a play of this card did, in a sentence, for the caster's played line and the author's "a card on your post" line, read
    * from the play's configuration ("It covers “Mario” with “Luigi”."). A card that gives none, or answers undefined, adds nothing.
-   * Out of character and true.
+   * Out of character and true. It is given what the play recorded with itself (`tokens`, for a card that writes: the length it bought, written
+   * with the play and never worked out again from today's economy), for a card whose play is said with a number it recorded.
    */
-  readonly logPlay?: (config: Readonly<Record<string, unknown>>) => string | undefined;
+  readonly logPlay?: (config: Readonly<Record<string, unknown>>, recorded: { readonly tokens?: number }) => string | undefined;
+  /**
+   * What a card that writes (`CardRules.writes`) did to a post of the author's, for the author's log, as the verb phrase after its subject; the
+   * engine names the card and the post, and says nothing of who played it or what it cost. `continued` follows "<card> on your post #3" (the
+   * play's first text, whatever version it came on); `again` follows "Your edit of post #3", given the card's name (a text after an earlier text);
+   * `failed` follows "<card> on post #3" (the failure that ended the play, which was refunded). A failure the play survived, and a failed
+   * regeneration after a text, keep things as they were and have no line. Out of character and true.
+   */
+  readonly logWritten?: {
+    readonly continued: string;
+    readonly again: (card: string) => string;
+    readonly failed: string;
+  };
 }

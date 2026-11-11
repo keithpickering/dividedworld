@@ -340,6 +340,21 @@ describe('the play form', () => {
     expect(within(form).getByRole('button', { name: 'Close' })).toBeInTheDocument();
   });
 
+  test('a use card that raises the cast says which card adds how much, where, and the total includes it', async () => {
+    const user = userEvent.setup();
+    const vibes: CardRules = { key: 'good-vibes', name: 'Good Vibes', alignment: 'sweet', rarity: 'uncommon', play: 'use', reaches: ['thread'], gimmick: { kind: 'price', flavors: ['salty'], add: 25 }, lasts: { unit: 'day', count: 1 }, playPrice: () => 0, validateConfig: (c) => ok(c), canApply: (t, e, _c, now) => landsOn({ key: 'good-vibes', reaches: ['thread'] }, t, e, now) };
+    const served: Instance = { ...instance, cards: [...instance.cards, vibes] };
+    const w = world(served);
+    w.fake.seed.reach(w.gloomba, 'thread', w.thread, 'good-vibes', { ends: Date.now() + 86_400_000 });
+    renderIn(w.fake, <Frame><LoadedThread thread={w.thread} /></Frame>, { path: `/t/${w.thread}`, instance: served, cards, settings: { postMaxLength: 1000, cardEconomy: (await w.fake.settings()).cardEconomy } });
+    await screen.findByRole('article', { name: /^Post 4 /u });
+    await screen.findByRole('button', { name: /^Hand, 3 postcards/u });
+    const form = await playHere(user, 2);
+    expect(within(form).getByText('Good Vibes adds 0.25 in this thread.')).toBeInTheDocument();
+    expect(within(form).getByText('To pay now').closest('div')).toHaveTextContent('0.50');
+    expect(within(form).getByRole('img', { name: 'Wallet after playing: 4.12 of 6.00' })).toBeInTheDocument();
+  });
+
   test('a short post costs nothing more, and the form says so', async () => {
     const user = userEvent.setup();
     const w = world();
@@ -623,6 +638,38 @@ describe('from the Task 3 quality review', () => {
       await act(async () => { await w.fake.edit(w.ids[2]!, w.hooligan, 'y'.repeat(1000)); });
       await waitFor(() => expect(within(form).getByRole('status', { name: 'Cost' })).toHaveTextContent('That costs 0.50, and your wallet holds 0.30.'));
       expect(within(form).getByRole('button', { name: 'Play as Pipewrench' })).toBeDisabled();
+    });
+  });
+
+  describe('a play that did not take (0149)', () => {
+    /* A card that writes: its play whose first generation failed was refunded and is over, so it is no layer on the post. */
+    const writing = { ...whoopsRules, writes: { tokens: () => 40, frame: () => ({ prompt: '', stop: [] as string[] }) } };
+    const server: Instance = { ...instance, cards: [writing, stickRules] };
+    const three = (w: ReturnType<typeof world>) => [1, 2, 3].map((layer) => w.fake.seed.card(w.gloomba, w.ids[1]!, 'whoops', { message: `layer ${layer}`, layer, config: { color: '#ff2bd6' } }));
+
+    test('the form takes a cast on a post with two live plays and one that did not take, as the server does, and refuses once a third is live', async () => {
+      const user = userEvent.setup();
+      const w = world(server);
+      const [, , lost] = three(w);
+      w.fake.seed.text(lost!, w.ids[1]!, { failed: true }, { quiet: true });
+      await open(w);
+      const form = await playHere(user, 2);
+      expect(within(form).queryByText(/already carries/u)).toBeNull();
+      expect(within(form).getByRole('button', { name: 'Play as Pipewrench' })).toBeEnabled();
+      await user.click(within(form).getByRole('button', { name: 'Play as Pipewrench' }));
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Whoops!' })).toBeNull());
+      /* Three plays are live now, the one that did not take among four: a fourth is refused, in the form as at the server. */
+      expect((await w.fake.cardsOn(w.ids[1]!, 10)).filter((a) => a.kind === 'card')).toHaveLength(4);
+      await waitFor(() => expect(here(2)).toBeNull());
+    });
+
+    test('three live plays and none that failed leave no room', async () => {
+      const user = userEvent.setup();
+      const w = world(server);
+      three(w);
+      await open(w);
+      await arm(user);
+      expect(here(2)).toBeNull();
     });
   });
 

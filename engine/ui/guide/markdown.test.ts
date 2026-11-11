@@ -44,13 +44,13 @@ describe('blocks', () => {
     ]);
   });
   test('a table has a header row and body rows, and a cell is inline', () => {
-    assert.deepEqual(parse('| Name | Cost |\n| --- | ---: |\n| **Whoops!** | {{setting:walletCap}} |\n| Bluff | 1 |'), [
+    assert.deepEqual(parse('| Name | Cost |\n| --- | ---: |\n| **Whoops!** | {{setting:walletCap}} |\n| Dud | 1 |'), [
       {
         t: 'table',
         head: [[text('Name')], [text('Cost')]],
         rows: [
           [[{ t: 'strong', children: [text('Whoops!')] }], [{ t: 'setting', path: 'walletCap' }]],
-          [[text('Bluff')], [text('1')]],
+          [[text('Dud')], [text('1')]],
         ],
       },
     ]);

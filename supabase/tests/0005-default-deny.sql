@@ -17,19 +17,19 @@ declare
                            'reading', 'my_reactions', 'thread_view_counts',
                            'pip_styles', 'account_preferences', 'character_profiles',
                            'class_reveals', 'turns_announced',
-                           'my_characters', 'my_wallet', 'my_ledger', 'my_ledger_shares', 'my_wallet_events', 'my_card_ledger', 'my_posts_played_on', 'screen_settings', 'thread_list', 'character_post_counts', 'season_size', 'board_counts', 'current_standings', 'current_season',
+                           'my_characters', 'my_wallet', 'my_ledger', 'my_ledger_shares', 'my_wallet_events', 'my_card_ledger', 'my_posts_played_on', 'my_posts_written_on', 'screen_settings', 'thread_list', 'character_post_counts', 'season_size', 'board_counts', 'current_standings', 'current_season',
                            'staff_now', 'staff_office_now', 'staff_profile_now', 'boards_now', 'moves_log', 'bars_now', 'face_down', 'my_face_down', 'my_caught', 'my_cards_ended', 'play_reach', 'play_moments', 'play_moment_layers',
                            'alerts', 'thread_follows', 'my_followed_threads', 'thread_open',
                            -- The log's lines for the Mod Bots (0111): each the caller's own characters' rows.
                            'my_infractions', 'my_bans', 'my_reports', 'my_appeals', 'my_reports_left', 'my_group_moves',
                            -- The search index (0117): one row per post or spin, readable as the Acts are; the table is no client's to write.
                            'post_search',
-                           -- The admins' re-review list (0148): the versions brought back by an author's edit, read by admins alone (the view is empty for anyone else).
+                           -- The admins' re-review list (0150): the versions brought back by an author's edit, read by admins alone (the view is empty for anyone else).
                            'reviews_due'];
   callable text[] := array['react(uuid,uuid,text)', 'start_thread(text,uuid,text,text,uuid[])', 'post(uuid,uuid,text,uuid,uuid[])',
                            'edit_post(uuid,uuid,text)', 'spin(uuid,uuid,text,text,uuid[])', 'whoami()', 'card_target(uuid)', 'card_of_play(uuid)', 'turn(uuid,text,text)', 'withdraw_turn(uuid)', 'create_invite()', 'reissue_invite(bigint)', 'open_account(text,integer)', 'create_character(text,text,text,text,jsonb)', 'set_debut(uuid,text,text)',
                            'next_settlement_at(timestampwithtimezone)', 'release_effect(uuid)', 'mark_read(uuid,integer,uuid)', 'set_preferences(text,text,text,text,text,integer,text,text,text,text[],boolean)', 'meet_card(text)', 'see_welcome()', 'see_tip(text)', 'skip_tips()', 'restore_tips()', 'resume_tips()', 'replay_tour()', 'my_account_opened()', 'see_alerts(timestampwithtimezone)', 'see_settlement(timestampwithtimezone)', 'follow_thread(uuid,boolean)', 'following_thread(uuid)', 'my_alerts(timestampwithtimezone,integer)', 'my_alerts_unread()', 'my_settlement_moved(bigint)', 'set_profile(uuid,text,text,text,jsonb)', 'is_admin()', 'retire_character(uuid)', 'restore_character(uuid)', 'span_interval(jsonb)',
-                           'unmask(uuid,uuid,text)', 'turn(uuid,text,text,boolean,boolean)', 'standing_place(uuid)', 'standings_page(integer,integer)', 'standings_season()', 'admin_queue()', 'admin_machine()', 'set_slot(uuid,text,integer)', 'move_slot(uuid,text)', 'save_machine(jsonb)', 'hold_move(bigint)', 'replace_queued_description(bigint,text)', 'describe_board(uuid,text)', 'reverse_move(uuid)', 'reverse_card(uuid)', 'card_ended(uuid)', 'replace_successor(bigint,text)', 'set_office(text,text)', 'boss_roster_names()', 'dismiss_handover_todo(integer)', 'move_progress(uuid)',
+                           'unmask(uuid,uuid,text)', 'turn(uuid,text,text,boolean,boolean)', 'standing_place(uuid)', 'standings_page(integer,integer)', 'standings_season()', 'admin_queue()', 'admin_machine()', 'set_slot(uuid,text,integer)', 'move_slot(uuid,text)', 'save_machine(jsonb)', 'hold_move(bigint)', 'replace_queued_description(bigint,text)', 'describe_board(uuid,text)', 'reverse_move(uuid)', 'reverse_card(uuid)', 'card_ended(uuid)', 'post_tails(uuid[])', 'replace_successor(bigint,text)', 'set_office(text,text)', 'boss_roster_names()', 'dismiss_handover_todo(integer)', 'move_progress(uuid)',
                            'here(text,uuid,uuid)', 'set_presence_hidden(uuid,boolean)',
                            -- The box here() ends with (0093), readable without marking a mask.
                            'presence_box(text,uuid)',
@@ -105,8 +105,9 @@ declare
                            'search_matches_sql(text,uuid,uuid,timestampwithtimezone,timestampwithtimezone,boolean,boolean,timestampwithtimezone,uuid,integer)', 'search_walk_sql(text,uuid,uuid,timestampwithtimezone,timestampwithtimezone,boolean,boolean,timestampwithtimezone,uuid,integer)', 'search_cursor_ok(jsonb,boolean)', 'search_cursor_cast(jsonb)', 'search_updates_thread()',
                            'search_match_conds(text,tsquery,uuid,timestampwithtimezone,timestampwithtimezone,boolean)', 'search_thread_matches(uuid,tsquery,uuid,timestampwithtimezone,timestampwithtimezone,boolean)', 'search_post_cards(uuid)',
                            -- The pulls check on pack_kinds (0139), granted to PUBLIC like them, and the count of a hand, which the ledger's policy cuts to the caller's own cards (my_cards calls it).
-                           'pack_pulls_problem(jsonb)', 'card_held(uuid,text)',
-                           -- Conduct (0148). The player's doors: the code accepted, a report to admins and the caller's own bar and log. The admin's: deciding and reading a version's words,
+                           -- Whether a spring or a take-back of a back exists (0150), the one fact card_held, which runs as its caller, can no longer read from the Acts' payload.
+                           'pack_pulls_problem(jsonb)', 'card_held(uuid,text)', 'back_closed(uuid)',
+                           -- Conduct (0150). The player's doors: the code accepted, a report to admins and the caller's own bar and log. The admin's: deciding and reading a version's words,
                            -- each refused to anyone who is not an admin. And the two functions acts_public calls as its reader: whether a version is hidden, a public fact
                            -- of its id as acts_public's `hidden` is, and what a payload shows.
                            'accept_conduct(integer)', 'conduct_accepted()', 'report_post(uuid,text,text)', 'my_bar()', 'my_conduct_log(integer)',

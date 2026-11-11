@@ -92,7 +92,7 @@ function ReportBody({ post, version, lead, onClose }: { readonly post: Id; reado
 
   /* A state is said with focus on the dialog's heading, which the dialog frame draws and names the dialog by. */
   const toHeading = () => {
-    const head = root.current?.closest<HTMLElement>('[role="dialog"]')?.querySelector<HTMLElement>('.kb-glass-dialog-head');
+    const head = root.current?.closest<HTMLElement>("[role='dialog']")?.querySelector<HTMLElement>('.kb-glass-dialog-head');
     if (!head) return;
     head.setAttribute('tabindex', '-1');
     head.focus();

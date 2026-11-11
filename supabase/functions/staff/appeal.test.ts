@@ -2,7 +2,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { appealDoor, runAppeal } from './appeal.ts';
 import { DatabaseError, TransportError, type Db } from '../_shared/rpc.ts';
-import { instance as dividedWorld } from '../_shared/instance.ts';
+import { instance as realInstance } from '../_shared/instance.ts';
+import { placeholderWorld } from '../../../instances/divided-world/system/fixtures/index.ts';
+import type { Instance as WorldInstance } from '../../../engine/rules/types.ts';
+
+const dividedWorld: WorldInstance = placeholderWorld(realInstance);
 import { AnswerRejected } from '../_shared/models/index.ts';
 import type { ChatRequest, ModelResult, Models } from '../../../engine/system/model.ts';
 
@@ -132,6 +136,14 @@ test('a ban\'s appeal is heard by the Boss the database names: the Boss is read 
   const persuadedBy = dividedWorld.system.roster.find((p) => p.key === BOSS)!.persuadedBy;
   assert.ok(text.includes(persuadedBy), 'the hearer\'s persuadedBy is in the prompt');
   assert.match(text, /appeal a ban to you, as the Boss/);
+  assert.ok(m.chats[0]!.system.startsWith(dividedWorld.system.offices.boss.premise), 'a Boss hears it in the Boss\'s frame');
+});
+
+test('an infraction\'s appeal heard by a Mod opens with the Mod premise', async () => {
+  const d = fakeDbs();
+  const m = fakeModels(() => ({ verdict: 'upheld', line: 'No.' }));
+  await go(d, m);
+  assert.ok(m.chats[0]!.system.startsWith(dividedWorld.system.offices.mod.premise));
 });
 
 test('a group punishment\'s appeal: the prompt says what the move did by the group\'s name, the thread is not read, and the ruling is sent with the phase\'s most days', async () => {

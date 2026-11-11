@@ -252,8 +252,8 @@
 }
 
 /*
- * A card set face down (the card mechanic's design, section 3): the engine's own back, the same for every card, so a trap and a
- * Bluff look alike. The mark is the face-down card itself (the card template design's amendment of 2026-11-07, "The mark's back"):
+ * A card set face down (the card mechanic's design, section 3): the engine's own back, the same for every card, so two backs
+ * look alike. The mark is the face-down card itself (the card template design's amendment of 2026-11-07, "The mark's back"):
  * its tile keeps its shape and a white border, and a layer under the border is filled with the postcard back's cloud, by the back's
  * own rules in postcard.css (which load first). Nothing is drawn on it but a count; the setter's own card is named in the Lens. A
  * hover or an open Lens brightens the cloud, since the tile's own fills would sit under it. A sprung back shows its card instead.
