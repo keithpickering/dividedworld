@@ -934,8 +934,15 @@ export interface ClingOptions {
    * The element the pointer is over when it is over this host, where the host itself takes none: a layer with `pointer-events:
    * none`, laid over that element, holds nothing a pointer hits, so the browser names only the element (or what is in it) as an
    * event's target or at a point. By default the host. A flake that lands is still placed in the host's own px (issue #399).
+   * A hit has one owner at a time (issue #412): where several hosts name one hit, the one of the highest `rank` owns it, and
+   * among equal ranks the most recently registered. A host's way out hands the hit back to the one registered before it.
    */
   readonly hit?: HTMLElement;
+  /**
+   * Who wins a shared hit: an `effect` (a surface that draws its own loose glitter) over a `cell` (a post's cell), whichever
+   * registered first. Default `effect`.
+   */
+  readonly rank?: 'effect' | 'cell';
 }
 
 /* The cling layer is page-fixed and has no host of its own, so each flake keeps the band of the host it was picked up from
@@ -946,8 +953,8 @@ interface Carried { f: Flake; ox: number; oy: number; ph: number; band: Band }
 interface Falling { f: Flake; x: number; y: number; vx: number; vy: number; land: number; fallen: number; ph: number; band: Band; over?: boolean }
 
 const hosts = new Map<HTMLElement, ClingOptions>();
-/** Each registered host's `hit` (the host itself by default), to the host: what a walk up from a node is matched against. */
-const hits = new Map<HTMLElement, HTMLElement>();
+/** Each registered host's `hit` (the host itself by default), to the hosts that name it in registration order: what a walk up from a node is matched against. */
+const hits = new Map<HTMLElement, HTMLElement[]>();
 let canvas: HTMLCanvasElement | null = null;
 let ctx: CanvasRenderingContext2D | null = null;
 let ratio = 1;
@@ -995,8 +1002,15 @@ const canAct = (e: Pick<PointerEvent, 'pointerType'>): boolean => e.pointerType 
 /** The registered host whose hit holds this node, if any: a walk up from the node, no measuring. */
 function hostOf(n: EventTarget | null | undefined): HTMLElement | null {
   for (let el = n instanceof Element ? n : null; el; el = el.parentElement) {
-    const host = hits.get(el as HTMLElement);
-    if (host) return host;
+    const list = hits.get(el as HTMLElement);
+    if (!list) continue;
+    /* The most recent host of the highest rank owns the hit. */
+    let owner: HTMLElement | null = null, best = -1;
+    for (const h of list) {
+      const rank = hosts.get(h)?.rank === 'cell' ? 0 : 1;
+      if (rank >= best) { owner = h; best = rank; }
+    }
+    if (owner) return owner;
   }
   return null;
 }
@@ -1212,10 +1226,14 @@ function paint(c: CanvasRenderingContext2D, f: Flake, x: number, y: number, ph: 
   dirty.push(Math.floor((x - r) * d), Math.floor((y - r) * d), Math.ceil((x + r) * d), Math.ceil((y + r) * d));
 }
 
-/** Lets go of a host's hit, unless another host has taken it since. */
+/** Takes a host out of its hit's list, so the host before it owns the hit again. */
 function unhit(host: HTMLElement, options: ClingOptions): void {
   const hit = options.hit ?? host;
-  if (hits.get(hit) === host) hits.delete(hit);
+  const list = hits.get(hit);
+  if (!list) return;
+  const at = list.indexOf(host);
+  if (at >= 0) list.splice(at, 1);
+  if (!list.length) hits.delete(hit);
 }
 
 export const cling = {
@@ -1227,7 +1245,9 @@ export const cling = {
     const was = hosts.get(host);
     if (was) unhit(host, was);
     hosts.set(host, options);
-    hits.set(options.hit ?? host, host);
+    const hit = options.hit ?? host;
+    const list = hits.get(hit);
+    if (list) list.push(host); else hits.set(hit, [host]);
     if (options.sticky) hearScroll(true);
     return () => {
       if (hosts.get(host) === options) { hosts.delete(host); unhit(host, options); }

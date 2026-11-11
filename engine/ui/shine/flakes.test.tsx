@@ -252,6 +252,75 @@ describe('the cling layer', () => {
     expect(cling.carried()).toBeGreaterThan(0);
   });
 
+  /* Issue #412's findings, and a hit's one owner (docs/plans/2026-11-11-shake-design.md section 4). */
+  describe('a hit has one owner at a time', () => {
+    const inked = (el: HTMLElement): HTMLElement => { for (const k of ['--kb-bg', ...POST_INK]) el.style.setProperty(k, light[k]!); return el; };
+    const child = (body: HTMLElement): HTMLElement => { const el = inked(document.createElement('div')); body.append(el); return el; };
+    const mk = () => makeFlakes({ seed: 'sticky', box: { w: 296, h: 296 }, inks: GLITTER, holo: 7, density: 70, glint: GLINT });
+    /** A pointer sweep over the page at x: how much of a host's glitter it picks up. */
+    const sweepAt = (x: number): number => {
+      for (let i = 0; i < 400; i++) { const px = x + 10 + (i % 2) * 120; cling.over(pointer('mouse', px, 100)); move(px, 100); }
+      return cling.carried();
+    };
+    /** Carries a load off a sticky post at the left and drops it at x, and steps time until all has landed. */
+    const dropAt = (x: number): void => { carryOver(x); };
+    const source = () => cling.register(host(0, 0), { sticky: true, flakes: mk() });
+
+    it('N1: a host registered again with a new hit no longer holds the old one', () => {
+      const x = host(0, 0), y = host(1000, 0);
+      const s = child(x);
+      const flakes = mk();
+      cling.register(s, { sticky: true, flakes, hit: x });
+      cling.register(s, { sticky: true, flakes, hit: y });
+      expect(sweepAt(0)).toBe(0);
+      expect(sweepAt(1000)).toBeGreaterThan(0);
+    });
+
+    it('N2: a host disconnected without unregistering lets go of its hit on the next tick', () => {
+      const { b, landed } = page();
+      b.remove();
+      cling.tick(0);
+      carryOver();
+      expect(loose(b)).toHaveLength(0);
+      expect(landed()).toBe(0);
+    });
+
+    it('N3: the second of two effect hosts owns a hit, and its way out hands the hit back to the first', () => {
+      const flakes = mk();
+      source();
+      const x = host(2000, 0);
+      const s1 = child(x), s2 = child(x);
+      const off1 = cling.register(s1, { flakes, hit: x });
+      const off2 = cling.register(s2, { flakes, hit: x });
+      dropAt(2100);
+      expect(loose(s2).length).toBeGreaterThan(0);
+      expect(loose(s1)).toHaveLength(0);
+      off2();
+      sweepLoose();
+      dropAt(2100);
+      expect(loose(s1).length).toBeGreaterThan(0);
+      /* Registered again, then the first's way out taken: the second keeps the hit. */
+      sweepLoose();
+      cling.register(s2, { flakes, hit: x });
+      off1();
+      dropAt(2100);
+      expect(loose(s2).length).toBeGreaterThan(0);
+      expect(loose(s1)).toHaveLength(0);
+    });
+
+    it.each([['effect first', true], ['cell first', false]])('a cell host and an effect host name one hit: the effect owns it, %s', (_n, effectFirst) => {
+      source();
+      const x = host(2000, 0);
+      const effect = child(x), cell = child(x);
+      const regs = [() => cling.register(effect, { rank: 'effect', hit: x }), () => cling.register(cell, { rank: 'cell', hit: x })];
+      if (!effectFirst) regs.reverse();
+      for (const r of regs) r();
+      dropAt(2100);
+      expect(loose(effect).length).toBeGreaterThan(0);
+      expect(loose(cell)).toHaveLength(0);
+    });
+  });
+
   it('a dropped flake over nothing fades and lands nowhere', () => {
     const { a, b } = page();
     load();
