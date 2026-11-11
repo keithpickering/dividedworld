@@ -1015,3 +1015,19 @@ test('a role of another beat is a role: {role, beat} is a role reference, and no
   const differ = moveParamsProblems('mergeBoard', { board: { role: 'f', beat: 'split' }, into: { role: 'f' } }, undefined, true);
   assert.ok(differ.ok, 'a role of this bundle and the same role of another beat are two boards');
 });
+
+test('no sentence in the prompt names a move kind the Boss holds back: each kind\'s prose goes with its line', async () => {
+  const { ASKABLE_MOVE_KINDS } = await import('./moves.ts');
+  const mod = { key: 'bot-a', name: 'Bot A', pronouns: PRONOUN_PRESETS.it, temperament: 'earnest', beats: [], petRules: [], career: { led: [], offices: [] }, notes: [], memory: null, granted: null, unspent: 0, boards: [], order: null };
+  const groups = { conferred: [{ key: 'trialMembers', name: 'Trial Members', tone: 'punishment' as const }] };
+  const base = { mods: [mod], groups, beats: [], heldBack: [] as string[] };
+  const whole = meetingSystemPrompt(promptFacts(base));
+  for (const k of ASKABLE_MOVE_KINDS) assert.ok(whole.includes(k.key), `${k.key} is named when it is listed`);
+  for (const k of ASKABLE_MOVE_KINDS) {
+    const prompt = meetingSystemPrompt(promptFacts({ ...base, heldBack: [k.key] }));
+    assert.ok(!prompt.includes(k.key), `${k.key} is held back and still named: ${prompt.slice(Math.max(0, prompt.indexOf(k.key) - 80), prompt.indexOf(k.key) + 80)}`);
+  }
+  const none = meetingSystemPrompt(promptFacts({ ...base, heldBack: ASKABLE_MOVE_KINDS.map((k) => k.key) }));
+  for (const k of ASKABLE_MOVE_KINDS) assert.ok(!none.includes(k.key), `${k.key} is named when every kind is held back`);
+  assert.ok(!/Board names\.|vending machine|Group moves/.test(none), 'a section about kinds that are all held back is not written');
+});

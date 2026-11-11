@@ -287,6 +287,24 @@ export function meetingSystemPrompt(f: PromptFacts): string {
   );
   const demands = MEETING_DEMAND_KINDS.map((d) => `- ${d.key}: params: ${fieldsOf(d.params)}.`);
   const m = machineLimits(s.economy);
+  // A kind the Boss holds back is named nowhere: its line, and any sentence that names or describes it, is written only when it is listed.
+  const listed = (key: string): boolean => !held.has(key);
+  const machineText = (): string[] => {
+    const [pull, reprice, flash] = [listed('pullSlot'), listed('repriceSlot'), listed('flashSale')];
+    const n = [pull, reprice, flash].filter(Boolean).length;
+    if (n === 0) return [];
+    const punish = pull && reprice ? 'A pullSlot and a repriceSlot above 100 percent punish, and carry a demand.' : pull ? 'A pullSlot punishes, and carries a demand.' : reprice ? 'A repriceSlot above 100 percent punishes, and carries a demand.' : '';
+    const favor = reprice && flash ? 'A repriceSlot below 100 percent and a flashSale are favors: each carries no demand (leave "demand" out; one you give is dropped).'
+      : reprice ? 'A repriceSlot below 100 percent is a favor: it carries no demand (leave "demand" out; one you give is dropped).'
+      : flash ? 'A flashSale is a favor: it carries no demand (leave "demand" out; one you give is dropped).' : '';
+    return [[
+      `The vending machine. ${n === 3 ? 'Three' : n === 2 ? 'Two' : 'One'} of your moves act${n === 1 ? 's' : ''} on its slots, which you name by the ids under "The machine" below. A move on the machine lasts at most ${m.moveDaysMost} days, and a slot has one move at a time.`,
+      ...(pull ? [`- pullSlot: params {slot}. Sells a slot out until the move ends. The slot is on sale, holds a single card, and that card can still come out of a pack on sale (packs are the floor: you never pull a pack). You may have at most ${m.pullMost} slots pulled at once.`] : []),
+      ...(reprice ? [`- repriceSlot: params {slot, percent}. Sets an on-sale slot's price (a pack's too) to a percent of the price the admins set: ${m.repriceLeast} to ${m.repriceMost} percent, never 100.`] : []),
+      ...(flash ? [`- flashSale: params {slot, hours}. Puts a slot the admins hid on sale for hours (params.hours, ${m.flashHoursLeast} to ${m.flashHoursMost} hours; its expiry is that window), then it is hidden again. One flash sale at a time.`] : []),
+      `${[punish, favor].filter(Boolean).join(' ')} An admin's sold out or hidden always wins over you. You read the machine's slots, prices and your moves in force, never who buys what.`,
+    ].join('\n')];
+  };
   const career = careerText(f.career);
   const notes = recentNotes(f.notes, s.pool.notesRead);
   return [
@@ -307,20 +325,16 @@ export function meetingSystemPrompt(f: PromptFacts): string {
       `${BUNDLE_WORDS} Answer one in "bundle" as {name, parts: [{role, kind, params, why}]}: at most ${s.bundleMostParts} parts, each a move of a kind above with its own reason (a part takes a demand, a go_live_at and expires_in_hours as any move does, where its kind needs them). A bundle costs one move for each of its parts. A part that makes a board may have a role, a short key of your own; a later part's board, into or fallback may be {"role": that key} to mean the board the earlier part makes.`,
     ].join('\n'),
     ...beatsText(f.beats ?? []),
-    [
-      `The vending machine. Three of your moves act on its slots, which you name by the ids under "The machine" below. A move on the machine lasts at most ${m.moveDaysMost} days, and a slot has one move at a time.`,
-      `- pullSlot: params {slot}. Sells a slot out until the move ends. The slot is on sale, holds a single card, and that card can still come out of a pack on sale (packs are the floor: you never pull a pack). You may have at most ${m.pullMost} slots pulled at once.`,
-      `- repriceSlot: params {slot, percent}. Sets an on-sale slot's price (a pack's too) to a percent of the price the admins set: ${m.repriceLeast} to ${m.repriceMost} percent, never 100.`,
-      `- flashSale: params {slot, hours}. Puts a slot the admins hid on sale for hours (params.hours, ${m.flashHoursLeast} to ${m.flashHoursMost} hours; its expiry is that window), then it is hidden again. One flash sale at a time.`,
-      'A pullSlot and a repriceSlot above 100 percent punish, and carry a demand. A repriceSlot below 100 percent and a flashSale are favors: each carries no demand (leave "demand" out; one you give is dropped). An admin\'s sold out or hidden always wins over you. You read the machine\'s slots, prices and your moves in force, never who buys what.',
-    ].join('\n'),
+    ...machineText(),
     [
       'Every other move carries a demand the characters can meet, and the move ends when it is met or when it expires. The demands you may set (anything else drops the move):',
       ...demands,
       `Use only the ids you are given below for boards, threads and characters. A count is a whole number of at least 1. A reaction threshold (a quadrant's count, a crossQuote's reactions) is at least ${s.reactionCap + 1}.`,
     ].join('\n'),
-    ...groupsText(f.groups?.conferred ?? []),
-    `Board names. ${f.system.nameStyleBrief} A renameBoard name is at most ${s.boardNameMaxLength} characters; its premise is a sentence saying what the board is now for. A name that is not in the style is dropped, not corrected. A renameBoard description is your own words, in character: the board's subtitle under its new name, a sentence or two.`,
+    ...(listed('conferGroup') ? groupsText(f.groups?.conferred ?? []) : []),
+    ...(listed('renameBoard') || listed('createBoard')
+      ? [`Board names. ${f.system.nameStyleBrief}${listed('renameBoard') ? ` A renameBoard name is at most ${s.boardNameMaxLength} characters; its premise is a sentence saying what the board is now for.` : ''} A name that is not in the style is dropped, not corrected.${listed('renameBoard') ? ' A renameBoard description is your own words, in character: the board\'s subtitle under its new name, a sentence or two.' : ''}`]
+      : []),
     [
       'Your memory. Your answer is your whole new memory: what you leave out is forgotten. Order every list most important first.',
       `You keep at most ${s.memoryOpinions} opinions, ${s.memoryGrudges} grudges, ${s.memoryWheelhouse} wheelhouse subjects and ${s.memoryRealWorld} real-world subjects; the rest are cut from the end. Opinions and grudges name characters by the ids you are given, scored -5 to 5. Leave alone these subjects, and add to them: ${f.system.realWorld.join('; ')}.`,
@@ -371,10 +385,12 @@ function modsText(f: PromptFacts): string {
   const { modBots: m, memoryOpinions, memoryGrudges, memoryWheelhouse, memoryRealWorld } = f.settings;
   if (f.mods.length === 0) return 'You have no Mod Bots on staff. Do not answer with orders or patrols.';
   // A Mod may confer only a punishment, which the queue holds it to; the wording says so.
-  const handable = ASKABLE_MOVE_KINDS.filter((k) => k.offices.includes('mod')).map((k) => (k.key === 'conferGroup' ? 'conferGroup punishments' : k.key));
+  const handable = ASKABLE_MOVE_KINDS.filter((k) => k.offices.includes('mod') && !(f.heldBack ?? []).includes(k.key)).map((k) => (k.key === 'conferGroup' ? 'conferGroup punishments' : k.key));
+  const handed = handable.filter((k) => k === 'setRule' || k === 'conferGroup punishments');
+  const handedText = handed.length ? `(a Mod may be handed ${handed.join(' and ')} on its beat)` : '';
   const out = [
     'Your Mod Bots.',
-    `They are your hands on the boards, with less power than you: they act between meetings, in their own judgments, and only with a move you hand them out of your bank (an allowance), of a kind they may make (${handable.join(', ')}; every other kind stays yours), on a board of their beat (a Mod may be handed setRule and conferGroup punishments on its beat). A Mod holds at most ${m.allowanceMost} at once, and a rule a Mod sets lasts at most ${m.ruleDaysMost} days. A move you hand away is one you do not make. What a Mod does not spend goes back to your bank before this meeting counts it, and is shown below.`,
+    `They are your hands on the boards, with less power than you: they act between meetings, in their own judgments, and only with a move you hand them out of your bank (an allowance), of a kind they may make (${handable.join(', ')}; every other kind stays yours), on a board of their beat ${handedText}. A Mod holds at most ${m.allowanceMost} at once, and a rule a Mod sets lasts at most ${m.ruleDaysMost} days. A move you hand away is one you do not make. What a Mod does not spend goes back to your bank before this meeting counts it, and is shown below.`,
     `Give each Mod on staff one order in "orders": {mod (its key), boards (the ids of the boards it watches), order (one line in your voice, at most ${ORDER_MOST} characters; it is read by that Mod's calls until the next meeting and never acted on), allowance (a whole number from 0 to ${m.allowanceMost}), memory (its whole new memory, in the shape of yours, at most ${memoryOpinions} opinions, ${memoryGrudges} grudges, ${memoryWheelhouse} wheelhouse and ${memoryRealWorld} real-world subjects, characters by the ids you are given)}. Every board is on exactly one Mod's beat: a board named in two orders stays with the first, and a board you leave out is given by plain code to the Mod whose beat preferences match it, and otherwise to the Mod with the fewest boards. The allowances together are cut to what your bank holds after your own moves, from the last order backward.`,
     `You may schedule at most ${m.patrolsPerDay} patrols today in "patrols": {mod, at (a time today, ISO 8601)}; the rest are cut from the end.`,
   ];
