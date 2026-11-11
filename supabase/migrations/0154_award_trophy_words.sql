@@ -25,7 +25,7 @@ begin
     if exists (select 1 from move_kinds k where k.key = move_kind and 'trophyName' = any (k.derived)) then
       params := params || jsonb_build_object(
         'trophyName', coalesce((select t.name from trophy_kinds t where t.key = params ->> 'trophy'), params ->> 'trophy', ''),
-        'characterName', coalesce((select c.name from characters c where c.id::text = lower(params ->> 'character')), ''));
+        'characterName', coalesce((select c.name from characters c where c.id = case when lower(params ->> 'character') ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then (params ->> 'character')::uuid end), ''));
     end if;
     words := fill_tokens(words, params);
     if lower(params ->> 'board') ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then

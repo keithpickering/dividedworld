@@ -478,8 +478,9 @@ declare
   fay uuid := tests.account('ta-fay'); gus uuid := tests.account('ta-gus'); hal uuid := tests.account('ta-hal'); boss uuid := tests.account('ta-admin');
   f uuid := tests.character(fay, 'Ta Fay'); g uuid := tests.character(gus, 'Ta Gus');
   staff uuid := (select id from characters where staff = 'tt-boss');
-  award uuid; said text; made jsonb; art_key text := 'tt-art-1.webp';
+  award uuid; said text; made jsonb; art_key text := 'tt-art-1.webp'; waiting uuid;
 begin
+  insert into characters (owner, name) values (hal, 'Ta Waiting') returning id into waiting;
   insert into admins (account) values (boss);
   perform tests.become(boss);
   award := (award_trophy('tt-pet', f) ->> 'award')::uuid;
@@ -515,6 +516,9 @@ begin
   -- An admin is refused a staff character, an unknown kind and an unknown character, in words that name no account.
   said := pg_temp.refusal(format('select award_trophy(%L, %L)', 'tt-pet', staff));
   if said is distinct from 'a staff character is never given a trophy' then raise exception 'a staff character was given a trophy: %', said; end if;
+  -- A character that has not debuted is refused, in plain words, and no award is written (a belt on a mask nobody has met would name it in the Boss's reference).
+  said := pg_temp.refusal(format('select award_trophy(%L, %L)', 'tt-belt', waiting));
+  if said is distinct from 'that character has not debuted' then raise exception 'an undebuted character was given a trophy: %', said; end if;
   said := pg_temp.refusal(format('select award_trophy(%L, %L)', 'tt-nope', g));
   if said is distinct from 'there is no trophy "tt-nope"' then raise exception 'an unknown kind: %', said; end if;
   said := pg_temp.refusal(format('select award_trophy(%L, %L)', 'tt-pet', gen_random_uuid()));

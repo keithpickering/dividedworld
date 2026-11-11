@@ -55,13 +55,13 @@ begin
 end $$;
 revoke execute on function trophy_move_problem(jsonb, jsonb) from public, anon, authenticated;
 
--- The trophies the Boss may give, in the instance's order of key, each belt with its holder now: [{key, name, belt, holder: {id, name} | null}]. For the meeting's reference text.
+-- The trophies the Boss may give, in the instance's order of key, each belt with its holder now (left out, as no holder, where the holder has not debuted: no award reaches one, but the text never names a mask nobody has met): [{key, name, belt, holder: {id, name} | null}]. For the meeting's reference text.
 create function boss_trophies() returns jsonb
 language sql stable security definer set search_path = public, pg_temp as $$
   select coalesce(jsonb_agg(jsonb_build_object('key', k.key, 'name', k.name, 'belt', k.belt,
     'holder', case when k.belt then (select jsonb_build_object('id', c.id, 'name', c.name)
                                      from (select a.character from trophy_awards a where a.trophy = k.key and not exists (select 1 from trophy_reversals r where r.award = a.id)
-                                           order by a.at desc, a.id desc limit 1) h join characters c on c.id = h.character) end) order by k.key), '[]'::jsonb)
+                                           order by a.at desc, a.id desc limit 1) h join characters c on c.id = h.character and c.debuted_at is not null) end) order by k.key), '[]'::jsonb)
   from trophy_kinds k where k.boss_gives
 $$;
 revoke execute on function boss_trophies() from public, anon, authenticated;

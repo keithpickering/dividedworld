@@ -186,10 +186,65 @@ begin
   perform pg_temp.expect(facts -> 'given' = jsonb_build_array('aw-pet:' || ann), 'only a standing non-belt award this season is given: ' || facts::text);
   perform pg_temp.expect((select string_agg(x, ',' order by x) from jsonb_array_elements_text(facts -> 'barred') x) = (select string_agg(x::text, ',' order by x::text) from unnest(array[boss, cat]) x), 'staff and retired are barred: ' || facts::text);
   perform pg_temp.expect(trophy_award_facts(null) = '{"given": [], "barred": []}'::jsonb, 'no awards, nothing named');
+  -- A belt's holder who has not debuted is not named: no award reaches one by the Boss or by the admin's hand, but a row written any other way must not put a mask in the reference text.
+  perform pg_temp.expect((select e -> 'holder' ->> 'name' from jsonb_array_elements(list) e where e ->> 'key' = 'aw-belt') = 'Aw Bob', 'a debuted holder is named');
+  insert into characters (owner, name) values (tests.account('aw-hid'), 'Aw Hidden');
+  insert into trophy_awards (trophy, character, by, at) values ('aw-belt', pg_temp.ch('Aw Hidden'), 'admin', now() + interval '1 second');
+  list := boss_trophies();
+  perform pg_temp.expect((select e -> 'holder' from jsonb_array_elements(list) e where e ->> 'key' = 'aw-belt') = 'null'::jsonb and position('Aw Hidden' in list::text) = 0 and position(pg_temp.ch('Aw Hidden')::text in list::text) = 0,
+    'an undebuted holder is left out of the Boss''s list: ' || list::text);
   -- Neither reader is a player's, and neither reads an account or a wardrobe.
   perform pg_temp.expect(not has_function_privilege('authenticated', 'boss_trophies()', 'execute') and not has_function_privilege('anon', 'boss_trophies()', 'execute')
     and not has_function_privilege('authenticated', 'trophy_award_facts(jsonb)', 'execute') and has_function_privilege('service_role', 'trophy_award_facts(jsonb)', 'execute')
     and not has_function_privilege('authenticated', 'trophy_move_problem(jsonb,jsonb)', 'execute') and not has_function_privilege('authenticated', 'trophy_award_problem(text,uuid)', 'execute'), 'the readers are the service role''s');
   perform pg_temp.expect((select not bool_or(pg_get_functiondef(p.oid) ~* '\m(from|join)\s+(public\.)?(gear_ledger|gear_worn|accounts|reactions)\M')
     from pg_proc p where p.proname in ('boss_trophies', 'trophy_award_facts', 'trophy_award_problem', 'trophy_move_problem')), 'the readers read no wardrobe, account or reaction');
+end $$;
+
+-- ---- 5. The season's edge: an award from before the open season does not bar a re-award; with no open season all history counts ----
+do $$
+declare
+  eve uuid := tests.character(tests.account('aw-eve'), 'Aw Eve');
+  fay uuid := tests.character(tests.account('aw-fay'), 'Aw Fay');
+  open_from timestamptz;
+begin
+  update seasons set starts_at = now() - interval '5 days' where ends_at is null;
+  open_from := (select starts_at from seasons where ends_at is null);
+  insert into trophy_awards (trophy, character, by, at) values ('aw-pet', eve, 'admin', open_from - interval '1 day'), ('aw-pet', fay, 'admin', open_from - interval '1 day');
+  perform pg_temp.expect(trophy_award_problem('aw-pet', eve) is null, 'an award from before the season does not bar a re-award: ' || coalesce(trophy_award_problem('aw-pet', eve), ''));
+  perform pg_temp.expect(trophy_award_facts(jsonb_build_array(jsonb_build_object('trophy', 'aw-pet', 'character', eve))) -> 'given' = '[]'::jsonb, 'nor does the meeting''s repair count it');
+  insert into trophy_awards (trophy, character, by, at) values ('aw-pet', eve, 'admin', open_from + interval '1 day');
+  perform pg_temp.expect(trophy_award_problem('aw-pet', eve) like '%already given%season%', 'an award inside the season bars one');
+  perform pg_temp.expect(trophy_award_facts(jsonb_build_array(jsonb_build_object('trophy', 'aw-pet', 'character', eve))) -> 'given' = jsonb_build_array('aw-pet:' || eve), 'and the repair counts it');
+  -- No open season: all history counts.
+  update seasons set ends_at = now() - interval '1 hour' where ends_at is null;
+  perform pg_temp.expect(not exists (select 1 from seasons where ends_at is null), 'no season is open');
+  perform pg_temp.expect(trophy_award_problem('aw-pet', fay) like '%already given%season%', 'with no open season an old award bars one');
+  perform pg_temp.expect(trophy_award_facts(jsonb_build_array(jsonb_build_object('trophy', 'aw-pet', 'character', fay))) -> 'given' = jsonb_build_array('aw-pet:' || fay), 'and the repair counts it');
+end $$;
+
+-- ---- 6. The words' lookup of the character is by key, not a scan ----
+create function pg_temp.explain_lines(stmt text) returns setof text language plpgsql as $$
+declare l text;
+begin
+  for l in execute 'explain ' || stmt loop return next l; end loop;
+end $$;
+do $$
+declare
+  plan text;
+  eve uuid := pg_temp.ch('Aw Eve');
+  words text;
+begin
+  insert into characters (owner, name) select tests.account('aw-bulk' || n), 'Aw Bulk ' || n from generate_series(1, 500) n;
+  analyze characters;
+  perform set_config('enable_seqscan', 'off', true);
+  -- The statement system_line runs, with the id given in text.
+  plan := (select string_agg(l, ' ') from pg_temp.explain_lines(format($q$select c.name from characters c where c.id = case when lower(%L::text) ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then (%L::text)::uuid end$q$, eve, eve)) l);
+  perform set_config('enable_seqscan', 'on', true);
+  perform pg_temp.expect(plan like '%characters_pkey%', 'the character lookup uses the primary key: ' || plan);
+  perform pg_temp.expect(pg_get_functiondef('system_line(text,text,jsonb,text)'::regprocedure) !~ 'c\.id::text', 'system_line does not cast the key to text');
+  words := system_line('moveLanded', 'awardTrophy', jsonb_build_object('trophy', 'aw-pet', 'character', upper(eve::text)), 'aw-boss');
+  perform pg_temp.expect(words like '%Aw Eve%', 'an upper-case key still names the character: ' || words);
+  words := system_line('moveLanded', 'awardTrophy', jsonb_build_object('trophy', 'aw-pet', 'character', 'not-a-uuid'), 'aw-boss');
+  perform pg_temp.expect(words like '%the Pet trophy to .%', 'a malformed key names no one and does not error: ' || words);
 end $$;

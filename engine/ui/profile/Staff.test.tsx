@@ -300,3 +300,15 @@ describe('a Mod Bot\'s moderation log lists its visits, the reports it judged an
     expect(link).toHaveAttribute('href', expect.stringMatching(/^\/t\/.+\?page=1#post-2$/u));
   });
 });
+
+describe('a Boss\'s moderation log with a trophy award', () => {
+  test('names the character the trophy went to, never "a member"', async () => {
+    open('director', (fake) => {
+      const ann = fake.seed.character(fake.seed.account('log-ann'), 'Log Ann', testInstance.classes[0]!.key);
+      fake.seed.trophyMove('director', { character: ann, trophy: 'p1' });
+    });
+    const table = await log();
+    await waitFor(() => expect(table).toHaveTextContent('Log Ann'));
+    expect(table).not.toHaveTextContent('a member');
+  });
+});

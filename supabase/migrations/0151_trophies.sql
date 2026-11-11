@@ -232,20 +232,23 @@ grant execute on function show_trophies(uuid, uuid, uuid[]) to service_role;
 
 -- ------------------------------------------------------------------------------------------------------ the admin's hand ----
 
--- An admin gives a trophy to a character. The answer is the same whoever plays it, and a staff character is refused as the table refuses it.
+-- An admin gives a trophy to a character. The answer is the same whoever plays it, and a staff character is refused as the table refuses it, and one that has not debuted as the Boss's landing refuses it.
 create function award_trophy(trophy_key text, of_character uuid, said text default null) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
   its_staff text;
+  its_debut timestamptz;
   made uuid;
 begin
   perform only_admins('gives a trophy');
   if not exists (select 1 from trophy_kinds k where k.key = trophy_key) then raise exception 'there is no trophy "%"', trophy_key using hint = 'kayfabb.refusal', errcode = '22023'; end if;
   said := nullif(btrim(said), '');
   if char_length(said) > 200 then raise exception 'a trophy''s words are at most 200 characters' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
-  select staff into its_staff from characters where id = of_character;
+  select staff, debuted_at into its_staff, its_debut from characters where id = of_character;
   if not found then raise exception 'there is no such character' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
   if its_staff is not null then raise exception 'a staff character is never given a trophy' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+  -- A character that has not debuted is no one's to name yet: a belt on it would put its name on a public page (the belt's lineage, the Boss's reference).
+  if its_debut is null then raise exception 'that character has not debuted' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
   insert into trophy_awards (trophy, character, by, line) values (trophy_key, of_character, 'admin', said) returning id into made;
   return jsonb_build_object('award', made);
 end $$;
