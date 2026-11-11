@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, test, vi } from 'vitest';
+import { ReadFailure } from './data/api.ts';
 import { RouterProvider } from './router.tsx';
 import { buildWorld, renderIn } from './test-world.tsx';
 import { match, Routes } from './routes.tsx';
@@ -37,6 +38,13 @@ describe('the failure screens', () => {
     expect(await screen.findByText('glass display /t/3f2a9c1e')).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'The page cannot be displayed' })).toBeNull();
     expect(failures.display).toHaveBeenCalledWith(expect.objectContaining({ kind: 'broken', address: '/t/3f2a9c1e', onRetry: expect.any(Function) }));
+  });
+
+  test('with failures, a load that failed for want of a connection passes that kind to the glass screen', async () => {
+    const offline = [{ path: '/t/:thread', load: () => Promise.reject(new ReadFailure('offline')), render: () => <p>thread</p> }];
+    renderIn(buildWorld(), <Routes routes={offline} failures={failures} />, { path: '/t/aa' });
+    expect(await screen.findByText('glass display /t/aa')).toBeInTheDocument();
+    expect(failures.display).toHaveBeenLastCalledWith(expect.objectContaining({ kind: 'offline', address: '/t/aa' }));
   });
 
   test('with failures, an address no route matches draws the glass find screen', () => {

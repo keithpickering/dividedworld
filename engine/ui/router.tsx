@@ -10,8 +10,8 @@
  * loader and leaves the page, and the address bar, as they are until the answer lands, then changes them together.
  * It also holds the prefetch answers and the history cache of loaded pages, both in memory only.
  */
-import { failureKind } from './data/api.ts';
 import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type AnchorHTMLAttributes, type MouseEvent, type ReactNode, type Ref } from 'react';
+import { failureKind } from './data/api.ts';
 
 export interface Location {
   readonly path: string;
