@@ -96,6 +96,28 @@ Files: `supabase/tests/e2e/0002-actions.ts` (a new test in it).
   in a scratch edit rename `in_move` to `move` in `actions.ts`'s `apologize` rule, run the test, record the failure,
   restore. Run with `node tools/test-sql.mjs` (or the narrowest filter it takes).
 
+## Task 4. The apology form says the rule it now meets
+
+Model: sonnet.
+
+Added during the build (a plan gap, found after Task 2): Task 2 said the screens are not changed, and that was wrong.
+The spin form (`engine/ui/spin/SpinForm.tsx`) labels the body "Your opening post (optional)" in an apology too, which
+stops being true the moment the apology reaches the action rules, and it shows a refusal's words bare, so a player who
+sent an apology with no body would read only "is empty". Out of character the screens speak plainly and truly
+("The fiction may lie; the log never does"), so the form previews the rule the server holds.
+
+Files: `engine/ui/spin/SpinForm.tsx`, its tests (`engine/ui/spin/`), `engine/ui/composer/barred.test.tsx`.
+
+- Tests first: in an apology the body's label is "Your apology" and does not say "optional"; "Send apology" is
+  disabled until the body holds something other than whitespace (as the button already is for an empty title), and
+  enabled once it does; a refusal that names a field is worded with the field's label, in an apology and in a spin
+  ("Your apology is empty", "The thread title is longer than N characters"), while a refusal with no field, and an
+  uncertain answer, read as they do today. In a spin nothing else changes: the label still says "(optional)" and an
+  empty body still sends. Task 2's form test in `barred.test.tsx` is kept as the server's refusal reaching the form: it
+  reaches the rule with a body the button lets through and the rule calls empty (a zero-width space), and asserts the
+  full sentence. Red runs: the label, the enabled button, the bare "is empty".
+- The change is in `SpinForm.tsx` alone. The button is a preview; the server (and the fake) still decide.
+
 ## After the tasks
 
 `npm run build`, the PR against main, the final review. The PR says it fixes the first item of #371 and does not
