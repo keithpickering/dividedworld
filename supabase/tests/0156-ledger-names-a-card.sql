@@ -79,7 +79,7 @@ begin
   if why is distinct from 'two entries name one character and reason and card' then raise exception 'two entries of one card are refused, got %', why; end if;
   if exists (select 1 from settlements where starts_at = w2) then raise exception 'a refused call settled a window'; end if;
 
-  -- A number under another key still passes, and a share's entry still adds up per card.
+  -- Each entry's shares add up to it by card: y's shares come to 4 against its 5.
   why := pg_temp.refusal(format($q$select apply_settlement(%L, %L, %L::jsonb, '{}', '[]', %L::jsonb)$q$, w2, w3,
     jsonb_build_array(jsonb_build_object('player', ann, 'character', a, 'reason', 'card.boost', 'amount', 5, 'params', '{"card": "x"}'::jsonb),
                       jsonb_build_object('player', ann, 'character', a, 'reason', 'card.boost', 'amount', 5, 'params', '{"card": "y"}'::jsonb)),

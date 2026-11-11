@@ -287,7 +287,6 @@ test('a window in which an Earn Gimmick boosts a card\'s Heel is applied, and th
   assert.ok(magnet, 'the Gimmick is played');
   const first = await runSettlement(db, instance, t.at(24));
   assert.equal(first.status, 'applied', JSON.stringify(first));
-  console.log(sql(`select string_agg(character::text || reason || ':' || amount || coalesce(params::text,''), ' ; ') from ledger `), sql(`select count(*) from acts where kind='card'`));
   assert.equal(sql(`select count(*) from ledger where character = '${t.characters.Gone}' and reason = 'card.boost' and params ->> 'card' = 'heat-magnet'`), '1', 'the boost is its own entry, naming its card');
   assert.ok(Number(sql(`select count(*) from ledger_shares s join ledger l on l.id = s.ledger where l.reason = 'card.boost' and l.character = '${t.characters.Gone}'`)) > 0, 'and has its shares');
   sql(`insert into reactions (act, reactor_character, reactor_account, kind, slot, created_at) values
