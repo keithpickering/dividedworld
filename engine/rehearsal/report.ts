@@ -36,11 +36,23 @@ export interface LogMove {
   readonly failure: string | null;
 }
 export interface LogOrder { readonly meeting: number; readonly staff: string; readonly line: string; readonly allowance: number; readonly boards: number }
-export interface LogVisit { readonly at: string; readonly staff: string; readonly line: string; readonly outcome: string | null }
-export interface LogInfraction { readonly at: string; readonly kind: string; readonly payload: unknown }
-export interface LogPatrol { readonly meeting: number; readonly n: number; readonly staff: string; readonly at: string; readonly ranAt: string | null; readonly sampled: number; readonly dropped: unknown; readonly outcome: unknown }
-export interface LogApology { readonly at: string; readonly character: string; readonly state: string }
-export interface LogChatter { readonly at: string; readonly staff: string; readonly character: string; readonly body: string }
+/** One kept model call: what was sent, what came back or why it was dropped, and the trims made. `cost` is from the ledger row when one matched. */
+export interface LogCall {
+  readonly at: string;
+  readonly duty: string;
+  readonly staff: string | null;
+  readonly replayed: boolean;
+  readonly costMicrodollars: number;
+  readonly prompt: string;
+  readonly answer: unknown;
+  readonly error: { readonly message: string; readonly predicate: string } | null;
+  readonly trims: readonly LogTrim[];
+}
+export interface LogVisit { readonly at: string; readonly staff: string; readonly line: string; readonly outcome: string | null; readonly call: LogCall | null }
+export interface LogInfraction { readonly at: string; readonly kind: string; readonly payload: unknown; readonly call: LogCall | null }
+export interface LogPatrol { readonly meeting: number; readonly n: number; readonly staff: string; readonly at: string; readonly ranAt: string | null; readonly sampled: number; readonly dropped: unknown; readonly outcome: unknown; readonly call: LogCall | null }
+export interface LogApology { readonly at: string; readonly character: string; readonly state: string; readonly call: LogCall | null }
+export interface LogChatter { readonly at: string; readonly staff: string; readonly character: string; readonly body: string; readonly call: LogCall | null }
 export interface LogCost { readonly job: string; readonly calls: number; readonly liveMicrodollars: number; readonly replayedMicrodollars: number }
 export interface LogSkip { readonly at: string; readonly what: string; readonly why: string }
 export interface LogDay {
@@ -54,6 +66,8 @@ export interface LogDay {
   readonly patrols: readonly LogPatrol[];
   readonly apologies: readonly LogApology[];
   readonly chatter: readonly LogChatter[];
+  /** Calls that belong to no Act or row above (reports, appeals, a rejected answer, anything unmatched), under their job. */
+  readonly calls: readonly LogCall[];
   readonly trims: readonly LogTrim[];
   readonly costByJob: readonly LogCost[];
   readonly skips: readonly LogSkip[];
@@ -81,9 +95,22 @@ const json = (v: unknown): string => (v === null || v === undefined ? 'none' : J
 const pre = (v: unknown): string => `<pre>${esc(typeof v === 'string' ? v : json(v))}</pre>`;
 const time = (iso: string | null): string => (iso ? esc(iso.slice(11, 16)) : 'never');
 
+/** Markup this file made from escaped parts, which a table cell takes as it is. */
+class Html {
+  readonly html: string;
+  constructor(html: string) { this.html = html; }
+}
+
+function callHtml(c: LogCall | null): Html {
+  if (!c) return new Html('');
+  const trims = c.trims.length ? `<p>Trims: ${c.trims.map((t) => esc(`${t.path} ${t.predicate} ${t.before} to ${t.after}`)).join('; ')}</p>` : '';
+  const result = c.error ? `<p>Dropped (${esc(c.error.predicate)}): ${esc(c.error.message)}</p>` : `<details><summary>Answer</summary>${pre(c.answer)}</details>`;
+  return new Html(`<details><summary>${esc(c.duty)} call${c.replayed ? ' (replayed)' : ''}</summary>${pre(c.prompt)}</details>${result}${trims}`);
+}
+
 function table(head: readonly string[], rows: readonly (readonly unknown[])[], empty: string): string {
   if (rows.length === 0) return `<p class="none">${esc(empty)}</p>`;
-  return `<table><thead><tr>${head.map((h) => `<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${rows.map((r) => `<tr>${r.map((c) => `<td>${esc(c)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+  return `<table><thead><tr>${head.map((h) => `<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${rows.map((r) => `<tr>${r.map((c) => `<td>${c instanceof Html ? c.html : esc(c)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
 }
 
 function meetingHtml(m: LogMeeting): string {
@@ -104,11 +131,12 @@ function dayHtml(d: LogDay): string {
 <h3>Moves</h3>${table(['Move', 'Mod', 'Kind', 'Reason', 'Demand', 'Goes live', 'Landed', 'Ended', 'Held', 'Failure'],
     d.moves.map((m) => [m.id, m.staff, m.kind, m.why, json(m.demand), m.goLiveAt, m.landedAt ?? 'not yet', m.endedHow ?? 'standing', m.held ? 'held' : '', m.failure ?? '']), 'No moves.')}
 <h3>Orders</h3>${table(['Meeting', 'Mod', 'Order', 'Allowance', 'Boards'], d.orders.map((o) => [o.meeting, o.staff, o.line, o.allowance, o.boards]), 'No orders.')}
-<h3>Mod work</h3>${table(['Time', 'Mod', 'Visit', 'Ended'], d.visits.map((v) => [v.at, v.staff, v.line, v.outcome ?? 'open']), 'No visits.')}
-${table(['Time', 'Kind', 'What'], d.infractions.map((i) => [i.at, i.kind, json(i.payload)]), 'No filings.')}
-${table(['Meeting', 'No.', 'Mod', 'At', 'Ran', 'Posts read', 'Dropped', 'Outcome'], d.patrols.map((p) => [p.meeting, p.n, p.staff, p.at, p.ranAt ?? 'not yet', p.sampled, json(p.dropped), json(p.outcome)]), 'No patrols.')}
-${table(['Time', 'Character', 'State'], d.apologies.map((a) => [a.at, a.character, a.state]), 'No apologies.')}
-<h3>Chatter</h3>${table(['Time', 'Mod', 'Character', 'Said'], d.chatter.map((c) => [c.at, c.staff, c.character, c.body]), 'No chatter.')}
+<h3>Mod work</h3>${table(['Time', 'Mod', 'Visit', 'Ended', 'Call'], d.visits.map((v) => [v.at, v.staff, v.line, v.outcome ?? 'open', callHtml(v.call)]), 'No visits.')}
+${table(['Time', 'Kind', 'What', 'Call'], d.infractions.map((i) => [i.at, i.kind, json(i.payload), callHtml(i.call)]), 'No filings.')}
+${table(['Meeting', 'No.', 'Mod', 'At', 'Ran', 'Posts read', 'Dropped', 'Outcome', 'Call'], d.patrols.map((p) => [p.meeting, p.n, p.staff, p.at, p.ranAt ?? 'not yet', p.sampled, json(p.dropped), json(p.outcome), callHtml(p.call)]), 'No patrols.')}
+${table(['Time', 'Character', 'State', 'Call'], d.apologies.map((a) => [a.at, a.character, a.state, callHtml(a.call)]), 'No apologies.')}
+<h3>Chatter</h3>${table(['Time', 'Mod', 'Character', 'Said', 'Call'], d.chatter.map((c) => [c.at, c.staff, c.character, c.body, callHtml(c.call)]), 'No chatter.')}
+<h3>Other calls</h3>${table(['Time', 'Job', 'Mod', 'Cost', 'Call'], d.calls.map((c) => [c.at, c.duty, c.staff ?? '', dollars(c.costMicrodollars), callHtml(c)]), 'None.')}
 <h3>Trims and drops</h3>${table(['Where', 'Path', 'Bound', 'Before', 'After'], d.trims.map((t) => [t.where, t.path, t.predicate, t.before, t.after]), 'None.')}
 <h3>Cost by job</h3>${table(['Job', 'Calls', 'Live', 'Replayed'], d.costByJob.map((c) => [c.job, c.calls, dollars(c.liveMicrodollars), dollars(c.replayedMicrodollars)]), 'No model calls.')}
 <h3>Skips</h3>${table(['Time', 'What', 'Why'], d.skips.map((s) => [s.at, s.what, s.why]), 'Nothing skipped.')}

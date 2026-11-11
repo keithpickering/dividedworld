@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { reportHtml, type LogDay, type RehearsalLog } from './report.ts';
+import { reportHtml, type LogCall, type LogDay, type RehearsalLog } from './report.ts';
 
 const emptyDay = (day: number): LogDay => ({
-  day, date: `2026-12-0${day}`, meetings: [], moves: [], orders: [], visits: [], infractions: [], patrols: [], apologies: [], chatter: [], trims: [], costByJob: [], skips: [], filler: { through: 3, refused: 1 },
+  day, date: `2026-12-0${day}`, meetings: [], moves: [], orders: [], visits: [], infractions: [], patrols: [], apologies: [], chatter: [], calls: [], trims: [], costByJob: [], skips: [], filler: { through: 3, refused: 1 },
 });
 const meeting = {
   id: 1, startedAt: '2026-12-01T00:00:00.000Z', finishedAt: '2026-12-01T00:01:00.000Z', outcome: 'ok', error: null, bankBefore: 2, bankAfter: 1,
@@ -25,12 +25,13 @@ test('a move\'s why and a chatter post are text, never markup (the poison)', () 
     days: [{
       ...day,
       moves: [{ ...move, why: '<script>alert(1)</script>' }],
-      chatter: [{ at: '2026-12-01T01:00:00.000Z', staff: 'mod', character: "O'Brien & \"Co\"", body: '<img src=x onerror=alert(1)>' }],
+      chatter: [{ at: '2026-12-01T01:00:00.000Z', staff: 'mod', character: "O'Brien & \"Co\"", body: '<img src=x onerror=alert(1)>', call: null }],
     }],
   };
   const html = reportHtml(poisoned);
-  assert.ok(!html.includes('<script'), 'a script tag is in the page');
-  assert.ok(!html.includes('<img'), 'an img tag is in the page');
+  assert.ok(!/<script/i.test(html), 'a script tag is in the page');
+  assert.ok(!/<img/i.test(html), 'an img tag is in the page');
+  assert.ok(!/<[^>]*\bonerror\s*=/i.test(html), 'an event handler is in a tag');
   assert.ok(html.includes('&lt;script&gt;alert(1)&lt;/script&gt;'));
   assert.ok(html.includes('&lt;img src=x onerror=alert(1)&gt;'));
   assert.ok(html.includes('O&#39;Brien &amp; &quot;Co&quot;'));
@@ -54,6 +55,46 @@ test('a skipped job and a trimmed answer are shown', () => {
 test('the page is whole: the meeting, memory side by side, cost, and nothing external', () => {
   const html = reportHtml(clean());
   for (const s of ['DIGEST-TEXT', 'before-hobby', 'after-hobby', 'tiny', 'prefers-color-scheme', '$1.50', '$0.25', 'met', '<details']) assert.ok(html.includes(s), s);
-  assert.ok(!/<script|@import|url\(|https?:/i.test(html));
-  for (const m of html.matchAll(/\b(?:src|href)\s*=\s*["']?([^"'\s>]*)/gi)) assert.equal(m[1], '#');
+  assert.ok(!/<script|@import|url\(/i.test(html));
+  for (const m of html.matchAll(/<[^>]*\b(?:src|href)\s*=\s*["']?([^"'\s>]*)/gi)) assert.equal(m[1], '#');
+});
+
+test('a URL in the log is shown as text and is no reference', () => {
+  const log = clean();
+  const html = reportHtml({ ...log, days: [{ ...log.days[0]!, chatter: [{ at: '2026-12-01T01:00:00.000Z', staff: 'mod', character: 'Mo', body: 'see https://example.com/x?a=1&b=2', call: null }] }] });
+  assert.ok(html.includes('see https://example.com/x?a=1&amp;b=2'));
+  assert.ok(!/<[^>]*\b(?:src|href)\s*=/i.test(html));
+});
+
+const call = (over: Partial<LogCall> = {}): LogCall => ({ at: '2026-12-01T02:00:00.000Z', duty: 'chatter', staff: 'mod', replayed: false, costMicrodollars: 0, prompt: 'CHATTER-PROMPT', answer: 'CHATTER-ANSWER', error: null, trims: [], ...over });
+
+test('visits, filings, patrols, apologies and chatter show their words, with the call that made them', () => {
+  const log = clean();
+  const html = reportHtml({
+    ...log,
+    days: [{
+      ...log.days[0]!,
+      visits: [{ at: '2026-12-01T03:00:00.000Z', staff: 'mod', line: 'VISIT-LINE', outcome: 'filed', call: null }],
+      infractions: [{ at: '2026-12-01T03:30:00.000Z', kind: 'infraction', payload: { rule: 'FILING-RULE' }, call: call({ duty: 'filing', prompt: 'FILING-PROMPT', answer: 'FILING-ANSWER' }) }],
+      patrols: [{ meeting: 1, n: 1, staff: 'mod', at: '2026-12-01T04:00:00.000Z', ranAt: null, sampled: 3, dropped: [{ why: 'PATROL-DROP' }], outcome: { note: 'PATROL-OUTCOME' }, call: call({ duty: 'patrolJudge', prompt: 'PATROL-PROMPT', answer: 'PATROL-ANSWER' }) }],
+      apologies: [{ at: '2026-12-01T05:00:00.000Z', character: 'APOLOGIZER', state: 'accepted', call: call({ duty: 'apologyJudge', prompt: 'APOLOGY-PROMPT', answer: 'APOLOGY-ANSWER' }) }],
+      chatter: [{ at: '2026-12-01T01:00:00.000Z', staff: 'mod', character: 'Mo', body: 'CHATTER-BODY', call: call() }],
+    }],
+  });
+  for (const w of ['VISIT-LINE', 'FILING-RULE', 'FILING-PROMPT', 'FILING-ANSWER', 'PATROL-DROP', 'PATROL-OUTCOME', 'PATROL-PROMPT', 'PATROL-ANSWER', 'APOLOGIZER', 'APOLOGY-PROMPT', 'APOLOGY-ANSWER', 'CHATTER-BODY', 'CHATTER-PROMPT', 'CHATTER-ANSWER']) assert.ok(html.includes(w), w);
+  assert.ok(html.includes('<details'));
+});
+
+test('a call with no Act shows under its job, and a rejected answer shows its predicate and reason', () => {
+  const log = clean();
+  const html = reportHtml({
+    ...log,
+    days: [{ ...log.days[0]!, calls: [call({ duty: 'reportJudge', prompt: 'REPORT-PROMPT', answer: null, error: { message: 'REJECTED-REASON', predicate: 'minLength 3' }, trims: [{ where: 'x', path: 'p', predicate: 'TRIM-BOUND', before: 9, after: 6 }] })] }],
+  });
+  for (const w of ['reportJudge', 'REPORT-PROMPT', 'REJECTED-REASON', 'minLength 3', 'TRIM-BOUND']) assert.ok(html.includes(w), w);
+});
+
+test('notes (the ledger mismatches) are shown', () => {
+  const html = reportHtml({ ...clean(), notes: ['ledger row 9 (chatter) has no kept call'] });
+  assert.ok(html.includes('ledger row 9 (chatter) has no kept call'));
 });

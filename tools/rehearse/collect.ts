@@ -3,8 +3,8 @@
 // as Acts (0104, 0105), patrols (0110), apologies (0129). A move's end is its `move_end` Act (0046), a visit's its `visit_end` (0105).
 // The calls Task 5 kept (prompt and answer) join to a meeting by the id on the request, and to a day by the simulated time they were made.
 import { DAY_MS } from "../../engine/rehearsal/generate.ts";
-import type { LogApology, LogChatter, LogCost, LogDay, LogInfraction, LogMeeting, LogMove, LogOrder, LogPatrol, LogSkip, LogTrim, LogVisit, RehearsalLog } from "../../engine/rehearsal/report.ts";
-import type { ChatRequest } from "../../engine/system/model.ts";
+import type { LogApology, LogCall, LogChatter, LogCost, LogDay, LogInfraction, LogMeeting, LogMove, LogOrder, LogPatrol, LogSkip, LogTrim, LogVisit, RehearsalLog } from "../../engine/rehearsal/report.ts";
+import type { ChatRequest, CompletionRequest } from "../../engine/system/model.ts";
 import type { RunContext } from "./run.ts";
 
 const iso = (ms: unknown): string => new Date(Number(ms)).toISOString();
@@ -19,11 +19,61 @@ export async function collect(ctx: RunContext): Promise<RehearsalLog> {
   const within = (at: number): boolean => at >= day1 && at < end;
   const days: { [d: number]: { -readonly [K in keyof LogDay]: LogDay[K] extends readonly (infer T)[] ? T[] : LogDay[K] } } = {};
   for (let d = 1; d <= scenario.days; d++) {
-    days[d] = { day: d, date: iso(day1 + (d - 1) * DAY_MS).slice(0, 10), meetings: [], moves: [], orders: [], visits: [], infractions: [], patrols: [], apologies: [], chatter: [], trims: [], costByJob: [], skips: [], filler: { through: 0, refused: 0 } };
+    days[d] = { day: d, date: iso(day1 + (d - 1) * DAY_MS).slice(0, 10), meetings: [], moves: [], orders: [], visits: [], infractions: [], patrols: [], apologies: [], chatter: [], calls: [], trims: [], costByJob: [], skips: [], filler: { through: 0, refused: 0 } };
   }
   const put = (at: number): (typeof days)[number] | undefined => (within(at) ? days[dayOf(at)] : undefined);
   const params = [day1, end];
   const range = (col: string): string => `${col} >= to_timestamp($1 / 1000.0) and ${col} < to_timestamp($2 / 1000.0)`;
+
+  // The ledger (model_calls, 0042) is the book of record for cost: each row is paired with the kept call of the same duty, Mod and
+  // meeting, in order, which says whether it was replayed. A row with no kept call, or a call with no row, is a note.
+  const ledger = await conn.sql(`select id, ${ms("at")} as ms, duty, staff, meeting, cost_microdollars::float8 as cost from model_calls order by at, id`);
+  const keyOf = (duty: string, staff: unknown, meeting: unknown): string => `${duty}|${staff ?? ""}|${meeting ?? ""}`;
+  const keptByKey = new Map<string, typeof calls[number][]>();
+  for (const c of calls) {
+    const k = keyOf(c.duty, c.staff, c.request.meeting);
+    keptByKey.set(k, [...(keptByKey.get(k) ?? []), c]);
+  }
+  const ledgerCost = new Map<typeof calls[number], number>();
+  const ledgerRows: { at: number; duty: string; cost: number; replayed: boolean }[] = [];
+  const notes: string[] = [...ctx.notes];
+  const taken = new Map<string, number>();
+  for (const r of ledger) {
+    const k = keyOf(String(r.duty), r.staff, r.meeting);
+    const i = taken.get(k) ?? 0;
+    const kept = keptByKey.get(k)?.[i];
+    taken.set(k, i + 1);
+    if (kept) ledgerCost.set(kept, Number(r.cost));
+    else notes.push(`ledger row ${r.id} (${r.duty}${r.staff ? `, ${r.staff}` : ""}) has no kept call`);
+    ledgerRows.push({ at: Number(r.ms), duty: String(r.duty), cost: Number(r.cost), replayed: kept?.replayed === true });
+  }
+  for (const c of calls) if (!ledgerCost.has(c)) notes.push(`the kept ${c.duty} call at ${iso(c.at)}${c.staff ? ` (${c.staff})` : ""} has no ledger row`);
+
+  const logCalls = new Map<typeof calls[number], LogCall>();
+  const logCall = (c: typeof calls[number]): LogCall => {
+    const made = logCalls.get(c);
+    if (made) return made;
+    const r = c.request as ChatRequest & CompletionRequest;
+    const prompt = "prompt" in r && typeof r.prompt === "string" ? r.prompt : `${r.system}\n\n${(r.messages ?? []).map((m) => `[${m.role}] ${m.content}`).join("\n\n")}`;
+    const row: LogCall = {
+      at: iso(c.at), duty: c.duty, staff: c.staff, replayed: c.replayed, costMicrodollars: ledgerCost.get(c) ?? c.cost, prompt, answer: c.value ?? null, error: c.error ?? null,
+      trims: c.trims.map((t) => ({ where: c.duty, path: t.path, predicate: t.predicate, before: t.before, after: t.after })),
+    };
+    logCalls.set(c, row);
+    return row;
+  };
+  const used = new Set<typeof calls[number]>();
+  /** The unused call of a duty (and Mod, where known) made nearest to `at`: the call that produced the Act or row made then. */
+  const takeCall = (duty: string, staff: string | null, at: number): LogCall | null => {
+    let best: typeof calls[number] | undefined;
+    for (const c of calls) {
+      if (used.has(c) || c.duty !== duty || (staff !== null && c.staff !== staff)) continue;
+      if (!best || Math.abs(c.at - at) < Math.abs(best.at - at)) best = c;
+    }
+    if (!best) return null;
+    used.add(best);
+    return logCall(best);
+  };
 
   // Meetings, with the Boss's memory before and after and the call that answered.
   const memories = await conn.sql(`select id, staff, meeting, ${ms("at")} as ms, body from staff_memory order by staff, id`);
@@ -34,6 +84,7 @@ export async function collect(ctx: RunContext): Promise<RehearsalLog> {
     const after = mine[0];
     const before = after ? memories.filter((r) => r.staff === after.staff && Number(r.id) < Number(after.id)).at(-1) : undefined;
     const call = calls.filter((c) => c.duty === "meeting" && c.request.meeting === id).at(-1);
+    if (call) used.add(call);
     const request = call?.request as ChatRequest | undefined;
     const row: LogMeeting = {
       id, startedAt: iso(m.started), finishedAt: iso(m.finished), outcome: String(m.outcome), error: m.error === null ? null : String(m.error),
@@ -70,22 +121,22 @@ export async function collect(ctx: RunContext): Promise<RehearsalLog> {
       `left join acts e on e.kind = 'visit_end' and e.target_act_id = v.id where v.kind = 'visit' and ${range("v.created_at")} order by v.created_at, v.id`, params,
   );
   for (const v of visits) {
-    const row: LogVisit = { at: iso(v.ms), staff: String(v.staff), line: String(v.line ?? ""), outcome: v.outcome === null ? null : String(v.outcome) };
+    const row: LogVisit = { at: iso(v.ms), staff: String(v.staff), line: String(v.line ?? ""), outcome: v.outcome === null ? null : String(v.outcome), call: null };
     put(Number(v.ms))?.visits.push(row);
   }
   const filings = await conn.sql(`select ${ms("created_at")} as ms, kind, payload from acts where kind in ('infraction', 'ban') and ${range("created_at")} order by created_at, id`, params);
   for (const f of filings) {
-    const row: LogInfraction = { at: iso(f.ms), kind: String(f.kind), payload: f.payload };
+    const row: LogInfraction = { at: iso(f.ms), kind: String(f.kind), payload: f.payload, call: takeCall("filing", null, Number(f.ms)) };
     put(Number(f.ms))?.infractions.push(row);
   }
   const patrols = await conn.sql(`select meeting, n, staff, ${ms("at")} as ms, ${ms("ran_at")} as ran, cardinality(sampled) as sampled, dropped, outcome from patrols where ${range("at")} order by id`, params);
   for (const p of patrols) {
-    const row: LogPatrol = { meeting: Number(p.meeting), n: Number(p.n), staff: String(p.staff), at: iso(p.ms), ranAt: isoOrNull(p.ran), sampled: Number(p.sampled), dropped: p.dropped, outcome: p.outcome };
+    const row: LogPatrol = { meeting: Number(p.meeting), n: Number(p.n), staff: String(p.staff), at: iso(p.ms), ranAt: isoOrNull(p.ran), sampled: Number(p.sampled), dropped: p.dropped, outcome: p.outcome, call: takeCall("patrolJudge", String(p.staff), Number(p.ran ?? p.ms)) };
     put(Number(p.ms))?.patrols.push(row);
   }
   const apologies = await conn.sql(`select ${ms("a.created_at")} as ms, c.name, a.state from apologies a join characters c on c.id = a.character where ${range("a.created_at")} order by a.id`, params);
   for (const a of apologies) {
-    const row: LogApology = { at: iso(a.ms), character: String(a.name), state: String(a.state) };
+    const row: LogApology = { at: iso(a.ms), character: String(a.name), state: String(a.state), call: takeCall("apologyJudge", null, Number(a.ms)) };
     put(Number(a.ms))?.apologies.push(row);
   }
 
@@ -95,24 +146,29 @@ export async function collect(ctx: RunContext): Promise<RehearsalLog> {
       `where c.staff is not null and a.kind in ('post', 'spin') and ${range("a.created_at")} order by a.created_at, a.id`, params,
   );
   for (const c of chatter) {
-    const row: LogChatter = { at: iso(c.ms), staff: String(c.staff), character: String(c.name), body: String(c.body ?? "") };
+    const row: LogChatter = { at: iso(c.ms), staff: String(c.staff), character: String(c.name), body: String(c.body ?? ""), call: takeCall("chatter", String(c.staff), Number(c.ms)) };
     put(Number(c.ms))?.chatter.push(row);
   }
 
-  // The calls: trims and rejected answers, and cost by job.
-  const byJob = new Map<number, Map<string, { calls: number; live: number; replayed: number }>>();
+  // The calls that matched no Act or row sit under their job; trims and rejected answers are listed for every call; cost is the ledger's.
   for (const c of calls) {
     const day = put(c.at);
     if (!day) continue;
     const where = c.request.meeting === undefined ? c.duty : `${c.duty}, meeting ${c.request.meeting}`;
+    if (!used.has(c)) day.calls.push(logCall(c));
     for (const t of c.trims) day.trims.push({ where, path: t.path, predicate: t.predicate, before: t.before, after: t.after } satisfies LogTrim);
     if (c.error) day.skips.push({ at: iso(c.at), what: where, why: `answer dropped (${c.error.predicate}): ${c.error.message}` });
-    const jobs2 = byJob.get(day.day) ?? new Map();
-    byJob.set(day.day, jobs2);
-    const j = jobs2.get(c.duty) ?? { calls: 0, live: 0, replayed: 0 };
+  }
+  const byJob = new Map<number, Map<string, { calls: number; live: number; replayed: number }>>();
+  for (const r of ledgerRows) {
+    if (!within(r.at)) continue;
+    const d = dayOf(r.at);
+    const jobs2 = byJob.get(d) ?? new Map();
+    byJob.set(d, jobs2);
+    const j = jobs2.get(r.duty) ?? { calls: 0, live: 0, replayed: 0 };
     j.calls++;
-    if (c.replayed) j.replayed += c.cost; else j.live += c.cost;
-    jobs2.set(c.duty, j);
+    if (r.replayed) j.replayed += r.cost; else j.live += r.cost;
+    jobs2.set(r.duty, j);
   }
   for (const [d, jobs2] of byJob) for (const [job, j] of jobs2) days[d]!.costByJob.push({ job, calls: j.calls, liveMicrodollars: j.live, replayedMicrodollars: j.replayed } satisfies LogCost);
 
@@ -129,10 +185,10 @@ export async function collect(ctx: RunContext): Promise<RehearsalLog> {
 
   let live = 0;
   let replayed = 0;
-  for (const c of calls) if (c.replayed) replayed += c.cost; else live += c.cost;
+  for (const r of ledgerRows) if (r.replayed) replayed += r.cost; else live += r.cost;
   return {
     scenario: scenario.key, seed: scenario.seed, mode: ctx.mode, daysRun: scenario.days, day1: iso(day1), systemOnAt: isoOrNull(ctx.systemOnAt),
-    cost: { liveMicrodollars: live, replayedMicrodollars: replayed, capDollars: scenario.costCapDollars }, notes: [...ctx.notes],
+    cost: { liveMicrodollars: live, replayedMicrodollars: replayed, capDollars: scenario.costCapDollars }, notes,
     days: Object.values(days) as LogDay[],
   };
 }
