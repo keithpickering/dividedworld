@@ -94,6 +94,8 @@ export interface PlayControls {
   readonly submitCompose: (config: unknown, first: unknown) => Promise<Answer<unknown>>;
   /** A way out of the compose, asking first when the card holds work. */
   readonly cancelCompose: () => void;
+  /** A compose's play is out: the screen says so where a press of Esc or Cancel, which then do nothing, can be seen. */
+  readonly sending: boolean;
   /** The card says whether it holds work leaving would lose: its question, or null. */
   readonly holdCompose: (ask: string | null) => void;
   /** The compose's slot is gone (its post left the screen): the compose ends with it, with no ask the page could not wait for. */
@@ -147,6 +149,7 @@ export function PlayProvider({ children }: { readonly children: ReactNode }) {
   const playerNow = useRef(player);
   playerNow.current = player;
   const sending = useRef<Promise<Answer<unknown>> | null>(null);
+  const [out, setOut] = useState(false);
   const askId = useId();
   /* The post is read before the form opens, so the form's first render holds the post as it stands. A target without a post (a thread's head, a board's banner) reads nothing. */
   const prepared = usePrepared<readonly Act[], Ask>(
@@ -275,7 +278,8 @@ export function PlayProvider({ children }: { readonly children: ReactNode }) {
       return answer;
     })();
     sending.current = run;
-    const done = () => { sending.current = null; };
+    setOut(true);
+    const done = () => { sending.current = null; setOut(false); };
     void run.then(done, done);
     return run;
   }, [api, endCompose, nameOf, setArmed, setSaid]);
@@ -287,7 +291,7 @@ export function PlayProvider({ children }: { readonly children: ReactNode }) {
       if (e.key !== 'Escape' || e.repeat || e.isComposing) return;
       /* Esc belongs to a field it was typed in, to an open menu or list, and to a dialog above it (the leave question itself, a Lens). */
       const t = e.target;
-      if (t instanceof Element && t.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), [aria-expanded="true"], [role="menu"], [role="listbox"]')) return;
+      if (t instanceof Element && (t.matches('[aria-expanded="true"]') || t.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="menu"], [role="listbox"]'))) return;
       if (document.querySelector('[aria-modal="true"], dialog[open]')) return;
       e.preventDefault();
       e.stopImmediatePropagation();
@@ -316,8 +320,8 @@ export function PlayProvider({ children }: { readonly children: ReactNode }) {
   }, [holding]);
 
   const controls = useMemo<PlayControls>(
-    () => ({ armed, handOpen, setHandOpen, arm, faceDown, choose, openForm, readyForm, opening, compose, openCompose, submitCompose, cancelCompose, holdCompose, dropCompose }),
-    [armed, handOpen, setHandOpen, arm, faceDown, choose, openForm, readyForm, opening, compose, openCompose, submitCompose, cancelCompose, holdCompose, dropCompose],
+    () => ({ armed, handOpen, setHandOpen, arm, faceDown, choose, openForm, readyForm, opening, compose, openCompose, submitCompose, cancelCompose, sending: out, holdCompose, dropCompose }),
+    [armed, handOpen, setHandOpen, arm, faceDown, choose, openForm, readyForm, opening, compose, openCompose, submitCompose, cancelCompose, out, holdCompose, dropCompose],
   );
 
   return (

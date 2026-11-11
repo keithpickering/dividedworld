@@ -311,8 +311,13 @@ export interface ComposeProps {
   readonly post: Act;
   /** Cast now, or set face down on the player's own post. */
   readonly mode: 'cast' | 'set';
-  /** The post body's box as the slot measures it (client px); null before it is measured. */
+  /** The box of the post's words (`under`) as the slot measures it, in client px, with no layer's chrome in it; null before it is measured. */
   readonly box: { readonly w: number; readonly h: number } | null;
+  /**
+   * The element directly around the post's words, inside every card's layer on the post: a card portals a preview into it to draw beneath the layers
+   * (a splat that will cover what is drawn). It is the same element for as long as the compose is open, whatever lands on the post; null where the page has no document.
+   */
+  readonly under: HTMLElement | null;
   /**
    * Land the play: `first` is the card's first draw, `config` its configuration. The answer is the play's or its refusal in the database's
    * words; on a refusal the compose stays mounted and the card shows it. On success the compose is closed.
@@ -407,4 +412,17 @@ export interface CardUi {
     readonly again: (card: string) => string;
     readonly failed: string;
   };
+  /**
+   * For a card with `CardRules.surface`: the colors (or whatever else a drawing names) of one draw on the surface, as a short phrase ("pink and lime"), read from the draw's
+   * payload, for the Lens's row of that draw. Out of character and true to the payload; a card that gives none, or answers an empty string, adds nothing to the row.
+   */
+  readonly describeDraw?: (payload: Readonly<Record<string, unknown>>) => string;
+  /**
+   * For a card with `CardRules.surface`: the words the player's log and the Lens say a draw in. `verb` follows its drawer ("tagged": "You tagged Spritey's post #4 (6% of the
+   * wall)"), `noun` and `nouns` name one draw and several ("tag", "tags": "and 14 older tags, washed or painted over"), and `surface` names what a share is of ("the wall": "6% of the wall").
+   * The engine's own words, when a card gives none, are "drew on", "drawing", "drawings" and "the surface". Out of character and true.
+   */
+  readonly logDraw?: { readonly verb: string; readonly noun: string; readonly nouns: string; readonly surface: string };
+  /** For a card with `CardRules.surface`: the verb of the post's own wash, after its subject ("washed": "You washed 9% of the wall off your post #4"). The engine's own is "washed". */
+  readonly logWash?: { readonly verb: string };
 }

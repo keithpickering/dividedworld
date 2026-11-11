@@ -994,15 +994,82 @@ describe('a card that is played on the post (CardUi.Compose)', () => {
     await user.click(screen.getByRole('button', { name: 'Scribble' }));
     expect(screen.getByRole('status', { name: 'Strokes' })).toHaveTextContent('2');
     const compose = screen.getByTestId('compose');
+    const under = seen!.under;
+    expect(under).not.toBeNull();
     expect(within(post(2)).queryByTestId('whoops-fx')).toBeNull();
     expect(await w.fake.playCard('whoops', w.hooligan, w.ids[1]!, { color: '#ff2bd6' }, 'late')).toMatchObject({ ok: true });
     await within(post(2)).findByTestId('whoops-fx');
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(screen.getByTestId('compose')).toBe(compose);
     expect(screen.getByRole('status', { name: 'Strokes' })).toHaveTextContent('2');
+    /* The body the card previews under is the same element, now inside the layer that landed. */
+    expect(seen!.under).toBe(under);
+    expect(within(post(2)).getByTestId('whoops-fx').contains(under)).toBe(true);
+    expect(within(post(2)).getByTestId('compose').contains(within(post(2)).getByTestId('whoops-fx'))).toBe(true);
     /* Nothing about the landing ended the ask: the drawing is still held. */
     await user.keyboard('{Escape}');
     expect(within(await screen.findByRole('dialog')).getByText(ASK)).toBeInTheDocument();
+  });
+
+  test('box is the post body\'s, not the slot\'s, and the body holds the post\'s words', async () => {
+    const user = userEvent.setup();
+    const rect = (w: number, h: number) => ({ width: w, height: h, top: 0, left: 0, right: w, bottom: h, x: 0, y: 0, toJSON: () => ({}) });
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+      return this.parentElement?.classList.contains('kb-compose-body') ? rect(300, 120) : rect(999, 999);
+    });
+    await onPost();
+    await armTagger(user);
+    await user.click(within(post(2)).getByRole('button', { name: 'Play Tagger on post 2' }));
+    await screen.findByTestId('compose');
+    await waitFor(() => expect(seen!.box).toEqual({ w: 300, h: 120 }));
+    expect(seen!.under!.textContent).toContain('x'.repeat(812));
+  });
+
+  test('while a play is out the wait is said on the screen, where a sighted player sees it', async () => {
+    const user = userEvent.setup();
+    const w = await onPost();
+    vi.spyOn(w.fake, 'playCard').mockImplementation(() => new Promise(() => undefined));
+    await armTagger(user);
+    await user.click(within(post(2)).getByRole('button', { name: 'Play Tagger on post 2' }));
+    await user.click(await screen.findByRole('button', { name: 'Tag it' }));
+    await user.keyboard('{Escape}');
+    expect(within(screen.getByTestId('compose').parentElement!).getByText('Your play is on its way.')).toBeVisible();
+  });
+
+  test('Esc is the compose\'s on a plain control, and the field\'s on an open disclosure or a list', async () => {
+    const user = userEvent.setup();
+    await onPost();
+    await armTagger(user);
+    await user.click(within(post(2)).getByRole('button', { name: 'Play Tagger on post 2' }));
+    const compose = await screen.findByTestId('compose');
+    const open = document.createElement('button');
+    open.setAttribute('aria-expanded', 'true');
+    const wrapper = document.createElement('div');
+    wrapper.setAttribute('aria-expanded', 'true');
+    const inside = document.createElement('button');
+    wrapper.append(inside);
+    compose.append(open, wrapper);
+    open.focus();
+    await user.keyboard('{Escape}');
+    expect(screen.getByTestId('compose')).toBeInTheDocument();
+    /* An ancestor that is expanded does not keep Esc from a control inside it. */
+    inside.focus();
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByTestId('compose')).toBeNull());
+  });
+
+  test('when the ghost mark is gone and what opened the ask is gone too, Leave puts focus on the post', async () => {
+    const user = userEvent.setup();
+    const w = await onPost();
+    await armTagger(user);
+    await user.click(within(post(2)).getByRole('button', { name: 'Play Tagger on post 2' }));
+    await user.click(await screen.findByRole('button', { name: 'Scribble' }));
+    /* Another Tagger lands on the post: it takes no more, so the mark goes. */
+    expect(await w.fake.playCard('tagger', w.hooligan, w.ids[1]!, {}, '')).toMatchObject({ ok: true });
+    await waitFor(() => expect(within(post(2)).queryByRole('button', { name: 'Play Tagger on post 2' })).toBeNull());
+    await user.keyboard('{Escape}');
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Leave' }));
+    await waitFor(() => expect(post(2)).toHaveFocus());
   });
 
   test('while a play is out Esc and Cancel ask nothing and end nothing, and a second submit is the same send', async () => {

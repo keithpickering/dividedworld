@@ -16,6 +16,7 @@
  * takeover is given the post's `marks` (the strip the post's date row draws, handed in by the post) and draws them on the post
  * it lifts. A post with no plays, or whose plays' cards draw no effect, is drawn untouched.
  */
+import { createPortal } from 'react-dom';
 import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentType, type ReactNode } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { Act, EffectState, Id, KayfaApi, PlayAbove, PlayMoment, SurfaceAct } from '../data/api.ts';
@@ -208,19 +209,25 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
   /* A play being made on this post itself (`CardUi.Compose`) is the innermost thing here: the post's words are its children. */
   const composing = play?.compose && play.compose.target.post?.id === post.id ? play.compose : null;
   const Compose = composing ? ui.cards.find((c) => c.key === composing.card)?.Compose : undefined;
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+  if (composing && Compose && bodyRef.current === null && typeof document !== 'undefined') bodyRef.current = document.createElement('div');
+  if (!composing) bodyRef.current = null;
+  const bodyEl = bodyRef.current;
   /* The slot is the outermost thing here, so a play landing on the post mid-compose (a layer wrapping the words) never moves it in the tree: it would remount, and the card's drawing with it. */
-  const slot = (inner: ReactNode) => (composing && play && Compose ? <ComposeSlot composing={composing} Compose={Compose} post={post} play={play}>{inner}</ComposeSlot> : inner);
-  if (layers.every((l) => l.acting.length === 0) && !momentAct) return <>{slot(children)}</>;
+  const slot = (inner: ReactNode) => (composing && play && Compose && bodyEl ? <ComposeSlot composing={composing} Compose={Compose} post={post} play={play} body={bodyEl}>{inner}</ComposeSlot> : inner);
+  /* The post's words sit in `bodyEl`, a div the slot owns (so it is one element however the layers wrap it), innermost inside every layer. */
+  const words = composing && Compose && bodyEl ? <WordsIn el={bodyEl}>{children}</WordsIn> : children;
+  if (layers.every((l) => l.acting.length === 0) && !momentAct) return <>{slot(words)}</>;
   const takes = (key: string) => ui.cards.find((c) => c.key === key)?.takeover === true;
   /* Each layer's cards in the order each was first played there, the first innermost; every takeover after all of them. */
   const wraps = layers.flatMap((l) => [...new Set(l.acting.map((p) => p.card))].map((key) => ({ ...l, key })));
   const beneath = (key: string) => ui.cards.find((c) => c.key === key)?.beneath === true;
   const ordered = [...wraps.filter((w) => !takes(w.key) && beneath(w.key)), ...wraps.filter((w) => !takes(w.key) && !beneath(w.key)), ...wraps.filter((w) => takes(w.key))];
-  let wrapped = children;
+  let wrapped = words;
   if (momentAct && bodyOf) {
     wrapped = (
       <MomentView
-        play={momentAct} place={place} nameOf={nameOf} bodyOf={bodyOf} now={children}
+        play={momentAct} place={place} nameOf={nameOf} bodyOf={bodyOf} now={words}
         back={() => lens.showMoment(null)}
       />
     );
@@ -252,21 +259,19 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
  * Where a card's `Compose` is mounted: the post's words inside it, in a box this measures (client px) and tells it. When the slot goes (the post
  * leaves the screen) the compose ends with it. It is the card's to draw; this keeps only the box, the way out and the answer.
  */
-function ComposeSlot({ composing, Compose, post, play, children }: {
-  readonly composing: Composing; readonly Compose: NonNullable<CardUi['Compose']>; readonly post: Act; readonly play: PlayControls; readonly children: ReactNode;
+function ComposeSlot({ composing, Compose, post, play, body, children }: {
+  readonly composing: Composing; readonly Compose: NonNullable<CardUi['Compose']>; readonly post: Act; readonly play: PlayControls; readonly body: HTMLDivElement; readonly children: ReactNode;
 }) {
-  const ref = useRef<HTMLDivElement>(null);
   const [box, setBox] = useState<{ readonly w: number; readonly h: number } | null>(null);
   useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return undefined;
+    const el = body;
     const measure = () => { const r = el.getBoundingClientRect(); setBox((was) => (was && was.w === r.width && was.h === r.height ? was : { w: r.width, h: r.height })); };
     measure();
     if (typeof ResizeObserver === 'undefined') return undefined;
     const watch = new ResizeObserver(measure);
     watch.observe(el);
     return () => watch.disconnect();
-  }, []);
+  }, [body]);
   /* Gone with its post, but not on a development remount that puts it straight back. */
   const alive = useRef(false);
   useEffect(() => {
@@ -274,10 +279,19 @@ function ComposeSlot({ composing, Compose, post, play, children }: {
     return () => { alive.current = false; setTimeout(() => { if (!alive.current) play.dropCompose(composing); }, 0); };
   }, [play, composing]);
   return (
-    <div ref={ref} className="kb-compose-slot" data-kb-compose={composing.mode}>
-      <Compose post={post} mode={composing.mode} box={box} submit={play.submitCompose} cancel={play.cancelCompose} hold={play.holdCompose}>{children}</Compose>
+    <div className="kb-compose-slot" data-kb-compose={composing.mode}>
+      <Compose post={post} mode={composing.mode} box={box} under={body} submit={play.submitCompose} cancel={play.cancelCompose} hold={play.holdCompose}>{children}</Compose>
+      {/* Esc and Cancel do nothing while the play is out; this is where a sighted player sees why (the status says it aloud). */}
+      {play.sending && <p className="kb-notice">Your play is on its way.</p>}
     </div>
   );
+}
+
+/** The post's words inside the compose's own body element, wherever in the tree the layers put it: the element is the slot's, so it never changes. */
+function WordsIn({ el, children }: { readonly el: HTMLDivElement; readonly children: ReactNode }) {
+  const host = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => { const h = host.current; if (h && el.parentNode !== h) h.appendChild(el); });
+  return <><div ref={host} className="kb-compose-body" />{createPortal(children, el)}</>;
 }
 
 /** What the store takes from a draw or a wash that landed: the cells now covered and the live ids, and the live Acts read again where they are wanted. */
