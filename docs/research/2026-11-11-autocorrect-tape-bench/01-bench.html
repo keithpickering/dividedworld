@@ -220,6 +220,10 @@ button.b:hover { background: var(--shade); }
     <legend>Stacks</legend>
     <label><input type="radio" name="stack" value="layered" id="stackLayered" checked> Layered tape: each strip over its own words</label>
     <label><input type="radio" name="stack" value="union" id="stackUnion"> One strip over the whole stack (today)</label>
+    <span class="hint">A reader's peek on a stack:</span>
+    <label><input type="radio" name="peek" value="turn" id="peekTurn" checked> Lifts the layers in turn on one pull</label>
+    <label><input type="radio" name="peek" value="together" id="peekTogether"> Lifts every layer together</label>
+    <label><input type="radio" name="peek" value="top" id="peekTop"> Lifts only the top</label>
     <span class="hint">The last post holds three plays: “big cats” → “small dogs”, then “cats are” → “nobody asked”, then “big cats” → “Wigglers”. Only a strip with nothing over it can be peeled or peeked.</span>
   </fieldset>
   <fieldset>
@@ -294,7 +298,7 @@ button.b:hover { background: var(--shade); }
   };
 
   /* ---------- The bench's settings. ---------- */
-  const S = { role: 'author', board: 'light', width: 'desk', font: 'gochi', stack: 'layered', pace: 90, pick: 450, give: 34, tear: true, gloss: true, reduce: matchMedia('(prefers-reduced-motion: reduce)').matches };
+  const S = { role: 'author', board: 'light', width: 'desk', font: 'gochi', stack: 'layered', peek: 'turn', pace: 90, pick: 450, give: 34, tear: true, gloss: true, reduce: matchMedia('(prefers-reduced-motion: reduce)').matches };
   /* Each strip's state: 'taped', 'peeled' (peeled this visit: its footprint stays) or 'saved' (peeled before this load: the words' own width). */
   const memberState = new Map();
   /* A half-peeled piece's progress, kept across the bench's own redraws within a visit. */
@@ -463,6 +467,9 @@ button.b:hover { background: var(--shade); }
         pieces.push(makePiece({ member: d.m, index: i, of: boxes.length, box: b, seed, words: shared.words[i], px: shared.px, residue, layer, exposed }));
       });
     }
+    /* What lies beneath each piece on its line, top first: what a peek on a stack lifts after it. */
+    const mine = pieces.filter((q) => q.layer === layer);
+    for (const q of mine) q.under = mine.filter((u) => u.member.z < q.member.z && Math.abs(u.box.y - q.box.y) < 3 && u.box.x < q.box.x + q.box.w && q.box.x < u.box.x + u.box.w).sort((a, b) => b.member.z - a.member.z);
     for (const m of members) m.fp.style.userSelect = members.some((q) => q.fp === m.fp && memberState.get(q.key) === 'taped') ? 'none' : 'text';
   }
 
@@ -635,7 +642,7 @@ button.b:hover { background: var(--shade); }
       ...o, el, pkey: seed, W: b.w, H: b.h, a: 0, bEnd: b.w,
       torn: { a: false, b: false }, side: null, rolled: 0, ready: false,
       pick: null, hand: null, keyHeld: false, tension: 0, lift: 0, liftSide: 'a', settling: false, done: false,
-      jag: { a: [], b: [] },
+      jag: { a: [], b: [] }, under: [], peekD: 0,
     };
     const kept = partial.get(seed);
     if (kept && Math.abs(kept.W - b.w) < 1) { Object.assign(P, { a: kept.a, bEnd: kept.bEnd, torn: kept.torn, jag: kept.jag, side: kept.side, rolled: kept.rolled, ready: kept.ready }); }
@@ -661,8 +668,10 @@ button.b:hover { background: var(--shade); }
       } else roll.style.display = 'none';
       /* The flap of a peek: the lifted tape folded back over the rest, its sticky side up. */
       if (P.lift > 0.5) {
-        flap.style.display = 'block'; flap.style.width = `${P.lift.toFixed(1)}px`;
-        flap.style.left = `${(P.liftSide === 'a' ? a : z - P.lift).toFixed(1)}px`;
+        /* Past halfway it is held up off the page rather than laid flat over the next words, so it narrows as it comes up. */
+        const fw = Math.min(P.lift, Math.max(9, P.W - P.lift + 9));
+        flap.style.display = 'block'; flap.style.width = `${fw.toFixed(1)}px`;
+        flap.style.left = `${(P.liftSide === 'a' ? a : z - fw).toFixed(1)}px`;
       } else flap.style.display = 'none';
       /* The corner lifting while an end is picked. */
       if (P.pick) {
@@ -697,7 +706,7 @@ button.b:hover { background: var(--shade); }
       const x = localX(e);
       el.setPointerCapture(e.pointerId);
       if (S.role === 'reader') {
-        P.liftSide = x < P.W / 2 ? 'a' : 'b'; P.settling = false;
+        P.liftSide = x < P.W / 2 ? 'a' : 'b'; P.settling = false; P.peekD = 0;
         P.hand = { id: e.pointerId, x, peek: true };
         say('Peeking. Let go and it sticks back down.');
         wake(P); return;
@@ -712,7 +721,7 @@ button.b:hover { background: var(--shade); }
       if (!P.hand || P.hand.id !== e.pointerId) return;
       const peek = P.hand.peek;
       P.hand = null;
-      if (peek) { P.settling = true; if (S.reduce) P.lift = 0; wake(P); say('It sticks back down.'); return; }
+      if (peek) { layDown(); say('It sticks back down.'); return; }
       if (P.pick) { P.pick = null; say('Let go before the corner came up.'); }
       else if (P.side) say('The roll waits where you left it.');
       P.tension = 0; render(); meter('');
@@ -724,13 +733,15 @@ button.b:hover { background: var(--shade); }
       e.preventDefault();
       if (e.repeat || P.keyHeld || P.done || !o.exposed) return;
       P.keyHeld = true;
-      if (S.role === 'reader') { P.liftSide = 'a'; P.settling = false; wake(P); return; }
+      if (S.role === 'reader') { P.liftSide = 'a'; P.settling = false; P.peekD = 0; wake(P); return; }
       startPick(P.side ?? (P.torn.a && !P.torn.b ? 'b' : 'a'));
       wake(P);
     });
+    /** Letting go of a peek: every layer it lifted lays back down. */
+    const layDown = () => { P.peekD = 0; for (const Q of [P, ...P.under]) { if (Q.lift <= 0) continue; Q.settling = true; if (S.reduce) { Q.lift = 0; Q.render(); } wake(Q); } };
     const letGoKey = () => {
       P.keyHeld = false;
-      if (S.role === 'reader') { P.settling = true; if (S.reduce) P.lift = 0; wake(P); return; }
+      if (S.role === 'reader') { layDown(); return; }
       if (P.pick) { P.pick = null; render(); }
     };
     el.addEventListener('keyup', (e) => { if (e.key === 'Enter' || e.key === ' ') letGoKey(); });
@@ -757,9 +768,17 @@ button.b:hover { background: var(--shade); }
   }
   function step(P, dt, now) {
     if (S.role === 'reader') {
-      if (P.hand?.peek) P.lift = clamp(P.liftSide === 'a' ? P.hand.x - P.a : P.bEnd - P.hand.x, 0, P.W);
-      else if (P.keyHeld) P.lift = Math.min(P.W, P.lift + (P.W / 0.45) * dt);
-      else if (P.settling) { P.lift = S.reduce ? 0 : Math.max(0, P.lift - Math.max(P.W, 90) * dt * 5); if (!P.lift) P.settling = false; }
+      if (P.hand?.peek || P.keyHeld) {
+        /* One pull: the top lifts first; pulling on brings the layer beneath up after it, and so on (or all at once, or the top alone). */
+        P.peekD = P.hand?.peek ? Math.max(0, P.liftSide === 'a' ? P.hand.x - P.a : P.bEnd - P.hand.x) : P.peekD + (P.W / 0.45) * dt;
+        let rem = P.peekD;
+        for (const Q of [P, ...(S.peek === 'top' ? [] : P.under)]) {
+          Q.liftSide = P.liftSide; Q.settling = false;
+          Q.lift = clamp(S.peek === 'together' ? P.peekD : rem, 0, Q.W);
+          rem -= Q.W;
+          if (Q !== P) Q.render();
+        }
+      } else if (P.settling) { P.lift = S.reduce ? 0 : Math.max(0, P.lift - Math.max(P.W, 90) * dt * 5); if (!P.lift) P.settling = false; }
       return;
     }
     if (P.pick) {
@@ -859,6 +878,7 @@ button.b:hover { background: var(--shade); }
   radios('board', (v) => { S.board = v; wrap.dataset.board = v; rebuild(); });
   radios('width', (v) => { S.width = v; wrap.dataset.width = v; partial.clear(); pieces = []; rebuild(); });
   radios('font', (v) => { S.font = v; partial.clear(); pieces = []; rebuild(); });
+  radios('peek', (v) => { S.peek = v; });
   radios('stack', (v) => { S.stack = v; partial.clear(); pieces = []; rebuild(); });
   const slider = (id, key) => { const i = document.getElementById(id), out = document.getElementById(`${id}Out`); i.addEventListener('input', () => { S[key] = Number(i.value); out.textContent = i.value; }); };
   slider('pace', 'pace'); slider('pick', 'pick'); slider('give', 'give');
