@@ -62,6 +62,8 @@ export interface CardPlay {
   readonly on?: Id;
   /** The drive this play belongs to (`CardRules.drive`): its opening play's id, from the play's own payload. Only a play of a drive card has one. */
   readonly drive?: Id;
+  /** The key of the one the server drew at this play from the card's pool (`CardRules.draws`), from the play's own payload: a card with no draws has none. */
+  readonly drawn?: string;
 }
 
 /**

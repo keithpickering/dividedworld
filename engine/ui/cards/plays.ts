@@ -72,6 +72,7 @@ export function playOf(act: Act): CardPlay | null {
     ...(typeof act.payload.ends === 'string' ? { ends: act.payload.ends } : {}),
     ...(act.untaken === true ? { untaken: true as const } : {}),
     ...(typeof act.payload.drive === 'string' ? { drive: act.payload.drive } : {}),
+    ...(typeof act.payload.drawn === 'string' ? { drawn: act.payload.drawn } : {}),
   };
 }
 

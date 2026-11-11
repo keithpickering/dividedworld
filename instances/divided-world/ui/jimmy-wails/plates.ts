@@ -11,7 +11,10 @@
  *   for words; the banner is then `width + panel.width` wide. A plate that does not extend has `extend: null` and `panel: null`.
  * - `box` is where the words go, in the banner's pixels (the panel's included).
  * - `ink` is the words' color on the plate.
- * The numbers are starting values; the owner judges them on the shots.
+ * - `boxRange` is the darkest and the lightest color under the box (the panel's included), measured from the picture file, since a test cannot
+ *   sample an image: the ink must keep a 4.5 ratio against both (Banner.test.tsx). Measured again whenever the picture or the box moves.
+ * The numbers are starting values; the owner judges them on the shots. Two moved in Task 7 to keep their contrast: close-up's box left the dark green
+ * at its right, and dark-logo, whose near-black band is only 65 pixels wide, got a near-black panel on its right to hold the white words.
  */
 import blueShirt from './plates/blue-shirt.png?url';
 import closeUp from './plates/close-up.png?url';
@@ -26,13 +29,15 @@ export interface Plate {
   readonly panel: { readonly width: number; readonly color: string } | null;
   readonly box: { readonly x: number; readonly y: number; readonly w: number; readonly h: number };
   readonly ink: '#fff' | '#222';
+  readonly boxRange: { readonly darkest: string; readonly lightest: string };
 }
 
 export const PLATES: readonly Plate[] = Object.freeze([
   // Jimbo in a blue shirt, fading to white on the right: the panel carries on that white, and the words go in it.
-  { key: 'blue-shirt', src: blueShirt, width: 450, height: 300, extend: 'right', panel: { width: 450, color: '#fff' }, box: { x: 470, y: 24, w: 410, h: 252 }, ink: '#222' },
-  // A close-up on the right, fading to white and green on the left: the words go in the left 45%.
-  { key: 'close-up', src: closeUp, width: 799, height: 301, extend: null, panel: null, box: { x: 20, y: 20, w: 340, h: 261 }, ink: '#222' },
-  // Jimbo on the right, a near-black band and a blue logo mark on the left: white words in the left half.
-  { key: 'dark-logo', src: darkLogo, width: 769, height: 300, extend: null, panel: null, box: { x: 20, y: 20, w: 364, h: 260 }, ink: '#fff' },
+  { key: 'blue-shirt', src: blueShirt, width: 450, height: 300, extend: 'right', panel: { width: 450, color: '#fff' }, box: { x: 470, y: 24, w: 410, h: 252 }, ink: '#222', boxRange: { darkest: '#ffffff', lightest: '#ffffff' } },
+  // A close-up on the right, fading to white and green on the left: the words go in the left 30%, where it is light (the green darkens past x 310).
+  { key: 'close-up', src: closeUp, width: 799, height: 301, extend: null, panel: null, box: { x: 40, y: 20, w: 230, h: 261 }, ink: '#222', boxRange: { darkest: '#918b5d', lightest: '#c6d2c8' } },
+  // Jimbo on the right, beige and a blue logo mark across the picture, and only a 65-pixel near-black band at its left edge: a near-black panel
+  // carries on to the right of him, and the white words go in it.
+  { key: 'dark-logo', src: darkLogo, width: 769, height: 300, extend: 'right', panel: { width: 360, color: '#0c0c0e' }, box: { x: 789, y: 20, w: 340, h: 260 }, ink: '#fff', boxRange: { darkest: '#0c0c0e', lightest: '#0c0c0e' } },
 ]);

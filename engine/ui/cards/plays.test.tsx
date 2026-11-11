@@ -26,6 +26,12 @@ describe('a play, read from its card Act', () => {
     expect(playOf(card({ payload: { card: 'whoops', layer: 0 } }))?.layer).toBe(1);
     expect(playOf(card({ payload: { card: 'whoops', config: [1] } }))?.config).toEqual({});
   });
+
+  test('carries the plate the server drew, when the payload has one', () => {
+    expect(playOf(card({ payload: { card: 'jimmy-wails', drawn: 'close-up' } }))?.drawn).toBe('close-up');
+    expect(playOf(card({ payload: { card: 'jimmy-wails', drawn: 3 } }))).not.toHaveProperty('drawn');
+    expect(playOf(card({ payload: { card: 'whoops' } }))).not.toHaveProperty('drawn');
+  });
   test('is nothing for an Act that is no card, a card with no card in it, or one with no post', () => {
     expect(playOf(card({ kind: 'post' }))).toBeNull();
     expect(playOf(card({ payload: {} }))).toBeNull();
