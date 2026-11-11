@@ -981,6 +981,49 @@ describe('a card that is played on the post (CardUi.Compose)', () => {
     expect(held.defaultPrevented).toBe(true);
   });
 
+  test('a link or Back while a drawing is held asks the same question: Stay keeps the page and the drawing, Leave goes on', async () => {
+    const user = userEvent.setup();
+    const w = await onPost();
+    await armTagger(user);
+    await user.click(within(post(2)).getByRole('button', { name: 'Play Tagger on post 2' }));
+    await user.click(await screen.findByRole('button', { name: 'Scribble' }));
+    const here = window.location.pathname;
+    const link = [...document.querySelectorAll<HTMLAnchorElement>('a[href]')].find((l) => new URL(l.href).origin === window.location.origin && new URL(l.href).pathname !== here && !l.closest('[aria-hidden="true"]'))!;
+    const to = new URL(link.href).pathname;
+    await user.click(link);
+    const ask = await screen.findByRole('dialog');
+    expect(within(ask).getByText(ASK)).toBeInTheDocument();
+    expect(window.location.pathname).toBe(here);
+    await user.click(within(ask).getByRole('button', { name: 'Stay' }));
+    expect(window.location.pathname).toBe(here);
+    expect(screen.getByTestId('compose')).toBeInTheDocument();
+    /* Back is asked too: the address is put back while the reader answers. */
+    const kept = window.history.state;
+    window.history.replaceState(null, '', '/prev');
+    window.history.pushState(kept, '', here);
+    window.history.back();
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeNull());
+    expect(window.location.pathname).toBe(here);
+    await user.click(screen.getByRole('button', { name: 'Stay' }));
+    await user.click(link);
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Leave' }));
+    await waitFor(() => expect(window.location.pathname).toBe(to));
+    expect(w.ids.length).toBe(4);
+  });
+
+  test('with nothing held, a link goes at once', async () => {
+    const user = userEvent.setup();
+    await onPost();
+    await armTagger(user);
+    await user.click(within(post(2)).getByRole('button', { name: 'Play Tagger on post 2' }));
+    await screen.findByTestId('compose');
+    const here = window.location.pathname;
+    const link = [...document.querySelectorAll<HTMLAnchorElement>('a[href]')].find((l) => new URL(l.href).origin === window.location.origin && new URL(l.href).pathname !== here && !l.closest('[aria-hidden="true"]'))!;
+    await user.click(link);
+    expect(screen.queryByRole('dialog')).toBeNull();
+    await waitFor(() => expect(window.location.pathname).toBe(new URL(link.href).pathname));
+  });
+
   test('Set on one\'s own post mounts it as a set, and submit goes through setCard with the first draw', async () => {
     const user = userEvent.setup();
     const w = await onPost();

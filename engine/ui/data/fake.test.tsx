@@ -3707,6 +3707,40 @@ describe('a surface, as the server keeps it', () => {
     return { fake, ana, anaFace, anaHeel, boFace, thread, post, play };
   }
 
+  describe('a surface card played with its first draw (play_surface_card)', () => {
+    const tag = { strokes: [stroke(0.5, 0.1)] };
+    test('playCard opens the wall with that draw, by the caster, and the wall reads it back', async () => {
+      const { fake, ana, anaFace, thread } = wall();
+      const post = fake.seed.post(thread, anaFace, 'a clean post');
+      fake.seed.cards(ana, { slab: 2 });
+      const played = await fake.playCard('slab', anaFace, post, {}, '', undefined, undefined, tag);
+      expect(played).toMatchObject({ ok: true });
+      const play = (played as { value: { id: string } }).value.id;
+      const held = (await fake.surfaceActs(play))!;
+      expect(held.acts).toHaveLength(1);
+      expect(held.acts[0]).toMatchObject({ kind: 'draw', character: anaFace });
+      expect(held.covered).toBe(count(cellsOf(tag.strokes)));
+    });
+    test('without a first draw it is refused on `first`, and a first draw past the limit refuses the whole play (the card stays in the hand)', async () => {
+      const { fake, ana, anaFace, thread } = wall();
+      const post = fake.seed.post(thread, anaFace, 'a clean post');
+      fake.seed.cards(ana, { slab: 2 });
+      expect(await fake.playCard('slab', anaFace, post, {}, '')).toMatchObject({ ok: false, error: 'draw your tag first', field: 'first' });
+      const huge = { strokes: [stroke(0.5, 0.9), stroke(0.1, 0.9)] };
+      expect(await fake.playCard('slab', anaFace, post, {}, '', undefined, undefined, huge)).toMatchObject({ ok: false, field: 'first' });
+      expect(await fake.myCards()).toEqual(expect.arrayContaining([{ card: 'slab', held: 2 }]));
+      expect(await fake.cardsOn(post, 10)).toHaveLength(0);
+    });
+    test('setCard on one\'s own post takes the draft with it: a back, and no wall until it springs (the fake lays no card from a spring, so the draft is checked and not kept)', async () => {
+      const { fake, ana, anaFace, thread } = wall();
+      const post = fake.seed.post(thread, anaFace, 'a clean post');
+      fake.seed.cards(ana, { slab: 2 });
+      expect(await fake.setCard('slab', anaFace, post, {})).toMatchObject({ ok: false, field: 'first' });
+      expect(await fake.setCard('slab', anaFace, post, {}, undefined, { strokes: 'no' })).toMatchObject({ ok: false });
+      expect(await fake.setCard('slab', anaFace, post, {}, undefined, tag)).toMatchObject({ ok: true, value: { kind: 'set' } });
+    });
+  });
+
   test('the limit\'s refusal says what the database says, with the same numbers', async () => {
     const { fake, anaHeel, play } = wall();
     const first = [stroke(0.5, 0.25)];

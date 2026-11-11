@@ -92,7 +92,17 @@ interface Router {
   readonly navigation: Navigation;
   readonly attach: (routes: readonly RouteLike[]) => void;
   readonly setAccount: (id: string | null) => void;
+  /** Register the one navigation guard (null takes it away); see `NavigationGuard`. */
+  readonly setGuard: (guard: NavigationGuard | null) => void;
 }
+
+/**
+ * Asked before an in-app move leaves the address shown (a link, `navigate`, Back or Forward). It returns false to let the move go, or true when it has taken
+ * the move over (it is asking the reader), in which case it calls `proceed` if the reader leaves and nothing if they stay. A Back or Forward has
+ * already moved the address: a guard that takes it over has the shown address put back, and `proceed` then moves to the address that was asked for.
+ * One guard at a time; a move to the address already shown, and one the account change makes, are never asked.
+ */
+export type NavigationGuard = (proceed: () => void) => boolean;
 
 export interface NavigateOptions { readonly replace?: boolean; readonly state?: unknown; readonly afterAccountChange?: boolean; readonly source?: string }
 
@@ -174,6 +184,9 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
   const shownRef = useRef(shown);
   const entryRef = useRef<string | null>(unwrap(w.history.state).kb);
   const pendingRef = useRef<Pending | null>(null);
+  const guardRef = useRef<NavigationGuard | null>(null);
+  const setGuard = useCallback((g: NavigationGuard | null) => { guardRef.current = g; }, []);
+  const goRef = useRef<(to: string, options?: NavigateOptions) => void>(() => undefined);
   /* The DOM event inside which the pending load began, if any: the same keydown that began a load (Esc to go Back) must not also stop it. */
   const startedBy = useRef<Event | undefined>(undefined);
   const routesRef = useRef<readonly RouteLike[]>([]);
@@ -348,6 +361,16 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
 
   useEffect(() => {
     const onPop = () => {
+      const guard = guardRef.current;
+      if (guard) {
+        const popped = w.location.pathname + w.location.search + w.location.hash;
+        const shownAt = addressOf(shownRef.current.location) + shownRef.current.location.hash;
+        if (popped !== shownAt && guard(() => goRef.current(popped))) {
+          /* The reader is being asked: the address goes back to the page shown, as a new entry. */
+          w.history.pushState(wrap(newEntry(), undefined), '', shownAt);
+          return;
+        }
+      }
       const location = read(w, true);
       const kb = unwrap(w.history.state).kb;
       const found = routeFor(location.path);
@@ -378,7 +401,7 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
     return () => w.removeEventListener('popstate', onPop);
   }, [w, routeFor, cancelPending, leave, commit, startLoad, report]);
 
-  const navigate = useCallback((to: string, options?: NavigateOptions) => {
+  const go = useCallback((to: string, options?: NavigateOptions) => {
     // An in-app navigation never leaves the site: an address that resolves elsewhere (a stray `next`,
     // a link built from text) is the index. A <Link> to another site is left to the browser instead.
     let url = new URL(to, w.location.href);
@@ -408,6 +431,16 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
     /* A re-read of the shown document that was out was read for the address left; it is asked again for the address now shown (its document is the same key's). */
     if (refreshing && same) retryRef.current();
   }, [w, routeFor, startLoad, cancelPending, leave, remember, commit, report]);
+  goRef.current = go;
+  const navigate = useCallback((to: string, options?: NavigateOptions) => {
+    const guard = guardRef.current;
+    if (guard && !options?.afterAccountChange) {
+      const url = new URL(to, w.location.href);
+      const same = url.pathname + url.search + url.hash === w.location.pathname + w.location.search + w.location.hash;
+      if (url.origin === w.location.origin && !same && guard(() => goRef.current(to, options))) return;
+    }
+    go(to, options);
+  }, [w, go]);
 
   /*
    * Reads the shown address again. A page that failed is tried as a move; a page that is shown (its screen has done something that changes
@@ -538,7 +571,7 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
   }, [beginInitial]);
 
   const navigation = useMemo(() => ({ pending, tracking, outcome, track }), [pending, tracking, outcome, track]);
-  const value = useMemo(() => ({ location: shown.location, shown, navigate, retry, prefetch, navigation, attach, setAccount }), [shown, navigate, retry, prefetch, navigation, attach, setAccount]);
+  const value = useMemo(() => ({ location: shown.location, shown, navigate, retry, prefetch, navigation, attach, setAccount, setGuard }), [shown, navigate, retry, prefetch, navigation, attach, setAccount, setGuard]);
   return <RouterContext.Provider value={value}>{children}</RouterContext.Provider>;
 }
 
@@ -631,4 +664,15 @@ export function useRouterAccount(id: string | null): void {
 /** For `Routes`: what to draw, how to try again, and where to hand over the routes. */
 export function useRouterInternals(): Pick<Router, 'shown' | 'retry' | 'attach'> {
   return useRouter();
+}
+
+/** Register a navigation guard while mounted (a screen holding unsaved work); a render outside the router registers none. Pass a stable function. */
+export function useNavigationGuard(guard: NavigationGuard): void {
+  const router = useContext(RouterContext);
+  const setGuard = router?.setGuard;
+  useEffect(() => {
+    if (!setGuard) return undefined;
+    setGuard(guard);
+    return () => setGuard(null);
+  }, [setGuard, guard]);
 }

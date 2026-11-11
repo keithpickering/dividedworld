@@ -1558,6 +1558,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     // Decided and written in one step, with no gap for an edit to land in, so the fake checks no version (play_card does, 0070).
     const decided = decidePlay(rules, settings, postTarget(on.id, on.kind as PostTarget['kind'], text), effects, config, message, { now: new Date(now()), nameOf: (k) => instance.cards.find((c) => c.key === k)?.name ?? k, first });
     if (!decided.ok) return refuse(decided.why, (message !== undefined && !casterMessage(message).ok) || decided.why === rules.needsMessage ? 'message' : 'config');
+    /* The one transaction of play_surface_card: a first draw past the wall's limit refuses the whole play, so none of it is written. */
+    if (decided.value.draw) {
+      const tag = count(fromBits(decided.value.draw.cells));
+      if (tag > decided.value.draw.most) return refuse(`this wall is 0% covered, and its limit is ${Math.floor(decided.value.draw.most / 100)}%; this tag would take it to ${Math.ceil(tag / 100)}%`, 'first');
+    }
     const c = acting(character);
     if (isRefusal(c)) return c;
     const account = me()!;
@@ -1595,6 +1600,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     spend(account, decided.value.price, 'play', written.id);
     recordCard(account.id, written.at, { card, kind: 'played', act: written.id, price: decided.value.price });
     sendAct(written);
+    /* A surface card's play opens its wall with the caster's first draw (play_surface_card: play_card, then draw_on_surface as the caster); a caught play opens none. */
+    if (decided.value.draw !== undefined && !(catches && !rides)) writeSurface('draw', written.id, character, first);
     if (spring) {
       /* The caught card is the setter's (a ride takes none): one more in the hand, and a `caught` row in their own ledger (nothing is paid). */
       const setter = rides ? undefined : accounts.get(faceDown.get(trap!.set)!.account);

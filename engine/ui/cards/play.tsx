@@ -27,6 +27,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useKayfa } from '../context.tsx';
 import { usePlayer } from '../player.tsx';
+import { useNavigationGuard } from '../router.tsx';
 import { useBoard } from '../glass/useBoard.ts';
 import type { Act, Answer, Id } from '../data/api.ts';
 import { PlayForm } from './PlayForm.tsx';
@@ -289,6 +290,14 @@ export function PlayProvider({ children }: { readonly children: ReactNode }) {
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
   }, [open, cancelCompose]);
+  /* A link or Back while work is held asks the same question, and Leave goes on. */
+  const guard = useCallback((proceed: () => void): boolean => {
+    const ask = askNow.current;
+    if (composeNow.current === null || ask === null) return false;
+    setLeaving({ ask, then: () => { endCompose(false); proceed(); } });
+    return true;
+  }, [endCompose]);
+  useNavigationGuard(guard);
   /* Leaving the page with work held is the browser's question. */
   const holding = compose !== null && askHeld !== null;
   useEffect(() => {
