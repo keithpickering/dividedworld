@@ -50,7 +50,7 @@ declare
   w0 timestamptz; w1 timestamptz; ls timestamptz;
   t uuid := tests.thread('Ts thread');
   p_old uuid; sk_up uuid; sk_old uuid; sk_adm uuid; sk_caught uuid; sk_in uuid; cast_old uuid; cast_quiet uuid; sset uuid; sset2 uuid; spr uuid; spr_quiet uuid;
-  tl_up uuid; tl_over uuid; tl_after uuid;
+  tl_up uuid; tl_over uuid; tl_after uuid; tl_edge uuid;
   off_b uuid; off_x uuid; off_y uuid; off_z uuid; off_a1 uuid; off_a2 uuid;
   input jsonb; est jsonb; got jsonb; applied jsonb; r jsonb; n bigint; why text; lp jsonb;
 begin
@@ -85,6 +85,8 @@ begin
   tl_up := tests.act(a, 'card', t, jsonb_build_object('card', 'tsrg', 'message', '', 'config', '{}'::jsonb, 'layer', 1, 'ends', w0 + interval '2 days'), p_old, w0 - interval '7 hours');
   tl_over := tests.act(a, 'card', t, jsonb_build_object('card', 'tsrg', 'message', '', 'config', '{}'::jsonb, 'layer', 2, 'ends', w0 - interval '6 hours'), p_old, w0 - interval '12 hours');
   tl_after := tests.act(a, 'card', t, jsonb_build_object('card', 'tsrg', 'message', '', 'config', '{}'::jsonb, 'layer', 3, 'ends', w0 + interval '2 days'), p_old, w0 - interval '1 hour');
+  -- Played at the very edge of the creation-time bound (the longest ride `lasts`, 7 days, before the window) and still up a second into it.
+  tl_edge := tests.act(a, 'card', t, jsonb_build_object('card', 'tsrg', 'message', '', 'config', '{}'::jsonb, 'layer', 4, 'ends', w0 + interval '1 second'), p_old, w0 - interval '7 days' + interval '1 second');
   -- Reactions to the cast in the window: two masks of one player, and Ann's own.
   insert into reactions (act, reactor_character, reactor_account, kind, slot, created_at) values
     (cast_old, d, dan, 'up', 1, w0 + interval '3 hours'), (cast_old, d2, dan, 'wow', 2, w0 + interval '4 hours'), (cast_old, a, ann, 'calm', 1, w0 + interval '5 hours');
@@ -148,6 +150,8 @@ begin
   if pg_temp.entry(est, cast_old) is null or pg_temp.entry(est, p_old) is null then raise exception 'the author''s estimate does not carry the cast her ride spring rode and its post'; end if;
   got := pg_temp.entry(est, tl_up);
   if got is null or (got ->> 'ends')::bigint is distinct from pg_temp.ms(w0 + interval '2 days') then raise exception 'the author''s estimate does not carry her ride gimmick with its end: %', got; end if;
+  if pg_temp.entry(est, tl_edge) is null then raise exception 'the author''s estimate does not carry a ride gimmick played a lasts before the window and still up'; end if;
+  if pg_temp.entry(est, tl_over) is not null then raise exception 'the author''s estimate carries a ride gimmick that ended before the window'; end if;
   if pg_temp.entry(est, spr_quiet) is not null or pg_temp.entry(est, cast_quiet) is not null then raise exception 'the author''s estimate carries a ride spring whose cast drew no reaction'; end if;
   if pg_temp.scored(est) is distinct from a2 || ':beta:' || off_a1 then raise exception 'the author''s estimate''s scoredAs is not her own mask''s: %', est -> 'scoredAs'; end if;
   -- Every reaction but the caller's own is keyed per mask: two masks of one player are two voters, and none is the caller's key.

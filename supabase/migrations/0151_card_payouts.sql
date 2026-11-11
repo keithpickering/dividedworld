@@ -1252,7 +1252,8 @@ begin
     select g.id, g.target_act_id as post, g.created_at, (g.payload ->> 'ends')::timestamptz as ends
     from acts g join mine m on m.id = g.character join card_kinds ck on ck.key = g.payload ->> 'card' and ck.gimmick ->> 'kind' = 'ride'
     where g.kind = 'card' and g.target_act_id is not null and coalesce(g.payload ->> 'reach', 'post') = 'post' and not (g.payload ? 'caught')
-      and g.created_at < window_end and (g.payload ->> 'ends')::timestamptz > window_start and g.id not in (select id from ended)),
+      and g.created_at < window_end and g.created_at >= window_start - (select max(r.lasts) from card_kinds r where r.gimmick ->> 'kind' = 'ride')
+      and (g.payload ->> 'ends')::timestamptz > window_start and g.id not in (select id from ended)),
   rode as (
     select s.id as spring, (s.payload ->> 'by')::uuid as by_cast
     from acts s join mine m on m.id = s.character
