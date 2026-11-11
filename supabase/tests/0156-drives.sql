@@ -902,3 +902,50 @@ begin
   why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "dn-bad", "name": "Dn Bad", "alignment": "sweet", "rarity": "common", "needsMessage": "  "}]}')$s$);
   if why is null or why not like '22023 %' then raise exception 'a blank refusal was not refused: %', why; end if;
 end $$;
+
+-- ---- the log reads a gift: each side's page names the gift's Act, the drive's opening play and the post, and holds only its own wallet event ----
+-- log_page (0150) names the Acts a `gift_out` or `gift_in` points at (`ref`, the gift) and follows them to the drive's play and the post, so the line can say the amount, the overhead, what arrived and where. The giver's page
+-- holds the giver's event and none of the author's; the author's holds the author's and the giver's public character, never an account.
+do $$
+declare
+  gv uuid := tests.account('dl-giver');  gch uuid := tests.character(gv, 'Dl Giver');
+  au uuid := tests.account('dl-author'); ach uuid := tests.character(au, 'Dl Author');
+  cs uuid := tests.account('dl-caster'); cch uuid := tests.character(cs, 'Dl Caster');
+  t uuid := tests.thread('Dl log');
+  p uuid := tests.post(ach, t, 'A post with a drive.');
+  d uuid;
+  gift uuid;
+  doc jsonb;
+begin
+  perform pg_temp.eco();
+  insert into card_ledger (account, card, kind, price) values (cs, 'dv-gift', 'bought', 0);
+  perform pg_temp.wallet(gv, 100);
+  perform pg_temp.wallet(au, 50);
+  d := pg_temp.open_drive(cs, cch, p);
+  perform tests.become_service();
+  gift := (donate(gv, gch, d, 25) #>> '{gift,id}')::uuid;
+  perform tests.unbecome();
+
+  -- The giver's page.
+  perform tests.become(gv);
+  doc := log_page(null);
+  if (select count(*) from jsonb_array_elements(doc -> 'sources' -> 'wallet') e where e ->> 'kind' = 'gift_out' and (e ->> 'ref')::uuid = gift and (e ->> 'change')::integer = -25 and (e ->> 'balance_after')::integer = 75) is distinct from 1::bigint
+    then raise exception 'the giver''s log holds the gift_out event: %', doc -> 'sources' -> 'wallet'; end if;
+  if exists (select 1 from jsonb_array_elements(doc -> 'sources' -> 'wallet') e where e ->> 'kind' = 'gift_in') then raise exception 'the giver''s log holds no author event'; end if;
+  if (select a -> 'payload' from jsonb_array_elements(doc -> 'acts') a where (a ->> 'id')::uuid = gift) is distinct from '{"amount": 25, "overhead": 7, "arrives": 18}'::jsonb then raise exception 'the gift''s Act is named with its money: %', doc -> 'acts'; end if;
+  if (select count(*) from jsonb_array_elements(doc -> 'acts') a where (a ->> 'id')::uuid in (d, p)) is distinct from 2::bigint then raise exception 'the drive''s opening play and its post are followed: %', doc -> 'acts'; end if;
+  if doc::text ~* au::text then raise exception 'the giver''s page holds the author''s account'; end if;
+  perform tests.unbecome();
+
+  -- The author's page.
+  perform tests.become(au);
+  doc := log_page(null);
+  if (select count(*) from jsonb_array_elements(doc -> 'sources' -> 'wallet') e where e ->> 'kind' = 'gift_in' and (e ->> 'ref')::uuid = gift and (e ->> 'change')::integer = 18 and (e ->> 'overflow')::integer = 0 and (e ->> 'balance_after')::integer = 68) is distinct from 1::bigint
+    then raise exception 'the author''s log holds the gift_in event: %', doc -> 'sources' -> 'wallet'; end if;
+  if exists (select 1 from jsonb_array_elements(doc -> 'sources' -> 'wallet') e where e ->> 'kind' = 'gift_out') then raise exception 'the author''s log holds no giver event'; end if;
+  if (select a ->> 'character' from jsonb_array_elements(doc -> 'acts') a where (a ->> 'id')::uuid = gift) is distinct from gch::text then raise exception 'the gift''s Act names the giver''s character'; end if;
+  if (select count(*) from jsonb_array_elements(doc -> 'people') f where (f ->> 'id')::uuid = gch and f ->> 'name' = 'Dl Giver') is distinct from 1::bigint then raise exception 'the giver''s character is named for the line: %', doc -> 'people'; end if;
+  if (select count(*) from jsonb_array_elements(doc -> 'acts') a where (a ->> 'id')::uuid in (d, p)) is distinct from 2::bigint then raise exception 'the drive''s opening play and its post are followed'; end if;
+  if doc::text ~* gv::text then raise exception 'the author''s page holds the giver''s account'; end if;
+  perform tests.unbecome();
+end $$;
