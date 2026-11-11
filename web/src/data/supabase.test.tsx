@@ -399,7 +399,7 @@ describe('reads and their rows', () => {
     const p = req?.url.searchParams;
     expect(p?.get('thread')).toBe(`eq.${T}`);
     expect(p?.getAll('seq')).toEqual(['gte.3', 'lte.9']);
-    expect(p?.get('kind')).toBe('not.in.(edit,card)');
+    expect(p?.get('kind')).toBe('not.in.(edit,card,donation)');
     expect(p?.get('order')).toBe('seq.asc');
     expect(acts).toEqual([ACT]);
   });
@@ -1744,6 +1744,24 @@ describe('reads by many ids', () => {
     const times = above.map((p) => p.act.createdAt);
     expect(times).toEqual([...times].sort());
     expect(await h.api.effectsAbove([], null, null)).toEqual([]);
+  });
+
+  it('gives through the act function and maps the gift and the giver\'s balance, and reads the wall in one call and by a keyset cursor', async () => {
+    const gift = { ...ACT_ROW, kind: 'donation', target_act_id: B, seq: null, payload: { amount: 25, overhead: 5, arrives: 20 }, current_payload: { amount: 25, overhead: 5, arrives: 20 }, edited_at: null };
+    const h = harness((r) => {
+      if (r.url.pathname === '/functions/v1/act') return json({ gift, balance: 475 });
+      if (r.url.pathname === `${REST}/rpc/drive_gifts`) return json([{ drive: B, total: 25, count: 1, gifts: [{ id: A, character: B, name: 'Spritey', amount: 25, at: '2026-10-01T10:00:00+00:00' }, { id: B, character: null, amount: 10, at: '2026-10-01T09:00:00+00:00' }] }]);
+      if (r.url.pathname === `${REST}/rpc/drive_gifts_page`) return json({ gifts: [{ id: A, character: B, name: 'Spritey', amount: 25, at: '2026-10-01T10:00:00+00:00' }], more: false });
+      return undefined;
+    });
+    const given = await h.api.donate(B, B, 25);
+    expect(given).toMatchObject({ ok: true, value: { balance: 475, act: { id: A, kind: 'donation', targetActId: B, seq: null } } });
+    expect(h.log.filter((r) => r.url.pathname === '/functions/v1/act').map((r) => r.body)).toEqual([{ action: 'donate', character: B, drive: B, amount: 25 }]);
+    expect(await h.api.driveGifts([B, B, 'x),y'])).toEqual([{ id: B, total: 25, count: 1, gifts: [{ id: A, character: B, name: 'Spritey', amount: 25, at: '2026-10-01T10:00:00+00:00' }, { id: B, character: null, name: null, amount: 10, at: '2026-10-01T09:00:00+00:00' }] }]);
+    expect(h.to('rpc/drive_gifts')[0]?.body).toEqual({ drives: [B] });
+    expect(await h.api.driveGifts([])).toEqual([]);
+    expect(await h.api.driveGiftsPage(B, { at: '2026-10-01T10:00:00+00:00', id: A })).toEqual({ gifts: [{ id: A, character: B, name: 'Spritey', amount: 25, at: '2026-10-01T10:00:00+00:00' }], more: false });
+    expect(h.to('rpc/drive_gifts_page')[0]?.body).toEqual({ drive: B, before_at: '2026-10-01T10:00:00+00:00', before_id: A });
   });
 
   it('tails asks post_tails for a page of posts in one call, in calls of at most 200, and maps its rows', async () => {

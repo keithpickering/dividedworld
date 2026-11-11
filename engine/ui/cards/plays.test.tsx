@@ -26,6 +26,12 @@ describe('a play, read from its card Act', () => {
     expect(playOf(card({ payload: { card: 'whoops', layer: 0 } }))?.layer).toBe(1);
     expect(playOf(card({ payload: { card: 'whoops', config: [1] } }))?.config).toEqual({});
   });
+
+  test('carries the plate the server drew, when the payload has one', () => {
+    expect(playOf(card({ payload: { card: 'jimmy-wails', drawn: 'close-up' } }))?.drawn).toBe('close-up');
+    expect(playOf(card({ payload: { card: 'jimmy-wails', drawn: 3 } }))).not.toHaveProperty('drawn');
+    expect(playOf(card({ payload: { card: 'whoops' } }))).not.toHaveProperty('drawn');
+  });
   test('is nothing for an Act that is no card, a card with no card in it, or one with no post', () => {
     expect(playOf(card({ kind: 'post' }))).toBeNull();
     expect(playOf(card({ payload: {} }))).toBeNull();
@@ -91,7 +97,7 @@ test('only the cards the instance draws an effect for have a state to read', () 
 
 describe('the kinds of Act that hold a card\'s effect', () => {
   test('are the ones drawn as words: not a card, an unmask, an announcement, a tally, a reveal, a move, the end of one, a Boss keeping one, a card back, a take-back, a spring or an update', () => {
-    const kinds: Record<ActKind, boolean> = { post: true, spin: true, edit: true, card: false, unmask: false, announce: false, tally: false, reveal: false, move: false, move_end: false, move_keep: false, set: false, take_back: false, spring: false, update: false, card_end: false, visit: false, visit_join: false, visit_end: false, report: false, report_verdict: false, intercept: false, infraction: false, ban: false, appeal: false, appeal_ruling: false };
+    const kinds: Record<ActKind, boolean> = { post: true, spin: true, edit: true, card: false, unmask: false, announce: false, tally: false, reveal: false, move: false, move_end: false, move_keep: false, set: false, take_back: false, spring: false, update: false, card_end: false, visit: false, visit_join: false, visit_end: false, report: false, report_verdict: false, intercept: false, infraction: false, ban: false, appeal: false, appeal_ruling: false, donation: false };
     for (const [kind, held] of Object.entries(kinds)) expect(holdsEffects(kind as ActKind), kind).toBe(held);
   });
 });

@@ -22,7 +22,7 @@
 import type { Instance, Quadrant, Settings, Span } from '../../rules/types.ts';
 import { decide } from '../../rules/actions.ts';
 import { rollPack } from '../../rules/packs.ts';
-import { atOrBelow, OLD_VOICE_OFF, withheld, playOf as kindOfPlay, postTarget, casterMessage, decidePlay, decideSet, decideUse, effectsOnTarget, type BeyondPost, type CardEffect, type CardTarget, type EffectsAbove, type PostTarget, type Reach, type SetConditions } from '../../rules/cards.ts';
+import { atOrBelow, giftSplit, spanMs, OLD_VOICE_OFF, withheld, playOf as kindOfPlay, postTarget, casterMessage, decidePlay, decideSet, decideUse, effectsOnTarget, type BeyondPost, type CardEffect, type CardRules, type CardTarget, type EffectsAbove, type PostTarget, type Reach, type SetConditions } from '../../rules/cards.ts';
 import { sameName } from '../../rules/names.ts';
 import { earnedGroup } from '../../rules/groups.ts';
 import { ALERT_KINDS, isWritten, type WrittenKind } from '../../rules/alerts.ts';
@@ -46,7 +46,7 @@ import type {
   Boot, BoardPage, IndexPage, Opened, AdminSlot, Slot, SlotMove, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, LogPage,
   PostHit, ThreadHit, SearchCursor, SearchPage, SearchQuery, SearchSort, Suggestions,
   AppealResult, AppealVerdict, LogAppeal, LogBan, LogGroupMove, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
-  Presence, PresencePlace, ReachListener, ScreenSettings, Season, Session, Standing, Tally, ThreadListener, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, Wallet, WalletEvent,
+  Donated, DriveGift, DriveGifts, Presence, PresencePlace, ReachListener, ScreenSettings, Season, Session, Standing, Tally, ThreadListener, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, Wallet, WalletEvent,
 } from './api.ts';
 
 /** The tour's tips, which `replayTour` forgets alone: the engine's one list, which the SQL's replay_tour is held to (engine/ui/tips/keys.test.ts). */
@@ -208,7 +208,7 @@ export interface Seed {
    * where it is more than 0); without, the play is an Act alone, held and paid for nowhere. With `unrecorded`, it is a play from before
    * moments were snapshotted (0072): its moment is not taken.
    */
-  card(character: Id, target: Id, card: string, options?: { message?: string; config?: Readonly<Record<string, unknown>>; at?: number; live?: boolean; layer?: number; paid?: number; caught?: Id; ends?: string; unrecorded?: boolean; spring?: Id; tokens?: number }): Id;
+  card(character: Id, target: Id, card: string, options?: { message?: string; config?: Readonly<Record<string, unknown>>; at?: number; live?: boolean; layer?: number; paid?: number; caught?: Id; ends?: string; unrecorded?: boolean; spring?: Id; tokens?: number; drawn?: string }): Id;
   /**
    * A card played beyond a post (what `play_card` writes for a reach, 0055): on a character (from `post`, one of its posts), a thread or
    * a board, its Act where play_card puts it and its play_reach row ending at `ends` (an epoch, else the card's lasts cut to its reach's
@@ -391,7 +391,7 @@ const refuse = (error: string, field?: string): Refusal => (field === undefined 
 const ok = <T,>(value: T): Answer<T> => ({ ok: true, value });
 const iso = (ms: number) => new Date(ms).toISOString();
 /** The kinds of Act that take no place in a thread (`acts_take_seq`, supabase/migrations/0109): an edit, a card's marks and the Mod Bots' meta acts. */
-const UNPLACED: ReadonlySet<ActKind> = new Set<ActKind>(['edit', 'card', 'set', 'take_back', 'spring', 'card_end', 'visit', 'visit_join', 'visit_end', 'report', 'report_verdict', 'intercept', 'infraction', 'ban', 'appeal', 'appeal_ruling']);
+const UNPLACED: ReadonlySet<ActKind> = new Set<ActKind>(['edit', 'card', 'set', 'take_back', 'spring', 'card_end', 'visit', 'visit_join', 'visit_end', 'report', 'report_verdict', 'intercept', 'infraction', 'ban', 'appeal', 'appeal_ruling', 'donation']);
 
 /** The methods that are not a promise of something: everything else is made one. */
 const NOT_PROMISED = new Set(['onSession', 'subscribeThread', 'subscribeBoard', 'subscribeAccount', 'subscribeReach']);
@@ -1446,7 +1446,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const effects = effectsOn(target);
     // Decided and written in one step, with no gap for an edit to land in, so the fake checks no version (play_card does, 0070).
     const decided = decidePlay(rules, settings, postTarget(on.id, on.kind as PostTarget['kind'], text), effects, config, message, { now: new Date(now()), nameOf: (k) => instance.cards.find((c) => c.key === k)?.name ?? k });
-    if (!decided.ok) return refuse(decided.why, message !== undefined && !casterMessage(message).ok ? 'message' : 'config');
+    if (!decided.ok) return refuse(decided.why, (message !== undefined && !casterMessage(message).ok) || decided.why === rules.needsMessage ? 'message' : 'config');
     const c = acting(character);
     if (isRefusal(c)) return c;
     const account = me()!;
@@ -1477,7 +1477,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         : { card: trap.card, trigger: 'cast', did: 'caught', set: trap.set, by: playId, caught: playId } });
       faceDown.get(trap.set)!.sprung = spring.id;
     }
-    const written = write({ id: playId, character, kind: 'card', thread: on.thread, target, payload: { card, message: decided.value.message, config: decided.value.config, ...(decided.value.tokens === undefined ? {} : { tokens: decided.value.tokens }), ...(catches && !rides ? { caught: trap!.set } : { layer }), ...(rides ? { rode: trap!.set } : {}), ...(rules.skim && rules.lasts ? { ends: iso(at + span(rules.lasts)) } : {}) } });
+    /* A caught play joins no drive; a play a ride back let land is a play like any other (drive_plays leaves a caught play out, 0153). */
+    const drive = catches && !rides ? undefined : driveOf(rules, target, playId);
+    const written = write({ id: playId, character, kind: 'card', thread: on.thread, target, payload: { card, message: decided.value.message, config: decided.value.config, ...(decided.value.tokens === undefined ? {} : { tokens: decided.value.tokens }), ...(catches && !rides ? { caught: trap!.set } : { layer }), ...(rides ? { rode: trap!.set } : {}), ...(rules.skim && rules.lasts ? { ends: iso(at + span(rules.lasts)) } : {}), ...(drive === undefined ? {} : { drive }) } });
     /* After the Act, so the wallet's record names what the Aura went on (play_card). */
     spend(account, decided.value.price, 'play', written.id);
     recordCard(account.id, written.at, { card, kind: 'played', act: written.id, price: decided.value.price });
@@ -1493,6 +1495,75 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     }
     return ok(publicAct(written));
   }
+
+  /**
+   * The plays that make a post's drives (drive_plays, 0153): a drive card's plays on a post still up (not caught, not ended, at the post). A play's drive is the one its
+   * payload names, its opening play's id, or its own.
+   */
+  const drivePlays = (post: Id, card: string, at: number) => [...acts.values()].filter((a) => a.kind === 'card' && a.target === post && a.payload.card === card && a.payload.caught === undefined
+    && onPost(a) && !over(a.id) && (typeof a.payload.ends !== 'string' || Date.parse(a.payload.ends) > at)).map((a) => ({ act: a, drive: typeof a.payload.drive === 'string' ? a.payload.drive : a.id }));
+  /** When a drive closes: its latest play's time plus the card's span, or null with no play up. */
+  const driveCloses = (rules: CardRules, post: Id, drive: Id, at: number): number | null => {
+    const mine = drivePlays(post, rules.key, at).filter((p) => p.drive === drive);
+    return mine.length === 0 || !rules.drive ? null : Math.max(...mine.map((p) => p.act.at)) + spanMs(rules.drive.lasts);
+  };
+  /** The drive a new play of a drive card on `post` belongs to: the open one with room under the stack, else its own id (place_cast). A card with no drive has none. */
+  function driveOf(rules: CardRules, post: Id, own: Id, at: number = stamp ?? now()): Id | undefined {
+    if (!rules.drive) return undefined;
+    const open = [...new Set(drivePlays(post, rules.key, at).map((p) => p.drive))].find((d) => (driveCloses(rules, post, d, at) ?? 0) > at);
+    return open ?? own;
+  }
+  /** One move of an account's wallet, as wallet_move clamps and records it: the cap's overflow is the event's own, and nobody else's response holds it. */
+  function moveWallet(account: AccountRec, delta: number, kind: 'gift_out' | 'gift_in', ref: Id): void {
+    const raw = account.wallet + delta;
+    const after = Math.min(settings.walletCap, Math.max(0, raw));
+    recordWallet(account.id, stamp ?? now(), { settlement: null, kind, change: after - account.wallet, overflow: Math.max(0, raw - settings.walletCap), floored: Math.max(0, -raw), balanceAfter: after, ref });
+    account.wallet = after;
+  }
+
+  /**
+   * The Edge Function's reading of a gift, then `donate` (0153_drives.sql), in its order of refusals: the character is the player's and not banned, the drive is a drive and open, the
+   * amount is one the card offers now, and the wallet holds it. The split is `giftSplit` of the card's overhead from the economy; a staff post, which has no wallet, is all overhead; the author's
+   * overflow past the cap is lost, recorded in the author's own event alone. The answer is the gift and the giver's balance, nothing of the author's wallet.
+   */
+  function donate(character: Id, driveId: Id, amount: number): Answer<Donated> {
+    const bad = request({ action: 'donate', character, drive: driveId, amount });
+    if (bad) return bad;
+    const c = acting(character);
+    if (isRefusal(c)) return c;
+    const banned = bannedUntilOf(character);
+    if (banned !== null) return refuse(`this character is banned until ${iso(banned)}; the ban ends by itself then`);
+    const opening = acts.get(driveId);
+    const rules = opening?.kind === 'card' ? instance.cards.find((k) => k.key === opening.payload.card) : undefined;
+    if (!opening || !rules?.drive || opening.payload.drive !== opening.id || !onPost(opening) || opening.target === null) return refuse('that is not a drive');
+    const post = acts.get(opening.target)!;
+    const closes = driveCloses(rules, post.id, opening.id, now());
+    if (closes === null || closes <= now()) return refuse('this drive has ended');
+    const economy = settings.economy as Readonly<Record<string, unknown>>;
+    const offered = [...new Set(rules.drive.gifts.map((k) => economy[k]).filter((v): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 1))].sort((x, y) => x - y);
+    if (offered.length === 0) return refuse('this drive takes no gifts right now');
+    if (!offered.includes(amount)) return refuse(`a gift here is one of ${offered.map((o) => (o / 100).toFixed(2)).join(', ')}`);
+    const pct = economy[rules.drive.overhead];
+    if (typeof pct !== 'number' || pct < 0 || pct > 100) return refuse('this drive\'s overhead is not set');
+    let { overhead, arrives } = giftSplit(amount, pct);
+    const authorOwner = post.character === null ? undefined : characters.get(post.character);
+    const author = authorOwner && !authorOwner.staff && authorOwner.owner ? accounts.get(authorOwner.owner) : undefined;
+    if (!author) { overhead = amount; arrives = 0; }
+    const account = me()!;
+    if (account.wallet < amount) return refuse('your wallet holds less than that');
+    const written = write({ character, kind: 'donation', thread: opening.thread, target: opening.id, payload: { amount, overhead, arrives } });
+    moveWallet(account, -amount, 'gift_out', written.id);
+    if (author && arrives > 0) moveWallet(author, arrives, 'gift_in', written.id);
+    sendAct(written);
+    return ok({ act: publicAct(written), balance: account.wallet });
+  }
+  const giftOf = (a: ActRec): DriveGift => {
+    const giver = a.character === null ? undefined : characters.get(a.character);
+    return { id: a.id, character: a.character, name: giver?.debutedAt != null ? giver.name : null, amount: Number(a.payload.amount), at: iso(a.at) };
+  };
+  /** A drive's gifts, newest first by (time, id): the order drive_gifts takes its latest 20 in and drive_gifts_page pages by. */
+  const giftsOf = (drive: Id): ActRec[] => [...acts.values()].filter((a) => a.kind === 'donation' && a.target === drive).sort((x, y) => y.at - x.at || (x.id < y.id ? 1 : x.id > y.id ? -1 : 0));
+  const GIFTS_SHOWN = 20;
 
   /**
    * The cards set face down (face_down, 0054): which card a set is, its setter's account alone; when it ends; the spring that ended it.
@@ -1582,7 +1653,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const effects = effectsOnTarget(goal, reachEffects(reach, target), above, new Date(at));
     const nameOf = (k: string) => instance.cards.find((c) => c.key === k)?.name ?? k;
     const decided = play === 'use' ? decideUse(rules, settings, goal, effects, config, message, { now: new Date(at) }) : decidePlay(rules, settings, goal, effects, config, message, { now: new Date(at), nameOf });
-    if (!decided.ok) return refuse(decided.why, message !== undefined && !casterMessage(message).ok ? 'message' : 'config');
+    if (!decided.ok) return refuse(decided.why, (message !== undefined && !casterMessage(message).ok) || decided.why === rules.needsMessage ? 'message' : 'config');
     const c = acting(character);
     if (isRefusal(c)) return c;
     if (play === 'use' && reach === 'character' && target !== character) return refuse(`${rules.name} is used on your own character`);
@@ -2790,6 +2861,16 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       return ok({ slot, moved: true });
     },
     playCard: lossy(playCard),
+    donate: lossy(donate),
+    driveGifts: (drives) => drives.slice(0, 100).map((id): DriveGifts => {
+      const all = giftsOf(id);
+      return { id, total: all.reduce((n, a) => n + Number(a.payload.amount), 0), count: all.length, gifts: all.slice(0, GIFTS_SHOWN).map(giftOf) };
+    }),
+    driveGiftsPage: (drive, before) => {
+      const at = Date.parse(before.at);
+      const after = giftsOf(drive).filter((a) => a.at < at || (a.at === at && a.id < before.id));
+      return { gifts: after.slice(0, GIFTS_SHOWN).map(giftOf), more: after.length > GIFTS_SHOWN };
+    },
     setCard: lossy(setCard),
     takeBack: lossy(takeBack),
     useCard: lossy(useCard),
@@ -3790,7 +3871,14 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       /* A play a trap caught names its set, and takes no layer; a Use carries its end (0054). */
       if (o?.caught !== undefined) { payload.caught = o.caught; delete payload.layer; }
       if (o?.spring !== undefined) payload.spring = o.spring;
+      /* The key the server drew for the play (`CardRules.draws`), as play_card stores it. */
+      if (o?.drawn !== undefined) payload.drawn = o.drawn;
       if (o?.ends !== undefined) payload.ends = o.ends;
+      /* A play of a drive card joins the post's open drive, or opens one named by its own id (place_cast, 0153). */
+      const driveRules = instance.cards.find((c) => c.key === card);
+      const seededId = uuid();
+      const drive = o?.caught === undefined && driveRules ? driveOf(driveRules, target, seededId, o?.at) : undefined;
+      if (drive !== undefined) payload.drive = drive;
       /* A paid play is refused before its Act is written, as play_card refuses before it writes; the hand is the seed's to set (`cards`). */
       if (o?.paid !== undefined) {
         if (!Number.isInteger(o.paid) || o.paid < 0) throw new Error(`a price is a whole amount, at least zero, not ${o.paid}`);
@@ -3799,8 +3887,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       }
       /* A staff character's play has no owner to act as (staff_play_card writes it as The System): it is written as itself, at `at`. */
       const written = characters.get(character)?.staff
-        ? write({ character, kind: 'card', thread: on.thread, target, payload, at: o?.at })
-        : asAt(ownerOf(character), o?.at, () => write({ character, kind: 'card', thread: on.thread, target, payload }));
+        ? write({ id: seededId, character, kind: 'card', thread: on.thread, target, payload, at: o?.at })
+        : asAt(ownerOf(character), o?.at, () => write({ id: seededId, character, kind: 'card', thread: on.thread, target, payload }));
       if (o?.unrecorded) moments.delete(written.id);
       if (o?.paid !== undefined) {
         const account = seeded(ownerOf(character));

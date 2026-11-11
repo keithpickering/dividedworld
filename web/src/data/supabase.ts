@@ -40,7 +40,7 @@ import { ALERT_KINDS, type AlertKind } from '../../../engine/rules/alerts.ts';
 import type { Career } from '../../../engine/system/career.ts';
 import type {
   AdminQueue, Apology, Bar, BoardName, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesLog, QueuedMove, StaffCardPlay, StaffProfile,
-  Act, ActKind, Answer, AvatarUpload, Board, Bought, BoardSummary, CardEnded, ScoredAs, CardEvent, PackEvent, WrittenOnMine, CaughtPlay, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd,
+  Act, ActKind, Answer, AvatarUpload, Board, Bought, Donated, DriveGift, DriveGifts, BoardSummary, CardEnded, ScoredAs, CardEvent, PackEvent, WrittenOnMine, CaughtPlay, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd,
   Alert, ContactLink, EffectState, Tail, PostHit, SearchCursor, SearchPage, SearchQuery, Suggestions, ThreadHit, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, SeasonShown, TallyName, Update, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
   Tally, StandingPlace, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, TurnAsked, Wallet, WalletEvent,
   Boot, BoardPage, IndexPage, Opened, AdminSlot, Slot, SlotMove, Presence, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, LogPage,
@@ -245,6 +245,7 @@ function toThread(r: Row): ThreadSummary {
   };
 }
 
+const toDriveGifts = (v: unknown): DriveGift[] => (Array.isArray(v) ? (v as Row[]) : []).map((g): DriveGift => ({ id: String(g['id']), character: typeof g['character'] === 'string' ? g['character'] : null, name: typeof g['name'] === 'string' ? g['name'] : null, amount: num(g['amount']), at: String(g['at']) }));
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const isText = (v: unknown): v is string => typeof v === 'string';
 
@@ -1247,7 +1248,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       return r[0] ? toThread(r[0]) : null;
     },
     async acts(thread, fromSeq, toSeq) {
-      const rows = await list(() => client.from('acts_public').select('*').eq('thread', thread).gte('seq', fromSeq).lte('seq', toSeq).not('kind', 'in', '(edit,card)').order('seq', { ascending: true }));
+      const rows = await list(() => client.from('acts_public').select('*').eq('thread', thread).gte('seq', fromSeq).lte('seq', toSeq).not('kind', 'in', '(edit,card,donation)').order('seq', { ascending: true }));
       return rows.map(toAct);
     },
     async act(id) {
@@ -1359,6 +1360,21 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     /* A purchase names its slot and the price the screen showed; the database holds the slot and refuses a price that has since changed. */
     buyCard: (slot) => act({ action: 'buyCard', slot: slot.id, price: slot.price }, (r): Bought => ({ card: r['card'], balance: num(r['balance']), held: num(r['held']) })),
     buyPack: (slot) => act({ action: 'buyPack', slot: slot.id, price: slot.price }, (r): Opened => ({ pack: r['pack'], contents: Array.isArray(r['contents']) ? r['contents'].filter((c): c is string => typeof c === 'string') : [], balance: num(r['balance']) })),
+    /* A gift: the Edge Function's answer is the gift's projection and the giver's own balance after. */
+    donate: (character, drive, amount) => act({ action: 'donate', character, drive, amount }, (r): Donated => ({ act: toAct(r['gift'] as Row), balance: num(r['balance']) })),
+    async driveGifts(drives) {
+      /* drive_gifts holds a call to 100 drives and answers each in the order asked; a page's drives are one call. */
+      const wanted = [...new Set(drives)].filter(idOk).slice(0, 100);
+      if (wanted.length === 0) return [];
+      const r = await read(() => client.rpc('drive_gifts', { drives: wanted }));
+      return (Array.isArray(r.data) ? (r.data as Row[]) : []).map((d): DriveGifts => ({ id: String(d['drive']), total: num(d['total']), count: num(d['count']), gifts: toDriveGifts(d['gifts']) }));
+    },
+    async driveGiftsPage(drive, before) {
+      if (!idOk(drive) || !idOk(before.id)) return { gifts: [], more: false };
+      const r = await read(() => client.rpc('drive_gifts_page', { drive, before_at: before.at, before_id: before.id }));
+      const d = isObject(r.data) ? r.data : {};
+      return { gifts: toDriveGifts(d['gifts']), more: d['more'] === true };
+    },
     playCard: (card, character, target, config, message, reach, fromPost) => act({ action: 'playCard', card, character, target, config, message, ...beyond(reach, fromPost) }, toAct),
     setCard: (card, character, target, config, when) => act({ action: 'setCard', card, character, target, config, ...(when ? { when } : {}) }, toAct),
     takeBack: (character, set) => act({ action: 'takeBack', character, set }, toAct),
