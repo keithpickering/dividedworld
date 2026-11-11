@@ -318,6 +318,15 @@ export interface Fake extends KayfaApi {
      * event sent before it subscribes is lost (as a real Realtime event would be), so a test that sends one waits for the listener it means.
      */
     reachListeners(): number;
+    /**
+     * Keep the thread and reach listeners that subscribe from now on unjoined, as a channel still being joined is: they hear nothing and are
+     * not told `onJoined`, until `join()`. Ends with `join()`.
+     */
+    holdJoins(): void;
+    /** Join every listener waiting for it (each is told `onJoined`) and end the hold; returns how many joined. */
+    join(): number;
+    /** Tell every joined thread and reach listener `onJoined` again, as a channel that dropped and rejoined does. */
+    rejoin(): void;
   };
   readonly seed: Seed;
   /** Always `KAYFA_FAKE_BACKEND`: what the bundle guard finds if the fake ever reaches a production build. */
@@ -478,6 +487,23 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const boardListeners = new Map<Id, Set<BoardListener>>();
   const accountListeners = new Map<Id, Set<AccountListener>>();
   const reachListeners = new Set<ReachListener>();
+  /* A thread or reach listener sits in its set only while its channel is joined, as in Realtime a channel hears nothing until it is: it is
+     joined a microtask after it subscribes (queued before any event a test sends in the same tick, so that one is still heard), or when
+     `broadcast.join()` ends a hold. Every delivery below reads the sets as they stand when it runs. */
+  let joinsHeld = false;
+  const waiting: (() => boolean)[] = [];
+  const attach = <L extends { readonly onJoined?: () => void }>(set: Set<L>, listener: L): (() => void) => {
+    let left = false;
+    const join = () => {
+      if (left) return false;
+      set.add(listener);
+      listener.onJoined?.();
+      return true;
+    };
+    if (joinsHeld) waiting.push(join);
+    else queueMicrotask(join);
+    return () => { left = true; set.delete(listener); };
+  };
   const log: LiveEvent[] = [];
   let held: (() => void)[] | null = null;
   let muted = false;
@@ -3333,8 +3359,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
 
     subscribeThread(thread, listener) {
       const set = threadListeners.get(thread) ?? new Set();
-      threadListeners.set(thread, set.add(listener));
-      return () => { set.delete(listener); };
+      threadListeners.set(thread, set);
+      return attach(set, listener);
     },
     subscribeBoard(board, listener) {
       const set = boardListeners.get(board) ?? new Set();
@@ -3350,8 +3376,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       return () => { set.delete(listener); };
     },
     subscribeReach(listener) {
-      reachListeners.add(listener);
-      return () => { reachListeners.delete(listener); };
+      return attach(reachListeners, listener);
     },
   };
 
@@ -3922,6 +3947,17 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     broadcast: {
       log,
       reachListeners: () => reachListeners.size,
+      holdJoins() { joinsHeld = true; },
+      join() {
+        joinsHeld = false;
+        let joined = 0;
+        for (const join of waiting.splice(0)) if (join()) joined++;
+        return joined;
+      },
+      rejoin() {
+        for (const l of [...threadListeners.values()].flatMap((set) => [...set])) l.onJoined?.();
+        for (const l of [...reachListeners]) l.onJoined?.();
+      },
       hold() { held ??= []; },
       flush(o: { reverse?: boolean; twice?: boolean } = {}) {
         const batch = held ?? [];

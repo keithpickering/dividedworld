@@ -1265,19 +1265,19 @@ describe('the avatar', () => {
 
 describe('live', () => {
   function stub() {
-    const channels: { topic: string; opts: unknown; handlers: Map<string, (m: { payload: unknown }) => void>; subscribed: boolean }[] = [];
+    const channels: { topic: string; opts: unknown; handlers: Map<string, (m: { payload: unknown }) => void>; subscribed: boolean; status?: ((s: string) => void) | undefined }[] = [];
     const removed: string[] = [];
     const order: string[] = [];
     const client = {
       auth: { getSession: async () => ({ data: { session: { access_token: JWT, user: { id: A } } } }), onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }) },
       realtime: { setAuth: vi.fn(async (t: string) => { order.push(`auth:${t === JWT}`); }) },
       channel(topic: string, opts: unknown) {
-        const ch = { topic, opts, handlers: new Map<string, (m: { payload: unknown }) => void>(), subscribed: false };
+        const ch: (typeof channels)[number] = { topic, opts, handlers: new Map<string, (m: { payload: unknown }) => void>(), subscribed: false };
         channels.push(ch);
         order.push(`channel:${topic}`);
         const self = {
           on(_type: string, filter: { event: string }, cb: (m: { payload: unknown }) => void) { ch.handlers.set(filter.event, cb); return self; },
-          subscribe() { ch.subscribed = true; order.push(`subscribe:${topic}`); return self; },
+          subscribe(status?: (s: string) => void) { ch.subscribed = true; ch.status = status; order.push(`subscribe:${topic}`); return self; },
         };
         return self;
       },
@@ -1397,6 +1397,94 @@ describe('live', () => {
       { kind: 'update', sub: null, act: C, at: '2026-11-02T11:00:00Z' },
     ]);
     expect(onPlay).not.toHaveBeenCalled();
+  });
+
+  describe('when a channel is joined', () => {
+    it('tells a thread listener only once the channel reports SUBSCRIBED, and again on each rejoin', async () => {
+      const s = stub();
+      const onJoined = vi.fn();
+      s.api.subscribeThread(T, { onJoined });
+      await settle();
+      expect(s.channels[0]?.subscribed).toBe(true);
+      expect(onJoined).not.toHaveBeenCalled();
+      s.channels[0]?.status?.('SUBSCRIBED');
+      expect(onJoined).toHaveBeenCalledTimes(1);
+      s.channels[0]?.status?.('CHANNEL_ERROR');
+      s.channels[0]?.status?.('TIMED_OUT');
+      expect(onJoined).toHaveBeenCalledTimes(1);
+      s.channels[0]?.status?.('SUBSCRIBED');
+      expect(onJoined).toHaveBeenCalledTimes(2);
+    });
+
+    it('tells a listener added to a topic already joined in a microtask, and not one that left by then', async () => {
+      const s = stub();
+      s.api.subscribeThread(T, { onAct: vi.fn() });
+      await settle();
+      s.channels[0]?.status?.('SUBSCRIBED');
+      const late = vi.fn();
+      const gone = vi.fn();
+      s.api.subscribeThread(T, { onJoined: late });
+      s.api.subscribeThread(T, { onJoined: gone })();
+      expect(late).not.toHaveBeenCalled();
+      await Promise.resolve();
+      expect(late).toHaveBeenCalledTimes(1);
+      expect(gone).not.toHaveBeenCalled();
+      expect(s.channels).toHaveLength(1);
+    });
+
+    it('does not tell a listener added after the channel dropped until it rejoins', async () => {
+      const s = stub();
+      s.api.subscribeThread(T, { onAct: vi.fn() });
+      await settle();
+      s.channels[0]?.status?.('SUBSCRIBED');
+      s.channels[0]?.status?.('CLOSED');
+      const late = vi.fn();
+      s.api.subscribeThread(T, { onJoined: late });
+      await settle();
+      expect(late).not.toHaveBeenCalled();
+      s.channels[0]?.status?.('SUBSCRIBED');
+      expect(late).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not tell a listener that left before the channel was joined', async () => {
+      const s = stub();
+      const keep = vi.fn();
+      const left = vi.fn();
+      s.api.subscribeThread(T, { onJoined: keep });
+      s.api.subscribeThread(T, { onJoined: left })();
+      await settle();
+      s.channels[0]?.status?.('SUBSCRIBED');
+      expect(keep).toHaveBeenCalledTimes(1);
+      expect(left).not.toHaveBeenCalled();
+    });
+
+    it('tells a reach listener the same way', async () => {
+      const s = stub();
+      const onJoined = vi.fn();
+      const left = vi.fn();
+      s.api.subscribeReach({ onJoined });
+      s.api.subscribeReach({ onJoined: left })();
+      await settle();
+      expect(onJoined).not.toHaveBeenCalled();
+      s.channels[0]?.status?.('SUBSCRIBED');
+      expect(onJoined).toHaveBeenCalledTimes(1);
+      s.channels[0]?.status?.('SUBSCRIBED');
+      expect(onJoined).toHaveBeenCalledTimes(2);
+      expect(left).not.toHaveBeenCalled();
+      const late = vi.fn();
+      s.api.subscribeReach({ onJoined: late });
+      await Promise.resolve();
+      expect(late).toHaveBeenCalledTimes(1);
+    });
+
+    it('leaves a board and an account listener, which pass no callback, untouched', async () => {
+      const s = stub();
+      const onThread = vi.fn();
+      s.api.subscribeBoard(C, { onThread });
+      await settle();
+      expect(() => s.channels[0]?.status?.('SUBSCRIBED')).not.toThrow();
+      expect(onThread).not.toHaveBeenCalled();
+    });
   });
 });
 

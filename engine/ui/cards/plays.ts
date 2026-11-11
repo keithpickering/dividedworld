@@ -194,6 +194,8 @@ export interface Plays {
   add(acts: readonly Act[]): boolean;
   /** Keep each play's newest saved state, by when it was saved; true when any was newer. A state for a play not here is kept for when it is. */
   setStates(states: Readonly<Record<Id, EffectState>>): boolean;
+  /** Mark each of these plays reversed in place, as its `card_end` would (one not held yet is remembered, as an early `card_end` is); true when a play was marked or newly remembered. */
+  setEnded(plays: readonly Id[]): boolean;
   /** The reader released themselves from these plays. */
   setReleased(plays: readonly Id[]): boolean;
   /** The reader's own card backs' cards, by set: drawn under the back on their screen alone, never sent. */
@@ -336,6 +338,22 @@ export function createPlays(): Plays {
       }
       changed(touched);
       return touched.size > 0;
+    },
+    setEnded(next) {
+      const touched = new Set<Id>();
+      let remembered = false;
+      for (const target of next) {
+        if (!ended.has(target)) { ended.add(target); remembered = true; }
+        const home = postOf.get(target);
+        const own = home === undefined ? undefined : byPost.get(home);
+        const was = own?.get(target);
+        if (own && was && !was.reversed) {
+          own.set(target, { ...was, reversed: true });
+          touched.add(home!);
+        }
+      }
+      changed(touched);
+      return remembered || touched.size > 0;
     },
     setReleased(plays) {
       const touched = new Set<Id>();

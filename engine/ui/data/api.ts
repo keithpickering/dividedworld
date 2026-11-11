@@ -1557,6 +1557,12 @@ export interface ThreadListener {
   readonly onEffect?: (play: Id, savedAt: string) => void;
   /** A writing play made a tail (`card_text`): the play and the version of its post and nothing else. Read the post's tails again. */
   readonly onText?: (play: Id, version: Id) => void;
+  /**
+   * The channel is joined and events are heard from now on. Called again each time the channel rejoins after a drop. A screen drawn from a
+   * document read before this has missed whatever landed until now, and so has one whose connection dropped: what landed while the
+   * channel was not joined is the listener's to read.
+   */
+  readonly onJoined?: () => void;
 }
 
 export interface BoardListener {
@@ -1600,6 +1606,8 @@ export interface ReachListener {
   readonly onNews?: (news: LiveNews) => void;
   /** A settlement was applied, for every signed-in player alike. May come twice: key by id. */
   readonly onSettled?: (settled: LiveSettled) => void;
+  /** The channel is joined and events are heard from now on; called again each time it rejoins after a drop. What landed while it was not joined is the listener's to read. */
+  readonly onJoined?: () => void;
 }
 
 /* ---------------------------------------------------------------- the api ---- */
