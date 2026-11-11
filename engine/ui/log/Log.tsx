@@ -78,7 +78,7 @@ function Breakdown({ settlement, data, words, tab, id, open, onClose }: { readon
       <td colSpan={5}>
         <div className="kb-log-breakdown-body">
           {lines.map((l) => (
-            <section key={`${l.character}:${l.reason}`} className="kb-log-reason" aria-label={`${tab === null ? `${nameOf(l.character)}, ` : ''}${reasonName(words.ui.reasonWords(l.reason, paramsOf(l, words.economy)))}`}>
+            <section key={`${l.character}:${l.reason}:${l.params?.['card'] ?? ''}`} className="kb-log-reason" aria-label={`${tab === null ? `${nameOf(l.character)}, ` : ''}${reasonName(words.ui.reasonWords(l.reason, paramsOf(l, words.economy)))}`}>
               <h2 className="kb-log-reason-head">
                 <span>
                   {tab === null && <span className="kb-log-reason-who">{nameOf(l.character)} · </span>}

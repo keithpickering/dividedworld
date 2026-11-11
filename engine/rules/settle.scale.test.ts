@@ -133,3 +133,58 @@ test('earn gimmicks on many characters cost their earnings times the gimmicks on
   assert.ok(r.entries.some((e) => e.reason === 'card.boost'));
   assert.ok(ms < 15_000, `took ${Math.round(ms)} ms`);
 });
+
+/* Skim and ride (docs/plans/2026-11-11-card-notes-part-6-plan.md, Task 3): their indexes are built once, so a window's cost grows with the
+   plays and votes it reads and never with their product. */
+const payWorld: Instance = {
+  ...instance,
+  cards: [
+    ...instance.cards,
+    { ...instance.cards[0]!, key: 'mooch', skim: { share: 0.1 } },
+    { ...instance.cards[0]!, key: 'chess', play: 'set', trap: { trigger: { on: 'cast' }, outcome: { kind: 'ride', share: 1 } }, catches: () => 'splat' },
+  ],
+};
+const calm = 'tea';
+
+test('a thousand ride springs, each on its own cast, settle in time that grows with the rows read', () => {
+  const n = 1_000;
+  const characters = [...Array.from({ length: n }, (_, i) => ({ id: `s${i}`, player: `ps${i}`, classes: [{ class: 'counting', from: 0 }] })),
+    { id: 'author', player: 'pa', classes: [{ class: 'counting', from: 0 }] }, { id: 'caster', player: 'pc', classes: [{ class: 'counting', from: 0 }] },
+    ...Array.from({ length: 50 }, (_, i) => ({ id: `v${i}`, player: `pv${i}`, classes: [{ class: 'counting', from: 0 }] }))];
+  const acts: InputAct[] = [{ id: 'post', character: 'author', kind: 'post', at: 1_000, thread: 't' }];
+  const reactions: InputReaction[] = [];
+  for (let i = 0; i < n; i++) {
+    acts.push({ id: `cast${i}`, character: 'caster', kind: 'card', at: 2_000 + i, thread: 't', target: 'post', card: 'splat' });
+    acts.push({ id: `sp${i}`, character: `s${i}`, kind: 'spring', at: 5_000 + i, thread: 't', target: 'post', card: 'chess', by: `cast${i}`, quadrant: 'calmPositive' });
+    for (let j = 0; j < 5; j++) reactions.push({ act: `cast${i}`, player: `pv${(i + j) % 50}`, character: `v${(i + j) % 50}`, kind: calm, at: 100_000 + i * 5 + j });
+  }
+  const start = performance.now();
+  const r = settle({ window: { id: 'ride', from: 0, to: 10_000_000 }, characters, acts, reactions }, payWorld);
+  const ms = performance.now() - start;
+  console.log(`  settled ${n} ride springs on ${reactions.length} votes in ${Math.round(ms)} ms`);
+  assert.equal(r.entries.filter((e) => e.reason === 'card.ride').length, n, 'one entry per setter');
+  assert.ok(ms < 15_000, `took ${Math.round(ms)} ms`);
+});
+
+test('a thousand skim plays on a thousand posts, and one post of five thousand votes under one skim play, settle in time that grows with the rows read', () => {
+  // A skim pays each vote it covers, so many plays on one post would be their product in output by design: the plays here are on posts of their own.
+  const casters = 1_000, voters = 5_000;
+  const characters = [{ id: 'author', player: 'pa', classes: [{ class: 'counting', from: 0 }] },
+    ...Array.from({ length: casters }, (_, i) => ({ id: `k${i}`, player: `pk${i}`, classes: [{ class: 'counting', from: 0 }] })),
+    ...Array.from({ length: voters }, (_, i) => ({ id: `v${i}`, player: `pv${i}`, classes: [{ class: 'counting', from: 0 }] }))];
+  const acts: InputAct[] = [{ id: 'hot', character: 'author', kind: 'post', at: 1_000, thread: 't' },
+    { id: 'hotm', character: 'k0', kind: 'card', at: 2_000, thread: 't', target: 'hot', card: 'mooch', quadrant: 'calmPositive', ends: 9_000_000 }];
+  const reactions: InputReaction[] = Array.from({ length: voters }, (_, i) => ({ act: 'hot', player: `pv${i}`, character: `v${i}`, kind: calm, at: 100_000 + i }));
+  for (let i = 1; i < casters; i++) {
+    acts.push({ id: `p${i}`, character: 'author', kind: 'post', at: 1_000 + i, thread: 't' });
+    acts.push({ id: `m${i}`, character: `k${i}`, kind: 'card', at: 2_000 + i, thread: 't', target: `p${i}`, card: 'mooch', quadrant: 'calmPositive', ends: 9_000_000 });
+    for (let j = 0; j < 5; j++) reactions.push({ act: `p${i}`, player: `pv${(i + j) % voters}`, character: `v${(i + j) % voters}`, kind: calm, at: 200_000 + i * 5 + j });
+  }
+  const start = performance.now();
+  const r = settle({ window: { id: 'skim', from: 0, to: 10_000_000 }, characters, acts, reactions }, payWorld);
+  const ms = performance.now() - start;
+  console.log(`  settled ${casters} skim plays on ${reactions.length} votes, one post holding ${voters}, in ${Math.round(ms)} ms`);
+  assert.equal(r.entries.filter((e) => e.reason === 'card.skim').length, casters, 'one entry per caster');
+  assert.ok(r.entries.find((e) => e.character === 'k0' && e.reason === 'card.skim')!.amount > 0);
+  assert.ok(ms < 15_000, `took ${Math.round(ms)} ms`);
+});

@@ -39,7 +39,7 @@ begin
   if pg_temp.refusal($q$select meet_card('Whoops')$q$) is distinct from 'a card is named in lowercase words joined by hyphens' then raise exception 'an uppercase key'; end if;
   if pg_temp.refusal($q$select meet_card('')$q$) is distinct from 'a card is named in lowercase words joined by hyphens' then raise exception 'an empty key'; end if;
   if pg_temp.refusal($q$select meet_card(null)$q$) is distinct from 'a card is named in lowercase words joined by hyphens' then raise exception 'a null key'; end if;
-  if pg_temp.refusal($q$select meet_card('1up')$q$) is distinct from 'a card is named in lowercase words joined by hyphens' then raise exception 'a key opening with a digit'; end if;
+  if pg_temp.refusal($q$select meet_card('-up')$q$) is distinct from 'a card is named in lowercase words joined by hyphens' then raise exception 'a key opening with a hyphen'; end if;
   if pg_temp.refusal($q$select meet_card(repeat('a', 41))$q$) is distinct from 'a card is named in lowercase words joined by hyphens' then raise exception 'a 41 character key'; end if;
   if pg_temp.refusal($q$select meet_card('bad key')$q$) is distinct from 'a card is named in lowercase words joined by hyphens' then raise exception 'a key with a space'; end if;
 
