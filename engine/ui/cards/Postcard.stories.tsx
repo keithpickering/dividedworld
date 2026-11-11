@@ -1,6 +1,6 @@
 /**
  * The postcard's frame at its four sizes (docs/plans/2026-11-05-card-template-design.md): the instance's cards drawn at each size,
- * and the card's back, default and the hit pull's gold, wearing the instance's mark where it gave one (`InstanceUi.cardBack`).
+ * and the card's back, the same for every card, wearing the instance's mark where it gave one (`InstanceUi.cardBack`).
  * Nothing here acts.
  */
 import type { Meta, StoryObj } from '@storybook/react-vite';

@@ -161,7 +161,7 @@ function webpFaults(name, bytes) {
 }
 
 /**
- * The faults of the canvas in a folder: `art.svg` or `art.webp`. Neither is a fault, and so is both (`holds` says what
+ * The faults of the canvas in a folder: `art.svg` or `art.webp`. Having neither is a fault, and so is having both (`holds` says what
  * the folder holds, for the first message); each file gets its cap, and an SVG its viewBox and safety, a WebP its header.
  */
 function canvasFaults(dir, holds) {

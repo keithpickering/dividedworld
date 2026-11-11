@@ -104,7 +104,8 @@ fetches nothing, or a still WebP of exactly 1080 by 1680, at most 400 KB. A back
 canvas, as a face draws its art, and no mark over it: the picture holds the emblem. The frame is the engine's either way.
 
 A pack's hit pull has no back of its own. A gold back shown only while a pack opens would suggest that a card set face
-down could look different, so every back is the same back, and the hit is told only once it is turned.
+down could look different, so every back is the same back. The opening still says which card is the hit by its place, the last, and marks it in
+gold once it is turned.
 
 The small tile of a face-down card on a post is not given the picture. It keeps the stylesheet's smoke: a 1080 by 1680
 image decoded for an 18px tile, once for every face-down card on a page, is a cost with nothing to show for it.
