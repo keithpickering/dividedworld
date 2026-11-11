@@ -44,6 +44,7 @@ let draws = 0;
 /** The page surface's host, and how many screens hold it live. */
 const pageHost = {};
 let pageHolds = 0;
+let onResize: (() => void) | null = null;
 /** Whether an element's point is the page's ground, per element, for the frame being run. */
 let ground = new Map<Element, boolean>();
 
@@ -85,21 +86,21 @@ function groundOf(el: Element): boolean {
 
 /** A surface's size in its own px: a cell's box, the document's. */
 function sizeOf(s: Surface): { w: number; h: number } {
-  if (s.el) { const r = s.el.getBoundingClientRect(); return { w: r.width, h: r.height }; }
+  const fin = (n: number): number => (Number.isFinite(n) ? n : 0);
+  if (s.el) { const r = s.el.getBoundingClientRect(); return { w: fin(r.width), h: fin(r.height) }; }
   const de = document.documentElement;
   /* The client width, not the window's: a tile past the scrollbar's edge would make the page scroll sideways. */
-  return { w: de.clientWidth || innerWidth, h: Math.max(de.scrollHeight, innerHeight, window.scrollY + innerHeight) };
+  return { w: fin(de.clientWidth || innerWidth), h: fin(Math.max(de.scrollHeight, innerHeight, window.scrollY + innerHeight)) };
 }
 
 /** The tiles of a surface's grid a flake's square touches. */
-function tilesOf(f: Flake2): Array<[number, number]> {
+function tilesOf(f: LooseFlake): Array<[number, number]> {
   const x0 = Math.max(0, Math.floor((f.x - REACH) / TILE_W)), x1 = Math.max(0, Math.floor((f.x + REACH) / TILE_W));
   const y0 = Math.max(0, Math.floor((f.y - REACH) / TILE_H)), y1 = Math.max(0, Math.floor((f.y + REACH) / TILE_H));
   const out: Array<[number, number]> = [];
   for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) out.push([tx, ty]);
   return out;
 }
-type Flake2 = LooseFlake;
 
 function removeTile(t: Tile): void {
   t.stop();
@@ -116,8 +117,10 @@ function removeTiles(s: Surface): void {
 
 /** Puts a tile's canvas where it stands (inside its cell, or in the body), again if something under it took it away. */
 function attach(t: Tile): void {
-  const into = t.s.el ?? document.body;
-  if (t.canvas.parentElement !== into) into.append(t.canvas);
+  try {
+    const into = t.s.el ?? document.body;
+    if (t.canvas.parentElement !== into) into.append(t.canvas);
+  } catch { /* a cell taken apart under it: the next call puts it back */ }
 }
 
 /** Sizes the tile's box to what is left of its surface from its corner, and its backing store to that at the density. */
@@ -129,20 +132,35 @@ function fit(t: Tile): { w: number; h: number } {
   return { w, h };
 }
 
-/** Draws a tile from the flakes that lie in it. A tile left with none is taken away. */
-function draw(t: Tile): void {
+/**
+ * Draws a tile from the flakes that lie in it. A tile left with none is taken away, unless `keep` (a refit: the surface may grow
+ * back over its flakes, so the tile stays and holds no backing store).
+ */
+function draw(t: Tile, keep = false): void {
   attach(t);
   const { w, h } = fit(t);
   const d = density();
   const x0 = t.tx * TILE_W, y0 = t.ty * TILE_H;
   const mine = loose(t.s.host).filter((f) => f.x + REACH >= x0 && f.x - REACH < x0 + w && f.y + REACH >= y0 && f.y - REACH < y0 + h) as LooseFlake[];
-  if (!mine.length) { removeTile(t); return; }
+  if (!mine.length) {
+    if (keep) { t.canvas.width = 0; t.canvas.height = 0; } else removeTile(t);
+    return;
+  }
   /* Sizing the backing store clears it. */
   t.canvas.width = Math.ceil(w * d); t.canvas.height = Math.ceil(h * d);
   const c = t.canvas.getContext('2d');
   draws++;
   if (!c) return;
   for (const f of mine) if (f.band) drawFlake(c, f, f.x - x0, f.y - y0, f.ph ?? 0, f.band, d);
+}
+
+/** A surface changed size: every tile is fitted to what is left of it, and one in view is drawn again. */
+function refit(s: Surface): void {
+  for (const t of [...s.tiles.values()]) {
+    attach(t);
+    fit(t);
+    if (t.inView) draw(t, true);
+  }
 }
 
 function makeTile(s: Surface, tx: number, ty: number): Tile {
@@ -157,7 +175,9 @@ function makeTile(s: Surface, tx: number, ty: number): Tile {
   attach(t);
   fit(t);
   t.stop = watchInView(canvas, (inView) => {
-    if (!s.tiles.has(key(tx, ty)) || s.tiles.get(key(tx, ty)) !== t) return;
+    if (s.tiles.get(key(tx, ty)) !== t) return;
+    /* A tile React took out of its cell is seen as out of view; it is put back so the observer can see it return. */
+    attach(t);
     t.inView = inView;
     if (!inView) { canvas.width = 0; canvas.height = 0; return; }
     /* Back in view, or seen for the first time: drawn from its flakes unless this frame's landings are about to draw it. */
@@ -210,7 +230,9 @@ export function landPost(article: HTMLElement): () => void {
     const s: Surface = { kind: 'cell', host: child, el: child, tiles: new Map() };
     surfaces.set(child, s);
     const off = cling.register(child, { rank: 'cell', landed: () => { const l = loose(child); const f = l[l.length - 1]; if (f) mark(s, f as LooseFlake, true); } });
-    mine.push({ cell: child, s, off });
+    let ro: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined') { ro = new ResizeObserver(() => refit(s)); ro.observe(child); }
+    mine.push({ cell: child, s, off: () => { off(); ro?.disconnect(); } });
   }
   hold();
   let gone = false;
@@ -236,6 +258,8 @@ export function landPage(): () => void {
   if (pageHolds++ === 0) {
     const s: Surface = { kind: 'page', host: pageHost, el: null, tiles: new Map() };
     surfaces.set(pageHost, s);
+    onResize = () => refit(s);
+    if (typeof window !== 'undefined') window.addEventListener('resize', onResize);
     hooks.page = { host: pageHost, landed: () => { const l = loose(pageHost); const f = l[l.length - 1]; if (f) mark(s, f as LooseFlake, true); } };
   }
   hold();
@@ -244,6 +268,8 @@ export function landPage(): () => void {
     if (gone) return;
     gone = true;
     if (--pageHolds === 0) {
+      if (onResize) window.removeEventListener('resize', onResize);
+      onResize = null;
       sweepLoose();
       for (const s of surfaces.values()) removeTiles(s);
       surfaces.delete(pageHost);
@@ -275,6 +301,8 @@ export const probe = {
     surfaces.clear();
     marked.clear();
     ground = new Map();
+    if (onResize) window.removeEventListener('resize', onResize);
+    onResize = null;
     draws = 0; pageHolds = 0; hooked = 0; hooks.page = null;
     setLanding(null);
   },

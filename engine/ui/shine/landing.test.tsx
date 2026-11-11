@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { tokensOf } from '../contrast.ts';
 import { POST_INK } from './band.ts';
 import { cling, landAll, loose, makeFlakes, MAX_AIR, MAX_LOOSE, shake, SHAKE_SPEED, type Flakes } from './flakes.ts';
-import { landPage, landPost, probe, TILE_H, TILE_W } from './landing.ts';
+import { landPage, landPost, probe } from './landing.ts';
 
 const GLINT = '#ffffff';
 const GLITTER = ['#ff3b4a', '#ff9a2e', '#ffd23f', '#3ddc6b', '#2fd6ff', '#4a6bff', '#b65cff', '#dfe4ec', '#dfe4ec', '#dfe4ec'];
@@ -99,13 +99,31 @@ class FakeObserver {
   }
 }
 
+class FakeResize {
+  static all: FakeResize[] = [];
+  seen = new Set<Element>();
+  constructor(readonly cb: ResizeObserverCallback) { FakeResize.all.push(this); }
+  observe(el: Element) { this.seen.add(el); }
+  unobserve(el: Element) { this.seen.delete(el); }
+  disconnect() { this.seen.clear(); }
+  /** Tells the page `el` changed size. */
+  static fire(el: Element): void {
+    for (const o of FakeResize.all) if (o.seen.has(el)) o.cb([{ target: el } as ResizeObserverEntry], o as unknown as ResizeObserver);
+  }
+  static live(): number { return FakeResize.all.reduce((n, o) => n + o.seen.size, 0); }
+}
+const resize = (el: HTMLElement, w: number, h: number): void => {
+  el.getBoundingClientRect = () => ({ left: 100, top: 130, right: 100 + w, bottom: 130 + h, width: w, height: h, x: 100, y: 130, toJSON() {} });
+};
+
 let outs: Array<() => void> = [];
 const keep = (out: () => void): (() => void) => { outs.push(out); return out; };
 
 beforeEach(() => {
   vi.useFakeTimers();
   clock = 0; placed = []; outs = [];
-  fills.clear(); FakeObserver.all = [];
+  fills.clear(); FakeObserver.all = []; FakeResize.all = [];
+  vi.stubGlobal('ResizeObserver', FakeResize);
   Object.assign(asked, { styles: 0, froms: 0 });
   document.documentElement.setAttribute('data-kb-motion', 'full');
   vi.stubGlobal('matchMedia', (q: string) => ({
@@ -161,8 +179,9 @@ describe('where a flake lands', () => {
     expect(probe.tiles()).toEqual({ cell: 1, page: 0 });
     expect(second.per.every((d) => d <= 1)).toBe(true);
     expect(probe.draws()).toBeGreaterThan(drawn);
-    expect(TILE_W).toBe(512);
-    expect(TILE_H).toBe(256);
+    /* The tile's real size: main is 600 by 300, so its tile is the full 512 by 256 grid cell at its corner. */
+    const tile = cellTiles(main)[0]!;
+    expect([tile.style.width, tile.style.height, tile.style.left, tile.style.top]).toEqual(['512px', '256px', '0px', '0px']);
   });
 
   it('a bombed post\'s body goes to the Glitter Bomb\'s surface, not the cell', () => {
@@ -318,6 +337,137 @@ describe('the tiles', () => {
   });
 });
 
+describe('refit and re-attach', () => {
+  beforeEach(() => { vi.stubGlobal('IntersectionObserver', FakeObserver); });
+
+  it('a cell that shrinks refits its tile to what is left of it and redraws it in view; one out of view is refit and not drawn', () => {
+    const { article, main } = post();
+    keep(landPost(article));
+    drop(300, 250);
+    settle();
+    const tile = cellTiles(main)[0]!;
+    FakeObserver.report(tile, true);
+    expect([tile.style.width, tile.style.height]).toEqual(['512px', '256px']);
+    const draws = probe.draws();
+    resize(main, 400, 150);
+    FakeResize.fire(main);
+    expect([tile.style.width, tile.style.height]).toEqual(['400px', '150px']);
+    expect([tile.width, tile.height]).toEqual([400, 150]);
+    expect(probe.draws()).toBeGreaterThan(draws);
+    FakeObserver.report(tile, false);
+    resize(main, 300, 100);
+    const d2 = probe.draws();
+    FakeResize.fire(main);
+    expect([tile.style.width, tile.style.height]).toEqual(['300px', '100px']);
+    expect(tile.width).toBe(0);
+    expect(probe.draws()).toBe(d2);
+  });
+
+  it('a cell shrunk past all its glitter keeps its tile, and a cell that grows back has it drawn again', () => {
+    const { article, main } = post();
+    keep(landPost(article));
+    drop(300, 250);
+    settle();
+    const tile = cellTiles(main)[0]!;
+    FakeObserver.report(tile, true);
+    resize(main, 10, 10);
+    FakeResize.fire(main);
+    expect(tile.isConnected).toBe(true);
+    expect(tile.style.width).toBe('10px');
+    expect(tile.width).toBe(0);
+    resize(main, 600, 300);
+    FakeResize.fire(main);
+    expect([tile.style.width, tile.width]).toEqual(['512px', 512]);
+  });
+
+  it('a window that narrows refits the page\'s tiles, and landPage\'s way out stops listening', () => {
+    const add = vi.spyOn(window, 'addEventListener'), rem = vi.spyOn(window, 'removeEventListener');
+    const out = keep(landPage());
+    drop(300, 300);
+    settle();
+    const tile = pageTiles()[0]!;
+    FakeObserver.report(tile, true);
+    expect(tile.style.width).toBe('512px');
+    vi.stubGlobal('innerWidth', 330);
+    window.dispatchEvent(new Event('resize'));
+    expect(tile.style.width).toBe('330px');
+    expect(tile.width).toBe(330);
+    out();
+    /* The page's own listener only (the loop's has its own way out). */
+    const ours = (c: unknown[]) => c[0] === 'resize' && (c[1] as { name?: string }).name === 'onResize';
+    const added = add.mock.calls.filter(ours), removed = rem.mock.calls.filter(ours);
+    expect(added.length).toBeGreaterThan(0);
+    expect(removed.map((c) => c[1])).toEqual(added.map((c) => c[1]));
+  });
+
+  it('a zero or NaN rect gives a tile of a pixel, never a NaN size, and never throws', () => {
+    const { article, main } = post();
+    keep(landPost(article));
+    drop(300, 250);
+    settle();
+    const tile = cellTiles(main)[0]!;
+    FakeObserver.report(tile, true);
+    for (const [w, h] of [[0, 0], [NaN, NaN]] as const) {
+      resize(main, w, h);
+      expect(() => FakeResize.fire(main)).not.toThrow();
+      expect([tile.style.width, tile.style.height]).toEqual(['1px', '1px']);
+    }
+  });
+
+  it('a tile React detached comes back to its cell when the observer next speaks, in view or not, and never throws', () => {
+    const { article, main } = post();
+    keep(landPost(article));
+    drop(300, 250);
+    settle();
+    const tile = cellTiles(main)[0]!;
+    FakeObserver.report(tile, true);
+    main.textContent = 'replaced';
+    expect(tile.isConnected).toBe(false);
+    expect(() => FakeObserver.report(tile, false)).not.toThrow();
+    expect(tile.parentElement).toBe(main);
+    main.textContent = 'again';
+    expect(() => FakeObserver.report(tile, true)).not.toThrow();
+    expect(tile.parentElement).toBe(main);
+    expect(tile.width).toBe(512);
+  });
+
+  it('StrictMode\'s mount, cleanup, mount of landPost leaves one set of registrations and one tile', () => {
+    const { article, main } = post();
+    landPost(article)();
+    expect(FakeResize.live()).toBe(0);
+    const out = keep(landPost(article));
+    expect(FakeResize.live()).toBe(4);
+    drop(300, 250);
+    settle();
+    expect(cellTiles(main)).toHaveLength(1);
+    expect(probe.tiles()).toEqual({ cell: 1, page: 0 });
+    out();
+    expect(FakeResize.live()).toBe(0);
+    expect(probe.tiles()).toEqual({ cell: 0, page: 0 });
+    drop(300, 250);
+    settle();
+    expect(probe.landed()).toEqual({ effect: 0, cell: 0, page: 0 });
+  });
+
+  it('StrictMode\'s mount, cleanup, mount of landPage leaves one listener and no duplicate tiles', () => {
+    const add = vi.spyOn(window, 'addEventListener'), rem = vi.spyOn(window, 'removeEventListener');
+    const count = (spy: typeof add) => spy.mock.calls.filter((c) => c[0] === 'resize').length;
+    landPage()();
+    expect([count(add), count(rem)]).toEqual([1, 1]);
+    const out = keep(landPage());
+    expect(count(add)).toBe(2);
+    drop(300, 300);
+    settle();
+    const n = pageTiles().length;
+    expect(n).toBeGreaterThan(0);
+    expect(new Set(pageTiles().map((t) => `${t.style.left},${t.style.top}`)).size).toBe(n);
+    out();
+    expect(pageTiles()).toHaveLength(0);
+    expect(rem.mock.calls.filter((c) => c[0] === 'resize' && c[1] === add.mock.calls.filter((a) => a[0] === 'resize')[1]![1])).toHaveLength(1);
+    expect(probe.landed().page).toBe(0);
+  });
+});
+
 describe('the 300, and the way out', () => {
   /** Lands rounds of 26 on each of three surfaces: a plain cell, the page, and a Glitter Bomb's. */
   function threeKinds(rounds: number) {
@@ -346,10 +496,16 @@ describe('the 300, and the way out', () => {
     const tile = cellTiles(k.main)[0];
     expect(tile).toBeDefined();
     const was = fills.get(tile!) ?? 0;
+    const pages = pageTiles().map((t) => fills.get(t) ?? 0);
+    expect(pages.length).toBeGreaterThan(0);
     const draws = probe.draws();
+    const page = probe.landed().page;
     drop(300, 600);
     settle(k.t);
+    /* The dropped flakes were the cell's: its own tile was redrawn, and the page's tiles (none of whose flakes went) were not. */
+    expect(probe.landed().page).toBe(page);
     expect(fills.get(tile!)! - was).toBeGreaterThan(0);
+    expect(pageTiles().map((t) => fills.get(t) ?? 0)).toEqual(pages);
     expect(probe.draws()).toBeGreaterThan(draws);
   });
 

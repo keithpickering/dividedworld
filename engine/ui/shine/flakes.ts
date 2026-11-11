@@ -1049,7 +1049,6 @@ function hostOf(n: EventTarget | null | undefined): HTMLElement | null {
 const elementAt = (x: number, y: number): Element | null =>
   typeof document === 'undefined' || !document.elementFromPoint ? null : document.elementFromPoint(x, y);
 
-
 /** A band read from a board's computed style is kept per host for this long: a sweep over a post asks the browser once, not per flake. */
 const BAND_MS = 100;
 let bands = new WeakMap<HTMLElement, { at: number; band: Band | null }>();
