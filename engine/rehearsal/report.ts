@@ -7,14 +7,14 @@
 export interface LogTrim { readonly where: string; readonly path: string; readonly predicate: string; readonly before: number; readonly after: number }
 export interface LogMeetingPart {
   readonly part: string;
-  /** ok, rejected or failed: the record's, or from the call's own error where the record has none for this part. */
+  /** ok, rejected or failed, as the meeting's record has it for this part; "unknown" where an old record has no parts. */
   readonly outcome: string;
   readonly error: string | null;
-  /** What the Boss was sent for this part: the system prompt and the messages. */
-  readonly sent: { readonly system: string; readonly messages: readonly { readonly role: string; readonly content: string }[] };
+  /** What the Boss was sent for this part: the system prompt and the messages. Null when no call was kept for this part. */
+  readonly sent: { readonly system: string; readonly messages: readonly { readonly role: string; readonly content: string }[] } | null;
   readonly answer: unknown;
-  /** True when the call came from the cassette. */
-  readonly replayed: boolean;
+  /** True when the call came from the cassette; null when no call was kept for this part. */
+  readonly replayed: boolean | null;
 }
 export interface LogMeeting {
   readonly id: number;
@@ -24,7 +24,7 @@ export interface LogMeeting {
   readonly error: string | null;
   readonly bankBefore: number | null;
   readonly bankAfter: number | null;
-  /** One per kept call of the meeting, in order (moves, staff, self), each with the outcome the meeting's record holds for that part. Empty when no call was kept. */
+  /** One per part the meeting's record holds, in order (moves, staff, self), each with its outcome and the call kept for it, if any. An old record with no parts has one "unknown" entry per kept call. */
   readonly parts: readonly LogMeetingPart[];
   readonly memoryBefore: unknown;
   readonly memoryAfter: unknown;
@@ -126,12 +126,16 @@ function table(head: readonly string[], rows: readonly (readonly unknown[])[], e
 function partHtml(p: LogMeetingPart): string {
   const error = p.outcome === 'ok' ? '' : ` Error: ${esc(p.error ?? 'none recorded')}`;
   return `<div class="part"><h4>Part ${esc(p.part)}: ${esc(p.outcome)}${p.replayed ? ' (replayed)' : ''}${error}</h4>
-<details><summary>What the Boss was sent</summary>${pre(p.sent.system)}${p.sent.messages.map((x) => `<p class="role">${esc(x.role)}</p>${pre(x.content)}`).join('')}</details>
-<details open><summary>The answer</summary>${pre(p.answer)}</details></div>`;
+${p.sent === null ? '<p class="none">No call was kept for this part.</p>' : `<details><summary>What the Boss was sent</summary>${pre(p.sent.system)}${p.sent.messages.map((x) => `<p class="role">${esc(x.role)}</p>${pre(x.content)}`).join('')}</details>
+<details open><summary>The answer</summary>${pre(p.answer)}</details>`}</div>`;
 }
 
 function meetingHtml(m: LogMeeting): string {
-  const replayed = m.parts.length === 0 ? '' : m.parts.every((p) => p.replayed) ? ' (replayed)' : ' (live or stub)';
+  const withCall = m.parts.filter((p) => p.replayed !== null);
+  const missing = m.parts.length - withCall.length;
+  const label = withCall.length === 0 ? '' : withCall.every((p) => p.replayed) ? 'replayed' : 'live or stub';
+  const note = missing > 0 && withCall.length > 0 ? `no call was kept for ${missing} part${missing === 1 ? '' : 's'}` : '';
+  const replayed = label || note ? ` (${[label, note].filter(Boolean).join('; ')})` : '';
   return `<div class="card"><h3>Meeting ${esc(m.id)}: ${esc(m.outcome)}${replayed}</h3>
 <p>${esc(m.startedAt)} to ${time(m.finishedAt)}. Bank ${esc(m.bankBefore ?? 'none')} to ${esc(m.bankAfter ?? 'none')}.${m.error ? ` Error: ${esc(m.error)}` : ''}</p>
 ${m.parts.length ? m.parts.map(partHtml).join('') : '<p class="none">No call was kept for this meeting.</p>'}

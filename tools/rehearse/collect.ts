@@ -5,6 +5,7 @@
 import { DAY_MS } from "../../engine/rehearsal/generate.ts";
 import type { LogApology, LogCall, LogChatter, LogCost, LogDay, LogInfraction, LogMeeting, LogMeetingPart, LogMove, LogOrder, LogPatrol, LogSkip, LogTrim, LogVisit, RehearsalLog } from "../../engine/rehearsal/report.ts";
 import type { ChatRequest, CompletionRequest } from "../../engine/system/model.ts";
+import { MEETING_PARTS } from "../../engine/system/meeting.ts";
 import type { KeptCall } from "./models.ts";
 import type { RunContext } from "./run.ts";
 
@@ -71,6 +72,39 @@ export function pairLedger(rows: readonly LedgerRow[], calls: readonly KeptCall[
   return { pairs, unmatched, notes };
 }
 
+const askOf = (name: string): string | undefined => MEETING_PARTS.find((p) => p.key === name)?.ask;
+
+/** The part of a meeting a call asked for: its request's last message ends with that part's ask (MEETING_PARTS). */
+const partCall = (c: KeptCall, ask: string): boolean => {
+  const last = (c.request as ChatRequest).messages?.at(-1)?.content;
+  return typeof last === "string" && last.endsWith(ask);
+};
+
+const partOf = (c: KeptCall | undefined): Pick<LogMeetingPart, "sent" | "answer" | "replayed"> => {
+  if (!c) return { sent: null, answer: null, replayed: null };
+  const request = c.request as ChatRequest;
+  return { sent: { system: request.system, messages: request.messages.map((x) => ({ role: x.role, content: x.content })) }, answer: c.value ?? (c.error ? { rejected: c.error } : null), replayed: c.replayed };
+};
+
+/**
+ * A meeting's parts, from its record (the authority: apply_meeting and fail_meeting write one per part, failed ones too). Each takes the kept call
+ * whose last message ends with that part's ask; a part nothing was kept for says so, with its own outcome and error. A record with no parts (an old
+ * row) gives one entry per kept call, its part and outcome "unknown" rather than guessed.
+ */
+export function meetingParts(record: unknown, calls: readonly KeptCall[]): LogMeetingPart[] {
+  const raw = (record as { parts?: unknown } | null)?.parts;
+  const recorded = Array.isArray(raw) ? (raw as { part?: unknown; outcome?: unknown; error?: unknown }[]) : [];
+  if (recorded.length === 0) return calls.map((c) => ({ part: "unknown", outcome: "unknown", error: c.error ? c.error.message : null, ...partOf(c) }));
+  const taken = new Set<KeptCall>();
+  return recorded.map((rec) => {
+    const part = typeof rec.part === "string" ? rec.part : "unknown";
+    const ask = askOf(part);
+    const call = ask === undefined ? undefined : calls.find((c) => !taken.has(c) && partCall(c, ask));
+    if (call) taken.add(call);
+    return { part, outcome: typeof rec.outcome === "string" ? rec.outcome : "unknown", error: rec.error != null ? String(rec.error) : null, ...partOf(call) };
+  });
+}
+
 export async function collect(ctx: RunContext): Promise<RehearsalLog> {
   const { conn, scenario, timeline, calls, jobs, dispatched, filler } = ctx;
   const day1 = timeline.day1;
@@ -124,21 +158,9 @@ export async function collect(ctx: RunContext): Promise<RehearsalLog> {
     const mine = memories.filter((r) => Number(r.meeting) === id);
     const after = mine[0];
     const before = after ? memories.filter((r) => r.staff === after.staff && Number(r.id) < Number(after.id)).at(-1) : undefined;
-    // One part per kept call of the meeting, in order; the record's parts (apply_meeting, fail_meeting) give each its outcome, by position.
-    const recorded = Array.isArray((m.record as { parts?: unknown } | null)?.parts) ? ((m.record as { parts: { part?: unknown; outcome?: unknown; error?: unknown }[] }).parts) : [];
     const mine2 = calls.filter((c) => c.duty === "meeting" && c.request.meeting === id);
-    const parts: LogMeetingPart[] = mine2.map((c, i) => {
-      used.add(c);
-      const rec = recorded[i];
-      const request = c.request as ChatRequest;
-      const outcome = typeof rec?.outcome === "string" ? rec.outcome : c.error ? "rejected" : "ok";
-      const error = rec?.error != null ? String(rec.error) : c.error ? c.error.message : null;
-      return {
-        part: typeof rec?.part === "string" ? rec.part : `part ${i + 1}`, outcome, error,
-        sent: { system: request.system, messages: request.messages.map((x) => ({ role: x.role, content: x.content })) },
-        answer: c.value ?? (c.error ? { rejected: c.error } : null), replayed: c.replayed,
-      };
-    });
+    for (const c of mine2) used.add(c);
+    const parts = meetingParts(m.record, mine2);
     const row: LogMeeting = {
       id, startedAt: iso(m.started), finishedAt: iso(m.finished), outcome: String(m.outcome), error: m.error === null ? null : String(m.error),
       bankBefore: m.bank_before === null ? null : Number(m.bank_before), bankAfter: m.bank_after === null ? null : Number(m.bank_after),

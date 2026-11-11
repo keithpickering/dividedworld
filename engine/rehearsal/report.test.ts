@@ -158,3 +158,14 @@ test('a meeting with no kept call says so', () => {
   const html = reportHtml({ ...log, days: [{ ...log.days[0]!, meetings: [{ ...meeting, parts: [] }] }] });
   assert.match(html, /No call was kept for this meeting/);
 });
+
+test('a part with no kept call says so plainly, and the meeting label counts only parts with calls', () => {
+  const withCall = { part: 'staff', outcome: 'ok', error: null, sent: { system: 's', messages: [{ role: 'user', content: 'c' }] }, answer: { a: 1 }, replayed: true };
+  const noCall = { part: 'moves', outcome: 'failed', error: 'MOVES-BOOM', sent: null, answer: null, replayed: null };
+  const log = clean();
+  const html = reportHtml({ ...log, days: [{ ...log.days[0]!, meetings: [{ ...meeting, parts: [noCall, withCall] }] }] });
+  assert.match(html, /Part moves: failed[^<]*MOVES-BOOM/);
+  assert.match(html, /No call was kept for this part\./);
+  assert.match(html, /Meeting 1: [^<]*\(replayed; no call was kept for 1 part\)/);
+  assert.ok(!/Part moves: failed \(replayed\)/.test(html));
+});
