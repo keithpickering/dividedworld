@@ -1,4 +1,18 @@
 /*
+ * Gochi Hand, the marker on the tape (SIL Open Font License; fonts/OFL.txt). The Latin subset, vendored from
+ * https://fonts.gstatic.com/s/gochihand/v27/hES06XlsOjtJsgCkx1Pkfon_-w.woff2 on 2026-11-11 (the file Google Fonts' CSS API
+ * names for family=Gochi+Hand). Nothing is fetched at run time. `block` so a strip is never drawn in a fallback face that
+ * measures differently.
+ */
+@font-face {
+  font-family: 'Gochi Hand';
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url('./fonts/GochiHand-Regular.woff2') format('woff2');
+}
+
+/*
  * Autocorrect (Effect.tsx): label-maker tape over the author's words. Off-white paper with torn ends and a faint shadow, a little
  * crooked (each strip's tilt is seeded by its key), the caster's replacement typed on it in Courier. The words it covers stay in it,
  * hidden, in the same cell as the replacement, so the tape is as wide as the wider of the two; a long strip is tape that breaks
