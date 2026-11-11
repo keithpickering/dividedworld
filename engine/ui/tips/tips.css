@@ -258,14 +258,19 @@
   .kb-tips .kb-tips-panel { outline: 1px solid CanvasText; }
 }
 
-/* A refused tilt save, said after the tip has closed (Tips.tsx): a line above the page's bottom edge, in the tip's own colors. */
+/* A refused tilt save, said after the tip has closed (Tips.tsx): a line above the page's bottom edge; its Dismiss button ends it. */
 .kb-tips-refusal {
   position: fixed;
   inset: auto 1rem 1rem 1rem;
   z-index: 60;
-  margin: 0;
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
   padding: 0.75rem 1rem;
-  border: 1.5px solid var(--kb-border, currentColor);
-  background: var(--kb-surface, Canvas);
-  color: var(--kb-text, CanvasText);
+  border: 1.5px solid var(--kb-glass-pale);
+  background: var(--kb-glass-ground);
+  color: var(--kb-glass-text);
+  font-family: var(--kb-glass-font-body);
 }
+.kb-tips-refusal p { margin: 0; }

@@ -278,6 +278,20 @@ describe('the shine tip', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent("You're offline, so this was not sent.");
   });
 
+  test('the refusal line goes away with its Dismiss button', async () => {
+    phone();
+    const fake = signedIn();
+    open(fake);
+    await settle();
+    shiny();
+    const tip = await screen.findByRole('dialog', { name: 'Title of shine' });
+    fake.seed.offline(true);
+    fireEvent.click(within(tip).getByRole('button', { name: 'Action of shine' }));
+    const line = await screen.findByRole('alert');
+    fireEvent.click(within(line).getByRole('button', { name: 'Dismiss' }));
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
   test('a grant or a choice made elsewhere withdraws the tip', async () => {
     phone();
     open(signedIn());
