@@ -284,7 +284,11 @@ export function inOrder(lines: readonly LogLine[]): LogLine[] {
 
 /** The words of one character's lines in a settlement, as the board's row says them: "drew heat +0.20, stole thunder +0.20". */
 function scoredWords(lines: readonly LogLine[], words: Words): string {
-  return inOrder(lines).map((l) => `${lowerFirst(reasonName(words.ui.reasonWords(l.reason, paramsOf(l, words.economy))))} ${signed(l.amount)}`).join(', ');
+  /* A reason that names a card (a boost's `{ card }`) keeps the card's capital: only a reason's own first word is lowered into the sentence. */
+  return inOrder(lines).map((l) => {
+    const said = reasonName(words.ui.reasonWords(l.reason, paramsOf(l, words.economy)));
+    return `${typeof l.params?.['card'] === 'string' ? said : lowerFirst(said)} ${signed(l.amount)}`;
+  }).join(', ');
 }
 
 /**

@@ -22,7 +22,7 @@ import { ThreadScreen } from '../thread/Thread.tsx';
 import { PostEffects } from './Effects.tsx';
 import { createPlays } from './plays.ts';
 import type { CardUi, EffectProps } from './types.ts';
-import { LoadedThread } from '../loaded.tsx';
+import { LoadedBoard, LoadedThread } from '../loaded.tsx';
 
 const base = { playPrice: () => 0, validateConfig: (c: unknown) => ok(c) };
 const reaching = (key: string, name: string, rarity: CardRules['rarity'], reaches: CardRules['reaches'], extra: Partial<CardRules> = {}): CardRules => ({
@@ -227,6 +227,17 @@ describe('a Gimmick armed on a thread or a board', () => {
   test('is offered on the head of a thread the acting character started', async () => {
     const head = await armed('me');
     expect(await within(head).findByRole('button', { name: 'Use Vibes on “Whose thread”' })).toBeInTheDocument();
+  });
+
+  test('is not offered on a board\'s banner, whoever the reader is', async () => {
+    const w = world();
+    w.fake.seed.cards(w.me, { vibes: 1 });
+    renderIn(w.fake, <Frame><LoadedBoard slug="general" /></Frame>, { path: '/b/general', instance, cards });
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: /^Hand, \d postcards?/u }));
+    await user.click(within(screen.getByRole('region', { name: 'Your hand' })).getAllByRole('button', { name: /^Vibes, .*postcard/u })[0]!);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByRole('button', { name: /^Use Vibes/u })).toBeNull();
   });
 
   test('is not offered on another character\'s thread, as the server refuses it there', async () => {

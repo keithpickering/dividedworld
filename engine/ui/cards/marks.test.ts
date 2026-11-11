@@ -48,8 +48,12 @@ describe('a card back, a ward and a caught play, in words', () => {
   test('every Gimmick says what it does and when it ends', () => {
     const now = new Date('2026-11-01T00:00:00.000Z');
     const end = '2026-11-06T10:00:00.000Z';
-    assert.deepEqual(gimmickWords({ kind: 'ward', upTo: 'uncommon' }, end, now), { state: 'Turning away cards up to uncommon', ends: `Ends ${dayAndTime(end)}` });
-    assert.deepEqual(gimmickWords({ kind: 'ward', flavors: ['salty', 'sweet'] }, end, now), { state: 'Turning away Salty and Sweet cards', ends: `Ends ${dayAndTime(end)}` });
+    assert.deepEqual(gimmickWords({ kind: 'ward', upTo: 'uncommon' }, end, now), { state: 'Turns away cards up to uncommon', ends: `Ends ${dayAndTime(end)}` });
+    assert.deepEqual(gimmickWords({ kind: 'ward', flavors: ['salty', 'sweet'] }, end, now), { state: 'Turns away Salty and Sweet cards', ends: `Ends ${dayAndTime(end)}` });
+    assert.deepEqual(gimmickWords({ kind: 'ward', cards: ['whoops'] }, end, now, (k) => (k === 'whoops' ? 'Whoops!' : k)), { state: 'Turns away Whoops!', ends: `Ends ${dayAndTime(end)}` });
+    /* Every condition is said: the ward turns away a card that meets any one of them. */
+    assert.deepEqual(gimmickWords({ kind: 'ward', upTo: 'uncommon', flavors: ['salty'], cards: ['whoops', 'glitter'] }, end, now, (k) => (k === 'whoops' ? 'Whoops!' : 'Glitter Bomb')),
+      { state: 'Turns away cards up to uncommon, Salty cards, Whoops! and Glitter Bomb', ends: `Ends ${dayAndTime(end)}` });
     assert.deepEqual(gimmickWords({ kind: 'price', flavors: ['salty'], add: 25 }, end, now), { state: 'Salty cards cost 0.25 more here', ends: `Ends ${dayAndTime(end)}` });
     assert.deepEqual(gimmickWords({ kind: 'earn', by: 0.1 }, end, now), { state: 'Earns 10% more from some reactions', ends: `Ends ${dayAndTime(end)}` });
     for (const effect of [{ kind: 'ward', upTo: 'uncommon' }, { kind: 'price', flavors: ['salty'], add: 25 }, { kind: 'earn', by: 0.1 }] as const) {

@@ -231,7 +231,7 @@ export function useResolvedView(store: Plays, post: Id, kind: string, nameOf?: (
     }
     if (rules?.gimmick && live.length > 0) {
       const latest = [...live].sort((a, b) => Date.parse(b.ends ?? '') - Date.parse(a.ends ?? ''))[0]!;
-      const gimmick = gimmickWords(rules.gimmick, latest.ends);
+      const gimmick = gimmickWords(rules.gimmick, latest.ends, new Date(), cardName);
       return { ...base, state: gimmick.state, ...(gimmick.ends ? { ends: gimmick.ends } : {}), notes: caught };
     }
     return Object.keys(caught).length > 0 ? { ...base, notes: caught } : base;

@@ -851,3 +851,15 @@ describe('the group lines', () => {
     expect(said(rowsOf([move()], null)[0]!)).not.toMatch(/Spritey|others|members of/iu);
   });
 });
+
+describe('a card\'s boost in a settlement', () => {
+  test('is said with the card\'s name, as the instance\'s words give it, and the amount it added, the card\'s capital kept', () => {
+    const at = '2026-10-30T08:17:00.000Z';
+    const w: Words = { ...words, ui: { ...words.ui, reasonWords: (r, params) => (r === 'card.boost' ? `${params['card'] === 'pt' ? 'Publicity Tour' : 'A card'} added: what the boost earned` : r) } };
+    const log = { ...empty, settlements: [settled(1, at, [{ character: 'p', reason: 'face.cheered', amount: 100, shares: [] }, { character: 'p', reason: 'card.boost', amount: 10, params: { card: 'pt' }, shares: [] }])] };
+    const rows = logRows(data({ log, mine: [char('p', 'Pipewrench', 'face')] }), w, 600, null);
+    const said = rows.map((r) => `${r.what} ${r.details.map((d) => (typeof d === 'string' ? d : (d as { text: string }).text)).join('')}`).join(' | ');
+    expect(said).toContain('Publicity Tour added +0.10');
+    expect(said).not.toContain('publicity Tour');
+  });
+});

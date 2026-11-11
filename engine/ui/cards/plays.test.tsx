@@ -342,6 +342,11 @@ describe('a back that sprang, and a new back set on the same post', () => {
     const backs = [{ ...playOf(base('s1', 'set', {}))!, playedAt: '2020-01-01T00:00:00.000Z' }, { ...playOf(base('s2', 'set', {}))!, playedAt: new Date().toISOString() }];
     expect(shownPlays(backs, { unit: 'day', count: 7 }).map((p) => p.id)).toEqual(['s2']);
   });
+  test('a back its setter took back leaves the post: it is not shown', () => {
+    const now = new Date().toISOString();
+    const backs = [{ ...playOf(base('s1', 'set', {}))!, playedAt: now, takenBack: { at: now } }, { ...playOf(base('s2', 'set', {}))!, playedAt: now }];
+    expect(shownPlays(backs, { unit: 'day', count: 7 }).map((p) => p.id)).toEqual(['s2']);
+  });
 });
 
 /* An admin's end of a play (supabase/migrations/0092_card_end.sql): a card_end Act names its play and marks it reversed, whichever arrives first. */

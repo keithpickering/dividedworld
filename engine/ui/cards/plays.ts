@@ -33,12 +33,12 @@ export const isBack = (kind: string): boolean => kind === CARD_BACK || kind.star
 const sprungKind = (spring: Id) => `${CARD_BACK}:${spring}`;
 
 /**
- * The plays a post shows: all but a card back whose time has passed with nothing springing it, which is gone, as the server drops it
+ * The plays a post shows: all but a card back whose time has passed with nothing springing it, or that its setter took back, which is gone, as the server drops it
  * (card_target). Its end is setLasts after it was set, the same for every card.
  */
 export function shownPlays(plays: readonly CardPlay[], setLasts: Span, now: number = Date.now()): readonly CardPlay[] {
   const span = setLasts.count * (setLasts.unit === 'minute' ? 60_000 : setLasts.unit === 'hour' ? 3_600_000 : setLasts.unit === 'day' ? 86_400_000 : setLasts.unit === 'week' ? 7 * 86_400_000 : 30 * 86_400_000);
-  const shown = plays.filter((p) => !(p.faceDown && !p.revealed && Date.parse(p.playedAt) + span <= now));
+  const shown = plays.filter((p) => !(p.faceDown && !p.revealed && (p.takenBack !== undefined || Date.parse(p.playedAt) + span <= now)));
   return shown.length === plays.length ? plays : shown;
 }
 

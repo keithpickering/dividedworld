@@ -82,19 +82,21 @@ export function backWords(back: CardPlay, setter: string, setLasts: Span, cardNa
 }
 
 const capital = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
-const list = (words: readonly string[]): string => (words.length <= 2 ? words.join(' and ') : `${words.slice(0, -1).join(', ')}, and ${words[words.length - 1]}`);
+const list = (words: readonly string[]): string => (words.length <= 2 ? words.join(' and ') : `${words.slice(0, -1).join(', ')} and ${words[words.length - 1]}`);
 
 /**
  * A Gimmick's words, as the Lens's status for a live one: what it does while it is up, and when it ends (or ended), the end in the
- * reader's zone. They are read from the effect's own numbers, and name no card: a ward says what it turns away, a price what a cast
+ * reader's zone. They are read from the effect's own numbers: a ward says everything it turns away (a card by the name `nameOf` gives), a price what a cast
  * costs more, an earn how much more a reaction earns (an earn's `by` is a share: 0.1 is 10%).
  */
-export function gimmickWords(effect: GimmickEffect, ends: string | undefined, now: Date = new Date()): { readonly state: string; readonly ends?: string } {
+export function gimmickWords(effect: GimmickEffect, ends: string | undefined, now: Date = new Date(), nameOf: (key: string) => string = (key) => key): { readonly state: string; readonly ends?: string } {
   if (ends !== undefined && Date.parse(ends) <= now.getTime()) return { state: 'Ended, changing nothing', ends: `Ended ${dayAndTime(ends)}` };
+  /* A ward turns away a card that meets any one of its conditions, so every condition it holds is said, in the order the rules read them. */
+  const away = effect.kind === 'ward'
+    ? [...(effect.upTo !== undefined ? [`cards up to ${effect.upTo}`] : []), ...(effect.flavors?.length ? [`${list(effect.flavors.map(capital))} cards`] : []), ...(effect.cards?.map(nameOf) ?? [])]
+    : [];
   const state = effect.kind === 'ward'
-    ? (effect.upTo !== undefined ? `Turning away cards up to ${effect.upTo}`
-      : effect.flavors?.length ? `Turning away ${list(effect.flavors.map(capital))} cards`
-        : 'Turning away some cards')
+    ? `Turns away ${away.length > 0 ? list(away) : 'some cards'}`
     : effect.kind === 'price' ? `${list(effect.flavors.map(capital))} cards cost ${(effect.add / 100).toFixed(2)} more here`
       : `Earns ${Math.round(effect.by * 100)}% more from some reactions`;
   return { state, ...(ends !== undefined ? { ends: endsWords(ends) } : {}) };
