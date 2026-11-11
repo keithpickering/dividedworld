@@ -64,7 +64,7 @@ begin
   if pg_temp.refusal(format('select unmask(%L, %L, %L)', a, gen_random_uuid(), '')) is distinct from 'there is no such thread' then raise exception 'a reveal in no thread'; end if;
   if pg_temp.refusal(format('select unmask(%L, %L, %L)', a, t, repeat('x', 201))) is distinct from 'the message is at most 200 characters' then raise exception 'a message of 201 characters was taken'; end if;
   if pg_temp.refusal(format('select unmask(%L, %L, %L)', a, t, repeat('🔥', 200))) is not null then raise exception 'a message of 200 characters, counted as characters, is taken'; end if;
-  -- The class just revealed is public (0146), so a reveal with no message is made by a character that has not revealed.
+  -- The class just revealed is public (0147), so a reveal with no message is made by a character that has not revealed.
   if pg_temp.refusal(format('select unmask(%L, %L, null)', a2, t)) is not null then raise exception 'no message is an empty one'; end if;
   perform tests.unbecome();
   update characters set retired_at = now() where id = a;
