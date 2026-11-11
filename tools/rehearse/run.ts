@@ -2,7 +2,7 @@
 // (`runMinute`: the clock, every cron job that is due, the dispatcher) and then any filler action due in it, through `runAction`, so every
 // filler Act is written by the code that writes a player's. The System's switch is off through backstory and on at day 1's first minute.
 // Each day's filler is drawn at that day's first minute from the public world read back then (`readWorld`).
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Instance } from "../../engine/rules/types.ts";
 import type { RehearsalContent, RehearsalCorpus, Scenario } from "../../engine/rehearsal/types.ts";
@@ -102,14 +102,10 @@ export interface Reach {
 }
 
 function reach(cluster: Cluster): Reach {
-  const lib = "/usr/lib/x86_64-linux-gnu/faketime/libfaketime.so.1";
-  const root = "/usr/lib/postgresql";
-  const newest = existsSync(root) ? readdirSync(root).filter((v) => /^\d+$/.test(v)).sort((a, b) => Number(b) - Number(a))[0] : undefined;
-  const bin = newest ? join(root, newest, "bin") : "<postgres bin>";
   const as = process.getuid?.() === 0 ? "runuser -u postgres -- " : "";
   const start =
-    `${as}env LD_PRELOAD=${existsSync(lib) ? lib : "<libfaketime.so.1>"} FAKETIME_TIMESTAMP_FILE=${cluster.dir}/clock FAKETIME_NO_CACHE=1 ` +
-    `${bin}/pg_ctl -D ${cluster.dir}/data -w -l ${cluster.dir}/server.log -o "-k ${cluster.dir} -p ${cluster.port} -c listen_addresses='' -c fsync=off" start`;
+    `${as}env LD_PRELOAD=${cluster.lib} FAKETIME_TIMESTAMP_FILE=${cluster.dir}/clock FAKETIME_NO_CACHE=1 ` +
+    `${cluster.bin}/pg_ctl -D ${cluster.dir}/data -w -l ${cluster.dir}/server.log -o "-k ${cluster.dir} -p ${cluster.port} -c listen_addresses='' -c fsync=off" start`;
   return { dir: cluster.dir, port: cluster.port, database: DATABASE, pg_ctl: start, psql: `psql -h ${cluster.dir} -p ${cluster.port} -U postgres ${DATABASE}` };
 }
 

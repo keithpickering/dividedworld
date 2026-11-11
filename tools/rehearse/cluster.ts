@@ -11,6 +11,9 @@ export type Cluster = {
   /** The socket directory and data directory (one directory). Connect with host = dir. */
   dir: string;
   port: number;
+  /** The Postgres binaries and the libfaketime library this cluster runs with, for a line that starts it again. */
+  bin: string;
+  lib: string;
   /** Writes the clock file. Call it with a minute plus one second (see the plan). */
   setClock(ms: number): void;
   stop(opts?: { keep?: boolean }): Promise<void>;
@@ -109,6 +112,8 @@ export async function startCluster(opts: { at: number; preload?: boolean; extraS
   const cluster: Cluster = {
     dir,
     port: PORT,
+    bin,
+    lib,
     setClock(ms) {
       // Written aside and renamed over, so libfaketime never reads an empty file mid-write.
       writeFileSync(`${clockFile}.tmp`, clockLine(ms), { mode: 0o644 });
