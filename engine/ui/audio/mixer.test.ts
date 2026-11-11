@@ -200,12 +200,12 @@ describe('mixer', () => {
     const m = make();
     ctx.resume = mock.fn(async () => { throw new Error('blocked'); });
     m.setBus('game', { on: true, volume: 100 });
-    await m.unlock();
+    assert.equal(await m.unlock(), false, 'a refused resume says it is still locked');
     assert.equal(await m.play(boo), null);
     assert.equal(await m.loop(boo), null);
     assert.equal(fetchBytes.mock.callCount(), 0);
     ctx.resume = mock.fn(async () => {});
-    await m.unlock();
+    assert.equal(await m.unlock(), true, 'a resume that resolves says it is unlocked');
     assert.equal(makeContext.mock.callCount(), 1);
     assert.deepEqual(await m.play(boo), { lengthMs: 1500 });
   });

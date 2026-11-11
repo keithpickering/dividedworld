@@ -27,7 +27,8 @@ export interface MixerDeps { makeContext(): AudioContextLike; fetchBytes(src: st
 export interface LoopHandle { setGain(g: number): void; stop(fadeMs: number): void }
 export interface Mixer {
   setBus(bus: SoundBus, s: { on: boolean; volume: number }): void;
-  unlock(): Promise<void>; suspend(): Promise<void>; resume(): Promise<void>;
+  /** Resolves whether the mixer is now unlocked: false when the browser refused, so the next gesture may try again. */
+  unlock(): Promise<boolean>; suspend(): Promise<void>; resume(): Promise<void>;
   play(slot: SoundSlot, o?: { group?: string; fadeMs?: number }): Promise<{ lengthMs: number } | null>;
   loop(slot: SoundSlot, o?: { group?: string }): Promise<LoopHandle | null>;
 }
@@ -114,7 +115,8 @@ export function createMixer(deps: MixerDeps): Mixer {
         made ??= deps.makeContext();
         await made.resume();
         ctx = made;
-      } catch { /* a browser that refuses leaves the mixer locked; the next gesture tries again */ }
+        return true;
+      } catch { /* a browser that refuses leaves the mixer locked; the next gesture tries again */ return false; }
     },
     async suspend() { try { await made?.suspend(); } catch { /* nothing to suspend */ } },
     async resume() { try { await made?.resume(); } catch { /* nothing to resume */ } },

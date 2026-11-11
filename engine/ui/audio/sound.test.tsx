@@ -3,7 +3,7 @@
  * says its caption and fetches nothing; a gesture unlocks once; a hidden tab suspends; the preference reaches the buses; an unknown key
  * throws in development.
  */
-import { act, renderHook } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { KayfaProvider, type Kayfa } from '../context.tsx';
@@ -96,6 +96,22 @@ describe('the page sound', () => {
     await gesture('pointerdown');
     await gesture('touchend');
     expect(makeContext).toHaveBeenCalledTimes(1);
+    expect(context.resume).toHaveBeenCalledTimes(1);
+  });
+
+  test('a refused resume leaves the listeners, the next gesture unlocks, and the one after does nothing', async () => {
+    resetSound({ makeContext: () => { const c = makeContext(); c.resume = context.resume = vi.fn().mockRejectedValueOnce(new Error('blocked')).mockResolvedValue(undefined); return c; }, fetchBytes });
+    on('game');
+    const { result } = renderHook(() => useSound(), { wrapper: wrap });
+    await gesture('keydown');
+    await act(async () => { await result.current.play('boo'); });
+    expect(fetchBytes).not.toHaveBeenCalled();
+    await gesture('pointerdown');
+    expect(context.resume).toHaveBeenCalledTimes(2);
+    await act(async () => { await result.current.play('boo'); });
+    expect(fetchBytes).toHaveBeenCalledTimes(1);
+    await gesture('touchend');
+    expect(context.resume).toHaveBeenCalledTimes(2);
   });
 
   test('a hidden tab suspends and a shown one resumes', async () => {
@@ -169,8 +185,8 @@ describe('the page sound', () => {
     function Probe() { latest = useGameSound(); return <p>{latest.on ? 'sound on' : 'sound off'}</p>; }
     const { findByText } = renderIn(fake, <Probe />);
     await findByText('sound off');
-    await act(async () => { await new Promise((r) => setTimeout(r, 50)); });
-    act(() => latest!.set(true));
+    /* A change before the account's choices are read is ignored, so ask until the screen shows it. */
+    await waitFor(() => { act(() => latest!.set(true)); expect(document.body.textContent).toBe('sound on'); });
     await findByText('sound on');
   });
 });

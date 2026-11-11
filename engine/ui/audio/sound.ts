@@ -58,9 +58,12 @@ export function createSound(deps: MixerDeps): SoundPage {
     gesturing = false;
     for (const g of GESTURES) document.removeEventListener(g, onGesture, true);
   };
+  /* The listeners stay until an unlock succeeds: a browser that ignores a gesture (a modifier's keydown) is asked again by the next. */
+  let unlocking = false;
   const onGesture = (): void => {
-    removeGestures();
-    void mixer.unlock();
+    if (unlocking) return;
+    unlocking = true;
+    void mixer.unlock().then((unlocked) => { unlocking = false; if (unlocked) removeGestures(); });
   };
   const onVisibility = (): void => { void (document.hidden ? mixer.suspend() : mixer.resume()); };
   const arm = (): void => {
