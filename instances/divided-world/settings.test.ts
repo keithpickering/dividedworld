@@ -116,6 +116,18 @@ test('Divided World\'s whole instance has no problems', () => {
   assert.deepEqual(instanceProblems(playtestInstance), []);
 });
 
+test('Autocorrect\'s five screen settings are held, and an instance missing one is refused at load', () => {
+  const held = defaults.cardSettings;
+  assert.deepEqual([held['autocorrect.pace'], held['autocorrect.pickMs'], held['autocorrect.give'], held['autocorrect.peekStayMs'], held['autocorrect.peekSettle']], [90, 450, 34, 300, 300]);
+  assert.equal('autocorrect.peelMs' in held, false, 'peelMs is gone');
+  assert.deepEqual(playtest.cardSettings, held);
+  const { 'autocorrect.pace': _gone, ...rest } = held;
+  const without = { ...instance, settings: { ...instance.settings, cardSettings: rest } };
+  assert.match(instanceProblems(without).join(), /card setting "autocorrect.pace", which the settings do not hold/);
+  const slow = { ...instance, settings: { ...instance.settings, cardSettings: { ...held, 'autocorrect.pace': 19 } } };
+  assert.match(instanceProblems(slow).join(), /autocorrect.pace/, 'out of its bounds is refused too');
+});
+
 test('hints: the thresholds are valid and a hint needs a crowd, a clear lead, and a real split', () => {
   assert.deepEqual(defaults.hints, { least: 8, share: 0.6, split: 0.3, window: { unit: 'minute', count: 360 } });
   assert.deepEqual(settingsProblems({ ...defaults, hints: defaults.hints }), []);
