@@ -254,7 +254,10 @@ export function judge(fact: TextFact, ctx: JudgeContext): string[] {
     out.push(`${at}: inks ${round1(fact.ink)}px at ${round1(fact.size)}px of ${fact.family}, under the floor of ${INK_FLOOR}px of ink`);
   }
   if (fact.color[3] < 1) out.push(`${at}: its color ${colorText(fact.color)} is translucent; glass type is opaque`);
-  const roles = ctx.palette.roles.get(keyOf(fact.color)) ?? [];
+  const named = ctx.palette.roles.get(keyOf(fact.color)) ?? [];
+  /* A color that is both a text token and an ink (the caption's white is the key's body text too) is judged as text: the ink reading excuses a line from every ceiling on an opaque fill, and would excuse all of that text. Only a color with no text role is read as an ink. */
+  const textual = named.filter((r) => r.kind !== 'ink');
+  const roles = textual.length > 0 ? textual : named;
   if (roles.length === 0) out.push(`${at}: its color ${colorText([fact.color[0], fact.color[1], fact.color[2], 1])} is not one of the glass's text colors in the ${ctx.palette.key} key`);
   /* Under high contrast the ground is solid, so the smoke's ceilings do not apply; the key's colors, which the guard holds at 7:1 on that ground, do. */
   if (ctx.high) {
