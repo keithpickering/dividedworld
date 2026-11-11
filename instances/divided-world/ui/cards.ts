@@ -55,6 +55,11 @@ import { publicityTour } from '../cards/publicity-tour.ts';
 import { heatMagnet } from '../cards/heat-magnet.ts';
 import { classClown } from '../cards/class-clown.ts';
 import { goodVibes } from '../cards/good-vibes.ts';
+import { jimmyWails } from '../cards/jimmy-wails.ts';
+import { defaults } from '../settings.ts';
+import jimmyWailsCanvas from './cards/jimmy-wails/art.svg?url';
+import jimmyWailsMark from './cards/jimmy-wails/mark.svg?url';
+import jimmyWailsArt from './cards/jimmy-wails/art.json';
 import publicityTourCanvas from './cards/publicity-tour/art.svg?url';
 import publicityTourMark from './cards/publicity-tour/mark.svg?url';
 import publicityTourArt from './cards/publicity-tour/art.json';
@@ -101,9 +106,32 @@ const AutocorrectEffect = lazy(() => import('../cards/autocorrect/Effect.tsx').t
 const FeelinFabEffect = lazy(() => import('./feelin-fab/Effect.tsx').then((m) => ({ default: m.FeelinFabEffect })));
 const GlitterBombEffect = lazy(() => import('./glitter-bomb/Effect.tsx').then((m) => ({ default: m.GlitterBombEffect })));
 const YouWereSayingEffect = lazy(() => import('../cards/you-were-saying/Effect.tsx').then((m) => ({ default: m.YouWereSayingEffect })));
+const JimmyWailsEffect = lazy(() => import('../cards/jimmy-wails/Effect.tsx').then((m) => ({ default: m.JimmyWailsEffect })));
 const WhoopsEffect = lazy(() => import('../cards/whoops/Effect.tsx').then((m) => ({ default: m.Effect })));
 
+/** A list in words: "0.10, 0.25, 0.50 and 1.00". */
+const listWords = (items: readonly string[]) => (items.length > 1 ? `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}` : items.join(''));
+
+/** The amounts Jimmy Wails's drive takes, from the economy, each once, smallest first (the order the drive's buttons show them in). */
+const giftAmounts = (settings: Settings) => {
+  const e = settings.economy as Readonly<Record<string, unknown>>;
+  return [...new Set(jimmyWails.drive!.gifts.map((k) => e[k]).filter((v): v is number => typeof v === 'number'))].sort((a, b) => a - b).map(orbs);
+};
+const giftOverhead = (settings: Settings) => (settings.economy as Readonly<Record<string, unknown>>)[jimmyWails.drive!.overhead];
+
 export const cardsUi: readonly CardUi[] = Object.freeze([
+  {
+    key: 'jimmy-wails',
+    Effect: JimmyWailsEffect,
+    art: { color: '#2ee6ff', ink: '#03141a', canvas: jimmyWailsCanvas, mark: jimmyWailsMark, credit: jimmyWailsArt.credit, tagline: 'Put your sob story on a banner.' },
+    summary: 'Puts your sob story on a donation banner under a post, so anyone can send its author Aura.',
+    /* A hint is one fixed line, so it says the instance's own number as it starts out; the card's describe, which is given the settings, says the one in force. */
+    hint: `Anyone can chip in. The System takes ${giftOverhead(defaults)}% for overhead.`,
+    status: 'A drive is open on this post',
+    describe: (settings: Settings) =>
+      `A Sweet card, ${jimmyWails.rarity}, cast on a post, with a message of your own: your sob story, which it must have. It goes on a donation banner under the post. Anyone can give through the banner, in ${listWords(giftAmounts(settings))}, as often as their wallet allows. The System keeps ${giftOverhead(settings)}% of each gift as overhead, rounded up, and the rest goes to the wallet of the post's author. A wallet that is too full to hold it loses what does not fit, and a gift on a post by staff is all overhead. Every gift is public, with who gave it and how much. Up to ${jimmyWails.stack} appeals share one drive, each on its own banner, and it closes by itself ${spanWords(jimmyWails.drive!.lasts)} after the latest one; the next play after that opens a new drive. It costs nothing more to play.`,
+    logPlay: (_config, { opened }) => (opened === undefined ? undefined : opened ? 'It opened a drive.' : 'It joined the drive.'),
+  },
   {
     key: 'stick-around',
     Effect: StickAroundEffect,

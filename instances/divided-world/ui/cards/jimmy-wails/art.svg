@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 540 840" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+<defs>
+<radialGradient id="jw" cx="50%" cy="36%" r="75%">
+<stop offset="0" stop-color="#0f6f86"/>
+<stop offset=".45" stop-color="#06303c"/>
+<stop offset="1" stop-color="#010608"/>
+</radialGradient>
+</defs>
+<rect width="540" height="840" fill="url(#jw)"/>
+<polygon points="330,0 540,0 540,260 160,840 20,840" fill="#fff" opacity=".05"/>
+<circle cx="50" cy="70" r="2" fill="#e6fdff" opacity="0.5"/>
+<circle cx="480" cy="110" r="3" fill="#e6fdff" opacity="0.7"/>
+<circle cx="500" cy="420" r="2" fill="#e6fdff" opacity="0.4"/>
+<circle cx="40" cy="560" r="3" fill="#e6fdff" opacity="0.55"/>
+<circle cx="470" cy="740" r="2" fill="#e6fdff" opacity="0.7"/>
+<circle cx="90" cy="770" r="2" fill="#e6fdff" opacity="0.4"/>
+<path d="M120 190 L270 120 L420 190" fill="none" stroke="#e6fdff" stroke-width="6" stroke-linecap="round" opacity=".7"/>
+<rect x="90" y="190" width="360" height="190" rx="22" fill="#2ee6ff"/>
+<rect x="108" y="208" width="324" height="154" rx="12" fill="none" stroke="#03141a" stroke-width="5" opacity=".55"/>
+<path d="M270 330 C212 290 224 240 252 242 C264 243 270 252 270 258 C270 252 276 243 288 242 C316 240 328 290 270 330Z" fill="#03141a"/>
+<rect x="140" y="574" width="260" height="190" rx="40" fill="#e6fdff" opacity=".16" stroke="#e6fdff" stroke-width="7"/>
+<rect x="170" y="540" width="200" height="40" rx="12" fill="#e6fdff" opacity=".3"/>
+<ellipse cx="270" cy="728" rx="96" ry="14" fill="#2ee6ff" opacity=".8"/>
+<ellipse cx="226" cy="708" rx="34" ry="10" fill="#2ee6ff" opacity=".9"/>
+<ellipse cx="310" cy="700" rx="34" ry="10" fill="#2ee6ff" opacity=".9"/>
+<circle cx="270" cy="452" r="22" fill="#2ee6ff" opacity=".85"/>
+<circle cx="224" cy="498" r="16" fill="#2ee6ff" opacity=".6"/>
+<circle cx="318" cy="520" r="14" fill="#2ee6ff" opacity=".5"/>
+</svg>
