@@ -43,3 +43,7 @@ test('an instance with no ui folder adds none, and the real repository lists the
   expect(instanceUis(repo)).toEqual([]);
   expect(boardStoryIds()).toContain('boards-08-hold--live-long-post');
 });
+
+test('the payout cards\' stories are listed, the Lens of each and the play form of each', () => {
+  expect(boardStoryIds()).toEqual(expect.arrayContaining(['skim', 'ride', 'ride-back', 'scored-as', 'skim-form', 'ride-back-form', 'scored-as-form'].map((n) => `cards-payout-cards--${n}`)));
+});

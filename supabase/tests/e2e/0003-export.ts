@@ -162,6 +162,32 @@ test('an instance exported and imported into a fresh database is the same instan
       timed_post := tests.post(a, t, 'Left to its time.');
       insert into acts (character, kind, thread, target_act_id, payload) values (a, 'set', t, timed_post, '{}') returning id into timed_set;
       insert into face_down (play, account, card, config, post, thread, round, ends_at) values (timed_set, ann, 'exptime', '{}', timed_post, t, 1, now() - interval '1 hour');
+      -- The payout cards (0150, 0151): a skim play (a cast on a post that names a quadrant, with the end lasts gave it), a ride Gimmick play, a ride Reversal set face down that a cast springs (did: rode,
+      -- carrying its quadrant, and the cast carrying rode), and a scored-as play on a character with the window it starts (a play_reach row too). Their kinds hold skim, scores_as, a ride gimmick and a trap outcome.
+      insert into card_kinds (key, name, alignment, rarity, play, trap, reaches, lasts, gimmick, skim, scores_as) values
+        ('expskim', 'Exported Skim', 'salty', 'uncommon', 'cast', null, '{post}', interval '7 days', null, '{"share": 0.1}', false),
+        ('expride', 'Exported Ride', 'pepperoni', 'uncommon', 'use', null, '{post}', interval '7 days', '{"kind": "ride", "share": 0.5}', null, false),
+        ('exprode', 'Exported Rode Reversal', 'salty', 'uncommon', 'set', '{"trigger": {"on": "cast"}, "outcome": {"kind": "ride", "share": 1}}', '{post}', null, null, null, false),
+        ('expscore', 'Exported Scored As', 'salty', 'legendary', 'cast', null, '{character}', interval '1 day', null, null, true);
+      insert into card_ledger (account, card, kind, price) values (ann, 'expskim', 'bought', 0), (ann, 'expride', 'bought', 0), (ann, 'exprode', 'bought', 0), (ann, 'expscore', 'bought', 0), (bob, 'blot', 'bought', 0);
+      declare skim_post uuid; skim_play uuid; ride_post uuid; ride_play uuid; rode_post uuid; rode_cast uuid; score_play uuid;
+      begin
+        skim_post := tests.post(a, t, 'Skimmed, and carried across.');
+        insert into acts (character, kind, thread, target_act_id, payload) values (a, 'card', t, skim_post,
+          jsonb_build_object('card', 'expskim', 'message', '', 'config', jsonb_build_object('quadrant', 'excitedPositive'), 'layer', 1, 'ends', to_char(now() + interval '7 days', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'))) returning id into skim_play;
+        ride_post := tests.post(a, t, 'Ridden, and carried across.');
+        insert into acts (character, kind, thread, target_act_id, payload) values (a, 'card', t, ride_post,
+          jsonb_build_object('card', 'expride', 'message', '', 'config', '{}'::jsonb, 'layer', 1, 'ends', to_char(now() + interval '7 days', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'))) returning id into ride_play;
+        rode_post := tests.post(a, t, 'Under a ride back.');
+        perform set_card(ann, 'exprode', a, rode_post, '{"quadrant": "excitedPositive"}', 0, 'blot');
+        perform play_card(bob, 'blot', b, rode_post, '{}', 0, '');
+        assert (select count(*) from acts where kind = 'spring' and payload ->> 'did' = 'rode' and payload ->> 'quadrant' = 'excitedPositive') = 1, 'the ride back sprang as a rode spring, carrying its quadrant';
+        assert (select count(*) from acts where kind = 'card' and target_act_id = rode_post and payload ? 'rode') = 1, 'the cast that met it carries rode';
+        insert into acts (character, kind, thread, target_act_id, payload) values (a, 'card', t, p,
+          jsonb_build_object('card', 'expscore', 'message', '', 'config', jsonb_build_object('class', 'heel'), 'layer', 1, 'reach', 'character', 'character', b,
+            'starts', to_char(now() + interval '1 day', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'), 'ends', to_char(now() + interval '2 days', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'))) returning id into score_play;
+        insert into play_reach (play, reach, character, ends_at) values (score_play, 'character', b, now() + interval '2 days');
+      end;
       -- A pack bought from its slot (0139): the pack's kind, its slot, the packs row with the pulls as they stood, and a pulled row per card.
       insert into card_kinds (key, name, alignment, rarity) values ('exppull', 'Exported Pull', 'sweet', 'common');
       insert into pack_kinds (key, pulls, leaves) values ('exppack', '[{"weights": {"common": 1}}, {"weights": {"common": 1}}]', '{}');
@@ -208,6 +234,9 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into settlement_class_totals (settlement, class_key, amount) select max(id), 'face', 10 from settlements on conflict do nothing;
       -- A share of a ledger line in e2e/0001's settlement (0034), on Ann's post.
       insert into ledger_shares (ledger, act, quadrant, amount) select max(id), p, 'excitedPositive', 10 from ledger;
+      -- What a settlement scored a character as (0151, append-only), and a ledger row that names the card that paid it (0150: params.card).
+      insert into scored_as (settlement, character, class_key, play) select (select max(id) from settlements), b, 'heel', id from acts where kind = 'card' and payload ->> 'card' = 'expscore';
+      insert into ledger (settlement, account, character, reason, amount, params) select max(id), ann, a, 'card.skim', 7, jsonb_build_object('card', 'expskim', 'share', 0.1) from settlements;
       -- A ledger line with the numbers its words state (0073), and a settle run's claim on a window long settled.
       insert into ledger (settlement, account, character, reason, amount, params) select max(id), ann, a, 'lurker.postedTooMuch', -10, '{"lurker.postsAllowed": 3}' from settlements;
       insert into settlement_claims (window_start, window_end, claimed_at) values ('2000-01-01T00:00:00Z', '2000-01-02T00:00:00Z', '2000-01-02T00:00:00Z') on conflict do nothing;
