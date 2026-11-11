@@ -48,7 +48,7 @@ create table trophy_awards (
   check ((by in ('boss', 'demand')) = (act is not null)),
   check ((by = 'season') = (season is not null))
 );
-create index trophy_awards_by_character on trophy_awards (character, at desc);
+create index trophy_awards_by_character on trophy_awards (character, at desc, id desc);
 create index trophy_awards_by_trophy on trophy_awards (trophy, at desc, id desc);
 -- A move credits a character once for a trophy, and a season gives a character one place.
 create unique index trophy_awards_once_per_move on trophy_awards (act, trophy, character) where act is not null;
@@ -128,13 +128,16 @@ language sql stable security definer set search_path = public, pg_temp as $$
 $$;
 revoke execute on function trophy_item(trophy_awards) from public, anon, authenticated;
 
--- A page of a character's trophies, newest first: its standing awards only, as {awards: [...], more: boolean}. `before` continues after the last award of the page before
--- (its `at`); `most` is the page's size, at least 1 and at most 100. Read through trophy_awards_by_character.
-create function trophies_of(of_character uuid, before timestamptz default null, most integer default 50) returns jsonb
+-- A page of a character's trophies, newest first: its standing awards only, as {awards: [...], more: boolean}. `before` and `before_id` continue after the last award of the
+-- page before, by its (`at`, id): awards sharing one `at` are neither skipped nor repeated across a page edge. With `before` alone the page continues from the awards strictly
+-- older than it. `most` is the page's size, at least 1 and at most 100. Read through trophy_awards_by_character.
+create function trophies_of(of_character uuid, before timestamptz default null, most integer default 50, before_id uuid default null) returns jsonb
 language sql stable security definer set search_path = public, pg_temp as $$
   with page as (
     select a.id, row_number() over (order by a.at desc, a.id desc) as n from trophy_awards a
-    where a.character = of_character and (before is null or a.at < before) and not exists (select 1 from trophy_reversals r where r.award = a.id)
+    where a.character = of_character
+      and (before is null or a.at < before or (before_id is not null and a.at = before and a.id < before_id))
+      and not exists (select 1 from trophy_reversals r where r.award = a.id)
     order by a.at desc, a.id desc
     limit least(greatest(coalesce(most, 50), 1), 100) + 1
   )
@@ -142,8 +145,8 @@ language sql stable security definer set search_path = public, pg_temp as $$
     'awards', coalesce((select jsonb_agg(trophy_item(a) order by p.n) from page p join trophy_awards a on a.id = p.id where p.n <= least(greatest(coalesce(most, 50), 1), 100)), '[]'::jsonb),
     'more', exists (select 1 from page p where p.n > least(greatest(coalesce(most, 50), 1), 100)))
 $$;
-revoke execute on function trophies_of(uuid, timestamptz, integer) from public, anon;
-grant execute on function trophies_of(uuid, timestamptz, integer) to authenticated;
+revoke execute on function trophies_of(uuid, timestamptz, integer, uuid) from public, anon;
+grant execute on function trophies_of(uuid, timestamptz, integer, uuid) to authenticated;
 
 -- A belt's line of holders: each standing award of it in order, when the reign began and when it ended (the next standing award's time, null for the holder now).
 create function belt_lineage(trophy_key text) returns jsonb
@@ -209,7 +212,9 @@ begin
   if n > most then raise exception '% trophies are shown; at most %', n, most using hint = 'kayfabb.refusal', errcode = '22023'; end if;
   if n <> (select count(distinct x) from unnest(awards) x) then raise exception 'a trophy is shown once' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
   perform 1 from characters where id = through for no key update;
-  perform 1 from trophy_awards where id = any (awards) for share;
+  -- `for no key update`, which conflicts with reverse_award's `for share` (two `for share` never wait on each other): a reversal and a show are serialized, so a
+  -- show never keeps an award that a reversal has just taken back. The race needs two sessions; supabase/tests/e2e/0023-show-vs-reverse.ts holds them.
+  perform 1 from trophy_awards where id = any (awards) order by id for no key update;
   foreach one in array awards loop
     if not exists (select 1 from trophy_awards a where a.id = one and a.character = through) then
       raise exception 'that trophy is not this character''s' using hint = 'kayfabb.refusal', errcode = '22023';
@@ -264,6 +269,17 @@ end $$;
 revoke execute on function reverse_award(uuid) from public, anon;
 grant execute on function reverse_award(uuid) to authenticated;
 
+-- The characters a failed demand's trophy was for, as the admin's read lists them; null where the demand cannot be read now (demand_contributors raised), so that one
+-- failure row never makes the admin's read of every other row fail. The row keeps its stored error, and the admin can give the trophy by hand.
+create function trophy_failure_characters(move uuid) returns jsonb
+language plpgsql stable security definer set search_path = public, pg_temp as $$
+begin
+  return coalesce((select jsonb_agg(jsonb_build_object('id', c.id, 'name', c.name) order by c.name) from characters c where c.id = any (demand_contributors(move))), '[]'::jsonb);
+exception when others then
+  return null;
+end $$;
+revoke execute on function trophy_failure_characters(uuid) from public, anon, authenticated;
+
 -- The awards that could not be written, newest first, for an admin to give by hand: the move's Act (a met demand's) or the season's number, the kind, the characters
 -- it was for, and the error.
 create function trophy_award_failures() returns jsonb
@@ -274,7 +290,7 @@ begin
     select jsonb_agg(jsonb_build_object('id', f.id, 'move', f.move_act, 'season', (select s.number from seasons s where s.id = f.season), 'at', f.at, 'error', f.error,
       'trophy', case when f.move_act is not null then (select k.key from trophy_kinds k where k.demand_met) end,
       'characters', case when f.move_act is not null
-        then coalesce((select jsonb_agg(jsonb_build_object('id', c.id, 'name', c.name) order by c.name) from characters c where c.id = any (demand_contributors(f.move_act))), '[]'::jsonb)
+        then trophy_failure_characters(f.move_act)
         else coalesce((select jsonb_agg(jsonb_build_object('id', r.character, 'name', r.name, 'place', r.place) order by r.place, r.name) from season_results r where r.season = f.season and r.place <= 3), '[]'::jsonb) end)
       order by f.at desc, f.id desc) from trophy_award_failures f), '[]'::jsonb);
 end $$;

@@ -231,7 +231,7 @@ select tests.unbecome();
 do $$
 declare
   eve uuid := tests.account('tt-eve'); e uuid := tests.character(eve, 'Tt Eve');
-  plan text; page jsonb; nxt jsonb;
+  plan text; page jsonb; nxt jsonb; tie uuid;
 begin
   insert into trophy_awards (trophy, character, by) select 'tt-pet', e, 'admin' from generate_series(1, 300);
   analyze trophy_awards;
@@ -252,6 +252,24 @@ begin
   nxt := trophies_of(e, ((page -> 'awards' -> 2) ->> 'at')::timestamptz, 3);
   if (nxt -> 'awards' -> 0 ->> 'award') is not distinct from (page -> 'awards' -> 2 ->> 'award') or (nxt -> 'awards' -> 0 ->> 'at')::timestamptz >= ((page -> 'awards' -> 2) ->> 'at')::timestamptz then raise exception 'before continues after the last of the page: %', nxt; end if;
   if (select count(distinct x ->> 'award') from jsonb_array_elements((page -> 'awards') || (nxt -> 'awards')) x) is distinct from 6::bigint then raise exception 'pages do not overlap'; end if;
+  -- Awards at one identical time, paged one at a time by (time, id): none skipped, none repeated.
+  tie := tests.character(eve, 'Tt Tie');
+  insert into trophy_awards (trophy, character, by, at) select 'tt-pet', tie, 'admin', timestamptz '2030-01-01' from generate_series(1, 5);
+  declare
+    cur jsonb := trophies_of(tie, null, 1);
+    seen_ids text[] := '{}';
+    i integer := 0;
+  begin
+    loop
+      seen_ids := seen_ids || (cur -> 'awards' -> 0 ->> 'award');
+      i := i + 1;
+      exit when not (cur ->> 'more')::boolean or i >= 5;
+      cur := trophies_of(tie, (cur -> 'awards' -> 0 ->> 'at')::timestamptz, 1, (cur -> 'awards' -> 0 ->> 'award')::uuid);
+    end loop;
+    if (select count(distinct x) from unnest(seen_ids) x) is distinct from 5 or (select count(*) from trophy_awards where character = tie
+         and id::text = any (seen_ids)) is distinct from 5::bigint then raise exception 'paging awards of one time skipped or repeated: %', seen_ids; end if;
+    if (cur ->> 'more')::boolean is distinct from false then raise exception 'the last tied award is the last: %', cur; end if;
+  end;
   if (trophies_of(e, null, 500) ->> 'more')::boolean is distinct from true then raise exception 'there are 200 past a page of 100'; end if;
   if (trophies_of(e, (select min(at) from trophy_awards where character = e) + interval '1 microsecond', 10) ->> 'more')::boolean is distinct from false
      or jsonb_array_length(trophies_of(e, (select min(at) from trophy_awards where character = e) + interval '1 microsecond', 10) -> 'awards') is distinct from 1 then raise exception 'the last page says there is no more'; end if;
@@ -323,6 +341,7 @@ end $$;
 select tests.unbecome();
 do $$
 declare
+  seen jsonb;
   ann uuid := tests.account('td-ann'); bob uuid := tests.account('td-bob'); cat uuid := tests.account('td-cat'); dan uuid := tests.account('td-dan'); eve uuid := tests.account('td-eve');
   a uuid := tests.character(ann, 'Td Ann'); b uuid := tests.character(bob, 'Td Bob'); c uuid := tests.character(cat, 'Td Cat'); d uuid := tests.character(dan, 'Td Dan');
   reactor uuid := tests.character(eve, 'Td Reactor');
@@ -413,11 +432,22 @@ begin
   if exists (select 1 from trophy_awards where act = mv) then raise exception 'a failed award left a row'; end if;
   alter table trophy_awards drop constraint tt_poison;
   -- An admin reads it, with the move, the trophy, the characters and the error; a player does not.
+  insert into trophy_award_failures (move_act, error) select a.id, 'tt_unreadable' from acts a where a.kind = 'post' limit 1;
+  update trophy_award_failures set at = now() - interval '2 hours' where season is not null;
+  update trophy_award_failures set at = now() - interval '1 hour' where move_act = mv;
+  update trophy_award_failures set at = now() where error = 'tt_unreadable';
   insert into admins (account) values (tests.account('td-adm'));
   perform tests.become((select id from auth.users where email = 'td-adm@test.invalid'));
   if (select count(*) from jsonb_array_elements(trophy_award_failures()) f where f ->> 'move' = mv::text and f ->> 'trophy' = 'tt-met' and f ->> 'error' like '%tt_poison%'
         and jsonb_array_length(f -> 'characters') > 0) is distinct from 1::bigint then raise exception 'an admin reads the failed demand: %', trophy_award_failures(); end if;
-  if (trophy_award_failures() -> 0 ->> 'at')::timestamptz < (trophy_award_failures() -> 1 ->> 'at')::timestamptz then raise exception 'newest first'; end if;
+  -- Newest first, over rows whose times differ (a transaction's now() is one instant, so they are set): the season's failure, the move's, and a third whose move
+  -- cannot be read (a post's Act is no move, so demand_contributors raises). That one must not make the admin's read fail: it is listed, its characters null.
+  seen := trophy_award_failures();
+  if jsonb_array_length(seen) is distinct from 3 then raise exception 'one failure row made the admin read lose the others: %', seen; end if;
+  if (select string_agg(f ->> 'error', ',' order by n) from jsonb_array_elements(seen) with ordinality t(f, n)) not like 'tt_unreadable,%tt_poison%,%tt_poison%' then raise exception 'newest first: %', seen; end if;
+  if seen -> 0 -> 'characters' is distinct from 'null'::jsonb or seen -> 0 ->> 'error' <> 'tt_unreadable' then raise exception 'an unreadable demand''s characters are null: %', seen -> 0; end if;
+  if jsonb_typeof(seen -> 1 -> 'characters') is distinct from 'array' or jsonb_typeof(seen -> 2 -> 'characters') is distinct from 'array' then raise exception 'the readable failures keep their characters: %', seen; end if;
+  if (seen -> 1 ->> 'move') is distinct from mv::text then raise exception 'the move failure is second: %', seen; end if;
   perform tests.become(ann);
   if pg_temp.refusal('select trophy_award_failures()') is null then raise exception 'a player read the award failures'; end if;
   perform tests.unbecome();
