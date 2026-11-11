@@ -3343,6 +3343,12 @@ describe('a skim, a ride back and a scored-as play, as the server holds them', (
       expect(await play(s)).toEqual(refused('the next settlement\'s time is not known yet, so no window can be named; play it after that settlement'));
     });
 
+    test('where a next settlement time is seeded but none has been applied, no window can be named, as next_settlement_at is null with no settlement', async () => {
+      const s = setup();
+      s.fake.seed.nextSettlementAt(NEXT);
+      expect(await play(s)).toEqual(refused('the next settlement\'s time is not known yet, so no window can be named; play it after that settlement'));
+    });
+
     test('where the season ends at the next settlement, there is no window after it', async () => {
       const s = open();
       s.fake.seed.season({ number: 1, endsAt: new Date(NEXT).toISOString() });

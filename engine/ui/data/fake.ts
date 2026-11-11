@@ -1595,9 +1595,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
    */
   function scoredAsWindow(): { opens: number; closes: number } | string {
     const opens = nextSettlement;
-    if (opens === null) return 'the next settlement\'s time is not known yet, so no window can be named; play it after that settlement';
+    const unknown = 'the next settlement\'s time is not known yet, so no window can be named; play it after that settlement';
+    /* next_settlement_at (0014) is null with no settlement applied, whatever time was seeded. */
+    if (opens === null || lastSettled === null) return unknown;
     /* The season the next window is in, and where it ends: an open season whose length was cut past what is settled ends at that next window. */
-    const lastEnd = lastSettled ?? opens;
+    const lastEnd = lastSettled;
     const s = seasons.find((z) => Date.parse(z.startsAt) <= lastEnd && (z.endsAt === null || Date.parse(z.endsAt) > lastEnd));
     const longest = s === undefined ? null : Math.max(Date.parse(s.startsAt) + span(settings.seasonLength), lastEnd);
     const seasonEnd = s === undefined ? null : s.endsAt !== null ? Date.parse(s.endsAt) : longest === lastEnd ? null : longest;

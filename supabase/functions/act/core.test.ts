@@ -950,10 +950,10 @@ test('a skim play\'s configuration reaches play_card as the card\'s validator sh
 
 test('a ride set sends the catch from the card\'s rules and the quadrant in its configuration', async () => {
   const { dbs, calls } = pair(onPost);
-  const out = await runAction(dbs, instance, { action: 'setCard', card: '4d-chess', character: id, target, config: { card: 'whoops', quadrant: 'calmPositive' }, catches: 'glitter-bomb' });
+  const out = await runAction(dbs, instance, { action: 'setCard', card: '4d-chess', character: id, target, config: { card: 'whoops', quadrant: 'calmPositive', extra: 'smuggled' }, catches: 'glitter-bomb' });
   assert.equal(out.status, 200, JSON.stringify(out.body));
   const sent = setCalls(calls);
-  assert.ok(sent[0]!.includes('"catches":"whoops"') && sent[0]!.includes('"quadrant":"calmPositive"') && !sent[0]!.includes('glitter-bomb'), sent[0]);
+  assert.ok(sent[0]!.includes('"catches":"whoops"') && sent[0]!.includes('"quadrant":"calmPositive"') && !sent[0]!.includes('glitter-bomb') && !sent[0]!.includes('smuggled'), sent[0]);
   const none = await runAction(pair(onPost).dbs, instance, { action: 'setCard', card: '4d-chess', character: id, target, config: { card: 'whoops' } });
   assert.deepEqual({ status: none.status, body: none.body }, { status: 400, body: { field: 'config', error: 'choose the reactions it pays on' } });
 });
