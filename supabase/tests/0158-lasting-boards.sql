@@ -210,15 +210,18 @@ begin
   perform pg_temp.expect((select e.payload ->> 'why' = 'superseded' from acts e where e.kind = 'move_end' and e.target_act_id = m1), 'the first moveThread was not ended as superseded');
   perform pg_temp.expect(not exists (select 1 from acts e where e.kind = 'move_end' and e.target_act_id = m2) and exists (select 1 from open_moves where move_act = m2), 'the second moveThread is not in force');
   perform pg_temp.settled('a superseding moveThread');
-  -- Reversing the second leaves no move of the thread in force (the first was superseded, which is an end), so it returns to where it started; the counts follow back.
+  -- Reversing the second restores the first, which it superseded: a superseded end does not take a move out of the thread's reckoning (only reversed or overturned does), though
+  -- the first stays ended and nothing is written for it. The counts follow.
   perform pg_temp.reverse(m2);
-  perform pg_temp.expect(pg_temp.at(t) = pg_temp.board('general'), 'reversing the last moveThread did not return the thread to its origin');
-  perform pg_temp.expect((select threads from board_counts where board = pg_temp.board('general')) = g0 and (select threads from board_counts where board = pg_temp.board('elsewhere')) = e0 and (select threads from board_counts where board = pg_temp.board('third')) = (select count(*) from threads where board = pg_temp.board('third')),
-    'the board counts did not follow the thread back');
-  perform pg_temp.settled('a reversed moveThread');
-  -- Reversing a move that is the only one in force returns the thread too, and the search copy of the board follows the thread.
-  q1 := pg_temp.queue('moveThread', jsonb_build_object('thread', t, 'board', pg_temp.board('fourth')));
-  m1 := pg_temp.land(q1);
+  perform pg_temp.expect(pg_temp.at(t) = pg_temp.board('elsewhere'), 'reversing the second moveThread did not return the thread to the first move''s board');
+  perform pg_temp.expect((select e.payload ->> 'why' = 'superseded' from acts e where e.kind = 'move_end' and e.target_act_id = m1) and (select count(*) from acts e where e.target_act_id = m1 and e.kind = 'move_end') = 1,
+    'the superseded move was ended again or its end changed');
+  perform pg_temp.expect((select threads from board_counts where board = pg_temp.board('general')) = g0 - 1 and (select threads from board_counts where board = pg_temp.board('elsewhere')) = e0 + 1,
+    'the board counts did not follow the thread back to the first move''s board');
+  perform pg_temp.settled('a reversed moveThread that had superseded one');
+  -- A move that was only ever reversed returns its thread to its origin.
+  t := pg_temp.mk('Lone', 'general');
+  m1 := pg_temp.land(pg_temp.queue('moveThread', jsonb_build_object('thread', t, 'board', pg_temp.board('fourth'))));
   perform pg_temp.expect(pg_temp.at(t) = pg_temp.board('fourth'), 'a third move did not place the thread');
   perform pg_temp.reverse(m1);
   perform pg_temp.expect(pg_temp.at(t) = pg_temp.board('general'), 'reversing the only moveThread did not return the thread');
