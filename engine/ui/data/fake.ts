@@ -2553,6 +2553,14 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
           cards: newest(cardLedger.filter((e) => e.account === account && fits(e.ms))).map((e) => e.event),
           packs: newest(packLedger.filter((e) => e.account === account && fits(e.ms))).map((e) => e.event),
           playsOnMine: newest(onMine.filter((a) => fits(a.at)).map((a) => ({ ms: a.at, order: a.order, a }))).map(({ a }) => ({ play: a.id, post: a.target!, at: iso(a.at), reach: reachOf(a) as 'post' | 'character' | 'thread', targetName: targetName(a), targetCharacter: targetCharacter(a) })),
+          /* my_posts_written_on (0146): each text or failure of a card that writes on a post one of the player's characters wrote, whoever played it. */
+          writes: newest(texts.flatMap((t) => {
+            const play = acts.get(t.play);
+            const post = play?.kind === 'card' && play.target !== null ? acts.get(play.target) : undefined;
+            if (!play || !post || (play.payload.reach ?? 'post') !== 'post' || characters.get(post.character ?? '')?.owner !== account || !fits(t.at)) return [];
+            const first = texts.filter((x) => x.play === t.play).sort((x, y) => x.order - y.order)[0];
+            return [{ ms: t.at, order: t.order, w: { play: t.play, post: post.id, version: t.version, failed: t.text === null, opening: first === t, at: iso(t.at) } }];
+          })).map(({ w }) => w),
           saves: newest(onMine.filter((a) => effects.has(a.id) && fits(effects.get(a.id)!.at)).map((a) => ({ ms: effects.get(a.id)!.at, order: a.order, a })))
             .map(({ a, ms }) => ({ play: a.id, post: a.target!, savedAt: iso(ms) })),
           /* The in-memory backend sets no card face down and springs no trap: the setter's and the caster's lines are the adapter's (my_face_down, my_caught). */

@@ -552,3 +552,108 @@ begin
     raise exception 'the sweep is not scheduled: %', (select jsonb_agg(to_jsonb(j)) from cron.job j);
   end if;
 end $$;
+
+-- ------------------------------------------------------------------------------------------------- the author's log read ----
+-- my_posts_written_on and log_page's `writes`: the texts and failures on posts one of the caller's characters wrote, for the author's log.
+do $$
+declare
+  ann uuid := tests.account('cwl-ann'); bob uuid := tests.account('cwl-bob'); cas uuid := tests.account('cwl-cas');
+  a uuid := tests.character(ann, 'Cwl Ann'); b uuid := tests.character(bob, 'Cwl Bob'); c uuid := tests.character(cas, 'Cwl Caster');
+  t uuid := tests.thread('Author log thread');
+  base timestamptz := '2030-07-01T00:00:00Z';
+  pa uuid; pb uuid; e1 uuid; e2 uuid; own uuid;
+  play_a uuid; play_fail uuid; play_kept uuid; play_b uuid; play_own uuid; many uuid;
+  rows jsonb; doc jsonb; plan text; n integer; i integer; v uuid;
+begin
+  pa := tests.post(a, t, 'Ann wrote this.', base);
+  pb := tests.post(b, t, 'Bob wrote this.', base + interval '1 minute');
+  own := tests.post(a, t, 'Ann wrote this too.', base + interval '2 minutes');
+  e1 := tests.act(a, 'edit', t, jsonb_build_object('body', 'Ann mended this'), pa, base + interval '10 minutes');
+  e2 := tests.act(a, 'edit', t, jsonb_build_object('body', 'Ann mended this again'), pa, base + interval '20 minutes');
+  play_a := tests.act(c, 'card', t, jsonb_build_object('card', 'cw-scribe', 'message', '', 'config', '{}'::jsonb, 'layer', 1), pa, base + interval '3 minutes');
+  play_fail := tests.act(c, 'card', t, jsonb_build_object('card', 'cw-scribe', 'message', '', 'config', '{}'::jsonb, 'layer', 2), pa, base + interval '4 minutes');
+  play_kept := tests.act(c, 'card', t, jsonb_build_object('card', 'cw-scribe', 'message', '', 'config', '{}'::jsonb, 'layer', 3), pa, base + interval '5 minutes');
+  play_b := tests.act(c, 'card', t, jsonb_build_object('card', 'cw-scribe', 'message', '', 'config', '{}'::jsonb, 'layer', 1), pb, base + interval '6 minutes');
+  -- Ann casts it on her own post too: the tail is hers to read whoever cast it.
+  play_own := tests.act(a, 'card', t, jsonb_build_object('card', 'cw-scribe', 'message', '', 'config', '{}'::jsonb, 'layer', 1), own, base + interval '7 minutes');
+  -- play_a: a first text, then a text for each edit. play_fail: its first generation failed. play_kept: a text, then a failure for a later version. play_b: Bob's post.
+  insert into card_texts (play, version, text, created_at) values (play_a, pa, 'first tail', base + interval '30 minutes');
+  insert into card_texts (play, version, text, created_at) values (play_a, e1, 'second tail', base + interval '31 minutes');
+  insert into card_texts (play, version, text, created_at) values (play_a, e2, 'third tail', base + interval '32 minutes');
+  insert into card_texts (play, version, failed, created_at) values (play_fail, pa, 'unreachable', base + interval '33 minutes');
+  insert into card_texts (play, version, text, created_at) values (play_kept, pa, 'kept tail', base + interval '34 minutes');
+  insert into card_texts (play, version, failed, created_at) values (play_kept, e1, 'scrub:word', base + interval '35 minutes');
+  insert into card_texts (play, version, text, created_at) values (play_b, pb, 'Bob''s tail', base + interval '36 minutes');
+  insert into card_texts (play, version, text, created_at) values (play_own, own, 'own tail', base + interval '37 minutes');
+
+  -- The author reads rows for plays on her own posts, and none for another's.
+  perform tests.become(ann);
+  select jsonb_agg(jsonb_build_object('play', w.play, 'post', w.post, 'version', w.version, 'failed', w.failed, 'opening', w.opening, 'at', w.at) order by w.at) into rows from my_posts_written_on w;
+  perform tests.unbecome();
+  if jsonb_array_length(rows) is distinct from 7 or exists (select 1 from jsonb_array_elements(rows) r where r ->> 'post' = pb::text or r ->> 'play' = play_b::text) then raise exception 'the author does not read exactly the rows on her own posts: %', rows; end if;
+  -- A first text, a regeneration for a later version, a first failure, and a failure after a text, each told apart.
+  if (select count(*) from jsonb_array_elements(rows) r where r ->> 'play' = play_a::text and (r ->> 'opening')::boolean and not (r ->> 'failed')::boolean and r ->> 'version' = pa::text) is distinct from 1
+     or (select count(*) from jsonb_array_elements(rows) r where r ->> 'play' = play_a::text and not (r ->> 'opening')::boolean and not (r ->> 'failed')::boolean and r ->> 'version' in (e1::text, e2::text)) is distinct from 2
+     or (select count(*) from jsonb_array_elements(rows) r where r ->> 'play' = play_fail::text and (r ->> 'opening')::boolean and (r ->> 'failed')::boolean) is distinct from 1
+     or (select count(*) from jsonb_array_elements(rows) r where r ->> 'play' = play_kept::text and not (r ->> 'opening')::boolean and (r ->> 'failed')::boolean and r ->> 'version' = e1::text) is distinct from 1
+     or (select count(*) from jsonb_array_elements(rows) r where r ->> 'play' = play_kept::text and (r ->> 'opening')::boolean and not (r ->> 'failed')::boolean) is distinct from 1 then
+    raise exception 'a first text, a regeneration, a first failure and a later failure are not told apart: %', rows;
+  end if;
+  -- Her own cast on her own post is a row too (the tail is hers), and the row's time is the text's own.
+  if not exists (select 1 from jsonb_array_elements(rows) r where r ->> 'play' = play_own::text and (r ->> 'opening')::boolean)
+     or (select (r ->> 'at')::timestamptz from jsonb_array_elements(rows) r where r ->> 'play' = play_a::text and r ->> 'version' = e1::text) is distinct from (base + interval '31 minutes') then
+    raise exception 'her own cast on her own post is missing, or a row''s time is not the text''s: %', rows;
+  end if;
+
+  -- Bob reads his own; the caster, who wrote no post, reads none; a visitor is refused.
+  perform tests.become(bob);
+  select count(*) into n from my_posts_written_on w where w.play = play_b and w.post = pb and w.opening and not w.failed;
+  if n is distinct from 1 or (select count(*) from my_posts_written_on) is distinct from 1 then raise exception 'Bob does not read exactly his own row'; end if;
+  perform tests.become(cas);
+  if (select count(*) from my_posts_written_on) is distinct from 0 then raise exception 'a caster reads rows on other players'' posts'; end if;
+  perform tests.become_anon();
+  if pg_temp.refusal('select * from my_posts_written_on') is null then raise exception 'my_posts_written_on is readable by anon'; end if;
+  perform tests.unbecome();
+
+  -- Its columns are the post's public facts and nothing about whose it is: no owner, no caster, no wallet.
+  if (select array_agg(a.attname::text order by a.attnum) from pg_attribute a where a.attrelid = 'my_posts_written_on'::regclass and a.attnum > 0 and not a.attisdropped) is distinct from array['play', 'post', 'version', 'failed', 'opening', 'at'] then
+    raise exception 'my_posts_written_on has columns beyond the public ones';
+  end if;
+
+  -- It starts from the caller's characters, posts and plays through indexes, never a scan of acts, texts or characters.
+  perform tests.become(ann);
+  set local enable_seqscan = off;
+  plan := pg_temp.plan('select * from my_posts_written_on');
+  reset enable_seqscan;
+  perform tests.unbecome();
+  if plan ~ 'Seq Scan on (acts|card_texts|characters)' or plan not like '%characters_owner%' or plan not like '%card_texts_play_version_key%' then raise exception 'the read is not index-led: %', plan; end if;
+
+  -- log_page's `writes` is the view's rows newest first, bounded by the cursor; the plays and posts they name are among its Acts.
+  perform tests.become(ann);
+  doc := log_page(null);
+  if (doc -> 'sources' -> 'writes') is distinct from (select jsonb_agg(to_jsonb(w) order by w.at desc, w.play, w.version) from my_posts_written_on w) then
+    raise exception 'log_page writes are not the view''s rows: %', doc -> 'sources' -> 'writes';
+  end if;
+  if jsonb_array_length(doc -> 'sources' -> 'writes') is distinct from 7 then raise exception 'log_page does not answer all seven rows: %', doc -> 'sources' -> 'writes'; end if;
+  if exists (select 1 from jsonb_array_elements(doc -> 'sources' -> 'writes') r where not exists (select 1 from jsonb_array_elements(doc -> 'acts') x where x ->> 'id' = r ->> 'play') or not exists (select 1 from jsonb_array_elements(doc -> 'acts') x where x ->> 'id' = r ->> 'post')) then
+    raise exception 'log_page does not name the plays and posts its writes name';
+  end if;
+  doc := log_page(base + interval '33 minutes');
+  if jsonb_array_length(doc -> 'sources' -> 'writes') is distinct from 4 or exists (select 1 from jsonb_array_elements(doc -> 'sources' -> 'writes') r where (r ->> 'at')::timestamptz > base + interval '33 minutes') then
+    raise exception 'log_page does not cut its writes at the cursor: %', doc -> 'sources' -> 'writes';
+  end if;
+  perform tests.unbecome();
+
+  -- Bounded: a play with 210 versions reads at most 200 rows in a page, newest first, and the cursor reaches the rest.
+  many := tests.act(c, 'card', t, jsonb_build_object('card', 'cw-scribe', 'message', '', 'config', '{}'::jsonb, 'layer', 2), own, base + interval '8 minutes');
+  for i in 1..210 loop
+    v := tests.act(a, 'edit', t, jsonb_build_object('body', 'edit ' || i), own, base + interval '1 hour' + i * interval '1 second');
+    insert into card_texts (play, version, text, created_at) values (many, v, 'tail ' || i, base + interval '2 hours' + i * interval '1 second');
+  end loop;
+  perform tests.become(ann);
+  doc := log_page(null);
+  if jsonb_array_length(doc -> 'sources' -> 'writes') is distinct from 200 or (doc -> 'sources' -> 'writes' -> 0 ->> 'at')::timestamptz is distinct from base + interval '2 hours' + interval '210 seconds' then
+    raise exception 'log_page reads % writes, not the newest 200', jsonb_array_length(doc -> 'sources' -> 'writes');
+  end if;
+  perform tests.unbecome();
+end $$;

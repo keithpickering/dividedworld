@@ -1,5 +1,5 @@
 -- log_page(before) (supabase/migrations/0123_log_page.sql; the glass-load design, section 7; its plan, Task 9): /log and /log/settlement in one read.
--- `sources` holds the fifteen reads (the group moves' since 0134, the packs' since 0139) the adapter's log() makes, each its view's rows newest first at or before `before`, at most LOG_ROWS (200), with the
+-- `sources` holds the sixteen reads (the group moves' since 0134, the packs' since 0139, the texts written on the caller's posts since 0146) the adapter's log() makes, each its view's rows newest first at or before `before`, at most LOG_ROWS (200), with the
 -- same columns and filters; `shares` the shares of the settlements read, whole; and the pieces useLog's `around` reads for them, computed over every row
 -- read: the Acts the lines name and the two rounds those follow, the saved states of the plays, the characters, threads and boards named, the caller's
 -- characters' standings and announced Turns, and the season. Another player's rows are absent; a visitor is refused.
@@ -121,7 +121,7 @@ begin
   perform tests.become(ann);
   doc := log_page(null);
 
-  -- ---- The fifteen sources: each its view's rows, newest first, at most 200, the same columns ----
+  -- ---- The sixteen sources: each its view's rows, newest first, at most 200, the same columns ----
   if doc -> 'sources' -> 'ledger' is distinct from pg_temp.arr((select jsonb_agg(to_jsonb(r)) from (
        select settlement, starts_at, ends_at, character, reason, amount, shares_kept, params from my_ledger order by ends_at desc, settlement, character, reason limit 200) r))
      or jsonb_array_length(doc -> 'sources' -> 'ledger') is distinct from 2 then raise exception 'ledger: %', doc -> 'sources' -> 'ledger'; end if;
@@ -161,7 +161,7 @@ begin
   -- The packs (0139): this caller bought none here, so the source is the view's empty read; 0139-machine.sql holds a bought pack's row.
   if doc -> 'sources' -> 'packs' is distinct from pg_temp.arr((select jsonb_agg(to_jsonb(r)) from (
        select id, pack, price, repriced, contents, bought_at from my_packs order by bought_at desc, id limit 200) r)) then raise exception 'packs: %', doc -> 'sources' -> 'packs'; end if;
-  if (select count(*) from jsonb_object_keys(doc -> 'sources')) is distinct from 15 then raise exception 'fifteen sources, not %', (select count(*) from jsonb_object_keys(doc -> 'sources')); end if;
+  if (select count(*) from jsonb_object_keys(doc -> 'sources')) is distinct from 16 then raise exception 'sixteen sources, not %', (select count(*) from jsonb_object_keys(doc -> 'sources')); end if;
   if doc::text like '%' || b1::text || '"%' and exists (select 1 from jsonb_array_elements(doc -> 'sources' -> 'ledger') x where x ->> 'character' = b1::text) then raise exception 'another player''s ledger line is in the page'; end if;
   if exists (select 1 from jsonb_array_elements(doc -> 'sources' -> 'wallet') x where (x ->> 'change')::integer = 9) then raise exception 'another player''s wallet event is in the page'; end if;
 
@@ -230,7 +230,7 @@ begin
   -- A signed-in caller with nothing: empty sources, no error.
   perform tests.become(nobody);
   doc := log_page(null);
-  if (select count(*) from jsonb_object_keys(doc -> 'sources')) is distinct from 15 or exists (select 1 from jsonb_each(doc -> 'sources') e where e.value is distinct from '[]'::jsonb) then raise exception 'a caller with nothing reads fifteen empty sources: %', doc -> 'sources'; end if;
+  if (select count(*) from jsonb_object_keys(doc -> 'sources')) is distinct from 16 or exists (select 1 from jsonb_each(doc -> 'sources') e where e.value is distinct from '[]'::jsonb) then raise exception 'a caller with nothing reads sixteen empty sources: %', doc -> 'sources'; end if;
   perform tests.unbecome();
 
   -- A visitor is refused.

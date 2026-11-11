@@ -21,7 +21,7 @@
 import { ENGINE_DEFAULT_PRONOUNS, words as pronounWords } from '../../rules/pronouns.ts';
 import { playOf as playKindOf, reachesOf } from '../../rules/cards.ts';
 import { rankIndex } from '../../rules/ranks.ts';
-import type { Instance } from '../../rules/types.ts';
+import type { Instance, Settings } from '../../rules/types.ts';
 import type { Act, CardEvent, MyBan, Estimate, EstimateLine, Id, Log, LogLine, LogSettlement, MyCharacter, Season, TurnAnnounced, WalletEvent } from '../data/api.ts';
 import { micros } from '../data/log-page.ts';
 import { officeRole } from '../board/move-words.ts';
@@ -34,7 +34,7 @@ import { quotedWords, shortQuote, springConditions, whoWords } from '../cards/le
 /** A piece of a line's words: plain text, or a link to an Act or a thread. */
 export type Segment = string | { readonly text: string; readonly href: string };
 
-export type LineKind = 'estimate' | 'settlement' | 'turn' | 'rank' | 'bought' | 'pack' | 'played' | 'returned' | 'onMine' | 'saved'
+export type LineKind = 'estimate' | 'settlement' | 'turn' | 'rank' | 'bought' | 'pack' | 'played' | 'returned' | 'onMine' | 'saved' | 'written'
   /* The card mechanic's (docs/plans/2026-11-01-card-mechanic-design.md, section 10). */
   | 'set' | 'sprung' | 'payout' | 'setEnded' | 'caught' | 'struck' | 'wardEnded'
   /* The bot-card-options design, section 3: an admin ended a card play. */
@@ -358,7 +358,7 @@ export function logRows(data: LogData, words: Words, cap: number, tab: Id | null
   rows.push(...modRows(data, words).filter((r) => inTab(r.characters)));
   rows.push(...groupRows(data, words).filter((r) => inTab(r.characters)));
 
-  const ORDER: Record<LineKind, number> = { estimate: 0, settlement: 1, turn: 2, rank: 3, bought: 4, pack: 4, played: 4, returned: 4, onMine: 4, saved: 4, set: 4, sprung: 4, payout: 4, setEnded: 4, caught: 4, struck: 4, wardEnded: 4, ended: 4, infraction: 4, ban: 4, report: 4, appeal: 4, bribe: 4, grouped: 4 };
+  const ORDER: Record<LineKind, number> = { estimate: 0, settlement: 1, turn: 2, rank: 3, bought: 4, pack: 4, played: 4, returned: 4, onMine: 4, saved: 4, written: 4, set: 4, sprung: 4, payout: 4, setEnded: 4, caught: 4, struck: 4, wardEnded: 4, ended: 4, infraction: 4, ban: 4, report: 4, appeal: 4, bribe: 4, grouped: 4 };
   rows.sort((a, b) => micros(b.at) - micros(a.at) || ORDER[a.kind] - ORDER[b.kind]);
   return [...estimateRows(data, words, tab), ...rows];
 }
@@ -518,10 +518,12 @@ function modRows(data: LogData, words: Words): LogRow[] {
  */
 function cardRows(data: LogData, words: Words): LogRow[] {
   const { instance, ui } = words;
+  /* The settings the log holds: the instance's own, with the economy as the server holds it now. */
+  const settings: Settings = { ...instance.settings, economy: words.economy };
   /* What the card says a play of it did (`CardUi.logPlay`), as one more sentence of the line; nothing where it says nothing. */
   const said = (key: unknown, play: Act | undefined): string[] => {
     const config = play?.payload.config;
-    const sentence = ui.cards.find((c) => c.key === key)?.logPlay?.(typeof config === 'object' && config !== null ? config as Readonly<Record<string, unknown>> : {});
+    const sentence = ui.cards.find((c) => c.key === key)?.logPlay?.(typeof config === 'object' && config !== null ? config as Readonly<Record<string, unknown>> : {}, settings);
     return sentence ? [` ${sentence}`] : [];
   };
   /* A card the instance no longer has, or a play the log could not read, is said plainly: never a key, never "undefined". */
@@ -697,16 +699,42 @@ function cardRows(data: LogData, words: Words): LogRow[] {
       aura: 0, wallet: null, characters: post?.character ? [post.character] : [],
     });
   }
+  /* A post the author wrote, named by its number and linked: the words of a line about a card's text on it ("your post #3" where it says whose). */
+  const postRef = (post: Act | undefined, whose: string): Segment =>
+    post && post.seq !== null ? { text: `${whose}post #${post.seq}`, href: threadHref(post.thread, pageOf(post.seq, words.postsPerPage), post.seq) } : whose === '' ? 'a post' : 'your post';
   for (const s of data.log.saves) {
     const play = data.acts.get(s.play);
     const post = data.acts.get(s.post);
     const said = ui.cards.find((c) => c.key === play?.payload.card)?.logSave?.(data.states.get(s.play));
     if (!said) continue;
+    if ('verb' in said) {
+      /* The author's own act, said as theirs: "You erased <card> on post #3." */
+      rows.push({
+        key: `saved:${s.play}`, kind: 'saved', at: s.savedAt, what: said.what,
+        details: [`You ${said.verb} ${cardName(play?.payload.card)} on `, postRef(post, ''), '.'],
+        aura: 0, wallet: null, characters: post?.character ? [post.character] : [],
+      });
+      continue;
+    }
     rows.push({
       key: `saved:${s.play}`, kind: 'saved', at: s.savedAt, what: said.what,
       details: [`${nameOf(play?.character, 'Someone')}'s ${cardName(play?.payload.card)} on `, (post && actLink(post, data, words, post.character ?? undefined)) ?? 'your post', `. ${said.said}`],
       aura: 0, wallet: null, characters: post?.character ? [post.character] : [],
     });
+  }
+  /* What a card that writes did to the author's post (`my_posts_written_on`): its first text continued the post, a text an edit made is the card
+     again, and a first generation that gave nothing did not take. A failure after a text kept the tail, and is no line. The words are the card's own. */
+  for (const x of data.log.writes) {
+    const play = data.acts.get(x.play);
+    const post = data.acts.get(x.post);
+    const hooks = ui.cards.find((c) => c.key === play?.payload.card)?.logWritten;
+    if (!hooks || (x.failed && !x.opening)) continue;
+    const card = cardName(play?.payload.card);
+    const key = `written:${x.play}:${x.version}`;
+    const characters = post?.character && mine(post.character) ? [post.character] : [];
+    if (x.failed) rows.push({ key, kind: 'written', at: x.at, what: `${card} did not take`, details: [`${card} on `, postRef(post, ''), ` ${hooks.failed}.`], aura: 0, wallet: null, characters });
+    else if (x.opening) rows.push({ key, kind: 'written', at: x.at, what: `${card} continued your post`, details: [`${card} on `, postRef(post, 'your '), ` ${hooks.continued}.`], aura: 0, wallet: null, characters });
+    else rows.push({ key, kind: 'written', at: x.at, what: `Your edit got a new ${card}`, details: ['Your edit of ', postRef(post, ''), ` ${hooks.again(card)}.`], aura: 0, wallet: null, characters });
   }
   rows.push(...setEndRows(data, words, take));
   rows.push(...endedRows(data, words));
@@ -865,6 +893,7 @@ export function actsNamed(log: Log, estimate: Estimate | null, turns: readonly T
   for (const t of turns) ids.add(t.act);
   for (const c of log.cards) if (c.act) ids.add(c.act);
   for (const p of log.playsOnMine) { ids.add(p.play); ids.add(p.post); }
+  for (const w of log.writes) { ids.add(w.play); ids.add(w.post); }
   for (const s of log.saves) { ids.add(s.play); ids.add(s.post); }
   for (const e of log.setEnds) { ids.add(e.post); if (e.spring) ids.add(e.spring); }
   for (const c of log.caught) { ids.add(c.play); ids.add(c.post); ids.add(c.spring); }

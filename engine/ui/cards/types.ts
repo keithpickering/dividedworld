@@ -274,14 +274,28 @@ export interface CardUi {
   readonly art: CardArt;
   /**
    * What the player's log says of a state the post's author saved on a play of this card on one of the player's posts, where the
-   * save is worth a line of its own (Whoops!'s layer washed clean): the line's What, and a plain sentence of what it did. A card
-   * gives none, or answers undefined, for a save that is not (a stroke washed away). Out of character and true.
+   * save is worth a line of its own (Whoops!'s layer washed clean): the line's What, and either a plain sentence of what it did (`said`,
+   * read after "<caster>'s <card> on <post>.") or, for a card whose save is the author's own act, the verb of it (`verb`: "erased" makes
+   * "You erased <card> on post #3."). A card gives none, or answers undefined, for a save that is not (a stroke washed away). Out of
+   * character and true.
    */
-  readonly logSave?: (state: unknown) => { readonly what: string; readonly said: string } | undefined;
+  readonly logSave?: (state: unknown) => { readonly what: string; readonly said: string } | { readonly what: string; readonly verb: string } | undefined;
   /**
    * What a play of this card did, in a sentence, for the caster's played line and the author's "a card on your post" line, read
    * from the play's configuration ("It covers “Mario” with “Luigi”."). A card that gives none, or answers undefined, adds nothing.
-   * Out of character and true.
+   * Out of character and true. It is given the settings the log holds (the economy as the server holds it now), for a card whose play
+   * is said with a number the settings decide (a length).
    */
-  readonly logPlay?: (config: Readonly<Record<string, unknown>>) => string | undefined;
+  readonly logPlay?: (config: Readonly<Record<string, unknown>>, settings: Settings) => string | undefined;
+  /**
+   * What a card that writes (`CardRules.writes`) did to a post of the author's, for the author's log, as the verb phrase after its subject; the
+   * engine names the card and the post, and says nothing of who played it or what it cost. `continued` follows "<card> on your post #3" (the
+   * play's first text); `again` follows "Your edit of post #3", given the card's name (an edit's new text); `failed` follows "<card> on post #3"
+   * (the play's first generation, which gave nothing). A failure after an earlier text keeps the tail and has no line. Out of character and true.
+   */
+  readonly logWritten?: {
+    readonly continued: string;
+    readonly again: (card: string) => string;
+    readonly failed: string;
+  };
 }

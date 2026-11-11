@@ -1590,7 +1590,7 @@ describe('the player\'s own log: the ledger with its shares, the wallet\'s event
     validateConfig: (c: unknown) => ({ ok: true as const, value: c ?? {} }),
   };
   const shop: Instance = { ...instance, cards: [splat], machine: [{ item: { card: splat.key }, availability: 'onSale' as const, price: 100 }], settings: { ...settings, economy: {} } };
-  const empty = { infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], settlements: [], wallet: [], cards: [], packs: [], playsOnMine: [], saves: [], setEnds: [], caught: [], ended: [], before: null };
+  const empty = { infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], settlements: [], wallet: [], cards: [], packs: [], playsOnMine: [], writes: [], saves: [], setEnds: [], caught: [], ended: [], before: null };
 
   function logWorld() {
     const fake = createFake({ instance: shop });
@@ -2989,6 +2989,30 @@ describe('a card that writes: its tails, as post_tails and the worker leave them
     await Promise.resolve();
     expect(heard).toHaveBeenCalledWith(play, post);
     expect(fake.broadcast.log.at(-1)).toEqual({ topic: `thread:${thread}`, event: 'card_text' });
+  });
+
+  test('the author\'s log holds each text and failure on a post of theirs, first rows told from later ones, and no one else\'s', async () => {
+    const { fake, face, post } = world();
+    const bo = fake.seed.account('bo');
+    const boFace = fake.seed.character(bo, 'Bo Face', 'face');
+    const { act: boPost } = fake.seed.thread('general', boFace, 'Bo opens', 'Bo\'s post');
+    const first = fake.seed.card(boFace, post, 'typewriter');
+    const second = fake.seed.card(boFace, post, 'typewriter');
+    const ofBo = fake.seed.card(face, boPost, 'typewriter');
+    fake.seed.text(first, post, { text: 'a' }, { quiet: true });
+    fake.seed.text(second, post, { failed: true }, { quiet: true });
+    fake.seed.text(ofBo, boPost, { text: 'b' }, { quiet: true });
+    fake.clock.advance(60_000);
+    expect((await fake.edit(post, face, 'Edited post')).ok).toBe(true);
+    const [, edit] = (await fake.history(post)).map((v) => v.id);
+    fake.seed.text(first, edit!, { text: 'c' }, { quiet: true });
+    const mine = (await fake.log()).writes;
+    /* Newest first; the author's own rows alone, whoever played the card; the first row of a play is its opening. */
+    expect(mine.map((w) => [w.play, w.post, w.version, w.failed, w.opening])).toEqual([[first, post, edit, false, false], [second, post, post, true, true], [first, post, post, false, true]]);
+    fake.signInAs(bo);
+    expect((await fake.log()).writes.map((w) => [w.play, w.post, w.opening])).toEqual([[ofBo, boPost, true]]);
+    fake.signInAs(null);
+    expect((await fake.log()).writes).toEqual([]);
   });
 
   test('more than 200 posts are refused as the server refuses them', async () => {

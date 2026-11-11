@@ -1261,6 +1261,20 @@ export const ALERTS_PAGE = 30;
 /** The count `alertsUnread` stops at: a result at the bound means that many or more, and a screen says "9+". */
 export const ALERTS_UNREAD_BOUND = 10;
 
+/**
+ * A text or a failure a card that writes made for a post the player's character wrote (`my_posts_written_on`, 0146): the play, the post it is on, the
+ * version of the post it was made for, whether the generation failed, whether it is the play's first row (a first text continued the post, a first
+ * failure did not take; a later text was made again for an edit, and a later failure kept the tail), and when. Public facts and the post's author alone.
+ */
+export interface WrittenOnMine {
+  readonly play: Id;
+  readonly post: Id;
+  readonly version: Id;
+  readonly failed: boolean;
+  readonly opening: boolean;
+  readonly at: string;
+}
+
 /** When the effect of a play on one of the player's posts was last saved: the post's author's save, which may wash it clean. */
 export interface EffectSaved {
   readonly play: Id;
@@ -1448,6 +1462,8 @@ export interface Log {
   /** The packs the player bought, by when each was bought. */
   readonly packs: readonly PackEvent[];
   readonly playsOnMine: readonly PlayOnMine[];
+  /** The texts and failures of cards that write on the player's posts, by when each was made (`my_posts_written_on`). */
+  readonly writes: readonly WrittenOnMine[];
   readonly saves: readonly EffectSaved[];
   /** The player's cards set face down that sprang or ended, by when. */
   readonly setEnds: readonly FaceDownEnd[];

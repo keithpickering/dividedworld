@@ -1377,6 +1377,9 @@ describe('the log', () => {
           ? rows([{ play: C, post: A, saved_at: '2026-10-29T23:00:00+00:00' }])
           : rows([{ play: C, post: A, at: '2026-10-29T21:16:00+00:00', reach: 'post', target_name: null, target_character: B }]);
       }
+      if (name === 'my_posts_written_on') {
+        return rows([{ play: C, post: A, version: A, failed: false, opening: true, at: '2026-10-29T22:30:00+00:00' }, { play: C, post: A, version: SET, failed: true, opening: false, at: '2026-10-29T22:20:00+00:00' }]);
+      }
       if (name === 'my_face_down') {
         /* The setter's own back, asked for by the sets in the ledger (what a Trap Card waits for); the ended views are the other read. */
         if (r.url.searchParams.get('select') === 'play,catches,phrase,passage,who,who_except') return rows([{ play: SET, catches: 'whoops', phrase: null }]);
@@ -1413,6 +1416,7 @@ describe('the log', () => {
         { card: 'bluffy', kind: 'pulled', act: null, price: 0, at: '2026-10-29T17:00:00+00:00', pack: PACK }],
       packs: [{ pack: PACK, kind: 'booster', price: 450, repriced: true, contents: ['bluffy', 'whoops'], at: '2026-10-29T17:00:00+00:00' }],
       playsOnMine: [{ play: C, post: A, at: '2026-10-29T21:16:00+00:00', reach: 'post', targetName: null, targetCharacter: B }],
+      writes: [{ play: C, post: A, version: A, failed: false, opening: true, at: '2026-10-29T22:30:00+00:00' }, { play: C, post: A, version: SET, failed: true, opening: false, at: '2026-10-29T22:20:00+00:00' }],
       saves: [{ play: C, post: A, savedAt: '2026-10-29T23:00:00+00:00' }],
       setEnds: [{ play: SET, card: 'bluffy', post: A, spring: null, endedAt: '2026-10-29T20:00:00+00:00' }],
       caught: [{ play: C, card: 'whoops', post: A, trap: 'snare', spring: SPRING, price: 25, boughtPrice: 100, at: '2026-10-29T19:00:00+00:00' }],
@@ -1440,6 +1444,8 @@ describe('the log', () => {
     expect(plays?.url.searchParams.get('order')).toBe('at.desc');
     expect(saves?.url.searchParams.get('order')).toBe('saved_at.desc');
     expect(saves?.url.searchParams.get('saved_at')).toBe('not.is.null');
+    const [written] = h.to('my_posts_written_on');
+    expect([written?.url.searchParams.get('order'), written?.url.searchParams.get('limit')]).toEqual(['at.desc,play.asc,version.asc', '200']);
     const [ends] = h.to('my_face_down');
     expect([ends?.url.searchParams.get('order'), ends?.url.searchParams.get('ended_at'), ends?.url.searchParams.get('limit')]).toEqual(['ended_at.desc', 'not.is.null', '200']);
     const [caught] = h.to('my_caught');
@@ -1466,6 +1472,7 @@ describe('the log', () => {
     expect(plays?.url.searchParams.get('at')).toBe(`lte.${before}`);
     expect(saves?.url.searchParams.getAll('saved_at')).toEqual(['not.is.null', `lte.${before}`]);
     expect(h.to('my_face_down')[0]?.url.searchParams.getAll('ended_at')).toEqual(['not.is.null', `lte.${before}`]);
+    expect(h.to('my_posts_written_on')[0]?.url.searchParams.get('at')).toBe(`lte.${before}`);
     expect(h.to('my_caught')[0]?.url.searchParams.get('at')).toBe(`lte.${before}`);
     expect(h.to('my_cards_ended')[0]?.url.searchParams.get('at')).toBe(`lte.${before}`);
     for (const name of ['my_infractions', 'my_bans', 'my_group_moves', 'my_reports', 'my_appeals']) expect(h.to(name)[0]?.url.searchParams.get('at')).toBe(`lte.${before}`);
@@ -2307,6 +2314,7 @@ describe('a screen in one call', () => {
       const answer = doc(SRC({
         ledger: [LEDGER_ROW], wallet: [{ settlement: 9, kind: 'settlement', change: 15, overflow: 0, floored: 0, balance_after: 472, ref: null, at: '2026-10-30T08:17:02+00:00' }],
         saves: [{ play: C, post: A, saved_at: '2026-10-29T23:00:00+00:00' }],
+        writes: [{ play: C, post: A, version: A, failed: true, opening: true, at: '2026-10-29T22:30:00+00:00' }],
         groupMoves: [{ move: 'g1', character: B, at: '2026-10-29T20:32:00+00:00', thread: T, seq: 7, group: 'trialMembers', board: A, board_name: 'General', expires_at: '2026-11-05T20:32:00+00:00', landed_until: '2026-11-04T20:32:00+00:00', check_at: null, demand: 'apologyAccepted', office: 'boss', ended_why: 'met', ended_by: 'demand', ended_at: '2026-10-30T10:00:00+00:00', ruling: 'reduced', ruled_at: '2026-10-29T22:00:00+00:00', ruled_until: '2026-11-05T20:32:00+00:00' }],
       }), {
         shares: [{ settlement: 9, character: B, reason: 'heel.drewHeat', act: A, quadrant: 'excitedNegative', amount: 20 }], acts: [ACT_ROW], states: [{ play: C, state: { n: 1 }, saved_at: '2026-10-29T23:00:00+00:00' }],
@@ -2321,6 +2329,8 @@ describe('a screen in one call', () => {
       }]);
       expect(page.log.wallet).toEqual([{ settlement: 9, kind: 'settlement', change: 15, overflow: 0, floored: 0, balanceAfter: 472, ref: null, at: '2026-10-30T08:17:02+00:00' }]);
       expect(page.log.saves).toEqual([{ play: C, post: A, savedAt: '2026-10-29T23:00:00+00:00' }]);
+      /* The texts cards wrote on the player's posts (log_page, 0146), mapped as log() maps my_posts_written_on. */
+      expect(page.log.writes).toEqual([{ play: C, post: A, version: A, failed: true, opening: true, at: '2026-10-29T22:30:00+00:00' }]);
       /* The group moves (log_page, 0134), mapped as log() maps my_group_moves. */
       expect(page.log.groupMoves).toEqual([{ move: 'g1', character: B, at: '2026-10-29T20:32:00+00:00', thread: T, seq: 7, group: 'trialMembers', board: A, boardName: 'General', expiresAt: '2026-11-05T20:32:00+00:00', landedUntil: '2026-11-04T20:32:00+00:00', checkAt: null, demand: 'apologyAccepted', office: 'boss', endedWhy: 'met', endedBy: 'demand', endedAt: '2026-10-30T10:00:00+00:00', ruling: 'reduced', ruledAt: '2026-10-29T22:00:00+00:00', ruledUntil: '2026-11-05T20:32:00+00:00' }]);
       expect(page.log.before).toBeNull();

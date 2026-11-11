@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import type { CardEvent, WalletEvent } from './api.ts';
 import { cutLog, justBefore, LOG_ROWS, micros, readLogPage, type LedgerRow, type LogRange, type LogRead, type ShareRow } from './log-page.ts';
 
-const none: LogRead = { ledger: [], shares: [], wallet: [], cards: [], packs: [], playsOnMine: [], saves: [], setEnds: [], caught: [], ended: [], infractions: [], bans: [], groupMoves: [], reports: [], appeals: [] };
+const none: LogRead = { ledger: [], shares: [], wallet: [], cards: [], packs: [], playsOnMine: [], writes: [], saves: [], setEnds: [], caught: [], ended: [], infractions: [], bans: [], groupMoves: [], reports: [], appeals: [] };
 const line = (settlement: number, endsAt: string, character: string, reason: string, amount: number): LedgerRow =>
   ({ settlement, startsAt: '2026-10-28T08:17:00Z', endsAt, sharesKept: true, character, reason, amount });
 const bought = (at: string): CardEvent => ({ card: 'whoops', kind: 'bought', act: null, price: 100, at });
@@ -35,6 +35,14 @@ test('a full source ends the page at its oldest time; every source keeps only wh
   assert.deepEqual(log.cards.map((c) => c.at), ['2026-10-30T10:00:00Z']);
   assert.deepEqual(log.wallet.map((e) => e.at), ['2026-10-30T09:30:00Z']);
   assert.deepEqual(log.settlements, []);
+});
+
+test('the texts cards wrote on the player\'s posts are a source of their own: a full one ends the page at its oldest time', () => {
+  const w = (at: string, version: string) => ({ play: 'k', post: 'p', version, failed: false, opening: false, at });
+  const log = cutLog({ ...none, writes: [w('2026-10-30T10:00:00Z', 'v3'), w('2026-10-30T09:00:00Z', 'v2')], cards: [bought('2026-10-30T09:30:00Z'), bought('2026-10-30T08:00:00Z')] }, 2);
+  assert.equal(log.before, '2026-10-30T09:00:00Z');
+  assert.deepEqual(log.writes.map((x) => x.version), ['v3']);
+  assert.deepEqual(log.cards.map((c) => c.at), ['2026-10-30T09:30:00Z']);
 });
 
 test('a settlement whose lines ran past a full read is left whole for the next page', () => {

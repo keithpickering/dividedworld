@@ -260,11 +260,49 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     expect(said).toContain('0.25 more for every 50 characters it covers');
     expect(ac.describe({ ...instance.settings, economy: { ...instance.settings.economy, 'autocorrect.volumeStep': 40 } })).toContain('every 40 characters');
     expect(ac.surcharge!(instance.settings)).toBe('Covers a lot, +0.25 per 50 characters covered');
-    expect(ac.logPlay!({ phrase: 'Mario', replacement: 'Luigi' })).toBe('It covers “Mario” with “Luigi”.');
-    expect(ac.logPlay!({})).toBeUndefined();
+    expect(ac.logPlay!({ phrase: 'Mario', replacement: 'Luigi' }, instance.settings)).toBe('It covers “Mario” with “Luigi”.');
+    expect(ac.logPlay!({}, instance.settings)).toBeUndefined();
     expect(ac.logSave!({ peeled: [0, 2] })).toEqual({ what: 'Strips peeled', said: 'You peeled 2 of its strips.' });
     expect(ac.logSave!({ peeled: [0], clean: true })).toEqual({ what: 'Peeled clean', said: 'You peeled every strip it had then. An edit that brings the phrase back brings a strip with it.' });
     expect(ac.logSave!({ peeled: [] })).toBeUndefined();
+  });
+  /* The card that writes, in the log (the design's section 13): the caster's length, the author's clear, and what it did to the author's post. */
+  test('You Were Saying? says its length in tokens from the settings, the author\'s clear as theirs, and what it did in its own words', () => {
+    const ywsCard = instanceUi.cards.find((c) => c.key === 'you-were-saying')!;
+    const e = instance.settings.economy;
+    const base = e['youWereSaying.baseTokens']!;
+    const step = e['youWereSaying.stepTokens']!;
+    expect(ywsCard.logPlay!({ steps: 0 }, instance.settings)).toBe(`It was played for ${base} tokens.`);
+    expect(ywsCard.logPlay!({ steps: 3 }, instance.settings)).toBe(`It was played for ${base + 3 * step} tokens.`);
+    /* A step past the most is held at the most, as the play was, and the settings now are the ones said. */
+    expect(ywsCard.logPlay!({ steps: 99 }, instance.settings)).toBe(`It was played for ${e['youWereSaying.mostTokens']} tokens.`);
+    expect(ywsCard.logPlay!({ steps: 1 }, { ...instance.settings, economy: { ...e, 'youWereSaying.baseTokens': 50 } })).toBe(`It was played for ${50 + step} tokens.`);
+    expect(ywsCard.logPlay!({}, instance.settings)).toBeUndefined();
+    expect(ywsCard.logSave!({ cleared: 'v1' })).toEqual({ what: 'Tail erased', verb: 'erased' });
+    expect(ywsCard.logSave!({})).toBeUndefined();
+    expect(ywsCard.logWritten!.continued).toBe('continued it');
+    expect(ywsCard.logWritten!.again('You Were Saying?')).toBe('made its You Were Saying? again');
+    expect(ywsCard.logWritten!.failed).toBe('didn\'t take');
+  });
+  test('the three lines of the author and the caster\'s length are said whole, from the instance\'s own words', () => {
+    const at = '2026-11-09T10:00:00.000Z';
+    const act = (id: string, kind: Act['kind'], character: string, over: Partial<Act> = {}): Act =>
+      ({ id, kind, character, thread: 'th', targetActId: null, seq: null, createdAt: at, payload: {}, currentPayload: {}, editedAt: null, shownEditedAt: null, ...over });
+    const post = act('post1', 'post', 'me', { seq: 1 });
+    const play = act('k1', 'card', 'them', { targetActId: 'post1', payload: { card: 'you-were-saying', config: { steps: 3 } } });
+    const log: Log = { infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], settlements: [], wallet: [], cards: [{ card: 'you-were-saying', kind: 'played', act: 'k1', price: 75, at }], packs: [], playsOnMine: [],
+      writes: [{ play: 'k1', post: 'post1', version: 'post1', failed: false, opening: true, at }, { play: 'k1', post: 'post1', version: 'e1', failed: false, opening: false, at }, { play: 'k1', post: 'post1', version: 'e2', failed: true, opening: true, at }],
+      saves: [{ play: 'k1', post: 'post1', savedAt: at }], setEnds: [], caught: [], ended: [], before: null };
+    const mine = [{ id: 'me', name: 'Pipewrench', pronouns: ENGINE_DEFAULT_PRONOUNS, class: 'heel', classSince: at, classDueAt: null, turnOpensAt: null, debutedAt: at, debutLoudness: 'announced' as const, retiredAt: null, pendingTurn: null, presenceHidden: false }, { ...{ id: 'them', name: 'Spritey' }, pronouns: ENGINE_DEFAULT_PRONOUNS, class: 'heel', classSince: at, classDueAt: null, turnOpensAt: null, debutedAt: at, debutLoudness: 'announced' as const, retiredAt: null, pendingTurn: null, presenceHidden: false }];
+    const rows = logRows({
+      log, mine, estimate: null, standings: {}, season: null, turns: [], nextSettlement: null, acts: new Map([post, play].map((a) => [a.id, a])),
+      names: new Map(), titles: new Map(), states: new Map([['k1', { cleared: 'post1' }]]),
+    }, { instance, ui: instanceUi, postsPerPage: 20, economy: instance.settings.economy }, 600, 'me');
+    const said = (k: string) => rows.filter((r) => r.kind === k).map((r) => r.details.map((d) => (typeof d === 'string' ? d : (d as { text: string }).text)).join(''));
+    expect(said('written').sort()).toEqual([
+      'Your edit of post #1 made its You Were Saying? again.', 'You Were Saying? on your post #1 continued it.', 'You Were Saying? on post #1 didn\'t take.',
+    ].sort());
+    expect(said('saved')).toEqual(['You erased You Were Saying? on post #1.']);
   });
   test('Autocorrect peeled clean, then an edit: the saved line never says the post is uncovered (#171 F1)', () => {
     /* Strips follow the phrase, so an edit that brings it back brings a strip: "covers nothing now" would go untrue here. */
@@ -274,7 +312,7 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     const post = act('post1', 'post', 'me', { seq: 1, payload: { body: 'Mario wins.' }, currentPayload: { body: 'Mario wins again.' }, editedAt: '2026-10-31T10:00:00.000Z' });
     const play = act('k1', 'card', 'them', { targetActId: 'post1', payload: { card: 'autocorrect', config: { phrase: 'Mario', replacement: 'Luigi' } } });
     const edit = act('e1', 'edit', 'me', { targetActId: 'post1', createdAt: '2026-10-31T10:00:00.000Z', payload: { body: 'Mario wins again.' } });
-    const log: Log = { infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], settlements: [], wallet: [], cards: [], packs: [], playsOnMine: [], saves: [{ play: 'k1', post: 'post1', savedAt: at }], setEnds: [], caught: [], ended: [], before: null };
+    const log: Log = { infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], settlements: [], wallet: [], cards: [], packs: [], playsOnMine: [], writes: [], saves: [{ play: 'k1', post: 'post1', savedAt: at }], setEnds: [], caught: [], ended: [], before: null };
     const mine = [{ id: 'me', name: 'Pipewrench', pronouns: ENGINE_DEFAULT_PRONOUNS, class: 'heel', classSince: at, classDueAt: null, turnOpensAt: null, debutedAt: at, debutLoudness: 'announced' as const, retiredAt: null, pendingTurn: null, presenceHidden: false }];
     const rows = logRows({
       log, mine, estimate: null, standings: {}, season: null, turns: [], nextSettlement: null, acts: new Map([post, play, edit].map((a) => [a.id, a])),
@@ -397,7 +435,7 @@ describe('a Booster in the log (the booster packs plan, Task 7)', () => {
   const contents = ['whoops', 'bluff', 'feelin-fab', 'stick-around', 'trap-card'];
   const pulled = contents.map((card) => ({ card, kind: 'pulled' as const, act: null, pack: 'pk1', price: 0, at }));
   const lines = (over: Partial<Log>, wallet: Log['wallet']) => logRows({
-    log: { infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], settlements: [], wallet, cards: [], packs: [], playsOnMine: [], saves: [], setEnds: [], caught: [], ended: [], before: null, ...over },
+    log: { infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], settlements: [], wallet, cards: [], packs: [], playsOnMine: [], writes: [], saves: [], setEnds: [], caught: [], ended: [], before: null, ...over },
     mine: [], estimate: null, standings: {}, season: null, turns: [], nextSettlement: null, acts: new Map(), names: new Map(), titles: new Map(), states: new Map(),
   }, { instance, ui: instanceUi, postsPerPage: 20, economy: {} }, 600, null);
   const said = (r: { details: readonly unknown[] }) => r.details.map((d) => (typeof d === 'string' ? d : (d as { text: string }).text)).join('');
