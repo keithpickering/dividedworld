@@ -669,7 +669,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     : a.seq !== null ? { kind: 'post', thread: a.thread, title: threads.get(a.thread)!.title, seq: a.seq }
     : null;
 
-  /** A spun thread's origin place, by the rules of thread_open's origin_place (0079), in order: none; an update; a play (kind first, so a numbered card is one) with its card (null for a set) and its target; any Act with a place number. */
+  /** A spun thread's origin place, by the rules of thread_open's origin_place (0079), in order: none; an update; a play (kind first, so a numbered card is one) with its card (null for a set) and its target; any Act with a place number. A board is named as it is called now (0152), as boards_now names it. */
   function originPlace(origin: ActRec): OriginPlace | null {
     if (origin.kind === 'update') return placeOf(origin);
     if (origin.kind === 'card' || origin.kind === 'set' || origin.kind === 'spring') {
@@ -680,7 +680,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         const named = beyond.reach === 'character' ? characters.get(beyond.target) : undefined;
         on = beyond.reach === 'character' ? { kind: 'character', id: beyond.target, name: named?.debutedAt != null ? named.name : null }
           : beyond.reach === 'thread' ? { kind: 'thread', id: beyond.target, title: threads.get(beyond.target)!.title }
-          : { kind: 'board', slug: boards.find((b) => b.id === beyond.target)!.slug, name: boards.find((b) => b.id === beyond.target)!.name };
+          : { kind: 'board', slug: boards.find((b) => b.id === beyond.target)!.slug, name: boardNow(boards.find((b) => b.id === beyond.target)!).name };
       } else {
         // A play with no play_reach row is on a post (0079 joins the target post only then; every beyond-post play has a reach row).
         on = origin.target !== null ? placeOf(acts.get(origin.target)) : null;
@@ -914,7 +914,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const handovers: { readonly outgoing: string | null; readonly boss: string; readonly at: number; readonly how: string; readonly bossWas: string | null; readonly outgoingOffice: string | null }[] = [];
   /** The seasons whose to-do an admin dismissed (`handover_dismissals`). */
   const dismissedTodos = new Set<number>();
-  /* The conduct screen's world (0150-0152): open reports, decisions, the re-review list, mail that failed and mail waiting for an address. */
+  /* The conduct screen's world (0150-0153): open reports, decisions, the re-review list, mail that failed and mail waiting for an address. */
   interface ReportRec { readonly id: number; readonly version: Id; readonly section: string; readonly note: string | null; readonly at: number; readonly reporter?: Id }
   interface DecisionRec { readonly id: number; readonly report: number | null; readonly version: Id | null; readonly account: Id | null; readonly outcome: string; readonly until: number | null; readonly note: string; readonly at: number }
   /** The most reports to admins an account holds open (`Settings.conduct.openReportsMost`): the fake's own, three. */
@@ -1829,7 +1829,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return ok({ withdrawn: true });
   }
 
-  /** The SQL's words (pronouns_hold, 0124): a set is held after it is lowercased, as set_profile and create_character store it. */
+  /** The SQL's words (pronouns_hold, 0124): a set is held and stored normalized (trimmed and lowercased), as the real client's setProfile sends it and the act function normalizes it. */
   const PRONOUNS_REFUSAL = 'pronouns are five words of 1 to 12 letters';
   const pronounsHold = (set: PronounSet) => pronounProblems(normalizePronouns(set)).length === 0;
 
@@ -2301,6 +2301,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       return [...acts.values()].filter((a) => a.kind === 'appeal' && a.character === character && acts.get(a.target ?? '')?.kind === 'move' && !refundedAppeals.has(a.id)).map((a) => a.target!);
     },
     apologize(move, character, title, body, framing) {
+      const bad = request({ action: 'apologize', move, character, title, body, ...(framing ? { framing } : {}) });
+      if (bad) return bad;
       const c = acting(character);
       if (isRefusal(c)) return c;
       const banned = bannedUntilOf(character);

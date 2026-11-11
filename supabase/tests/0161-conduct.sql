@@ -1,4 +1,4 @@
--- Reports to admins, what an admin decides and what a decision computes (supabase/migrations/0152_conduct.sql; the conduct plan, Task 2;
+-- Reports to admins, what an admin decides and what a decision computes (supabase/migrations/0153_conduct.sql; the conduct plan, Task 2;
 -- the conduct design, sections 2-5 and 8): the open-report limit, who may decide, a hidden version in acts_public, in its row and in a quote,
 -- hide until edited (the author's edit the first time, an approval after), a suspension and a ban at the writers, the caller's own bar, the
 -- log's read, the acceptance of the code, and the append-only tables.

@@ -1,4 +1,4 @@
--- The moderation mail's outbox and a new account's acceptance of the code (supabase/migrations/0153_conduct_mail.sql; the conduct plan, Tasks 3 and 5):
+-- The moderation mail's outbox and a new account's acceptance of the code (supabase/migrations/0154_conduct_mail.sql; the conduct plan, Tasks 3 and 5):
 -- decide_report and decide enqueue the author's mail for each outcome and the reporter's reportRead (the same template and facts whatever was decided),
 -- a staff author is sent nothing, mail_due lists a row until a sent or refused attempt exists (a failed one backs off 2^n minutes for n failures, at most a day), the
 -- bar it carries is the account's current one, never the decision's own (a row for a suspension read after a lift clears the login), the two service doors refuse a

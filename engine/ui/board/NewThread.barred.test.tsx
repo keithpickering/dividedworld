@@ -73,6 +73,7 @@ describe('New thread for a barred mask', () => {
     await userEvent.click(await within(form).findByRole('button', { name: 'Write an apology' }));
     const sorry = await screen.findByRole('form', { name: /apology/iu });
     await userEvent.type(within(sorry).getByLabelText('Thread title'), 'Sorry');
+    await userEvent.type(within(sorry).getByLabelText('Your apology'), 'I am sorry.');
     await userEvent.click(within(sorry).getByRole('button', { name: 'Send apology' }));
     await waitFor(() => expect(apologize).toHaveBeenCalled());
     expect(start).not.toHaveBeenCalled();

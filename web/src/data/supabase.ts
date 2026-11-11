@@ -35,7 +35,7 @@ import { readLogPage, type LedgerRow, type LogRange, type LogRead, type ShareRow
 import { buildMoveNotice, toDemand, toProgress } from '../../../engine/ui/data/moves.ts';
 import { ALERTS_PAGE, ALERTS_UNREAD_BOUND, MOVES_LOG_PAGE, SEASON_NEWS_PAGE, UPDATES_PAGE } from '../../../engine/ui/data/api.ts';
 import { RECORD_PAGE } from '../../../engine/ui/profile/record.ts';
-import { ENGINE_DEFAULT_PRONOUNS, type PronounSet } from '../../../engine/rules/pronouns.ts';
+import { ENGINE_DEFAULT_PRONOUNS, normalizePronouns, type PronounSet } from '../../../engine/rules/pronouns.ts';
 import { ALERT_KINDS, type AlertKind } from '../../../engine/rules/alerts.ts';
 import type { Career } from '../../../engine/system/career.ts';
 import type {
@@ -62,7 +62,7 @@ export interface SupabaseApiOptions {
 type Row = Record<string, any>;
 
 const REFUSAL_HINT = 'kayfabb.refusal';
-/** The hint a refusal for a barred account carries (0152_conduct.sql, refuse_if_barred). */
+/** The hint a refusal for a barred account carries (0153_conduct.sql, refuse_if_barred). */
 const BARRED_HINT = 'kayfabb.barred';
 const LOST = LOST_ANSWER;
 const NOT_DONE = 'that could not be done right now; try again';
@@ -827,24 +827,30 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
   /** The office characters_public shows a staff character; anything else it might say is no office. */
   const toOffice = (o: unknown): Office | undefined => (o === 'boss' || o === 'mod' || o === 'member' || o === 'benched' || o === 'waiting' || o === 'developer' ? o : undefined);
 
-  const toCharacter = (c: Row, p: Row | undefined): Character => ({
-    id: c['id'],
-    name: c['name'],
-    title: p?.['title'] ?? '',
-    signature: p?.['signature'] ?? '',
-    avatarSquare: avatarUrl(p?.['avatar_square'] ?? null),
-    avatarPortrait: avatarUrl(p?.['avatar_portrait'] ?? null),
-    squareFrame: toFrame(p?.['square_frame']),
-    portraitFrame: toFrame(p?.['portrait_frame']),
-    pipStyle: p?.['pip_style'] ?? 'default',
-    /* The set is read from the profile row; the engine's it/its stands only for a character with no profile row at all. */
-    pronouns: p ? pronounsOrDefault(p['pronouns']) : ENGINE_DEFAULT_PRONOUNS,
-    joined: c['joined'] ?? '',
-    ...(typeof c['warn_points'] === 'number' && c['warn_points'] > 0 ? { warnPoints: c['warn_points'] } : {}),
-    ...(typeof c['banned_until'] === 'string' && Date.parse(c['banned_until']) > Date.now() ? { bannedUntil: c['banned_until'] } : {}),
-    ...(typeof c['staff'] === 'string' ? { staff: c['staff'], ...(toOffice(c['office']) ? { office: toOffice(c['office'])! } : {}) } : {}),
-    group: typeof c['group'] === 'string' ? c['group'] : '',
-  });
+  /* A character from its row and its profile row. Where a profile row came without a set (a select or a projection dropped the column: the column is not null), the
+     engine's it/its stands for display only and `pronounsUnread` marks it, so Edit profile never offers it for saving over the set the player chose. With no profile row
+     at all (a character made before an instance was seeded, 0124) nothing is stored to overwrite: it/its is what a read shows, unmarked, and set_profile makes the row. */
+  const toCharacter = (c: Row, p: Row | undefined): Character => {
+    const set = p?.['pronouns'];
+    return {
+      id: c['id'],
+      name: c['name'],
+      title: p?.['title'] ?? '',
+      signature: p?.['signature'] ?? '',
+      avatarSquare: avatarUrl(p?.['avatar_square'] ?? null),
+      avatarPortrait: avatarUrl(p?.['avatar_portrait'] ?? null),
+      squareFrame: toFrame(p?.['square_frame']),
+      portraitFrame: toFrame(p?.['portrait_frame']),
+      pipStyle: p?.['pip_style'] ?? 'default',
+      pronouns: isObject(set) ? pronounsOrDefault(set) : ENGINE_DEFAULT_PRONOUNS,
+      ...(p !== undefined && !isObject(set) ? { pronounsUnread: true as const } : {}),
+      joined: c['joined'] ?? '',
+      ...(typeof c['warn_points'] === 'number' && c['warn_points'] > 0 ? { warnPoints: c['warn_points'] } : {}),
+      ...(typeof c['banned_until'] === 'string' && Date.parse(c['banned_until']) > Date.now() ? { bannedUntil: c['banned_until'] } : {}),
+      ...(typeof c['staff'] === 'string' ? { staff: c['staff'], ...(toOffice(c['office']) ? { office: toOffice(c['office'])! } : {}) } : {}),
+      group: typeof c['group'] === 'string' ? c['group'] : '',
+    };
+  };
 
   /** A character a document carries with its profile nested (`profile` null where it has none). */
   const faceOf = (c: Row): Character => toCharacter(c, isObject(c['profile']) ? c['profile'] : undefined);
@@ -1978,11 +1984,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     post: (thread, character, body, quote, framing) => act({ action: 'post', thread, character, body, ...(quote ? { quote } : {}), ...framed(framing) }, toAct),
     edit: (post, character, body) => act({ action: 'edit', post, character, body }, toAct),
     spin: (origin, character, title, body, framing) => act({ action: 'spin', origin, character, title, body, ...framed(framing) }, withThread),
-    async apologize(move, character, title, body, framing) {
-      if (!idOk(move) || !idOk(character)) return refusal('that move could not be found');
-      const a = await rpcWrite(() => client.rpc('apologize', { in_move: move, through: character, title, body, ...framed(framing) }));
-      return a.ok ? { ok: true, value: withThread(a.value) } : a;
-    },
+    apologize: (move, character, title, body, framing) => act({ action: 'apologize', move, character, title, body, ...framed(framing) }, withThread),
     react: (target, character, kind) => act({ action: 'react', act: target, character, kind }, (r) => ({ act: r['act'], tally: (r['tally'] ?? {}) as Tally })),
     turn: (character, to, loudness, showFrom, showTo) =>
       act({ action: 'turn', character, class: to, loudness, showFrom, showTo }, (r): TurnAsked => ({ class: r['class'], loudness: r['loudness'], showFrom: r['show_from'] === true, showTo: r['show_to'] === true, takesEffectAt: r['takes_effect_at'] ?? null })),
@@ -1992,8 +1994,9 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       act({ action: 'createCharacter', name, class: cls, timing, loudness, ...(pronouns === undefined ? {} : { pronouns }) }, (r): CreatedCharacter => ({ id: r['id'], name: r['name'], class: r['class'], waiting: r['waiting'] === true, loudness: r['loudness'] })),
     setDebut: (character, timing, loudness) => act({ action: 'setDebut', character, timing, loudness }, (r) => ({ id: r['id'], waiting: r['waiting'] === true, loudness: r['loudness'] })),
     async setProfile(character, title, signature, pipStyle, pronouns) {
-      /* A null set keeps the stored one (set_profile, 0124). */
-      const a = await rpcWrite(() => client.rpc('set_profile', { through: character, title, signature, pip_style: pipStyle, pronouns: pronouns ?? null }));
+      /* A null set keeps the stored one (set_profile, 0124). A set goes out normalized: the picker and the fake judge it trimmed and lowercased, as the act
+         function sends createCharacter's, and set_profile lowers a set but refuses a space, in words that name no form. */
+      const a = await rpcWrite(() => client.rpc('set_profile', { through: character, title, signature, pip_style: pipStyle, pronouns: pronouns === undefined ? null : normalizePronouns(pronouns) }));
       return a.ok ? { ok: true, value: await profileCharacter(a.value) } : a;
     },
     async setAvatar(upload: AvatarUpload) {
