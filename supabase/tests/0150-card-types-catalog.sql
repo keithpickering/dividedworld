@@ -44,7 +44,7 @@ begin
   if why is distinct from 'card "poison" is a use card with no time up (lasts); a use card ends at its time' then raise exception 'a use card with no lasts: %', why; end if;
 
   why := card_kinds_problem('[{"key": "poison", "rarity": "common", "play": "use", "lasts": {"unit": "day", "count": 7}, "gimmick": {"kind": "hex"}}]');
-  if why is distinct from 'card "poison" has a gimmick of kind "hex"; a gimmick is ward, earn or price' then raise exception 'a gimmick of no kind: %', why; end if;
+  if why is distinct from 'card "poison" has a gimmick of kind "hex"; a gimmick is ward, earn, price or ride' then raise exception 'a gimmick of no kind: %', why; end if;
 
   why := card_kinds_problem('[{"key": "poison", "rarity": "common", "play": "use", "lasts": {"unit": "day", "count": 7}, "gimmick": "ward"}]');
   if why is distinct from 'card "poison" has a gimmick that is not an object' then raise exception 'a gimmick that is not an object: %', why; end if;

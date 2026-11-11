@@ -932,3 +932,66 @@ test('the kick: a refused play or edit kicks nothing, and a kick that throws is 
     await later();
   } finally { console.error = was; }
 });
+
+// Task 6 (card notes, Part 6): what a skim play, a ride set and a scored-as play send play_card and set_card, and how the server's refusals of them come back.
+const playCalls = (calls: string[]) => calls.filter((c) => c.startsWith('service:play_card:'));
+
+test('a skim play\'s configuration reaches play_card as the card\'s validator shaped it, and a second for the same quadrant is refused before SQL', async () => {
+  const { dbs, calls } = pair({ whoami, card_target_reach: { reach: 'post', act: target, kind: 'post', length: 10, body: 'x'.repeat(10), effects: [] }, play_card: { id: 'k', kind: 'card' } });
+  const out = await runAction(dbs, instance, { action: 'playCard', card: 'mooch', character: id, target, config: { quadrant: 'excitedPositive', extra: 'smuggled' }, message: '' });
+  assert.equal(out.status, 200, JSON.stringify(out.body));
+  const sent = playCalls(calls);
+  assert.equal(sent.length, 1, calls.join('\n'));
+  assert.ok(sent[0]!.includes('"config":{"quadrant":"excitedPositive"}') && !sent[0]!.includes('smuggled'), sent[0]);
+
+  const live = { card: 'mooch', act: 'm', ends: new Date(Date.now() + 1e6).toISOString(), quadrant: 'excitedPositive' };
+  const same = pair({ whoami, card_target_reach: { reach: 'post', act: target, kind: 'post', length: 10, body: 'x'.repeat(10), effects: [live] }, play_card: { id: 'k', kind: 'card' } });
+  const refused = await runAction(same.dbs, instance, { action: 'playCard', card: 'mooch', character: id, target, config: { quadrant: 'excitedPositive' }, message: '' });
+  assert.deepEqual({ status: refused.status, body: refused.body }, { status: 400, body: { field: 'config', error: 'this post already carries that card for that quadrant' } });
+  assert.equal(playCalls(same.calls).length, 0);
+  const other = await runAction(same.dbs, instance, { action: 'playCard', card: 'mooch', character: id, target, config: { quadrant: 'boredNegative' }, message: '' });
+  assert.equal(other.status, 200, JSON.stringify(other.body));
+
+  const none = await runAction(same.dbs, instance, { action: 'playCard', card: 'mooch', character: id, target, config: {}, message: '' });
+  assert.deepEqual({ status: none.status, body: none.body }, { status: 400, body: { field: 'config', error: 'choose the reactions to mooch' } });
+});
+
+test('a ride set sends the catch from the card\'s rules and the quadrant in its configuration', async () => {
+  const { dbs, calls } = pair(onPost);
+  const out = await runAction(dbs, instance, { action: 'setCard', card: '4d-chess', character: id, target, config: { card: 'whoops', quadrant: 'calmPositive', extra: 'smuggled' }, catches: 'glitter-bomb' });
+  assert.equal(out.status, 200, JSON.stringify(out.body));
+  const sent = setCalls(calls);
+  assert.ok(sent[0]!.includes('"catches":"whoops"') && sent[0]!.includes('"quadrant":"calmPositive"') && !sent[0]!.includes('glitter-bomb') && !sent[0]!.includes('smuggled'), sent[0]);
+  const none = await runAction(pair(onPost).dbs, instance, { action: 'setCard', card: '4d-chess', character: id, target, config: { card: 'whoops' } });
+  assert.deepEqual({ status: none.status, body: none.body }, { status: 400, body: { field: 'config', error: 'choose the reactions it pays on' } });
+});
+
+test('a scored-as play names its class in its configuration and goes to play_card on a character', async () => {
+  const post = '44444444-4444-4444-8444-444444444444';
+  const named = instance.classes[0]!.key;
+  const { dbs, calls } = pair({ whoami, card_target_reach: { reach: 'character', character: target, effects: [], above: { thread: [], board: [] } }, play_card: { id: 'k', kind: 'card' } });
+  const out = await runAction(dbs, instance, { action: 'playCard', card: 'off-day', character: id, reach: 'character', target, post, config: { class: named, extra: 1 }, message: '' });
+  assert.equal(out.status, 200, JSON.stringify(out.body));
+  const sent = playCalls(calls);
+  assert.ok(sent[0]!.includes(`"config":{"class":"${named}"}`) && sent[0]!.includes('"reach":"character"'), sent[0]);
+  const bad = await runAction(dbs, instance, { action: 'playCard', card: 'off-day', character: id, reach: 'character', target, post, config: { class: 'no-such-class' }, message: '' });
+  assert.deepEqual({ status: bad.status, body: bad.body }, { status: 400, body: { field: 'config', error: 'choose the class to name' } });
+});
+
+test('each refusal of a skim, a ride and a scored-as play comes back as a plain refusal with its words', async () => {
+  const cases = [
+    ['22023', 400, 'this card names a reaction quadrant'],
+    ['23505', 409, 'this post already carries that card for that quadrant'],
+    ['22023', 400, 'there is no such class'],
+    ['55000', 409, 'the next settlement\'s time is not known yet, so no window can be named; play it after that settlement'],
+    ['55000', 409, 'this season ends at the next settlement, so there is no window after it to name'],
+    ['23505', 409, 'this character already has a class named for the window after the next settlement'],
+  ] as const;
+  for (const [code, status, words] of cases) {
+    const refusal = new DatabaseError(`play_card: ${words}`, code, status, words, REFUSAL_HINT);
+    const answers: Record<string, unknown> = { whoami, card_target_reach: { reach: 'post', act: target, kind: 'post', length: 10, body: 'x'.repeat(10), effects: [] } };
+    const make = (): Db => ({ rpc: async <T>(fn: string) => { if (fn === 'play_card') throw refusal; return (fn === 'instance_settings' ? { economy: instance.settings.economy } : answers[fn]) as T; } });
+    const out = await runAction({ player: make(), service: make() }, instance, { action: 'playCard', card: 'mooch', character: id, target, config: { quadrant: 'excitedPositive' }, message: '' });
+    assert.deepEqual({ status: out.status, body: out.body }, { status, body: { error: words, code } }, words);
+  }
+});

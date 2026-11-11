@@ -57,6 +57,9 @@ export function instanceSeed(instance: Instance, conduct: ConductSeed) {
       // How it is played and how rare it is, and a Set card's trap, a Use card's gimmick and time up (0054, 0148), which seed_instance
       // checks as instanceProblems does. A trap (with its match), a gimmick or a time up left out travels as none.
       rarity: c.rarity, play: c.play ?? 'cast', trap: c.trap, gimmick: c.gimmick, lasts: c.lasts,
+      // What a cast card's play pays its caster for votes on its post, and whether it names a class its target is scored as
+      // for a window (0151); a trap's outcome travels inside the trap. One left out travels as none.
+      skim: c.skim, scoresAs: c.scoresAs,
       // Where it reaches and whether a thread play of it pins (0055), which seed_instance checks against reachRarity and reachLasts.
       reaches: c.reaches ?? ['post'], pins: c.pins === true,
       // Whether its text is generated after it lands (0149): the SQL knows only this flag, never which card.

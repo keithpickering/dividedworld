@@ -1339,6 +1339,25 @@ export interface FaceDownEnd {
   readonly endedBy: 'sprung' | 'taken back' | 'time';
 }
 
+/**
+ * A class an Off Day-shaped play (a card with `scoresAs`) named for one of the player's characters, as the settlement that scored it
+ * recorded it (`my_scored_as`, sent by `log_page` as `scoredAs`): the settled window's own dates, the class the character was scored as
+ * there and the play that named it. Its character is one of the caller's own, so it is the only reader's.
+ */
+export interface ScoredAs {
+  readonly settlement: number;
+  readonly character: Id;
+  /** The class the character was scored as for that window (`class_key`). */
+  readonly classKey: string;
+  /** The play's Act. */
+  readonly play: Id;
+  /** The play's card key. */
+  readonly card: string;
+  /** The settled window's start and end (`settlements.starts_at`, `ends_at`). */
+  readonly startsAt: string;
+  readonly endsAt: string;
+}
+
 /** A play of the player's a trap caught (`my_caught`): its card, its post, the trap's card and spring, what the play cost and what the card cost at the machine. */
 export interface CaughtPlay {
   readonly play: Id;
@@ -1513,6 +1532,8 @@ export interface Log {
   readonly setEnds: readonly FaceDownEnd[];
   /** The player's plays a trap caught, by when each was played. */
   readonly caught: readonly CaughtPlay[];
+  /** The classes the player's characters were scored as for a settled window, newest settlement first. Absent from a payload older than the card that names them; read it as none. */
+  readonly scoredAs?: readonly ScoredAs[];
   /** The card plays an admin ended that the player cast or that landed on theirs, by when each was ended. */
   readonly ended: readonly CardEnded[];
   /** The next page's cursor: pass it to `log` for what is older. Null when nothing older is left. */

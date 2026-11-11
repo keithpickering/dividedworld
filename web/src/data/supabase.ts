@@ -40,7 +40,7 @@ import { ALERT_KINDS, type AlertKind } from '../../../engine/rules/alerts.ts';
 import type { Career } from '../../../engine/system/career.ts';
 import type {
   AdminQueue, Apology, Bar, BoardName, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesLog, QueuedMove, StaffCardPlay, StaffProfile,
-  Act, ActKind, Answer, AvatarUpload, Board, Bought, BoardSummary, CardEnded, CardEvent, PackEvent, WrittenOnMine, CaughtPlay, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd,
+  Act, ActKind, Answer, AvatarUpload, Board, Bought, BoardSummary, CardEnded, ScoredAs, CardEvent, PackEvent, WrittenOnMine, CaughtPlay, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd,
   Alert, ContactLink, EffectState, Tail, PostHit, SearchCursor, SearchPage, SearchQuery, Suggestions, ThreadHit, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, SeasonShown, TallyName, Update, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
   Tally, StandingPlace, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, TurnAsked, Wallet, WalletEvent,
   Boot, BoardPage, IndexPage, Opened, AdminSlot, Slot, SlotMove, Presence, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, ReportsPage, MyHiddenVersion, AdminReport, AdminReview, FailedMail, PastDecision, LogPage,
@@ -62,7 +62,7 @@ export interface SupabaseApiOptions {
 type Row = Record<string, any>;
 
 const REFUSAL_HINT = 'kayfabb.refusal';
-/** The hint a refusal for a barred account carries (0150_conduct.sql, refuse_if_barred). */
+/** The hint a refusal for a barred account carries (0152_conduct.sql, refuse_if_barred). */
 const BARRED_HINT = 'kayfabb.barred';
 const LOST = LOST_ANSWER;
 const NOT_DONE = 'that could not be done right now; try again';
@@ -1936,7 +1936,11 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
         setEnds: rowsOf(sources['setEnds']), caught: rowsOf(sources['caught']), ended: rowsOf(sources['ended']),
         infractions: rowsOf(sources['infractions']), bans: rowsOf(sources['bans']), groupMoves: rowsOf(sources['groupMoves']), reports: rowsOf(sources['reports']), appeals: rowsOf(sources['appeals']),
       }, rowsOf(d['shares']), await readBacks(rowsOf(sources['cards'])));
-      const log = await readLogPage((range) => ('at' in range ? readLogViews(range) : first), before ?? null);
+      /* The scored-as rows (`my_scored_as`) ride beside the sources, newest first; the column is `named_class` (a readable view column may not be `class_key`), and an older payload has none. */
+      const firstRead: LogRead = Array.isArray(d['scoredAs'])
+        ? { ...first, scoredAs: rowsOf(d['scoredAs']).map((r): ScoredAs => ({ settlement: num(r['settlement']), character: r['character'], classKey: String(r['named_class'] ?? ''), play: r['play'], card: r['card'], startsAt: r['starts_at'], endsAt: r['ends_at'] })) }
+        : first;
+      const log = await readLogPage((range) => ('at' in range ? readLogViews(range) : firstRead), before ?? null);
       return {
         log, acts: rowsOf(d['acts']).map(toAct), states: toStates(rowsOf(d['states'])), people: rowsOf(d['people']).map(faceOf),
         threads: rowsOf(d['threads']).map(toThread), boards: rowsOf(d['boards']).map(toBoard), standings: Object.fromEntries(rowsOf(d['standings']).map((r) => [r['character'], num(r['standing'])])),

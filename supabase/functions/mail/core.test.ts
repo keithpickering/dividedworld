@@ -10,7 +10,7 @@ const NOW = Date.parse('2026-11-11T12:00:00Z');
 function world(rows: MailRow[], addresses: Record<string, string | null> = { acc1: 'a@example.test' }) {
   const attempts: { outbox: number; kind: AttemptKind; providerId: string | null; error: string | null }[] = [];
   const db: MailDb = {
-    // As mail_due: a sent or refused row is done; a failed one comes back (its backoff is the database's, tested in supabase/tests/0157-conduct-mail.sql).
+    // As mail_due: a sent or refused row is done; a failed one comes back (its backoff is the database's, tested in supabase/tests/0162-conduct-mail.sql).
     async due(most) { return rows.filter((r) => !attempts.some((a) => a.outbox === r.id && a.kind !== 'failed')).slice(0, most); },
     async address(account) { return addresses[account] ?? null; },
     async attempt(a) { attempts.push({ outbox: a.outbox, kind: a.kind, providerId: a.providerId ?? null, error: a.error ?? null }); },

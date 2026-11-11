@@ -344,6 +344,7 @@ begin
   -- 2. The back's card kind.
   select * into k from card_kinds x where x.key = fd.card;
   f.kind_play := k.play; f.kind_trap := k.trap; f.kind_stack := k.stack; f.kind_seeded := k.seeded;
+  f.kind_skim := k.skim is not null; f.kind_scores := k.scores_as;
   f.reach := coalesce(k.reaches[1], 'post');
   -- 3. The Act that met the back: its kind, character, thread, board and words, and the thread's first post and the announcements thread a board card would be written in. For a cast
   -- or a visit by_act is not a post, or not yet written, and these find what they find.
@@ -357,15 +358,22 @@ begin
   -- Each play found is asked whether an admin ended it, whatever card it is (card_ended is a read of its own, and the subquery cannot be flattened away, so it is made for every play found and not only
   -- for the ones of this back's card): which card is counted is chosen after the reads.
   select count(*) filter (where l.card is not distinct from fd.card and (l.ends is null or l.ends > now()) and not l.ended),
-         greatest(coalesce(max(l.layer) filter (where l.card is not distinct from fd.card), 0), count(*) filter (where l.card is not distinct from fd.card)) + 1
-    into f.up, f.layer
-  from (select k2.payload ->> 'card' as card, (k2.payload ->> 'ends')::timestamptz as ends, (k2.payload ->> 'layer')::integer as layer, card_ended(k2.id) as ended
+         greatest(coalesce(max(l.layer) filter (where l.card is not distinct from fd.card), 0), count(*) filter (where l.card is not distinct from fd.card)) + 1,
+         count(*) filter (where l.card is not distinct from fd.card and (l.ends is null or l.ends > now()) and not l.ended and l.quadrant is not distinct from (fd.config ->> 'quadrant'))
+    into f.up, f.layer, f.quadrant_up
+  from (select k2.payload ->> 'card' as card, (k2.payload ->> 'ends')::timestamptz as ends, (k2.payload ->> 'layer')::integer as layer, card_ended(k2.id) as ended,
+               k2.payload #>> '{config,quadrant}' as quadrant
         from acts k2 where k2.kind = 'card' and k2.target_act_id = by_act and not (k2.payload ? 'caught') and coalesce(k2.payload ->> 'reach', 'post') = 'post' offset 0) l;
+  f.quadrant_ok := (fd.config ->> 'quadrant') = any (array['excitedPositive', 'excitedNegative', 'calmPositive', 'boredNegative']);
+  -- The window a scored-as play would name, and whether the quoting character already has a class named for it: a play of any scored-as card made at or after the last settled window's end, not ended.
+  select w.opens, w.closes, w.why into f.window_opens, f.window_closes, f.window_why from scored_as_window(now()) w;
+  f.class_ok := exists (select 1 from class_kinds ck where ck.key = fd.config ->> 'class');
   select count(*) filter (where l.card = fd.card and not l.ended and l.character = f.by_character), count(*) filter (where l.card = fd.card and not l.ended and l.thread = f.by_thread),
-         count(*) filter (where l.card = fd.card and not l.ended and l.board = f.by_board)
-    into in_character, in_thread, in_board
-  from (select k2.payload ->> 'card' as card, r.character, r.thread, r.board, card_ended(r.play) as ended
-        from play_reach r join acts k2 on k2.id = r.play
+         count(*) filter (where l.card = fd.card and not l.ended and l.board = f.by_board),
+         count(*) filter (where l.scores and not l.ended and l.character = f.by_character and l.at >= (select max(x.ends_at) from settlements x)) > 0
+    into in_character, in_thread, in_board, f.class_taken
+  from (select k2.payload ->> 'card' as card, r.character, r.thread, r.board, card_ended(r.play) as ended, k2.created_at as at, coalesce(ck.scores_as, false) as scores
+        from play_reach r join acts k2 on k2.id = r.play left join card_kinds ck on ck.key = k2.payload ->> 'card'
         where r.ends_at > now() and (r.character = f.by_character or r.thread = f.by_thread or r.board = f.by_board) offset 0) l;
   f.reach_up := case f.reach when 'character' then in_character when 'thread' then in_thread else in_board end;
   -- 4b. Whether a live ward Gimmick on the Act turns the card away: place_cast turns a cast away by the same test (ward_refusal), and a Move does not land through it either.
@@ -1370,6 +1378,10 @@ begin atomic
   ), sh as materialized (
     select s.settlement, s.character, s.reason, s.act, s.quadrant, s.amount
     from my_ledger_shares s where s.settlement in (select x.settlement from lg x)
+  ), sa as materialized (
+    select s.settlement, s.character, s.named_class, s.play, s.card, s.starts_at, s.ends_at
+    from my_scored_as s where in_before is null or s.ends_at <= in_before
+    order by s.ends_at desc, s.settlement, s.character limit 200
   ), tn as materialized (
     select t.act, t.character, t.at, t.was from turns_announced t where t.character in (select m.id from mine m)
   ), named(id) as (
@@ -1434,6 +1446,7 @@ begin atomic
       'reports', coalesce((select jsonb_agg(to_jsonb(x) order by x.at desc, x.report) from rp x), '[]'::jsonb),
       'appeals', coalesce((select jsonb_agg(to_jsonb(x) order by x.at desc, x.appeal) from ap x), '[]'::jsonb)),
     'shares', coalesce((select jsonb_agg(to_jsonb(x) order by x.settlement desc, x.character, x.reason, x.act, x.quadrant) from sh x), '[]'::jsonb),
+    'scoredAs', coalesce((select jsonb_agg(to_jsonb(x) order by x.ends_at desc, x.settlement, x.character) from sa x), '[]'::jsonb),
     'acts', coalesce((select jsonb_agg(to_jsonb(a) order by a.created_at, a.id::text collate "C") from ac a), '[]'::jsonb),
     'states', coalesce((select jsonb_agg(to_jsonb(e) order by e.play::text collate "C") from (
       select s.play, s.state, s.saved_at from effect_state s where s.play in (select v.play from sv v)) e), '[]'::jsonb),
