@@ -109,7 +109,7 @@ export function rehearsalModels(o: RehearsalModelsOptions): RehearsalModels {
 
   const factory = ((env: Env, record: RecordModelCall, options: ModelOptions): Models => {
     /** One call: stub, a replay, or live through the real adapter with a counting writer of its own (so a concurrent call never reads another's row). */
-    async function run<T>(kind: 'chat' | 'complete', request: ChatRequest | CompletionRequest, model: string, doLive: (m: Models) => Promise<ModelResult<T>>, doStub: () => { result: ModelResult<T>; row: ModelCallRow } | { reject: AnswerRejected; row: ModelCallRow }): Promise<ModelResult<T>> {
+    async function run<T>(kind: 'chat' | 'complete', request: ChatRequest | CompletionRequest, model: string, doLive: (m: Models) => Promise<ModelResult<T>>, doStub: () => { result: ModelResult<T>; row: ModelCallRow } | { reject: AnswerRejected; row: ModelCallRow } | { fail: Error; row: ModelCallRow }): Promise<ModelResult<T>> {
       const key = callKey(kind, request, o.mode === 'stub' ? 'stub' : model, sha256);
       const keep = (extra: Pick<KeptCall, 'replayed' | 'trims' | 'cost'> & Partial<Pick<KeptCall, 'value' | 'error'>>): void => {
         calls.push({ at: now(), duty: request.duty, staff: request.staff ?? null, key, request, ...extra });
@@ -119,6 +119,10 @@ export function rehearsalModels(o: RehearsalModelsOptions): RehearsalModels {
       if (o.mode === 'stub') {
         const made = doStub();
         await record(made.row);
+        if ('fail' in made) {
+          keep({ replayed: false, error: { message: made.fail.message, predicate: 'failed' }, trims: [], cost: 0 });
+          throw made.fail;
+        }
         if ('reject' in made) {
           keep({ replayed: false, error: { message: made.reject.message, predicate: made.reject.predicate }, trims: made.row.trims as Trim[], cost: 0 });
           throw made.reject;
@@ -181,8 +185,9 @@ export function rehearsalModels(o: RehearsalModelsOptions): RehearsalModels {
       },
       complete(request: CompletionRequest): Promise<ModelResult<string>> {
         return run('complete', request, env('SYSTEM_COMPLETIONS_MODEL') ?? 'default', (m) => m.complete(request), () => ({
-          result: { value: '', usage: {}, provider: 'stub', model: 'stub', trims: [], retries: 0, costMicrodollars: 0 },
-          row: emptyRow(request.duty, request, {}),
+          // As production does with no completions server: the same error and a failed row, so the stock lines stand in.
+          fail: new Error('SYSTEM_COMPLETIONS_URL is not set'),
+          row: emptyRow(request.duty, request, { outcome: 'failed' }),
         }));
       },
     };

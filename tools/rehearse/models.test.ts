@@ -117,16 +117,15 @@ test('a rejection is saved, and a replay rethrows AnswerRejected with its predic
   assert.ok(again.made.calls[0]!.error);
 });
 
-test('stub never calls live: chat gets the least answer, complete an empty one, both priced at zero under provider stub', async () => {
+test('stub never calls live: chat gets the least answer, complete fails as production does with no completions server, both priced at zero under provider stub', async () => {
   const s = setup('stub', dir());
   const r = await s.m.chat(chat);
   assert.deepEqual(r.value, { words: 'stub' });
   assert.equal(r.provider, 'stub');
   assert.equal(r.costMicrodollars, 0);
-  const c = await s.m.complete(completion);
-  assert.equal(c.value, '');
+  await assert.rejects(() => s.m.complete(completion), (e: unknown) => e instanceof Error && !(e instanceof AnswerRejected) && e.message === 'SYSTEM_COMPLETIONS_URL is not set');
   assert.deepEqual(s.live.calls, []);
-  assert.deepEqual(s.rows.map((x) => [x.provider, x.costMicrodollars, x.outcome, x.predicate]), [['stub', 0, 'ok', null], ['stub', 0, 'ok', null]]);
+  assert.deepEqual(s.rows.map((x) => [x.provider, x.costMicrodollars, x.outcome, x.predicate]), [['stub', 0, 'ok', null], ['stub', 0, 'failed', null]]);
   assert.equal(s.made.cap.reached(), false);
 });
 
