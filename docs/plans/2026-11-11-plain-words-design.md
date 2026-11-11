@@ -86,7 +86,7 @@ repeats is the one kind a player can neither wait out nor fix.
 
 | Screen | Today | Decided |
 |---|---|---|
-| My characters, and the profile editor, after a failed read of the player's characters (#68) | "You have no characters yet." | "Your characters couldn't be loaded." with Try again |
+| A screen that draws the player's characters from the provider, after that read failed (#68; narrowed under "Where the design stops") | An empty list, read as "no characters" | "Your characters couldn't be loaded." with Try again |
 | The Reveal, Debut and Turn dialogs, when the change landed and the read after it failed (#183) | "…could not be sent. Check your connection and try again." | The dialog closes as done, and its done line adds "This page may be out of date until you reload it." |
 | The search box, after a failed suggestion read (#327) | "No suggestions" | "Suggestions couldn't be loaded." |
 | The shine tip's tilt choice, after a refused save (#270) | Reverts with no words | Shows the refusal |
@@ -100,16 +100,19 @@ and are not decided here.
 **A dropped visit (#316).** No code path lets an admin end a visit. The only writer of a visit's `reversed` outcome is
 the tick, when a visit has failed to file ten times and is dropped, yet the Lens, the mark and the visit's page say an
 admin ended it. The tick writes a new outcome, `dropped`, worded "could not be filed and was dropped", and `reversed`
-is kept for the admin's reversal #315 asks for. A `reversed` end an instance already holds, written by nobody (its
-Act has no admin's account), reads as dropped, so no Act is edited (CLAUDE.md, "Append-only").
+is kept for the admin's reversal #315 asks for. A `reversed` end an instance already holds that names no Act behind
+it (its `by_act` is null, as the tick wrote it) reads as dropped, so no Act is edited (CLAUDE.md, "Append-only").
 
 **Who heard an appeal (#371).** The log's ruling line on a group move names the office stamped on the move. Once the
 move's maker has left the staff, the current Boss hears the appeal, and the log names the wrong one. The read carries
-the office that ruled, and the line names it.
+the office that ruled, and the line names it. A ruling is stamped with its hearer's office from now on, as a move
+is; a ruling an instance already holds has no stamp, and its line names no hearer ("{name}'s {group} was upheld on
+appeal").
 
 **A ban's log line (#316).** "Your other characters are not banned" was unconditional. It becomes "The ban is on
-{name} only; each character has its own warn bar", a rule that is always true. A ban an appeal overturned or
-shortened says so, where today it says the ban "ended by itself".
+{name} only; each character has its own warn bar", a rule that is always true. A ban an appeal overturned,
+shortened or lengthened says so, where today it says the ban "ended by itself": the log's read swaps the ruled end in
+for the ban's own and carries no word of the ruling, so the read gains the verdict.
 
 **A group move's pronoun (#371).** "barred it from posting" uses the character's pronouns.
 
@@ -120,7 +123,9 @@ shortened says so, where today it says the ban "ended by itself".
 leaves the time out.
 
 **A face-down card's end in the Lens (#138, the sixth question).** The date comes from the compiled `setLasts`, so it
-drifts if an admin changes the setting. The read carries the end the server will act on.
+drifts if an admin changes the setting. The server stores each face-down card's end when it is set
+(`face_down.ends_at`), and the screens read that. The play form's line for a card about to be set reads the server's
+setting, not the compiled one.
 
 **The claim refusal (#191).** A player who reveals in the seconds before a run claims the window, and reveals again,
 is told the Turn takes effect at a settlement that then passes it over. The claim branch is skipped where the earlier
@@ -128,9 +133,6 @@ reveal already rules the Turn out.
 
 **The wallet's refusal (#352).** It states its amounts in orbs, as the machine's refusal beside it does, not in
 hundredths.
-
-**Reacting to a reveal (#5).** The refusal says a reveal can't be reacted to, where today it says there is no such
-Act.
 
 **The quiz's terms (#443).** "A wrong answer" becomes "An answer other than {the Mod}'s", since a Mod's answer key may
 be wrong on purpose and the glass may not call the right answer wrong.
@@ -205,6 +207,14 @@ chunks.
 What a suspended or banned account is told at sign-in (#5) is already decided in
 `docs/plans/2026-11-02-conduct-design.md` and is being built in PR #428.
 
+Reacting to a reveal (#5) was confirmed with the owner as a wording fix, and reading the code afterward showed it is
+already right: `react` says "there is no such Act" only for an id that names no Act. It is not in the plan.
+
+The failed read of a player's characters (#68) is narrower than the issue says. My characters and the profile editor
+now read their own route document, so a failed read there is a load-error screen. What remains is the player's
+provider, whose failed read is held as "loaded, with no characters"; the plan fixes that and the screens that draw
+from it.
+
 ## The layers
 
 Everything in sections 2 to 5 is engine: the kinds, the router, both error screens, the dialogs, the log's lines and
@@ -218,11 +228,10 @@ the SQL. The board's error page reads the instance's site name through the inter
 Nothing here is computed from a private fact (CLAUDE.md, "A response never proves a private fact").
 
 - The kinds of failure describe the device and the server, and are the same whoever asks and whatever they ask for.
-  "Refused" carries the server's words as it does today, and no refusal's words change here except the three named
-  in section 5, none of which depends on who owns anything.
+  "Refused" carries the server's words as it does today, and no refusal's words change here except the two named
+  in section 5 (the claim and the wallet), which a player gets only about their own character and their own wallet.
 - The log's changes read only rows the player's own log already reads. The office that ruled an appeal is public
   with the ruling.
-- The refusal for reacting to a reveal depends on the kind of the Act, which is public.
 - The sign-in door's words depend on the instance's registration mode, which is the same for every visitor.
 
 ## Ways out
@@ -232,6 +241,12 @@ final as `reversed` was. Each failure screen names its way on: Try again, Back t
 
 ## Open
 
+- **A fourth kind the session found while planning, with words the owner has not seen.** A load can also fail
+  because the page's own code threw, which is neither the connection nor the server. Calling it either would be
+  untrue, so the plan gives it its own lead on both screens: "Something went wrong while loading it. Nothing was
+  lost. Try again, and if it keeps happening, tell an admin." The owner reads it in this PR.
+- **The ban line's words for an appealed ban** ("An appeal overturned the ban on {date}", "An appeal shortened the
+  ban", "An appeal lengthened the ban") are the plan's drafts, for the owner to read in this PR.
 - Whether the board's error page should gain a separate server-error page in the style of a 2003 browser's
   "HTTP 500" was raised and left: the three paragraphs above sit under the one heading.
 - The words an admin's reversal of a visit will use wait on #315.
