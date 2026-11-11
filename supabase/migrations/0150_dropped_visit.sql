@@ -2,6 +2,7 @@
 --
 -- The tick ended a visit it gave up on as `reversed`, which reads as an admin's act. A fifth outcome, `dropped`, names it. Acts already written keep `reversed` with no `by_act`;
 -- no Act is edited, and the client reads that shape as dropped. A dropped visit frees its rule to be charged again, as a reversed one did.
+-- moves_log (0135 whole) reads a `reversed` end with no `by_act` as `dropped`, so a Mod's log does not say an admin ended a visit the tick dropped.
 -- acts_visit_payload and end_visit take the five outcomes; visit_charge_matches counts neither reversed nor dropped; system_tick (0140 whole) drops a visit at the ceiling as `dropped`.
 
 alter table acts drop constraint acts_visit_payload;
@@ -277,3 +278,50 @@ begin
   return jsonb_build_object('landed', landed, 'met', met, 'expired', expired, 'superseded', superseded, 'unmet', unmet, 'failed', failed, 'checked', checked, 'visits', filed, 'budget', out_of_time,
     'noThread', enabled and ann is null);
 end $$;
+
+-- ---- the log ----
+
+create or replace view moves_log as
+  select a.id, c.staff, a.payload ->> 'kind' as kind, a.payload -> 'params' as params, a.payload -> 'demand' as demand,
+         move_expires_at(a.id) as expires_at, a.thread, a.created_at as at,
+         e.payload ->> 'why' as ended_why, e.payload ->> 'by' as ended_by, e.created_at as ended_at,
+         k.staff as kept_by, k.at as kept_at
+  from characters c
+  cross join lateral (select x.* from acts x where x.character = c.id and x.kind = 'move') a
+  left join acts e on e.kind = 'move_end' and e.target_act_id = a.id
+  left join lateral (
+    select kc.staff, ka.created_at as at from acts ka join characters kc on kc.id = ka.character
+    where ka.kind = 'move_keep' and ka.target_act_id = a.id order by ka.created_at desc, ka.id desc limit 1
+  ) k on true
+  where c.staff is not null
+  union all
+  select v.id, c.staff, 'visit'::text, jsonb_build_object('post', p.seq, 'rule', v.payload #>> '{charges,0,rule}', 'rule_number', v.payload #> '{charges,0,rule_number}', 'band', v.payload #>> '{charges,0,band}', 'cause', v.payload #>> '{charges,0,cause}'),
+         null::jsonb, (v.payload ->> 'ends_at')::timestamptz, v.thread, v.created_at,
+         case when e.payload ->> 'outcome' = 'reversed' and e.payload ->> 'by_act' is null then 'dropped' else e.payload ->> 'outcome' end, null::text, e.created_at, null::text, null::timestamptz
+  from characters c
+  join acts v on v.character = c.id and v.kind = 'visit'
+  join acts p on p.id = v.target_act_id
+  left join acts e on e.kind = 'visit_end' and e.target_act_id = v.id
+  where c.staff is not null
+  union all
+  select d.id, c.staff, 'report'::text, jsonb_build_object('post', p.seq, 'verdict', d.payload ->> 'verdict'),
+         null::jsonb, null::timestamptz, d.thread, d.created_at,
+         d.payload ->> 'verdict', null::text, d.created_at, null::text, null::timestamptz
+  from characters c
+  join acts d on d.character = c.id and d.kind = 'report_verdict'
+  join acts r on r.id = d.target_act_id
+  join acts p on p.id = r.target_act_id
+  where c.staff is not null
+  union all
+  select u.id, c.staff, 'appeal'::text,
+         jsonb_build_object('post', (select x.seq from acts x where x.id = case when pu.kind = 'infraction' then (pu.payload ->> 'about_act')::uuid else (select (i.payload ->> 'about_act')::uuid from acts i where i.id = (pu.payload ->> 'infraction_act')::uuid) end),
+                            'punishment', pu.kind, 'verdict', u.payload ->> 'verdict', 'points_delta', u.payload -> 'points_delta')
+           || case when pu.kind = 'move' then jsonb_build_object('group', pu.payload #>> '{params,group}', 'until', u.payload ->> 'until') else '{}'::jsonb end,
+         null::jsonb, null::timestamptz, u.thread, u.created_at,
+         u.payload ->> 'verdict', null::text, u.created_at, null::text, null::timestamptz
+  from characters c
+  join acts u on u.character = c.id and u.kind = 'appeal_ruling'
+  join acts ap on ap.id = u.target_act_id
+  join acts pu on pu.id = ap.target_act_id
+  where c.staff is not null;
+grant select on moves_log to anon, authenticated;

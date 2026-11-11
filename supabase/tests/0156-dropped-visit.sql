@@ -161,3 +161,22 @@ begin
   got := start_visit(p, 'vs-m1', a);
   if got ->> 'visit' is null or (got ->> 'visit')::uuid = v then raise exception 'a dropped visit barred the rule from being charged again: %', got; end if;
 end $$;
+
+-- ---- 4. A Mod's log says dropped for an end the tick wrote before `dropped` existed (reversed, no by_act), and keeps reversed for one an Act ended ----
+do $$
+declare
+  c uuid := tests.character(pg_temp.ann(), 'Vs Old Shape');
+  t uuid := tests.thread('Old shape');
+  p1 uuid := pg_temp.say(c, t, 'SHOUTING, OLD SHAPE ONE');
+  p2 uuid := pg_temp.say(c, t, 'SHOUTING, OLD SHAPE TWO');
+  v1 uuid := pg_temp.visit_of(p1);
+  v2 uuid := pg_temp.visit_of(p2);
+begin
+  -- Written as an old tick wrote it: the writer flag is the guard end_visit sets, and the payload is the old shape.
+  perform set_config('kayfabb.visit_writer', 'on', true);
+  insert into acts (character, kind, thread, target_act_id, payload) values (null, 'visit_end', t, v1, jsonb_build_object('visit_act', v1, 'outcome', 'reversed', 'line', 'This visit could not be filed and was dropped.'));
+  insert into acts (character, kind, thread, target_act_id, payload) values (null, 'visit_end', t, v2, jsonb_build_object('visit_act', v2, 'outcome', 'reversed', 'by_act', p1, 'line', 'An admin ended it.'));
+  perform set_config('kayfabb.visit_writer', '', true);
+  if (select ended_why from moves_log where id = v1) is distinct from 'dropped' then raise exception 'the log did not read the old dropped shape as dropped: %', (select ended_why from moves_log where id = v1); end if;
+  if (select ended_why from moves_log where id = v2) is distinct from 'reversed' then raise exception 'the log did not keep reversed for an end with a by_act: %', (select ended_why from moves_log where id = v2); end if;
+end $$;
