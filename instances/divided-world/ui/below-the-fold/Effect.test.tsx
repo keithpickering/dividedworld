@@ -3,7 +3,7 @@
  * presses it. Read here: folded at mount, a press opens and a second folds, the keyboard presses the same button, the Lens is
  * told each state in the plan's words, a play's moment draws it folded and untouchable, and the effect clears its view when it goes.
  */
-import { act, cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import type { Act } from '../../../../engine/ui/data/api.ts';
@@ -129,6 +129,18 @@ describe('Below the Fold', () => {
       expect(bar()).not.toBeDisabled();
       unmount();
     }
+  });
+
+  test('a press on the bar is the bar\'s own: no pointer or touch start reaches the post body around it (Whoops! scrubs from the body)', () => {
+    const { container } = setup();
+    const reached = vi.fn();
+    for (const type of ['pointerdown', 'touchstart']) container.addEventListener(type, reached);
+    fireEvent.pointerDown(bar());
+    fireEvent.touchStart(bar());
+    expect(reached).not.toHaveBeenCalled();
+    /* The post's words inside the fold are not the bar: a press there still reaches the body, as it does on a post with no fold. */
+    fireEvent.pointerDown(screen.getByText('The words of the post.'));
+    expect(reached).toHaveBeenCalledTimes(1);
   });
 
   test('clears its view when it goes', () => {
