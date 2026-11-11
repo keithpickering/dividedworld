@@ -16,6 +16,7 @@ import { BbCode } from '../../../../engine/ui/bbcode/render.tsx';
 import * as loop from '../../../../engine/ui/shine/loop.ts';
 import { probe } from '../../../../engine/ui/shine/loop.ts';
 import css from './autocorrect.css?raw';
+import { piecesOf } from './tape.ts';
 import { renderInWorld } from '../../../../engine/ui/test-world.tsx';
 import { AutocorrectEffect, LENS } from './Effect.tsx';
 import { readRange } from '../../../../engine/ui/thread/SelectionQuote.tsx';
@@ -32,6 +33,13 @@ vi.mock('../../../../engine/ui/shine/loop.ts', async (original) => {
   return { ...real, register: vi.fn(real.register), unregister: vi.fn(real.unregister) };
 });
 const registrations = { register: vi.mocked(loop.register), unregister: vi.mocked(loop.unregister) };
+
+/* The tape's model as it is, with the strip-wide work counted: a peel in hand must not redo it for every strip on the post. */
+vi.mock('./tape.ts', async (original) => {
+  const real = await original<typeof import('./tape.ts')>();
+  return { ...real, piecesOf: vi.fn(real.piecesOf) };
+});
+const pieceWork = vi.mocked(piecesOf);
 
 const QUOTE = '[quote=0f8fad5b-d9cb-469f-a165-70867728950e]Mario in a quote[/quote]';
 const postOf = (body: string) => ({ id: 'post-1', character: 'author', kind: 'post', thread: 't', payload: { body }, currentPayload: { body }, targetActId: null, seq: 3, createdAt: '2026-11-03T10:00:00.000Z', editedAt: null, shownEditedAt: null }) as unknown as Act;
@@ -110,6 +118,7 @@ class FakeResize {
 const resize = () => act(() => { for (const r of resizes) r.cb(); });
 
 beforeEach(() => {
+  pieceWork.mockClear();
   registrations.register.mockClear();
   registrations.unregister.mockClear();
   phone = null;
@@ -634,6 +643,110 @@ describe('Autocorrect: the hands on a piece', () => {
     up(piece, 2);
   });
 
+  const rafSteps = () => vi.spyOn(globalThis, 'requestAnimationFrame');
+  const stepsOf = (spy: ReturnType<typeof rafSteps>) => spy.mock.calls.filter(([cb]) => (cb as { name?: string }).name === 'step').length;
+
+  test('a finished piece unmounts under a held pointer: the hand lets go, the next press works, and the loop stops', async () => {
+    vi.useFakeTimers();
+    phone = 40;
+    mount({ author: true, body: 'Mario' });
+    expect(pieces()).toHaveLength(2);
+    const first = pieces()[0]!;
+    down(first, 3);
+    await pass(PICK + 20);
+    for (let i = 0; i < 60; i++) { move(first, Math.min(49, 12 + i * 1.44)); await pass(16); }
+    expect(pieces()).toHaveLength(1);
+    const spy = rafSteps();
+    await pass(600);
+    expect(stepsOf(spy)).toBe(0);
+    /* The line break left a peel line, where no pick is needed: the press is taken at once (not prevented-not, i.e. prevented). */
+    expect(down(pieces()[0]!, 3, 2)).toBe(false);
+    await pass(200);
+    expect(stepsOf(spy)).toBeGreaterThan(0);
+  });
+
+  test('a pointerup or pointercancel anywhere in the window lets a held hand go', async () => {
+    vi.useFakeTimers();
+    mount({ author: true, body: 'Mario' });
+    const piece = pieces()[0]!;
+    down(piece, 3);
+    await pass(200);
+    expect(document.querySelector('.dw-ac-corner')).not.toBeNull();
+    fireEvent.pointerUp(window, { pointerId: 1 });
+    await pass(50);
+    expect(document.querySelector('.dw-ac-corner')).toBeNull();
+    down(piece, 3, 2);
+    await pass(200);
+    expect(document.querySelector('.dw-ac-corner')).not.toBeNull();
+    fireEvent.pointerCancel(window, { pointerId: 2 });
+    await pass(50);
+    expect(document.querySelector('.dw-ac-corner')).toBeNull();
+  });
+
+  test('a peek held still lets the loop rest, and a move wakes it', async () => {
+    vi.useFakeTimers();
+    mount({ body: 'Mario' });
+    const piece = pieces()[0]!;
+    down(piece, 2);
+    move(piece, 30);
+    await pass(100);
+    const spy = rafSteps();
+    await pass(500);
+    expect(stepsOf(spy)).toBe(0);
+    move(piece, 40);
+    await pass(40);
+    expect(stepsOf(spy)).toBeGreaterThan(0);
+    expect(Number.parseFloat(document.querySelector<HTMLElement>('.dw-ac-flap')!.style.width)).toBeCloseTo(40, 0);
+  });
+
+  test('pointer events land only on the tape still stuck and the grip at its ends: the peeled part leaves the post\'s link alone', () => {
+    mount({ body: 'Mario [url=https://x.example]a link[/url] now', plays: [playOf(1, 'mario', 'Luigi')], states: { k1: savedOf({ peeled: [], stuck: { 0: [[0.5, 1, 3]] } }) } });
+    const piece = pieces()[0]!;
+    const w = wide(piece);
+    expect(css).not.toMatch(/\.dw-ac-piece\[data-kb-ac-hand\]\s*\{[^}]*pointer-events:\s*auto/u);
+    expect(css).toMatch(/\.dw-ac-hit\s*\{[^}]*pointer-events:\s*auto/u);
+    const hits = [...piece.querySelectorAll<HTMLElement>('.dw-ac-hit')];
+    expect(hits).toHaveLength(1);
+    const left = Number.parseFloat(hits[0]!.style.left), right = left + Number.parseFloat(hits[0]!.style.width);
+    expect(left).toBeGreaterThan(5);
+    expect(left).toBeLessThanOrEqual(w / 2);
+    expect(left).toBeGreaterThanOrEqual(w / 2 - 20);
+    expect(right).toBeCloseTo(w, 0);
+    const link = document.querySelector('a')!;
+    expect(fireEvent.click(link)).toBe(true);
+  });
+
+  test('a press that is not taken (covered, or not at an end) is not prevented, and a covered one still says its line', async () => {
+    vi.useFakeTimers();
+    mount({ author: true, body: 'Mario Kart', plays: [playOf(1, 'mario kart', 'Wii Sports'), playOf(2, 'mario', 'Luigi')] });
+    const under = pieces().find((p) => p.getAttribute('data-kb-ac-piece') === 'k1:0')!;
+    expect(down(under, 3)).toBe(true);
+    expect(screen.getAllByRole('status').at(-1)).toHaveTextContent('Another strip is stuck over this one. That one comes off first.');
+    up(under);
+    document.body.innerHTML = '';
+    mount({ author: true, body: 'Mario', plays: [playOf(1, 'mario', 'Mr. Mario Mario')] });
+    const wideOne = pieces()[0]!;
+    expect(down(wideOne, wide(wideOne) / 2, 2)).toBe(true);
+    expect(down(wideOne, 3, 3)).toBe(false);
+  });
+
+  test('a peel in hand redoes only the strip in hand, not every strip on the post, and the Lens is not told every frame', async () => {
+    vi.useFakeTimers();
+    const m = mount({ author: true, body: Array.from({ length: 50 }, () => 'Mario').join(' ') });
+    expect(pieces()).toHaveLength(50);
+    const told = m.views.length;
+    pieceWork.mockClear();
+    const spy = rafSteps();
+    await hold(buttons()[0]!, PICK + 900);
+    const frames = stepsOf(spy);
+    expect(frames).toBeGreaterThan(40);
+    expect(pieceWork.mock.calls.length / frames).toBeLessThan(3);
+    expect(m.views.length - told).toBeLessThan(5);
+    letGo(buttons()[0]!);
+    await pass(100);
+    expect(last(m).progress).toBeGreaterThan(0);
+  });
+
   test('a saved stuck state from a desktop width loads at a phone width with the same shares stuck', () => {
     const body = 'Mario';
     const states = { k1: savedOf({ peeled: [], stuck: { 0: [[0.25, 0.9, 4]] } }) };
@@ -660,9 +773,9 @@ describe('Autocorrect: the hands on a piece', () => {
   });
 
   test('the pieces take no selection, no long-press menu, and leave the vertical pan to the page', () => {
-    expect(css).toMatch(/\.dw-ac-piece\[data-kb-ac-hand\]\s*\{[^}]*touch-action:\s*pan-y/u);
-    expect(css).toMatch(/\.dw-ac-piece\[data-kb-ac-hand\]\s*\{[^}]*user-select:\s*none/u);
-    expect(css).toMatch(/\.dw-ac-piece\[data-kb-ac-hand\]\s*\{[^}]*-webkit-touch-callout:\s*none/u);
+    expect(css).toMatch(/\.dw-ac-hit\s*\{[^}]*touch-action:\s*pan-y/u);
+    expect(css).toMatch(/\.dw-ac-hit\s*\{[^}]*user-select:\s*none/u);
+    expect(css).toMatch(/\.dw-ac-hit\s*\{[^}]*-webkit-touch-callout:\s*none/u);
   });
 
   test('a peel in hand redraws only its own pieces: the residue host is registered once and no film is built again', async () => {

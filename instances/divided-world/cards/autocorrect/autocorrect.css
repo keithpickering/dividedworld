@@ -38,11 +38,15 @@
   filter: drop-shadow(0 1px 1px rgb(0 0 0 / 0.3));
 }
 /*
- * The hands (hands.ts): a piece takes a pointer. A pick held on a strip must not start a text selection or the long-press menu
+ * The hands (hands.ts): the tape still stuck takes a pointer, with a grip at its ends (`.dw-ac-hit`, one for each stuck stretch); the
+ * piece itself and the peeled part take none, so the post's words and links under them are left alone. A pick held on a strip must not start a text selection or the long-press menu
  * (iOS Safari), and a vertical swipe must still scroll the page while a sideways drag is the piece's own: `pan-y` leaves the
  * vertical pan to the browser, which cancels the pointer when it takes it, and hands every sideways move to the peek or the pull.
  */
-.dw-ac-piece[data-kb-ac-hand] {
+.dw-ac-hit {
+  position: absolute;
+  top: 0;
+  bottom: 0;
   pointer-events: auto;
   cursor: grab;
   touch-action: pan-y;

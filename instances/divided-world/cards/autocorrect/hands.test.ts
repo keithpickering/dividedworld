@@ -150,7 +150,7 @@ test('a strip of two pieces is off only once both are', () => {
   h.release(1);
   const first = h.drain();
   assert.equal(first.filter((e) => e.kind === 'off').length, 0);
-  assert.deepEqual(h.sharesOf('s:0'), [[0.5, 1, 6]], 'what is left starts where the line broke: a pick is needed there');
+  assert.deepEqual(h.sharesOf('s:0'), [[0.5, 1, 3]], 'what is left starts where the line broke: a peel line, never a tear');
   h.press('s:0:1', 3, 1);
   run(h, 450);
   follow(h, 800, 10, 's:0:1');
@@ -277,9 +277,45 @@ test('a reader\'s held key lifts one piece\'s width every 0.45 seconds', () => {
   assert.equal(h.view('a:0').lift, null);
 });
 
-test('shares go back through fromPieces: clamped, rounded to four places, and a cut edge kind 0 away from the ends becomes a tear', () => {
+test('shares go back through fromPieces: clamped, rounded to four places, and a cut edge kind 0 away from the ends becomes a peel line', () => {
   const h = make([piece({ id: 's:0:0', w: 100, stuck: [[0, 100, 0]] }), piece({ id: 's:0:1', index: 1, w: 100, stuck: [[0, 100, 0]] })]);
   assert.deepEqual(h.sharesOf('s:0'), [[0, 1, 0]]);
   h.sync([piece({ id: 's:0:0', w: 100, stuck: [[33.333333, 100, 3]] }), piece({ id: 's:0:1', index: 1, w: 100, stuck: [[0, 100.0000001, 0]] })]);
   assert.deepEqual(h.sharesOf('s:0'), [[0.1667, 1, 3]]);
+});
+
+test('a start that rounds to just under the last stretch\'s end moves up to it; the stretch is dropped only if that leaves nothing', () => {
+  const h = make([piece({ id: 's:0:0', w: 100, stuck: [[0, 20.02, 0], [20.0, 100, 0]] }), piece({ id: 's:0:1', index: 1, w: 100, stuck: [] })]);
+  assert.deepEqual(h.sharesOf('s:0'), [[0, 0.1001, 1], [0.1001, 0.5, 4]]);
+  const gone = make([piece({ id: 's:0:0', w: 100, stuck: [[0, 20.02, 0], [20.0, 20.01, 0]] }), piece({ id: 's:0:1', index: 1, w: 100, stuck: [] })]);
+  assert.equal(gone.sharesOf('s:0').length, 1);
+});
+
+test('a peel that finishes its piece with the pointer still down lets that hand go: the next press works and the loop is idle', () => {
+  const h = make([piece({ w: 60, stuck: [[0, 60, 0]] }), piece({ id: 's:0:1', index: 1, w: 60, stuck: [[0, 60, 0]] })]);
+  h.press('s:0:0', 3, 1);
+  run(h, 450);
+  follow(h, 1200);
+  assert.deepEqual(h.view('s:0:0').stuck, []);
+  assert.equal(h.busy(), false);
+  assert.equal(h.press('s:0:1', 3, 2), 'picking');
+});
+
+test('a held pointer with nothing to do lets the loop rest, and a move wakes it: after a tear, and a peek held still', () => {
+  const t = make([piece({ w: 400, stuck: [[0, 400, 0]] })]);
+  t.press('s:0:0', 3, 1);
+  run(t, 450);
+  t.move(1, 300);
+  run(t, 2500);
+  assert.equal(events(t, 'torn').length, 1);
+  assert.equal(t.busy(), false, 'torn, hand still down');
+  const p = make(chain(), false);
+  p.press('a:0', 0, 1);
+  p.move(1, 50);
+  run(p, 32);
+  assert.equal(p.busy(), false, 'held still');
+  p.move(1, 60);
+  assert.equal(p.busy(), true, 'a move wakes it');
+  run(p, 32);
+  assert.equal(p.view('a:0').lift!.lift, 60);
 });

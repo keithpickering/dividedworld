@@ -16,10 +16,10 @@
  *   reduced motion. Pressing any piece of a chain still up picks the pull up where it is. A held key lifts a piece's width every 0.45
  *   seconds. A peek changes no stuck model, so nothing a reader does is ever reported as a change.
  * - **Shares.** `sharesOf` gives a strip's stuck model back as the card's saved stretches (`fromPieces`), clamped, rounded to four
- *   places, with no empty stretch; an edge that was a line break and is no longer joined to its other half becomes a tear.
+ *   places, with no empty stretch; an edge that was a line break and is no longer joined to its other half becomes a peel line.
  */
 import type { Stretch } from '../autocorrect.ts';
-import { fromPieces, liftsOf, peelStep, rollDiameter, settle } from './tape.ts';
+import { fromPieces, liftsOf, peelStep, settle } from './tape.ts';
 
 export interface HandSettings {
   /** The peel line's fastest speed, px a second. */
@@ -81,12 +81,12 @@ export interface PieceView {
   readonly lift: { readonly side: Side; readonly lift: number; readonly fold: number } | null;
 }
 
-interface Piece { spec: PieceSpec; stuck: Stretch[]; rev: number; cache: { rev: number; lift: number; view: PieceView } | null }
+interface Piece { spec: PieceSpec; stuck: Stretch[]; rev: number; cache: { rev: number; view: PieceView } | null }
 /** The one pointer down. `carrier` is set for a peek. */
 interface Hand { readonly pointer: number | string; readonly piece: string; x: number; readonly x0: number; readonly carrier: string | null }
 /** A peel in hand: `pick` is the ms held so far, or null once the pick is up. */
 interface Work { readonly piece: string; readonly k: number; readonly side: Side; pick: number | null; rolled: number; strain: number }
-interface Peek { readonly carrier: string; readonly side: Side; pull: number; base: number; since: number | null; key: boolean }
+interface Peek { readonly carrier: string; readonly side: Side; pull: number; base: number; since: number | null; key: boolean; dirty: boolean }
 
 /** Peeling this close to the end of a stretch finishes it, as the bench does. */
 const FINISHED = 1.5;
@@ -129,9 +129,11 @@ export class Hands {
     this.settings = settings;
   }
 
-  /** Whether anything wants a tick: a pick or peel in hand, a peek held or laying down. */
+  /** Whether anything wants a tick: a pick or peel in hand, a peek being pulled, held by a key or laying down. A pointer held still with nothing to do does not. */
   busy(): boolean {
-    return this.work !== null || this.peeks.size > 0 || this.hand !== null || this.key !== null;
+    if (this.work) return true;
+    for (const pk of this.peeks.values()) if (pk.key || pk.since !== null || pk.dirty) return true;
+    return false;
   }
 
   /** Takes the pieces as the screen has them. A piece in hand keeps its own model until it is let go; every other piece takes the spec's. True when a piece appeared, went or took a different model: its drawing is stale. */
@@ -141,6 +143,7 @@ export class Hands {
     for (const spec of specs) {
       seen.add(spec.id);
       const own = this.pieces.get(spec.id);
+      if (own?.spec === spec) continue;
       if (!own) { this.pieces.set(spec.id, { spec, stuck: spec.stuck.map((s) => [s[0], s[1], s[2]] as const), rev: 0, cache: null }); changed = true; continue; }
       const resized = Math.abs(own.spec.w - spec.w) > 0.5 || Math.abs(own.spec.h - spec.h) > 0.5;
       const engaged = this.work?.piece === spec.id || this.hand?.piece === spec.id;
@@ -220,6 +223,7 @@ export class Hands {
     for (const pk of this.peeks.values()) {
       if (pk.pull > 0 && this.chainOf(pk.carrier).includes(p.spec.id)) {
         pk.since = null;
+        pk.dirty = true;
         this.hand = { pointer, piece: p.spec.id, x, x0: x, carrier: pk.carrier };
         pk.base = pk.pull;
         return 'peeking';
@@ -228,13 +232,16 @@ export class Hands {
     if (!p.spec.open) { this.out.push({ kind: 'covered', piece: p.spec.id }); return 'covered'; }
     const side: Side = x < p.spec.w / 2 ? 'a' : 'b';
     const edge = side === 'a' ? (p.stuck[0]?.[0] ?? 0) : (p.stuck[p.stuck.length - 1]?.[1] ?? p.spec.w);
-    this.peeks.set(p.spec.id, { carrier: p.spec.id, side, pull: 0, base: Math.max(0, side === 'a' ? x - edge : edge - x), since: null, key: false });
+    this.peeks.set(p.spec.id, { carrier: p.spec.id, side, pull: 0, base: Math.max(0, side === 'a' ? x - edge : edge - x), since: null, key: false, dirty: true });
     this.hand = { pointer, piece: p.spec.id, x, x0: x, carrier: p.spec.id };
     return 'peeking';
   }
 
   move(pointer: number | string, x: number): void {
-    if (this.hand && this.hand.pointer === pointer) this.hand.x = x;
+    if (!this.hand || this.hand.pointer !== pointer) return;
+    this.hand.x = x;
+    const pk = this.hand.carrier ? this.peeks.get(this.hand.carrier) : undefined;
+    if (pk) pk.dirty = true;
   }
 
   release(pointer: number | string): void {
@@ -267,7 +274,7 @@ export class Hands {
       if (!first) return false;
       const up = [...this.peeks.values()].find((pk) => pk.pull > 0 && this.chainOf(pk.carrier).includes(first.spec.id));
       if (!up && !first.spec.open) { this.out.push({ kind: 'covered', piece: first.spec.id }); return false; }
-      const pk = up ?? { carrier: first.spec.id, side: 'a' as Side, pull: 0, base: 0, since: null, key: true };
+      const pk = up ?? { carrier: first.spec.id, side: 'a' as Side, pull: 0, base: 0, since: null, key: true, dirty: true };
       pk.since = null;
       pk.base = pk.pull;
       pk.key = true;
@@ -303,6 +310,8 @@ export class Hands {
   /** `ms` of time goes by. */
   tick(ms: number): void {
     const dt = ms / 1000;
+    /* A hand whose piece has nothing left to hold lets go: its piece may be gone from the page, and no pointerup would come. */
+    if (this.hand && !this.hand.carrier && !this.work && (this.pieces.get(this.hand.piece)?.stuck.length ?? 0) === 0) this.hand = null;
     if (this.work) this.stepWork(ms, dt);
     for (const pk of [...this.peeks.values()]) this.stepPeek(pk, ms, dt);
     this.refreshLifts();
@@ -332,6 +341,7 @@ export class Hands {
       p.stuck.splice(w.k, 1);
       this.out.push({ kind: 'drop', piece: p.spec.id, x: at, side: w.side, rolled: w.rolled });
       this.work = null;
+      if (p.stuck.length === 0 && this.hand?.piece === p.spec.id) this.hand = null;
       this.bump(p);
       if (![...this.pieces.values()].some((q) => q.spec.strip === p.spec.strip && q.stuck.length > 0)) {
         /* The strip is off: a key still held does not go on to the next strip, which is another layer and its own peel. */
@@ -355,7 +365,7 @@ export class Hands {
     const p = this.pieces.get(pk.carrier);
     if (!p) { this.peeks.delete(pk.carrier); return; }
     const total = this.chainOf(pk.carrier).reduce((t, id) => t + (this.pieces.get(id)?.spec.w ?? 0), 0);
-    if (this.hand?.carrier === pk.carrier) pk.pull = Math.max(0, pk.base + (this.hand.x - this.hand.x0) * (pk.side === 'a' ? 1 : -1));
+    if (this.hand?.carrier === pk.carrier) { pk.pull = Math.max(0, pk.base + (this.hand.x - this.hand.x0) * (pk.side === 'a' ? 1 : -1)); pk.dirty = false; }
     else if (pk.key) pk.pull += (p.spec.w / KEY_PEEK_SECONDS) * dt;
     else if (pk.since !== null) {
       if (this.settings.reduced) {
@@ -403,6 +413,7 @@ export class Hands {
       for (const side of ['a', 'b'] as const) {
         if ((side === 'a' ? startKind(s) : endKind(s)) !== 1) continue;
         const live = w !== null && w.pick === null && w.k === k && w.side === side;
+        if (!live && this.waited(p, k, side) < 0.5) continue;
         rolls.push({ x: side === 'a' ? s[0] : s[1], side, rolled: live ? w.rolled : this.waited(p, k, side), live });
       }
     });
@@ -419,13 +430,8 @@ export class Hands {
       corner: w && w.pick !== null ? { side: w.side, at: edge, t: Math.min(1, w.pick / Math.max(1, this.settings.pickMs)) } : null,
       lift: lifted ? { side: lifted.side, lift: lifted.lift, fold: lifted.side === 'a' ? first + lifted.lift : last - lifted.lift } : null,
     };
-    p.cache = { rev: p.rev, lift: lifted?.lift ?? 0, view };
+    p.cache = { rev: p.rev, view };
     return view;
-  }
-
-  /** The diameter a roll of `rolled` px has. */
-  static diameter(rolled: number): number {
-    return rollDiameter(rolled);
   }
 
   /** A strip's stuck model as the card saves it: shares from 0 to 1, rounded to four places, none empty, each edge a kind the card accepts. */
@@ -435,13 +441,13 @@ export class Hands {
     const joined = fromPieces(mine.map((p) => p.stuck), widths);
     const out: Stretch[] = [];
     for (const [from, to, edges] of joined) {
-      const a = round4(clamp01(from)), b = round4(clamp01(to));
-      if (!(a < b)) continue;
       const prev = out[out.length - 1];
-      if (prev && a < prev[1]) continue;
-      /* A line break that no longer joins to its other half is a place a hand has to pick: a tear is the only edge that says so. */
-      const start = Math.floor(edges / 3) === 0 && a !== 0 ? 2 : Math.floor(edges / 3);
-      const end = edges % 3 === 0 && b !== 1 ? 2 : edges % 3;
+      /* Rounding may leave a start a hair under the last end: it moves up to it, and only a stretch that leaves nothing is dropped. */
+      const a = Math.max(round4(clamp01(from)), prev ? prev[1] : 0), b = round4(clamp01(to));
+      if (!(a < b)) continue;
+      /* A line break that no longer joins to its other half is a peel line, where a roll waits and no pick is needed: never a tear. */
+      const start = Math.floor(edges / 3) === 0 && a !== 0 ? 1 : Math.floor(edges / 3);
+      const end = edges % 3 === 0 && b !== 1 ? 1 : edges % 3;
       out.push([a, b, start * 3 + end]);
     }
     return out;

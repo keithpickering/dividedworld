@@ -180,6 +180,7 @@ const tearsOf = (stuck: readonly Stretch[], w: number): number[] => stuck.flatMa
 const isWhole = (stuck: readonly Stretch[]) => stuck.length === 1 && stuck[0]![0] === 0 && stuck[0]![1] === 1;
 
 /** A piece with nothing in hand: no rolls, no strain, no corner, no flap. */
+const NONE: readonly Stretch[] = [];
 const IDLE: PieceView = { stuck: [], shown: [], rolls: [], strain: null, corner: null, lift: null };
 
 interface AnchorProps {
@@ -229,6 +230,7 @@ interface PieceProps {
   readonly fontPx: number;
   readonly pad: number;
   /** The mask over what is stuck (less what a peek has lifted), and the ragged outline where an end is torn. */
+  readonly own: readonly Stretch[];
   readonly mask: string | undefined;
   readonly clip: string | undefined;
   /** The stuck stretches in local pixels, for anyone reading the page. */
@@ -248,7 +250,7 @@ interface PieceProps {
  * as an end is picked, and a peek's flap hinged at the fold, turned up in perspective with its sticky side showing. The tape's
  * body takes the mask; the roll, the corner and the flap sit beside it so the mask never clips them.
  */
-const Piece = memo(function Piece({ strip, index, box, words, fontPx, pad, mask, clip, stuck, focused, view, shake, still, onDown, onMove, onUp }: PieceProps) {
+const Piece = memo(function Piece({ strip, index, box, words, fontPx, pad, own, mask, clip, stuck, focused, view, shake, still, onDown, onMove, onUp }: PieceProps) {
   const div = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const tilt = useMemo(() => ((seeded(strip.key)() - 0.5) * 2.4).toFixed(2), [strip.key]);
@@ -290,11 +292,16 @@ const Piece = memo(function Piece({ strip, index, box, words, fontPx, pad, mask,
     onContextMenu: (e: { preventDefault: () => void }) => e.preventDefault(),
   };
   return (
-    <div ref={div} className="dw-ac-piece" style={style} data-kb-ac-piece={strip.key} data-kb-ac-line={index} data-kb-ac-stuck={stuck} data-kb-focus={focused ? 'true' : undefined} data-kb-ac-hand={still ? undefined : ''} {...handlers}>
+    <div ref={div} className="dw-ac-piece" style={style} data-kb-ac-piece={strip.key} data-kb-ac-line={index} data-kb-ac-stuck={stuck} data-kb-focus={focused ? 'true' : undefined} {...handlers}>
       <div className="dw-ac-body" style={body} data-tension={strain ? '' : undefined}>
         <canvas ref={canvas} className="dw-ac-paper" style={{ width: box.w, height: box.h }} />
         {words ? <span className="dw-ac-ink" style={{ fontSize: fontPx, left: pad }}>{words}</span> : null}
       </div>
+      {still ? null : own.map(([lo, hi], k) => {
+        /* Only the tape still stuck, and the grip at its ends, takes a pointer: the peeled part leaves the post's words and links alone. */
+        const grip = Math.max(16, 0.9 * box.h), left = Math.max(0, lo - grip), right = Math.min(box.w, hi + grip);
+        return <div key={k} className="dw-ac-hit" data-kb-ac-hit="" style={{ left, width: right - left }} />;
+      })}
       {view.rolls.map((r) => {
         const d = rollDiameter(r.rolled);
         const shaking = r.live && shake && strain !== null && strain.amount > 0.15;
@@ -331,6 +338,19 @@ interface Region {
   readonly peeled: readonly [number, number][];
   readonly cut: readonly Box[];
   readonly tears: readonly number[];
+}
+
+/** One piece of a strip as drawn: its stuck stretches in local pixels, their mask and torn outline, and the attribute that says them. */
+interface DrawnPiece { readonly own: readonly Stretch[]; readonly mask: string | undefined; readonly clip: string | undefined; readonly attr: string }
+/** What a strip's drawing and hands need, made for one set of stretches, one layout and one set of live strips. */
+interface Drawn {
+  readonly src: readonly Stretch[];
+  readonly laid: Layout;
+  readonly live: readonly TapeStrip[];
+  readonly still: boolean;
+  readonly pieces: readonly DrawnPiece[];
+  readonly regions: readonly Region[];
+  readonly specs: readonly PieceSpec[];
 }
 
 /** One scratch canvas the films are colored on. */
@@ -430,30 +450,50 @@ function Residue({ regions, span, width, host, still }: ResidueProps) {
     let density = Math.min(2, window.devicePixelRatio || 1);
     if (area * density * density > MOST_RESIDUE_PIXELS) density = Math.max(0.5, Math.sqrt(MOST_RESIDUE_PIXELS / area));
     const size = () => { cv.width = Math.ceil(width * density); cv.height = Math.ceil(height * density); };
-    const paint = (light: Light) => {
-      if (cv.width !== Math.ceil(width * density)) size();
+    /* What was painted last, by region: a draw asked for by a change in what is peeled repaints only the regions that changed. */
+    let painted = new Map<string, Region>();
+    let pending = false;
+    const meets = (a: Box, b: Box) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+    const paint = (light: Light, onlyChanged: boolean) => {
+      if (cv.width !== Math.ceil(width * density)) { size(); painted = new Map(); }
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.globalAlpha = 1;
-      ctx.clearRect(0, 0, cv.width, cv.height);
+      const now = current.current;
+      let todo: readonly Region[] = now;
+      let clip: Box[] | null = null;
+      if (onlyChanged && painted.size) {
+        const keys = new Set(now.map((r) => r.key));
+        clip = [...now.filter((r) => painted.get(r.key) !== r), ...[...painted.values()].filter((r) => !keys.has(r.key))].map((r) => r.box);
+        todo = now.filter((r) => clip!.some((b) => meets(b, r.box)));
+      } else ctx.clearRect(0, 0, cv.width, cv.height);
       ctx.setTransform(density, 0, 0, density, 0, 0);
-      if (!band) return;
-      const ink = residueInk(band, light);
-      for (const r of current.current) {
-        const id = `${r.key}|${r.box.w}|${r.box.h}|${JSON.stringify(r.cut)}`;
-        if (!films.has(id)) films.set(id, buildFilm(r));
-        const film = films.get(id);
-        if (!film) continue;
-        lay(ctx, film, ink.tint, 1, r, top);
-        lay(ctx, film, ink.gloss, GLOSS_ALPHA, r, top);
-        layFibers(ctx, r, top, ink.gloss);
+      painted = new Map(now.map((r) => [r.key, r]));
+      if (clip) {
+        ctx.save();
+        ctx.beginPath();
+        for (const b of clip) { ctx.clearRect(b.x, b.y - top, b.w, b.h); ctx.rect(b.x, b.y - top, b.w, b.h); }
+        ctx.clip();
       }
+      if (band) {
+        const ink = residueInk(band, light);
+        for (const r of todo) {
+          const id = `${r.key}|${r.box.w}|${r.box.h}|${JSON.stringify(r.cut)}`;
+          if (!films.has(id)) films.set(id, buildFilm(r));
+          const film = films.get(id);
+          if (!film) continue;
+          lay(ctx, film, ink.tint, 1, r, top);
+          lay(ctx, film, ink.gloss, GLOSS_ALPHA, r, top);
+          layFibers(ctx, r, top, ink.gloss);
+        }
+      }
+      if (clip) ctx.restore();
       ctx.globalAlpha = 1;
     };
-    if (still) { size(); paint(REST); redraw.current = () => paint(REST); return () => { redraw.current = null; films.clear(); }; }
+    if (still) { size(); paint(REST, false); redraw.current = () => paint(REST, false); return () => { redraw.current = null; films.clear(); }; }
     const me = token.current;
-    density = register(me, cv, { w: width, h: height }, density, (frame) => { paint(frame.light); return false; }, { quiet: true, share: 0.5, hidden: () => { films.clear(); cv.width = 0; cv.height = 0; } });
+    density = register(me, cv, { w: width, h: height }, density, (frame) => { paint(frame.light, pending && !frame.moved && !frame.idle); pending = false; return false; }, { quiet: true, share: 0.5, hidden: () => { films.clear(); painted = new Map(); cv.width = 0; cv.height = 0; } });
     size();
-    redraw.current = () => wake(me);
+    redraw.current = () => { pending = true; wake(me); };
     const board = typeof MutationObserver === 'function' ? new MutationObserver(() => { band = readBand(); wake(me); }) : null;
     board?.observe(document.documentElement, { attributes: true, attributeFilter: ['data-kb-mode', 'data-kb-effects'] });
     return () => { redraw.current = null; board?.disconnect(); unregister(me); films.clear(); };
@@ -491,17 +531,19 @@ export function AutocorrectEffect({ post, plays, states, reader, still, save, sh
   /* What was peeled before this load keeps no room (design section 1); what is peeled during the visit keeps its footprint until the next. */
   const [loaded] = useState<ReadonlySet<string>>(() => new Set(configs.flatMap((c) => savedOf(states[c.id]?.state).peeled.map((i) => `${c.id}:${i}`))));
 
-  /* Each strip's stretches still stuck: the author's change on its way if there is one, else the saved ones, the whole strip if untouched. */
-  const stuckBy = useMemo(() => {
+  /* Each strip's saved stretches still stuck, the whole strip if untouched: made when the saved state changes, never per frame. */
+  const savedStuck = useMemo(() => {
     const out = new Map<string, readonly Stretch[]>();
     for (const c of configs) {
       const saved = savedOf(states[c.id]?.state);
-      for (const s of strips) if (s.play === c.id) out.set(s.key, local[c.id]?.[s.index] ?? stuckOf(saved, s.index));
+      for (const s of strips) if (s.play === c.id) out.set(s.key, stuckOf(saved, s.index));
     }
     return out;
-  }, [configs, states, local, strips]);
-  /* The strips with tape left, by key, so a peel in hand (which changes `stuckBy` every frame) does not change what is live. */
-  const liveKey = strips.filter((s) => (stuckBy.get(s.key)?.length ?? 0) > 0).map((s) => s.key).join('|');
+  }, [configs, states, strips]);
+  /* A strip's stretches still stuck: the author's change on its way if there is one, else the saved ones. The array is the same while the strip is. */
+  const stuckFor = (s: TapeStrip): readonly Stretch[] => local[s.play]?.[s.index] ?? savedStuck.get(s.key) ?? NONE;
+  /* The strips with tape left, by key, so a peel in hand (which changes a strip's stretches every frame) does not change what is live. */
+  const liveKey = strips.filter((s) => stuckFor(s).length > 0).map((s) => s.key).join('|');
   const live = useMemo(() => { const keys = new Set(liveKey ? liveKey.split('|') : []); return strips.filter((s) => keys.has(s.key)); }, [strips, liveKey]);
   const liveKeys = useMemo(() => new Set(live.map((s) => s.key)), [live]);
 
@@ -684,20 +726,36 @@ export function AutocorrectEffect({ post, plays, states, reader, still, save, sh
     if (down) { onMeet(); hs.keyDown(strip.key); } else hs.keyUp();
     after(hs);
   }, [handsNow, onMeet, after]);
-  /* The pointer's place on a piece, in the piece's own pixels. */
-  const placeOf = (e: PointerEvent<HTMLElement>) => e.clientX - e.currentTarget.getBoundingClientRect().left;
+  /* The pointer's place on a piece, in the piece's own pixels: from its untilted box (offsetLeft ignores the tilt), not the rotated rect. */
+  const placeOf = (e: PointerEvent<HTMLElement>) => e.clientX - ((e.currentTarget.offsetParent?.getBoundingClientRect().left ?? 0) + e.currentTarget.offsetLeft);
+  /* While a hand is held, a pointerup or pointercancel anywhere lets it go: its piece may be gone from the page, and no event would come to it. */
+  const onWindow = useRef<(() => void) | null>(null);
+  useEffect(() => () => onWindow.current?.(), []);
   const onDown = useCallback<PieceHandler>((e, id) => {
     if ((e.pointerType === 'mouse' && e.button !== 0) || e.isPrimary === false) return;
-    e.preventDefault();
     const hs = handsNow();
     onMeet();
     const did = hs.press(id, placeOf(e), e.pointerId ?? 0);
-    if (did !== 'none' && did !== 'busy' && did !== 'covered') {
+    if (did === 'picking' || did === 'peeling' || did === 'peeking') {
+      /* Only a press that is taken stops the page's own selection and drag: a press that is not leaves the words and links alone. */
+      e.preventDefault();
       try { e.currentTarget.setPointerCapture?.(e.pointerId); } catch { /* A pointer already gone has nothing to capture. */ }
+      onWindow.current?.();
+      const out = (ev: Event) => { hs.release((ev as { pointerId?: number }).pointerId ?? 0); after(hs); };
+      const stop = () => { window.removeEventListener('pointerup', out); window.removeEventListener('pointercancel', out); onWindow.current = null; };
+      window.addEventListener('pointerup', out);
+      window.addEventListener('pointercancel', out);
+      onWindow.current = stop;
     }
     after(hs);
   }, [handsNow, onMeet, after]);
-  const onMove = useCallback<PieceHandler>((e) => { hands.current?.move(e.pointerId ?? 0, placeOf(e)); }, []);
+  const onMove = useCallback<PieceHandler>((e) => {
+    const hs = hands.current;
+    if (!hs) return;
+    hs.move(e.pointerId ?? 0, placeOf(e));
+    /* A hand held still lets the loop rest; a move wakes it. */
+    if (hs.busy()) run();
+  }, [run]);
   const onUp = useCallback<PieceHandler>((e) => {
     const hs = hands.current;
     if (!hs) return;
@@ -824,27 +882,57 @@ export function AutocorrectEffect({ post, plays, states, reader, still, save, sh
     });
   }), [stacks, liveKeys, live, rooms, reader.author, still, onKey]);
 
-  /* The eye: each live strip's pieces, and the residue of what is peeled, cut where a lower strip lay under it. */
-  const regions = useMemo<Region[]>(() => {
-    if (!laid) return [];
-    const out: Region[] = [];
-    for (const s of strips) {
-      const at = laid.strips[s.key];
-      if (!at) continue;
-      const stuck = piecesOf(stuckBy.get(s.key) ?? [[0, 1, 0]], at.boxes.map((b) => b.w));
-      const under = strips.filter((q) => q.z < s.z).flatMap((q) => laid.strips[q.key]?.boxes ?? []);
-      at.boxes.forEach((b, i) => {
-        const peeled = peeledOf(stuck[i] ?? [], b.w);
-        if (!peeled.length) return;
-        const cut = under.flatMap((q): Box[] => {
+  /*
+   * What a strip's drawing and hands need of its stretches, made once for the stretches it has (by identity) and this layout, so a
+   * peel or a peek in hand redoes only the strip in hand and not every strip on the post: its stretches in each piece's pixels, its
+   * masks and torn outline, the residue regions with what lay on a lower strip cut out, and the pieces as the hands take them, with
+   * what lies over them and what lies under them on their lines (only within the strip's own stack, where strips overlap).
+   */
+  const stackOf = useMemo(() => new Map(stacks.flatMap((st) => st.map((q): [string, readonly TapeStrip[]] => [q.key, st]))), [stacks]);
+  const drawn = useRef(new Map<string, Drawn>());
+  const drawOf = (s: TapeStrip): Drawn | null => {
+    const at = laid?.strips[s.key];
+    if (!laid || !at) return null;
+    const src = stuckFor(s);
+    const was = drawn.current.get(s.key);
+    if (was && was.src === src && was.laid === laid && was.live === live && was.still === still) return was;
+    const px = piecesOf(src, at.boxes.map((b) => b.w));
+    const open = exposed(s, live);
+    const lower = (stackOf.get(s.key) ?? []).filter((q) => q.z < s.z && liveKeys.has(q.key)).sort((x, y) => y.z - x.z);
+    const lowerBoxes = strips.filter((q) => q.z < s.z).flatMap((q) => laid.strips[q.key]?.boxes ?? []);
+    const pieces: DrawnPiece[] = [];
+    const regions: Region[] = [];
+    const specs: PieceSpec[] = [];
+    at.boxes.forEach((b, i) => {
+      const own = px[i] ?? [];
+      const id = `${s.key}:${i}`;
+      pieces.push({ own, mask: maskOf(own, b.w), clip: tornPath(own, b.h, id), attr: own.map(([lo, hi]) => `${lo.toFixed(1)}-${hi.toFixed(1)}`).join(',') });
+      const peeled = peeledOf(own, b.w);
+      if (peeled.length) {
+        const cut = lowerBoxes.flatMap((q): Box[] => {
           const [x0, y0, x1, y1] = [Math.max(b.x, q.x), Math.max(b.y, q.y), Math.min(b.x + b.w, q.x + q.w), Math.min(b.y + b.h, q.y + q.h)];
           return x1 > x0 && y1 > y0 ? [{ x: x0 - b.x, y: y0 - b.y, w: x1 - x0, h: y1 - y0 }] : [];
         });
-        out.push({ key: `${s.key}:${i}`, seed: `${s.key}:${i}`, box: b, peeled, cut, tears: tearsOf(stuck[i] ?? [], b.w) });
-      });
-    }
-    return out;
-  }, [laid, strips, stuckBy]);
+        regions.push({ key: id, seed: id, box: b, peeled, cut, tears: tearsOf(own, b.w) });
+      }
+      const under = lower.flatMap((q) => (laid.strips[q.key]?.boxes ?? []).flatMap((qb, j) => {
+        const line = Math.min(b.y + b.h, qb.y + qb.h) - Math.max(b.y, qb.y) > 0.5 * Math.min(b.h, qb.h);
+        return line && qb.x < b.x + b.w && qb.x + qb.w > b.x ? [`${q.key}:${j}`] : [];
+      }));
+      specs.push({ id, strip: s.key, index: i, w: b.w, h: b.h, stuck: own, open, under });
+    });
+    const made: Drawn = { src, laid, live, still, pieces, regions, specs };
+    drawn.current.set(s.key, made);
+    return made;
+  };
+  const drawnAll = strips.map((s) => [s, drawOf(s)] as const);
+  const drawnBy = new Map(drawnAll.map(([s, d]) => [s.key, d]));
+  /* The residue's regions, the same array while none of them is a new one: a peel in hand changes only its own. */
+  const regionsNow = drawnAll.flatMap(([, d]) => d?.regions ?? []);
+  const regionsKept = useRef<Region[]>([]);
+  if (regionsKept.current.length !== regionsNow.length || regionsKept.current.some((r, i) => r !== regionsNow[i])) regionsKept.current = regionsNow;
+  const regions = regionsKept.current;
+  const specs = still || !laid ? [] : drawnAll.flatMap(([s, d]) => (d && liveKeys.has(s.key) ? d.specs : []));
 
   /* Every strip's footprint on the post: the residue's one canvas covers it, whatever is peeled. */
   const span = useMemo(() => {
@@ -854,44 +942,21 @@ export function AutocorrectEffect({ post, plays, states, reader, still, save, sh
     return { top, height: Math.max(...boxes.map((b) => b.y + b.h)) - top };
   }, [laid]);
 
-  /*
-   * What the hands are given: every piece of every live strip, with its stuck stretches in local pixels, whether nothing lies over it,
-   * and the pieces of lower strips overlapping it on its line (highest first), which a peek lifts after it. A play's moment has no hands.
-   */
-  const specs = useMemo<PieceSpec[]>(() => {
-    if (!laid || still) return [];
-    const px = new Map<string, Stretch[][]>();
-    for (const s of live) {
-      const at = laid.strips[s.key];
-      if (at) px.set(s.key, piecesOf(stuckBy.get(s.key) ?? [], at.boxes.map((b) => b.w)));
-    }
-    const out: PieceSpec[] = [];
-    for (const s of live) {
-      const at = laid.strips[s.key];
-      if (!at) continue;
-      const open = exposed(s, live);
-      at.boxes.forEach((b, i) => {
-        const under = live.filter((q) => q.z < s.z).sort((a, c) => c.z - a.z).flatMap((q) => (laid.strips[q.key]?.boxes ?? []).flatMap((qb, j) => {
-          const line = Math.min(b.y + b.h, qb.y + qb.h) - Math.max(b.y, qb.y) > 0.5 * Math.min(b.h, qb.h);
-          return line && qb.x < b.x + b.w && qb.x + qb.w > b.x && (px.get(q.key)?.[j]?.length ?? 0) > 0 ? [`${q.key}:${j}`] : [];
-        }));
-        out.push({ id: `${s.key}:${i}`, strip: s.key, index: i, w: b.w, h: b.h, stuck: px.get(s.key)?.[i] ?? [], open, under });
-      });
-    }
-    return out;
-  }, [laid, live, stuckBy, still]);
   /* The hands take the pieces before the page paints; a piece whose state they changed (a roll waiting from a saved peel line) is drawn again. */
   useLayoutEffect(() => {
     if (still) return;
     if (handsNow().sync(specs)) setFrame((n) => n + 1);
-  }, [specs, still, handsNow]);
+  });
 
   /* The Lens's words (design section 12): how many strips, how many peeled and started, each play's phrase and places. */
   const all = strips.length;
   const done = strips.filter((s) => !liveKeys.has(s.key)).length;
-  const started = strips.filter((s) => liveKeys.has(s.key) && !isWhole(stuckBy.get(s.key) ?? [])).length;
+  const started = strips.filter((s) => liveKeys.has(s.key) && !isWhole(stuckFor(s))).length;
   const length = strips.reduce((n, s) => n + (s.to - s.from), 0);
-  const share = length ? strips.reduce((n, s) => n + (s.to - s.from) * (1 - (stuckBy.get(s.key) ?? []).reduce((a, [lo, hi]) => a + (hi - lo), 0)), 0) / length : null;
+  const share = length ? strips.reduce((n, s) => n + (s.to - s.from) * (1 - stuckFor(s).reduce((a, [lo, hi]) => a + (hi - lo), 0)), 0) / length : null;
+  /* The Lens is told the progress when the hands rest (a peel ends, a save is queued), not every frame of a peel. */
+  const progress = useRef<number | null>(null);
+  if (!hands.current?.busy()) progress.current = share;
   /* A play stacked with another's strips says its layer among the plays of its stacks, by order. */
   const layers = new Map<string, [number, number]>();
   for (const c of configs) {
@@ -903,7 +968,7 @@ export function AutocorrectEffect({ post, plays, states, reader, still, save, sh
     }
   }
   const view: CardView = {
-    progress: reader.author && share !== null ? Math.round(share * 1000) / 1000 : null,
+    progress: reader.author && progress.current !== null ? Math.round(progress.current * 1000) / 1000 : null,
     state: all ? `${all} ${all === 1 ? 'strip' : 'strips'}, ${done} peeled${reader.author && started > 0 ? `, ${started} started` : ''}` : 'Phrase not in this version',
     ends: reader.author ? LENS.authorEnds : LENS.readerEnds,
     yours: live.length > 0,
@@ -927,17 +992,16 @@ export function AutocorrectEffect({ post, plays, states, reader, still, save, sh
         {laid && regions.length ? <Residue regions={regions} span={span} width={laid.w} host={box} still={still} /> : null}
         {laid ? live.flatMap((s) => {
           const at = laid.strips[s.key];
-          if (!at) return [];
-          const px = piecesOf(stuckBy.get(s.key) ?? [], at.boxes.map((b) => b.w));
+          const d = drawnBy.get(s.key);
+          if (!at || !d) return [];
           return at.boxes.flatMap((b, i) => {
-            const own = px[i] ?? [];
+            const piece = d.pieces[i]!;
             const view = hands.current?.view(`${s.key}:${i}`) ?? IDLE;
-            if (!own.length && !view.rolls.length) return [];
-            const shown = view.lift ? view.shown : own;
+            if (!piece.own.length && !view.rolls.length) return [];
             return [(
               <Piece
                 key={`${s.key}:${i}`} strip={s} index={i} box={b} words={at.words[i] ?? ''} fontPx={laid.base * MARKER * at.scale} pad={laid.base * PAD_EM}
-                mask={maskOf(shown, b.w)} clip={tornPath(own, b.h, `${s.key}:${i}`)} stuck={own.map(([lo, hi]) => `${lo.toFixed(1)}-${hi.toFixed(1)}`).join(',')}
+                own={piece.own} mask={view.lift ? maskOf(view.shown, b.w) : piece.mask} clip={piece.clip} stuck={piece.attr}
                 focused={focused === s.key} view={view} shake={!motionReduced()} still={still} onDown={onDown} onMove={onMove} onUp={onUp}
               />
             )];
