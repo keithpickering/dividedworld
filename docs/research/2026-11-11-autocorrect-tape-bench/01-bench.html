@@ -1,0 +1,924 @@
+<!--
+  Record, written 2026-11-11. The Autocorrect tape bench: the design session's interactive mockup for the masking tape
+  refinements to Autocorrect (docs/plans/2026-11-03-autocorrect-design.md is the card's first design). A standalone page:
+  open it in a browser. It is a reference for how the tape looks and how peeling it feels, not code to copy.
+-->
+<title>Autocorrect Tape Bench</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caveat:wght@700&family=Gochi+Hand&family=Kalam:wght@700&family=Permanent+Marker&display=swap">
+<style>
+/* Layout: the 2003 board's posts in one column at the board's reference width (or a phone's), a bench of controls above, notes below. The bench chrome is the board's own black on white, kept in either theme like the other benches. */
+:root {
+  --paper: #ffffff;
+  --ink: #000000;
+  --rule: #000000;
+  --muted: #555555;
+  --shade: #f1f1ef;
+  --flag: #c8102e;
+  --font: Verdana, Geneva, sans-serif;
+  --mono: "Courier New", Courier, monospace;
+  --size-body: 15px;
+  --size-small: 13.75px;
+  --size-fine: 12.5px;
+  --size-title: 22.5px;
+  --lx: 22vw;
+  --ly: 14vh;
+  color-scheme: light;
+}
+body {
+  background: var(--paper); color: var(--ink);
+  font: var(--size-body)/1.45 var(--font);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 20px 56px;
+}
+h1 { font-size: var(--size-title); margin: 0; text-wrap: balance; }
+h2 { font-size: var(--size-body); margin: 0 0 .4em; text-wrap: balance; }
+p { margin: 0 0 .8em; }
+:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+.head { max-width: 988px; display: grid; gap: .4em; margin-bottom: 18px; }
+.head p { color: var(--muted); margin: 0; max-width: 72ch; font-size: var(--size-small); }
+
+.bench {
+  max-width: 988px; border: 1px solid var(--rule);
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); margin-bottom: 14px;
+}
+.bench fieldset {
+  border: 0; border-right: 1px solid var(--rule); border-bottom: 1px solid var(--rule);
+  margin: 0 -1px -1px 0; padding: 10px 12px 12px; min-width: 0;
+  display: grid; gap: 6px; align-content: start; font-size: var(--size-fine);
+}
+.bench legend {
+  float: left; width: 100%; padding: 0; margin-bottom: 4px; font-weight: bold;
+  font-size: var(--size-fine); letter-spacing: .06em; text-transform: uppercase;
+}
+.bench label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.bench .hint { color: var(--muted); }
+.slider { display: grid; grid-template-columns: 6.5em 1fr 3.4em; align-items: center; gap: 6px; }
+.slider output { font-variant-numeric: tabular-nums; text-align: right; }
+.slider input { width: 100%; min-width: 0; }
+.buttons { display: flex; flex-wrap: wrap; gap: 6px; }
+button.b {
+  font: inherit; font-size: var(--size-fine); padding: 3px 10px; background: var(--paper);
+  color: var(--ink); border: 1px solid var(--rule); cursor: pointer;
+}
+button.b:hover { background: var(--shade); }
+
+.status {
+  max-width: 988px; box-sizing: border-box; border: 1px solid var(--rule); border-top: 0; margin: -14px 0 18px;
+  padding: 6px 12px; font-size: var(--size-fine); min-height: 1.45em; display: flex; gap: 1.2em; flex-wrap: wrap;
+}
+.status .meter { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.status .tension[data-high] { color: var(--flag); font-weight: bold; }
+
+/* The board: its two looks, by the engine's tokens (engine/ui/tokens.css). */
+.boardwrap {
+  --kb-fg: #000; --kb-bg: #fff; --kb-muted: #555; --kb-rule: #000;
+  --res-tint: rgb(186 146 58); --res-opacity: .48; --res-gloss: .6; --res-fiber: rgb(231 216 176); --res-dust: rgb(70 58 36 / .45);
+  max-width: 988px; background: var(--kb-bg); color: var(--kb-fg); display: grid; gap: 14px; padding: 14px 0;
+}
+.boardwrap[data-board="dark"] {
+  --kb-fg: #fff; --kb-bg: #000; --kb-muted: #aaa; --kb-rule: #fff;
+  --res-tint: rgb(196 166 98); --res-opacity: .3; --res-gloss: .12; --res-fiber: rgb(150 138 104); --res-dust: rgb(160 150 120 / .35);
+  padding: 14px; outline: 14px solid #000; outline-offset: -1px;
+}
+.boardwrap[data-width="phone"] { max-width: 360px; }
+
+.act {
+  display: grid; grid-template-columns: minmax(7em, min(18%, 14em)) minmax(0, 1fr);
+  grid-template-areas: "bit meta" "bit main"; grid-template-rows: auto 1fr;
+  border: 1px solid var(--kb-rule); background: var(--kb-bg); color: var(--kb-fg);
+}
+.boardwrap[data-width="phone"] .act { grid-template-columns: minmax(0, 1fr); grid-template-areas: "bit" "meta" "main"; }
+.bit {
+  grid-area: bit; padding: .5em 6%; border-right: 1px solid var(--kb-rule);
+  display: flex; flex-direction: column; gap: .2em; font-size: var(--size-fine); min-width: 0;
+}
+.boardwrap[data-width="phone"] .bit { border-right: 0; border-bottom: 1px solid var(--kb-rule); flex-direction: row; gap: 1em; }
+.bit .name { font-weight: bold; font-size: var(--size-body); }
+.bit .counts { color: var(--kb-muted); }
+.meta {
+  grid-area: meta; display: flex; justify-content: space-between; gap: 1em; padding: .25em 1%;
+  font-size: var(--size-fine); color: var(--kb-muted); border-bottom: 1px solid var(--kb-rule); flex-wrap: wrap;
+}
+.meta .card { color: var(--kb-fg); font-weight: bold; }
+.main { grid-area: main; position: relative; padding: .6em 1.2% .9em; min-width: 0; }
+.words { position: relative; z-index: 0; }
+.words p { margin: 0 0 .7em; }
+.words p:last-child { margin: 0; }
+.fp { user-select: none; }
+.fill { white-space: break-spaces; }
+.layer { position: absolute; inset: 0; pointer-events: none; z-index: 1; }
+
+/* The residue: a tacky film in the tape's own outline, tinted, lit by the page's one light, with dust and torn fibers on it. */
+.residue { position: absolute; pointer-events: none; -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat; }
+.residue > * { position: absolute; inset: 0; width: 100%; height: 100%; }
+.residue .film, .residue .gloss { -webkit-mask-size: 100% 100%; mask-size: 100% 100%; -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat; }
+.residue .film { background: var(--res-tint); opacity: var(--res-opacity); }
+.residue .gloss {
+  opacity: var(--res-gloss);
+  background: radial-gradient(circle 150px at var(--gx, -999px) var(--gy, -999px), rgb(255 255 250 / .9), rgb(255 255 250 / .22) 38%, transparent 72%);
+}
+.boardwrap[data-gloss="off"] .residue .gloss { display: none; }
+
+/* A piece of masking tape. */
+.piece {
+  position: absolute; pointer-events: auto; touch-action: none; cursor: grab;
+  filter: drop-shadow(0 .6px .5px rgb(0 0 0 / .32)) drop-shadow(0 0 .4px rgb(0 0 0 / .18));
+  transform-origin: center; outline-offset: 3px;
+}
+.piece[data-gone] { pointer-events: none; }
+.piece:focus-visible { outline: 2px solid #1a5fd0; }
+.piece .tape { position: absolute; inset: 0; }
+.piece canvas.paper { position: absolute; inset: 0; width: 100%; height: 100%; }
+.piece .ink {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  white-space: nowrap; color: #1a1815; pointer-events: none;
+  text-shadow: 0 0 .5px rgb(26 24 21 / .55), .3px .2px .3px rgb(26 24 21 / .2);
+}
+.piece .ink span { display: inline-block; }
+.piece .roll, .piece .flap, .piece .corner { position: absolute; pointer-events: none; display: none; }
+.piece .roll {
+  top: -1.5px; bottom: -1.5px; border-radius: 45% / 3.2px;
+  background:
+    repeating-linear-gradient(90deg, rgb(120 95 40 / .07) 0 .8px, transparent .8px 2.1px),
+    linear-gradient(90deg, #b9a676 0%, #e2d2a6 22%, #f6ecd0 40%, #e6d6ab 62%, #c4b080 86%, #9f8c5c 100%);
+  box-shadow: 1.5px 1px 2.5px rgb(0 0 0 / .28), -1px 0 1.5px rgb(0 0 0 / .12);
+}
+.piece .flap {
+  top: 0; bottom: 0;
+  background:
+    repeating-linear-gradient(90deg, rgb(120 95 40 / .05) 0 .7px, transparent .7px 2px),
+    linear-gradient(180deg, #f6eed6, #ece0bd 55%, #e7d9b2);
+  box-shadow: 0 1.5px 3px rgb(0 0 0 / .3);
+}
+.piece .flap::after {
+  content: ""; position: absolute; inset: 0;
+  background:
+    linear-gradient(var(--fold, 90deg), transparent 55%, rgb(70 55 25 / .22)),
+    linear-gradient(100deg, transparent 20%, rgb(255 255 255 / .55) 45%, transparent 62%);
+}
+.piece .corner {
+  top: 0; background: linear-gradient(135deg, #f8f0da, #e2d4ad);
+  box-shadow: 0 1px 2px rgb(0 0 0 / .35);
+}
+.piece[data-tension] .tape::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: var(--stretch, none);
+}
+.dropping {
+  position: fixed; z-index: 60; pointer-events: none; border-radius: 45% / 3.2px;
+  background:
+    repeating-linear-gradient(90deg, rgb(120 95 40 / .07) 0 .8px, transparent .8px 2.1px),
+    linear-gradient(90deg, #b9a676 0%, #e2d2a6 22%, #f6ecd0 40%, #e6d6ab 62%, #c4b080 86%, #9f8c5c 100%);
+  box-shadow: 2px 2px 4px rgb(0 0 0 / .3);
+}
+
+.notes { max-width: 988px; margin-top: 22px; display: grid; gap: 14px; font-size: var(--size-small); }
+.notes section { border: 1px solid var(--rule); padding: 10px 14px; }
+.notes ul { margin: 0; padding-left: 1.2em; display: grid; gap: .35em; }
+.notes .q { border-left: 3px solid var(--flag); padding-left: 8px; }
+.kbd { font-family: var(--mono); border: 1px solid var(--rule); padding: 0 4px; font-size: var(--size-fine); }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+</style>
+
+<header class="head">
+  <h1>Autocorrect Tape Bench</h1>
+  <p>Masking tape over the author's words, written on in marker. A reader lifts an end to peek, and it sticks back down. The post's author peels it off for good: pick an end, then pull slowly. Pull faster than the tape gives and it tears. Hold <span class="kbd">Enter</span> on a focused strip for the keyboard's way.</p>
+</header>
+
+<form class="bench" id="bench" onsubmit="return false">
+  <fieldset>
+    <legend>You are</legend>
+    <label><input type="radio" name="role" value="author" id="roleAuthor" checked> The post's author (peel for good)</label>
+    <label><input type="radio" name="role" value="reader" id="roleReader"> Another reader (peek)</label>
+    <span class="hint">The author's peels are saved; a reader's peek is never kept.</span>
+  </fieldset>
+  <fieldset>
+    <legend>Board</legend>
+    <label><input type="radio" name="board" value="light" id="boardLight" checked> Light board</label>
+    <label><input type="radio" name="board" value="dark" id="boardDark"> Dark board</label>
+    <label><input type="radio" name="width" value="desk" id="widthDesk" checked> Desktop width</label>
+    <label><input type="radio" name="width" value="phone" id="widthPhone"> Phone width (lines wrap, so the tape is cut in pieces)</label>
+  </fieldset>
+  <fieldset>
+    <legend>Marker</legend>
+    <label><input type="radio" name="font" value="kalam" id="fontKalam"> Kalam Bold</label>
+    <label><input type="radio" name="font" value="pm" id="fontPm"> Permanent Marker</label>
+    <label><input type="radio" name="font" value="gochi" id="fontGochi" checked> Gochi Hand (chosen)</label>
+    <label><input type="radio" name="font" value="caveat" id="fontCaveat"> Caveat Bold</label>
+  </fieldset>
+  <fieldset>
+    <legend>Peel</legend>
+    <div class="slider"><label for="pace">Pace</label><input type="range" id="pace" min="30" max="240" step="5" value="90"><output for="pace" id="paceOut">90</output></div>
+    <div class="slider"><label for="pick">Pick an end</label><input type="range" id="pick" min="0" max="1200" step="50" value="450"><output for="pick" id="pickOut">450</output></div>
+    <div class="slider"><label for="give">Tear past</label><input type="range" id="give" min="12" max="120" step="2" value="34"><output for="give" id="giveOut">34</output></div>
+    <label><input type="checkbox" id="tear" checked> Tape tears when pulled too fast</label>
+    <span class="hint">Pace in pixels a second. Pick in milliseconds. Tear past: how far ahead of the peel your hand can get before the tape starts to strain.</span>
+  </fieldset>
+  <fieldset>
+    <legend>Stacks</legend>
+    <label><input type="radio" name="stack" value="layered" id="stackLayered" checked> Layered tape: each strip over its own words</label>
+    <label><input type="radio" name="stack" value="union" id="stackUnion"> One strip over the whole stack (today)</label>
+    <span class="hint">A reader's peek on a stack:</span>
+    <label><input type="radio" name="peek" value="turn" id="peekTurn" checked> Lifts the layers in turn on one pull</label>
+    <label><input type="radio" name="peek" value="together" id="peekTogether"> Lifts every layer together</label>
+    <label><input type="radio" name="peek" value="top" id="peekTop"> Lifts only the top</label>
+    <div class="slider"><label for="stay">Stays up</label><input type="range" id="stay" min="0" max="2500" step="100" value="300"><output for="stay" id="stayOut">300</output></div>
+    <div class="slider"><label for="settle">Lays down</label><input type="range" id="settle" min="40" max="1200" step="20" value="300"><output for="settle" id="settleOut">300</output></div>
+    <span class="hint">After a peek is let go: how long it stays up (milliseconds), then how fast it lays back down (pixels a second, the last layer lifted first). Grab it again before it is down to keep pulling: room for a phone's short drags.</span>
+    <span class="hint">The last post holds three plays: “big cats” → “small dogs”, then “cats are” → “nobody asked”, then “big cats” → “Wigglers”. Only a strip with nothing over it can be peeled or peeked.</span>
+  </fieldset>
+  <fieldset>
+    <legend>Look and loads</legend>
+    <label><input type="checkbox" id="gloss" checked> Residue catches the light</label>
+    <label><input type="checkbox" id="reduce"> Reduced motion</label>
+    <div class="buttons">
+      <button type="button" class="b" id="reload">Reload the page</button>
+      <button type="button" class="b" id="fresh">Fresh tape</button>
+    </div>
+    <span class="hint">Reload: the author's peels come back as saved, at the words' own width. Fresh tape: as if just cast.</span>
+  </fieldset>
+</form>
+<div class="status" id="status" aria-live="polite"><span id="say">Grab an end of a strip.</span><span class="meter" id="meter"></span></div>
+
+<div class="boardwrap" id="boardwrap" data-board="light" data-width="desk" data-gloss="on"></div>
+
+<div class="notes">
+  <section>
+    <h2>What the bench shows</h2>
+    <ul>
+      <li><b>The footprint.</b> Each occurrence keeps the width of the wider of its words and its replacement, so the post never moves when tape comes off. After a reload, an occurrence the author peeled takes its words' own width, and the residue follows it.</li>
+      <li><b>Pieces.</b> Where the footprint crosses a line break, the tape is cut into one piece per line, and the replacement's words are shared out between them. Each piece peels on its own; the occurrence is peeled once its last piece is.</li>
+      <li><b>The peel.</b> Hold at an end until the corner lifts, then pull back along the strip. The peel follows your hand no faster than the pace. Get too far ahead and the tape strains (it whitens and shakes), then tears: the rolled part drops, and the new ragged end has to be picked again. Let go partway and the roll waits where it is.</li>
+      <li><b>The peek.</b> A reader drags from an end to fold the tape back and read under it. On a stack, pulling on lifts the strips beneath in turn. Let go and it stays up a moment, then lays back down slowly, the last strip lifted first; grab it again before it is down and the pull carries on from there.</li>
+      <li><b>The keyboard.</b> Holding Enter or Space picks the end, then peels at the pace. Letting go keeps what is done. It can never pull too fast, so it costs what a careful hand does.</li>
+      <li><b>Reduced motion.</b> No fall and no shaking; a roll that comes off is gone at once, and a peek stays up as long, then lays down at once. The pace is the same.</li>
+    </ul>
+  </section>
+  <section>
+    <h2>For the owner to judge</h2>
+    <ul>
+      <li class="q">The marker: which of the four, and at what size against the board's Verdana.</li>
+      <li class="q">The pace, the pick and the tear: what feels like Chuck's way, slow and fussy but never stuck.</li>
+      <li class="q">The tape and the residue on each board: real enough, and readable after peeling.</li>
+      <li class="q">The drop at the end: a quick fall of the rolled cylinder.</li>
+    </ul>
+  </section>
+</div>
+
+<script>
+(() => {
+  'use strict';
+  /* ---------- Seeded randomness, so every screen would cut the same tape. ---------- */
+  const hashOf = (s) => { let h = 1779033703 ^ s.length; for (let i = 0; i < s.length; i++) { h = Math.imul(h ^ s.charCodeAt(i), 3432918353); h = (h << 13) | (h >>> 19); } h = Math.imul(h ^ (h >>> 16), 2246822507); h = Math.imul(h ^ (h >>> 13), 3266489909); return (h ^= h >>> 16) >>> 0; };
+  const seeded = (seed) => { let a = hashOf(seed); return () => { a |= 0; a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+  /* ---------- The posts and their plays, in the order they were cast (invented, in the community's voice). ---------- */
+  const POSTS = [
+    { id: 'p1', name: 'Shellcreeper', counts: 'Posts: 412', when: 'Posted: Nov 9 2026, 08:14 PM',
+      text: ['Finally beat the last castle in my Mario fangame. Mario controls a lot better than he did in the demo, and the new Mario sprites are all by Sloopy.', 'Feedback welcome, but be nice.'],
+      plays: [{ phrase: 'Mario', replacement: 'Luigi' }] },
+    { id: 'p2', name: 'Ninjikun', counts: 'Posts: 1,288', when: 'Posted: Nov 9 2026, 09:02 PM',
+      text: ['Honestly the Mushroom Kingdom tileset is the best thing in this release. I would put the Mushroom Kingdom tileset in every game I make if I could.'],
+      plays: [{ phrase: 'the Mushroom Kingdom tileset', replacement: 'Ohio' }] },
+    { id: 'p3', name: 'Waddle', counts: 'Posts: 77', when: 'Posted: Nov 10 2026, 12:40 AM',
+      text: ['My review, for what it is worth: the boss fight is fine. Music slaps though.'],
+      plays: [{ phrase: 'the boss fight is fine', replacement: 'the boss fight is the single greatest achievement in the history of fangames' }] },
+    { id: 'p4', name: 'Pidgit', counts: 'Posts: 2,903', when: 'Posted: Nov 10 2026, 07:55 AM',
+      text: ['Look, I have been on this forum since the Klik days and I will say it plainly: I have never once played a fangame I did not secretly enjoy, and I am not about to start with this one.'],
+      plays: [{ phrase: 'I have never once played a fangame I did not secretly enjoy', replacement: 'I am legally required to be nice about fangames' }] },
+    { id: 'p5', name: 'Koopa Kid', counts: 'Posts: 58', when: 'Posted: Nov 10 2026, 11:31 AM',
+      text: ['Big cats are the best enemies in the whole game, and I cheer every time big cats are back for another level.'],
+      plays: [{ phrase: 'big cats', replacement: 'small dogs' }, { phrase: 'cats are', replacement: 'nobody asked' }, { phrase: 'big cats', replacement: 'Wigglers' }] },
+  ];
+  const FONTS = {
+    kalam: { family: '"Kalam", "Comic Sans MS", cursive', weight: 700, scale: 1.18 },
+    pm: { family: '"Permanent Marker", "Comic Sans MS", cursive', weight: 400, scale: 1.0 },
+    gochi: { family: '"Gochi Hand", "Comic Sans MS", cursive', weight: 400, scale: 1.3 },
+    caveat: { family: '"Caveat", "Comic Sans MS", cursive', weight: 700, scale: 1.45 },
+  };
+
+  /* ---------- The bench's settings. ---------- */
+  const S = { role: 'author', board: 'light', width: 'desk', font: 'gochi', stack: 'layered', peek: 'turn', stay: 300, settle: 300, pace: 90, pick: 450, give: 34, tear: true, gloss: true, reduce: matchMedia('(prefers-reduced-motion: reduce)').matches };
+  /* Each strip's state: 'taped', 'peeled' (peeled this visit: its footprint stays) or 'saved' (peeled before this load: the words' own width). */
+  const memberState = new Map();
+  /* A half-peeled piece's progress, kept across the bench's own redraws within a visit. */
+  const partial = new Map();
+  const wrap = document.getElementById('boardwrap');
+  const say = (t) => { document.getElementById('say').textContent = t; };
+  const meter = (t) => { document.getElementById('meter').textContent = t; };
+
+  /* ---------- Matching: whole words, any case, as match.ts does; each play against the author's own words. ---------- */
+  const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const occurrencesIn = (text, phrase) => {
+    const re = new RegExp(`(?<![\\p{L}\\p{N}])${escape(phrase)}(?![\\p{L}\\p{N}])`, 'giu');
+    const out = []; let m; while ((m = re.exec(text))) out.push({ from: m.index, to: m.index + m[0].length });
+    return out;
+  };
+  const overlap = (a, b) => a.from < b.to && b.from < a.to;
+
+  /* ---------- Measuring words, to give each strip room for its replacement. ---------- */
+  const ctx = document.createElement('canvas').getContext('2d');
+  const textWidth = (text, font) => { ctx.font = font; return ctx.measureText(text).width; };
+  const bodyFont = () => { const cs = getComputedStyle(wrap); return `${cs.fontSize} ${cs.fontFamily}`; };
+  const markerFont = (px) => { const f = FONTS[S.font]; return `${f.weight} ${px}px ${f.family}`; };
+  const bodyPx = () => parseFloat(getComputedStyle(wrap).fontSize);
+  const markerPx = () => bodyPx() * 1.02 * FONTS[S.font].scale;
+  const TEXT_PAD = 7;
+
+  /* ---------- Building the board. ---------- */
+  let pieces = [];
+  function build() {
+    for (const P of pieces) if (!P.done && (P.a > 0 || P.bEnd < P.W || P.torn.a || P.torn.b || P.side)) partial.set(P.pkey, { W: P.W, a: P.a, bEnd: P.bEnd, torn: { ...P.torn }, jag: P.jag, side: P.side, rolled: P.rolled, ready: P.ready });
+    const focused = pieces.find((P) => P.el === document.activeElement)?.member.key;
+    busy.clear();
+    pieces = [];
+    wrap.textContent = '';
+    for (const post of POSTS) {
+      const act = document.createElement('article');
+      act.className = 'act';
+      act.innerHTML = `<div class="bit"><span class="name">${post.name}</span><span class="counts">${post.counts}</span></div><div class="meta"><span>${post.when}</span><span class="card">Autocorrect ×${post.plays.length}</span></div><div class="main"><div class="words"></div><div class="layer"></div></div>`;
+      wrap.append(act);
+      const words = act.querySelector('.words');
+      const counters = post.plays.map(() => 0);
+      const members = [];
+      post.text.forEach((para) => {
+        const ms = [];
+        post.plays.forEach((play, z) => {
+          for (const o of occurrencesIn(para, play.phrase)) {
+            const key = `${post.id}:${z}:${counters[z]++}`;
+            if (!memberState.has(key)) memberState.set(key, 'taped');
+            ms.push({ key, z, play, from: o.from, to: o.to, covered: para.slice(o.from, o.to) });
+          }
+        });
+        /* A stack: strips whose words overlap share one footprint in the text. */
+        const clusters = [];
+        for (const m of [...ms].sort((a, b) => a.from - b.from)) {
+          const last = clusters[clusters.length - 1];
+          if (last && m.from < last.to) { last.members.push(m); last.to = Math.max(last.to, m.to); }
+          else clusters.push({ from: m.from, to: m.to, members: [m] });
+        }
+        const p = document.createElement('p');
+        let at = 0;
+        for (const cl of clusters) {
+          p.append(para.slice(at, cl.from));
+          p.append(footprint(para, cl));
+          at = cl.to;
+        }
+        p.append(para.slice(at));
+        words.append(p);
+        members.push(...ms);
+      });
+      layOut(act, members);
+    }
+    const back = focused && pieces.find((P) => P.member.key === focused && P.exposed) || (focused && pieces.find((P) => P.exposed));
+    back?.el.focus({ preventScroll: true });
+    relight();
+  }
+
+  /**
+   * One stack's footprint: its words, cut at every strip's ends, with room made after each strip's words for its replacement
+   * (break-spaces, which wrap as words do), so no strip ever has to squeeze and nothing moves when one comes off.
+   */
+  function footprint(para, cl) {
+    const fp = document.createElement('span');
+    fp.className = 'fp';
+    const kept = cl.members.filter((m) => memberState.get(m.key) !== 'saved');
+    const body = bodyFont(), mf = markerFont(markerPx()), spaceW = textWidth(' ', body);
+    const fills = new Map();
+    for (const e of [...new Set(kept.map((m) => m.to))].sort((a, b) => a - b)) {
+      let need = 0;
+      for (const m of kept.filter((q) => q.to === e)) {
+        let have = textWidth(para.slice(m.from, e), body);
+        for (const [fe, n] of fills) if (fe > m.from && fe < e) have += n * spaceW;
+        need = Math.max(need, textWidth(m.play.replacement, mf) + 2 * TEXT_PAD - have);
+      }
+      if (need > 0) fills.set(e, Math.ceil(need / spaceW));
+    }
+    const cuts = [...new Set([cl.from, cl.to, ...cl.members.flatMap((m) => [m.from, m.to])])].sort((a, b) => a - b);
+    const startNode = new Map(), endText = new Map(), endFill = new Map();
+    for (let i = 0; i < cuts.length - 1; i++) {
+      const t = document.createTextNode(para.slice(cuts[i], cuts[i + 1]));
+      fp.append(t);
+      startNode.set(cuts[i], t); endText.set(cuts[i + 1], t);
+      const n = fills.get(cuts[i + 1]);
+      if (n) { const f = document.createElement('span'); f.className = 'fill'; f.textContent = ' '.repeat(n); fp.append(f); endFill.set(cuts[i + 1], f); }
+    }
+    for (const m of cl.members) Object.assign(m, { fp, startNode: startNode.get(m.from), endText: endText.get(m.to), endFill: endFill.get(m.to) });
+    return fp;
+  }
+
+  /** The line boxes of a stretch of the footprint: one per line, the words and the room after them joined. */
+  function boxesOf(start, end, origin) {
+    const r = document.createRange();
+    r.setStartBefore(start); r.setEndAfter(end);
+    const lines = [];
+    for (const q of [...r.getClientRects()].filter((x) => x.width > 2)) {
+      const same = lines.find((l) => Math.abs(l.top - q.top) < 3);
+      if (same) { same.left = Math.min(same.left, q.left); same.right = Math.max(same.right, q.right); same.bottom = Math.max(same.bottom, q.bottom); }
+      else lines.push({ left: q.left, right: q.right, top: q.top, bottom: q.bottom });
+    }
+    return lines.map((l) => ({ x: l.left - origin.left - 2, y: l.top - origin.top - 1, w: l.right - l.left + 4, h: l.bottom - l.top + 2 }));
+  }
+
+  /** Lays the tape and the residue for a post's strips. */
+  function layOut(act, members) {
+    const main = act.querySelector('.main');
+    const layer = act.querySelector('.layer');
+    const origin = main.getBoundingClientRect();
+    const live = members.filter((m) => memberState.get(m.key) === 'taped');
+    /* Which strips are drawn, over which stretch: each over its own words, or the top of each live stack over all of it. */
+    let drawn;
+    if (S.stack === 'layered') drawn = live.map((m) => ({ m, start: m.startNode, end: m.endFill || m.endText }));
+    else {
+      drawn = [];
+      const byFrom = [...live].sort((a, b) => a.from - b.from);
+      let group = [];
+      const close = () => {
+        if (!group.length) return;
+        const top = group.reduce((a, b) => (b.z > a.z ? b : a));
+        const first = group.reduce((a, b) => (b.from < a.from ? b : a)), last = group.reduce((a, b) => (b.to > a.to ? b : a));
+        drawn.push({ m: top, start: first.startNode, end: last.endFill || last.endText });
+        group = [];
+      };
+      let reach = -1;
+      for (const m of byFrom) { if (m.from >= reach) close(); group.push(m); reach = Math.max(reach, m.to); }
+      close();
+    }
+    /* A strip's residue is only where it touched the post, never where it lay on a strip beneath it. */
+    const beneath = (m) => members.filter((q) => q.z < m.z && overlap(q, m)).flatMap((q) => boxesOf(q.startNode, q.endText, origin));
+    for (const m of members.filter((q) => memberState.get(q.key) !== 'taped')) {
+      const natural = memberState.get(m.key) === 'saved';
+      const under = beneath(m);
+      for (const [i, b] of boxesOf(m.startNode, natural ? m.endText : m.endFill || m.endText, origin).entries()) {
+        const res = makeResidue(b, `${m.key}:${i}`, under);
+        res.show(0, 0);
+        layer.append(res.el);
+      }
+    }
+    for (const d of drawn) {
+      const boxes = boxesOf(d.start, d.end, origin);
+      const shared = shareOut(d.m.play.replacement, boxes);
+      const exposed = !live.some((q) => q.z > d.m.z && overlap(q, d.m));
+      const under = beneath(d.m);
+      boxes.forEach((b, i) => {
+        const seed = `${d.m.key}:${i}`;
+        const residue = makeResidue(b, seed, under);
+        layer.append(residue.el);
+        pieces.push(makePiece({ member: d.m, index: i, of: boxes.length, box: b, seed, words: shared.words[i], px: shared.px, residue, layer, exposed }));
+      });
+    }
+    /* What lies beneath each piece on its line, top first: what a peek on a stack lifts after it. */
+    const mine = pieces.filter((q) => q.layer === layer);
+    for (const q of mine) q.under = mine.filter((u) => u.member.z < q.member.z && Math.abs(u.box.y - q.box.y) < 3 && u.box.x < q.box.x + q.box.w && q.box.x < u.box.x + u.box.w).sort((a, b) => b.member.z - a.member.z);
+    for (const m of members) m.fp.style.userSelect = members.some((q) => q.fp === m.fp && memberState.get(q.key) === 'taped') ? 'none' : 'text';
+  }
+
+  /** Deals the replacement's words across the pieces, in order, shrinking the marker a little if the last piece would overflow. */
+  function shareOut(replacement, boxes) {
+    const all = replacement.split(' ');
+    let out = { words: [replacement], px: markerPx() };
+    for (let k = 1; k >= 0.6 - 1e-9; k -= 0.05) {
+      const px = markerPx() * k;
+      const words = []; let w = 0;
+      boxes.forEach((b, i) => {
+        const cap = b.w - 2 * TEXT_PAD;
+        const line = [];
+        if (i === boxes.length - 1) { while (w < all.length) line.push(all[w++]); }
+        else { while (w < all.length && textWidth([...line, all[w]].join(' '), markerFont(px)) <= cap) line.push(all[w++]); }
+        words.push(line.join(' '));
+      });
+      out = { words, px };
+      const last = boxes[boxes.length - 1];
+      if (!last || textWidth(words[words.length - 1], markerFont(px)) <= last.w - 2 * TEXT_PAD + 1) return out;
+    }
+    return out;
+  }
+
+  /* ---------- Drawing masking tape: crepe paper, factory edges, ends torn by hand. ---------- */
+  const endJags = (seed, W, H) => {
+    const r = seeded(`${seed}:ends`);
+    const side = (x0, dir) => { const pts = []; const steps = Math.max(4, Math.round(H / 3)); for (let i = 0; i <= steps; i++) pts.push([x0 + dir * (r() * 3.2 + (i % 2) * 0.8), (H * i) / steps]); return pts; };
+    return { left: side(0, 1), right: side(W, -1) };
+  };
+  const tapePath = (c, ends) => {
+    c.beginPath();
+    ends.left.forEach(([x, y], i) => (i ? c.lineTo(x, y) : c.moveTo(x, y)));
+    [...ends.right].reverse().forEach(([x, y]) => c.lineTo(x, y));
+    c.closePath();
+  };
+  const crepeLines = (seed, W) => { const r = seeded(`${seed}:crepe`); const xs = []; for (let x = 0; x < W; x += 1.1 + r() * 1.7) xs.push([x, r(), r()]); return xs; };
+
+  function drawPaper(canvas, W, H, seed) {
+    const dpr = Math.min(3, devicePixelRatio || 1);
+    canvas.width = Math.ceil(W * dpr); canvas.height = Math.ceil(H * dpr);
+    const c = canvas.getContext('2d');
+    c.scale(dpr, dpr);
+    const r = seeded(`${seed}:paper`);
+    const ends = endJags(seed, W, H);
+    c.save();
+    tapePath(c, ends); c.clip();
+    /* The paper: a beige-cream with slow variation along its length. */
+    const g = c.createLinearGradient(0, 0, W, 0);
+    for (let i = 0; i <= 6; i++) { const l = 79 + (r() - 0.5) * 4; g.addColorStop(i / 6, `hsl(${42 + (r() - 0.5) * 3} ${44 + (r() - 0.5) * 6}% ${l}%)`); }
+    c.fillStyle = g; c.fillRect(0, 0, W, H);
+    /* Crepe: fine ridges across the width, each a little crooked, darker and lighter by turns. */
+    for (const [x, a, b] of crepeLines(seed, W)) {
+      c.strokeStyle = a > 0.62 ? `rgb(255 251 236 / ${0.10 + b * 0.12})` : `rgb(118 92 38 / ${0.05 + b * 0.08})`;
+      c.lineWidth = 0.5 + b * 0.6;
+      c.beginPath(); c.moveTo(x + (b - 0.5) * 0.8, 0); c.quadraticCurveTo(x + (a - 0.5) * 1.2, H / 2, x - (b - 0.5) * 0.8, H); c.stroke();
+    }
+    /* Fiber: short faint flecks in the paper. */
+    for (let i = 0; i < W * H * 0.035; i++) {
+      c.fillStyle = r() > 0.5 ? 'rgb(255 250 232 / .16)' : 'rgb(110 86 34 / .09)';
+      c.fillRect(r() * W, r() * H, 0.6 + r() * 1.6, 0.4);
+    }
+    /* The factory edges, slightly darker, with a lit lip just inside the top one. */
+    c.fillStyle = 'rgb(140 110 52 / .28)'; c.fillRect(0, 0, W, 0.7); c.fillRect(0, H - 0.8, W, 0.8);
+    c.fillStyle = 'rgb(255 255 255 / .25)'; c.fillRect(0, 1, W, 0.6);
+    /* The torn ends darken a touch where the paper is crushed. */
+    const eg = c.createLinearGradient(0, 0, W, 0);
+    const e = Math.min(0.5, 6 / W);
+    eg.addColorStop(0, 'rgb(90 70 30 / .14)'); eg.addColorStop(e, 'rgb(90 70 30 / 0)'); eg.addColorStop(1 - e, 'rgb(90 70 30 / 0)'); eg.addColorStop(1, 'rgb(90 70 30 / .14)');
+    c.fillStyle = eg; c.fillRect(0, 0, W, H);
+    c.restore();
+    /* Loose fibers standing out of the torn ends. */
+    c.strokeStyle = 'rgb(236 226 196 / .9)'; c.lineWidth = 0.45;
+    for (const [side, dir] of [[ends.left, -1], [ends.right, 1]]) {
+      for (const [x, y] of side) if (r() > 0.55) { c.beginPath(); c.moveTo(x, y); c.lineTo(x + dir * (0.8 + r() * 1.8), y + (r() - 0.5) * 1.6); c.stroke(); }
+    }
+  }
+
+  /* ---------- Drawing the residue: patchy film, crepe pressed in, an edge line, dust, and torn fibers. ---------- */
+  /** Spans [x0, x1] of [0, W] left after cutting out `cuts`. */
+  const without = (spans, cuts) => cuts.reduce((acc, [c0, c1]) => acc.flatMap(([a, b]) => (c1 <= a || c0 >= b ? [[a, b]] : [...(c0 > a ? [[a, c0]] : []), ...(c1 < b ? [[c1, b]] : [])])), spans);
+  const maskOf = (W, spans) => {
+    if (!spans.length) return 'linear-gradient(transparent, transparent)';
+    const stops = []; let x = 0;
+    for (const [a, b] of spans) { stops.push(`transparent ${x.toFixed(1)}px`, `transparent ${a.toFixed(1)}px`, `#000 ${a.toFixed(1)}px`, `#000 ${b.toFixed(1)}px`); x = b; }
+    stops.push(`transparent ${x.toFixed(1)}px`, `transparent ${W.toFixed(1)}px`);
+    return `linear-gradient(90deg, ${stops.join(', ')})`;
+  };
+  function makeResidue(b, seed, under) {
+    const el = document.createElement('div');
+    el.className = 'residue';
+    Object.assign(el.style, { left: `${b.x}px`, top: `${b.y}px`, width: `${b.w}px`, height: `${b.h}px` });
+    const film = document.createElement('div'); film.className = 'film';
+    const gloss = document.createElement('div'); gloss.className = 'gloss';
+    const bits = document.createElement('canvas'); bits.className = 'bits';
+    el.append(film, gloss, bits);
+    const W = Math.max(1, Math.round(b.w)), H = Math.max(1, Math.round(b.h));
+    const m = document.createElement('canvas'); m.width = W * 2; m.height = H * 2;
+    const c = m.getContext('2d'); c.scale(2, 2);
+    const r = seeded(`${seed}:film`);
+    /* Patchy: two scales of value noise, so the film is thick here and thin there. */
+    const grid = (cell) => { const cols = Math.ceil(W / cell) + 2, rows = Math.ceil(H / cell) + 2; const v = Array.from({ length: cols * rows }, r); return (x, y) => { const gx = x / cell, gy = y / cell, i = Math.floor(gx), j = Math.floor(gy), fx = gx - i, fy = gy - j; const at = (a, bb) => v[bb * cols + a]; const s = (t) => t * t * (3 - 2 * t); const top = at(i, j) + (at(i + 1, j) - at(i, j)) * s(fx); const bot = at(i, j + 1) + (at(i + 1, j + 1) - at(i, j + 1)) * s(fx); return top + (bot - top) * s(fy); }; };
+    const big = grid(11), small = grid(4);
+    const img = c.createImageData(W * 2, H * 2);
+    const crepe = crepeLines(seed, W).map(([x]) => x);
+    for (let y = 0; y < H * 2; y++) for (let x = 0; x < W * 2; x++) {
+      const px = x / 2, py = y / 2;
+      let a = 0.28 + 0.55 * big(px, py) + 0.25 * (small(px, py) - 0.5);
+      const near = crepe.reduce((d, cx) => Math.min(d, Math.abs(cx - px)), 9);
+      if (near < 0.45) a *= 1.22; else if (near > 1.1) a *= 0.9;
+      const i = (y * W * 2 + x) * 4;
+      img.data[i] = img.data[i + 1] = img.data[i + 2] = 255; img.data[i + 3] = clamp(a, 0.05, 0.95) * 255;
+    }
+    c.putImageData(img, 0, 0);
+    /* Where the tape's edge sat, the film is thickest: a line that follows the torn outline. */
+    const ends = endJags(seed, W, H);
+    c.strokeStyle = 'rgb(255 255 255 / .9)'; c.lineWidth = 0.9; tapePath(c, ends); c.stroke();
+    c.globalCompositeOperation = 'destination-in'; c.fillStyle = '#fff'; tapePath(c, ends); c.fill();
+    const url = `url(${m.toDataURL()})`;
+    for (const layer of [film, gloss]) { layer.style.webkitMaskImage = url; layer.style.maskImage = url; }
+    /* Dust that stuck, and a few fibers of paper the tape left behind. */
+    const dpr = Math.min(3, devicePixelRatio || 1);
+    bits.width = Math.ceil(W * dpr); bits.height = Math.ceil(H * dpr);
+    const bc = bits.getContext('2d'); bc.scale(dpr, dpr);
+    const fiber = getComputedStyle(wrap).getPropertyValue('--res-fiber').trim(), dust = getComputedStyle(wrap).getPropertyValue('--res-dust').trim();
+    for (let i = 0; i < Math.max(1, W / 34); i++) { bc.fillStyle = dust; bc.beginPath(); bc.arc(r() * W, r() * H, 0.35 + r() * 0.5, 0, 7); bc.fill(); }
+    const fibers = (x, count, spread) => {
+      bc.strokeStyle = fiber; bc.lineCap = 'round';
+      for (let i = 0; i < count; i++) {
+        const fx = x + (r() - 0.5) * spread, fy = 1 + r() * (H - 2), len = 1.5 + r() * 4, ang = r() * Math.PI;
+        bc.lineWidth = 0.5 + r() * 0.7; bc.beginPath(); bc.moveTo(fx, fy);
+        bc.quadraticCurveTo(fx + Math.cos(ang) * len * 0.5 + (r() - 0.5), fy + Math.sin(ang) * len * 0.5, fx + Math.cos(ang) * len, fy + Math.sin(ang) * len); bc.stroke();
+      }
+    };
+    for (let i = 0; i < Math.round(W / 140); i++) fibers(r() * W, 1, 0);
+    /* What lay beneath another strip on this line is cut out: the glue there is on that strip, not the post. */
+    const cuts = under.filter((u) => Math.abs(u.y - b.y) < 3).map((u) => [u.x - b.x, u.x + u.w - b.x]);
+    /** Shows the residue everywhere but the stretch [a, z] the tape still covers. */
+    const show = (a, z) => {
+      const mask = maskOf(b.w, without([[0, a], [z, b.w]].filter(([x0, x1]) => x1 - x0 > 0.1), cuts));
+      el.style.webkitMaskImage = mask; el.style.maskImage = mask;
+    };
+    return { el, show, fibers: (x) => fibers(x, 4 + Math.round(r() * 4), 5) };
+  }
+
+  /* ---------- A piece of tape and its handling. ---------- */
+  function makePiece(o) {
+    const { box: b, seed, residue, member } = o;
+    const el = document.createElement('div');
+    el.className = 'piece';
+    const r = seeded(`${seed}:hand`);
+    const tilt = (r() - 0.5) * 1.6;
+    Object.assign(el.style, { left: `${b.x}px`, top: `${b.y}px`, width: `${b.w}px`, height: `${b.h}px`, zIndex: String(2 + member.z), transform: `rotate(${tilt.toFixed(2)}deg)` });
+    el.innerHTML = '<div class="tape"><canvas class="paper"></canvas><div class="ink"><span></span></div></div><div class="flap"></div><div class="roll"></div><div class="corner"></div>';
+    const tape = el.querySelector('.tape'), ink = el.querySelector('.ink span'), roll = el.querySelector('.roll'), flap = el.querySelector('.flap'), corner = el.querySelector('.corner');
+    drawPaper(el.querySelector('canvas'), b.w, b.h, seed);
+    ink.textContent = o.words;
+    Object.assign(ink.style, { font: markerFont(o.px), lineHeight: `${b.h}px`, transform: `translateY(${((r() - 0.5) * 1.2).toFixed(1)}px) rotate(${((r() - 0.5) * 1.4).toFixed(2)}deg)` });
+    const label = member.play.replacement;
+    if (o.exposed) {
+      el.tabIndex = 0;
+      el.setAttribute('role', 'button');
+      el.setAttribute('aria-label', S.role === 'author'
+        ? `Autocorrected text: “${label}”${o.of > 1 ? `, piece ${o.index + 1} of ${o.of}` : ''}. Hold Enter or Space to peel it off for good`
+        : `Autocorrected text: “${label}”. Hold Enter or Space to lift it and peek`);
+    } else el.setAttribute('aria-hidden', 'true');
+    o.layer.append(el);
+
+    const P = {
+      ...o, el, pkey: seed, W: b.w, H: b.h, a: 0, bEnd: b.w,
+      torn: { a: false, b: false }, side: null, rolled: 0, ready: false,
+      pick: null, hand: null, keyHeld: false, tension: 0, lift: 0, liftSide: 'a', settling: false, done: false,
+      jag: { a: [], b: [] }, under: [], peekD: 0,
+    };
+    const kept = partial.get(seed);
+    if (kept && Math.abs(kept.W - b.w) < 1) { Object.assign(P, { a: kept.a, bEnd: kept.bEnd, torn: kept.torn, jag: kept.jag, side: kept.side, rolled: kept.rolled, ready: kept.ready }); }
+    partial.delete(seed);
+    const END = Math.max(16, b.h * 0.9);
+    const localX = (e) => { const rr = el.getBoundingClientRect(); return e.clientX - rr.left; };
+
+    function render() {
+      /* What is still stuck: from a to bEnd, cut ragged where it tore, and folded back from the peeked end. */
+      const a = P.a + (P.liftSide === 'a' ? P.lift : 0), z = P.bEnd - (P.liftSide === 'b' ? P.lift : 0);
+      const left = P.torn.a ? P.jag.a.map(([dx, y]) => `${(a + dx).toFixed(1)}px ${y.toFixed(1)}px`) : [`${a.toFixed(1)}px 0`, `${a.toFixed(1)}px ${P.H}px`];
+      const right = P.torn.b ? P.jag.b.map(([dx, y]) => `${(z + dx).toFixed(1)}px ${y.toFixed(1)}px`) : [`${z.toFixed(1)}px 0`, `${z.toFixed(1)}px ${P.H}px`];
+      const full = a <= 0.01 && z >= P.W - 0.01;
+      tape.style.clipPath = full ? '' : `polygon(${[...left, ...[...right].reverse()].join(',')})`;
+      /* The residue shows only where the tape has come off for good; a peek lifts the tape with its glue still on it. */
+      residue.show(P.done ? P.W : P.a, P.done ? P.W : P.bEnd);
+      /* The roll: a cylinder of the peeled tape lying across the strip at the peel line, fatter the more it holds. */
+      if (P.side && !P.done) {
+        const d = Math.sqrt(9 + 0.55 * P.rolled);
+        const jitter = !S.reduce && P.tension > 0.15 ? (Math.random() - 0.5) * P.tension * 1.6 : 0;
+        roll.style.display = 'block'; roll.style.width = `${d.toFixed(1)}px`;
+        roll.style.left = `${((P.side === 'a' ? P.a - d * 0.72 : P.bEnd - d * 0.28) + jitter).toFixed(1)}px`;
+      } else roll.style.display = 'none';
+      /* The flap of a peek: the lifted tape folded back over the rest, its sticky side up. */
+      if (P.lift > 0.5) {
+        /*
+         * The lifted tape is a plane hinged at the fold, turned up toward the eye: nearly folded flat for a small lift, nearly
+         * upright once all of it is up, so it never lies over the next words. Seen in perspective, its free end, nearer the eye,
+         * stands taller than the fold, by at most about half again however long the strip is.
+         */
+        const L = P.lift, t = clamp(L / P.W, 0, 1), theta = 150 - 58 * t;
+        flap.style.display = 'block'; flap.style.width = `${L.toFixed(1)}px`;
+        flap.style.left = `${(P.liftSide === 'a' ? a - L : z).toFixed(1)}px`;
+        flap.style.transformOrigin = P.liftSide === 'a' ? 'right center' : 'left center';
+        flap.style.transform = `perspective(${Math.max(P.H * 13, L * 3).toFixed(0)}px) rotateY(${(P.liftSide === 'a' ? theta : -theta).toFixed(1)}deg)`;
+        flap.style.setProperty('--fold', P.liftSide === 'a' ? '90deg' : '270deg');
+      } else flap.style.display = 'none';
+      /* The corner lifting while an end is picked. */
+      if (P.pick) {
+        const t = clamp((performance.now() - P.pick.at) / Math.max(1, S.pick), 0, 1);
+        const s = (0.25 + 0.6 * t) * P.H;
+        corner.style.display = 'block'; corner.style.width = corner.style.height = `${s.toFixed(1)}px`;
+        corner.style.left = `${(P.pick.side === 'a' ? P.a : P.bEnd - s).toFixed(1)}px`;
+        corner.style.clipPath = P.pick.side === 'a' ? 'polygon(0 0, 100% 0, 0 100%)' : 'polygon(0 0, 100% 0, 100% 100%)';
+      } else corner.style.display = 'none';
+      /* Strain: the paper whitens toward the peel line as the hand gets ahead of it. */
+      if (P.tension > 0.05 && P.side) {
+        el.dataset.tension = '';
+        const at = P.side === 'a' ? (P.a / P.W) * 100 : 100 - (P.bEnd / P.W) * 100;
+        tape.style.setProperty('--stretch', `linear-gradient(${P.side === 'a' ? 90 : 270}deg, transparent ${at - 0.1}%, rgb(255 255 255 / ${(P.tension * 0.6).toFixed(2)}) ${at}%, transparent ${at + 22}%)`);
+      } else delete el.dataset.tension;
+    }
+    P.render = render;
+
+    function startPick(side) {
+      if (P.side === side && P.ready) return true;
+      if (P.side && P.side !== side && P.rolled > 0) { dropRoll(P); P.rolled = 0; }
+      P.pick = { side, at: performance.now() };
+      P.side = null; P.ready = false;
+      say('Picking at the end…');
+      wake(P);
+      return false;
+    }
+    el.addEventListener('pointerdown', (e) => {
+      if (P.done || (e.pointerType === 'mouse' && e.button !== 0)) return;
+      e.preventDefault();
+      /* A peek still up, on this strip or carried from the one above it, is picked up again where it is. */
+      const carrier = S.role === 'reader' && (P.carrier?.peekD > 0 ? P.carrier : P.peekD > 0 ? P : null);
+      if (carrier) {
+        const cx = e.clientX - carrier.el.getBoundingClientRect().left;
+        carrier.el.setPointerCapture(e.pointerId);
+        carrier.hand = { id: e.pointerId, x: cx, x0: cx, base: carrier.peekD, peek: true }; carrier.letGoAt = null;
+        say('Picked it up again. Keep pulling.');
+        wake(carrier); return;
+      }
+      if (!o.exposed) { say('Another strip is stuck over this one. That one comes off first.'); return; }
+      const x = localX(e);
+      el.setPointerCapture(e.pointerId);
+      if (S.role === 'reader') {
+        P.liftSide = x < P.W / 2 ? 'a' : 'b'; P.letGoAt = null;
+        P.hand = { id: e.pointerId, x, x0: x, base: Math.max(0, P.liftSide === 'a' ? x - P.a : P.bEnd - x), peek: true };
+        say('Peeking. Let go and it lays back down after a moment.');
+        wake(P); return;
+      }
+      const side = Math.abs(x - P.a) <= END ? 'a' : Math.abs(x - P.bEnd) <= END ? 'b' : null;
+      if (!side) { say('Start at an end of the tape.'); return; }
+      P.hand = { id: e.pointerId, x };
+      if (startPick(side)) say('Pulling. Slowly.');
+    });
+    el.addEventListener('pointermove', (e) => { if (P.hand && P.hand.id === e.pointerId) P.hand.x = localX(e); });
+    const release = (e) => {
+      if (!P.hand || P.hand.id !== e.pointerId) return;
+      const peek = P.hand.peek;
+      P.hand = null;
+      if (peek) { layDown(); say('It sticks back down.'); return; }
+      if (P.pick) { P.pick = null; say('Let go before the corner came up.'); }
+      else if (P.side) say('The roll waits where you left it.');
+      P.tension = 0; render(); meter('');
+    };
+    el.addEventListener('pointerup', release);
+    el.addEventListener('pointercancel', release);
+    el.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      e.preventDefault();
+      if (e.repeat || P.keyHeld || P.done || !o.exposed) return;
+      P.keyHeld = true;
+      if (S.role === 'reader') { if (!(P.peekD > 0)) P.liftSide = 'a'; P.letGoAt = null; wake(P); return; }
+      startPick(P.side ?? (P.torn.a && !P.torn.b ? 'b' : 'a'));
+      wake(P);
+    });
+    /** Letting go of a peek: every layer it lifted lays back down. */
+    const layDown = () => { P.letGoAt = performance.now(); wake(P); };
+    const letGoKey = () => {
+      P.keyHeld = false;
+      if (S.role === 'reader') { layDown(); return; }
+      if (P.pick) { P.pick = null; render(); }
+    };
+    el.addEventListener('keyup', (e) => { if (e.key === 'Enter' || e.key === ' ') letGoKey(); });
+    el.addEventListener('blur', () => { if (P.keyHeld) letGoKey(); });
+    render();
+    return P;
+  }
+
+  /* ---------- One loop for every piece in hand. ---------- */
+  const busy = new Set();
+  let last = 0, running = false;
+  const wake = (P) => { busy.add(P); if (!running) { running = true; last = performance.now(); requestAnimationFrame(tick); } };
+  function tick(now) {
+    const dt = Math.min(0.05, (now - last) / 1000); last = now;
+    for (const P of [...busy]) {
+      if (!busy.has(P)) continue;
+      step(P, dt, now);
+      if (!busy.has(P)) continue;
+      P.render();
+      const still = !P.pick && !P.hand && !P.keyHeld && !(P.letGoAt != null && P.peekD > 0);
+      if (still || P.done) busy.delete(P);
+    }
+    if (busy.size) requestAnimationFrame(tick); else running = false;
+  }
+  function step(P, dt, now) {
+    if (S.role === 'reader') {
+      if (P.hand?.peek) P.peekD = Math.max(0, P.hand.base + (P.hand.x - P.hand.x0) * (P.liftSide === 'a' ? 1 : -1));
+      else if (P.keyHeld) P.peekD += (P.W / 0.45) * dt;
+      else if (P.letGoAt != null && now - P.letGoAt >= S.stay) P.peekD = S.reduce ? 0 : Math.max(0, P.peekD - S.settle * dt);
+      /* One pull: the top lifts first; pulling on brings the layer beneath up after it, and so on (or all at once, or the top alone). Laying down runs it backwards. */
+      const chain = [P, ...(S.peek === 'top' ? [] : P.under)];
+      P.peekD = Math.min(P.peekD, S.peek === 'together' ? Math.max(...chain.map((Q) => Q.W)) : chain.reduce((t, Q) => t + Q.W, 0));
+      let rem = P.peekD;
+      for (const Q of chain) {
+        Q.liftSide = P.liftSide;
+        Q.lift = clamp(S.peek === 'together' ? P.peekD : rem, 0, Q.W);
+        Q.carrier = Q.lift > 0 ? P : null;
+        rem -= Q.W;
+        if (Q !== P) Q.render();
+      }
+      if (!P.peekD) P.letGoAt = null;
+      return;
+    }
+    if (P.pick) {
+      if (now - P.pick.at < S.pick) return;
+      P.side = P.pick.side; P.ready = true; P.pick = null;
+      say(P.keyHeld ? 'Peeling at the pace.' : 'Pulling. Slowly.');
+    }
+    if (!P.side || !P.ready) return;
+    let want = 0;
+    if (P.hand) want = P.side === 'a' ? P.hand.x - P.a : P.bEnd - P.hand.x;
+    else if (P.keyHeld) want = S.pace * dt;
+    else return;
+    const move = clamp(want, 0, S.pace * dt);
+    if (P.side === 'a') P.a = Math.min(P.bEnd, P.a + move); else P.bEnd = Math.max(P.a, P.bEnd - move);
+    P.rolled += move;
+    /* The tape strains while the hand is further ahead than it gives, and tears once the strain is full. */
+    const lag = want - move;
+    if (P.hand && S.tear && lag > S.give) P.tension = Math.min(1, P.tension + dt * (1.2 + (lag - S.give) / 30));
+    else P.tension = Math.max(0, P.tension - dt * 2.5);
+    meter(`${Math.round(((P.a + (P.W - P.bEnd)) / P.W) * 100)}% off this piece${P.tension > 0.05 ? `   strain ${'▮'.repeat(Math.ceil(P.tension * 6))}${'▯'.repeat(6 - Math.ceil(P.tension * 6))}` : ''}`);
+    if (P.bEnd - P.a <= 1.5) return finish(P);
+    if (P.tension >= 1) {
+      const at = P.side === 'a' ? P.a : P.bEnd;
+      dropRoll(P);
+      P.residue.fibers(at);
+      P.torn[P.side] = true; P.jag[P.side] = jagAt(P, at);
+      P.side = null; P.ready = false; P.rolled = 0; P.tension = 0; P.hand = null;
+      say('Too fast: it tore. Pick the new end and go slower.');
+      meter('');
+    }
+  }
+  const jagAt = (P, at) => { const rj = seeded(`${P.seed}:tear:${at.toFixed(0)}`); const pts = []; const steps = Math.max(4, Math.round(P.H / 2.5)); for (let i = 0; i <= steps; i++) pts.push([(rj() - 0.5) * 3.2, (P.H * i) / steps]); return pts; };
+
+  function finish(P) {
+    dropRoll(P);
+    P.done = true; P.side = null; P.a = P.bEnd; P.el.dataset.gone = '';
+    P.el.querySelector('.tape').style.clipPath = 'inset(0 100% 0 0)';
+    P.residue.show(P.W, P.W);
+    meter('');
+    busy.delete(P);
+    if (pieces.filter((q) => q.member === P.member).every((q) => q.done)) {
+      memberState.set(P.member.key, 'peeled');
+      say(`Peeled for good. Under it: “${P.member.covered}”.`);
+      /* The strips beneath may now be uncovered, and a stack's top changes: the bench lays the post out again. */
+      const hadFocus = document.activeElement === P.el;
+      build();
+      if (hadFocus) pieces.find((q) => q.exposed)?.el.focus({ preventScroll: true });
+    } else {
+      say('That piece is off. The rest of this strip is on another line.');
+      const next = pieces.find((q) => q.member === P.member && !q.done);
+      if (next && document.activeElement === P.el) next.el.focus({ preventScroll: true });
+    }
+  }
+
+  /** The rolled-up tape drops: a quick fall under gravity, turning as it goes, and gone below the screen. */
+  function dropRoll(P) {
+    if (P.rolled < 0.5) return;
+    const roll = P.el.querySelector('.roll');
+    const rr = roll.getBoundingClientRect();
+    roll.style.display = 'none';
+    if (S.reduce || !rr.width) return;
+    const copy = document.createElement('div');
+    copy.className = 'dropping'; copy.setAttribute('aria-hidden', 'true');
+    Object.assign(copy.style, { left: `${rr.left}px`, top: `${rr.top}px`, width: `${rr.width}px`, height: `${rr.height}px` });
+    document.body.append(copy);
+    const fall = Math.max(80, innerHeight - rr.top + 40);
+    const r = seeded(`${P.seed}:drop:${P.a.toFixed(0)}`);
+    const drift = (r() - 0.5) * 50, spin = (r() > 0.5 ? 1 : -1) * (200 + r() * 260);
+    const ms = 260 + Math.sqrt(fall) * 13;
+    const run = copy.animate([
+      { transform: 'translate(0, 0) rotate(0deg)', offset: 0 },
+      { transform: `translate(${drift * 0.1}px, -5px) rotate(${spin * 0.06}deg)`, offset: 0.1 },
+      { transform: `translate(${drift}px, ${fall}px) rotate(${spin}deg)`, offset: 1 },
+    ], { duration: ms, easing: 'cubic-bezier(.55,0,.9,.55)', fill: 'forwards' });
+    run.onfinish = () => copy.remove();
+  }
+
+  /* ---------- One light for the page: the residue's gloss is lit from where the pointer is, resting up and to the left. ---------- */
+  let light = { x: innerWidth * 0.22, y: innerHeight * 0.14 }, lightQueued = false;
+  function relight() {
+    lightQueued = false;
+    for (const g of wrap.querySelectorAll('.residue .gloss')) {
+      const rr = g.getBoundingClientRect();
+      g.style.setProperty('--gx', `${(light.x - rr.left).toFixed(0)}px`);
+      g.style.setProperty('--gy', `${(light.y - rr.top).toFixed(0)}px`);
+    }
+  }
+  const queueLight = () => { if (!lightQueued) { lightQueued = true; requestAnimationFrame(relight); } };
+  addEventListener('pointermove', (e) => { if (e.pointerType === 'mouse' && !S.reduce) { light = { x: e.clientX, y: e.clientY }; queueLight(); } }, { passive: true });
+  addEventListener('scroll', queueLight, { passive: true });
+
+  /* ---------- The bench's controls. ---------- */
+  const radios = (name, fn) => document.querySelectorAll(`input[name="${name}"]`).forEach((i) => i.addEventListener('change', () => { if (i.checked) fn(i.value); }));
+  const fontReady = () => (document.fonts ? document.fonts.load(markerFont(20)).catch(() => {}).then(() => document.fonts.ready) : Promise.resolve());
+  const rebuild = () => fontReady().then(build);
+  radios('role', (v) => { S.role = v; rebuild(); say(v === 'author' ? 'Grab an end of a strip.' : 'Drag from an end to peek under it.'); });
+  radios('board', (v) => { S.board = v; wrap.dataset.board = v; rebuild(); });
+  radios('width', (v) => { S.width = v; wrap.dataset.width = v; partial.clear(); pieces = []; rebuild(); });
+  radios('font', (v) => { S.font = v; partial.clear(); pieces = []; rebuild(); });
+  radios('peek', (v) => { S.peek = v; });
+  radios('stack', (v) => { S.stack = v; partial.clear(); pieces = []; rebuild(); });
+  const slider = (id, key) => { const i = document.getElementById(id), out = document.getElementById(`${id}Out`); i.addEventListener('input', () => { S[key] = Number(i.value); out.textContent = i.value; }); };
+  slider('pace', 'pace'); slider('pick', 'pick'); slider('give', 'give'); slider('stay', 'stay'); slider('settle', 'settle');
+  document.getElementById('tear').addEventListener('change', (e) => { S.tear = e.target.checked; });
+  document.getElementById('gloss').addEventListener('change', (e) => { S.gloss = e.target.checked; wrap.dataset.gloss = e.target.checked ? 'on' : 'off'; });
+  const reduceBox = document.getElementById('reduce'); reduceBox.checked = S.reduce;
+  reduceBox.addEventListener('change', (e) => { S.reduce = e.target.checked; if (S.reduce) { light = { x: innerWidth * 0.22, y: innerHeight * 0.14 }; relight(); } });
+  document.getElementById('reload').addEventListener('click', () => {
+    for (const [k, v] of memberState) if (v === 'peeled') memberState.set(k, 'saved');
+    partial.clear(); pieces = [];
+    rebuild(); say('Reloaded. The author’s peels are saved; anything half done is taped again.');
+  });
+  document.getElementById('fresh').addEventListener('click', () => { memberState.clear(); partial.clear(); pieces = []; rebuild(); say('Fresh tape, as if just cast.'); });
+  let resizeTimer = 0;
+  addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { partial.clear(); pieces = []; rebuild(); }, 200); });
+  rebuild();
+})();
+</script>
