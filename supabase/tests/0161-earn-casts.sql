@@ -119,7 +119,10 @@ begin
 
   -- A staff character casts none: nothing is written, whoever it casts on.
   insert into characters (name, staff, staff_kind, debuted_at) values ('Ec Boss', 'ec-boss', 'persona', now()) returning id into boss;
+  -- The staff writer's flag is on, as it is in the game's own staff moves, so the refusal met is place_cast's own.
+  perform set_config('kayfabb.staff_writer', 'on', true);
   why := pg_temp.coded(format('select place_cast(%L, %L, %L, %L, %L, %L, %L, null, 0)', boss, 'ecboost', a, '{}', '', 'character', pa));
+  perform set_config('kayfabb.staff_writer', '', true);
   if why is distinct from '22023 a staff character casts no card that carries an earn' then raise exception 'a staff cast of a cast earn: %', why; end if;
   if exists (select 1 from acts where character = boss and kind = 'card') then raise exception 'a refused staff cast wrote an Act'; end if;
 end $$;
