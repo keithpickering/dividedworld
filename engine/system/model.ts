@@ -48,6 +48,8 @@ export interface CompletionRequest extends CallContext {
   readonly maxTokens: number;
   /** The most characters kept; a completion's length is capped after the fact (cutCompletion). Six a token when unset. */
   readonly maxChars?: number;
+  /** `'many'` keeps the answer's newlines (a text continued over several lines); `'one'`, cut at the first, when unset. */
+  readonly lines?: 'one' | 'many';
 }
 
 /** What a provider reported, each field as it reported it; a field it did not report is absent. */

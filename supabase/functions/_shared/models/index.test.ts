@@ -79,6 +79,15 @@ test('a model missing from the shipped table throws naming it, as does a priorit
   await assert.rejects(models(env, noRecord, { fetch: fake([message('{}', { service_tier: 'priority' })]).fetch, sleep: async () => {} }).chat(chat), /priority/);
 });
 
+test('a completion asked for many lines comes back with its lines; one asked for nothing is cut at the first', async () => {
+  const body = { choices: [{ text: ' and then\nit kept going\nPosted: later' }], usage: { prompt_tokens: 12, completion_tokens: 7 } };
+  const ask = { duty: 'standingOrderLine', prompt: 'Line:', temperature: 0.9, topP: 0.95, stop: ['\nPosted:'], maxTokens: 40 } as const;
+  const many = await models(env, noRecord, { fetch: fake([json(body)]).fetch, sleep: async () => {}, now: () => 0 }).complete({ ...ask, lines: 'many' });
+  assert.equal(many.value, ' and then\nit kept going');
+  const one = await models(env, noRecord, { fetch: fake([json(body)]).fetch, sleep: async () => {}, now: () => 0 }).complete(ask);
+  assert.equal(one.value, 'and then');
+});
+
 test('a completion goes to the instance\'s /v1/completions, cut at its stop, priced at zero', async () => {
   const f = fake([json({ choices: [{ text: ' The Director sighs.\nAnd more' }], usage: { prompt_tokens: 12, completion_tokens: 7 } })]);
   const r = await models(env, noRecord, { fetch: f.fetch, sleep: async () => {}, now: () => 0 }).complete({ duty: 'standingOrderLine', prompt: 'Line:', temperature: 0.9, topP: 0.95, stop: ['\n\n'], maxTokens: 40 });

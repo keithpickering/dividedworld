@@ -160,7 +160,7 @@ export function models(env: Env, record: RecordModelCall, options: ModelOptions)
         call.model = raw.model;
         call.usage = raw.usage;
         priced(call, 'completions');
-        const cut = cutCompletion(raw.text, request.stop, request.maxChars ?? request.maxTokens * 6);
+        const cut = cutCompletion(raw.text, request.stop, request.maxChars ?? request.maxTokens * 6, request.lines);
         if (!cut.ok) throw new AnswerRejected('the completion is empty', cut.predicate);
         call.trims = cut.trims;
         return { value: cut.text, usage: raw.usage, provider: 'completions', model: raw.model, trims: cut.trims, retries: call.retries, costMicrodollars: call.costMicrodollars };
