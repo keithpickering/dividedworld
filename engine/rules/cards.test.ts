@@ -436,6 +436,14 @@ test('a gift splits into the overhead, rounded up, and what arrives', () => {
   assert.deepEqual(giftSplit(100, 25), { overhead: 25, arrives: 75 });
   assert.deepEqual(giftSplit(10, 0), { overhead: 0, arrives: 10 });
   assert.deepEqual(giftSplit(10, 100), { overhead: 10, arrives: 0 });
+  // Every overhead and every amount up to a wallet's cap: the overhead is the integer ceiling, and the parts add up.
+  for (let pct = 0; pct <= 100; pct++) {
+    for (let amount = 1; amount <= 600; amount++) {
+      const { overhead, arrives } = giftSplit(amount, pct);
+      const exact = Math.floor((amount * pct + 99) / 100);
+      if (overhead !== exact || overhead + arrives !== amount || overhead < 0 || overhead > amount) assert.fail(`${amount} at ${pct}%: ${overhead} + ${arrives}`);
+    }
+  }
 });
 
 test('the open drive is the one whose close is after now, with its plays', () => {
@@ -450,4 +458,11 @@ test('the open drive is the one whose close is after now, with its plays', () =>
   assert.equal(openDrive([a], 'appeal', new Date()), undefined, 'every drive has closed');
   assert.equal(openDrive([b1], 'other', new Date()), undefined, 'another card has none');
   assert.equal(openDrive([], 'appeal', new Date()), undefined);
+  // A drive closing at this very moment has closed; a play of the card with no drive is no drive's.
+  const now = new Date();
+  assert.equal(openDrive([play('d', 'd', now.toISOString())], 'appeal', now), undefined, 'a drive is open only before its close');
+  assert.equal(openDrive([{ card: 'appeal', act: 'e' }], 'appeal', now), undefined, 'a play with no drive');
+  // Another drive's plays, open by a stale close the server would never give, are not the open drive's.
+  const stray = play('f', 'f', soon);
+  assert.deepEqual(openDrive([b1, stray, b2], 'appeal', new Date())?.plays, [b1, b2]);
 });

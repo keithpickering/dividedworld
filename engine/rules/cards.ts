@@ -446,10 +446,12 @@ export function casterMessage(message: unknown): Verdict<string> {
 export const spanMs = (s: Span): number => s.count * (s.unit === 'minute' ? 60_000 : s.unit === 'hour' ? 3_600_000 : s.unit === 'day' ? 86_400_000 : s.unit === 'week' ? 7 * 86_400_000 : 30 * 86_400_000);
 
 /**
- * The open drive of card `key` among `effects`: the drive whose `closes` is after `now`, with its plays, or none. The effects are exactly
- * the drive's plays (card_target leaves out a caught or ended play), and this is the one place that says which plays make a drive.
+ * The open drive of card `key` among `effects`: the drive whose `closes` is after `now`, with its plays, or none. A drive's plays are
+ * the effects the caller passes, which are the plays still up on the post (the server's card_target lists no caught or ended play;
+ * whether an ended play leaves its drive is the owner's question #447), and this is the one place that says which plays make a drive.
+ * A post holds at most one open drive of a card, since a play while one is open joins it, so the first open play names it.
  */
-export function openDrive(effects: readonly CardEffect[], key: string, now: Date): { readonly id: string; readonly closes: string; readonly plays: CardEffect[] } | undefined {
+export function openDrive(effects: readonly CardEffect[], key: string, now: Date): { readonly id: string; readonly closes: string; readonly plays: readonly CardEffect[] } | undefined {
   const plays = effects.filter((e) => e.card === key && e.drive !== undefined && e.closes !== undefined && Date.parse(e.closes) > now.getTime());
   if (!plays.length) return undefined;
   const first = plays[0]!;

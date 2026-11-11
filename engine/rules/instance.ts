@@ -579,13 +579,14 @@ function driveProblems(c: CardRules, settings: Settings): string[] {
   const held = economy !== null && typeof economy === 'object' && !Array.isArray(economy) ? economy : {};
   const gifts: readonly unknown[] = Array.isArray(d.gifts) ? d.gifts : [];
   if (!Array.isArray(d.gifts) || !gifts.length) out.push(`${who} with no gift amounts (gifts); a drive lists the economy keys of at least one`);
+  for (const k of duplicates(gifts.filter((k) => typeof k === 'string'), (k) => k)) out.push(`${who} that lists gift "${k}" twice`);
   for (const k of gifts) {
     const n = typeof k === 'string' ? held[k] : undefined;
-    if (typeof n !== 'number' || !Number.isFinite(n)) out.push(`${who} gift ${JSON.stringify(k)}, which the economy does not hold`);
+    if (typeof n !== 'number' || !Number.isFinite(n)) out.push(`${who} gift ${JSON.stringify(k)}, which is not a number the economy holds`);
     else if (!isWhole(n, 1) || n > settings.walletCap) out.push(`${who} gift ${JSON.stringify(k)} of ${n}; a gift is a positive whole number of hundredths, at most the wallet's cap (${settings.walletCap})`);
   }
   const over = typeof d.overhead === 'string' ? held[d.overhead] : undefined;
-  if (typeof over !== 'number' || !Number.isFinite(over)) out.push(`${who} overhead ${JSON.stringify(d.overhead)}, which the economy does not hold`);
+  if (typeof over !== 'number' || !Number.isFinite(over)) out.push(`${who} overhead ${JSON.stringify(d.overhead)}, which is not a number the economy holds`);
   else if (!isWhole(over, 0) || over > 100) out.push(`${who} overhead of ${over}; it is a whole number from 0 to 100`);
   return out;
 }
