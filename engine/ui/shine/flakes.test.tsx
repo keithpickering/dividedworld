@@ -263,7 +263,6 @@ describe('the cling layer', () => {
       return cling.carried();
     };
     /** Carries a load off a sticky post at the left and drops it at x, and steps time until all has landed. */
-    const dropAt = (x: number): void => { carryOver(x); };
     const source = () => cling.register(host(0, 0), { sticky: true, flakes: mk() });
 
     it('N1: a host registered again with a new hit no longer holds the old one', () => {
@@ -292,18 +291,18 @@ describe('the cling layer', () => {
       const s1 = child(x), s2 = child(x);
       const off1 = cling.register(s1, { flakes, hit: x });
       const off2 = cling.register(s2, { flakes, hit: x });
-      dropAt(2100);
+      carryOver(2100);
       expect(loose(s2).length).toBeGreaterThan(0);
       expect(loose(s1)).toHaveLength(0);
       off2();
       sweepLoose();
-      dropAt(2100);
+      carryOver(2100);
       expect(loose(s1).length).toBeGreaterThan(0);
       /* Registered again, then the first's way out taken: the second keeps the hit. */
       sweepLoose();
       cling.register(s2, { flakes, hit: x });
       off1();
-      dropAt(2100);
+      carryOver(2100);
       expect(loose(s2).length).toBeGreaterThan(0);
       expect(loose(s1)).toHaveLength(0);
     });
@@ -312,10 +311,10 @@ describe('the cling layer', () => {
       source();
       const x = host(2000, 0);
       const effect = child(x), cell = child(x);
-      const regs = [() => cling.register(effect, { rank: 'effect', hit: x }), () => cling.register(cell, { rank: 'cell', hit: x })];
+      const regs = [() => cling.register(effect, { hit: x }), () => cling.register(cell, { rank: 'cell', hit: x })];
       if (!effectFirst) regs.reverse();
       for (const r of regs) r();
-      dropAt(2100);
+      carryOver(2100);
       expect(loose(effect).length).toBeGreaterThan(0);
       expect(loose(cell)).toHaveLength(0);
     });
