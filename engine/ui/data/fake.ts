@@ -31,7 +31,7 @@ import { ALERT_KINDS, isWritten, type WrittenKind } from '../../rules/alerts.ts'
 import { DEFAULT_DEVELOPER } from '../../rules/instance.ts';
 import { normalizePronouns, pronounProblems, type PronounSet } from '../../rules/pronouns.ts';
 import type { Career } from '../../system/career.ts';
-import { ALERTS_PAGE, ALERTS_UNREAD_BOUND, CONTACT_HREF_MAX, CONTACT_LABEL_MAX, CONTACT_MOST, CONTACT_WS, DEFAULT_PREFERENCES, FOLLOWED_COUNT_CAP, LOST_ANSWER, MOVES_LOG_PAGE, REIGNS_PAGE, TROPHIES_PAGE, SEARCH_CARDS_MAX, SEARCH_COUNT_CAP, SEARCH_MATCHES_CAP, SEARCH_PER_PAGE, SEARCH_PER_PAGE_MAX, SEASON_NEWS_PAGE, SPUN_FROM_MAX, UPDATES_PAGE } from './api.ts';
+import { ADMIN_AWARDS_PAGE, ALERTS_PAGE, ALERTS_UNREAD_BOUND, CONTACT_HREF_MAX, CONTACT_LABEL_MAX, CONTACT_MOST, CONTACT_WS, DEFAULT_PREFERENCES, FOLLOWED_COUNT_CAP, LOST_ANSWER, MOVES_LOG_PAGE, REIGNS_PAGE, TROPHIES_PAGE, SEARCH_CARDS_MAX, SEARCH_COUNT_CAP, SEARCH_MATCHES_CAP, SEARCH_PER_PAGE, SEARCH_PER_PAGE_MAX, SEASON_NEWS_PAGE, SPUN_FROM_MAX, UPDATES_PAGE } from './api.ts';
 import { buildMoveNotice, toDemand, toProgress } from './moves.ts';
 import { TIP_KEYS, TOUR_KEYS } from '../tips/keys.ts';
 import { PLAYS_PER_POST } from '../cards/plays.ts';
@@ -46,7 +46,7 @@ import type {
   Act, Apology, Bar, AccountListener, Tail, ActKind, Alert, ContactLink, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, TallyName, SeasonShown, Update, UpdateChange, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, CardEvent, PackEvent, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, DebutLoudness, EffectState, PlayMoment,
   DebutTiming, Estimate, EstimateLine, FollowedThread, Frame, HeldCard, Id, KayfaApi, LogShare, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, PreferencesPatch, Refusal,
   Boot, BoardPage, IndexPage, Opened, AdminSlot, Slot, SlotMove, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, LogPage,
-  BeltCursor, BeltPage, BeltReign, RandomEvent, ShownTrophy, TrophyAwardFailure, TrophyCursor, TrophyItem, TrophyPage, WardrobeItem,
+  AdminAward, AdminKind, BeltCursor, BeltPage, BeltReign, RandomEvent, ShownTrophy, TrophyAwardFailure, TrophyCursor, TrophyItem, TrophyPage, WardrobeItem,
   PostHit, ThreadHit, SearchCursor, SearchPage, SearchQuery, SearchSort, Suggestions,
   AppealResult, AppealVerdict, LogAppeal, LogBan, LogGroupMove, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
   Presence, PresencePlace, ReachListener, ScreenSettings, Season, Session, Standing, Tally, ThreadListener, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, Wallet, WalletEvent,
@@ -137,6 +137,8 @@ export interface Seed {
   award(character: Id, trophy: string, options?: { at?: number; by?: 'season' | 'boss' | 'demand' | 'admin'; line?: string; move?: Id }): Id;
   /** The outcome of the next Random Event roll that comes past the window and the day's most, in place of the weighted draw; null is a roll that finds nothing. */
   nextEvent(event: { outcome: RandomEvent['outcome']; item?: string; line?: string } | null): void;
+  /** An award that could not be written, as `trophyAwardFailures` lists it, for an admin to give by hand. */
+  awardFailure(failure: Omit<TrophyAwardFailure, 'id'>): Id;
   /** The account's settled wallet, as a purchase or a card play leaves it between settlements (`settle` sets it at one, and dates it). Writes no wallet event: it is the state the seed starts from. */
   wallet(account: Id, balance: number): void;
   /**
@@ -455,6 +457,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const madeKinds: { key: string; name: string; line: string | null; belt: boolean; art: string | null }[] = [];
   /** The Random Events a test scripted (`Seed.nextEvent`), taken in order before the weighted draw; null is a roll that finds nothing. */
   const scripted: (Pick<RandomEvent, 'outcome'> & { item?: string; line?: string } | null)[] = [];
+  const awardFailures: TrophyAwardFailure[] = [];
   const acts = new Map<Id, ActRec>();
   /** Moves whose demand the tick has not counted (SeedMove.uncounted). */
   const uncounted = new Set<Id>();
@@ -3566,7 +3569,33 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     trophyAwardFailures() {
       const no = adminOnly('reads the trophies that could not be given');
       if (no) return no;
-      return ok([] as TrophyAwardFailure[]);
+      return ok([...awardFailures].sort((x, y) => (x.at < y.at ? 1 : x.at > y.at ? -1 : 0)));
+    },
+    adminAwards(cursor) {
+      const no = adminOnly('reads the trophies given');
+      if (no) return no;
+      const before = cursor ? Date.parse(cursor.before) : null;
+      const all = [...awards].filter((a) => before === null || a.at < before || (a.at === before && a.id < cursor!.beforeId))
+        .sort((x, y) => y.at - x.at || (x.id < y.id ? 1 : x.id > y.id ? -1 : 0));
+      const kinds = [...instance.trophies.kinds.map((k) => k.key), ...madeKinds.map((k) => k.key)].map((key): AdminKind => {
+        const k = kindOf(key)!;
+        return { key, name: k.name, belt: k.belt, made: key.startsWith('made-'), art: k.art };
+      }).sort((x, y) => (x.name < y.name ? -1 : x.name > y.name ? 1 : 0));
+      return ok({
+        awards: all.slice(0, ADMIN_AWARDS_PAGE).map((a): AdminAward => {
+          const k = kindOf(a.trophy)!;
+          return { award: a.id, trophy: a.trophy, name: k.name, belt: k.belt, art: k.art, character: a.character, to: characters.get(a.character)?.name ?? '', by: givenBy(a.by), at: iso(a.at), line: a.line, reversed: a.reversed };
+        }),
+        kinds,
+        more: all.length > ADMIN_AWARDS_PAGE,
+      });
+    },
+    adminCharacterNamed(name) {
+      const no = adminOnly('looks a character up by name');
+      if (no) return no;
+      const want = name.trim().toLowerCase();
+      const c = [...characters.values()].find((x) => !x.staff && x.name.toLowerCase() === want);
+      return ok(c ? { id: c.id, name: c.name } : null);
     },
 
     subscribeThread(thread, listener) {
@@ -3750,6 +3779,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     },
     /** The outcome of the next Random Event roll that comes past the window and the day's most, in place of the draw; null is a roll that finds nothing. */
     nextEvent(event) { scripted.push(event); },
+    awardFailure(failure) {
+      const id = uuid();
+      awardFailures.push({ id, ...failure });
+      return id;
+    },
     retire(character) {
       const c = characters.get(character)!;
       c.retiredAt = now();

@@ -616,6 +616,20 @@ describe('reads and their rows', () => {
     expect(await h.api.trophyAwardFailures()).toEqual({ ok: true, value: [{ id: A, move: T, season: null, at: '2026-10-01T00:00:00+00:00', error: 'x', trophy: 'met', characters: [{ id: B, name: 'Bea' }] }] });
   });
 
+  it('an admin reads the awards given and finds a character by name, through their functions', async () => {
+    const h = harness((r) => {
+      if (r.url.pathname.endsWith('/rpc/admin_awards')) return json({ awards: [{ award: A, trophy: 'pet', name: 'Pet', art: null, belt: false, character: B, to: 'Bea', by: 'an admin', at: '2026-10-01T00:00:00+00:00', line: null, reversed: true }], kinds: [{ key: 'pet', name: 'Pet', belt: false, made: false, art: null }], more: true });
+      if (r.url.pathname.endsWith('/rpc/admin_character_named')) return json(r.body && (r.body as { of_name: string }).of_name === 'Bea' ? { id: B, name: 'Bea' } : null);
+      return undefined;
+    });
+    expect(await h.api.adminAwards({ before: '2026-10-02T00:00:00+00:00', beforeId: A })).toEqual({ ok: true, value: {
+      awards: [{ award: A, trophy: 'pet', name: 'Pet', art: null, belt: false, character: B, to: 'Bea', by: 'an admin', at: '2026-10-01T00:00:00+00:00', line: null, reversed: true }],
+      kinds: [{ key: 'pet', name: 'Pet', belt: false, made: false, art: null }], more: true } });
+    expect(h.to('rpc/admin_awards')[0]?.body).toEqual({ before: '2026-10-02T00:00:00+00:00', before_id: A, most: 20 });
+    expect(await h.api.adminCharacterNamed('Bea')).toEqual({ ok: true, value: { id: B, name: 'Bea' } });
+    expect(await h.api.adminCharacterNamed('Nobody')).toEqual({ ok: true, value: null });
+  });
+
   it('builds the board index from boards_now (the names as Acts say them now) and thread_list', async () => {
     const h = harness((r) => {
       if (r.url.pathname.endsWith('/boards_now')) return rows([{ id: C, slug: 'general', name: 'General', description: 'All', is_system: false, created_at: 'x' }]);

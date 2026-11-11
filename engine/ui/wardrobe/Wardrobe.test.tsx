@@ -53,6 +53,24 @@ const said = () => screen.getByRole('status', { name: 'Outfit messages' });
 beforeEach(() => { document.documentElement.setAttribute('data-kb-motion', 'reduce'); });
 afterEach(() => { cleanup(); document.documentElement.removeAttribute('data-kb-motion'); vi.restoreAllMocks(); });
 
+describe('Wear it, from a Random Event', () => {
+  test('the found gear is on the stage on that mask as the page opens, and on no other', async () => {
+    const { fake, bones } = seeded();
+    renderIn(fake, <Wardrobe />, { instance: shop, path: '/wardrobe', state: { character: bones, wear: 'tall' } });
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Character' })).toHaveDisplayValue('Dr. Bones'));
+    await waitFor(() => expect(worn().map((b) => b.textContent)).toEqual([expect.stringMatching(/Layer 1.*Tall Hat/u)]));
+    expect(selected().getAttribute('aria-label')).toBe('Tall Hat, selected');
+  });
+
+  test('a gear with no free copy is not placed, and the page says why', async () => {
+    const { fake, pipe, bones } = seeded({ held: { tall: 1 } });
+    await fake.setOutfit(bones, [{ gear: 'tall', x: 0.5, y: 0.5, w: 0.5, turn: 0, layer: 0 }]);
+    renderIn(fake, <Wardrobe />, { instance: shop, path: '/wardrobe', state: { character: pipe, wear: 'tall' } });
+    await waitFor(() => expect(said()).toHaveTextContent(/No copy of Tall Hat is free/u));
+    expect(worn()).toHaveLength(0);
+  });
+});
+
 describe('placing', () => {
   test('Enter on an item puts a piece at the center on the next layer', async () => {
     open(seeded().fake);

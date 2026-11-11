@@ -52,6 +52,8 @@ export function Wardrobe() {
   const location = useLocation();
   /* The character a navigation carried in history.state (My characters' Dress up), if it is one the player plays; never the address. */
   const carried = typeof location.state === 'object' && location.state !== null ? (location.state as { character?: unknown }).character : undefined;
+  /* The gear a Random Event's Wear it carried, to be put on this mask when the stage opens. */
+  const wear = typeof location.state === 'object' && location.state !== null ? (location.state as { wear?: unknown }).wear : undefined;
   const [picked, setPicked] = useState<Id | null>(null);
   const [faces, setFaces] = useState<ReadonlyMap<Id, Character> | null>(null);
   const [items, setItems] = useState<readonly WardrobeItem[] | null>(null);
@@ -123,12 +125,12 @@ export function Wardrobe() {
       </CalmRegion>
       {stale && <CalmRegion as="p" className="kb-notice">Your save went through, but the page could not be refreshed. Reload it to see everything as saved.</CalmRegion>}
       {/* Keyed by the mask; an arrangement not yet saved waits in `drafts` while another mask is chosen. */}
-      <Dressing key={id} id={id} name={acting.find((c) => c.id === id)!.name} face={face} items={items} reload={refresh} drafts={drafts.current} />
+      <Dressing key={id} id={id} name={acting.find((c) => c.id === id)!.name} face={face} items={items} reload={refresh} drafts={drafts.current} wear={typeof wear === 'string' && id === carried ? wear : null} />
     </div>
   );
 }
 
-function Dressing({ id, name, face, items, reload, drafts }: { readonly id: Id; readonly name: string; readonly face: Character | null; readonly items: readonly WardrobeItem[]; readonly reload: () => Promise<void>; readonly drafts: Map<Id, Piece[]> }) {
+function Dressing({ id, name, face, items, reload, drafts, wear }: { readonly id: Id; readonly name: string; readonly face: Character | null; readonly items: readonly WardrobeItem[]; readonly reload: () => Promise<void>; readonly drafts: Map<Id, Piece[]>; readonly wear: string | null }) {
   const { api, instance, ui } = useKayfa();
   const { characters } = usePlayer();
   const most = instance.settings.cosmetics.gear.wornMost;
@@ -136,7 +138,7 @@ function Dressing({ id, name, face, items, reload, drafts }: { readonly id: Id; 
   const group = useId();
   const [pieces, setPieces] = useState<Piece[]>(() => drafts.get(id) ?? renumber(face?.outfit ?? []));
   const [at, setAt] = useState<number | null>(null);
-  const [gear, setGear] = useState<string | null>(items[0]?.gear ?? null);
+  const [gear, setGear] = useState<string | null>(items.some((i) => i.gear === wear) ? wear : items[0]?.gear ?? null);
   const [say, setSay] = useState('');
   const [sayN, setSayN] = useState(0);
   /* A line for the live region; the counter re-keys it, so the same words said twice are announced twice. */
@@ -200,6 +202,14 @@ function Dressing({ id, name, face, items, reload, drafts }: { readonly id: Id; 
     const piece = fit({ gear: key, x: where?.x ?? 0.5, y: where?.y ?? 0.5, w: FIRST_WIDTH, turn: 0, layer: pieces.length });
     change([...pieces, piece], pieces.length, `${nameOf(key)} put on, layer ${pieces.length + 1} of ${pieces.length + 1} worn. The buttons under Selected piece move it.`);
   };
+
+  /* A Random Event's Wear it: the found piece is put on once as the stage opens, unless this mask already wears one or none is free (then the page says why). */
+  const wore = useRef(false);
+  useEffect(() => {
+    if (wear === null || wore.current) return;
+    wore.current = true;
+    if (!pieces.some((p) => p.gear === wear)) put(wear);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- once, as the stage opens
 
   const current = at !== null ? pieces[at] ?? null : null;
   /** A change to the selected piece; where it changes nothing (a bound), says so in `none`. */

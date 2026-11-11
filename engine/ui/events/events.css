@@ -1,0 +1,46 @@
+/*
+ * The Random Event dialog (RandomEvent.tsx; board 04 of docs/research/2026-11-04-cosmetics/): the picture beside the words inside the modal's box, stacked on a phone.
+ * Sizes are in em and rem, never px; every color is the page's own token.
+ */
+.kb-event {
+  display: flex;
+  align-items: flex-start;
+  gap: 1.2em;
+  margin-bottom: 1em;
+}
+
+.kb-event-art {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 6rem;
+  min-height: 4rem;
+}
+
+.kb-event-art img {
+  display: block;
+  width: 6rem;
+  height: 4rem;
+  object-fit: contain;
+}
+
+.kb-event-words {
+  min-width: 0;
+}
+
+.kb-event-words p {
+  margin: 0 0 0.5em;
+}
+
+.kb-event-line {
+  font-size: 1.25em;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 30em) {
+  .kb-event {
+    flex-direction: column;
+  }
+}

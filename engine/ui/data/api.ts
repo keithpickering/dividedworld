@@ -595,6 +595,47 @@ export interface TrophyAwardFailure {
   readonly characters: readonly { readonly id: Id; readonly name: string; readonly place?: number }[] | null;
 }
 
+/** A trophy kind as the admin page's choice lists it (`admin_awards`'s `kinds`): `made` is whether an admin made it, `art` the picture's URL for an admin's kind (null for the instance's). */
+export interface AdminKind {
+  readonly key: string;
+  readonly name: string;
+  readonly belt: boolean;
+  readonly made: boolean;
+  readonly art: string | null;
+}
+
+/** One award as the admin page lists it: to which character, in what words it was given, and whether it was taken back (a taken-back award stays listed, marked). Never which admin. */
+export interface AdminAward {
+  readonly award: Id;
+  readonly trophy: string;
+  readonly name: string;
+  readonly belt: boolean;
+  readonly art: string | null;
+  readonly character: Id;
+  readonly to: string;
+  /** Who gave it, in plain words ("an admin", "a met demand", the Boss's name). */
+  readonly by: string;
+  readonly at: string;
+  readonly line: string | null;
+  readonly reversed: boolean;
+}
+
+/** How many awards a page of `adminAwards` holds. */
+export const ADMIN_AWARDS_PAGE = 20;
+
+/** A page of recent awards, newest first, with every kind there is; `more` is whether older ones remain. */
+export interface AdminAwardsPage {
+  readonly awards: readonly AdminAward[];
+  readonly kinds: readonly AdminKind[];
+  readonly more: boolean;
+}
+
+/** Where a page of `adminAwards` continues from: the last award of the page before it, by its instant and id. */
+export interface AdminAwardsCursor {
+  readonly before: string;
+  readonly beforeId: Id;
+}
+
 /** A character's season standing and its place, as a page of the standings lists it (standings_page). */
 export interface Standing {
   readonly character: Id;
@@ -2392,6 +2433,10 @@ export interface KayfaApi {
   makeTrophy(name: string, line: string | null, art: Blob | null, belt: boolean): Promise<Answer<{ readonly trophy: string }>>;
   /** The awards that could not be written, newest first, for an admin to give by hand. An admin's alone. */
   trophyAwardFailures(): Promise<Answer<readonly TrophyAwardFailure[]>>;
+  /** The recent awards, newest first, with every trophy kind (`admin_awards`): the trophies admin page's list. An admin's alone. */
+  adminAwards(cursor?: AdminAwardsCursor): Promise<Answer<AdminAwardsPage>>;
+  /** The character a name means, folded as names are kept (`admin_character_named`), or null for none; its id and name only, never who plays it. An admin's alone. */
+  adminCharacterNamed(name: string): Promise<Answer<{ readonly id: Id; readonly name: string } | null>>;
 
   /* Live: Acts, tallies and saved effects on a thread; new threads on a board. Each returns its unsubscribe. */
   subscribeThread(thread: Id, listener: ThreadListener): () => void;
