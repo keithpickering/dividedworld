@@ -142,3 +142,14 @@ test('the seed carries the developer persona: the instance\'s, or the engine\'s 
   assert.ok(!instanceSeed(instance).system.staff.some((s) => s.key === 'developer'), 'the developer is not in the roster a model is handed');
   assert.ok(!('developer' in instanceSeed(instance).system), 'nothing under `system`, which is all the Director reads, names the developer');
 });
+
+test('the seed carries the trophy catalog: the kinds with their words and belts, the three places, the Boss\'s kinds and the met demand\'s (0151)', () => {
+  const { trophies } = instanceSeed(instance);
+  assert.deepEqual(trophies.kinds.map((k) => k.key), instance.trophies.kinds.map((k) => k.key));
+  assert.deepEqual(trophies.kinds.filter((k) => k.belt).map((k) => k.key), instance.trophies.kinds.filter((k) => k.belt).map((k) => k.key), 'a belt is said as a belt');
+  for (const k of trophies.kinds) assert.equal(typeof k.belt, 'boolean');
+  assert.deepEqual(trophies.seasonPlaces, [...instance.trophies.seasonPlaces]);
+  assert.deepEqual(trophies.boss, [...instance.trophies.boss]);
+  assert.equal(trophies.demandMet, instance.trophies.demandMet);
+  assert.ok(trophies.kinds.every((k) => !k.key.startsWith('made-')), 'an instance key never begins with the admin page\'s prefix');
+});

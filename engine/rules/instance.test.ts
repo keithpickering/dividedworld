@@ -960,6 +960,15 @@ test('a gear key is used once, a trophy key is used once, and no gear is named a
   assert.match(said({ ...good, gear: [...good.gear, { key: 'a', name: 'A', line: 'x', rarity: 'common' }] }), /gear key "a" is also a card's key/);
 });
 
+test('a trophy kind is held to what the database holds: a key of lower-case words that never begins "made-", a name of 1 to 60 characters, words of at most 200 (0151)', () => {
+  const kinds = (k: Partial<Instance['trophies']['kinds'][number]> & { key: string }) => trophied({ kinds: [...good.trophies.kinds, { name: 'Ok', ...k }] });
+  assert.match(said(kinds({ key: 'made-1' })), /trophy key "made-1" begins "made-", which is the admin page's/);
+  assert.match(said(kinds({ key: 'Bad Key' })), /trophy key "Bad Key" is not lower-case words/);
+  assert.match(said(kinds({ key: 'long', name: 'x'.repeat(61) })), /trophy "long" has a name of 61 characters; a name is 1 to 60/);
+  assert.match(said(kinds({ key: 'wordy', line: 'x'.repeat(201) })), /trophy "wordy" has words of 201 characters; at most 200/);
+  assert.deepEqual(instanceProblems(kinds({ key: 'fine-one', line: 'x'.repeat(200) })), []);
+});
+
 test('the season places, the Boss\'s list and the demand name kinds the catalog has', () => {
   assert.match(said(trophied({ seasonPlaces: ['first', 'ghost', 'third'] })), /season place 2 names the trophy "ghost", and the instance has no such kind/);
   assert.match(said(trophied({ boss: ['pet', 'ghost'] })), /the Boss's trophies name "ghost", and the instance has no such kind/);

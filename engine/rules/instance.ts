@@ -408,6 +408,13 @@ function cosmeticsProblems(instance: Instance): string[] {
   if (typeof catalog !== 'object' || catalog === null || !Array.isArray(catalog.kinds)) out.push('the instance has no trophy catalog');
   else {
     for (const k of duplicates(catalog.kinds, (t) => t.key)) out.push(`trophy key "${k}" is used twice`);
+    // What trophy_kinds holds (supabase/migrations/0151_trophies.sql): a key of lower-case words, never the admin page's `made-` prefix, a short name, short words.
+    for (const t of catalog.kinds) {
+      if (typeof t.key === 'string' && t.key.startsWith('made-')) out.push(`trophy key "${t.key}" begins "made-", which is the admin page's`);
+      else if (typeof t.key !== 'string' || !/^[a-z][a-z0-9-]*$/.test(t.key)) out.push(`trophy key "${String(t.key)}" is not lower-case words (letters, digits and hyphens, beginning with a letter)`);
+      if (typeof t.name !== 'string' || t.name.length < 1 || t.name.length > 60) out.push(`trophy "${t.key}" has a name of ${typeof t.name === 'string' ? t.name.length : 0} characters; a name is 1 to 60`);
+      if (t.line !== undefined && t.line.length > 200) out.push(`trophy "${t.key}" has words of ${t.line.length} characters; at most 200`);
+    }
     const kind = (key: string) => catalog.kinds.find((t) => t.key === key);
     const named = (who: string, key: string) => (kind(key) ? true : (out.push(`${who} "${key}", and the instance has no such kind`), false));
     (Array.isArray(catalog.seasonPlaces) ? catalog.seasonPlaces : []).forEach((key, i) => {

@@ -102,6 +102,16 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into gear_ledger (account, gear, kind, event) values (ann, 'expgear', 'found', gen_random_uuid());
       insert into gear_ledger (account, gear, kind) values (ann, 'expgear', 'granted');
       insert into gear_worn (character, layer, gear, x, y, w, turn) values (a, 2, 'expgear', 0.25, 0.75, 0.5, -30);
+      -- Trophies (0151): an instance's kind with a place, a belt, and a kind an admin made with its picture's key; an award each by an admin, the season and the Boss (naming the post as its move Act),
+      -- the admin's taken back, and the Boss's shown on a postbit. Each is carried as it was, and the picture is a file the export fetches from the trophies bucket.
+      insert into trophy_kinds (key, name, line, belt, season_place) values ('exptrophy', 'Exported Trophy', 'Carried across.', false, null), ('expbelt', 'Exported Belt', null, true, null);
+      insert into trophy_kinds (key, name, made_by, art) values ('made-00000000-0000-4000-8000-0000000000e1', 'Exported Made', ann, 'exp-trophy.webp');
+      insert into trophy_awards (id, trophy, character, by, line) values ('00000000-0000-4000-8000-0000000000a1', 'made-00000000-0000-4000-8000-0000000000e1', a, 'admin', 'By hand.');
+      insert into trophy_awards (id, trophy, character, by, season) values ('00000000-0000-4000-8000-0000000000a2', 'exptrophy', b, 'season', (select id from seasons order by number limit 1));
+      insert into trophy_awards (id, trophy, character, by, act) values ('00000000-0000-4000-8000-0000000000a3', 'expbelt', a, 'boss', p);
+      insert into trophy_reversals (award, by) values ('00000000-0000-4000-8000-0000000000a1', ann);
+      insert into trophies_shown (character, award, position) values (a, '00000000-0000-4000-8000-0000000000a3', 0);
+      insert into trophy_award_failures (move_act, error) values (p, 'a failure kept for an admin (23514)');
       insert into invites (code_hash, inviter) values (invite_hash('exported'), ann);
       insert into acts (character, kind, thread, target_act_id, payload) values (a, 'card', t, p, '{"card": "splat", "config": {"color": "red"}}') returning id into play;
       insert into effect_state (play, state, saved_by) values (play, '{"strokes": []}', b);
@@ -390,7 +400,9 @@ test('an instance exported and imported into a fresh database is the same instan
   const oldStore = await fakeStorage();
   const newStore = await fakeStorage();
   const avatar = { 'avatars/exp-sq.webp': Buffer.from('RIFF-sq'), 'avatars/exp-pt.webp': Buffer.from('RIFF-pt') };
-  for (const [k, v] of Object.entries(avatar)) oldStore.objects.set(k, v);
+  // And the trophy art an admin stored, in the bucket of its own: the files a row of any bucket names are the export's.
+  const files = { ...avatar, 'trophies/exp-trophy.webp': Buffer.from('RIFF-trophy') };
+  for (const [k, v] of Object.entries(files)) oldStore.objects.set(k, v);
   try {
     // Each tool names the database it touches and refuses one a URL does not name.
     const unnamed = new URL(from);
@@ -454,7 +466,7 @@ test('an instance exported and imported into a fresh database is the same instan
     assert.notEqual(again.status, 0, 'an export into a directory that is not empty');
     assert.doesNotMatch(exported.stdout + exported.stderr, /pg@|password/i, 'the export printed a secret');
     assert.ok(!(exported.stdout + exported.stderr).includes(STORAGE_KEY), 'the export printed the Storage key');
-    for (const [k, v] of Object.entries(avatar)) assert.deepEqual(fs.readFileSync(path.join(dir, 'files', k)), v, `${k} is carried`);
+    for (const [k, v] of Object.entries(files)) assert.deepEqual(fs.readFileSync(path.join(dir, 'files', k)), v, `${k} is carried`);
     assert.ok(oldStore.seen.every((r) => r.startsWith('GET') && r.endsWith(' keyed')), oldStore.seen.join('\n'));
 
     // The fresh instance: the shim and the migrations, nothing seeded.
@@ -597,7 +609,7 @@ test('an instance exported and imported into a fresh database is the same instan
     assert.equal(moments(fresh.toString()), moments(from));
     assert.notEqual(moments(from), '0/0', 'the export carried a moment and a layer');
     // And every file its rows name is in the new project's Storage, byte for byte.
-    assert.deepEqual(new Map(newStore.objects), new Map(Object.entries(avatar)));
+    assert.deepEqual(new Map(newStore.objects), new Map(Object.entries(files)));
     assert.ok(!(imported.stdout + imported.stderr).includes(STORAGE_KEY), 'the import printed the Storage key');
 
     // The gear's three tables are carried as they were: the kind, both ledger rows (the found one naming its event) and the worn piece.
@@ -607,6 +619,20 @@ test('an instance exported and imported into a fresh database is the same instan
     assert.match(gearRows(from), /"kind": "found"/, 'the found copy is in the export');
     assert.match(gearRows(from), /"turn": -30/, 'the worn piece is in the export');
     assert.equal(gearRows(fresh.toString()), gearRows(from), 'gear_kinds, gear_ledger and gear_worn survive the round trip');
+
+    // The trophies' five tables are carried as they were: the kinds (an instance's with its place, a belt, an admin's with its art), the three awards, the taking back, the shown award and a met demand's failure.
+    for (const t of ['trophy_kinds', 'trophy_awards', 'trophy_reversals', 'trophies_shown', 'trophy_award_failures']) assert.notEqual(psqlOn(from, `select count(*) from public.${t}`), '0', `the exported instance holds ${t} rows`);
+    const trophyRows = (url: string) => psqlOn(url, `select coalesce(string_agg(x, ' | ' order by x), '') from (
+      select to_jsonb(k)::text x from trophy_kinds k union all select to_jsonb(w)::text from trophy_awards w union all select to_jsonb(r)::text from trophy_reversals r
+      union all select to_jsonb(sh)::text from trophies_shown sh union all select to_jsonb(f)::text from trophy_award_failures f) q`);
+    assert.match(trophyRows(from), /"art": "exp-trophy\.webp"/, 'the admin\'s kind names its picture');
+    assert.match(trophyRows(from), /"by": "boss"/, 'the Boss\'s award is in the export');
+    assert.equal(trophyRows(fresh.toString()), trophyRows(from), 'the trophies survive the round trip');
+    // What the imported instance shows is what the old one did: the admin's taken back, the Boss's belt held and shown.
+    const exportedA = sql(`select id from characters where name = 'Exported A'`);
+    const shelf = (url: string, who: string) => psqlOn(url, `select (trophies_of('${who}')::jsonb)::text`);
+    assert.equal(shelf(fresh.toString(), exportedA), shelf(from, exportedA), 'a character\'s trophies are the same after the round trip');
+    assert.match(shelf(from, exportedA), /"held": true/, 'the belt is held in the exported instance');
 
     // The imported instance goes on: each identity column's next value is past every row it holds.
     const identities = psqlOn(fresh.toString(), `
