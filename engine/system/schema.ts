@@ -1,6 +1,5 @@
 /**
- * What a provider's structured output accepts, as one dated table ("Two lists that must agree are one
- * list"), the way `supabase/functions/_shared/models/prices.ts` holds prices. The first live rehearsal's
+ * What a provider's structured output accepts, as one dated table, the way `supabase/functions/_shared/models/prices.ts` holds prices. The first live rehearsal's
  * every meeting closed `failed` on a schema the provider refuses (`{}`, then too many optional
  * parameters, then a grammar too large), and the stub took each of them, since it answers any schema.
  * So the rules are data with a verification date, and `schemaProblems` holds a request's schema to them
@@ -9,10 +8,14 @@
  * (`engine/system/validate.ts`), which the repair holds after the fact.
  *
  * Predicates name a problem the way a repair names a failed bound: `emptySchema`, `keyword(<name>)`,
- * `type(<name>)`, `closedObject`, `minItems(<n>)`, and the four counts. The argument is consistent by
+ * `type(<name>)`, `closedObject`, `minItems(<n>)`, `requiredUnknown(<key>)`, and the four counts. The argument is consistent by
  * kind: where the schema holds a forbidden thing, it is the thing found (`keyword(maxItems)`,
  * `type(null)`, `minItems(2)`); where a count passes a limit, it is the limit
- * (`optionalPerObject(8)`), so a failure reads against the table. Paths read like a repair's
+ * (`optionalPerObject(8)`), so a failure reads against the table. `requiredUnknown(<key>)` is a `required` that
+ * names a key the object's `properties` does not hold (at the object). A keyword whose value is the wrong shape
+ * (`anyOf` or `required` that is not an array) is reported as `keyword(anyOf)` or `keyword(required)`, at the node.
+ * Tuple `items` (an array of schemas) is `type(tuple)` at `<path>.items`, and is not walked. `emptySchema` does
+ * not hide a forbidden keyword on the same node: both are reported. Paths read like a repair's
  * (`properties.moves.items.properties.params`; an `anyOf` branch is `anyOf.<index>`). A problem with one
  * schema node is at that node; `optionalPerObject` is at the object; the three whole-schema totals
  * are at the root, which is the empty path ''.
@@ -24,7 +27,7 @@ export interface SchemaRules {
   /** The provider these rules were measured on. */
   readonly provider: string;
   /** The date the rules were last checked against the provider, as the price table dates its rows. */
-  readonly verified: string;
+  readonly verifiedOn: string;
   /** Where each rule came from. */
   readonly source: string;
   /** The keywords a schema node may carry. Nothing else. */
@@ -47,7 +50,7 @@ export interface SchemaRules {
 
 export const ANTHROPIC_SCHEMA_RULES: SchemaRules = {
   provider: 'anthropic',
-  verified: '2026-11-11',
+  verifiedOn: '2026-11-11',
   source:
     'platform.claude.com/docs/en/build-with-claude/structured-outputs (read 2026-11-11); probes, provider schemas design, section 0',
   keywords: ['type', 'properties', 'required', 'additionalProperties', 'items', 'enum', 'const', 'anyOf', 'description', 'minItems'],
@@ -72,6 +75,9 @@ export interface SchemaProblem {
   readonly predicate: string;
 }
 
+/** The keywords that say what a node holds; a node with none of them accepts any JSON value. */
+const says = ['type', 'anyOf', 'enum', 'const', 'properties', 'items'];
+
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
 /** The problems in `schema` against `rules`, in the order the walk meets them, then the totals. Empty when the schema is accepted. */
@@ -83,15 +89,20 @@ export function schemaProblems(schema: unknown, rules: SchemaRules = ANTHROPIC_S
   const join = (path: string, part: string) => (path === '' ? part : `${path}.${part}`);
 
   const walk = (node: unknown, path: string): void => {
-    // A node that is not an object, or says nothing about what it holds, accepts any JSON value.
-    const says = ['type', 'anyOf', 'enum', 'const', 'properties', 'items'];
-    if (!isRecord(node) || !says.some((k) => k in node)) {
+    if (!isRecord(node)) {
       problems.push({ path, predicate: 'emptySchema' });
       return;
     }
     for (const key of Object.keys(node)) {
       if (!rules.keywords.includes(key)) problems.push({ path, predicate: `keyword(${key})` });
     }
+    // A node that says nothing about what it holds accepts any JSON value; its keywords were checked first.
+    if (!says.some((k) => k in node)) {
+      problems.push({ path, predicate: 'emptySchema' });
+      return;
+    }
+    if (node.anyOf !== undefined && !Array.isArray(node.anyOf)) problems.push({ path, predicate: 'keyword(anyOf)' });
+    if (node.required !== undefined && !Array.isArray(node.required)) problems.push({ path, predicate: 'keyword(required)' });
     if (node.type !== undefined && !(typeof node.type === 'string' && rules.types.includes(node.type))) {
       problems.push({ path, predicate: `type(${String(node.type)})` });
     }
@@ -103,6 +114,9 @@ export function schemaProblems(schema: unknown, rules: SchemaRules = ANTHROPIC_S
       const props = isRecord(node.properties) ? node.properties : {};
       const required = new Set(Array.isArray(node.required) ? node.required : []);
       const keys = Object.keys(props);
+      if (Array.isArray(node.required)) {
+        for (const r of node.required) if (!keys.includes(String(r))) problems.push({ path, predicate: `requiredUnknown(${String(r)})` });
+      }
       const optionalHere = keys.filter((k) => !required.has(k)).length;
       if (optionalHere > rules.optionalPerObject) problems.push({ path, predicate: `optionalPerObject(${rules.optionalPerObject})` });
       optional += optionalHere;
@@ -110,7 +124,8 @@ export function schemaProblems(schema: unknown, rules: SchemaRules = ANTHROPIC_S
       for (const k of keys) walk(props[k], join(join(path, 'properties'), k));
     }
     // An array that names no items holds any value, as `{}` would, and the provider refuses that the same way.
-    if (node.items !== undefined) walk(node.items, join(path, 'items'));
+    if (Array.isArray(node.items)) problems.push({ path: join(path, 'items'), predicate: 'type(tuple)' });
+    else if (node.items !== undefined) walk(node.items, join(path, 'items'));
     else if (node.type === 'array') problems.push({ path: join(path, 'items'), predicate: 'emptySchema' });
     if (Array.isArray(node.anyOf)) {
       unions += 1;

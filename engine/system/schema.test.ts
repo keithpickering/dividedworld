@@ -89,14 +89,68 @@ test('the apology schema shape is clean', () => {
 });
 
 test('a schema at every limit at once is clean', () => {
-  // 40 properties: 8 optional in one object, 16 unions, the rest required.
-  const unions = Object.fromEntries(Array.from({ length: 16 }, (_, i) => [`u${i}`, { anyOf: [str, { type: 'number' }] }]));
-  const s = obj({ opt: obj(props('o', 8), []), ...unions, ...props('r', 40 - 1 - 8 - 16) });
-  assert.equal(JSON.stringify(s).match(/"anyOf"/g)?.length, 16);
+  const union = { anyOf: [str, { type: 'number' }] };
+  const unions = (prefix: string) => Object.fromEntries(Array.from({ length: 8 }, (_, i) => [`${prefix}${i}`, union]));
+  // 3 objects + 24 optional inside them (8 strings, then two sets of 8 unions: 16 unions) + 13 required at the root
+  // (two of them arrays, minItems 0 and 1) = 40 properties, 24 optional in all, 8 in each object.
+  const s = obj({
+    a: obj(props('o', 8), []),
+    b: obj(unions('u'), []),
+    c: obj(unions('v'), []),
+    zero: { type: 'array', items: str, minItems: 0 },
+    one: { type: 'array', items: str, minItems: 1 },
+    ...props('r', 11),
+  });
+  assert.equal(JSON.stringify(s).match(/"anyOf"/g)?.length, ANTHROPIC_SCHEMA_RULES.unionsTotal);
+  assert.equal(JSON.stringify(s).match(/"properties"/g)?.length, 4);
   assert.deepEqual(schemaProblems(s), []);
 });
 
-test('the table names its provider, date and source', () => {
-  assert.equal(ANTHROPIC_SCHEMA_RULES.provider, 'anthropic');
-  assert.equal(ANTHROPIC_SCHEMA_RULES.verified, '2026-11-11');
+test('optionalPerObject is named at a nested object, not only the root', () => {
+  const s = obj({ o: obj(props('p', 9), []) });
+  assert.deepEqual(schemaProblems(s), [{ path: 'properties.o', predicate: 'optionalPerObject(8)' }]);
+});
+
+test('a keyword on an empty schema is still reported, beside emptySchema', () => {
+  const s = obj({ x: { maxLength: 3 } });
+  assert.deepEqual(schemaProblems(s), [
+    { path: 'properties.x', predicate: 'keyword(maxLength)' },
+    { path: 'properties.x', predicate: 'emptySchema' },
+  ]);
+});
+
+test('required naming a key that is not in properties is requiredUnknown', () => {
+  const s = obj({ a: str }, ['a', 'ghost']);
+  assert.deepEqual(schemaProblems(s), [{ path: '', predicate: 'requiredUnknown(ghost)' }]);
+});
+
+test('anyOf that is not an array is a malformed keyword', () => {
+  const s = obj({ pick: { type: 'string', anyOf: 'nope' } });
+  assert.deepEqual(schemaProblems(s), [{ path: 'properties.pick', predicate: 'keyword(anyOf)' }]);
+});
+
+test('required that is not an array is a malformed keyword', () => {
+  const s = { type: 'object', properties: { a: str }, required: 'a', additionalProperties: false };
+  assert.deepEqual(schemaProblems(s), [{ path: '', predicate: 'keyword(required)' }]);
+});
+
+test('tuple items are a tuple type, named at items', () => {
+  const s = obj({ pair: { type: 'array', items: [str, str] } });
+  assert.deepEqual(schemaProblems(s), [{ path: 'properties.pair.items', predicate: 'type(tuple)' }]);
+});
+
+test('the table holds the design section 1 numbers and lists', () => {
+  const r = ANTHROPIC_SCHEMA_RULES;
+  assert.equal(r.provider, 'anthropic');
+  assert.equal(r.verifiedOn, '2026-11-11');
+  assert.deepEqual(r.keywords, ['type', 'properties', 'required', 'additionalProperties', 'items', 'enum', 'const', 'anyOf', 'description', 'minItems']);
+  assert.deepEqual(r.types, ['object', 'array', 'string', 'number', 'integer', 'boolean']);
+  assert.deepEqual(r.minItems, [0, 1]);
+  assert.equal(r.optionalPerObject, 8);
+  assert.equal(r.optionalTotal, 24);
+  assert.equal(r.unionsTotal, 16);
+  assert.equal(r.propertiesTotal, 40);
+  assert.equal(r.closedObjects, true);
+  assert.match(r.source, /build-with-claude\/structured-outputs/);
+  assert.match(r.source, /provider schemas design/);
 });
