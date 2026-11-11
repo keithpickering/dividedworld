@@ -40,7 +40,7 @@ const quiet: CardUi = {
   Effect: (props: EffectProps) => { given.set(`plain:${props.post.id}`, props); return <div>{props.children}</div>; },
 };
 
-afterEach(() => { vi.restoreAllMocks(); given.clear(); });
+afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); given.clear(); });
 
 function seeded(posts = 1) {
   const fake = createFake({ instance });
@@ -59,6 +59,9 @@ type World = ReturnType<typeof seeded>;
 
 /** A page of posts, each drawn in a PostEffects over the plays the fake holds for them, as the thread reads them. */
 async function page(w: World, posts: readonly Id[] = w.ids) {
+  /* The screen reads the time from Date (a drive's close is judged against it); the fake's clock is its own story, so Date is set to it. */
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(w.fake.clock.now());
   const plays = createPlays();
   plays.add(await w.fake.cardsOnMany(posts, 40));
   const acts = await Promise.all(posts.map((p) => w.fake.act(p)));
@@ -119,6 +122,7 @@ describe('a drive is read for the page in one call and kept live', () => {
   test('moreGifts appends the next page by the keyset cursor', async () => {
     const w = seeded(1);
     const drive = w.fake.seed.card(w.boFace, w.ids[0]!, 'appeal');
+    w.fake.seed.wallet(w.ana, 1000);
     for (let i = 0; i < 25; i++) { w.fake.clock.advance(1000); await w.fake.donate(w.anaFace, drive, 10); }
     const more = vi.spyOn(w.fake, 'driveGiftsPage');
     await page(w);
