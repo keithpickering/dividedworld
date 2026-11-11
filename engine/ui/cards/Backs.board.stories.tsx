@@ -36,7 +36,7 @@ function useSeeded(thread: string | null, scene: Scene): boolean {
       const caster = acts.find((a) => a.seq === 42)?.character;
       if (!target?.character || !caster) throw new Error('the boards fixture has no #41 and #42 with authors');
       const setCard = instance.cards.find((c) => playOf(c) === 'set' && c.trap?.trigger.on === 'cast');
-      const ward = instance.cards.find((c) => c.ward);
+      const ward = instance.cards.find((c) => c.gimmick?.kind === 'ward');
       const cast = instance.cards.find((c) => playOf(c) === 'cast');
       if (scene === 'back' || scene === 'caught') {
         if (!setCard) throw new Error('the instance has no Set card with a cast trap');
