@@ -16,10 +16,10 @@ Each case is shot four ways, `<case>-<light|dark>-<1440|390>.png`: the light and
 | `plate-dark-long` | The dark-logo plate with the 200-character message. |
 | `drive-three-mid` | A drive of three appeals (one on each plate) at its second, with the carousel's previous and next, dots, "2 of 3" and Pause, and three gifts on the wall. |
 | `drive-long-wall` | Three appeals and 26 gifts: the wall holds the latest 20 and says "and 6 more". |
-| `drive-closed` | A drive of two appeals, a week and a day old: "This drive has ended. It raised 5.30 in 11 gifts.", no buttons, the wall kept. |
+| `drive-closed` | A drive of two appeals, a week and a day old: "This drive has ended. It raised 5.30 in 11 gifts.", no give buttons, the wall kept. |
 | `drive-earlier-collapsed` | A closed drive and, after it, a new drive of one appeal. The closed one is the line "An earlier drive raised 3.45 in 7 gifts", shown opened so its banners show. |
 | `drive-reduced-motion` | The three-appeal carousel under reduced motion, on its second appeal: no Pause button, no fade, no rotation, and previous and next still work. |
-| `origin-box` | A thread spun from the post: its ORIGIN box shows the banners and the totals and no buttons. |
+| `origin-box` | A thread spun from the post: its ORIGIN box shows the banners and the totals and no give buttons (the carousel keeps its own controls). |
 | `button-short-wallet` | One appeal with a wallet of 0.20 Aura: 0.10 can be given, and 0.25, 0.50 and 1.00 are disabled. |
 
 ## How they were taken
