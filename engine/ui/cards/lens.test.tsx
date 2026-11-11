@@ -1833,3 +1833,53 @@ describe('the buttons', () => {
     expect(ruleOf('.kb-lens-row-foot .kb-reaction-list')).toMatch(/grid-column:\s*1\s*\/\s*-1/u);
   });
 });
+
+describe('taking a back back', () => {
+  const takeButton = () => within(lens()).queryByRole('button', { name: 'Take back' });
+  const openBack = async (seq: number) => {
+    await userEvent.click(await within(await article(seq)).findByRole('button', { name: /^A card set face down/u }));
+    await userEvent.click(whoButton());
+  };
+  const mine = () => {
+    const w = world();
+    const post = w.fake.seed.post(w.thread, w.pipe, 'my own post');
+    w.fake.clock.advance(60_000);
+    w.fake.seed.set(w.pipe, post, 'k2', { at: Date.now() });
+    return w;
+  };
+
+  test('is offered on the setter\'s own live back, with its words, and nowhere else', async () => {
+    width(false);
+    const w = mine();
+    w.fake.clock.advance(60_000);
+    w.fake.seed.set(w.spritey, w.second, 'k3', { at: Date.now() });
+    open(w);
+    await openBack(4);
+    expect(takeButton()).not.toBeNull();
+    expect(within(lens()).getByText('Take this card back into your hand. The card back leaves the post.')).toBeInTheDocument();
+    await userEvent.keyboard('{Escape}');
+    await openBack(2);
+    expect(takeButton()).toBeNull();
+  });
+
+  test('calls takeBack with the setter\'s character and the back, and closes the Lens once it is back', async () => {
+    width(false);
+    const w = mine();
+    const call = vi.spyOn(w.fake, 'takeBack');
+    open(w);
+    await openBack(4);
+    await userEvent.click(takeButton()!);
+    expect(call).toHaveBeenCalledWith(w.pipe, expect.any(String));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Cards on this post' })).toBeNull());
+  });
+
+  test('says the refusal in plain words, and stays open', async () => {
+    width(false);
+    const w = mine();
+    vi.spyOn(w.fake, 'takeBack').mockResolvedValue({ ok: false, error: 'there is no face-down card to take back there' } as never);
+    open(w);
+    await openBack(4);
+    await userEvent.click(takeButton()!);
+    expect(await within(lens()).findByRole('alert')).toHaveTextContent('there is no face-down card to take back there');
+  });
+});

@@ -4,7 +4,7 @@
  * screen so the order and the names are tested under plain node.
  */
 import type { Tally } from '../data/api.ts';
-import type { Rarity } from '../../rules/cards.ts';
+import type { GimmickEffect } from '../../rules/cards.ts';
 import type { Span } from '../../rules/types.ts';
 import type { CardPlay } from './types.ts';
 import { dayAndTime } from '../characters/format.ts';
@@ -61,7 +61,7 @@ export const utcDate = (iso: string): string => { const d = new Date(iso); retur
 /** "Nov 5": a day in the reader's zone, as a back's words say when it was set and when it sprang. */
 const localDate = (iso: string): string => new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 const DAY = 86_400_000;
-const spanMs = (s: Span): number => s.count * (s.unit === 'minute' ? 60_000 : s.unit === 'hour' ? 3_600_000 : s.unit === 'day' ? DAY : s.unit === 'week' ? 7 * DAY : 30 * DAY);
+export const spanMs = (s: Span): number => s.count * (s.unit === 'minute' ? 60_000 : s.unit === 'hour' ? 3_600_000 : s.unit === 'day' ? DAY : s.unit === 'week' ? 7 * DAY : 30 * DAY);
 const article = (name: string) => `${/^[aeiou]/iu.test(name) ? 'an' : 'a'} ${name}`;
 
 /**
@@ -76,14 +76,28 @@ export function backWords(back: CardPlay, setter: string, setLasts: Span, cardNa
     const card = cardName(back.revealed.card);
     return { name: `${card}, set face down by ${setter}`, state: `Sprang on ${localDate(back.revealed.at)}`, note: `${article(card).replace(/^a/u, 'A')} set face down by ${setter}.`, ends: 'It has sprung, and ended.' };
   }
+  if (back.takenBack) return { name: `A card set face down by ${setter}`, state: `Taken back on ${localDate(back.takenBack.at)}`, note: `Set face down by ${setter} on ${localDate(back.playedAt)}, and taken back.`, ends: 'It was taken back, and ended.' };
   const ends = new Date(Date.parse(back.playedAt) + spanMs(setLasts)).toISOString();
   return { name: `A card set face down by ${setter}`, state: 'Face down on this post', note: `Set face down by ${setter} on ${localDate(back.playedAt)}.`, ends: `${endsWords(ends)}, unless it springs first.` };
 }
 
-/** A ward's words: what it turns away, and when it ends (or ended), the end in the reader's zone. */
-export function wardWords(rarity: Rarity, ends: string | undefined, now: Date = new Date()): { readonly state: string; readonly ends?: string } {
-  if (ends !== undefined && Date.parse(ends) <= now.getTime()) return { state: 'Ended, turning nothing away', ends: `Ended ${dayAndTime(ends)}` };
-  return { state: `Turning away cards up to ${rarity}`, ...(ends !== undefined ? { ends: endsWords(ends) } : {}) };
+const capital = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
+const list = (words: readonly string[]): string => (words.length <= 2 ? words.join(' and ') : `${words.slice(0, -1).join(', ')}, and ${words[words.length - 1]}`);
+
+/**
+ * A Gimmick's words, as the Lens's status for a live one: what it does while it is up, and when it ends (or ended), the end in the
+ * reader's zone. They are read from the effect's own numbers, and name no card: a ward says what it turns away, a price what a cast
+ * costs more, an earn how much more a reaction earns (an earn's `by` is a share: 0.1 is 10%).
+ */
+export function gimmickWords(effect: GimmickEffect, ends: string | undefined, now: Date = new Date()): { readonly state: string; readonly ends?: string } {
+  if (ends !== undefined && Date.parse(ends) <= now.getTime()) return { state: 'Ended, changing nothing', ends: `Ended ${dayAndTime(ends)}` };
+  const state = effect.kind === 'ward'
+    ? (effect.upTo !== undefined ? `Turning away cards up to ${effect.upTo}`
+      : effect.flavors?.length ? `Turning away ${list(effect.flavors.map(capital))} cards`
+        : 'Turning away some cards')
+    : effect.kind === 'price' ? `${list(effect.flavors.map(capital))} cards cost ${(effect.add / 100).toFixed(2)} more here`
+      : `Earns ${Math.round(effect.by * 100)}% more from some reactions`;
+  return { state, ...(ends !== undefined ? { ends: endsWords(ends) } : {}) };
 }
 
 /** When a play beyond a post ends, as its Lens line says it: on its timer, in the reader's zone ("Ends Nov 7, 9:14 PM"). */
