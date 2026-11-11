@@ -696,6 +696,44 @@ describe('the machine\'s slots, from the machine', () => {
     expect(moves).toHaveTextContent(`Whoops! is pulled until Nov 9, or sooner if its demand is met: 12 different characters to post in ${board!.name} (7 of 12 so far). It still comes in Boosters.`);
   });
 
+  test('a sold out slot\'s card info says what its chip says in place of a price to buy, and keeps the face and the rules', async () => {
+    const fake = stockedWorld(562);
+    fake.seed.slot({ card: 'stick' }, { availability: 'soldOut' });
+    openStocked(fake);
+    fireEvent.click(await screen.findByRole('button', { name: 'About Stick Around' }));
+    const dialog = screen.getByRole('dialog', { name: 'Stick Around' });
+    expect(dialog.querySelector('.kb-vending-about-price')).toHaveTextContent(/^Sold out$/u);
+    expect(dialog.textContent).not.toContain('to buy');
+    expect(dialog.querySelector('.kb-postcard[data-kb-card="stick"]')).not.toBeNull();
+    expect(dialog.querySelector('.kb-vending-about-says')).not.toBeEmptyDOMElement();
+  });
+
+  test('a pulled slot\'s card info says it was pulled and until when', async () => {
+    const fake = stockedWorld(562);
+    fake.seed.slot({ card: 'whoops' }, {
+      availability: 'soldOut',
+      move: { kind: 'pullSlot', act: 'a2', ends: '2026-11-09T12:00:00Z', was: 100, percent: null, hours: null, demand: null, progress: null },
+    });
+    openStocked(fake);
+    fireEvent.click(await screen.findByRole('button', { name: 'About Whoops!' }));
+    const dialog = screen.getByRole('dialog', { name: 'Whoops!' });
+    expect(dialog.querySelector('.kb-vending-about-price')).toHaveTextContent(/^Pulled by the Boss until Nov 9$/u);
+    expect(dialog.textContent).not.toContain('to buy');
+  });
+
+  test('a price the Boss moved is said as the current price in words, with no struck old price and no "+"', async () => {
+    const fake = stockedWorld(562);
+    fake.seed.slot({ card: 'trap' }, { price: 225, move: { kind: 'repriceSlot', act: 'a1', ends: '2026-11-08T20:00:00Z', demand: null, progress: null, was: 150, percent: 150, hours: null } });
+    openStocked(fake);
+    fireEvent.click(await screen.findByRole('button', { name: 'About Trap Card' }));
+    const dialog = screen.getByRole('dialog', { name: 'Trap Card' });
+    const price = dialog.querySelector('.kb-vending-about-price')!;
+    expect(price.textContent).toMatch(/^2\.25 to buy/u);
+    expect(dialog.querySelector('s')).toBeNull();
+    expect(dialog.textContent).not.toContain('1.50');
+    expect(dialog.textContent).not.toContain('+');
+  });
+
   test('a flash sale and a markup are each worded plainly, and a machine with no move in force has no Boss\'s moves', async () => {
     const fake = stockedWorld(562);
     openStocked(fake);

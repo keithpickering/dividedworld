@@ -8,7 +8,7 @@
  *
  * There is no list of what is in the machine: it would grow with every card added (the owner's
  * answer on #75, the cards plan's Task 2). Each stocked slot carries an info button beside its
- * own ("About Whoops!") that opens an Overlay with that card's rules in plain words. It is a
+ * own ("About Whoops!") that opens an Overlay with the card's face, its price in words ("1.00 to buy", or why it cannot be bought) and its rules. It is a
  * sibling of the slot's button, never inside it, so opening it selects nothing and spends nothing;
  * a sealed slot has none.
  *
@@ -51,7 +51,7 @@ import { useMachine } from '../cards/machine.ts';
 import type { CardArt } from '../cards/types.ts';
 import { signInHref } from '../account/next.ts';
 import { useKayfa } from '../context.tsx';
-import type { BoardName, Id, Slot } from '../data/api.ts';
+import type { BoardName, Id, Slot, SlotMove } from '../data/api.ts';
 import { backHref, boardPlace } from '../glass/back.ts';
 import { GlassButton } from '../glass/Button.tsx';
 import { Overlay } from '../glass/Overlay.tsx';
@@ -106,6 +106,9 @@ interface Item {
 
 /** What a button says of what the slot sells, after its price: "common Cast", "a pack of 5 postcards". */
 const whatOf = (it: Item) => (it.pack ? `a pack of ${it.pack.pulls.length} postcards` : `${it.face!.rarity} ${it.face!.kind}`);
+
+/** What a sold out slot's info says in place of a price to buy: the slot's own words (`soldWhy`), as a sentence ("Sold out", "Pulled by the Boss until Nov 9"). */
+const soldSaid = (move: SlotMove | null): string => { const why = soldWhy(move); return `${why.charAt(0).toUpperCase()}${why.slice(1)}`; };
 
 /** The slot's accessible name: what it sells, its price, and (where the Boss changed it) how; a sold out slot says why instead. */
 function nameOf(it: Item, selected: boolean): string {
@@ -614,8 +617,8 @@ export function Vending() {
               <Postcard as="article" face={aboutItem.face} size="sheet" aria-label={cardLabel(aboutItem.face, 'sheet')} className="kb-vending-about-face" />
               <div className="kb-vending-about-text">
                 <p className="kb-vending-about-price kb-num">
-                  {orbs(aboutItem.price)} to buy
-                  {aboutItem.face.extra > 0 && <span className="kb-vending-about-extra"> · more to play on a long post</span>}
+                  {aboutItem.sold ? soldSaid(aboutItem.slot.move) : <>{orbs(aboutItem.price)} to buy</>}
+                  {!aboutItem.sold && aboutItem.face.extra > 0 && <span className="kb-vending-about-extra"> · more to play on a long post</span>}
                 </p>
                 <p className="kb-vending-about-says">{aboutItem.face.describe}</p>
               </div>
