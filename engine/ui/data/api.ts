@@ -1359,8 +1359,6 @@ export interface CaughtPlay {
   readonly trap: string;
   readonly spring: Id;
   readonly price: number;
-  /** What the player paid for the card at the machine, the latest purchase of it before the play; null where none is on record. */
-  readonly boughtPrice: number | null;
   readonly at: string;
 }
 
@@ -1416,6 +1414,10 @@ export interface LogBan {
   readonly infraction: Id;
   readonly rule: string | null;
   readonly thread: Id;
+  /** The verdict of the ruling on its appeal (`my_bans`, 0153); null with no ruling. */
+  readonly ruling: AppealVerdict | null;
+  /** When the ban ends by its own Act, before any ruling. */
+  readonly ownUntil: string;
 }
 
 /** A ban running on one of the player's characters: its Act (what an appeal names), when it ends, how long it was and the rule that filled the bar. */
@@ -1461,6 +1463,8 @@ export interface LogGroupMove {
   readonly ruledAt: string | null;
   /** The end an appeal's ruling set. */
   readonly ruledUntil: string | null;
+  /** The office that heard the latest ruling (its stamp, 0153); null for a ruling written before the stamp, and for a move with none. No default stands in for it. */
+  readonly ruledOffice: Office | null;
 }
 
 /** A report one of the player's characters made. */

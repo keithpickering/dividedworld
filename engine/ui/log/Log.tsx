@@ -169,7 +169,7 @@ export function nothingSettled(name: string | null, next: string | null, pronoun
 function NothingYet({ name, next, pronouns }: { readonly name: string | null; readonly next: string | null; readonly pronouns: PronounSet | null }) {
   return (
     <tr data-kb-kind="nothing">
-      <td className="kb-log-when" data-kb-label="When (UTC)">{next !== null ? utcWhen(next) : '—'}</td>
+      <td className="kb-log-when" data-kb-label="When (UTC)">{next !== null && untilWords(next) !== null ? utcWhen(next) : '—'}</td>
       <td className="kb-log-what" data-kb-label="What">Nothing yet</td>
       <td className="kb-log-details" data-kb-label="Details">{nothingSettled(name, next, pronouns)}</td>
       <td className="kb-log-num" data-kb-label="Aura" />

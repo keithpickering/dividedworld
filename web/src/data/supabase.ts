@@ -589,7 +589,7 @@ function toLogRead(src: Readonly<Record<'ledger' | 'wallet' | 'cards' | 'packs' 
     setEnds: src['setEnds'].map((r): FaceDownEnd => ({ play: r['play'], card: r['card'], post: r['post'], spring: r['spring'] ?? null, endedAt: r['ended_at'], endedBy: r['ended_by'] === 'taken back' || r['ended_by'] === 'sprung' || r['ended_by'] === 'time' ? r['ended_by'] : r['spring'] ? 'sprung' : 'time' })),
     caught: src['caught'].map((r): CaughtPlay => ({
       play: r['play'], card: r['card'], post: r['post'], trap: r['trap'], spring: r['spring'], price: num(r['price']),
-      boughtPrice: r['bought_price'] === null || r['bought_price'] === undefined ? null : num(r['bought_price']), at: r['at'],
+      at: r['at'],
     })),
     ended: src['ended'].map((r): CardEnded => ({
       cardEnd: r['card_end'], play: r['play'], card: r['card'], at: r['at'], side: r['side'], reach: r['reach'],
@@ -600,13 +600,13 @@ function toLogRead(src: Readonly<Record<'ledger' | 'wallet' | 'cards' | 'packs' 
       ruleNumber: typeof r['rule_number'] === 'number' ? r['rule_number'] : null, rule: str(r['rule']), mod: str(r['mod_name']), post: r['post'],
       postSeq: typeof r['post_seq'] === 'number' ? r['post_seq'] : null, thread: r['thread'], expiresAt: r['expires_at'], relief: num(r['relief']), emptiedAt: str(r['emptied_at']),
     })),
-    bans: src['bans'].map((r): LogBan => ({ ban: r['ban'], character: r['character'], at: r['at'], days: num(r['days']), until: r['until'], infraction: r['infraction'], rule: str(r['rule']), thread: r['thread'] })),
+    bans: src['bans'].map((r): LogBan => ({ ban: r['ban'], character: r['character'], at: r['at'], days: num(r['days']), until: r['until'], infraction: r['infraction'], rule: str(r['rule']), thread: r['thread'], ruling: RULINGS.find((v) => v === r['ruling']) ?? null, ownUntil: r['own_until'] ?? r['until'] })),
     groupMoves: src['groupMoves'].map((r): LogGroupMove => ({
       move: r['move'], character: r['character'], at: r['at'], thread: r['thread'], seq: typeof r['seq'] === 'number' ? r['seq'] : null, group: String(r['group'] ?? ''),
       board: str(r['board']), boardName: str(r['board_name']), expiresAt: str(r['expires_at']), landedUntil: str(r['landed_until']), checkAt: str(r['check_at']), demand: str(r['demand']),
       office: OFFICES.find((o) => o === r['office']) ?? null,
       endedWhy: MOVE_END_WHYS.find((w) => w === r['ended_why']) ?? null, endedBy: str(r['ended_by']), endedAt: str(r['ended_at']),
-      ruling: RULINGS.find((v) => v === r['ruling']) ?? null, ruledAt: str(r['ruled_at']), ruledUntil: str(r['ruled_until']),
+      ruling: RULINGS.find((v) => v === r['ruling']) ?? null, ruledAt: str(r['ruled_at']), ruledUntil: str(r['ruled_until']), ruledOffice: OFFICES.find((o) => o === r['ruled_office']) ?? null,
     })),
     reports: src['reports'].map((r): LogReport => ({
       report: r['report'], character: r['character'], at: r['at'], post: r['post'], postSeq: typeof r['post_seq'] === 'number' ? r['post_seq'] : null, thread: r['thread'],
@@ -982,14 +982,14 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       rows(() => client.from('my_posts_played_on').select('play,post,saved_at').not('saved_at', 'is', null), 'saved_at', (q) => q, ['play']),
       /* The player's own cards set face down, by when each sprang or ended (0054); one still live has no end yet. */
       rows(() => client.from('my_face_down').select('play,card,post,spring,ended_at,ended_by').not('ended_at', 'is', null), 'ended_at', (q) => q, ['play']),
-      rows(() => client.from('my_caught').select('play,card,post,trap,spring,price,bought_price,at'), 'at', (q) => q, ['play']),
+      rows(() => client.from('my_caught').select('play,card,post,trap,spring,price,at'), 'at', (q) => q, ['play']),
       /* The card plays an admin ended that the player cast or that landed on theirs (0092); a third party's reversal is in no one's view but its own. */
       rows(() => client.from('my_cards_ended').select('card_end,play,card,at,side,reach,target_name,post_author_name,caster_name,character'), 'at', (q) => q, ['card_end']),
       /* The Mod Bots' lines (0111): the warn points, bans, reports and appeals of the player's own characters; each view answers from the caller's own rows alone. */
       rows(() => client.from('my_infractions').select('infraction,character,at,band,points,rule_number,rule,mod_name,post,post_seq,thread,expires_at,relief,emptied_at'), 'at', (q) => q, ['infraction']),
-      rows(() => client.from('my_bans').select('ban,character,at,days,until,infraction,rule,thread'), 'at', (q) => q, ['ban']),
+      rows(() => client.from('my_bans').select('ban,character,at,days,until,infraction,rule,thread,ruling,own_until'), 'at', (q) => q, ['ban']),
       /* The staff moves of the player's characters into groups (0134): each with how it ended and the appeal's ruling on it. */
-      rows(() => client.from('my_group_moves').select('move,character,at,thread,seq,group,board,board_name,expires_at,landed_until,check_at,demand,office,ended_why,ended_by,ended_at,ruling,ruled_at,ruled_until'), 'at', (q) => q, ['move']),
+      rows(() => client.from('my_group_moves').select('move,character,at,thread,seq,group,board,board_name,expires_at,landed_until,check_at,demand,office,ended_why,ended_by,ended_at,ruling,ruled_at,ruled_until,ruled_office'), 'at', (q) => q, ['move']),
       rows(() => client.from('my_reports').select('report,character,at,post,post_seq,thread,verdict,verdict_at,mod_name,refund'), 'at', (q) => q, ['report']),
       rows(() => client.from('my_appeals').select('appeal,character,at,punishment,punishment_kind,post_seq,thread,verdict,ruled_at,points_delta,hearer_name,refund'), 'at', (q) => q, ['appeal']),
     ]);

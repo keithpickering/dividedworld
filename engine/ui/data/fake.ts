@@ -1918,6 +1918,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         .map(({ b }): LogBan => ({
           ban: b.id, character: b.payload.character as Id, at: iso(b.at), days: b.payload.days as number, until: (rulingOn(b.id)?.payload.until ?? b.payload.until) as string,
           infraction: b.payload.infraction_act as Id, rule: ((i) => (i ? ruleWords(i) : null))(acts.get(String(b.payload.infraction_act))), thread: b.thread,
+          ruling: (rulingOn(b.id)?.payload.verdict as AppealVerdict | undefined) ?? null, ownUntil: b.payload.until as string,
         })),
       /* my_group_moves (0134): the conferGroup moves on the account's own characters, each with its end and the ruling of the appeal on it; the end is read through the ruling's `until`. */
       groupMoves: newest(all.filter((m) => m.kind === 'move' && m.payload['kind'] === 'conferGroup' && owned((m.payload['params'] as Record<string, unknown> | undefined)?.['character']) && fits(m.at)).map((m) => ({ ms: m.at, order: m.order, m })))
@@ -1936,6 +1937,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
             office: m.payload['office'] === 'mod' ? 'mod' as const : 'boss' as const, endedWhy: (end?.payload['why'] as LogGroupMove['endedWhy'] | undefined) ?? null, endedBy: (end?.payload['by'] as string | undefined) ?? null,
             endedAt: end ? iso(end.at) : null, ruling: (ruling?.payload['verdict'] as AppealVerdict | undefined) ?? null, ruledAt: ruling ? iso(ruling.at) : null,
             ruledUntil: typeof ruling?.payload['until'] === 'string' ? ruling.payload['until'] : null,
+            ruledOffice: ruling?.payload['office'] === 'boss' || ruling?.payload['office'] === 'mod' ? ruling.payload['office'] : null,
           };
         }),
       reports: newest(all.filter((r) => r.kind === 'report' && owned(r.character) && fits(r.at)).map((r) => ({ ms: r.at, order: r.order, r })))
@@ -2541,7 +2543,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         const end = verdict === 'overturned' ? now() : verdict === 'reduced' ? start + (days * 86_400_000) / 2 : verdict === 'increased' ? was + (days * 86_400_000) / 2 : null;
         if (end !== null) until = iso(end);
       }
-      write({ character: hearer.id, kind: 'appeal_ruling', thread: pun.thread, target: appeal.id, payload: { appeal_act: appeal.id, verdict, points_delta: delta, line, ...(until ? { until } : {}) } });
+      write({ character: hearer.id, kind: 'appeal_ruling', thread: pun.thread, target: appeal.id, payload: { appeal_act: appeal.id, verdict, points_delta: delta, line, ...(until ? { until } : {}), ...(hearer.staff?.office === 'boss' || hearer.staff?.office === 'mod' ? { office: hearer.staff.office } : {}) } });
       if (movePunishes) {
         if (verdict === 'overturned') {
           moveEnds.set(pun.id, { why: 'overturned', by: 'appeal', at: now() });

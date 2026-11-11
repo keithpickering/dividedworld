@@ -396,6 +396,7 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
  */
 function groupRows(data: LogData, words: Words): LogRow[] {
   const nameOf = (id: Id) => data.mine.find((c) => c.id === id)?.name ?? 'one of your characters';
+  const pronounsOf = (id: Id) => pronounWords(data.mine.find((c) => c.id === id)?.pronouns ?? ENGINE_DEFAULT_PRONOUNS);
   const groups = [...words.instance.groups.ladder, ...words.instance.groups.conferred];
   const rows: LogRow[] = [];
   for (const g of data.log.groupMoves) {
@@ -408,7 +409,7 @@ function groupRows(data: LogData, words: Words): LogRow[] {
     const check = g.checkAt === null ? '' : ` It stays if ${name} meets the demand by ${utcDay(g.checkAt)}.`;
     rows.push({
       key: `grouped:${g.move}`, kind: 'grouped', at: g.at, what: `${name} was put in ${group}`,
-      details: [`${role} `, linked(`put ${name} in ${group}`), g.boardName === null ? `${until}.${check}` : ` and barred it from posting on ${g.boardName}${until}.${check}`],
+      details: [`${role} `, linked(`put ${name} in ${group}`), g.boardName === null ? `${until}.${check}` : ` and barred ${pronounsOf(g.character).them} from posting on ${g.boardName}${until}.${check}`],
       aura: 0, wallet: null, characters: [g.character],
     });
     if (g.endedWhy !== null && g.endedAt !== null) {
@@ -424,7 +425,8 @@ function groupRows(data: LogData, words: Words): LogRow[] {
       });
     }
     if (g.ruling !== null && g.ruledAt !== null) {
-      const hearer = role;
+      /* The hearer is the office stamped on the ruling (0153); a ruling written before the stamp names none, and no default stands in for it. */
+      const hearer = g.ruledOffice === null ? null : officeRole(words.ui.copy, g.ruledOffice);
       const ruled = g.ruledUntil === null ? Number.NaN : Date.parse(g.ruledUntil);
       const result = g.ruling === 'upheld' ? 'nothing changed'
         : g.ruling === 'overturned' ? 'it ended'
@@ -432,7 +434,10 @@ function groupRows(data: LogData, words: Words): LogRow[] {
         : ruled <= Date.parse(g.ruledAt) ? 'it ended at once' : `it now ends ${utcDay(g.ruledUntil!)}`;
       rows.push({
         key: `grouped:${g.move}:ruling`, kind: 'grouped', at: g.ruledAt, what: `Appeal ${g.ruling}`,
-        details: [`${hearer} ${g.ruling} `, linked(`${name}'s ${group}`), ` on appeal${result === null ? '' : `: ${result}`}.`], aura: 0, wallet: null, characters: [g.character],
+        details: hearer === null
+          ? [linked(`${name}'s ${group}`), ` was ${g.ruling} on appeal${result === null ? '' : `: ${result}`}.`]
+          : [`${hearer} ${g.ruling} `, linked(`${name}'s ${group}`), ` on appeal${result === null ? '' : `: ${result}`}.`],
+        aura: 0, wallet: null, characters: [g.character],
       });
     }
   }
@@ -467,9 +472,14 @@ function modRows(data: LogData, words: Words): LogRow[] {
 
   for (const b of data.log.bans) {
     const over = Date.parse(b.until) <= now;
+    /* How the ban ends, by what an appeal's ruling did to it (`ruling`, 0153); a ban with no ruling, or an upheld one, ends as it was laid. */
+    const ends = b.ruling === 'overturned' ? `An appeal overturned the ban on ${utcWhen(b.until)} UTC.`
+      : b.ruling === 'reduced' ? `An appeal shortened the ban: it ${over ? 'ended' : 'ends'} ${utcWhen(b.until)} UTC.`
+      : b.ruling === 'increased' ? `An appeal lengthened the ban: it ${over ? 'ended' : 'ends by itself'} ${utcWhen(b.until)} UTC.`
+      : `The ban ${over ? 'ended by itself' : 'ends by itself'} ${utcWhen(b.until)} UTC.`;
     rows.push({
       key: `ban:${b.ban}`, kind: 'ban', at: b.at, what: `${nameOf(b.character)} was banned`,
-      details: [`${nameOf(b.character)}'s warn bar filled${b.rule ? ` with ${b.rule}` : ''}, so ${pronounsOf(b.character).they} ${pronounsOf(b.character).was} banned for ${plural(b.days, 'day', 'days')} and the bar was emptied. ${pronounsOf(b.character).They} can read but not post, react or play cards. The ban ${over ? 'ended by itself' : 'ends by itself'} ${utcWhen(b.until)} UTC. Your other characters are not banned.`],
+      details: [`${nameOf(b.character)}'s warn bar filled${b.rule ? ` with ${b.rule}` : ''}, so ${pronounsOf(b.character).they} ${pronounsOf(b.character).was} banned for ${plural(b.days, 'day', 'days')} and the bar was emptied. ${pronounsOf(b.character).They} can read but not post, react or play cards. ${ends} The ban is on ${nameOf(b.character)} only; each character has its own warn bar.`],
       aura: 0, wallet: null, characters: [b.character],
       ...(!over && !data.log.appeals.some((a) => a.punishment === b.ban && a.refund === null) ? { appealBan: { ban: b.ban, character: b.character, until: b.until, days: b.days, rule: b.rule } } : {}),
     });
@@ -645,10 +655,10 @@ function cardRows(data: LogData, words: Words): LogRow[] {
       });
       return;
     }
-    /* A play a trap caught: the caster's whole cost, the machine's and the post's, and that nothing came back. */
+    /* A play a trap caught: what the cast cost, and that nothing came back. The price the card was bought at is not quoted: it is the machine's own, one of possibly several the player paid (the design, section 5). */
     const catchOf = data.log.caught.find((c) => c.play === e.act);
     if (catchOf) {
-      const cost = catchOf.boughtPrice === null ? plain(e.price) : `${plain(catchOf.boughtPrice)} and ${plain(e.price)}`;
+      const cost = plain(e.price);
       /* Where the card went, only for a spring that says it caught (`did`, from the face-down Moves on): a play caught before had its card spent, and keeps its old words.
          The setter is the spring's character, public with it, never an account; a staff setter takes nothing. */
       const spring = data.acts.get(catchOf.spring);
@@ -656,7 +666,7 @@ function cardRows(data: LogData, words: Words): LogRow[] {
       const fate = setter ? (data.staff?.has(setter) ? ', and the card is spent' : `, and went to ${nameOf(setter, 'the setter')}`) : '';
       rows.push({
         key: `caught:${e.act}`, kind: 'caught', at: e.at, what: `Your ${cardName(e.card)} was caught`,
-        details: [`Your ${cardName(e.card)} on `, link ?? 'a post', ` was caught by ${withArticle(cardName(catchOf.trap))}${fate}; it cost ${cost}, and nothing came back${setter ? ' to you' : ''}.`],
+        details: [`Your ${cardName(e.card)} on `, link ?? 'a post', ` was caught by ${withArticle(cardName(catchOf.trap))}${fate}; the cast cost ${cost}, and nothing came back${setter ? ' to you' : ''}.`],
         aura: -e.price, wallet: paid?.balanceAfter ?? null, characters: caster ? [caster] : [],
       });
       return;

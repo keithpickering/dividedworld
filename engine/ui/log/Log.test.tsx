@@ -294,6 +294,8 @@ describe('My log', () => {
     await open(due.fake, due.me, due.pipe);
     await screen.findByRole('table');
     expect(cells(bodyRows()[0]!)[2]).toBe('Nothing has settled for Pipewrench yet. A line comes here when a settlement scores her.');
+    /* No time is named, so none is shown in the When cell either: a dash, never the due time. */
+    expect(cells(bodyRows()[0]!)[0]).toBe('—');
     cleanup();
     const { fake, me, pipe } = world();
     await open(fake, me, pipe);
