@@ -453,6 +453,7 @@ function toQueued(r: Row): QueuedMove {
     id: num(r['id']), staff: String(r['staff'] ?? ''), boss: orNull(r['boss']), bossPronouns: pronounsOrDefault(r['bossPronouns']), kind: String(r['kind'] ?? ''), params: params(r['params']), demand: toDemand(r['demand']),
     why: String(r['why'] ?? ''), goLiveAt: String(r['goLiveAt'] ?? ''), expiresAt: orNull(r['expiresAt']), structural: r['structural'] === true, boardName: orNull(r['boardName']),
     failedAt: orNull(r['failedAt']), failure: orNull(r['failure']), replacedAt: orNull(r['replacedAt']), adminDescription: orNull(r['adminDescription']),
+    waitsFor: (Array.isArray(r['waitsFor']) ? r['waitsFor'] : []).filter((x): x is Row => !!x && typeof x === 'object').map((x) => ({ id: num(x['id']), role: orNull(x['role']), kind: String(x['kind'] ?? ''), name: orNull(x['name']) })),
     ...bundleOf(r),
   };
 }

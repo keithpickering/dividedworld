@@ -453,3 +453,145 @@ begin
   perform pg_temp.expect((select count(*) = 2 from pg_trigger t where t.tgrelid = 'move_dependencies'::regclass and t.tgenabled = 'A' and not t.tgisinternal and t.tgname in ('move_dependencies_no_update', 'move_dependencies_no_truncate')), 'the guards of move_dependencies do not fire always');
   perform pg_temp.expect((select count(*) from pg_proc p where p.proname in ('hold_move', 'reverse_move', 'admin_queue', 'queued_moves_guard', 'system_tick', 'move_dependencies_guard') and p.prosecdef and exists (select 1 from unnest(p.proconfig) c where c = 'search_path=public, pg_temp')) = 6, 'a definer does not pin its search_path');
 end $$;
+
+-- ---- 9. A part waiting on its role's part says so in the queue: waitsFor names the part, and a part that waits for none has none ----
+do $$
+declare
+  b uuid := gen_random_uuid();
+  t uuid := pg_temp.mk('Waits', 'general');
+  q1 bigint;
+  q2 bigint;
+  qj jsonb;
+  w1 jsonb;
+  w2 jsonb;
+begin
+  q1 := pg_temp.part(b, 'The Waiters', 'minus', 'createBoard', pg_temp.mkboard('Waiters Minus'));
+  q2 := pg_temp.part(b, 'The Waiters', 'move', 'moveThread', jsonb_build_object('thread', t, 'board', jsonb_build_object('role', 'minus')));
+  perform tests.become(pg_temp.admin());
+  qj := admin_queue();
+  perform tests.unbecome();
+  select x into w1 from jsonb_array_elements(qj -> 'waiting') x where (x ->> 'id')::bigint = q1;
+  select x into w2 from jsonb_array_elements(qj -> 'waiting') x where (x ->> 'id')::bigint = q2;
+  perform pg_temp.expect(w1 -> 'waitsFor' = '[]'::jsonb, 'the first part waits for something: ' || coalesce((w1 -> 'waitsFor')::text, 'no key'));
+  perform pg_temp.expect(jsonb_array_length(w2 -> 'waitsFor') = 1 and w2 #>> '{waitsFor,0,id}' = q1::text and w2 #>> '{waitsFor,0,role}' = 'minus' and w2 #>> '{waitsFor,0,name}' = 'Waiters Minus' and w2 #>> '{waitsFor,0,kind}' = 'createBoard',
+    'the second part does not say it waits for the first: ' || coalesce((w2 -> 'waitsFor')::text, 'no key'));
+  update queued_moves set held_at = now(), held_by = pg_temp.admin() where bundle = b;
+end $$;
+
+-- ---- 10. A creation reversed after what built on it landed: every live dependent ends reversed, every thread has a board, no drift ----
+do $$
+declare
+  b uuid := gen_random_uuid();
+  t1 uuid := pg_temp.mk('Late A', 'general');
+  t2 uuid := pg_temp.mk('Late B', 'general');
+  q uuid;
+  qc bigint;
+  ac uuid;
+  made uuid;
+  m1 uuid;
+  m2 uuid;
+  mg uuid;
+begin
+  -- Several dependents at later meetings, a merge of a board into the made one among them.
+  qc := pg_temp.part(b, 'The Held Creation', 'minus', 'createBoard', pg_temp.mkboard('Held Creation'));
+  perform system_tick();
+  ac := (pg_temp.qrow(qc)).landed_act;
+  made := pg_temp.made_by(ac);
+  m1 := pg_temp.land(pg_temp.queue('moveThread', jsonb_build_object('thread', t1, 'board', made)));
+  m2 := pg_temp.land(pg_temp.queue('moveThread', jsonb_build_object('thread', t2, 'board', made)));
+  mg := pg_temp.land(pg_temp.queue('mergeBoard', jsonb_build_object('board', pg_temp.board('fourth'), 'into', made)));
+  perform pg_temp.expect(pg_temp.at(t1) = made and pg_temp.at(t2) = made, 'the threads did not land on the made board');
+  perform tests.become(pg_temp.admin());
+  perform reverse_move(ac);
+  perform tests.unbecome();
+  perform pg_temp.expect(pg_temp.ends(m1) = 'reversed/admin' and pg_temp.ends(m2) = 'reversed/admin' and pg_temp.ends(mg) = 'reversed/admin', 'a dependent did not end as reversed: ' || pg_temp.ends(m1) || ' ' || pg_temp.ends(m2) || ' ' || pg_temp.ends(mg));
+  perform pg_temp.expect(not exists (select 1 from open_moves where move_act in (ac, m1, m2, mg)), 'a dependent is still in force');
+  perform pg_temp.expect(pg_temp.at(t1) = pg_temp.board('general') and pg_temp.at(t2) = pg_temp.board('general'), 'a thread has not the board it was started on');
+  perform pg_temp.expect(not exists (select 1 from threads t where not exists (select 1 from boards b2 where b2.id = t.board)), 'a thread has no board');
+  perform pg_temp.expect(board_is_open(pg_temp.board('fourth')), 'the merged board did not reopen');
+  perform pg_temp.settled('several dependents reversed with their creation');
+end $$;
+
+do $$
+declare
+  b uuid := gen_random_uuid();
+  t uuid := pg_temp.mk('In then out', 'general');
+  qc bigint;
+  ac uuid;
+  made uuid;
+  m_in uuid;
+  m_out uuid;
+begin
+  -- A thread moved in and then out: the first move is superseded, the second builds on nothing made.
+  qc := pg_temp.part(b, 'The Round Trip', 'minus', 'createBoard', pg_temp.mkboard('Round Trip'));
+  perform system_tick();
+  ac := (pg_temp.qrow(qc)).landed_act;
+  made := pg_temp.made_by(ac);
+  m_in := pg_temp.land(pg_temp.queue('moveThread', jsonb_build_object('thread', t, 'board', made)));
+  m_out := pg_temp.land(pg_temp.queue('moveThread', jsonb_build_object('thread', t, 'board', pg_temp.board('elsewhere'))));
+  perform pg_temp.expect(pg_temp.ends(m_in) = 'superseded/landing' and pg_temp.at(t) = pg_temp.board('elsewhere'), 'the thread did not go in and out: ' || pg_temp.ends(m_in));
+  perform tests.become(pg_temp.admin());
+  perform reverse_move(ac);
+  perform tests.unbecome();
+  perform pg_temp.expect(pg_temp.ends(m_in) like '%reversed/admin', 'the superseded move into the board was not reversed with it: ' || pg_temp.ends(m_in));
+  perform pg_temp.expect(pg_temp.ends(m_out) = '' and exists (select 1 from open_moves where move_act = m_out), 'the move out, which built on nothing made, ended');
+  perform pg_temp.expect(pg_temp.at(t) = pg_temp.board('elsewhere'), 'the thread left the board the later move put it on');
+  perform pg_temp.settled('a thread moved in and out');
+end $$;
+
+do $$
+declare
+  b uuid := gen_random_uuid();
+  t uuid := pg_temp.mk('Three deep', 'general');
+  qx bigint;
+  ax uuid;
+  bx uuid;
+  ay uuid;
+  by_ uuid;
+  m uuid;
+begin
+  -- A three-deep chain: X made; Y made later with X as its fallback; a thread moved into Y.
+  qx := pg_temp.part(b, 'The Chain Held', 'minus', 'createBoard', pg_temp.mkboard('Deep X'));
+  perform system_tick();
+  ax := (pg_temp.qrow(qx)).landed_act;
+  bx := pg_temp.made_by(ax);
+  ay := pg_temp.land(pg_temp.queue('createBoard', pg_temp.mkboard('Deep Y') || jsonb_build_object('fallback', bx)));
+  by_ := pg_temp.made_by(ay);
+  m := pg_temp.land(pg_temp.queue('moveThread', jsonb_build_object('thread', t, 'board', by_)));
+  perform pg_temp.expect(pg_temp.at(t) = by_, 'the thread is not on the third board');
+  perform tests.become(pg_temp.admin());
+  perform reverse_move(ax);
+  perform tests.unbecome();
+  perform pg_temp.expect(pg_temp.ends(ay) = 'reversed/admin' and pg_temp.ends(m) = 'reversed/admin', 'the chain was not reversed to its end: ' || pg_temp.ends(ay) || ' ' || pg_temp.ends(m));
+  perform pg_temp.expect(pg_temp.at(t) = pg_temp.board('general'), 'the thread has not the board it was started on');
+  perform pg_temp.settled('a three-deep chain');
+end $$;
+
+do $$
+declare
+  b uuid := gen_random_uuid();
+  t1 uuid := pg_temp.mk('Ended first', 'general');
+  t2 uuid := pg_temp.mk('Live second', 'general');
+  qc bigint;
+  ac uuid;
+  made uuid;
+  m1 uuid;
+  m2 uuid;
+  answer jsonb;
+begin
+  -- A dependent already ended (reversed alone) is skipped by the traversal; the live one still follows.
+  qc := pg_temp.part(b, 'The Skipped', 'minus', 'createBoard', pg_temp.mkboard('Skipped Place'));
+  perform system_tick();
+  ac := (pg_temp.qrow(qc)).landed_act;
+  made := pg_temp.made_by(ac);
+  m1 := pg_temp.land(pg_temp.queue('moveThread', jsonb_build_object('thread', t1, 'board', made)));
+  m2 := pg_temp.land(pg_temp.queue('moveThread', jsonb_build_object('thread', t2, 'board', made)));
+  perform tests.become(pg_temp.admin());
+  perform reverse_move(m1);
+  answer := reverse_move(ac);
+  perform tests.unbecome();
+  perform pg_temp.expect(answer -> 'alsoEnded' = to_jsonb(array[m2]), 'the traversal did not skip the ended dependent: ' || answer::text);
+  perform pg_temp.expect(pg_temp.ends(m1) = 'reversed/admin' and pg_temp.ends(m2) = 'reversed/admin', 'a dependent is not reversed once: ' || pg_temp.ends(m1) || ' ' || pg_temp.ends(m2));
+  perform pg_temp.expect(pg_temp.at(t1) = pg_temp.board('general') and pg_temp.at(t2) = pg_temp.board('general'), 'a thread has no board of its own');
+  perform pg_temp.settled('a dependent already ended');
+end $$;

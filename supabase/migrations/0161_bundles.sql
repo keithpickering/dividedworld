@@ -16,6 +16,10 @@
 --   moves_log       gains `bundle` and `role` at its end.
 --   role_board      the board the part of a role in a bundle made: the one place a role is resolved, so that a role from an earlier beat (Task 9's {role, beat}) is one more argument here.
 --
+-- What is not a dependent. A later renameBoard, setRule or conferGroup that names a made board does not build on its creation: it changes only how a board is called, ruled or barred, and stands
+-- or ends by its own expiry or an admin's word; reversing the creation closes the board, and none of those leaves a thread without a board or a player in a state with no way out.
+-- Only the three moves that put threads and boards in places (createBoard, moveThread, mergeBoard) record a dependency.
+--
 -- Cost on a busy instance. Following a hold reads queued_moves by a partial GIN index on `depends_on` over the rows still waiting, and following a reversal reads move_dependencies by `on_act`:
 -- each costs the dependents of the move, never the history of moves or of Acts.
 -- Its way out: a held or reversed part is over, as any held or reversed move is, and the Boss chooses again at its next meeting. A part that waits for a part that is held or refused is held or

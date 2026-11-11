@@ -1898,7 +1898,7 @@ describe('the moves a board shows, a staff profile and the admin queue', () => {
       todos: [{ season: 3, boss: 'the-clerk', bossName: 'The Clerk', bossPronouns: PRONOUN_PRESETS.he, bossWas: 'mod', outgoing: 'director', outgoingName: 'The Director', outgoingPronouns: null, outgoingOffice: 'member', how: 'rotation', landedAt: '2026-11-01T00:00:00+00:00' }],
     };
     /* A part of a bundle says its bundle, role and the bundle's name (0161); a move that is none says null for each. */
-    queue.waiting[0] = { ...queue.waiting[0]!, bundle: C, role: 'minus', bundleName: 'The Split' } as (typeof queue.waiting)[0];
+    queue.waiting[0] = { ...queue.waiting[0]!, bundle: C, role: 'minus', bundleName: 'The Split', waitsFor: [{ id: 3, role: 'minus', kind: 'createBoard', name: 'World -1' }, 'junk'] } as (typeof queue.waiting)[0];
     const h = harness((r) => {
       if (r.url.pathname.endsWith('/rpc/admin_queue')) return json(queue);
       if (r.url.pathname.endsWith('/rpc/hold_move')) return json({ id: 4, heldAt: '2026-10-31T15:00:00+00:00', heldAlso: [5, 6] });
@@ -1908,6 +1908,7 @@ describe('the moves a board shows, a staff profile and the admin queue', () => {
     const q = await h.api.adminQueue();
     expect(q.waiting[0]).toMatchObject({ id: 4, boss: 'The Director', boardName: 'General', failure: 'it did not land', failedAt: '2026-10-31T14:11:00+00:00', demand: { kind: 'postsOnBoard' } });
     expect(q.waiting[0]).toMatchObject({ bundle: C, role: 'minus', bundleName: 'The Split' });
+    expect(q.waiting[0]?.waitsFor).toEqual([{ id: 3, role: 'minus', kind: 'createBoard', name: 'World -1' }]);
     expect([q.inForce[0], q.ended[0]]).toMatchObject([{ bundle: null, role: null, bundleName: null }, { bundle: null, role: null, bundleName: null }]);
     expect(q.inForce[0]?.progress).toEqual({ done: 2, of: 5, met: false, checkedAt: '2026-11-01T14:05:00+00:00' });
     expect(q.ended.map((e) => e.how)).toEqual(['held', 'met']);

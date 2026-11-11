@@ -34,6 +34,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { ENGINE_DEFAULT_PRONOUNS, words, type PronounSet } from '../../rules/pronouns.ts';
 import { demandAsk, demandKind, demandWords } from '../../system/demands.ts';
+import { moveKind } from '../../system/moves.ts';
 import { MoveSentence } from '../board/MoveSentence.tsx';
 import { demandNeeds } from '../board/move-words.ts';
 import { dayAndTime } from '../characters/format.ts';
@@ -73,11 +74,23 @@ type Roster = { readonly staff: string; readonly name: string; readonly pronouns
 type Asked = { readonly kind: 'hold'; readonly row: QueuedMove } | { readonly kind: 'reverse'; readonly row: MoveInForce };
 
 /** What a button says of its move: the board it makes or renames, else the part of its bundle it is, else the move. */
-function partLabel(row: { readonly kind: string; readonly params: Readonly<Record<string, unknown>>; readonly role: string | null; readonly bundleName: string | null }): string {
+function partLabel(row: { readonly kind: string; readonly params: Readonly<Record<string, unknown>>; readonly role: string | null; readonly bundleName: string | null }, boards: readonly BoardName[] = []): string {
   const name = row.params['name'];
   if (typeof name === 'string' && name !== '') return name;
   if (row.kind === 'nameSuccessor') return 'the naming of a successor';
-  return row.role !== null && row.bundleName !== null ? `the part "${row.role}" of ${row.bundleName}` : 'this move';
+  if (row.role !== null && row.bundleName !== null) return `the part "${row.role}" of ${row.bundleName}`;
+  /* The kind's own plain sentence, with the boards it names where they are known. */
+  const to = boards.find((b) => b.id === row.params['board'])?.name;
+  const into = boards.find((b) => b.id === row.params['into'])?.name;
+  const parts = moveKind(row.kind)?.parts(row.params, null, 'plan', to ? { board: to } : undefined);
+  const said = parts?.map((p) => (typeof p === 'string' ? p : p.name)).join('');
+  return said ? (into && row.kind === 'mergeBoard' ? said.replace(/ into a board$/u, ` into ${into}`) : said) : 'this move';
+}
+
+/** Each label of a group once: where two parts read the same, each says its place in the group. */
+function uniqueLabels<T>(rows: readonly T[], label: (row: T) => string): ReadonlyMap<T, string> {
+  const base = rows.map(label);
+  return new Map(rows.map((row, i) => [row, base.filter((b) => b === base[i]).length > 1 ? `${base[i]} (${base.slice(0, i + 1).filter((b) => b === base[i]).length} of ${base.filter((b) => b === base[i]).length})` : base[i]!]));
 }
 
 /** Rows in their order, the parts of one bundle gathered where the first of them stands. */
@@ -361,7 +374,7 @@ function Todos({ rows, onDismissed }: { readonly rows: readonly HandoverTodo[]; 
   );
 }
 
-function WaitingRow({ q, nested, boards, bosses, roster, now, onHold, onReplaced }: { readonly q: QueuedMove; readonly nested: boolean; readonly boards: readonly BoardName[]; readonly bosses: readonly Roster[]; readonly roster: readonly Roster[]; readonly now: number; readonly onHold: (row: QueuedMove) => void; readonly onReplaced: () => Promise<void> }) {
+function WaitingRow({ q, label, nested, boards, bosses, roster, now, onHold, onReplaced }: { readonly q: QueuedMove; readonly label: string; readonly nested: boolean; readonly boards: readonly BoardName[]; readonly bosses: readonly Roster[]; readonly roster: readonly Roster[]; readonly now: number; readonly onHold: (row: QueuedMove) => void; readonly onReplaced: () => Promise<void> }) {
   const { api } = useKayfa();
   const Head = nested ? 'h4' : 'h3';
   const description = typeof q.params['description'] === 'string' ? q.params['description'] : '';
@@ -381,6 +394,7 @@ function WaitingRow({ q, nested, boards, bosses, roster, now, onHold, onReplaced
         {description && <p className="kb-queue-quote">Description: “{description}”</p>}
         {q.adminDescription && <p className="kb-queue-quote">An admin&apos;s replacement, which lands beside it: “{q.adminDescription}”</p>}
         {q.why && <p className="kb-queue-quote">Why, in {q.boss ?? 'the Boss'}&apos;s words: “{q.why}”</p>}
+        {q.waitsFor.map((d) => <p key={d.id}>Waits for the part {d.role ? `“${d.role}”` : 'it builds on'}{d.name ? ` (${d.name})` : ''} to land first.</p>)}
         {q.failedAt && (
           <p className="kb-queue-failure" role="note">
             It could not land at {dayAndTime(q.failedAt)}: {q.failure}. It stays in line and is tried again; hold it if it should not land.
@@ -389,7 +403,7 @@ function WaitingRow({ q, nested, boards, bosses, roster, now, onHold, onReplaced
       </div>
       <div className="kb-queue-act">
         {(() => {
-          const hold = <GlassButton aria-label={`Hold: ${partLabel(q)}`} onClick={() => onHold(q)}>HOLD</GlassButton>;
+          const hold = <GlassButton aria-label={`Hold: ${label}`} onClick={() => onHold(q)}>HOLD</GlassButton>;
           /* A rename's replacement field sits shut under HOLD, so the row keeps the board's width and its words wrap as the board's do. */
           return q.kind === 'renameBoard'
             ? <ReplaceDescription lead={hold} id={`queue-rename-${q.id}`} about={String(q.params['name'] ?? 'this rename')} saved="Saved. It lands with the rename." save={(words) => api.replaceQueuedDescription(q.id, words)} onSaved={onReplaced} />
@@ -407,20 +421,20 @@ function Waiting({ rows, more, boards, bosses, roster, now, onHold, onReplaced }
       <GroupHead id="queue-waiting" title="Waiting to land" count={rows.length} more={more} />
       {rows.length === 0 && <p className="kb-queue-empty">Nothing is waiting.</p>}
       {inBundles(rows).map((item) => item.bundle === null
-        ? <WaitingRow key={item.row.id} q={item.row} nested={false} boards={boards} bosses={bosses} roster={roster} now={now} onHold={onHold} onReplaced={onReplaced} />
+        ? <WaitingRow key={item.row.id} q={item.row} label={partLabel(item.row, boards)} nested={false} boards={boards} bosses={bosses} roster={roster} now={now} onHold={onHold} onReplaced={onReplaced} />
         : (
           <BundleGroup key={item.bundle} id={item.bundle} name={item.name}>
-            {item.rows.map((q) => <WaitingRow key={q.id} q={q} nested boards={boards} bosses={bosses} roster={roster} now={now} onHold={onHold} onReplaced={onReplaced} />)}
+            {(() => { const labels = uniqueLabels(item.rows, (r) => partLabel(r, boards)); return item.rows.map((q) => <WaitingRow key={q.id} q={q} label={labels.get(q)!} nested boards={boards} bosses={bosses} roster={roster} now={now} onHold={onHold} onReplaced={onReplaced} />); })()}
           </BundleGroup>
         ))}
     </CalmRegion>
   );
 }
 
-function InForceRow({ m, nested, boards, bosses, onReverse }: { readonly m: MoveInForce; readonly nested: boolean; readonly boards: readonly BoardName[]; readonly bosses: readonly Roster[]; readonly onReverse: (row: MoveInForce) => void }) {
+function InForceRow({ m, label, nested, boards, bosses, onReverse }: { readonly m: MoveInForce; readonly label: string; readonly nested: boolean; readonly boards: readonly BoardName[]; readonly bosses: readonly Roster[]; readonly onReverse: (row: MoveInForce) => void }) {
   const Head = nested ? 'h4' : 'h3';
-    const ok = m.progress.of > 0 && !m.progress.error;
-    const known = m.demand !== null && demandKind(m.demand.kind) !== undefined;
+  const ok = m.progress.of > 0 && !m.progress.error;
+  const known = m.demand !== null && demandKind(m.demand.kind) !== undefined;
   return (
     <article className="kb-queue-move" data-kb-state="in-force">
       <div className="kb-queue-when">
@@ -441,7 +455,7 @@ function InForceRow({ m, nested, boards, bosses, onReverse }: { readonly m: Move
         {m.why && <p className="kb-queue-quote">Why, in {m.boss ?? 'the Boss'}&apos;s words: “{m.why}”</p>}
       </div>
       <div className="kb-queue-act">
-        <ButtonRow><GlassButton aria-label={`Reverse: ${partLabel(m)}`} onClick={() => onReverse(m)}>REVERSE</GlassButton></ButtonRow>
+        <ButtonRow><GlassButton aria-label={`Reverse: ${label}`} onClick={() => onReverse(m)}>REVERSE</GlassButton></ButtonRow>
       </div>
     </article>
   );
@@ -453,10 +467,10 @@ function InForce({ rows, more, boards, bosses, onReverse }: { readonly rows: rea
       <GroupHead id="queue-in-force" title="In force" count={rows.length} more={more} />
       {rows.length === 0 && <p className="kb-queue-empty">Nothing is in force.</p>}
       {inBundles(rows).map((item) => item.bundle === null
-        ? <InForceRow key={item.row.act} m={item.row} nested={false} boards={boards} bosses={bosses} onReverse={onReverse} />
+        ? <InForceRow key={item.row.act} m={item.row} label={partLabel(item.row, boards)} nested={false} boards={boards} bosses={bosses} onReverse={onReverse} />
         : (
           <BundleGroup key={item.bundle} id={item.bundle} name={item.name}>
-            {item.rows.map((m) => <InForceRow key={m.act} m={m} nested boards={boards} bosses={bosses} onReverse={onReverse} />)}
+            {(() => { const labels = uniqueLabels(item.rows, (r) => partLabel(r, boards)); return item.rows.map((m) => <InForceRow key={m.act} m={m} label={labels.get(m)!} nested boards={boards} bosses={bosses} onReverse={onReverse} />); })()}
           </BundleGroup>
         ))}
     </CalmRegion>

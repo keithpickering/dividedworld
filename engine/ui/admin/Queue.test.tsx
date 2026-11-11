@@ -870,3 +870,39 @@ describe('a bundle', () => {
     expect(ended.map((e) => `${e.role}:${e.how}`).sort()).toEqual(['minus:reversed', 'move:reversed']);
   });
 });
+
+describe('a bundle: each part named, and what waits says so', () => {
+  const split = { id: 'plain-parts', name: 'Plain Parts' };
+  const threadA = '22222222-2222-4222-8222-222222222222';
+  const threadB = '33333333-3333-4333-8333-333333333333';
+
+  test('two parts with no role and no name have buttons of their own: the kind\'s plain sentence, then a place in the group', async () => {
+    open({
+      build: (fake, w) => {
+        const soon = fake.clock.now() + 3_600_000;
+        fake.seed.queueMove('director', { board: '', name: '', goLiveAt: soon, why: 'One.', bundle: split, lasting: { kind: 'moveThread', params: { thread: threadA, board: w.general } } });
+        fake.seed.queueMove('director', { board: '', name: '', goLiveAt: soon, why: 'Two.', bundle: split, lasting: { kind: 'moveThread', params: { thread: threadB, board: w.general } } });
+      },
+    });
+    const bundle = await within(await group(/^Waiting to land/u)).findByRole('group', { name: 'Plain Parts' });
+    const names = within(bundle).getAllByRole('button', { name: /^Hold/u }).map((b) => b.getAttribute('aria-label'));
+    expect(names).toHaveLength(2);
+    expect(new Set(names).size).toBe(2);
+    for (const n of names) expect(n).toMatch(/^Hold: Move a thread to .+ \(\d of 2\)$/u);
+    expect(names.some((n) => /this move/u.test(n ?? ''))).toBe(false);
+  });
+
+  test('a part that waits for its role\'s part says so, plainly, and the part it waits for says nothing of the kind', async () => {
+    open({
+      build: (fake) => {
+        const soon = fake.clock.now() - 60_000;
+        fake.seed.queueMove('director', { board: '', name: '', goLiveAt: soon, why: 'First.', bundle: { id: 'w', name: 'The Waits', role: 'minus' }, lasting: { kind: 'createBoard', params: { name: 'World -1', premise: 'p', description: 'd' } } });
+        fake.seed.queueMove('director', { board: '', name: '', goLiveAt: soon, why: 'Second.', bundle: { id: 'w', name: 'The Waits', role: 'move' }, lasting: { kind: 'moveThread', params: { thread: threadA, board: { role: 'minus' } } } });
+      },
+    });
+    const bundle = await within(await group(/^Waiting to land/u)).findByRole('group', { name: 'The Waits' });
+    const [first, second] = within(bundle).getAllByRole('article');
+    expect(second).toHaveTextContent('Waits for the part “minus” (World -1) to land first.');
+    expect(first).not.toHaveTextContent(/Waits for/u);
+  });
+});

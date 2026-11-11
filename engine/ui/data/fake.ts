@@ -2318,11 +2318,14 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const demandFor = moveDemand;
       const waiting = queue.filter((q) => q.landed === null && q.heldAt === null && !q.refusal).sort((a, b) => a.goLiveAt - b.goLiveAt || a.id - b.id).map((q): QueuedMove => q.successor !== undefined ? ({
         id: q.id, staff: q.staff, boss: nameOf(q.staff), bossPronouns: pronounsOf(q.staff), kind: 'nameSuccessor', params: { boss: q.successor }, demand: null, why: q.why, goLiveAt: iso(q.goLiveAt),
-        expiresAt: null, structural: true, boardName: null, failedAt: null, failure: null, replacedAt: q.replacedAt === undefined ? null : iso(q.replacedAt), adminDescription: null, ...bundleOf(q),
+        expiresAt: null, structural: true, boardName: null, failedAt: null, failure: null, replacedAt: q.replacedAt === undefined ? null : iso(q.replacedAt), adminDescription: null, waitsFor: [], ...bundleOf(q),
       }) : ({
         id: q.id, staff: q.staff, boss: nameOf(q.staff), bossPronouns: pronounsOf(q.staff), kind: q.lasting?.kind ?? 'renameBoard', params: q.lasting?.params ?? paramsOf(q.move), demand: q.lasting ? null : demandFor(q.move), why: q.why, goLiveAt: iso(q.goLiveAt),
         expiresAt: q.lasting || q.move.expiresAt === undefined ? null : iso(q.move.expiresAt), structural: q.lasting?.kind !== 'moveThread', boardName: boards.find((b) => b.slug === q.move.board) ? boardNow(boards.find((b) => b.slug === q.move.board)!).name : null,
         failedAt: q.failure ? iso(q.failure.at) : null, failure: q.failure?.text ?? null, replacedAt: null, adminDescription: q.adminDescription ?? null, ...bundleOf(q),
+        waitsFor: queue.filter((d) => d !== q && d.bundle?.id === q.bundle?.id && q.bundle !== undefined && d.bundle?.role && d.landed === null && d.heldAt === null && !d.refusal
+          && ['board', 'into', 'fallback'].some((k) => (q.lasting?.params[k] as { role?: unknown } | undefined)?.role === d.bundle!.role))
+          .map((d) => ({ id: d.id, role: d.bundle!.role, kind: d.lasting?.kind ?? 'renameBoard', name: typeof d.lasting?.params['name'] === 'string' ? d.lasting.params['name'] : null })),
       }));
       const rowOf = (a: ActRec) => {
         const q = queue.find((x) => x.landed === a.id);

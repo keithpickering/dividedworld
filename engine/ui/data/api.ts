@@ -683,6 +683,8 @@ export interface QueuedMove {
   readonly replacedAt: string | null;
   /** The words an admin has put in the place of the rename's description (`replace_queued_description`, 0101); null when none did. The Boss's own stay in `params`. */
   readonly adminDescription: string | null;
+  /** The queued moves it builds on that have not landed (admin_queue, 0163): it lands after them. Empty for a move that waits for none. */
+  readonly waitsFor: readonly { readonly id: number; readonly role: string | null; readonly kind: string; readonly name: string | null }[];
   /** The bundle the move is a part of (admin_queue, 0161), the part's role in it and the bundle's name; all null for a move that is no part of a bundle. */
   readonly bundle: Id | null;
   readonly role: string | null;

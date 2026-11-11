@@ -276,6 +276,10 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into queued_moves (meeting, staff, kind, params, demand, why, go_live_at, expires_at, structural, landed_act, cause_act, bundle, bundle_name, role)
       select max(m.id), 'exp-boss', 'renameBoard', '{"board": "x", "name": "Exported Palace"}', jsonb_build_object('kind', 'postsOnBoard', 'params', jsonb_build_object('board', gen, 'count', 2)), 'Because the toast was cold.',
              now() - interval '1 day', now() + interval '2 days', true, kept, p, gen_random_uuid(), 'The Exported Bundle', 'palace' from meetings m;
+      -- The part builds on another queued move (depends_on, an array, set only by the guard, so it is written here with the guard's triggers off for the one update).
+      perform set_config('session_replication_role', 'replica', true);
+      update queued_moves set depends_on = array[queued_moves.id] where landed_act = kept;
+      perform set_config('session_replication_role', 'origin', true);
       -- A move that built on another (0161): written when the dependent lands, insert-only, carried across with the Acts it names.
       insert into move_dependencies (act, on_act) values (kept, moved);
       -- An apology to the move in force (0129), carried across with the Acts it names.
