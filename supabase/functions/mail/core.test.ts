@@ -156,3 +156,11 @@ test('a render error is deterministic: recorded as refused, never retried', asyn
   assert.equal(out.status === 'done' && out.refused, 1);
   assert.equal((await w.db.due(10)).length, 0);
 });
+
+test('a row whose bar is null, as mail_due returns it for a mail with no bar (a JSON null, not an absent key), is sent with no Auth call', async () => {
+  const w = world([row({ bar: null })]);
+  await runMail(deps(w, okMailer(w)));
+  assert.equal(w.sent.length, 1);
+  assert.deepEqual(w.bans, []);
+  assert.deepEqual(w.attempts, [{ outbox: 1, kind: 'sent', providerId: 'prov-1', error: null }]);
+});

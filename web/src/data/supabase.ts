@@ -1663,10 +1663,10 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const a = await rpcWrite(() => client.rpc('report_post', { version_act: version, section, note: note.trim() === '' ? null : note }), (code) => (code === '53400' ? REPORT_LIMIT : undefined));
       return a.ok ? { ok: true, value: null } : a;
     },
-    async myOpenReports(): Promise<number | null> {
+    async myOpenReports(): Promise<{ readonly open: number; readonly most: number } | null> {
       try {
         const d = (await read(() => client.rpc('my_open_reports'))).data;
-        return typeof d === 'number' ? d : null;
+        return isObject(d) && typeof d['open'] === 'number' && typeof d['most'] === 'number' ? { open: d['open'], most: d['most'] } : null;
       } catch {
         return null;
       }

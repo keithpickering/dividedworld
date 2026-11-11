@@ -3067,7 +3067,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     }),
     myOpenReports() {
       const account = me()?.id;
-      return account === undefined ? null : conductReports.filter((r) => r.reporter === account && !conductDecisions.some((d) => d.report === r.id)).length;
+      return account === undefined ? null : { open: conductReports.filter((r) => r.reporter === account && !conductDecisions.some((d) => d.report === r.id)).length, most: CONDUCT_OPEN_MOST };
     },
     myHiddenVersion(post) {
       const found = acts.get(post);

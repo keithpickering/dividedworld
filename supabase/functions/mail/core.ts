@@ -39,8 +39,8 @@ export interface MailRow {
   readonly account: string;
   readonly template: ConductTemplate;
   readonly facts: Readonly<Record<string, unknown>>;
-  /** The decision's effect on the login, where it has one. */
-  readonly bar?: { readonly outcome: 'suspend' | 'ban' | 'lift'; readonly until: string | null };
+  /** The decision's effect on the login, where it has one (mail_due gives null for a mail with none). */
+  readonly bar?: { readonly outcome: 'suspend' | 'ban' | 'lift'; readonly until: string | null } | null;
 }
 
 export interface MailDb {
@@ -86,7 +86,7 @@ export async function runMail(deps: MailDeps): Promise<MailOutcome> {
       if (kind === 'refused') refused++; else failed++;
       await deps.db.attempt({ outbox: row.id, kind, providerId: null, error });
     };
-    if (row.bar !== undefined) {
+    if (row.bar !== undefined && row.bar !== null) {
       try {
         if (row.bar.outcome === 'lift') await deps.auth.clearBan(row.account);
         else if (row.bar.outcome === 'ban' || row.bar.until === null) await deps.auth.setBan(row.account, null);

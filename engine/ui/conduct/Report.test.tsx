@@ -168,17 +168,35 @@ describe('the report dialog', () => {
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Report to admins' })).toBeNull());
   });
 
-  test('the limit stands in place of the form with the account\'s own count, and focus on its heading', async () => {
+  test('at the limit the dialog says so as it opens, in place of the form, with the account\'s own count and focus on its heading', async () => {
     const w = world();
+    for (let i = 0; i < 3; i++) w.fake.seed.conductReport({ version: w.mine, section: 'hate', reporter: w.me });
+    const send = vi.spyOn(w.fake, 'reportPost');
+    const dialog = await dialogFrom(w);
+    expect(await within(dialog).findByText('You have 3 reports waiting for an admin. You can send another once one of them is read.')).toBeInTheDocument();
+    expect(within(dialog).getByRole('heading', { name: 'Report to admins' })).toHaveFocus();
+    expect(within(dialog).queryByRole('radio')).toBeNull();
+    expect(within(dialog).queryByRole('textbox')).toBeNull();
+    expect(within(foot(dialog)).getByRole('button', { name: 'Close' })).toBeInTheDocument();
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  test('under the limit the form shows, and a limit that arrives at send time still replaces it (the server refuses)', async () => {
+    const w = world();
+    vi.spyOn(w.fake, 'myOpenReports').mockResolvedValueOnce({ open: 0, most: 3 });
     for (let i = 0; i < 3; i++) w.fake.seed.conductReport({ version: w.mine, section: 'hate', reporter: w.me });
     const dialog = await dialogFrom(w);
     await userEvent.click(within(dialog).getByRole('radio', { name: /No hate/u }));
     await userEvent.click(within(foot(dialog)).getByRole('button', { name: 'Send to admins' }));
     expect(await within(dialog).findByText('You have 3 reports waiting for an admin. You can send another once one of them is read.')).toBeInTheDocument();
     expect(within(dialog).getByRole('heading', { name: 'Report to admins' })).toHaveFocus();
-    expect(within(dialog).queryByRole('radio')).toBeNull();
-    expect(within(dialog).queryByRole('textbox')).toBeNull();
-    expect(within(foot(dialog)).getByRole('button', { name: 'Close' })).toBeInTheDocument();
+  });
+
+  test('a count that cannot be read shows the form: the server still refuses', async () => {
+    const w = world();
+    vi.spyOn(w.fake, 'myOpenReports').mockRejectedValue(new Error('offline'));
+    const dialog = await dialogFrom(w);
+    expect(await within(dialog).findAllByRole('radio')).toHaveLength(2);
   });
 
   test('an error is said plainly above the form, which keeps what was typed, and a retry sends it', async () => {

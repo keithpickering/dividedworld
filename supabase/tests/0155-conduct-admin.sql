@@ -238,12 +238,12 @@ begin
 
   -- ---- The caller's own open reports ----
   perform tests.become(rep);
-  n := my_open_reports();
+  n := (my_open_reports() ->> 'open')::integer;
   perform tests.unbecome();
   select count(*) into ob from conduct_reports r where r.reporter = rep and not exists (select 1 from conduct_decisions d where d.report = r.id);
   if n <> ob or n < 1 then raise exception 'my_open_reports counts the caller''s own open reports: % against %', n, ob; end if;
   perform tests.become(author);
-  if my_open_reports() <> 0 then raise exception 'my_open_reports counted another account''s reports'; end if;
+  if (my_open_reports() ->> 'open')::integer <> 0 or (my_open_reports() ->> 'most')::integer is not distinct from null or (my_open_reports() ->> 'most')::integer < 1 then raise exception 'my_open_reports counted another account''s reports'; end if;
   perform tests.unbecome();
 
   -- ---- Bounds: a page of 50 open reports, newest first, and a flag that more wait ----

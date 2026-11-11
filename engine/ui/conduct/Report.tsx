@@ -83,6 +83,13 @@ function ReportBody({ post, version, lead, onClose }: { readonly post: Id; reado
   const current = useRef<Promise<Id | null> | null>(null);
   if (current.current === null) current.current = version !== null ? Promise.resolve(version) : Promise.resolve(api.history(post)).then((v) => v.at(-1)?.id ?? post, () => null);
 
+  /* The account's own count is read as the dialog opens: at the limit the limit is said in place of the form at once. A count that cannot be read leaves the form, which the server still refuses at send time. */
+  useEffect(() => {
+    let live = true;
+    Promise.resolve(api.myOpenReports()).then((held) => { if (live && held !== null && held.open >= held.most) setSaid({ kind: 'limit', n: held.open }); }, () => undefined);
+    return () => { live = false; };
+  }, [api]);
+
   /* A state is said with focus on the dialog's heading, which the dialog frame draws and names the dialog by. */
   const toHeading = () => {
     const head = root.current?.closest<HTMLElement>('[role="dialog"]')?.querySelector<HTMLElement>('.kb-glass-dialog-head');
@@ -109,8 +116,8 @@ function ReportBody({ post, version, lead, onClose }: { readonly post: Id; reado
       const a = await api.reportPost(id, section, note);
       if (a.ok) { setSaid({ kind: 'sent' }); return; }
       if (a.field === REPORT_LIMIT) {
-        const n = await Promise.resolve(api.myOpenReports()).catch(() => null);
-        setSaid({ kind: 'limit', n });
+        const held = await Promise.resolve(api.myOpenReports()).catch(() => null);
+        setSaid({ kind: 'limit', n: held === null ? null : held.open });
         return;
       }
       setProblem(a.uncertain === true ? OFFLINE : `That did not send: ${a.error}. What you typed is still here.`);

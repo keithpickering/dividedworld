@@ -143,12 +143,13 @@ begin
   return jsonb_build_object('status', 'waiting', 'version', cur.id, 'words', cur.payload ->> 'body');
 end $$;
 
--- How many reports to admins the caller's account holds open now: the count `report_post` limits. Only the caller's own account is counted, so it is the limit state's
+-- {open, most}: how many reports to admins the caller's account holds open now, and the most it may (`report_post` refuses at `most`), so the report form can say the limit before it is asked to send. Only the caller's own account is counted, so it is the limit state's
 -- "You have {n} reports waiting" and nothing about anyone else.
-create function my_open_reports() returns integer
+create function my_open_reports() returns jsonb
 language sql stable security definer set search_path = public, pg_temp as $$
-  select count(*)::integer from conduct_reports r
-  where r.reporter = auth.uid() and not exists (select 1 from conduct_decisions d where d.report = r.id)
+  select jsonb_build_object(
+    'open', (select count(*) from conduct_reports r where r.reporter = auth.uid() and not exists (select 1 from conduct_decisions d where d.report = r.id)),
+    'most', (setting('conduct') ->> 'openReportsMost')::integer)
 $$;
 
 revoke execute on function admin_reports(), admin_failed_mail() from public, anon;

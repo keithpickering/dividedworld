@@ -2128,8 +2128,8 @@ export interface KayfaApi {
    * open-report limit has `field: REPORT_LIMIT`, and the form then asks `myOpenReports` for the account's own count. `note` is at most 1000 characters.
    */
   reportPost(version: Id, section: string, note: string): Promise<Answer<null>>;
-  /** How many reports to admins the signed-in account holds open (`my_open_reports`): the caller's own count, shown only to them; null where it could not be read. */
-  myOpenReports(): Promise<number | null>;
+  /** How many reports to admins the signed-in account holds open and the most it may (`my_open_reports`): the caller's own count, shown only to them; null where it could not be read. */
+  myOpenReports(): Promise<{ readonly open: number; readonly most: number } | null>;
   /** The author's own words of a post hidden until they edit it, or where it waits for an admin (`my_hidden_version`); null for anyone else's post or a post that is not so hidden. */
   myHiddenVersion(post: Id): Promise<MyHiddenVersion | null>;
   /** The public name of the Mod on a board's beat, who judges its reports, and the board's name; null where no Mod is on staff. */

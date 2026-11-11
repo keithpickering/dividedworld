@@ -182,8 +182,8 @@ describe('what the adapter may request', () => {
   });
 
   it('counts the account\'s own open reports, null where it could not be read', async () => {
-    const h = harness((r) => (r.url.pathname.endsWith('/rpc/my_open_reports') ? json(3) : json({}, 404)));
-    expect(await h.api.myOpenReports()).toBe(3);
+    const h = harness((r) => (r.url.pathname.endsWith('/rpc/my_open_reports') ? json({ open: 3, most: 3 }) : json({}, 404)));
+    expect(await h.api.myOpenReports()).toEqual({ open: 3, most: 3 });
     const down = harness(() => json({}, 500));
     expect(await down.api.myOpenReports()).toBeNull();
   });
