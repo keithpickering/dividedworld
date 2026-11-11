@@ -32,7 +32,7 @@ begin
   if why is distinct from 'card "poison" is a use card with no gimmick' then raise exception 'a use card with no gimmick: %', why; end if;
 
   why := card_kinds_problem('[{"key": "poison", "rarity": "common", "play": "cast", "gimmick": {"kind": "ward", "upTo": "common"}}]');
-  if why is distinct from 'card "poison" has a gimmick, and only a use card has one' then raise exception 'a gimmick on a cast card: %', why; end if;
+  if why is distinct from 'card "poison" has a gimmick, and only a use card has one, or a cast card on a character an earn' then raise exception 'a gimmick on a cast card: %', why; end if;
 
   why := card_kinds_problem('[{"key": "poison", "rarity": "common", "play": "set"}]');
   if why is distinct from 'card "poison" is a set card with no trap' then raise exception 'a set card with no trap: %', why; end if;
@@ -44,7 +44,7 @@ begin
   if why is distinct from 'card "poison" is a use card with no time up (lasts); a use card ends at its time' then raise exception 'a use card with no lasts: %', why; end if;
 
   why := card_kinds_problem('[{"key": "poison", "rarity": "common", "play": "use", "lasts": {"unit": "day", "count": 7}, "gimmick": {"kind": "hex"}}]');
-  if why is distinct from 'card "poison" has a gimmick of kind "hex"; a gimmick is ward, earn, price or ride' then raise exception 'a gimmick of no kind: %', why; end if;
+  if why is distinct from 'card "poison" has a gimmick of kind "hex"; a gimmick is ward, earn, price, ride or noQuote' then raise exception 'a gimmick of no kind: %', why; end if;
 
   why := card_kinds_problem('[{"key": "poison", "rarity": "common", "play": "use", "lasts": {"unit": "day", "count": 7}, "gimmick": "ward"}]');
   if why is distinct from 'card "poison" has a gimmick that is not an object' then raise exception 'a gimmick that is not an object: %', why; end if;
@@ -61,7 +61,7 @@ begin
   why := card_kinds_problem('[{"key": "poison", "rarity": "common", "play": "use", "lasts": {"unit": "day", "count": 7}, "gimmick": null}]');
   if why is distinct from 'card "poison" has a gimmick that is not an object' then raise exception 'a null gimmick on a use card: %', why; end if;
   why := card_kinds_problem('[{"key": "poison", "rarity": "common", "play": "cast", "gimmick": null}]');
-  if why is distinct from 'card "poison" has a gimmick, and only a use card has one' then raise exception 'a null gimmick on a cast card: %', why; end if;
+  if why is distinct from 'card "poison" has a gimmick, and only a use card has one, or a cast card on a character an earn' then raise exception 'a null gimmick on a cast card: %', why; end if;
 end $$;
 
 -- ---- seed_instance writes the gimmick and the trap's match, and refuses the poisons by name ----
@@ -89,7 +89,7 @@ begin
   why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "ct-bad", "name": "Ct Bad", "alignment": "sweet", "rarity": "common", "play": "set"}]}')$s$);
   if why is distinct from 'card "ct-bad" is a set card with no trap' then raise exception 'the seed refused a set card with no trap, said %', why; end if;
   why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "ct-bad", "name": "Ct Bad", "alignment": "sweet", "rarity": "common", "gimmick": {"kind": "ward", "upTo": "common"}}]}')$s$);
-  if why is distinct from 'card "ct-bad" has a gimmick, and only a use card has one' then raise exception 'the seed refused a gimmick on a cast card, said %', why; end if;
+  if why is distinct from 'card "ct-bad" has a gimmick, and only a use card has one, or a cast card on a character an earn' then raise exception 'the seed refused a gimmick on a cast card, said %', why; end if;
 end $$;
 
 -- ---- card_target and reach_effects carry a live use card's gimmick, and no ward ----
