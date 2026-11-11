@@ -420,6 +420,22 @@ export interface EffectState {
   readonly savedAt: string;
 }
 
+/**
+ * One row of a post's tails (`post_tails`, supabase/migrations/0146_card_writes.sql): what a writing card's play made for one version of its post.
+ * Every row of every writing play on the post, in version order then play order, and the same for every reader: `text` is the generated words
+ * (null where `failed`, and where `waiting`); `failed` is a flag and never the predicate; `waiting` is a job queued for a version that has no
+ * row yet (`createdAt` null). The version is the post's own Act or an edit of it.
+ */
+export interface Tail {
+  readonly post: Id;
+  readonly play: Id;
+  readonly version: Id;
+  readonly text: string | null;
+  readonly failed: boolean;
+  readonly waiting: boolean;
+  readonly createdAt: string | null;
+}
+
 /** A crop frame, in fractions of the picture it was cut from. */
 export interface Frame {
   readonly x: number;
@@ -1482,6 +1498,8 @@ export interface ThreadListener {
   /** A tally that only grows: keep each kind's largest. */
   readonly onTally?: (act: Id, tally: Tally) => void;
   readonly onEffect?: (play: Id, savedAt: string) => void;
+  /** A writing play made a tail (`card_text`): the play and the version of its post and nothing else. Read the post's tails again. */
+  readonly onText?: (play: Id, version: Id) => void;
 }
 
 export interface BoardListener {
@@ -1914,6 +1932,11 @@ export interface KayfaApi {
   pinnedThreads(board: Id): Promise<readonly PinnedThread[]>;
   /** The state each play's effect has saved (the post's author saves it), by play; a play that has saved none is absent. Any signed-in reader may read it. */
   effectStates(plays: readonly Id[]): Promise<Readonly<Record<Id, EffectState>>>;
+  /**
+   * The tails of a page of posts (`post_tails`): every row of every writing play on them, in version order then play order, and the waiting jobs.
+   * At most 200 posts a call (the server refuses more); a post with no writing play has no row. The same for every signed-in reader.
+   */
+  tails(posts: readonly Id[]): Promise<readonly Tail[]>;
   /** A play's moment (`PlayMoment`), read once when asked for; null for an id that is no play on a post. Any signed-in reader may read it. */
   playMoment(play: Id): Promise<PlayMoment | null>;
   /** Debuted characters with their profiles; an id not among them (waiting, or none) is left out. */

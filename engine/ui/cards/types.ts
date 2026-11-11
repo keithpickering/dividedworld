@@ -109,6 +109,13 @@ export interface CardView {
 }
 
 /**
+ * What a writing card's play has made for one version of its post, as its effect draws it: its text (`text`), a generation still waiting
+ * for the version (`waiting`: the cursor typing nothing), or none (`failed`: the generation failed and there is no earlier text to keep).
+ * A play with no entry has nothing known yet, or nothing for the version drawn (History), and draws nothing. `resolveWritten` (written.ts).
+ */
+export type Written = { readonly text: string } | { readonly waiting: true } | { readonly failed: true };
+
+/**
  * What an effect is given. It wraps `children`, the post's words as they would be drawn without it,
  * and draws whatever it likes around them or over them; with several cards played on a post each
  * card's `Effect` wraps the one played before it, the latest outermost, so a card's `children`
@@ -127,6 +134,16 @@ export interface EffectProps {
   readonly states: Readonly<Record<Id, EffectState>>;
   /** The plays the reader has released themselves from, on every device (their certification). Nothing here is ever broadcast or counted. */
   readonly released: ReadonlySet<Id>;
+  /**
+   * What each play of a card that writes (`CardRules.writes`) has made for the version of the post drawn, by play (written.ts): the text
+   * of the version drawn now (a failed regeneration keeps the tail it had: the text of the play's latest earlier version), or what is still
+   * waiting. In still mode it is the drawn version's own rows alone, so a tail shows in full whatever `states` hold. Empty for any other card.
+   * An effect draws a tail after the words by wrapping `children` (`<>{children}<Tail/></>`), its element marked `data-kb-tail`: the
+   * engine draws the post's words inline before it (bbcode.css), so the last line of the words and the tail's first characters share a line.
+   */
+  readonly written: ReadonlyMap<Id, Written>;
+  /** The version of the post `written` is for (the post's Act, or the edit that made it), where it is known: what an author's save of a version names. */
+  readonly version?: Id;
   readonly reader: EffectReader;
   readonly place: EffectPlace;
   /**

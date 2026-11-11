@@ -41,7 +41,7 @@ import { actsFollowed, actsNamed } from '../log/lines.ts';
 import { micros, readLogPageNow, type LedgerRow, type ShareRow } from './log-page.ts';
 import type {
   AdminQueue, BoardName, Demand, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesCursor, MovesLog, QueuedMove, StaffCardPlay, StaffProfile,
-  Act, Apology, Bar, AccountListener, ActKind, Alert, ContactLink, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, TallyName, SeasonShown, Update, UpdateChange, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, CardEvent, PackEvent, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, DebutLoudness, EffectState, PlayMoment,
+  Act, Apology, Bar, AccountListener, Tail, ActKind, Alert, ContactLink, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, TallyName, SeasonShown, Update, UpdateChange, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, CardEvent, PackEvent, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, DebutLoudness, EffectState, PlayMoment,
   DebutTiming, Estimate, EstimateLine, FollowedThread, Frame, HeldCard, Id, KayfaApi, LogShare, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, PreferencesPatch, Refusal,
   Boot, BoardPage, IndexPage, Opened, AdminSlot, Slot, SlotMove, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, LogPage,
   PostHit, ThreadHit, SearchCursor, SearchPage, SearchQuery, SearchSort, Suggestions,
@@ -66,7 +66,7 @@ export const START = Date.UTC(2026, 9, 29, 12);
 
 export interface LiveEvent {
   readonly topic: string;
-  readonly event: 'act' | 'tally' | 'thread' | 'effect' | 'alert' | 'news' | 'settled';
+  readonly event: 'act' | 'tally' | 'thread' | 'effect' | 'card_text' | 'alert' | 'news' | 'settled';
 }
 
 export interface Seed {
@@ -243,6 +243,13 @@ export interface Seed {
   judging(answers: { readonly report?: ReportVerdict | 'failed'; readonly appeal?: AppealVerdict | 'failed' }): void;
   /** A saved card effect on a thread's play, heard by its subscribers. */
   effect(thread: Id, play: Id): void;
+  /**
+   * What a writing play made for a version of its post (`finish_card_write`, 0146): its row (`text`, or `failed`), the waiting job it ends, and
+   * the `card_text` event on the post's thread, which carries the play and the version alone. A play of a card whose rules `write` is
+   * queued at the post's version when it lands, and again at each edit, as the server does; this delivers what the model made, later.
+   * `quiet` keeps the event back (a screen that was not listening), so a test can see the row without it.
+   */
+  text(play: Id, version: Id, result: { readonly text: string } | { readonly failed: true }, options?: { readonly quiet?: boolean }): void;
   /**
    * The next post, edit or spin gets no answer, as when the network drops: it answers with an
    * uncertain refusal. `went` says whether the server did it before the answer was lost.
@@ -970,6 +977,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     acts.set(rec.id, rec);
     if (rec.kind === 'card_end' && rec.target !== null) reversedPlays.add(rec.target);
     if ((rec.kind === 'card' || rec.kind === 'set' || rec.kind === 'spring') && rec.target !== null && onPost(rec)) takeMoment(rec);
+    queueWrites(rec);
     return rec;
   }
   function openThread(board: Id, title: string, origin: Id | null, at?: number): ThreadRec {
@@ -1105,6 +1113,41 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return ok({ act, tally });
   }
 
+  /* --------------------------------------------------------------- a card that writes ---- */
+  /** card_texts (0146): one row per play and version, the generation or its failure. */
+  const texts: { play: Id; version: Id; text: string | null; at: number; order: number }[] = [];
+  /** card_writes (0146): a play's waiting job, at the version it will continue; one per play, a newer version replacing it. */
+  const jobs = new Map<Id, { post: Id; version: Id }>();
+  const writes = (card: unknown): boolean => instance.cards.some((c) => c.key === card && c.writes !== undefined);
+  /** A card Act that is a live writing play on a post (live_writing_plays): a card of the post's own reach that writes, no caught play, no ended one. */
+  const writingPlay = (a: ActRec): boolean => a.kind === 'card' && a.target !== null && (a.payload.reach ?? 'post') === 'post' && a.payload.caught === undefined && writes(a.payload.card);
+  /** The trigger on acts (card_writes_enqueue): a writing play queues its job at the post's version, an edit queues each live writing play on the post again. */
+  function queueWrites(rec: ActRec) {
+    if (rec.kind !== 'card' && rec.kind !== 'edit') return;
+    if (writingPlay(rec)) jobs.set(rec.id, { post: rec.target!, version: edits(acts.get(rec.target!)!).at(-1)?.id ?? rec.target! });
+    else if (rec.kind === 'edit' && rec.target !== null) {
+      for (const k of acts.values()) if (writingPlay(k) && k.target === rec.target && !reversedPlays.has(k.id)) jobs.set(k.id, { post: rec.target, version: rec.id });
+    }
+  }
+  /** post_tails (0146): every row of every writing play on the posts, oldest version first, then each waiting job whose version has no row yet. */
+  function tails(posts: readonly Id[]): Tail[] {
+    if (new Set(posts).size > 200) throw new Error('tails are read for at most 200 posts at a time');
+    const out: { row: Tail; vat: number; pat: number; order: number }[] = [];
+    for (const post of new Set(posts)) {
+      for (const k of acts.values()) {
+        if (!writingPlay(k) || k.target !== post) continue;
+        for (const x of texts.filter((t) => t.play === k.id)) {
+          out.push({ row: { post, play: k.id, version: x.version, text: x.text, failed: x.text === null, waiting: false, createdAt: iso(x.at) }, vat: acts.get(x.version)!.at, pat: k.at, order: k.order });
+        }
+        const job = jobs.get(k.id);
+        if (job && !texts.some((t) => t.play === k.id && t.version === job.version) && !reversedPlays.has(k.id)) {
+          out.push({ row: { post, play: k.id, version: job.version, text: null, failed: false, waiting: true, createdAt: null }, vat: acts.get(job.version)!.at, pat: k.at, order: k.order });
+        }
+      }
+    }
+    return out.sort((a, b) => a.vat - b.vat || a.pat - b.pat || a.order - b.order).map((x) => x.row);
+  }
+
   /** The state a play's effect has saved, as effect_state keeps it: one row per play, the newest save. */
   const effects = new Map<Id, { state: unknown; at: number }>();
   /**
@@ -1211,8 +1254,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   }
   /** `card_in_open_pack` (0139): whether a pack on sale can still give the card. */
   function cardInOpenPack(card: string): boolean {
-    const rarity = instance.cards.find((c) => c.key === card)?.rarity;
-    if (!rarity) return false;
+    const rules = instance.cards.find((c) => c.key === card);
+    const rarity = rules?.rarity;
+    /* A card the instance withholds is never rolled (roll_pack, 0146; packOdds), so no pack can give it. */
+    if (!rules || !rarity || withheld(rules, instance.settings)) return false;
     return slotRecs.some((r) => {
       if (!('pack' in r.item) || r.availability !== 'onSale') return false;
       const key = r.item.pack;
@@ -2461,6 +2506,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const wanted = new Set(ids);
       return withEnds([...acts.values()].filter((a) => (a.kind === 'card' || a.kind === 'set' || a.kind === 'spring') && a.target !== null && wanted.has(a.target)).sort((a, b) => a.at - b.at || a.order - b.order).slice(0, limit));
     },
+    tails: (posts) => tails(posts),
     effectStates(plays) {
       const out: Record<Id, EffectState> = {};
       for (const play of plays) {
@@ -3714,6 +3760,16 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     judging(answers) {
       if (answers.report) judged.report = answers.report;
       if (answers.appeal) judged.appeal = answers.appeal;
+    },
+    text(play, version, result, o) {
+      const k = acts.get(play);
+      if (!k || !writingPlay(k)) throw new Error(`no such writing play ${play}`);
+      if (!acts.has(version)) throw new Error(`no such version ${version}`);
+      const job = jobs.get(play);
+      texts.push({ play, version, text: 'text' in result ? result.text : null, at: now(), order: ++order });
+      if (job && job.version === version) jobs.delete(play);
+      if (o?.quiet) return;
+      send(`thread:${k.thread}`, 'card_text', () => { for (const l of [...(threadListeners.get(k.thread) ?? [])]) l.onText?.(play, version); });
     },
     effect(thread, play) {
       const savedAt = iso(now());

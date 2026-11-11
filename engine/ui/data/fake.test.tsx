@@ -4,7 +4,7 @@
  * the fake meets the refusals it will meet live. A `.test.tsx` file though it holds no JSX, because
  * `test:engine` runs `engine/**\/*.test.ts` under plain node and this runs under jsdom with the screens'.
  */
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 import type { Instance, Settings } from '../../rules/types.ts';
 import { landsOn, type CardEffect, type CardRules, type CardTarget } from '../../rules/cards.ts';
 import { momentParts } from '../cards/Effects.tsx';
@@ -1267,6 +1267,26 @@ describe('the Vending Machine and a card play, refused as the server refuses the
     expect((await on.buyCard(await slotOf(on, 'typewriter'))).ok).toBe(true);
     const off = sells(false);
     expect(await off.buyCard(await slotOf(off, 'typewriter'))).toEqual(refused("The old voice isn't running on this forum, so this card can't be played."));
+  });
+
+  test('a card the instance withholds is in no open pack, as roll_pack leaves it out: a Pull of it ends when another pack goes off sale, where it would stay with the old voice', async () => {
+    const typewriter = { ...splat, key: 'typewriter', name: 'Typewriter', writes: { tokens: () => 40, frame: () => ({ prompt: '', stop: [] as string[] }) } };
+    const pull = { kind: 'pullSlot' as const, act: 'no-such-act', ends: '2026-11-09T12:00:00Z', demand: null, progress: null, was: 100, percent: null, hours: null };
+    const ended = async (oldVoice: boolean) => {
+      const own: Instance = {
+        ...shop, cards: [splat, typewriter], settings: { ...shop.settings, oldVoice },
+        packs: [{ key: 'booster', pulls: [{ weights: { common: 1 } }] }, { key: 'second', pulls: [{ weights: { common: 1 } }] }],
+        machine: [{ item: { card: 'typewriter' }, availability: 'onSale' as const, price: 100 }, { item: { pack: 'booster' }, availability: 'onSale' as const, price: 300 }, { item: { pack: 'second' }, availability: 'onSale' as const, price: 300 }],
+      };
+      const fake = createFake({ instance: own });
+      fake.signInAs(fake.seed.account('boss', { admin: true }));
+      fake.seed.slot({ card: 'typewriter' }, { move: pull });
+      const booster = (await fake.adminMachine()).find((m) => 'pack' in m.item && m.item.pack === 'booster')!;
+      const answer = await fake.setSlot(booster.id, 'soldOut', booster.price);
+      return answer.ok ? answer.value.ended : -1;
+    };
+    expect(await ended(true)).toBe(0);
+    expect(await ended(false)).toBe(1);
   });
 
   test('a purchase is refused in the server\'s words: a sold out slot, a stale price, the wrong kind of slot, and a wallet that falls short', async () => {
@@ -2917,5 +2937,62 @@ describe('a screen in one call is what the separate calls answer', () => {
     expect('queue' in (await fake.updatesPage(null, null, null))).toBe(false);
     const other = world();
     expect('queue' in (await other.fake.updatesPage(null, null, 3))).toBe(false);
+  });
+});
+
+
+describe('a card that writes: its tails, as post_tails and the worker leave them (0146)', () => {
+  const typewriter = {
+    key: 'typewriter', name: 'Typewriter', alignment: 'salty' as const, rarity: 'common' as const, stack: 3, playPrice: () => 0,
+    canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c ?? {} }),
+    writes: { tokens: () => 40, frame: () => ({ prompt: '', stop: [] as string[] }) },
+  };
+  const plain = { ...typewriter, key: 'plain', name: 'Plain', writes: undefined };
+  const own: Instance = { ...instance, cards: [typewriter, plain] };
+  function world() {
+    const fake = createFake({ instance: own });
+    const ana = fake.seed.account('ana');
+    const face = fake.seed.character(ana, 'Ana Face', 'face');
+    const { thread, act: post } = fake.seed.thread('general', face, 'Hello', 'First post');
+    fake.signInAs(ana);
+    return { fake, face, thread, post };
+  }
+
+  test('a play of a writing card waits at the post\'s version, a play of any other card has no row, and the text ends the wait in a row of its own', async () => {
+    const { fake, face, post } = world();
+    const first = fake.seed.card(face, post, 'typewriter');
+    fake.seed.card(face, post, 'plain');
+    expect(await fake.tails([post])).toEqual([{ post, play: first, version: post, text: null, failed: false, waiting: true, createdAt: null }]);
+    fake.seed.text(first, post, { text: ' and on' }, { quiet: true });
+    expect(await fake.tails([post])).toEqual([{ post, play: first, version: post, text: ' and on', failed: false, waiting: false, createdAt: expect.any(String) }]);
+  });
+
+  test('an edit queues each live writing play again at the edit, and the rows come oldest version first, then by play', async () => {
+    const { fake, face, post } = world();
+    const first = fake.seed.card(face, post, 'typewriter');
+    const second = fake.seed.card(face, post, 'typewriter');
+    fake.seed.text(first, post, { text: 'a' }, { quiet: true });
+    fake.seed.text(second, post, { failed: true }, { quiet: true });
+    fake.clock.advance(60_000);
+    expect((await fake.edit(post, face, 'Edited post')).ok).toBe(true);
+    const [, edit] = (await fake.history(post)).map((v) => v.id);
+    const rows = await fake.tails([post]);
+    expect(rows.map((r) => [r.play, r.version, r.failed, r.waiting])).toEqual([[first, post, false, false], [second, post, true, false], [first, edit, false, true], [second, edit, false, true]]);
+  });
+
+  test('card_text carries the play and the version and nothing else, to the thread that holds the play', async () => {
+    const { fake, face, thread, post } = world();
+    const play = fake.seed.card(face, post, 'typewriter');
+    const heard = vi.fn();
+    fake.subscribeThread(thread, { onText: heard });
+    fake.seed.text(play, post, { text: 'x' });
+    await Promise.resolve();
+    expect(heard).toHaveBeenCalledWith(play, post);
+    expect(fake.broadcast.log.at(-1)).toEqual({ topic: `thread:${thread}`, event: 'card_text' });
+  });
+
+  test('more than 200 posts are refused as the server refuses them', async () => {
+    const { fake } = world();
+    await expect(Promise.resolve().then(() => fake.tails(Array.from({ length: 201 }, (_, i) => `p${i}`)))).rejects.toThrow('at most 200');
   });
 });

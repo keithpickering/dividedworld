@@ -651,7 +651,7 @@ describe('an effect given more than one play', () => {
     return (
       <HoldStage.Provider value={{ mode: 'view', level: 0 }}>
         <StickAroundEffect
-          post={act1()} plays={plays} states={{}} released={released} reader={{ author: false, caster: false }} place="thread" reach="post" still={false} save={vi.fn()} show={() => {}} met={() => {}} holdScreen={() => {}} marks={null} nameOf={() => 'A character'}
+          post={act1()} plays={plays} states={{}} released={released} written={new Map()} reader={{ author: false, caster: false }} place="thread" reach="post" still={false} save={vi.fn()} show={() => {}} met={() => {}} holdScreen={() => {}} marks={null} nameOf={() => 'A character'}
           release={async (id) => { setReleased((r) => new Set([...r, id])); return { ok: true, value: { play: id, releasedAt: 'now' } } as never; }}
         >
           <p>the post</p>

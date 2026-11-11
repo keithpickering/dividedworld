@@ -41,7 +41,7 @@ import type { Career } from '../../../engine/system/career.ts';
 import type {
   AdminQueue, Apology, Bar, BoardName, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesLog, QueuedMove, StaffCardPlay, StaffProfile,
   Act, ActKind, Answer, AvatarUpload, Board, Bought, BoardSummary, CardEnded, CardEvent, PackEvent, CaughtPlay, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd,
-  Alert, ContactLink, EffectState, PostHit, SearchCursor, SearchPage, SearchQuery, Suggestions, ThreadHit, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, SeasonShown, TallyName, Update, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
+  Alert, ContactLink, EffectState, Tail, PostHit, SearchCursor, SearchPage, SearchQuery, Suggestions, ThreadHit, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, SeasonShown, TallyName, Update, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
   Tally, StandingPlace, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, TurnAsked, Wallet, WalletEvent,
   Boot, BoardPage, IndexPage, Opened, AdminSlot, Slot, SlotMove, Presence, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, LogPage,
   AppealResult, AppealVerdict, InterceptResult, MyBan, LogAppeal, LogBan, LogGroupMove, GroupMoveEndWhy, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitChallenge, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
@@ -72,6 +72,8 @@ const ROW_CAP = 1000;
 const rowLimit = (n: number) => Math.max(1, Math.min(Math.floor(n), ROW_CAP));
 /** The most ids one read by id names, so its address stays short whoever asks (a page of the log can name a thousand Acts). */
 const ID_CHUNK = 100;
+/** The most posts one `post_tails` call takes (0146). */
+const TAILS_CALL = 200;
 const chunks = <T,>(xs: readonly T[]): T[][] => Array.from({ length: Math.ceil(xs.length / ID_CHUNK) }, (_, i) => xs.slice(i * ID_CHUNK, (i + 1) * ID_CHUNK));
 /**
  * A read by many ids, one request per chunk of them, run together. Every list a read by id takes can grow on a busy
@@ -412,6 +414,10 @@ function toVisit(v: Row): Visit {
 }
 /** effect_state rows, as effectStates() answers them. */
 const toStates = (list: Row[]): Record<Id, EffectState> => Object.fromEntries(list.map((r) => [r['play'], { state: r['state'], savedAt: r['saved_at'] }]));
+/** post_tails rows (0146), as tails() answers them: `failed` is the flag and never the predicate, and a waiting job has no text or time. */
+const toTails = (list: Row[]): Tail[] => list.map((r) => ({
+  post: r['post'], play: r['play'], version: r['version'], text: str(r['text']), failed: r['failed'] === true, waiting: r['waiting'] === true, createdAt: str(r['created_at']),
+}));
 /** An answer's tallies as tallies() answers them for the acts asked: an act with none is an empty tally. */
 function toTallies(asked: readonly Id[], list: Row[]): Record<Id, Tally> {
   const out: Record<Id, Record<string, number>> = Object.fromEntries(asked.map((a) => [a, {}]));
@@ -1288,6 +1294,14 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       for (const r of rows) out[r['play']] = { state: r['state'], savedAt: r['saved_at'] };
       return out;
     },
+    async tails(posts) {
+      /* post_tails (0146) holds a call to 200 posts, which is what the screens ask for at most: a page's posts are one call, and a longer list is cut at that, run together. The rows come as the server orders them (version, then play). */
+      const wanted = [...new Set(posts)].filter(idOk);
+      if (wanted.length === 0) return [];
+      const parts = Array.from({ length: Math.ceil(wanted.length / TAILS_CALL) }, (_, i) => wanted.slice(i * TAILS_CALL, (i + 1) * TAILS_CALL));
+      const answers = await Promise.all(parts.map((part) => every((start, end) => client.rpc('post_tails', { posts: part }).range(start, end))));
+      return toTails(answers.flat());
+    },
     async playMoment(play) {
       /* One read of the moment (play_moment, 0072); an id that is no play on a post is refused in words, which is null here. */
       if (!idOk(play)) return null;
@@ -1894,10 +1908,11 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     },
 
     subscribeThread(thread, l) {
-      return join(`thread:${thread}`, ['act', 'tally', 'effect'], (event, p) => {
+      return join(`thread:${thread}`, ['act', 'tally', 'effect', 'card_text'], (event, p) => {
         if (event === 'act') l.onAct?.(toAct(p));
         else if (event === 'tally') l.onTally?.(p['act'], (p['tally'] ?? {}) as Tally);
         else if (event === 'effect') l.onEffect?.(p['play'], p['saved_at']);
+        else if (event === 'card_text') l.onText?.(p['play'], p['version']);
       });
     },
     subscribeBoard(board, l) {

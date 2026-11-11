@@ -114,7 +114,7 @@ describe('what the adapter may request', () => {
     });
     const api = h.api;
     await Promise.allSettled([
-      api.settings(), api.boards(), api.board('general'), api.board(C), api.threads(C, { offset: 0, limit: 5 }), api.thread(T), api.acts(T, 1, 5), api.act(A), api.actsById([A]), api.history(A), api.spunFrom(A), api.spunFromMany([A], 10), api.cardsOn(A, 10), api.cardsOnMany([A], 10), api.effectStates([A]), api.playMoment(A), api.myReleases([A]), api.releaseEffect(A),
+      api.settings(), api.boards(), api.board('general'), api.board(C), api.threads(C, { offset: 0, limit: 5 }), api.thread(T), api.acts(T, 1, 5), api.act(A), api.actsById([A]), api.history(A), api.spunFrom(A), api.spunFromMany([A], 10), api.cardsOn(A, 10), api.cardsOnMany([A], 10), api.effectStates([A]), api.tails([A]), api.playMoment(A), api.myReleases([A]), api.releaseEffect(A),
       api.characters([B]), api.characterCounts(B), api.characterStats([B]), api.standingAmounts([B]), api.standingPlace(B), api.characterActs(B, ['post'], { offset: 0, limit: 5 }), api.finishedSeasons(), api.resultsPage(1, 2), api.resultPlace(1, B), api.standingsCount(), api.standingsPage(0, 5), api.tallies([A]), api.viewCounts([T]), api.season(),
       api.boardNames(), api.moveNotice(A), api.movesLog('director'), api.movesLog('director', { at: '2026-10-01T10:00:00+00:00', act: A }), api.staffProfile('director'), api.adminQueue(), api.holdMove(1), api.reverseMove(A), api.updates(), api.updates('2026-10-01T10:00:00+00:00'), api.postUpdate('T', 'B', []),
       api.lastSettledAt(), api.classReveals([B]), api.turnsAnnounced([B]), api.nextSettlementAt(), api.myCharacters(), api.wallet(),
@@ -1236,7 +1236,8 @@ describe('live', () => {
     const onAct = vi.fn();
     const onTally = vi.fn();
     const onEffect = vi.fn();
-    s.api.subscribeThread(T, { onAct, onTally, onEffect });
+    const onText = vi.fn();
+    s.api.subscribeThread(T, { onAct, onTally, onEffect, onText });
     await settle();
     expect(s.channels).toHaveLength(1);
     expect(s.channels[0]?.topic).toBe(`thread:${T}`);
@@ -1248,6 +1249,8 @@ describe('live', () => {
     expect(onAct).toHaveBeenCalledWith(ACT);
     expect(onTally).toHaveBeenCalledWith(A, { fire: 2 });
     expect(onEffect).toHaveBeenCalledWith(A, '2026-10-29T00:00:00Z');
+    s.channels[0]?.handlers.get('card_text')?.({ payload: { play: A, version: B } });
+    expect(onText).toHaveBeenCalledWith(A, B);
   });
 
   it('shares a channel between listeners on one topic and removes it with the last', async () => {
@@ -1589,6 +1592,35 @@ describe('reads by many ids', () => {
     const times = above.map((p) => p.act.createdAt);
     expect(times).toEqual([...times].sort());
     expect(await h.api.effectsAbove([], null, null)).toEqual([]);
+  });
+
+  it('tails asks post_tails for a page of posts in one call, in calls of at most 200, and maps its rows', async () => {
+    const asked: string[][] = [];
+    const h = harness((r) => {
+      if (r.url.pathname !== `${REST}/rpc/post_tails`) return undefined;
+      const body = r.body as { posts: string[] };
+      asked.push(body.posts);
+      return json(body.posts.slice(0, 1).flatMap((post) => [
+        { post, play: A, version: post, text: ' and on', failed: false, waiting: false, created_at: '2026-11-07T12:00:00+00:00' },
+        { post, play: B, version: post, text: null, failed: true, waiting: false, created_at: '2026-11-07T12:00:01+00:00' },
+        { post, play: C, version: post, text: null, failed: false, waiting: true, created_at: null },
+      ]));
+    });
+    expect(await h.api.tails([A, A, 'x),y'])).toEqual([
+      { post: A, play: A, version: A, text: ' and on', failed: false, waiting: false, createdAt: '2026-11-07T12:00:00+00:00' },
+      { post: A, play: B, version: A, text: null, failed: true, waiting: false, createdAt: '2026-11-07T12:00:01+00:00' },
+      { post: A, play: C, version: A, text: null, failed: false, waiting: true, createdAt: null },
+    ]);
+    expect(asked).toEqual([[A]]);
+    asked.length = 0;
+    await h.api.tails(ids);
+    expect(asked.map((a) => a.length)).toEqual([200, 200, 50]);
+    expect(await h.api.tails([])).toEqual([]);
+  });
+
+  it('a failed post_tails read is thrown, so the page reads it again', async () => {
+    const h = harness((r) => (r.url.pathname === `${REST}/rpc/post_tails` ? json({ message: 'no' }, 500) : undefined));
+    await expect(h.api.tails([A])).rejects.toThrow();
   });
 
   it('playMoment asks play_moment once, reads its version, layers and plays above, and reads a refusal as null', async () => {
