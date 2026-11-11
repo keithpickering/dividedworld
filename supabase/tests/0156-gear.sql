@@ -96,6 +96,28 @@ begin
   perform tests.unbecome();
 end $$;
 
+-- ---- A retired mask is refused as played_by refuses; an instance with no gear settings refuses plainly ----
+select tests.unbecome();
+do $$
+declare
+  gwen uuid := tests.account('tg-gwen'); g1 uuid := tests.character(gwen, 'Tg Gwen One'); said text; was jsonb;
+begin
+  insert into gear_ledger (account, gear, kind) values (gwen, 'tg-hat', 'granted');
+  perform tests.become_service();
+  update characters set retired_at = now() where id = g1;
+  said := pg_temp.refusal(format('select set_outfit(%L, %L, %L)', gwen, g1, '[{"gear": "tg-hat", "x": 0.5, "y": 0.5, "w": 0.3, "turn": 0, "layer": 0}]'));
+  if said is distinct from 'that character is retired; an admin can restore it' then raise exception 'a retired mask was dressed or refused oddly: %', said; end if;
+  update characters set retired_at = null where id = g1;
+  perform tests.unbecome();
+  select value into was from settings where key = 'cosmetics';
+  delete from settings where key = 'cosmetics';
+  perform tests.become_service();
+  said := pg_temp.refusal(format('select set_outfit(%L, %L, %L)', gwen, g1, '[{"gear": "tg-hat", "x": 0.5, "y": 0.5, "w": 0.3, "turn": 0, "layer": 0}]'));
+  if said is distinct from 'this instance has no gear settings' then raise exception 'no cosmetics setting: %', said; end if;
+  perform tests.unbecome();
+  insert into settings (key, value) values ('cosmetics', was);
+end $$;
+
 -- ---- A new portrait takes the outfit off; a square recrop keeps it ----
 select tests.unbecome();
 do $$

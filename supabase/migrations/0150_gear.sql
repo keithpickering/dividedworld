@@ -217,11 +217,12 @@ language sql stable security definer set search_path = public, pg_temp as $$
 $$;
 revoke execute on function gear_held(uuid, text) from public, anon, authenticated;
 
--- A player's wardrobe: each gear they hold, how many copies, and which of their own characters wear it. Read from the caller's own account alone.
+-- A player's wardrobe: each gear they hold, how many copies, and which of their own characters wear it. Read from the caller's own account alone, and driven from
+-- their own characters (characters_owner) to those characters' pieces (gear_worn's primary key), never from every wearer of a gear.
 create function my_wardrobe() returns jsonb
 language sql stable security definer set search_path = public, pg_temp as $$
   select coalesce(jsonb_agg(jsonb_build_object('gear', h.gear, 'rarity', k.rarity, 'held', h.held,
-      'worn_by', coalesce((select jsonb_agg(w.character order by w.character) from gear_worn w join characters c on c.id = w.character
+      'worn_by', coalesce((select jsonb_agg(w.character order by w.character) from characters c join gear_worn w on w.character = c.id
                            where c.owner = signed_in_account() and w.gear = h.gear), '[]'::jsonb)) order by h.gear), '[]'::jsonb)
   from (select l.gear, count(*)::integer as held from gear_ledger l where l.account = signed_in_account() group by l.gear) h
   join gear_kinds k on k.key = h.gear
@@ -253,12 +254,17 @@ revoke execute on function piece_problem(jsonb, integer) from public, anon, auth
 create function set_outfit(who uuid, through uuid, pieces jsonb) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
-  most integer := (setting('cosmetics') #>> '{gear,wornMost}')::integer;
+  most integer;
   p jsonb;
   why text;
   problems text[] := '{}';
   g record;
+  free integer;
 begin
+  select (s.value #>> '{gear,wornMost}')::integer into most from settings s where s.key = 'cosmetics';
+  if most is null then raise exception 'this instance has no gear settings' using hint = 'kayfabb.refusal', errcode = '55000'; end if;
+  -- The row first, then who plays it: a retirement committing between the two would otherwise find a retired mask dressed.
+  perform 1 from characters where id = through and owner = who for no key update;
   perform played_by(through, who);
   if jsonb_typeof(pieces) is distinct from 'array' then raise exception 'an outfit is a list of pieces' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
   if jsonb_array_length(pieces) > most then
@@ -271,7 +277,6 @@ begin
       raise exception 'there is no gear "%"', p ->> 'gear' using hint = 'kayfabb.refusal', errcode = '22023';
     end if;
   end loop;
-  perform 1 from characters where id = through for no key update;
   perform pg_advisory_xact_lock(hashtext('kayfabb.outfit'), hashtext(who::text));
   -- Layer collisions come before copy shortfalls, as outfitProblems lists them.
   for g in
@@ -284,11 +289,12 @@ begin
   for g in
     select pc ->> 'gear' as gear, count(*)::integer as here from jsonb_array_elements(pieces) pc group by pc ->> 'gear' order by pc ->> 'gear'
   loop
-    if g.here > greatest(0, gear_held(who, g.gear) - (select count(*) from gear_worn w join characters c on c.id = w.character
-                                                       where c.owner = who and w.character <> through and w.gear = g.gear)) then
+    -- The account's own characters to their pieces (characters_owner, then gear_worn's primary key), once per gear.
+    free := greatest(0, gear_held(who, g.gear) - (select count(*) from characters c join gear_worn w on w.character = c.id
+                                                  where c.owner = who and c.id <> through and w.gear = g.gear));
+    if g.here > free then
       problems := problems || format('"%s" is worn %s time%s here, and %s %s free', g.gear, g.here, case when g.here = 1 then '' else 's' end,
-        greatest(0, gear_held(who, g.gear) - (select count(*) from gear_worn w join characters c on c.id = w.character where c.owner = who and w.character <> through and w.gear = g.gear)),
-        case when greatest(0, gear_held(who, g.gear) - (select count(*) from gear_worn w join characters c on c.id = w.character where c.owner = who and w.character <> through and w.gear = g.gear)) = 1 then 'copy is' else 'copies are' end);
+        free, case when free = 1 then 'copy is' else 'copies are' end);
     end if;
   end loop;
   if cardinality(problems) > 0 then
