@@ -635,3 +635,14 @@
 :where(:root[data-kb-layout='phone']) :is(.kb-play-label, .kb-play legend, .kb-play-dialog .kb-glass-dialog-kicker) {
   font-size: var(--kb-glass-size-phone-body);
 }
+
+/* A card played on the post itself (CardUi.Compose): the slot holds the card's composer around the post, and the composer
+   places its preview and its press surface against the slot; the body host holds the post's words in one element for as long
+   as the composer is open, so it lays out as the words would and sizes to them. */
+.kb-compose-slot {
+  position: relative;
+}
+.kb-compose-body {
+  position: relative;
+  min-width: 0;
+}
