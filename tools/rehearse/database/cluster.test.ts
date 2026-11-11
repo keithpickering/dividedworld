@@ -4,6 +4,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
 import { startCluster, type Cluster } from "../cluster.ts";
+import { connect } from "../db.ts";
+import { assertClock as realAssertClock } from "../schedule.ts";
 
 function psql(c: Cluster, sql: string): string {
   return execFileSync(
@@ -14,12 +16,15 @@ function psql(c: Cluster, sql: string): string {
 }
 const epoch = (c: Cluster, expr = "now()") => Number(psql(c, `select extract(epoch from ${expr})::bigint * 1000;`));
 
-// STUB: Task 4 replaces this with the real `assertClock` exported from ../schedule.ts. It sets the clock, asks
-// the database for now(), and refuses when the database disagrees by more than a few seconds.
+// The real `assertClock` (Task 4): it reads the database's now() over a connection and refuses when it does not follow.
 async function assertClock(c: Cluster, at: number): Promise<void> {
-  c.setClock(at);
-  const got = epoch(c);
-  if (Math.abs(got - at) > 5000) throw new Error(`database clock ${got} does not follow the rehearsal clock ${at}`);
+  c.setClock(at + 1000);
+  const conn = await connect(c.dir, c.port, "postgres");
+  try {
+    await realAssertClock(conn, at);
+  } finally {
+    await conn.end();
+  }
 }
 
 const T = Date.UTC(2027, 2, 1, 9, 0, 0);
@@ -53,9 +58,9 @@ test("setClock moves a held connection's now() and a column default", async () =
     child.stdin.end();
     await done;
     const got = out.trim().split("\n").map(Number);
-    assert.ok(Math.abs(got[0] - T) < 3000, `first ${got[0]}`);
-    assert.ok(Math.abs(got[1] - t2) < 3000, `held connection's next now() ${got[1]}`);
-    assert.ok(Math.abs(got[2] - t2) < 3000, `default now() ${got[2]}`);
+    assert.ok(Math.abs(got[0]! - T) < 3000, `first ${got[0]!}`);
+    assert.ok(Math.abs(got[1]! - t2) < 3000, `held connection's next now() ${got[1]!}`);
+    assert.ok(Math.abs(got[2]! - t2) < 3000, `default now() ${got[2]!}`);
   } finally {
     await c.stop({ keep: false });
   }
