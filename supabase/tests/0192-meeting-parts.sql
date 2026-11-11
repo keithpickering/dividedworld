@@ -1,4 +1,4 @@
--- A meeting part that fails leaves its fields as they were (supabase/migrations/0158_meeting_parts.sql;
+-- A meeting part that fails leaves its fields as they were (supabase/migrations/0192_meeting_parts.sql;
 -- docs/plans/2026-11-11-provider-schemas-design.md, section 4; the plan's Task 5).
 --
 -- The meeting is three calls (the Boss's answer, its memory and its profile), and a part that failed arrives as no `memory` or no `profile` in the payload. apply_meeting then
