@@ -20,7 +20,7 @@
  * **The window.** The digest runs from where the previous meeting's window ended (its slot) to this slot, so no play falls
  * between two meetings: the previous meeting's finish time would skip what happened between its slot and its close.
  *
- * **Cost does not grow with the instance.** One strong-tier call per meeting, a digest bounded by the settings' ceilings
+ * **Cost does not grow with the instance.** Three strong-tier calls per meeting (moves, staff, self; one cached prefix), a digest bounded by the settings' ceilings
  * (engine/system/digest.ts), a memory bounded by its caps, and one fetch per configured feed with a short timeout. Nothing here reads a row per player, character or Act.
  *
  * Nothing private reaches the model: the digest is built by a role that reads public relations only, and the characters the
@@ -34,15 +34,16 @@ import { DUTY_SPECS } from '../../../engine/system/duties.ts';
 import { feedTitles } from '../../../engine/system/feed.ts';
 import type { Memory } from '../../../engine/system/memory.ts';
 import {
-  MEETING_RULE,
+  MEETING_PARTS,
   REFERENCE_MOST,
   SUCCESSOR_WINDOW_MS,
   inheritedText,
   meetingSystemPrompt,
   namedCharacters,
   referenceText,
+  partRule,
+  partSchema,
   repairAnswer,
-  ruleSchema,
   type InheritedMove,
   type MachineSlotFacts,
   type ModFacts,
@@ -54,7 +55,7 @@ import { phaseAt } from '../../../engine/system/phases.ts';
 import { type Trim } from '../../../engine/system/validate.ts';
 import { DatabaseError, TransportError, type Db } from '../_shared/rpc.ts';
 import { withDatabaseSettings } from '../_shared/settings.ts';
-import { AnswerRejected, LedgerWriteFailed } from '../_shared/models/index.ts';
+import { AnswerRejected, LedgerWriteFailed, SchemaRefused } from '../_shared/models/index.ts';
 
 export interface SkippedFeed {
   readonly name: string;
@@ -120,6 +121,9 @@ const FEED_BYTES = 400_000;
 const DAY = 86_400_000;
 const clip = (s: string, n: number): string => (s.length <= n ? s : s.slice(0, n));
 const said = (e: unknown): string => clip(e instanceof Error ? e.message : String(e), 500);
+
+/** The most tokens each part of the meeting may answer with, by the part's key (the moves are the long one). */
+const PART_TOKENS = { moves: 6_000, staff: 3_000, self: 3_000 } as const;
 
 /** Errors that are facts about the database or the ledger, never about the model: thrown at once, after the row is closed failed. */
 const isInfrastructure = (e: unknown): boolean => e instanceof DatabaseError || e instanceof TransportError || e instanceof LedgerWriteFailed;
@@ -270,30 +274,52 @@ export async function runMeeting(
         machine: context.machine,
       }),
       '',
-      'Hold your meeting.',
+      // The first part's ask closes the message, so the message is the same in all three calls and is the cached prefix.
+      MEETING_PARTS[0].ask,
     ].join('\n');
 
-    let raw: unknown;
-    try {
-      const answered = await models.chat({
-        duty: 'meeting',
-        tier: DUTY_SPECS.meeting.tier,
-        staff: bossKey,
-        meeting,
-        system,
-        messages: [{ role: 'user', content: message }],
-        schema: ruleSchema(MEETING_RULE),
-        rules: MEETING_RULE,
-        maxTokens: 8_000,
-      });
-      raw = answered.value;
-    } catch (e) {
-      if (isInfrastructure(e)) throw e;
-      const outcome = e instanceof AnswerRejected ? 'rejected' : 'failed';
-      const error = said(e);
-      await close(outcome, error, { phase: phase.phase, feedsSkipped: skipped });
-      return { status: outcome, meeting, error };
+    // Three calls in order, each shown the earlier answers as prior turns; a part that fails is recorded and the next still runs, shown that it was not kept.
+    const messages: { role: 'user' | 'assistant'; content: string }[] = [{ role: 'user', content: message }];
+    const merged: Record<string, unknown> = {};
+    const parts: { part: string; outcome: 'ok' | 'rejected' | 'failed'; error?: string }[] = [];
+    for (const [i, p] of MEETING_PARTS.entries()) {
+      if (i > 0) messages.push({ role: 'user', content: p.ask });
+      let shown: string;
+      try {
+        const answered = await models.chat({
+          duty: 'meeting',
+          tier: DUTY_SPECS.meeting.tier,
+          staff: bossKey,
+          meeting,
+          system,
+          messages: [...messages],
+          schema: partSchema(p.key),
+          rules: partRule(p.key),
+          maxTokens: PART_TOKENS[p.key],
+          cachePrefix: true,
+        });
+        // The value is the part's own fields, repaired against its rule by the model layer: that is what is kept and what the next call is shown.
+        const value = answered.value !== null && typeof answered.value === 'object' ? (answered.value as Record<string, unknown>) : {};
+        const own = Object.fromEntries(p.fields.filter((f) => value[f] !== undefined).map((f) => [f, value[f]]));
+        Object.assign(merged, own);
+        parts.push({ part: p.key, outcome: 'ok' });
+        shown = JSON.stringify(own);
+      } catch (e) {
+        if (isInfrastructure(e)) throw e;
+        // As the ledger writes it: a refused schema was never asked ('failed'); an answer that could not be used is 'rejected'.
+        const outcome = e instanceof AnswerRejected && !(e instanceof SchemaRefused) ? 'rejected' : 'failed';
+        const error = said(e);
+        parts.push({ part: p.key, outcome, error });
+        shown = `(this part was not kept: ${error})`;
+      }
+      messages.push({ role: 'assistant', content: shown });
     }
+    if (!parts.some((p) => p.outcome === 'ok')) {
+      const { outcome, error } = parts[0]!;
+      await close(outcome as 'failed' | 'rejected', error!, { phase: phase.phase, feedsSkipped: skipped, parts });
+      return { status: outcome as 'failed' | 'rejected', meeting, error: error! };
+    }
+    const raw: unknown = merged;
 
     // The characters the answer names are checked against who is public now, not against today's digest.
     const named = namedCharacters(raw);
@@ -341,13 +367,16 @@ export async function runMeeting(
       successor: repaired.successor,
       // The patrols the Boss scheduled for the Mods: kept on the record for the patrol run (Task 11).
       patrols: repaired.patrols,
+      // Each part's outcome: a part that was not kept left its fields out of the answer.
+      parts,
     };
     const applied = await db.rpc<{ status: 'applied' | 'already applied'; queued?: number; bank_before?: number; bank_after?: number }>('apply_meeting', {
       meeting,
       payload: {
         boss: bossKey,
-        memory: repaired.memory,
-        profile: repaired.profile,
+        // A part that was not kept leaves these out; the database then writes no new row (the Boss keeps yesterday's).
+        ...(repaired.memory ? { memory: repaired.memory } : {}),
+        ...(repaired.profile ? { profile: repaired.profile } : {}),
         moves: moves.map((m) => ({
           kind: m.kind,
           params: m.params,

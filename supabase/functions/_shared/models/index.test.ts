@@ -54,6 +54,24 @@ test('chat asks the Messages API for structured output, with the key in a header
   assert.deepEqual(r.usage, { inputTokens: 1000, outputTokens: 500, cacheReadTokens: 0, cacheWrite5mTokens: 0, cacheWrite1hTokens: 0, serviceTier: 'standard' });
 });
 
+test('a request with cachePrefix marks the system prompt and the first message\'s one text block as cacheable; without it neither is marked', async () => {
+  const f = fake([message('{}'), message('{}')]);
+  const m = models(env, noRecord, { fetch: f.fetch, sleep: async () => {} });
+  await m.chat({ ...chat, cachePrefix: true, messages: [{ role: 'user', content: 'First.' }, { role: 'assistant', content: '{}' }, { role: 'user', content: 'Next.' }] });
+  const on = JSON.parse(String(f.calls[0]?.init.body));
+  assert.deepEqual(on.system, [{ type: 'text', text: 'You are the Director.', cache_control: { type: 'ephemeral' } }]);
+  assert.deepEqual(on.messages, [
+    { role: 'user', content: [{ type: 'text', text: 'First.', cache_control: { type: 'ephemeral' } }] },
+    { role: 'assistant', content: '{}' },
+    { role: 'user', content: 'Next.' },
+  ]);
+  await m.chat(chat);
+  const off = JSON.parse(String(f.calls[1]?.init.body));
+  assert.equal(off.system, 'You are the Director.');
+  assert.deepEqual(off.messages, [{ role: 'user', content: 'Go.' }]);
+  assert.equal(JSON.stringify(off).includes('cache_control'), false);
+});
+
 test('the strong tier asks for the strong model; a tier\'s model is what the settings\' tiers say', async () => {
   const f = fake([message('{}', {}, { model: 'claude-opus-5-5' })]);
   await models(env, noRecord, { fetch: f.fetch, sleep: async () => {} }).chat({ ...chat, tier: 'strong' });
