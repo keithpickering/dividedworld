@@ -38,12 +38,12 @@ test('the triggers are the design\'s eight, and the defaults put the first five 
 
 test('named: a post that names a persona is a candidate, in that thread, quoting that post', () => {
   const c = run({ named: [{ staff: 'mod1', act: 'a1', thread: 't1', n: 1 }] });
-  assert.deepEqual(c, [{ staff: 'mod1', trigger: 'named', thread: 't1', quoting: 'a1', act: 'a1' }]);
+  assert.deepEqual(c, [{ staff: 'mod1', office: 'mod', trigger: 'named', thread: 't1', quoting: 'a1', act: 'a1' }]);
 });
 
 test('quoted: a post that quotes or replies to a persona\'s post is a candidate in that thread', () => {
   const c = run({ quoted: [{ staff: 'mem1', act: 'a2', thread: 't2', n: 1 }] });
-  assert.deepEqual(c, [{ staff: 'mem1', trigger: 'quoted', thread: 't2', quoting: 'a2', act: 'a2' }]);
+  assert.deepEqual(c, [{ staff: 'mem1', office: 'member', trigger: 'quoted', thread: 't2', quoting: 'a2', act: 'a2' }]);
 });
 
 test('legacy: a move ended, kept or reversed fires for its maker, not for its owner at the Act', () => {
@@ -53,7 +53,7 @@ test('legacy: a move ended, kept or reversed fires for its maker, not for its ow
 
 test('successorStumbles: the Boss entering its meltdown inside the window fires for the Boss before it, and only then', () => {
   const crossing: PoolPhase = { ...PHASE, since: 78.5 * DAY, until: 79.5 * DAY };
-  assert.deepEqual(run({}, crossing), [{ staff: 'old', trigger: 'successorStumbles', thread: null, quoting: null, act: null }]);
+  assert.deepEqual(run({}, crossing), [{ staff: 'old', office: 'member', trigger: 'successorStumbles', thread: null, quoting: null, act: null }]);
   assert.deepEqual(run({}, PHASE), [], 'mid-reign, nothing');
   assert.deepEqual(run({}, { ...PHASE, since: 85 * DAY, until: 86 * DAY }), [], 'already in the meltdown before the window: it entered it earlier');
   assert.deepEqual(run({}, { ...crossing, predecessor: null }), [], 'a Boss with no predecessor stumbles in front of no one');
@@ -61,7 +61,7 @@ test('successorStumbles: the Boss entering its meltdown inside the window fires 
 
 test('successorStumbles: an admin reversal of the Boss\'s move fires for the Boss before it, with the reversal as its act', () => {
   const c = run({ reversals: [{ staff: 'boss1', move: 'm9', act: 'r1', thread: 'tm9' }] });
-  assert.deepEqual(c, [{ staff: 'old', trigger: 'successorStumbles', thread: 'tm9', quoting: 'r1', act: 'r1' }]);
+  assert.deepEqual(c, [{ staff: 'old', office: 'member', trigger: 'successorStumbles', thread: 'tm9', quoting: 'r1', act: 'r1' }]);
 });
 
 test('oldFlame: a favorite or a grudge in its memory writing one of the hottest posts fires, in that thread', () => {
@@ -88,7 +88,7 @@ test('hotOnBeat: a hot thread on a board of a persona\'s beats fires for it, and
 
 test('homeTurf: a hot thread a persona started fires for it; so does a board it made, once an Act records one', () => {
   const started = only(run({ hot: [hot({ staffStarted: true, starterStaff: 'mem1', board: 'unknown' })] }), 'homeTurf');
-  assert.deepEqual(started, [{ staff: 'mem1', trigger: 'homeTurf', thread: 't1', quoting: null, act: null }]);
+  assert.deepEqual(started, [{ staff: 'mem1', office: 'member', trigger: 'homeTurf', thread: 't1', quoting: null, act: null }]);
   const made = only(run({ hot: [hot({ boardMaker: 'old', board: 'unknown' })] }), 'homeTurf');
   assert.deepEqual(made.map((x) => x.staff), ['old']);
   assert.deepEqual(only(run({ hot: [hot({ board: 'unknown' })] }), 'homeTurf'), [], 'a thread a player started is no persona\'s turf');
@@ -96,9 +96,9 @@ test('homeTurf: a hot thread a persona started fires for it; so does a board it 
 
 test('seasonTurn: a handover in the window fires for the Boss that left', () => {
   const c = run({ handovers: [{ season: 4, outgoing: 'old', boss: 'boss1', how: 'rotation', at: 'x', act: 'arr', thread: 'ta' }, { season: 5, outgoing: null, boss: 'mod1', how: 'none', at: 'y', act: null, thread: null }] });
-  assert.deepEqual(c, [{ staff: 'old', trigger: 'seasonTurn', thread: 'ta', quoting: 'arr', act: 'arr' }], 'a reply to the arrival');
+  assert.deepEqual(c, [{ staff: 'old', office: 'member', trigger: 'seasonTurn', thread: 'ta', quoting: 'arr', act: 'arr' }], 'a reply to the arrival');
   const unsaid = run({ handovers: [{ season: 4, outgoing: 'old', boss: 'boss1', how: 'rotation', at: 'x', act: null, thread: null }] });
-  assert.deepEqual(unsaid, [{ staff: 'old', trigger: 'seasonTurn', thread: null, quoting: null, act: null }], 'an arrival not said: thread-null');
+  assert.deepEqual(unsaid, [{ staff: 'old', office: 'member', trigger: 'seasonTurn', thread: null, quoting: null, act: null }], 'an arrival not said: thread-null');
 });
 
 test('a waiting or benched persona is never a candidate, whatever the signal says', () => {
@@ -133,7 +133,7 @@ test('the allowance is the week\'s remainder over the days left, rounded down, a
 
 /* ------------------------------------------------------------------------------------------------------------ pick ---- */
 
-const cand = (staff: string, trigger: Candidate['trigger'] = 'named', thread = 't-' + staff): Candidate => ({ staff, trigger, thread, quoting: null, act: null });
+const cand = (staff: string, trigger: Candidate['trigger'] = 'named', thread = 't-' + staff): Candidate => ({ staff, office: 'member', trigger, thread, quoting: null, act: null });
 const veteran = { value: 2, isNew: false };
 const rookie = { value: 0, isNew: true };
 const PRIOR = (...staff: string[]) => Object.fromEntries(staff.map((s) => [s, veteran]));
@@ -244,6 +244,14 @@ test('a benched or waiting persona is never picked, even when handed to pick as 
   const c = run({ named: [{ staff: 'bench', act: 'a', thread: 't', n: 1 }, { staff: 'wait', act: 'b', thread: 't', n: 1 }, { staff: 'mod1', act: 'c', thread: 't', n: 1 }] });
   const { picks } = pick(c, PRIOR('bench', 'wait', 'mod1'), 10, 1, dayRng('d'), POOL);
   assert.deepEqual(picks.map((p) => p.staff), ['mod1']);
+});
+
+test('each candidate and each pick carries the office the persona holds now, from ctx.offices', () => {
+  const c = run({ named: [{ staff: 'mod1', act: 'a', thread: 't', n: 1 }, { staff: 'boss1', act: 'b', thread: 't', n: 1 }, { staff: 'mem1', act: 'c', thread: 't', n: 1 }] });
+  assert.deepEqual(c.map((x) => [x.staff, x.office]).sort(), [['boss1', 'boss'], ['mem1', 'member'], ['mod1', 'mod']]);
+  const { picks } = pick(c, PRIOR('boss1', 'mem1', 'mod1'), 10, 0, dayRng('d'), POOL);
+  assert.equal(picks.length, 3);
+  for (const p of picks) assert.equal(p.office, OFFICES[p.staff as keyof typeof OFFICES], p.staff);
 });
 
 test('the tie-breaks do not depend on the order the candidates arrive in, nor on the platform\'s locale', () => {

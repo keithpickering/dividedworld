@@ -16,9 +16,13 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { psqlDb, sql, scratchSeed } from './psql-db.ts';
 import { runChatter } from '../../functions/chatter/core.ts';
-import { instance } from '../../functions/_shared/instance.ts';
+import { instance as realInstance } from '../../functions/_shared/instance.ts';
+import { placeholderWorld } from '../../../instances/divided-world/system/fixtures/index.ts';
 import { models } from '../../functions/_shared/models/index.ts';
 import { ledgerWriter } from '../../functions/_shared/models/ledger.ts';
+
+/** This file needs a second Boss, which the real roster no longer has: its world is the placeholder fixtures'. */
+const instance = placeholderWorld(realInstance);
 
 const tiers = { strong: 'claude-opus-5-5', light: 'claude-haiku-5-5' };
 const roster = instance.system.roster;
@@ -94,7 +98,7 @@ test('the Boss is named and a mod quoted, the season is handed over, and the poo
     const body = JSON.parse(String(init?.body));
     if (!String(url).includes('anthropic')) return new Response(JSON.stringify({ choices: [{ text: ' ok.' }], usage: { prompt_tokens: 100, completion_tokens: 4 } }), { status: 200 });
     const text = JSON.stringify(body);
-    const who = roster.find((p) => text.includes(JSON.stringify(p.persona).slice(1, -1)));
+    const who = roster.find((p) => text.includes(JSON.stringify(p.selfPrompt).slice(1, -1)));
     const asked = String(body.messages?.[0]?.content ?? '');
     if (who) promptsFor[who.key] = asked;
     const reply: Record<string, unknown> = { words: words[who?.key ?? ''] ?? 'Noted.' };

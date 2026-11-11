@@ -17,7 +17,7 @@ import type { Duty } from '../system/duties.ts';
 import type { HintSettings } from './hints.ts';
 import type { AlertKind } from './alerts.ts';
 import type { PhaseOverrides, PhaseSettings } from '../system/phases.ts';
-import type { PoolTrigger } from '../system/pool.ts';
+import type { PoolTrigger, PostingOffice } from '../system/pool.ts';
 import type { PronounSet } from './pronouns.ts';
 
 export type { PronounSet };
@@ -669,8 +669,10 @@ export type Weakness =
  * without a second shape.
  */
 export interface Persona extends StaffSeed {
-  /** The system prompt that makes the model this persona, built on the instance's shared premise for the duty it is doing. */
-  readonly persona: string;
+  /** Who this persona is, in its own words: no premise and no answer rules; the engine sets it in its office's frame (`personaPrompt`). */
+  readonly selfPrompt: string;
+  /** A line it adds in that office only. */
+  readonly officeLines?: Readonly<Partial<Record<PostingOffice, string>>>;
   /** What it is into on its first day. */
   readonly startingHobby: string;
   /** A line of temperament, for an admin reading the roster and for the meeting to be told. */
@@ -701,6 +703,12 @@ export interface FeedSource {
   readonly url: string;
 }
 
+/** What an office is, in an instance's words: the premise a persona holding it is built on, and the rules its answer keeps. */
+export interface OfficeFrame {
+  readonly premise: string;
+  readonly answerRules: string;
+}
+
 /**
  * Everything The System needs from an instance: its roster of personas, who does each duty, the lines it falls back
  * on, what it reads from outside, what it leaves alone, and the shape of a board's name. The engine names this
@@ -711,6 +719,8 @@ export interface SystemContent {
   readonly roster: readonly Persona[];
   /** The roster key of the first season's Boss. */
   readonly firstBoss: string;
+  /** What each office that posts is: set around a persona's own words by the engine (`personaPrompt`). */
+  readonly offices: Readonly<Record<PostingOffice, OfficeFrame>>;
   /** The title of the one thread on The System's board where landed moves and their ends are written; the seed makes it once. */
   readonly announcementsTitle: string;
   /** The roster keys on staff when the instance is seeded (never the first Boss). */

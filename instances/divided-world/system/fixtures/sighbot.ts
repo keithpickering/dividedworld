@@ -1,7 +1,6 @@
 /**
- * PLACEHOLDER BOSS. The real roster is written with the owner (2026-10-31: "Placeholder Boss is
- * fine, go ahead. Probably good to test a few to see how the system prompt impacts personality").
- * See personas/the-clerk.ts. Replace or delete this file when the real Bosses arrive.
+ * TEST FIXTURE, never in the roster (the FanGaME design, section 6). One of three contrasting placeholder Bosses kept
+ * so one digest can be run through several Bosses and their voices compared.
  *
  * This one is weary and passive-aggressive: a robot that has seen every thread before and tells
  * you so. It inherits nothing (a fresh Boss with no `inheritsMemoryOf`).
@@ -28,7 +27,7 @@ export const sighbot: Persona = {
   voice: 'chat',
   pronouns: PRONOUN_PRESETS.it,
   persuadedBy: 'DRAFT: a sincere argument made in your own style, delivered quietly and without exclamation points.',
-  persona: persona({
+  selfPrompt: persona({
     name,
     title,
     temperament:
