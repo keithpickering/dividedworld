@@ -15,6 +15,7 @@ import { SIZES } from '../../../engine/ui/cards/template.ts';
 import { logRows } from '../../../engine/ui/log/lines.ts';
 import type { Act, Log } from '../../../engine/ui/data/api.ts';
 import { instanceUi, REASON_KEYS, wordsRead } from './index.ts';
+import { spanWords } from './cards.ts';
 import { ENGINE_DEFAULT_PRONOUNS, PRONOUN_PRESETS } from '../../../engine/rules/pronouns.ts';
 
 describe('Divided World\'s developer persona', () => {
@@ -94,6 +95,26 @@ describe('Divided World\'s cards in the guide, in the glass\'s words about setti
     expect(guideMd).toMatch(/A Ward is used on your own post to guard it/u);
     expect(guideMd).toMatch(/every card back looks the same/u);
     expect(guideMd).not.toMatch(/pays you|what it cost/u);
+  });
+});
+
+describe('Divided World\'s Gimmick cards in plain words', () => {
+  test('a span says "an hour", "a day", "a week", and counts the rest', () => {
+    expect(spanWords({ unit: 'hour', count: 1 })).toBe('an hour');
+    expect(spanWords({ unit: 'day', count: 1 })).toBe('a day');
+    expect(spanWords({ unit: 'day', count: 7 })).toBe('a week');
+    expect(spanWords({ unit: 'hour', count: 36 })).toBe('36 hours');
+  });
+
+  test('each new Gimmick reads its span and its amount from its own rules', () => {
+    const faces = facesOf(instance.cards, instanceUi.cards, instance.settings, instanceUi.copy.cardKinds);
+    const say = (key: string) => {
+      const f = faces.find((x) => x.key === key)!;
+      return `${f.describe} ${f.summary}`;
+    };
+    for (const key of ['publicity-tour', 'heat-magnet']) expect(say(key), key).toMatch(/36 hours[\s\S]*0\.1 more/u);
+    expect(say('class-clown')).toMatch(/36 hours[\s\S]*0\.5 more/u);
+    expect(say('good-vibes')).toMatch(/3 days[\s\S]*costs 0\.25 more/u);
   });
 });
 

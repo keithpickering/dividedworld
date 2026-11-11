@@ -11,6 +11,7 @@
 import { lazy } from 'react';
 import type { CardUi } from '../../../engine/ui/cards/types.ts';
 import type { Settings } from '../../../engine/rules/types.ts';
+import type { GimmickEffect } from '../../../engine/rules/cards.ts';
 import stickAroundCanvas from './cards/stick-around/art.svg?url';
 import stickAroundMark from './cards/stick-around/mark.svg?url';
 import stickAroundArt from './cards/stick-around/art.json';
@@ -49,6 +50,18 @@ import { publicityTour } from '../cards/publicity-tour.ts';
 import { heatMagnet } from '../cards/heat-magnet.ts';
 import { classClown } from '../cards/class-clown.ts';
 import { goodVibes } from '../cards/good-vibes.ts';
+import publicityTourCanvas from './cards/publicity-tour/art.svg?url';
+import publicityTourMark from './cards/publicity-tour/mark.svg?url';
+import publicityTourArt from './cards/publicity-tour/art.json';
+import heatMagnetCanvas from './cards/heat-magnet/art.svg?url';
+import heatMagnetMark from './cards/heat-magnet/mark.svg?url';
+import heatMagnetArt from './cards/heat-magnet/art.json';
+import classClownCanvas from './cards/class-clown/art.svg?url';
+import classClownMark from './cards/class-clown/mark.svg?url';
+import classClownArt from './cards/class-clown/art.json';
+import goodVibesCanvas from './cards/good-vibes/art.svg?url';
+import goodVibesMark from './cards/good-vibes/mark.svg?url';
+import goodVibesArt from './cards/good-vibes/art.json';
 import { ConfigForm as WhoopsConfigForm } from '../cards/whoops/ConfigForm.tsx';
 import { rgbOf } from '../cards/whoops/splat.ts';
 
@@ -59,7 +72,11 @@ import { rgbOf } from '../cards/whoops/splat.ts';
 const setMoveWords = (lands: string) => `You can also set it face down on one of your own posts: it springs on the next quote of that post and lands on ${lands} at no further cost, using up the card.`;
 
 /** A span in words: "a week", "3 days". */
-const spanWords = (s: { readonly unit: string; readonly count: number }) => (s.unit === 'day' && s.count === 7 ? 'a week' : s.count === 1 ? `a ${s.unit}` : `${s.count} ${s.unit}s`);
+export const spanWords = (s: { readonly unit: string; readonly count: number }) => (s.unit === 'day' && s.count === 7 ? 'a week' : s.count === 1 ? `${s.unit === 'hour' ? 'an' : 'a'} ${s.unit}` : `${s.count} ${s.unit}s`);
+
+/** What an Earn Gimmick adds to a reaction's count, and what a Price Gimmick adds to a cast, read from the card's own rules: "0.1", "0.25". */
+const earnBy = (c: { readonly gimmick?: GimmickEffect }) => (c.gimmick?.kind === 'earn' ? String(c.gimmick.by) : '');
+const priceAdd = (c: { readonly gimmick?: GimmickEffect }) => (c.gimmick?.kind === 'price' ? orbs(c.gimmick.add) : '');
 
 /** A price of a whole number of hundredths, as the shop says it: "1.00". */
 const orbs = (hundredths: number) => (hundredths / 100).toFixed(2);
@@ -144,44 +161,43 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
       `A Sweet card, ${forceField.rarity}, used on one of your own posts. For ${spanWords(forceField.lasts!)}, every card cast there that is ${forceField.rarity} or commoner is turned away before it lands, and its caster is told so; a rarer card lands as usual. It never stops a card set face down. It costs nothing more to use.`,
   },
   /*
-   * The Gimmicks of the card types design (docs/plans/2026-11-11-card-types-design.md, section 8). Their art comes with the plan's Task 7:
-   * until then each wears the art of a card of its own flavor, so a face has a canvas and a mark.
+   * The Gimmicks of the card types design (docs/plans/2026-11-11-card-types-design.md, section 8). Their art is placeholder, in each card's flavor's color.
    */
   {
     key: 'publicity-tour',
-    art: { color: '#2ee6ff', ink: '#03141a', canvas: forceFieldCanvas, mark: forceFieldMark, credit: forceFieldArt.credit, tagline: 'Positive reactions count more.' },
-    summary: `Used on one of your characters. For ${spanWords(publicityTour.lasts!)}, positive reactions to its posts count 0.1 more.`,
+    art: { color: '#2ee6ff', ink: '#03141a', canvas: publicityTourCanvas, mark: publicityTourMark, credit: publicityTourArt.credit, tagline: 'Positive reactions count more.' },
+    summary: `Used on one of your characters. For ${spanWords(publicityTour.lasts!)}, positive reactions to its posts count ${earnBy(publicityTour)} more.`,
     status: 'Positive reactions count more',
     describe: (settings: Settings) =>
-      `A Sweet card, ${publicityTour.rarity}, used on one of your own characters. For ${spanWords(publicityTour.lasts!)}, every positive reaction (excited or calm) that character's posts earn counts 0.1 more, and then it stops by itself. It never makes a loss worse. It costs nothing more to use.`,
-    logPlay: () => 'Positive reactions to that character count 0.1 more until it ends.',
+      `A Sweet card, ${publicityTour.rarity}, used on one of your own characters. For ${spanWords(publicityTour.lasts!)}, every positive reaction (excited or calm) that character's posts earn counts ${earnBy(publicityTour)} more, and then it stops by itself. It never makes a loss worse. It costs nothing more to use.`,
+    logPlay: () => `Positive reactions to that character count ${earnBy(publicityTour)} more until it ends.`,
   },
   {
     key: 'heat-magnet',
-    art: { color: '#ff3d7f', ink: '#14030a', canvas: cardCollectorCanvas, mark: cardCollectorMark, credit: cardCollectorArt.credit, tagline: 'Negative reactions count more.' },
-    summary: `Used on one of your characters. For ${spanWords(heatMagnet.lasts!)}, negative reactions to its posts count 0.1 more.`,
+    art: { color: '#ff3d7f', ink: '#14030a', canvas: heatMagnetCanvas, mark: heatMagnetMark, credit: heatMagnetArt.credit, tagline: 'Negative reactions count more.' },
+    summary: `Used on one of your characters. For ${spanWords(heatMagnet.lasts!)}, negative reactions to its posts count ${earnBy(heatMagnet)} more.`,
     status: 'Negative reactions count more',
     describe: (settings: Settings) =>
-      `A Salty card, ${heatMagnet.rarity}, used on one of your own characters. For ${spanWords(heatMagnet.lasts!)}, every negative reaction (excited or bored) that character's posts earn counts 0.1 more, and then it stops by itself. It never makes a loss worse. It costs nothing more to use.`,
-    logPlay: () => 'Negative reactions to that character count 0.1 more until it ends.',
+      `A Salty card, ${heatMagnet.rarity}, used on one of your own characters. For ${spanWords(heatMagnet.lasts!)}, every negative reaction (excited or bored) that character's posts earn counts ${earnBy(heatMagnet)} more, and then it stops by itself. It never makes a loss worse. It costs nothing more to use.`,
+    logPlay: () => `Negative reactions to that character count ${earnBy(heatMagnet)} more until it ends.`,
   },
   {
     key: 'class-clown',
-    art: { color: '#d24a2c', ink: '#1a0602', canvas: glitterBombCanvas, mark: glitterBombMark, credit: glitterBombArt.credit, tagline: 'Laughs and eye rolls count more.' },
-    summary: `Used on one of your characters. For ${spanWords(classClown.lasts!)}, each 😂 and 🙄 on its posts counts 0.5 more.`,
+    art: { color: '#d24a2c', ink: '#1a0602', canvas: classClownCanvas, mark: classClownMark, credit: classClownArt.credit, tagline: 'Laughs and eye rolls count more.' },
+    summary: `Used on one of your characters. For ${spanWords(classClown.lasts!)}, each 😂 and 🙄 on its posts counts ${earnBy(classClown)} more.`,
     status: 'Laughs and eye rolls count more',
     describe: (settings: Settings) =>
-      `A Pepperoni card, ${classClown.rarity}, used on one of your own characters. For ${spanWords(classClown.lasts!)}, every 😂 and every 🙄 that character's posts earn counts 0.5 more, and then it stops by itself. It never makes a loss worse. It costs nothing more to use.`,
-    logPlay: () => 'Each 😂 and 🙄 on that character\'s posts counts 0.5 more until it ends.',
+      `A Pepperoni card, ${classClown.rarity}, used on one of your own characters. For ${spanWords(classClown.lasts!)}, every 😂 and every 🙄 that character's posts earn counts ${earnBy(classClown)} more, and then it stops by itself. It never makes a loss worse. It costs nothing more to use.`,
+    logPlay: () => `Each 😂 and 🙄 on that character's posts counts ${earnBy(classClown)} more until it ends.`,
   },
   {
     key: 'good-vibes',
-    art: { color: '#2ee6ff', ink: '#03141a', canvas: mainEventCanvas, mark: mainEventMark, credit: mainEventArt.credit, tagline: 'Salty cards cost more here.' },
-    summary: `Used on a thread you started. For ${spanWords(goodVibes.lasts!)}, casting a Salty card there costs 0.25 more.`,
-    status: 'Salty cards cost 0.25 more here',
+    art: { color: '#2ee6ff', ink: '#03141a', canvas: goodVibesCanvas, mark: goodVibesMark, credit: goodVibesArt.credit, tagline: 'Salty cards cost more here.' },
+    summary: `Used on a thread you started. For ${spanWords(goodVibes.lasts!)}, casting a Salty card there costs ${priceAdd(goodVibes)} more.`,
+    status: `Salty cards cost ${priceAdd(goodVibes)} more here`,
     describe: (settings: Settings) =>
-      `A Sweet card, ${goodVibes.rarity}, used on a thread one of your own characters started. For ${spanWords(goodVibes.lasts!)}, casting a Salty card in that thread, or on a post in it, costs 0.25 more, for everyone, and then it stops by itself. It costs nothing more to use.`,
-    logPlay: () => 'Casting a Salty card in that thread costs 0.25 more until it ends.',
+      `A Sweet card, ${goodVibes.rarity}, used on a thread one of your own characters started. For ${spanWords(goodVibes.lasts!)}, casting a Salty card in that thread, or on a post in it, costs ${priceAdd(goodVibes)} more, for everyone, and then it stops by itself. It costs nothing more to use.`,
+    logPlay: () => `Casting a Salty card in that thread costs ${priceAdd(goodVibes)} more until it ends.`,
   },
   /*
    * Autocorrect (docs/plans/2026-11-03-autocorrect-design.md): Pepperoni's color, as Glitter Bomb is. Its face is a strip
