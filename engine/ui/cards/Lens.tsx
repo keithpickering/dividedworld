@@ -46,7 +46,7 @@ import { spunCount, useSpunInto } from '../spin/spun.ts';
 import { when } from '../thread/lines.tsx';
 import type { Tallies } from '../thread/tallies.ts';
 import { inkOf, useOnInk, useSheet, useUntil } from './Effects.tsx';
-import { withCardEconomy } from './faces.ts';
+import { plainRefusal, withCardEconomy } from './faces.ts';
 import { Kit } from './Kit.tsx';
 import { backWords, CAUGHT_STATE, caughtWords, endedWords, kindsOf, playsPhrase, spanMs, sumOf, gimmickWords } from './marks.ts';
 import { defaultView, inPlayOrder, isBack, markedPlays, shownPlays, useCardView, usePlays, type Plays } from './plays.ts';
@@ -232,7 +232,7 @@ export function useResolvedView(store: Plays, post: Id, kind: string, nameOf?: (
     if (rules?.gimmick && live.length > 0) {
       const latest = [...live].sort((a, b) => Date.parse(b.ends ?? '') - Date.parse(a.ends ?? ''))[0]!;
       const gimmick = gimmickWords(rules.gimmick, latest.ends, new Date(), cardName);
-      return { ...base, state: gimmick.state, ...(gimmick.ends ? { ends: gimmick.ends } : {}), notes: caught };
+      return { ...base, state: gimmick.state, ...(gimmick.ends ? { ends: gimmick.ends } : {}), ...(gimmick.report ? { report: gimmick.report } : {}), notes: caught };
     }
     return Object.keys(caught).length > 0 ? { ...base, notes: caught } : base;
   }, [instance.cards, instance.settings.setLasts, ui.cards, kind, economy, here, nameOf]);
@@ -436,9 +436,13 @@ function TakeBack({ play, store }: { readonly play: CardPlay; readonly store: Pl
     setRefusal(null);
     try {
       const answer = await api.takeBack(play.caster, play.id);
-      if (!answer.ok) { setRefusal(answer.error); return; }
+      if (!answer.ok) { setRefusal(plainRefusal(answer.error)); return; }
+      /* The back's mark goes with it, so focus goes to the post it was on (the mark is read before it goes): never to the page's body. */
+      const mark = document.querySelector<HTMLElement>('.kb-mark[aria-expanded="true"]');
+      const post = mark?.closest<HTMLElement>('article') ?? null;
       store.add([answer.value]);
       lens.close();
+      setTimeout(() => { (mark?.isConnected ? mark : post)?.focus(); }, 0);
     } catch {
       setRefusal('That could not be sent. Check your connection and look at the card before you try again.');
     } finally {

@@ -8,6 +8,8 @@ import type { GimmickEffect } from '../../rules/cards.ts';
 import type { Span } from '../../rules/types.ts';
 import type { CardPlay } from './types.ts';
 import { dayAndTime } from '../characters/format.ts';
+import { orbs } from './faces.ts';
+import { STATUS_MAX_WORDS } from './lens-words.ts';
 
 /** The most marks a strip draws on a desktop, before the "+N" mark. */
 export const MARKS_WIDE = 4;
@@ -89,17 +91,15 @@ const list = (words: readonly string[]): string => (words.length <= 2 ? words.jo
  * reader's zone. They are read from the effect's own numbers: a ward says everything it turns away (a card by the name `nameOf` gives), a price what a cast
  * costs more, an earn how much more a reaction earns (an earn's `by` is a share: 0.1 is 10%).
  */
-export function gimmickWords(effect: GimmickEffect, ends: string | undefined, now: Date = new Date(), nameOf: (key: string) => string = (key) => key): { readonly state: string; readonly ends?: string } {
+export function gimmickWords(effect: GimmickEffect, ends: string | undefined, now: Date = new Date(), nameOf: (key: string) => string = (key) => key): { readonly state: string; readonly ends?: string; readonly report?: string } {
   if (ends !== undefined && Date.parse(ends) <= now.getTime()) return { state: 'Ended, changing nothing', ends: `Ended ${dayAndTime(ends)}` };
-  /* A ward turns away a card that meets any one of its conditions, so every condition it holds is said, in the order the rules read them. */
-  const away = effect.kind === 'ward'
-    ? [...(effect.upTo !== undefined ? [`cards up to ${effect.upTo}`] : []), ...(effect.flavors?.length ? [`${list(effect.flavors.map(capital))} cards`] : []), ...(effect.cards?.map(nameOf) ?? [])]
-    : [];
-  const state = effect.kind === 'ward'
-    ? `Turns away ${away.length > 0 ? list(away) : 'some cards'}`
-    : effect.kind === 'price' ? `${list(effect.flavors.map(capital))} cards cost ${(effect.add / 100).toFixed(2)} more here`
-      : `Earns ${Math.round(effect.by * 100)}% more from some reactions`;
-  return { state, ...(ends !== undefined ? { ends: endsWords(ends) } : {}) };
+  const finish = (state: string, report?: string) => ({ state, ...(ends !== undefined ? { ends: endsWords(ends) } : {}), ...(report !== undefined ? { report } : {}) });
+  if (effect.kind === 'price') return finish(`${list(effect.flavors.map(capital))} cards cost ${orbs(effect.add)} more here`);
+  if (effect.kind === 'earn') return finish(`Earns ${Math.round(effect.by * 100)}% more from some reactions`);
+  /* A ward turns away a card that meets any one of its conditions, so it says every one, in the order the rules read them. When that is more than a heading may run, the heading is the short "some cards" and the whole list is the detail. */
+  const away = [...(effect.upTo !== undefined ? [`cards up to ${effect.upTo}`] : []), ...(effect.flavors?.length ? [`${list(effect.flavors.map(capital))} cards`] : []), ...(effect.cards?.map(nameOf) ?? [])];
+  const full = `Turns away ${away.length > 0 ? list(away) : 'some cards'}`;
+  return full.split(/\s+/u).length <= STATUS_MAX_WORDS ? finish(full) : finish('Turns away some cards', `${full}.`);
 }
 
 /** When a play beyond a post ends, as its Lens line says it: on its timer, in the reader's zone ("Ends Nov 7, 9:14 PM"). */

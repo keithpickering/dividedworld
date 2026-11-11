@@ -1871,6 +1871,8 @@ describe('taking a back back', () => {
     await userEvent.click(takeButton()!);
     expect(call).toHaveBeenCalledWith(w.pipe, expect.any(String));
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Cards on this post' })).toBeNull());
+    /* The mark is gone with the back: focus goes to the post, not to the page's body. */
+    await waitFor(() => expect(document.activeElement).toBe(document.getElementById('post-4')));
   });
 
   test('says the refusal in plain words, and stays open', async () => {
@@ -1880,6 +1882,6 @@ describe('taking a back back', () => {
     open(w);
     await openBack(4);
     await userEvent.click(takeButton()!);
-    expect(await within(lens()).findByRole('alert')).toHaveTextContent('there is no face-down card to take back there');
+    expect(await within(lens()).findByRole('alert')).toHaveTextContent('There is no face-down card to take back there.');
   });
 });

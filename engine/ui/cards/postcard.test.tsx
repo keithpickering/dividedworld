@@ -269,11 +269,17 @@ describe('the frame says how a card is played', () => {
   });
 
   test('each type\'s frame is drawn, a Set\'s outside ring and a Use\'s dashed one, never under 1.5px', () => {
-    expect(body(".kb-postcard[data-kb-play='set']::before")).toMatch(/border:\s*(?:1\.5|[2-9])px solid var\(--kb-card-color\)/u);
+    /* A shadow keeps 1.5px at a pixel ratio of 1, where a border of that width is floored to 1px. */
+    expect(body(".kb-postcard[data-kb-play='set']::before")).toMatch(/box-shadow:\s*0 0 0 (?:1\.5|[2-9])px var\(--kb-card-color\)/u);
+    expect(/\[data-kb-play='set'\]::before\s*\{([^}]*)\}/u.exec(css.slice(0, css.indexOf('@media (forced-colors')))![1]).not.toMatch(/border:/u);
     expect(body(".kb-postcard[data-kb-play='use']::before")).toMatch(/border:\s*(?:1\.5|[2-9])px dashed var\(--kb-card-color\)/u);
     expect(body(".kb-postcard[data-kb-play='set']::before,\n.kb-postcard[data-kb-play='use']::before")).toMatch(/inset:\s*-/u);
     expect(body(".kb-postcard[data-kb-play='cast']::before")).toBe('');
     expect(body('.kb-postcard-fold')).toMatch(/left:\s*0/u);
+    /* Above the canvas (z-index 0), which is later in the markup, and below the words; one flat fill. */
+    expect(body('.kb-postcard-fold')).toMatch(/z-index:\s*1\b/u);
+    expect(body('.kb-postcard-fold')).not.toContain('gradient');
+    expect(body('.kb-postcard-fold')).toMatch(/background:\s*var\(--kb-card-color\)/u);
     expect(body('.kb-postcard-fold')).toMatch(/bottom:\s*0/u);
   });
 
