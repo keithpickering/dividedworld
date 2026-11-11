@@ -3,8 +3,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { systemSettings, testSystem } from '../rules/test-system.ts';
 import { DEMAND_KINDS } from './demands.ts';
-import { DEMAND_ID_ROLES, MEETING_RULE, inheritedText, meetingSystemPrompt, namedCharacters, referenceText, repairAnswer, ruleSchema, type InheritedMove, type MachineSlotFacts, type RepairContext } from './meeting.ts';
+import { DEMAND_ID_ROLES, MEETING_FIELDS, MEETING_PARTS, MEETING_RULE, partRule, partSchema, inheritedText, meetingSystemPrompt, namedCharacters, referenceText, repairAnswer, ruleSchema, type InheritedMove, type MachineSlotFacts, type RepairContext } from './meeting.ts';
 import { noteMost } from './memory.ts';
+import { schemaProblems } from './schema.ts';
+import { repair } from './validate.ts';
 import { phaseAt } from './phases.ts';
 import { personaPrompt } from './prompt.ts';
 import { PRONOUN_PRESETS } from '../rules/pronouns.ts';
@@ -194,7 +196,7 @@ const ruleMove = (params: unknown) => ({ ...move({ kind: 'postsOnBoard', params:
 const ruleAnswer = (params: unknown) => ({ ...answer(null), moves: [ruleMove(params)] });
 
 test('a setRule on a listed board, or on every board, is kept; a numeric param stays a number', () => {
-  const on = repairAnswer(ruleAnswer({ board: BOARD, predicate: 'minLength', param: '20', band: 'minor' }), ctx());
+  const on = repairAnswer(ruleAnswer({ board: BOARD, predicate: 'minLength', param: 20, band: 'minor' }), ctx());
   assert.ok(on.ok && on.moves.length === 1, JSON.stringify(on));
   assert.deepEqual(on.ok && on.moves[0]!.params, { board: BOARD, predicate: 'minLength', param: 20, band: 'minor' });
   const all = repairAnswer(ruleAnswer({ predicate: 'noDoublePost', band: 'severe' }), ctx());
@@ -730,4 +732,181 @@ test('a first group move dropped for its board does not reserve its character: a
   assert.equal(r.moves.length, 1);
   assert.ok(r.trims.some((t) => t.path === 'moves[0].params.board' && t.predicate === 'isBoard'));
   assert.ok(!r.trims.some((t) => t.path === 'moves[1].params.character'), JSON.stringify(r.trims));
+});
+
+/* ------------------------------------------------------------------ the three parts (provider schemas plan, Task 4) ---- */
+
+const tally = (schema: any): { properties: number; optional: number; unions: number } => {
+  const t = { properties: 0, optional: 0, unions: 0 };
+  const walk = (n: any): void => {
+    if (n === null || typeof n !== 'object') return;
+    if (n.properties) {
+      const keys = Object.keys(n.properties);
+      t.properties += keys.length;
+      t.optional += keys.filter((k) => !(n.required ?? []).includes(k)).length;
+      for (const k of keys) walk(n.properties[k]);
+    }
+    if (n.items) walk(n.items);
+    if (n.anyOf) { t.unions += 1; n.anyOf.forEach(walk); }
+  };
+  walk(schema);
+  return t;
+};
+
+test('every field of the answer is in exactly one part, and MEETING_RULE is built from the parts', () => {
+  assert.deepEqual(MEETING_PARTS.map((p) => p.key), ['moves', 'staff', 'self']);
+  assert.deepEqual(MEETING_PARTS.map((p) => [...p.fields]), [['moves', 'inherited', 'successor'], ['orders', 'patrols'], ['memory', 'profile']]);
+  const listed = MEETING_PARTS.flatMap((p) => [...p.fields]);
+  assert.equal(new Set(listed).size, listed.length, `a field is in two parts: ${listed.join(', ')}`);
+  assert.deepEqual([...listed].sort(), Object.keys(MEETING_FIELDS).sort(), 'a field is in no part');
+  assert.deepEqual(Object.keys((MEETING_RULE as { fields: object }).fields), listed);
+  for (const p of MEETING_PARTS) {
+    assert.deepEqual(Object.keys((partRule(p.key) as { fields: object }).fields), [...p.fields]);
+    assert.match(p.ask, /\S/);
+  }
+  assert.ok(MEETING_PARTS[0]!.ask.includes('Hold your meeting.'));
+});
+
+const DESIGN_PROPERTIES = { moves: 36, staff: 23, self: 20 } as const;
+const OPTIONAL = { moves: 2, staff: 7, self: 1 } as const;
+for (const key of ['moves', 'staff', 'self'] as const) {
+  const t = tally(partSchema(key));
+  test(`the ${key} part's schema is accepted by the provider's rules: ${t.properties} properties, ${t.optional} optional, ${t.unions} unions`, () => {
+    assert.deepEqual(schemaProblems(partSchema(key)), []);
+    assert.deepEqual(t, { properties: DESIGN_PROPERTIES[key], optional: OPTIONAL[key], unions: 0 });
+  });
+}
+
+test('the moves part asks for every field of a move, and its loose params and demand are all required', () => {
+  const schema = partSchema('moves') as any;
+  assert.deepEqual(schema.required, ['moves']);
+  const item = schema.properties.moves.items;
+  assert.deepEqual([...item.required].sort(), ['demand', 'expires_in_hours', 'go_live_at', 'kind', 'params', 'why']);
+  assert.deepEqual([...item.properties.params.required].sort(), Object.keys(item.properties.params.properties).sort());
+  assert.deepEqual([...item.properties.demand.required].sort(), ['kind', 'params']);
+  assert.deepEqual([...item.properties.demand.properties.params.required].sort(), Object.keys(item.properties.demand.properties.params.properties).sort());
+  assert.ok(Object.keys(item.properties.params.properties).length > 4);
+});
+
+test('a schema merged from all three parts is too large for the provider, by propertiesTotal', () => {
+  const merged = { type: 'object', additionalProperties: false, properties: {} as Record<string, unknown>, required: [] as string[] };
+  for (const key of ['moves', 'staff', 'self'] as const) {
+    const s = partSchema(key) as any;
+    Object.assign(merged.properties, s.properties);
+    merged.required.push(...(s.required ?? []));
+  }
+  assert.ok(schemaProblems(merged).some((p) => p.predicate.startsWith('propertiesTotal')), JSON.stringify(schemaProblems(merged)));
+});
+
+const BLANK_PARAMS = { board: '', name: '', premise: '', description: '', predicate: '', param: '', band: '', character: '', group: '', checkAt: '', slot: '', percent: 0, hours: 0 };
+const BLANK_DEMAND = { kind: '', params: { board: '', count: 0, quadrant: '', character: '', thread: '', a: '', b: '', reactions: 0 } };
+const askedMove = (kind: string, params: Record<string, unknown>, demand: unknown = BLANK_DEMAND) => ({
+  kind, params: { ...BLANK_PARAMS, ...params }, demand, go_live_at: new Date(NOW + 30 * H).toISOString(), expires_in_hours: 72, why: 'Because.',
+});
+const movesOnly = (...moves: unknown[]) => ({ moves, inherited: [] });
+const plain = (raw: unknown, c: RepairContext = ctx()) => {
+  const r = repairAnswer(raw, c);
+  assert.ok(r.ok, JSON.stringify(r));
+  return r;
+};
+
+test('a rename with a 0 in percent and a blank predicate keeps exactly its four params, with no trim for the rest', () => {
+  const r = plain(movesOnly(askedMove('renameBoard', { board: BOARD, name: 'Pirate Puns Palace', premise: 'Everything about puns.', description: 'Ahoy.' }, { kind: 'postsOnBoard', params: { ...BLANK_DEMAND.params, board: BOARD, count: 4, thread: THREAD, a: ANN } })));
+  assert.equal(r.moves.length, 1, JSON.stringify(r.trims));
+  assert.deepEqual(r.moves[0]!.params, { board: BOARD, name: 'Pirate Puns Palace', premise: 'Everything about puns.', description: 'Ahoy.' });
+  assert.deepEqual(r.moves[0]!.demand, { kind: 'postsOnBoard', params: { board: BOARD, count: 4 } });
+  assert.deepEqual(r.trims.filter((t) => /\.(params|demand)/.test(t.path)), []);
+});
+
+test('a number or a blank in another kind\'s field is never read, never recorded, and never costs the answer', () => {
+  const r = plain(movesOnly(askedMove('renameBoard', { board: BOARD, name: 'Pirate Puns Palace', premise: 'Everything about puns.', predicate: 7, band: 9, slot: 3 }, { kind: 'postsOnBoard', params: { ...BLANK_DEMAND.params, board: BOARD, count: 4, quadrant: 5 } })));
+  assert.equal(r.moves.length, 1, JSON.stringify(r.trims));
+  assert.deepEqual(r.moves[0]!.params, { board: BOARD, name: 'Pirate Puns Palace', premise: 'Everything about puns.' });
+  assert.deepEqual(r.trims.filter((t) => /\.(params|demand)/.test(t.path)), []);
+});
+
+test('a house rule (blank board) is a rule on every board, and a blank param is none where the predicate takes none', () => {
+  const r = plain(movesOnly(askedMove('setRule', { board: '', predicate: 'noAllCaps', param: '', band: 'minor' }, { kind: 'postsOnBoard', params: { ...BLANK_DEMAND.params, board: BOARD, count: 4 } })));
+  assert.equal(r.moves.length, 1, JSON.stringify(r.trims));
+  assert.deepEqual(r.moves[0]!.params, { board: null, predicate: 'noAllCaps', param: null, band: 'minor' });
+});
+
+test('a conferral\'s blank board and blank checkAt are absent', () => {
+  const r = plain(movesOnly(askedMove('conferGroup', { character: ANN, group: 'trialMembers', board: '', checkAt: '' }, { kind: 'postsOnBoard', params: { ...BLANK_DEMAND.params, board: BOARD, count: 4 } })));
+  assert.equal(r.moves.length, 1, JSON.stringify(r.trims));
+  assert.deepEqual(r.moves[0]!.params, { character: ANN, group: 'trialMembers' });
+});
+
+test('a favor whose demand kind is blank has no demand, and no stray-demand trim is recorded', () => {
+  const SLOT = '51000000-0000-4000-8000-00000000000a';
+  const shelf: MachineSlotFacts[] = [{ id: SLOT, position: 1, card: 'whoops', pack: null, availability: 'onSale', price: 100, pullable: true, move: null }];
+  const r = plain(movesOnly(askedMove('repriceSlot', { slot: SLOT, percent: 80 })), { ...ctx(), machine: shelf });
+  assert.equal(r.moves.length, 1, JSON.stringify(r.trims));
+  assert.equal(r.moves[0]!.demand, null);
+  assert.ok(!r.trims.some((t) => t.predicate === 'noDemand'), JSON.stringify(r.trims));
+});
+
+test('a move that needs a demand and gives a blank demand kind is dropped, recorded at its demand', () => {
+  const r = plain(movesOnly(askedMove('renameBoard', { board: BOARD, name: 'Pirate Puns Palace', premise: 'Everything about puns.' })));
+  assert.equal(r.moves.length, 0);
+  assert.ok(r.trims.some((t) => t.path.startsWith('moves[0].demand')), JSON.stringify(r.trims));
+});
+
+test('a setRule\'s param sent as a JSON number keeps the move, read as its text and then as the count, both recorded', () => {
+  const r = repairAnswer(ruleAnswer({ board: BOARD, predicate: 'minLength', param: 20, band: 'minor' }), ctx());
+  assert.ok(r.ok, JSON.stringify(r));
+  assert.equal(r.moves.length, 1, JSON.stringify(r.trims));
+  assert.equal(r.moves[0]!.params['param'], 20);
+  assert.ok(r.trims.some((t) => t.path === 'moves[0].params.param' && t.predicate === 'asText' && t.before === 20 && t.after === 2), JSON.stringify(r.trims));
+  assert.ok(r.trims.some((t) => t.path === 'moves[0].params.param' && t.predicate === 'asNumber'), JSON.stringify(r.trims));
+  const demand = repairAnswer(answer({ kind: 'postsOnBoard', params: { board: BOARD, count: 5, quadrant: 7 } }), ctx());
+  assert.ok(demand.ok && demand.moves.length === 1, JSON.stringify(demand));
+});
+
+const noParts = { moves: [] as unknown[] };
+test('an answer with a part missing is an answer with none of it', () => {
+  const none = plain({});
+  assert.deepEqual([none.moves, none.inherited, none.successor, none.orders, none.patrols, none.memory, none.profile], [[], [], null, [], [], undefined, undefined]);
+  const staff = plain({ orders: [], patrols: [] });
+  assert.deepEqual([staff.moves, staff.memory, staff.profile], [[], undefined, undefined]);
+  const moves = plain(movesOnly(move({ kind: 'postsOnBoard', params: { board: BOARD, count: 5 } })));
+  assert.equal(moves.moves.length, 1);
+  assert.equal(moves.memory, undefined);
+  assert.equal(moves.profile, undefined);
+  assert.deepEqual([moves.orders, moves.patrols], [[], []]);
+  const shown = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+  const handover = plain({ moves: [], inherited: [{ move_act: shown, decision: 'keep' }] });
+  assert.deepEqual(handover.inherited.map((x) => x.move_act), [shown]);
+  const self = plain({ memory: answer(null).memory, profile: answer(null).profile });
+  assert.ok(self.memory !== undefined && self.profile !== undefined);
+  assert.deepEqual([self.moves, self.inherited, self.successor], [[], [], null]);
+  assert.deepEqual(noParts.moves, []);
+});
+
+test('a memory without a profile, or a profile without a memory, is whole: the missing one is undefined', () => {
+  const m = plain({ memory: answer(null).memory });
+  assert.ok(m.memory !== undefined && m.profile === undefined);
+  const p = plain({ profile: answer(null).profile });
+  assert.ok(p.memory === undefined && p.profile !== undefined);
+});
+
+test('a present but broken memory still rejects, naming the path', () => {
+  const r = repairAnswer({ memory: { hobby: 3 } }, ctx());
+  assert.ok(!r.ok && r.path.startsWith('memory'), JSON.stringify(r));
+});
+
+test('the system prompt says the meeting is answered in three turns, and names each part once, from the parts', () => {
+  const text = meetingSystemPrompt({ boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.she, system: testSystem, settings, phase: ctx().phase, bank: 2, mods: [], characterName: () => 'someone', successorAllowed: false, roster: [], notes: [], career: { led: [], offices: [] } });
+  assert.match(text, /The meeting is answered in three turns/);
+  for (const p of MEETING_PARTS) assert.equal(text.split(`the "${p.key}" part (${p.fields.join(', ')})`).length - 1, 1, p.key);
+  assert.equal(MEETING_PARTS.length, 3);
+  assert.ok(text.endsWith('Answer only in the structure you are asked for.'));
+});
+
+test('each part\'s own rule accepts its own schema\'s shape: a rule with every field optional, so a blank is read as absent', () => {
+  for (const p of MEETING_PARTS) {
+    const rule = partRule(p.key) as { fields: Record<string, { optional?: boolean }> };
+    for (const f of p.fields) assert.equal(rule.fields[f]!.optional, true, `${p.key}.${f}`);
+    assert.ok(repair({}, partRule(p.key)).ok, p.key);
+  }
 });
