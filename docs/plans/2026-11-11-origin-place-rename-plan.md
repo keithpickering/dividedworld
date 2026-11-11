@@ -63,16 +63,16 @@ threads on one board, half of them spun from a board play, 42 boards, 5 renames 
 The join computes `boards_now` whole (every board, and the moves in force for each) once per query when the planner
 hashes it, on every read of `thread_open`, spun or not, the thread page's one-row read included; and `boards_now` holds
 a materialized step, so it cannot be turned into a primary-key probe, and a plan that nests the loop would walk every
-board for every row. The subquery runs only for a row whose origin is a board play: one lookup of `boards` by id and one read
-of the moves in force (`open_moves`, a handful of rows; its materialized step runs once per query). A thread not spun
+board for every row. The subquery runs only for a row whose origin is a board play: one lookup of `boards` by id and
+one read of the moves in force (`open_moves`, a handful of rows; its materialized step runs once per query). A thread not spun
 from a board play, which is nearly every thread, pays nothing, on any plan.
 
 ## What it costs on a busy instance
 
 The issue's own note is the baseline: `origin_place` is computed for the rows an offset skips too, and offset paging on
 a board is linear in the offset already (offset 2000: 47 ms before 0079, 77 ms after, on 5,000 threads). This change
-adds, for each row walked whose origin is a board play, one lookup of `boards` by id and one pass over the moves in force: about
-9 µs per such row as measured above (about 1,000 such rows among the 2,030 walked, 9 ms). That measurement is a bad
+adds, for each row walked whose origin is a board play, one lookup of `boards` by id and one pass over the moves in
+force: about 9 µs per such row as measured above (about 1,000 such rows among the 2,030 walked, 9 ms). That measurement is a bad
 case on purpose, with half a board spun from board plays; a board play is one card's reach and a spin from one is rare.
 The cost does not grow with players, Acts or boards. It grows with the offset, as the page already does, and with the
 renames in force, which are few and short-lived (0046). Keyset paging, the "Deep board pages" item of #205, removes the
