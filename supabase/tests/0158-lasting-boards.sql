@@ -219,6 +219,23 @@ begin
   perform pg_temp.expect((select threads from board_counts where board = pg_temp.board('general')) = g0 - 1 and (select threads from board_counts where board = pg_temp.board('elsewhere')) = e0 + 1,
     'the board counts did not follow the thread back to the first move''s board');
   perform pg_temp.settled('a reversed moveThread that had superseded one');
+  -- A superseded move can still be reversed, once: a new move_end beside its superseded one. With the second reversed, reversing the first returns the thread to its origin.
+  perform pg_temp.reverse(m1);
+  perform pg_temp.expect(pg_temp.at(t) = pg_temp.board('general'), 'reversing the first moveThread after the second did not return the thread to its origin');
+  perform pg_temp.expect((select count(*) from acts e where e.kind = 'move_end' and e.target_act_id = m1) = 2 and (select count(*) from moves_log l where l.id = m1) = 1
+    and (select ended_why from moves_log l where l.id = m1) = 'reversed', 'the log does not read a move with two ends as one row, ended reversed');
+  perform pg_temp.expect(not (end_move(m1, 'reversed', 'admin') ->> 'ended')::boolean and not (end_move(m1, 'superseded', 'landing') ->> 'ended')::boolean, 'a move took a third end');
+  perform pg_temp.settled('a reversed superseded move');
+  -- The first reversed while the second is live changes nothing about where the thread is; reversing the second then returns it to its origin.
+  t := pg_temp.mk('Pair', 'general');
+  m1 := pg_temp.land(pg_temp.queue('moveThread', jsonb_build_object('thread', t, 'board', pg_temp.board('elsewhere'))));
+  m2 := pg_temp.land(pg_temp.queue('moveThread', jsonb_build_object('thread', t, 'board', pg_temp.board('third'))));
+  perform pg_temp.reverse(m1);
+  perform pg_temp.expect(pg_temp.at(t) = pg_temp.board('third') and exists (select 1 from open_moves where move_act = m2), 'reversing the superseded first moved the thread or ended the second');
+  perform pg_temp.settled('the superseded first reversed with the second live');
+  perform pg_temp.reverse(m2);
+  perform pg_temp.expect(pg_temp.at(t) = pg_temp.board('general'), 'reversing the second after the first did not return the thread to its origin');
+  perform pg_temp.settled('both reversed');
   -- A move that was only ever reversed returns its thread to its origin.
   t := pg_temp.mk('Lone', 'general');
   m1 := pg_temp.land(pg_temp.queue('moveThread', jsonb_build_object('thread', t, 'board', pg_temp.board('fourth'))));
