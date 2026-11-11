@@ -57,17 +57,32 @@ create view my_cosmetic_log as
   from trophy_reversals r join trophy_awards a on a.id = r.award join trophy_kinds k on k.key = a.trophy join characters o on o.id = a.character
   where o.owner = auth.uid()
   union all
-  select 'lost', a.id::text, n.at, a.character, null, null, null, null,
-         a.trophy, k.name, n.by, (select c.name from acts x join characters c on c.id = x.character where x.id = n.act and n.by = 'boss'),
+  select 'lost', n.id::text, n.at, p.character, null, null, null, null,
+         n.trophy, k.name, n.by, (select c.name from acts x join characters c on c.id = x.character where x.id = n.act and n.by = 'boss'),
          null, null, null, nc.name
-  from trophy_awards a
-  join trophy_kinds k on k.key = a.trophy and k.belt
-  join characters o on o.id = a.character
-  cross join lateral (select x.at, x.by, x.act, x.character from trophy_awards x
-                      where x.trophy = a.trophy and (x.at, x.id) > (a.at, a.id) and not exists (select 1 from trophy_reversals r where r.award = x.id)
-                      order by x.at, x.id limit 1) n
+  from trophy_awards n
+  join trophy_kinds k on k.key = n.trophy and k.belt
   join characters nc on nc.id = n.character
-  where o.owner = auth.uid() and n.character <> a.character and not exists (select 1 from trophy_reversals r where r.award = a.id);
+  cross join lateral (select x.character from trophy_awards x
+                      where x.trophy = n.trophy and (x.at, x.id) < (n.at, n.id) and not exists (select 1 from trophy_reversals r where r.award = x.id and r.at <= n.at)
+                      order by x.at desc, x.id desc limit 1) p
+  join characters o on o.id = p.character
+  where o.owner = auth.uid() and p.character <> n.character
+  union all
+  -- The belt that came back: an admin took the holder's award back, and the character that held it before holds it again. Said as of the reversal, so a later one changes nothing of it.
+  select 'beltBack', x.id::text, rv.at, h.character, null, null, null, null,
+         x.trophy, k.name, null, null, null, null, null, xc.name
+  from trophy_reversals rv
+  join trophy_awards x on x.id = rv.award
+  join trophy_kinds k on k.key = x.trophy and k.belt
+  join characters xc on xc.id = x.character
+  cross join lateral (select y.character from trophy_awards y
+                      where y.trophy = x.trophy and y.id <> x.id and (y.at, y.id) < (x.at, x.id) and not exists (select 1 from trophy_reversals r where r.award = y.id and r.at <= rv.at)
+                      order by y.at desc, y.id desc limit 1) h
+  join characters o on o.id = h.character
+  where o.owner = auth.uid() and h.character <> x.character
+    and not exists (select 1 from trophy_awards z
+                    where z.trophy = x.trophy and z.id <> x.id and (z.at, z.id) > (x.at, x.id) and z.at <= rv.at and not exists (select 1 from trophy_reversals r where r.award = z.id and r.at <= rv.at));
 revoke all on my_cosmetic_log from anon, public;
 grant select on my_cosmetic_log to authenticated;
 
@@ -414,3 +429,26 @@ begin
 end $$;
 revoke execute on function trophy_awards_alert() from public, anon, authenticated, service_role;
 create trigger trophy_awards_alert after insert on trophy_awards for each row execute function trophy_awards_alert();
+
+-- A belt that comes back (the cosmetics plan, Task 12, review): an admin's taking back of the holder's award hands the belt to the character that held it before, and that character's player is
+-- told, so the beltLost alert they were sent never points at nothing. The alert is a `trophy` one whose sub is `again:` and the trophy's name, which its words read; the log says whose award was
+-- taken back. Cheap: one reversal, one look at the belt's awards. A reversal of an award that was not the holder's, or of a non-belt, tells no one.
+create function trophy_reversals_alert() returns trigger
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  x trophy_awards;
+  its_name text;
+  held uuid;
+begin
+  select a.* into x from trophy_awards a where a.id = new.award;
+  select k.name into its_name from trophy_kinds k where k.key = x.trophy and k.belt;
+  if its_name is null then return null; end if;
+  if exists (select 1 from trophy_awards z where z.trophy = x.trophy and z.id <> x.id and (z.at, z.id) > (x.at, x.id) and not exists (select 1 from trophy_reversals r where r.award = z.id)) then return null; end if;
+  select y.character into held from trophy_awards y
+  where y.trophy = x.trophy and y.id <> x.id and (y.at, y.id) < (x.at, x.id) and not exists (select 1 from trophy_reversals r where r.award = y.id)
+  order by y.at desc, y.id desc limit 1;
+  if held is not null and held <> x.character then perform write_alert(held, 'trophy', 'again:' || its_name, null); end if;
+  return null;
+end $$;
+revoke execute on function trophy_reversals_alert() from public, anon, authenticated, service_role;
+create trigger trophy_reversals_alert after insert on trophy_reversals for each row execute function trophy_reversals_alert();

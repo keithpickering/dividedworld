@@ -2110,7 +2110,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   }
   /**
    * `my_cosmetic_log` (0158): the finds and gear grants of the account, and the awards, takings back and passed belts of its own characters, newest first. A belt passes from
-   * the holder to the next standing award of its kind to another character; a reversed award is no standing one.
+   * the holder to the next award of its kind to another character, a line that stays when that award is taken back, and a belt taken back from the taker is a `beltBack` line for the holder before.
    */
   function cosmeticLogOf(account: Id | undefined, fits: (ms: number) => boolean, cap: <T>(rows: T[]) => T[]): LogCosmetic[] {
     if (account === undefined) return [];
@@ -2124,9 +2124,17 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const given = { trophy: a.trophy, name: kind.name, by: a.by, byName: a.by === 'boss' ? bossName() : null, season: a.season, place: a.by === 'season' ? place(a.trophy) : null };
       if (fits(a.at)) rows.push({ ms: a.at, row: { ...NO_COSMETIC, ...given, kind: 'awarded', id: a.id, at: iso(a.at), character: a.character, line: a.line } });
       if (a.reversed && a.reversedAt !== undefined && fits(a.reversedAt)) rows.push({ ms: a.reversedAt, row: { ...NO_COSMETIC, trophy: a.trophy, name: kind.name, kind: 'reversed', id: a.id, at: iso(a.reversedAt), character: a.character } });
-      const next = kind.belt && !a.reversed ? awards.filter((x) => x.trophy === a.trophy && !x.reversed && x.at > a.at).sort((x, y) => x.at - y.at)[0] : undefined;
-      if (next && next.character !== a.character && fits(next.at)) {
-        rows.push({ ms: next.at, row: { ...NO_COSMETIC, ...given, by: next.by, byName: next.by === 'boss' ? bossName() : null, season: null, place: null, kind: 'lost', id: a.id, at: iso(next.at), character: a.character, toName: characters.get(next.character)?.name ?? null } });
+      /* A belt passes to the next award of its kind, standing or not (it happened); the holder before it is the latest award not yet taken back when it came. */
+      const next = kind.belt ? awards.filter((x) => x.trophy === a.trophy && x.at > a.at).sort((x, y) => x.at - y.at)[0] : undefined;
+      const heldAt = (ms: number) => !(a.reversed && a.reversedAt !== undefined && a.reversedAt <= ms);
+      const latestBefore = (ms: number, x: typeof a) => !awards.some((y) => y.trophy === a.trophy && y.at > a.at && y.at < x.at && (!(y.reversed && y.reversedAt !== undefined && y.reversedAt <= ms)));
+      if (next && next.character !== a.character && heldAt(next.at) && latestBefore(next.at, next) && fits(next.at)) {
+        rows.push({ ms: next.at, row: { ...NO_COSMETIC, ...given, by: next.by, byName: next.by === 'boss' ? bossName() : null, season: null, place: null, kind: 'lost', id: next.id, at: iso(next.at), character: a.character, toName: characters.get(next.character)?.name ?? null } });
+      }
+      /* When that next award is taken back and no later one stands, the belt is back with this holder. */
+      if (next && next.reversed && next.reversedAt !== undefined && next.character !== a.character && heldAt(next.reversedAt) && latestBefore(next.reversedAt, next) && fits(next.reversedAt)
+        && !awards.some((y) => y.trophy === a.trophy && y.at > next.at && !(y.reversed && y.reversedAt !== undefined && y.reversedAt <= next.reversedAt!) && y.at <= next.reversedAt!)) {
+        rows.push({ ms: next.reversedAt, row: { ...NO_COSMETIC, trophy: a.trophy, name: kind.name, kind: 'beltBack', id: next.id, at: iso(next.reversedAt), character: a.character, toName: characters.get(next.character)?.name ?? null } });
       }
     }
     return cap(rows.sort((x, y) => y.ms - x.ms).map((r) => r.row));

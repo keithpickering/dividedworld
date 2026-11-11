@@ -1675,7 +1675,7 @@ export interface Log {
  * `toName`, a character's name, which is public (`by`, `byName` as an award's). A field a kind does not use is null.
  */
 export interface LogCosmetic {
-  readonly kind: 'found' | 'granted' | 'awarded' | 'reversed' | 'lost';
+  readonly kind: 'found' | 'granted' | 'awarded' | 'reversed' | 'lost' | 'beltBack';
   readonly id: string;
   readonly at: string;
   readonly character: Id | null;

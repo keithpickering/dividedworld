@@ -46,7 +46,7 @@ export type LineKind = 'estimate' | 'settlement' | 'turn' | 'rank' | 'bought' | 
   /* The aura-grant design, section 2: an admin gave the player Aura (docs/plans/2026-11-08-aura-grant-design.md). */
   | 'grant'
   /* The cosmetics plan, Task 12: a Random Event's find, gear an admin gave, a trophy given or taken back, and a belt lost. */
-  | 'found' | 'gearGranted' | 'trophy' | 'beltLost';
+  | 'found' | 'gearGranted' | 'trophy' | 'beltLost' | 'beltBack';
 
 /** One row of the log. */
 export interface LogRow {
@@ -368,7 +368,7 @@ export function logRows(data: LogData, words: Words, cap: number, tab: Id | null
   rows.push(...grantRows(data).filter((r) => inTab(r.characters)));
   rows.push(...cosmeticRows(data, words).filter((r) => inTab(r.characters)));
 
-  const ORDER: Record<LineKind, number> = { estimate: 0, settlement: 1, turn: 2, rank: 3, bought: 4, pack: 4, played: 4, returned: 4, onMine: 4, saved: 4, written: 4, set: 4, sprung: 4, payout: 4, setEnded: 4, caught: 4, struck: 4, gimmickEnded: 4, ended: 4, infraction: 4, ban: 4, report: 4, appeal: 4, bribe: 4, grouped: 4, grant: 4, found: 4, gearGranted: 4, trophy: 4, beltLost: 4 };
+  const ORDER: Record<LineKind, number> = { estimate: 0, settlement: 1, turn: 2, rank: 3, bought: 4, pack: 4, played: 4, returned: 4, onMine: 4, saved: 4, written: 4, set: 4, sprung: 4, payout: 4, setEnded: 4, caught: 4, struck: 4, gimmickEnded: 4, ended: 4, infraction: 4, ban: 4, report: 4, appeal: 4, bribe: 4, grouped: 4, grant: 4, found: 4, gearGranted: 4, trophy: 4, beltLost: 4, beltBack: 4 };
   rows.sort((a, b) => micros(b.at) - micros(a.at) || ORDER[a.kind] - ORDER[b.kind]);
   return [...estimateRows(data, words, tab), ...rows];
 }
@@ -435,6 +435,8 @@ function cosmeticRows(data: LogData, words: Words): LogRow[] {
       rows.push(row(`trophy:${e.id}`, 'trophy', `${who} was given a trophy`, `${who} was given ${trophy}${why}.`, mine));
     } else if (e.kind === 'reversed') {
       rows.push(row(`reversed:${e.id}`, 'trophy', `A trophy was taken back from ${who}`, `An admin took back ${who}'s ${e.name ?? 'trophy'}.`, mine));
+    } else if (e.kind === 'beltBack') {
+      rows.push(row(`beltBack:${e.id}`, 'beltBack', `${who} holds ${trophy} again`, `An admin took back ${trophy} from ${e.toName ?? 'another character'}; ${who} holds it again.`, mine));
     } else {
       const by = e.by === 'boss' ? `by ${e.byName ?? role}'s move` : byWords;
       rows.push(row(`lost:${e.id}`, 'beltLost', `${who} lost ${trophy}`, `${who} lost ${trophy} to ${e.toName ?? 'another character'}, ${by}.`, mine));

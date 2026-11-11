@@ -1036,7 +1036,7 @@ describe('the cosmetics lines', () => {
   const mine = [char('p', 'Pipewrench', 'face'), char('q', 'Quinn', 'heel')];
   const w: Words = { ...words, instance: { ...testInstance, gear: [{ key: 'band', name: 'Headband', line: 'Holds a thought in place.', rarity: 'common' }, { key: 'tall', name: 'Tall Hat', line: 'Tall.', rarity: 'rare' }] } };
   const base = { at: '2026-11-09T12:00:00.000Z', id: 'e1', character: 'p', trophy: null, name: null, item: null, outcome: null, text: null, copies: null, by: null, byName: null, season: null, place: null, line: null, toName: null } as const;
-  const rowsOf = (cosmetics: Log['cosmetics'], tab: string | null = null) => logRows(data({ log: { ...empty, cosmetics }, mine }), w, 600, tab).filter((r) => ['found', 'gearGranted', 'trophy', 'beltLost'].includes(r.kind));
+  const rowsOf = (cosmetics: Log['cosmetics'], tab: string | null = null) => logRows(data({ log: { ...empty, cosmetics }, mine }), w, 600, tab).filter((r) => ['found', 'gearGranted', 'trophy', 'beltLost', 'beltBack'].includes(r.kind));
   const said = (r: { details: readonly unknown[] }) => r.details.map((d) => (typeof d === 'string' ? d : (d as { text: string }).text)).join('');
 
   test('a found piece of gear and a found card say what, and its rarity in words, for the character it happened to', () => {
@@ -1082,6 +1082,15 @@ describe('the cosmetics lines', () => {
     expect(boss).toMatchObject({ kind: 'beltLost', characters: ['p'] });
     expect(said(boss!)).toBe('Pipewrench lost the Belt to Sock Puppet, by Sighbot\'s move.');
     expect(said(admin!)).toBe('Pipewrench lost the Belt to Sock Puppet, by an admin.');
+  });
+
+  test('a belt that comes back says an admin took it from the taker and the mask holds it again, beside the lost line that stays', () => {
+    const lines = rowsOf([
+      { ...base, kind: 'lost', id: 'l1', trophy: 'belt', name: 'The Belt', toName: 'Sock Puppet', by: 'admin' },
+      { ...base, kind: 'beltBack', id: 'l1', at: '2026-11-09T13:00:00.000Z', trophy: 'belt', name: 'The Belt', toName: 'Sock Puppet' },
+    ]);
+    expect(lines.map((r) => r.kind)).toEqual(['beltBack', 'beltLost']);
+    expect(lines.map(said)).toEqual(['An admin took back the Belt from Sock Puppet; Pipewrench holds it again.', 'Pipewrench lost the Belt to Sock Puppet, by an admin.']);
   });
 
   test('a reversed award says an admin took it back', () => {

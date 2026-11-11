@@ -343,6 +343,11 @@ describe('a trophy alert and a belt lost alert (the cosmetics plan, Task 12)', (
       line: 'Pipewrench was given Boss\'s Pet', detail: 'The log says who gave it.', ways: [{ text: 'Open My log', to: '/log' }], who: 'Pipewrench',
     });
   });
+  test('a belt that came back says the mask holds it again', () => {
+    expect(said(row({ kind: 'trophy', sub: 'again:The Belt', character: 'c1', name: 'Pipewrench', thread: null }), ctx())).toEqual({
+      line: 'Pipewrench holds The Belt again', detail: 'The log says what changed.', ways: [{ text: 'Open My log', to: '/log' }], who: 'Pipewrench',
+    });
+  });
   test('a belt lost says the mask no longer holds it, and never names who took it', () => {
     expect(said(lost, ctx())).toEqual({
       line: 'Pipewrench lost The Belt', detail: 'The log says who took it.', ways: [{ text: 'Open My log', to: '/log' }], who: 'Pipewrench',
