@@ -7,6 +7,9 @@
  * already chained on the post; `scrubbedComplete` makes the call (a ledger row per call, models.complete); the job is finished with the text
  * or with the predicate that failed, and the database refunds where it is due. Nothing here reads who owns a post, a play or a character.
  *
+ * Before any call the job is checked again: an instance whose old voice has been switched off since, and a post an edit has emptied
+ * (`emptyPost`), finish without one.
+ *
  * **Errors** ("Three unrelated timeouts are not a poison pill"). A transport failure is retried on the request inside models.complete; one
  * that outlived its retries is `unreachable`. An `AnswerRejected` is finished with its own predicate (`nonEmpty`, `scrub:word`, ...). A
  * database error, or a ledger row that could not be written (an unrecorded call is not trusted), stops the run and is thrown at once; the
@@ -15,7 +18,8 @@
  * take in `attempts`, so a job that keeps crashing is finished `unreachable` past its third, without a call, and the chain behind it moves.
  *
  * **Time.** Jobs on different posts run up to `CONCURRENCY` at once, so a slow endpoint lengthens the wait and never stalls the board; a claim
- * hands back only the first waiting play of each post, so after a round the next is claimed, until a claim is empty or the budget is spent.
+ * takes no more jobs than that and hands back only the first waiting play of each post, so after a round the next is claimed, until a claim
+ * is empty or the budget is spent.
  */
 import { parse } from '../../../engine/bbcode/parse.ts';
 import { visibleText } from '../../../engine/bbcode/visible.ts';
@@ -30,7 +34,7 @@ import { DatabaseError, TransportError, type Db } from '../_shared/rpc.ts';
 export const MOST_ATTEMPTS = 3;
 /** How many jobs run at once. */
 export const CONCURRENCY = 4;
-/** No new round is claimed after this long; a claim lasts two minutes and the function's limit is longer. */
+/** No new round is claimed after this long; a claim lasts five minutes (a model call may take four) and the function's limit is longer. */
 export const BUDGET_MS = 90_000;
 /** A stored text is at most this many characters (card_texts). */
 const MOST_CHARS = 4_000;
@@ -61,6 +65,8 @@ const stops = (e: unknown): boolean => e instanceof DatabaseError || e instanceo
 /** Works the queue: the whole of it, or with `onlyPost` the one post's. Answers counts only. */
 export async function runWrites(db: Db, models: Models, instance: Instance, settings: Settings, most: number, onlyPost?: string, options: WriteOptions = {}): Promise<WriteCounts> {
   const now = options.now ?? Date.now;
+  // No more jobs are claimed than run at once, so none waits its turn inside its lease while a slow model holds the others.
+  const concurrency = options.concurrency ?? CONCURRENCY;
   const started = now();
   const counts = { claimed: 0, written: 0, failed: 0, errored: 0 };
   let stopped = false;
@@ -74,19 +80,24 @@ export async function runWrites(db: Db, models: Models, instance: Instance, sett
 
   const work = async (job: WriteJob): Promise<void> => {
     const rules = job.card === null ? undefined : instance.cards.find((c) => c.key === job.card);
-    // A card the instance no longer has, or one that no longer writes, and a job that has crashed its worker too often, make no call.
-    if (!rules?.writes || job.attempts > MOST_ATTEMPTS) return finish(job, null, 'unreachable');
+    // A card the instance no longer has, or one that no longer writes, an instance that has since switched its old voice off, and a job that has
+    // crashed its worker too often, make no call.
+    if (!rules?.writes || !settings.oldVoice || job.attempts > MOST_ATTEMPTS) return finish(job, null, 'unreachable');
     const writes = rules.writes;
-    const maxTokens = writes.tokens(job.config as never, settings);
-    const { prompt, stop: stopAt } = writes.frame({
-      post: { name: job.author, text: visible(job.body) },
-      before: job.before.map((b) => ({ name: b.name, text: visible(b.body) })),
-      title: job.title,
-      tails: job.earlier.map((e) => e.text),
-      settings,
-    });
     let text: string;
     try {
+      // The frame is built inside the job's own try: a card's rules throwing on one post is that job's error, never the run's.
+      const own = visible(job.body);
+      // An edit emptied the post: nothing to continue, no call. On a first generation this refunds; on a regeneration the earlier tail stays.
+      if (own.trim() === '') return finish(job, null, 'emptyPost');
+      const maxTokens = writes.tokens(job.config as never, settings);
+      const { prompt, stop: stopAt } = writes.frame({
+        post: { name: job.author, text: own },
+        before: job.before.map((b) => ({ name: b.name, text: visible(b.body) })),
+        title: job.title,
+        tails: job.earlier.map((e) => e.text),
+        settings,
+      });
       const out = await scrubbedComplete(models, {
         duty: 'cardText', play: job.play, lines: 'many', maxTokens, maxChars: Math.min(MOST_CHARS, maxTokens * CHARS_A_TOKEN),
         temperature: 0.9, topP: 0.95, prompt, stop: stopAt,
@@ -96,8 +107,9 @@ export async function runWrites(db: Db, models: Models, instance: Instance, sett
       if (e instanceof AnswerRejected) return finish(job, null, e.predicate);
       if (e instanceof TransportFailure) return finish(job, null, 'unreachable');
       if (stops(e)) throw e;
-      // A bug: said in the log, the job left claimed for its next turn (and its third attempt's `unreachable`).
-      console.error('a card text could not be written', job.play, e instanceof Error ? e.message : 'unknown');
+      // A bug: said in the log by the play and the error's name alone (a message could carry a post's words), the job left claimed for its next
+      // turn (and its third attempt's `unreachable`).
+      console.error('a card text could not be written', job.play, e instanceof Error ? e.name : 'unknown');
       counts.errored++;
       return;
     }
@@ -105,7 +117,7 @@ export async function runWrites(db: Db, models: Models, instance: Instance, sett
   };
 
   while (!stopped && now() - started < (options.budgetMs ?? BUDGET_MS)) {
-    const jobs = await db.rpc<WriteJob[]>('claim_card_writes', { most, only_post: onlyPost ?? null });
+    const jobs = await db.rpc<WriteJob[]>('claim_card_writes', { most: Math.min(most, concurrency), only_post: onlyPost ?? null });
     if (!jobs.length) break;
     counts.claimed += jobs.length;
     const queue = [...jobs];
@@ -114,7 +126,7 @@ export async function runWrites(db: Db, models: Models, instance: Instance, sett
         try { await work(job); } catch (e) { stop(e); }
       }
     };
-    await Promise.all(Array.from({ length: Math.min(options.concurrency ?? CONCURRENCY, jobs.length) }, worker));
+    await Promise.all(Array.from({ length: Math.min(concurrency, jobs.length) }, worker));
   }
   if (stopped) throw firstError;
   return counts;

@@ -165,3 +165,48 @@ test('a run stops starting rounds when its time budget is spent', async () => {
   await runWrites(db, fakeModels(() => 'x').models, instance, instance.settings, 8, undefined, { budgetMs: 1000, now: () => (t += 600) });
   assert.equal(calls.filter((c) => c.fn === 'claim_card_writes').length, 1);
 });
+
+test('a card whose frame throws for one job is that job\'s error: the others in the batch are finished, and the log has the play and the error name only', async () => {
+  const boom = { ...card, writes: { ...card.writes, frame: (input: unknown) => { frames.push(input); if ((input as { post: { name: string } }).post.name === 'Boom') throw new RangeError('the post said: a secret'); return { prompt: 'PROMPT', stop: [] }; } } } as unknown as CardRules;
+  const inst: Instance = { ...instance, cards: [...base.cards, boom] };
+  const { db, calls } = fakeDb([[job({ author: 'Boom' }), job({ play: P2, post: V })]]);
+  const logged: unknown[][] = [];
+  const was = console.error;
+  console.error = (...a: unknown[]) => { logged.push(a); };
+  let out;
+  try { out = await runWrites(db, fakeModels(() => 'fine').models, inst, inst.settings, 8); } finally { console.error = was; }
+  assert.deepEqual(finishes(calls).map((f) => f.play), [P2]);
+  assert.equal(out.errored, 1);
+  assert.ok(logged.some((l) => l.includes(P1) && l.includes('RangeError')), JSON.stringify(logged));
+  assert.ok(!JSON.stringify(logged).includes('secret'), 'the error\'s message is never logged');
+});
+
+test('no more jobs are claimed at a time than run at once', async () => {
+  const { db, calls } = fakeDb([[]]);
+  await run(db, fakeModels(() => 'x').models);
+  assert.equal(calls[0]!.args.most, 4);
+  const narrow = fakeDb([[]]);
+  await runWrites(narrow.db, fakeModels(() => 'x').models, instance, instance.settings, 8, undefined, { concurrency: 2 });
+  assert.equal(narrow.calls[0]!.args.most, 2);
+  const few = fakeDb([[]]);
+  await runWrites(few.db, fakeModels(() => 'x').models, instance, instance.settings, 3);
+  assert.equal(few.calls[0]!.args.most, 3);
+});
+
+test('an instance whose old voice is off finishes the job unreachable, with no call', async () => {
+  const { db, calls } = fakeDb([[job()]]);
+  const { models, requests } = fakeModels(() => 'x');
+  await runWrites(db, models, instance, { ...instance.settings, oldVoice: false }, 8);
+  assert.equal(requests.length, 0);
+  assert.deepEqual(finishes(calls), [{ play: P1, version: V, text: null, failed: 'unreachable' }]);
+});
+
+test('a post an edit has emptied finishes emptyPost, with no call', async () => {
+  frames.length = 0;
+  const { db, calls } = fakeDb([[job({ body: '[code]only hidden[/code]  ' })]]);
+  const { models, requests } = fakeModels(() => 'x');
+  await run(db, models);
+  assert.equal(requests.length, 0);
+  assert.equal(frames.length, 0);
+  assert.deepEqual(finishes(calls), [{ play: P1, version: V, text: null, failed: 'emptyPost' }]);
+});

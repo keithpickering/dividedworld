@@ -7,7 +7,17 @@
 --   card_texts          what was made, one row for each (play, version): a text, or the predicate that failed. Append-only, as play_moments is.
 --   card_writes         the queue, a job and not an Act: one row for each play, the newest version only (primary key `play`). A newer version
 --                       replaces the waiting one, so a run of edits makes one call for each play and not one for each edit (design, section 15).
---   card_write_refunds  a refund paid, once for each play (the primary key), as appeal_refunds is.
+--   card_write_refunds  the end of a play whose first generation failed, once for each play (the primary key), as appeal_refunds is: the refund
+--                       paid (the amount that actually moved; 0 for a play that cost nothing) or, for a play nobody paid for (a Mod Bot's), a row
+--                       with no amount. A play with a row is over (below).
+--
+-- A refunded play is over (card_ended, below, says so wherever "in force" is read): an edit queues nothing for it, no claim returns it, a job
+-- that races in with the refund is deleted by it and dropped by the claim, it is no earlier play in a tail's chain, and a post's stack
+-- of plays does not count it, so a failed cast never uses up one of a post's places. Its way out is the card, back in the caster's hand to cast
+-- again; a Mod Bot's play has no hand and simply ends. post_tails keeps its failed row, which a reader draws nothing for.
+--
+-- A regeneration waits for the editing to settle: a job an edit queues is claimable only `Settings.cardWriteSettleSeconds` after the post's
+-- last edit (`not_before`, pushed out by each further edit), and the first generation after a cast is claimable at once.
 --
 -- The enqueue is a trigger on acts, so every path that writes a play or an edit is covered without being edited. An edit Act on a post with
 -- no writing play costs one probe of the post's layers (live_writing_plays, through the index acts_layers, 0072) and writes nothing.
@@ -70,7 +80,9 @@ create table card_writes (
   version uuid not null references acts (id),
   queued_at timestamptz not null default clock_timestamp(),
   attempts integer not null default 0 check (attempts >= 0),
-  claimed_until timestamptz
+  claimed_until timestamptz,
+  -- Claimable from here: now for a cast, the settle wait after the last edit for an edit.
+  not_before timestamptz not null default now()
 );
 -- The chain's probe (an earlier play on the post with a job) and a kick's claim for one post.
 create index card_writes_post on card_writes (post);
@@ -79,7 +91,8 @@ create index card_writes_queue on card_writes (queued_at, play);
 
 create table card_write_refunds (
   play uuid primary key references acts (id),
-  amount integer not null check (amount >= 0),
+  -- What moved back into the payer's wallet (the cap may clamp a refund; 0 for a play that cost nothing); null for a play with no payer.
+  amount integer check (amount is null or amount >= 0),
   at timestamptz not null default now()
 );
 
@@ -133,6 +146,14 @@ end $$;
 
 -- ----------------------------------------------------------------------------------------------------------- the queue ----
 
+-- card_ended (0092), also true for a play whose write failed and was refunded (or, with no payer, ended): that play is over, so every reader of
+-- "in force" (the stack a post carries, the effects, the edit's probe below) leaves it out. One more probe of the refunds' primary key.
+create or replace function card_ended(play uuid) returns boolean
+language sql stable security definer set search_path = public, pg_temp as $$
+  select exists (select 1 from acts e where e.kind = 'card_end' and e.target_act_id = card_ended.play)
+      or exists (select 1 from card_write_refunds r where r.play = card_ended.play)
+$$;
+
 -- The live writing plays on a post: the one probe an edit makes. It reads the post's layers through acts_layers (0072) and joins the card by
 -- its key. Not security definer and with no `set`, so a caller's plan can inline it; every name is qualified, and its callers pin their own
 -- search_path.
@@ -148,19 +169,22 @@ $$;
 revoke execute on function live_writing_plays(uuid) from public, anon, authenticated;
 
 -- A play of a writing card queues its job at the post's current version; an edit queues every live writing play on the post again at the edit,
--- which replaces a waiting job (newest only), resets its attempts and frees it to be claimed now.
+-- which replaces a waiting job (newest only) and resets its attempts. A cast's job is claimable at once; an edit's only after the settle wait
+-- from this edit, so a run of edits is waited out and a play's job is made for the version the editing stopped at.
 create function card_writes_enqueue() returns trigger
 language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  settle integer := coalesce(((select s.value from settings s where s.key = 'cardWriteSettleSeconds') #>> '{}')::integer, 30);
 begin
   if new.kind = 'card' then
     if coalesce(new.payload ->> 'reach', 'post') = 'post' and not (new.payload ? 'caught')
        and exists (select 1 from card_kinds k where k.key = new.payload ->> 'card' and k.writes) then
-      insert into card_writes (play, post, version) values (new.id, new.target_act_id, post_version(new.target_act_id));
+      insert into card_writes (play, post, version, not_before) values (new.id, new.target_act_id, post_version(new.target_act_id), clock_timestamp());
     end if;
   else
-    insert into card_writes (play, post, version)
-    select p, new.target_act_id, new.id from live_writing_plays(new.target_act_id) p
-    on conflict (play) do update set version = excluded.version, queued_at = clock_timestamp(), attempts = 0, claimed_until = null;
+    insert into card_writes (play, post, version, not_before)
+    select p, new.target_act_id, new.id, clock_timestamp() + make_interval(secs => settle) from live_writing_plays(new.target_act_id) p
+    on conflict (play) do update set version = excluded.version, queued_at = clock_timestamp(), attempts = 0, claimed_until = null, not_before = excluded.not_before;
   end if;
   return null;
 end $$;
@@ -169,9 +193,11 @@ create trigger acts_card_writes after insert on acts for each row
   when (new.kind in ('card', 'edit') and new.target_act_id is not null) execute function card_writes_enqueue();
 
 -- Takes up to `most` jobs, oldest first, whose claim has run out, skipping any whose post has an earlier writing play with a job still
--- waiting, and holds each for two minutes and counts the attempt. `only_post` takes that post's jobs alone (the kick after a play or an edit),
+-- waiting, and holds each for five minutes (a model call may take four, and the worker runs no more jobs at once than it claims) and counts the
+-- attempt. A job is taken only once its `not_before` has passed (an edit's settle wait), but a later play's job still waits behind an earlier play's
+-- job while that one settles. `only_post` takes that post's jobs alone (the kick after a play or an edit),
 -- under the same row locks, so a kick and a sweep never take one job. A job takes the post's version as it stands at the claim. The jobs of plays an
--- admin has ended are let go first. Each job carries the frame's inputs: the post's author's name and words, the thread's title, the public
+-- admin has ended, or whose write was refunded, are let go first. Each job carries the frame's inputs: the post's author's name and words, the thread's title, the public
 -- posts before it (`pool.chatterThreadPosts` of them), and the earlier plays' texts for this version (the latest text of one that failed).
 create function claim_card_writes(most integer, only_post uuid default null) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
@@ -183,13 +209,13 @@ begin
     select x.play from card_writes x where card_ended(x.play) and (claim_card_writes.only_post is null or x.post = claim_card_writes.only_post) for update skip locked);
   with picked as materialized (
     select c.play from card_writes c join acts a on a.id = c.play
-    where (c.claimed_until is null or c.claimed_until < clock_timestamp())
+    where (c.claimed_until is null or c.claimed_until < clock_timestamp()) and c.not_before <= clock_timestamp() and not card_ended(c.play)
       and (claim_card_writes.only_post is null or c.post = claim_card_writes.only_post)
       and not exists (select 1 from card_writes e join acts ea on ea.id = e.play
-                      where e.post = c.post and e.play <> c.play and (ea.created_at, ea.id) < (a.created_at, a.id))
+                      where e.post = c.post and e.play <> c.play and not card_ended(e.play) and (ea.created_at, ea.id) < (a.created_at, a.id))
     order by c.queued_at, c.play limit greatest(claim_card_writes.most, 0) for update of c skip locked
   ), taken as (
-    update card_writes w set claimed_until = clock_timestamp() + interval '2 minutes', attempts = w.attempts + 1, version = post_version(w.post)
+    update card_writes w set claimed_until = clock_timestamp() + interval '5 minutes', attempts = w.attempts + 1, version = post_version(w.post)
     from picked where w.play = picked.play
     returning w.play, w.post, w.version, w.attempts, w.queued_at
   )
@@ -223,14 +249,16 @@ end $$;
 
 -- The refund of a failed write (the pattern of refund_appeal, 0109): under an advisory lock for the play, once (card_write_refunds' primary
 -- key), the payer read from the hand's `played` row and the amount from the play's own wallet event, the wallet moved as a `refund`, and the
--- card returned to the hand as a `returned` ledger row naming the play. A play that already has a text refunds nothing, and a play with no
--- payer (a Mod Bot's) refunds nothing and returns nothing.
+-- card returned to the hand as a `returned` ledger row naming the play. The amount recorded is what the wallet actually moved (its cap may
+-- clamp it). A play that already has a text refunds nothing and is not over. A play with no payer (a Mod Bot's) refunds nothing and returns
+-- nothing, but is over all the same: its row has no amount. Either way the play's job goes with the refund.
 create function refund_card_write(play uuid) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
   k acts%rowtype;
   payer record;
   paid integer;
+  moved integer := 0;
 begin
   select * into k from acts a where a.id = refund_card_write.play and a.kind = 'card';
   if not found then raise exception 'there is no such card play' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
@@ -238,12 +266,20 @@ begin
   if exists (select 1 from card_write_refunds r where r.play = k.id) then return jsonb_build_object('refunded', false, 'already', true); end if;
   if exists (select 1 from card_texts x where x.play = k.id and x.text is not null) then return jsonb_build_object('refunded', false, 'kept', true); end if;
   select l.account, l.card into payer from card_ledger l where l.kind = 'played' and l.act = k.id;
-  if payer.account is null then return jsonb_build_object('refunded', false, 'payer', false); end if;
+  if payer.account is null then
+    insert into card_write_refunds (play, amount) values (k.id, null);
+    delete from card_writes w where w.play = k.id;
+    return jsonb_build_object('refunded', false, 'payer', false, 'over', true);
+  end if;
   select coalesce(-sum(w.change), 0)::integer into paid from wallet_events w where w.kind = 'play' and w.ref = k.id and w.account = payer.account;
-  insert into card_write_refunds (play, amount) values (k.id, paid);
-  if paid > 0 then perform wallet_move(payer.account, paid, 'refund', null, k.id); end if;
-  insert into card_ledger (account, card, kind, act, price) values (payer.account, payer.card, 'returned', k.id, paid);
-  return jsonb_build_object('refunded', true, 'amount', paid);
+  if paid > 0 then
+    perform wallet_move(payer.account, paid, 'refund', null, k.id);
+    select e.change into moved from wallet_events e where e.kind = 'refund' and e.ref = k.id and e.account = payer.account order by e.id desc limit 1;
+  end if;
+  insert into card_write_refunds (play, amount) values (k.id, moved);
+  delete from card_writes w where w.play = k.id;
+  insert into card_ledger (account, card, kind, act, price) values (payer.account, payer.card, 'returned', k.id, moved);
+  return jsonb_build_object('refunded', true, 'amount', moved);
 end $$;
 
 -- Writes the row the worker made (a text, or the predicate that failed) and clears the job if it is still the version queued; a job a newer
@@ -267,6 +303,8 @@ begin
     raise exception 'that is no version of the play''s post' using hint = 'kayfabb.refusal', errcode = '22023';
   end if;
   perform pg_advisory_xact_lock(hashtextextended('kayfabb.card_write.' || k.id::text, 0));
+  -- A play that is over (its write failed and was refunded) makes no text: a late finish, a second worker after a reclaim, writes nothing.
+  if exists (select 1 from card_write_refunds r where r.play = k.id) then return jsonb_build_object('written', false, 'refund', null, 'over', true); end if;
   insert into card_texts (play, version, text, failed, call)
   values (k.id, finish_card_write.version, finish_card_write.text, finish_card_write.failed, finish_card_write.call)
   on conflict on constraint card_texts_play_version_key do nothing returning id into made;
@@ -446,7 +484,7 @@ begin
   return got;
 end $$;
 
--- settings_held (0130), also holding oldVoice: true or false. Everything else as 0130 wrote it.
+-- settings_held (0130), also holding oldVoice (true or false) and cardWriteSettleSeconds (a whole number from 0 to 600). Everything else as 0130 wrote it.
 create or replace function settings_held() returns trigger
 language plpgsql set search_path = public, pg_temp as $$
 declare
@@ -485,6 +523,7 @@ begin
     when 'cardSettings' then case when not setting_named_numbers(v) then 'an object of named numbers' end
     when 'systemEnabled' then case when jsonb_typeof(v) is distinct from 'boolean' then 'true or false' end
     when 'oldVoice' then case when jsonb_typeof(v) is distinct from 'boolean' then 'true or false' end
+    when 'cardWriteSettleSeconds' then case when not setting_whole(v, 0, 600) then 'a whole number of seconds, at least 0 and at most 600' end
     when 'hints' then case when not coalesce(jsonb_typeof(v) = 'object'
         and setting_whole(v -> 'least', 1)
         and jsonb_typeof(v -> 'share') = 'number' and (v ->> 'share')::numeric > 0.5 and (v ->> 'share')::numeric <= 1

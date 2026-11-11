@@ -232,6 +232,7 @@ const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | nul
   cardSettings: namedNumbers,
   systemEnabled: (v) => (typeof v === 'boolean' ? null : 'true or false'),
   oldVoice: (v) => (typeof v === 'boolean' ? null : 'true or false'),
+  cardWriteSettleSeconds: whole(0, 'seconds', 600),
   pronouns: (v) => { const p = pronounProblems(v); return p.length ? p.join('; ') : null; },
   meetingCron: (v) => (isCron(v) ? null : 'a five-field cron expression, each field inside its range'),
   phases: phasesRule,

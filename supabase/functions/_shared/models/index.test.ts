@@ -298,3 +298,14 @@ test('a completions server that reports no usage block records no tokens, never 
   assert.equal(tgi.rows[0]?.outputTokens, 5);
   assert.equal(tgi.rows[0]?.inputTokens, null);
 });
+
+test('the card play a call was made for reaches its ledger row, and a call for none records null', async () => {
+  const l = ledger();
+  await models(env, l.record, { fetch: fake([json({ choices: [{ text: 'a line' }] })]).fetch, sleep: async () => {} })
+    .complete({ duty: 'cardText', play: 'the-play', prompt: 'x', temperature: 1, topP: 1, stop: [], maxTokens: 10 });
+  assert.equal(l.rows[0]?.play, 'the-play');
+  const n = ledger();
+  await models(env, n.record, { fetch: fake([json({ choices: [{ text: 'a line' }] })]).fetch, sleep: async () => {} })
+    .complete({ duty: 'cardText', prompt: 'x', temperature: 1, topP: 1, stop: [], maxTokens: 10 });
+  assert.equal(n.rows[0]?.play, null);
+});

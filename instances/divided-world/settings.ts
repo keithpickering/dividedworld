@@ -47,6 +47,8 @@ export const defaults: Settings = deepFreeze<Settings>({
   systemEnabled: false,
   /** The instance runs a completion endpoint, so a card that writes in the old voice is sold and played. */
   oldVoice: true,
+  /** An edit makes a card that writes wait half a minute for the editing to stop before it writes again. */
+  cardWriteSettleSeconds: 30,
   /** A character a player makes starts with it/its, as every character did before pronouns; its player changes it on the character's page. */
   pronouns: PRONOUN_PRESETS.it,
   /** Daily, at 09:23 UTC, an hour after the settlement, so the Boss's digest holds the newest standings. */
@@ -151,7 +153,7 @@ export const defaults: Settings = deepFreeze<Settings>({
    */
   toastDefaults: ['quote', 'cardOnYours', 'cardEnded', 'trapStruck', 'trapSprang', 'ruling', 'settlement', 'update'],
   /** The numbers a card gives the screens: a Whoops! layer is washed clean at 95%, the last specks not being worth chasing across a phone. */
-  cardSettings: { 'whoops.clean': 95, 'autocorrect.peelMs': 700 },
+  cardSettings: { 'whoops.clean': 95, 'autocorrect.peelMs': 700, 'youWereSaying.eraseCps': 6, 'youWereSaying.retypeMs': 2000, 'youWereSaying.typeCps': 40 },
   /** The classes' and cards' own numbers from the same table, each named for what reads it. */
   economy: {
     /** "Early" is among this many first players to react to a post. */

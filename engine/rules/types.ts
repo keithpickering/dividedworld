@@ -237,6 +237,12 @@ export interface Settings {
    * not sold, not offered to the pool, and a play of one already held is refused in plain words. Switching The System off may keep it.
    */
   readonly oldVoice: boolean;
+  /**
+   * How long a card that writes waits after its post's last edit before its text is made again, in seconds. A tail is made for each version of the
+   * post, so a run of edits would make one for each; this waits for the editing to stop, and the first text after a cast is never made to wait.
+   * A player sees the typing cursor for about this long after an edit. 0 makes it at once. A starting point.
+   */
+  readonly cardWriteSettleSeconds: number;
   /** The pronouns a staff character has when its persona file names none, and the ones a new character starts with. */
   readonly pronouns: PronounSet;
   /** When the Boss's meeting runs, as a five-field cron expression in UTC: daily by default, an hour after the settlement so the digest holds the newest standings. */

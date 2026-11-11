@@ -22,9 +22,10 @@ export const testWarnBar: Settings['warnBar'] = { size: 10, bands: { minor: 2, m
 /** The apology's numbers as a test world holds them. */
 export const testApologySettings: Settings['apology'] = { apologyEveryHours: 24, apologyJudgeBatch: 10, apologyRulingMaxWords: 80 };
 
-export const systemSettings: Pick<Settings, 'modBots' | 'warnBar' | 'apology' | 'systemEnabled' | 'oldVoice' | 'pronouns' | 'meetingCron' | 'phases' | 'inheritanceGraceDays' | 'rosterRecentExcluded' | 'structuralHoldHours' | 'microEventDailyCalls' | 'digestThreads' | 'digestExcerpts' | 'digestExcerptChars' | 'memoryOpinions' | 'memoryGrudges' | 'memoryWheelhouse' | 'memoryRealWorld' | 'pool' | 'boardNameMaxLength' | 'moveExpiryMostDays' | 'moveExpiryLeastHours' | 'demandCheckMinutes' | 'demandChecksPerTick' | 'modelTiers'> = {
+export const systemSettings: Pick<Settings, 'modBots' | 'warnBar' | 'apology' | 'systemEnabled' | 'oldVoice' | 'cardWriteSettleSeconds' | 'pronouns' | 'meetingCron' | 'phases' | 'inheritanceGraceDays' | 'rosterRecentExcluded' | 'structuralHoldHours' | 'microEventDailyCalls' | 'digestThreads' | 'digestExcerpts' | 'digestExcerptChars' | 'memoryOpinions' | 'memoryGrudges' | 'memoryWheelhouse' | 'memoryRealWorld' | 'pool' | 'boardNameMaxLength' | 'moveExpiryMostDays' | 'moveExpiryLeastHours' | 'demandCheckMinutes' | 'demandChecksPerTick' | 'modelTiers'> = {
   systemEnabled: false,
   oldVoice: true,
+  cardWriteSettleSeconds: 30,
   pronouns: PRONOUN_PRESETS.it,
   meetingCron: '23 9 * * *',
   phases: {

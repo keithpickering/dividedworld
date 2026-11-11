@@ -50,6 +50,8 @@ end $$;
 do $$
 begin
   insert into settings (key, value) values ('oldVoice', 'true') on conflict (key) do update set value = excluded.value;
+  -- The settle wait is off for the cases below that edit and claim at once; its own block turns it on.
+  insert into settings (key, value) values ('cardWriteSettleSeconds', '0') on conflict (key) do update set value = excluded.value;
   insert into settings (key, value) values ('pool', '{"weekly": 20, "holdback": 0.2, "threadsWeekly": 1, "cardRarityMost": "uncommon", "priorityDays": 28, "notesRead": 12, "chatterThreadPosts": 3, "strengths": {"named": 5, "quoted": 5, "legacy": 5, "successorStumbles": 5, "oldFlame": 5, "homeTurf": 2, "seasonTurn": 2, "hotOnBeat": 2}, "chatterCron": "37 17 * * *"}')
     on conflict (key) do update set value = excluded.value;
   insert into card_kinds (key, name, alignment, rarity, play, stack, writes) values ('cw-scribe', 'Scribe', 'salty', 'uncommon', 'cast', 3, true);
@@ -119,6 +121,8 @@ begin
   if jobs -> 0 -> 'before' is distinct from jsonb_build_array(jsonb_build_object('name', 'Cw Reader', 'body', 'An earlier post, before the one that carries the card.')) then
     raise exception 'the claim carries the public posts before this one: %', jobs -> 0 -> 'before';
   end if;
+  -- A claim lasts five minutes: a model call may take four, and the worker runs no more jobs at once than it claims.
+  if (select w.claimed_until from card_writes w where w.play = play1) < clock_timestamp() + interval '290 seconds' then raise exception 'a claim holds a job for less than five minutes'; end if;
   -- A claimed job is not claimed again until its claim runs out.
   if jsonb_array_length(pg_temp.of_post(pg_temp.claim(10), p)) is distinct from 0 then raise exception 'a claimed job was claimed again before its claim ran out'; end if;
 
@@ -307,10 +311,162 @@ begin
   select coalesce(sum(w.balance), 0) into wallets_before from wallets w;
   perform pg_temp.finish(pl, p7, null, 'scrub:word');
   if (select coalesce(sum(w.balance), 0) from wallets w) is distinct from wallets_before or exists (select 1 from wallet_events w where w.ref = pl) or exists (select 1 from card_ledger l where l.act = pl)
-     or exists (select 1 from card_write_refunds r where r.play = pl) or exists (select 1 from card_writes w where w.play = pl) then
+     or exists (select 1 from card_write_refunds r where r.play = pl and r.amount is not null) or exists (select 1 from card_writes w where w.play = pl) then
     raise exception 'a Mod Bot''s play''s failure moved a wallet or a hand';
   end if;
   if (select count(*) from card_texts x where x.play = pl and x.failed = 'scrub:word') is distinct from 1 then raise exception 'a Mod Bot''s failure is still a row'; end if;
+end $$;
+
+-- ------------------------------------------------------------------------------------------------------- the settle wait ----
+do $$
+declare
+  ann uuid := tests.account('cws-ann'); bob uuid := tests.account('cws-bob');
+  a uuid := tests.character(ann, 'Cws Caster'); b uuid := tests.character(bob, 'Cws Author');
+  t uuid := tests.thread('Settle thread');
+  base timestamptz := '2030-04-01T00:00:00Z';
+  p uuid; pl1 uuid; pl2 uuid; e1 uuid; e2 uuid; e3 uuid; first_wait timestamptz; got jsonb;
+begin
+  update settings set value = '30' where key = 'cardWriteSettleSeconds';
+  p := tests.post(b, t, 'Words that will be mended.', base);
+  pl1 := tests.act(a, 'card', t, jsonb_build_object('card', 'cw-scribe', 'message', '', 'config', '{}'::jsonb, 'layer', 1), p, base + interval '1 minute');
+  -- The first generation after a cast is claimable at once.
+  got := pg_temp.claim(10, p);
+  if jsonb_array_length(got) is distinct from 1 then raise exception 'a cast''s job was not claimable at once: %', got; end if;
+  perform pg_temp.finish(pl1, p, 'First tail.', null);
+  -- An edit's job waits the setting's seconds from the edit, and is not claimable before.
+  e1 := tests.act(b, 'edit', t, jsonb_build_object('body', 'Mended once'), p, base + interval '2 minutes');
+  first_wait := (select w.not_before from card_writes w where w.play = pl1);
+  if first_wait < clock_timestamp() + interval '25 seconds' or first_wait > clock_timestamp() + interval '35 seconds' then raise exception 'an edit''s job waits about 30 seconds: %', first_wait - clock_timestamp(); end if;
+  if jsonb_array_length(pg_temp.claim(10, p)) is distinct from 0 then raise exception 'an edit''s job was claimed before its wait was over'; end if;
+  -- A second edit leaves one job at the newer version and pushes the wait out again.
+  e2 := tests.act(b, 'edit', t, jsonb_build_object('body', 'Mended twice'), p, base + interval '3 minutes');
+  if (select count(*) from card_writes w where w.post = p) is distinct from 1 or (select w.version from card_writes w where w.play = pl1) is distinct from e2
+     or (select w.not_before from card_writes w where w.play = pl1) <= first_wait then
+    raise exception 'two edits leave one job at the newer version with the later wait: %', (select jsonb_agg(to_jsonb(w)) from card_writes w where w.post = p);
+  end if;
+  -- The cursor shows meanwhile: post_tails reports the job as waiting.
+  if not exists (select 1 from post_tails(array[p]) x where x.waiting and x.play = pl1 and x.version = e2) then raise exception 'a settling job is not reported as waiting'; end if;
+  -- After the wait (the row's clock moved) it is claimable.
+  update card_writes set not_before = clock_timestamp() - interval '1 second' where play = pl1;
+  if jsonb_array_length(pg_temp.claim(10, p)) is distinct from 1 then raise exception 'an edit''s job was not claimable after its wait'; end if;
+  perform pg_temp.finish(pl1, e2, 'Second tail.', null);
+  -- The setting is read at the edit: 0 is no wait.
+  update settings set value = '0' where key = 'cardWriteSettleSeconds';
+  e3 := tests.act(b, 'edit', t, jsonb_build_object('body', 'Mended thrice'), p, base + interval '4 minutes');
+  if jsonb_array_length(pg_temp.claim(10, p)) is distinct from 1 then raise exception 'with a wait of 0 an edit''s job was not claimable at once'; end if;
+  perform pg_temp.finish(pl1, e3, 'Third tail.', null);
+  update settings set value = '30' where key = 'cardWriteSettleSeconds';
+
+  -- The chain holds while an earlier play's job is settling: the later play's job waits behind it, even once its own wait is over.
+  pl2 := tests.act(a, 'card', t, jsonb_build_object('card', 'cw-scribe', 'message', '', 'config', '{}'::jsonb, 'layer', 2), p, base + interval '5 minutes');
+  perform tests.act(b, 'edit', t, jsonb_build_object('body', 'Mended again'), p, base + interval '6 minutes');
+  if jsonb_array_length(pg_temp.claim(10, p)) is distinct from 0 then raise exception 'jobs claimed while both settle'; end if;
+  update card_writes set not_before = clock_timestamp() - interval '1 second' where play = pl2;
+  if jsonb_array_length(pg_temp.claim(10, p)) is distinct from 0 then raise exception 'a later play''s job was claimed while an earlier play''s job was still settling'; end if;
+  update card_writes set not_before = clock_timestamp() - interval '1 second' where play = pl1;
+  got := pg_temp.claim(10, p);
+  if jsonb_array_length(got) is distinct from 1 or got -> 0 ->> 'play' is distinct from pl1::text then raise exception 'the earlier play''s job is the one claimed once it has settled: %', got; end if;
+end $$;
+
+-- ----------------------------------------------------------------------------------------------- a refunded play is over ----
+do $$
+declare
+  ann uuid := tests.account('cwo-ann'); bob uuid := tests.account('cwo-bob');
+  a uuid := tests.character(ann, 'Cwo Caster'); b uuid := tests.character(bob, 'Cwo Author');
+  t uuid := tests.thread('Over thread');
+  base timestamptz := '2030-05-01T00:00:00Z';
+  p uuid; p2 uuid; p3 uuid; p4 uuid; pl uuid; pl2 uuid; pl3 uuid; pl4 uuid; got jsonb; said jsonb; before_sum bigint; n integer;
+begin
+  update settings set value = '0' where key = 'cardWriteSettleSeconds';
+  insert into wallets (account, balance) values (ann, 600);
+  insert into card_ledger (account, card, kind, price) select ann, 'cw-scribe', 'bought', 0 from generate_series(1, 6);
+
+  -- Fail, refund: an edit queues nothing for the play, and a claim returns nothing.
+  p := tests.post(b, t, 'A post whose play failed.', base);
+  perform tests.become_service();
+  pl := (play_card(ann, 'cw-scribe', a, p, '{}', 50, '') ->> 'id')::uuid;
+  perform tests.unbecome();
+  perform pg_temp.finish(pl, p, null, 'unreachable');
+  if not exists (select 1 from card_write_refunds r where r.play = pl) or not card_ended(pl) then raise exception 'a refunded play is not over'; end if;
+  perform tests.act(b, 'edit', t, jsonb_build_object('body', 'Mended after the refund'), p, base + interval '1 minute');
+  if exists (select 1 from card_writes w where w.play = pl) or exists (select 1 from live_writing_plays(p) x where x = pl) then raise exception 'an edit queued a job for a refunded play'; end if;
+  if jsonb_array_length(pg_temp.claim(10, p)) is distinct from 0 then raise exception 'a claim returned a refunded play'; end if;
+  -- Its failed row is still there for post_tails, and no cursor is drawn for it.
+  if (select count(*) from post_tails(array[p]) x where x.play = pl and x.failed) is distinct from 1 or exists (select 1 from post_tails(array[p]) x where x.waiting) then raise exception 'post_tails does not keep the refunded play''s failed row alone'; end if;
+  -- A late text for it (a second worker after a reclaim) writes nothing: the play is over and the card is back in the hand.
+  said := pg_temp.finish(pl, p, 'Too late.', null);
+  if exists (select 1 from card_texts x where x.play = pl and x.text is not null) or (said ->> 'written')::boolean is distinct from false then raise exception 'a text was written for a refunded play: %', said; end if;
+
+  -- A job that exists for the play when the refund lands is deleted by the refund itself; a job inserted behind it is dropped by the claim.
+  p2 := tests.post(b, t, 'A post refunded with a job racing in.', base + interval '2 minutes');
+  perform tests.become_service();
+  pl2 := (play_card(ann, 'cw-scribe', a, p2, '{}', 20, '') ->> 'id')::uuid;
+  perform refund_card_write(pl2);
+  perform tests.unbecome();
+  if exists (select 1 from card_writes w where w.play = pl2) then raise exception 'the refund left the play''s job'; end if;
+  insert into card_writes (play, post, version) values (pl2, p2, p2);
+  got := pg_temp.claim(10, p2);
+  if jsonb_array_length(got) is distinct from 0 or exists (select 1 from card_writes w where w.play = pl2) then raise exception 'the claim did not drop a job for a refunded play: % %', got, (select jsonb_agg(to_jsonb(w)) from card_writes w where w.play = pl2); end if;
+
+  -- A refunded play is no earlier play in the chain: a later play on the post is claimable, and its frame does not carry the refunded tail.
+  p3 := tests.post(b, t, 'A post with two plays, the first refunded.', base + interval '3 minutes');
+  perform tests.become_service();
+  pl3 := (play_card(ann, 'cw-scribe', a, p3, '{}', 0, '') ->> 'id')::uuid;
+  perform tests.unbecome();
+  pl4 := tests.act(a, 'card', t, jsonb_build_object('card', 'cw-scribe', 'message', '', 'config', '{}'::jsonb, 'layer', 2), p3, clock_timestamp() + interval '1 second');
+  if jsonb_array_length(pg_temp.claim(10, p3)) is distinct from 1 then raise exception 'before the refund the later play waits behind the earlier'; end if;
+  update card_writes set claimed_until = null where play = pl3;
+  -- A base-length paid play (price 0): its failure returns the card, moves no wallet, and is over.
+  select coalesce(sum(w.balance), 0) into before_sum from wallets w;
+  perform pg_temp.finish(pl3, p3, null, 'unreachable');
+  if (select coalesce(sum(w.balance), 0) from wallets w) is distinct from before_sum or exists (select 1 from wallet_events w where w.kind = 'refund' and w.ref = pl3)
+     or (select count(*) from card_ledger l where l.kind = 'returned' and l.act = pl3) is distinct from 1 or (select r.amount from card_write_refunds r where r.play = pl3) is distinct from 0 or not card_ended(pl3) then
+    raise exception 'a base-length play''s failure returns the card, moves no wallet and is over';
+  end if;
+  got := pg_temp.claim(10, p3);
+  if jsonb_array_length(got) is distinct from 1 or got -> 0 ->> 'play' is distinct from pl4::text or got -> 0 -> 'earlier' is distinct from '[]'::jsonb then raise exception 'the later play is claimable behind a refunded one: %', got; end if;
+
+  -- A Mod Bot's play: its first failure is over too, recorded without pretending a refund was paid (a row with no amount), and moves nothing.
+  p4 := tests.post(b, t, 'A post a Mod Bot played on.', base + interval '5 minutes');
+  perform tests.become_service();
+  pl := (staff_play_card('cw-mod', 'cw-scribe', p4, '{}', '') ->> 'id')::uuid;
+  perform tests.unbecome();
+  select coalesce(sum(w.balance), 0) into before_sum from wallets w;
+  perform pg_temp.finish(pl, p4, null, 'scrub:word');
+  if (select count(*) from card_write_refunds r where r.play = pl and r.amount is null) is distinct from 1 or not card_ended(pl) or exists (select 1 from card_writes w where w.play = pl)
+     or (select coalesce(sum(w.balance), 0) from wallets w) is distinct from before_sum or exists (select 1 from wallet_events w where w.ref = pl) or exists (select 1 from card_ledger l where l.act = pl) then
+    raise exception 'a Mod Bot''s failed play is not over, or moved something';
+  end if;
+  perform tests.act(b, 'edit', t, jsonb_build_object('body', 'Mended after the Mod Bot''s failure'), p4, base + interval '6 minutes');
+  if exists (select 1 from card_writes w where w.play = pl) then raise exception 'an edit queued a job for a Mod Bot''s failed play'; end if;
+
+  -- The stack counts plays still up: two live plays and a refunded one leave room for a fourth, and a fifth is refused.
+  p := tests.post(b, t, 'A post for the stack.', base + interval '7 minutes');
+  perform tests.become_service();
+  pl := (play_card(ann, 'cw-scribe', a, p, '{}', 0, '') ->> 'id')::uuid;
+  perform play_card(ann, 'cw-scribe', a, p, '{}', 0, '');
+  pl2 := (play_card(ann, 'cw-scribe', a, p, '{}', 0, '') ->> 'id')::uuid;
+  if pg_temp.refusal(format('select play_card(%L, %L, %L, %L, %L, 0, %L)', ann, 'cw-scribe', a, p, '{}', '')) is null then raise exception 'a fourth cast was allowed with three live plays'; end if;
+  perform tests.unbecome();
+  perform pg_temp.finish(pl2, p, null, 'unreachable');
+  perform tests.become_service();
+  perform play_card(ann, 'cw-scribe', a, p, '{}', 0, '');
+  if pg_temp.refusal(format('select play_card(%L, %L, %L, %L, %L, 0, %L)', ann, 'cw-scribe', a, p, '{}', '')) is null then raise exception 'a fifth cast was allowed'; end if;
+  perform tests.unbecome();
+  select count(*) into n from acts k where k.kind = 'card' and k.target_act_id = p and not card_ended(k.id);
+  if n is distinct from 3 then raise exception 'three plays are live on the post, not %', n; end if;
+
+  -- A refund the wallet's cap clamps is recorded as what moved, not as what was paid.
+  p2 := tests.post(b, t, 'A post paid for with a wallet near its cap.', base + interval '8 minutes');
+  perform tests.become_service();
+  pl := (play_card(ann, 'cw-scribe', a, p2, '{}', 50, '') ->> 'id')::uuid;
+  perform tests.unbecome();
+  update wallets set balance = (setting('walletCap'))::integer - 10 where account = ann;
+  perform pg_temp.finish(pl, p2, null, 'unreachable');
+  if (select r.amount from card_write_refunds r where r.play = pl) is distinct from 10 or (select w.change from wallet_events w where w.kind = 'refund' and w.ref = pl) is distinct from 10
+     or (select l.price from card_ledger l where l.kind = 'returned' and l.act = pl) is distinct from 10 then
+    raise exception 'a clamped refund is recorded as paid, not as moved: %', (select jsonb_agg(to_jsonb(r)) from card_write_refunds r where r.play = pl);
+  end if;
 end $$;
 
 -- ------------------------------------------------------------------------------------------- append-only, bounds, access ----

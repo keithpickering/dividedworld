@@ -37,6 +37,7 @@ const settings: Settings = {
   presencePollSeconds: 30,
   systemEnabled: false,
   oldVoice: true,
+  cardWriteSettleSeconds: 30,
   pronouns: PRONOUN_PRESETS.it,
   meetingCron: '23 9 * * *',
   phases: {

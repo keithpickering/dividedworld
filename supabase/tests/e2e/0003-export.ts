@@ -112,7 +112,7 @@ test('an instance exported and imported into a fresh database is the same instan
         insert into acts (character, kind, thread, target_act_id, payload) values (a, 'card', t, wp, '{"card": "expwrite", "message": "", "config": {}, "layer": 3}') returning id into w3;
         perform finish_card_write(w1, wp, 'A tail, carried across.', null);
         perform finish_card_write(w3, wp, null, 'scrub:word');
-        insert into card_write_refunds (play, amount) values (w3, 40);
+        insert into card_write_refunds (play, amount) values (w3, 40) on conflict on constraint card_write_refunds_pkey do update set amount = 40;
       end;
       -- A trap of the export's own (#136 F1): Ann sets a Trap Card naming Blot on her post through set_card, and Bob's Blot cast on it
       -- through play_card is caught, so a face_down row, a spring and a caught card are the cast's own, by their ids, below.
