@@ -127,7 +127,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
     summary: 'Puts your sob story on a donation banner under a post, so anyone can send its author Aura.',
     /* A hint is one fixed line, so it says the instance's own number as it starts out; the card's describe, which is given the settings, says the one in force. */
     hint: `Anyone can chip in. The System takes ${giftOverhead(defaults)}% for overhead.`,
-    status: 'A drive is open on this post',
+    status: 'A drive on this post',
     describe: (settings: Settings) =>
       `A Sweet card, ${jimmyWails.rarity}, cast on a post, with a message of your own: your sob story, which it must have. It goes on a donation banner under the post. Anyone can give through the banner, in ${listWords(giftAmounts(settings))}, as often as their wallet allows. The System keeps ${giftOverhead(settings)}% of each gift as overhead, rounded up, and the rest goes to the wallet of the post's author. A wallet that is too full to hold it loses what does not fit, and a gift on a post by staff is all overhead. Every gift is public, with who gave it and how much. Up to ${jimmyWails.stack} appeals share one drive, each on its own banner, and it closes by itself ${spanWords(jimmyWails.drive!.lasts)} after the latest one; the next play after that opens a new drive. It costs nothing more to play.`,
     logPlay: (_config, { opened }) => (opened === undefined ? undefined : opened ? 'It opened a drive.' : 'It joined the drive.'),
