@@ -174,11 +174,17 @@ describe('A barred account (the conduct plan, Task 4)', () => {
     const fake = barredWorld({ until: Date.now() + 5 * DAY });
     renderIn(fake, <AccountGate><p>The page</p></AccountGate>, { path: '/settings' });
     expect(await screen.findByRole('heading', { name: 'This account is suspended' })).toBeInTheDocument();
-    expect(screen.getByText(/This account is suspended until .*\d{4}\. We emailed you the details; reply to that email to appeal\./u)).toBeInTheDocument();
+    expect(screen.getByText(/This account is suspended until .*\d{4} at \d{2}:\d{2} UTC\. We emailed you the details; reply to that email to appeal\./u)).toBeInTheDocument();
     expect(screen.queryByText('The page')).toBeNull();
     expect(screen.getByRole('button', { name: 'Sign out' })).toBeInTheDocument();
     expect(screen.getAllByRole('button')).toHaveLength(1);
     expect(screen.queryByRole('link')).toBeNull();
+  });
+
+  test('names the end of a suspension in UTC, as the email does, even where the local day differs', async () => {
+    const fake = barredWorld({ until: Date.parse('2099-11-12T23:30:00Z') });
+    renderIn(fake, <AccountGate><p>The page</p></AccountGate>, { path: '/' });
+    expect(await screen.findByText('This account is suspended until November 12, 2099 at 23:30 UTC. We emailed you the details; reply to that email to appeal.')).toBeInTheDocument();
   });
 
   test('a ban says the same without a date', async () => {

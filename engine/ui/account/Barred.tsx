@@ -10,7 +10,12 @@ import { CalmRegion } from '../glass/Calm.tsx';
 import { useKayfa } from '../context.tsx';
 import './account.css';
 
-const dateOf = (iso: string) => new Intl.DateTimeFormat('en-US', { dateStyle: 'medium' }).format(new Date(iso));
+/** The moment as the email names it ("November 12, 2026 at 14:00 UTC", 0147_conduct_mail.sql), and as the server's refusal does: UTC, so the screen and the email name the same moment. */
+const dateOf = (iso: string) => {
+  const d = new Date(iso);
+  const day = new Intl.DateTimeFormat('en-US', { dateStyle: 'long', timeZone: 'UTC' }).format(d);
+  return `${day} at ${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')} UTC`;
+};
 
 /** Whether a bar still holds: a ban always, a suspension until its date. The server ends a suspension by itself, so a stale bar is never trusted. */
 export const barHolds = (bar: { readonly until: string | null } | null, now: number = Date.now()): bar is { readonly until: string | null } =>

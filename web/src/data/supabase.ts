@@ -763,18 +763,18 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
   async function currentSession(): Promise<Session> {
     const { data } = await client.auth.getSession();
     if (!data.session) return { signedIn: false, account: null, bar: null, conductAccepted: true };
-    /* The bar and the code are read beside whoami. A read that fails leaves the account as it was: no bar, the code accepted; the server refuses a barred account's writes either way. */
+    /* The bar and the code are read beside whoami. A failed my_bar read is no bar (the server refuses a barred account's writes, and its hint reloads this); a failed conduct_accepted read is NOT accepted, since nothing server-side enforces the code and agreeing again is harmless. */
     const [r, bar, accepted] = await Promise.all([
       read(() => client.rpc('whoami')),
       read(() => client.rpc('my_bar')).then((x) => x.data, () => null),
-      read(() => client.rpc('conduct_accepted')).then((x) => x.data, () => true),
+      read(() => client.rpc('conduct_accepted')).then((x) => x.data, () => false),
     ]);
     const until = bar && typeof bar === 'object' ? (bar as Row)['until'] : undefined;
     return {
       signedIn: true,
       account: typeof r.data === 'string' ? r.data : null,
       bar: bar && typeof bar === 'object' ? { until: typeof until === 'string' ? until : null } : null,
-      conductAccepted: accepted !== false,
+      conductAccepted: accepted === true,
     };
   }
 
@@ -1028,7 +1028,8 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     },
     async acceptConduct(version) {
       const a = await rpcWrite(() => client.rpc('accept_conduct', { version }));
-      if (a.ok) await reloadSession();
+      /* A reload already in flight may have read before this accept landed: wait for it, then read afresh. */
+      if (a.ok) { await reloading; await reloadSession(); }
       return a.ok ? { ok: true, value: {} } : a;
     },
     async requestCode(email, invite) {

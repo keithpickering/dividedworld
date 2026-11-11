@@ -367,3 +367,12 @@ test('the door: a taken appeal is judged with the player\'s session passed on, a
   assert.equal(t.d.calls[0]!.db, 'player');
   assert.equal(((await out.json()) as Record<string, unknown>)['verdict'], 'upheld');
 });
+
+test('a barred account is answered 403 with the hint, and nothing is judged', async () => {
+  const d = fakeDbs({ open: new DatabaseError('open_appeal: this account is banned', '28000', 401, 'this account is banned', 'kayfabb.barred') });
+  const m = fakeModels(() => ({}));
+  const out = await go(d, m);
+  assert.deepEqual({ status: out.status, body: out.body }, { status: 403, body: { error: 'this account is banned', hint: 'kayfabb.barred' } });
+  assert.equal(m.chats.length, 0);
+  assert.deepEqual(d.calls.map((c) => c.fn), ['open_appeal']);
+});

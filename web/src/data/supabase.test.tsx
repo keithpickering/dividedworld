@@ -1011,6 +1011,7 @@ describe('signing in goes through the account function', () => {
       }
       if (r.url.pathname === '/auth/v1/user') return json(SESSION.user);
       if (r.url.pathname === '/rest/v1/rpc/whoami') return json(A);
+      if (r.url.pathname.endsWith('/rpc/conduct_accepted')) return json(true);
       return undefined;
     });
     expect(await h.api.requestCode(' a@b.c ', 'inv')).toEqual({ ok: true, value: { message: 'If this address can sign in...', invite: 'that invite opens nothing, so no new login is made with it' } });
@@ -2544,6 +2545,38 @@ describe('the session carries the bar and the code (the conduct plan, Task 4)', 
     const ban = signedIn((r) => (r.url.pathname.endsWith('/rpc/my_bar') ? json({ kind: 'banned', until: null }) : r.url.pathname.endsWith('/rpc/conduct_accepted') ? json(true) : undefined));
     await ban.api.verifyCode('a@b.c', '123456');
     expect(await ban.api.session()).toEqual({ signedIn: true, account: A, bar: { until: null }, conductAccepted: true });
+  });
+
+  it('a failed conduct_accepted read counts as NOT accepted, so the code is shown again (agreeing is harmless)', async () => {
+    const h = signedIn((r) => (r.url.pathname.endsWith('/rpc/my_bar') ? json(null) : r.url.pathname.endsWith('/rpc/conduct_accepted') ? json({ message: 'boom' }, 500) : undefined));
+    await h.api.verifyCode('a@b.c', '123456');
+    expect(await h.api.session()).toEqual({ signedIn: true, account: A, bar: null, conductAccepted: false });
+  });
+
+  it('a failed my_bar read stays no bar: the server refuses a barred account\'s writes and the hint reloads', async () => {
+    const h = signedIn((r) => (r.url.pathname.endsWith('/rpc/my_bar') ? json({ message: 'boom' }, 500) : r.url.pathname.endsWith('/rpc/conduct_accepted') ? json(true) : undefined));
+    await h.api.verifyCode('a@b.c', '123456');
+    expect(await h.api.session()).toEqual({ signedIn: true, account: A, bar: null, conductAccepted: true });
+  });
+
+  it('accepting while a reload is in flight still ends with the code accepted: the read after the accept is a fresh one', async () => {
+    let accepted = false;
+    const h = signedIn((r) => {
+      if (r.url.pathname.endsWith('/rpc/my_bar')) return json(null);
+      if (r.url.pathname.endsWith('/rpc/conduct_accepted')) { const was = accepted; return new Promise<Response>((res) => setTimeout(() => res(json(was)), 60)) as unknown as Response; }
+      if (r.url.pathname.endsWith('/rpc/accept_conduct')) { accepted = true; return json(null); }
+      if (r.url.pathname.endsWith('/rpc/mark_read')) return json({ code: '28000', message: 'this account is banned', hint: 'kayfabb.barred' }, 401);
+      return undefined;
+    });
+    await h.api.verifyCode('a@b.c', '123456');
+    const heard = vi.fn();
+    h.api.onSession(heard);
+    await new Promise((r) => setTimeout(r, 200));
+    heard.mockClear();
+    await h.api.markRead(T, 3, null); // starts a reload that reads accepted = false, slowly
+    await new Promise((r) => setTimeout(r, 10));
+    expect(await h.api.acceptConduct(2)).toEqual({ ok: true, value: {} });
+    await vi.waitFor(() => expect(heard).toHaveBeenLastCalledWith({ signedIn: true, account: A, bar: null, conductAccepted: true }));
   });
 
   it('keeps the signed-out path unchanged: no my_bar and no conduct_accepted without a session', async () => {
