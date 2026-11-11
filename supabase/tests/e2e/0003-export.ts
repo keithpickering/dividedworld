@@ -410,9 +410,9 @@ test('an instance exported and imported into a fresh database is the same instan
     (select count(*) from scored_as s join acts k on k.id = s.play where k.payload ->> 'card' = 'expscore' and s.class_key = 'heel') || '|' ||
     (select count(*) from acts where kind = 'card' and payload ->> 'card' = 'expscore' and payload ->> 'starts' is not null) || '|' ||
     (select count(*) from acts where kind = 'spring' and payload ->> 'did' = 'rode' and payload ->> 'quadrant' = 'excitedPositive')`);
-  // A surface's row is derived from its Acts: rebuilt from them, it is the stored row (the first number is the surfaces held, the second those that differ).
-  const surfaceRows = (url: string) => psqlOn(url, `select count(*) || '|' || count(*) filter (where r.cover is distinct from s.cover or r.owners is distinct from s.owners or r.live is distinct from s.live)
-    from surfaces s cross join lateral rebuild_surface(s.play) r`);
+  // A surface's row is derived from its Acts: rebuilt from them, it is the stored row (the first number is the fixture's own wall, the second the surfaces in the database that differ, the races' committed ones included).
+  const surfaceRows = (url: string) => psqlOn(url, `select count(*) filter (where k.payload ->> 'card' = 'expwall') || '|' || count(*) filter (where r.cover is distinct from s.cover or r.owners is distinct from s.owners or r.live is distinct from s.live)
+    from surfaces s join acts k on k.id = s.play cross join lateral rebuild_surface(s.play) r`);
   assert.equal(surfaceRows(from), '1|0', 'the fixture holds a surface, and rebuilding it from its Acts gives the stored row');
   assert.equal(payouts(from), '1|1|1|1', 'the fixture holds the skim ledger row, the scored-as row, the play\'s starts and the rode spring\'s quadrant');
   // The cast's own set, its spring and the card it caught, by their ids, so the round trip is shown to carry a trap's rows

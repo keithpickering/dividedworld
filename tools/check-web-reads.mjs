@@ -59,6 +59,8 @@ const DATA_LAYER = /^web\/src\/data\//;
 export const ALLOWED_READS = Object.freeze([
   // Public: what anyone could have watched.
   'boards', 'boards_now', 'moves_log', 'staff_profile_now', 'threads', 'thread_list', 'thread_open', 'acts_public', 'characters_public', 'character_profiles', 'class_kinds', 'reaction_kinds', 'card_kinds', 'machine_now',
+  // A surface's derived row (0154): the covered cells, the owners and the live list of a play whose layer any character may add to, all public facts of public Acts. The web reads it only through thread_page and surface_acts.
+  'surfaces',
   'reaction_tallies', 'effect_state', 'pip_styles', 'thread_view_counts', 'settlements',
   'class_reveals', 'turns_announced', 'post_search', 'screen_settings', 'character_post_counts', 'season_size', 'board_counts',
   // Public: a finished season's frozen results; who plays whom is in none of it (supabase/migrations/0099_season_results.sql). The web reads them only
