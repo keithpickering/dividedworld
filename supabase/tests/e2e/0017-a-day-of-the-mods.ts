@@ -22,11 +22,15 @@ import { runFilings } from '../../functions/staff/core.ts';
 import { runPatrols } from '../../functions/staff/patrol.ts';
 import { runReport } from '../../functions/staff/report.ts';
 import { runAppeal } from '../../functions/staff/appeal.ts';
-import { instance } from '../../functions/_shared/instance.ts';
+import { instance as realInstance } from '../../functions/_shared/instance.ts';
+import { placeholderWorld } from '../../../instances/divided-world/system/fixtures/index.ts';
 import { models } from '../../functions/_shared/models/index.ts';
 import { ledgerWriter } from '../../functions/_shared/models/ledger.ts';
 import { COUNT_MOST } from '../../../engine/system/demands.ts';
 import type { Instance } from '../../../engine/rules/types.ts';
+
+/** This file needs a second Boss, which the real roster no longer has: its world is the placeholder fixtures'. */
+const instance = placeholderWorld(realInstance);
 
 const quiet: Instance = { ...instance, system: { ...instance.system, feeds: [] } };
 const tiers = { strong: 'claude-opus-5-5', light: 'claude-haiku-5-5' };
@@ -98,7 +102,7 @@ test('a meeting orders two Mods; visits are drawn, intercepted, reported and fil
     assert.ok(String(url).includes('anthropic'), `a Mod's day asks for no completion: ${url}`);
     const text = JSON.stringify(body);
     const asked = String(body.messages?.[0]?.content ?? '');
-    const who = roster.find((p) => text.includes(JSON.stringify(p.persona).slice(1, -1)))?.key ?? '';
+    const who = roster.find((p) => text.includes(JSON.stringify(p.selfPrompt).slice(1, -1)))?.key ?? '';
     const last = asked.trim().split('\n').pop()!;
     let duty: string;
     let reply: unknown;

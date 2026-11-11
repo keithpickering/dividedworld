@@ -1,4 +1,4 @@
--- Reversals: what place_set refuses and what a cast back springs on (supabase/migrations/0147_card_types.sql; docs/plans/2026-11-11-card-types-design.md, section 4;
+-- Reversals: what place_set refuses and what a cast back springs on (supabase/migrations/0148_card_types.sql; docs/plans/2026-11-11-card-types-design.md, section 4;
 -- plan Task 4). A set card with no trap, a named catch rarer than the set card, a `match` rarer than it, and a match beside a named catch are each refused in the
 -- engine's words; a back springs on a cast when it names the card or when its match (a flavor list, a rarity ceiling) holds and the card is at or below the back's own rarity;
 -- and every back a cast meets does the same reads before it decides. The cards are this file's own (tb...), never an instance's.

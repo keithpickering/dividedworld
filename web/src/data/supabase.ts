@@ -488,6 +488,7 @@ function toMyCharacter(r: Row): MyCharacter {
     pronouns: pronounsOrDefault(r['pronouns']),
     class: r['class'],
     classSince: r['class_since'],
+    classShownAt: r['class_shown_at'] ?? null,
     classDueAt: r['class_due_at'] ?? null,
     turnOpensAt: r['turn_opens_at'] ?? null,
     debutedAt: r['debuted_at'] ?? null,

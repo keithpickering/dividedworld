@@ -1,4 +1,4 @@
--- Taking a face-down card back, and the hand that follows (supabase/migrations/0147_card_types.sql; docs/plans/2026-11-11-card-types-design.md, section 6; plan Task 4).
+-- Taking a face-down card back, and the hand that follows (supabase/migrations/0148_card_types.sql; docs/plans/2026-11-11-card-types-design.md, section 6; plan Task 4).
 -- A back ends by its spring, a take-back naming it, or its time; a taken-back card is a `returned` row in the setter's ledger and a public take_back Act by the post's author; a back
 -- whose time passes unsprung and not taken back is returned by card_held and my_card_ledger without a row of its own; card_held never counts a back twice. The cards are this file's own (tk...).
 

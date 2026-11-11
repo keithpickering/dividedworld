@@ -1,4 +1,4 @@
--- Readers of a live back (supabase/migrations/0147_card_types.sql, Task 4 review): a back is live only while unsprung, not taken back and before its time, so lock_for_quote (post()'s and
+-- Readers of a live back (supabase/migrations/0148_card_types.sql, Task 4 review): a back is live only while unsprung, not taken back and before its time, so lock_for_quote (post()'s and
 -- write_staff_act's locks) neither locks nor returns a taken-back back, and log_page says how each ended back ended (setEnds[].ended_by). The cards are this file's own (lq...).
 
 select tests.unbecome();

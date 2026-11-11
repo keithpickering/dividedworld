@@ -2,7 +2,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { FILINGS_PER_RUN, learnMod, runFilings } from './core.ts';
 import { DatabaseError, type Db } from '../_shared/rpc.ts';
-import { instance as dividedWorld } from '../_shared/instance.ts';
+import { instance as realInstance } from '../_shared/instance.ts';
+import { placeholderWorld } from '../../../instances/divided-world/system/fixtures/index.ts';
+import type { Instance as WorldInstance } from '../../../engine/rules/types.ts';
+
+const dividedWorld: WorldInstance = placeholderWorld(realInstance);
 import { AnswerRejected, LedgerWriteFailed, models as realModels } from '../_shared/models/index.ts';
 import type { ModelCallRow } from '../_shared/models/ledger.ts';
 import type { ChatRequest, CompletionRequest, ModelResult, Models } from '../../../engine/system/model.ts';

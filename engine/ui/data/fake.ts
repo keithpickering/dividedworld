@@ -59,6 +59,7 @@ const SEASONED_WELCOME = '2026-10-01T00:00:00.000Z';
 export const TEST_CODE = '123456';
 
 const CODE_MESSAGE = 'If this address can sign in here, a code and a link to sign in are on their way to it. A new login needs an invite where this instance asks for one. If nothing comes in a few minutes, ask again.';
+const ALREADY_PUBLIC = 'that character\'s class is already public; after a Turn, the new class can be revealed';
 const SYSTEM_BOARD = 'only the staff post here; spin a thread from what they said';
 const MINUTE = 60_000;
 const DAY = 86_400_000;
@@ -1373,7 +1374,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     /* A live catching set card that names this very card, whatever its rarity, catches the play and takes it (spring_traps): the spring is written first, as the server writes it. */
     const trap = liveBack(target);
     const trapRules = trap ? instance.cards.find((c) => c.key === trap.card) : undefined;
-    /* It catches the card it names, or one its match holds: the flavor in `flavors`, the rarity at or below `upTo` and at or below the back's own (spring_traps, 0147). */
+    /* It catches the card it names, or one its match holds: the flavor in `flavors`, the rarity at or below `upTo` and at or below the back's own (spring_traps, 0148). */
     const match = trapRules?.trap?.match;
     const matched = match !== undefined && (match.flavors === undefined || match.flavors.includes(rules.alignment)) && (match.upTo === undefined || atOrBelow(rules.rarity, match.upTo)) && atOrBelow(rules.rarity, trapRules!.rarity);
     const catches = trap && trapRules?.trap?.trigger.on === 'cast' && (faceDown.get(trap.set)!.catches === card || matched) && ownerOf(acts.get(trap.set)!.character!) !== undefined;
@@ -1413,11 +1414,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     for (const [set, f] of faceDown) if (f.post === post && f.sprung === null && f.takenBack === undefined && f.endsAt > now()) return { set, card: f.card };
     return null;
   }
-  /** The account's backs whose time passed unsprung and not taken back: their cards are in the hand again (card_held, 0147), read and never written. */
+  /** The account's backs whose time passed unsprung and not taken back: their cards are in the hand again (card_held, 0148), read and never written. */
   const endedBacks = (account: Id) => [...faceDown.values()].filter((f) => f.account === account && f.sprung === null && f.takenBack === undefined && f.endsAt <= now() && f.refunded !== true);
   /** What the account holds of a card: bought, pulled, caught and returned, less played, and the backs whose time passed. */
   const heldOf = (account: AccountRec, card: string): number => (account.cards[card] ?? 0) + endedBacks(account.id).filter((f) => f.card === card).length;
-  /** A back whose time passed unsprung and not taken back shows as a `returned` line at its end, with no Act and no price (my_card_ledger, 0147). */
+  /** A back whose time passed unsprung and not taken back shows as a `returned` line at its end, with no Act and no price (my_card_ledger, 0148). */
   const endedLedger = () => [...faceDown.values()].filter((f) => f.sprung === null && f.takenBack === undefined && f.endsAt <= now())
     .map((f) => ({ account: f.account, order: 0, ms: f.endsAt, event: { card: f.card, kind: 'returned' as const, act: null, price: 0, at: iso(f.endsAt) } satisfies CardEvent }));
   /** Before a card is spent: each back whose time passed becomes a card in the hand, once. */
@@ -1459,7 +1460,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     let thread: Id;
     let on: Id | null;
     let above: EffectsAbove;
-    /* A use card never goes on a board, before the board is looked for (place_cast, 0147). */
+    /* A use card never goes on a board, before the board is looked for (place_cast, 0148). */
     if (play === 'use' && reach === 'board') return refuse(`${rules.name} is never used on a board`);
     if (reach === 'character') {
       if (!characters.has(target)) return refuse('there is no such character', 'target');
@@ -1473,7 +1474,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       thread = target;
       on = [...acts.values()].find((a) => a.thread === target && a.seq === 1)?.id ?? null;
       if (!on) return refuse('that thread has no post yet');
-      /* A use card on a thread is a match stipulation, so only on a thread the acting character started (place_cast, 0147), before the card's own rules are asked. */
+      /* A use card on a thread is a match stipulation, so only on a thread the acting character started (place_cast, 0148), before the card's own rules are asked. */
       if (play === 'use' && acts.get(on)?.character !== character) return refuse(`${rules.name} is used on a thread your own character started`);
       above = { board: reachEffects('board', boardOf(target)) };
     } else {
@@ -1539,7 +1540,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return ok(publicAct(written));
   }
 
-  /** take_back (0147): the setter's own live back goes back to the hand, free; every other back, and one that has ended, is refused in the same words. */
+  /** take_back (0148): the setter's own live back goes back to the hand, free; every other back, and one that has ended, is refused in the same words. */
   function takeBack(character: Id, set: Id): Answer<Act> {
     const bad = request({ action: 'takeBack', character, set });
     if (bad) return bad;
@@ -1602,11 +1603,25 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return ok(publicAct(original));
   }
 
+  /** When the character's current class was made public: the latest of its unmask Acts and class-carrying announces of that class, at or after the class began (the filter `classReveals` uses). */
+  function classShownAt(c: CharRec): number | null {
+    const now = classNow(c);
+    let latest: number | null = null;
+    for (const a of acts.values()) {
+      if (a.character !== c.id || a.at < now.at) continue;
+      if (a.kind !== 'unmask' && !(a.kind === 'announce' && typeof a.payload.class === 'string')) continue;
+      if (a.payload.class !== now.cls) continue;
+      if (latest === null || a.at > latest) latest = a.at;
+    }
+    return latest;
+  }
+
   function unmask(character: Id, thread: Id, message: string): Answer<Act> {
     const bad = request({ action: 'unmask', character, thread, message });
     if (bad) return bad;
     const c = acting(character);
     if (isRefusal(c)) return c;
+    if (classShownAt(c) !== null) return refuse(ALREADY_PUBLIC);
     const found = threadAndBoard(thread);
     if (isRefusal(found)) return found;
     if (found.board.isSystem) return refuse(SYSTEM_BOARD);
@@ -2733,8 +2748,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (!account) return [];
       return [...characters.values()].filter((c) => c.owner === account.id).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)).map((c): MyCharacter => {
         const opens = turnOpens(c);
+        const shown = classShownAt(c);
         return {
-          id: c.id, name: c.name, pronouns: c.pronouns, class: classNow(c).cls, classSince: iso(classNow(c).at), classDueAt: classNow(c).dueAt === undefined ? null : iso(classNow(c).dueAt!),
+          id: c.id, name: c.name, pronouns: c.pronouns, class: classNow(c).cls, classSince: iso(classNow(c).at), classShownAt: shown === null ? null : iso(shown), classDueAt: classNow(c).dueAt === undefined ? null : iso(classNow(c).dueAt!),
           turnOpensAt: opens === null ? null : iso(opens),
           debutedAt: c.debutedAt === null ? null : iso(c.debutedAt), debutLoudness: c.loudness, retiredAt: c.retiredAt === null ? null : iso(c.retiredAt),
           pendingTurn: c.pending ? { class: c.pending.class, loudness: c.pending.loudness, showFrom: c.pending.showFrom, showTo: c.pending.showTo, takesEffectAt: takesEffectAt() } : null,

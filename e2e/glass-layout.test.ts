@@ -200,7 +200,7 @@ describe('the layout judgment', () => {
   });
 
   test('a form\'s board primary stands larger than the small buttons beside it, and those are still held to each other across it', () => {
-    /* The reply box's foot as board 05-reply draws it (the board look design, section 3): Preview and Reveal… small, Send the form's one primary, larger. */
+    /* A synthetic row, checker input and not the composer (which no longer has a Reveal…): the reply box's foot as board 05-reply draws it (the board look design, section 3): Preview and Reveal… small, Send the form's one primary, larger. */
     const foot = 'form.kb-composer > div.kb-editor > div.kb-editor-foot';
     const line = (revealHeight: number, revealSize: number) => ({
       path: foot, kind: 'flex-line' as const,

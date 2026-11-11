@@ -42,8 +42,8 @@ const botFields = {
 
 export const testSystem: SystemContent = {
   roster: [
-    { key: 'boss-a', name: 'Boss A', title: 'The Boss', signature: 'Hi.', persona: 'You are a boss.', startingHobby: 'tomatoes', temperament: 'petty', ...botFields },
-    { key: 'bot-a', name: 'Bot A', title: 'Hall monitor', signature: 'Walk.', persona: 'You are a bot.', startingHobby: 'clipboards', temperament: 'earnest', ...botFields },
+    { key: 'boss-a', name: 'Boss A', title: 'The Boss', signature: 'Hi.', selfPrompt: 'You are a boss.', officeLines: { boss: 'You run the place.', member: 'You used to run the place.' }, startingHobby: 'tomatoes', temperament: 'petty', ...botFields },
+    { key: 'bot-a', name: 'Bot A', title: 'Hall monitor', signature: 'Walk.', selfPrompt: 'You are a bot.', startingHobby: 'clipboards', temperament: 'earnest', ...botFields },
   ],
   firstBoss: 'boss-a',
   announcementsTitle: 'Announcements',
@@ -53,6 +53,11 @@ export const testSystem: SystemContent = {
   feeds: [], realWorld: [], wheelhouse: [],
   nameStyle: () => [],
   nameStyleBrief: 'any name',
+  offices: {
+    boss: { premise: 'Boss premise.', answerRules: 'Boss rules.' },
+    mod: { premise: 'Mod premise.', answerRules: 'Mod rules.' },
+    member: { premise: 'Member premise.', answerRules: 'Member rules.' },
+  },
 };
 
 /** A small valid `groups` for test fakes of an `Instance`: a default rung and a staff rung. */

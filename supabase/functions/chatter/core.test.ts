@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { runChatter } from './core.ts';
 import { DatabaseError, type Db } from '../_shared/rpc.ts';
-import { instance as dividedWorld } from '../_shared/instance.ts';
+import { instance as realInstance } from '../_shared/instance.ts';
+import { placeholderWorld } from '../../../instances/divided-world/system/fixtures/index.ts';
 import { AnswerRejected, LedgerWriteFailed, models as realModels } from '../_shared/models/index.ts';
 import type { ModelCallRow } from '../_shared/models/ledger.ts';
 import type { ChatRequest, CompletionRequest, ModelResult, Models } from '../../../engine/system/model.ts';
@@ -10,6 +11,8 @@ import type { Instance } from '../../../engine/rules/types.ts';
 import { autocorrect as autocorrectRules } from '../../../instances/divided-world/cards/autocorrect.ts';
 import { staffOffers } from '../../../engine/rules/cards.ts';
 import { whoops as whoopsRules } from '../../../instances/divided-world/cards/whoops.ts';
+
+const dividedWorld: Instance = placeholderWorld(realInstance);
 
 // A Wednesday: the week's 20 posts over its five days left give an allowance of 4, so three posts and one card slot.
 const SLOT = '2026-11-04T17:37:00.000Z';
@@ -243,6 +246,18 @@ test('a card with no default and no configurations of its own is not offered', a
   const m = fakeModels((r) => ({ words: 'x', card: { key: 'whoops', on: 'reply' } }));
   await run(d, m, bare);
   assert.equal(d.count('staff_play_card'), 0);
+});
+
+test('a persona is asked in the frame of the office it holds now: a member opens with the member premise, a Boss with the Boss premise, a Mod with the Mod premise', async () => {
+  const d = fakeDb({ named: [CLERK, HYPE, SIGH], pool: { threadsWeekly: 0 } });
+  const m = fakeModels((r) => ({ words: `A reply from ${r.staff}.` }));
+  await run(d, m);
+  const offices = dividedWorld.system.offices;
+  const asked = (staff: string) => m.chats.find((c) => c.staff === staff)!.system;
+  assert.ok(asked(CLERK).startsWith(offices.member.premise), 'member');
+  assert.ok(asked(HYPE).startsWith(offices.boss.premise), 'boss');
+  assert.ok(asked(SIGH).startsWith(offices.mod.premise), 'mod');
+  assert.ok(!asked(CLERK).includes(offices.boss.premise), 'a member is never told it is the Boss');
 });
 
 test('a disabled System writes nothing and calls no model', async () => {

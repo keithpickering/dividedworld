@@ -41,7 +41,7 @@ export function instanceSeed(instance: Instance) {
     cards: instance.cards.map((c) => ({
       key: c.key, name: c.name, alignment: c.alignment, stack: c.stack ?? 1, seeded: c.seeded === true,
       reads: (c.reads ?? []).map((r) => (typeof r === 'string' ? r : r.key)),
-      // How it is played and how rare it is, and a Set card's trap, a Use card's gimmick and time up (0054, 0147), which seed_instance
+      // How it is played and how rare it is, and a Set card's trap, a Use card's gimmick and time up (0054, 0148), which seed_instance
       // checks as instanceProblems does. A trap (with its match), a gimmick or a time up left out travels as none.
       rarity: c.rarity, play: c.play ?? 'cast', trap: c.trap, gimmick: c.gimmick, lasts: c.lasts,
       // Where it reaches and whether a thread play of it pins (0055), which seed_instance checks against reachRarity and reachLasts.

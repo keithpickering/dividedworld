@@ -72,6 +72,12 @@ export interface RehearsalModelsOptions {
   readonly live?: typeof realModels;
   /** The clock a kept call's `at` reads. */
   readonly now?: () => number;
+  /**
+   * The transport a live call goes out on: the global fetch by default, a fake in a test. The handlers pass `deps.fetch` as the models'
+   * `options.fetch`, and in the rehearsal that is the feeds' cassette (`rehearsalFetch`), keyed on URL and day only; a model call sent
+   * through it would get the day's first answer back. So a live call never uses `options.fetch`: the model cassette above is its record.
+   */
+  readonly transport?: typeof fetch;
 }
 
 interface Saved {
@@ -103,6 +109,7 @@ const emptyRow = (duty: string, request: CompletionRequest | ChatRequest, over: 
 export function rehearsalModels(o: RehearsalModelsOptions): RehearsalModels {
   const live = o.live ?? realModels;
   const now = o.now ?? Date.now;
+  const transport: typeof fetch = o.transport ?? ((input, init) => globalThis.fetch(input, init));
   const calls: KeptCall[] = [];
   let liveMicro = 0;
   const cap: Cap = { liveMicrodollars: () => liveMicro, reached: () => liveMicro >= o.cap.dollars * 1e6 };
@@ -151,7 +158,7 @@ export function rehearsalModels(o: RehearsalModelsOptions): RehearsalModels {
         liveMicro += row.costMicrodollars;
       };
       try {
-        const result = await doLive(live(env, counting, options));
+        const result = await doLive(live(env, counting, { ...options, fetch: transport }));
         if (written) save(o.dir, { key, kind, request, result, row: written });
         keep({ replayed: false, value: result.value, trims: result.trims, cost: result.costMicrodollars });
         return result;

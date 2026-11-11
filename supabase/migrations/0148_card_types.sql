@@ -436,7 +436,7 @@ begin
     on conflict (key) do update set name = excluded.name, badge = excluded.badge, color = excluded.color, stripe = excluded.stripe, source = excluded.source, rung = excluded.rung,
       condition = excluded.condition, at_least = excluded.at_least, tone = excluded.tone;
   end if;
-  -- A card's play, rarity, trap, gimmick and time up (0054, 0147), and its reaches (0055), checked as instanceProblems checks them, each
+  -- A card's play, rarity, trap, gimmick and time up (0054, 0148), and its reaches (0055), checked as instanceProblems checks them, each
   -- naming the card. The reaches are read against reachRarity and reachLasts as the settings above have just written them.
   select nullif(concat_ws('; ', card_kinds_problem(payload -> 'cards'), card_reach_problem(payload -> 'cards')), '') into unknown;
   if unknown is not null then raise exception '%', unknown using errcode = '22023'; end if;
@@ -957,7 +957,7 @@ grant execute on function take_back(uuid, uuid, uuid) to service_role;
 
 -- ------------------------------------------------------------------------------------------ 4. spring_facts and spring_traps ----
 
--- spring_facts (0147), a cast back springing on a named card or a match (step 6b); everything else as its definition above in this migration wrote it.
+-- spring_facts (0148), a cast back springing on a named card or a match (step 6b); everything else as its definition above in this migration wrote it.
 create or replace function spring_facts(fd face_down, trigger text, by_act uuid, incoming_card text) returns spring_facts
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
@@ -1105,7 +1105,7 @@ revoke execute on function spring_traps(text, uuid, uuid, text, uuid[], uuid) fr
 
 -- --------------------------------------------------------------------------------------------------------- 5. the back's end ----
 
--- card_target (0147), a face-down card's end being the earliest of its spring, a take-back naming it and its time. Everything else as its definition above in this migration wrote it.
+-- card_target (0148), a face-down card's end being the earliest of its spring, a take-back naming it and its time. Everything else as its definition above in this migration wrote it.
 create or replace function card_target(target uuid) returns jsonb
 language sql stable security definer set search_path = public, pg_temp as $$
   select jsonb_build_object('reach', 'post', 'act', a.id, 'kind', a.kind,

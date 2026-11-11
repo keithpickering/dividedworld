@@ -136,7 +136,7 @@ test('an instance exported and imported into a fresh database is the same instan
       perform tests.become((select owner from characters where id = b));
       perform post(t, b, '[quote=' || spr_post || ']Passage quoted[/quote] Bob, quoting.', spr_post);
       perform tests.unbecome();
-      -- The card types (0147): a use card whose Gimmick is a ward by flavor and whose time up is a day; a Reversal with a match on its trap.
+      -- The card types (0148): a use card whose Gimmick is a ward by flavor and whose time up is a day; a Reversal with a match on its trap.
       insert into card_kinds (key, name, alignment, rarity, play, trap, reaches, lasts, gimmick) values
         ('expward', 'Exported Ward', 'salty', 'common', 'use', null, '{post}', interval '1 day', '{"kind": "ward", "flavors": ["salty"]}'),
         ('expmatch', 'Exported Match Reversal', 'salty', 'uncommon', 'set', '{"trigger": {"on": "cast"}, "match": {"flavors": ["salty"]}}', '{post}', null, null),
@@ -352,7 +352,7 @@ test('an instance exported and imported into a fresh database is the same instan
   assert.ok(condSet && quoteSet && quoteSpring, 'the Anyone-but Move is set, and a quote springs the Only-these Move');
   assert.equal(sql(`select passage || '|' || who_except::text || '|' || cardinality(who)::text || '|' || coalesce(catches, '-') from face_down where play = '${condSet}'`), 'conditioned words|true|1|-', 'an Anyone-but Move holds its passage and its list, and no catch');
   assert.equal(sql(`select (payload -> 'when')::text || '|' || (payload ->> 'for' = (select id from characters where name = 'Exported B')::text) from acts where id = '${quoteSpring}'`), '{"passage": "passage quoted"}|true', 'the spring names the passage it matched and the quoter');
-  // The take-back (0147): the Reversal is returned to its setter's ledger, and its take-back Act names the back; the timed back is a face_down row whose time passed.
+  // The take-back (0148): the Reversal is returned to its setter's ledger, and its take-back Act names the back; the timed back is a face_down row whose time passed.
   assert.equal(sql(`select count(*) from card_ledger l join auth.users u on u.id = l.account and u.email = 'exp-ann@test.invalid' where l.kind = 'returned' and l.card = 'expmatch'`), '1', 'the taken-back Reversal is returned to the setter\'s ledger');
   assert.equal(sql(`select count(*) from acts where kind = 'take_back' and payload ->> 'set' in (select f.play::text from face_down f where f.card = 'expmatch')`), '1', 'the take-back Act names the back it takes back');
   assert.equal(sql(`select ends_at <= now() from face_down where card = 'exptime'`), 't', 'a back whose time passed is held as ended');

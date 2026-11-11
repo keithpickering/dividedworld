@@ -1,4 +1,4 @@
--- The card catalog for the three card types (supabase/migrations/0147_card_types.sql; docs/plans/2026-11-11-card-types-design.md, sections 5 and 12; plan Task 3):
+-- The card catalog for the three card types (supabase/migrations/0148_card_types.sql; docs/plans/2026-11-11-card-types-design.md, sections 5 and 12; plan Task 3):
 -- a use card (a Gimmick) holds a `gimmick` in place of `ward`, a Reversal's trap may hold a `match`, card_kinds_problem refuses each pairing instanceProblems
 -- refuses that SQL can check, in the engine's words, and card_target and reach_effects carry the live Gimmick. The cards are this file's own, never an instance's.
 

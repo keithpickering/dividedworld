@@ -9,7 +9,7 @@ import type { DeveloperPersona, EconomyRead, Instance, Settings, QuizQuestion, S
 import { DIGEST_MOST } from '../system/digest.ts';
 import { DUTIES } from '../system/duties.ts';
 import { PHASES, PHASE_CAPS, PHASE_KEYS } from '../system/phases.ts';
-import { TRIGGERS as POOL_TRIGGERS } from '../system/pool.ts';
+import { POSTING_OFFICES, TRIGGERS as POOL_TRIGGERS } from '../system/pool.ts';
 import { PRONOUN_FORMS, STAFF_TOKENS, STOCK_LINE_KEYS, STOCK_LINE_TOKENS } from '../system/stock.ts';
 import { pronounProblems } from './pronouns.ts';
 import { BEYOND_POST, GIMMICK_KINDS, INT4_MAX, PLAYS, RARITIES, REACHES, TRIGGERS, atOrBelow, spanMs } from './cards.ts';
@@ -550,16 +550,29 @@ function systemProblems(instance: Instance): string[] {
   const roster = Array.isArray(sys.roster) ? sys.roster : [];
   if (!roster.length) out.push('the instance\'s roster is empty (system.roster)');
   const rosterKeys = new Set(roster.map((p) => p.key));
+  // Each office that posts has a frame: a premise and answer rules the engine sets around a persona's own words (`personaPrompt`).
+  const frames: Record<string, { premise?: unknown; answerRules?: unknown } | undefined> = sys.offices !== null && typeof sys.offices === 'object' ? sys.offices : {};
+  for (const office of POSTING_OFFICES) {
+    const frame = frames[office];
+    if (frame === undefined || frame === null || typeof frame !== 'object') { out.push(`system.offices has no "${office}" frame`); continue; }
+    for (const part of ['premise', 'answerRules'] as const) if (typeof frame[part] !== 'string' || frame[part].trim() === '') out.push(`system.offices.${office} has a blank ${part}`);
+  }
   for (const k of duplicates(roster, (p) => p.key)) out.push(`persona key "${k}" is used twice`);
   /* The developer persona's staff key is the engine's (0062): a roster member under it would be the character the persona is seeded as, or be left unmade. */
   if (rosterKeys.has(DEVELOPER_STAFF_KEY)) out.push(`persona key "${DEVELOPER_STAFF_KEY}" is reserved for the developer persona, which a model never plays`);
   const text = (v: unknown) => typeof v === 'string' && v.trim() !== '';
   for (const p of roster) {
     const who = `persona "${p.key}"`;
-    for (const part of ['name', 'title', 'signature', 'persona', 'startingHobby', 'temperament', 'persuadedBy'] as const) if (!text(p[part])) out.push(`${who} has no ${part}`);
+    for (const part of ['name', 'title', 'signature', 'selfPrompt', 'startingHobby', 'temperament', 'persuadedBy'] as const) if (!text(p[part])) out.push(`${who} has no ${part}`);
     if (typeof p.title === 'string' && p.title.length > STAFF_TITLE_MAX) out.push(`${who} has a title of ${p.title.length} characters; the seed keeps at most ${STAFF_TITLE_MAX} and cuts the rest in silence`);
     if (typeof p.signature === 'string' && p.signature.length > STAFF_SIGNATURE_MAX) out.push(`${who} has a signature of ${p.signature.length} characters; the seed keeps at most ${STAFF_SIGNATURE_MAX} and cuts the rest in silence`);
     for (const list of ['beats', 'petRules'] as const) if (!Array.isArray(p[list])) out.push(`${who} has no ${list}`);
+    if (p.officeLines !== undefined && p.officeLines !== null && typeof p.officeLines === 'object') {
+      for (const [office, line] of Object.entries(p.officeLines)) {
+        if (!(POSTING_OFFICES as readonly string[]).includes(office)) out.push(`${who} has an office line for "${office}", which is not an office that posts (${POSTING_OFFICES.join(', ')})`);
+        else if (!text(line)) out.push(`${who} has a blank office line for "${office}"`);
+      }
+    }
     if (p.pronouns !== undefined) for (const why of pronounProblems(p.pronouns)) out.push(`${who} has pronouns that fail: ${why}`);
     if (p.strictness === undefined || p.strictness === null) out.push(`${who} has no strictness`);
     if (p.inheritsMemoryOf !== undefined && (p.inheritsMemoryOf === p.key || !rosterKeys.has(p.inheritsMemoryOf))) out.push(`${who} inherits the memory of "${p.inheritsMemoryOf}", who is not another persona in the roster`);

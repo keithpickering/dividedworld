@@ -77,8 +77,8 @@ const botFields = {
   weakness: { kind: 'quiz', questions: [{ question: 'Which is a number?', choices: ['one', 'cat'], answer: 'one' }] },
   voice: 'chat', persuadedBy: 'Pedantry.',
 } as const;
-const boss: Persona = { key: 'boss-a', name: 'Boss A', title: 'The Boss', signature: 'Hi.', persona: 'You are a boss.', ...bossFields, ...botFields };
-const bot: Persona = { key: 'bot-a', name: 'Bot A', title: 'Hall monitor', signature: 'Walk.', persona: 'You are a bot.', ...bossFields, ...botFields };
+const boss: Persona = { key: 'boss-a', name: 'Boss A', title: 'The Boss', signature: 'Hi.', selfPrompt: 'You are a boss.', ...bossFields, ...botFields };
+const bot: Persona = { key: 'bot-a', name: 'Bot A', title: 'Hall monitor', signature: 'Walk.', selfPrompt: 'You are a bot.', ...bossFields, ...botFields };
 
 const system: SystemContent = {
   roster: [boss, bot],
@@ -91,6 +91,7 @@ const system: SystemContent = {
   wheelhouse: ['games'],
   nameStyle: () => [],
   nameStyleBrief: 'any name',
+  offices: { boss: { premise: 'B.', answerRules: 'Br.' }, mod: { premise: 'M.', answerRules: 'Mr.' }, member: { premise: 'E.', answerRules: 'Er.' } },
   announcementsTitle: 'Announcements',
 };
 
@@ -488,8 +489,18 @@ test('a title over 40 characters or a signature over 500 is a problem, for a Bos
 
 test('a staff member needs a name, a title and a persona', () => {
   assert.match(said(withBot({ name: ' ' })), /persona "bot-a" has no name/);
-  assert.match(said(withBot({ persona: '' })), /persona "bot-a" has no persona/);
+  assert.match(said(withBot({ selfPrompt: '' })), /persona "bot-a" has no selfPrompt/);
   assert.match(said(withBoss({ title: '' })), /persona "boss-a" has no title/);
+});
+
+test('a persona in each office\'s frame: every posting office has a premise and answer rules, and an office line names an office that posts', () => {
+  const { member: _gone, ...noMember } = system.offices;
+  assert.match(said(withSystem({ offices: noMember as SystemContent['offices'] })), /system\.offices has no "member" frame/);
+  assert.match(said(withSystem({ offices: { ...system.offices, boss: { premise: ' ', answerRules: 'r' } } })), /system\.offices\.boss has a blank premise/);
+  assert.match(said(withSystem({ offices: { ...system.offices, mod: { premise: 'p', answerRules: '' } } })), /system\.offices\.mod has a blank answerRules/);
+  assert.match(said(withBoss({ officeLines: { janitor: 'Mop.' } as unknown as Persona['officeLines'] })), /persona "boss-a" has an office line for "janitor", which is not an office that posts \(boss, mod, member\)/);
+  assert.match(said(withBoss({ officeLines: { boss: ' ' } })), /persona "boss-a" has a blank office line for "boss"/);
+  assert.deepEqual(instanceProblems(withBoss({ officeLines: { boss: 'You run it.', mod: 'You patrol.' } })), []);
 });
 
 test('the name style must also be said in words for the meeting\'s prompt', () => {
