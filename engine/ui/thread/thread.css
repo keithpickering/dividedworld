@@ -167,10 +167,15 @@
 }
 
 .kb-act-meta,
-.kb-act-main,
 .kb-act-foot,
 .kb-act-panels {
   z-index: 1;
+}
+
+/* The words one above the other cells: a moment's ring and its glow (cards/moment.css) sit in the words' layer and are drawn unclipped,
+   so a glow that spills past the words still paints over the actions and the panels, as it did before the cells were lifted. */
+.kb-act-main {
+  z-index: 2;
 }
 
 .kb-act-main {
