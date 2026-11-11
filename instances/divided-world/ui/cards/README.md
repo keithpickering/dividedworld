@@ -75,15 +75,15 @@ The scenes began as one day's exploration, recorded with its drafts in `docs/res
 
 ## The card back
 
-Every card has the same back, and it is the instance's: `instances/divided-world/ui/card-back/` holds `art.webp` (the
-back of every card), `hit.webp` (the hit pull's, in the machine's gold) and `art.json`. Each picture is a canvas like a
-card's, held to the same rules, and the back has no mark of its own. Here both come from one scene, the coin as a raised
-medallion in smoke lit in the back's colors. From that folder:
+Every card has the same back, and it is the instance's: `instances/divided-world/ui/card-back/` holds `art.webp` and
+`art.json`. The picture is a canvas like a card's, held to the same rules, and the back has no mark of its own. Here it
+comes from a scene, the coin as a raised medallion in smoke lit in the back's colors. From that folder:
 
 ```
 python scene.py art.webp
-BACK=hit python scene.py hit.webp
 ```
+
+A pack's hit pull has the same back as every other card.
 
 The small tile of a face-down card on a post is not this picture: it keeps the stylesheet's smoke, in the same colors.
 

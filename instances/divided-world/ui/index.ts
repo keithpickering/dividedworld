@@ -23,7 +23,6 @@ import fanSite from './themes/fan-site.css?url';
 import fanSitePreview from './themes/fan-site.css?preview';
 import coinUrl from './icon/coin.svg?url';
 import cardBackCanvas from './card-back/art.webp?url';
-import cardBackHitCanvas from './card-back/hit.webp?url';
 import pipFull from './pips/default-full.svg?url';
 import pipEmpty from './pips/default-empty.svg?url';
 import gabe from './avatars/gabe.png?url';
@@ -175,8 +174,8 @@ export const instanceUi: InstanceUi = Object.freeze({
   cards: cardsUi,
   packs: packsUi,
   /* The back of a card wears the favicon's coin (the owner's word, 2026-11-07). */
-  /* The back's two pictures hold the coin, raised and glowing; the mark is still given, for a back drawn without them. */
-  cardBack: { mark: coinUrl, canvas: cardBackCanvas, hitCanvas: cardBackHitCanvas },
+  /* The back's picture holds the coin, raised and glowing; the mark is still given, for a back drawn without it. */
+  cardBack: { mark: coinUrl, canvas: cardBackCanvas },
   onboarding,
   frontDoor,
   /* The Strategy Guide's Markdown and Gabe's hint for each class (guide/); tools/check-guide.mjs holds both to the instance. */

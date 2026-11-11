@@ -227,13 +227,13 @@ function SlotArt({ it }: { readonly it: Item }) {
   return <PackArt name={it.name} count={it.pack!.pulls.length} {...(it.look?.art ? { art: it.look.art } : {})} />;
 }
 
-/** "In this pack": five small backs, the last one the hit's gold, and what opening does. */
+/** "In this pack": five small backs, all the same, and what opening does. */
 function InPack({ pack, count, line, back }: { readonly pack: PackRules; readonly count: number; readonly line: string; readonly back: InstanceUi['cardBack'] }) {
   return (
     <section className="kb-vending-inpack" aria-label="In this pack">
       <p className="kb-vending-inpack-head" aria-hidden="true" data-kb-art />
       <div className="kb-vending-backs" aria-hidden="true" data-kb-key={pack.key}>
-        {Array.from({ length: count }, (_, i) => <PostcardBack key={i} size="slot" hit={i === count - 1} {...(back ?? {})} />)}
+        {Array.from({ length: count }, (_, i) => <PostcardBack key={i} size="slot" {...(back ?? {})} />)}
       </div>
       <p className="kb-vending-inpack-line">{line}</p>
     </section>

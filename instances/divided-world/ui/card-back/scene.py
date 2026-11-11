@@ -1,8 +1,7 @@
 """Divided World's card back: its coin, raised and glowing, in smoke. The look is the stylesheet back's
 (engine/ui/cards/postcard.css), made as a scene like the cards' own. From this folder,
 
-    python scene.py art.webp            the back of every card
-    BACK=hit python scene.py hit.webp   the hit pull's, in the machine's gold
+    python scene.py art.webp
 
 with the cards' rig (../cards/rig.py), as the cards' README says."""
 import sys, os, math
@@ -13,11 +12,10 @@ from mathutils import Vector
 import rig
 
 OUT = sys.argv[-1]
-HIT = os.environ.get('BACK', '') == 'hit'
 sc = rig.reset()
-# the glass's colors along the back's diagonal, as its stylesheet mixes them: violet, neon, violet, salty for the default; gold, salty, gold for the hit
-TINT = [(0.0, '#ffc83a'), (0.55, '#ff3d8a'), (1.0, '#ffc83a')] if HIT else [(0.0, '#7a5cf0'), (0.45, '#2ee6ff'), (0.72, '#7a5cf0'), (1.0, '#ff3d8a')]
-GLOW = '#ffc83a' if HIT else '#2ee6ff'
+# the glass's colors along the back's diagonal, as its stylesheet mixes them: violet, neon, violet, salty
+TINT = [(0.0, '#7a5cf0'), (0.45, '#2ee6ff'), (0.72, '#7a5cf0'), (1.0, '#ff3d8a')]
+GLOW = '#2ee6ff'
 C = Vector((0.0, 0.0, 0.0))              # the coin sits at the card's middle, as the emblem does
 
 # ---- the smoke: a deep slab of it behind the coin, its own light in the back's colors, dark where it thins ----------

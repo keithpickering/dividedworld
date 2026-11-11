@@ -143,10 +143,9 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     expect(instanceUi.cardBack?.mark).toMatch(SVG_URL);
   });
 
-  test('the card back has its pictures from its folder: the back of every card, and the hit pull\'s', () => {
+  test('the card back has its picture from its folder, one for every card', () => {
     expect(instanceUi.cardBack?.canvas, 'the back').toMatch(CANVAS_URL);
-    expect(instanceUi.cardBack?.hitCanvas, 'the hit pull\'s back').toMatch(CANVAS_URL);
-    expect(instanceUi.cardBack?.hitCanvas).not.toBe(instanceUi.cardBack?.canvas);
+    expect(Object.keys(instanceUi.cardBack ?? {}).sort()).toEqual(['canvas', 'mark']);
   });
 
   /* A card's name is laid out at no more than 165cqw over its longest line (engine/ui/cards/postcard.css), and a name of more than 14

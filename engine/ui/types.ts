@@ -418,12 +418,11 @@ export interface InstanceUi {
   readonly packs: Readonly<Record<string, { readonly name: string; readonly art: CardArt }>>;
   /**
    * The instance's look for a card's back (`PostcardBack`), each a URL the bundler resolved. `mark` is drawn at the center of the
-   * back's crossed bands; without it the back is the bands alone. `canvas` is a picture for the back of every card and `hitCanvas`
-   * one for the hit pull's, each a canvas as a card's is (specs/card-art.md); a back with its picture draws that, and no mark over
-   * it. A hit pull with no `hitCanvas` keeps the stylesheet's gold back. All of it is the instance's, never a card's, so a back
-   * still says nothing about the card it is.
+   * back's crossed bands; without it the back is the bands alone. `canvas` is a picture for the back, a canvas as a card's is
+   * (specs/card-art.md); a back with its picture draws that, and no mark over it. Both are the instance's, never a card's, and
+   * every card has the same back, so a back still says nothing about the card it is.
    */
-  readonly cardBack?: { readonly mark: string; readonly canvas?: string; readonly hitCanvas?: string };
+  readonly cardBack?: { readonly mark: string; readonly canvas?: string };
   /** The instance's onboarding words, in its developer persona's voice (docs/plans/2026-11-02-onboarding-plan.md, Task 4). */
   readonly onboarding: OnboardingUi;
   /** The instance's Strategy Guide: its prose, and Gabe's hint for each class (docs/plans/2026-11-02-onboarding-plan.md, Task 8). */

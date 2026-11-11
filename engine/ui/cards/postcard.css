@@ -394,13 +394,6 @@ button.kb-postcard {
   object-fit: contain;
 }
 
-/* The hit pull's back: its clouds and its glow in the machine's gold. */
-.kb-postcard-back[data-hit] {
-  --kb-card-color: var(--kb-glass-ready);
-  --kb-back-tint: linear-gradient(160deg, var(--kb-glass-ready) 0%, var(--kb-glass-salty) 55%, var(--kb-glass-ready) 100%);
-  --kb-back-glow: var(--kb-glass-ready);
-}
-
 /* ---- armed ---- */
 .kb-postcard[data-armed] {
   box-shadow: 0 0 0 2px var(--kb-card-color), 0 0 26px color-mix(in srgb, var(--kb-card-color) 75%, transparent), 0 22px 34px color-mix(in srgb, var(--kb-glass-ground) 90%, transparent);

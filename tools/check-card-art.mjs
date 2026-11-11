@@ -42,10 +42,10 @@
  * another size, since only the first chunk is read; and EXIF or XMP chunks, which are inert in an `<img>`.
  *
  * An instance's card back is one folder, `ui/card-back/` (docs/plans/2026-11-11-rendered-card-back-design.md,
- * section 3), read where it exists: `art.svg` or `art.webp`, exactly one (the back of every card), `hit.svg` or
- * `hit.webp`, at most one (the hit pull's), and `art.json`, as a card's. It has no `mark.svg`. Each picture is held to
- * what a card's canvas is (rules 2, 5, 6 and 7, with `hit.svg` at most 200 KB and `hit.webp` at most 400 KB), and
- * `art.json` to rule 4. A repository with no such folder passes.
+ * section 3), read where it exists: `art.svg` or `art.webp`, exactly one (the back of every card, with no separate back
+ * for a hit pull), and `art.json`, as a card's. It has no `mark.svg`. Its picture is held to what a card's canvas is
+ * (rules 2, 5, 6 and 7), and `art.json` to rule 4. Any other file in a back folder, as in a card's, is not read. A
+ * repository with no such folder passes.
  *
  * `cardArtFaults` is exported and reads only the root it is handed, so tools/test-card-art.mjs
  * drives it red over scratch folders. A repository with no card folder passes: there is nothing
@@ -58,7 +58,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 const KB = 1024;
-const CAPS = { 'art.svg': 200 * KB, 'art.webp': 400 * KB, 'hit.svg': 200 * KB, 'hit.webp': 400 * KB, 'mark.svg': 20 * KB, 'art.json': 2 * KB };
+const CAPS = { 'art.svg': 200 * KB, 'art.webp': 400 * KB, 'mark.svg': 20 * KB, 'art.json': 2 * KB };
 const CANVAS = [0, 0, 540, 840];
 const RASTER = [1080, 1680];
 
@@ -161,22 +161,21 @@ function webpFaults(name, bytes) {
 }
 
 /**
- * The faults of one canvas in a folder: `<base>.svg` or `<base>.webp`, where `base` is `art` or `hit`. Both there is a
- * fault; neither is a fault only when `required` (`holds` says what the folder holds, for that message); each file
- * gets its cap, and an SVG its viewBox and safety, a WebP its header.
+ * The faults of the canvas in a folder: `art.svg` or `art.webp`. Neither is a fault, and so is both (`holds` says what
+ * the folder holds, for the first message); each file gets its cap, and an SVG its viewBox and safety, a WebP its header.
  */
-function canvasFaults(dir, base, required, holds) {
+function canvasFaults(dir, holds) {
   const out = [];
-  const svg = `${base}.svg`;
-  const webp = `${base}.webp`;
+  const svg = 'art.svg';
+  const webp = 'art.webp';
   const files = {};
   for (const f of [svg, webp]) {
     files[f] = read(path.join(dir, f));
     if (files[f] !== null && files[f].length > CAPS[f]) out.push(`${path.join(dir, f)}: is ${files[f].length} bytes; it may be at most ${CAPS[f] / KB} KB`);
   }
   const at = (f) => path.join(dir, f);
-  if (files[svg] === null && files[webp] === null && required) out.push(`${dir}: missing a canvas; ${holds}`);
-  if (files[svg] !== null && files[webp] !== null) out.push(`${dir}: holds ${svg} and ${webp}; ${base === 'art' ? 'a card has one canvas' : 'a back has one hit canvas'}`);
+  if (files[svg] === null && files[webp] === null) out.push(`${dir}: missing a canvas; ${holds}`);
+  if (files[svg] !== null && files[webp] !== null) out.push(`${dir}: holds ${svg} and ${webp}; a card has one canvas`);
   if (files[webp]) out.push(...webpFaults(at(webp), files[webp]));
   if (files[svg]) {
     const text = files[svg].toString('utf8');
@@ -208,11 +207,11 @@ function manifestFaults(dir, holds) {
 }
 
 const CARD_HOLDS = "a card's art folder holds art.svg or art.webp, mark.svg and art.json";
-const BACK_HOLDS = "a card back's folder holds art.svg or art.webp, optionally hit.svg or hit.webp, and art.json";
+const BACK_HOLDS = "a card back's folder holds art.svg or art.webp and art.json";
 
 /** The faults of one card folder. */
 function folderFaults(dir) {
-  const out = canvasFaults(dir, 'art', true, CARD_HOLDS);
+  const out = canvasFaults(dir, CARD_HOLDS);
   const mark = read(path.join(dir, 'mark.svg'));
   if (mark === null) out.push(`${path.join(dir, 'mark.svg')}: missing; ${CARD_HOLDS}`);
   else {
@@ -225,9 +224,9 @@ function folderFaults(dir) {
   return out;
 }
 
-/** The faults of an instance's card-back folder: the back's canvas (required), the hit pull's (optional), art.json. */
+/** The faults of an instance's card-back folder: the back's canvas and art.json. */
 function backFaults(dir) {
-  return [...canvasFaults(dir, 'art', true, BACK_HOLDS), ...canvasFaults(dir, 'hit', false, BACK_HOLDS), ...manifestFaults(dir, BACK_HOLDS)];
+  return [...canvasFaults(dir, BACK_HOLDS), ...manifestFaults(dir, BACK_HOLDS)];
 }
 
 /** What a card's key looks like: lowercase words joined by hyphens. A folder named any other way is not a card's. */

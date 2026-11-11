@@ -240,26 +240,19 @@ try {
   };
 
   backGreen('a back with art.webp and art.json', () => {});
-  backGreen('a back with art.webp, hit.webp and art.json', (f) => { f['hit.webp'] = WEBP_LOSSLESS; });
-  backGreen('a back with art.svg and hit.svg (no mark.svg asked for)', (f) => { f['art.webp'] = null; f['art.svg'] = ART(); f['hit.svg'] = ART(); });
   backGreen('a back with a scene.py beside its pictures', (f) => { f['scene.py'] = 'print(1)'; });
+  backGreen('a back with a hit.webp of 540 by 840 beside its pictures (every card has one back; hit.* is not read)', (f) => { f['hit.webp'] = WEBP_SMALL; });
   {
     const dir = backRepo();
     const c = run(dir);
     check('the passing line counts the card folder and the back folder', c.status === 0 && /1 card folder\(s\).*1 card back folder\(s\)/.test(c.stdout), c.stdout);
   }
 
-  backRed('a back folder with no art.*', (f) => { f['art.webp'] = null; }, /card-back.*missing a canvas; a card back's folder holds art\.svg or art\.webp, optionally hit\.svg or hit\.webp, and art\.json/);
+  backRed('a back folder with no art.*', (f) => { f['art.webp'] = null; }, /card-back.*missing a canvas; a card back's folder holds art\.svg or art\.webp and art\.json/);
   backRed('a back with art.svg and art.webp', (f) => { f['art.svg'] = ART(); }, /card-back.*holds art\.svg and art\.webp/);
-  backRed('a back with hit.svg and hit.webp', (f) => { f['hit.svg'] = ART(); f['hit.webp'] = WEBP_LOSSY; }, /card-back.*holds hit\.svg and hit\.webp/);
-  backRed('a hit.webp of 540 by 840', (f) => { f['hit.webp'] = WEBP_SMALL; }, /hit\.webp.*is 540 by 840; a raster canvas is exactly 1080 by 1680/);
-  backRed('a hit.webp that is a PNG', (f) => { f['hit.webp'] = PNG; }, /hit\.webp.*is not a WebP image$/m);
   backRed('an art.svg in a back holding <script', (f) => { f['art.webp'] = null; f['art.svg'] = ART('<script/>'); }, /card-back.*art\.svg.*<script/i);
   backRed('a back with no art.json', (f) => { f['art.json'] = null; }, /card-back.*art\.json.*missing/);
   backRed('a back with an art.json with an empty credit', (f) => { f['art.json'] = JSON.stringify({ credit: '', license: 'x' }); }, /card-back.*art\.json.*credit/);
-  backRed('a hit.webp padded past 400 KB', (f) => { f['hit.webp'] = Buffer.concat([WEBP_LOSSY, Buffer.alloc(401 * 1024)]); }, /hit\.webp.*400 KB/);
-  backRed('a hit.svg over 200 KB', (f) => { f['art.webp'] = null; f['art.svg'] = ART(); f['hit.svg'] = ART(`<!--${'a'.repeat(201 * 1024)}-->`); }, /hit\.svg.*200 KB/);
-  backRed('a hit.svg off the canvas', (f) => { f['hit.svg'] = `<svg ${NS} viewBox="0 0 120 110"/>`; }, /hit\.svg.*viewBox/);
 } finally {
   fs.rmSync(root, { recursive: true, force: true });
 }

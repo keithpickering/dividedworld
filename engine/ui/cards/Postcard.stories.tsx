@@ -31,10 +31,8 @@ function Backs() {
   const { ui } = useKayfa();
   return (
     <div style={row}>
-      <p style={{ flexBasis: '100%', margin: 0 }}>Card backs at the four sizes: the default, then the hit pull's gold. A back names no card.</p>
-      {[false, true].flatMap((hit) => sizes.map((size) => (
-        <PostcardBack key={`${size}${hit}`} size={size} hit={hit} {...(ui.cardBack ?? {})} role="img" aria-label={`A face-down postcard, ${size}${hit ? ', the hit pull' : ''}`} />
-      )))}
+      <p style={{ flexBasis: '100%', margin: 0 }}>The card back at the four sizes. A back names no card, and every card has the same one.</p>
+      {sizes.map((size) => <PostcardBack key={size} size={size} {...(ui.cardBack ?? {})} role="img" aria-label={`A face-down postcard, ${size}`} />)}
     </div>
   );
 }

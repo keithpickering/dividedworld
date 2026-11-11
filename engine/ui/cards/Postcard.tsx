@@ -114,14 +114,10 @@ export function Postcard({ face, size, price = null, as: As = 'span', armed = fa
 
 export interface PostcardBackProps extends Omit<HTMLAttributes<HTMLElement>, 'children'> {
   readonly size: PostcardSize;
-  /** The hit pull's back, in the machine's gold. */
-  readonly hit?: boolean;
   /** The instance's mark (`InstanceUi.cardBack`), drawn at the back's center; without it the back is the glass's bands alone. */
   readonly mark?: string;
-  /** The instance's picture for the back of every card (`InstanceUi.cardBack`). It holds the emblem, so the mark is not drawn over it. */
+  /** The instance's picture for the back (`InstanceUi.cardBack`). It holds the emblem, so the mark is not drawn over it. */
   readonly canvas?: string;
-  /** The instance's picture for the hit pull's back. Without it a hit pull keeps the stylesheet's gold back, never `canvas`. */
-  readonly hitCanvas?: string;
   readonly as?: ElementType;
   readonly ref?: Ref<HTMLElement>;
 }
@@ -131,23 +127,21 @@ export interface PostcardBackProps extends Omit<HTMLAttributes<HTMLElement>, 'ch
  * card's color, key or name, so a back says nothing about the card it is (the design's section 8). The caller names it, as it
  * names a face. Where the instance gives the back a picture (docs/plans/2026-11-11-rendered-card-back-design.md), that is
  * drawn on the canvas as a face's art is, in place of the bands and the mark; the picture is the instance's, the same for
- * every card, so the back still says nothing.
+ * every card, so the back still says nothing. Every back is the same back: a pack's hit pull has none of its own, since a back
+ * seen only while a pack opens would suggest that a card set face down could look different (the owner, 2026-11-11).
  */
-export function PostcardBack({ size, hit = false, mark, canvas, hitCanvas, as: As = 'span', className, style, ...rest }: PostcardBackProps) {
-  /* The hit pull's back must be told from the others at a glance, so it never borrows the default picture. */
-  const picture = hit ? hitCanvas : canvas;
+export function PostcardBack({ size, mark, canvas, as: As = 'span', className, style, ...rest }: PostcardBackProps) {
   return (
     <As
       {...rest}
       className={`kb-postcard kb-postcard-back${className ? ` ${className}` : ''}`}
       style={{ ...templateVars(size), ...style } as CSSProperties}
       data-size={size}
-      data-hit={hit ? '' : undefined}
-      data-kb-pictured={picture ? '' : undefined}
+      data-kb-pictured={canvas ? '' : undefined}
     >
       <span className="kb-postcard-canvas" aria-hidden="true">
-        {picture
-          ? <img className="kb-postcard-art" src={picture} alt="" aria-hidden="true" draggable={false} decoding="async" />
+        {canvas
+          ? <img className="kb-postcard-art" src={canvas} alt="" aria-hidden="true" draggable={false} decoding="async" />
           : mark ? <span className="kb-postcard-emblem"><img src={mark} alt="" aria-hidden="true" draggable={false} /></span> : null}
       </span>
     </As>
