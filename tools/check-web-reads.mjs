@@ -73,7 +73,7 @@ export const ALLOWED_READS = Object.freeze([
   // The season a screen names beside them, by the same rule; seasons itself is not here, for the same reason.
   'current_season',
   // The player's own.
-  'my_characters', 'my_wallet', 'my_ledger', 'my_ledger_shares', 'my_scored_as', 'my_wallet_events', 'my_card_ledger', 'my_packs', 'my_posts_played_on', 'my_posts_written_on', 'my_cards', 'my_reactions', 'my_invites', 'reading', 'my_followed_threads',
+  'my_characters', 'my_wallet', 'my_ledger', 'my_ledger_shares', 'my_scored_as', 'my_wallet_events', 'my_card_ledger', 'my_packs', 'my_posts_played_on', 'my_posts_written_on', 'my_draws', 'my_walls_drawn_on', 'my_cards', 'my_reactions', 'my_invites', 'reading', 'my_followed_threads',
   'account_preferences', 'effect_releases',
   // The player's own cards set face down and plays a trap caught (0054_card_plays.sql), and the card plays an admin ended (0092_card_end.sql): each filtered to the caller's own characters on the server.
   'my_face_down', 'my_caught', 'my_cards_ended',

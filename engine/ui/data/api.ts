@@ -1389,6 +1389,23 @@ export interface WrittenOnMine {
   readonly at: string;
 }
 
+/**
+ * A draw or a wash on a surface as the player's log reads it (`my_draws` and `my_walls_drawn_on`, 0195): the Act, the surface play and the post it is on, the Act's character, the player's own
+ * character the line is for (`mine`), when, and the cells it counts, of the grid's 10,000. `kind` is 'draw' (a draw: the cells its strokes cover, public in its payload), 'wash' (the post's own wash: the cells it
+ * uncovered, none for a wash over bare cells) or 'cut' (a wash that took cells of the player's own draw: the cells of theirs it took, the washer the post's character). Public facts and the reader's own character
+ * alone: nothing of an owner, a class or a reaction.
+ */
+export interface SurfaceLogRow {
+  readonly act: Id;
+  readonly kind: 'draw' | 'wash' | 'cut';
+  readonly play: Id;
+  readonly post: Id;
+  readonly character: Id;
+  readonly mine: Id;
+  readonly at: string;
+  readonly cells: number;
+}
+
 /** When the effect of a play on one of the player's posts was last saved: the post's author's save, which may wash it clean. */
 export interface EffectSaved {
   readonly play: Id;
@@ -1606,6 +1623,10 @@ export interface Log {
   readonly playsOnMine: readonly PlayOnMine[];
   /** The texts and failures of cards that write on the player's posts, by when each was made (`my_posts_written_on`). */
   readonly writes: readonly WrittenOnMine[];
+  /** The draws the player's characters made on surfaces, and the washes that cut them, by when each landed (`my_draws`). Absent from a payload older than the surface; read it as none. */
+  readonly draws?: readonly SurfaceLogRow[];
+  /** The draws on, and the washes of, the surfaces on the player's own posts, by when each landed (`my_walls_drawn_on`). Absent from a payload older than the surface; read it as none. */
+  readonly wallsDrawn?: readonly SurfaceLogRow[];
   readonly saves: readonly EffectSaved[];
   /** The player's cards set face down that sprang or ended, by when. */
   readonly setEnds: readonly FaceDownEnd[];

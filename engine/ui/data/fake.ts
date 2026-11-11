@@ -41,6 +41,7 @@ import { PROFILE_ROWS, RECORD_PAGE, type RecordKind } from '../profile/record.ts
 import { actsFollowed, actsNamed } from '../log/lines.ts';
 import { micros, readLogPageNow, type LedgerRow, type ShareRow } from './log-page.ts';
 import type {
+  SurfaceLogRow,
   AdminQueue, BoardName, Demand, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesCursor, MovesLog, QueuedMove, StaffCardPlay, StaffProfile,
   Act, Apology, Bar, AccountListener, Tail, ActKind, Alert, ContactLink, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, TallyName, SeasonShown, Update, UpdateChange, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, CardEvent, PackEvent, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, DebutLoudness, EffectState, PlayMoment,
   DebutTiming, Estimate, EstimateLine, FollowedThread, Frame, HeldCard, Id, KayfaApi, LogShare, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, PreferencesPatch, Refusal,
@@ -1372,6 +1373,52 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     });
     const older = [...acts.values()].filter((a) => a.kind === 'draw' && a.target === play && !s.live.includes(a.id)).length;
     return { covered: count(s.cover), acts: shown, older };
+  }
+  /**
+   * wash_effect (0195): the draws a wash cut and the cells of each it took, read from the play's Acts alone. Walking back from the wash, a draw that inked a cell the wash covers (and no later Act has
+   * touched it) owned that cell when the wash landed; a wash that covered it earlier had already bared it, so it counts for no one.
+   */
+  function washEffect(wash: ActRec): { readonly draw: Id; readonly cells: number }[] {
+    let rest = fromBits(String(wash.payload.cells));
+    const out: { draw: Id; cells: number }[] = [];
+    const before = [...acts.values()].filter((a) => a.target === wash.target && (a.kind === 'draw' || a.kind === 'wash') && a.order < wash.order).sort((x, y) => y.order - x.order);
+    for (const a of before) {
+      if (count(rest) === 0) break;
+      const covers = fromBits(String(a.payload.cells));
+      const hit = rest.map((v, i) => v & covers[i]!);
+      if (a.kind === 'draw' && count(hit) > 0) out.push({ draw: a.id, cells: count(hit) });
+      rest = minus(rest, covers);
+    }
+    return out;
+  }
+  /**
+   * `my_draws` and `my_walls_drawn_on` (0195) for an account, as the views read them: the account's characters' draws and the washes that cut them (not by the account's own washer), and the draws and washes on
+   * walls on the account's own posts (not the account's own characters' draws). Newest first is the log's: the caller sorts.
+   */
+  function surfaceLog(account: Id): { readonly draws: { ms: number; order: number; r: SurfaceLogRow }[]; readonly walls: { ms: number; order: number; r: SurfaceLogRow }[] } {
+    const owns = (character: Id | null): boolean => character !== null && characters.get(character)?.owner === account;
+    const row = (a: ActRec, kind: SurfaceLogRow['kind'], play: Id, mine: Id, cells: number) => ({ ms: a.at, order: a.order, r: { act: a.id, kind, play, post: playOf(play)!.target!, character: a.character!, mine, at: iso(a.at), cells } satisfies SurfaceLogRow });
+    const onSurface = (a: ActRec): boolean => (a.kind === 'draw' || a.kind === 'wash') && a.target !== null && a.character !== null && surfaceRecs.has(a.target) && playOf(a.target) !== undefined;
+    const draws: { ms: number; order: number; r: SurfaceLogRow }[] = [];
+    const walls: { ms: number; order: number; r: SurfaceLogRow }[] = [];
+    const all = [...acts.values()].filter(onSurface);
+    for (const a of all) {
+      const play = a.target!;
+      const author = acts.get(playOf(play)!.target ?? '')?.character ?? null;
+      if (a.kind === 'draw') {
+        if (owns(a.character)) draws.push(row(a, 'draw', play, a.character!, count(fromBits(String(a.payload.cells)))));
+        else if (owns(author)) walls.push(row(a, 'draw', play, author!, count(fromBits(String(a.payload.cells)))));
+        continue;
+      }
+      const cut = washEffect(a);
+      if (owns(author)) walls.push(row(a, 'wash', play, author!, cut.reduce((n, c) => n + c.cells, 0)));
+      if (owns(a.character)) continue;
+      /* One row for each of the account's characters whose draws it cut, with the cells of theirs it took. */
+      const by = new Map<Id, number>();
+      for (const c of cut) { const drawer = acts.get(c.draw)?.character; if (drawer && owns(drawer)) by.set(drawer, (by.get(drawer) ?? 0) + c.cells); }
+      for (const [drawer, cells] of by) draws.push(row(a, 'cut', play, drawer, cells));
+    }
+    return { draws, walls };
   }
   /** thread_page's `surfaces`: for each surface play among the page's plays, its covered cells and its live Acts' ids, never a stroke or an owner. */
   const surfacesOn = (plays: readonly Act[]): Readonly<Record<Id, SurfaceNow>> => Object.fromEntries(plays.flatMap((a): [Id, SurfaceNow][] => {
@@ -2904,6 +2951,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
           cards: newest([...cardLedger, ...endedLedger()].filter((e) => e.account === account && fits(e.ms))).map((e) => e.event),
           packs: newest(packLedger.filter((e) => e.account === account && fits(e.ms))).map((e) => e.event),
           playsOnMine: newest(onMine.filter((a) => fits(a.at)).map((a) => ({ ms: a.at, order: a.order, a }))).map(({ a }) => ({ play: a.id, post: a.target!, at: iso(a.at), reach: reachOf(a) as 'post' | 'character' | 'thread', targetName: targetName(a), targetCharacter: targetCharacter(a) })),
+          /* my_draws and my_walls_drawn_on (0195): what was drawn on surfaces by the player's characters and washed off them, and what was drawn on and washed off the player's own posts. */
+          ...((surfaces) => ({
+            draws: newest(surfaces.draws.filter((x) => fits(x.ms))).map(({ r }) => r),
+            wallsDrawn: newest(surfaces.walls.filter((x) => fits(x.ms))).map(({ r }) => r),
+          }))(account === undefined ? { draws: [], walls: [] } : surfaceLog(account)),
           /* my_posts_written_on (0149): each text or failure of a card that writes on a post one of the player's characters wrote, whoever played it. */
           writes: newest(texts.flatMap((t) => {
             const play = acts.get(t.play);

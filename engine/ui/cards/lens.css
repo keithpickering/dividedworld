@@ -292,6 +292,41 @@
   color: var(--kb-lens-ink-text);
 }
 
+/*
+ * A surface play's rows under its Who (Lens.tsx `SurfaceRows`): one line for each live draw and wash, small, each with its character's face; then one line for the older draws that left the list.
+ * They are plain lines and not plates: the plates are the plays', and a draw is no play.
+ */
+.kb-lens-draws {
+  display: grid;
+  gap: 6px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.kb-lens-draw {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.kb-lens-draw .kb-lens-by {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.kb-lens-draw-avatar {
+  width: 1.75rem;
+  height: 1.75rem;
+  border: 1px solid var(--kb-lens-ink, var(--kb-glass-neon));
+}
+
+.kb-lens-older {
+  margin: 8px 0 0;
+  color: var(--kb-glass-text-2);
+}
+
 /* The fold's words, an item apart from the faces: they shrink and wrap, a long name breaking where it must, as in a row's head. */
 .kb-lens-fold-words {
   min-width: 0;

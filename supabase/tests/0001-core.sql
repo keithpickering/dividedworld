@@ -95,6 +95,9 @@ begin
       -- my_posts_written_on (0149) reads the owner to keep each caller to the texts written on posts their own characters wrote;
       -- 0146-card-writes.sql holds that it shows nobody else's and names no owner, caster or account.
       and not (u.view_name = 'my_posts_written_on' and (u.table_name, u.column_name) = ('characters', 'owner'))
+      -- my_draws and my_walls_drawn_on (0195) read the owner to keep each caller to the draws of their own characters and the surfaces on posts their own characters wrote;
+      -- 0166-surface-log.sql holds that they show nobody else's and name no owner, class or account.
+      and not (u.view_name in ('my_draws', 'my_walls_drawn_on') and (u.table_name, u.column_name) = ('characters', 'owner'))
       -- my_scored_as (0151) reads the owner to keep each caller to the classes their own characters were scored as; 0160-settlement-payouts.sql holds that it shows nobody else's and names no owner or account.
       and not (u.view_name = 'my_scored_as' and (u.table_name, u.column_name) = ('characters', 'owner'))
       -- my_followed_threads (0059) reads the owner to find the threads the caller's own characters started and to leave their own

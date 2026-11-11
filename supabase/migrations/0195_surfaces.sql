@@ -11,6 +11,7 @@
 --   4. the functions     surface_step (the pure step every write and every rebuild takes), surface_apply (the lock, the limits, the Act), open_surface, draw_on_surface, wash_surface, staff_draw_on_surface,
 --                        play_surface_card, staff_play_surface_card, set_surface_card, surface_draft_fits, surface_acts, rebuild_surface; place_cast, lay_sprung, spring_traps and card_target are redefined, and the pool's three (pool_thread, pool_orphans, record_pool_spend: the walls on a page, and a wall draw as a persona's card for the day).
 --   5. the readers       thread_page returns `surfaces: {play: {covered, live}}` (ids and counts, never strokes or owners); card_target shows a surface's `covered`; surface_acts is the Lens's read.
+--   6. the log            wash_effect, my_draws and my_walls_drawn_on (the player's own draws and the washes that cut them; the draws and washes on the walls of their own posts), and log_page reading both (section 6, last).
 --
 -- Cells. The grid is 100 x 100, row-major: bit i of a cover is the cell at row i / 100, column i % 100 (engine/rules/surface.ts: GRID, toBits). The server function computes a draw's cells from its strokes and passes
 -- them as a bit string; SQL does bit arithmetic only. A draw's and a wash's cells are kept in their payloads (`cells`, 10,000 characters of 0 and 1), which is what lets rebuild_surface and the live list work from the
@@ -1470,3 +1471,279 @@ begin
     'reactions', (select count(*) from reaction_kinds), 'groups', (select count(*) from group_kinds), 'cards', (select count(*) from card_kinds), 'boards', (select count(*) from boards));
 end $$;
 
+
+-- ------------------------------------------------------------------------------------------------------ 6. the player's log ----
+-- What the log says of a surface (docs/plans/2026-11-11-graffiti-design.md, sections 3 and 11; plan Task 6), in plain words and from public Acts alone. Two views, each read by the reader's own characters, as
+-- my_posts_written_on (0149) is read by the post's author; and `log_page` (0157) carries them as `draws` and `wallsDrawn`, its seventeenth and eighteenth sources.
+--
+--   my_draws          the drawer's: a row for each draw one of the caller's characters made (`kind` 'draw', `cells` the cells the drawing covers, public in its payload), and a row for each wash that cut one of those draws
+--                     (`kind` 'cut', `character` the washer, `cells` the caller's cells it took). A wash by the caller's own other mask is not a cut row: the author's own line says it.
+--   my_walls_drawn_on the post's author's: a row for each draw another character made on a wall on a post one of the caller's characters wrote, and a row for each wash (`cells` the cells it uncovered, none for a wash
+--                     over bare cells). A draw by the caller's own other mask is not here: my_draws has it.
+--
+-- Both name the Act, the play and post, the Act's character, the caller's own character the line is for (`mine`), when, and a count of cells; nothing of an owner, a class or a reaction. "Cut" is read from the Acts alone,
+-- by wash_effect: the washes' and draws' payload cells, replayed backward from the wash, so a cell counts for the draw that last inked it and a cell already bare counts for no one. A third player's views are empty.
+--
+-- The percent a line says is this count over the grid's 10,000 cells: a draw's own cells at the time it landed (what its strokes covered, whether or not it painted over something) and a wash's cells uncovered. Both are
+-- facts of the Acts and never change, so a line is as true next year as the day it was written.
+--
+-- At a busy instance's scale: both views start from the caller's own characters (a post's author through surfaces.post, a drawer through acts_character) and their draws are bounded by the wall's own Acts; a wash row
+-- costs one walk of the wall's Acts backward from the wash, which ends as soon as the wash's cells are all accounted for. log_page takes at most 200 rows of each, newest first, as it does of every source.
+-- Ways out: reads only.
+
+-- wash_effect(wash): the draws the wash cut and the cells of each it took, read from the wall's Acts alone. Walking back from the wash, a draw that inked a cell the wash covers and nothing since has taken or
+-- covered, owned that cell when the wash landed; a wash that covered it earlier had already bared it, so it counts for no one.
+-- It reads public Acts alone and says of a wash what the wall's Acts already say. A view's reader needs the right to call a function the view uses, so the signed-in role has it; a visitor has none.
+create function wash_effect(in_wash uuid) returns table (draw uuid, cells integer)
+language plpgsql stable security definer set search_path = public, pg_temp as $$
+declare
+  w acts%rowtype;
+  rest bit(10000);
+  a record;
+  hit bit(10000);
+begin
+  select * into w from acts x where x.id = in_wash and x.kind = 'wash';
+  if not found then return; end if;
+  rest := (w.payload ->> 'cells')::bit(10000);
+  for a in
+    select x.id, x.kind, (x.payload ->> 'cells')::bit(10000) as covers from acts x
+    where x.target_act_id = w.target_act_id and x.kind in ('draw', 'wash') and (x.created_at, x.id) < (w.created_at, w.id)
+    order by x.created_at desc, x.id desc
+  loop
+    exit when bit_count(rest) = 0;
+    hit := rest & a.covers;
+    if a.kind = 'draw' and bit_count(hit) > 0 then
+      draw := a.id; cells := bit_count(hit);
+      return next;
+    end if;
+    rest := rest & ~a.covers;
+  end loop;
+end $$;
+revoke execute on function wash_effect(uuid) from public, anon;
+grant execute on function wash_effect(uuid) to authenticated;
+
+create view my_draws as
+  select d.id as act, 'draw'::text as kind, d.target_act_id as play, s.post, d.character, c.id as mine, d.created_at as at,
+         bit_count((d.payload ->> 'cells')::bit(10000)) as cells
+  from characters c
+  join acts d on d.character = c.id and d.kind = 'draw'
+  join surfaces s on s.play = d.target_act_id
+  where c.owner = auth.uid()
+  union all
+  select w.id, 'cut'::text, w.target_act_id, s.post, w.character, d.character, w.created_at, sum(e.cells)::integer
+  from characters c
+  join acts d on d.character = c.id and d.kind = 'draw'
+  join surfaces s on s.play = d.target_act_id
+  join acts w on w.kind = 'wash' and w.target_act_id = d.target_act_id and (w.created_at, w.id) > (d.created_at, d.id)
+             and bit_count((w.payload ->> 'cells')::bit(10000) & (d.payload ->> 'cells')::bit(10000)) > 0
+  cross join lateral wash_effect(w.id) e
+  where c.owner = auth.uid() and e.draw = d.id
+    and not exists (select 1 from characters x where x.id = w.character and x.owner = auth.uid())
+  group by w.id, w.target_act_id, s.post, w.character, d.character, w.created_at;
+
+revoke all on my_draws from anon, public;
+grant select on my_draws to authenticated;
+
+create view my_walls_drawn_on as
+  select d.id as act, 'draw'::text as kind, d.target_act_id as play, s.post, d.character, c.id as mine, d.created_at as at,
+         bit_count((d.payload ->> 'cells')::bit(10000)) as cells
+  from characters c
+  join surfaces s on true
+  join acts p on p.id = s.post and p.character = c.id
+  join acts d on d.target_act_id = s.play and d.kind = 'draw'
+  where c.owner = auth.uid()
+    and not exists (select 1 from characters x where x.id = d.character and x.owner = auth.uid())
+  union all
+  select w.id, 'wash'::text, w.target_act_id, s.post, w.character, c.id, w.created_at,
+         coalesce((select sum(e.cells) from wash_effect(w.id) e), 0)::integer
+  from characters c
+  join surfaces s on true
+  join acts p on p.id = s.post and p.character = c.id
+  join acts w on w.target_act_id = s.play and w.kind = 'wash'
+  where c.owner = auth.uid();
+
+revoke all on my_walls_drawn_on from anon, public;
+grant select on my_walls_drawn_on to authenticated;
+
+-- log_page (0157), also reading the two views above as `draws` and `wallsDrawn` (newest first by `at`, at most 200, the columns the adapter's log() reads). The plays and posts they name are among the Acts the page
+-- names (never the draws' own Acts, which hold strokes), and the characters they name (a drawer, a washer) among its people. Everything else as 0157 wrote it.
+create or replace function log_page(in_before timestamptz) returns jsonb
+language sql stable security invoker set search_path = public, pg_temp
+begin atomic
+  with recursive
+  mine as (
+    select m.id, m.class_since from my_characters m
+  ), lg as materialized (
+    select l.settlement, l.starts_at, l.ends_at, l.character, l.reason, l.amount, l.shares_kept, l.params
+    from my_ledger l where in_before is null or l.ends_at <= in_before
+    order by l.ends_at desc, l.settlement, l.character, l.reason limit 200
+  ), wl as materialized (
+    select e.settlement, e.kind, e.change, e.overflow, e.floored, e.balance_after, e.ref, e.at
+    from my_wallet_events e where in_before is null or e.at <= in_before
+    order by e.at desc, e.settlement, e.kind, e.ref, e.change, e.overflow, e.floored, e.balance_after limit 200
+  ), cd as materialized (
+    select c.card, c.kind, c.act, c.price, c.at, c.springs, c.pack, c.repriced
+    from my_card_ledger c where in_before is null or c.at <= in_before
+    order by c.at desc, c.card, c.kind, c.act, c.price, c.pack limit 200
+  ), pk as materialized (
+    select p.id, p.pack, p.price, p.repriced, p.contents, p.bought_at
+    from my_packs p where in_before is null or p.bought_at <= in_before
+    order by p.bought_at desc, p.id limit 200
+  ), po as materialized (
+    select p.play, p.post, p.at, p.reach, p.target_name, p.target_character
+    from my_posts_played_on p where in_before is null or p.at <= in_before
+    order by p.at desc, p.play limit 200
+  ), wr as materialized (
+    select w.play, w.post, w.version, w.failed, w.opening, w.over, w.at
+    from my_posts_written_on w where in_before is null or w.at <= in_before
+    order by w.at desc, w.play, w.version limit 200
+  ), dr as materialized (
+    select r.act, r.kind, r.play, r.post, r.character, r.mine, r.at, r.cells
+    from my_draws r where in_before is null or r.at <= in_before
+    order by r.at desc, r.act, r.mine limit 200
+  ), wd as materialized (
+    select r.act, r.kind, r.play, r.post, r.character, r.mine, r.at, r.cells
+    from my_walls_drawn_on r where in_before is null or r.at <= in_before
+    order by r.at desc, r.act, r.mine limit 200
+  ), sv as materialized (
+    select p.play, p.post, p.saved_at
+    from my_posts_played_on p where p.saved_at is not null and (in_before is null or p.saved_at <= in_before)
+    order by p.saved_at desc, p.play limit 200
+  ), se as materialized (
+    select f.play, f.card, f.post, f.spring, f.ended_at, f.ended_by
+    from my_face_down f where f.ended_at is not null and (in_before is null or f.ended_at <= in_before)
+    order by f.ended_at desc, f.play limit 200
+  ), sp as materialized (
+    select f.play, f.card, f.post, f.ends_at, f.passed_at
+    from my_face_down f where f.passed_at is not null and f.spring is null and (in_before is null or f.passed_at <= in_before)
+    order by f.passed_at desc, f.play limit 200
+  ), ca as materialized (
+    select c.play, c.card, c.post, c.trap, c.spring, c.price, c.at
+    from my_caught c where in_before is null or c.at <= in_before
+    order by c.at desc, c.play limit 200
+  ), en as materialized (
+    select e.card_end, e.play, e.card, e.at, e.side, e.reach, e.target_name, e.post_author_name, e.caster_name, e.character
+    from my_cards_ended e where in_before is null or e.at <= in_before
+    order by e.at desc, e.card_end limit 200
+  ), inf as materialized (
+    select i.infraction, i.character, i.at, i.band, i.points, i.rule_number, i.rule, i.mod_name, i.post, i.post_seq, i.thread, i.expires_at, i.relief, i.emptied_at
+    from my_infractions i where in_before is null or i.at <= in_before
+    order by i.at desc, i.infraction limit 200
+  ), bn as materialized (
+    select b.ban, b.character, b.at, b.days, b.until, b.infraction, b.rule, b.thread, b.ruling, b.own_until
+    from my_bans b where in_before is null or b.at <= in_before
+    order by b.at desc, b.ban limit 200
+  ), gm as materialized (
+    select g.move, g.character, g.at, g.thread, g.seq, g."group", g.board, g.board_name, g.expires_at, g.landed_until, g.check_at, g.demand, g.office,
+           g.ended_why, g.ended_by, g.ended_at, g.ruling, g.ruled_at, g.ruled_until, g.ruled_office
+    from my_group_moves g where in_before is null or g.at <= in_before
+    order by g.at desc, g.move limit 200
+  ), rp as materialized (
+    select r.report, r.character, r.at, r.post, r.post_seq, r.thread, r.verdict, r.verdict_at, r.mod_name, r.refund
+    from my_reports r where in_before is null or r.at <= in_before
+    order by r.at desc, r.report limit 200
+  ), ap as materialized (
+    select a.appeal, a.character, a.at, a.punishment, a.punishment_kind, a.post_seq, a.thread, a.verdict, a.ruled_at, a.points_delta, a.hearer_name, a.refund
+    from my_appeals a where in_before is null or a.at <= in_before
+    order by a.at desc, a.appeal limit 200
+  ), sh as materialized (
+    select s.settlement, s.character, s.reason, s.act, s.quadrant, s.amount
+    from my_ledger_shares s where s.settlement in (select x.settlement from lg x)
+  ), sa as materialized (
+    select s.settlement, s.character, s.named_class, s.play, s.card, s.starts_at, s.ends_at
+    from my_scored_as s where in_before is null or s.ends_at <= in_before
+    order by s.ends_at desc, s.settlement, s.character limit 200
+  ), tn as materialized (
+    select t.act, t.character, t.at, t.was from turns_announced t where t.character in (select m.id from mine m)
+  ), named(id) as (
+    -- actsNamed (engine/ui/log/lines.ts) over every row read; the Turns are the latest one of each character, the one announced as its class began.
+    select x.act from sh x where x.act is not null
+    union select t.act from tn t where exists (select 1 from mine m where m.id = t.character and date_trunc('milliseconds', m.class_since) = date_trunc('milliseconds', t.at))
+    union select x.act from cd x where x.act is not null
+    union select x.play from po x union select x.post from po x where x.post is not null
+    union select x.play from wr x union select x.post from wr x
+    union select x.play from dr x union select x.post from dr x
+    union select x.play from wd x union select x.post from wd x
+    union select x.play from sv x union select x.post from sv x where x.post is not null
+    union select x.post from se x where x.post is not null union select x.spring from se x where x.spring is not null
+    union select x.post from sp x where x.post is not null
+    union select x.play from ca x union select x.post from ca x where x.post is not null
+    union select x.play from en x
+    union select x.ref from wl x where x.kind in ('bribe', 'gift_out', 'gift_in') and x.ref is not null
+  ), walk(id, depth) as (
+    -- actsFollowed, twice: what the Acts read lead to. A loop costs the two rounds as a chain does.
+    select n.id, 0 from named n
+    union
+    select f.id, w.depth + 1
+    from walk w
+    join acts_public a on a.id = w.id
+    cross join lateral (values
+      (case when a.kind in ('card', 'spring', 'set', 'donation') then a.target_act_id end),
+      (case when a.kind = 'intercept' and a.payload ->> 'visit_act' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then (a.payload ->> 'visit_act')::uuid end),
+      (case when a.kind in ('spring', 'card') and a.payload ->> 'spring' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then (a.payload ->> 'spring')::uuid end),
+      (case when a.kind = 'spring' and a.payload ->> 'caught' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then (a.payload ->> 'caught')::uuid end),
+      (case when a.kind = 'spring' and a.payload ->> 'by' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then (a.payload ->> 'by')::uuid end)
+    ) f(id)
+    where w.depth < 2 and f.id is not null
+  ), ac as materialized (
+    select a.* from acts_public a where a.id in (select w.id from walk w)
+  ), reach as materialized (
+    -- A play beyond a post carries its target's name (play_card, 0056); one written without reads it as it stands, so its target is named here.
+    select a.payload ->> 'reach' as kind,
+           case when a.payload ->> (a.payload ->> 'reach') ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then (a.payload ->> (a.payload ->> 'reach'))::uuid end as target
+    from ac a
+    where a.kind = 'card' and jsonb_typeof(a.payload -> 'targetName') is distinct from 'string' and a.payload ->> 'reach' in ('character', 'thread', 'board')
+  ), pe(id) as (
+    select a.character from ac a where a.character is not null and a.character not in (select m.id from mine m)
+    union select x.character from dr x where x.character not in (select m.id from mine m)
+    union select x.character from wd x where x.character not in (select m.id from mine m)
+    union select r.target from reach r where r.kind = 'character' and r.target is not null and r.target not in (select m.id from mine m)
+  ), th(id) as (
+    select a.thread from ac a where a.id in (select t.act from tn t where exists (select 1 from mine m where m.id = t.character and date_trunc('milliseconds', m.class_since) = date_trunc('milliseconds', t.at)))
+    union select r.target from reach r where r.kind = 'thread' and r.target is not null
+  )
+  select jsonb_build_object(
+    'sources', jsonb_build_object(
+      'ledger', coalesce((select jsonb_agg(to_jsonb(x) order by x.ends_at desc, x.settlement, x.character, x.reason) from lg x), '[]'::jsonb),
+      'wallet', coalesce((select jsonb_agg(to_jsonb(x) order by x.at desc, x.settlement, x.kind, x.ref, x.change, x.overflow, x.floored, x.balance_after) from wl x), '[]'::jsonb),
+      'cards', coalesce((select jsonb_agg(to_jsonb(x) order by x.at desc, x.card, x.kind, x.act, x.price, x.pack) from cd x), '[]'::jsonb),
+      'packs', coalesce((select jsonb_agg(to_jsonb(x) order by x.bought_at desc, x.id) from pk x), '[]'::jsonb),
+      'playsOnMine', coalesce((select jsonb_agg(to_jsonb(x) order by x.at desc, x.play) from po x), '[]'::jsonb),
+      'writes', coalesce((select jsonb_agg(to_jsonb(x) order by x.at desc, x.play, x.version) from wr x), '[]'::jsonb),
+      'draws', coalesce((select jsonb_agg(to_jsonb(x) order by x.at desc, x.act, x.mine) from dr x), '[]'::jsonb),
+      'wallsDrawn', coalesce((select jsonb_agg(to_jsonb(x) order by x.at desc, x.act, x.mine) from wd x), '[]'::jsonb),
+      'saves', coalesce((select jsonb_agg(to_jsonb(x) order by x.saved_at desc, x.play) from sv x), '[]'::jsonb),
+      'setEnds', coalesce((select jsonb_agg(to_jsonb(x) order by x.ended_at desc, x.play) from se x), '[]'::jsonb),
+      'setPasses', coalesce((select jsonb_agg(to_jsonb(x) order by x.passed_at desc, x.play) from sp x), '[]'::jsonb),
+      'caught', coalesce((select jsonb_agg(to_jsonb(x) order by x.at desc, x.play) from ca x), '[]'::jsonb),
+      'ended', coalesce((select jsonb_agg(to_jsonb(x) order by x.at desc, x.card_end) from en x), '[]'::jsonb),
+      'infractions', coalesce((select jsonb_agg(to_jsonb(x) order by x.at desc, x.infraction) from inf x), '[]'::jsonb),
+      'bans', coalesce((select jsonb_agg(to_jsonb(x) order by x.at desc, x.ban) from bn x), '[]'::jsonb),
+      'groupMoves', coalesce((select jsonb_agg(to_jsonb(x) order by x.at desc, x.move) from gm x), '[]'::jsonb),
+      'reports', coalesce((select jsonb_agg(to_jsonb(x) order by x.at desc, x.report) from rp x), '[]'::jsonb),
+      'appeals', coalesce((select jsonb_agg(to_jsonb(x) order by x.at desc, x.appeal) from ap x), '[]'::jsonb)),
+    'shares', coalesce((select jsonb_agg(to_jsonb(x) order by x.settlement desc, x.character, x.reason, x.act, x.quadrant) from sh x), '[]'::jsonb),
+    'scoredAs', coalesce((select jsonb_agg(to_jsonb(x) order by x.ends_at desc, x.settlement, x.character) from sa x), '[]'::jsonb),
+    'acts', coalesce((select jsonb_agg(to_jsonb(a) order by a.created_at, a.id::text collate "C") from ac a), '[]'::jsonb),
+    'states', coalesce((select jsonb_agg(to_jsonb(e) order by e.play::text collate "C") from (
+      select s.play, s.state, s.saved_at from effect_state s where s.play in (select v.play from sv v)) e), '[]'::jsonb),
+    'people', coalesce((
+      select jsonb_agg(f.face order by f.name, f.id) from (
+        select cp.name, cp.id, to_jsonb(cp) || jsonb_build_object('profile', (
+          select to_jsonb(p) from (
+            select r.character, r.title, r.signature, r.avatar_square, r.avatar_portrait, r.square_frame, r.portrait_frame, r.pip_style, r.pronouns
+            from character_profiles r where r.character = cp.id) p)) as face
+        from (select c.id, c.name, c.joined, c.staff, c.office, c."group" from characters_public c where c.id in (select p.id from pe p)) cp) f), '[]'::jsonb),
+    'threads', coalesce((select jsonb_agg(to_jsonb(t) order by t.created_at, t.id::text collate "C") from thread_open t where t.id in (select h.id from th h)), '[]'::jsonb),
+    'boards', coalesce((select jsonb_agg(to_jsonb(b) order by b.id::text collate "C") from (
+      select n.id, n.slug, n.name, n.description, n.is_system, n.move_act from boards_now n
+      where n.id in (select r.target from reach r where r.kind = 'board' and r.target is not null)) b), '[]'::jsonb),
+    'standings', coalesce((select jsonb_agg(to_jsonb(s) order by s.character::text collate "C") from (
+      select c.character, c.standing from current_standings c where c.character in (select m.id from mine m)) s), '[]'::jsonb),
+    'turns', coalesce((select jsonb_agg(to_jsonb(t) order by t.at, t.act::text collate "C") from tn t), '[]'::jsonb),
+    'season', (select to_jsonb(s) from current_season s limit 1)
+  );
+end;
+
+revoke all on function log_page(timestamptz) from public, anon, authenticated;
+grant execute on function log_page(timestamptz) to authenticated;

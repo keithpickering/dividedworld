@@ -77,7 +77,9 @@ export async function around(api: KayfaApi, log: Log, own: LogData): Promise<Log
   }
   /* A face-down card's Who names characters its setter's own line says by name (castWaits), though none of them is on the page. */
   const whoNamed = log.cards.flatMap((c) => c.who ?? []);
-  const others = [...new Set([...acts.values()].map((a) => a.character).concat(unnamed.character, whoNamed).filter((c): c is Id => c !== null && !ids.includes(c) && !names.has(c)))];
+  /* A draw's drawer and a wash's washer are named by the lines about them, though none of their Acts is read (a draw's strokes stay out of the page). */
+  const drawn = [...(log.draws ?? []), ...(log.wallsDrawn ?? [])].map((r) => r.character);
+  const others = [...new Set([...acts.values()].map((a) => a.character).concat(unnamed.character, whoNamed, drawn).filter((c): c is Id => c !== null && !ids.includes(c) && !names.has(c)))];
   for (const part of await Promise.all(inChunks(others).map((chunk) => orElse(api.characters(chunk), [])))) for (const c of part) { names.set(c.id, c.name); if (c.staff !== undefined) staff.add(c.id); }
   const titles = new Map(own.titles);
   const threads = [...new Set(own.turns.map((t) => acts.get(t.act)?.thread).concat(unnamed.thread).filter((t): t is Id => t !== undefined && !titles.has(t)))];

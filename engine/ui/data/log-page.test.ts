@@ -45,6 +45,16 @@ test('the texts cards wrote on the player\'s posts are a source of their own: a 
   assert.deepEqual(log.cards.map((c) => c.at), ['2026-10-30T09:30:00Z']);
 });
 
+test('the draws and the washes on a surface are two sources of their own: each full one ends the page at its oldest time, and a page that holds none leaves them out', () => {
+  const r = (act: string, at: string) => ({ act, kind: 'draw' as const, play: 'k', post: 'p', character: 'c', mine: 'm', at, cells: 600 });
+  const log = cutLog({ ...none, draws: [r('d2', '2026-10-30T10:00:00Z'), r('d1', '2026-10-30T09:00:00Z')], wallsDrawn: [r('d4', '2026-10-30T09:30:00Z'), r('d3', '2026-10-30T08:00:00Z')] }, 2);
+  assert.equal(log.before, '2026-10-30T09:00:00Z');
+  assert.deepEqual(log.draws?.map((x) => x.act), ['d2']);
+  assert.deepEqual(log.wallsDrawn?.map((x) => x.act), ['d4']);
+  assert.equal('draws' in cutLog(none, 2), false);
+  assert.equal('wallsDrawn' in cutLog(none, 2), false);
+});
+
 test('a settlement whose lines ran past a full read is left whole for the next page', () => {
   const ledger = [
     line(5, '2026-10-31T08:17:00Z', 'p', 'heel.drewHeat', 20),

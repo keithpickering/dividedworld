@@ -1755,7 +1755,7 @@ describe('the player\'s own log: the ledger with its shares, the wallet\'s event
     validateConfig: (c: unknown) => ({ ok: true as const, value: c ?? {} }),
   };
   const shop: Instance = { ...instance, cards: [splat], machine: [{ item: { card: splat.key }, availability: 'onSale' as const, price: 100 }], settings: { ...settings, economy: {} } };
-  const empty = { infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], settlements: [], wallet: [], cards: [], packs: [], playsOnMine: [], writes: [], saves: [], setEnds: [], caught: [], ended: [], before: null };
+  const empty = { infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], settlements: [], wallet: [], cards: [], packs: [], playsOnMine: [], writes: [], draws: [], wallsDrawn: [], saves: [], setEnds: [], caught: [], ended: [], before: null };
 
   function logWorld() {
     const fake = createFake({ instance: shop });
@@ -3742,7 +3742,7 @@ describe('a surface, as the server keeps it', () => {
     const post = fake.seed.post(thread, anaFace, 'a post of Ana\'s');
     const play = fake.seed.card(boFace, post, 'slab');
     fake.signInAs(ana);
-    return { fake, ana, anaFace, anaHeel, boFace, thread, post, play };
+    return { fake, ana, bo, anaFace, anaHeel, boFace, thread, post, play };
   }
 
   describe('a surface card played with its first draw (play_surface_card)', () => {
@@ -3841,6 +3841,35 @@ describe('a surface, as the server keeps it', () => {
     expect(b.live).toEqual([b.id]);
     expect((await fake.surfaceActs(play))!.older).toBe(1);
     expect(a.id).not.toBe(b.id);
+  });
+
+  test('the log reads a surface as the views do: the drawer\'s draw and the wash that cut it, the author\'s walls and washes, and nothing for a third player', async () => {
+    const { fake, ana, bo, anaFace, anaHeel, boFace, play, post } = wall();
+    const cy = fake.seed.account('cy');
+    fake.seed.character(cy, 'Cy Face', 'face');
+    fake.signInAs(bo);
+    must(await fake.draw(play, boFace, { strokes: [dab(0.5)] }));
+    fake.signInAs(ana);
+    must(await fake.draw(play, anaHeel, { strokes: [dab(0.2)] }));
+    const washed = must(await fake.wash(play, anaFace, { strokes: [dab(0.5, 0.5, 0.02)] }));
+    must(await fake.wash(play, anaFace, { strokes: [dab(0.5, 0.5, 0.02)] }));
+    const whole = count(cellsOf([dab(0.5)]));
+    const took = count(cellsOf([dab(0.5, 0.5, 0.02)]));
+    const row = (act: string, kind: string, character: string, mine: string, cells: number) => expect.objectContaining({ act, kind, play, post, character, mine, cells });
+    /* The author: the other player's draw on their post, then their own two washes (the second over bare cells took none); their own other mask's draw is the drawer's line. */
+    const own = await fake.log();
+    expect(own.wallsDrawn!.map((r) => [r.kind, r.character, r.cells])).toEqual([['wash', anaFace, 0], ['wash', anaFace, took], ['draw', boFace, whole]]);
+    expect(own.wallsDrawn!.every((r) => r.mine === anaFace && r.post === post && r.play === play)).toBe(true);
+    expect(own.wallsDrawn![1]).toEqual(row(washed.id, 'wash', anaFace, anaFace, took));
+    expect(own.draws!.map((r) => [r.kind, r.mine, r.cells])).toEqual([['draw', anaHeel, count(cellsOf([dab(0.2)]))]]);
+    /* The drawer: the draw, and the wash that cut it (the author's own cut nothing of the draw's twice: the second wash took none). */
+    fake.signInAs(bo);
+    const drawer = await fake.log();
+    expect(drawer.draws!.map((r) => [r.kind, r.character, r.mine, r.cells])).toEqual([['cut', anaFace, boFace, took], ['draw', boFace, boFace, whole]]);
+    expect(drawer.wallsDrawn).toEqual([]);
+    fake.signInAs(cy);
+    const third = await fake.log();
+    expect([third.draws, third.wallsDrawn]).toEqual([[], []]);
   });
 
   test('only the post\'s own character washes, in the database\'s words; a wash takes cells off, and a full wash leaves nothing live', async () => {
