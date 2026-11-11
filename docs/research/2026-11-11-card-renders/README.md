@@ -178,6 +178,13 @@ beside its art as `scene.py`, and its picture rendered from there as `art.webp`.
 `shipped-cards-small.png` are the engine's own Postcard story with that art, nothing swapped, at the four sizes. From
 that change on, the copies in the card folders are the ones kept up, and the scenes here are the record of this day.
 
+While that change was open, main deleted Bluff, renamed Trap Card to Card Collector and gained Publicity Tour, Heat
+Magnet, Class Clown and Good Vibes. So the sheets show thirteen cards: Bluff's picture ships nowhere, the trap is Card
+Collector's, and the four new cards wear their renders too (Good Vibes and Class Clown pulled back so their subjects
+clear the name plate, Heat Magnet as the simulated fire). Measured on the sheet-size faces, white rules text against
+the plate's own ground is 8.8 to 1 at the median on Heat Magnet, the brightest picture, and 13 to 1 or better on the
+rest.
+
 ## What using these on cards would need
 
 Card art is vector only today: `tools/check-card-art.mjs` refuses an `<image>` in `art.svg`, and the art README says

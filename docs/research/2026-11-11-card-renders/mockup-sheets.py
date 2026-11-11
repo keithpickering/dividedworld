@@ -15,6 +15,7 @@ def grid(rows, path):
         y += rh + PAD
     im.save(path)
 get = lambda k, s: Image.open(f'{d}/{k}--{s}.png').convert('RGB')
-grid([[get(k, 'sheet') for k in keys[:5]], [get(k, 'sheet') for k in keys[5:]]], out_big)
-small = [[im for k in keys[a:a + 5] for im in (get(k, 'fan'), get(k, 'phone'), get(k, 'slot'))] for a in (0, 5)]
+rows = [keys[a:a + 5] for a in range(0, len(keys), 5)]                 # five cards a row, however many cards there are
+grid([[get(k, 'sheet') for k in r] for r in rows], out_big)
+small = [[im for k in r for im in (get(k, 'fan'), get(k, 'phone'), get(k, 'slot'))] for r in rows]
 grid(small, out_small)
