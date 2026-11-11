@@ -48,30 +48,57 @@ describe("You Were Saying?'s play form", () => {
     for (const steps of [0, 3, 7]) {
       const price = youWereSaying.playPrice(defaults, { reach: 'post', act: 'p', kind: 'post', length: 16, text: 'Once upon a time' }, { steps });
       const { slider } = form({ steps });
-      expect(slider.getAttribute('aria-valuetext')).toContain(steps === 0 ? 'free to play' : (price / 100).toFixed(2));
+      expect(slider.getAttribute('aria-valuetext')).toContain(steps === 0 ? 'free to play' : `${(price / 100).toFixed(2)} orbs more`);
     }
     form({ steps: 7 });
-    expect(screen.getByRole('status')).toHaveTextContent('1.75');
+    expect(screen.getByText('1.75')).toBeInTheDocument();
+    expect(screen.getByText(/1\.75 on top of the price you paid at the machine/)).toBeInTheDocument();
     form({ steps: 0 });
-    expect(screen.getByRole('status').parentElement).toHaveTextContent('Nothing more to play it: its price was paid at the machine.');
+    expect(screen.getByText('Nothing more to play it: its price was paid at the machine.')).toBeInTheDocument();
+  });
+
+  test("the slider's value text reads naturally, and only it is announced: no live region repeats it", () => {
+    const { slider } = form({ steps: 4 });
+    expect(slider).toHaveAttribute('aria-valuetext', 'a paragraph and a half, 1.00 orb more');
+    expect(slider).not.toHaveAttribute('aria-describedby');
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  test('the group and the slider have names that do not repeat', () => {
+    form({ steps: 1 });
+    expect(screen.getAllByText('How much it writes')).toHaveLength(1);
+    expect(screen.queryByRole('group')).toBeNull();
   });
 
   test('the first and last steps are named in words, in the slider\'s value text too', () => {
     expect(form({ steps: 0 }).slider).toHaveAttribute('aria-valuetext', 'about a sentence, free to play');
-    expect(form({ steps: 7 }).slider).toHaveAttribute('aria-valuetext', 'a rant, 1.75');
-    expect(screen.getByRole('status')).toHaveTextContent('a rant');
+    expect(form({ steps: 7 }).slider).toHaveAttribute('aria-valuetext', 'a rant, 1.75 orbs more');
+    expect(screen.getByText('a rant')).toBeInTheDocument();
   });
 
-  test("the range's max follows the settings, a server-tuned economy included", () => {
+  test("the range's max follows the live settings when they lower it", () => {
     const { slider } = form({ steps: 1 }, { 'youWereSaying.mostTokens': 100 });
     expect(slider).toHaveAttribute('max', '3');
+  });
+
+  test("the range's max never passes what the card's validateConfig accepts, whatever the live settings raise it to", () => {
+    const { slider } = form({ steps: 1 }, { 'youWereSaying.mostTokens': 400 });
+    expect(slider).toHaveAttribute('max', '7');
+    expect(youWereSaying.validateConfig({ steps: 8 }).ok).toBe(false);
+  });
+
+  test('the words follow the step\'s tokens, so overridden step sizes still describe the length honestly', () => {
+    const economy = { 'youWereSaying.stepTokens': 50 };
+    expect(form({ steps: 0 }, economy).slider).toHaveAttribute('aria-valuetext', expect.stringContaining('about a sentence'));
+    expect(form({ steps: 1 }, economy).slider).toHaveAttribute('aria-valuetext', expect.stringContaining('a short paragraph'));
+    expect(form({ steps: 3 }, economy).slider).toHaveAttribute('aria-valuetext', expect.stringContaining('a very long paragraph'));
   });
 
   test('every step has its own words', () => {
     const said = new Set<string>();
     for (let i = 0; i <= 7; i++) {
       const { slider: s } = form({ steps: i });
-      said.add(String(String(s.getAttribute('aria-valuetext')).split(',')[0]));
+      said.add(String(s.getAttribute('aria-valuetext')).split(',')[0] ?? '');
     }
     expect(said.size).toBe(8);
   });

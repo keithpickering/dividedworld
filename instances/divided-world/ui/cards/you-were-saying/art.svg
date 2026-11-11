@@ -1,4 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 540 840" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+<style>
+.ywsa-cursor{opacity:1}
+@media (prefers-reduced-motion: no-preference){.ywsa-cursor{animation:ywsa-blink 1.1s steps(1,end) infinite}}
+@keyframes ywsa-blink{50%{opacity:0}}
+</style>
 <defs>
 <radialGradient id="bg" cx="50%" cy="34%" r="80%">
 <stop offset="0" stop-color="#6b2212"/>
@@ -32,9 +37,7 @@
 <rect x="218" y="256" width="120" height="14" rx="7" opacity=".14"/>
 <rect x="124" y="292" width="130" height="14" rx="7" fill="#ff8a6a" opacity=".9"/>
 </g>
-<rect x="268" y="324" width="26" height="40" fill="#ff8a6a">
-<animate attributeName="opacity" values="1;1;0;0" keyTimes="0;.5;.5;1" dur="1.1s" repeatCount="indefinite"/>
-</rect>
+<rect class="ywsa-cursor" x="268" y="324" width="26" height="40" fill="#ff8a6a"/>
 <path d="M104 132 C150 124 200 122 270 122" stroke="#fff" stroke-width="6" stroke-linecap="round" opacity=".12" fill="none"/>
 <circle cx="426" cy="424" r="7" fill="#d24a2c"/>
 <rect x="110" y="418" width="120" height="10" rx="5" fill="#1a0602" opacity=".5"/>

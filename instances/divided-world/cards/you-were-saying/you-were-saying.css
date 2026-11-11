@@ -6,12 +6,9 @@
   margin: 0;
   padding: 0;
 }
-.dw-ywsf-legend {
-  padding: 0;
-  margin-bottom: 0.25rem;
-}
 .dw-ywsf-form input[type='range'] {
   width: 100%;
+  min-height: 24px; /* a touch target of at least 24px, on the native control and its focus ring */
   margin: 0;
 }
 .dw-ywsf-length {
