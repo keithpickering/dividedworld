@@ -53,7 +53,14 @@ for (const { story, size } of [
     const moment = page.locator('#post-41 .kb-moment');
     await expect(moment).toBeVisible({ timeout: 15_000 });
     await expect(page.locator('#post-41 .kb-moment [data-kb-effect-ink]').first()).toBeAttached();
-    const problems = await page.evaluate(() => {
+    /*
+     * Asked until it holds, not once. The ring is placed by a ResizeObserver (Moment.tsx, useRing), which the browser answers when it
+     * next renders, so for the one frame after the body changes height the ring is still where the body was. A single reading that
+     * lands in that frame fails on a page with nothing wrong: 1 run in 200 here, and once in CI ("the ring's bottom is 553, the body's
+     * is 533"), which a probe reproduces exactly by shrinking the body 20px and measuring in the same task (-20 at once, 0 a frame
+     * later). A ring that does not follow the body never comes to hold, and still fails.
+     */
+    const read = () => page.evaluate(() => {
       const out: string[] = [];
       const cell = document.querySelector<HTMLElement>('#post-41 .kb-act-main')!;
       const ring = document.querySelector<HTMLElement>('#post-41 .kb-moment-ring');
@@ -72,7 +79,7 @@ for (const { story, size } of [
       }
       return [...new Set(out)];
     });
-    expect(problems).toEqual([]);
+    await expect.poll(read, { timeout: 5_000 }).toEqual([]);
   });
 }
 
