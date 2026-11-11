@@ -1,7 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -2 120 120" aria-hidden="true">
-<circle cx="60" cy="58" r="46" fill="none" stroke="#2ee6ff" stroke-width="5" opacity=".45"/>
-<circle cx="60" cy="58" r="30" fill="none" stroke="#2ee6ff" stroke-width="6" opacity=".75"/>
-<circle cx="60" cy="40" r="13" fill="#2ee6ff"/>
-<rect x="55" y="48" width="10" height="14" fill="#2ee6ff"/>
-<path d="M60 62 L60 86" stroke="#e6fdff" stroke-width="7" stroke-linecap="round"/>
+<g fill="none" stroke="#2ee6ff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"><path d="M60 58 L60.0 8.0"/><path d="M60 58 L95.4 22.6"/><path d="M60 58 L110.0 58.0"/><path d="M60 58 L95.4 93.4"/><path d="M60 58 L60.0 108.0"/><path d="M60 58 L24.6 93.4"/><path d="M60 58 L10.0 58.0"/><path d="M60 58 L24.6 22.6"/></g>
+<g fill="none" stroke="#2ee6ff" stroke-width="5.5" stroke-linejoin="round"><path d="M60.0 36.0 Q66.6 42.1 75.6 42.4 Q75.9 51.4 82.0 58.0 Q75.9 64.6 75.6 73.6 Q66.6 73.9 60.0 80.0 Q53.4 73.9 44.4 73.6 Q44.1 64.6 38.0 58.0 Q44.1 51.4 44.4 42.4 Q53.4 42.1 60.0 36.0"/><path d="M60.0 14.0 Q73.1 26.3 91.1 26.9 Q91.7 44.9 104.0 58.0 Q91.7 71.1 91.1 89.1 Q73.1 89.7 60.0 102.0 Q46.9 89.7 28.9 89.1 Q28.3 71.1 16.0 58.0 Q28.3 44.9 28.9 26.9 Q46.9 26.3 60.0 14.0"/></g>
+<circle cx="60" cy="58" r="8" fill="#e6fdff"/>
 </svg>

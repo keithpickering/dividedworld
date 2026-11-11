@@ -185,6 +185,10 @@ clear the name plate, Heat Magnet as the simulated fire). Measured on the sheet-
 the plate's own ground is 8.8 to 1 at the median on Heat Magnet, the brightest picture, and 13 to 1 or better on the
 rest.
 
+**The card back** followed (`docs/plans/2026-11-11-rendered-card-back-design.md`): `card-backs-before.png` is the
+engine's Card Backs story with the stylesheet's back, and `card-backs-rendered.png` the same story with Divided World's
+two rendered pictures, at the four sizes. Its scene is `instances/divided-world/ui/card-back/scene.py`.
+
 ## What using these on cards would need
 
 Card art is vector only today: `tools/check-card-art.mjs` refuses an `<image>` in `art.svg`, and the art README says

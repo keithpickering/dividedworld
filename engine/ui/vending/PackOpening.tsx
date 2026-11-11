@@ -7,8 +7,8 @@
  *  - The emptied pack is parked at the top, past the screen's edge with its foot in view, and "N OF 5 TURNED OVER" is under it.
  *  - The cards lie in a row at the fan's size. The card last turned is shown above the row at the sheet's size (the spotlight), so each is read large
  *    as it is turned; before the first, it holds the first card's back. Only the next card is a button.
- *  - A card is turned by a click or a tap on the next card, "Turn the next card", or Space. "Turn all" turns the rest. The hit (the last card) has a gold
- *    back and, once turned, a gold tag naming its rarity and card, with a glow and a few sparks.
+ *  - A card is turned by a click or a tap on the next card, "Turn the next card", or Space. "Turn all" turns the rest. The hit (the last card) has the
+ *    same back as the others and, once turned, a gold tag naming its rarity and card, with a glow and a few sparks.
  *  - On a phone the cards are a pile at the sheet's size: a tap on the pile or a swipe across it turns the next card, and a row of five outlines counts down.
  *  - A screen reader hears each card as it is turned, and the whole pack once all are, from one live region (the count line, which holds both). A face-down card is named with no word of what it is.
  *
@@ -112,7 +112,8 @@ export function PackOpening({ name, art, cards, note, onClose, returnFocusTo, ha
   const instantly = useInstantTransition();
   const primary = useRef<HTMLButtonElement>(null);
   const delays = useMemo(() => stagger(feel, 4), [feel]);
-  const mark = ui.cardBack?.mark;
+  /* The instance's mark and pictures for a back, passed to each as they are (none: the stylesheet's back). */
+  const back = ui.cardBack ?? {};
   const all = turned >= count;
   const hitShown = feel ? hitDone && all && count > 0 : all && count > 0;
   const shownIndex = Math.max(0, turned - 1);
@@ -330,7 +331,7 @@ export function PackOpening({ name, art, cards, note, onClose, returnFocusTo, ha
       /* E3: the crimped top rips away along the tear, up and to the side, and is gone for good. The cards wait inside. */
       cardNodes.forEach((c) => { if (c) animate(c, { opacity: 1 }, NOW); });
       await go(r, top, { x: [0, 40, 180], y: [0, -60, -340], rotate: [0, 18, 40], opacity: [1, 1, 0] }, { ...eased(f, f.enter * 1.5), times: [0, 0.4, 1] } as Beat);
-      /* E4: the five backs rise out of the opening, fanning, the gold hit last; once clear of the pack they pass in front of it. */
+      /* E4: the five backs rise out of the opening, fanning, the hit last; once clear of the pack they pass in front of it. */
       const d = stagger(f, count);
       await Promise.all(cardNodes.map((c, i) => go(r, c, fanned(i), landing(f, f.enter, (d[i] ?? 0) * 1.5) as Beat)));
       setFront(true);
@@ -468,7 +469,7 @@ export function PackOpening({ name, art, cards, note, onClose, returnFocusTo, ha
 
   /* ---- what is drawn ---- */
 
-  const backOf = (i: number, size: 'fan' | 'sheet') => <PostcardBack size={size} hit={i === count - 1} {...(mark ? { mark } : {})} />;
+  const backOf = (i: number, size: 'fan' | 'sheet') => <PostcardBack size={size} {...back} />;
   const faceUp = (c: CardFace, size: 'fan' | 'sheet') => <Postcard face={c} size={size} />;
 
   /** Under a feel: one element per pull, which stands in its row slot or in the spotlight, moved between them by a shared layout. */
@@ -568,7 +569,7 @@ export function PackOpening({ name, art, cards, note, onClose, returnFocusTo, ha
             {feel === null
               ? (turned > 0 && shown
                 ? <Postcard as="article" face={shown} size="sheet" aria-label={saidOf(shown)} />
-                : <PostcardBack size="sheet" hit={count === 1} {...(mark ? { mark } : {})} aria-hidden="true" />)
+                : <PostcardBack size="sheet" {...back} aria-hidden="true" />)
               : spot >= 0 && cardBox(spot, 'sheet')}
           </div>
         </div>

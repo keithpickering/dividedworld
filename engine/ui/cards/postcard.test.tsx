@@ -212,17 +212,50 @@ describe('the back', () => {
     expect(render(<PostcardBack size="sheet" />).container.querySelector('img')).toBeNull();
   });
 
-  test('a hit sets data-hit, and the caller names it', () => {
-    const { container } = render(<PostcardBack size="fan" hit aria-label="A face-down postcard" />);
-    const back = container.firstElementChild!;
-    expect(back.hasAttribute('data-hit')).toBe(true);
-    expect(back.getAttribute('aria-label')).toBe('A face-down postcard');
+  /* The instance may give the back its picture (docs/plans/2026-11-11-rendered-card-back-design.md): the picture holds the emblem. */
+  test('with a picture it draws that, as a face draws its art, and no separate mark though one is given', () => {
+    const { container } = render(<PostcardBack size="sheet" mark="/coin.svg" canvas="/back.webp" />);
+    const back = container.firstElementChild as HTMLElement;
+    const imgs = back.querySelectorAll('img');
+    expect(imgs.length).toBe(1);
+    expect(imgs[0]!.className).toBe('kb-postcard-art');
+    expect(imgs[0]!.getAttribute('src')).toBe('/back.webp');
+    expect(imgs[0]!.getAttribute('alt')).toBe('');
+    expect(imgs[0]!.getAttribute('aria-hidden')).toBe('true');
+    expect(imgs[0]!.getAttribute('decoding')).toBe('async');
+    expect(imgs[0]!.closest('.kb-postcard-canvas')).not.toBeNull();
+    expect(back.querySelector('.kb-postcard-emblem')).toBeNull();
+    expect(back.hasAttribute('data-kb-pictured')).toBe(true);
+    expect(back.textContent).toBe('');
   });
 
-  test('is drawn in the glass\'s text and field, and gold on a hit', () => {
+  /*
+   * Every back is the same back (the owner, 2026-11-11, on #455: a hit pull's own back shown only while a pack opens "could convince
+   * a user their face-down card will look orange"). So a back takes nothing that could tell one card's from another's.
+   */
+  test('nothing marks a hit pull\'s back: a back has no such attribute, and its props no such field', () => {
+    const { container } = render(<PostcardBack size="sheet" mark="/coin.svg" canvas="/back.webp" />);
+    expect(container.firstElementChild!.hasAttribute('data-hit')).toBe(false);
+    const source = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'Postcard.tsx'), 'utf8');
+    const props = source.slice(source.indexOf('export interface PostcardBackProps'), source.indexOf('export function PostcardBack'));
+    expect(props).not.toMatch(/\bhit\w*\??:/u);
+  });
+
+  test('the stylesheet lays no smoke under a pictured back, so a late picture shows the plain field and not a second back', () => {
+    const rule = css.match(/\.kb-postcard-back\[data-kb-pictured\]\s+\.kb-postcard-canvas\s*\{([^}]*)\}/u);
+    expect(rule, 'a rule for a pictured back\'s canvas').not.toBeNull();
+    expect(rule![1]).toMatch(/background-image:\s*none/u);
+  });
+
+  test('the caller names it', () => {
+    const { container } = render(<PostcardBack size="fan" aria-label="A face-down postcard" />);
+    expect(container.firstElementChild!.getAttribute('aria-label')).toBe('A face-down postcard');
+  });
+
+  test('is drawn in the glass\'s text and field, and the stylesheet has no other back', () => {
     expect(css).toMatch(/\.kb-postcard-back\s*\{[^}]*--kb-card-color:\s*var\(--kb-glass-text-hi\)/u);
     expect(css).toMatch(/\.kb-postcard-back\s+\.kb-postcard-canvas[^{]*\{[^}]*var\(--kb-glass-field\)/u);
-    expect(css).toMatch(/\.kb-postcard-back\[data-hit\][^{]*\{[^}]*var\(--kb-glass-ready\)/u);
+    expect(css).not.toMatch(/\.kb-postcard-back\[data-hit\]/u);
   });
 
   const rule = (selector: string) => new RegExp(`${selector.replace(/[.[\]]/gu, '\\$&')}\\s*\\{([^}]*)\\}`, 'u').exec(css)?.[1] ?? '';
@@ -255,9 +288,6 @@ describe('the back', () => {
     expect(layer).toMatch(/background-size:\s*100% 100%,\s*[\d.]+rem [\d.]+rem,\s*[\d.]+rem [\d.]+rem/u);
   });
 
-  test('glows in the machine\'s gold on a hit', () => {
-    expect(rule('.kb-postcard-back[data-hit]')).toMatch(/--kb-back-glow:\s*var\(--kb-glass-ready\)/u);
-  });
 });
 
 describe('the stylesheet', () => {

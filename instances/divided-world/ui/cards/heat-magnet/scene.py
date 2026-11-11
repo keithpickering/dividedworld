@@ -4,6 +4,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) 
 sys.dont_write_bytecode = True           # no __pycache__ beside the card folders: the art guard reads every folder there as a card's
 import bpy, bmesh
 from mathutils import Vector
+os.environ.setdefault('ART_SAMPLES', '64')    # this picture shipped at 64 samples: fire in a volume is slow, and soft enough not to need more
 import rig
 
 OUT = sys.argv[-1]

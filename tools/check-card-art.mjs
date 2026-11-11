@@ -8,7 +8,9 @@
  * `ui/cards/<key>/`: a canvas (`art.svg` or `art.webp`, exactly one), `mark.svg` (its small emblem)
  * and `art.json` (who made it, and under what license). Plain files directly in `ui/cards/` are not
  * folders and are not read here, and neither is any other file in a card's folder (a `scene.py`
- * beside its art, say). Every such folder, of every instance, must pass:
+ * beside its art, say), nor a folder whose name could not be a card's key (lowercase words joined by
+ * hyphens): `__pycache__` or a dot-folder is a tool's leavings, not a card. Every card folder, of
+ * every instance, must pass:
  *
  * 1. mark.svg and art.json are there, and exactly one canvas: art.svg or art.webp, not neither and
  *    not both;
@@ -38,6 +40,12 @@
  * Not caught in a WebP: a right header over corrupt image data (the browser draws nothing, and a card
  * with no picture is still a whole card); an extended header that claims 1080 by 1680 over a frame of
  * another size, since only the first chunk is read; and EXIF or XMP chunks, which are inert in an `<img>`.
+ *
+ * An instance's card back is one folder, `ui/card-back/` (docs/plans/2026-11-11-rendered-card-back-design.md,
+ * section 3), read where it exists: `art.svg` or `art.webp`, exactly one (the back of every card, with no separate back
+ * for a hit pull), and `art.json`, as a card's. It has no `mark.svg`. Its picture is held to what a card's canvas is
+ * (rules 2, 5, 6 and 7), and `art.json` to rule 4. Any other file in a back folder, as in a card's, is not read. A
+ * repository with no such folder passes.
  *
  * `cardArtFaults` is exported and reads only the root it is handed, so tools/test-card-art.mjs
  * drives it red over scratch folders. A repository with no card folder passes: there is nothing
@@ -152,49 +160,82 @@ function webpFaults(name, bytes) {
   return out;
 }
 
-/** The faults of one card folder. */
-function folderFaults(dir) {
+/**
+ * The faults of the canvas in a folder: `art.svg` or `art.webp`. Having neither is a fault, and so is having both (`holds` says what
+ * the folder holds, for the first message); each file gets its cap, and an SVG its viewBox and safety, a WebP its header.
+ */
+function canvasFaults(dir, holds) {
   const out = [];
+  const svg = 'art.svg';
+  const webp = 'art.webp';
   const files = {};
-  for (const f of Object.keys(CAPS)) {
-    const p = path.join(dir, f);
-    files[f] = read(p);
-    const canvas = f === 'art.svg' || f === 'art.webp';
-    if (files[f] === null) {
-      if (!canvas) out.push(`${p}: missing; a card's art folder holds art.svg or art.webp, mark.svg and art.json`);
-    } else if (files[f].length > CAPS[f]) out.push(`${p}: is ${files[f].length} bytes; it may be at most ${CAPS[f] / KB} KB`);
+  for (const f of [svg, webp]) {
+    files[f] = read(path.join(dir, f));
+    if (files[f] !== null && files[f].length > CAPS[f]) out.push(`${path.join(dir, f)}: is ${files[f].length} bytes; it may be at most ${CAPS[f] / KB} KB`);
   }
   const at = (f) => path.join(dir, f);
-  if (files['art.svg'] === null && files['art.webp'] === null) out.push(`${dir}: missing a canvas; a card's art folder holds art.svg or art.webp, mark.svg and art.json`);
-  if (files['art.svg'] !== null && files['art.webp'] !== null) out.push(`${dir}: holds art.svg and art.webp; a card has one canvas`);
-  if (files['art.webp']) out.push(...webpFaults(at('art.webp'), files['art.webp']));
-  if (files['art.svg']) {
-    const text = files['art.svg'].toString('utf8');
-    out.push(...rootFaults(at('art.svg'), text, 'the canvas must be exactly 0 0 540 840', (b) => b.every((n, i) => n === CANVAS[i])));
-    out.push(...safetyFaults(at('art.svg'), text));
+  if (files[svg] === null && files[webp] === null) out.push(`${dir}: missing a canvas; ${holds}`);
+  if (files[svg] !== null && files[webp] !== null) out.push(`${dir}: holds ${svg} and ${webp}; a card has one canvas`);
+  if (files[webp]) out.push(...webpFaults(at(webp), files[webp]));
+  if (files[svg]) {
+    const text = files[svg].toString('utf8');
+    out.push(...rootFaults(at(svg), text, 'the canvas must be exactly 0 0 540 840', (b) => b.every((n, i) => n === CANVAS[i])));
+    out.push(...safetyFaults(at(svg), text));
   }
-  if (files['mark.svg']) {
-    const text = files['mark.svg'].toString('utf8');
-    out.push(...rootFaults(at('mark.svg'), text, 'the mark must be square', (b) => b[2] > 0 && b[2] === b[3]));
-    out.push(...safetyFaults(at('mark.svg'), text));
+  return out;
+}
+
+/** The faults of an `art.json` in a folder: present, JSON, `credit` and `license` non-empty strings. */
+function manifestFaults(dir, holds) {
+  const p = path.join(dir, 'art.json');
+  const bytes = read(p);
+  if (bytes === null) return [`${p}: missing; ${holds}`];
+  const out = [];
+  if (bytes.length > CAPS['art.json']) out.push(`${p}: is ${bytes.length} bytes; it may be at most ${CAPS['art.json'] / KB} KB`);
+  let data;
+  try {
+    data = JSON.parse(bytes.toString('utf8'));
+  } catch (e) {
+    out.push(`${p}: is not JSON (${e.message})`);
   }
-  if (files['art.json']) {
-    let data;
-    try {
-      data = JSON.parse(files['art.json'].toString('utf8'));
-    } catch (e) {
-      out.push(`${at('art.json')}: is not JSON (${e.message})`);
-    }
-    if (data !== undefined) {
-      for (const k of ['credit', 'license']) {
-        if (data === null || typeof data !== 'object' || typeof data[k] !== 'string' || data[k].trim() === '') out.push(`${at('art.json')}: ${k} must be a non-empty string`);
-      }
+  if (data !== undefined) {
+    for (const k of ['credit', 'license']) {
+      if (data === null || typeof data !== 'object' || typeof data[k] !== 'string' || data[k].trim() === '') out.push(`${p}: ${k} must be a non-empty string`);
     }
   }
   return out;
 }
 
-/** Every `instances/*\/ui/cards/*\/` directory under a root. */
+const CARD_HOLDS = "a card's art folder holds art.svg or art.webp, mark.svg and art.json";
+const BACK_HOLDS = "a card back's folder holds art.svg or art.webp and art.json";
+
+/** The faults of one card folder. */
+function folderFaults(dir) {
+  const out = canvasFaults(dir, CARD_HOLDS);
+  const mark = read(path.join(dir, 'mark.svg'));
+  if (mark === null) out.push(`${path.join(dir, 'mark.svg')}: missing; ${CARD_HOLDS}`);
+  else {
+    if (mark.length > CAPS['mark.svg']) out.push(`${path.join(dir, 'mark.svg')}: is ${mark.length} bytes; it may be at most ${CAPS['mark.svg'] / KB} KB`);
+    const text = mark.toString('utf8');
+    out.push(...rootFaults(path.join(dir, 'mark.svg'), text, 'the mark must be square', (b) => b[2] > 0 && b[2] === b[3]));
+    out.push(...safetyFaults(path.join(dir, 'mark.svg'), text));
+  }
+  out.push(...manifestFaults(dir, CARD_HOLDS));
+  return out;
+}
+
+/** The faults of an instance's card-back folder: the back's canvas and art.json. */
+function backFaults(dir) {
+  return [...canvasFaults(dir, BACK_HOLDS), ...manifestFaults(dir, BACK_HOLDS)];
+}
+
+/** What a card's key looks like: lowercase words joined by hyphens. A folder named any other way is not a card's. */
+const CARD_KEY = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/u;
+
+/**
+ * Every `instances/*\/ui/cards/<key>/` directory under a root. A folder whose name could not be a card's key is a
+ * tool's leavings (Python's `__pycache__` when a scene is run, a dot-folder) and is not read (the owner, 2026-11-11).
+ */
 function cardFolders(root) {
   const inst = path.join(root, 'instances');
   if (!fs.existsSync(inst)) return [];
@@ -202,18 +243,30 @@ function cardFolders(root) {
   for (const i of fs.readdirSync(inst, { withFileTypes: true })) {
     const cards = path.join(inst, i.name, 'ui', 'cards');
     if (!i.isDirectory() || !fs.existsSync(cards)) continue;
-    for (const c of fs.readdirSync(cards, { withFileTypes: true })) if (c.isDirectory()) out.push(path.join(cards, c.name));
+    for (const c of fs.readdirSync(cards, { withFileTypes: true })) if (c.isDirectory() && CARD_KEY.test(c.name)) out.push(path.join(cards, c.name));
+  }
+  return out.sort();
+}
+
+/** Every `instances/*\/ui/card-back/` directory under a root, where it exists. */
+function backFolders(root) {
+  const inst = path.join(root, 'instances');
+  if (!fs.existsSync(inst)) return [];
+  const out = [];
+  for (const i of fs.readdirSync(inst, { withFileTypes: true })) {
+    const back = path.join(inst, i.name, 'ui', 'card-back');
+    if (i.isDirectory() && fs.existsSync(back) && fs.statSync(back).isDirectory()) out.push(back);
   }
   return out.sort();
 }
 
 /**
- * Every fault in the card-art folders under a root: a list of lines, each naming the file and the
+ * Every fault in the card-art and card-back folders under a root: a list of lines, each naming the file and the
  * rule it broke; empty when all is well.
  * @param {string} root
  */
 export function cardArtFaults(root) {
-  return cardFolders(root).flatMap(folderFaults);
+  return [...cardFolders(root).flatMap(folderFaults), ...backFolders(root).flatMap(backFaults)];
 }
 
 function main() {
@@ -226,7 +279,7 @@ function main() {
     for (const f of faults) console.error(`    ${rel(f)}`);
     process.exit(1);
   }
-  console.log(`  card art: ${cardFolders(root).length} card folder(s) hold a canvas, a mark and a manifest, on the right canvas, running nothing`);
+  console.log(`  card art: ${cardFolders(root).length} card folder(s) and ${backFolders(root).length} card back folder(s) hold a canvas and a manifest, on the right canvas, running nothing`);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

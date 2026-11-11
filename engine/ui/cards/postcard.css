@@ -365,6 +365,12 @@ button.kb-postcard {
   background-color: var(--kb-glass-field);
 }
 
+/* A back the instance gave a picture: the picture is the whole back, so no smoke is laid under it, and one that is late
+   shows the plain field, never a second back. */
+.kb-postcard-back[data-kb-pictured] .kb-postcard-canvas {
+  background-image: none;
+}
+
 /* The instance's mark on the back, as a TCG back's emblem: two thirds of the card's width, glowing; the mark draws its own
    rim, so no disc is laid under it. */
 .kb-postcard-emblem {
@@ -386,13 +392,6 @@ button.kb-postcard {
   width: 100%;
   height: 100%;
   object-fit: contain;
-}
-
-/* The hit pull's back: its clouds and its glow in the machine's gold. */
-.kb-postcard-back[data-hit] {
-  --kb-card-color: var(--kb-glass-ready);
-  --kb-back-tint: linear-gradient(160deg, var(--kb-glass-ready) 0%, var(--kb-glass-salty) 55%, var(--kb-glass-ready) 100%);
-  --kb-back-glow: var(--kb-glass-ready);
 }
 
 /* ---- armed ---- */
