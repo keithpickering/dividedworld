@@ -218,6 +218,51 @@ describe('a stencil', () => {
   });
 });
 
+describe('review fixes', () => {
+  test('a press on the post while the Stencils tab is open starts no stroke and holds no work', async () => {
+    const user = userEvent.setup();
+    const { surface, props } = mountCompose();
+    await user.click(screen.getByRole('tab', { name: 'Stencils' }));
+    drag(surface, LINE);
+    expect(strokes(surface)).toBe(0);
+    expect(props.hold).not.toHaveBeenCalledWith(ASK);
+    await user.click(screen.getByRole('tab', { name: 'Spray' }));
+    expect(strokes(surface)).toBe(0);
+    expect(screen.getByText('Draw something first')).toBeInTheDocument();
+  });
+
+  test('Stay returns focus to Cancel', async () => {
+    const user = userEvent.setup();
+    const { surface } = mountDraw();
+    drag(surface, LINE);
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    await user.click(screen.getByRole('button', { name: 'Stay' }));
+    expect(screen.getByRole('button', { name: 'Cancel' })).toHaveFocus();
+  });
+
+  test('Cancel is off while a submit is out', async () => {
+    const user = userEvent.setup();
+    let release: (a: Answer<unknown>) => void = () => {};
+    const { surface } = mountCompose({ submit: () => new Promise((done) => { release = done; }) });
+    drag(surface, LINE);
+    await user.click(tag());
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
+    await act(async () => { release({ ok: false, error: 'No.' }); });
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeEnabled();
+  });
+
+  test('the preview is painted with the aspect that is stored, rounded to three figures', () => {
+    const under = document.createElement('div');
+    document.body.append(under);
+    unders.push(under);
+    const { container } = renderInWorld(<Compose post={POST} mode="cast" box={{ w: 601, h: 400 }} under={under} submit={ok} cancel={() => {}} hold={() => {}}><p>x</p></Compose>);
+    void container;
+    drag(under.querySelector('[data-kb-draw-surface]') as HTMLElement, LINE);
+    const painted = (vi.mocked(spray.paintWall).mock.calls.at(-1)![3][0]!.payload as { strokes: { aspect: number }[] }).strokes[0]!.aspect;
+    expect(painted).toBe(1.5);
+  });
+});
+
 describe('the meter on a wall that is already there', () => {
   const stripe = { can: 'red', cap: 'fat', aspect: 1.5, points: [[0.05, 0.5], [0.95, 0.5]] };
   const wall = [{ kind: 'draw', payload: { strokes: [stripe] } }];

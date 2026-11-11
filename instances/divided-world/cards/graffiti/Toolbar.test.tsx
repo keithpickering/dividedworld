@@ -158,8 +158,15 @@ describe('Tag it', () => {
     const go = screen.getByRole('button', { name: 'Tag it' });
     expect(go).toHaveAttribute('aria-disabled', 'true');
     expect(screen.getByText('This tag would take the wall to 46%; its limit is 40%')).toBeInTheDocument();
+    expect(screen.getByText('Wall 46% of 40%')).toBeInTheDocument();
     await user.click(go);
     expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  test('over the limit by a part of a percent, the meter and the reason name the same figure', () => {
+    render(<Toolbar {...propsOf({ hasDraft: true, meter: { wall: 3100, after: 4001, most: 4000, over: true } })} />);
+    expect(screen.getByText('Wall 41% of 40%')).toBeInTheDocument();
+    expect(screen.getByText('This tag would take the wall to 41%; its limit is 40%')).toBeInTheDocument();
   });
 
   test('is ready with a drawing inside the limit, says nothing under it, and sends', async () => {

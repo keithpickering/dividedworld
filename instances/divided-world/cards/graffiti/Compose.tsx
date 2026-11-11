@@ -116,8 +116,8 @@ export function DrawMode(p: DrawModeProps) {
   );
   const held = strokes.current.length > 0 || stencil !== null;
 
-  const now = useRef({ can, cap, box: p.box, locked: false, busy: false, asking: null as string | null });
-  now.current = { can, cap, box: p.box, locked: busy || asking !== null, busy, asking };
+  const now = useRef({ can, cap, box: p.box, locked: false, busy: false, asking: null as string | null, tab });
+  now.current = { can, cap, box: p.box, locked: busy || asking !== null, busy, asking, tab };
 
   const changed = () => { setVersion((v) => v + 1); setRefusal(null); };
 
@@ -198,7 +198,7 @@ export function DrawMode(p: DrawModeProps) {
 
   const begin = (clientX: number, clientY: number, pointer: number, touch: boolean): boolean => {
     const { box, locked, can: c, cap: k } = now.current;
-    if (!surfaceEl || !box || box.w <= 0 || box.h <= 0 || locked) return false;
+    if (!surfaceEl || !box || box.w <= 0 || box.h <= 0 || locked || now.current.tab !== 'spray') return false;
     const total = strokes.current.reduce((n, s) => n + s.points.length, 0);
     if (strokes.current.length >= BOUNDS.strokes) { setNotice(FULL.strokes); return false; }
     if (total >= BOUNDS.totalPoints) { setNotice(FULL.points); return false; }

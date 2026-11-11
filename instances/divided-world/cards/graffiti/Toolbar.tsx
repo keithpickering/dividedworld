@@ -130,9 +130,15 @@ export function Toolbar(p: ToolbarProps) {
   const dock = useRef<HTMLDivElement>(null);
   const first = useRef<HTMLButtonElement>(null);
   const stay = useRef<HTMLButtonElement>(null);
+  const cancel = useRef<HTMLButtonElement>(null);
+  const wasAsking = useRef(false);
 
   useEffect(() => { if (p.focusOnMount) first.current?.focus({ preventScroll: true }); }, [p.focusOnMount]);
-  useEffect(() => { if (p.asking !== null) stay.current?.focus(); }, [p.asking]);
+  useEffect(() => {
+    if (p.asking !== null) stay.current?.focus();
+    else if (wasAsking.current) cancel.current?.focus();
+    wasAsking.current = p.asking !== null;
+  }, [p.asking]);
 
   /* On a phone the dock is fixed to the foot of the window and would hide the last of the page: the page keeps its height clear (graffiti.css). */
   useLayoutEffect(() => {
@@ -167,7 +173,7 @@ export function Toolbar(p: ToolbarProps) {
     <div ref={dock} className="kb-graffiti-dock" role="group" aria-label="Graffiti tools" data-kb-over-ink data-kb-dock>
       <div className="kb-graffiti-label">
         <span data-kb-meter-can>{CAN_NAMES[p.can]}</span>
-        <span>{`Wall ${percent(p.meter.after)}% of ${percent(p.meter.most)}%`}</span>
+        <span>{`Wall ${p.meter.over ? Math.ceil(p.meter.after / 100) : percent(p.meter.after)}% of ${percent(p.meter.most)}%`}</span>
       </div>
       <div className="kb-graffiti-meter" data-over={p.meter.over ? 'true' : undefined} aria-hidden="true">
         <i className="kb-graffiti-meter-wall" style={{ width: `${fill}%` }} />
@@ -214,7 +220,7 @@ export function Toolbar(p: ToolbarProps) {
       ) : (
         <>
           <div className="kb-graffiti-row">
-            <button type="button" className="kb-graffiti-btn" onClick={p.onCancel}><span>Cancel</span></button>
+            <button ref={cancel} type="button" className="kb-graffiti-btn" disabled={p.busy} onClick={p.onCancel}><span>Cancel</span></button>
             <button
               type="button" className="kb-graffiti-btn kb-graffiti-go" aria-disabled={!ready} aria-busy={p.busy || undefined} aria-describedby={reason !== null ? reasonId : undefined}
               onClick={() => { if (ready) p.onSubmit(); }}
