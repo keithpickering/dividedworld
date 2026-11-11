@@ -72,6 +72,8 @@ function Editor({ page, io }: { readonly page: MyCharactersPage; readonly io?: P
   const [refusal, setRefusal] = useState<string | null>(null);
   const [saved, setSaved] = useState('');
   const [formFor, setFormFor] = useState<Id | null>(id);
+  /* A character chosen starts the form afresh. And a set that no read had carried may arrive with a later document (an avatar saved, the page read again): the form
+     takes it then, since there is none of the player's to keep. */
   if (formFor !== id) {
     setFormFor(id);
     setTitle(profile?.title ?? '');
@@ -81,7 +83,6 @@ function Editor({ page, io }: { readonly page: MyCharactersPage; readonly io?: P
     setSaved('');
     setRefusal(null);
   }
-  /* A set that no read had carried arrives with a later document (an avatar saved, the page read again): the form takes it then, since there is none of the player's to keep. */
   else if (pronouns === null && setOf(profile) !== null) setPronouns(setOf(profile));
 
   const back = <CalmRegion><ButtonRow><GlassButton to="/characters" state={id === null ? undefined : { character: id }}>Back to your characters</GlassButton></ButtonRow></CalmRegion>;

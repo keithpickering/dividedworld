@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
-import type { MyCharactersPage } from '../data/api.ts';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { buildWorld, holdReads, renderIn } from '../test-world.tsx';
@@ -8,6 +7,7 @@ import { Link } from '../router.tsx';
 import { PRONOUN_PRESETS } from '../../rules/pronouns.ts';
 import { LoadedCharacters } from '../loaded.tsx';
 import { ProfileEdit } from './ProfileEdit.tsx';
+import type { MyCharactersPage } from '../data/api.ts';
 
 beforeEach(() => { localStorage.clear(); });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
