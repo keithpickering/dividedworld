@@ -63,6 +63,8 @@ export interface Refusal {
   readonly uncertain?: true;
   /** Set when nothing left the device, or the server never ran the write: sending again cannot duplicate. */
   readonly notSent?: true;
+  /** Set when the refusal is because the account is barred (a sign-in Auth refused as banned): the screen shows the bar's words, not this error. */
+  readonly barred?: true;
 }
 
 /** The words of a write that never left the device. */
@@ -803,6 +805,19 @@ export interface MoveInForce {
   readonly progress: DemandProgress;
 }
 
+/**
+ * What an admin did to a post of the player's own, under the code of conduct (`my_conduct_log`, 0159): the decision, its outcome, the version (an Act) and the post it was about,
+ * its thread and when. Never the admin, never the note (that is in the mail), never who reported, and never another player's.
+ */
+export interface ConductLogRow {
+  readonly decision: number;
+  readonly outcome: 'hide' | 'hideUntilEdited' | 'unhide' | 'approve';
+  readonly versionAct: Id;
+  readonly post: Id;
+  readonly thread: Id;
+  readonly at: string;
+}
+
 /** A move that ended, or was held or refused and never landed, in the last 30 days (admin_queue). */
 export interface MoveEnded {
   readonly how: 'met' | 'expired' | 'reversed' | 'superseded' | 'spent' | 'overturned' | 'held' | 'refused';
@@ -885,7 +900,7 @@ export interface Session {
    * The account's own bar (my_bar): null when it has none; `until` is the end of a suspension, null for a ban. Read for a signed-in account
    * only, so signed out it is null. A screen treats a suspension whose `until` has passed as no bar, since the server ends it by itself.
    */
-  readonly bar: { readonly until: string | null } | null;
+  readonly bar: { readonly until: string | null; /** Set for a bar read while signed out (Auth refused a refresh as banned): its end is not known, so `until` is not said. */ readonly unknown?: true } | null;
   /** Whether the account has accepted the current code of conduct (conduct_accepted); true while signed out, where nothing is asked. */
   readonly conductAccepted: boolean;
 }
@@ -2046,7 +2061,9 @@ export interface KayfaApi {
   onSession(listener: (s: Session) => void): () => void;
   /** `conduct` is the version of the code of conduct the register form's box agreed to; it rides with the login and the account records it when it opens. */
   requestCode(email: string, invite: string | null, conduct?: number | null): Promise<Answer<{ readonly message: string; readonly invite?: string }>>;
-  verifyCode(email: string, code: string): Promise<Answer<{ readonly account: boolean; readonly why?: string }>>;
+  verifyCode(email: string, code: string): Promise<Answer<{ readonly account: boolean; readonly why?: string;
+    /** Set when Auth refused the sign-in because the login is barred (suspended or banned): nothing is signed in, and the screen says so plainly. `until` is the end of a suspension, null for a ban, undefined when the end is not known. */
+    readonly barred?: { readonly until: string | null | undefined } }>>;
   openAccount(invite: string | null): Promise<Answer<{ readonly opened: boolean }>>;
   signOut(): Promise<void>;
   /** The signed-in account accepts the code of conduct at this version (accept_conduct). */
@@ -2324,6 +2341,8 @@ export interface KayfaApi {
   decide(on: { readonly account?: Id; readonly version?: Id }, outcome: DecideOutcome, until?: string, note?: string): Promise<Answer<null>>;
   /** The log in one read, the rows at or before `before`. */
   logPage(before: string | null): Promise<LogPage>;
+  /** What admins did to the player's own posts, newest first (`my_conduct_log`): the log says each in plain words. Empty where signed out. */
+  conductLog(): Promise<readonly ConductLogRow[]>;
   /** A character's profile page in one read; null where the character is not shown. */
   profilePage(character: Id): Promise<ProfilePage | null>;
   /** A page of a character's record in one read; null where the character is not shown. */

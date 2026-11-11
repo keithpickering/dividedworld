@@ -53,6 +53,8 @@ export function gotrue(options: { url: string; key: string; fetch?: typeof globa
       // A wrong code and one for an address with no login are one refusal to Auth too.
       if ((response.status === 400 || response.status === 403)
           && (body.error_code === 'otp_expired' || body.error_code === 'otp_invalid' || body.error === 'invalid_grant')) return { refused: 'code' };
+      // A suspended or banned login carries Auth's ban (mail/core.ts); Auth refuses it after a correct code, which proves nothing to anyone who does not hold the address.
+      if ((response.status === 400 || response.status === 403) && body.error_code === 'user_banned') return { refused: 'barred' };
       throw new Error(`auth code check answered ${response.status} ${String(body.error_code ?? body.error ?? '')}`);
     },
   };

@@ -41,7 +41,7 @@ import type { Career } from '../../../engine/system/career.ts';
 import type {
   AdminQueue, Apology, Bar, BoardName, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesLog, QueuedMove, StaffCardPlay, StaffProfile,
   Act, ActKind, Answer, AvatarUpload, Board, Bought, Donated, DriveGift, DriveGifts, BoardSummary, CardEnded, ScoredAs, CardEvent, PackEvent, WrittenOnMine, CaughtPlay, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd,
-  Alert, ContactLink, EffectState, Tail, PostHit, SearchCursor, SearchPage, SearchQuery, Suggestions, ThreadHit, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, SeasonShown, TallyName, Update, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
+  Alert, ConductLogRow, ContactLink, EffectState, Tail, PostHit, SearchCursor, SearchPage, SearchQuery, Suggestions, ThreadHit, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, SeasonShown, TallyName, Update, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
   Tally, StandingPlace, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, TurnAsked, Wallet, WalletEvent,
   Boot, BoardPage, IndexPage, Opened, AdminSlot, Slot, SlotMove, Presence, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, ReportsPage, MyHiddenVersion, AdminReport, AdminReview, FailedMail, PastDecision, LogPage,
   AppealResult, AppealVerdict, InterceptResult, MyBan, LogAppeal, LogBan, LogGroupMove, GroupMoveEndWhy, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitChallenge, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
@@ -644,6 +644,8 @@ function toEstimate(r: Row): Estimate {
 type Res = { data: unknown; error: { message: string; hint?: string | null; code?: string | null } | null; status: number };
 
 export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
+  let bannedByRefresh = false;
+  const signedOutSession = (): Session => ({ signedIn: false, account: null, bar: bannedByRefresh ? { until: null, unknown: true } : null, conductAccepted: true });
   const { url, publishableKey, settingsFallback } = options;
   const doFetch: typeof fetch = options.fetch ?? ((...a) => globalThis.fetch(...a));
   // supabase-js sends its key as the bearer where there is no session; a publishable key goes in apikey alone (Supabase's
@@ -653,7 +655,14 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     const headers = new Headers(init?.headers);
     const res = headers.get('authorization') !== `Bearer ${publishableKey}` ? await doFetch(input, init) : await doFetch(input, { ...init, headers: (headers.delete('authorization'), headers) });
     /* The one place a refusal because the account is barred is noticed, whatever asked: the session is read again so the gate shows at once. */
-    if (res.status >= 400 && res.status < 500) void res.clone().text().then((t) => { if (t.includes(BARRED_HINT)) void reloadSession(); }, () => undefined);
+    if (res.status >= 400 && res.status < 500) {
+      const refresh = String(input instanceof Request ? input.url : input).includes('/auth/v1/token');
+      void res.clone().text().then((t) => {
+        /* Auth refused a token refresh because the login is banned: the sign-in screen is signed out, so the bar is kept here and every screen shows the barred words, never "try again". */
+        if (refresh && t.includes('user_banned')) { bannedByRefresh = true; void reloadSession(); }
+        else if (t.includes(BARRED_HINT)) void reloadSession();
+      }, () => undefined);
+    }
     return res;
   };
   const client: SupabaseClient =
@@ -766,7 +775,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     /* A 5xx from a write is an answer that may not say whether it was done: its words are shown, and the caller looks before it resends. */
     if (got.status >= 500 && !resend && lost === LOST && parsed?.['sent'] === false) return notSent(words ?? NOT_SENT);
     if (got.status >= 500 && !resend && lost === LOST) return { ok: false, error: words ?? LOST, uncertain: true };
-    if (words) return refusal(words, str(parsed?.['field']) ?? undefined);
+    if (words) return { ...refusal(words, str(parsed?.['field']) ?? undefined), ...(parsed?.['hint'] === BARRED_HINT ? { barred: true as const } : {}) };
     return refusal(got.status >= 500 ? lost : NOT_DONE);
   }
 
@@ -788,7 +797,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
 
   async function currentSession(): Promise<Session> {
     const { data } = await client.auth.getSession();
-    if (!data.session) return { signedIn: false, account: null, bar: null, conductAccepted: true };
+    if (!data.session) return signedOutSession();
     /* The bar and the code are read beside whoami. A failed my_bar read is no bar (the server refuses a barred account's writes, and its hint reloads this); a failed conduct_accepted read is NOT accepted, since nothing server-side enforces the code and agreeing again is harmless. */
     const [r, bar, accepted] = await Promise.all([
       read(() => client.rpc('whoami')),
@@ -1071,7 +1080,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
         heardFor = id;
         // Not awaited inside the callback: Auth holds its lock while it runs.
         setTimeout(() => {
-          void (s ? currentSession() : Promise.resolve<Session>({ signedIn: false, account: null, bar: null, conductAccepted: true }))
+          void (s ? currentSession() : Promise.resolve<Session>(signedOutSession()))
             .catch((): Session => ({ signedIn: !!s, account: null, bar: null, conductAccepted: true }))
             .then(listener);
         }, 0);
@@ -1090,7 +1099,10 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     },
     async verifyCode(email, code) {
       const a = await edge('account', { action: 'verifyCode', email, code }, NOT_DONE);
+      /* Auth refused the sign-in because the login is barred (the function's 403 with the barred hint): its end is not known here, so the screen says no date. */
+      if (!a.ok && a.barred) { bannedByRefresh = false; return { ok: true, value: { account: false, barred: { until: undefined } } }; }
       if (!a.ok) return a;
+      bannedByRefresh = false;
       const s = a.value['session'] as Row | undefined;
       if (!s || !str(s['access_token']) || !str(s['refresh_token'])) return refusal(NOT_DONE);
       const set = await client.auth.setSession({ access_token: s['access_token'], refresh_token: s['refresh_token'] }).catch(() => null);
@@ -1102,6 +1114,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     async signOut() {
       lastEstimate = null;
       await client.auth.signOut();
+      if (bannedByRefresh) { bannedByRefresh = false; await reloadSession(); }
     },
     /* Reads the client's own session for its address, which is not signing in, up or a reset, so it is outside Task 11's rule that those go through the account function; no table is read. */
     async signInAddress() {
@@ -1980,6 +1993,15 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
      */
     log(before) {
       return readLogPage(readLogViews, before ?? null);
+    },
+    /* What admins did to the player's own posts (`my_conduct_log`, 0159): the caller's own rows, newest first; an unknown outcome is no row. */
+    async conductLog() {
+      const d = (await read(() => client.rpc('my_conduct_log'))).data;
+      return rowsOf(d).flatMap((r): ConductLogRow[] => {
+        const outcome = r['outcome'];
+        return outcome === 'hide' || outcome === 'hideUntilEdited' || outcome === 'unhide' || outcome === 'approve'
+          ? [{ decision: num(r['decision']), outcome, versionAct: String(r['version_act']), post: String(r['post']), thread: String(r['thread']), at: String(r['at']) }] : [];
+      });
     },
     /* The log page in one read (`log_page`, 0123): the first range of the views comes from the document, and a page that would not move reads its one instant by the views as `log` does. */
     async logPage(before): Promise<LogPage> {

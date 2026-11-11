@@ -41,6 +41,13 @@ test('a refused code is a wrong or expired one; anything else is thrown', async 
   await assert.rejects(gotrue({ ...opts, fetch: refuse({}, 500) }).verifyCode('a@b.c', '1'));
 });
 
+test('a login Auth has banned is told apart from a wrong code: the verify is refused as barred, for a 400 or a 403', async () => {
+  const refuse = (body: unknown, status: number) => recorder(() => new Response(JSON.stringify(body), { status })).fetch;
+  for (const status of [400, 403]) {
+    assert.deepEqual(await gotrue({ ...opts, fetch: refuse({ error_code: 'user_banned', msg: 'User is banned' }, status) }).verifyCode('a@b.c', '1'), { refused: 'barred' }, String(status));
+  }
+});
+
 test('a code request, after the answer, is retried once on a transport failure, and its refusals are logged, never thrown', async () => {
   let n = 0;
   const flaky = (async () => (++n === 1 ? new Response('', { status: 503 }) : new Response('{}', { status: 200 }))) as unknown as typeof globalThis.fetch;

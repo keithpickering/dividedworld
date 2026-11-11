@@ -1177,6 +1177,11 @@ describe('signing in goes through the account function', () => {
     expect(h.log.some((r) => /\/auth\/v1\/(otp|verify|recover|signup|magiclink)/.test(r.url.pathname))).toBe(false);
   });
 
+  it('answers a sign-in Auth refused as barred with the barred answer, signed out, never "try again"', async () => {
+    const barred = harness(() => json({ error: 'this account is barred, so it cannot sign in; reach an admin through Contact to appeal', hint: 'kayfabb.barred' }, 403));
+    expect(await barred.api.verifyCode('a@b.c', '123456')).toEqual({ ok: true, value: { account: false, barred: { until: undefined } } });
+  });
+
   it('passes a wrong code through with its field and says why an account stayed closed', async () => {
     const wrong = harness(() => json({ field: 'code', error: 'that code does not match, or it has expired: ask for a new one' }, 400));
     expect(await wrong.api.verifyCode('a@b.c', '000000')).toEqual({ ok: false, error: 'that code does not match, or it has expired: ask for a new one', field: 'code' });
@@ -2907,6 +2912,19 @@ describe('the session carries the bar and the code (the conduct plan, Task 4)', 
     if (r.url.pathname === '/auth/v1/user') return json(SESSION.user);
     if (r.url.pathname === '/rest/v1/rpc/whoami') return json(A);
     return extra(r);
+  });
+
+  it('reads my_conduct_log for the caller: each outcome a row, an outcome it does not know none, and no admin, note or reporter anywhere', async () => {
+    const h = signedIn((r) => (r.url.pathname.endsWith('/rpc/my_conduct_log') ? json([
+      { decision: 7, outcome: 'hide', version_act: 'v1', post: 'p1', thread: 't1', at: '2026-11-01T00:00:00+00:00' },
+      { decision: 6, outcome: 'nudge', version_act: 'v1', post: 'p1', thread: 't1', at: '2026-11-01T00:00:00+00:00' },
+      { decision: 5, outcome: 'approve', version_act: 'v2', post: 'p2', thread: 't2', at: '2026-10-31T00:00:00+00:00' },
+    ]) : undefined));
+    await h.api.verifyCode('a@b.c', '123456');
+    expect(await h.api.conductLog()).toEqual([
+      { decision: 7, outcome: 'hide', versionAct: 'v1', post: 'p1', thread: 't1', at: '2026-11-01T00:00:00+00:00' },
+      { decision: 5, outcome: 'approve', versionAct: 'v2', post: 'p2', thread: 't2', at: '2026-10-31T00:00:00+00:00' },
+    ]);
   });
 
   it('reads my_bar and conduct_accepted for a signed-in account, beside whoami', async () => {

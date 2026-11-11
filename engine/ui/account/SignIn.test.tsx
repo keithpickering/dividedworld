@@ -474,3 +474,20 @@ describe('Register', () => {
     expect(opening.mock.calls[0]).toEqual([made.value.code]);
   });
 });
+
+describe('A barred login that gives the right code', () => {
+  test('is told plainly it is barred, while signed out, with the way to reach a person; the screen asked for a code the same as for any address', async () => {
+    const w = world();
+    w.fake.seed.bar(w.known, Date.parse('2099-11-12T23:30:00Z'));
+    open(w, 'sign-in');
+    await ask('known@example.test');
+    await userEvent.type(await screen.findByLabelText('Code from the email'), `${TEST_CODE}{Enter}`);
+    expect(await screen.findByRole('heading', { name: 'This account is suspended' })).toBeInTheDocument();
+    expect(screen.getByText('This account is suspended until November 12, 2099 at 23:30 UTC. An admin may have emailed you the details. To appeal, reply to that email, or reach a person through Contact.')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Reach a person' })).toHaveAttribute('href', '/contact');
+    expect(screen.queryByText(/try again/iu)).toBeNull();
+    expect((await w.fake.session()).signedIn).toBe(false);
+    await userEvent.click(screen.getByRole('button', { name: 'Use another address' }));
+    expect(await screen.findByLabelText('Email address')).toBeInTheDocument();
+  });
+});

@@ -40,7 +40,7 @@ export interface Session {
 export interface Auth {
   /** Emails a code and a link; `create` lets it make a login for an address with none, carrying the invite. */
   requestCode(email: string, options: { create: boolean; invite: string | null; conduct?: number }): Promise<void>;
-  verifyCode(email: string, code: string): Promise<{ session: Session } | { refused: 'code' }>;
+  verifyCode(email: string, code: string): Promise<{ session: Session } | { refused: 'code' | 'barred' }>;
 }
 
 export interface Clock {
@@ -56,6 +56,7 @@ export interface AccountAnswer {
 }
 
 const SENT_CODE = 'If this address can sign in here, a code and a link to sign in are on their way to it. A new login needs an invite where this instance asks for one. If nothing comes in a few minutes, ask again.';
+const BARRED = 'this account is barred, so it cannot sign in; reach an admin through Contact to appeal';
 const NO_MATCH = 'that code does not match, or it has expired: ask for a new one';
 
 const refused = (field: string, error: string): AccountAnswer => ({ status: 400, body: { field, error } });
@@ -99,6 +100,8 @@ async function answer(deps: { auth: Auth; service: Db; player: (token: string) =
       const digits = code(r);
       if (typeof digits !== 'string') return digits;
       const out = await deps.auth.verifyCode(address, digits);
+      /* Said only after a correct code, so it proves nothing to anyone who does not hold the address; plain, never "try again". The hint is the one the screens read as a bar. */
+      if ('refused' in out && out.refused === 'barred') return { status: 403, body: { error: BARRED, hint: 'kayfabb.barred' } };
       if ('refused' in out) return refused('code', NO_MATCH);
       const invite = out.session.user.user_metadata?.invite;
       try {

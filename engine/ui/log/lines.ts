@@ -22,7 +22,7 @@ import { ENGINE_DEFAULT_PRONOUNS, words as pronounWords } from '../../rules/pron
 import { playOf as playKindOf, reachesOf } from '../../rules/cards.ts';
 import { rankIndex } from '../../rules/ranks.ts';
 import type { Instance, Quadrant } from '../../rules/types.ts';
-import type { Act, CardEvent, MyBan, Estimate, EstimateLine, Id, Log, LogLine, LogSettlement, MyCharacter, ScoredAs, Season, TurnAnnounced, WalletEvent } from '../data/api.ts';
+import type { Act, CardEvent, ConductLogRow, MyBan, Estimate, EstimateLine, Id, Log, LogLine, LogSettlement, MyCharacter, ScoredAs, Season, TurnAnnounced, WalletEvent } from '../data/api.ts';
 import { micros } from '../data/log-page.ts';
 import { officeRole } from '../board/move-words.ts';
 import { pageOf, threadHref } from '../thread/pages.ts';
@@ -45,6 +45,8 @@ export type LineKind = 'estimate' | 'settlement' | 'turn' | 'rank' | 'bought' | 
   | 'grouped'
   /* The aura-grant design, section 2: an admin gave the player Aura (docs/plans/2026-11-08-aura-grant-design.md). */
   | 'grant'
+  /* The conduct design, section 8: an admin hid, brought back or approved the player's own post under the code of conduct. */
+  | 'conduct'
   /* A drive's gift, the giver's and the post's author's (docs/plans/2026-11-03-jimmy-wails-design.md, section 10). */
   | 'gift';
 
@@ -90,6 +92,8 @@ export interface LogData {
   readonly titles: ReadonlyMap<Id, string>;
   /** The state each play's effect was last saved with, for the saves the log reads (`effectStates`, public). */
   readonly states: ReadonlyMap<Id, unknown>;
+  /** What admins did to the player's own posts (`my_conduct_log`): newest first, read once with the first page. Absent: none. */
+  readonly conduct?: readonly ConductLogRow[];
 }
 
 export interface Words {
@@ -374,8 +378,9 @@ export function logRows(data: LogData, words: Words, cap: number, tab: Id | null
   rows.push(...groupRows(data, words).filter((r) => inTab(r.characters)));
   rows.push(...grantRows(data).filter((r) => inTab(r.characters)));
   rows.push(...giftRows(data, words).filter((r) => inTab(r.characters)));
+  rows.push(...conductRows(data).filter((r) => inTab(r.characters)));
 
-  const ORDER: Record<LineKind, number> = { estimate: 0, settlement: 1, turn: 2, rank: 3, bought: 4, pack: 4, played: 4, returned: 4, onMine: 4, saved: 4, written: 4, set: 4, sprung: 4, payout: 4, setEnded: 4, caught: 4, struck: 4, gimmickEnded: 4, ended: 4, infraction: 4, ban: 4, report: 4, appeal: 4, bribe: 4, grouped: 4, grant: 4, gift: 4 };
+  const ORDER: Record<LineKind, number> = { estimate: 0, settlement: 1, turn: 2, rank: 3, bought: 4, pack: 4, played: 4, returned: 4, onMine: 4, saved: 4, written: 4, set: 4, sprung: 4, payout: 4, setEnded: 4, caught: 4, struck: 4, gimmickEnded: 4, ended: 4, infraction: 4, ban: 4, report: 4, appeal: 4, bribe: 4, grouped: 4, grant: 4, gift: 4, conduct: 4 };
   rows.sort((a, b) => micros(b.at) - micros(a.at) || ORDER[a.kind] - ORDER[b.kind]);
   return [...estimateRows(data, words, tab), ...rows];
 }
@@ -525,6 +530,31 @@ function groupRows(data: LogData, words: Words): LogRow[] {
   }
   return rows;
 }
+
+/**
+ * What an admin did to the player's own posts under the code of conduct (the conduct design, section 8; `my_conduct_log`), in plain words and never in character. The
+ * rows say which post's thread and what changed and never who reported or which admin: "An admin" is the whole of the answer. "An admin may have emailed you the
+ * details" is the one honest thing to say of the mail, which waits where no admin address is set and may be refused. A hide until edited says how it ends.
+ */
+function conductRows(data: LogData): LogRow[] {
+  return (data.conduct ?? []).map((c): LogRow => {
+    const title = data.titles.get(c.thread);
+    const where: Segment = title === undefined ? 'a thread' : { text: title, href: threadHref(c.thread, 1) };
+    const owner = data.acts.get(c.versionAct)?.character;
+    const mailed = ' An admin may have emailed you the details.';
+    const [what, details]: [string, readonly Segment[]] = c.outcome === 'unhide' ? ['An admin brought back your post', ['An admin brought back your post in ', where, '.']]
+      : c.outcome === 'approve' ? ['An admin approved your edit', ['An admin approved your edit in ', where, '.']]
+      : ["An admin hid your post", ['An admin hid your post in ', where, ` (code of conduct)${c.outcome === 'hideUntilEdited' ? ' until you edit it' : ''}.${mailed}`]];
+    return { key: `conduct:${c.decision}`, kind: 'conduct', at: c.at, what, details: mergeText(details), aura: 0, wallet: null, characters: owner && data.mine.some((m) => m.id === owner) ? [owner] : [] };
+  });
+}
+
+/** Text segments side by side are one (so a line without a linked title reads as one sentence). */
+const mergeText = (segs: readonly Segment[]): Segment[] => segs.reduce<Segment[]>((out, s) => {
+  const last = out[out.length - 1];
+  if (typeof s === 'string' && typeof last === 'string') out[out.length - 1] = last + s; else out.push(s);
+  return out;
+}, []);
 
 /**
  * The Mod Bots' lines (the design, section 9): the warn points filed against the player's characters, the bans laid on them, and the reports and appeals they made, each in

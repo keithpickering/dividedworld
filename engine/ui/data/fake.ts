@@ -44,7 +44,7 @@ import type {
   Act, Apology, Bar, AccountListener, Tail, ActKind, Alert, ContactLink, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, TallyName, SeasonShown, Update, UpdateChange, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, CardEvent, PackEvent, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, DebutLoudness, EffectState, PlayMoment,
   DebutTiming, Estimate, EstimateLine, FollowedThread, Frame, HeldCard, Id, KayfaApi, LogShare, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, PreferencesPatch, Refusal,
   Boot, BoardPage, IndexPage, Opened, AdminSlot, Slot, SlotMove, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, LogPage,
-  AdminReport, AdminReview, DecideOutcome, FailedMail, PastDecision, ReportOutcome, ReportsPage,
+  AdminReport, AdminReview, ConductLogRow, DecideOutcome, FailedMail, PastDecision, ReportOutcome, ReportsPage,
   PostHit, ThreadHit, SearchCursor, SearchPage, SearchQuery, SearchSort, Suggestions,
   AppealResult, AppealVerdict, LogAppeal, LogBan, LogGroupMove, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
   Donated, DriveGift, DriveGifts, Presence, PresencePlace, ReachListener, ScreenSettings, Season, Session, Standing, Tally, ThreadListener, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, Wallet, WalletEvent,
@@ -133,7 +133,7 @@ export interface Seed {
    */
   update(update: { title: string; body: string; changes?: readonly UpdateChange[]; at?: number }): Id;
   /** An account's decision recorded before the screen opens (the admin screen's past decisions), dated `at` (else now). */
-  conductDecision(decision: { account: Id; outcome: string; until?: number; note?: string; at?: number }): void;
+  conductDecision(decision: { account: Id; outcome: string; until?: number; note?: string; at?: number; /** The version an admin's decision was about (a hide, an unhide, an approve): it is in the author's `conductLog`. */ version?: Id }): void;
   /** An open report (`report_post`, 0159) on a post's version, dated `at` (else now), by `reporter` (an account) when the open-report limit is under test: the screen shows the version's words, the section and the note. */
   conductReport(report: { version: Id; section: string; note?: string; at?: number; reporter?: Id }): number;
   /** A post hidden until its author edited it and edited since, awaiting an admin's second look (`reviews_due`): `words` are the edit's. */
@@ -2359,6 +2359,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (digits !== TEST_CODE) return refuse('that code does not match, or it has expired: ask for a new one', 'code');
       const address = email.trim().toLowerCase();
       const known = byEmail.get(address);
+      /* Auth refuses a barred login after a correct code (mail/core.ts sets its ban), and nothing is signed in. */
+      const held = known ? bars.get(known) : undefined;
+      if (known && held && (held.until === null || held.until > now())) return ok({ account: false, barred: { until: held.until === null ? null : iso(held.until) } });
       if (known) { setSession({ email: address, account: known }); return ok({ account: true }); }
       const opened = tryOpen(address, pendingInvite.get(address) ?? null);
       if ('account' in opened) { setSession({ email: address, account: opened.account }); return ok({ account: true }); }
@@ -3407,6 +3410,14 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     queuePage(): QueuePage | null {
       return core.isAdmin() ? { queue: core.adminQueue(), boardNames: core.boardNames(), bosses: core.bosses(), contact: core.adminContact() } : null;
     },
+    conductLog() {
+      const account = me()?.id;
+      /* my_conduct_log: the decisions on versions the caller's own characters wrote, newest first; never the note, the admin or a report. */
+      return account === undefined ? [] : conductDecisions
+        .filter((d) => d.version !== null && authorOf(d.version) === account && (d.outcome === 'hide' || d.outcome === 'hideUntilEdited' || d.outcome === 'unhide' || d.outcome === 'approve'))
+        .sort((a, b) => b.id - a.id).slice(0, 100)
+        .map((d): ConductLogRow => ({ decision: d.id, outcome: d.outcome as ConductLogRow['outcome'], versionAct: d.version!, post: postOf(d.version!), thread: acts.get(d.version!)?.thread ?? '', at: iso(d.at) }));
+    },
     logPage(before): LogPage {
       const log = core.log(before);
       const mine = core.myCharacters();
@@ -3798,7 +3809,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     admin(account, on = true) { accounts.get(account)!.admin = on; },
     bar(account, until) { if (until === undefined) bars.delete(account); else bars.set(account, { until }); },
     unaccepted(account) { unaccepted.add(account); },
-    conductDecision(d) { conductDecisions.push({ id: conductNextId++, report: null, version: null, account: d.account, outcome: d.outcome, until: d.until ?? null, note: d.note ?? '', at: d.at ?? now() }); },
+    conductDecision(d) { conductDecisions.push({ id: conductNextId++, report: null, version: d.version ?? null, account: d.account, outcome: d.outcome, until: d.until ?? null, note: d.note ?? '', at: d.at ?? now() }); },
     conductReport(r) {
       const id = conductNextId++;
       if (!acts.has(r.version)) throw new Error(`no such act ${r.version}`);

@@ -236,3 +236,20 @@ test('Auth failing to answer a code is a plain retry-later, in the same time', a
   const out = await runAccount({ auth: down, service: { rpc: async () => null as never }, player: () => ({ rpc: async () => null as never }), clock }, { action: 'verifyCode', email: KNOWN, code: CODE });
   assert.deepEqual([out.status, out.body, now], [503, { error: 'signing in is not working right now; try again' }, ANSWER_FLOOR_MS]);
 });
+
+test('a banned login that gives the right code is told plainly it is barred (403 with the barred hint), never "try again"; asking for its code answers like any other', async () => {
+  let now = 0;
+  const clock = { now: () => now, sleep: async (ms: number) => { now += ms; } };
+  const banned: Auth = { requestCode: async () => {}, verifyCode: async () => ({ refused: 'barred' }) };
+  const service: Db = { rpc: async <T>() => null as T };
+  const player = (): Db => ({ rpc: async <T>() => null as T });
+  const out = await runAccount({ auth: banned, service, player, clock }, { action: 'verifyCode', email: KNOWN, code: CODE });
+  assert.equal(out.status, 403);
+  assert.equal((out.body as { hint?: string }).hint, 'kayfabb.barred');
+  assert.match((out.body as { error: string }).error, /barred/);
+  assert.doesNotMatch((out.body as { error: string }).error, /try again/);
+  // Asking for a code is answered the same for the banned address as for one with no login.
+  const a = await runAccount({ auth: banned, service, player, clock }, { action: 'requestCode', email: KNOWN });
+  const b = await runAccount({ auth: banned, service, player, clock }, { action: 'requestCode', email: UNKNOWN });
+  assert.deepEqual([a.status, a.body], [b.status, b.body]);
+});

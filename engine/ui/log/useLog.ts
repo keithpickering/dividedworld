@@ -112,7 +112,8 @@ export function logDataOf(doc: LogDoc, mine: readonly MyCharacter[], nextSettlem
   return {
     log: page.log, mine, estimate, standings: page.standings, season: page.season, nextSettlement,
     turns: page.turns.filter((t) => mine.some((c) => c.id === t.character && Date.parse(c.classSince) === Date.parse(t.at))),
-    acts: new Map([...page.acts, ...(doc.estimateActs ?? [])].map((a) => [a.id, a])), names, staff, titles, states,
+    acts: new Map([...page.acts, ...(doc.estimateActs ?? []), ...(doc.conduct?.acts ?? [])].map((a) => [a.id, a])), names, staff, titles: new Map([...titles, ...(doc.conduct?.titles ?? [])]), states,
+    ...(doc.conduct ? { conduct: doc.conduct.rows } : {}),
   };
 }
 

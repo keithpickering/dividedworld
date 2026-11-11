@@ -85,7 +85,7 @@ export function AccountGate({ children }: { readonly children: ReactNode }) {
   const session = useSession();
   const { path } = useLocation();
   /* A bar comes first, then the code; neither lets any page through, and a stale suspension (its date passed on this clock) is no bar. */
-  if (session?.signedIn && session.account && barHolds(session.bar)) return <Barred until={session.bar.until} />;
+  if (path !== CONTACT_PATH && session && (!session.signedIn || session.account !== null) && barHolds(session.bar)) return <Barred until={session.bar.unknown ? undefined : session.bar.until} signedIn={session.signedIn} />;
   if (session?.signedIn && session.account && !session.conductAccepted) return <Accept />;
   if (session?.signedIn && !session.account && path !== '/sign-in' && path !== '/register' && path !== CONTACT_PATH) {
     return <div className="kb-acct"><CalmRegion className="kb-acct-panel"><OpenAccount /></CalmRegion></div>;
