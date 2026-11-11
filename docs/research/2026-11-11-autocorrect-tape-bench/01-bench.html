@@ -224,6 +224,9 @@ button.b:hover { background: var(--shade); }
     <label><input type="radio" name="peek" value="turn" id="peekTurn" checked> Lifts the layers in turn on one pull</label>
     <label><input type="radio" name="peek" value="together" id="peekTogether"> Lifts every layer together</label>
     <label><input type="radio" name="peek" value="top" id="peekTop"> Lifts only the top</label>
+    <div class="slider"><label for="stay">Stays up</label><input type="range" id="stay" min="0" max="2500" step="100" value="900"><output for="stay" id="stayOut">900</output></div>
+    <div class="slider"><label for="settle">Lays down</label><input type="range" id="settle" min="40" max="1200" step="20" value="160"><output for="settle" id="settleOut">160</output></div>
+    <span class="hint">After a peek is let go: how long it stays up (milliseconds), then how fast it lays back down (pixels a second, the last layer lifted first). Grab it again before it is down to keep pulling: room for a phone's short drags.</span>
     <span class="hint">The last post holds three plays: “big cats” → “small dogs”, then “cats are” → “nobody asked”, then “big cats” → “Wigglers”. Only a strip with nothing over it can be peeled or peeked.</span>
   </fieldset>
   <fieldset>
@@ -248,9 +251,9 @@ button.b:hover { background: var(--shade); }
       <li><b>The footprint.</b> Each occurrence keeps the width of the wider of its words and its replacement, so the post never moves when tape comes off. After a reload, an occurrence the author peeled takes its words' own width, and the residue follows it.</li>
       <li><b>Pieces.</b> Where the footprint crosses a line break, the tape is cut into one piece per line, and the replacement's words are shared out between them. Each piece peels on its own; the occurrence is peeled once its last piece is.</li>
       <li><b>The peel.</b> Hold at an end until the corner lifts, then pull back along the strip. The peel follows your hand no faster than the pace. Get too far ahead and the tape strains (it whitens and shakes), then tears: the rolled part drops, and the new ragged end has to be picked again. Let go partway and the roll waits where it is.</li>
-      <li><b>The peek.</b> A reader drags from an end to fold the tape back and read under it; letting go lays it back down.</li>
+      <li><b>The peek.</b> A reader drags from an end to fold the tape back and read under it. On a stack, pulling on lifts the strips beneath in turn. Let go and it stays up a moment, then lays back down slowly, the last strip lifted first; grab it again before it is down and the pull carries on from there.</li>
       <li><b>The keyboard.</b> Holding Enter or Space picks the end, then peels at the pace. Letting go keeps what is done. It can never pull too fast, so it costs what a careful hand does.</li>
-      <li><b>Reduced motion.</b> No fall and no shaking; a roll that comes off is gone at once, and a peek lays down at once. The pace is the same.</li>
+      <li><b>Reduced motion.</b> No fall and no shaking; a roll that comes off is gone at once, and a peek stays up as long, then lays down at once. The pace is the same.</li>
     </ul>
   </section>
   <section>
@@ -298,7 +301,7 @@ button.b:hover { background: var(--shade); }
   };
 
   /* ---------- The bench's settings. ---------- */
-  const S = { role: 'author', board: 'light', width: 'desk', font: 'gochi', stack: 'layered', peek: 'turn', pace: 90, pick: 450, give: 34, tear: true, gloss: true, reduce: matchMedia('(prefers-reduced-motion: reduce)').matches };
+  const S = { role: 'author', board: 'light', width: 'desk', font: 'gochi', stack: 'layered', peek: 'turn', stay: 900, settle: 160, pace: 90, pick: 450, give: 34, tear: true, gloss: true, reduce: matchMedia('(prefers-reduced-motion: reduce)').matches };
   /* Each strip's state: 'taped', 'peeled' (peeled this visit: its footprint stays) or 'saved' (peeled before this load: the words' own width). */
   const memberState = new Map();
   /* A half-peeled piece's progress, kept across the bench's own redraws within a visit. */
@@ -702,13 +705,22 @@ button.b:hover { background: var(--shade); }
     el.addEventListener('pointerdown', (e) => {
       if (P.done || (e.pointerType === 'mouse' && e.button !== 0)) return;
       e.preventDefault();
+      /* A peek still up, on this strip or carried from the one above it, is picked up again where it is. */
+      const carrier = S.role === 'reader' && (P.carrier?.peekD > 0 ? P.carrier : P.peekD > 0 ? P : null);
+      if (carrier) {
+        const cx = e.clientX - carrier.el.getBoundingClientRect().left;
+        carrier.el.setPointerCapture(e.pointerId);
+        carrier.hand = { id: e.pointerId, x: cx, x0: cx, base: carrier.peekD, peek: true }; carrier.letGoAt = null;
+        say('Picked it up again. Keep pulling.');
+        wake(carrier); return;
+      }
       if (!o.exposed) { say('Another strip is stuck over this one. That one comes off first.'); return; }
       const x = localX(e);
       el.setPointerCapture(e.pointerId);
       if (S.role === 'reader') {
-        P.liftSide = x < P.W / 2 ? 'a' : 'b'; P.settling = false; P.peekD = 0;
-        P.hand = { id: e.pointerId, x, peek: true };
-        say('Peeking. Let go and it sticks back down.');
+        P.liftSide = x < P.W / 2 ? 'a' : 'b'; P.letGoAt = null;
+        P.hand = { id: e.pointerId, x, x0: x, base: Math.max(0, P.liftSide === 'a' ? x - P.a : P.bEnd - x), peek: true };
+        say('Peeking. Let go and it lays back down after a moment.');
         wake(P); return;
       }
       const side = Math.abs(x - P.a) <= END ? 'a' : Math.abs(x - P.bEnd) <= END ? 'b' : null;
@@ -733,12 +745,12 @@ button.b:hover { background: var(--shade); }
       e.preventDefault();
       if (e.repeat || P.keyHeld || P.done || !o.exposed) return;
       P.keyHeld = true;
-      if (S.role === 'reader') { P.liftSide = 'a'; P.settling = false; P.peekD = 0; wake(P); return; }
+      if (S.role === 'reader') { if (!(P.peekD > 0)) P.liftSide = 'a'; P.letGoAt = null; wake(P); return; }
       startPick(P.side ?? (P.torn.a && !P.torn.b ? 'b' : 'a'));
       wake(P);
     });
     /** Letting go of a peek: every layer it lifted lays back down. */
-    const layDown = () => { P.peekD = 0; for (const Q of [P, ...P.under]) { if (Q.lift <= 0) continue; Q.settling = true; if (S.reduce) { Q.lift = 0; Q.render(); } wake(Q); } };
+    const layDown = () => { P.letGoAt = performance.now(); wake(P); };
     const letGoKey = () => {
       P.keyHeld = false;
       if (S.role === 'reader') { layDown(); return; }
@@ -761,24 +773,28 @@ button.b:hover { background: var(--shade); }
       step(P, dt, now);
       if (!busy.has(P)) continue;
       P.render();
-      const still = !P.pick && !P.hand && !P.keyHeld && !(P.settling && P.lift > 0);
+      const still = !P.pick && !P.hand && !P.keyHeld && !(P.letGoAt != null && P.peekD > 0);
       if (still || P.done) busy.delete(P);
     }
     if (busy.size) requestAnimationFrame(tick); else running = false;
   }
   function step(P, dt, now) {
     if (S.role === 'reader') {
-      if (P.hand?.peek || P.keyHeld) {
-        /* One pull: the top lifts first; pulling on brings the layer beneath up after it, and so on (or all at once, or the top alone). */
-        P.peekD = P.hand?.peek ? Math.max(0, P.liftSide === 'a' ? P.hand.x - P.a : P.bEnd - P.hand.x) : P.peekD + (P.W / 0.45) * dt;
-        let rem = P.peekD;
-        for (const Q of [P, ...(S.peek === 'top' ? [] : P.under)]) {
-          Q.liftSide = P.liftSide; Q.settling = false;
-          Q.lift = clamp(S.peek === 'together' ? P.peekD : rem, 0, Q.W);
-          rem -= Q.W;
-          if (Q !== P) Q.render();
-        }
-      } else if (P.settling) { P.lift = S.reduce ? 0 : Math.max(0, P.lift - Math.max(P.W, 90) * dt * 5); if (!P.lift) P.settling = false; }
+      if (P.hand?.peek) P.peekD = Math.max(0, P.hand.base + (P.hand.x - P.hand.x0) * (P.liftSide === 'a' ? 1 : -1));
+      else if (P.keyHeld) P.peekD += (P.W / 0.45) * dt;
+      else if (P.letGoAt != null && now - P.letGoAt >= S.stay) P.peekD = S.reduce ? 0 : Math.max(0, P.peekD - S.settle * dt);
+      /* One pull: the top lifts first; pulling on brings the layer beneath up after it, and so on (or all at once, or the top alone). Laying down runs it backwards. */
+      const chain = [P, ...(S.peek === 'top' ? [] : P.under)];
+      P.peekD = Math.min(P.peekD, S.peek === 'together' ? Math.max(...chain.map((Q) => Q.W)) : chain.reduce((t, Q) => t + Q.W, 0));
+      let rem = P.peekD;
+      for (const Q of chain) {
+        Q.liftSide = P.liftSide;
+        Q.lift = clamp(S.peek === 'together' ? P.peekD : rem, 0, Q.W);
+        Q.carrier = Q.lift > 0 ? P : null;
+        rem -= Q.W;
+        if (Q !== P) Q.render();
+      }
+      if (!P.peekD) P.letGoAt = null;
       return;
     }
     if (P.pick) {
@@ -881,7 +897,7 @@ button.b:hover { background: var(--shade); }
   radios('peek', (v) => { S.peek = v; });
   radios('stack', (v) => { S.stack = v; partial.clear(); pieces = []; rebuild(); });
   const slider = (id, key) => { const i = document.getElementById(id), out = document.getElementById(`${id}Out`); i.addEventListener('input', () => { S[key] = Number(i.value); out.textContent = i.value; }); };
-  slider('pace', 'pace'); slider('pick', 'pick'); slider('give', 'give');
+  slider('pace', 'pace'); slider('pick', 'pick'); slider('give', 'give'); slider('stay', 'stay'); slider('settle', 'settle');
   document.getElementById('tear').addEventListener('change', (e) => { S.tear = e.target.checked; });
   document.getElementById('gloss').addEventListener('change', (e) => { S.gloss = e.target.checked; wrap.dataset.gloss = e.target.checked ? 'on' : 'off'; });
   const reduceBox = document.getElementById('reduce'); reduceBox.checked = S.reduce;
