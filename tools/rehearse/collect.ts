@@ -3,7 +3,7 @@
 // as Acts (0104, 0105), patrols (0110), apologies (0129). A move's end is its `move_end` Act (0046), a visit's its `visit_end` (0105).
 // The calls Task 5 kept (prompt and answer) join to a meeting by the id on the request, and to a day by the simulated time they were made.
 import { DAY_MS } from "../../engine/rehearsal/generate.ts";
-import type { LogApology, LogCall, LogChatter, LogCost, LogDay, LogInfraction, LogMeeting, LogMove, LogOrder, LogPatrol, LogSkip, LogTrim, LogVisit, RehearsalLog } from "../../engine/rehearsal/report.ts";
+import type { LogApology, LogCall, LogChatter, LogCost, LogDay, LogInfraction, LogMeeting, LogMeetingPart, LogMove, LogOrder, LogPatrol, LogSkip, LogTrim, LogVisit, RehearsalLog } from "../../engine/rehearsal/report.ts";
 import type { ChatRequest, CompletionRequest } from "../../engine/system/model.ts";
 import type { KeptCall } from "./models.ts";
 import type { RunContext } from "./run.ts";
@@ -118,21 +118,31 @@ export async function collect(ctx: RunContext): Promise<RehearsalLog> {
 
   // Meetings, with the Boss's memory before and after and the call that answered.
   const memories = await conn.sql(`select id, staff, meeting, ${ms("at")} as ms, body from staff_memory order by staff, id`);
-  const meetings = await conn.sql(`select id, ${ms("started_at")} as started, ${ms("finished_at")} as finished, outcome, error, bank_before::float8 as bank_before, bank_after::float8 as bank_after from meetings where ${range("started_at")} order by id`, params);
+  const meetings = await conn.sql(`select id, ${ms("started_at")} as started, ${ms("finished_at")} as finished, outcome, error, record, bank_before::float8 as bank_before, bank_after::float8 as bank_after from meetings where ${range("started_at")} order by id`, params);
   for (const m of meetings) {
     const id = Number(m.id);
     const mine = memories.filter((r) => Number(r.meeting) === id);
     const after = mine[0];
     const before = after ? memories.filter((r) => r.staff === after.staff && Number(r.id) < Number(after.id)).at(-1) : undefined;
-    const call = calls.filter((c) => c.duty === "meeting" && c.request.meeting === id).at(-1);
-    if (call) used.add(call);
-    const request = call?.request as ChatRequest | undefined;
+    // One part per kept call of the meeting, in order; the record's parts (apply_meeting, fail_meeting) give each its outcome, by position.
+    const recorded = Array.isArray((m.record as { parts?: unknown } | null)?.parts) ? ((m.record as { parts: { part?: unknown; outcome?: unknown; error?: unknown }[] }).parts) : [];
+    const mine2 = calls.filter((c) => c.duty === "meeting" && c.request.meeting === id);
+    const parts: LogMeetingPart[] = mine2.map((c, i) => {
+      used.add(c);
+      const rec = recorded[i];
+      const request = c.request as ChatRequest;
+      const outcome = typeof rec?.outcome === "string" ? rec.outcome : c.error ? "rejected" : "ok";
+      const error = rec?.error != null ? String(rec.error) : c.error ? c.error.message : null;
+      return {
+        part: typeof rec?.part === "string" ? rec.part : `part ${i + 1}`, outcome, error,
+        sent: { system: request.system, messages: request.messages.map((x) => ({ role: x.role, content: x.content })) },
+        answer: c.value ?? (c.error ? { rejected: c.error } : null), replayed: c.replayed,
+      };
+    });
     const row: LogMeeting = {
       id, startedAt: iso(m.started), finishedAt: iso(m.finished), outcome: String(m.outcome), error: m.error === null ? null : String(m.error),
       bankBefore: m.bank_before === null ? null : Number(m.bank_before), bankAfter: m.bank_after === null ? null : Number(m.bank_after),
-      sent: request ? { system: request.system, messages: request.messages.map((x) => ({ role: x.role, content: x.content })) } : null,
-      answer: call?.value ?? (call?.error ? { rejected: call.error } : null),
-      memoryBefore: before?.body ?? null, memoryAfter: after?.body ?? null, replayed: call ? call.replayed : null,
+      parts, memoryBefore: before?.body ?? null, memoryAfter: after?.body ?? null,
     };
     put(Number(m.started))?.meetings.push(row);
   }

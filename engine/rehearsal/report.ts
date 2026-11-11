@@ -5,6 +5,17 @@
  */
 
 export interface LogTrim { readonly where: string; readonly path: string; readonly predicate: string; readonly before: number; readonly after: number }
+export interface LogMeetingPart {
+  readonly part: string;
+  /** ok, rejected or failed: the record's, or from the call's own error where the record has none for this part. */
+  readonly outcome: string;
+  readonly error: string | null;
+  /** What the Boss was sent for this part: the system prompt and the messages. */
+  readonly sent: { readonly system: string; readonly messages: readonly { readonly role: string; readonly content: string }[] };
+  readonly answer: unknown;
+  /** True when the call came from the cassette. */
+  readonly replayed: boolean;
+}
 export interface LogMeeting {
   readonly id: number;
   readonly startedAt: string;
@@ -13,13 +24,10 @@ export interface LogMeeting {
   readonly error: string | null;
   readonly bankBefore: number | null;
   readonly bankAfter: number | null;
-  /** What the Boss was sent: the system prompt and the messages (the digest and its memory are in them). Null when no call was kept. */
-  readonly sent: { readonly system: string; readonly messages: readonly { readonly role: string; readonly content: string }[] } | null;
-  readonly answer: unknown;
+  /** One per kept call of the meeting, in order (moves, staff, self), each with the outcome the meeting's record holds for that part. Empty when no call was kept. */
+  readonly parts: readonly LogMeetingPart[];
   readonly memoryBefore: unknown;
   readonly memoryAfter: unknown;
-  /** Null when no call was kept; true when the call came from the cassette. */
-  readonly replayed: boolean | null;
 }
 export interface LogMove {
   readonly id: number;
@@ -115,14 +123,18 @@ function table(head: readonly string[], rows: readonly (readonly unknown[])[], e
   return `<table><thead><tr>${head.map((h) => `<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${rows.map((r) => `<tr>${r.map((c) => `<td>${c instanceof Html ? c.html : esc(c)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
 }
 
+function partHtml(p: LogMeetingPart): string {
+  const error = p.outcome === 'ok' ? '' : ` Error: ${esc(p.error ?? 'none recorded')}`;
+  return `<div class="part"><h4>Part ${esc(p.part)}: ${esc(p.outcome)}${p.replayed ? ' (replayed)' : ''}${error}</h4>
+<details><summary>What the Boss was sent</summary>${pre(p.sent.system)}${p.sent.messages.map((x) => `<p class="role">${esc(x.role)}</p>${pre(x.content)}`).join('')}</details>
+<details open><summary>The answer</summary>${pre(p.answer)}</details></div>`;
+}
+
 function meetingHtml(m: LogMeeting): string {
-  const sent = m.sent
-    ? `<details><summary>What the Boss was sent (the digest and its memory)</summary>${pre(m.sent.system)}${m.sent.messages.map((x) => `<p class="role">${esc(x.role)}</p>${pre(x.content)}`).join('')}</details>`
-    : '<p class="none">No call was kept for this meeting.</p>';
-  return `<div class="card"><h3>Meeting ${esc(m.id)}: ${esc(m.outcome)}${m.replayed === null ? '' : m.replayed ? ' (replayed)' : ' (live or stub)'}</h3>
+  const replayed = m.parts.length === 0 ? '' : m.parts.every((p) => p.replayed) ? ' (replayed)' : ' (live or stub)';
+  return `<div class="card"><h3>Meeting ${esc(m.id)}: ${esc(m.outcome)}${replayed}</h3>
 <p>${esc(m.startedAt)} to ${time(m.finishedAt)}. Bank ${esc(m.bankBefore ?? 'none')} to ${esc(m.bankAfter ?? 'none')}.${m.error ? ` Error: ${esc(m.error)}` : ''}</p>
-${sent}
-<details open><summary>The answer</summary>${pre(m.answer)}</details>
+${m.parts.length ? m.parts.map(partHtml).join('') : '<p class="none">No call was kept for this meeting.</p>'}
 <div class="side"><div><h4>Memory before</h4>${pre(m.memoryBefore)}</div><div><h4>Memory after</h4>${pre(m.memoryAfter)}</div></div></div>`;
 }
 
