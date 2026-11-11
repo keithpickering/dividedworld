@@ -453,5 +453,5 @@ export async function readAbove(api: KayfaApi, plays: Plays, characters: readonl
  * default case draws the words in `PostEffects`) and the ORIGIN box both ask `holdsEffects`, so the kinds that wear an
  * effect, and so carry marks, are one list.
  */
-const WITHOUT_EFFECTS: ReadonlySet<ActKind> = new Set<ActKind>(['card', 'unmask', 'announce', 'tally', 'reveal', 'move', 'move_end', 'move_keep', 'set', 'take_back', 'spring', 'update', 'card_end', 'visit', 'visit_join', 'visit_end', 'report', 'report_verdict', 'intercept', 'infraction', 'ban', 'appeal', 'appeal_ruling']);
+const WITHOUT_EFFECTS: ReadonlySet<ActKind> = new Set<ActKind>(['card', 'unmask', 'announce', 'tally', 'reveal', 'move', 'move_end', 'move_keep', 'set', 'take_back', 'spring', 'update', 'card_end', 'visit', 'visit_join', 'visit_end', 'report', 'report_verdict', 'intercept', 'infraction', 'ban', 'appeal', 'appeal_ruling', 'donation']);
 export const holdsEffects = (kind: ActKind): boolean => !WITHOUT_EFFECTS.has(kind);

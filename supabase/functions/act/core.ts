@@ -104,6 +104,8 @@ const BROADCASTS: Record<string, (answer: Row) => Broadcast[]> = {
   withdraw_turn: () => [],
   react: (a) => withSprung(a, a.thread ? [{ topic: `thread:${a.thread}`, event: 'tally', payload: { act: a.act, tally: a.tally } }] : []),
   save_effect_state: (a) => (a.thread ? [{ topic: `thread:${a.thread}`, event: 'effect', payload: { play: a.play, saved_at: a.saved_at } }] : []),
+  // A gift is an Act of the drive's thread, heard as a play is. The answer also holds the giver's own balance, which is the giver's alone and is never sent on.
+  donate: (a) => act(a.gift),
   buy_card: () => [],
   buy_pack: () => [],
   // A player's own: a character appears on the next load of who is here, and an invite or an

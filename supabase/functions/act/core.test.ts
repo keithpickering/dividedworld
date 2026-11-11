@@ -924,3 +924,14 @@ test('the kick: a refused play or edit kicks nothing, and a kick that throws is 
     await later();
   } finally { console.error = was; }
 });
+
+test('a gift is the service\'s, for whoever the session is, and only the gift\'s projection is broadcast, never a balance', async () => {
+  const thread = '66666666-6666-4666-8666-666666666666';
+  const gift = { id: '77777777-7777-4777-8777-777777777777', kind: 'donation', thread, character: id, targetActId: target, seq: null, payload: { amount: 25 } };
+  const { dbs, calls } = pair({ whoami, donate: { gift, balance: 475 } });
+  const out = await runAction(dbs, instance, { action: 'donate', character: id, drive: target, amount: 25 });
+  assert.ok(calls.includes(`service:donate:${JSON.stringify({ through: id, drive: target, amount: 25, who: whoami })}`), calls.join('\n'));
+  assert.deepEqual(out.body, { gift, balance: 475 }, 'the giver is answered with the gift and their own balance');
+  assert.deepEqual(out.broadcasts, [{ topic: `thread:${thread}`, event: 'act', payload: gift }]);
+  assert.doesNotMatch(JSON.stringify(out.broadcasts), /balance|475/, 'no wallet or balance is sent live');
+});
