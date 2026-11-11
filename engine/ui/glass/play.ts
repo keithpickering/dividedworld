@@ -17,8 +17,12 @@ const split = (t: unknown) => {
   return { values: values as Values, transition: transition as Transition | undefined };
 };
 
-/** The css property a Motion key writes. */
-const cssOf = (k: string) => (k === 'x' || k === 'y' || k === 'scale' ? 'transform' : k === 'clipPath' ? 'clip-path' : k === 'transformOrigin' ? 'transform-origin' : k);
+/**
+ * The css property a Motion key writes: a transform shorthand is `transform`, and any other camelCase key is its css name
+ * (`maskImage` is `mask-image`, `WebkitMaskImage` is `-webkit-mask-image`), since removeProperty reads only that. A key left in
+ * camelCase removes nothing, and Snappy's wipe mask stayed on the hand drawer, cutting its fan off at the drawer's top.
+ */
+const cssOf = (k: string) => (k === 'x' || k === 'y' || k === 'scale' ? 'transform' : k.replace(/^Webkit/u, '-webkit').replace(/[A-Z]/gu, (c) => `-${c.toLowerCase()}`));
 
 function clear(el: HTMLElement, keys: Iterable<string>) {
   for (const k of keys) el.style.removeProperty(cssOf(k));
