@@ -830,6 +830,7 @@ test('a wall pick that is offered draws on that wall through staff_draw_on_surfa
   const drew = d.of('staff_draw_on_surface')[0]!;
   assert.equal(drew.play, W);
   assert.equal(drew.payload.stencil, 'horns');
+  assert.equal(typeof drew.payload.pool, 'string', 'the draw carries its pool day, so a crash before the spend is adopted');
   assert.equal(drew.cells.length, 10000);
   assert.equal(typeof drew.most, 'number');
   assert.ok(d.state.spends.some((x) => x.card_act !== null && x.staff === drew.staff_key), 'the draw spends the card slot');

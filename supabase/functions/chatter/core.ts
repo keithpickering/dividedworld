@@ -400,7 +400,7 @@ async function onePick(r: PickRun): Promise<PickRecord> {
           if (first === undefined) throw new DatabaseError('no configuration could be built for the card', '', 400, 'no configuration could be built for the card');
           record['cardConfig'] = chosen;
           const drawn = wall !== undefined
-            ? await db.rpc<{ id: string }>('staff_draw_on_surface', { staff_key: p.staff, play: wall, payload: first.payload, cells: first.cells, most: first.most })
+            ? await db.rpc<{ id: string }>('staff_draw_on_surface', { staff_key: p.staff, play: wall, payload: { ...first.payload, pool: day }, cells: first.cells, most: first.most })
             : await db.rpc<{ id: string }>('staff_play_surface_card', {
               staff_key: p.staff, card: answer.card.key, target: p.quoting, config: {}, message: '', pool_day: day,
               ...(rules.writes === undefined ? {} : { tokens: rules.writes.tokens({} as never, tuned.settings) }),
