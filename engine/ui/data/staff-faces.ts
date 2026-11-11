@@ -6,9 +6,7 @@
  */
 import type { InstanceUi } from '../types.ts';
 import type { Character } from './api.ts';
-
-/** The staff key the developer persona's character carries. */
-const DEVELOPER = 'developer';
+import { DEVELOPER_STAFF_KEY } from '../../rules/instance.ts';
 
 /**
  * The character with the instance's picture for it, where it is staff and the instance has one; otherwise the very
@@ -17,7 +15,7 @@ const DEVELOPER = 'developer';
  */
 export function withStaffFace(character: Character, ui: InstanceUi, developerAvatar?: string): Character {
   if (character.staff === undefined) return character;
-  if (character.staff === DEVELOPER) {
+  if (character.staff === DEVELOPER_STAFF_KEY) {
     const square = developerAvatar === undefined ? undefined : ui.avatars?.[developerAvatar];
     return square === undefined ? character : { ...character, avatarSquare: square };
   }
