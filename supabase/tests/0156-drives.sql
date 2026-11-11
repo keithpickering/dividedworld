@@ -16,6 +16,41 @@ create function pg_temp.eco() returns void language sql as $$
   update settings set value = value || '{"dv.g1": 10, "dv.g2": 25, "dv.over": 25}'::jsonb where key = 'economy'
 $$;
 
+-- ---- two plays at once on a post with no open drive serialize on the post's lock: one opens the drive, the other joins it ----
+-- Without the lock both read no open drive and each opens one of its own. Stack 2, so both fit in one drive. Two players, so no ledger or
+-- character lock of a single caster serializes them: the post's row is the only thing they share. The racers are two sessions,
+-- so everything they read is committed first (tests.commit), as 0077 does. It runs first: the file's own transaction holds locks (seed_instance's) that a committed insert would wait on.
+do $$
+declare
+  ann uuid := gen_random_uuid(); a uuid := gen_random_uuid(); bob uuid := gen_random_uuid(); b uuid := gen_random_uuid(); t uuid := gen_random_uuid(); p uuid;
+  said text[];
+  drives text[];
+  round integer;
+begin
+  perform tests.commit(format($sql$
+    insert into auth.users (id, email) values (%1$L, 'dv-race@test.invalid'), (%4$L, 'dv-race2@test.invalid');
+    insert into accounts (id) values (%1$L), (%4$L);
+    insert into characters (id, owner, name, created_at, debuted_at) values (%2$L, %1$L, 'Dv Racer', now(), now()), (%5$L, %4$L, 'Dv Racer Two', now(), now());
+    insert into class_history (character, class_key, started_at) values (%2$L, 'alpha', now()), (%5$L, 'alpha', now());
+    insert into threads (id, board, title) select %3$L, b.id, 'Dv race' from boards b where b.slug = 'general';
+    insert into card_kinds (key, name, alignment, rarity, play, stack, drive) values
+      ('dv-race', 'Dv Race', 'sweet', 'uncommon', 'cast', 2, '{"lasts": {"unit": "hour", "count": 1}, "gifts": ["dv.g1"], "overhead": "dv.over"}');
+    insert into card_ledger (account, card, kind, price) select x, 'dv-race', 'bought', 0 from unnest(array[%1$L::uuid, %4$L::uuid]) x, generate_series(1, 20);
+  $sql$, ann, a, t, bob, b));
+  for round in 1 .. 10 loop
+    p := gen_random_uuid();
+    perform tests.commit(format($sql$ insert into acts (id, character, kind, thread, payload) values (%L, %L, 'post', %L, '{"body": "Raced on."}') $sql$, p, a, t));
+    said := tests.race_service(format('select play_card(%L, ''dv-race'', %L, %L, ''{}'', 0, ''one'')', ann, a, p),
+                               format('select play_card(%L, ''dv-race'', %L, %L, ''{}'', 0, ''two'')', bob, b, p));
+    if said[1] is not null or said[2] is not null then raise exception 'two plays of a drive card at once, round %: %', round, said; end if;
+    select array_agg(k.payload ->> 'drive' order by k.created_at, k.id) into drives from acts k where k.kind = 'card' and k.target_act_id = p;
+    if cardinality(drives) is distinct from 2 or drives[1] is distinct from drives[2]
+       or (select count(*) from acts k where k.kind = 'card' and k.target_act_id = p and k.payload ->> 'drive' = k.id::text) is distinct from 1 then
+      raise exception 'two plays at once, round %: both landed but did not share one drive opened by one of them: %', round, drives;
+    end if;
+  end loop;
+end $$;
+
 -- ---- card_kinds_problem: each poison is refused alone, in instanceProblems's words, and clean cards pass ----
 do $$
 declare
@@ -252,39 +287,4 @@ begin
   if c2 is distinct from now() + interval '1 hour' or (select count(distinct e ->> 'closes') from jsonb_array_elements(card_target(p) -> 'effects') e) is distinct from 1 then
     raise exception 'the close moved back an hour from the new play: %', card_target(p);
   end if;
-end $$;
-
--- ---- two plays at once on a post with no open drive serialize on the post's lock: one opens the drive, the other joins it ----
--- Without the lock both read no open drive and each opens one of its own. Stack 2, so both fit in one drive. The racers are two sessions,
--- so everything they read is committed first (tests.commit), as 0077 does.
-do $$
-declare
-  ann uuid := gen_random_uuid(); a uuid := gen_random_uuid(); t uuid := gen_random_uuid(); p uuid;
-  said text[];
-  drives text[];
-  round integer;
-begin
-  perform tests.commit(format($sql$
-    insert into auth.users (id, email) values (%1$L, 'dv-race@test.invalid');
-    insert into accounts (id) values (%1$L);
-    insert into characters (id, owner, name, created_at, debuted_at) values (%2$L, %1$L, 'Dv Racer', now(), now());
-    insert into class_history (character, class_key, started_at) values (%2$L, 'alpha', now());
-    insert into threads (id, board, title) select %3$L, b.id, 'Dv race' from boards b where b.slug = 'general';
-    update settings set value = value || '{"dv.g1": 10, "dv.over": 25}'::jsonb where key = 'economy';
-    insert into card_kinds (key, name, alignment, rarity, play, stack, drive) values
-      ('dv-race', 'Dv Race', 'sweet', 'uncommon', 'cast', 2, '{"lasts": {"unit": "hour", "count": 1}, "gifts": ["dv.g1"], "overhead": "dv.over"}');
-    insert into card_ledger (account, card, kind, price) select %1$L, 'dv-race', 'bought', 0 from generate_series(1, 20);
-  $sql$, ann, a, t));
-  for round in 1 .. 10 loop
-    p := gen_random_uuid();
-    perform tests.commit(format($sql$ insert into acts (id, character, kind, thread, payload) values (%L, %L, 'post', %L, '{"body": "Raced on."}') $sql$, p, a, t));
-    said := tests.race_service(format('select play_card(%L, ''dv-race'', %L, %L, ''{}'', 0, ''one'')', ann, a, p),
-                               format('select play_card(%L, ''dv-race'', %L, %L, ''{}'', 0, ''two'')', ann, a, p));
-    if said[1] is not null or said[2] is not null then raise exception 'two plays of a drive card at once, round %: %', round, said; end if;
-    select array_agg(k.payload ->> 'drive' order by k.created_at, k.id) into drives from acts k where k.kind = 'card' and k.target_act_id = p;
-    if cardinality(drives) is distinct from 2 or drives[1] is distinct from drives[2]
-       or (select count(*) from acts k where k.kind = 'card' and k.target_act_id = p and k.payload ->> 'drive' = k.id::text) is distinct from 1 then
-      raise exception 'two plays at once, round %: both landed but did not share one drive opened by one of them: %', round, drives;
-    end if;
-  end loop;
 end $$;

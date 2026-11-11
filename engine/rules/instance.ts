@@ -545,6 +545,9 @@ function reachProblems(c: CardRules, settings: Settings): string[] {
   return out;
 }
 
+/** A drive's span counts hours, days or weeks, never months: SQL's span_interval takes a month as a calendar month and spanMs as 30 days, so a monthly close could differ between them. */
+const DRIVE_UNITS: readonly Span['unit'][] = ['hour', 'day', 'week'];
+
 /** The most days a drive may last after its latest play: a month's drive would never close in play, and the close is computed from the plays. */
 const DRIVE_LASTS_MOST_DAYS = 30;
 
@@ -573,7 +576,7 @@ function driveProblems(c: CardRules, settings: Settings): string[] {
   const reaches = c.reaches ?? ['post'];
   if (!Array.isArray(reaches) || reaches.length !== 1 || reaches[0] !== 'post') out.push(`${who}, and a drive card reaches a post alone`);
   if (typeof d !== 'object' || d === null) return [...out, `${who} that is not an object of lasts, gifts and overhead`];
-  if (!isSpan(d.lasts, LASTS_UNITS)) out.push(`${who} that lasts ${JSON.stringify(d.lasts)}; it must be a span: a unit of hour, day, week or month and a whole count from 1 to 1000`);
+  if (!isSpan(d.lasts, DRIVE_UNITS)) out.push(`${who} that lasts ${JSON.stringify(d.lasts)}; it must be a span: a unit of hour, day or week and a whole count from 1 to 1000`);
   else if (spanMs(d.lasts) > DRIVE_LASTS_MOST_DAYS * 86_400_000) out.push(`${who} that lasts ${spanWords(d.lasts)}, longer than the ${DRIVE_LASTS_MOST_DAYS} days a drive may`);
   const economy = settings?.economy;
   const held = economy !== null && typeof economy === 'object' && !Array.isArray(economy) ? economy : {};
