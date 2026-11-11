@@ -52,3 +52,32 @@ test('the glitter\'s canvases fill the post\'s body', async ({ page }) => {
   });
   expect(problems).toEqual([]);
 });
+
+/**
+ * Cling (docs/plans/2026-11-06-shine-design.md, section 2, "settle, burst and cling"): a mouse passing over a bombed post picks glitter
+ * up, and the page-fixed cling layer (`canvas[data-kb-shine="cling"]`) is made by that first pickup. Chromium, the light board, reduced
+ * motion off (reduced motion turns cling off by design). The glitter's canvases take no pointer, so what the pointer hits is the post's
+ * body, never the surface they stand on: issue #399, where cling knew only the surface and nothing was ever picked up.
+ */
+test('a mouse passing over a bombed post picks glitter up, and it drops off over what the pointer passes next', async ({ page }) => {
+  await page.goto(STORY('light'));
+  await expect.poll(() => page.locator(HOST).count()).toBeGreaterThan(0);
+  const host = page.locator(HOST).first();
+  await host.scrollIntoViewIfNeeded();
+  await expect.poll(() => page.evaluate(() => window.__kbShineDraws?.(0) ?? -1)).toBeGreaterThan(0);
+  expect(await page.evaluate(() => matchMedia('(hover: hover) and (pointer: fine)').matches && !matchMedia('(prefers-reduced-motion: reduce)').matches)).toBe(true);
+  const box = (await host.boundingBox())!;
+  const y = box.y + box.height / 2;
+  /* Back and forth across the words, a few px a move, as a hand passes over a post. */
+  for (let i = 0; i < 6 && (await page.locator('canvas[data-kb-shine="cling"]').count()) === 0; i++) {
+    await page.mouse.move(box.x + 10, y);
+    await page.mouse.move(box.x + box.width - 10, y, { steps: 40 });
+  }
+  await expect(page.locator('canvas[data-kb-shine="cling"]')).toHaveCount(1);
+  /* Off the post, down the page's left edge: what was carried drops off, falls, and the layer goes once nothing is in the air. */
+  for (let i = 0; i < 8; i++) {
+    await page.mouse.move(2, 100);
+    await page.mouse.move(2, 600, { steps: 25 });
+  }
+  await expect(page.locator('canvas[data-kb-shine="cling"]')).toHaveCount(0, { timeout: 10_000 });
+});
