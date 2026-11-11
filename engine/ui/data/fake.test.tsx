@@ -976,6 +976,29 @@ describe('what a list row shows', () => {
     expect(await place(old)).toEqual({ kind: 'play', card: 'whoops', on: post });
   });
 
+  test('a play on a board names the board as it is called now: a rename in force shows, and its end gives the old name back (0152)', async () => {
+    const { fake, anaFace, boFace } = world();
+    const general = (await fake.boards()).find((b) => b.slug === 'general')!;
+    const spun = must(await fake.spin(fake.seed.reach(boFace, 'board', general.id, 'glint'), anaFace, 'Spun', 'b')).thread.id;
+    // The place from the thread's own read and from its board's row, which must agree, beside the name the board list gives.
+    const names = async () => {
+      const one = (await fake.thread(spun))?.origin;
+      const row = (await fake.threads(general.id, { offset: 0, limit: 50 })).threads.find((t) => t.id === spun)?.origin;
+      expect(row).toEqual(one);
+      return [one, (await fake.boards()).find((b) => b.id === general.id)?.name];
+    };
+    const on = (name: string) => [{ kind: 'play', card: 'glint', on: { kind: 'board', slug: 'general', name } }, name];
+    expect(await names()).toEqual(on('General'));
+    fake.seed.staff('boss', 'The Boss', 'boss');
+    const first = fake.seed.move('boss', { board: 'general', name: 'Toast Palace' });
+    expect(await names()).toEqual(on('Toast Palace'));
+    fake.seed.endMove(first, { why: 'reversed' });
+    expect(await names()).toEqual(on('General'));
+    // A second rename, after the first has ended: the place follows it too.
+    fake.seed.move('boss', { board: 'general', name: 'Crumb Hall' });
+    expect(await names()).toEqual(on('Crumb Hall'));
+  });
+
   test('a thread spun from an update has the update\'s place, and a play on an update lands on the update', async () => {
     const { fake, anaFace } = world();
     const update = fake.seed.update({ title: 'Traps bite', body: 'Hi.' });
@@ -2731,6 +2754,39 @@ describe('framed alerts', () => {
     const move = w.fake.seed.groupMove('boss', { character: w.anaFace, group: 'trialMembers', board: 'general', at, expiresAt: at + 86_400_000 });
     must(await w.fake.apologize(move, w.anaFace, 'Sorry', w.named(w.boFace), [w.boFace]));
     expect(await w.framedFor(w.bo)).toHaveLength(1);
+  });
+  describe('an apology is read as the action rule reads it, before anything else', () => {
+    function apologyWorld() {
+      const w = framedWorld();
+      const at = Date.now() - 3_600_000;
+      const move = w.fake.seed.groupMove('boss', { character: w.anaFace, group: 'trialMembers', board: 'general', at, expiresAt: at + 86_400_000 });
+      const wrote = async () => ({ threads: (await w.fake.threads('general', { offset: 0, limit: 50 })).total, apologies: await w.fake.myApologies(w.anaFace) });
+      return { ...w, move, wrote };
+    }
+    test.each([['empty', ''], ['whitespace', '  \n ']])('a %s body is refused by body, and writes no thread, Act or apology', async (_name, body) => {
+      const w = apologyWorld();
+      const before = await w.wrote();
+      const acts = await w.fake.thread(w.thread);
+      const answer = await w.fake.apologize(w.move, w.anaFace, 'Sorry', body);
+      expect(answer).toMatchObject({ ok: false, field: 'body', error: 'is empty' });
+      expect(await w.wrote()).toEqual(before);
+      expect(await w.fake.thread(w.thread)).toEqual(acts);
+    });
+    test('a title over the limit is refused by title', async () => {
+      const w = apologyWorld();
+      const before = await w.wrote();
+      expect(await w.fake.apologize(w.move, w.anaFace, 'x'.repeat(21), 'I was wrong.')).toMatchObject({ ok: false, field: 'title', error: 'is longer than 20 characters' });
+      expect(await w.wrote()).toEqual(before);
+    });
+    test('signed out, it is refused with "sign in to act"', async () => {
+      const w = apologyWorld();
+      w.fake.signOut();
+      expect(await w.fake.apologize(w.move, w.anaFace, 'Sorry', 'I was wrong.')).toMatchObject({ ok: false, error: 'sign in to act' });
+    });
+    test('with a body it is sent', async () => {
+      const w = apologyWorld();
+      expect((await w.fake.apologize(w.move, w.anaFace, 'Sorry', 'I was wrong.')).ok).toBe(true);
+    });
   });
   test('none for an undebuted, unknown, unnamed-in-the-body, staff or own-mask target, and the answer is the same ok', async () => {
     const w = framedWorld();

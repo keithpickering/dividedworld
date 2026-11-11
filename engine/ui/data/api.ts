@@ -500,8 +500,10 @@ export interface Character {
   readonly squareFrame: Frame | null;
   readonly portraitFrame: Frame | null;
   readonly pipStyle: string;
-  /** Its pronouns (character_profiles.pronouns, public like a title): copy about this one character is written with them. A character with no profile row has the engine's it/its. */
+  /** Its pronouns (character_profiles.pronouns, public like a title): copy about this one character is written with them. A character with no profile row, or whose set a read did not carry (`pronounsUnread`), has the engine's it/its. */
   readonly pronouns: PronounSet;
+  /** Set only when a read gave this character's profile row without its set: `pronouns` is then the engine's it/its for display only, and is never offered for saving, so a save cannot overwrite the set the player chose. A character with no profile row at all is not marked: nothing is stored to overwrite. */
+  readonly pronounsUnread?: true;
   /** The first day of the month it debuted, "2026-10-01": the month and never the time ("Joined Oct 2026"). */
   readonly joined: string;
   /** Set only for a staff character (a persona or the developer): the instance's key for it. A staff member is known to be staff, signed in or not. */
