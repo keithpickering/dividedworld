@@ -1,17 +1,53 @@
-/* The ORIGIN box, the spin form, and "Spun into". */
+/*
+ * The ORIGIN box (docs/plans/2026-11-11-origin-band-design.md): a strip of another thread's table set into this post. Its head is the
+ * column head's band, in the theme's own --kb-head-* tokens, edge to edge inside the theme's frame. The Act under it stands on the
+ * second row's ground, so the words lifted in are told from the spinner's own: the opening post is seq 1, always on the first row's.
+ * What inside paints the post's ground (a play's moment, cards/moment.css) paints the box's.
+ */
 .kb-origin {
-  border: 3px double var(--kb-rule);
-  padding: 0.3em 2%;
+  --kb-origin-inset: 0.75em;
+  --kb-post-bg: var(--kb-row-2);
+  border: 1px solid var(--kb-frame);
+  background: var(--kb-row-2);
+  padding: 0 var(--kb-origin-inset) 0.4em;
   margin: 0 0 0.6em;
   overflow-wrap: anywhere;
 }
 
+/*
+ * The band. It sets its own color and shadow, so the bright ink's reset of the box (thread.css) never reaches it. The rule under it is
+ * a border, which forced colors keep and paint in a system color where they drop the gradient, so the band still reads as a head.
+ */
 .kb-origin-head {
-  margin: 0 0 0.3em;
+  margin: 0 calc(-1 * var(--kb-origin-inset)) 0.4em;
+  padding: 0.35em var(--kb-origin-inset);
+  background: var(--kb-head-bg);
+  color: var(--kb-head-fg);
+  text-shadow: var(--kb-head-shadow);
+  border-bottom: 1px solid var(--kb-grid);
   font-family: var(--kb-font-mono);
+  font-weight: bold;
   /* As the date bar's: the strip is centered on the head, and a tile hangs a few pixels past it (cards/marks.css). */
   box-sizing: border-box;
   min-height: calc(var(--kb-meta-tile) - 0.4rem);
+}
+
+/*
+ * The link on the band is the band's ink, visited or not, and keeps it under the pointer with a heavier underline: --kb-link-hover is
+ * held only against the page and the rows (contrast.ts), never the band. Its ring is the column head's. The mark tiles keep their own.
+ */
+.kb-origin-head a,
+.kb-origin-head a:visited {
+  color: var(--kb-head-fg);
+}
+
+.kb-origin-head a:hover {
+  color: var(--kb-head-fg);
+  text-decoration-thickness: 2px;
+}
+
+.kb-origin-head a:focus-visible {
+  outline-color: var(--kb-head-focus);
 }
 
 .kb-spin-form {
