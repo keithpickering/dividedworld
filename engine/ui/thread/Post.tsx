@@ -15,6 +15,11 @@ import { PostEffects } from '../cards/Effects.tsx';
 import { PostMarks, type FormAsk } from '../cards/Marks.tsx';
 import { AppealCtx, ViolationNotice } from '../cards/Visit.tsx';
 import { useReachShown } from '../cards/PlayActions.tsx';
+import { effectsOf } from '../cards/land.ts';
+import { usePlays } from '../cards/plays.ts';
+import type { CardPlay } from '../cards/types.ts';
+import { quoteStop } from '../../rules/cards.ts';
+import type { Instance } from '../../rules/types.ts';
 import { EditPost } from '../composer/EditPost.tsx';
 import type { Act, Id, Visit } from '../data/api.ts';
 import { useNarrow } from '../media.ts';
@@ -109,19 +114,27 @@ function Body({ act, name, spoken, person, editing, onDone, marks, visit }: { re
 /** What the post's spin form is open for: the post itself, or a play on it (from its Lens), with what gives focus back when it closes. */
 export interface SpinOrigin { readonly id: Id; readonly label: string | null; readonly opener: HTMLElement | null }
 
+/** Whether a post's plays stop a quote of it right now (`quoteStop`): read when drawn, so a play that has ended frees the link at the next render after its end. */
+export function quoteStopped(plays: readonly CardPlay[], instance: Pick<Instance, 'cards' | 'settings'>): boolean {
+  return quoteStop(effectsOf(plays, instance.cards, instance.settings.setLasts)) !== undefined;
+}
+
 function Actions({ act, editing, onEdit, editButton, spinOrigin, setSpinOrigin, onReport }: {
   /** Opens the post's report form; absent where the post cannot be reported by this reader (a staff post, the current mask's own, no mask to report through). */
   readonly onReport: ((opener: HTMLElement) => void) | null;
   readonly act: Act; readonly editing: boolean; readonly onEdit: () => void; readonly editButton: React.RefObject<HTMLButtonElement | null>;
   readonly spinOrigin: SpinOrigin | null; readonly setSpinOrigin: (o: SpinOrigin | null) => void;
 }) {
-  const { quote } = useThread();
+  const { quote, plays } = useThread();
+  const { instance } = useKayfa();
   const { actingCharacters } = usePlayer();
   const spinButton = useRef<HTMLButtonElement>(null);
   /* One draft per origin: the form is keyed by its origin, so a switch between the post and a play would otherwise lose what was typed (#100). */
   const drafts = useSpinDrafts();
   const history = useHistory(act.id);
-  const quotable = (act.kind === 'post' || act.kind === 'spin') && quote !== null;
+  const stopped = quoteStopped(usePlays(plays, act.id).plays, instance);
+  /* A post under a no-quote has no Quote link: left out, not disabled, since its mark and Lens say why. */
+  const quotable = (act.kind === 'post' || act.kind === 'spin') && quote !== null && !stopped;
   const mine = act.kind === 'post' && act.character !== null && actingCharacters.some((c) => c.id === act.character);
   /* The post's own Spin thread is pressed while its form is open for the post; a play's form is opened from its row in the Lens. */
   const spinning = spinOrigin?.id === act.id;

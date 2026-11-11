@@ -63,7 +63,11 @@ describe('a card back, a ward and a caught play, in words', () => {
     /* A ride says its author is paid, with the share the card's rules hold (retuned, the new share is said), in a heading within the Lens's word rule. */
     assert.deepEqual(gimmickWords({ kind: 'ride', share: 0.5 }, end, now), { state: 'Pays its author for votes here', ends: `Ends ${dayAndTime(end)}`, report: 'Each vote on a card another player casts here pays its author half a vote.' });
     assert.equal(gimmickWords({ kind: 'ride', share: 0.25 }, end, now).report, 'Each vote on a card another player casts here pays its author a quarter of a vote.');
-    for (const effect of [{ kind: 'ward', upTo: 'uncommon' }, { kind: 'price', flavors: ['salty'], add: 25 }, { kind: 'earn', by: 0.1 }, { kind: 'ride', share: 0.5 }] as const) {
+    /* A no-quote says what it stops while it is up, in a heading within the Lens's word rule, and what every ended use card says once it is over; a ward's words are unchanged beside it. */
+    assert.deepEqual(gimmickWords({ kind: 'noQuote' }, end, now), { state: 'Cannot be quoted', ends: `Ends ${dayAndTime(end)}` });
+    assert.deepEqual(gimmickWords({ kind: 'noQuote' }, '2026-10-31T10:00:00.000Z', now), { state: 'Ended, changing nothing', ends: `Ended ${dayAndTime('2026-10-31T10:00:00.000Z')}` });
+    assert.deepEqual(gimmickWords({ kind: 'ward', upTo: 'uncommon' }, end, now), { state: 'Turns away cards up to uncommon', ends: `Ends ${dayAndTime(end)}` });
+    for (const effect of [{ kind: 'noQuote' }, { kind: 'ward', upTo: 'uncommon' }, { kind: 'price', flavors: ['salty'], add: 25 }, { kind: 'earn', by: 0.1 }, { kind: 'ride', share: 0.5 }] as const) {
       assert.deepEqual(wordsProblems('state', gimmickWords(effect, undefined).state), [], effect.kind);
       assert.deepEqual(gimmickWords(effect, '2026-10-31T10:00:00.000Z', now), { state: 'Ended, changing nothing', ends: `Ended ${dayAndTime('2026-10-31T10:00:00.000Z')}` }, effect.kind);
     }

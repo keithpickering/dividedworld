@@ -239,6 +239,49 @@ describe('what the Lens says and offers', () => {
     expect(within(lens()).getByRole('tabpanel')).toHaveTextContent('Turns away some cards');
   });
 
+  test('the Lens of a live no-quote play says it cannot be quoted and when it ends', async () => {
+    width(false);
+    const stops = {
+      ...instance,
+      cards: instance.cards.map((c) => (c.key === 'k2' ? { ...c, play: 'use' as const, gimmick: { kind: 'noQuote' as const }, lasts: { unit: 'day' as const, count: 7 } } : c)),
+    };
+    const fake = buildWorld(undefined, stops);
+    const me = fake.seed.account('me');
+    const spritey = fake.seed.character(fake.seed.account('other'), 'Spritey', 'face');
+    fake.seed.character(me, 'Pipewrench', 'heel');
+    const { thread } = fake.seed.thread('general', spritey, 'A thread', 'post 1');
+    const second = fake.seed.post(thread, spritey, 'post 2');
+    fake.signInAs(me);
+    fake.clock.advance(60_000);
+    const ends = new Date(Date.now() + 3_600_000).toISOString();
+    fake.seed.card(spritey, second, 'k2', { ends });
+    renderIn(fake, <LoadedThread thread={thread} />, { path: `/t/${thread}`, instance: stops, cards });
+    await userEvent.click(await markOf(2, 'Card 2'));
+    const panel = within(lens()).getByRole('tabpanel');
+    expect(panel).toHaveTextContent('Cannot be quoted');
+    expect(panel).toHaveTextContent(/Ends /u);
+  });
+
+  test('the Lens of a cast earn reads "Earns 10% more from some reactions", whatever its play', async () => {
+    width(false);
+    const earns = {
+      ...instance,
+      cards: instance.cards.map((c) => (c.key === 'k3' ? { ...c, play: 'cast' as const, gimmick: { kind: 'earn' as const, by: 0.1, quadrants: ['excitedPositive' as const], group: 'test' } } : c)),
+    };
+    const fake = buildWorld(undefined, earns);
+    const me = fake.seed.account('me');
+    const spritey = fake.seed.character(fake.seed.account('other'), 'Spritey', 'face');
+    fake.seed.character(me, 'Pipewrench', 'heel');
+    const { thread } = fake.seed.thread('general', spritey, 'A thread', 'post 1');
+    const second = fake.seed.post(thread, spritey, 'post 2');
+    fake.signInAs(me);
+    fake.clock.advance(60_000);
+    fake.seed.card(spritey, second, 'k3', { ends: new Date(Date.now() + 3_600_000).toISOString() });
+    renderIn(fake, <LoadedThread thread={thread} />, { path: `/t/${thread}`, instance: earns, cards });
+    await userEvent.click(await markOf(2, 'Card 3'));
+    expect(within(lens()).getByRole('tabpanel')).toHaveTextContent('Earns 10% more from some reactions');
+  });
+
   test('Act draws the view\'s controls from the kit, and a card with none has no Act row', async () => {
     width(false);
     const w = world();
