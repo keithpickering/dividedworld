@@ -61,14 +61,16 @@ function Act({ scene }: { readonly scene: Scene }) {
     const key = scene === 'ghost' ? instance.cards.find((c) => c.gimmick?.kind === 'price')?.key
       : scene === 'surcharge' ? instance.cards.find((c) => playOf(c) === 'cast' && c.alignment === 'salty')?.key : undefined;
     if (key) play.arm(key);
+    /* The a11y suite renders every story in jsdom, which has no scrollIntoView, so the scroll is optional; both timers end with the story. */
+    let fold: ReturnType<typeof setTimeout> | undefined;
     const timer = setInterval(() => {
       if (scene === 'surcharge') { const g = document.querySelector<HTMLButtonElement>('#post-1 .kb-ghost-mark'); if (g) { clearInterval(timer); g.click(); } }
       if (scene === 'takeback') {
         const mark = document.querySelector<HTMLButtonElement>('#post-43 .kb-mark[data-kb-back="down"]');
-        if (mark) { clearInterval(timer); mark.scrollIntoView({ block: 'center' }); mark.click(); setTimeout(() => document.querySelector<HTMLButtonElement>('.kb-lens .kb-lens-fold')?.click(), 400); }
+        if (mark) { clearInterval(timer); mark.scrollIntoView?.({ block: 'center' }); mark.click(); fold = setTimeout(() => document.querySelector<HTMLButtonElement>('.kb-lens .kb-lens-fold')?.click(), 400); }
       }
     }, 150);
-    return () => clearInterval(timer);
+    return () => { clearInterval(timer); clearTimeout(fold); };
     // Once for each account.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [account]);
