@@ -19,7 +19,9 @@ if ! command -v pg_lsclusters >/dev/null 2>&1; then
 fi
 
 # libfaketime, for the System rehearsal's fake-clock Postgres (tools/rehearse/cluster.ts).
-if [ ! -e /usr/lib/x86_64-linux-gnu/faketime/libfaketime.so.1 ] && ! dpkg -L libfaketime 2>/dev/null | grep -q 'libfaketime.so.1$'; then
+# (dpkg's output is captured first: `grep -q` closing the pipe early would fail the pipeline under pipefail.)
+faketime_files="$(dpkg -L libfaketime 2>/dev/null || true)"
+if [ ! -e /usr/lib/x86_64-linux-gnu/faketime/libfaketime.so.1 ] && [[ "$faketime_files" != *libfaketime.so.1* ]]; then
   sudo_or_plain apt-get update -qq
   sudo_or_plain apt-get install -y -qq faketime
 fi

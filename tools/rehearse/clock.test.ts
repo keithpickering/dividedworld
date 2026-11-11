@@ -27,7 +27,9 @@ test("everything else about Date is unchanged", async () => {
     const bare = (Date as unknown as () => string)();
     assert.equal(typeof bare, "string");
     assert.ok(Math.abs(Date.parse(bare) - Date.UTC(2027, 0, 1)) < 2000, bare);
-    await new Promise<void>((resolve) => setTimeout(resolve, 10));
+    let fired = false;
+    await new Promise<void>((resolve) => setTimeout(() => ((fired = true), resolve()), 10));
+    assert.ok(fired);
   } finally {
     clock.restore();
   }
@@ -39,4 +41,17 @@ test("restore puts the real Date back", () => {
   clock.setSimulated(Date.UTC(2030, 0, 1));
   clock.restore();
   assert.equal(globalThis.Date, real);
+});
+
+test("a Date made before simulateClock is still instanceof Date, and constructor is Date", () => {
+  const before = new Date(5);
+  const clock = simulateClock();
+  try {
+    assert.ok(before instanceof Date);
+    assert.equal(new Date(5).constructor, Date);
+    assert.ok(new Date() instanceof Date);
+    assert.equal(Object.getPrototypeOf(new Date()), Date.prototype);
+  } finally {
+    clock.restore();
+  }
 });
