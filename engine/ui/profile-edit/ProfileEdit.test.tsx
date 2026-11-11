@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import type { MyCharactersPage } from '../data/api.ts';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { buildWorld, holdReads, renderIn } from '../test-world.tsx';
@@ -144,6 +146,23 @@ describe('profile edit', () => {
     expect(screen.getByLabelText('Reflexive')).toHaveValue('xemself');
     await userEvent.click(screen.getByRole('button', { name: 'Save the profile' }));
     await waitFor(() => expect(setProfile).toHaveBeenCalledWith(gloomba, '', '', 'default', xe));
+  });
+
+  test('a later document that carries the set brings the picker back on the stored set', async () => {
+    const w = world();
+    const boot = await w.fake.boot();
+    const good = await w.fake.myCharactersPage();
+    const unread = { ...good, faces: good.faces.map((f) => ({ ...f, pronounsUnread: true as const })) };
+    function Host() {
+      const [doc, setDoc] = useState<MyCharactersPage>(unread);
+      return <><button type="button" onClick={() => setDoc(good)}>read again</button><ProfileEdit doc={doc} /></>;
+    }
+    renderIn(w.fake, <Host />, { path: '/characters/edit', boot });
+    expect(screen.getByRole('button', { name: 'Save the profile' })).toBeDisabled();
+    await userEvent.click(screen.getByRole('button', { name: 'read again' }));
+    expect(within(screen.getByRole('group', { name: 'Pronouns' })).getByRole('radio', { name: /^it\/its/u })).toBeChecked();
+    expect(screen.queryByText(/pronouns could not be loaded/u)).toBeNull();
+    expect(screen.getByRole('button', { name: 'Save the profile' })).toBeEnabled();
   });
 
   test('edits the title, the signature and the pip style', async () => {

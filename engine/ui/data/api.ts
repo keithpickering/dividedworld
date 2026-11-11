@@ -461,9 +461,9 @@ export interface Character {
   readonly squareFrame: Frame | null;
   readonly portraitFrame: Frame | null;
   readonly pipStyle: string;
-  /** Its pronouns (character_profiles.pronouns, public like a title): copy about this one character is written with them. When the read that built this character carried no set (see `pronounsUnread`), they are the engine's it/its. */
+  /** Its pronouns (character_profiles.pronouns, public like a title): copy about this one character is written with them. A character with no profile row, or whose set a read did not carry (`pronounsUnread`), has the engine's it/its. */
   readonly pronouns: PronounSet;
-  /** Set only when the read that built this character carried no set (no profile row in the read, or a row without `pronouns`): `pronouns` is then the engine's it/its for display only and is never offered for saving, so a save cannot overwrite the set the player chose. */
+  /** Set only when a read gave this character's profile row without its set: `pronouns` is then the engine's it/its for display only, and is never offered for saving, so a save cannot overwrite the set the player chose. A character with no profile row at all is not marked: nothing is stored to overwrite. */
   readonly pronounsUnread?: true;
   /** The first day of the month it debuted, "2026-10-01": the month and never the time ("Joined Oct 2026"). */
   readonly joined: string;

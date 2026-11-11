@@ -81,6 +81,8 @@ function Editor({ page, io }: { readonly page: MyCharactersPage; readonly io?: P
     setSaved('');
     setRefusal(null);
   }
+  /* A set that no read had carried arrives with a later document (an avatar saved, the page read again): the form takes it then, since there is none of the player's to keep. */
+  else if (pronouns === null && setOf(profile) !== null) setPronouns(setOf(profile));
 
   const back = <CalmRegion><ButtonRow><GlassButton to="/characters" state={id === null ? undefined : { character: id }}>Back to your characters</GlassButton></ButtonRow></CalmRegion>;
   if (!mine || id === null) {

@@ -799,25 +799,30 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
   /** The office characters_public shows a staff character; anything else it might say is no office. */
   const toOffice = (o: unknown): Office | undefined => (o === 'boss' || o === 'mod' || o === 'member' || o === 'benched' || o === 'waiting' || o === 'developer' ? o : undefined);
 
-  const toCharacter = (c: Row, p: Row | undefined): Character => ({
-    id: c['id'],
-    name: c['name'],
-    title: p?.['title'] ?? '',
-    signature: p?.['signature'] ?? '',
-    avatarSquare: avatarUrl(p?.['avatar_square'] ?? null),
-    avatarPortrait: avatarUrl(p?.['avatar_portrait'] ?? null),
-    squareFrame: toFrame(p?.['square_frame']),
-    portraitFrame: toFrame(p?.['portrait_frame']),
-    pipStyle: p?.['pip_style'] ?? 'default',
-    /* The set is the profile row's when the read carried one; else the engine's it/its stands for display only and `pronounsUnread` marks it, so Edit profile never offers it for saving. Every character has a profile row, so a missing set is a read that dropped it. */
-    pronouns: isObject(p?.['pronouns']) ? pronounsOrDefault(p!['pronouns']) : ENGINE_DEFAULT_PRONOUNS,
-    ...(isObject(p?.['pronouns']) ? {} : { pronounsUnread: true as const }),
-    joined: c['joined'] ?? '',
-    ...(typeof c['warn_points'] === 'number' && c['warn_points'] > 0 ? { warnPoints: c['warn_points'] } : {}),
-    ...(typeof c['banned_until'] === 'string' && Date.parse(c['banned_until']) > Date.now() ? { bannedUntil: c['banned_until'] } : {}),
-    ...(typeof c['staff'] === 'string' ? { staff: c['staff'], ...(toOffice(c['office']) ? { office: toOffice(c['office'])! } : {}) } : {}),
-    group: typeof c['group'] === 'string' ? c['group'] : '',
-  });
+  /* A character from its row and its profile row. Where a profile row came without a set (a select or a projection dropped the column: the column is not null), the
+     engine's it/its stands for display only and `pronounsUnread` marks it, so Edit profile never offers it for saving over the set the player chose. With no profile row
+     at all (a character made before an instance was seeded, 0124) nothing is stored to overwrite: it/its is what a read shows, unmarked, and set_profile makes the row. */
+  const toCharacter = (c: Row, p: Row | undefined): Character => {
+    const set = p?.['pronouns'];
+    return {
+      id: c['id'],
+      name: c['name'],
+      title: p?.['title'] ?? '',
+      signature: p?.['signature'] ?? '',
+      avatarSquare: avatarUrl(p?.['avatar_square'] ?? null),
+      avatarPortrait: avatarUrl(p?.['avatar_portrait'] ?? null),
+      squareFrame: toFrame(p?.['square_frame']),
+      portraitFrame: toFrame(p?.['portrait_frame']),
+      pipStyle: p?.['pip_style'] ?? 'default',
+      pronouns: isObject(set) ? pronounsOrDefault(set) : ENGINE_DEFAULT_PRONOUNS,
+      ...(p !== undefined && !isObject(set) ? { pronounsUnread: true as const } : {}),
+      joined: c['joined'] ?? '',
+      ...(typeof c['warn_points'] === 'number' && c['warn_points'] > 0 ? { warnPoints: c['warn_points'] } : {}),
+      ...(typeof c['banned_until'] === 'string' && Date.parse(c['banned_until']) > Date.now() ? { bannedUntil: c['banned_until'] } : {}),
+      ...(typeof c['staff'] === 'string' ? { staff: c['staff'], ...(toOffice(c['office']) ? { office: toOffice(c['office'])! } : {}) } : {}),
+      group: typeof c['group'] === 'string' ? c['group'] : '',
+    };
+  };
 
   /** A character a document carries with its profile nested (`profile` null where it has none). */
   const faceOf = (c: Row): Character => toCharacter(c, isObject(c['profile']) ? c['profile'] : undefined);
