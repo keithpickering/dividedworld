@@ -69,7 +69,7 @@ test('chatter\'s schema, asked for a title and offered cards, gives an answer re
 
 const she = PRONOUN_PRESETS.she;
 const base = {
-  persona: { persona: 'You are Mod One.' }, pronouns: PRONOUN_PRESETS.they, order: 'Watch Games.',
+  persona: { selfPrompt: 'You are Mod One.' }, office: 'mod', offices: testSystem.offices, pronouns: PRONOUN_PRESETS.they, order: 'Watch Games.',
   career: { led: [], offices: [{ office: 'mod', since: '2026-10-01T00:00:00Z', until: null, cause: 'seed' }] },
   memory: { hobby: { name: 'knitting', since: 'today', from: 'a friend' }, opinions: [], grudges: [], wheelhouse: [], realWorld: [], marks: [] },
   notes: [], rules: [{ board: GAMES, number: 2, predicate: 'noDoublePost', param: null, band: 'moderate' }],
