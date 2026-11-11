@@ -148,6 +148,9 @@ for (const scheme of ['light', 'dark'] as const) {
         test(`${label} has no axe violation, color contrast included`, async ({ page }) => {
           await visit(page, path);
           await expect(ready(page, path)).toBeVisible();
+          /* The menu bar shows before the screen under it has landed and entered (a redirect, as /invites is, or a module still loading), and contrast
+             read mid-entrance is of a half-faded title the player sees only for a moment; it is read once the screen has settled, as the sign-in screens are. */
+          await settled(page, { loops: true });
           expect(await pageViolations(page)).toEqual([]);
         });
         test(`${label} does not scroll sideways`, async ({ page }) => {

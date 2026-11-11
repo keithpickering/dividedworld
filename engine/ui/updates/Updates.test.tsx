@@ -14,6 +14,7 @@ import type { Instance } from '../../rules/types.ts';
 import { buildWorld, holdReads, renderIn, testInstance } from '../test-world.tsx';
 import { ThreadScreen } from '../thread/Thread.tsx';
 import { LoadedUpdates } from '../loaded.tsx';
+import { Page } from '../glass/Page.tsx';
 import { UpdatesScreen } from './Updates.tsx';
 import { LoadedThread } from '../loaded.tsx';
 
@@ -420,5 +421,39 @@ describe('opened from a handover to-do', () => {
     await userEvent.type(words, 'Comptroller has the seat.');
     await userEvent.click(within(form).getByRole('button', { name: 'Post update' }));
     await waitFor(async () => expect((await w.fake.adminQueue()).todos).toEqual([]));
+  });
+});
+
+/* An update press is the body's change, not the screen's (docs/plans/2026-11-08-glass-in-page-swap-design.md): drawn through the page, as the app draws it. */
+describe('opening another update swaps the article\'s body only', () => {
+  test('the heading and the archive stay the same nodes, the pressed link keeps focus, and the article sits in a screen body', async () => {
+    const w = world();
+    renderIn(w.fake, <Page surface="settings"><LoadedUpdates /></Page>, { path: '/updates', instance, avatars: AVATARS });
+    await screen.findByRole('article', { name: 'Traps now bite board cards' });
+    const h1 = screen.getByRole('heading', { level: 1, name: 'Updates' });
+    const archive = screen.getByRole('navigation', { name: 'All updates' });
+    expect(article().closest('.kb-updates-main > .kb-screen-body')).not.toBeNull();
+    const link = screen.getByRole('link', { name: /Washes 20% faster/u });
+    await userEvent.click(link);
+    await screen.findByRole('article', { name: 'Washes 20% faster' });
+    expect(screen.getByRole('heading', { level: 1, name: 'Updates' })).toBe(h1);
+    expect(screen.getByRole('navigation', { name: 'All updates' })).toBe(archive);
+    expect(screen.getByRole('link', { name: /Washes 20% faster/u })).toBe(link);
+    expect(link).toHaveAttribute('aria-current', 'page');
+    expect(link).toHaveFocus();
+    expect(article().closest('.kb-updates-main > .kb-screen-body')).not.toBeNull();
+  });
+
+  test('a later (older) update enters from below: the direction is +1 down the archive, -1 back up', async () => {
+    const w = world();
+    renderIn(w.fake, <Page surface="settings"><LoadedUpdates /></Page>, { path: '/updates', instance, avatars: AVATARS });
+    await screen.findByRole('article', { name: 'Traps now bite board cards' });
+    const holder = () => document.querySelector('.kb-updates-main > .kb-screen-body')!;
+    await userEvent.click(screen.getByRole('link', { name: /Welcome to playtest/u }));
+    await screen.findByRole('article', { name: 'Welcome to playtest' });
+    expect(holder()).toHaveAttribute('data-kb-dir', '1');
+    await userEvent.click(screen.getByRole('link', { name: /Traps now bite/u }));
+    await screen.findByRole('article', { name: 'Traps now bite board cards' });
+    expect(holder()).toHaveAttribute('data-kb-dir', '-1');
   });
 });

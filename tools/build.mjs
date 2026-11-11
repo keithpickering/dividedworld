@@ -136,6 +136,11 @@ export const AFTER = { 'node tools/check-web-bundle.mjs': 'npm run build:web', '
  * file; one for a file that does not exist yet is stale from the day it is written, and
  * problems() says so. Each excuse arrives with its file.
  */
+/*
+ * The rehearsal's `npm run test:rehearse` and `npm run rehearse` (tools/rehearse/) are outside the build too: they need Postgres and
+ * libfaketime, which the build does not have, and they run in .github/workflows/rehearsal.yml. problems() reads only tools/*.mjs
+ * check and test files against this table, so an npm script that is not a STEPS entry needs no row here.
+ */
 /** @type {Record<string, string>} */
 export const OUTSIDE_THE_BUILD = {
   'tools/test-sql.mjs': 'needs Postgres, which the build does not have; it runs in .github/workflows/sql.yml against a Postgres service, and its refusal of any database but localhost is driven red in the build by tools/test-sql-refusal.mjs',

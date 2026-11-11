@@ -478,3 +478,50 @@ for (const width of [320, 390]) {
     expect(cut, 'cards cut off at the screen\'s edge').toEqual([]);
   });
 }
+
+/* A change of section within Settings keeps the screen mounted and swaps only its body: the title is never filtered or faded, and focus ends on the section's own link. */
+test('smooth: pressing Settings › The board swaps the body without ever filtering or fading the title, and leaves focus on The board', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await page.goto('/settings?section=account');
+  await page.evaluate(() => { document.documentElement.setAttribute('data-kb-motion', 'full'); document.documentElement.setAttribute('data-kb-motion-feel', 'smooth'); });
+  const nav = page.getByRole('navigation', { name: 'Settings sections' });
+  await expect(nav).toBeVisible();
+  /* The screen's own arrival has settled, so nothing sampled below is left over from it. */
+  await expect.poll(() => page.locator('h1').first().evaluate((h) => { for (let el: Element | null = h; el && el.tagName !== 'MAIN'; el = el.parentElement) { const c = getComputedStyle(el); if ((c.filter !== 'none' && c.filter !== 'blur(0px)') || c.opacity !== '1') return false; } return true; })).toBe(true);
+  await page.evaluate(() => {
+    const w = globalThis as unknown as { __h1: string[]; __bad: string[]; __exiting: number; __stop: boolean };
+    w.__h1 = []; w.__bad = []; w.__exiting = 0; w.__stop = false;
+    const tick = () => {
+      const shown = [...document.querySelectorAll('h1')].find((h) => !h.closest('[data-kb-exiting]'));
+      /* Every element from the shown title up to main: a filter or fade on any of them is the title blurring (the head keeps a spent blur(0px) at rest, which is no blur).
+         The same test as the settle poll above; the two run in separate evaluates, so each spells it out. */
+      for (let el: Element | null = shown ?? null; el && el.tagName !== 'MAIN'; el = el.parentElement) {
+        const c = getComputedStyle(el);
+        w.__h1.push('ok');
+        if ((c.filter !== 'none' && c.filter !== 'blur(0px)') || c.opacity !== '1') w.__bad.push(`${el.tagName}.${el.className}: ${c.filter} ${c.opacity}`);
+      }
+      /* A frame counts as mid-transition only while the old part of this page is leaving: its body (the fix) or its whole screen (the defect). */
+      if (document.querySelector('.kb-screen-body > [data-kb-exiting], .kb-glass-screen[data-kb-exiting]')) w.__exiting += 1;
+      if (!w.__stop) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
+  /* The feel at the press is Smooth as motion.ts's currentFeel reads it: the account's appearance may replace the attributes set above, and with no motion asked
+     for and no reduced motion it falls back to Smooth; only reduce or snappy would change it. */
+  expect(await page.evaluate(() => [document.documentElement.getAttribute('data-kb-motion') === 'reduce', document.documentElement.getAttribute('data-kb-motion-feel') === 'snappy', matchMedia('(prefers-reduced-motion: reduce)').matches])).toEqual([false, false, false]);
+  await nav.getByRole('link', { name: 'The board' }).click();
+  await expect(page).toHaveURL(/section=board/);
+  /* The new section has landed (its link is current), and then the exit has run and gone. */
+  await expect(nav.getByRole('link', { name: 'The board' })).toHaveAttribute('aria-current', 'page');
+  await expect(page.locator('[data-kb-exiting]')).toHaveCount(0);
+  const { h1, bad, exiting } = await page.evaluate(() => {
+    const w = globalThis as unknown as { __h1: string[]; __bad: string[]; __exiting: number; __stop: boolean };
+    w.__stop = true;
+    return { h1: w.__h1, bad: w.__bad, exiting: w.__exiting };
+  });
+  /* The samples were taken while the old body was leaving, and the title was plain in every one. */
+  expect(exiting, 'frames drawn while the old body or screen was leaving').toBeGreaterThan(2);
+  expect(h1.length).toBeGreaterThan(2);
+  expect(bad, 'ancestors of the shown title with a filter or a fade').toEqual([]);
+  await expect(nav.getByRole('link', { name: 'The board' })).toBeFocused();
+});

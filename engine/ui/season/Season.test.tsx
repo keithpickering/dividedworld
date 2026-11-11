@@ -13,6 +13,7 @@ import { buildWorld, holdReads, renderIn } from '../test-world.tsx';
 import { SEASON_NEWS_PAGE } from '../data/api.ts';
 import { firstWords, SeasonScreen } from './Season.tsx';
 import { LoadedSeason } from '../loaded.tsx';
+import { Page } from '../glass/Page.tsx';
 
 const entered = vi.hoisted(() => ({ calls: [] as Element[] }));
 vi.mock('motion/react', async (orig) => ({
@@ -408,5 +409,30 @@ describe('signed out', () => {
     await act(async () => { await Promise.resolve(); });
     expect(await screen.findByRole('link', { name: /sign in/iu })).toBeInTheDocument();
     expect(spy).not.toHaveBeenCalled();
+  });
+});
+
+/* A tab press is the body's change, not the screen's (docs/plans/2026-11-08-glass-in-page-swap-design.md): drawn through the page, as the app draws it. */
+describe('a change of tab swaps the panel\'s body only', () => {
+  test('the heading and the tablist stay the same nodes, the pressed tab keeps focus, and the panel stays put around its body', async () => {
+    const w = world();
+    renderIn(w.fake, <Page surface="rankings"><LoadedSeason /></Page>, { path: '/season?tab=rankings' });
+    const panel = await screen.findByRole('tabpanel', { name: 'Rankings' });
+    await within(panel).findByRole('table');
+    const h1 = screen.getByRole('heading', { level: 1 });
+    const tabs = screen.getByRole('tablist', { name: 'Season' });
+    expect(panel.firstElementChild).toHaveClass('kb-screen-body');
+    expect(within(panel.firstElementChild as HTMLElement).getByRole('table')).toBeInTheDocument();
+    const news = screen.getByRole('tab', { name: 'News' });
+    await userEvent.click(news);
+    const shown = await screen.findByRole('tabpanel', { name: 'News' });
+    await waitFor(() => expect(shown.querySelector('ul.kb-season-feed')).not.toBeNull());
+    expect(shown).toBe(panel);
+    expect(shown).toHaveAttribute('id', news.getAttribute('aria-controls'));
+    expect(screen.getByRole('heading', { level: 1 })).toBe(h1);
+    expect(screen.getByRole('tablist', { name: 'Season' })).toBe(tabs);
+    expect(screen.getByRole('tab', { name: 'News' })).toBe(news);
+    expect(news).toHaveFocus();
+    expect(shown.querySelector('.kb-screen-body > :not([data-kb-exiting]) ul.kb-season-feed')).not.toBeNull();
   });
 });
