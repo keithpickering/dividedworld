@@ -30,9 +30,18 @@ when this was written:
 | Good Vibes | `vibes.py` | `good-vibes.png` | this session's: a lava lamp, and a salt shaker with its surcharge on a tag |
 | You Were Saying? | `saying.py` | `you-were-saying.png` | this session's: an old beige computer going on with a post in green |
 
+Three more are not cards of this game. The owner sent three of Minus World's spell icons, without their names, to see
+them in the same style; the scripts are named for what each shows:
+
+| Icon | Scene | Render |
+| --- | --- | --- |
+| a great smiling face risen behind a city at sunset | `looming.py` | `mw-looming.png` |
+| a blue face, red-eyed and pleased, in smoke | `hazy.py` | `mw-hazy.png` |
+| a figure in a hat and long coat, one eye lit, in a blue alley | `gumshoe.py` | `mw-gumshoe.png` |
+
 `rig.py` is what they all share: the scene reset, the Standard view transform (saturated, with no filmic roll-off,
 which is most of the period look), materials, lights, the card's camera, the render call, and the small shapes the scenes are built from (tubes, slabs,
-rounded outlines, stars, raised letters).
+rounded outlines, stars, raised letters, turned shapes, blocks).
 
 The scenes are the source. No `.blend` file is committed: each script rebuilds its scene in seconds, and the Whoops!
 scene saved as a `.blend` is 75 MB. To get one to open in Blender, set `ART_BLEND` (below).
@@ -74,6 +83,9 @@ Environment variables, all optional:
 | `CLOWN_EYE_X`, `CLOWN_EYE_Z` | `0.9`, `2.7` | Where the vortex's eye is on the card. |
 | `VIBES_SEED` | `4` | The soft lights in the room and the spilled salt. |
 | `SAYING_SEED` | `3` | The lengths of the words on the screen and past it. |
+| `LOOMING_SEED` | `5` | The smoke, and which windows are lit. |
+| `HAZY_SEED` | `7` | Where the smoke's balls sit. |
+| `GUMSHOE_SEED` | `2` | Which bricks are missing or pale, and the rain. |
 
 Every scene but Whoops! puts the card on the xz plane, 5.4 wide by 8.4 tall and centered on the origin, with the
 camera looking along +y, so one unit is 100 px of the canvas and a position can be read off the card template

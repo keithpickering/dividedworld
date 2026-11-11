@@ -206,3 +206,23 @@ def cone(p0, p1, r0, r1, mat, verts=24):
     o = bpy.context.object; o.rotation_euler = d.to_track_quat('Z', 'Y').to_euler(); o.data.materials.append(mat)
     bpy.ops.object.shade_smooth()
     return o
+
+def lathe(name, profile, mat, loc=(0, 0, 0), seg=64, thick=None):
+    """A shape turned about the vertical: profile is (radius, height) pairs from the foot up."""
+    import bmesh
+    bm = bmesh.new(); rings = [[bm.verts.new((math.cos(q) * r, math.sin(q) * r, z)) for q in (math.tau * k / seg for k in range(seg))] for r, z in profile]
+    for a, b in zip(rings, rings[1:]):
+        for k in range(seg): bm.faces.new((a[k], a[(k + 1) % seg], b[(k + 1) % seg], b[k]))
+    bm.faces.new(reversed(rings[0])); bm.faces.new(rings[-1])
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    me = bpy.data.meshes.new(name); bm.to_mesh(me); bm.free()
+    for f in me.polygons: f.use_smooth = True
+    o = bpy.data.objects.new(name, me); bpy.context.scene.collection.objects.link(o); me.materials.append(mat); o.location = loc
+    if thick: o.modifiers.new('thick', 'SOLIDIFY').thickness = thick
+    return o
+
+def box(name, w, d, h, mat, loc, bevel=0.03):
+    """A block w wide, d deep and h tall, standing with its foot's middle at `loc`."""
+    o = slab(name, rrect(w, h, 0.01, 1), -d / 2, d / 2, mat, bevel)
+    o.location = (loc[0], loc[1], loc[2] + h / 2)
+    return o
