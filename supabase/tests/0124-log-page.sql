@@ -138,7 +138,7 @@ begin
        select play, post, saved_at from my_posts_played_on where saved_at is not null order by saved_at desc, play limit 200) r))
      or jsonb_array_length(doc -> 'sources' -> 'saves') is distinct from 1 then raise exception 'saves: %', doc -> 'sources' -> 'saves'; end if;
   if doc -> 'sources' -> 'setEnds' is distinct from pg_temp.arr((select jsonb_agg(to_jsonb(r)) from (
-       select play, card, post, spring, ended_at from my_face_down where ended_at is not null order by ended_at desc, play limit 200) r)) then raise exception 'setEnds: %', doc -> 'sources' -> 'setEnds'; end if;
+       select play, card, post, spring, ended_at, ended_by from my_face_down where ended_at is not null order by ended_at desc, play limit 200) r)) then raise exception 'setEnds: %', doc -> 'sources' -> 'setEnds'; end if;
   if doc -> 'sources' -> 'setPasses' is distinct from pg_temp.arr((select jsonb_agg(to_jsonb(r)) from (
        select play, card, post, ends_at, passed_at from my_face_down where passed_at is not null and spring is null order by passed_at desc, play limit 200) r)) then raise exception 'setPasses: %', doc -> 'sources' -> 'setPasses'; end if;
   if doc -> 'sources' -> 'caught' is distinct from pg_temp.arr((select jsonb_agg(to_jsonb(r)) from (

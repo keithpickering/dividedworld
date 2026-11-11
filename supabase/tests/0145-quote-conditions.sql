@@ -86,10 +86,10 @@ begin
   perform tests.become(bob);
   if exists (select 1 from my_face_down f where f.play = (placed ->> 'id')::uuid) then raise exception 'another account read a back through my_face_down'; end if;
   perform tests.unbecome();
-  if (select array_agg(column_name::text order by ordinal_position) from information_schema.columns where table_name = 'my_face_down' and column_name in ('catches', 'phrase', 'passage', 'who', 'who_except'))
-     is distinct from array['catches', 'phrase', 'passage', 'who', 'who_except'] then raise exception 'my_face_down does not end catches, phrase, passage, who, who_except'; end if;
-  if (select max(ordinal_position) from information_schema.columns where table_name = 'my_face_down' and column_name = 'who_except') is distinct from (select max(ordinal_position) from information_schema.columns where table_name = 'my_face_down') then
-    raise exception 'who_except is not my_face_down''s last column';
+  if (select array_agg(column_name::text order by ordinal_position) from information_schema.columns where table_name = 'my_face_down' and column_name in ('catches', 'phrase', 'passage', 'who', 'who_except', 'ended_by'))
+     is distinct from array['catches', 'phrase', 'passage', 'who', 'who_except', 'ended_by'] then raise exception 'my_face_down does not end catches, phrase, passage, who, who_except, ended_by'; end if;
+  if (select max(ordinal_position) from information_schema.columns where table_name = 'my_face_down' and column_name = 'who_except') is distinct from (select max(ordinal_position) - 1 from information_schema.columns where table_name = 'my_face_down') then
+    raise exception 'who_except is not my_face_down''s last column but one, ended_by being the last';
   end if;
 
   -- A passage is held to the post's current words: one the original held and an edit removed is refused, and one an edit added is accepted.
