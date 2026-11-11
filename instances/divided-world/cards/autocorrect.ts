@@ -97,7 +97,7 @@ export const autocorrect: CardRules<AutocorrectConfig> = {
     if (clean !== undefined && typeof clean !== 'boolean') return refuse('clean is true or false');
     if (!peeled.every((n) => Number.isSafeInteger(n) && n >= 0 && n < PEELS.most)) return refuse(`a place is a whole number from 0 to ${PEELS.most - 1}`);
     const kept = [...new Set(peeled as number[])].sort((a, b) => a - b);
-    let kept_stuck: Record<string, Stretch[]> | undefined;
+    let keptStuck: Record<string, Stretch[]> | undefined;
     if (stuck !== undefined) {
       if (typeof stuck !== 'object' || stuck === null || Array.isArray(stuck)) return refuse('stuck is a list of stretches for each place');
       const places = new Set(kept);
@@ -127,8 +127,8 @@ export const autocorrect: CardRules<AutocorrectConfig> = {
         }
         out[key] = rounded;
       }
-      if (total) kept_stuck = out;
+      if (total) keptStuck = out;
     }
-    return ok({ peeled: kept, ...(clean === undefined ? {} : { clean }), ...(kept_stuck ? { stuck: kept_stuck } : {}) });
+    return ok({ peeled: kept, ...(clean === undefined ? {} : { clean }), ...(keptStuck ? { stuck: keptStuck } : {}) });
   },
 };

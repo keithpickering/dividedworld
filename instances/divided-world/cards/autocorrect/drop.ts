@@ -34,6 +34,7 @@ export function dropRoll(roll: HTMLElement, o: { readonly reduced: boolean; read
   copy.removeAttribute('id');
   copy.setAttribute('aria-hidden', 'true');
   copy.setAttribute('tabindex', '-1');
+  copy.inert = true;
   Object.assign(copy.style, { position: 'fixed', left: `${box.left}px`, top: `${box.top}px`, width: `${box.width}px`, height: `${box.height}px`, margin: '0', pointerEvents: 'none', zIndex: '60' });
   document.body.append(copy);
   const fall = Math.max(80, window.innerHeight - box.top + 40);
