@@ -725,8 +725,8 @@ describe('the machine\'s slots, from the machine', () => {
     const fake = stockedWorld(562);
     fake.seed.slot({ card: 'trap' }, { price: 225, move: { kind: 'repriceSlot', act: 'a1', ends: '2026-11-08T20:00:00Z', demand: null, progress: null, was: 150, percent: 150, hours: null } });
     openStocked(fake);
-    fireEvent.click(await screen.findByRole('button', { name: 'About Trap Card' }));
-    const dialog = screen.getByRole('dialog', { name: 'Trap Card' });
+    fireEvent.click(await screen.findByRole('button', { name: 'About Card Collector' }));
+    const dialog = screen.getByRole('dialog', { name: 'Card Collector' });
     const price = dialog.querySelector('.kb-vending-about-price')!;
     expect(price.textContent).toMatch(/^2\.25 to buy/u);
     expect(dialog.querySelector('s')).toBeNull();
