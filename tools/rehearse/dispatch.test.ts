@@ -2,7 +2,7 @@
 // handler as a Request. A fake queue and fake handlers here; the real handlers are Task 1's.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { drain, UnknownFunction, type DispatchCtx, type QueueRow } from "./dispatch.ts";
+import { drain, REAL, UnknownFunction, type DispatchCtx, type QueueRow } from "./dispatch.ts";
 
 function setup(rows: QueueRow[], capped = false) {
   const seen: { name: string; body: unknown; auth: string | null; method: string }[] = [];
@@ -59,6 +59,18 @@ test("a capped model function is skipped and recorded; settle still runs", async
   assert.deepEqual(seen.map((s) => s.name), ["settle"]);
   assert.deepEqual(ctx.dispatched.map((d) => [d.function, d.skipped ?? null]), [["meet", "cost cap"], ["chatter", "cost cap"], ["staff", "cost cap"], ["settle", null]]);
   assert.equal(ctx.lastDrained, 4);
+});
+
+test("write is a function the dispatcher knows, and one that calls a model: handed over, and skipped at the cost cap", async () => {
+  const open = setup([row(1, "write", {})]);
+  open.ctx.handlers!.write = async () => new Response("{}", { status: 200 });
+  await drain(open.ctx);
+  assert.deepEqual(open.ctx.dispatched.map((d) => [d.function, d.status]), [["write", 200]]);
+  const capped = setup([row(1, "write", {})], true);
+  capped.ctx.handlers!.write = async () => { throw new Error("called past the cap"); };
+  await drain(capped.ctx);
+  assert.deepEqual(capped.ctx.dispatched.map((d) => [d.function, d.skipped ?? null]), [["write", "cost cap"]]);
+  assert.ok(REAL.includes("write"), "the real set holds it, so a rehearsal's sweep is served");
 });
 
 test("a path named like an Object property (constructor) is unknown, not resolved", async () => {

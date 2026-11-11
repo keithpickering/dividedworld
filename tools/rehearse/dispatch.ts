@@ -37,14 +37,14 @@ export interface DispatchCtx {
 export class UnknownFunction extends Error {
   readonly path: string;
   constructor(path: string) {
-    super(`no handler for ${path}: the dispatcher knows meet, chatter, staff and settle`);
+    super(`no handler for ${path}: the dispatcher knows meet, chatter, staff, settle and write`);
     this.name = "UnknownFunction";
     this.path = path;
   }
 }
 
-const MODEL_FUNCTIONS = new Set(["meet", "chatter", "staff"]);
-const REAL = ["meet", "chatter", "staff", "settle"];
+const MODEL_FUNCTIONS = new Set(["meet", "chatter", "staff", "write"]);
+export const REAL = ["meet", "chatter", "staff", "settle", "write"];
 
 async function handlerFor(ctx: DispatchCtx, name: string, path: string): Promise<Handler> {
   if (ctx.handlers) {

@@ -1,5 +1,5 @@
 /**
- * What the four scheduled functions' handler tests share: deps whose every part is a fake that writes down what it was handed (as
+ * What the scheduled functions' handler tests share: deps whose every part is a fake that writes down what it was handed (as
  * meet/core.test.ts builds its fake Db and Models), a request builder, and the two refusals every jobs-key handler gives.
  * Not a test itself: the build's test glob takes `*.test.ts`.
  */
