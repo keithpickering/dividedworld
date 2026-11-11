@@ -3402,11 +3402,13 @@ describe('gear, trophies and Random Events', () => {
     expect(must(await fake.randomEvent(a1))).toMatchObject({ outcome: 'line' });
   });
 
-  test('a scripted roll that finds nothing answers null, and an unscripted one draws from the settings\' own odds', async () => {
+  test('a scripted roll that finds nothing answers null, an unscripted one finds nothing until a world turns the odds on, and then draws from the settings\' own odds', async () => {
     const { fake, a1 } = dressing();
     fake.seed.nextEvent(null);
     expect(must(await fake.randomEvent(a1))).toBeNull();
     fake.clock.advance(16 * MINUTE);
+    for (let i = 0; i < 20; i++) { expect(must(await fake.randomEvent(a1))).toBeNull(); fake.clock.advance(16 * MINUTE); }
+    fake.seed.eventsOn();
     const drawn = must(await fake.randomEvent(a1));
     expect(drawn === null || ['line', 'gear', 'card'].includes(drawn.outcome)).toBe(true);
   });

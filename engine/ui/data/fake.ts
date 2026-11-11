@@ -137,6 +137,8 @@ export interface Seed {
   award(character: Id, trophy: string, options?: { at?: number; by?: 'season' | 'boss' | 'demand' | 'admin'; line?: string; move?: Id }): Id;
   /** The outcome of the next Random Event roll that comes past the window and the day's most, in place of the weighted draw; null is a roll that finds nothing. */
   nextEvent(event: { outcome: RandomEvent['outcome']; item?: string; line?: string } | null): void;
+  /** Turns on the weighted draw from the settings' odds for a roll nothing scripted; off at first, so an unscripted fake never opens a dialog over a page a test or story is about something else. */
+  eventsOn(on?: boolean): void;
   /** An award that could not be written, as `trophyAwardFailures` lists it, for an admin to give by hand. */
   awardFailure(failure: Omit<TrophyAwardFailure, 'id' | 'open' | 'characters'> & { readonly characters: readonly { readonly id: Id; readonly name: string; readonly place?: number }[] | null }): Id;
   /** The account's settled wallet, as a purchase or a card play leaves it between settlements (`settle` sets it at one, and dates it). Writes no wallet event: it is the state the seed starts from. */
@@ -460,6 +462,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   /** The kinds an admin made (`make_trophy`), beside the instance's own. */
   const madeKinds: { key: string; name: string; line: string | null; belt: boolean; art: string | null }[] = [];
   /** The Random Events a test scripted (`Seed.nextEvent`), taken in order before the weighted draw; null is a roll that finds nothing. */
+  let weightedEvents = false;
   const scripted: (Pick<RandomEvent, 'outcome'> & { item?: string; line?: string } | null)[] = [];
   const awardFailures: (Omit<TrophyAwardFailure, 'open' | 'characters'> & { characters: readonly { readonly id: Id; readonly name: string; readonly place?: number }[] | null })[] = [];
   /** trophy_failure_resolutions: `${failure}:${character}` for each award an admin gave by hand. */
@@ -1974,6 +1977,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const cfg = cosmetics().events;
     if (account.rolledAt !== null && account.rolledAt > now() - cfg.windowMinutes * MINUTE) return ok(null);
     if (account.eventsAt.filter((t) => t > now() - DAY).length >= cfg.dayMost) return ok(null);
+    /* Nothing scripted and the odds not turned on (`Seed.eventsOn`): the roll finds nothing and uses nothing up. */
+    if (scripted.length === 0 && !weightedEvents) return ok(null);
     account.rolledAt = now();
     let outcome: RandomEvent['outcome'] | 'none';
     let item: string | null = null;
@@ -3847,6 +3852,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     },
     /** The outcome of the next Random Event roll that comes past the window and the day's most, in place of the draw; null is a roll that finds nothing. */
     nextEvent(event) { scripted.push(event); },
+    eventsOn(on = true) { weightedEvents = on; },
     awardFailure(failure) {
       const id = uuid();
       awardFailures.push({ id, ...failure });
