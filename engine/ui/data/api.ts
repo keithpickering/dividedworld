@@ -769,6 +769,8 @@ export interface MyCharacter {
   /** Its class now: shown to its player as "only you". */
   readonly class: string;
   readonly classSince: string;
+  /** When its current class was made public (a reveal, a debut with its class, or a Turn announced with it); null while only its player knows it. */
+  readonly classShownAt: string | null;
   /**
    * The settlement end its latest Turn was due at, where a reveal made after that window had ended made the Turn wait for the
    * next settlement (0074_settle_claim.sql); null where it took effect when due, or its class is its first.
@@ -777,8 +779,6 @@ export interface MyCharacter {
   /** When it may next Turn; null when it may now. */
   readonly turnOpensAt: string | null;
   /** Null while it waits to debut at the next tally. */
-  /** When its current class was made public (a reveal, a debut with its class, or a Turn announced with it); null while only its player knows it. */
-  readonly classShownAt: string | null;
   readonly debutedAt: string | null;
   readonly debutLoudness: 'silent' | 'announced' | 'with_class' | null;
   readonly retiredAt: string | null;
