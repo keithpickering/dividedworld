@@ -139,6 +139,33 @@ Every other scene runs under either. The full build is Blender 5.3.0 for Linux f
 author's, and goes on in green with a block cursor, the colors the card's design gives the tail in play (Courier with
 a green tint); the green then runs off the glass and out into the room, the design's "terminal bleed".
 
+## The renders on the card face
+
+The owner asked to see the renders under the card's own plates and words. `on-cards-sheet.png` is the ten cards on
+main at the sheet size (276 px wide), and `on-cards-small.png` the same ten at the fan, phone and slot sizes. The
+frame, plates, words and sizes are the engine's `Postcard`, drawn by its own story; only each picture is swapped, in
+the page, so nothing in the game was changed to make them. The five cards on other branches and the three spells have
+no face on this branch and are not in them.
+
+To make them again, with Storybook running (`npm run storybook`):
+
+```
+mkdir -p out/faces
+node docs/research/2026-11-11-card-renders/mockup.cjs out/faces
+python3 docs/research/2026-11-11-card-renders/mockup-sheets.py out/faces out/on-cards-sheet.png out/on-cards-small.png
+```
+
+The second step needs Pillow. What they show, on this date:
+
+- At the sheet and fan sizes the name plate starts a little over half way down, so only the upper half of a render is
+  seen. Stick Around, Trap Card, Force Field, Main Event and Autocorrect keep their subject clear of it.
+- Feelin' Fab loses its sun and hills at those sizes, Whoops! its runs, Bluff its gloved hand, Glitter Bomb the lower
+  half of its envelope, and Hall Pass the lower half of its pass. Each still reads; the lower part shows only at the
+  phone and slot sizes, where the plate is a strip at the foot.
+- The gem in the top right corner sits over Force Field's sky near its bouncing card and over Hall Pass's lanyard.
+- Main Event's sign says the card's name, which the plate then says again.
+- Trap Card's trap is small in its frame at every size.
+
 ## What using these on cards would need
 
 Card art is vector only today: `tools/check-card-art.mjs` refuses an `<image>` in `art.svg`, and the art README says
