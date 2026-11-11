@@ -52,13 +52,25 @@
 .kb-postbit .kb-trophy {
   height: 1.6em;
   width: auto;
-  max-width: 3.2em;
+  max-width: 1.6em;
   object-fit: contain;
 }
 
+/* A belt is twice a trophy's width (board 01: 40px against 20px), under the rank at the trophy's height; beside the name it is 32 by 16. */
 .kb-postbit .kb-trophy-belt {
+  max-width: 3.2em;
+}
+
+.kb-postbit-belts .kb-trophy-belt {
   height: 1.3em;
-  max-width: 2.8em;
+  max-width: 2.6em;
+}
+
+/* A trophy with no picture is its name in words: no image box, so its height and width limits do not apply. */
+.kb-postbit span.kb-trophy {
+  height: auto;
+  max-width: none;
+  font-size: 0.75em;
 }
 
 /* The rank's name on its line, its pips under it. */

@@ -463,6 +463,64 @@ describe('the Wearing row and the trophy case', () => {
     expect(screen.queryByRole('button', { name: 'Earlier holders' })).toBeNull();
   });
 
+  test('a lineage still loading when "More trophies" is pressed still shows', async () => {
+    const { fake, spritey } = await dressed();
+    for (let i = 0; i < 52; i++) fake.seed.award(spritey, 'p1', { at: T0 + i * 3_600_000, by: 'admin' });
+    fake.seed.award(spritey, 'belt', { at: T0 + 100 * 3_600_000, by: 'admin' });
+    const real = fake.beltLineage.bind(fake);
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((r) => { release = r; });
+    vi.spyOn(fake, 'beltLineage').mockImplementation(async (...args) => { await gate; return real(...args); });
+    renderIn(fake, <LoadedProfile id={spritey} />, { path: `/c/${spritey}`, instance: shop });
+    const more = await screen.findByRole('button', { name: 'More trophies' });
+    act(() => more.click());
+    await waitFor(() => expect(screen.getByRole('table', { name: /trophies/iu }).querySelectorAll('td.kb-trophy-what')).toHaveLength(53));
+    release();
+    expect(await screen.findByRole('table', { name: /Test Belt.*holders/iu })).toBeInTheDocument();
+  });
+
+  test('a failed older page, first lineage read and earlier-holders read each say so and offer "Try again"', async () => {
+    const { fake, spritey, rival } = await dressed();
+    for (let i = 0; i < 52; i++) fake.seed.award(spritey, 'p1', { at: T0 + i * 3_600_000, by: 'admin' });
+    for (let i = 0; i < 22; i++) fake.seed.award(i % 2 ? spritey : rival, 'belt', { at: T0 + 200 * 3_600_000 + i * 3_600_000, by: 'admin' });
+    const trophies = vi.spyOn(fake, 'trophies');
+    const lineage = vi.spyOn(fake, 'beltLineage');
+    lineage.mockRejectedValueOnce(new Error('down'));
+    renderIn(fake, <LoadedProfile id={spritey} />, { path: `/c/${spritey}`, instance: shop });
+    /* The first lineage read fails: a sentence, then the read again. */
+    const sentence = await screen.findByText(/lineage could not be read/iu);
+    act(() => within(sentence.parentElement!).getByRole('button', { name: 'Try again' }).click());
+    const table = await screen.findByRole('table', { name: /Test Belt.*holders/iu });
+    const rows = () => within(table).getAllByRole('row').filter((r) => r.querySelector('td.kb-lineage-span'));
+    expect(rows()).toHaveLength(20);
+    /* Earlier holders fails: a sentence, the reigns kept, then it comes. */
+    lineage.mockRejectedValueOnce(new Error('down'));
+    act(() => screen.getByRole('button', { name: 'Earlier holders' }).click());
+    await screen.findByText(/earlier holders could not be read/iu);
+    expect(rows()).toHaveLength(20);
+    act(() => screen.getByRole('button', { name: 'Try again' }).click());
+    await waitFor(() => expect(rows()).toHaveLength(22));
+    /* The older page fails: a sentence, then it comes. */
+    trophies.mockRejectedValueOnce(new Error('down'));
+    act(() => screen.getByRole('button', { name: 'More trophies' }).click());
+    const older = await screen.findByText(/earlier trophies could not be read/iu);
+    act(() => within(older.parentElement!).getByRole('button', { name: 'Try again' }).click());
+    await waitFor(() => expect(screen.queryByText(/earlier trophies could not be read/iu)).toBeNull());
+    await waitFor(() => expect(screen.getAllByRole('table', { name: /trophies/iu })[0]!.querySelectorAll('td.kb-trophy-what').length).toBeGreaterThan(50));
+  });
+
+  test('"Try again" on the first page reads once however often it is pressed', async () => {
+    const { fake, spritey } = await dressed();
+    fake.seed.award(spritey, 'p1', { by: 'admin' });
+    const trophies = vi.spyOn(fake, 'trophies');
+    trophies.mockRejectedValueOnce(new Error('down'));
+    renderIn(fake, <LoadedProfile id={spritey} />, { path: `/c/${spritey}`, instance: shop });
+    const again = await screen.findByRole('button', { name: 'Try again' });
+    act(() => { again.click(); again.click(); });
+    await screen.findByRole('table', { name: /trophies/iu });
+    expect(trophies).toHaveBeenCalledTimes(2);
+  });
+
   test('passes axe with the row, the case and a lineage drawn', async () => {
     const { fake, spritey } = await dressed();
     fake.seed.award(spritey, 'belt', { by: 'boss' });

@@ -3280,13 +3280,12 @@ describe('gear, trophies and Random Events', () => {
 
   test('an award names its move and says whether it is shown; a belt\'s reigns page newest first from a cursor', async () => {
     const { fake, a1, b1 } = dressing();
-    const boss = fake.seed.staff('s-boss', 'Boss Staff', 'boss');
+    fake.seed.staff('s-boss', 'Boss Staff', 'boss');
     const move = fake.seed.trophyMove('s-boss', { character: a1, trophy: 'pet' });
     const t0 = Date.parse('2026-10-01T00:00:00Z');
     const pet = fake.seed.award(a1, 'pet', { at: t0, by: 'boss', move });
     fake.seed.award(a1, 'p1', { at: t0 + 1000, by: 'season' });
     fake.seed.award(a1, 'p2', { at: t0 + 2000, by: 'admin' });
-    expect(boss).toBeTruthy();
     must(await fake.showTrophies(a1, [pet]));
     const items = (await fake.trophies(a1)).awards;
     expect(items.map((t) => [t.name, t.move !== null, t.season, t.shown])).toEqual([['P2', false, null, false], ['First', false, 1, false], ['Pet', true, null, true]]);
@@ -3303,6 +3302,19 @@ describe('gear, trophies and Random Events', () => {
     expect(rest.reigns).toHaveLength(5);
     expect(rest.more).toBe(false);
     expect(rest.reigns[0]!.ended).toBe(last.began);
+  });
+
+  test('reigns that began at the same moment are neither skipped nor repeated across a page edge', async () => {
+    const { fake, a1, b1 } = dressing();
+    const at = Date.parse('2026-10-01T00:00:00Z');
+    const ids = Array.from({ length: 22 }, (_, i) => fake.seed.award(i % 2 ? a1 : b1, 'belt', { at, by: 'admin' }));
+    const first = must(await fake.beltLineage('belt'));
+    const last = first.reigns[first.reigns.length - 1]!;
+    expect(first.reigns).toHaveLength(20);
+    expect(first.more).toBe(true);
+    const rest = must(await fake.beltLineage('belt', { before: last.began, beforeId: last.award }));
+    expect(rest.more).toBe(false);
+    expect([...first.reigns, ...rest.reigns].map((r) => r.award).sort()).toEqual([...ids].sort());
   });
 
   test('an admin\'s hand is an admin\'s alone; a player is refused in only_admins\'s words', async () => {

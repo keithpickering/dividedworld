@@ -484,6 +484,7 @@
 
 .kb-lineage .kb-lineage-span {
   width: 220px;
+  max-width: 50%;
   font-variant-numeric: tabular-nums;
 }
 
@@ -519,5 +520,9 @@
 
   .kb-lineage .kb-lineage-span {
     width: auto;
+  }
+
+  .kb-lineage .kb-lineage-by {
+    white-space: normal;
   }
 }

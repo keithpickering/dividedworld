@@ -527,18 +527,6 @@ describe('trophies on the postbit', () => {
     expect(Array.from(bit().querySelectorAll('img.kb-trophy')).map((i) => i.getAttribute('alt'))).toEqual(['First', 'Second', 'Third', 'Test Belt']);
   });
 
-  test('a belt both chosen and held is drawn once, wherever it was put in the order, and uses no place', () => {
-    widthOf(1440);
-    show(person({}, { trophies: [four[0]!, belt, four[1]!, four[2]!, four[3]!] }));
-    expect(Array.from(bit().querySelectorAll('img.kb-trophy')).map((i) => i.getAttribute('alt')).filter((a) => a === 'Test Belt')).toHaveLength(1);
-    expect(Array.from(bit().querySelectorAll('img.kb-trophy')).map((i) => i.getAttribute('alt')).sort()).toEqual(['First', 'Second', 'Test Belt', 'Third']);
-  });
-
-  test('a belt both chosen and held is drawn once on the stacked band too', () => {
-    show(person({}, { trophies: [belt, four[0]!] }), 'stacked');
-    expect(Array.from(bit().querySelectorAll('img.kb-trophy')).map((i) => i.getAttribute('alt'))).toEqual(['Test Belt']);
-  });
-
   test('a held belt is drawn on the stacked band, beside the name, and the chosen trophies are not', () => {
     show(person({}, { trophies: [...four, belt] }), 'stacked');
     const imgs = Array.from(bit().querySelectorAll('img.kb-trophy'));

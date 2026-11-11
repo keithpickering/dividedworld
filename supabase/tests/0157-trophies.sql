@@ -434,7 +434,10 @@ begin
   if (ran ->> 'awardsFailed')::integer is distinct from 0 then raise exception 'the tick counted failed awards: %', ran; end if;
   if (select t ->> 'by' from jsonb_array_elements(trophies_of(a) -> 'awards') t where t ->> 'trophy' = 'tt-met' limit 1) is distinct from 'a met demand' then raise exception 'a met demand''s award says so'; end if;
   -- It links to the move: its Act, its thread and its number there, and nothing else of the Act.
-  if (select t -> 'move' from jsonb_array_elements(trophies_of(a) -> 'awards') t where t ->> 'trophy' = 'tt-met' limit 1)
+  -- Read by the award's own id: Ann holds other tt-met awards from earlier blocks, and in one transaction they share a time, so
+  -- "the first tt-met" would be whichever the id tie-break put first.
+  if (select t -> 'move' from jsonb_array_elements(trophies_of(a) -> 'awards') t
+       where t ->> 'award' = (select w.id::text from trophy_awards w where w.act = mv_quad and w.character = a))
      is distinct from (select jsonb_build_object('act', x.id, 'thread', x.thread, 'seq', x.seq) from acts_public x where x.id = mv_quad) then
     raise exception 'a met demand''s award links to its move: %', trophies_of(a);
   end if;
@@ -574,4 +577,26 @@ begin
   if (select to_jsonb(b) - 'name' from storage.buckets b where id = 'trophies') is distinct from '{"id": "trophies", "public": true, "file_size_limit": 16384, "allowed_mime_types": ["image/webp"]}'::jsonb then
     raise exception 'the trophies bucket: %', (select to_jsonb(b) from storage.buckets b where id = 'trophies');
   end if;
+end $$;
+
+-- ---- Two reigns that began at the same instant, a page of one: the award breaks the tie, so none is skipped or repeated ----
+select tests.unbecome();
+do $$
+declare
+  eve uuid := tests.account('tt-tiea'); fay uuid := tests.account('tt-tieb');
+  e uuid := tests.character(eve, 'Tt Tie A'); f uuid := tests.character(fay, 'Tt Tie B');
+  tie timestamptz := now() + interval '1 day'; seen uuid[] := '{}'; page jsonb; n int := 0; total int;
+begin
+  insert into trophy_awards (trophy, character, at, by) values ('tt-belt', e, tie, 'admin'), ('tt-belt', f, tie, 'admin');
+  total := jsonb_array_length(belt_lineage('tt-belt') -> 'reigns');
+  page := belt_lineage('tt-belt', null, 1);
+  loop
+    n := n + 1;
+    if (page #>> '{reigns,0,award}')::uuid = any (seen) then raise exception 'a tie at a page edge repeated a reign: %', page; end if;
+    seen := seen || (page #>> '{reigns,0,award}')::uuid;
+    exit when page ->> 'more' = 'false' or n > total + 1;
+    page := belt_lineage('tt-belt', (page #>> '{reigns,0,began}')::timestamptz, 1, (page #>> '{reigns,0,award}')::uuid);
+  end loop;
+  if cardinality(seen) is distinct from total or total < 3 then raise exception 'paging one at a time over a tie skipped a reign: % of %', cardinality(seen), total; end if;
+  if (select count(*) from unnest(seen) s where s in (select id from trophy_awards where at = tie)) is distinct from 2::bigint then raise exception 'both tied reigns are paged once each'; end if;
 end $$;

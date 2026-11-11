@@ -17,8 +17,8 @@ import { TrophyBadge } from '../postbit/Trophy.tsx';
 import { shortDate } from '../postbit/dates.ts';
 import { Link } from '../router.tsx';
 
-/** A belt's reigns read so far (newest first), whether earlier ones remain, and whether a read of them is under way; or that the first read failed. */
-type Lineage = { readonly reigns: readonly BeltReign[]; readonly more: boolean; readonly paging: boolean };
+/** A belt's reigns read so far (newest first), whether earlier ones remain, whether a read of them is under way, and whether the last such read failed; or that the first read failed. */
+type Lineage = { readonly reigns: readonly BeltReign[]; readonly more: boolean; readonly paging: boolean; readonly error: boolean };
 type Lineages = Readonly<Record<string, Lineage | 'failed'>>;
 
 /** Where an award came from, as a link: the Boss's move or a met demand's (the post it stands in), or the season's results; an admin's has none. */
@@ -35,30 +35,39 @@ export function TrophyCase({ character, name }: { readonly character: Id; readon
   const [state, setState] = useState<'loading' | 'ready' | 'failed'>('loading');
   const [paging, setPaging] = useState(false);
   const [lineages, setLineages] = useState<Lineages>({});
+  const [olderFailed, setOlderFailed] = useState(false);
   const asked = useRef(new Set<string>());
+  /* `run` numbers the reads of the first page, `gen` the character the case is for: an answer that is not for the latest of either is dropped, so a re-render never drops a read that is still wanted. */
+  const run = useRef(0);
+  const gen = useRef(0);
+  const reading = useRef(false);
 
   const first = useCallback(() => {
-    let live = true;
+    const mine = ++run.current;
+    reading.current = true;
     setState('loading');
     api.trophies(character).then(
-      (page) => { if (live) { setItems(page.awards); setMore(page.more); setState('ready'); } },
-      () => { if (live) setState('failed'); },
+      (page) => { if (run.current === mine) { reading.current = false; setItems(page.awards); setMore(page.more); setOlderFailed(false); setState('ready'); } },
+      () => { if (run.current === mine) { reading.current = false; setState('failed'); } },
     );
-    return () => { live = false; };
   }, [api, character]);
   useEffect(() => {
+    gen.current += 1;
     asked.current = new Set();
     setLineages({});
-    return first();
+    first();
+    return () => { run.current += 1; };
   }, [first]);
 
   const older = () => {
     const last = items[items.length - 1];
     if (!last || paging) return;
+    const mine = gen.current;
     setPaging(true);
+    setOlderFailed(false);
     api.trophies(character, { before: last.at, beforeId: last.award }).then(
-      (page) => { setItems((now) => [...now, ...page.awards]); setMore(page.more); setPaging(false); },
-      () => { setPaging(false); },
+      (page) => { if (gen.current !== mine) return; setItems((now) => [...now, ...page.awards]); setMore(page.more); setPaging(false); },
+      () => { if (gen.current !== mine) return; setPaging(false); setOlderFailed(true); },
     );
   };
 
@@ -68,31 +77,39 @@ export function TrophyCase({ character, name }: { readonly character: Id; readon
     for (const t of items) if (t.belt && !seen.has(t.trophy)) seen.set(t.trophy, t.name);
     return [...seen];
   }, [items]);
+  const readLineage = useCallback((key: string) => {
+    const mine = gen.current;
+    asked.current.add(key);
+    const set = (to: Lineage | 'failed') => { if (gen.current === mine) setLineages((now) => ({ ...now, [key]: to })); };
+    api.beltLineage(key).then(
+      (a) => { set(a.ok ? { reigns: a.value.reigns, more: a.value.more, paging: false, error: false } : 'failed'); },
+      () => { set('failed'); },
+    );
+  }, [api]);
   useEffect(() => {
-    let live = true;
-    for (const [key] of belts) {
-      if (asked.current.has(key)) continue;
-      asked.current.add(key);
-      api.beltLineage(key).then(
-        (a) => { if (live) setLineages((now) => ({ ...now, [key]: a.ok ? { reigns: a.value.reigns, more: a.value.more, paging: false } : 'failed' })); },
-        () => { if (live) setLineages((now) => ({ ...now, [key]: 'failed' })); },
-      );
-    }
-    return () => { live = false; };
-  }, [api, belts]);
+    for (const [key] of belts) if (!asked.current.has(key)) readLineage(key);
+  }, [belts, readLineage]);
+
+  const retryLineage = (key: string) => {
+    if (lineages[key] !== 'failed') return;
+    setLineages((now) => { const { [key]: _gone, ...rest } = now; return rest; });
+    readLineage(key);
+  };
 
   const earlier = (key: string) => {
     const now = lineages[key];
     const last = now && now !== 'failed' ? now.reigns[now.reigns.length - 1] : undefined;
     if (!now || now === 'failed' || !last || now.paging) return;
-    setLineages((all) => ({ ...all, [key]: { ...now, paging: true } }));
+    const mine = gen.current;
+    setLineages((all) => ({ ...all, [key]: { ...now, paging: true, error: false } }));
+    const settle = (to: (cur: Lineage) => Lineage) => { if (gen.current === mine) setLineages((all) => { const cur = all[key]; return !cur || cur === 'failed' ? all : { ...all, [key]: to(cur) }; }); };
     api.beltLineage(key, { before: last.began, beforeId: last.award }).then(
-      (a) => setLineages((all) => { const cur = all[key]; return !cur || cur === 'failed' ? all : { ...all, [key]: a.ok ? { reigns: [...cur.reigns, ...a.value.reigns], more: a.value.more, paging: false } : { ...cur, paging: false } }; }),
-      () => setLineages((all) => { const cur = all[key]; return !cur || cur === 'failed' ? all : { ...all, [key]: { ...cur, paging: false } }; }),
+      (a) => { settle((cur) => (a.ok ? { reigns: [...cur.reigns, ...a.value.reigns], more: a.value.more, paging: false, error: false } : { ...cur, paging: false, error: true })); },
+      () => { settle((cur) => ({ ...cur, paging: false, error: true })); },
     );
   };
 
-  if (state === 'failed') return <section className="kb-profile-trophies" aria-label="Trophy case"><p>The trophy case could not be read. <button type="button" className="kb-link" onClick={() => { first(); }}>Try again</button></p></section>;
+  if (state === 'failed') return <section className="kb-profile-trophies" aria-label="Trophy case"><p>The trophy case could not be read. <button type="button" className="kb-link" onClick={() => { if (!reading.current) first(); }}>Try again</button></p></section>;
   if (state === 'loading' || items.length === 0) return null;
   return (
     <section className="kb-profile-trophies" aria-label="Trophy case">
@@ -113,10 +130,13 @@ export function TrophyCase({ character, name }: { readonly character: Id; readon
           ))}
         </tbody>
       </table>
-      {more && <p className="kb-small kb-profile-all"><button type="button" className="kb-link" disabled={paging} onClick={older}>More trophies</button></p>}
+      {olderFailed
+        ? <p className="kb-small kb-profile-all">The earlier trophies could not be read. <button type="button" className="kb-link" onClick={older}>Try again</button></p>
+        : more && <p className="kb-small kb-profile-all"><button type="button" className="kb-link" disabled={paging} onClick={older}>More trophies</button></p>}
       {belts.map(([key, belt]) => {
         const lineage = lineages[key];
-        if (!lineage || lineage === 'failed') return null;
+        if (!lineage) return null;
+        if (lineage === 'failed') return <p key={key} className="kb-small kb-profile-all">The {belt}'s lineage could not be read. <button type="button" className="kb-link" onClick={() => { retryLineage(key); }}>Try again</button></p>;
         const reigns = lineage.reigns;
         return (
           <Fragment key={key}>
@@ -133,7 +153,8 @@ export function TrophyCase({ character, name }: { readonly character: Id; readon
               ))}
             </tbody>
           </table>
-          {lineage.more && <p className="kb-small kb-profile-all"><button type="button" className="kb-link" disabled={lineage.paging} onClick={() => { earlier(key); }}>Earlier holders</button></p>}
+          {lineage.error && <p className="kb-small kb-profile-all">The earlier holders could not be read.</p>}
+          {lineage.more && <p className="kb-small kb-profile-all"><button type="button" className="kb-link" disabled={lineage.paging} onClick={() => { earlier(key); }}>{lineage.error ? 'Try again' : 'Earlier holders'}</button></p>}
           </Fragment>
         );
       })}
