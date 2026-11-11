@@ -2598,6 +2598,16 @@ describe('reports, appeals and what a page says of a ban', () => {
     expect((await run(undefined))?.ruling).toBeUndefined();
   });
 
+  it('reads a reversed end with no by_act as dropped, and one with a by_act as reversed', async () => {
+    const doc = (end: unknown) => ({ summary: THREAD_ROW, page: 1, acts: [], plays: [], above: [], visits: [{ visit: 'v1', post: A, mod: B, at: '2026-10-01T10:00:00+00:00', ends_at: '2026-10-01T12:00:00+00:00', line: 'x', charges: [], challenge: { kind: 'distraction' }, end }] });
+    const run = async (end: unknown) => (await harness((r) => (r.url.pathname === `${REST}/rpc/thread_page` ? json(doc(end)) : undefined)).api.threadPage(T, { page: 1 }, 20, []))?.visits[0]?.end;
+    const at = '2026-10-01T13:00:00+00:00';
+    expect((await run({ act: 'e1', at, outcome: 'reversed', by_act: null, line: 'This visit could not be filed and was dropped.' }))?.outcome).toBe('dropped');
+    expect((await run({ act: 'e1', at, outcome: 'reversed', line: 'x' }))?.outcome).toBe('dropped');
+    expect((await run({ act: 'e1', at, outcome: 'reversed', by_act: 'a1', line: 'x' }))?.outcome).toBe('reversed');
+    expect((await run({ act: 'e1', at, outcome: 'dropped', line: 'x' }))?.outcome).toBe('dropped');
+  });
+
   it('says a failed, refunded judgment in the server\'s words, and that it may be made again', async () => {
     const words = 'The Mod could not hear this report. Your Aura has been refunded, and you can make it again.';
     const h = harness((r) => (r.url.pathname === '/functions/v1/staff' ? json({ report: 'r1', error: words }, 502) : undefined));

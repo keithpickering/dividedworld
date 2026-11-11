@@ -360,7 +360,7 @@ export type VisitChallenge =
   | { readonly kind: 'distraction' };
 
 /** How a visit ended: filed (the points landed), intercepted (talked down), trapped (a card's trap sprang) or reversed (an admin). */
-export type VisitOutcome = 'filed' | 'intercepted' | 'trapped' | 'reversed';
+export type VisitOutcome = 'filed' | 'intercepted' | 'trapped' | 'reversed' | 'dropped';
 
 export interface VisitEnd {
   readonly act: Id;

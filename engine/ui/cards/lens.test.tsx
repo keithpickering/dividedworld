@@ -1311,7 +1311,7 @@ describe('a visit\'s tab', () => {
       const choices = within(group).getAllByRole('button');
       expect(choices.map((c) => c.textContent)).toEqual(['Form 1-A', 'Form 0', 'Form 27-B/6']);
       for (const c of choices) expect(c).toHaveClass('kb-visit-choice');
-      expect(l).toHaveTextContent('One try for Pipewrench. A wrong answer, and The Clerk visits Pipewrench\'s next post within 24 hours, charging Obstruction (minor, 2 warn points). There is no timer.');
+      expect(l).toHaveTextContent('One try for Pipewrench. An answer other than The Clerk\'s, and The Clerk visits Pipewrench\'s next post within 24 hours, charging Obstruction (minor, 2 warn points). There is no timer.');
       expect(within(l).getByRole('status')).toBeEmptyDOMElement();
     });
 
@@ -1583,6 +1583,18 @@ describe('a visit\'s tab', () => {
       expect(within(l).getByRole('heading', { name: 'The Clerk was talked down' })).toBeInTheDocument();
       expect(l).toHaveTextContent(/Nothing landed on Spritey\./u);
       expect(within(l).queryByRole('heading', { name: 'Talk it down' })).toBeNull();
+    });
+
+    test('dropped, it says it could not be filed and that nothing landed', async () => {
+      width(false);
+      const w = visited({ challenge: QUIZ });
+      w.fake.seed.visitEnd(w.visit, { outcome: 'dropped', line: 'This visit could not be filed and was dropped.' });
+      openVisit(w);
+      const l = await press(w);
+      expect(within(l).getByRole('tab', { name: 'Dropped' })).toHaveAttribute('aria-selected', 'true');
+      expect(within(l).getByRole('heading', { name: 'The Clerk could not be filed and was dropped' })).toBeInTheDocument();
+      expect(l).toHaveTextContent(/The visit could not be filed and was dropped on .*Nothing landed on Spritey\./u);
+      expect(l).not.toHaveTextContent(/admin/u);
     });
 
     test('trapped, it says a trap on the post ended it', async () => {

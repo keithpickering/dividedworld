@@ -378,7 +378,7 @@ const rowsOf = (v: unknown): Row[] => (Array.isArray(v) ? (v as Row[]) : []);
 
 const BANDS: readonly VisitBand[] = ['minor', 'moderate', 'severe'];
 const CAUSES: readonly VisitCharge['cause'][] = ['rule', 'patrol', 'report', 'tail', 'backfire'];
-const OUTCOMES: readonly VisitOutcome[] = ['filed', 'intercepted', 'trapped', 'reversed'];
+const OUTCOMES: readonly VisitOutcome[] = ['filed', 'intercepted', 'trapped', 'reversed', 'dropped'];
 const VERDICTS: readonly ReportVerdict[] = ['visit', 'dismissed', 'backfire'];
 const RULINGS: readonly AppealVerdict[] = ['overturned', 'upheld', 'reduced', 'increased'];
 const OFFICES: readonly Office[] = ['boss', 'mod', 'member', 'benched', 'waiting', 'developer'];
@@ -392,10 +392,15 @@ function toCharge(c: Row): VisitCharge {
   };
 }
 
-/** A visit's end, from thread_page's `end` or a `visit_end` Act's payload: null where the outcome is not one of the four. */
+/**
+ * A visit's end, from thread_page's `end` or a `visit_end` Act's payload: null where the outcome is not one of the five. The tick wrote a visit it gave up on as `reversed` with no
+ * `by_act` before `dropped` existed, and no Act is edited, so that shape reads as dropped here.
+ */
 function toVisitEnd(e: Row, at: unknown, act: unknown): VisitEnd | null {
-  const outcome = OUTCOMES.find((o) => o === e['outcome']);
-  return outcome && typeof act === 'string' ? { act, at: str(at) ?? '', outcome, byAct: str(e['by_act']), line: str(e['line']) ?? '' } : null;
+  const found = OUTCOMES.find((o) => o === e['outcome']);
+  const byAct = str(e['by_act']);
+  const outcome = found === 'reversed' && byAct === null ? 'dropped' : found;
+  return outcome && typeof act === 'string' ? { act, at: str(at) ?? '', outcome, byAct, line: str(e['line']) ?? '' } : null;
 }
 
 /** The challenge a visit carries: never an answer. A quiz whose question the page could not read is a distraction, which asks nothing it cannot say. */

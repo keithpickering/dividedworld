@@ -686,7 +686,7 @@ begin
   if not exists (select 1 from visit_draw_failures f where f.post_act = p and f.rule_number is null and f.error like '%value%') then raise exception 'a failure in draw_visits'' own reads left no trace'; end if;
 end $$;
 
--- ---- 21. A visit that fails forever is dropped at the ceiling: reversed, a plain line, and nothing lands on the author ----
+-- ---- 21. A visit that fails forever is dropped at the ceiling: dropped, a plain line, and nothing lands on the author ----
 do $$
 declare
   c uuid := tests.character(tests.account('vs-kay'), 'Vs Doomed');
@@ -702,13 +702,13 @@ begin
   perform system_tick();
   if exists (select 1 from acts where kind = 'visit_end' and target_act_id = v) then raise exception 'a visit was dropped before the ceiling'; end if;
   perform system_tick();
-  if not exists (select 1 from acts e where e.kind = 'visit_end' and e.target_act_id = v and e.payload ->> 'outcome' = 'reversed' and e.payload ->> 'line' = 'This visit could not be filed and was dropped.') then
+  if not exists (select 1 from acts e where e.kind = 'visit_end' and e.target_act_id = v and e.payload ->> 'outcome' = 'dropped' and e.payload ->> 'line' = 'This visit could not be filed and was dropped.') then
     raise exception 'a visit that fails forever was not dropped at the ceiling';
   end if;
   if exists (select 1 from acts where kind = 'infraction' and payload ->> 'visit_act' = v::text) or warn_points(c) is distinct from 0 then raise exception 'something landed on the author of a dropped visit'; end if;
   perform tests.become((select owner from characters where id = c));
   page := thread_page(t, 1, null, 20, '{}');
   perform tests.unbecome();
-  if not exists (select 1 from jsonb_array_elements(page -> 'visits') e where e ->> 'post' = p::text and e #>> '{end,outcome}' = 'reversed') then raise exception 'the post does not show its visit ended'; end if;
+  if not exists (select 1 from jsonb_array_elements(page -> 'visits') e where e ->> 'post' = p::text and e #>> '{end,outcome}' = 'dropped') then raise exception 'the post does not show its visit ended'; end if;
   drop trigger vs_poison2 on acts;
 end $$;

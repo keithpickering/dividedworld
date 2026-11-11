@@ -227,7 +227,7 @@ export interface Seed {
    * with `charges` (default one minor breach of Rule 2) and a `challenge`. A quiz's `answer` is the fake's alone, never carried to a reader.
    */
   visit(mod: Id, post: Id, options?: { at?: number; endsInMs?: number; line?: string; charges?: readonly SeedCharge[]; challenge?: SeedChallenge }): Id;
-  /** A visit's end (`end_visit`): filed, intercepted, trapped or reversed, with the Act that ended it where one did. */
+  /** A visit's end (`end_visit`): filed, intercepted, trapped, reversed or dropped, with the Act that ended it where one did. */
   visitEnd(visit: Id, end: { outcome: VisitOutcome; by?: Id; line?: string; at?: number }): Id;
   /** A character's report of a post (`open_report`), with its reason. */
   report(character: Id, post: Id, reason: string, options?: { at?: number }): Id;
