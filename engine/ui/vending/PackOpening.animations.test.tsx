@@ -19,13 +19,13 @@ const ok = { ok: true as const, value: undefined };
 const rule = (key: string, name: string, rarity: CardRules['rarity'], alignment: CardRules['alignment'] = 'sweet'): CardRules => ({
   key, name, alignment, rarity, playPrice: () => 0, canApply: () => ok, validateConfig: (c) => ({ ok: true, value: c }),
 });
-const rules = [rule('stick', 'Stick Around', 'common'), rule('whoops', 'Whoops!', 'common', 'salty'), rule('bluff', 'Bluff', 'common', 'pepperoni'), rule('trap', 'Trap Card', 'uncommon'), rule('main', 'Main Event', 'rare')];
+const rules = [rule('stick', 'Stick Around', 'common'), rule('whoops', 'Whoops!', 'common', 'salty'), rule('dud', 'Dud', 'common', 'pepperoni'), rule('trap', 'Trap Card', 'uncommon'), rule('main', 'Main Event', 'rare')];
 const art = { color: '#2ee6ff', ink: '#03141a', canvas: '', mark: '', credit: 'Test' };
 const uis: CardUi[] = rules.map((r) => ({ key: r.key, art, describe: () => `${r.name} does a thing.` }));
 const faces = facesOf(rules, uis, testInstance.settings);
 const face = (key: string) => faces.find((f) => f.key === key)!;
 /* Four commons, then the hit: in the order the answer gave them. */
-const pulled = ['whoops', 'stick', 'bluff', 'stick', 'main'].map(face);
+const pulled = ['whoops', 'stick', 'dud', 'stick', 'main'].map(face);
 const packArt = { color: '#ffd93d', ink: '#1a1403', canvas: '', mark: '', credit: 'Test' };
 
 

@@ -32,7 +32,7 @@ begin
   insert into card_kinds (key, name, alignment, rarity, play, trap, gimmick, lasts) values
     ('snare', 'Snare', 'salty', 'uncommon', 'set', '{"trigger": {"on": "cast"}}', null, null),
     ('catcher', 'Catcher', 'salty', 'rare', 'set', '{"trigger": {"on": "cast"}}', null, null),
-    ('bluffy', 'Bluffy', 'pepperoni', 'common', 'set', null, null, null),
+    ('idle', 'Idle', 'pepperoni', 'common', 'set', '{"trigger": {"on": "cast"}}', null, null),
     ('grandie', 'Grandie', 'sweet', 'legendary', 'cast', null, null, null),
     ('shield', 'Shield', 'sweet', 'uncommon', 'use', null, '{"kind": "ward", "upTo": "uncommon"}', interval '7 days'),
     ('hook', 'Hook', 'salty', 'uncommon', 'cast', null, null, null);
@@ -109,7 +109,7 @@ begin
   if said is null then raise exception 'a staff Cast landed on something that is not a post'; end if;
   -- A card that is a Set is not played here, and a card that does not exist is no card.
   perform tests.become_service();
-  said := pg_temp.refused(format('select staff_play_card(%L, %L, %L)', 'sc-mod', 'bluffy', p));
+  said := pg_temp.refused(format('select staff_play_card(%L, %L, %L)', 'sc-mod', 'snare', p));
   perform tests.unbecome();
   if said is null or said !~ 'set face down' then raise exception 'a Set was played as a Cast: %', said; end if;
   perform tests.become_service();
@@ -118,7 +118,7 @@ begin
   if said is null or said !~ '^P0002' then raise exception 'a card that does not exist was played: %', said; end if;
 end $$;
 
--- ---- A staff Set of a Bluff lands face down, for no one; a Set that pays out is refused; so is a rare card ----
+-- ---- A staff Set of a Move lands face down, for no one; a Set that pays out is refused; so is a rare card ----
 do $$
 declare
   ann uuid := tests.account('sc-ann2'); a uuid := tests.character(ann, 'Sc Ann Two');
@@ -128,23 +128,23 @@ declare
   r jsonb; said text; before_acts bigint;
 begin
   perform tests.become_service();
-  r := staff_set_card('sc-mod', 'bluffy', sp);
+  r := staff_set_card('sc-mod', 'idle', sp, '{"card": "sweetie"}', 'sweetie');
   perform tests.unbecome();
   if (select x.kind || ':' || x.character::text || ':' || x.target_act_id::text from acts x where x.id = (r ->> 'id')::uuid) is distinct from 'set:' || pg_temp.staff_char('sc-mod')::text || ':' || sp::text then
     raise exception 'a staff Set is a set Act by the persona on its own post: %', r;
   end if;
-  if r::text like '%bluffy%' then raise exception 'a staff Set names its card: %', r; end if;
-  if (select f.card || ':' || coalesce(f.account::text, 'none') from face_down f where f.play = (r ->> 'id')::uuid) is distinct from 'bluffy:none' then
+  if r::text like '%idle%' then raise exception 'a staff Set names its card: %', r; end if;
+  if (select f.card || ':' || coalesce(f.account::text, 'none') from face_down f where f.play = (r ->> 'id')::uuid) is distinct from 'idle:none' then
     raise exception 'a staff Set is a face-down row with no account';
   end if;
   if exists (select 1 from card_ledger where act = (r ->> 'id')::uuid) then raise exception 'a staff Set was charged'; end if;
   -- One card face down to a post; and only on the persona's own post.
   perform tests.become_service();
-  said := pg_temp.refused(format('select staff_set_card(%L, %L, %L)', 'sc-mod', 'bluffy', sp));
+  said := pg_temp.refused(format('select staff_set_card(%L, %L, %L, %L, %L)', 'sc-mod', 'idle', sp, '{"card": "sweetie"}', 'sweetie'));
   perform tests.unbecome();
   if said is null or said !~ '^23505 this post already holds a card face down' then raise exception 'a second card on one back: %', said; end if;
   perform tests.become_service();
-  said := pg_temp.refused(format('select staff_set_card(%L, %L, %L)', 'sc-mod', 'bluffy', pp));
+  said := pg_temp.refused(format('select staff_set_card(%L, %L, %L, %L, %L)', 'sc-mod', 'idle', pp, '{"card": "sweetie"}', 'sweetie'));
   perform tests.unbecome();
   if said is null or said !~ '^42501' then raise exception 'a staff Set on a player''s post: %', said; end if;
   -- A Trap Card that names no card catches nothing and is refused in plain words. Nothing is written.
@@ -170,7 +170,7 @@ begin
   perform tests.unbecome();
   if said is null or said !~ '^55000 Snare is above' then raise exception 'an uncommon Set under a common cap: %', said; end if;
   perform tests.become_service();
-  perform staff_set_card('sc-mod', 'bluffy', sp2);
+  perform staff_set_card('sc-mod', 'idle', sp2, '{"card": "sweetie"}', 'sweetie');
   perform tests.unbecome();
   said := pg_temp.refused($q$update settings set value = jsonb_set(value, '{cardRarityMost}', '"mythic"') where key = 'pool'$q$);
   if said is null or said !~ '^23514' then raise exception 'a pool cap that is no rarity was stored: %', said; end if;
@@ -195,9 +195,9 @@ begin
   if said is null or said !~ '^55000 a benched persona writes nothing' then raise exception 'a benched persona played a card: %', said; end if;
   said := pg_temp.refused(format('select staff_play_card(%L, %L, %L)', 'sc-nobody', 'sweetie', pp));
   if said is null or said !~ '^P0002' then raise exception 'an unknown persona played a card: %', said; end if;
-  said := pg_temp.refused(format('select staff_set_card(%L, %L, %L)', 'sc-bench', 'bluffy', sp));
+  said := pg_temp.refused(format('select staff_set_card(%L, %L, %L, %L, %L)', 'sc-bench', 'idle', sp, '{"card": "sweetie"}', 'sweetie'));
   if said is null or said !~ '^55000 a benched persona writes nothing' then raise exception 'a benched persona set a card: %', said; end if;
-  said := pg_temp.refused(format('select staff_set_card(%L, %L, %L)', 'sc-wait', 'bluffy', sp));
+  said := pg_temp.refused(format('select staff_set_card(%L, %L, %L, %L, %L)', 'sc-wait', 'idle', sp, '{"card": "sweetie"}', 'sweetie'));
   if said is null or said !~ '^55000 a waiting persona writes nothing' then raise exception 'a waiting persona set a card: %', said; end if;
   perform tests.unbecome();
   -- No player and no visitor reaches either door, or the inner functions.
@@ -208,11 +208,11 @@ begin
   if said is null or said !~ '^42501' then raise exception 'a player called place_cast: %', said; end if;
   perform tests.unbecome();
   perform tests.become_anon();
-  said := pg_temp.refused(format('select staff_set_card(%L, %L, %L)', 'sc-mod', 'bluffy', sp));
+  said := pg_temp.refused(format('select staff_set_card(%L, %L, %L, %L, %L)', 'sc-mod', 'idle', sp, '{"card": "sweetie"}', 'sweetie'));
   if said is null or said !~ '^42501' then raise exception 'a visitor called staff_set_card: %', said; end if;
   perform tests.unbecome();
   perform tests.become_service();
-  said := pg_temp.refused(format('select place_set(%L, %L, %L, %L, null, 0)', pg_temp.staff_char('sc-mod'), 'bluffy', sp, '{}'));
+  said := pg_temp.refused(format('select place_set(%L, %L, %L, %L, null, 0, %L)', pg_temp.staff_char('sc-mod'), 'idle', sp, '{"card": "sweetie"}', 'sweetie'));
   perform tests.unbecome();
   if said is null or said !~ '^42501' then raise exception 'the service role called place_set directly: %', said; end if;
 end $$;
@@ -313,7 +313,7 @@ declare
   ann uuid := tests.account('sc-nested'); a uuid := tests.character(ann, 'Sc Nested');
   t uuid := tests.thread('A staff cast on a staff trap');
   sp uuid := pg_temp.staff_post('sc-mod', t, 'A staff post carrying a Catcher.');
-  bp uuid := pg_temp.staff_post('sc-boss', t, 'A staff post carrying a Bluff.');
+  bp uuid := pg_temp.staff_post('sc-boss', t, 'A staff post carrying a Move.');
   r jsonb;
 begin
   -- Plant a Trap Card of the staff's own for the staff to meet (catcher is rare: lifted for this setup alone).
@@ -347,9 +347,9 @@ begin
   if said is null or said !~ '^22023' then raise exception 'a staff Cast with a price was placed: %', said; end if;
   said := pg_temp.refused(format('select place_cast(%L, %L, %L, %L, %L, %L, null, null, 0)', a, 'sweetie', pp, '{}', '', 'post'));
   if said is null or said !~ '^22023' then raise exception 'a player''s Cast with no payer was placed: %', said; end if;
-  said := pg_temp.refused(format('select place_set(%L, %L, %L, %L, %L, 0)', mod, 'bluffy', sp, '{}', ann));
+  said := pg_temp.refused(format('select place_set(%L, %L, %L, %L, %L, 0, %L)', mod, 'idle', sp, '{"card": "sweetie"}', ann, 'sweetie'));
   if said is null or said !~ '^22023' then raise exception 'a staff Set with a payer was placed: %', said; end if;
-  said := pg_temp.refused(format('select place_set(%L, %L, %L, %L, null, 0)', a, 'bluffy', ap, '{}'));
+  said := pg_temp.refused(format('select place_set(%L, %L, %L, %L, null, 0, %L)', a, 'idle', ap, '{"card": "sweetie"}', 'sweetie'));
   if said is null or said !~ '^22023' then raise exception 'a player''s Set with no payer was placed: %', said; end if;
   perform set_config('kayfabb.staff_writer', '', true);
   if (select count(*) from acts) is distinct from before_acts then raise exception 'a refused place wrote an Act'; end if;
@@ -357,10 +357,10 @@ begin
   perform set_config('kayfabb.staff_writer', 'on', true);
   setting_act := tests.act(mod, 'set', t, '{}', sp);
   perform set_config('kayfabb.staff_writer', '', true);
-  said := pg_temp.refused(format('insert into face_down (play, account, card, post, thread, round, ends_at) values (%L, %L, ''bluffy'', %L, %L, 1, now() + interval ''1 day'')', setting_act, ann, sp, t));
+  said := pg_temp.refused(format('insert into face_down (play, account, card, post, thread, round, ends_at) values (%L, %L, ''idle'', %L, %L, 1, now() + interval ''1 day'')', setting_act, ann, sp, t));
   if said is null or said !~ '^23514' then raise exception 'a staff back with an account was stored: %', said; end if;
   setting_act := tests.act(a, 'set', t, '{}', pp);
-  said := pg_temp.refused(format('insert into face_down (play, account, card, post, thread, round, ends_at) values (%L, null, ''bluffy'', %L, %L, 1, now() + interval ''1 day'')', setting_act, pp, t));
+  said := pg_temp.refused(format('insert into face_down (play, account, card, post, thread, round, ends_at) values (%L, null, ''idle'', %L, %L, 1, now() + interval ''1 day'')', setting_act, pp, t));
   if said is null or said !~ '^23514' then raise exception 'a player''s back with no account was stored: %', said; end if;
 end $$;
 
@@ -374,7 +374,7 @@ declare
   mine2 uuid := tests.post(a, t, 'Ann''s second post.');
   r jsonb; said text; events bigint; ledger bigint;
 begin
-  perform pg_temp.hand(ann, 'sweetie', 'bluffy', 'sweetie', 'bluffy');
+  perform pg_temp.hand(ann, 'sweetie', 'idle', 'sweetie', 'idle');
   perform pg_temp.hand(bob, 'shield');
   insert into wallets (account, balance) values (ann, 300), (bob, 0);
   perform play_card(bob, 'shield', b, warded, '{}', 0, '');
@@ -386,7 +386,7 @@ begin
     raise exception 'the wallet event of a Cast: %', (select jsonb_agg(to_jsonb(w)) from wallet_events w where w.account = ann);
   end if;
   -- A Set: the same.
-  r := set_card(ann, 'bluffy', a, mine, '{}', 25);
+  r := set_card(ann, 'idle', a, mine, '{"card": "sweetie"}', 25, 'sweetie');
   if (select balance from wallets where account = ann) is distinct from 200 then raise exception 'a player''s Set cost %', 225 - (select balance from wallets where account = ann); end if;
   if (select l.price from card_ledger l where l.act = (r ->> 'id')::uuid and l.account = ann and l.kind = 'played') is distinct from 25 then raise exception 'the ledger row of a Set'; end if;
   -- Refused anywhere after the hand check: nothing is spent, and the card stays in the hand.
@@ -394,9 +394,9 @@ begin
   select count(*) into ledger from card_ledger where account = ann and kind = 'played';
   said := pg_temp.refused(format('select play_card(%L, %L, %L, %L, %L, 75, %L)', ann, 'sweetie', a, warded, '{}', ''));
   if said is null or said !~ 'turns away' then raise exception 'a Cast on a warded post: %', said; end if;
-  said := pg_temp.refused(format('select play_card(%L, %L, %L, %L, %L, 75, %L)', ann, 'bluffy', a, p, '{}', ''));
+  said := pg_temp.refused(format('select play_card(%L, %L, %L, %L, %L, 75, %L)', ann, 'idle', a, p, '{}', ''));
   if said is null or said !~ 'set face down on your own post' then raise exception 'a Set played as a Cast: %', said; end if;
-  said := pg_temp.refused(format('select set_card(%L, %L, %L, %L, %L, 25)', ann, 'bluffy', a, p, '{}'));
+  said := pg_temp.refused(format('select set_card(%L, %L, %L, %L, %L, 25, %L)', ann, 'idle', a, p, '{"card": "sweetie"}', 'sweetie'));
   if said is null or said !~ '^42501' then raise exception 'a Set on another''s post: %', said; end if;
   perform pg_temp.hand(ann, 'shield');
   said := pg_temp.refused(format('select set_card(%L, %L, %L, %L, %L, 25)', ann, 'shield', a, mine2, '{}'));
@@ -424,7 +424,7 @@ declare
 begin
   perform tests.become_service();
   cast_act := staff_play_card('sc-mod', 'sweetie', p, '{}', '', '2030-03-04');
-  set_act := staff_set_card('sc-mod', 'bluffy', sp);
+  set_act := staff_set_card('sc-mod', 'idle', sp, '{"card": "sweetie"}', 'sweetie');
   perform tests.unbecome();
   if (select x.payload ->> 'pool' from acts x where x.id = (cast_act ->> 'id')::uuid) is distinct from '2030-03-04' then raise exception 'a marked Cast has no marker: %', cast_act; end if;
   -- A Set's payload is empty (acts_set_payload); it is tied to its post by landing on it.

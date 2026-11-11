@@ -309,8 +309,8 @@ describe('card backs, springs and catches', () => {
   test('the setter\'s own card is kept for their screen alone, beside the back', () => {
     const plays = createPlays();
     plays.add([base('s1', 'set', {})]);
-    plays.setFaces({ s1: 'bluffy' });
-    expect(plays.get('p1').faces).toEqual({ s1: 'bluffy' });
+    plays.setFaces({ s1: 'dud' });
+    expect(plays.get('p1').faces).toEqual({ s1: 'dud' });
   });
 });
 

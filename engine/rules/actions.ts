@@ -256,7 +256,7 @@ const ACTIONS: Record<string, (r: Fields, instance: Instance) => Decided> = {
     needsTarget: true,
     play: 'use',
   }),
-  // A Set carries no message: its Act says nothing, so a Bluff's and a trap's are alike.
+  // A Set carries no message: its Act says nothing, so every card set face down is alike.
   setCard: (r, instance) => ({
     rpc: 'set_card',
     args: setArgs(r, instance),

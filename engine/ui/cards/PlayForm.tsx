@@ -319,7 +319,7 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
             <SetConditions id={id} open={whenOpen} onToggle={() => setWhenOpen((o) => !o)} draft={draft} onChange={(next) => { setPlaced(null); setDraft(next); }} lockedSays={lockedSays} words={watched!.text} count={countOf(when)} problems={shown} />
           )}
           {setting && <p className="kb-play-sets" data-kb-ends>{endsWords(instance.settings.setLasts)}</p>}
-          {/* A Set's Act says nothing, so it carries no message and costs no more than the card: a Bluff's and a trap's are alike. */}
+          {/* A Set's Act says nothing, so it carries no message and costs no more than the card: every card set face down is alike. */}
           {!setting && <div className="kb-play-message">
             <label htmlFor={`${id}-message`} className="kb-play-label">Your message</label>
             <textarea id={`${id}-message`} className="kb-play-input" rows={3} value={message} aria-describedby={hint} onChange={(e) => change(e.target.value)} />

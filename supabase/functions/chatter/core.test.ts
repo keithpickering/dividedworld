@@ -156,17 +156,17 @@ function fakeModels(reply: (r: ChatRequest) => unknown, completion: string | Err
   };
   return { models, chats, completions };
 }
-/** A thread start is the one request that asks for a title; it may play a Set on its own post. A reply may leave a note. */
+/** A thread start is the one request that asks for a title; it may set a Reversal on its own post (a pool that plays uncommons). A reply may leave a note. */
 const normal = (r: ChatRequest) => {
   const asksTitle = (r.schema as any).required.includes('title');
   return asksTitle
-    ? { words: `Opening words from ${r.staff}.`, title: `A thread by ${r.staff}`, card: { key: 'bluff', on: 'own' }, note: `Started one, ${r.staff}.` }
+    ? { words: `Opening words from ${r.staff}.`, title: `A thread by ${r.staff}`, card: { key: 'card-collector', on: 'own', config: { 'card-collector': { card: 'whoops' } } }, note: `Started one, ${r.staff}.` }
     : { words: `A reply from ${r.staff}.`, note: `Replied, ${r.staff}.` };
 };
 const run = (d: ReturnType<typeof fakeDb>, m: { models: Models }, instance: Instance = dividedWorld, slot = SLOT) => runChatter(d.db, m.models, instance, slot);
 
 test('a day with three picks writes three posts, one card, the notes and three spends', async () => {
-  const d = fakeDb();
+  const d = fakeDb({ pool: { cardRarityMost: 'uncommon' } });
   const m = fakeModels(normal);
   const out = await run(d, m);
   assert.equal(out.status, 'ok');
@@ -181,7 +181,7 @@ test('a day with three picks writes three posts, one card, the notes and three s
   assert.equal(d.count('staff_play_card') + d.count('staff_set_card'), 1, 'one card');
   assert.equal(d.count('staff_set_card'), 1, 'a Set, on the post the thread start wrote');
   const set = d.of('staff_set_card')[0]!;
-  assert.equal(set.card, 'bluff');
+  assert.equal(set.card, 'card-collector');
   assert.equal(set.target, d.state.acts.find((a) => a.kind === 'thread')!.id, 'on its own post');
   assert.equal(d.state.notes.length, 3, 'a note each');
   assert.equal(d.state.spends.length, 3);
@@ -647,7 +647,7 @@ test('a wrongly typed option costs neither the post nor the card: the ink falls 
 });
 
 test('a Set with options reads its own new post as the target, after it is written, and sets with the decided config', async () => {
-  // The only Divided World Gimmick with options is Trap Card, whose option is the card it names; so the instance here carries a Gimmick on a cast
+  // The only Divided World Gimmick with options is Card Collector, whose option is the card it names; so the instance here carries a Gimmick on a cast
   // with Whoops!'s options and a catch of its own: the persona's ink is checked by the card's own rules, and the named catch goes to SQL.
   const whoops = dividedWorld.cards.find((c) => c.key === 'whoops')!;
   const snare = { ...whoops, key: 'snare', name: 'Snare', play: 'set' as const, trap: { trigger: { on: 'cast' as const } }, catches: () => 'whoops' };
@@ -671,19 +671,19 @@ test('a Set with options reads its own new post as the target, after it is writt
   assert.ok(wrote >= 0 && wrote < read && read < setAt, 'written, then read, then set');
 });
 
-test('a persona\'s Trap Card is offered with its options and stores the card it names; Hall Pass is never offered', async () => {
+test('a persona\'s Card Collector is offered with its options and stores the card it names; Hall Pass is never offered', async () => {
   const hall = dividedWorld.cards.find((c) => c.key === 'hall-pass')!;
-  const trap = dividedWorld.cards.find((c) => c.key === 'trap-card')!;
+  const trap = dividedWorld.cards.find((c) => c.key === 'card-collector')!;
   assert.equal(staffOffers(hall), false, 'a Mod Bot visits only players\' posts');
   assert.equal(staffOffers(trap), true);
-  // Divided World's pool plays commons; an instance that lets it play uncommons offers the Trap Card.
+  // Divided World's pool plays commons; an instance that lets it play uncommons offers the Card Collector.
   const d = fakeDb({ pool: { threadsWeekly: 0, cardRarityMost: 'uncommon' } });
-  const m = fakeModels((r) => ({ words: `A reply from ${r.staff}.`, card: { key: 'trap-card', on: 'own', config: { 'trap-card': { card: 'whoops' } } } }));
+  const m = fakeModels((r) => ({ words: `A reply from ${r.staff}.`, card: { key: 'card-collector', on: 'own', config: { 'card-collector': { card: 'whoops' } } } }));
   const out = await run(d, m);
   assert.ok(out.status === 'ok');
   const set = d.of('staff_set_card')[0]!;
-  assert.ok(set, 'the Trap Card was set: ' + JSON.stringify(out.picks));
-  assert.deepEqual({ card: set.card, config: set.config, catches: set.catches }, { card: 'trap-card', config: { card: 'whoops' }, catches: 'whoops' });
+  assert.ok(set, 'the Card Collector was set: ' + JSON.stringify(out.picks));
+  assert.deepEqual({ card: set.card, config: set.config, catches: set.catches }, { card: 'card-collector', config: { card: 'whoops' }, catches: 'whoops' });
   const hallModels = fakeModels((r) => ({ words: `A reply from ${r.staff}.`, card: { key: 'hall-pass', on: 'own' } }));
   const d2 = fakeDb({ pool: { threadsWeekly: 0, cardRarityMost: 'uncommon' } });
   await run(d2, hallModels);

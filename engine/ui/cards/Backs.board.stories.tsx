@@ -107,7 +107,7 @@ export default meta;
 type Story = StoryObj<typeof Scene>;
 const phone = { parameters: { moment: '02-phone' } } as const;
 
-/** #41 carries a card set face down by its author: one back, the same for a trap and a Bluff. */
+/** #41 carries a card set face down by its author: one back, the same for any card. */
 export const Back: Story = { args: { scene: 'back' } };
 /** The back after its trap caught #42's author's cast: the card that sprang in its place, the caught play dimmed. */
 export const Caught: Story = { args: { scene: 'caught' } };

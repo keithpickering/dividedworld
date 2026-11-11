@@ -119,7 +119,7 @@ describe('cards set face down, traps and catches', () => {
     cards: [
       ...testInstance.cards,
       { ...testInstance.cards[0]!, key: 'snare', name: 'Snare', rarity: 'uncommon' as const, play: 'set' as const, trap: { trigger: { on: 'cast' as const } }, catches: () => 'whoops' },
-      { ...testInstance.cards[0]!, key: 'bluffy', name: 'Bluffy', play: 'set' as const },
+      { ...testInstance.cards[0]!, key: 'dud', name: 'Dud', play: 'set' as const },
       { ...testInstance.cards[0]!, key: 'hook', name: 'Hook', rarity: 'uncommon' as const, play: 'set' as const, trap: { trigger: { on: 'reply' } as never } },
       { ...testInstance.cards[0]!, key: 'pass', name: 'Hall Pass', rarity: 'rare' as const, play: 'set' as const, trap: { trigger: { on: 'visit' as const } } },
       { ...testInstance.cards[0]!, key: 'glitter', name: 'Glitter Bomb', reaches: ['character' as const] },
@@ -237,10 +237,10 @@ describe('cards set face down, traps and catches', () => {
     expect(text(setRow('hook'))).toBe('Hook set face down on your post #3. It springs once, or ends by itself.');
   });
 
-  test('a Bluff set face down says it never springs (#136 F3)', () => {
-    const row = setRow('bluffy', { springs: false });
-    expect(row.what).toBe('You set Bluffy face down');
-    expect(text(row)).toBe('Bluffy set face down on your post #3. It never springs, and ends by itself.');
+  test('a card with no trap set face down says it never springs (#136 F3)', () => {
+    const row = setRow('dud', { springs: false });
+    expect(row.what).toBe('You set Dud face down');
+    expect(text(row)).toBe('Dud set face down on your post #3. It never springs, and ends by itself.');
   });
 
   test('a quote sprang a Move: what it landed on, and whose quote set it off', () => {
@@ -338,10 +338,10 @@ describe('cards set face down, traps and catches', () => {
   });
 
   test('a card back that ended says nothing sprang it', () => {
-    const log = { ...empty, setEnds: [{ play: 'set1', card: 'bluffy', post: 'post3', spring: null, endedAt: later }] };
+    const log = { ...empty, setEnds: [{ play: 'set1', card: 'dud', post: 'post3', spring: null, endedAt: later }] };
     const [row] = logRows(data({ log, mine, acts: new Map(posts.map((a) => [a.id, a])), names }), w, 600, null);
     expect(row!.kind).toBe('setEnded');
-    expect(text(row!)).toBe('Bluffy on your post #3 ended; nothing sprang it.');
+    expect(text(row!)).toBe('Dud on your post #3 ended; nothing sprang it.');
     expect(row!.characters).toEqual(['p']);
   });
 
@@ -440,7 +440,7 @@ describe('cards set face down, traps and catches', () => {
   test('no line names an owner or a reactor: only characters\' names, and the player\'s own', () => {
     const spring = act('sp', 'spring', 'p', { targetActId: 'post3', payload: { card: 'snare', trigger: 'cast', outcome: { do: 'payout' }, set: 'set1', by: 'k1', caught: 'k1' } });
     const play = act('k1', 'card', 's', { targetActId: 'post3', payload: { card: 'whoops', caught: 'set1' } });
-    const log = { ...empty, setEnds: [{ play: 'set1', card: 'snare', post: 'post3', spring: 'sp', endedAt: later }, { play: 'set2', card: 'bluffy', post: 'post3', spring: null, endedAt: at }] };
+    const log = { ...empty, setEnds: [{ play: 'set1', card: 'snare', post: 'post3', spring: 'sp', endedAt: later }, { play: 'set2', card: 'dud', post: 'post3', spring: null, endedAt: at }] };
     const all = logRows(data({ log, mine, acts: new Map([...posts, play, spring].map((a) => [a.id, a])), names }), w, 600, null).map(text).join(' ');
     expect(all).not.toMatch(/account|player|owner|reacted/iu);
   });

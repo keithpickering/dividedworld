@@ -1044,7 +1044,7 @@ export interface CardEvent {
   readonly repriced?: boolean;
   readonly price: number;
   readonly at: string;
-  /** For a card the player set face down, whether it carries a trap: false for a Bluff, which never springs. Absent on any other row. */
+  /** For a card the player set face down, whether it carries a trap: false for a card with no trap, which never springs. Absent on any other row. */
   readonly springs?: boolean;
   /** For a card the player set face down, the card a Trap Card waits to catch (`my_face_down.catches`, the setter's own row), where it was read. */
   readonly catches?: string;

@@ -944,7 +944,7 @@ describe('buying and playing a card', () => {
   });
 
   it('drops a row whose availability it does not know, rather than showing it on sale', async () => {
-    const h = harness((r) => (r.url.pathname === `${REST}/machine_now` ? rows([SLOT_CARD, { ...SLOT_CARD, slot: C, position: 3, card: 'stick', availability: 'hidden' }, { ...SLOT_CARD, slot: B, position: 4, card: 'bluff', availability: 'someday' }, { ...SLOT_CARD, slot: T, position: 5, card: 'trap', availability: null }]) : undefined));
+    const h = harness((r) => (r.url.pathname === `${REST}/machine_now` ? rows([SLOT_CARD, { ...SLOT_CARD, slot: C, position: 3, card: 'stick', availability: 'hidden' }, { ...SLOT_CARD, slot: B, position: 4, card: 'dud', availability: 'someday' }, { ...SLOT_CARD, slot: T, position: 5, card: 'trap', availability: null }]) : undefined));
     expect((await h.api.machine()).map((s) => s.id)).toEqual([A]);
   });
 
@@ -987,8 +987,8 @@ describe('buying and playing a card', () => {
   });
 
   it('buys a pack through the act function, and reads what it gave in pull order', async () => {
-    const h = harness((r) => (r.url.pathname === '/functions/v1/act' ? json({ pack: T, kind: 'booster', contents: ['whoops', 'stick', 'whoops', 'bluff', 'trap'], balance: 162 }) : undefined));
-    expect(await h.api.buyPack(await slotOf(SLOT_PACK))).toEqual({ ok: true, value: { pack: T, contents: ['whoops', 'stick', 'whoops', 'bluff', 'trap'], balance: 162 } });
+    const h = harness((r) => (r.url.pathname === '/functions/v1/act' ? json({ pack: T, kind: 'booster', contents: ['whoops', 'stick', 'whoops', 'dud', 'trap'], balance: 162 }) : undefined));
+    expect(await h.api.buyPack(await slotOf(SLOT_PACK))).toEqual({ ok: true, value: { pack: T, contents: ['whoops', 'stick', 'whoops', 'dud', 'trap'], balance: 162 } });
     expect(h.log.filter((r) => r.url.pathname === '/functions/v1/act').map((r) => r.body)).toEqual([{ action: 'buyPack', slot: B, price: 300 }]);
   });
 
@@ -1363,12 +1363,12 @@ describe('the log', () => {
       if (name === 'my_card_ledger') {
         return rows([
           { card: 'whoops', kind: 'played', act: C, price: 25, at: '2026-10-29T21:52:00+00:00', springs: null },
-          { card: 'bluffy', kind: 'played', act: SET, price: 0, at: '2026-10-29T18:00:00+00:00', springs: false },
+          { card: 'dud', kind: 'played', act: SET, price: 0, at: '2026-10-29T18:00:00+00:00', springs: false },
           { card: 'whoops', kind: 'bought', act: null, price: 150, at: '2026-10-29T17:30:00+00:00', springs: null, pack: null, repriced: true },
-          { card: 'bluffy', kind: 'pulled', act: null, price: 0, at: '2026-10-29T17:00:00+00:00', springs: null, pack: PACK, repriced: false },
+          { card: 'dud', kind: 'pulled', act: null, price: 0, at: '2026-10-29T17:00:00+00:00', springs: null, pack: PACK, repriced: false },
         ]);
       }
-      if (name === 'my_packs') return rows([{ id: PACK, pack: 'booster', price: 450, repriced: true, contents: ['bluffy', 'whoops'], bought_at: '2026-10-29T17:00:00+00:00' }]);
+      if (name === 'my_packs') return rows([{ id: PACK, pack: 'booster', price: 450, repriced: true, contents: ['dud', 'whoops'], bought_at: '2026-10-29T17:00:00+00:00' }]);
       if (name === 'my_posts_played_on') {
         return r.url.searchParams.get('select') === 'play,post,saved_at'
           ? rows([{ play: C, post: A, saved_at: '2026-10-29T23:00:00+00:00' }])
@@ -1377,7 +1377,7 @@ describe('the log', () => {
       if (name === 'my_face_down') {
         /* The setter's own back, asked for by the sets in the ledger (what a Trap Card waits for); the ended views are the other read. */
         if (r.url.searchParams.get('select') === 'play,catches,phrase,passage,who,who_except') return rows([{ play: SET, catches: 'whoops', phrase: null }]);
-        return rows([{ play: SET, card: 'bluffy', post: A, spring: null, ended_at: '2026-10-29T20:00:00+00:00' }]);
+        return rows([{ play: SET, card: 'dud', post: A, spring: null, ended_at: '2026-10-29T20:00:00+00:00' }]);
       }
       if (name === 'my_caught') return rows([{ play: C, card: 'whoops', post: A, trap: 'snare', spring: SPRING, price: 25, bought_price: 100, at: '2026-10-29T19:00:00+00:00' }]);
       if (name === 'my_cards_ended') return rows([{ card_end: 'e1', play: C, card: 'whoops', at: '2026-10-29T22:00:00+00:00', side: 'onMine', reach: 'post', target_name: null, post_author_name: 'Pipewrench', caster_name: 'Spritey', character: B }]);
@@ -1403,15 +1403,15 @@ describe('the log', () => {
         ],
       }],
       wallet: [{ settlement: 9, kind: 'settlement', change: 15, overflow: 0, floored: 0, balanceAfter: 472, ref: null, at: '2026-10-30T08:17:02.123456+00:00' }],
-      /* A Bluff's row keeps its `springs` (0075); a row that is not a card set face down carries none. */
-      cards: [{ card: 'whoops', kind: 'played', act: C, price: 25, at: '2026-10-29T21:52:00+00:00' }, { card: 'bluffy', kind: 'played', act: SET, price: 0, at: '2026-10-29T18:00:00+00:00', springs: false, catches: 'whoops' },
+      /* A card with no trap keeps its `springs` (0075); a row that is not a card set face down carries none. */
+      cards: [{ card: 'whoops', kind: 'played', act: C, price: 25, at: '2026-10-29T21:52:00+00:00' }, { card: 'dud', kind: 'played', act: SET, price: 0, at: '2026-10-29T18:00:00+00:00', springs: false, catches: 'whoops' },
         /* A purchase keeps whether the Boss had moved its price (0139); a pulled row keeps its pack (0139), and no other row carries either. */
         { card: 'whoops', kind: 'bought', act: null, price: 150, at: '2026-10-29T17:30:00+00:00', repriced: true },
-        { card: 'bluffy', kind: 'pulled', act: null, price: 0, at: '2026-10-29T17:00:00+00:00', pack: PACK }],
-      packs: [{ pack: PACK, kind: 'booster', price: 450, repriced: true, contents: ['bluffy', 'whoops'], at: '2026-10-29T17:00:00+00:00' }],
+        { card: 'dud', kind: 'pulled', act: null, price: 0, at: '2026-10-29T17:00:00+00:00', pack: PACK }],
+      packs: [{ pack: PACK, kind: 'booster', price: 450, repriced: true, contents: ['dud', 'whoops'], at: '2026-10-29T17:00:00+00:00' }],
       playsOnMine: [{ play: C, post: A, at: '2026-10-29T21:16:00+00:00', reach: 'post', targetName: null, targetCharacter: B }],
       saves: [{ play: C, post: A, savedAt: '2026-10-29T23:00:00+00:00' }],
-      setEnds: [{ play: SET, card: 'bluffy', post: A, spring: null, endedAt: '2026-10-29T20:00:00+00:00' }],
+      setEnds: [{ play: SET, card: 'dud', post: A, spring: null, endedAt: '2026-10-29T20:00:00+00:00' }],
       caught: [{ play: C, card: 'whoops', post: A, trap: 'snare', spring: SPRING, price: 25, boughtPrice: 100, at: '2026-10-29T19:00:00+00:00' }],
       ended: [{ cardEnd: 'e1', play: C, card: 'whoops', at: '2026-10-29T22:00:00+00:00', side: 'onMine', reach: 'post', targetName: null, postAuthorName: 'Pipewrench', casterName: 'Spritey', character: B }],
       infractions: [{ infraction: 'i1', character: B, at: '2026-10-29T20:30:00+00:00', band: 'minor', points: 2, ruleNumber: 2, rule: 'Rule 2: No double posting', mod: 'The Clerk', post: A, postSeq: 41, thread: T, expiresAt: '2026-11-12T20:30:00+00:00', relief: 0, emptiedAt: null }],

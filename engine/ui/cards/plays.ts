@@ -21,7 +21,7 @@ import { endsWords } from './marks.ts';
 export const PLAYS_PER_POST = 8;
 
 /**
- * The kind every card set face down is drawn as: one back, the same for every card, so a trap and a Bluff look alike to everyone
+ * The kind every card set face down is drawn as: one back, the same for every card, so two cards set face down look alike to everyone
  * but their setter (the card mechanic's design, section 3). No instance's card key can be it: a key is lowercase words.
  */
 export const CARD_BACK = 'kb:card-back';

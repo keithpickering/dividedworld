@@ -65,8 +65,8 @@ const spanMs = (s: Span): number => s.count * (s.unit === 'minute' ? 60_000 : s.
 const article = (name: string) => `${/^[aeiou]/iu.test(name) ? 'an' : 'a'} ${name}`;
 
 /**
- * A card back's words (the card mechanic's design, section 3): the same for every card face down, so a reader cannot tell a trap
- * from a Bluff. Its `state` is the engine's alone ("Face down on this post", the Lens's status); who set it and when is its play's
+ * A card back's words (the card mechanic's design, section 3): the same for every card face down, so a reader cannot tell one card's back
+ * from another's. Its `state` is the engine's alone ("Face down on this post", the Lens's status); who set it and when is its play's
  * `note`, and when it ends is its `ends`, in the reader's zone. Once it has sprung, the card is public, and its name is said.
  * `setLasts` is the instance's, the same for every Set, so the end it gives names no card either. `cardName` is asked only of a
  * back that sprang.

@@ -80,9 +80,9 @@ begin
   perform tests.post(other, t, 'Other''s post.');
   perform tests.post(other, t, 'Other''s second post.');
   perform tests.post(one, t, 'One''s post.');
-  -- A Cast card (sweetie) and a Set card (bluffy, the engine's test set), two of each in Ann's hand.
-  insert into card_kinds (key, name, alignment, rarity, play, trap, gimmick, lasts) values ('bluffy', 'Bluffy', 'pepperoni', 'common', 'set', null, null, null) on conflict (key) do nothing;
-  insert into card_ledger (account, card, kind, price) values (ann, 'sweetie', 'bought', 0), (ann, 'sweetie', 'bought', 0), (ann, 'bluffy', 'bought', 0), (ann, 'bluffy', 'bought', 0);
+  -- A Cast card (sweetie) and a Set card (idle, the engine's test set), two of each in Ann's hand.
+  insert into card_kinds (key, name, alignment, rarity, play, trap, gimmick, lasts) values ('idle', 'Idle', 'pepperoni', 'common', 'set', '{"trigger": {"on": "visit"}}', null, null) on conflict (key) do nothing;
+  insert into card_ledger (account, card, kind, price) values (ann, 'sweetie', 'bought', 0), (ann, 'sweetie', 'bought', 0), (ann, 'idle', 'bought', 0), (ann, 'idle', 'bought', 0);
   insert into wallets (account, balance) values (ann, 600);
   perform tests.post(two, t, 'Mask Two''s own post.');
 end $$;
@@ -357,7 +357,7 @@ begin
   if why is null or why not like '%banned until ' || ends || '%' then raise exception 'play_card, got %', why; end if;
   why := pg_temp.refusal(format('select play_card(%L, ''sweetie'', %L, %L, ''{}'', 0, '''', ''post'', null, null)', ann, one, others_post));
   if why is null or why not like '%banned until ' || ends || '%' then raise exception 'play_card with a version, got %', why; end if;
-  why := pg_temp.refusal(format('select set_card(%L, ''bluffy'', %L, %L, ''{}'', 0)', ann, one, ones_post));
+  why := pg_temp.refusal(format('select set_card(%L, ''idle'', %L, %L, ''{}'', 0)', ann, one, ones_post));
   if why is null or why not like '%banned until ' || ends || '%' then raise exception 'set_card, got %', why; end if;
   perform tests.unbecome();
   -- Nothing was written by any of them.
@@ -373,7 +373,7 @@ begin
   perform tests.unbecome();
   perform tests.become_service();
   perform play_card(ann, 'sweetie', pg_temp.id('Wb Mask Two'), others_post, '{}', 0, '');
-  perform set_card(ann, 'bluffy', pg_temp.id('Wb Mask Two'), pg_temp.post_of('Wb Mask Two', 'Mask Two''s own post.'), '{}', 0);
+  perform set_card(ann, 'idle', pg_temp.id('Wb Mask Two'), pg_temp.post_of('Wb Mask Two', 'Mask Two''s own post.'), '{}', 0);
   perform tests.unbecome();
   perform tests.become(bob);
   perform post(t, other, 'Other talks.');
@@ -409,7 +409,7 @@ begin
   perform tests.unbecome();
   perform tests.become_service();
   perform play_card(ann, 'sweetie', one, pg_temp.post_of('Wb Other', 'Other''s second post.'), '{}', 0, '');
-  perform set_card(ann, 'bluffy', one, pg_temp.post_of('Wb Mask One', 'Back again.'), '{}', 0);
+  perform set_card(ann, 'idle', one, pg_temp.post_of('Wb Mask One', 'Back again.'), '{}', 0);
   perform tests.unbecome();
 end $$;
 

@@ -11,11 +11,11 @@ const card = (key: string, name: string, rarity: 'common' | 'uncommon' | 'rare')
 /* Five slots: a Booster, two cards on sale, one sold out and one hidden. */
 const instance: Instance = {
   ...testInstance,
-  cards: [card('whoops', 'Whoops!', 'common'), card('bluff', 'Bluff', 'common'), card('trap', 'Trap Card', 'uncommon'), card('main', 'Main Event', 'rare')],
+  cards: [card('whoops', 'Whoops!', 'common'), card('dud', 'Dud', 'common'), card('trap', 'Trap Card', 'uncommon'), card('main', 'Main Event', 'rare')],
   packs: [{ key: 'booster', pulls: [{ weights: { common: 1 } }, { weights: { common: 1 } }, { weights: { common: 1 } }, { weights: { common: 1 } }, { weights: { uncommon: 1 } }] }],
   machine: [
     { item: { pack: 'booster' }, availability: 'onSale', price: 300 }, { item: { card: 'whoops' }, availability: 'onSale', price: 100 },
-    { item: { card: 'bluff' }, availability: 'onSale', price: 25 }, { item: { card: 'trap' }, availability: 'soldOut', price: 150 },
+    { item: { card: 'dud' }, availability: 'onSale', price: 25 }, { item: { card: 'trap' }, availability: 'soldOut', price: 150 },
     { item: { card: 'main' }, availability: 'hidden', price: 300 },
   ],
 };
@@ -37,14 +37,14 @@ describe('the machine\'s admin page', () => {
   test('lists every slot in grid order, the hidden one too, with its code, item, availability and price', async () => {
     open();
     expect(await screen.findByRole('heading', { level: 1, name: 'The machine' })).toBeInTheDocument();
-    expect(await names()).toEqual(['Booster', 'Whoops!', 'Bluff', 'Trap Card', 'Main Event']);
+    expect(await names()).toEqual(['Booster', 'Whoops!', 'Dud', 'Trap Card', 'Main Event']);
     const r = await rows();
     expect(within(r[0]!).getByRole('rowheader')).toHaveTextContent('pack · 5 cards');
     expect(within(r[2]!).getByRole('rowheader')).toHaveTextContent('common');
     expect(r.map((x) => x.querySelector('td')!.textContent)).toEqual(['A1', 'A2', 'B1', 'B2', '–']);
     expect(screen.getByRole('combobox', { name: 'Trap Card: availability' })).toHaveValue('soldOut');
     expect(screen.getByRole('combobox', { name: 'Main Event: availability' })).toHaveValue('hidden');
-    expect(screen.getByRole('textbox', { name: 'Bluff: price' })).toHaveValue('0.25');
+    expect(screen.getByRole('textbox', { name: 'Dud: price' })).toHaveValue('0.25');
     expect(screen.getByRole('textbox', { name: 'Booster: price' })).toHaveValue('3.00');
   });
 
@@ -92,7 +92,7 @@ describe('the machine\'s admin page', () => {
     const first = (await fake.adminMachine())[0]!;
     expect(await fake.moveSlot(first.id, 'up')).toEqual({ ok: true, value: { slot: first.id, moved: false } });
     expect((await fake.adminMachine()).map((s) => s.id)[0]).toBe(first.id);
-    expect(await names()).toEqual(['Booster', 'Whoops!', 'Bluff', 'Trap Card', 'Main Event']);
+    expect(await names()).toEqual(['Booster', 'Whoops!', 'Dud', 'Trap Card', 'Main Event']);
   });
 
   test('moves a slot down and up from the keyboard on the page only, keeps focus on its button, and says where it now stands', async () => {
@@ -103,13 +103,13 @@ describe('the machine\'s admin page', () => {
     const moved = vi.spyOn(fake, 'moveSlot');
     screen.getByRole('button', { name: 'Booster: move down' }).focus();
     await user.keyboard('{Enter}');
-    expect(await names()).toEqual(['Whoops!', 'Booster', 'Bluff', 'Trap Card', 'Main Event']);
+    expect(await names()).toEqual(['Whoops!', 'Booster', 'Dud', 'Trap Card', 'Main Event']);
     expect(screen.getByRole('status')).toHaveTextContent('Booster is now 2nd in the list and 2nd on the machine.');
     expect(screen.getByRole('button', { name: 'Booster: move down' })).toHaveFocus();
     /* The slot codes follow the order on the page. */
     expect((await rows()).map((x) => x.querySelector('td')!.textContent)).toEqual(['A1', 'A2', 'B1', 'B2', '–']);
     await user.click(screen.getByRole('button', { name: 'Booster: move up' }));
-    expect(await names()).toEqual(['Booster', 'Whoops!', 'Bluff', 'Trap Card', 'Main Event']);
+    expect(await names()).toEqual(['Booster', 'Whoops!', 'Dud', 'Trap Card', 'Main Event']);
     /* The Booster reached the end of its arrow's road: its up arrow is disabled, so focus went to its other arrow and not to the page. */
     await waitFor(() => expect(screen.getByRole('button', { name: 'Booster: move down' })).toHaveFocus());
     expect(saved).not.toHaveBeenCalled();
@@ -121,12 +121,12 @@ describe('the machine\'s admin page', () => {
     await names();
     const user = userEvent.setup();
     await user.click(screen.getByRole('button', { name: 'Booster: move down' }));
-    expect(await names()).toEqual(['Whoops!', 'Booster', 'Bluff', 'Trap Card', 'Main Event']);
+    expect(await names()).toEqual(['Whoops!', 'Booster', 'Dud', 'Trap Card', 'Main Event']);
     expect((await fake.adminMachine()).map((x) => x.id)[0]).toBe((await fake.machine())[0]!.id);
-    expect((await fake.machine()).map((x) => 'pack' in x.item ? x.item.pack : x.item.card)).toEqual(['booster', 'whoops', 'bluff', 'trap']);
+    expect((await fake.machine()).map((x) => 'pack' in x.item ? x.item.pack : x.item.card)).toEqual(['booster', 'whoops', 'dud', 'trap']);
     cleanup();
     renderIn(fake, <MachineScreen />, { path: '/admin/machine', instance, packs });
-    expect(await names()).toEqual(['Booster', 'Whoops!', 'Bluff', 'Trap Card', 'Main Event']);
+    expect(await names()).toEqual(['Booster', 'Whoops!', 'Dud', 'Trap Card', 'Main Event']);
   });
 
   test('the status names a moved slot\'s place on the machine, and says a hidden one stands on none', async () => {
@@ -135,7 +135,7 @@ describe('the machine\'s admin page', () => {
     const user = userEvent.setup();
     /* Main Event is hidden: moving Trap Card down swaps it past the hidden row, so the list changes and the front does not. */
     await user.click(screen.getByRole('button', { name: 'Trap Card: move down' }));
-    expect(await names()).toEqual(['Booster', 'Whoops!', 'Bluff', 'Main Event', 'Trap Card']);
+    expect(await names()).toEqual(['Booster', 'Whoops!', 'Dud', 'Main Event', 'Trap Card']);
     expect(screen.getByRole('status')).toHaveTextContent('Trap Card is now 5th in the list and 4th on the machine.');
     await user.click(screen.getByRole('button', { name: 'Main Event: move down' }));
     expect(screen.getByRole('status')).toHaveTextContent('Main Event is now 5th in the list and not on the machine, since it is hidden.');
@@ -151,8 +151,8 @@ describe('the machine\'s admin page', () => {
     expect(await screen.findByText(/^Saved\. Players see it at once\./u)).toBeInTheDocument();
     expect(saved).toHaveBeenCalledTimes(1);
     expect(saved.mock.calls[0]![0].map((c) => c.slot)).toEqual((await fake.adminMachine()).map((x) => x.id));
-    expect((await fake.machine()).map((x) => 'pack' in x.item ? x.item.pack : x.item.card)).toEqual(['whoops', 'booster', 'bluff', 'trap']);
-    expect(await names()).toEqual(['Whoops!', 'Booster', 'Bluff', 'Trap Card', 'Main Event']);
+    expect((await fake.machine()).map((x) => 'pack' in x.item ? x.item.pack : x.item.card)).toEqual(['whoops', 'booster', 'dud', 'trap']);
+    expect(await names()).toEqual(['Whoops!', 'Booster', 'Dud', 'Trap Card', 'Main Event']);
   });
 
   test('one Save changes saves every changed availability and price, and a saved price shows on the machine', async () => {
@@ -162,7 +162,7 @@ describe('the machine\'s admin page', () => {
     const price = screen.getByRole('textbox', { name: 'Whoops!: price' });
     await user.clear(price);
     await user.type(price, '1.75');
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Bluff: availability' }), 'soldOut');
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Dud: availability' }), 'soldOut');
     await user.selectOptions(screen.getByRole('combobox', { name: 'Main Event: availability' }), 'onSale');
     /* Nothing is sent until Save changes. */
     expect((await fake.machine()).find((s) => 'card' in s.item && s.item.card === 'whoops')!.price).toBe(100);
@@ -170,7 +170,7 @@ describe('the machine\'s admin page', () => {
     expect(await screen.findByText(/^Saved\. Players see it at once\./u)).toBeInTheDocument();
     const slots = await fake.machine();
     expect(slots.find((s) => 'card' in s.item && s.item.card === 'whoops')!.price).toBe(175);
-    expect(slots.find((s) => 'card' in s.item && s.item.card === 'bluff')!.availability).toBe('soldOut');
+    expect(slots.find((s) => 'card' in s.item && s.item.card === 'dud')!.availability).toBe('soldOut');
     expect(slots.some((s) => 'card' in s.item && s.item.card === 'main')).toBe(true);
     expect(screen.getByRole('textbox', { name: 'Whoops!: price' })).toHaveValue('1.75');
   });
@@ -180,12 +180,12 @@ describe('the machine\'s admin page', () => {
     await names();
     const user = userEvent.setup();
     const set = vi.spyOn(fake, 'saveMachine');
-    const price = screen.getByRole('textbox', { name: 'Bluff: price' });
+    const price = screen.getByRole('textbox', { name: 'Dud: price' });
     await user.clear(price);
     await user.type(price, 'cheap');
     await user.selectOptions(screen.getByRole('combobox', { name: 'Whoops!: availability' }), 'soldOut');
     await user.click(screen.getByRole('button', { name: 'Save changes' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('Bluff: a price is an amount in orbs between 0.01 and 1,000,000.00, like 1.50.');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Dud: a price is an amount in orbs between 0.01 and 1,000,000.00, like 1.50.');
     expect(price).toHaveAttribute('aria-invalid', 'true');
     expect(price.getAttribute('aria-describedby')).toContain((await screen.findByRole('alert')).id);
     expect(screen.getByText(/^A price is between 0\.01 and 1,000,000\.00\./u)).toBeInTheDocument();
@@ -204,11 +204,11 @@ describe('the machine\'s admin page', () => {
     await user.click(screen.getByRole('button', { name: 'Booster: move down' }));
     await user.click(screen.getByRole('button', { name: 'Save changes' }));
     const alert = await screen.findByRole('alert');
-    expect(alert).toHaveTextContent('Bluff: a slot is on sale, sold out or hidden Nothing was saved.');
-    const select = screen.getByRole('combobox', { name: 'Bluff: availability' });
+    expect(alert).toHaveTextContent('Dud: a slot is on sale, sold out or hidden Nothing was saved.');
+    const select = screen.getByRole('combobox', { name: 'Dud: availability' });
     expect(select).toHaveAttribute('aria-invalid', 'true');
     expect(select.getAttribute('aria-describedby')).toBe(alert.id);
-    expect(screen.getByRole('textbox', { name: 'Bluff: price' })).not.toHaveAttribute('aria-invalid');
+    expect(screen.getByRole('textbox', { name: 'Dud: price' })).not.toHaveAttribute('aria-invalid');
     /* The page keeps what the admin did, so they can fix it and save again; the machine has none of it. */
     expect(screen.getByRole('textbox', { name: 'Whoops!: price' })).toHaveValue('9');
     expect((await fake.adminMachine()).find((x) => 'card' in x.item && x.item.card === 'whoops')!.price).toBe(100);
@@ -267,7 +267,7 @@ describe('taking a pack off sale', () => {
     const fake = buildWorld(undefined, instance);
     fake.signInAs(fake.seed.account('machine-admin', { admin: true }));
     fake.seed.slot({ card: 'whoops' }, { availability: 'soldOut', move: { kind: 'pullSlot', act: 'no-such-act', ends: '2026-11-09T12:00:00.000Z', demand: null, progress: null, was: 100, percent: null, hours: null } });
-    const slot = (await fake.adminMachine()).find((x) => 'card' in x.item && x.item.card === 'bluff')!;
+    const slot = (await fake.adminMachine()).find((x) => 'card' in x.item && x.item.card === 'dud')!;
     expect(await fake.setSlot(slot.id, 'soldOut', slot.price)).toMatchObject({ ok: true, value: { ended: 0 } });
     expect((await fake.adminMachine()).find((x) => 'card' in x.item && x.item.card === 'whoops')!.move).not.toBeNull();
   });

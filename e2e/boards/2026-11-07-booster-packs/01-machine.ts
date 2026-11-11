@@ -48,7 +48,7 @@ const manifest: BoardManifest = {
     { id: 'slot-a2', role: 'button', name: 'Whoops!, sold out: pulled by the Boss until Nov 9', type: false, box: 'position' },
     { id: 'slot-b1', role: 'button', name: 'Buy Stick Around, 1.00 orb, common Cast', buildName: 'Buy Stick Around, 1.00 orb, common Move', type: false, box: 'position' },
     { id: 'slot-b2', role: 'button', name: 'Buy Autocorrect, 1.00 orb, common Cast', buildName: 'Buy Autocorrect, 1.00 orb, common Move', type: false, box: 'position' },
-    { id: 'slot-c1', role: 'button', name: 'Buy Bluff, 0.25 orb, common Set', buildName: 'Buy Bluff, 0.25 orbs, common Gimmick', type: false, box: 'position' },
+    { id: 'slot-c1', role: 'button', name: 'Buy Publicity Tour, 1.50 orb, uncommon Use', buildName: 'Buy Publicity Tour, 1.50 orbs, uncommon Ward', type: false, box: 'position' },
     { id: 'slot-c2', role: 'button', name: 'Buy Feelin\' Fab, 0.20 orb, common Cast', buildName: 'Buy Feelin\' Fab, 0.20 orbs, common Move', type: false, box: 'position' },
     { id: 'slot-d1', role: 'button', name: 'Buy Trap Card, 1.50 orb, uncommon Set', buildName: 'Buy Trap Card, 1.50 orbs, uncommon Gimmick', type: false, box: 'position' },
     { id: 'slot-d2', role: 'button', name: 'Buy Force Field, 1.50 orb, uncommon Use', buildName: 'Buy Hall Pass, 1.50 orbs, uncommon Gimmick', type: false, box: 'position' },

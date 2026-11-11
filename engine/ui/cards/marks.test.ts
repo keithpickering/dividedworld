@@ -32,16 +32,16 @@ describe('a card back, a ward and a caught play, in words', () => {
   const setLasts = { unit: 'day' as const, count: 7 };
   const day = (iso: string) => utcDate(iso);
 
-  test('a back says "Face down on this post", the engine\'s own words; who set it and when is its note, and when it ends its way out, the same for a trap and a Bluff to any reader but the setter', () => {
-    const words = backWords(back(), 'PIPEWRENCH', setLasts, () => 'Trap Card');
+  test('a back says "Face down on this post", the engine\'s own words; who set it and when is its note, and when it ends its way out, the same for any card to any reader but the setter', () => {
+    const words = backWords(back(), 'PIPEWRENCH', setLasts, () => 'Card Collector');
     assert.deepEqual(words, { name: 'A card set face down by PIPEWRENCH', state: 'Face down on this post', note: `Set face down by PIPEWRENCH on ${localDate('2026-10-29T12:00:00.000Z')}.`, ends: `${endsWords('2026-11-05T12:00:00.000Z')}, unless it springs first.` });
     assert.deepEqual(wordsProblems('state', words.state), []);
-    assert.deepEqual(backWords(back(), 'PIPEWRENCH', setLasts, () => 'Bluff'), words, 'the card behind it changes nothing');
+    assert.deepEqual(backWords(back(), 'PIPEWRENCH', setLasts, () => 'Hall Pass'), words, 'the card behind it changes nothing');
   });
 
   test('a back that sprang names its card, which is public from then', () => {
-    const words = backWords(back({ revealed: { card: 'trap-card', spring: 'sp', at: '2026-10-30T02:00:00.000Z' } }), 'PIPEWRENCH', setLasts, () => 'Trap Card');
-    assert.deepEqual(words, { name: 'Trap Card, set face down by PIPEWRENCH', state: `Sprang on ${localDate('2026-10-30T02:00:00.000Z')}`, note: 'A Trap Card set face down by PIPEWRENCH.', ends: 'It has sprung, and ended.' });
+    const words = backWords(back({ revealed: { card: 'card-collector', spring: 'sp', at: '2026-10-30T02:00:00.000Z' } }), 'PIPEWRENCH', setLasts, () => 'Card Collector');
+    assert.deepEqual(words, { name: 'Card Collector, set face down by PIPEWRENCH', state: `Sprang on ${localDate('2026-10-30T02:00:00.000Z')}`, note: 'A Card Collector set face down by PIPEWRENCH.', ends: 'It has sprung, and ended.' });
     assert.deepEqual(wordsProblems('state', words.state), []);
   });
 

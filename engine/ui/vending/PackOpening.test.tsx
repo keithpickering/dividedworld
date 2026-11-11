@@ -19,13 +19,13 @@ const ok = { ok: true as const, value: undefined };
 const rule = (key: string, name: string, rarity: CardRules['rarity'], alignment: CardRules['alignment'] = 'sweet'): CardRules => ({
   key, name, alignment, rarity, playPrice: () => 0, canApply: () => ok, validateConfig: (c) => ({ ok: true, value: c }),
 });
-const rules = [rule('stick', 'Stick Around', 'common'), rule('whoops', 'Whoops!', 'common', 'salty'), rule('bluff', 'Bluff', 'common', 'pepperoni'), rule('trap', 'Trap Card', 'uncommon'), rule('main', 'Main Event', 'rare')];
+const rules = [rule('stick', 'Stick Around', 'common'), rule('whoops', 'Whoops!', 'common', 'salty'), rule('dud', 'Dud', 'common', 'pepperoni'), rule('trap', 'Trap Card', 'uncommon'), rule('main', 'Main Event', 'rare')];
 const art = { color: '#2ee6ff', ink: '#03141a', canvas: '', mark: '', credit: 'Test' };
 const uis: CardUi[] = rules.map((r) => ({ key: r.key, art, describe: () => `${r.name} does a thing.` }));
 const faces = facesOf(rules, uis, testInstance.settings);
 const face = (key: string) => faces.find((f) => f.key === key)!;
 /* Four commons, then the hit: in the order the answer gave them. */
-const pulled = ['whoops', 'stick', 'bluff', 'stick', 'main'].map(face);
+const pulled = ['whoops', 'stick', 'dud', 'stick', 'main'].map(face);
 const packArt = { color: '#ffd93d', ink: '#1a1403', canvas: '', mark: '', credit: 'Test' };
 
 function open(o: { onClose?: () => void; note?: string | null; opener?: HTMLElement } = {}) {
@@ -85,9 +85,9 @@ describe('turning the cards', () => {
     expect(row().getByRole('listitem', { name: /^Card 2: Stick Around/u })).toBeInTheDocument();
     fireEvent.keyDown(screen.getByRole('dialog'), { key: ' ' });
     expect(counter()).toHaveTextContent('3 of 5 turned over');
-    expect(row().getByRole('listitem', { name: /^Card 3: Bluff/u })).toBeInTheDocument();
+    expect(row().getByRole('listitem', { name: /^Card 3: Dud/u })).toBeInTheDocument();
     /* The card in the spotlight is the one last turned, at the sheet's size. */
-    expect(document.querySelector('.kb-opening-spot .kb-postcard:not(.kb-postcard-back)[data-size="sheet"]')).toHaveAccessibleName(/Bluff/u);
+    expect(document.querySelector('.kb-opening-spot .kb-postcard:not(.kb-postcard-back)[data-size="sheet"]')).toHaveAccessibleName(/Dud/u);
     /* The cards not turned yet are still backs, in order. */
     expect(row().getByRole('button', { name: 'Turn card 4' })).toBeInTheDocument();
     expect(row().getAllByRole('listitem')[4]).toHaveAccessibleName('Card 5, face down, the hit');
@@ -107,7 +107,7 @@ describe('turning the cards', () => {
     fireEvent.click(next());
     fireEvent.click(screen.getByRole('button', { name: 'Turn all' }));
     expect(counter()).toHaveTextContent('5 of 5');
-    expect(row().getAllByRole('listitem').map((li) => li.getAttribute('aria-label')?.split(':')[1]?.split(',')[0]?.trim())).toEqual(['Whoops!', 'Stick Around', 'Bluff', 'Stick Around', 'Main Event']);
+    expect(row().getAllByRole('listitem').map((li) => li.getAttribute('aria-label')?.split(':')[1]?.split(',')[0]?.trim())).toEqual(['Whoops!', 'Stick Around', 'Dud', 'Stick Around', 'Main Event']);
     expect(document.querySelector('.kb-opening-spot .kb-postcard')).toHaveAccessibleName(/Main Event/u);
     expect(screen.queryByRole('button', { name: 'Turn all' })).toBeNull();
   });
@@ -247,7 +247,7 @@ describe('what a screen reader hears', () => {
     fireEvent.click(next());
     expect(live()).toHaveTextContent('Card 2 of 5: Stick Around');
     fireEvent.click(screen.getByRole('button', { name: 'Turn all' }));
-    expect(live()).toHaveTextContent('All five are turned: Whoops!, Stick Around, Bluff, Stick Around, Main Event. All five are in your hand.');
+    expect(live()).toHaveTextContent('All five are turned: Whoops!, Stick Around, Dud, Stick Around, Main Event. All five are in your hand.');
   });
 
   test('a face-down card is named with no word of what it is', () => {

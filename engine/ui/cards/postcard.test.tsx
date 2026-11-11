@@ -56,7 +56,7 @@ describe('the frame at every size', () => {
   });
 
   test('--kb-name-chars follows the face\'s name, and the name has a floor and never spills', () => {
-    for (const name of ['Bluff', 'Autocorrect']) {
+    for (const name of ['Dud', 'Autocorrect']) {
       const card = shown('slot', { ...face(), name });
       expect(card.style.getPropertyValue('--kb-name-chars')).toBe(String(name.length));
       document.body.innerHTML = '';
