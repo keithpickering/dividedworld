@@ -60,7 +60,7 @@ import { heatMagnet } from '../cards/heat-magnet.ts';
 import { classClown } from '../cards/class-clown.ts';
 import { goodVibes } from '../cards/good-vibes.ts';
 import { jimmyWails } from '../cards/jimmy-wails.ts';
-import jimmyWailsCanvas from './cards/jimmy-wails/art.svg?url';
+import jimmyWailsCanvas from './cards/jimmy-wails/art.webp?url';
 import jimmyWailsMark from './cards/jimmy-wails/mark.svg?url';
 import jimmyWailsArt from './cards/jimmy-wails/art.json';
 import publicityTourCanvas from './cards/publicity-tour/art.webp?url';

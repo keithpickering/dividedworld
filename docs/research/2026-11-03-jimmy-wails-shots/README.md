@@ -34,3 +34,7 @@ The stories are `instances/divided-world/ui/jimmy-wails/Effect.board.stories.tsx
 ## Size
 
 The PNGs were reduced from 29 MB to about 9.5 MB by 256-color quantization (median cut, Floyd-Steinberg dithering), at the same pixel size and deviceScaleFactor 2. Photographs show slight banding; text and borders are unchanged. Lossless recompression alone saved under 3%.
+
+## The card face
+
+`card-face.png`: the rendered art (`instances/divided-world/ui/cards/jimmy-wails/art.webp`, built by its `scene.py` with the shared `rig.py`) on the card face at all four sizes, at 1x.
