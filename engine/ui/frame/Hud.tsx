@@ -61,6 +61,7 @@ import { cascade, CASCADE_BEAT_MS, orbFills } from '../orbs/fill.ts';
 import { motionReduced, useTextSize } from '../appearance.ts';
 import { ALERTS_UNREAD_BOUND } from '../data/api.ts';
 import { Toasts } from '../alerts/Toasts.tsx';
+import { Captions } from '../audio/Captions.tsx';
 import { useAlertFeed } from '../alerts/useAlertFeed.ts';
 import { HUD_CLASS } from '../glass/place.ts';
 import { Smoke, useSurfaceStyle } from '../glass/Smoke.tsx';
@@ -561,6 +562,8 @@ export function Hud() {
           </Smoke>
         </div>
       </section>
+      {/* The caption bar is the page's, signed in or not: sound captions are never behind a sign-in. */}
+      <Captions />
       {signedIn && (
         <Toasts
           key={player.session.account ?? ''}

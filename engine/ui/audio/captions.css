@@ -1,0 +1,80 @@
+/*
+ * The caption bar (Captions.tsx), look A of docs/research/2026-11-11-laugh-track-bench/01-bench.html: a slim chamfered tray of the glass's strong panel
+ * with a 1px edge of its neon at 60% and a glow, and in it the words in white monospace capitals on black. Fixed and centered above the HUD's seam
+ * (Hud.tsx sets --kb-hud-measured), as wide as its words and never wider than the window less a 16px gutter on each side; a long caption wraps.
+ * It lets every press through. A held caption (a loop's build-up) is italic.
+ *
+ * The caption's own black and white are glass tokens (--kb-glass-caption-ground and --kb-glass-caption-ink), so no literal lives here.
+ */
+.kb-captions-bar {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--kb-hud-measured, 0px) + 10px);
+  z-index: 30;
+  box-sizing: border-box;
+  width: max-content;
+  max-width: calc(100vw - 32px);
+  padding: 6px;
+  transform: translateX(-50%);
+  background: var(--kb-glass-panel-strong);
+  border: 1px solid color-mix(in srgb, var(--kb-glass-neon) 60%, transparent);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--kb-glass-neon) 25%, transparent);
+  clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+  pointer-events: none;
+  animation: kb-captions-in 150ms ease-out both;
+}
+
+.kb-captions-bar[data-leaving='true'] {
+  opacity: 0;
+  animation: kb-captions-out 150ms ease-in both;
+}
+
+.kb-captions-text {
+  display: block;
+  padding: 3px 10px;
+  background: var(--kb-glass-caption-ground);
+  color: var(--kb-glass-caption-ink);
+  font-family: var(--kb-font-mono);
+  font-size: var(--kb-glass-size-label);
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: 0.5px;
+  text-align: center;
+  text-transform: uppercase;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.kb-captions-bar[data-held='true'] .kb-captions-text {
+  font-style: italic;
+}
+
+.kb-captions-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 8px;
+  vertical-align: middle;
+  border-radius: 50%;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-captions-text {
+  font-size: var(--kb-glass-size-phone-small);
+}
+
+@keyframes kb-captions-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes kb-captions-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kb-captions-bar,
+  .kb-captions-bar[data-leaving='true'] {
+    animation: none;
+  }
+}
