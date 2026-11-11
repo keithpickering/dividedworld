@@ -207,26 +207,43 @@ describe('the three states of an apology', () => {
     const form = await screen.findByRole('form', { name: /apology/iu });
     expect(form).toHaveTextContent('Pipewrench');
     await userEvent.type(within(form).getByLabelText('Thread title'), 'I am sorry');
-    await userEvent.type(within(form).getByLabelText(/Your opening post/u), 'I was wrong.');
+    await userEvent.type(within(form).getByLabelText('Your apology'), 'I was wrong.');
     await userEvent.click(within(form).getByRole('button', { name: 'Send apology' }));
     await waitFor(() => expect(apologize).toHaveBeenCalledWith(w.move, w.pipe, 'I am sorry', 'I was wrong.'));
     expect(spin).not.toHaveBeenCalled();
   });
 
-  test('an apology with no body is refused on the form, which stays open with what was typed, and a body then typed sends it', async () => {
+  test('the apology form labels its body as the apology, and sends only once it holds something other than whitespace', async () => {
+    const w = barred();
+    openThread(w, undefined, { settings: { groups: GROUPS } });
+    await userEvent.click(await screen.findByRole('button', { name: 'Write an apology' }));
+    const form = await screen.findByRole('form', { name: /apology/iu });
+    expect(within(form).getByLabelText('Your apology')).toBeInTheDocument();
+    expect(within(form).queryByText(/optional/iu)).toBeNull();
+    await userEvent.type(within(form).getByLabelText('Thread title'), 'I am sorry');
+    expect(within(form).getByRole('button', { name: 'Send apology' })).toBeDisabled();
+    await userEvent.type(within(form).getByLabelText('Your apology'), '   ');
+    expect(within(form).getByRole('button', { name: 'Send apology' })).toBeDisabled();
+    await userEvent.type(within(form).getByLabelText('Your apology'), 'I was wrong.');
+    expect(within(form).getByRole('button', { name: 'Send apology' })).toBeEnabled();
+  });
+
+  test('an apology the rule calls empty is refused on the form in the field\'s words, which stays open with what was typed, and a body then typed sends it', async () => {
     const w = barred();
     const apologize = vi.spyOn(w.fake, 'apologize');
     openThread(w, undefined, { settings: { groups: GROUPS } });
     await userEvent.click(await screen.findByRole('button', { name: 'Write an apology' }));
     const form = await screen.findByRole('form', { name: /apology/iu });
     await userEvent.type(within(form).getByLabelText('Thread title'), 'I am sorry');
+    /* A zero-width space is something other than whitespace to the button and empty to the rule. */
+    await userEvent.type(within(form).getByLabelText('Your apology'), '\u200b');
     await userEvent.click(within(form).getByRole('button', { name: 'Send apology' }));
-    expect(await within(form).findByRole('alert')).toHaveTextContent('is empty');
+    expect(await within(form).findByRole('alert')).toHaveTextContent('Your apology is empty');
     expect(screen.getByRole('form', { name: /apology/iu })).toBeInTheDocument();
     expect(within(form).getByLabelText('Thread title')).toHaveValue('I am sorry');
-    await userEvent.type(within(form).getByLabelText(/Your opening post/u), 'I was wrong.');
+    await userEvent.type(within(form).getByLabelText('Your apology'), 'I was wrong.');
     await userEvent.click(within(form).getByRole('button', { name: 'Send apology' }));
-    await waitFor(() => expect(apologize).toHaveBeenLastCalledWith(w.move, w.pipe, 'I am sorry', 'I was wrong.'));
+    await waitFor(() => expect(apologize).toHaveBeenLastCalledWith(w.move, w.pipe, 'I am sorry', '\u200bI was wrong.'));
   });
 
   test('waiting: says it is with the Boss, and offers no second one', async () => {

@@ -131,6 +131,40 @@ describe('the Spin thread link', () => {
   });
 });
 
+describe('the spin form words a refusal that names a field', () => {
+  const open = async (w: ReturnType<typeof threadWorld>) => {
+    openThread(w);
+    const article = await screen.findByRole('article', { name: /^Post 2 /u });
+    await userEvent.click(spinLink(article));
+    const form = within(article).getByRole('form', { name: 'Spin a thread from post 2' });
+    await userEvent.type(within(form).getByLabelText('Thread title'), 'Keep me');
+    return form;
+  };
+
+  test('a spin keeps its optional opening post, and words a title refusal and a body refusal with the field\'s label', async () => {
+    const w = threadWorld(3);
+    const spin = vi.spyOn(w.fake, 'spin').mockResolvedValueOnce({ ok: false, error: 'is longer than 40 characters', field: 'title' }).mockResolvedValueOnce({ ok: false, error: 'is longer than 9 characters', field: 'body' });
+    const form = await open(w);
+    expect(within(form).getByLabelText('Your opening post (optional)')).toBeInTheDocument();
+    expect(within(form).getByRole('button', { name: 'Spin thread' })).toBeEnabled();
+    await userEvent.click(within(form).getByRole('button', { name: 'Spin thread' }));
+    expect(await within(form).findByRole('alert')).toHaveTextContent('The thread title is longer than 40 characters');
+    await userEvent.click(within(form).getByRole('button', { name: 'Spin thread' }));
+    await waitFor(() => expect(within(form).getByRole('alert')).toHaveTextContent('Your opening post is longer than 9 characters'));
+    expect(spin).toHaveBeenCalledTimes(2);
+  });
+
+  test('a refusal with no field, or another field, reads as the server said it', async () => {
+    const w = threadWorld(3);
+    vi.spyOn(w.fake, 'spin').mockResolvedValueOnce({ ok: false, error: 'sign in to act' }).mockResolvedValueOnce({ ok: false, error: 'is not an id', field: 'origin' });
+    const form = await open(w);
+    await userEvent.click(within(form).getByRole('button', { name: 'Spin thread' }));
+    await waitFor(() => expect(within(form).getByRole('alert').textContent).toBe('sign in to act'));
+    await userEvent.click(within(form).getByRole('button', { name: 'Spin thread' }));
+    await waitFor(() => expect(within(form).getByRole('alert').textContent).toBe('is not an id'));
+  });
+});
+
 async function spinFrom(w: ReturnType<typeof threadWorld>, origin: string, title = 'Spun off', body = 'Taking this elsewhere.') {
   const made = await w.fake.spin(origin, w.zed, title, body);
   if (!made.ok) throw new Error(made.error);

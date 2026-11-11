@@ -90,6 +90,8 @@ export function SpinForm({ origin, label: named, onClose, draft, onDraft, apolog
     setAgain(true);
     setRefusal(`${words ?? 'No answer came back.'} ${looked ? 'The thread is not there yet.' : 'The threads spun from this Act could not be checked.'} Press “${apology ? 'Send again anyway' : 'Spin again anyway'}” to ${apology ? 'send it' : 'spin it'} again.`);
   };
+  /* A refusal that names a field is worded with that field's label, as the form shows it; any other reads as the server said it. */
+  const fieldWords: Record<string, string> = { title: 'The thread title ', body: apology ? 'Your apology ' : 'Your opening post ' };
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (busy || title.trim() === '') return;
@@ -102,7 +104,7 @@ export function SpinForm({ origin, label: named, onClose, draft, onDraft, apolog
       try { answer = await (apology ? api.apologize(origin, character, title, body, ...framingArgs(body)) : api.spin(origin, character, title, body, ...framingArgs(body))); } catch { await look(null, character); return; }
       if (answer.ok) went(answer.value.thread.id);
       else if (answer.uncertain) await look(answer.error, character);
-      else setRefusal(answer.error);
+      else setRefusal(`${fieldWords[answer.field ?? ''] ?? ''}${answer.error}`);
     } finally {
       setBusy(false);
     }
@@ -130,13 +132,13 @@ export function SpinForm({ origin, label: named, onClose, draft, onDraft, apolog
         <input ref={first} id={`spin-title-${origin}`} className="kb-input kb-spin-title" value={title} maxLength={settings.titleMaxLength} autoComplete="off" onChange={(e) => { setTitle(e.target.value); edited(); }} />
       </div>
       <div className="kb-field">
-        <label htmlFor={`spin-body-${origin}`}>Your opening post (optional)</label>
+        <label htmlFor={`spin-body-${origin}`}>{apology ? 'Your apology' : 'Your opening post (optional)'}</label>
         <textarea id={`spin-body-${origin}`} className="kb-textarea" rows={3} value={body} onChange={(e) => { setBody(e.target.value); edited(); }} />
         <span className="kb-small kb-muted kb-num">{[...body].length} of {settings.postMaxLength}</span>
       </div>
       {refusal && <p role="alert" className="kb-notice" data-kb-tone="refusal">{refusal}</p>}
       <div className="kb-spin-actions">
-        <button type="submit" className="kb-button" data-kb-primary="" disabled={busy || title.trim() === '' || [...body].length > settings.postMaxLength}>
+        <button type="submit" className="kb-button" data-kb-primary="" disabled={busy || title.trim() === '' || (apology !== undefined && body.trim() === '') || [...body].length > settings.postMaxLength}>
           {who.changed ? `Confirm posting as ${hudCharacter.name}` : again ? (apology ? 'Send again anyway' : 'Spin again anyway') : verb}
         </button>
         <button type="button" className="kb-button" onClick={dismiss}>Cancel</button>
