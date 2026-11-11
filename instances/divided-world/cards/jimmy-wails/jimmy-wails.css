@@ -24,6 +24,8 @@
   position: absolute;
   inset: 0 auto auto 0;
   transform-origin: 0 0;
+  /* The plates' own ground: a picture fades to transparent where the original faded to white, so on a dark board its dark ink would sit on the board. */
+  background: #fff;
   font-family: Arial, Helvetica, sans-serif;
   line-height: 1.2;
 }

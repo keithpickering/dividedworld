@@ -7,7 +7,7 @@
  * - `three`: a drive of three appeals, one on each plate, at its first banner; press Next, or a dot, to see another. With `reduced` the rotation is
  *   off and the swap has no fade.
  * - `wall`: three appeals and 26 gifts, so the wall holds its latest 20 and says "and 6 more".
- * - `closed`: two appeals and 11 gifts, the clock moved past the drive's end: no buttons, "This drive has ended."
+ * - `closed`: two appeals and 11 gifts, its appeals a week and a day old: no buttons, "This drive has ended."
  * - `earlier`: a closed drive and, after it, a new drive of one appeal; the closed one is a collapsed line that opens its banners.
  * - `origin`: a thread spun from the post, whose ORIGIN box shows the banners and the totals and no buttons.
  * - `short`: one appeal with a wallet of 0.20 Aura, so only the smallest gift can be given and the others are disabled.
@@ -50,6 +50,9 @@ const seededFor = new WeakMap<object, Map<string, Promise<string>>>();
 
 async function seedCase(fake: Fake, thread: string, shown: Case, instanceClass: string): Promise<string> {
   const { seed } = fake;
+  /* The page judges a drive's close by the real clock, so the fake's is brought to it (a closed drive's plays are dated a week and a day back, and the clock returns). */
+  const back = shown === 'closed' || shown === 'earlier' ? 8 * DAY : 0;
+  fake.clock.advance(Date.now() - back - fake.clock.now());
   const found = await Promise.all([41, 42, 43, 44].map(async (n) => (await fake.acts(thread, n, n))[0]?.character ?? null));
   const author = found[0];
   const casters = found.slice(1).filter((c): c is string => c !== null);
@@ -59,11 +62,11 @@ async function seedCase(fake: Fake, thread: string, shown: Case, instanceClass: 
   const play = (n: number, message: string, at?: number) => seed.card(caster(n), post, 'jimmy-wails', { layer: n + 1, live: true, message, drawn: PLATE_KEYS[n % PLATE_KEYS.length]!, ...(at === undefined ? {} : { at }) });
 
   /* The reader, last signed in: a new account that wrote none of the thread, with the wallet the case calls for. */
-  const reader = seed.account('story-reader');
+  const reader = seed.account('story-reader', { seasoned: true });
   const readerCharacter = seed.character(reader, 'Story reader', instanceClass);
   const gifts = async (drive: string, n: number) => {
     for (let i = 0; i < n; i += 1) {
-      const donor = seed.account(`story-donor-${drive.slice(0, 6)}-${i}`);
+      const donor = seed.account(`story-donor-${drive.slice(0, 6)}-${i}`, { seasoned: true });
       const mask = seed.character(donor, DONORS[i % DONORS.length]!, instanceClass);
       seed.wallet(donor, 500);
       fake.signInAs(donor);
@@ -87,12 +90,12 @@ async function seedCase(fake: Fake, thread: string, shown: Case, instanceClass: 
     const first = play(0, SHORT[0]!);
     play(2, SHORT[2]!);
     await gifts(first, 11);
-    fake.clock.advance(8 * DAY);
+    fake.clock.advance(back);
   } else if (shown === 'earlier') {
     const first = play(1, SHORT[1]!);
     play(0, LONG);
     await gifts(first, 7);
-    fake.clock.advance(8 * DAY);
+    fake.clock.advance(back);
     play(2, SHORT[2]!);
   } else if (shown === 'origin') {
     const first = play(0, SHORT[0]!);
@@ -127,7 +130,8 @@ function Appealing({ shown, mode, reduced }: Args) {
     let live = true;
     const done = seededFor.get(api) ?? new Map<string, Promise<string>>();
     seededFor.set(api, done);
-    const key = `${thread}/${shown}`;
+    /* Once per case: spinning moves the address to the spun thread, and the effect must not seed that one again. */
+    const key = shown;
     const seeded = done.get(key) ?? seedCase(api as Fake, thread, shown, instance.classes[0]!.key);
     done.set(key, seeded);
     seeded.then((t) => { if (live) setReady(t); }).catch((e: unknown) => { console.error('the Jimmy Wails story could not be seeded', e); });

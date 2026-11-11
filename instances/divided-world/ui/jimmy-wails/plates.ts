@@ -39,5 +39,5 @@ export const PLATES: readonly Plate[] = Object.freeze([
   { key: 'close-up', src: closeUp, width: 799, height: 301, extend: null, panel: null, box: { x: 40, y: 20, w: 230, h: 261 }, ink: '#222', boxRange: { darkest: '#918b5d', lightest: '#c6d2c8' } },
   // Jimbo on the right, beige and a blue logo mark across the picture, and only a 65-pixel near-black band at its left edge: a near-black panel
   // carries on to the right of him, and the white words go in it.
-  { key: 'dark-logo', src: darkLogo, width: 769, height: 300, extend: 'right', panel: { width: 360, color: '#0c0c0e' }, box: { x: 789, y: 20, w: 340, h: 260 }, ink: '#fff', boxRange: { darkest: '#0c0c0e', lightest: '#0c0c0e' } },
+  { key: 'dark-logo', src: darkLogo, width: 769, height: 300, extend: 'right', panel: { width: 360, color: '#0c0c0e' }, box: { x: 789, y: 20, w: 320, h: 260 }, ink: '#fff', boxRange: { darkest: '#0c0c0e', lightest: '#0c0c0e' } },
 ]);
