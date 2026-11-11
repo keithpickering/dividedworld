@@ -8,7 +8,9 @@ both are records.
 ## An art set
 
 Every card has an art set, one folder per card in an instance: `instances/<name>/ui/cards/<key>/`. Plain files directly
-in `ui/cards/` are not folders and the guard does not read them.
+in `ui/cards/` are not folders and the guard does not read them. Nor does it read a folder there whose name could not
+be a card's key (lowercase words joined by hyphens), such as the `__pycache__` Python leaves when a scene is run: that
+is a tool's leavings, not a card.
 
 - **The canvas**, the card's picture: `art.svg` or `art.webp`, exactly one.
   - **`art.svg`** is vector, so it is sharp from the smallest size to the largest. Its root `svg` has a viewBox of

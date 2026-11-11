@@ -111,4 +111,5 @@ well. Some editors write a `<!DOCTYPE>` line at the top of an export; delete it.
 
 It reads only those files. Anything else in a card's folder, such as a `scene.py`, is yours.
 
-This README and `rig.py` are files, not card folders, so the guard does not read them.
+This README and `rig.py` are files, not card folders, so the guard does not read them. It also passes over a folder
+whose name could not be a card's key, such as a `__pycache__`.

@@ -8,7 +8,9 @@
  * `ui/cards/<key>/`: a canvas (`art.svg` or `art.webp`, exactly one), `mark.svg` (its small emblem)
  * and `art.json` (who made it, and under what license). Plain files directly in `ui/cards/` are not
  * folders and are not read here, and neither is any other file in a card's folder (a `scene.py`
- * beside its art, say). Every such folder, of every instance, must pass:
+ * beside its art, say), nor a folder whose name could not be a card's key (lowercase words joined by
+ * hyphens): `__pycache__` or a dot-folder is a tool's leavings, not a card. Every card folder, of
+ * every instance, must pass:
  *
  * 1. mark.svg and art.json are there, and exactly one canvas: art.svg or art.webp, not neither and
  *    not both;
@@ -194,7 +196,13 @@ function folderFaults(dir) {
   return out;
 }
 
-/** Every `instances/*\/ui/cards/*\/` directory under a root. */
+/** What a card's key looks like: lowercase words joined by hyphens. A folder named any other way is not a card's. */
+const CARD_KEY = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/u;
+
+/**
+ * Every `instances/*\/ui/cards/<key>/` directory under a root. A folder whose name could not be a card's key is a
+ * tool's leavings (Python's `__pycache__` when a scene is run, a dot-folder) and is not read (the owner, 2026-11-11).
+ */
 function cardFolders(root) {
   const inst = path.join(root, 'instances');
   if (!fs.existsSync(inst)) return [];
@@ -202,7 +210,7 @@ function cardFolders(root) {
   for (const i of fs.readdirSync(inst, { withFileTypes: true })) {
     const cards = path.join(inst, i.name, 'ui', 'cards');
     if (!i.isDirectory() || !fs.existsSync(cards)) continue;
-    for (const c of fs.readdirSync(cards, { withFileTypes: true })) if (c.isDirectory()) out.push(path.join(cards, c.name));
+    for (const c of fs.readdirSync(cards, { withFileTypes: true })) if (c.isDirectory() && CARD_KEY.test(c.name)) out.push(path.join(cards, c.name));
   }
   return out.sort();
 }

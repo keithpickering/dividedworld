@@ -191,6 +191,23 @@ try {
   red('a lossy WebP cut to 27 bytes, inside its size', webp(WEBP_LOSSY.subarray(0, 27)), /art\.webp.*is not a WebP image$/m);
   // A lossy frame's width and height are 14 bits each; the two bits above them are a scale, which is not the size.
   green('a lossy WebP with scale bits set above its width and height', webp(altered(WEBP_LOSSY, (c) => { c.writeUInt16LE(1080 | 0x4000, 26); c.writeUInt16LE(1680 | 0x8000, 28); })));
+
+  // A folder beside the card folders whose name could not be a card's key is not a card: a tool's leavings, such as
+  // Python's __pycache__ when a scene is run, or a dot-folder. A folder named as a key could be is still read.
+  const beside = (name, file) => { const dir = repo(); const d = path.join(dir, 'instances/demo/ui/cards', name); fs.mkdirSync(d, { recursive: true }); if (file) fs.writeFileSync(path.join(d, file), 'x'); return dir; };
+  for (const name of ['__pycache__', '.cache', 'Notes', 'old_art']) {
+    const dir = beside(name, 'rig.cpython-313.pyc');
+    check(`a folder named ${name} beside the card folders is not read as a card`, cardArtFaults(dir).length === 0, JSON.stringify(cardArtFaults(dir)));
+    const c = run(dir);
+    check('  and the command exits 0', c.status === 0, `${c.status} ${c.stderr}`);
+  }
+  {
+    const dir = beside('second-card', null);
+    const faults = cardArtFaults(dir);
+    check('an empty folder named as a card key could be is still read, and fails', faults.some((f) => /second-card.*missing a canvas/.test(f)), JSON.stringify(faults));
+    const c = run(dir);
+    check('  and the command exits 1 naming it', c.status === 1 && /second-card.*missing a canvas/.test(c.stderr), `${c.status} ${c.stderr}`);
+  }
 } finally {
   fs.rmSync(root, { recursive: true, force: true });
 }
