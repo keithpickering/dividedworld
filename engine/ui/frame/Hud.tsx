@@ -125,10 +125,12 @@ export function Hud() {
   const hud = player.hudCharacter;
   /* The thread the player is reading (thread/open.tsx), read from the hook and never from the route: it goes to the Reveal, and with the way to My characters, so the Reveal there can start on it. */
   const openThread = useOpenThread();
-  const toCharacters = openThread ? { state: { thread: openThread } } : {};
+  const toCharacters = useMemo(() => (openThread ? { state: { thread: openThread } } : {}), [openThread]);
   const [revealing, setRevealing] = useState(false);
   const [done, setDone] = useState('');
   const secret = useRef<HTMLButtonElement>(null);
+  /* A reveal replaces the button with the Revealed line before the overlay closes, so focus returns to the line. */
+  const revealedLine = useRef<HTMLSpanElement>(null);
   /* The Reveal's done line, in a status region of the HUD's own that puts itself away. */
   useEffect(() => {
     if (!done) return undefined;
@@ -329,7 +331,7 @@ export function Hud() {
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [signedIn, handOpen, armed, play, setHandOpen, navigate, menuSource, openThread]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [signedIn, handOpen, armed, play, setHandOpen, navigate, menuSource, toCharacters]);
 
   /* A card in the hand is armed, or put back if it was the armed one; a post then offers it (cards/PlayActions.tsx). */
   const pick = (face: { readonly key: string }) => {
@@ -410,7 +412,7 @@ export function Hud() {
                             {className}
                           </span>
                           {hud.classShownAt !== null ? (
-                            <span className="kb-hud-secret">
+                            <span ref={revealedLine} tabIndex={-1} className="kb-hud-secret">
                               <svg aria-hidden="true" focusable="false" width="15" height="16" viewBox="0 0 11 12"><rect x="1" y="5" width="9" height="6.5" rx="1" /><path d="M3 5 V3.4 a2.5 2.5 0 0 1 5 0" /></svg>
                               Revealed
                             </span>
@@ -420,6 +422,7 @@ export function Hud() {
                               Only you see this
                             </button>
                           ) : (
+                            /* Defensive: the HUD's mask is always a live one (player.tsx canAct), so this is never drawn today. */
                             <span className="kb-hud-secret">
                               <svg aria-hidden="true" focusable="false" width="15" height="16" viewBox="0 0 11 12"><rect x="1" y="5" width="9" height="6.5" rx="1" /><path d="M3 5 V3.4 a2.5 2.5 0 0 1 5 0 V5" /></svg>
                               Only you see this
@@ -429,7 +432,7 @@ export function Hud() {
                         </span>
                         <span role="status" className="kb-hud-flash">{done}</span>
                       </span>
-                      {revealing && <RevealOverlay kicker="Reveal" character={hud} at={openThread} onClose={() => setRevealing(false)} onDone={setDone} returnFocusTo={() => secret.current} />}
+                      {revealing && <RevealOverlay kicker="Reveal" character={hud} at={openThread} onClose={() => setRevealing(false)} onDone={setDone} returnFocusTo={() => secret.current ?? revealedLine.current} />}
                       <CalmRegion as="span" calm={!wide} className="kb-hud-swap">
                         <label htmlFor={selectId} className="kb-hud-swap-label">{wide ? 'Swap mask' : 'Posting as'}</label>
                         {/* The phone's HUD has no name line: the mark stands by the mask it names. */}

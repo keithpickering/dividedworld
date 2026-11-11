@@ -1522,4 +1522,18 @@ describe('the Reveal carried from a thread (the HUD reveal plan, Task 4)', () =>
     expect(within(panel).getByText('Revealed')).toHaveClass('kb-roster-line');
     expect(within(row('Mrs. Hooligan')).getByRole('button', { name: 'Reveal Mrs. Hooligan\'s class' })).toBeInTheDocument();
   });
+
+  test('a reveal here leaves focus in the panel, on the Revealed line, not on the page body', async () => {
+    const w = world();
+    const thread = await generalThread(w);
+    renderIn(w.fake, <LoadedCharacters />, { path: '/characters', state: { thread }, settings: { charactersPerPlayer: w.per } });
+    await ready();
+    await userEvent.click(within(row('Pipewrench')).getByRole('button', { name: 'Reveal Pipewrench\'s class' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Reveal Pipewrench\'s class' });
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Reveal Pipewrench as a Face' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await waitFor(() => expect(within(row('Pipewrench')).getByText('Revealed')).toBeInTheDocument());
+    expect(document.body).not.toHaveFocus();
+    expect(within(row('Pipewrench')).getByText('Revealed')).toHaveFocus();
+  });
 });

@@ -1090,6 +1090,19 @@ describe('the HUD opens the Reveal, and says when a class is public', () => {
     expect(await lineButton()).toBeInTheDocument();
   });
 
+  test('a reveal from the HUD leaves focus on the Revealed line, not on the page body', async () => {
+    const w = RevealWorld();
+    await onThread(w);
+    await userEvent.click(await lineButton());
+    const dialog = await screen.findByRole('dialog', { name: 'Reveal Pipewrench\'s class' });
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Reveal Pipewrench as a Face' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    const h = await hud();
+    const line = within(h).getByText('Revealed');
+    expect(document.body).not.toHaveFocus();
+    expect(line.closest('.kb-hud-secret')).toHaveFocus();
+  });
+
   test('Esc in the overlay closes it, and focus returns to the button', async () => {
     const w = RevealWorld();
     await off(w);

@@ -347,7 +347,7 @@ function Roster({ page }: { readonly page: MyCharactersPage }) {
           <GlassButton to="/log" state={{ character: c.id }}>{c.name}'s log</GlassButton>
           {live && c.classShownAt === null && <GlassButton aria-label={`Reveal ${c.name}'s class`} onClick={() => show({ kind: 'reveal', id: c.id })}>Reveal…</GlassButton>}
         </div>
-        {live && c.classShownAt !== null && <p className="kb-roster-line">Revealed</p>}
+        {live && c.classShownAt !== null && <p className="kb-roster-line" tabIndex={-1} data-kb-revealed="">Revealed</p>}
         <p className="kb-roster-line kb-roster-most">{per} characters at most. To free a slot, ask an admin to retire one; every Act it made stays on the board.</p>
       </Leaving>
     );
@@ -404,7 +404,7 @@ function Roster({ page }: { readonly page: MyCharactersPage }) {
 
       <Layers>
       {dialog && target && dialog.kind === 'turn' && <TurnDialog key="turn" character={target} face={faces.get(target.id)} standing={standings[target.id]} nextSettlement={next} onClose={() => setDialog(null)} onDone={done} returnFocusTo={returnTo(target.id)} />}
-      {dialog && target && dialog.kind === 'reveal' && <RevealOverlay key="reveal" kicker="My characters › Reveal" character={target} at={thread} onClose={() => setDialog(null)} onDone={(message) => { setFlash(message); reload(); }} returnFocusTo={returnTo(target.id)} />}
+      {dialog && target && dialog.kind === 'reveal' && <RevealOverlay key="reveal" kicker="My characters › Reveal" character={target} at={thread} onClose={() => setDialog(null)} onDone={(message) => { setFlash(message); reload(); }} returnFocusTo={() => document.querySelector<HTMLElement>(`[data-kb-character="${target.id}"] [data-kb-revealed]`) ?? returnTo(target.id)()} />}
       {dialog && target && dialog.kind === 'drop' && <DebutDialog key="drop" character={target} timing="now" nextSettlement={next} onClose={() => setDialog(null)} onDone={done} returnFocusTo={returnTo(target.id)} />}
       {dialog && target && dialog.kind === 'debut' && <DebutDialog key="debut" character={target} timing="tally" nextSettlement={next} onClose={() => setDialog(null)} onDone={done} returnFocusTo={returnTo(target.id)} />}
       </Layers>
