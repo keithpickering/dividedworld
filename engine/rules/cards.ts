@@ -78,15 +78,17 @@ export interface CardEffect {
  * A ward turns away casts on its own target (by rarity, printed flavor or card key); an earn raises what reactions earn the
  * character or post it is on (never deepens a loss); a price adds a flat amount to a cast of the named flavors on its target or anything under it;
  * earn effects on one character or post that share a `group` do not add: for each earning the largest `by` among them applies (an earn with no group boosts on its own);
- * a ride pays the author of the post it is on `share` of a vote for each vote on a card another player casts on that post while it is up.
+ * a ride pays the author of the post it is on `share` of a vote for each vote on a card another player casts on that post while it is up;
+ * a no-quote stops a post that quotes the post it is on, before that post is written.
  */
 export type GimmickEffect =
   | { readonly kind: 'ward'; readonly upTo?: Rarity; readonly flavors?: readonly Alignment[]; readonly cards?: readonly string[] }
   | { readonly kind: 'earn'; readonly quadrants?: readonly Quadrant[]; readonly reactions?: readonly string[]; readonly by: number; readonly group?: string }
   | { readonly kind: 'price'; readonly flavors: readonly Alignment[]; readonly add: Hundredths }
-  | { readonly kind: 'ride'; readonly share: number };
+  | { readonly kind: 'ride'; readonly share: number }
+  | { readonly kind: 'noQuote' };
 export type WardEffect = Extract<GimmickEffect, { kind: 'ward' }>;
-export const GIMMICK_KINDS: readonly GimmickEffect['kind'][] = Object.freeze(['ward', 'earn', 'price', 'ride']);
+export const GIMMICK_KINDS: readonly GimmickEffect['kind'][] = Object.freeze(['ward', 'earn', 'price', 'ride', 'noQuote']);
 
 /** What a cast set card matches, besides a named card (`catches`): the printed flavors, and the rarity it takes up to. Pepperoni is its own flavor. */
 export interface Match {
@@ -146,6 +148,16 @@ export function wardWords(wardName: string, effect: WardEffect, rules: Pick<Card
   if (effect.upTo !== undefined && atOrBelow(rules.rarity, effect.upTo)) return `${head} cards up to ${effect.upTo}`;
   if (effect.flavors?.includes(rules.alignment)) return `${head} ${capital(rules.alignment)} cards`;
   return `${head} ${rules.name}`;
+}
+
+/** The live no-quote effect on a post, if it has one: the play that stops quotes of it. */
+export const quoteStop = (effects: readonly CardEffect[], now: Date = new Date()): CardEffect | undefined =>
+  effects.find((e) => e.gimmick?.kind === 'noQuote' && (e.reach ?? 'post') === 'post' && isLive(e, now));
+
+/** A stopped quote's refusal, the same for every writer; the guard on acts says it in the same words. `seq` is the quoted post's number where it is in the thread written to. */
+export function noQuoteWords(cardName: string, ends: string | undefined, seq: number | null): string {
+  const post = seq === null ? 'a post in another thread' : `post ${seq}`;
+  return `${post} carries ${cardName}, so it cannot be quoted until ${ends ? refusalTime(ends) : 'it ends'}; take that quote out and send again`;
 }
 
 /** How each play is said in a refusal of the wrong one. */
@@ -364,7 +376,10 @@ export function decidePlay(rules: CardRules, settings: Settings, target: CardTar
  */
 export function decideUse(rules: CardRules, settings: Settings, target: CardTarget, effects: readonly CardEffect[], config: unknown, message: unknown, context: Pick<PlayContext, 'now'> = {}): Verdict<Decided> {
   if (playOf(rules) !== 'use') return wrongPlay(rules);
-  return decided(rules, settings, target, effects, config, message, context.now ?? new Date());
+  const now = context.now ?? new Date();
+  // A back springs on a quote and a no-quote stops one, so the two never share a post; each says how it is undone.
+  if (rules.gimmick?.kind === 'noQuote' && effects.some((e) => e.faceDown && isLive(e, now))) return refuse(`${rules.name} stops quotes, and this post holds a card face down; take that card back first`);
+  return decided(rules, settings, target, effects, config, message, now);
 }
 
 /**
@@ -400,6 +415,8 @@ export function decideSet(rules: CardRules, settings: Settings, target: CardTarg
   if (rules.writes !== undefined) return refuse(`${rules.name} writes, so it is cast face up and never set face down`);
   if (target.reach !== 'post' || target.kind !== 'post') return refuse('a card is set face down on a post');
   if (effects.some((e) => e.faceDown && isLive(e, now))) return refuse('this post already holds a card face down');
+  const stop = quoteStop(effects, now);
+  if (stop) return refuse(`this post's ${cards.find((c) => c.key === stop.card)?.name ?? stop.card} stops quotes until ${stop.ends ? refusalTime(stop.ends) : 'it ends'}, so no card is set face down here until then`);
   // A Move that lands beyond a post (Glitter Bomb on a character) is set on a post all the same and lands on what the quote reaches (design section 3); whether it can land there is the spring's to decide.
   if (play === 'set' && rules.trap === undefined) return refuse(`${rules.name} has no trap to spring`);
   const lands = reachesOf(rules).includes('post') ? rules.canApply(target, effects, undefined, now) : ok(undefined);

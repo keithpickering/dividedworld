@@ -98,3 +98,43 @@ export function excerptText(nodes: readonly BbNode[], act: string): string {
   }
   return parts.join(SEPARATOR);
 }
+
+/**
+ * The Act of every real quote in a post, at any depth, in the order they open, each once (lowercase, as `parse` gives them). Where
+ * `excerptText` finds only the quotes of one Act that no other real quote encloses, this is every quote the parser built: inside a
+ * quote, a link, a list item or formatting, and an unclosed one that closed at the end. Nothing is found where the parser built no quote:
+ * in code, in noparse, or past its nesting cap. The database's `bbcode_walk` gives the same list, held to the same fixtures
+ * (plain.fixtures.ts). Written as `visibleWalk` is, with its own stack.
+ */
+export function quotedActs(nodes: readonly BbNode[]): string[] {
+  const acts: string[] = [];
+  const seen = new Set<string>();
+  const stack: BbNode[] = [];
+  const pushAll = (list: readonly BbNode[]) => { for (let i = list.length - 1; i >= 0; i--) stack.push(list[i]!); };
+  pushAll(nodes);
+  while (stack.length) {
+    const n = stack.pop()!;
+    switch (n.type) {
+      case 'quote':
+        if (!seen.has(n.act)) { seen.add(n.act); acts.push(n.act); }
+        pushAll(n.children);
+        break;
+      case 'bold': case 'italic': case 'underline': case 'strike': case 'color': case 'size': case 'counterfeit': case 'spoiler': case 'ispoiler':
+      case 'align': case 'sub': case 'sup': case 'font': case 'marquee': case 'glow': case 'shadow': case 'rainbow': case 'highlight':
+        pushAll(n.children);
+        break;
+      case 'url':
+        pushAll(n.children);
+        break;
+      case 'list': {
+        const flat: BbNode[] = [];
+        for (const item of n.items) for (const node of item) flat.push(node);
+        pushAll(flat);
+        break;
+      }
+      default:
+        break;
+    }
+  }
+  return acts;
+}

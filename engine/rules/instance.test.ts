@@ -707,6 +707,15 @@ test('a cast card on a character may carry an earn, and nothing else a gimmick',
   assert.match(cast({ reaches: ['character'], gimmick: { ...earn, group: 3 } }), /card "splat" has an earn with the group 3; a group is a word/);
 });
 
+test('a card that stops quotes reaches a post alone', () => {
+  const week = { unit: 'day', count: 7 };
+  const stop = (over: Record<string, unknown>) => instanceProblems(withCards({ play: 'use', lasts: week, gimmick: { kind: 'noQuote' }, ...over })).join('\n');
+  assert.equal(stop({}), '', 'no reaches is a post');
+  assert.equal(stop({ reaches: ['post'] }), '');
+  assert.match(stop({ reaches: ['character'] }), /card "splat" stops quotes, and a card that stops quotes reaches a post alone/);
+  assert.match(stop({ rarity: 'rare', reaches: ['post', 'thread'] }), /card "splat" stops quotes, and a card that stops quotes reaches a post alone/);
+});
+
 test('a gimmick is a ward, an earn or a price, each with its numbers', () => {
   const lasts = { unit: 'day', count: 7 };
   const use = (gimmick: unknown) => instanceProblems(withCards({ play: 'use', lasts, gimmick })).join('\n');
@@ -715,7 +724,7 @@ test('a gimmick is a ward, an earn or a price, each with its numbers', () => {
   assert.match(use({ kind: 'ward' }), /card "splat" has a ward that names no rarity, flavor or card/);
   assert.match(use({ kind: 'ward', upTo: 'mythic' }), /card "splat" has a ward up to "mythic"/);
   assert.match(use({ kind: 'ward', flavors: ['bitter'] }), /card "splat" has a ward of the flavors \["bitter"\]/);
-  assert.match(use({ kind: 'sneeze' }), /card "splat" has a gimmick of kind "sneeze"; a gimmick is ward, earn, price or ride/);
+  assert.match(use({ kind: 'sneeze' }), /card "splat" has a gimmick of kind "sneeze"; a gimmick is ward, earn, price, ride or noQuote/);
   assert.equal(use({ kind: 'earn', quadrants: ['excitedPositive'], by: 0.5 }), '');
   assert.equal(use({ kind: 'earn', reactions: ['fire'], by: 1 }), '');
   assert.match(use({ kind: 'earn', quadrants: ['excitedPositive'], by: 0 }), /card "splat" has an earn of 0; by is above 0 and at most 1/);

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { RARITIES, quadrantFree, wardTurnsAway, SET_PHRASE_MOST, atOrBelow, drawnInMoment, refusalTime, spanMs, decidePlay, decideSet, decideUse, effectsOnTarget, landsOn, ok, staffConfigOf, staffOffers, refuse, type CardEffect, type CardRules, type CardTarget } from './cards.ts';
+import { RARITIES, quadrantFree, wardTurnsAway, SET_PHRASE_MOST, atOrBelow, drawnInMoment, refusalTime, spanMs, decidePlay, decideSet, decideUse, effectsOnTarget, landsOn, noQuoteWords, quoteStop, ok, staffConfigOf, staffOffers, refuse, type CardEffect, type CardRules, type CardTarget } from './cards.ts';
 import type { Settings } from './types.ts';
 
 // The engine's own test cards: no instance's names (the engine/instance boundary).
@@ -487,4 +487,41 @@ test('a ride trap names its quadrant in its configuration: a card that drops it 
   assert.match((decideSet(ride, settings, post, [], { ...named, card: 'nothing' }, [inky]) as { why: string }).why, /names a card that is cast on a post/);
   // A catching trap has no outcome and needs no quadrant.
   assert.equal(decideSet(snare, settings, post, [], { card: 'inky' }, [inky]).ok, true);
+});
+
+const hush: CardRules = { ...base, key: 'hush', name: 'Test Hush', rarity: 'uncommon', play: 'use', gimmick: { kind: 'noQuote' }, lasts: { unit: 'day', count: 7 }, canApply: (t, e, _config, now) => landsOn({ key: 'hush' }, t, e, now) };
+
+test('quoteStop finds a live no-quote on a post, and not an ended one or one on a thread', () => {
+  const stop: CardEffect = { card: 'hush', act: 'h', gimmick: { kind: 'noQuote' }, ends: soon };
+  assert.equal(quoteStop([stop])?.act, 'h');
+  assert.equal(quoteStop([{ ...stop, reach: 'post' }])?.act, 'h');
+  assert.equal(quoteStop([{ ...stop, ends: gone }]), undefined);
+  assert.equal(quoteStop([{ ...stop, reach: 'thread' }]), undefined);
+  assert.equal(quoteStop([{ card: 'shield', act: 'w', gimmick: { kind: 'ward', upTo: 'uncommon' }, ends: soon }]), undefined);
+  assert.equal(quoteStop([stop], new Date(Date.parse(soon) + 1000)), undefined, 'read on the clock it is given');
+});
+
+test('noQuoteWords names the post by its number where it is in the thread, and says so where it is not', () => {
+  const ends = '2030-01-02T03:04:05.000Z';
+  assert.equal(noQuoteWords('Test Hush', ends, 4), `post 4 carries Test Hush, so it cannot be quoted until ${refusalTime(ends)}; take that quote out and send again`);
+  assert.equal(noQuoteWords('Test Hush', ends, null), `a post in another thread carries Test Hush, so it cannot be quoted until ${refusalTime(ends)}; take that quote out and send again`);
+  assert.equal(noQuoteWords('Test Hush', undefined, 4), 'post 4 carries Test Hush, so it cannot be quoted until it ends; take that quote out and send again');
+});
+
+test('a no-quote is refused on a post that holds a live back, and accepted once the back has ended', () => {
+  const back: CardEffect = { card: null, act: 'b', faceDown: true, ends: soon };
+  assert.deepEqual(decideUse(hush, settings, post, [back], {}, ''), { ok: false, why: 'Test Hush stops quotes, and this post holds a card face down; take that card back first' });
+  assert.equal(decideUse(hush, settings, post, [{ ...back, ends: gone }], {}, '').ok, true);
+  assert.equal(decideUse(hush, settings, post, [], {}, '').ok, true);
+  assert.equal(decideUse(shield, settings, post, [back], {}, '').ok, true, 'a ward is no no-quote');
+});
+
+test('a card is not set face down on a post with a live no-quote, and is once it has ended', () => {
+  const stop: CardEffect = { card: 'hush', act: 'h', gimmick: { kind: 'noQuote' }, ends: soon };
+  const why = `this post's Test Hush stops quotes until ${refusalTime(soon)}, so no card is set face down here until then`;
+  assert.deepEqual(decideSet(snare, settings, post, [stop], { card: 'inky' }, [inky, hush]), { ok: false, why });
+  assert.deepEqual(decideSet(inky, settings, post, [stop], { ink: 'red' }, [inky, hush]), { ok: false, why }, 'a Move too');
+  assert.deepEqual(decideSet(watcher, settings, post, [stop], {}, [hush]), { ok: false, why }, 'a Reversal that springs on a visit too');
+  assert.equal(decideSet(snare, settings, post, [{ ...stop, ends: gone }], { card: 'inky' }, [inky, hush]).ok, true);
+  assert.match((decideSet(watcher, settings, post, [stop], {}, []) as { why: string }).why, /this post's hush stops quotes until/, 'the key where the card is not found');
 });

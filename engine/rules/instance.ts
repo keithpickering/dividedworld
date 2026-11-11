@@ -464,6 +464,7 @@ function playProblems(c: CardRules, reactionKeys: ReadonlySet<string> = new Set(
   else if (match !== undefined && play === 'set') out.push(...matchProblems(match, who));
   if (c.catches !== undefined && typeof c.catches !== 'function') out.push(`${who} has a catch that is not a function`);
   else if (c.catches !== undefined && !(play === 'set' && on === 'cast')) out.push(`${who} has a catch, and only a set card that springs on a cast does`);
+  if (c.gimmick?.kind === 'noQuote' && c.reaches !== undefined && !(Array.isArray(c.reaches) && c.reaches.length === 1 && c.reaches[0] === 'post')) out.push(`${who} stops quotes, and a card that stops quotes reaches a post alone`);
   if (c.gimmick?.kind === 'ride' && postAlone === false) out.push(`${who} has a ride, and a card with a ride reaches a post alone`);
   if (c.trap?.outcome !== undefined) out.push(...outcomeProblems(c.trap.outcome, who, play, on, match));
   if (c.skim !== undefined) out.push(...skimProblems(c, who, play));
@@ -557,6 +558,8 @@ function gimmickProblems(g: unknown, who: string, reactionKeys: ReadonlySet<stri
   } else if (e.kind === 'ride') {
     const why = shareProblem(e, who, 'a ride', 'a ride of');
     if (why) out.push(why);
+  } else if (e.kind === 'noQuote') {
+    // It has no numbers: a card that stops quotes stops them all, and what it reaches is playProblems'.
   } else {
     out.push(`${who} has a gimmick of kind ${JSON.stringify(e.kind)}; a gimmick is ${GIMMICK_KINDS.slice(0, -1).join(', ')} or ${GIMMICK_KINDS.at(-1)}`);
   }
