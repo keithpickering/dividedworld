@@ -35,7 +35,12 @@ export const youWereSaying: CardRules<YouWereSayingConfig> = {
     { key: 'youWereSaying.mostTokens', whole: true, min: 1 },
   ],
   writes: {
-    tokens: (config, settings) => economyOf(settings, 'youWereSaying.baseTokens') + Math.min(config.steps, mostSteps(settings)) * economyOf(settings, 'youWereSaying.stepTokens'),
+    // Never above the most, even where an override puts the most below the base.
+    tokens: (config, settings) =>
+      Math.min(
+        economyOf(settings, 'youWereSaying.mostTokens'),
+        economyOf(settings, 'youWereSaying.baseTokens') + Math.min(config.steps, mostSteps(settings)) * economyOf(settings, 'youWereSaying.stepTokens'),
+      ),
     frame: youWereSayingFrame,
   },
   playPrice: (settings, target, config) => {
