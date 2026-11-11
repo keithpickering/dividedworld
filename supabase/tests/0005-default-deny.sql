@@ -26,6 +26,8 @@ declare
                            'alerts', 'thread_follows', 'my_followed_threads', 'thread_open',
                            -- The log's lines for the Mod Bots (0111): each the caller's own characters' rows.
                            'my_infractions', 'my_bans', 'my_reports', 'my_appeals', 'my_reports_left', 'my_group_moves',
+                           -- The log of the cosmetics (0158): the caller's own characters' rows, drawn by a function no API role may call.
+                           'my_cosmetic_log',
                            -- The search index (0117): one row per post or spin, readable as the Acts are; the table is no client's to write.
                            'post_search'];
   callable text[] := array['react(uuid,uuid,text)', 'start_thread(text,uuid,text,text,uuid[])', 'post(uuid,uuid,text,uuid,uuid[])',
@@ -106,6 +108,8 @@ declare
                            'bbcode_plain_trim(text)', 'bbcode_plain_quote_head(text)', 'bbcode_plain_pct(text)', 'bbcode_plain_query_v(text)', 'bbcode_plain_ipv4_number(text)', 'bbcode_plain_punycode_ok(text)', 'bbcode_plain_host_ok(text)', 'bbcode_plain_video_ok(text)',
                            -- 0142: the phrase matcher a face-down Move's spring asks of a post's plain words, and the case fold it reads them through; each reads nothing but its arguments.
                            'phrase_in(text,text)', 'phrase_fold(text)', 'phrase_norm(text)', 'bbcode_walk(text,uuid)', 'bbcode_plain_quote_act(text)', 'phrase_word_class()',
+                           -- The cosmetics log's rows (0158): my_cosmetic_log runs it as the caller, and it reads only the caller's own characters' rows by auth.uid().
+                           'cosmetic_log_rows(timestampwithtimezone,integer)',
                            'search_lang()', 'search_words(text,text)', 'search_words(text,text,regconfig)',
                            -- The search reads (0117): three screens' reads, security invoker and stable, and the functions they call. The two definers say only a public fact of their arguments: the Updates thread's id,
                            -- and the id and name of a debuted character a prefix finds (all characters_public shows of one; `characters` is owner-only).

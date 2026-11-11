@@ -71,6 +71,15 @@ begin
   if jsonb_array_length(rows) < 1 or jsonb_array_length(rows) >= 7 then raise exception 'a cursor at the oldest row leaves the rows at that instant: %', jsonb_array_length(rows); end if;
   perform tests.unbecome();
 
+  -- The bounds reach the rows: a find a day newer than the cursor is left out of a page asked with it, and `most` caps the count of what the function returns.
+  insert into random_events (account, character, outcome, item, line, line_text, at) values (ann, a, 'line', null, 'cl-later', 'a later pigeon', now() + interval '1 day');
+  perform tests.become(ann);
+  if jsonb_array_length(log_page(null) -> 'sources' -> 'cosmetics') is distinct from 8 then raise exception 'the newer find is in the unbounded page'; end if;
+  if jsonb_array_length(log_page(now() + interval '1 hour') -> 'sources' -> 'cosmetics') is distinct from 7 or (select count(*) from cosmetic_log_rows(now() + interval '1 hour')) is distinct from 7 then raise exception 'a cursor leaves out what is newer: % / %', jsonb_array_length(log_page(now() + interval '1 hour') -> 'sources' -> 'cosmetics'), (select count(*) from cosmetic_log_rows(now() + interval '1 hour')); end if;
+  if (select count(*) from cosmetic_log_rows(null, 3)) is distinct from 3 or (select count(*) from cosmetic_log_rows(now() + interval '1 hour', 2)) is distinct from 2 then raise exception 'most caps the count'; end if;
+  if (select max(x.at) from cosmetic_log_rows(null, 1) x) is distinct from (select max(x.at) from cosmetic_log_rows(null, 1000) x) then raise exception 'the cap keeps the newest'; end if;
+  perform tests.unbecome();
+
   -- The alerts are no more than the account's own, in Alerts: Ann reads hers and Bob his.
   perform tests.become(ann);
   if (select count(*) from my_alerts(null, 30) where kind in ('trophy', 'beltLost', 'beltBack')) is distinct from 3 then raise exception 'Ann''s alerts: %', (select count(*) from my_alerts(null, 30)); end if;

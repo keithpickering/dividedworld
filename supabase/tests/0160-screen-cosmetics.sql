@@ -14,7 +14,7 @@ declare
   ann uuid := tests.account('sc-ann'); bob uuid := tests.account('sc-bob'); boss uuid := tests.account('sc-admin');
   a uuid := tests.character(ann, 'Sc Ann'); b uuid := tests.character(bob, 'Sc Bob');
   t uuid := tests.thread('Fifty'); bd uuid := (select board from threads where id = t);
-  pet uuid; belt uuid; medal uuid; r jsonb; face jsonb; before_n bigint; after_n bigint; i integer;
+  pet uuid; belt uuid; medal uuid; ib uuid; r jsonb; face jsonb; before_n bigint; after_n bigint; i integer;
 begin
   insert into admins (account) values (boss);
   -- Ann has a tall portrait, two pieces (written out of layer order) and a shown award and a held belt; Bob has a profile and no portrait.
@@ -67,6 +67,12 @@ begin
   face := (select x -> 'face' -> 'profile' from jsonb_array_elements(my_characters_page() -> 'characters') x where x ->> 'id' = a::text);
   if jsonb_array_length(face -> 'outfit') is distinct from 2 then raise exception 'my_characters_page: %', face; end if;
   -- The index carries it too.
+  -- On a board of its own: another file's committed thread with no post (0036's race) sorts first on General, and its board then names no last character.
+  perform tests.unbecome();
+  insert into boards (slug, name) values ('sc-index', 'Sc Index');
+  insert into threads (board, title) select id, 'Sc index' from boards where slug = 'sc-index' returning id into ib;
+  perform tests.post(a, ib, 'On its own board.');
+  perform tests.become(ann);
   if not exists (select 1 from jsonb_array_elements(index_page() -> 'characters') x where x -> 'profile' ? 'outfit') then raise exception 'index_page carries no outfit: %', index_page(); end if;
   perform tests.unbecome();
 

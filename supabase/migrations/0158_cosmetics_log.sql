@@ -43,25 +43,31 @@ end $$;
 
 -- --------------------------------------------------------------------------------------------------- the log's read ----
 
-create view my_cosmetic_log as
+-- The rows are drawn by a function that reads the owner of a character, so no view a caller can read draws on that private column (0001-core.sql holds that); the function
+-- keeps the caller to their own characters' rows by auth.uid(), so a signed-in caller may call it (a view's function is run as the caller, not its owner); a visitor has no rows and may not. `my_cosmetic_log` is its thin view, as the others of the log are.
+create function cosmetic_log_rows(in_before timestamptz default null, most integer default 200) returns table (
+  kind text, id text, at timestamptz, "character" uuid, outcome text, item text, "text" text, copies integer, trophy text, name text, "by" text, by_name text,
+  season integer, place integer, line text, to_name text)
+language sql stable security definer set search_path = public, pg_temp as $$
+  select u.* from (
   select 'found'::text as kind, e.id::text as id, e.at, e.character, e.outcome, e.item, e.line_text as text, null::integer as copies,
          null::text as trophy, null::text as name, null::text as by, null::text as by_name, null::integer as season, null::integer as place, null::text as line, null::text as to_name
-  from random_events e where e.account = auth.uid()
+  from random_events e where e.account = auth.uid() and (in_before is null or e.at <= in_before)
   union all
   select 'granted', min(g.id)::text, g.at, g.through, null, g.gear, null, count(*)::integer,
          null, null, null, null, null, null, null, null
-  from gear_ledger g where g.kind = 'granted' and g.account = auth.uid() group by g.at, g.gear, g.through
+  from gear_ledger g where g.kind = 'granted' and g.account = auth.uid() and (in_before is null or g.at <= in_before) group by g.at, g.gear, g.through
   union all
   select 'awarded', a.id::text, a.at, a.character, null, null, null, null,
          a.trophy, k.name, a.by, (select c.name from acts x join characters c on c.id = x.character where x.id = a.act and a.by = 'boss'),
          (select s.number::integer from seasons s where s.id = a.season), k.season_place::integer, a.line, null
   from trophy_awards a join trophy_kinds k on k.key = a.trophy join characters o on o.id = a.character
-  where o.owner = auth.uid()
+  where o.owner = auth.uid() and (in_before is null or a.at <= in_before)
   union all
   select 'reversed', a.id::text, r.at, a.character, null, null, null, null,
          a.trophy, k.name, null, null, null, null, null, null
   from trophy_reversals r join trophy_awards a on a.id = r.award join trophy_kinds k on k.key = a.trophy join characters o on o.id = a.character
-  where o.owner = auth.uid()
+  where o.owner = auth.uid() and (in_before is null or r.at <= in_before)
   union all
   select 'lost', n.id::text, n.at, p.character, null, null, null, null,
          n.trophy, k.name, n.by, (select c.name from acts x join characters c on c.id = x.character where x.id = n.act and n.by = 'boss'),
@@ -73,7 +79,7 @@ create view my_cosmetic_log as
                       where x.trophy = n.trophy and (x.at, x.id) < (n.at, n.id) and not exists (select 1 from trophy_reversals r where r.award = x.id and r.at <= n.at)
                       order by x.at desc, x.id desc limit 1) p
   join characters o on o.id = p.character
-  where o.owner = auth.uid() and p.character <> n.character
+  where o.owner = auth.uid() and (in_before is null or n.at <= in_before) and p.character <> n.character
     and n.trophy in (select a.trophy from trophy_awards a join characters c on c.id = a.character where c.owner = auth.uid())
   union all
   -- The belt that came back: an admin took the holder's award back, and the character that held it before holds it again. Said as of the reversal, so a later one changes nothing of it.
@@ -87,10 +93,16 @@ create view my_cosmetic_log as
                       where y.trophy = x.trophy and y.id <> x.id and (y.at, y.id) < (x.at, x.id) and not exists (select 1 from trophy_reversals r where r.award = y.id and r.at <= rv.at)
                       order by y.at desc, y.id desc limit 1) h
   join characters o on o.id = h.character
-  where o.owner = auth.uid() and h.character <> x.character
+  where o.owner = auth.uid() and (in_before is null or rv.at <= in_before) and h.character <> x.character
     and x.trophy in (select a.trophy from trophy_awards a join characters c on c.id = a.character where c.owner = auth.uid())
     and not exists (select 1 from trophy_awards z
-                    where z.trophy = x.trophy and z.id <> x.id and (z.at, z.id) > (x.at, x.id) and z.at <= rv.at and not exists (select 1 from trophy_reversals r where r.award = z.id and r.at <= rv.at));
+                    where z.trophy = x.trophy and z.id <> x.id and (z.at, z.id) > (x.at, x.id) and z.at <= rv.at and not exists (select 1 from trophy_reversals r where r.award = z.id and r.at <= rv.at))
+  ) u order by u.at desc, u.kind, u.id limit least(greatest(most, 0), 1000);
+$$;
+revoke execute on function cosmetic_log_rows(timestamptz, integer) from public, anon, service_role;
+grant execute on function cosmetic_log_rows(timestamptz, integer) to authenticated;
+-- The view (the web reads it, paging by `at` itself) hands the function's ceiling of 1000 newest rows; log_page asks for its own 200 before its cursor.
+create view my_cosmetic_log as select * from cosmetic_log_rows(null, 1000);
 revoke all on my_cosmetic_log from anon, public;
 grant select on my_cosmetic_log to authenticated;
 
@@ -168,8 +180,8 @@ begin atomic
     order by a.at desc, a.appeal limit 200
   ), cs as materialized (
     select c.kind, c.id, c.at, c.character, c.outcome, c.item, c.text, c.copies, c.trophy, c.name, c.by, c.by_name, c.season, c.place, c.line, c.to_name
-    from my_cosmetic_log c where in_before is null or c.at <= in_before
-    order by c.at desc, c.kind, c.id limit 200
+    from cosmetic_log_rows(in_before, 200) c
+    order by c.at desc, c.kind, c.id
   ), sh as materialized (
     select s.settlement, s.character, s.reason, s.act, s.quadrant, s.amount
     from my_ledger_shares s where s.settlement in (select x.settlement from lg x)

@@ -102,7 +102,7 @@ export const ALLOWED_RPCS = Object.freeze(['whoami', 'is_admin', 'next_settlemen
  * The functions a screen function may depend on without the web calling them (supabase/tests/e2e/0016-screen-reads.ts reads each screen function's recorded dependencies against
  * ALLOWED_RPCS and this list): the search reads' helpers (0117), stable, security invoker but the two definers, each a public fact about its arguments. A call to one from a screen is a fault.
  */
-export const SCREEN_HELPERS = Object.freeze(['search_matches', 'search_walk', 'search_cursor_ok', 'search_post_cards', 'search_thread_matches', 'search_suggest_threads', 'suggest_characters', 'search_lang', 'fold_text', 'bbcode_plain', 'profile_cosmetics']);
+export const SCREEN_HELPERS = Object.freeze(['search_matches', 'search_walk', 'search_cursor_ok', 'search_post_cards', 'search_thread_matches', 'search_suggest_threads', 'suggest_characters', 'search_lang', 'fold_text', 'bbcode_plain', 'profile_cosmetics', 'cosmetic_log_rows']);
 
 const WRITES = new Set(['insert', 'upsert', 'update', 'delete']);
 const NOT_A_CLIENT = new Set(['Array', 'Buffer', 'Object', 'Uint8Array', 'Set', 'Map']);
