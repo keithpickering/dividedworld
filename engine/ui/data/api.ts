@@ -25,6 +25,30 @@ import type { RecordKind } from '../profile/record.ts';
 
 export type Id = string;
 
+/* ------------------------------------------------------------------ failed reads ---- */
+
+/**
+ * Which kind a failed read was: `offline` (the browser said it had no network, so nothing was sent), `silent` (a request that never
+ * got an answer, twice), `server` (the server answered, and not with what the screen can use). A 4xx that is not a refusal is `server`,
+ * the same for a row that does not exist and a row the caller may not see ("A response never proves a private fact").
+ */
+export type FailureKind = 'offline' | 'silent' | 'server';
+
+/** A read that failed; its message is the one plain sentence a screen shows, and its kind says which failure it was. */
+export class ReadFailure extends Error {
+  readonly kind: FailureKind;
+  constructor(kind: FailureKind) {
+    super('that could not be read right now; try again');
+    this.name = 'ReadFailure';
+    this.kind = kind;
+  }
+}
+
+/** The kind of a thrown failure: a `ReadFailure`'s own, and `broken` for anything else (the page's own code). */
+export function failureKind(e: unknown): FailureKind | 'broken' {
+  return e instanceof ReadFailure ? e.kind : 'broken';
+}
+
 /* ------------------------------------------------------------------ answers ---- */
 
 /** A refusal, in the server's own words, with the request field it names when it names one. */

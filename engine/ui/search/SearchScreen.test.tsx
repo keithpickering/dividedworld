@@ -7,6 +7,7 @@ import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { axeViolations, describeViolations } from '../a11y.ts';
+import { ReadFailure } from '../data/api.ts';
 import type { PostHit, SearchCursor, SearchPage, ThreadHit } from '../data/api.ts';
 import type { CardUi } from '../cards/types.ts';
 import { LoadedSearch } from '../loaded.tsx';
@@ -258,7 +259,7 @@ describe('a short page is not the end', () => {
 
 describe('review fixes', () => {
   test('Q-2: a search that could not reach the server says so, not that the words were wrong', async () => {
-    open('/search?q=zzz', { posts: new TypeError('Failed to fetch') });
+    open('/search?q=zzz', { posts: new ReadFailure('silent') });
     const note = await screen.findByText('The search could not reach the server. Check your connection and try again.');
     expect(note.closest('.kb-notice')).toHaveAttribute('data-kb-tone', 'refusal');
     expect(screen.queryByText(/Check the dates and the words/)).toBeNull();

@@ -7,6 +7,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ALLOWED_READS, ALLOWED_RPCS as GUARD_RPCS } from '../../../tools/check-web-reads.mjs';
+import { failureKind } from '../../../engine/ui/data/api.ts';
 import type { Act, KayfaApi, ScreenSettings, ThreadSummary } from '../../../engine/ui/data/api.ts';
 import { ENGINE_DEFAULT_PRONOUNS, PRONOUN_PRESETS } from '../../../engine/rules/pronouns.ts';
 import { createSupabaseApi } from './supabase.ts';
@@ -780,6 +781,32 @@ describe('failures', () => {
     expect(dead.to('acts_public')).toHaveLength(2);
     const err = await dead.api.act(A).catch((e: Error) => e.message);
     expect(err).not.toContain('down');
+  });
+
+  it('a failed read says which kind it was: silent, server, a 4xx that is not a refusal, or offline', async () => {
+    const silent = harness(() => new TypeError('network'));
+    expect(failureKind(await silent.api.act(A).catch((e: unknown) => e))).toBe('silent');
+
+    const server = harness(() => json({ message: 'down' }, 500));
+    expect(failureKind(await server.api.act(A).catch((e: unknown) => e))).toBe('server');
+    expect(server.to('acts_public')).toHaveLength(2);
+
+    const missing = harness(() => json({ code: 'PGRST116', message: 'no such row', hint: null }, 404));
+    const e404 = await missing.api.act(A).catch((e: unknown) => e);
+    expect(failureKind(e404)).toBe('server');
+    expect((e404 as Error).message).toBe('that could not be read right now; try again');
+    expect(missing.to('acts_public')).toHaveLength(1);
+
+    const was = Object.getOwnPropertyDescriptor(Navigator.prototype, 'onLine');
+    Object.defineProperty(Navigator.prototype, 'onLine', { configurable: true, get: () => false });
+    try {
+      const offline = harness(() => rows([ACT_ROW]));
+      expect(failureKind(await offline.api.act(A).catch((e: unknown) => e))).toBe('offline');
+      expect(offline.log).toHaveLength(0);
+    } finally {
+      if (was) Object.defineProperty(Navigator.prototype, 'onLine', was);
+      else delete (Navigator.prototype as { onLine?: boolean }).onLine;
+    }
   });
 
   it('reads Acts by id in one acts_public read', async () => {

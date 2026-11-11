@@ -30,7 +30,7 @@
  * never in a URL, a header or a channel name.
  */
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import { DEFAULT_PREFERENCES, LOST_ANSWER, SPUN_FROM_MAX } from '../../../engine/ui/data/api.ts';
+import { DEFAULT_PREFERENCES, LOST_ANSWER, ReadFailure, SPUN_FROM_MAX } from '../../../engine/ui/data/api.ts';
 import { readLogPage, type LedgerRow, type LogRange, type LogRead, type ShareRow } from '../../../engine/ui/data/log-page.ts';
 import { buildMoveNotice, toDemand, toProgress } from '../../../engine/ui/data/moves.ts';
 import { ALERTS_PAGE, ALERTS_UNREAD_BOUND, MOVES_LOG_PAGE, SEASON_NEWS_PAGE, UPDATES_PAGE } from '../../../engine/ui/data/api.ts';
@@ -216,7 +216,7 @@ function toThreadHit(r: Row): ThreadHit {
   return { ...toPostHit(r), matches: typeof m === 'number' ? m : parseInt(String(m), 10) || 0, matchesMore: r['matches_more'] === true || (typeof m === 'string' && m.endsWith('+')) };
 }
 function toSearchPage<T>(d: unknown, hit: (r: Row) => T): SearchPage<T> {
-  if (!isObject(d)) throw new Error(NOT_READ);
+  if (!isObject(d)) throw new ReadFailure('server');
   return { count: num(d['count']), more: d['more'] === true, pooled: d['pooled'] === true, results: rowsOf(d['results']).map(hit), next: toSearchCursor(d['next']) };
 }
 /* A cursor's rank is a number or absent (search_cursor_ok refuses a JSON null), so a page sorted by time sends none. */
@@ -674,6 +674,8 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
   }
   /** A read, retried once on the request itself when it failed in transport; a second failure throws plain words. */
   async function read(run: () => PromiseLike<unknown>, pastEnd = false): Promise<Res> {
+    /* The browser says it has no network: nothing is sent. */
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) throw new ReadFailure('offline');
     const once = async (): Promise<Res> => {
       try {
         return (await run()) as Res;
@@ -684,7 +686,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     let r = await once();
     if (transport(r)) r = await once();
     /* A range that starts past the end is PostgREST's 416: for a page, that is an empty page. */
-    if (r.error && !(pastEnd && r.status === 416)) throw new Error(NOT_READ);
+    if (r.error && !(pastEnd && r.status === 416)) throw new ReadFailure(r.status === 0 ? 'silent' : 'server');
     return r;
   }
   const list = async (run: () => PromiseLike<unknown>): Promise<Row[]> => {
@@ -1495,7 +1497,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
        field is what the method named in its type answers for the same data. A load writes nothing (the design's section 4). */
     async boot(): Promise<Boot> {
       const d = (await read(() => client.rpc('boot'))).data as Row | null;
-      if (!isObject(d)) throw new Error(NOT_READ);
+      if (!isObject(d)) throw new ReadFailure('server');
       const settings = mergeSettings(isObject(d['settings']) ? d['settings'] : {});
       const w: Row = isObject(d['wallet']) ? d['wallet'] : {};
       return {
@@ -1516,7 +1518,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     },
     async indexPage(): Promise<IndexPage> {
       const d = (await read(() => client.rpc('index_page'))).data as Row | null;
-      if (!isObject(d)) throw new Error(NOT_READ);
+      if (!isObject(d)) throw new ReadFailure('server');
       return { boards: rowsOf(d['boards']).map(toBoardSummary), characters: rowsOf(d['characters']).map(faceOf), presence: toPresence(d['presence'] ?? {}), unread: toUnread(d['unread']) };
     },
     async searchPosts(q, after): Promise<SearchPage<PostHit>> {
@@ -1529,7 +1531,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const d = (await refusableRead(() => client.rpc('search_suggest', {
         prefix, kinds: options?.kinds ? [...options.kinds] : null, board: options?.board ?? null, exclude_system: options?.excludeSystem ?? false, most: options?.most ?? null,
       }))).data as Row | null;
-      if (!isObject(d)) throw new Error(NOT_READ);
+      if (!isObject(d)) throw new ReadFailure('server');
       return {
         threads: rowsOf(d['threads']).map((t) => ({ id: t['id'], title: str(t['title']) ?? '', board: t['board'], boardName: str(t['board_name']) ?? '' })),
         characters: rowsOf(d['characters']).map((c) => ({ id: c['id'], name: str(c['name']) ?? '' })),
@@ -1684,7 +1686,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     },
     async myCharactersPage(): Promise<MyCharactersPage> {
       const d = (await read(() => client.rpc('my_characters_page'))).data as Row | null;
-      if (!isObject(d)) throw new Error(NOT_READ);
+      if (!isObject(d)) throw new ReadFailure('server');
       const mine = rowsOf(d['characters']);
       const debuted = mine.filter((c) => isObject(c['face']));
       return {
@@ -1710,7 +1712,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     },
     async alertsPage(before): Promise<AlertsPage> {
       const d = (await read(() => client.rpc('alerts_page', { in_before: before }))).data as Row | null;
-      if (!isObject(d)) throw new Error(NOT_READ);
+      if (!isObject(d)) throw new ReadFailure('server');
       const reading: Record<Id, number> = {};
       for (const r of rowsOf(d['reading'])) reading[r['thread']] = num(r['furthest_seq']);
       return {
@@ -1720,7 +1722,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     },
     async updatesPage(update, before, handoverSeason): Promise<UpdatesPage> {
       const d = (await read(() => client.rpc('updates_page', { in_update: update !== null && idOk(update) ? update : null, in_before: before, in_handover_season: handoverSeason }))).data as Row | null;
-      if (!isObject(d)) throw new Error(NOT_READ);
+      if (!isObject(d)) throw new ReadFailure('server');
       const updates = rowsOf(d['updates']).map(toUpdate);
       /* The open Update is the one asked for when it is on the page, else the newest of the page (as Updates.tsx shows it): the tallies were read for it alone. */
       const open = update !== null && updates.some((u) => u.act === update) ? update : updates[0]?.act;
@@ -1840,7 +1842,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     /* The log page in one read (`log_page`, 0123): the first range of the views comes from the document, and a page that would not move reads its one instant by the views as `log` does. */
     async logPage(before): Promise<LogPage> {
       const d = (await read(() => client.rpc('log_page', { in_before: before ?? null }))).data as Row | null;
-      if (!isObject(d)) throw new Error(NOT_READ);
+      if (!isObject(d)) throw new ReadFailure('server');
       const sources: Row = isObject(d['sources']) ? d['sources'] : {};
       const first = toLogRead({
         ledger: rowsOf(sources['ledger']), wallet: rowsOf(sources['wallet']), cards: rowsOf(sources['cards']), packs: rowsOf(sources['packs']), playsOnMine: rowsOf(sources['playsOnMine']), writes: rowsOf(sources['writes']), saves: rowsOf(sources['saves']),

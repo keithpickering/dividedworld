@@ -9,6 +9,7 @@ import type { Instance, Settings } from '../../rules/types.ts';
 import { landsOn, type CardEffect, type CardRules, type CardTarget } from '../../rules/cards.ts';
 import { momentParts } from '../cards/Effects.tsx';
 import type { CardUi } from '../cards/types.ts';
+import { failureKind, ReadFailure } from './api.ts';
 import type { Act, Refusal, Slot, Tally } from './api.ts';
 import { TIP_KEYS } from '../tips/keys.ts';
 import { createFake, FAKE_BACKEND_MARKER, TEST_CODE } from './fake.ts';
@@ -1184,6 +1185,16 @@ describe('what a list row shows', () => {
     expect(bodies).toContain('did go');
     expect(bodies).not.toContain('did not go');
     expect(bodies).toContain('plain');
+  });
+
+  test('failNextRead: the next read rejects with that kind, once', async () => {
+    const { fake, thread } = world();
+    fake.seed.failNextRead('server');
+    const failed = await fake.acts(thread, 1, 99).catch((e: unknown) => e);
+    expect(failed).toBeInstanceOf(ReadFailure);
+    expect(failureKind(failed)).toBe('server');
+    expect((failed as Error).message).toBe('that could not be read right now; try again');
+    expect(await fake.acts(thread, 1, 99)).toBeInstanceOf(Array);
   });
 
   test('a player\'s seeded Act takes the time it is given, as The System\'s does', async () => {
