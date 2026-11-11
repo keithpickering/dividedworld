@@ -3,19 +3,26 @@
  *
  *   node tools/check-card-art.mjs [--root <directory>]     (default: the repository)
  *
- * The design is docs/plans/2026-11-05-card-template-plan.md (Task 2). An instance keeps a card's
- * art in `ui/cards/<key>/`: `art.svg` (the card's canvas), `mark.svg` (its small emblem) and
- * `art.json` (who made it, and under what license). Plain files directly in `ui/cards/` are not
- * folders and are not read here. Every such folder, of every instance, must pass:
+ * The design is docs/plans/2026-11-05-card-template-plan.md (Task 2), and, for a raster canvas,
+ * docs/plans/2026-11-11-rendered-card-art-design.md (section 3). An instance keeps a card's art in
+ * `ui/cards/<key>/`: a canvas (`art.svg` or `art.webp`, exactly one), `mark.svg` (its small emblem)
+ * and `art.json` (who made it, and under what license). Plain files directly in `ui/cards/` are not
+ * folders and are not read here, and neither is any other file in a card's folder (a `scene.py`
+ * beside its art, say). Every such folder, of every instance, must pass:
  *
- * 1. all three files are there;
+ * 1. mark.svg and art.json are there, and exactly one canvas: art.svg or art.webp, not neither and
+ *    not both;
  * 2. art.svg's root `svg` has a viewBox of four numbers, exactly `0 0 540 840`;
  * 3. mark.svg's viewBox is square;
  * 4. art.json parses, and its `credit` and `license` are non-empty strings;
- * 5. art.svg is at most 200 KB, mark.svg at most 20 KB, art.json at most 2 KB;
+ * 5. art.svg is at most 200 KB, art.webp at most 400 KB, mark.svg at most 20 KB, art.json at most 2 KB;
  * 6. nothing in either SVG runs or reaches out, read case-insensitively over the whole file: no
  *    `<script`, `<foreignObject` or `<image`; no attribute whose name starts `on`; no `@import`;
- *    every `href`, `xlink:href` and `url(` value starts with `#`.
+ *    every `href`, `xlink:href` and `url(` value starts with `#`;
+ * 7. art.webp is a WebP, read by its header alone (nothing is decoded): a RIFF file of form WEBP
+ *    whose first chunk is `VP8 `, `VP8L` or `VP8X`, whose width and height are exactly 1080 by 1680
+ *    (twice the SVG canvas), and which is not animated (a `VP8X` file with its animation flag set).
+ *    An image runs nothing in an `<img>`, so this is a shape check, not a safety one.
  *
  * Beyond the plan's list, for a hostile file (a card is shown through `<img>`, where a browser runs
  * and loads nothing, so this is the second wall, for an editor or a raw view): no `<!DOCTYPE` or
@@ -28,6 +35,10 @@
  * runs inside an `<img>`. Text and comments are read as markup, deliberately: a false positive is
  * cheap and a miss is not.
  *
+ * Not caught in a WebP: a right header over corrupt image data (the browser draws nothing, and a card
+ * with no picture is still a whole card); an extended header that claims 1080 by 1680 over a frame of
+ * another size, since only the first chunk is read; and EXIF or XMP chunks, which are inert in an `<img>`.
+ *
  * `cardArtFaults` is exported and reads only the root it is handed, so tools/test-card-art.mjs
  * drives it red over scratch folders. A repository with no card folder passes: there is nothing
  * to check, and no instance is named here.
@@ -39,8 +50,9 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 const KB = 1024;
-const CAPS = { 'art.svg': 200 * KB, 'mark.svg': 20 * KB, 'art.json': 2 * KB };
+const CAPS = { 'art.svg': 200 * KB, 'art.webp': 400 * KB, 'mark.svg': 20 * KB, 'art.json': 2 * KB };
 const CANVAS = [0, 0, 540, 840];
+const RASTER = [1080, 1680];
 
 /** The file at a path, or null when there is none. */
 function read(file) {
@@ -114,6 +126,32 @@ function safetyFaults(name, text) {
   return out;
 }
 
+/** Faults of a WebP read by its header alone, decoding nothing: [] when it is a still 1080 by 1680 image. */
+function webpFaults(name, bytes) {
+  if (bytes.length < 30 || bytes.toString('latin1', 0, 4) !== 'RIFF' || bytes.toString('latin1', 8, 12) !== 'WEBP') return [`${name}: is not a WebP image`];
+  const unreadable = [`${name}: is not a WebP image this guard can read`];
+  const tag = bytes.toString('latin1', 12, 16);
+  let width;
+  let height;
+  if (tag === 'VP8 ') {
+    if (bytes[23] !== 0x9d || bytes[24] !== 0x01 || bytes[25] !== 0x2a) return unreadable;
+    width = bytes.readUInt16LE(26) & 0x3fff;
+    height = bytes.readUInt16LE(28) & 0x3fff;
+  } else if (tag === 'VP8L') {
+    if (bytes[20] !== 0x2f) return unreadable;
+    const v = bytes.readUInt32LE(21);
+    width = (v & 0x3fff) + 1;
+    height = ((v >>> 14) & 0x3fff) + 1;
+  } else if (tag === 'VP8X') {
+    width = bytes.readUIntLE(24, 3) + 1;
+    height = bytes.readUIntLE(27, 3) + 1;
+  } else return unreadable;
+  const out = [];
+  if (width !== RASTER[0] || height !== RASTER[1]) out.push(`${name}: is ${width} by ${height}; a raster canvas is exactly ${RASTER[0]} by ${RASTER[1]}`);
+  if (tag === 'VP8X' && (bytes[20] & 2) !== 0) out.push(`${name}: is animated; a card's art is a still image`);
+  return out;
+}
+
 /** The faults of one card folder. */
 function folderFaults(dir) {
   const out = [];
@@ -121,10 +159,15 @@ function folderFaults(dir) {
   for (const f of Object.keys(CAPS)) {
     const p = path.join(dir, f);
     files[f] = read(p);
-    if (files[f] === null) out.push(`${p}: missing; a card's art folder holds art.svg, mark.svg and art.json`);
-    else if (files[f].length > CAPS[f]) out.push(`${p}: is ${files[f].length} bytes; it may be at most ${CAPS[f] / KB} KB`);
+    const canvas = f === 'art.svg' || f === 'art.webp';
+    if (files[f] === null) {
+      if (!canvas) out.push(`${p}: missing; a card's art folder holds art.svg or art.webp, mark.svg and art.json`);
+    } else if (files[f].length > CAPS[f]) out.push(`${p}: is ${files[f].length} bytes; it may be at most ${CAPS[f] / KB} KB`);
   }
   const at = (f) => path.join(dir, f);
+  if (files['art.svg'] === null && files['art.webp'] === null) out.push(`${dir}: missing a canvas; a card's art folder holds art.svg or art.webp, mark.svg and art.json`);
+  if (files['art.svg'] !== null && files['art.webp'] !== null) out.push(`${dir}: holds art.svg and art.webp; a card has one canvas`);
+  if (files['art.webp']) out.push(...webpFaults(at('art.webp'), files['art.webp']));
   if (files['art.svg']) {
     const text = files['art.svg'].toString('utf8');
     out.push(...rootFaults(at('art.svg'), text, 'the canvas must be exactly 0 0 540 840', (b) => b.every((n, i) => n === CANVAS[i])));
@@ -183,7 +226,7 @@ function main() {
     for (const f of faults) console.error(`    ${rel(f)}`);
     process.exit(1);
   }
-  console.log(`  card art: ${cardFolders(root).length} card folder(s) hold their three files, on the right canvas, running nothing`);
+  console.log(`  card art: ${cardFolders(root).length} card folder(s) hold a canvas, a mark and a manifest, on the right canvas, running nothing`);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

@@ -14,3 +14,6 @@ playwright-report/
 
 # The board match's side-by-side report (e2e/boards.spec.ts); CI uploads it as an artifact.
 e2e/report/
+
+# Python bytecode from running the card render scenes (docs/research/2026-11-11-card-renders).
+__pycache__/
