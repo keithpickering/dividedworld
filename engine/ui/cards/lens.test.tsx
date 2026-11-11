@@ -15,6 +15,7 @@ import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
 import { ThreadScreen } from '../thread/Thread.tsx';
 import { axeViolations, describeViolations } from '../a11y.ts';
 import { createPlays } from './plays.ts';
+import { endsWords } from './marks.ts';
 import { createTallies } from '../thread/tallies.ts';
 import { createMine } from '../reactions/mine.ts';
 import { fadeOf, Lens, LensProvider, moreBelow, useLensFor, useLensStore } from './Lens.tsx';
@@ -61,8 +62,8 @@ function Said({ plays, show, children }: EffectProps) {
 }
 const cards: CardUi[] = KEYS.map((k) => cardUi(k, k === 'k1' ? { Effect: Said } : {}));
 
-function world() {
-  const fake = buildWorld(undefined, instance);
+function world(settings?: Parameters<typeof buildWorld>[0]) {
+  const fake = buildWorld(settings, instance);
   const me = fake.seed.account('me');
   const other = fake.seed.account('other');
   const third = fake.seed.account('third');
@@ -1322,7 +1323,7 @@ describe('a visit\'s tab', () => {
       const choices = within(group).getAllByRole('button');
       expect(choices.map((c) => c.textContent)).toEqual(['Form 1-A', 'Form 0', 'Form 27-B/6']);
       for (const c of choices) expect(c).toHaveClass('kb-visit-choice');
-      expect(l).toHaveTextContent('One try for Pipewrench. A wrong answer, and The Clerk visits Pipewrench\'s next post within 24 hours, charging Obstruction (minor, 2 warn points). There is no timer.');
+      expect(l).toHaveTextContent('One try for Pipewrench. An answer other than The Clerk\'s, and The Clerk visits Pipewrench\'s next post within 24 hours, charging Obstruction (minor, 2 warn points). There is no timer.');
       expect(within(l).getByRole('status')).toBeEmptyDOMElement();
     });
 
@@ -1391,7 +1392,7 @@ describe('a visit\'s tab', () => {
       openVisit(w);
       const l = await press(w);
       await userEvent.click(within(l).getByRole('button', { name: 'Pay 0.50 Aura' }));
-      await waitFor(() => expect(within(l).getByRole('status')).toHaveTextContent('that costs 50, and your wallet holds 0'));
+      await waitFor(() => expect(within(l).getByRole('status')).toHaveTextContent('that costs 0.50, and your wallet holds 0.00'));
     });
 
     test('draws no try before its story is read, and none for a visit the story says has ended', async () => {
@@ -1594,6 +1595,18 @@ describe('a visit\'s tab', () => {
       expect(within(l).getByRole('heading', { name: 'The Clerk was talked down' })).toBeInTheDocument();
       expect(l).toHaveTextContent(/Nothing landed on Spritey\./u);
       expect(within(l).queryByRole('heading', { name: 'Talk it down' })).toBeNull();
+    });
+
+    test('dropped, it says it could not be filed and that nothing landed', async () => {
+      width(false);
+      const w = visited({ challenge: QUIZ });
+      w.fake.seed.visitEnd(w.visit, { outcome: 'dropped', line: 'This visit could not be filed and was dropped.' });
+      openVisit(w);
+      const l = await press(w);
+      expect(within(l).getByRole('tab', { name: 'Dropped' })).toHaveAttribute('aria-selected', 'true');
+      expect(within(l).getByRole('heading', { name: 'The Clerk could not be filed and was dropped' })).toBeInTheDocument();
+      expect(l).toHaveTextContent(/The visit could not be filed and was dropped on .*Nothing landed on Spritey\./u);
+      expect(l).not.toHaveTextContent(/admin/u);
     });
 
     test('trapped, it says a trap on the post ended it', async () => {
@@ -1959,6 +1972,30 @@ describe('taking a back back', () => {
     await userEvent.keyboard('{Escape}');
     await openBack(2);
     expect(takeButton()).toBeNull();
+  });
+
+  test('follows the end the server stored: a back set ten days ago whose end is twenty days off is live, can be taken back and says when it ends', async () => {
+    width(false);
+    const w = world();
+    const post = w.fake.seed.post(w.thread, w.pipe, 'my own post');
+    /* The screen's setLasts is seven days: ten days on, a back worked out from it would be over. */
+    w.fake.seed.set(w.pipe, post, 'k2', { at: Date.now() - 10 * 86_400_000, endsAt: Date.now() + 20 * 86_400_000 });
+    const [set] = await w.fake.cardsOn(post, 10);
+    open(w);
+    await openBack(4);
+    expect(takeButton()).not.toBeNull();
+    expect(lens().querySelector('.kb-lens-ends')!.textContent).toBe(`${endsWords(set!.endsAt!)}, unless it springs first.`);
+  });
+
+  test('a back whose stored end has passed is gone and cannot be taken back, though the setting would still give it days', async () => {
+    width(false);
+    const w = world();
+    const post = w.fake.seed.post(w.thread, w.pipe, 'my own post');
+    w.fake.seed.set(w.pipe, post, 'k2', { at: Date.now() - 86_400_000, endsAt: Date.now() - 3_600_000 });
+    open(w);
+    await article(4);
+    expect(within(await article(4)).queryByRole('button', { name: /^A card set face down/u })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Take back' })).toBeNull();
   });
 
   test('calls takeBack with the setter\'s character and the back, and closes the Lens once it is back', async () => {

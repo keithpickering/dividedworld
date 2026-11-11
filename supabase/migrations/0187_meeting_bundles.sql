@@ -15,6 +15,8 @@
 -- A beat's way out is Task 5's: a due beat is played at the next meeting with its defaults, an optional one lapses at the season's end. A bundle an admin holds or reverses is the admin queue's.
 -- Cost: each read is one persona's beats (at most 24) and one season's events of that persona; a bundle's parts are at most bundleAuthoredMostParts (16 at the most), and nothing here grows with the
 -- Acts, boards or players an instance holds.
+--
+-- Merged with main's 0154 (#469): system_tick ends a visit that cannot be filed as 'dropped' (end_visit(..., 'dropped', ...)), no longer 'reversed'; carried into this definition, which is built on 0140's body.
 
 create function meeting_season(in_meeting bigint) returns bigint
 language sql stable security definer set search_path = public, pg_temp as $$
@@ -565,10 +567,10 @@ begin
       update visits_open set failed_at = now(), attempts = attempts + 1 where visit_act = late.visit_act returning attempts into tries;
       insert into visit_file_failures (visit_act, attempts, error) values (late.visit_act, coalesce(tries, 1), left(sqlerrm || ' (' || sqlstate || ')', 500))
       on conflict (visit_act) do update set attempts = excluded.attempts, error = excluded.error, at = now();
-      -- The ceiling: a visit that cannot be filed after `visit_file_attempts_most` tries is dropped (reversed, no infraction), so it is never stuck for good.
+      -- The ceiling: a visit that cannot be filed after `visit_file_attempts_most` tries is dropped (ended `dropped`, no infraction), so it is never stuck for good.
       if coalesce(tries, 1) >= 10 then
         begin
-          perform end_visit(late.visit_act, 'reversed', null, 'This visit could not be filed and was dropped.');
+          perform end_visit(late.visit_act, 'dropped', null, 'This visit could not be filed and was dropped.');
         exception when others then
           raise warning 'system_tick: visit % could not be dropped: % (%)', late.visit_act, sqlerrm, sqlstate;
         end;

@@ -30,7 +30,7 @@ import { DEFAULT_DEVELOPER } from '../../rules/instance.ts';
 import { normalizePronouns, pronounProblems, type PronounSet } from '../../rules/pronouns.ts';
 import type { Career } from '../../system/career.ts';
 import type { HandoffFacts } from '../../system/meeting.ts';
-import { ALERTS_PAGE, ALERTS_UNREAD_BOUND, CONTACT_HREF_MAX, CONTACT_LABEL_MAX, CONTACT_MOST, CONTACT_WS, DEFAULT_PREFERENCES, FOLLOWED_COUNT_CAP, LOST_ANSWER, MOVES_LOG_PAGE, SEARCH_CARDS_MAX, SEARCH_COUNT_CAP, SEARCH_MATCHES_CAP, SEARCH_PER_PAGE, SEARCH_PER_PAGE_MAX, SEASON_NEWS_PAGE, SPUN_FROM_MAX, UPDATES_PAGE } from './api.ts';
+import { ALERTS_PAGE, ALERTS_UNREAD_BOUND, type FailureKind, CONTACT_HREF_MAX, CONTACT_LABEL_MAX, CONTACT_MOST, CONTACT_WS, DEFAULT_PREFERENCES, FOLLOWED_COUNT_CAP, LOST_ANSWER, MOVES_LOG_PAGE, NOT_SENT, ReadFailure, SEARCH_CARDS_MAX, SEARCH_COUNT_CAP, SEARCH_MATCHES_CAP, SEARCH_PER_PAGE, SEARCH_PER_PAGE_MAX, SEASON_NEWS_PAGE, SPUN_FROM_MAX, UPDATES_PAGE } from './api.ts';
 import { buildMoveNotice, toDemand, toProgress } from './moves.ts';
 import { TIP_KEYS, TOUR_KEYS } from '../tips/keys.ts';
 import { PLAYS_PER_POST } from '../cards/plays.ts';
@@ -232,7 +232,7 @@ export interface Seed {
    * A card set face down by a character on a post of its own (what `set_card` writes): a set Act naming no card, and the setter's own
    * record of which card it is. Returns the set Act.
    */
-  set(character: Id, target: Id, card: string, options?: { at?: number }): Id;
+  set(character: Id, target: Id, card: string, options?: { at?: number; endsAt?: number }): Id;
   /** The spring of a set (what `spring_traps` writes): a spring Act on its post naming the card, and `caught` where it caught a play. Returns the spring Act. */
   spring(set: Id, options?: { trigger?: string; caught?: Id; by?: Id; at?: number }): Id;
   /**
@@ -240,7 +240,7 @@ export interface Seed {
    * with `charges` (default one minor breach of Rule 2) and a `challenge`. A quiz's `answer` is the fake's alone, never carried to a reader.
    */
   visit(mod: Id, post: Id, options?: { at?: number; endsInMs?: number; line?: string; charges?: readonly SeedCharge[]; challenge?: SeedChallenge }): Id;
-  /** A visit's end (`end_visit`): filed, intercepted, trapped or reversed, with the Act that ended it where one did. */
+  /** A visit's end (`end_visit`): filed, intercepted, trapped, reversed or dropped, with the Act that ended it where one did. */
   visitEnd(visit: Id, end: { outcome: VisitOutcome; by?: Id; line?: string; at?: number }): Id;
   /** A character's report of a post (`open_report`), with its reason. */
   report(character: Id, post: Id, reason: string, options?: { at?: number }): Id;
@@ -271,6 +271,10 @@ export interface Seed {
    * uncertain refusal. `went` says whether the server did it before the answer was lost.
    */
   loseNextAnswer(went: boolean): void;
+  /** The next read of any kind rejects with a `ReadFailure` of this kind, once. */
+  failNextRead(kind: FailureKind): void;
+  /** While on, every write answers the not-sent refusal and changes nothing, and every read rejects as offline. */
+  offline(on: boolean): void;
 }
 
 /** A charge a seeded visit carries. */
@@ -413,6 +417,20 @@ const iso = (ms: number) => new Date(ms).toISOString();
 /** The kinds of Act that take no place in a thread (`acts_take_seq`, supabase/migrations/0109): an edit, a card's marks and the Mod Bots' meta acts. */
 const UNPLACED: ReadonlySet<ActKind> = new Set<ActKind>(['edit', 'card', 'set', 'take_back', 'spring', 'card_end', 'visit', 'visit_join', 'visit_end', 'report', 'report_verdict', 'intercept', 'infraction', 'ban', 'appeal', 'appeal_ruling', 'donation']);
 
+/**
+ * The api's writes: the one split `failNextRead` and `offline` share. Every method that answers an `Answer` is one, and `markRead` (a
+ * boolean) and `signOut` (nothing) besides; the record's type is computed from KayfaApi, so a write missing here, or a read listed, fails tsc.
+ */
+type WriteName = { [K in keyof KayfaApi]: KayfaApi[K] extends (...a: never[]) => Promise<infer R> ? (R extends Answer<unknown> ? K : never) : never }[keyof KayfaApi] | 'markRead' | 'signOut';
+const WRITES: ReadonlySet<string> = new Set(Object.keys({
+  requestCode: true, verifyCode: true, openAccount: true, signOut: true, postUpdate: true, dismissHandoverTodo: true, setAdminContact: true,
+  holdMove: true, reverseMove: true, reverseCard: true, replaceSuccessor: true, replaceQueuedDescription: true, describeBoard: true, setSlot: true,
+  moveSlot: true, saveMachine: true, intercept: true, fileReport: true, fileAppeal: true, markRead: true, setPresenceHidden: true,
+  setPreferences: true, meetCard: true, seeWelcome: true, seeTip: true, skipTips: true, resumeTips: true, restoreTips: true, replayTour: true,
+  seeAlerts: true, donate: true, seeSettlement: true, follow: true, createInvite: true, reissueInvite: true, startThread: true, post: true, edit: true, spin: true,
+  apologize: true, buyCard: true, buyPack: true, playCard: true, setCard: true, takeBack: true, useCard: true, releaseEffect: true, saveEffect: true,
+  react: true, turn: true, withdrawTurn: true, unmask: true, createCharacter: true, setDebut: true, setProfile: true, setAvatar: true,
+} satisfies Record<WriteName, true>));
 /** The methods that are not a promise of something: everything else is made one. */
 const NOT_PROMISED = new Set(['onSession', 'subscribeThread', 'subscribeBoard', 'subscribeAccount', 'subscribeReach']);
 type Sync<T> = { [K in keyof T]: T[K] extends (...a: infer A) => Promise<infer R> ? (...a: A) => R : T[K] };
@@ -433,7 +451,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     postsPerPage: settings.postsPerPage, searchLanguage: settings.searchLanguage, searchRankPool: settings.searchRankPool, hotReplies: settings.hotReplies, editGrace: settings.editGrace, reactionCap: settings.reactionCap,
     charactersPerPlayer: settings.charactersPerPlayer, invitesPerPlayer: settings.invitesPerPlayer, inviteLifetime: settings.inviteLifetime,
     turnCooldown: settings.turnCooldown, walletCap: settings.walletCap, postMaxLength: settings.postMaxLength, titleMaxLength: settings.titleMaxLength,
-    registrationMode: settings.registrationMode, settlementLength: settings.settlementLength, cardSettings: settings.cardSettings,
+    registrationMode: settings.registrationMode, settlementLength: settings.settlementLength, setLasts: settings.setLasts, cardSettings: settings.cardSettings,
     presencePollSeconds: settings.presencePollSeconds, presenceWindow: settings.presenceWindow, toastDefaults: settings.toastDefaults,
     /* What screen_settings's groups holds (0128): the ladder lowest first, then the groups a move confers. */
     groups: options.settings?.groups ?? [...options.instance.groups.ladder.map((g) => ({ key: g.key, name: g.name, ...(g.badge !== undefined ? { badge: g.badge } : {}), color: g.color, stripe: g.stripe === true, staff: g.when.kind === 'staff' })), ...options.instance.groups.conferred.map((g) => ({ key: g.key, name: g.name, ...(g.badge !== undefined ? { badge: g.badge } : {}), color: g.color, stripe: g.stripe === true, staff: false }))],
@@ -639,6 +657,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       editedAt: latest ? iso(latest.at) : null,
       shownEditedAt: latest && latest.at > a.at + span(settings.editGrace) ? iso(latest.at) : null,
       ...(untakenPlays.has(a.id) ? { untaken: true as const } : {}),
+      /* A set's end is the face_down row's, stored when it was set (acts_public.ends_at, 0156). */
+      ...(a.kind === 'set' && faceDown.get(a.id) ? { endsAt: iso(faceDown.get(a.id)!.endsAt) } : {}),
     };
   }
 
@@ -1101,6 +1121,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (lose.went) run(...a);
     return { ok: false, error: LOST_ANSWER, uncertain: true };
   };
+  /* The next read fails (see `Seed.failNextRead`). */
+  let failing: FailureKind | null = null;
+  /* Offline (see `Seed.offline`). */
+  let off = false;
   const isRefusal = (x: unknown): x is Refusal => typeof x === 'object' && x !== null && (x as Refusal).ok === false;
 
   /** The Edge Function's reading of a request: signed in, then well formed. */
@@ -1458,7 +1482,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   /** The appeals whose judgment failed and were refunded: the punishment can be appealed again. */
   const refundedAppeals = new Set<Id>();
   /** `wallet_spend`'s refusal of a price the wallet does not hold, or nothing. */
-  const covers = (account: AccountRec, amount: number): Refusal | null => (account.wallet < amount ? refuse(`that costs ${amount}, and your wallet holds ${account.wallet}`) : null);
+  const covers = (account: AccountRec, amount: number): Refusal | null => (account.wallet < amount ? refuse(`that costs ${orbsOf(amount)}, and your wallet holds ${orbsOf(account.wallet)}`) : null);
 
   /** `buy_card` (0139_machine.sql): the slot's card at the price the screen showed, from the settled wallet, and one more of it in the hand. */
   function buyCard(shown: Slot): Answer<Bought> {
@@ -2094,6 +2118,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         .map(({ b }): LogBan => ({
           ban: b.id, character: b.payload.character as Id, at: iso(b.at), days: b.payload.days as number, until: (rulingOn(b.id)?.payload.until ?? b.payload.until) as string,
           infraction: b.payload.infraction_act as Id, rule: ((i) => (i ? ruleWords(i) : null))(acts.get(String(b.payload.infraction_act))), thread: b.thread,
+          ruling: (rulingOn(b.id)?.payload.verdict as AppealVerdict | undefined) ?? null, ownUntil: b.payload.until as string,
         })),
       /* my_group_moves (0134): the conferGroup moves on the account's own characters, each with its end and the ruling of the appeal on it; the end is read through the ruling's `until`. */
       groupMoves: newest(all.filter((m) => m.kind === 'move' && m.payload['kind'] === 'conferGroup' && owned((m.payload['params'] as Record<string, unknown> | undefined)?.['character']) && fits(m.at)).map((m) => ({ ms: m.at, order: m.order, m })))
@@ -2112,6 +2137,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
             office: m.payload['office'] === 'mod' ? 'mod' as const : 'boss' as const, endedWhy: (end?.payload['why'] as LogGroupMove['endedWhy'] | undefined) ?? null, endedBy: (end?.payload['by'] as string | undefined) ?? null,
             endedAt: end ? iso(end.at) : null, ruling: (ruling?.payload['verdict'] as AppealVerdict | undefined) ?? null, ruledAt: ruling ? iso(ruling.at) : null,
             ruledUntil: typeof ruling?.payload['until'] === 'string' ? ruling.payload['until'] : null,
+            ruledOffice: ruling?.payload['office'] === 'boss' || ruling?.payload['office'] === 'mod' ? ruling.payload['office'] : null,
           };
         }),
       reports: newest(all.filter((r) => r.kind === 'report' && owned(r.character) && fits(r.at)).map((r) => ({ ms: r.at, order: r.order, r })))
@@ -2747,7 +2773,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         const end = verdict === 'overturned' ? now() : verdict === 'reduced' ? start + (days * 86_400_000) / 2 : verdict === 'increased' ? was + (days * 86_400_000) / 2 : null;
         if (end !== null) until = iso(end);
       }
-      write({ character: hearer.id, kind: 'appeal_ruling', thread: pun.thread, target: appeal.id, payload: { appeal_act: appeal.id, verdict, points_delta: delta, line, ...(until ? { until } : {}) } });
+      write({ character: hearer.id, kind: 'appeal_ruling', thread: pun.thread, target: appeal.id, payload: { appeal_act: appeal.id, verdict, points_delta: delta, line, ...(until ? { until } : {}), ...(hearer.staff?.office === 'boss' || hearer.staff?.office === 'mod' ? { office: hearer.staff.office } : {}) } });
       if (movePunishes) {
         if (verdict === 'overturned') {
           moveEnds.set(pun.id, { why: 'overturned', by: 'appeal', at: now() });
@@ -3573,7 +3599,16 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   };
 
   const api = Object.fromEntries(
-    Object.entries(core).map(([name, f]) => [name, NOT_PROMISED.has(name) ? f : async (...args: unknown[]) => (f as (...a: unknown[]) => unknown)(...args)]),
+    Object.entries(core).map(([name, f]) => [name, NOT_PROMISED.has(name) ? f : async (...args: unknown[]) => {
+      if (WRITES.has(name)) {
+        if (off && name !== 'signOut') return name === 'markRead' ? false : { ok: false, error: NOT_SENT, notSent: true };
+      } else {
+        if (off) throw new ReadFailure('offline');
+        const kind = failing;
+        if (kind) { failing = null; throw new ReadFailure(kind); }
+      }
+      return (f as (...a: unknown[]) => unknown)(...args);
+    }]),
   ) as unknown as KayfaApi;
 
   /* ----------------------------------------------------------------------- seed ---- */
@@ -4058,7 +4093,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (!on) throw new Error(`no such Act ${target}`);
       if (on.character !== character) throw new Error('a card is set face down on a post of its own author\'s');
       const written = asAt(ownerOf(character), o?.at, () => write({ character, kind: 'set', thread: on.thread, target, payload: {} }));
-      faceDown.set(written.id, { account: ownerOf(character), card, post: target, endsAt: written.at + span(settings.setLasts), sprung: null });
+      faceDown.set(written.id, { account: ownerOf(character), card, post: target, endsAt: o?.endsAt ?? written.at + span(settings.setLasts), sprung: null });
       return written.id;
     },
     spring(set, o) {
@@ -4076,6 +4111,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       return written.id;
     },
     loseNextAnswer(went) { losing = { went }; },
+    failNextRead(kind) { failing = kind; },
+    offline(on) { off = on; },
     visit(mod, post, o) {
       const p = acts.get(post);
       if (!p || (p.kind !== 'post' && p.kind !== 'spin')) throw new Error(`no such post ${post}`);

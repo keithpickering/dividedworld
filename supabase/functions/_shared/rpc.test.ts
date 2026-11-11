@@ -121,3 +121,19 @@ test('a refused session is a 401 with no hint, and only that; it is logged by it
     assert.ok(!warned.join().includes('sb_publishable_x'), 'nothing the gateway sent back is logged');
   } finally { console.warn = warn; }
 });
+
+test('a transport failure says whether the request ever ran: only four 503s mean never', async () => {
+  const ranOf = async (...answers: (Response | Error)[]) => {
+    const { fetch } = scripted(...answers);
+    const db = postgrest({ url: 'https://p.example', key: 'k', fetch, sleep: noWait, attempts: answers.length });
+    return db.rpc('f', {}).then(() => null, (e: unknown) => (e instanceof TransportError ? e.ran : 'not a transport error'));
+  };
+  assert.equal(await ranOf(json(503, {}), json(503, {}), json(503, {}), json(503, {})), 'never');
+  assert.equal(await ranOf(json(503, {}), json(503, {}), json(503, {}), json(502, {})), 'maybe');
+  assert.equal(await ranOf(json(504, {}), json(503, {})), 'maybe');
+  assert.equal(await ranOf(json(503, {}), new TypeError('fetch failed')), 'maybe');
+  // A write sent once, then given up on after a 502, may have run.
+  const { fetch } = scripted(json(502, {}));
+  const once = postgrest({ url: 'https://p.example', key: 'k', fetch, sleep: noWait, safeToRepeat: () => false });
+  await assert.rejects(once.rpc('post', {}), (e: unknown) => e instanceof TransportError && e.ran === 'maybe');
+});

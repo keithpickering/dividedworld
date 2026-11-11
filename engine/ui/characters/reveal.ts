@@ -6,10 +6,11 @@
  */
 import { useState } from 'react';
 import { useKayfa } from '../context.tsx';
-import type { Id, MyCharacter } from '../data/api.ts';
+import { LOST_ANSWER, type Id, type MyCharacter } from '../data/api.ts';
 import { words } from '../../rules/pronouns.ts';
 import { usePlayer } from '../player.tsx';
 import { withArticle } from './format.ts';
+import { readBack, STALE_PAGE } from './readBack.ts';
 
 /** The most characters of the character's own words, as the server holds them (0027_unmask.sql). */
 export const MAX = 200;
@@ -41,17 +42,19 @@ export function useReveal(character: MyCharacter) {
     if (over || busy) return { ok: false };
     setBusy(true);
     setRefusal(null);
+    let answer;
     try {
-      const answer = await api.unmask(character.id, thread, message);
-      if (!answer.ok) { setRefusal(answer.error); return { ok: false }; }
-      await refresh();
-      return { ok: true, done: `${character.name} revealed as ${className} in ${threadTitle}.` };
+      answer = await api.unmask(character.id, thread, message);
     } catch {
-      setRefusal('The reveal could not be sent. Check your connection and try again.');
-      return { ok: false };
-    } finally {
+      /* The adapter does not throw; if the call did, nothing says it did not go through. */
+      setRefusal(LOST_ANSWER);
       setBusy(false);
+      return { ok: false };
     }
+    if (!answer.ok) { setRefusal(answer.error); setBusy(false); return { ok: false }; }
+    /* Written: the dialog ends, so the button stays busy and a second press cannot send a second reveal. */
+    const fresh = await readBack(refresh);
+    return { ok: true, done: `${character.name} revealed as ${className} in ${threadTitle}.${fresh ? '' : STALE_PAGE}` };
   };
 
   return { className, message, setMessage, count, over, busy, refusal, setRefusal, submit };

@@ -24,6 +24,9 @@
 -- each costs the dependents of the move, never the history of moves or of Acts.
 -- Its way out: a held or reversed part is over, as any held or reversed move is, and the Boss chooses again at its next meeting. A part that waits for a part that is held or refused is held or
 -- refused with it, so no part waits for good.
+--
+-- Merged with main's 0154 (#469): system_tick ends a visit that cannot be filed as 'dropped' (end_visit(..., 'dropped', ...)), no longer 'reversed'; carried into this definition, which is built on 0140's body.
+-- Merged with main's 0154 (#469): moves_log reads a visit's own end ('reversed' with no by_act) as 'dropped'; carried into this definition, which is built on 0135's body.
 
 -- ------------------------------------------------------------------------------ the columns ----
 
@@ -599,10 +602,10 @@ begin
       update visits_open set failed_at = now(), attempts = attempts + 1 where visit_act = late.visit_act returning attempts into tries;
       insert into visit_file_failures (visit_act, attempts, error) values (late.visit_act, coalesce(tries, 1), left(sqlerrm || ' (' || sqlstate || ')', 500))
       on conflict (visit_act) do update set attempts = excluded.attempts, error = excluded.error, at = now();
-      -- The ceiling: a visit that cannot be filed after `visit_file_attempts_most` tries is dropped (reversed, no infraction), so it is never stuck for good.
+      -- The ceiling: a visit that cannot be filed after `visit_file_attempts_most` tries is dropped (ended `dropped`, no infraction), so it is never stuck for good.
       if coalesce(tries, 1) >= 10 then
         begin
-          perform end_visit(late.visit_act, 'reversed', null, 'This visit could not be filed and was dropped.');
+          perform end_visit(late.visit_act, 'dropped', null, 'This visit could not be filed and was dropped.');
         exception when others then
           raise warning 'system_tick: visit % could not be dropped: % (%)', late.visit_act, sqlerrm, sqlstate;
         end;
@@ -862,7 +865,7 @@ create or replace view moves_log as
   union all
   select v.id, c.staff, 'visit'::text, jsonb_build_object('post', p.seq, 'rule', v.payload #>> '{charges,0,rule}', 'rule_number', v.payload #> '{charges,0,rule_number}', 'band', v.payload #>> '{charges,0,band}', 'cause', v.payload #>> '{charges,0,cause}'),
          null::jsonb, (v.payload ->> 'ends_at')::timestamptz, v.thread, v.created_at,
-         e.payload ->> 'outcome', null::text, e.created_at, null::text, null::timestamptz, null::uuid, null::text
+         case when e.payload ->> 'outcome' = 'reversed' and e.payload ->> 'by_act' is null then 'dropped' else e.payload ->> 'outcome' end, null::text, e.created_at, null::text, null::timestamptz, null::uuid, null::text
   from characters c
   join acts v on v.character = c.id and v.kind = 'visit'
   join acts p on p.id = v.target_act_id

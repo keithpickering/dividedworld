@@ -9,6 +9,8 @@
 -- superseded, so it has one end), moves_log (below: one row per move, with its latest end, so a move with two ends is one row that reads its final state), my_group_moves (conferGroup only,
 -- never lasting, so one end), and the windowed readers (digest, admin queue log, pool signals), which list each end as its own event with its own why and time, and so show the
 -- supersession and the reversal as two true events.
+--
+-- Merged with main's 0154 (#469): moves_log reads a visit's own end ('reversed' with no by_act) as 'dropped'; carried into this definition, which is built on 0135's body.
 
 drop index acts_one_move_end;
 create unique index acts_one_move_end on acts (target_act_id, ((payload ->> 'why') = 'superseded')) where kind = 'move_end';
@@ -69,7 +71,7 @@ create or replace view moves_log as
   union all
   select v.id, c.staff, 'visit'::text, jsonb_build_object('post', p.seq, 'rule', v.payload #>> '{charges,0,rule}', 'rule_number', v.payload #> '{charges,0,rule_number}', 'band', v.payload #>> '{charges,0,band}', 'cause', v.payload #>> '{charges,0,cause}'),
          null::jsonb, (v.payload ->> 'ends_at')::timestamptz, v.thread, v.created_at,
-         e.payload ->> 'outcome', null::text, e.created_at, null::text, null::timestamptz
+         case when e.payload ->> 'outcome' = 'reversed' and e.payload ->> 'by_act' is null then 'dropped' else e.payload ->> 'outcome' end, null::text, e.created_at, null::text, null::timestamptz
   from characters c
   join acts v on v.character = c.id and v.kind = 'visit'
   join acts p on p.id = v.target_act_id

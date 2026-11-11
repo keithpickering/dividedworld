@@ -5,6 +5,8 @@
 -- fallback, or to the first open non-system board. A moveThread onto a board later merged still follows the merge, which carries its threads. thread_place and thread_places_computed
 -- are redefined from 0156 and agree (0180 holds them equal). end_move's rebuild set already covers these threads: threads_touching_board reads every moveThread Act that names
 -- the ended board, and those stored on it.
+--
+-- Merged with main's 0154 (#469): moves_log reads a visit's own end ('reversed' with no by_act) as 'dropped'; carried into this definition, which is built on 0135's body.
 
 create or replace function thread_place(in_thread uuid) returns uuid
 language plpgsql stable security definer set search_path = public, pg_temp as $$
@@ -98,7 +100,7 @@ create or replace view moves_log as
   union all
   select v.id, c.staff, 'visit'::text, jsonb_build_object('post', p.seq, 'rule', v.payload #>> '{charges,0,rule}', 'rule_number', v.payload #> '{charges,0,rule_number}', 'band', v.payload #>> '{charges,0,band}', 'cause', v.payload #>> '{charges,0,cause}'),
          null::jsonb, (v.payload ->> 'ends_at')::timestamptz, v.thread, v.created_at,
-         e.payload ->> 'outcome', null::text, e.created_at, null::text, null::timestamptz
+         case when e.payload ->> 'outcome' = 'reversed' and e.payload ->> 'by_act' is null then 'dropped' else e.payload ->> 'outcome' end, null::text, e.created_at, null::text, null::timestamptz
   from characters c
   join acts v on v.character = c.id and v.kind = 'visit'
   join acts p on p.id = v.target_act_id
