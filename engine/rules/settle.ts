@@ -35,7 +35,7 @@
  * - An Earn Gimmick (a use card whose gimmick is `earn`), on a character or a post and not ended
  *   (an admin-ended play is not in the input), adds a `card.boost` earning of `by` times each
  *   positive earning of that character's Act that carries a time and a quadrant, falls in the
- *   Gimmick's window and is in a quadrant or of a reaction kind it names. Each Gimmick boosts on its own.
+ *   Gimmick's window [at, ends) (a play with no `ends` boosts nothing) and is in a quadrant or of a reaction kind it names. Each Gimmick boosts on its own.
  * - A play an admin reversed before the window's end is not in the input, nor are the votes on it
  *   (settlement_input and estimate_input leave it out), so there is no filter for it here.
  * - A card on a staff post is judged against the post's own reactions (`unscoredTargets`), which
@@ -399,7 +399,7 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
   for (const a of windowActs.filter((x) => isPlay(x) && x.reach === undefined)) {
     if (!a.target) throw new Error(`settle: ${a.kind} Act ${a.id} has no target`);
     // A staff post is another's, and nobody's to land on.
-    // A spring's `by` that is no scored Act (a staff Act, a visit) is a staff target too.
+    // A spring's `by` that is no scored Act (a staff Act, a visit; an unknown one too) is read as a staff target, as `unscoredTargets` are.
     const scored = scoredOn(a)!;
     const target = unscored.has(scored) || (a.kind === 'spring' && a.by !== undefined && !acts.has(scored)) ? { id: scored, character: null } : actOf(scored);
     const player = playerOf(a.character);
@@ -468,7 +468,9 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
     const on = a.reach === 'character' ? a.on : a.reach === undefined ? a.target : undefined;
     if (!earn || on === undefined) continue;
     const list = boostsOn.get(on) ?? [];
-    list.push({ card: a.card!, from: a.at, ends: a.ends ?? Infinity, by: earn.by, quadrants: earn.quadrants ?? [], reactions: earn.reactions ?? [] });
+    // Every use card lasts, so a play always has `ends`; a row without one is malformed and boosts nothing.
+    if (a.ends === undefined) continue;
+    list.push({ card: a.card!, from: a.at, ends: a.ends, by: earn.by, quadrants: earn.quadrants ?? [], reactions: earn.reactions ?? [] });
     boostsOn.set(on, list);
   }
   for (const c of characters.values()) {
@@ -505,7 +507,9 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
       if (!(e.amount > 0) || e.at === undefined || !e.quadrant || e.act === undefined || acts.get(e.act)?.character !== c.id) continue;
       for (const g of [...(boostsOn.get(c.id) ?? []), ...(boostsOn.get(e.act) ?? [])]) {
         if (e.at < g.from || e.at >= g.ends || !(g.quadrants.includes(e.quadrant) || (e.kind !== undefined && g.reactions.includes(e.kind)))) continue;
-        contributions.push({ player: e.player, character: e.character, class: e.class, reason: 'card.boost', amount: tidy(e.amount * g.by), params: { card: g.card }, act: e.act, quadrant: e.quadrant, at: e.at });
+        const boost = tidy(e.amount * g.by);
+        if (!boost) continue;
+        contributions.push({ player: e.player, character: e.character, class: e.class, reason: 'card.boost', amount: boost, params: { card: g.card }, act: e.act, quadrant: e.quadrant, at: e.at });
       }
     }
   }

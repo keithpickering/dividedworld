@@ -113,3 +113,23 @@ test('one post that 20,000 players first react to in one window settles in secon
   assert.ok(r.entries.length > 0);
   assert.ok(ms < 3_000, `took ${Math.round(ms)} ms`);
 });
+
+test('Earn Gimmicks on many characters cost their earnings times the Gimmicks on each character, not the instance\'s', () => {
+  const input = busyWindow(500, 20_000, 100_000);
+  const next = rng(11);
+  const quad: ClassRules = {
+    key: 'counting', name: 'Counting',
+    earn: (i) => i.received.map((r) => ({ reason: 'busy.received', amount: r.votes, act: r.act, quadrant: r.quadrant, at: r.at, kind: r.kind })),
+  };
+  const earnWorld: Instance = { ...instance, classes: [quad], cards: [...instance.cards, { ...instance.cards[0]!, key: 'boost', gimmick: { kind: 'earn', quadrants: ['excitedPositive', 'calmPositive'], by: 0.1 } }] };
+  // Two Earn Gimmicks on each of 3,000 characters, 6,000 in all, each up for the whole window.
+  const gimmicks: InputAct[] = input.characters.flatMap((c, i): InputAct[] => [0, 1].map((n) => ({
+    id: `g${i}-${n}`, character: c.id, kind: 'card', at: 500 + n, thread: 'g', card: 'boost', reach: 'character', on: c.id, ends: 9_000_000 + Math.floor(next() * 100),
+  })));
+  const start = performance.now();
+  const r = settle({ ...input, acts: [...input.acts, ...gimmicks] }, earnWorld);
+  const ms = performance.now() - start;
+  console.log(`  settled with ${gimmicks.length} Earn Gimmicks into ${r.entries.length} entries in ${Math.round(ms)} ms`);
+  assert.ok(r.entries.some((e) => e.reason === 'card.boost'));
+  assert.ok(ms < 15_000, `took ${Math.round(ms)} ms`);
+});

@@ -1130,6 +1130,7 @@ const cardsWorld: Instance = {
     { ...splat, key: 'cheer', alignment: 'sweet' },
     { ...splat, key: 'calmBoost', gimmick: { kind: 'earn', quadrants: ['calmPositive'], by: 0.1 } },
     { ...splat, key: 'fireBoost', gimmick: { kind: 'earn', reactions: ['fire'], by: 0.5 } },
+    { ...splat, key: 'dustBoost', gimmick: { kind: 'earn', quadrants: ['calmPositive'], by: 1e-8 } },
   ],
 };
 function springBoard(castBy: string, extra: InputAct[] = [], unscoredTargets: SettlementInput['unscoredTargets'] = []): SettlementInput {
@@ -1183,7 +1184,7 @@ function earnBoard(gimmicks: InputAct[], reactions: InputReaction[]): Settlement
     reactions,
   };
 }
-const onTom = (id: string, card: string, at: number, ends?: number): InputAct => ({ id, character: 'tom-1', kind: 'card', at, thread: 't1', card, reach: 'character', on: 'tom-1', ...(ends !== undefined ? { ends } : {}) });
+const onTom = (id: string, card: string, at: number, ends: number | null = FROM + 20 * H): InputAct => ({ id, character: 'tom-1', kind: 'card', at, thread: 't1', card, reach: 'character', on: 'tom-1', ...(ends !== null ? { ends } : {}) });
 test('an Earn Gimmick raises positive earnings from its quadrants inside its window, and nothing outside it', () => {
   const r = settle(earnBoard([onTom('g1', 'calmBoost', FROM + 2 * H, FROM + 10 * H)], [
     react('tp1', 'bob', 'bob-1', 'tea', FROM + 5 * H),
@@ -1211,7 +1212,7 @@ test('an Earn Gimmick that names a reaction raises that reaction and leaves anot
   assert.equal(amountOf(r, 'tom-1', 'card.boost'), 5, 'half of the fire vote only');
 });
 test('a Gimmick on a post raises that post\'s earnings alone, and two Gimmicks each raise on their own', () => {
-  const onPost: InputAct = { id: 'g2', character: 'tom-1', kind: 'card', at: FROM + 2 * H, thread: 't1', target: 'tp1', card: 'fireBoost' };
+  const onPost: InputAct = { id: 'g2', character: 'tom-1', kind: 'card', at: FROM + 2 * H, thread: 't1', target: 'tp1', card: 'fireBoost', ends: FROM + 20 * H };
   const r = settle(earnBoard([onPost], [react('tp1', 'bob', 'bob-1', 'fire', FROM + 5 * H), react('tp2', 'cat', 'cat-1', 'fire', FROM + 5 * H)]), cardsWorld);
   assert.equal(amountOf(r, 'tom-1', 'card.boost'), 5, 'tp1 only');
   const both = settle(earnBoard([onTom('g1', 'calmBoost', FROM + 2 * H), onTom('g3', 'fireBoost', FROM + 2 * H)], [
@@ -1222,7 +1223,7 @@ test('a Gimmick on a post raises that post\'s earnings alone, and two Gimmicks e
   assert.equal(both.details.filter((d) => d.reason === 'card.boost').reduce((s, d) => s + d.amount, 0), 6, 'the log\'s lines add up to the entries');
 });
 test('two Earn cards on different posts split each boost entry over its own card\'s posts alone', () => {
-  const onPost = (id: string, card: string, target: string): InputAct => ({ id, character: 'tom-1', kind: 'card', at: FROM + 2 * H, thread: 't1', target, card });
+  const onPost = (id: string, card: string, target: string): InputAct => ({ id, character: 'tom-1', kind: 'card', at: FROM + 2 * H, thread: 't1', target, card, ends: FROM + 20 * H });
   const input = earnBoard([onPost('g1', 'calmBoost', 'tp1'), onPost('g2', 'fireBoost', 'tp2')], [react('tp1', 'bob', 'bob-1', 'tea', FROM + 5 * H), react('tp2', 'cat', 'cat-1', 'fire', FROM + 5 * H)]);
   const r = settle(input, cardsWorld);
   const boosts = r.entries.filter((e) => e.reason === 'card.boost');
@@ -1232,6 +1233,25 @@ test('two Earn cards on different posts split each boost entry over its own card
   assert.deepEqual(postsOf('calmBoost'), ['tp1']);
   assert.deepEqual(postsOf('fireBoost'), ['tp2']);
   assert.equal(shares.length, 2, 'each entry lands on one post');
+});
+test('an Earn Gimmick play with no `ends` is malformed and boosts nothing', () => {
+  const r = settle(earnBoard([onTom('g1', 'calmBoost', FROM + 2 * H, null)], [react('tp1', 'bob', 'bob-1', 'tea', FROM + 5 * H)]), cardsWorld);
+  assert.equal(amountOf(r, 'tom-1', 'kinded.nod'), 10);
+  assert.equal(r.entries.filter((e) => e.reason === 'card.boost').length, 0);
+});
+test('a boost that rounds to nothing makes no card.boost entry', () => {
+  const r = settle(earnBoard([onTom('g1', 'dustBoost', FROM + 2 * H)], [react('tp1', 'bob', 'bob-1', 'tea', FROM + 5 * H)]), cardsWorld);
+  assert.equal(r.entries.filter((e) => e.reason === 'card.boost').length, 0);
+  assert.equal(r.details.filter((e) => e.reason === 'card.boost').length, 0);
+});
+test('the same card on a character and on one of its posts is one entry, each play boosting', () => {
+  const onPost: InputAct = { id: 'g2', character: 'tom-1', kind: 'card', at: FROM + 2 * H, thread: 't1', target: 'tp1', card: 'calmBoost', ends: FROM + 20 * H };
+  const r = settle(earnBoard([onTom('g1', 'calmBoost', FROM + 2 * H), onPost], [react('tp1', 'bob', 'bob-1', 'tea', FROM + 5 * H)]), cardsWorld);
+  assert.deepEqual(r.entries.filter((e) => e.reason === 'card.boost').map((e) => [e.params, e.amount]), [[{ card: 'calmBoost' }, 2]]);
+});
+test('an Earn Gimmick played before the window, still up in it, boosts the window\'s earnings', () => {
+  const r = settle(earnBoard([onTom('g1', 'calmBoost', FROM - 2 * H, FROM + 10 * H)], [react('tp1', 'bob', 'bob-1', 'tea', FROM + 5 * H), react('tp1', 'cat', 'cat-1', 'tea', FROM + 11 * H)]), cardsWorld);
+  assert.equal(amountOf(r, 'tom-1', 'card.boost'), 1, 'the vote before `ends` only');
 });
 test('an Earn Gimmick an admin ended is not in the input, so it boosts nothing', () => {
   const r = settle(earnBoard([], [react('tp1', 'bob', 'bob-1', 'tea', FROM + 5 * H)]), cardsWorld);
