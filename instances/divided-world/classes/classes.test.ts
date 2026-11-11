@@ -24,7 +24,7 @@ const none: Record<Quadrant, number> = { excitedPositive: 0, excitedNegative: 0,
 const input = (over: Partial<ClassInput>): ClassInput => ({
   character: 'c', from: 0, to: 100, posts: [], received: [], given: [], held: [], cardsPlayed: [], cardsLanded: [], threadsSpun: [], standings: [], ...over,
 });
-const got = (quadrant: Quadrant, votes = 1, actKind: 'post' | 'card' = 'post', act = 'a1', actAt = 0): ReceivedReaction => ({ act, actKind, quadrant, at: 10, actAt, votes });
+const got = (quadrant: Quadrant, votes = 1, actKind: 'post' | 'card' = 'post', act = 'a1', actAt = 0, kind = 'reaction'): ReceivedReaction => ({ act, actKind, quadrant, at: 10, actAt, kind, votes });
 const card = (over: Partial<PlayedCard>): PlayedCard => ({
   act: 'k1', card: 'whoops', alignment: 'salty', at: 5, target: 'p9', onOthers: true, votes: 0, targetVotes: 0, targetAfter: none, drawnAfter: null, ...over,
   readsAs: over.readsAs ?? over.alignment ?? 'salty',
@@ -176,7 +176,7 @@ test('a calm vote withdrawn from an old post takes the bonus back; from a young 
 });
 test('Evergreen names the Act, the quadrant and the reaction\'s time, for the log and the estimate', () => {
   const e = technician.earn(input({ received: [calmAged(4 * DAY)] }), settings).find((x) => x.reason === 'technician.evergreen');
-  assert.deepEqual(e, { reason: 'technician.evergreen', amount: 5, act: 'a1', quadrant: 'calmPositive', at: 10 });
+  assert.deepEqual(e, { reason: 'technician.evergreen', amount: 5, act: 'a1', quadrant: 'calmPositive', at: 10, kind: 'reaction' });
 });
 test('an override of the Technician\'s numbers changes the age and the amount', () => {
   const sooner = withOverrides(settings, { economy: { 'technician.evergreenDays': 1 } });
@@ -684,4 +684,13 @@ test('settled whole: a Tweener\'s card pays twice the smaller side of the player
     ],
   }, world);
   assert.equal(twPaid(r, 'tweener.stirredThePot'), 2 * settings.vote);
+});
+
+test('every earning a class builds from a single reaction names that reaction\'s kind, for an Earn Gimmick that names reactions', () => {
+  const one = (quadrant: Quadrant, over: Partial<ReceivedReaction> = {}) => input({ received: [{ ...got(quadrant, 1, 'post', 'a1', 0, 'laughing'), at: 4 * 86_400_000, ...over }] });
+  const kinds = (rules: ClassRules, i: ClassInput) => rules.earn(i, settings).filter((e) => e.quadrant !== undefined).map((e) => e.kind);
+  assert.deepEqual(kinds(face, one('excitedPositive')), ['laughing']);
+  assert.deepEqual(kinds(technician, one('calmPositive')), ['laughing', 'laughing'], 'Respected and Evergreen');
+  assert.deepEqual(kinds(tweener, one('calmPositive')), ['laughing']);
+  assert.deepEqual(kinds(lurker, input({ received: [got('excitedPositive', 1, 'card', 'k1', 0, 'laughing')] })), ['laughing']);
 });

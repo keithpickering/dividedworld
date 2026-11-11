@@ -350,6 +350,12 @@ export interface InputAct {
    * carries no `target`; its own reactions pay its caster as any Act's do, and it is in no class's cards played or landed.
    */
   readonly reach?: BeyondPost;
+  /** The Act that sprang a `spring`: the cast it caught or the visit that tripped it. A spring is scored against it, not its trapped post; absent on older rows, which keep the trapped post. */
+  readonly by?: string;
+  /** When a use card's play ends (its `payload.ends`); none stays until an admin ends it, which takes it out of the input. */
+  readonly ends?: number;
+  /** The character a character-reach play is on. */
+  readonly on?: string;
 }
 
 /** A staff post a card landed on: its author is staff, so it is named but never settled. */
@@ -426,6 +432,8 @@ export interface ReceivedReaction {
   readonly at: number;
   /** When the reacted Act was posted: public, as every post and card shows its time. */
   readonly actAt: number;
+  /** The reaction's kind (its key): public as the quadrant is, and what an Earn Gimmick that names a reaction reads. */
+  readonly kind: string;
   /**
    * What this window pays of the reacting player's one vote on the Act, in this quadrant, times
    * its halving: the difference from what earlier windows paid, so a vote that moved from this
@@ -570,9 +578,11 @@ export interface Earning {
    * settlement writes them into the ledger row (`ledger.params`), so a line settled before a retune is said with the numbers it was
    * settled under. Only on a reason whose words state a tunable number (`lurker.postedTooMuch` names `lurker.postsAllowed`).
    */
-  readonly params?: Readonly<Record<string, number>>;
+  readonly params?: Readonly<Record<string, number | string>>;
   readonly act?: string;
   readonly quadrant?: Quadrant;
+  /** The kind of the one reaction it pays for, where it pays for one: an Earn Gimmick that names reactions boosts by it. */
+  readonly kind?: string;
   /**
    * The reactions it pays for, where they are not on `act`: on this Act, after this time (a card's
    * lift is the votes on its target after it). The live estimate hangs its lines on them, and

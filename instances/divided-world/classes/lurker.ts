@@ -36,7 +36,7 @@ export const lurker: ClassRules = {
       .map((t): Earning => ({ reason: 'lurker.spunAThread', amount: spunThread, act: t.act, params: { 'lurker.spunThreadRepliers': spunThreadRepliers } })),
     ...input.received
       .filter((r) => r.actKind === 'card')
-      .map((r): Earning => ({ reason: 'lurker.cardDrew', amount: settings.vote * r.votes, act: r.act, quadrant: r.quadrant, at: r.at })),
+      .map((r): Earning => ({ reason: 'lurker.cardDrew', amount: settings.vote * r.votes, act: r.act, quadrant: r.quadrant, at: r.at, kind: r.kind })),
     ...input.posts
       .slice(postsAllowed)
       .map((p): Earning => ({ reason: 'lurker.postedTooMuch', amount: overPosting, act: p.act, params: { 'lurker.postsAllowed': postsAllowed } })),
