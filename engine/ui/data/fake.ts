@@ -1417,6 +1417,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const endedBacks = (account: Id) => [...faceDown.values()].filter((f) => f.account === account && f.sprung === null && f.takenBack === undefined && f.endsAt <= now() && f.refunded !== true);
   /** What the account holds of a card: bought, pulled, caught and returned, less played, and the backs whose time passed. */
   const heldOf = (account: AccountRec, card: string): number => (account.cards[card] ?? 0) + endedBacks(account.id).filter((f) => f.card === card).length;
+  /** A back whose time passed unsprung and not taken back shows as a `returned` line at its end, with no Act and no price (my_card_ledger, 0146). */
+  const endedLedger = () => [...faceDown.values()].filter((f) => f.sprung === null && f.takenBack === undefined && f.endsAt <= now())
+    .map((f) => ({ account: f.account, order: 0, ms: f.endsAt, event: { card: f.card, kind: 'returned' as const, act: null, price: 0, at: iso(f.endsAt) } satisfies CardEvent }));
   /** Before a card is spent: each back whose time passed becomes a card in the hand, once. */
   const settleBacks = (account: AccountRec): void => { for (const f of endedBacks(account.id)) { account.cards[f.card] = (account.cards[f.card] ?? 0) + 1; f.refunded = true; } };
   /** What a card's rules see on a post (card_target): its plays not caught or reversed, each ward's rarity and end, and its card backs naming no card. */
@@ -1456,6 +1459,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     let thread: Id;
     let on: Id | null;
     let above: EffectsAbove;
+    /* A Gimmick never goes on a board, before the board is looked for (place_cast, 0146). */
+    if (play === 'use' && reach === 'board') return refuse(`${rules.name} is never used on a board`);
     if (reach === 'character') {
       if (!characters.has(target)) return refuse('there is no such character', 'target');
       const from = fromPost ? acts.get(fromPost) : undefined;
@@ -1468,6 +1473,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       thread = target;
       on = [...acts.values()].find((a) => a.thread === target && a.seq === 1)?.id ?? null;
       if (!on) return refuse('that thread has no post yet');
+      /* A Gimmick on a thread is a match stipulation, so only on a thread the acting character started (place_cast, 0146), before the card's own rules are asked. */
+      if (play === 'use' && acts.get(on)?.character !== character) return refuse(`${rules.name} is used on a thread your own character started`);
       above = { board: reachEffects('board', boardOf(target)) };
     } else {
       if (!boards.some((b) => b.id === target)) return refuse('there is no such board', 'target');
@@ -1477,7 +1484,6 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     }
     const at = stamp ?? now();
     const goal = { reach, [reach]: target } as unknown as CardTarget;
-    if (play === 'use' && reach === 'board') return refuse(`${rules.name} is never used on a board`);
     const effects = effectsOnTarget(goal, reachEffects(reach, target), above, new Date(at));
     const nameOf = (k: string) => instance.cards.find((c) => c.key === k)?.name ?? k;
     const decided = play === 'use' ? decideUse(rules, settings, goal, effects, config, message, { now: new Date(at) }) : decidePlay(rules, settings, goal, effects, config, message, { now: new Date(at), nameOf });
@@ -1485,8 +1491,6 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const c = acting(character);
     if (isRefusal(c)) return c;
     if (play === 'use' && reach === 'character' && target !== character) return refuse(`${rules.name} is used on your own character`);
-    /* A Gimmick on a thread is a match stipulation, so only on a thread the acting character started (play_card, 0146). */
-    if (play === 'use' && reach === 'thread' && acts.get(on!)?.character !== character) return refuse(`${rules.name} is used on a thread your own character started`);
     const account = me()!;
     settleBacks(account);
     if ((account.cards[card] ?? 0) < 1) return refuse(`you hold no "${card}" card; the Vending Machine sells them`);
@@ -1541,6 +1545,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (bad) return bad;
     const c = acting(character);
     if (isRefusal(c)) return c;
+    const banned = bannedUntilOf(character);
+    if (banned !== null) return refuse(`this character is banned until ${iso(banned)}; the ban ends by itself then`);
     const account = me()!;
     const nothing = 'there is no face-down card to take back there';
     const f = faceDown.get(set);
@@ -2537,7 +2543,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
           ledger,
           shares,
           wallet: newest(walletEvents.filter((e) => e.account === account && fits(e.ms))).map((e) => e.event),
-          cards: newest(cardLedger.filter((e) => e.account === account && fits(e.ms))).map((e) => e.event),
+          cards: newest([...cardLedger, ...endedLedger()].filter((e) => e.account === account && fits(e.ms))).map((e) => e.event),
           packs: newest(packLedger.filter((e) => e.account === account && fits(e.ms))).map((e) => e.event),
           playsOnMine: newest(onMine.filter((a) => fits(a.at)).map((a) => ({ ms: a.at, order: a.order, a }))).map(({ a }) => ({ play: a.id, post: a.target!, at: iso(a.at), reach: reachOf(a) as 'post' | 'character' | 'thread', targetName: targetName(a), targetCharacter: targetCharacter(a) })),
           saves: newest(onMine.filter((a) => effects.has(a.id) && fits(effects.get(a.id)!.at)).map((a) => ({ ms: effects.get(a.id)!.at, order: a.order, a })))

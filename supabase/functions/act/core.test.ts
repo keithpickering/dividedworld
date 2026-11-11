@@ -291,6 +291,7 @@ test('a take-back is written by take_back for the account and the character, and
   assert.equal(out.status, 200, JSON.stringify(out.body));
   assert.deepEqual(calls, [`player:whoami:{}`, `service:take_back:${JSON.stringify({ through: id, set_act: target, who: whoami })}`]);
   assert.deepEqual(out.broadcasts, [{ topic: 'thread:th', event: 'act', payload: back }]);
+  assert.doesNotMatch(JSON.stringify(out.body) + JSON.stringify(out.broadcasts), /snare|whoops|test-/, 'the answer and the broadcast name no card');
 });
 
 test('a Salty cast on a post under a live Good Vibes thread is priced 25 above its play price, and a Sweet one is not', async () => {

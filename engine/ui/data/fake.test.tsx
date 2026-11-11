@@ -2074,8 +2074,10 @@ describe('a card set face down, a ward and a trap, as the server holds them', ()
     const nothing = refused('there is no face-down card to take back there');
     fake.signInAs(bo);
     expect(await fake.takeBack(boFace, set.id)).toEqual(nothing);
-    expect(await fake.takeBack(boFace, 'nowhere')).toMatchObject({ ok: false });
+    expect(await fake.takeBack(boFace, '00000000-0000-4000-8000-00000000ffff')).toEqual(nothing);
     fake.signInAs(ana);
+    const mask = fake.seed.character(ana, 'Ana Heel', 'heel');
+    expect(await fake.takeBack(mask, set.id)).toEqual(nothing);
     const back = must(await fake.takeBack(anaFace, set.id));
     expect([back.kind, back.targetActId, back.payload]).toEqual(['take_back', opener, { set: set.id }]);
     expect((await fake.myCards()).find((c) => c.card === 'snare')?.held).toBe(2);
@@ -2093,6 +2095,7 @@ describe('a card set face down, a ward and a trap, as the server holds them', ()
     expect(await held()).toBe(1);
     fake.clock.advance(31 * 24 * 3_600_000);
     expect(await held()).toBe(2);
+    expect((await fake.log()).cards.find((e) => e.kind === 'returned')).toMatchObject({ card: 'snare', kind: 'returned', act: null, price: 0 });
     expect(await fake.takeBack(anaFace, set.id)).toEqual(refused('there is no face-down card to take back there'));
     expect(must(await fake.setCard('snare', anaFace, opener, {})).kind).toBe('set');
     expect(await held()).toBe(1);
@@ -2101,7 +2104,6 @@ describe('a card set face down, a ward and a trap, as the server holds them', ()
     fake.signInAs(ana);
     fake.clock.advance(31 * 24 * 3_600_000);
     expect(await held()).toBe(1);
-    void bo;
   });
 
   test('a Reversal with a match springs on a card whose flavor it holds and lets another by', async () => {
