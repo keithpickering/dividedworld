@@ -670,6 +670,9 @@ describe('Who across tabs', () => {
   });
 });
 
+/** The plain link at the very foot of a post's Lens: the last stop in it. */
+const reportToAdmins = () => within(lens()).getByRole('button', { name: 'Report to admins' });
+
 describe('the Tab order around a Lens drawn at the end of the body', () => {
   test('Tab past its last control goes to the element after the mark, Shift+Tab before its first goes back to the mark, and it stays open', async () => {
     width(false);
@@ -678,12 +681,12 @@ describe('the Tab order around a Lens drawn at the end of the body', () => {
     open(w);
     const mark = await markOf(2, 'Card 2');
     await userEvent.click(mark);
-    /* The first stop is the open tab and the last is Who's disclosure. */
+    /* The first stop is the open tab and the last is Report to admins, the plain link at the foot of the Lens (the conduct plan, Task 6). */
     expect(tab('Card 2')).toHaveFocus();
     await userEvent.tab({ shift: true });
     expect(mark).toHaveFocus();
     expect(lens()).toBeInTheDocument();
-    whoButton().focus();
+    reportToAdmins().focus();
     await userEvent.tab();
     expect(within(await article(2)).getByRole('link', { name: 'Permalink to post #2' })).toHaveFocus();
     expect(lens()).toBeInTheDocument();
@@ -703,7 +706,7 @@ describe('the Tab order around a Lens drawn at the end of the body', () => {
       mark.closest('header')!.insertBefore(hidden, link);
     }
     await userEvent.click(mark);
-    whoButton().focus();
+    reportToAdmins().focus();
     await userEvent.tab();
     expect(link).toHaveFocus();
   });

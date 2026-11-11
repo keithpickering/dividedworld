@@ -5,8 +5,12 @@
 -- waiting for an admin address says so, plainly, only while none is set. A staff post's version is reported and hidden as any, and no mail
 -- goes to a staff author (it has no account).
 --
+-- The author's own reads (Task 6): my_hidden_version gives the words of a version hidden until edited to its author and to no one else, says "waiting" for an edit
+-- an admin has yet to look at (with the author's own words, so Edit can start from them), and says nothing for a version an admin hid outright or one that shows; my_open_reports counts the caller's own.
+--
 -- The poison, driven red once on the migration before the check was trusted:
 --   * admin_reports with its only_admins call removed must fail the player's refusal check.
+--   * (Task 6, written with the function; not yet driven red on a poisoned migration) my_hidden_version with its owner check removed must fail "another player read the author's words".
 
 create function tests.refusal(stmt text) returns text language plpgsql as $$
 declare state text; hint text; msg text;
@@ -32,7 +36,7 @@ declare
   rep uuid := tests.account('adm-reporter');
   ch_author uuid := tests.character(author, 'Ada');
   th uuid := tests.thread('Admin');
-  p1 uuid; p2 uuid; e1 uuid; boss uuid; pb uuid;
+  p1 uuid; p2 uuid; e1 uuid; e2 uuid; e3 uuid; p3 uuid; p4 uuid; boss uuid; pb uuid;
   r1 bigint; r2 bigint; rb bigint;
   got jsonb;
   seen text;
@@ -168,4 +172,72 @@ begin
   perform decide(null, pb, 'unhide', null, '');
   perform tests.unbecome();
   if (select a.hidden from acts_public a where a.id = pb) is distinct from false then raise exception 'a staff post was not unhidden'; end if;
+
+  -- ---- The author's own words (my_hidden_version) ----
+  p3 := tests.post(ch_author, th, 'Words that go too far.', now() - interval '20 minutes');
+  perform tests.become(author);
+  if my_hidden_version(p3) is not null then raise exception 'a post that shows has no hidden version'; end if;
+  perform tests.unbecome();
+  perform tests.claims(admin_a);
+  perform decide(null, p3, 'hideUntilEdited', null, '');
+  perform tests.unbecome();
+  perform tests.become(author);
+  got := my_hidden_version(p3);
+  perform tests.unbecome();
+  if got ->> 'status' is distinct from 'hiddenUntilEdited' or got ->> 'words' is distinct from 'Words that go too far.' or got ->> 'version' is distinct from p3::text then
+    raise exception 'the author reads their own words, hidden until edited: %', got;
+  end if;
+  perform tests.become(rep);
+  got := my_hidden_version(p3);
+  perform tests.unbecome();
+  if got is not null then raise exception 'another player read the author''s words: %', got; end if;
+  perform tests.become(admin_a);
+  got := my_hidden_version(p3);
+  perform tests.unbecome();
+  if got is not null then raise exception 'only the author reads their words through it, an admin has admin_version: %', got; end if;
+  -- The first edit shows at once, so there is nothing hidden to read; the edit's own id answers the same as its post.
+  e2 := tests.act(ch_author, 'edit', th, '{"body": "Softer words."}', p3, now() + interval '1 minute');
+  perform tests.become(author);
+  if my_hidden_version(p3) is not null or my_hidden_version(e2) is not null then raise exception 'an edit that shows has no hidden version'; end if;
+  perform tests.unbecome();
+  -- A second hide until edited, on that edit: the author reads the edit's words; an edit after it waits for an admin, and is the author's own words too.
+  perform tests.claims(admin_a);
+  perform decide(null, e2, 'hideUntilEdited', null, '');
+  perform tests.unbecome();
+  perform tests.become(author);
+  got := my_hidden_version(e2);
+  perform tests.unbecome();
+  if got ->> 'status' is distinct from 'hiddenUntilEdited' or got ->> 'words' is distinct from 'Softer words.' then raise exception 'the second hide shows the author the edit''s words: %', got; end if;
+  e3 := tests.act(ch_author, 'edit', th, '{"body": "Softest words."}', p3, now() + interval '2 minutes');
+  perform tests.become(author);
+  got := my_hidden_version(p3);
+  perform tests.unbecome();
+  if got ->> 'status' is distinct from 'waiting' or got ->> 'version' is distinct from e3::text or got ->> 'words' is distinct from 'Softest words.' then raise exception 'an edit after a second hide waits, carrying the author''s own words: %', got; end if;
+  perform tests.become(rep);
+  if my_hidden_version(p3) is not null then raise exception 'another player read the waiting state'; end if;
+  perform tests.unbecome();
+  perform tests.claims(admin_a);
+  perform decide(null, e3, 'approve', null, '');
+  perform tests.unbecome();
+  perform tests.become(author);
+  if my_hidden_version(p3) is not null then raise exception 'an approved edit shows'; end if;
+  perform tests.unbecome();
+  -- A version an admin hid outright is not the author's to read back: it has its own way out (an unhide).
+  p4 := tests.post(ch_author, th, 'Hidden outright.', now() - interval '10 minutes');
+  perform tests.claims(admin_a);
+  perform decide(null, p4, 'hide', null, '');
+  perform tests.unbecome();
+  perform tests.become(author);
+  if my_hidden_version(p4) is not null then raise exception 'a version hidden outright is not read back to its author'; end if;
+  perform tests.unbecome();
+
+  -- ---- The caller's own open reports ----
+  perform tests.become(rep);
+  n := my_open_reports();
+  perform tests.unbecome();
+  select count(*) into ob from conduct_reports r where r.reporter = rep and not exists (select 1 from conduct_decisions d where d.report = r.id);
+  if n <> ob or n < 1 then raise exception 'my_open_reports counts the caller''s own open reports: % against %', n, ob; end if;
+  perform tests.become(author);
+  if my_open_reports() <> 0 then raise exception 'my_open_reports counted another account''s reports'; end if;
+  perform tests.unbecome();
 end $$;

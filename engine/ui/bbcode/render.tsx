@@ -18,6 +18,7 @@ import { colorHex, FONTS, parse, type BbNode } from '../../bbcode/parse.ts';
 import { visibleWalk } from '../../bbcode/visible.ts';
 import { stretchesOf, useTextLayers, type Stretch } from './layers.tsx';
 import { inkOn as bestInk } from '../contrast.ts';
+import { HiddenNote } from '../conduct/Hidden.tsx';
 import { Mini } from '../mini.tsx';
 import { Link } from '../router.tsx';
 import { Video } from './Video.tsx';
@@ -125,6 +126,13 @@ function inkOn(color: string): string {
   return hex === null || bestInk(hex) === 'black' ? 'var(--kb-ink-black)' : 'var(--kb-ink-white)';
 }
 
+/**
+ * Whether a quote of an Act has had its words taken: the server empties the contents of a quote of a post with a hidden version (`conceal_quotes`, 0148), keeping its opener
+ * and its closer, so the cite still names the post. A quote with nothing in it is the hidden note's place. (A quote a player wrote empty by hand reads the same; the quote tool
+ * copies the words it quotes, so an empty one is not the ordinary case.)
+ */
+const concealed = (children: readonly BbNode[]): boolean => children.every((c) => (c.type === 'text' || c.type === 'noparse') && c.text.trim() === '');
+
 function nodes(list: readonly BbNode[], quoteHead: BbCodeProps['quoteHead'], layered?: Layered): ReactNode[] {
   return list.map((n, i) => node(n, i, quoteHead, layered));
 }
@@ -156,7 +164,7 @@ function node(n: BbNode, key: number, quoteHead: BbCodeProps['quoteHead'], layer
       return (
         <blockquote key={key} className="kb-quote">
           <cite className="kb-quote-from">{(quoteHead ?? defaultHead)({ kind: 'real', act: n.act })}</cite>
-          <div className="kb-quote-body">{nodes(n.children, quoteHead)}</div>
+          <div className="kb-quote-body">{concealed(n.children) ? <HiddenNote /> : nodes(n.children, quoteHead)}</div>
         </blockquote>
       );
     case 'counterfeit':

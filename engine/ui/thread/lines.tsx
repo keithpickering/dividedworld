@@ -8,6 +8,8 @@ import { words, type PronounSet } from '../../rules/pronouns.ts';
 import { useKayfa } from '../context.tsx';
 import type { Act, Id } from '../data/api.ts';
 import { Debuts, RevealPost, TallyPost } from '../reveal/Reveal.tsx';
+import { HiddenNote } from '../conduct/Hidden.tsx';
+import { ReportLink } from '../conduct/Report.tsx';
 
 import { sameYear } from '../postbit/dates.ts';
 import { Link } from '../router.tsx';
@@ -54,8 +56,17 @@ export function QuoteHead({ of }: { readonly of: QuoteOf }) {
 }
 export const quoteHead = (q: QuoteOf): ReactNode => <QuoteHead of={q} />;
 
-/** Every version of a post, the original first, for anyone who asks. */
-function Versions({ post }: { readonly post: Id }) {
+/** What names a post to a reader who reports one of its versions: its number and its author's name, as the post's own head says them. */
+export interface PostAbout { readonly seq: number | null; readonly name: string }
+
+/**
+ * Whether a History row is a hidden version. A hidden version's words are null (`public_payload`, 0148); an edit's own `hidden` says so too. The original's own row cannot say it by
+ * `hidden`, which for a post is whether its *current* version is hidden, so it is read from its words.
+ */
+const versionHidden = (v: Act): boolean => typeof v.payload.body !== 'string' || (v.kind === 'edit' && v.hidden === true);
+
+/** Every version of a post, the original first, for anyone who asks. A hidden version is the one-line note and offers no report; any other offers Report to admins. */
+function Versions({ post, about }: { readonly post: Id; readonly about: PostAbout | undefined }) {
   const { api } = useKayfa();
   const [versions, setVersions] = useState<readonly Act[] | null | 'failed'>(null);
   useEffect(() => {
@@ -66,25 +77,38 @@ function Versions({ post }: { readonly post: Id }) {
   if (versions === 'failed') return <p className="kb-notice" data-kb-tone="refusal">The history could not be loaded. Close it and try again.</p>;
   if (versions === null) return <p className="kb-muted kb-small" aria-busy="true">Loading the history…</p>;
   if (versions.length < 2) return <p className="kb-muted kb-small">This post has not been edited.</p>;
+  const named = about === undefined ? 'This post' : `Post${about.seq === null ? '' : ` #${about.seq}`} by ${about.name}`;
   return (
     <ol className="kb-post-history" data-kb-quotable="hidden" aria-label="Versions of this post, oldest first">
-      {versions.map((v, i) => (
-        <li key={v.id}>
-          <span className="kb-small kb-muted">{i === 0 ? 'Original' : `Edit ${i}`}, {when(v.createdAt)}{i === versions.length - 1 ? ' · Current' : ''}</span>
-          <BbCode text={text(v.payload.body)} quoteHead={quoteHead} />
-        </li>
-      ))}
+      {versions.map((v, i) => {
+        const last = i === versions.length - 1;
+        const which = i === 0 ? 'Original' : `Edit ${i}`;
+        const hidden = versionHidden(v);
+        return (
+          <li key={v.id}>
+            <span className="kb-small kb-muted">{which}, {when(v.createdAt)}{last ? ' · Current' : ''}</span>
+            {hidden
+              ? <HiddenNote />
+              : (
+                <>
+                  <ReportLink post={post} version={v.id} kicker={`${named}, ${last ? 'current version' : which.toLowerCase()}`} className="kb-report-row-link kb-small" ariaLabel={`Report to admins: ${which.toLowerCase()}`} />
+                  <BbCode text={text(v.payload.body)} quoteHead={quoteHead} />
+                </>
+              )}
+          </li>
+        );
+      })}
     </ol>
   );
 }
 
-/** The History button of a post and the panel it opens; the panel goes where `panel` puts it. */
-export function useHistory(post: Id): { readonly button: ReactNode; readonly panel: ReactNode } {
+/** The History button of a post and the panel it opens; the panel goes where `panel` puts it. `about` names the post for a report made from one of its versions. */
+export function useHistory(post: Id, about?: PostAbout): { readonly button: ReactNode; readonly panel: ReactNode } {
   const [open, setOpen] = useState(false);
   const id = `history-${post}`;
   return {
     button: <button type="button" className="kb-button" data-kb-size="small" aria-expanded={open} aria-controls={id} onClick={() => setOpen(!open)}>History</button>,
-    panel: <div id={id}>{open && <Versions post={post} />}</div>,
+    panel: <div id={id}>{open && <Versions post={post} about={about} />}</div>,
   };
 }
 

@@ -30,7 +30,7 @@
  * never in a URL, a header or a channel name.
  */
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import { DEFAULT_PREFERENCES, LOST_ANSWER, SPUN_FROM_MAX } from '../../../engine/ui/data/api.ts';
+import { DEFAULT_PREFERENCES, LOST_ANSWER, REPORT_LIMIT, SPUN_FROM_MAX } from '../../../engine/ui/data/api.ts';
 import { readLogPage, type LedgerRow, type LogRange, type LogRead, type ShareRow } from '../../../engine/ui/data/log-page.ts';
 import { buildMoveNotice, toDemand, toProgress } from '../../../engine/ui/data/moves.ts';
 import { ALERTS_PAGE, ALERTS_UNREAD_BOUND, MOVES_LOG_PAGE, SEASON_NEWS_PAGE, UPDATES_PAGE } from '../../../engine/ui/data/api.ts';
@@ -43,7 +43,7 @@ import type {
   Act, ActKind, Answer, AvatarUpload, Board, Bought, BoardSummary, CardEnded, CardEvent, PackEvent, CaughtPlay, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd,
   Alert, ContactLink, EffectState, PostHit, SearchCursor, SearchPage, SearchQuery, Suggestions, ThreadHit, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, SeasonShown, TallyName, Update, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
   Tally, StandingPlace, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, TurnAsked, Wallet, WalletEvent,
-  Boot, BoardPage, IndexPage, Opened, AdminSlot, Slot, SlotMove, Presence, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, ReportsPage, AdminReport, AdminReview, FailedMail, PastDecision, LogPage,
+  Boot, BoardPage, IndexPage, Opened, AdminSlot, Slot, SlotMove, Presence, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, ReportsPage, MyHiddenVersion, AdminReport, AdminReview, FailedMail, PastDecision, LogPage,
   AppealResult, AppealVerdict, InterceptResult, MyBan, LogAppeal, LogBan, LogGroupMove, GroupMoveEndWhy, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitChallenge, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
 } from '../../../engine/ui/data/api.ts';
 
@@ -143,6 +143,7 @@ function toAct(r: Row): Act {
     currentPayload: r['current_payload'] ?? r['payload'] ?? {},
     editedAt: r['edited_at'] ?? null,
     shownEditedAt: r['shown_edited_at'] ?? null,
+    ...(r['hidden'] === true ? { hidden: true } : {}),
   };
 }
 
@@ -624,7 +625,7 @@ function toEstimate(r: Row): Estimate {
 
 /* ---------------------------------------------------------------------- the adapter ---- */
 
-type Res = { data: unknown; error: { message: string; hint?: string | null } | null; status: number };
+type Res = { data: unknown; error: { message: string; hint?: string | null; code?: string | null } | null; status: number };
 
 export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
   const { url, publishableKey, settingsFallback } = options;
@@ -747,7 +748,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
   }
 
   /** A direct rpc that writes: its refusals are the server's words, a lost answer is never resent. */
-  async function rpcWrite(run: () => PromiseLike<unknown>): Promise<Answer<Row>> {
+  async function rpcWrite(run: () => PromiseLike<unknown>, fieldOf?: (code: string | null | undefined) => string | undefined): Promise<Answer<Row>> {
     let r: Res;
     try {
       r = (await run()) as Res;
@@ -755,7 +756,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       return uncertain();
     }
     if (!r.error) return { ok: true, value: (r.data && typeof r.data === 'object' ? r.data : {}) as Row };
-    if (r.error.hint === REFUSAL_HINT && r.error.message) return refusal(r.error.message);
+    if (r.error.hint === REFUSAL_HINT && r.error.message) return refusal(r.error.message, fieldOf?.(r.error.code));
     return r.status === 0 || r.status >= 500 ? uncertain() : refusal(NOT_DONE);
   }
 
@@ -1651,6 +1652,31 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
         /* my_reports_left (0111): the caller's own characters' quotas, by open_report's own rule; a character that is not theirs has no row. */
         const r = (await list(() => client.from('my_reports_left').select('left').eq('character', character).limit(1)))[0];
         return typeof r?.['left'] === 'number' ? r['left'] : null;
+      } catch {
+        return null;
+      }
+    },
+    async reportPost(version, section, note) {
+      if (!idOk(version)) return refusal('that post could not be found');
+      /* The open-report limit (errcode 53400) is told apart by `field: 'limit'`, so the form can say it as its own state and ask for the account's own count. */
+      const a = await rpcWrite(() => client.rpc('report_post', { version_act: version, section, note: note.trim() === '' ? null : note }), (code) => (code === '53400' ? REPORT_LIMIT : undefined));
+      return a.ok ? { ok: true, value: null } : a;
+    },
+    async myOpenReports(): Promise<number | null> {
+      try {
+        const d = (await read(() => client.rpc('my_open_reports'))).data;
+        return typeof d === 'number' ? d : null;
+      } catch {
+        return null;
+      }
+    },
+    async myHiddenVersion(post): Promise<MyHiddenVersion | null> {
+      if (!idOk(post)) return null;
+      try {
+        const d = (await read(() => client.rpc('my_hidden_version', { act: post }))).data;
+        if (!isObject(d) || typeof d['version'] !== 'string') return null;
+        if (d['status'] === 'hiddenUntilEdited' && typeof d['words'] === 'string') return { status: 'hiddenUntilEdited', version: d['version'], words: d['words'] };
+        return d['status'] === 'waiting' && typeof d['words'] === 'string' ? { status: 'waiting', version: d['version'], words: d['words'] } : null;
       } catch {
         return null;
       }

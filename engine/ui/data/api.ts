@@ -278,6 +278,9 @@ export type ActKind = 'post' | 'spin' | 'card' | 'edit' | 'tally' | 'reveal' | '
   /* The Mod Bots' Acts (supabase/migrations/0104 to 0109): meta acts like a card play, none a place in the thread (`seq` null). */
   | 'visit' | 'visit_join' | 'visit_end' | 'report' | 'report_verdict' | 'intercept' | 'infraction' | 'ban' | 'appeal' | 'appeal_ruling';
 
+/** The `field` of the refusal `reportPost` answers at the account's open-report limit (errcode 53400). */
+export const REPORT_LIMIT = 'limit';
+
 /** An Act as every reader sees it (acts_public): the original and, where edited, what it shows now. */
 export interface Act {
   readonly id: Id;
@@ -297,7 +300,22 @@ export interface Act {
   readonly editedAt: string | null;
   /** Set only by an edit made after the grace period: what "Last edited" says. */
   readonly shownEditedAt: string | null;
+  /**
+   * Whether the version this Act shows now (a post's current one, an edit's own) is hidden by an admin (`acts_public.hidden`, 0148): its words are
+   * then null in `payload` and `currentPayload`, and the screen draws the hidden note in their place. Absent reads as not hidden. A post's own row
+   * says whether its *current* version is hidden; to read whether one version in its History is, the version's `payload.body` is null.
+   */
+  readonly hidden?: boolean;
 }
+
+/**
+ * The author's own view of their hidden post (`my_hidden_version`, 0150): `hiddenUntilEdited` carries their own words, which only they can read, so they can edit them; `waiting`
+ * is an edit that follows a second hide until edited, which an admin looks at before it shows again; it carries the edit's words too, so Edit can start from them. Null for anyone else and for a version that is not hidden
+ * until edited.
+ */
+export type MyHiddenVersion =
+  | { readonly status: 'hiddenUntilEdited'; readonly version: Id; readonly words: string }
+  | { readonly status: 'waiting'; readonly version: Id; readonly words: string };
 
 /* ------------------------------------------------------------------------------ a visit (the Mod Bots design, sections 6 and 7) ---- */
 
@@ -2097,6 +2115,15 @@ export interface KayfaApi {
   fileAppeal(through: Id, punishment: Id, plea: string): Promise<Answer<AppealResult>>;
   /** How many reports this character may still make today (UTC). Shown only to the player of that character; null where it could not be read. */
   reportsLeft(character: Id): Promise<number | null>;
+  /**
+   * Reports a version (a post, or one of its edits) to admins (`report_post`): the account's own report, never a character's. Refused in the server's words; the refusal for the
+   * open-report limit has `field: REPORT_LIMIT`, and the form then asks `myOpenReports` for the account's own count. `note` is at most 1000 characters.
+   */
+  reportPost(version: Id, section: string, note: string): Promise<Answer<null>>;
+  /** How many reports to admins the signed-in account holds open (`my_open_reports`): the caller's own count, shown only to them; null where it could not be read. */
+  myOpenReports(): Promise<number | null>;
+  /** The author's own words of a post hidden until they edit it, or where it waits for an admin (`my_hidden_version`); null for anyone else's post or a post that is not so hidden. */
+  myHiddenVersion(post: Id): Promise<MyHiddenVersion | null>;
   /** The public name of the Mod on a board's beat, who judges its reports, and the board's name; null where no Mod is on staff. */
   beatMod(board: Id): Promise<{ readonly mod: string; readonly pronouns: PronounSet; readonly board: string } | null>;
   /** The ban now running on one of the player's characters (`my_bans`), for the appeal to the Boss; null where it is not banned. */

@@ -161,6 +161,44 @@ describe('what the adapter may request', () => {
     await expect(refused.api.here({ kind: 'index' }, B)).rejects.toThrow('you do not play that character');
   });
 
+  it('reads a version\'s hidden flag from acts_public, absent when it is not hidden', async () => {
+    const row = { id: B, character: A, kind: 'post', thread: T, target_act_id: null, seq: 1, created_at: '2026-11-01T00:00:00+00:00', payload: { body: null }, current_payload: { body: null }, edited_at: null, shown_edited_at: null };
+    const h = harness((r) => (r.url.pathname === `${REST}/acts_public` ? rows([{ ...row, hidden: true }, { ...row, id: A, payload: { body: 'Shown.' }, current_payload: { body: 'Shown.' } }]) : undefined));
+    expect((await h.api.history(B)).map((a) => a.hidden)).toEqual([true, undefined]);
+  });
+
+  it('reports a version to admins through report_post, the note empty as null, and refuses in the server\'s words', async () => {
+    const h = harness((r) => (r.url.pathname.endsWith('/rpc/report_post')
+      ? (r.body as { section?: string }).section === 'hate' ? json({ code: '53400', message: 'you have 3 reports open, the most an account can; an admin will close one', hint: 'kayfabb.refusal' }, 400) : json(7)
+      : json({}, 404)));
+    expect(await h.api.reportPost(B, 'person', '   ')).toEqual({ ok: true, value: null });
+    expect(h.to('rpc/report_post')[0]?.body).toEqual({ version_act: B, section: 'person', note: null });
+    expect(await h.api.reportPost(B, 'person', 'a note')).toEqual({ ok: true, value: null });
+    expect(h.to('rpc/report_post')[1]?.body).toEqual({ version_act: B, section: 'person', note: 'a note' });
+    expect(await h.api.reportPost(B, 'hate', '')).toEqual({ ok: false, error: 'you have 3 reports open, the most an account can; an admin will close one', field: 'limit' });
+    expect(await h.api.reportPost('not-an-id', 'person', '')).toEqual({ ok: false, error: 'that post could not be found' });
+  });
+
+  it('counts the account\'s own open reports, null where it could not be read', async () => {
+    const h = harness((r) => (r.url.pathname.endsWith('/rpc/my_open_reports') ? json(3) : json({}, 404)));
+    expect(await h.api.myOpenReports()).toBe(3);
+    const down = harness(() => json({}, 500));
+    expect(await down.api.myOpenReports()).toBeNull();
+  });
+
+  it('reads the author\'s own hidden words and its waiting state, nothing for anything else', async () => {
+    let answer: unknown = { status: 'hiddenUntilEdited', version: B, words: 'My words.' };
+    const h = harness((r) => (r.url.pathname.endsWith('/rpc/my_hidden_version') ? json(answer) : json({}, 404)));
+    expect(await h.api.myHiddenVersion(B)).toEqual({ status: 'hiddenUntilEdited', version: B, words: 'My words.' });
+    expect(h.to('rpc/my_hidden_version')[0]?.body).toEqual({ act: B });
+    answer = { status: 'waiting', version: A, words: 'My edit.' };
+    expect(await h.api.myHiddenVersion(B)).toEqual({ status: 'waiting', version: A, words: 'My edit.' });
+    answer = null;
+    expect(await h.api.myHiddenVersion(B)).toBeNull();
+    answer = { status: 'something', version: A };
+    expect(await h.api.myHiddenVersion(B)).toBeNull();
+  });
+
   it('hides a mask from presence through set_presence_hidden, and answers whether it is hidden', async () => {
     const h = harness((r) => (r.url.pathname.endsWith('/rpc/set_presence_hidden') ? json({ character: B, hidden: true }) : json({}, 404)));
     expect(await h.api.setPresenceHidden(B, true)).toEqual({ ok: true, value: true });

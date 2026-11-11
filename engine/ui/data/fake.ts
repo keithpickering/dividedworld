@@ -29,7 +29,7 @@ import { ALERT_KINDS, isWritten, type WrittenKind } from '../../rules/alerts.ts'
 import { DEFAULT_DEVELOPER } from '../../rules/instance.ts';
 import { normalizePronouns, pronounProblems, type PronounSet } from '../../rules/pronouns.ts';
 import type { Career } from '../../system/career.ts';
-import { ALERTS_PAGE, ALERTS_UNREAD_BOUND, CONTACT_HREF_MAX, CONTACT_LABEL_MAX, CONTACT_MOST, CONTACT_WS, DEFAULT_PREFERENCES, FOLLOWED_COUNT_CAP, LOST_ANSWER, MOVES_LOG_PAGE, SEARCH_CARDS_MAX, SEARCH_COUNT_CAP, SEARCH_MATCHES_CAP, SEARCH_PER_PAGE, SEARCH_PER_PAGE_MAX, SEASON_NEWS_PAGE, SPUN_FROM_MAX, UPDATES_PAGE } from './api.ts';
+import { ALERTS_PAGE, ALERTS_UNREAD_BOUND, CONTACT_HREF_MAX, CONTACT_LABEL_MAX, CONTACT_MOST, CONTACT_WS, DEFAULT_PREFERENCES, FOLLOWED_COUNT_CAP, LOST_ANSWER, MOVES_LOG_PAGE, REPORT_LIMIT, SEARCH_CARDS_MAX, SEARCH_COUNT_CAP, SEARCH_MATCHES_CAP, SEARCH_PER_PAGE, SEARCH_PER_PAGE_MAX, SEASON_NEWS_PAGE, SPUN_FROM_MAX, UPDATES_PAGE } from './api.ts';
 import { buildMoveNotice, toDemand, toProgress } from './moves.ts';
 import { TIP_KEYS, TOUR_KEYS } from '../tips/keys.ts';
 import { PLAYS_PER_POST } from '../cards/plays.ts';
@@ -89,6 +89,8 @@ export interface Seed {
   /** A thread with its first Act; a null character is The System's, on its board only. */
   thread(board: string, character: Id | null, title: string, body?: string, options?: SeedAct): { thread: Id; act: Id };
   post(thread: Id, character: Id | null, body: string, options?: SeedAct & { quote?: Id }): Id;
+  /** An edit of a post by its own character, as that character's player, dated `at` (else now); returns the edit's Act, which is the version the History lists. */
+  edit(post: Id, character: Id, body: string, options?: SeedAct): Id;
   /** A reaction, refused in the server's words like any other. */
   react(account: Id, character: Id, act: Id, kind: string): void;
   /**
@@ -132,10 +134,16 @@ export interface Seed {
   update(update: { title: string; body: string; changes?: readonly UpdateChange[]; at?: number }): Id;
   /** An account's decision recorded before the screen opens (the admin screen's past decisions), dated `at` (else now). */
   conductDecision(decision: { account: Id; outcome: string; until?: number; note?: string; at?: number }): void;
-  /** An open report (`report_post`, 0148) on a post's version, dated `at` (else now): the screen shows the version's words, the section and the note. */
-  conductReport(report: { version: Id; section: string; note?: string; at?: number }): number;
+  /** An open report (`report_post`, 0148) on a post's version, dated `at` (else now), by `reporter` (an account) when the open-report limit is under test: the screen shows the version's words, the section and the note. */
+  conductReport(report: { version: Id; section: string; note?: string; at?: number; reporter?: Id }): number;
   /** A post hidden until its author edited it and edited since, awaiting an admin's second look (`reviews_due`): `words` are the edit's. */
   conductReview(review: { post: Id; version?: Id; words: string; at?: number }): void;
+  /**
+   * A version hidden by an admin (`hide`), hidden until its author edits it (`hideUntilEdited`), or an edit of the author's that waits for an admin after a second hide until
+   * edited (`waiting`): its words are null in every read a player makes, a post's `hidden` says so, and a quote of the post is emptied. The author's own words stay in the fake, which
+   * `myHiddenVersion` gives to the author of a version hidden until edited.
+   */
+  hide(version: Id, how: 'hide' | 'hideUntilEdited' | 'waiting'): void;
   /** A mail whose latest attempt failed (it is tried again) or was refused (never again). */
   failedMail(mail: { account: Id; template: string; kind: 'failed' | 'refused'; error: string; at?: number }): void;
   /** Mail waiting to go because no admin reply-to address is set (`n` rows with no attempt); with none set, `addressSet` is false. */
@@ -564,13 +572,32 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   /* ---------------------------------------------------------------- projections ---- */
   const edits = (post: ActRec) => [...acts.values()].filter((a) => a.kind === 'edit' && a.target === post.id).sort((a, b) => a.at - b.at || a.order - b.order);
 
+  /** The versions hidden from players (hide, hideUntilEdited, and an edit that waits for an admin), as acts_public's `hidden` and `public_payload` serve them. */
+  const hiddenVersions = new Map<Id, 'hide' | 'hideUntilEdited' | 'waiting'>();
+  /** A body with the contents of each quote of a post with a hidden version emptied, as `conceal_quotes` does (0148); the opener and the closer stay. */
+  const concealQuotes = (body: string): string => {
+    let out = body;
+    for (const v of hiddenVersions.keys()) {
+      const post = acts.get(v)?.kind === 'edit' ? acts.get(v)!.target : v;
+      if (post === null) continue;
+      out = out.replace(new RegExp(`(\\[quote="?${post}"?[^\\]]*\\])[\\s\\S]*?(\\[/quote\\])`, 'giu'), '$1$2');
+    }
+    return out;
+  };
+  /** A payload as a player reads it (`public_payload`): a hidden version's body is null; any other has its quotes of hidden posts emptied. */
+  const publicPayload = (payload: Readonly<Record<string, unknown>>, hidden: boolean): Readonly<Record<string, unknown>> =>
+    typeof payload['body'] !== 'string' ? payload : hidden ? { ...payload, body: null } : { ...payload, body: concealQuotes(payload['body']) };
+
   function publicAct(a: ActRec): Act {
     const latest = a.kind === 'post' ? edits(a).at(-1) : undefined;
+    const own = hiddenVersions.has(a.id);
+    const cur = latest === undefined ? own : hiddenVersions.has(latest.id);
     return {
-      id: a.id, character: a.character, kind: a.kind, thread: a.thread, targetActId: a.target, seq: a.seq, createdAt: iso(a.at), payload: a.payload,
-      currentPayload: latest?.payload ?? a.payload,
+      id: a.id, character: a.character, kind: a.kind, thread: a.thread, targetActId: a.target, seq: a.seq, createdAt: iso(a.at), payload: publicPayload(a.payload, own),
+      currentPayload: publicPayload(latest?.payload ?? a.payload, cur),
       editedAt: latest ? iso(latest.at) : null,
       shownEditedAt: latest && latest.at > a.at + span(settings.editGrace) ? iso(latest.at) : null,
+      hidden: cur,
     };
   }
 
@@ -877,8 +904,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   /** The seasons whose to-do an admin dismissed (`handover_dismissals`). */
   const dismissedTodos = new Set<number>();
   /* The conduct screen's world (0148-0150): open reports, decisions, the re-review list, mail that failed and mail waiting for an address. */
-  interface ReportRec { readonly id: number; readonly version: Id; readonly section: string; readonly note: string | null; readonly at: number }
+  interface ReportRec { readonly id: number; readonly version: Id; readonly section: string; readonly note: string | null; readonly at: number; readonly reporter?: Id }
   interface DecisionRec { readonly id: number; readonly report: number | null; readonly version: Id | null; readonly account: Id | null; readonly outcome: string; readonly until: number | null; readonly note: string; readonly at: number }
+  /** The most reports to admins an account holds open (`Settings.conduct.openReportsMost`): the fake's own, three. */
+  const CONDUCT_OPEN_MOST = 3;
   const conductReports: ReportRec[] = [];
   const conductDecisions: DecisionRec[] = [];
   const conductReviews: { decision: number; post: Id; version: Id; words: string; at: number }[] = [];
@@ -2510,10 +2539,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const original = acts.get(id);
       if (!original || original.kind !== 'post') return [];
       const versions = edits(original).map((e): Act => ({
-        id: e.id, character: e.character, kind: 'edit', thread: e.thread, targetActId: id, seq: null, createdAt: iso(e.at), payload: e.payload,
-        currentPayload: e.payload, editedAt: null, shownEditedAt: null,
+        id: e.id, character: e.character, kind: 'edit', thread: e.thread, targetActId: id, seq: null, createdAt: iso(e.at), payload: publicPayload(e.payload, hiddenVersions.has(e.id)),
+        currentPayload: publicPayload(e.payload, hiddenVersions.has(e.id)), editedAt: null, shownEditedAt: null, hidden: hiddenVersions.has(e.id),
       }));
-      return [{ ...publicAct(original), currentPayload: original.payload, editedAt: null, shownEditedAt: null }, ...versions];
+      return [{ ...publicAct(original), currentPayload: publicPayload(original.payload, hiddenVersions.has(id)), editedAt: null, shownEditedAt: null, hidden: hiddenVersions.has(id) }, ...versions];
     },
     spunFrom: (act, limit = SPUN_FROM_MAX) => [...threads.values()].filter((t) => t.origin === act).sort((a, b) => a.at - b.at).slice(0, limit).map(summary),
     spunFromMany(ids, limit) {
@@ -3015,6 +3044,33 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const failed = conductFailed.map(({ atMs: _at, ...m }): FailedMail => m);
       return { reports, reviews, failed, waiting: conductAddress ? 0 : conductWaiting, addressSet: conductAddress };
     },
+    reportPost: lossy((version: Id, section: string, note: string): Answer<null> => {
+      const account = me()?.id;
+      if (account === undefined) return refuse('sign in with an account first');
+      const open = conductReports.filter((r) => r.reporter === account && !conductDecisions.some((d) => d.report === r.id)).length;
+      if (open >= CONDUCT_OPEN_MOST) return { ok: false, error: `you have ${open} reports open, the most an account can; an admin will close one`, field: REPORT_LIMIT };
+      const target = acts.get(version);
+      if (target === undefined || (target.kind !== 'post' && target.kind !== 'edit')) return refuse('a report names a post or an edit');
+      if (section.trim() === '') return refuse('that is not a section of the code of conduct');
+      const said = note.trim();
+      if ([...said].length > 1000) return refuse('a note is at most 1000 characters');
+      conductReports.push({ id: conductNextId++, version, section, note: said === '' ? null : said, at: now(), reporter: account });
+      return ok(null);
+    }),
+    myOpenReports() {
+      const account = me()?.id;
+      return account === undefined ? null : conductReports.filter((r) => r.reporter === account && !conductDecisions.some((d) => d.report === r.id)).length;
+    },
+    myHiddenVersion(post) {
+      const found = acts.get(post);
+      const p = found?.kind === 'edit' && found.target !== null ? acts.get(found.target) : found;
+      const owner = p?.character == null ? null : characters.get(p.character)?.owner;
+      if (p === undefined || p.kind !== 'post' || owner === undefined || owner === null || owner !== me()?.id) return null;
+      const cur = edits(p).at(-1) ?? p;
+      const how = hiddenVersions.get(cur.id);
+      if (how === 'hideUntilEdited') return { status: 'hiddenUntilEdited', version: cur.id, words: String(cur.payload['body'] ?? '') };
+      return how === 'waiting' ? { status: 'waiting', version: cur.id, words: String(cur.payload['body'] ?? '') } : null;
+    },
     decideReport(report, outcomes) {
       if (!me()?.admin) return refuse('only an admin decides a report');
       const r = conductReports.find((x) => x.id === report);
@@ -3436,9 +3492,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     conductReport(r) {
       const id = conductNextId++;
       if (!acts.has(r.version)) throw new Error(`no such act ${r.version}`);
-      conductReports.push({ id, version: r.version, section: r.section, note: r.note ?? null, at: r.at ?? now() });
+      conductReports.push({ id, version: r.version, section: r.section, note: r.note ?? null, at: r.at ?? now(), ...(r.reporter === undefined ? {} : { reporter: r.reporter }) });
       return id;
     },
+    hide(version, how) { if (!acts.has(version)) throw new Error(`no such act ${version}`); hiddenVersions.set(version, how); },
     conductReview(r) { conductReviews.push({ decision: conductNextId++, post: r.post, version: r.version ?? r.post, words: r.words, at: r.at ?? now() }); },
     failedMail(m) { conductFailed.push({ id: conductNextId++, account: m.account, template: m.template, kind: m.kind, error: m.error, at: iso(m.at ?? now()), atMs: m.at ?? now() }); },
     mailWaiting(n) { conductWaiting = n; conductAddress = false; },
@@ -3467,6 +3524,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (character === null) return systemAct(thread, o, body).id;
       const made = accepted(asAt(ownerOf(character), o.at, () => post(thread, character, body, o.quote ?? null)));
       return made.id;
+    },
+    edit(post, character, body, o = {}) {
+      accepted(asAt(ownerOf(character), o.at, () => edit(post, character, body)));
+      return edits(acts.get(post)!).at(-1)!.id;
     },
     react(account, character, act, kind) { accepted(as(account, () => react(act, character, kind))); },
     settle(o) {
