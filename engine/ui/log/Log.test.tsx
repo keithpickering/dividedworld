@@ -443,6 +443,20 @@ describe('My log', () => {
     expect(screen.queryByText(/Nothing here yet|Nothing on these pages/u)).toBeNull();
   });
 
+  test('with the characters unread and settlements read that show no line, it says so with Try again, not that nothing is here', async () => {
+    const fake = buildWorld();
+    const me = fake.seed.account('me');
+    const pipe = fake.seed.character(me, 'Pipewrench', 'heel', { at: at(2) });
+    fake.seed.settle({ at: at(28, 8, 17), debut: false, ledger: [{ character: pipe, reason: 'heel.drewHeat', amount: 50 }] });
+    fake.signInAs(me);
+    const page = await fake.logPage(null);
+    vi.spyOn(fake, 'logPage').mockResolvedValue({ ...page, log: { ...page.log, settlements: page.log.settlements.map((x) => ({ ...x, lines: [] })), wallet: [], saves: [] }, turns: [] });
+    vi.spyOn(fake, 'myCharacters').mockRejectedValue(new Error('down'));
+    renderIn(fake, <LoadedLog />, { path: '/log' });
+    expect(await screen.findByText('Your characters couldn\'t be loaded.')).toBeInTheDocument();
+    expect(screen.queryByText(/Nothing on these pages/u)).toBeNull();
+  });
+
   test('signed out, asks the player to sign in and reads nothing', async () => {
     const { fake, me, pipe } = world();
     fake.signInAs(null);

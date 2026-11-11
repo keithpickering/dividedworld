@@ -16,7 +16,7 @@ import { words } from '../../rules/pronouns.ts';
 import { rankIndex } from '../../rules/ranks.ts';
 import { useKayfa } from '../context.tsx';
 import { LOST_ANSWER, type Character, type MyCharacter } from '../data/api.ts';
-import { STALE_PAGE } from './reveal.ts';
+import { readBack, STALE_PAGE } from './readBack.ts';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { Overlay } from '../glass/Overlay.tsx';
 import { usePlayer } from '../player.tsx';
@@ -82,7 +82,7 @@ export function TurnDialog({ character, face, standing, nextSettlement, onClose,
     }
     if (!answer.ok) { setRefusal(answer.error); setBusy(false); return; }
     /* Written: the dialog ends, so the button stays busy and a second press cannot send a second Turn. */
-    const fresh = await refresh();
+    const fresh = await readBack(refresh);
     onDone(`${character.name}'s Turn is waiting for the next settlement.${fresh ? '' : STALE_PAGE}`);
   };
 

@@ -12,7 +12,7 @@ import { FormFoot } from '../glass/FormFoot.tsx';
 import { Overlay } from '../glass/Overlay.tsx';
 import { usePlayer } from '../player.tsx';
 import { DebutChoice } from './DebutChoice.tsx';
-import { STALE_PAGE } from './reveal.ts';
+import { readBack, STALE_PAGE } from './readBack.ts';
 import { debutFooter } from './footers.ts';
 import { untilWords } from './format.ts';
 import './characters.css';
@@ -52,7 +52,7 @@ export function DebutDialog({ character, timing, nextSettlement = null, onClose,
     }
     if (!answer.ok) { setRefusal(answer.error); setBusy(false); return; }
     /* Written: the dialog ends, so the button stays busy and a second press cannot send a second one. */
-    const fresh = await refresh();
+    const fresh = await readBack(refresh);
     onDone((drop ? `${character.name} has debuted.` : `${character.name} will debut at the next settlement, as you chose.`) + (fresh ? '' : STALE_PAGE));
   };
 

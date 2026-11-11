@@ -232,6 +232,32 @@ describe('from the Task 3 quality review: an account switch, a failed read', () 
     await waitFor(() => expect(answers).toEqual([false, true]));
     expect(screen.getByTestId('failed').textContent).toBe('false');
   });
+  test('overlapping refreshes: the latest call decides, so an earlier one failing late changes nothing', async () => {
+    let calls = 0;
+    let failFirst!: () => void;
+    const { api } = stubApi({
+      myCharacters: async () => {
+        calls += 1;
+        if (calls === 1) return [char('a')];
+        if (calls === 2) return new Promise<never>((_, reject) => { failFirst = () => reject(new Error('late')); });
+        return [char('z')];
+      },
+    });
+    let answers: boolean[] = [];
+    function Seq() {
+      const p = usePlayer();
+      return <div><span data-testid="ids">{p.characters.map((c) => c.id).join(',')}</span><span data-testid="failed">{String(p.charactersFailed)}</span><button onClick={() => void p.refresh().then((ok) => { answers = [...answers, ok]; })}>go</button></div>;
+    }
+    render(<PlayerProvider api={api}><Seq /></PlayerProvider>);
+    await waitFor(() => expect(screen.getByTestId('ids').textContent).toBe('a'));
+    await act(async () => { screen.getByText('go').click(); });
+    await act(async () => { screen.getByText('go').click(); });
+    await waitFor(() => expect(screen.getByTestId('ids').textContent).toBe('z'));
+    await act(async () => { failFirst(); });
+    await waitFor(() => expect(answers).toContain(false));
+    expect(screen.getByTestId('ids').textContent).toBe('z');
+    expect(screen.getByTestId('failed').textContent).toBe('false');
+  });
   test('signing in is not "loaded" until the player\'s rows have come', async () => {
     let release: () => void = () => {};
     const gate = new Promise<void>((r) => { release = r; });

@@ -144,11 +144,14 @@ export function PlayerProvider({ api, initial, children }: { readonly api: Kayfa
   const current = useRef<Id | null>(null);
   current.current = account;
 
+  /* Each call is numbered: an earlier read landing after a later one changes nothing, and answers as the later one's rows stand. */
+  const calls = useRef(0);
   const refresh = useCallback(async (): Promise<boolean> => {
     if (!account) return true;
+    const mineCall = ++calls.current;
     try {
       const [chars, w, hand] = await Promise.all([api.myCharacters(), api.wallet(), api.myCards()]);
-      if (current.current !== account) return true;
+      if (current.current !== account || calls.current !== mineCall) return true;
       const seen = store.get(`kb-wallet-seen:${account}`);
       setHeld({
         for: account, characters: chars, wallet: w, cards: hand, loaded: true, failed: false,
@@ -158,7 +161,7 @@ export function PlayerProvider({ api, initial, children }: { readonly api: Kayfa
       return true;
     } catch {
       /* The rows as they were: the next action or page asks again. Loading still ends, so the HUD is never blank. */
-      if (current.current === account) setHeld((h) => ({ ...(h.for === account ? h : emptyFor(account)), loaded: true, failed: true }));
+      if (current.current === account && calls.current === mineCall) setHeld((h) => ({ ...(h.for === account ? h : emptyFor(account)), loaded: true, failed: true }));
       return false;
     }
   }, [api, account]);

@@ -37,6 +37,7 @@ import { ClassChip } from './ClassChip.tsx';
 import { DebutDialog } from './DebutDialog.tsx';
 import { Portrait } from './Portrait.tsx';
 import { dayAndTime, figure, inDays, spanWords } from './format.ts';
+import { readBack } from './readBack.ts';
 import { RevealOverlay } from './RevealOverlay.tsx';
 import { TurnDialog } from './TurnDialog.tsx';
 import './characters.css';
@@ -160,7 +161,7 @@ function Roster({ page }: { readonly page: MyCharactersPage }) {
     try {
       const answer = await api.withdrawTurn(c.id);
       if (!answer.ok) { setProblem({ id: c.id, text: answer.error }); return; }
-      await player.refresh();
+      await readBack(player.refresh);
       reload();
       setFlash(`${c.name}'s Turn is withdrawn.`);
       setRefocus({ id: c.id, was: page });
@@ -209,7 +210,7 @@ function Roster({ page }: { readonly page: MyCharactersPage }) {
       if (!answer.ok) { setProblem({ id: c.id, text: answer.error, pip: true }); return; }
       /* Saved: the select and the HUD's mark follow the characters read again (a read that fails keeps them, and says so). */
       reload();
-      if (!(await player.refresh())) setProblem({ id: c.id, text: 'Saved, but this page could not read it back. Reload to see it.', pip: true });
+      if (!(await readBack(player.refresh))) setProblem({ id: c.id, text: 'Saved, but this page could not read it back. Reload to see it.', pip: true });
     } catch {
       setProblem({ id: c.id, text: 'That could not be sent. Check your connection and try again.', pip: true });
     } finally {

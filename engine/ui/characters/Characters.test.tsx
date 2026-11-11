@@ -6,6 +6,7 @@ import { Page } from '../glass/Page.tsx';
 import { usePlayer } from '../player.tsx';
 import { PRONOUN_PRESETS } from '../../rules/pronouns.ts';
 import type { Instance } from '../../rules/types.ts';
+import { LOAD_LIMIT_MS } from '../router.tsx';
 import { buildWorld, holdReads, renderIn, testInstance } from '../test-world.tsx';
 import { LoadedCharacters } from '../loaded.tsx';
 import { Characters } from './Characters.tsx';
@@ -1628,5 +1629,23 @@ describe('a write that landed while its refresh is still out', () => {
     release();
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(setDebut).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('a read-back that never answers', () => {
+  test('a Turn ends after the limit with the done line and the stale sentence, not held forever', async () => {
+    const w = world();
+    open(w);
+    await ready();
+    await userEvent.click(within(row('Pipewrench')).getByRole('button', { name: 'Turn Pipewrench' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Turn Pipewrench' });
+    await userEvent.click(within(dialog).getByRole('radio', { name: /^Heel/u }));
+    vi.spyOn(w.fake, 'wallet').mockImplementation(() => new Promise(() => {}));
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Confirm Turn' }));
+    await vi.advanceTimersByTimeAsync(LOAD_LIMIT_MS - 1000);
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    await vi.advanceTimersByTimeAsync(2000);
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(screen.getByRole('status')).toHaveTextContent("Pipewrench's Turn is waiting for the next settlement. This page may be out of date until you reload it.");
   });
 });

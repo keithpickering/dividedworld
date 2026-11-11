@@ -10,12 +10,10 @@ import { LOST_ANSWER, type Id, type MyCharacter } from '../data/api.ts';
 import { words } from '../../rules/pronouns.ts';
 import { usePlayer } from '../player.tsx';
 import { withArticle } from './format.ts';
+import { readBack, STALE_PAGE } from './readBack.ts';
 
 /** The most characters of the character's own words, as the server holds them (0027_unmask.sql). */
 export const MAX = 200;
-
-/** Added to a done line when the write landed and the player's rows could not be read again. */
-export const STALE_PAGE = ' This page may be out of date until you reload it.';
 
 /** The dialog's own words, which both shells show. */
 export function revealWords(character: MyCharacter, className: string, gameWord: string) {
@@ -55,7 +53,7 @@ export function useReveal(character: MyCharacter) {
     }
     if (!answer.ok) { setRefusal(answer.error); setBusy(false); return { ok: false }; }
     /* Written: the dialog ends, so the button stays busy and a second press cannot send a second reveal. */
-    const fresh = await refresh();
+    const fresh = await readBack(refresh);
     return { ok: true, done: `${character.name} revealed as ${className} in ${threadTitle}.${fresh ? '' : STALE_PAGE}` };
   };
 
