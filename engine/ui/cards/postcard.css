@@ -81,7 +81,7 @@ button.kb-postcard {
   position: absolute;
   left: 0;
   bottom: 0;
-  width: 15cqw;
+  width: 9cqw;
   aspect-ratio: 1;
   border-bottom-left-radius: var(--kb-pc-radius);
   background: linear-gradient(45deg, var(--kb-card-color) 0 50%, var(--kb-glass-ground) 50% 100%);
