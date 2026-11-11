@@ -410,7 +410,7 @@ const WRITES: ReadonlySet<string> = new Set(Object.keys({
   moveSlot: true, saveMachine: true, intercept: true, fileReport: true, fileAppeal: true, markRead: true, setPresenceHidden: true,
   setPreferences: true, meetCard: true, seeWelcome: true, seeTip: true, skipTips: true, resumeTips: true, restoreTips: true, replayTour: true,
   seeAlerts: true, donate: true, seeSettlement: true, follow: true, createInvite: true, reissueInvite: true, startThread: true, post: true, edit: true, spin: true,
-  apologize: true, buyCard: true, buyPack: true, playCard: true, setCard: true, takeBack: true, useCard: true, releaseEffect: true, saveEffect: true,
+  apologize: true, buyCard: true, buyPack: true, playCard: true, setCard: true, takeBack: true, useCard: true, releaseEffect: true, saveEffect: true, draw: true, wash: true,
   react: true, turn: true, withdrawTurn: true, unmask: true, createCharacter: true, setDebut: true, setProfile: true, setAvatar: true,
 } satisfies Record<WriteName, true>));
 /** The methods that are not a promise of something: everything else is made one. */
