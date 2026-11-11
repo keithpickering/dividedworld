@@ -1,4 +1,4 @@
--- What settlement_input and estimate_input send for the three card types (supabase/migrations/0146_card_types.sql; docs/plans/2026-11-11-card-types-design.md, sections 3 and 5; plan Task 4):
+-- What settlement_input and estimate_input send for the three card types (supabase/migrations/0147_card_types.sql; docs/plans/2026-11-11-card-types-design.md, sections 3 and 5; plan Task 4):
 -- `by` on a spring (the Act that sprang it), `ends` on a use card's play and `on` on a character-reach play, and every live Earn Gimmick play that reaches into the window even when it
 -- was played before it (settle.ts boosts only with the play present in the input). A play an admin ended, one that ended before the window and one that is no Earn card are not carried over.
 -- Dates are in the fixtures' first season (2000), so the windows are this file's own. The cards are this file's own (se...).

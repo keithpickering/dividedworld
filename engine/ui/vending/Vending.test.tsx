@@ -172,9 +172,44 @@ describe('the info button on each card\'s slot', () => {
     open(seeded(562));
     fireEvent.click(await screen.findByRole('button', { name: 'About Whoops!' }));
     const dialog = screen.getByRole('dialog', { name: 'Whoops!' });
-    expect(within(dialog).getByText('A Salty card. Splats a post in your ink.')).toBeInTheDocument();
+    /* The face's plate holds the summary, which a card with no summary of its own draws as its rules: the rules' own line is the one read. */
+    expect(dialog.querySelector('.kb-vending-about-says')).toHaveTextContent('A Salty card. Splats a post in your ink.');
     expect(within(dialog).queryByText('A Sweet card. Holds each reader on a post.')).toBeNull();
     expect(within(dialog).getByRole('button', { name: 'Close' })).toBeInTheDocument();
+  });
+
+  test('it is the card\'s info: its face at the sheet\'s size, the slot and kind over the title, and the price in words', async () => {
+    open(seeded(562));
+    fireEvent.click(await screen.findByRole('button', { name: 'About Whoops!' }));
+    const dialog = screen.getByRole('dialog', { name: 'Whoops!' });
+    /* The face is the Postcard at the sheet's size, an article, beside the rules and never an image of its own. */
+    const face = dialog.querySelector('.kb-postcard[data-kb-card="whoops"]');
+    expect(face).not.toBeNull();
+    expect(face).toHaveAttribute('data-size', 'sheet');
+    expect(face!.tagName).toBe('ARTICLE');
+    /* The title is the dialog's heading; the slot's code and the card's kind (the instance's word for how it is played) are over it. */
+    expect(within(dialog).getByRole('heading', { name: 'Whoops!' })).toBeInTheDocument();
+    expect(within(dialog).getByText('Slot A2 · Cast')).toBeInTheDocument();
+    /* Its price in words, and a long post's extra said, never a bare "1.00+". */
+    expect(dialog.querySelector('.kb-vending-about-price')).toHaveTextContent(/^1\.00 to buy · more to play on a long post$/u);
+    expect(dialog.textContent).not.toContain('1.00+');
+  });
+
+  test('the card info\'s title is the large display size (the play form\'s), and the medium one on the phone (the boards draw 60px and 40px)', () => {
+    const css = readFileSync('engine/ui/vending/vending.css', 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+    const rule = (selector: string) => css.match(new RegExp(`${selector.replace(/[.[\]()':=-]/g, '\\$&')}\\s*\\{([^}]*)\\}`))?.[1] ?? '';
+    expect(rule('.kb-vending-about-dialog--card .kb-glass-dialog-head')).toMatch(/font-size:\s*var\(--kb-glass-size-display-l\)/);
+    expect(rule(":where(:root[data-kb-layout='phone']) .kb-vending-about-dialog--card .kb-glass-dialog-head")).toMatch(/font-size:\s*var\(--kb-glass-size-display-m\)/);
+  });
+
+  test('a card whose play costs nothing more says its price alone', async () => {
+    open(seeded(562));
+    fireEvent.click(await screen.findByRole('button', { name: 'About Stick Around' }));
+    const dialog = screen.getByRole('dialog', { name: 'Stick Around' });
+    expect(dialog.querySelector('.kb-vending-about-price')).toHaveTextContent(/^1\.00 to buy$/u);
+    expect(dialog.textContent).not.toContain('long post');
+    expect(within(dialog).getByText('Slot A1 · Cast')).toBeInTheDocument();
+    expect(dialog.querySelector('.kb-postcard[data-kb-card="stick"]')).toHaveAttribute('data-size', 'sheet');
   });
 
   test('Close puts focus back on the info button', async () => {
@@ -659,6 +694,44 @@ describe('the machine\'s slots, from the machine', () => {
     expect(await screen.findByRole('button', { name: 'Whoops!, sold out: pulled by the Boss until Nov 9' })).toHaveAttribute('aria-disabled', 'true');
     const moves = await screen.findByRole('region', { name: 'The Boss\'s moves' });
     expect(moves).toHaveTextContent(`Whoops! is pulled until Nov 9, or sooner if its demand is met: 12 different characters to post in ${board!.name} (7 of 12 so far). It still comes in Boosters.`);
+  });
+
+  test('a sold out slot\'s card info says what its chip says in place of a price to buy, and keeps the face and the rules', async () => {
+    const fake = stockedWorld(562);
+    fake.seed.slot({ card: 'stick' }, { availability: 'soldOut' });
+    openStocked(fake);
+    fireEvent.click(await screen.findByRole('button', { name: 'About Stick Around' }));
+    const dialog = screen.getByRole('dialog', { name: 'Stick Around' });
+    expect(dialog.querySelector('.kb-vending-about-price')).toHaveTextContent(/^Sold out$/u);
+    expect(dialog.textContent).not.toContain('to buy');
+    expect(dialog.querySelector('.kb-postcard[data-kb-card="stick"]')).not.toBeNull();
+    expect(dialog.querySelector('.kb-vending-about-says')).not.toBeEmptyDOMElement();
+  });
+
+  test('a pulled slot\'s card info says it was pulled and until when', async () => {
+    const fake = stockedWorld(562);
+    fake.seed.slot({ card: 'whoops' }, {
+      availability: 'soldOut',
+      move: { kind: 'pullSlot', act: 'a2', ends: '2026-11-09T12:00:00Z', was: 100, percent: null, hours: null, demand: null, progress: null },
+    });
+    openStocked(fake);
+    fireEvent.click(await screen.findByRole('button', { name: 'About Whoops!' }));
+    const dialog = screen.getByRole('dialog', { name: 'Whoops!' });
+    expect(dialog.querySelector('.kb-vending-about-price')).toHaveTextContent(/^Pulled by the Boss until Nov 9$/u);
+    expect(dialog.textContent).not.toContain('to buy');
+  });
+
+  test('a price the Boss moved is said as the current price in words, with no struck old price and no "+"', async () => {
+    const fake = stockedWorld(562);
+    fake.seed.slot({ card: 'trap' }, { price: 225, move: { kind: 'repriceSlot', act: 'a1', ends: '2026-11-08T20:00:00Z', demand: null, progress: null, was: 150, percent: 150, hours: null } });
+    openStocked(fake);
+    fireEvent.click(await screen.findByRole('button', { name: 'About Trap Card' }));
+    const dialog = screen.getByRole('dialog', { name: 'Trap Card' });
+    const price = dialog.querySelector('.kb-vending-about-price')!;
+    expect(price.textContent).toMatch(/^2\.25 to buy/u);
+    expect(dialog.querySelector('s')).toBeNull();
+    expect(dialog.textContent).not.toContain('1.50');
+    expect(dialog.textContent).not.toContain('+');
   });
 
   test('a flash sale and a markup are each worded plainly, and a machine with no move in force has no Boss\'s moves', async () => {

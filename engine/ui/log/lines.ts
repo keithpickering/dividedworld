@@ -42,7 +42,9 @@ export type LineKind = 'estimate' | 'settlement' | 'turn' | 'rank' | 'bought' | 
   /* The Mod Bots design, sections 5 to 9: warn points filed, a ban, a report made and an appeal made, each of the player's own characters. */
   | 'infraction' | 'ban' | 'report' | 'appeal' | 'bribe'
   /* Member groups, Task 11: a staff move into a group, how it ended and an appeal's ruling on it. */
-  | 'grouped';
+  | 'grouped'
+  /* The aura-grant design, section 2: an admin gave the player Aura (docs/plans/2026-11-08-aura-grant-design.md). */
+  | 'grant';
 
 /** One row of the log. */
 export interface LogRow {
@@ -361,10 +363,28 @@ export function logRows(data: LogData, words: Words, cap: number, tab: Id | null
   rows.push(...cardRows(data, words).filter((r) => inTab(r.characters)));
   rows.push(...modRows(data, words).filter((r) => inTab(r.characters)));
   rows.push(...groupRows(data, words).filter((r) => inTab(r.characters)));
+  rows.push(...grantRows(data).filter((r) => inTab(r.characters)));
 
-  const ORDER: Record<LineKind, number> = { estimate: 0, settlement: 1, turn: 2, rank: 3, bought: 4, pack: 4, played: 4, onMine: 4, saved: 4, set: 4, sprung: 4, payout: 4, setEnded: 4, caught: 4, struck: 4, gimmickEnded: 4, ended: 4, infraction: 4, ban: 4, report: 4, appeal: 4, bribe: 4, grouped: 4 };
+  const ORDER: Record<LineKind, number> = { estimate: 0, settlement: 1, turn: 2, rank: 3, bought: 4, pack: 4, played: 4, onMine: 4, saved: 4, set: 4, sprung: 4, payout: 4, setEnded: 4, caught: 4, struck: 4, gimmickEnded: 4, ended: 4, infraction: 4, ban: 4, report: 4, appeal: 4, bribe: 4, grouped: 4, grant: 4 };
   rows.sort((a, b) => micros(b.at) - micros(a.at) || ORDER[a.kind] - ORDER[b.kind]);
   return [...estimateRows(data, words, tab), ...rows];
+}
+
+/**
+ * An admin's grant (docs/plans/2026-11-08-aura-grant-design.md, section 2): the wallet's own event of kind `grant`, in plain and true words. It belongs to the account, so it is in every tab,
+ * and it says how much of it the wallet's cap held back.
+ */
+function grantRows(data: LogData): LogRow[] {
+  const rows: LogRow[] = [];
+  for (const w of data.log.wallet) {
+    if (w.kind !== 'grant') continue;
+    rows.push({
+      key: `grant:${w.at}`, kind: 'grant', at: w.at, what: 'An admin gave you Aura',
+      details: [`An admin gave you ${plain(w.change)} Aura.${w.overflow > 0 ? ` ${plain(w.overflow)} more didn't fit under your wallet's cap.` : ''}`],
+      aura: w.change, wallet: w.balanceAfter, characters: [],
+    });
+  }
+  return rows;
 }
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;

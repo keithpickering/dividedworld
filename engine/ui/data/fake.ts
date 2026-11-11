@@ -1373,7 +1373,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     /* A live catching set card that names this very card, whatever its rarity, catches the play and takes it (spring_traps): the spring is written first, as the server writes it. */
     const trap = liveBack(target);
     const trapRules = trap ? instance.cards.find((c) => c.key === trap.card) : undefined;
-    /* It catches the card it names, or one its match holds: the flavor in `flavors`, the rarity at or below `upTo` and at or below the back's own (spring_traps, 0146). */
+    /* It catches the card it names, or one its match holds: the flavor in `flavors`, the rarity at or below `upTo` and at or below the back's own (spring_traps, 0147). */
     const match = trapRules?.trap?.match;
     const matched = match !== undefined && (match.flavors === undefined || match.flavors.includes(rules.alignment)) && (match.upTo === undefined || atOrBelow(rules.rarity, match.upTo)) && atOrBelow(rules.rarity, trapRules!.rarity);
     const catches = trap && trapRules?.trap?.trigger.on === 'cast' && (faceDown.get(trap.set)!.catches === card || matched) && ownerOf(acts.get(trap.set)!.character!) !== undefined;
@@ -1413,11 +1413,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     for (const [set, f] of faceDown) if (f.post === post && f.sprung === null && f.takenBack === undefined && f.endsAt > now()) return { set, card: f.card };
     return null;
   }
-  /** The account's backs whose time passed unsprung and not taken back: their cards are in the hand again (card_held, 0146), read and never written. */
+  /** The account's backs whose time passed unsprung and not taken back: their cards are in the hand again (card_held, 0147), read and never written. */
   const endedBacks = (account: Id) => [...faceDown.values()].filter((f) => f.account === account && f.sprung === null && f.takenBack === undefined && f.endsAt <= now() && f.refunded !== true);
   /** What the account holds of a card: bought, pulled, caught and returned, less played, and the backs whose time passed. */
   const heldOf = (account: AccountRec, card: string): number => (account.cards[card] ?? 0) + endedBacks(account.id).filter((f) => f.card === card).length;
-  /** A back whose time passed unsprung and not taken back shows as a `returned` line at its end, with no Act and no price (my_card_ledger, 0146). */
+  /** A back whose time passed unsprung and not taken back shows as a `returned` line at its end, with no Act and no price (my_card_ledger, 0147). */
   const endedLedger = () => [...faceDown.values()].filter((f) => f.sprung === null && f.takenBack === undefined && f.endsAt <= now())
     .map((f) => ({ account: f.account, order: 0, ms: f.endsAt, event: { card: f.card, kind: 'returned' as const, act: null, price: 0, at: iso(f.endsAt) } satisfies CardEvent }));
   /** Before a card is spent: each back whose time passed becomes a card in the hand, once. */
@@ -1459,7 +1459,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     let thread: Id;
     let on: Id | null;
     let above: EffectsAbove;
-    /* A use card never goes on a board, before the board is looked for (place_cast, 0146). */
+    /* A use card never goes on a board, before the board is looked for (place_cast, 0147). */
     if (play === 'use' && reach === 'board') return refuse(`${rules.name} is never used on a board`);
     if (reach === 'character') {
       if (!characters.has(target)) return refuse('there is no such character', 'target');
@@ -1473,7 +1473,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       thread = target;
       on = [...acts.values()].find((a) => a.thread === target && a.seq === 1)?.id ?? null;
       if (!on) return refuse('that thread has no post yet');
-      /* A use card on a thread is a match stipulation, so only on a thread the acting character started (place_cast, 0146), before the card's own rules are asked. */
+      /* A use card on a thread is a match stipulation, so only on a thread the acting character started (place_cast, 0147), before the card's own rules are asked. */
       if (play === 'use' && acts.get(on)?.character !== character) return refuse(`${rules.name} is used on a thread your own character started`);
       above = { board: reachEffects('board', boardOf(target)) };
     } else {
@@ -1539,7 +1539,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return ok(publicAct(written));
   }
 
-  /** take_back (0146): the setter's own live back goes back to the hand, free; every other back, and one that has ended, is refused in the same words. */
+  /** take_back (0147): the setter's own live back goes back to the hand, free; every other back, and one that has ended, is refused in the same words. */
   function takeBack(character: Id, set: Id): Answer<Act> {
     const bad = request({ action: 'takeBack', character, set });
     if (bad) return bad;

@@ -1,4 +1,4 @@
--- A ward Gimmick everywhere a card lands, and a Gimmick on one's own thread (supabase/migrations/0146_card_types.sql; docs/plans/2026-11-11-card-types-design.md,
+-- A ward Gimmick everywhere a card lands, and a Gimmick on one's own thread (supabase/migrations/0147_card_types.sql; docs/plans/2026-11-11-card-types-design.md,
 -- section 5; plan Task 3). A live ward Gimmick on a cast's own target (a post, a character or a thread) turns the cast away when the card's rarity is at or below
 -- its `upTo`, its printed flavor is in `flavors`, or its key is in `cards`, in the same words for every caster (cards.ts's wardWords); a Gimmick goes on a thread only if
 -- one of the caster's own characters started it, and never on a board. The cards are this file's own (gw...), never an instance's.

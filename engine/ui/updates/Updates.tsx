@@ -21,6 +21,7 @@ import { UPDATES_PAGE, type Id, type Update, type UpdatesPage } from '../data/ap
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { ENTERING, useEnterAdded } from '../glass/enter.ts';
 import { PageHead } from '../glass/PageHead.tsx';
+import { ScreenBody } from '../glass/ScreenBody.tsx';
 import { UpdateArticle } from './UpdateArticle.tsx';
 import { utcDay } from './time.ts';
 import { SignInPrompt, useIsAdmin } from '../mini.tsx';
@@ -158,7 +159,10 @@ export function Updates({ updates, open, more, onMore, paging = false, scope, en
               {writing && <WriteUpdate key={initial?.title ?? ''} onWritten={onWritten} initial={initial} />}
             </CalmRegion>
           )}
-          {current ? <Post key={current.act} update={current} seed={seed !== null && seed.act === current.act ? seed : null} /> : <CalmRegion as="p" className="kb-updates-empty">Nothing here yet. When the developers post an update, it is here, and in everyone&apos;s alerts.</CalmRegion>}
+          {/* Its place in the archive, newest first, so an older update arrives from below; `current` is always one of `updates`, and 0 stands for the empty archive. */}
+          <ScreenBody at={Math.max(0, updates.findIndex((u) => u.act === current?.act))} axis="y">
+            {current ? <Post key={current.act} update={current} seed={seed !== null && seed.act === current.act ? seed : null} /> : <CalmRegion as="p" className="kb-updates-empty">Nothing here yet. When the developers post an update, it is here, and in everyone&apos;s alerts.</CalmRegion>}
+          </ScreenBody>
         </div>
       </div>
     </div>
