@@ -3,9 +3,9 @@ import { join } from 'node:path';
 import { describe, mock, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { tokensOf, type Mode, type Tokens } from '../../../../engine/ui/contrast.ts';
-import { LIGHT_GRID, bandOf, shineIsReadable, toHex, toLinear, type Band, type Light } from '../../../../engine/ui/shine/band.ts';
+import { bandOf, shineIsReadable, toHex, toLinear, type Band, type Light } from '../../../../engine/ui/shine/band.ts';
 import { endJags } from './paper.ts';
-import { EDGE_HALF, FILM_MAX, GLOSS_ALPHA, filmAlpha, fibersAt, residueInk, type ResidueInk } from './residue.ts';
+import { EDGE_HALF, FILM_PEAK, GLOSS_ALPHA, filmAlpha, fibersAt, residueInk, type ResidueInk } from './residue.ts';
 
 const read = (p: string) => readFileSync(join(process.cwd(), p), 'utf8');
 /* Both boards' tokens: the engine's, then Divided World's theme over them. */
@@ -24,7 +24,7 @@ function composite(mode: Mode, light: Light, inkOf: (band: Band, light: Light) =
   const t: Tokens = tokens[mode];
   const ground = toHex(toLinear(t['--kb-bg']!));
   const ink = inkOf(bandOf(t), light);
-  const film = over(ground, ink.tint, FILM_MAX);
+  const film = over(ground, ink.tint, FILM_PEAK);
   return [film, over(film, ink.gloss, GLOSS_ALPHA), over(film, ink.gloss, 1)];
 }
 
@@ -43,18 +43,21 @@ describe('the residue stays readable', () => {
     assert.ok(failures.length > 0, 'an unclamped residue passed the band check');
   });
 
-  test('the tint and the gloss keep their hue under the clamp', () => {
-    const band = bandOf(tokens.dark);
-    const a = residueInk(band, { x: 0, y: 0 });
-    assert.notEqual(a.tint, a.gloss);
-    const [r, g, b] = rgb(a.tint) as [number, number, number];
-    assert.ok(r >= g && g >= b, `the tint ${a.tint} lost its warm order`);
+  test('the tint keeps the glue\'s amber hue and color under the clamp, on both boards', () => {
+    for (const mode of ['light', 'dark'] as const) {
+      const a = residueInk(bandOf(tokens[mode]), { x: 0, y: 0 });
+      assert.notEqual(a.tint, a.gloss);
+      const [r, g, b] = (rgb(a.tint) as [number, number, number]).map((c) => c / 255) as [number, number, number];
+      const hi = Math.max(r, g, b), lo = Math.min(r, g, b);
+      const hue = 60 * (((g - b) / (hi - lo) + 6) % 6); /* red is the highest channel for an amber */
+      assert.ok(hi === r && Math.abs(hue - 41) < 8, `${mode}: the tint ${a.tint} is at hue ${hue.toFixed(1)}, not amber`);
+      assert.ok((hi - lo) / hi > 0.3, `${mode}: the tint ${a.tint} went grey`);
+    }
   });
 
   test('the gloss moves with the light', () => {
     const band = bandOf(tokens.light);
     assert.notEqual(residueInk(band, { x: 0, y: 0 }).gloss, residueInk(band, { x: 1.5, y: 1.5 }).gloss);
-    assert.ok(LIGHT_GRID.length > 0);
   });
 });
 
@@ -112,6 +115,5 @@ describe('the film', () => {
     assert.ok(f.length >= 4 && f.length <= 8, String(f.length));
     assert.ok(f.every((s) => Math.abs(s.x0 - 40) <= 2.5 && s.y0 >= 1 && s.y0 <= H - 1));
     assert.notDeepEqual(f, fibersAt('k:1', 41, H));
-    assert.ok(GLOSS_ALPHA > 0);
   });
 });

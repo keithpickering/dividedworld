@@ -23,6 +23,8 @@ export const DENSITY = 2;
 export const EDGE_HALF = 0.45;
 /** What the edge line adds, as the bench strokes it: white at 0.9. */
 const EDGE_ALPHA = 0.9;
+/** The film's thickest, on the edge line: the band check composites at this. */
+export const FILM_PEAK = FILM_MAX + EDGE_ALPHA * (1 - FILM_MAX);
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 const smooth = (t: number) => t * t * (3 - 2 * t);
