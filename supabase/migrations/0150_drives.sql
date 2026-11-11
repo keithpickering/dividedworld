@@ -1,4 +1,4 @@
--- The draw and the drive (docs/plans/2026-11-03-jimmy-wails-design.md, section 4; plan docs/plans/2026-11-03-jimmy-wails-plan.md, Task 2).
+-- The draw and the drive, and gifts to a drive (docs/plans/2026-11-03-jimmy-wails-design.md, sections 1 to 4; plan docs/plans/2026-11-03-jimmy-wails-plan.md, Tasks 2 and 3).
 --
 --   1. the catalog         card_kinds gains `draws text[]` (the keys the server draws one of at each play) and `drive jsonb` ({lasts, gifts, overhead}).
 --   2. card_kinds_problem  refuses a bad draws or drive in the words of instanceProblems (engine/rules/instance.ts, drawProblems and driveProblems); the economy's numbers are read
@@ -7,9 +7,15 @@
 --   4. place_cast          the draw (`drawn`, never the caster's) and the drive: the first play opens one, later plays join it up to the card's stack, a full one refuses, a play after the close opens another.
 --   5. card_target         each drive play carries its `drive` and its `closes`.
 --   6. seed_instance       writes `draws` and `drive`.
+--   7. the gift's kind     acts_kind_check, acts_seq_check, acts_well_formed and acts_take_seq admit `donation` (an Act on a drive's opening play, payload {amount, overhead, arrives}, no seq); acts_donation_payload
+--                          holds its money; wallet_events_kind_check admits gift_out and gift_in; acts_donations indexes a drive's gifts.
+--   8. donate              the one write: the post's lock, the refusals, the split from the economy now, both wallets locked in account order, the Act, then the two moves. Service role only.
+--   9. drive_gifts, drive_gifts_page   a drive's total, count and donor wall, and the next 20; signed-in players read them.
+--  10. settlement_input, estimate_input   leave a gift out of every set they build.
 --
 -- Ways out: a drive closes by itself, `lasts` after its latest play, and a full drive refuses a play only until then; a refusal writes nothing and costs nothing.
--- Privacy: a drive's id, its plays and its close are public Acts' times; nothing here reads who owns a character or a hand.
+-- A gift is a finished Act with no state; a refused gift writes nothing and costs nothing.
+-- Privacy: a drive's id, its plays and its close are public Acts' times; nothing in 1 to 6 reads who owns a character or a hand. donate (8) reads the post author's account to credit it and answers with nothing of it.
 -- Each function below is copied from its latest definition (card_kinds_problem 0148, place_cast 0148, card_target 0148, seed_instance 0149), changing only what is named at it; lock order is place_cast's.
 
 -- ------------------------------------------------------------------------------------------------------- 1. the catalog ----
@@ -611,3 +617,509 @@ begin
     'reactions', (select count(*) from reaction_kinds), 'groups', (select count(*) from group_kinds), 'cards', (select count(*) from card_kinds), 'boards', (select count(*) from boards));
 end $$;
 
+
+-- ================================================================================================================ gifts (plan Task 3) ====
+
+-- ----------------------------------------------------------------------------------------------------- 7. the gift's kind ----
+
+-- A gift is a `donation` Act: written by the giving character, on the drive's opening play, with the payload {amount, overhead, arrives} in whole hundredths. It takes no seq (so it never bumps its thread's
+-- last_at or replies, and never counts as a post), and its Aura is two wallet events, `gift_out` and `gift_in`. acts_check1 (0104) needs no change: a donation is not among the kinds that point at nothing,
+-- so it must name its drive; acts_character_null (0105) needs none either: a donation has a character.
+alter table acts drop constraint acts_kind_check;
+alter table acts add constraint acts_kind_check check (kind in ('post', 'spin', 'card', 'edit', 'tally', 'reveal', 'unmask', 'move', 'move_end', 'move_keep', 'set', 'spring', 'update', 'card_end', 'announce', 'describe', 'infraction', 'ban',
+  'visit', 'visit_join', 'visit_end', 'report', 'report_verdict', 'intercept', 'appeal', 'appeal_ruling', 'take_back', 'donation'));
+
+alter table acts drop constraint acts_seq_check;
+alter table acts add constraint acts_seq_check check ((kind = 'edit') = (seq is null) or kind in ('card', 'set', 'spring', 'card_end', 'describe', 'infraction', 'ban', 'visit', 'visit_join', 'visit_end', 'report', 'report_verdict', 'intercept',
+  'appeal', 'appeal_ruling', 'take_back', 'donation'));
+
+-- A gift's money: three whole, non-negative hundredths, the amount above zero and exactly the overhead plus what arrives. Nothing else is in the payload, so no account and nothing of any wallet can be. The regexes
+-- guard the casts: the cast is only reached once all three are whole numbers that fit.
+alter table acts add constraint acts_donation_payload check (kind <> 'donation' or (
+  payload - 'amount' - 'overhead' - 'arrives' = '{}'::jsonb
+  and jsonb_typeof(payload -> 'amount') = 'number' and jsonb_typeof(payload -> 'overhead') = 'number' and jsonb_typeof(payload -> 'arrives') = 'number'
+  and case when payload ->> 'amount' ~ '^[1-9][0-9]{0,8}$' and payload ->> 'overhead' ~ '^(0|[1-9][0-9]{0,8})$' and payload ->> 'arrives' ~ '^(0|[1-9][0-9]{0,8})$'
+           then (payload ->> 'amount')::integer = (payload ->> 'overhead')::integer + (payload ->> 'arrives')::integer else false end) is true);
+
+alter table wallet_events drop constraint wallet_events_kind_check;
+alter table wallet_events add constraint wallet_events_kind_check check (kind in ('settlement', 'purchase', 'play', 'trap', 'trapSystem', 'report', 'refund', 'bribe', 'appeal', 'grant', 'gift_out', 'gift_in'));
+
+-- A drive's gifts, by drive and time: the donor wall and its pages (drive_gifts, drive_gifts_page) and the total are one range of this index for each drive.
+create index acts_donations on acts (target_act_id, created_at) where kind = 'donation';
+
+-- acts_well_formed (0148), refusing a gift that is not on a drive's opening play, in that play's thread. Everything else as 0148 wrote it.
+create or replace function acts_well_formed() returns trigger
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare t acts%rowtype;
+begin
+  if new.character is not null and coalesce(current_setting('kayfabb.staff_writer', true), '') <> 'on'
+     and exists (select 1 from characters c where c.id = new.character and c.staff is not null) then
+    raise exception 'a staff character acts only through the game''s own moves' using hint = 'kayfabb.refusal', errcode = '42501';
+  end if;
+  if new.kind in ('move', 'move_keep') and new.character is not null and not exists (select 1 from characters c where c.id = new.character and c.staff is not null) then
+    raise exception 'a % is a staff character''s Act', new.kind using hint = 'kayfabb.refusal', errcode = '42501';
+  end if;
+  if new.kind = 'move' then
+    if not exists (select 1 from move_kinds k where k.key = new.payload ->> 'kind') then
+      raise exception 'there is no move kind "%"', coalesce(new.payload ->> 'kind', '') using errcode = '23514';
+    end if;
+    if jsonb_typeof(new.payload -> 'demand') = 'object' and not exists (select 1 from demand_kinds d where d.key = new.payload #>> '{demand,kind}') then
+      raise exception 'there is no demand kind "%"', coalesce(new.payload #>> '{demand,kind}', '') using errcode = '23514';
+    end if;
+    if jsonb_typeof(new.payload -> 'demand') = 'object' and demand_params_problem(new.payload -> 'demand') is not null then
+      raise exception 'the demand''s params are malformed at %', demand_params_problem(new.payload -> 'demand') using errcode = '23514';
+    end if;
+    -- Cast once here, so an expiry that is no time is refused at the door and the readers of it never meet one.
+    if jsonb_typeof(new.payload -> 'expires_at') = 'string' then perform (new.payload ->> 'expires_at')::timestamptz; end if;
+  end if;
+  if new.kind = 'move_end' and coalesce(current_setting('kayfabb.move_end_writer', true), '') <> 'on' then
+    raise exception 'a move ends only through end_move' using hint = 'kayfabb.refusal', errcode = '42501';
+  end if;
+  if new.kind = 'card_end' and coalesce(current_setting('kayfabb.card_end_writer', true), '') <> 'on' then
+    raise exception 'a card ends only through reverse_card' using hint = 'kayfabb.refusal', errcode = '42501';
+  end if;
+  if new.character is not null and exists (select 1 from characters c where c.id = new.character and c.debuted_at is null) then
+    raise exception 'that character debuts at the next settlement' using hint = 'kayfabb.refusal', errcode = '55000';
+  end if;
+  if new.character is not null and exists (select 1 from characters c where c.id = new.character and c.retired_at is not null) then
+    raise exception 'that character is retired; an admin can restore it' using hint = 'kayfabb.refusal', errcode = '55000';
+  end if;
+  if new.kind = 'announce' then
+    if new.payload ->> 'what' is distinct from 'debut' and new.payload ->> 'what' is distinct from 'turn' then
+      raise exception 'an announcement is a debut or a Turn' using errcode = '23514';
+    end if;
+    if new.payload ->> 'what' = 'debut' and new.payload ? 'was' then
+      raise exception 'a debut has no class it was' using errcode = '23514';
+    end if;
+  end if;
+  if (new.kind = 'unmask' or (new.kind = 'announce' and new.payload ? 'class'))
+     and (new.payload ->> 'class') is distinct from (select class_key from class_now(new.character, new.created_at)) then
+    raise exception 'an % names the class its character holds', new.kind using errcode = '23514';
+  end if;
+  if new.target_act_id is null then return new; end if;
+  select * into t from acts where id = new.target_act_id;
+  if new.kind = 'move_end' and (t.kind <> 'move' or t.thread <> new.thread) then
+    raise exception 'a move_end is of a move, in its thread' using hint = 'kayfabb.refusal', errcode = '23514';
+  end if;
+  if new.kind = 'card_end' and (t.kind <> 'card' or t.thread <> new.thread) then
+    raise exception 'a card_end is of a card play, in its thread' using hint = 'kayfabb.refusal', errcode = '23514';
+  end if;
+  if new.kind = 'move_keep' then
+    if t.kind <> 'move' or t.thread <> new.thread then
+      raise exception 'a move_keep is of a move, in its thread' using hint = 'kayfabb.refusal', errcode = '23514';
+    end if;
+    if not exists (select 1 from open_moves o where o.move_act = t.id) then
+      raise exception 'only a move in force can be kept' using hint = 'kayfabb.refusal', errcode = '55000';
+    end if;
+    if (select c.staff from characters c where c.id = new.character) is distinct from current_boss() then
+      raise exception 'only the season''s Boss keeps a move' using hint = 'kayfabb.refusal', errcode = '42501';
+    end if;
+    if move_owner(t.id) is not distinct from current_boss() then
+      raise exception 'that move is already the Boss''s own' using hint = 'kayfabb.refusal', errcode = '55000';
+    end if;
+  end if;
+  if new.kind = 'edit' and (t.kind <> 'post' or t.character <> new.character or t.thread <> new.thread) then
+    raise exception 'an edit is of its own author''s post, in its thread' using hint = 'kayfabb.refusal', errcode = '23514';
+  end if;
+  if new.kind = 'card' and t.kind <> 'post' then
+    raise exception 'a card lands on a post' using hint = 'kayfabb.refusal', errcode = '23514';
+  end if;
+  -- A card set face down is its post's own author's, in the post's thread; a spring is its set's author's, on the set's post.
+  if new.kind = 'set' and (t.kind <> 'post' or t.character <> new.character or t.thread <> new.thread) then
+    raise exception 'a card is set face down on a post of its own author''s, in its thread' using hint = 'kayfabb.refusal', errcode = '23514';
+  end if;
+  if new.kind = 'spring' and (t.kind <> 'post' or t.thread <> new.thread or not exists (
+       select 1 from acts s where s.id::text = new.payload ->> 'set' and s.kind = 'set' and s.target_act_id = t.id and s.character = new.character)) then
+    raise exception 'a spring is of a card set face down on its post, by the one who set it' using hint = 'kayfabb.refusal', errcode = '23514';
+  end if;
+  -- A take-back is of a card set face down on the post it is on, by the one who set it, in the post's thread, while the back is live as of the take-back: not sprung, not taken back before (acts_one_take_back
+  -- holds that), and not past its time. The card's own account is read from face_down, never named in the Act.
+  if new.kind = 'take_back' and (t.kind <> 'post' or t.thread <> new.thread or not exists (
+       select 1 from acts s join face_down f on f.play = s.id
+       where s.id::text = new.payload ->> 'set' and s.kind = 'set' and s.target_act_id = t.id and s.character = new.character and f.ends_at > new.created_at
+         and not exists (select 1 from acts p where p.kind = 'spring' and (p.payload ->> 'set') = s.id::text))) then
+    raise exception 'a take-back is of a live card set face down on its post, by the one who set it' using hint = 'kayfabb.refusal', errcode = '23514';
+  end if;
+  -- A gift is on a drive's opening play, in the play's thread: a card play whose card has a drive and whose payload names the play as its own drive. Whether the drive is still open and the amounts are donate's to say.
+  if new.kind = 'donation' and (t.kind <> 'card' or t.thread <> new.thread or t.payload ->> 'drive' is distinct from t.id::text
+       or not exists (select 1 from card_kinds ck where ck.key = t.payload ->> 'card' and ck.drive is not null)) then
+    raise exception 'a gift is to a drive, the first play of a drive card' using hint = 'kayfabb.refusal', errcode = '23514';
+  end if;
+  if new.kind <> 'edit' and t.kind = 'edit' then
+    raise exception 'an edit is not answered; answer the post' using hint = 'kayfabb.refusal', errcode = '23514';
+  end if;
+  return new;
+end $$;
+
+-- acts_take_seq (0148), also leaving a gift out of its thread's seq. Everything else as 0148 wrote it.
+create or replace function acts_take_seq() returns trigger
+language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  if new.kind in ('edit', 'card', 'set', 'spring', 'card_end', 'describe', 'infraction', 'ban', 'visit', 'visit_join', 'visit_end', 'report', 'report_verdict', 'intercept', 'appeal', 'appeal_ruling', 'take_back', 'donation') then
+    new.seq := null;
+  else
+    -- On the right of an assignment a column is its old value: a post that takes a seq above 1 is a reply.
+    update threads set next_seq = next_seq + 1, last_at = greatest(last_at, new.created_at),
+                       replies = replies + case when new.kind = 'post' and next_seq > 1 then 1 else 0 end
+     where id = new.thread returning next_seq - 1 into new.seq;
+  end if;
+  return new;
+end $$;
+
+-- ------------------------------------------------------------------------------------------------------------ 8. donate ----
+
+-- donate(who, through, drive, amount): the player `who`, through their character `through`, gives `amount` hundredths to a drive. The Aura moves out of the giver's wallet, and the overhead (ceil(amount * pct / 100),
+-- engine/rules/cards.ts's giftSplit, pct read from the economy now) is lost; the rest arrives in the wallet of the account that owns the drive's post's author, where there is one. Called by the Edge Function with the
+-- service key, as play_card is; no API role executes it.
+--
+-- The order is the order of the locks: the drive's post (so a gift and a play that extends, fills or reopens the drive are ordered, as place_cast's plays are), the refusals that read only public facts, the author's
+-- account, both wallets in account order (spring_traps's Pay out), the giver's own balance under that lock, then the Act, then the two moves. Nothing is written before the last refusal.
+--
+-- Privacy ("A response never proves a private fact"): the author's account is read here and only here, to credit it. The answer is the gift as acts_public shows it and the giver's own balance after; it holds nothing of
+-- the author's wallet, and the author's overflow lands in the author's own wallet event alone. The Act carries no account. Every refusal reads the giver's own wallet or a public fact. A gift to one's own mask is not
+-- refused (that would be a refusal computed from who owns what): both moves land on the one wallet, out and then in, and it costs the overhead.
+create function donate(who uuid, through uuid, drive uuid, amount integer) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  opening acts%rowtype;
+  on_post acts%rowtype;
+  ck card_kinds%rowtype;
+  eco jsonb := coalesce((select s.value from settings s where s.key = 'economy' and jsonb_typeof(s.value) = 'object'), '{}'::jsonb);
+  closes timestamptz;
+  offered integer[];
+  pct numeric;
+  overhead integer;
+  arrives integer;
+  author_account uuid;
+  have integer;
+  gift uuid := gen_random_uuid();
+begin
+  perform played_by(through, who);
+  -- The drive: a card play whose payload names itself as its drive, of a card that has one. An Act is never changed, so reading it before the lock is reading it.
+  select * into opening from acts a where a.id = donate.drive and a.kind = 'card';
+  select * into ck from card_kinds k where k.key = opening.payload ->> 'card';
+  if opening.id is null or ck.drive is null or opening.payload ->> 'drive' is distinct from opening.id::text or coalesce(opening.payload ->> 'reach', 'post') <> 'post' then
+    raise exception 'that is not a drive' using hint = 'kayfabb.refusal', errcode = '22023';
+  end if;
+  -- The post's row, as place_cast locks it: a play and a gift on one post are laid one at a time, and what is read below is read after any play that was ahead of this gift.
+  select * into on_post from acts a where a.id = opening.target_act_id for no key update;
+  -- Open: the drive's latest play, plus the card's span, is still ahead (place_cast's own test of an open drive, through the one helper that says which plays make one).
+  select max(d.created_at) + span_interval(ck.drive -> 'lasts') into closes from drive_plays(on_post.id, opening.payload ->> 'card') d where d.drive = opening.id;
+  if closes is null or closes <= now() then raise exception 'this drive has ended' using hint = 'kayfabb.refusal', errcode = '55000'; end if;
+  -- The amounts the card offers, as the economy holds them now.
+  select array_agg(distinct (eco ->> g.k)::integer order by (eco ->> g.k)::integer) into offered
+  from jsonb_array_elements_text(case when jsonb_typeof(ck.drive -> 'gifts') = 'array' then ck.drive -> 'gifts' else '[]'::jsonb end) g(k)
+  where jsonb_typeof(eco -> g.k) = 'number' and (eco ->> g.k)::numeric = trunc((eco ->> g.k)::numeric) and (eco ->> g.k)::numeric >= 1;
+  if offered is null then raise exception 'this drive takes no gifts right now' using hint = 'kayfabb.refusal', errcode = '55000'; end if;
+  if donate.amount is null or not donate.amount = any (offered) then
+    raise exception 'a gift here is one of %', (select string_agg(to_char(o / 100.0, 'FM990.00'), ', ' order by o) from unnest(offered) o) using hint = 'kayfabb.refusal', errcode = '22023';
+  end if;
+  pct := case when jsonb_typeof(eco -> (ck.drive ->> 'overhead')) = 'number' then (eco ->> (ck.drive ->> 'overhead'))::numeric end;
+  if pct is null or pct < 0 or pct > 100 then raise exception 'this drive''s overhead is not set' using hint = 'kayfabb.refusal', errcode = '55000'; end if;
+  overhead := ceil(donate.amount * pct / 100)::integer;
+  arrives := donate.amount - overhead;
+  -- The post's author's account, read here to credit it and nowhere else. Staff hold no wallet, so a staff post's gift is all overhead.
+  select c.owner into author_account from characters c where c.id = on_post.character;
+  if author_account is null or is_staff_side(on_post.character, on_post.kind, on_post.id) then
+    author_account := null;
+    overhead := donate.amount;
+    arrives := 0;
+  end if;
+  -- Both wallets, in account order, so two gifts crossing each other's posts cannot wait on each other. The giver's balance is read under the lock: a refusal for a short wallet is the wallet as it is.
+  insert into wallets (account) select x from unnest(array[donate.who, author_account]) x where x is not null on conflict (account) do nothing;
+  perform 1 from wallets w where w.account in (donate.who, author_account) order by w.account for update;
+  select w.balance into have from wallets w where w.account = donate.who;
+  if have < donate.amount then raise exception 'your wallet holds less than that' using hint = 'kayfabb.refusal', errcode = 'P0001'; end if;
+
+  insert into acts (id, character, kind, thread, target_act_id, payload)
+  values (gift, donate.through, 'donation', opening.thread, opening.id, jsonb_build_object('amount', donate.amount, 'overhead', overhead, 'arrives', arrives));
+  -- After the Act, so each wallet event names the gift. The cap clamps what arrives and records what it cut off in the author's own event.
+  perform wallet_move(donate.who, -donate.amount, 'gift_out', null, gift);
+  if author_account is not null and arrives > 0 then perform wallet_move(author_account, arrives, 'gift_in', null, gift); end if;
+  return jsonb_build_object('gift', act_projection(gift), 'balance', (select w.balance from wallets w where w.account = donate.who));
+end $$;
+revoke execute on function donate(uuid, uuid, uuid, integer) from public, anon, authenticated;
+grant execute on function donate(uuid, uuid, uuid, integer) to service_role;
+
+-- ---------------------------------------------------------------------------------------------------------- 9. the reads ----
+
+-- drive_gifts(drives): for each drive asked, in the order asked, its total and its count of gifts and its latest 20 (giver character, amount, time). One range of acts_donations for each drive, and a drive's gifts are
+-- bounded by its givers' wallets. A drive nobody gave to, and an id that is no drive, are a row of zeros. Security invoker, reading acts (public, as every Act is) and nothing of any wallet: a gift's `arrives` and
+-- `overhead` are in the Act and are not shown here, only what was given.
+create function drive_gifts(drives uuid[]) returns jsonb
+language plpgsql stable security invoker set search_path = public, pg_temp as $$
+begin
+  if cardinality(drives) > 100 then raise exception 'ask for at most 100 drives at a time' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+  return coalesce((
+    select jsonb_agg(jsonb_build_object('drive', d.id, 'total', g.total, 'count', g.n, 'gifts', g.latest) order by d.ord)
+    from unnest(drives) with ordinality d(id, ord)
+    cross join lateral (
+      select coalesce(sum((a.payload ->> 'amount')::integer), 0)::integer as total, count(*)::integer as n,
+        coalesce((select jsonb_agg(jsonb_build_object('id', x.id, 'character', x.character, 'amount', (x.payload ->> 'amount')::integer, 'at', x.created_at) order by x.created_at desc, x.id desc)
+                  from (select l.id, l.character, l.payload, l.created_at from acts l where l.kind = 'donation' and l.target_act_id = d.id order by l.created_at desc, l.id desc limit 20) x), '[]'::jsonb) as latest
+      from acts a where a.kind = 'donation' and a.target_act_id = d.id
+    ) g), '[]'::jsonb);
+end $$;
+revoke execute on function drive_gifts(uuid[]) from public, anon;
+grant execute on function drive_gifts(uuid[]) to authenticated;
+
+-- drive_gifts_page(drive, before): a screen function (the name says so, and tools' screen guard holds it to a SQL-standard body reading acts_public): the next 20 gifts, those older than `before` (the `at` of the last one shown), newest first, and whether more follow. The wall's "and N more". Two gifts at the very same
+-- microsecond are not told apart by a time; each is its own transaction's, so they are not made at once.
+create function drive_gifts_page(drive uuid, before timestamptz) returns jsonb
+language sql stable security invoker set search_path = public, pg_temp
+begin atomic
+  select jsonb_build_object('gifts', coalesce(jsonb_agg(jsonb_build_object('id', x.id, 'character', x.character, 'amount', (x.payload ->> 'amount')::integer, 'at', x.created_at)
+                                                         order by x.created_at desc, x.id desc) filter (where x.n <= 20), '[]'::jsonb),
+                            'more', coalesce(bool_or(x.n > 20), false))
+  from (select l.id, l.character, l.payload, l.created_at, row_number() over (order by l.created_at desc, l.id desc) as n
+        from acts_public l where l.kind = 'donation' and l.target_act_id = drive_gifts_page.drive and l.created_at < drive_gifts_page.before
+        order by l.created_at desc, l.id desc limit 21) x;
+end;
+revoke execute on function drive_gifts_page(uuid, timestamptz) from public, anon;
+grant execute on function drive_gifts_page(uuid, timestamptz) to authenticated;
+
+-- ------------------------------------------------------------------------------------------------ 10. settlement_input and estimate_input ----
+
+-- settlement_input (0148), leaving a gift out of every set it builds: the window's Acts, the Acts a reaction touched (and with them the targets and everything read through them) and the reactions to one. What
+-- stayed as it was needed no change: the spins, first posts and the Lurker's and the halving's posts are read by kind `post`, and the targets, the earn plays and the cards on a reacted Act by kind `card`, `spin` or
+-- `spring`, so a donation is in none of them. Everything else as 0148 wrote it.
+create or replace function settlement_input(window_start timestamptz, window_end timestamptz) returns jsonb
+language sql stable security definer set search_path = public, pg_temp as $$
+  with
+  -- The plays an admin ended before the window's end (Task 3): out of this window, with the votes on them. `<` as every other bound
+  -- here is, so a card_end written at the instant window_end is after the window, as a vote written then is.
+  ended as (select e.target_act_id as id from acts e where e.kind = 'card_end' and e.created_at < window_end),
+  -- Every live Earn Gimmick play still up when the window opens, played before it (a play inside it is a window Act already): settle.ts boosts only with the play in the input, and an Earn play of an earlier window
+  -- is still up in this one. Live is not ended by an admin, not caught, and ending after the window's start; found by creation time, a window of the longest Earn `lasts` before the window, and each comes with its post.
+  earn_up as (
+    select k.id, case when coalesce(k.payload ->> 'reach', 'post') = 'post' then k.target_act_id end as post
+    from acts k join card_kinds ck on ck.key = k.payload ->> 'card'
+    where k.kind = 'card' and ck.play = 'use' and ck.gimmick ->> 'kind' = 'earn'
+      and k.created_at < window_start and k.created_at >= window_start - (select max(e.lasts) from card_kinds e where e.play = 'use' and e.gimmick ->> 'kind' = 'earn')
+      and coalesce(k.payload ->> 'reach', 'post') in ('post', 'character') and not (k.payload ? 'caught')
+      and (k.payload ->> 'ends')::timestamptz > window_start and k.id not in (select id from ended)),
+  -- The System's own Acts (the reveal) are no character's, and nobody's to settle; a staff character's
+  -- are The System's too (0043): staff earn nothing, and a card on a staff Act is nobody's to score.
+  -- A gift (a donation) is no one's to settle (design, section 5): it earns nothing, is never counted as posting or in the halving, and is no one's reaction to count. It is left out here, of the window's Acts and of
+  -- the reactions to one; `all_acts` leaves it out once more, since an Act a reaction touched is read whatever its kind.
+  win_acts as (select * from acts a where a.created_at >= window_start and a.created_at < window_end and a.character is not null and a.kind <> 'donation'
+               and not is_staff_side(a.character, a.kind, a.target_act_id) and a.id not in (select id from ended)),
+  win_reactions as (select * from reactions r where r.created_at >= window_start and r.created_at < window_end and r.act not in (select id from ended)
+                    and not exists (select 1 from acts d where d.id = r.act and d.kind = 'donation')),
+  reacted as (select distinct act from win_reactions),
+  earlier_reactions as (select r.* from reactions r join reacted x on x.act = r.act where r.created_at < window_start),
+  active_spun as (select distinct t.id from threads t join win_acts a on a.thread = t.id where t.origin_act_id is not null),
+  spins as (select a.* from acts a join active_spun t on t.id = a.thread where a.kind = 'spin'),
+  first_posts as (
+    -- Each character's first post in the thread, read through acts_thread_posts, one per
+    -- character rather than a sort of the whole thread.
+    select f.* from active_spun t
+    cross join lateral (select distinct a.character from acts a where a.thread = t.id and a.kind = 'post' and a.created_at < window_end) w
+    cross join lateral (select a.* from acts a where a.thread = t.id and a.character = w.character and a.kind = 'post' and a.created_at < window_end
+                        order by a.created_at, a.id limit 1) f
+  ),
+  touched as (
+    select id from win_acts union select act from reacted
+    union select id from earn_up union select post from earn_up where post is not null
+    union select target_act_id from win_acts where kind in ('card', 'spin', 'spring') and target_act_id is not null and coalesce(payload ->> 'reach', 'post') = 'post'
+    union select id from spins union select target_act_id from spins where target_act_id is not null
+    -- Every card on an Act a reaction touches, an earlier window's too: a vote counts once per
+    -- player and alignment, for the earliest card (engine/rules/settle.ts).
+    union select a.id from acts a join reacted x on x.act = a.target_act_id where a.kind in ('card', 'spring') and coalesce(a.payload ->> 'reach', 'post') = 'post'
+    union select id from first_posts
+  ),
+  all_acts as (select a.* from acts a join touched t on t.id = a.id where a.created_at < window_end and a.character is not null and a.kind <> 'donation'
+               and not is_staff_side(a.character, a.kind, a.target_act_id) and a.id not in (select id from ended)),
+  -- A staff post a window's card landed on (0054): named with its reactions, so the card is judged against it, and paid nobody.
+  unscored as (select a.* from acts a join characters c on c.id = a.character
+               where c.staff is not null and a.id in (select k.target_act_id from all_acts k where k.kind = 'card' and k.created_at >= window_start and coalesce(k.payload ->> 'reach', 'post') = 'post')),
+  -- Named, never settled: settle.ts drops a reaction to one, and reads a spin from one as from another.
+  system_acts as (select a.id from acts a join touched t on t.id = a.id
+                  where (a.character is null or is_staff_side(a.character, a.kind, a.target_act_id)) and a.id not in (select id from unscored)),
+  all_reactions as (select * from win_reactions union all select * from earlier_reactions),
+  named as (select character as id from all_acts union select reactor_character from all_reactions),
+  ms as (select 1)
+  select jsonb_build_object(
+    'window', jsonb_build_object('id', to_jsonb(window_start) #>> '{}',
+      'from', (extract(epoch from window_start) * 1000)::bigint, 'to', (extract(epoch from window_end) * 1000)::bigint),
+    'characters', coalesce((
+      select jsonb_agg(jsonb_build_object('id', c.id, 'player', c.owner, 'classes', coalesce((
+        select jsonb_agg(jsonb_build_object('class', h.class_key, 'from', (extract(epoch from h.started_at) * 1000)::bigint) order by h.started_at)
+        from class_history h where h.character = c.id and h.started_at < window_end), '[]')) order by c.id)
+      from characters c join named n on n.id = c.id), '[]'),
+    'acts', coalesce((
+      select jsonb_agg(jsonb_strip_nulls(jsonb_build_object('id', a.id, 'character', a.character, 'kind', a.kind,
+        'at', (extract(epoch from a.created_at) * 1000)::bigint, 'thread', a.thread,
+        'target', case when coalesce(a.payload ->> 'reach', 'post') = 'post' then a.target_act_id end,
+        'reach', case when a.kind = 'card' then nullif(coalesce(a.payload ->> 'reach', 'post'), 'post') end,
+        'card', case when a.kind in ('card', 'spring') then a.payload ->> 'card' end,
+        'by', case when a.kind = 'spring' then a.payload ->> 'by' end,
+        'ends', case when a.kind = 'card' and (select ck.play from card_kinds ck where ck.key = a.payload ->> 'card') = 'use'
+                     then (extract(epoch from (a.payload ->> 'ends')::timestamptz) * 1000)::bigint end,
+        'on', case when a.kind = 'card' and a.payload ->> 'reach' = 'character' then a.payload ->> 'character' end)) order by a.created_at, a.id)
+      from all_acts a), '[]'),
+    'unscoredTargets', coalesce((
+      select jsonb_agg(jsonb_build_object('id', a.id, 'kind', a.kind, 'at', (extract(epoch from a.created_at) * 1000)::bigint, 'thread', a.thread, 'staff', true) order by a.created_at, a.id)
+      from unscored a), '[]'),
+    'reactions', coalesce((
+      select jsonb_agg(jsonb_build_object('act', r.act, 'kind', r.kind, 'at', (extract(epoch from r.created_at) * 1000)::bigint,
+        'player', r.reactor_account, 'character', r.reactor_character) order by r.created_at, r.id)
+      from all_reactions r), '[]'),
+    -- The System's Acts an input Act points at (a spin from the reveal): named, never settled.
+    'systemActs', coalesce((select jsonb_agg(id order by id) from system_acts), '[]'),
+    -- What earlier windows paid for every player's vote on each Act this window's reactions touch (section 9).
+    'paid', coalesce((
+      select jsonb_agg(jsonb_build_object('player', p.account, 'act', p.act, 'weight', p.weight, 'shares', p.shares) order by p.account, p.act)
+      from paid_votes p join reacted r on r.act = p.act), '[]'))
+$$;
+-- estimate_input (0148), leaving a gift out as settlement_input does, of the caller's own Acts, of the Acts they touch and of the reactions to one. Everything else as 0148 wrote it.
+create or replace function estimate_input(account uuid, until timestamptz default now()) returns jsonb
+language plpgsql stable security definer set search_path = public, pg_temp as $$
+declare
+  salt text := gen_random_uuid()::text;
+  window_start timestamptz := coalesce((select max(ends_at) from settlements), (select min(starts_at) from seasons));
+  season_end timestamptz;
+  window_end timestamptz;
+  you text := md5(salt || 'you');
+begin
+  -- The window the next settlement reads begins where next_settlement_window (0004) begins it: at
+  -- the last settled end, or, where no season holds that instant (a gap between seasons), at the
+  -- next season's start; and it never runs past its season's end.
+  if window_start is not null and not exists (select 1 from seasons where starts_at <= window_start and (ends_at is null or ends_at > window_start)) then
+    window_start := (select min(starts_at) from seasons where starts_at > window_start);
+  end if;
+  if window_start is null then return null; end if;
+  select coalesce(s.ends_at, nullif(greatest(s.starts_at + span_interval(setting('seasonLength')), window_start), window_start)) into season_end
+  from seasons s where s.starts_at <= window_start and (s.ends_at is null or s.ends_at > window_start);
+  window_end := least(until, coalesce(season_end, 'infinity'));
+  if window_start >= window_end then return null; end if;
+  return (
+  with
+  -- The plays an admin ended before the window's end (Task 3): out of this window, with the votes on them. `<` as every other bound
+  -- here is, so a card_end written at the instant window_end is after the window, as a vote written then is.
+  ended as (select e.target_act_id as id from acts e where e.kind = 'card_end' and e.created_at < window_end),
+  mine as (select id from characters where owner = account),
+  -- The live Earn plays on the caller's characters and posts, played before the window and still up in it (settlement_input's earn_up, for what the caller's earnings can carry): another player's play on
+  -- the caller's post is a public Act and counts as one of the caller's own.
+  earn_up as (
+    select k.id, case when coalesce(k.payload ->> 'reach', 'post') = 'post' then k.target_act_id end as post
+    from acts k join card_kinds ck on ck.key = k.payload ->> 'card'
+    where k.kind = 'card' and ck.play = 'use' and ck.gimmick ->> 'kind' = 'earn'
+      and k.created_at < window_start and k.created_at >= window_start - (select max(e.lasts) from card_kinds e where e.play = 'use' and e.gimmick ->> 'kind' = 'earn')
+      and coalesce(k.payload ->> 'reach', 'post') in ('post', 'character') and not (k.payload ? 'caught')
+      and (k.payload ->> 'ends')::timestamptz > window_start and k.id not in (select id from ended)
+      and case when coalesce(k.payload ->> 'reach', 'post') = 'character' then (k.payload ->> 'character')::uuid in (select id from mine)
+               else exists (select 1 from acts p join mine m on m.id = p.character where p.id = k.target_act_id) end),
+  win_acts as (select a.* from acts a join mine m on m.id = a.character where a.created_at >= window_start and a.created_at < window_end and a.kind <> 'donation'
+               and a.id not in (select id from ended)),
+  -- The caller's Acts reacted to in the window, whenever written: each of the caller's Acts, then
+  -- its reactions through the index that leads with the Act, never the whole window's reactions.
+  mine_reacted as (select distinct a.id as act from acts a join mine m on m.id = a.character
+                   where exists (select 1 from reactions r where r.act = a.id and r.created_at >= window_start and r.created_at < window_end)),
+  -- The Acts the caller reacted to in the window, through reactions_reactor.
+  reacted_by_me as (select distinct r.act from reactions r where r.reactor_account = account and r.created_at >= window_start and r.created_at < window_end),
+  targets as (select target_act_id as id from win_acts where kind in ('card', 'spin', 'spring') and target_act_id is not null and coalesce(payload ->> 'reach', 'post') = 'post'),
+  -- Every card of the caller's on a post the caller's window cards point at: a vote counts for the earliest.
+  my_cards_there as (select a.id from acts a join mine m on m.id = a.character join targets t on t.id = a.target_act_id where a.kind in ('card', 'spring') and a.created_at < window_end and coalesce(a.payload ->> 'reach', 'post') = 'post'),
+  -- Cards others played on the caller's posts in the window.
+  landed as (select a.id from acts p join mine m on m.id = p.character join acts a on a.target_act_id = p.id
+             where a.kind = 'card' and a.created_at >= window_start and a.created_at < window_end and coalesce(a.payload ->> 'reach', 'post') = 'post'),
+  -- The caller's spun threads active in the window: the spin, and each character's first post.
+  spun as (select distinct s.thread as id from acts s join mine m on m.id = s.character
+           where s.kind = 'spin' and exists (select 1 from acts x where x.thread = s.thread and x.created_at >= window_start and x.created_at < window_end)),
+  spins as (select a.id from acts a join spun t on t.id = a.thread where a.kind = 'spin'),
+  first_posts as (
+    select f.id from spun t
+    cross join lateral (select distinct a.character from acts a where a.thread = t.id and a.kind = 'post' and a.created_at < window_end) w
+    cross join lateral (select a.id from acts a where a.thread = t.id and a.character = w.character and a.kind = 'post' and a.created_at < window_end
+                        order by a.created_at, a.id limit 1) f
+  ),
+  -- The Acts whose reactions are read.
+  voted as (select id from win_acts union select act from mine_reacted union select act from reacted_by_me union select id from targets),
+  touched as (
+    select id from voted union select id from my_cards_there union select id from landed union select id from spins
+    union select id from earn_up union select post from earn_up where post is not null
+    union select target_act_id from acts a join spins s on s.id = a.id where a.target_act_id is not null
+    union select id from first_posts
+    -- The post each card, spin or spring among the voted Acts points at (Task 1, #137): a card the caller only reacted to is
+    -- judged against its post, and a spin the caller only reacted to is read with its origin (settle.ts reads every spin's), as
+    -- settlement_input reads every window play's target.
+    union select a.target_act_id from acts a join voted v on v.id = a.id
+          where a.kind in ('card', 'spin', 'spring') and a.target_act_id is not null and coalesce(a.payload ->> 'reach', 'post') = 'post'
+  ),
+  -- As settlement_input (0004, as 0043 changed it): a staff character's Acts, and a card on one, are named and pay nobody.
+  all_acts as (select a.* from acts a join touched t on t.id = a.id where a.created_at < window_end and a.character is not null and a.kind <> 'donation'
+               and not is_staff_side(a.character, a.kind, a.target_act_id) and a.id not in (select id from ended)),
+  -- A staff post a window's card of the caller's landed on, as settlement_input names it (0054).
+  unscored as (select a.* from acts a join characters c on c.id = a.character join touched t on t.id = a.id
+               where c.staff is not null and a.id in (select k.target_act_id from all_acts k where k.kind = 'card' and k.created_at >= window_start and coalesce(k.payload ->> 'reach', 'post') = 'post')),
+  system_acts as (select a.id from acts a join touched t on t.id = a.id
+                  where (a.character is null or is_staff_side(a.character, a.kind, a.target_act_id)) and a.id not in (select id from unscored)),
+  -- Every reaction on an Act voted on, up to now, but the caller's own to the caller's own characters,
+  -- and none on The System's own Acts: the tally every player reacts to would hand each caller who
+  -- reacted to it every other player's reaction.
+  --
+  -- The settlement never pays a player's reactions to their own characters, and until 0073 this read
+  -- left them out too, which made a live line computed from who reacted: a fire landing on Bob's post
+  -- under Ann's card with no lift line told Ann it came from one of Bob's masks. The live estimate is not
+  -- The System's scoring (CLAUDE.md, "A response never proves a private fact": "The live estimate is not
+  -- that exception: it leaves out only the caller's own reactions, counts every other as anyone's, and
+  -- the settlement is exact"). So ownership is read here only to tell the caller's own from the rest:
+  -- the caller knows their own, and every other reaction, the author's own player's included, is
+  -- counted under `keyed`'s per-mask keys, which the engine cannot tie to an author. The estimate can then
+  -- say more than the settlement pays, as it says "up to"; the settled log is exact.
+  all_reactions as (
+    select r.* from reactions r join voted v on v.id = r.act
+    join acts a on a.id = r.act join characters c on c.id = a.character
+    where r.created_at < window_end and not (r.reactor_account = account and c.owner = account) and r.act not in (select id from ended) and a.kind <> 'donation'
+      and (not is_staff_side(a.character, a.kind, a.target_act_id) or a.id in (select id from unscored))
+  ),
+  -- Each reaction's voter and mask as the engine reads them: the caller's own, as the caller's;
+  -- any other's, under keys made up for this request.
+  keyed as (
+    select r.id, r.act, r.kind, r.created_at,
+      case when r.reactor_account = account then you else md5(salt || 'reactor' || r.reactor_character) end as player,
+      case when r.reactor_account = account then r.reactor_character::text else md5(salt || 'mask' || r.reactor_character) end as character
+    from all_reactions r
+  ),
+  others as (
+    select distinct a.character::text as id, md5(salt || 'author' || a.character) as player from all_acts a where a.character not in (select id from mine)
+    union select distinct k.character, k.player from keyed k where k.player <> you
+  )
+  select jsonb_build_object(
+    'player', you,
+    -- The window's start exactly, as the settlement that opened it ended: `from` is whole
+    -- milliseconds, which can fall short of it. The estimate keeps its answer with this one.
+    'windowStart', window_start,
+    'window', jsonb_build_object('id', 'estimate',
+      'from', (extract(epoch from window_start) * 1000)::bigint, 'to', (extract(epoch from window_end) * 1000)::bigint),
+    'characters', coalesce((
+      select jsonb_agg(x order by x ->> 'id') from (
+        select jsonb_build_object('id', c.id, 'player', you, 'classes', coalesce((
+          select jsonb_agg(jsonb_build_object('class', h.class_key, 'from', (extract(epoch from h.started_at) * 1000)::bigint) order by h.started_at)
+          from class_history h where h.character = c.id and h.started_at < window_end), '[]')) as x
+        from characters c join mine m on m.id = c.id
+        union all
+        select jsonb_build_object('id', o.id, 'player', o.player, 'classes', '[]'::jsonb) from others o
+      ) cs), '[]'),
+    'acts', coalesce((
+      select jsonb_agg(jsonb_strip_nulls(jsonb_build_object('id', a.id, 'character', a.character, 'kind', a.kind,
+        'at', (extract(epoch from a.created_at) * 1000)::bigint, 'thread', a.thread,
+        'target', case when coalesce(a.payload ->> 'reach', 'post') = 'post' then a.target_act_id end,
+        'reach', case when a.kind = 'card' then nullif(coalesce(a.payload ->> 'reach', 'post'), 'post') end,
+        'card', case when a.kind in ('card', 'spring') then a.payload ->> 'card' end,
+        'by', case when a.kind = 'spring' then a.payload ->> 'by' end,
+        'ends', case when a.kind = 'card' and (select ck.play from card_kinds ck where ck.key = a.payload ->> 'card') = 'use'
+                     then (extract(epoch from (a.payload ->> 'ends')::timestamptz) * 1000)::bigint end,
+        'on', case when a.kind = 'card' and a.payload ->> 'reach' = 'character' then a.payload ->> 'character' end)) order by a.created_at, a.id)
+      from all_acts a), '[]'),
+    'unscoredTargets', coalesce((
+      select jsonb_agg(jsonb_build_object('id', a.id, 'kind', a.kind, 'at', (extract(epoch from a.created_at) * 1000)::bigint, 'thread', a.thread, 'staff', true) order by a.created_at, a.id)
+      from unscored a), '[]'),
+    'reactions', coalesce((
+      select jsonb_agg(jsonb_build_object('act', k.act, 'kind', k.kind, 'at', (extract(epoch from k.created_at) * 1000)::bigint,
+        'player', k.player, 'character', k.character) order by k.created_at, k.id)
+      from keyed k), '[]'),
+    'systemActs', coalesce((select jsonb_agg(id order by id) from system_acts), '[]'))
+  );
+end $$;
