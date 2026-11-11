@@ -21,14 +21,14 @@
 import { ENGINE_DEFAULT_PRONOUNS, words as pronounWords } from '../../rules/pronouns.ts';
 import { playOf as playKindOf, reachesOf } from '../../rules/cards.ts';
 import { rankIndex } from '../../rules/ranks.ts';
-import type { Instance } from '../../rules/types.ts';
-import type { Act, CardEvent, MyBan, Estimate, EstimateLine, Id, Log, LogLine, LogSettlement, MyCharacter, Season, TurnAnnounced, WalletEvent } from '../data/api.ts';
+import type { Instance, Quadrant } from '../../rules/types.ts';
+import type { Act, CardEvent, MyBan, Estimate, EstimateLine, Id, Log, LogLine, LogSettlement, MyCharacter, ScoredAs, Season, TurnAnnounced, WalletEvent } from '../data/api.ts';
 import { micros } from '../data/log-page.ts';
 import { officeRole } from '../board/move-words.ts';
 import { pageOf, threadHref } from '../thread/pages.ts';
 import { paramsOf } from '../economy.ts';
 import type { InstanceUi } from '../types.ts';
-import { upperFirst } from '../copy-words.ts';
+import { shareWords, upperFirst } from '../copy-words.ts';
 import { quotedWords, shortQuote, springConditions, whoWords } from '../cards/lens-words.ts';
 
 /** A piece of a line's words: plain text, or a link to an Act or a thread. */
@@ -130,9 +130,10 @@ export function reasonName(words: string): string {
 }
 const lowerFirst = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
 
-/** The class a settlement scored a character's lines as: their reasons' class, when every one names the same class the instance has. */
+/** The class a settlement scored a character's lines as: their reasons' class, when every one names the same class the instance has (a card's payout names none). */
 export function scoredAs(lines: readonly LogLine[], instance: Instance): string | null {
-  const keys = new Set(lines.map((l) => l.reason.split('.')[0]!));
+  /* A card's payout (`card.boost`, `card.skim`, `card.ride`) is no class's reason: a boosted or paid character is still scored as the class its other lines name. */
+  const keys = new Set(lines.map((l) => l.reason.split('.')[0]!).filter((k) => k !== 'card'));
   if (keys.size !== 1) return null;
   const [key] = keys;
   return instance.classes.find((c) => c.key === key)?.key ?? null;
@@ -317,15 +318,17 @@ export function logRows(data: LogData, words: Words, cap: number, tab: Id | null
       const day = utcDay(s.startsAt);
       const byCharacter = [...new Set(lines.map((l) => l.character))].sort((a, b) => nameOf(a).localeCompare(nameOf(b)));
       const said: string[] = [];
+      /* A card that named the class this window was scored as (an Off Day) says so after the character's own sentence: the player's own rows (`my_scored_as`), never a guess. */
+      const named = (c: Id) => (data.log.scoredAs ?? []).filter((r) => r.settlement === s.id && r.character === c).map((r) => scoredAsWords(r, nameOf(c), words));
       if (tab !== null) {
         const cls = scoredAs(lines, instance);
-        said.push(`${cls ? `Scored as ${withArticle(className(instance, cls))}` : 'Scored'} for ${day}: ${scoredWords(lines, words)}.`);
+        said.push(`${cls ? `Scored as ${withArticle(className(instance, cls))}` : 'Scored'} for ${day}: ${scoredWords(lines, words)}.`, ...named(tab));
       } else {
         said.push(`Scored for ${day}.`);
         for (const c of byCharacter) {
           const own = lines.filter((l) => l.character === c);
           const cls = scoredAs(own, instance);
-          said.push(`${nameOf(c)}${cls ? ` as ${withArticle(className(instance, cls))}` : ''}: ${scoredWords(own, words)}.`);
+          said.push(`${nameOf(c)}${cls ? ` as ${withArticle(className(instance, cls))}` : ''}: ${scoredWords(own, words)}.`, ...named(c));
         }
       }
       const held = heldBack(settlementWallet.get(s.id), cap);
@@ -362,6 +365,7 @@ export function logRows(data: LogData, words: Words, cap: number, tab: Id | null
     }
   }
 
+  rows.push(...scoredAsRows(data, words).filter((r) => inTab(r.characters)));
   rows.push(...cardRows(data, words).filter((r) => inTab(r.characters)));
   rows.push(...modRows(data, words).filter((r) => inTab(r.characters)));
   rows.push(...groupRows(data, words).filter((r) => inTab(r.characters)));
@@ -371,6 +375,31 @@ export function logRows(data: LogData, words: Words, cap: number, tab: Id | null
   const ORDER: Record<LineKind, number> = { estimate: 0, settlement: 1, turn: 2, rank: 3, bought: 4, pack: 4, played: 4, returned: 4, onMine: 4, saved: 4, written: 4, set: 4, sprung: 4, payout: 4, setEnded: 4, caught: 4, struck: 4, gimmickEnded: 4, ended: 4, infraction: 4, ban: 4, report: 4, appeal: 4, bribe: 4, grouped: 4, grant: 4, gift: 4 };
   rows.sort((a, b) => micros(b.at) - micros(a.at) || ORDER[a.kind] - ORDER[b.kind]);
   return [...estimateRows(data, words, tab), ...rows];
+}
+
+/** The sentence a settlement's row gains for a character a card scored as a named class (an Off Day): what named it, for whom and that nothing outlasted the window. */
+function scoredAsWords(r: ScoredAs, name: string, words: Words): string {
+  const card = words.instance.cards.find((c) => c.key === r.card)?.name ?? 'A card';
+  return `${card} named ${withArticle(className(words.instance, r.classKey))} for ${name} in this window, so it was scored as one whatever its own class. That ended with this settlement, and its own class never changed.`;
+}
+
+/**
+ * A window a card named a class for, in which the character had no line at all: a row of its own at the settlement's end, so the Off Day that did nothing is not
+ * a play that simply vanishes. (A character that did have lines has the sentence in its settlement's row instead.) The player's own rows, plain and true.
+ */
+function scoredAsRows(data: LogData, words: Words): LogRow[] {
+  const nameOf = (id: Id) => data.mine.find((c) => c.id === id)?.name ?? 'one of your characters';
+  const rows: LogRow[] = [];
+  for (const r of data.log.scoredAs ?? []) {
+    if (data.log.settlements.find((s) => s.id === r.settlement)?.lines.some((l) => l.character === r.character)) continue;
+    const card = words.instance.cards.find((c) => c.key === r.card)?.name ?? 'A card';
+    rows.push({
+      key: `scoredAs:${r.settlement}:${r.character}:${r.play}`, kind: 'gimmickEnded', at: r.endsAt, what: `${card} on ${nameOf(r.character)} ended`,
+      details: [`${nameOf(r.character)} was to be scored as ${withArticle(className(words.instance, r.classKey))} for ${utcDay(r.startsAt)}, and nothing was scored for it in that window. Its own class never changed.`],
+      aura: 0, wallet: null, characters: [r.character],
+    });
+  }
+  return rows;
 }
 
 /**
@@ -599,7 +628,12 @@ function cardRows(data: LogData, words: Words): LogRow[] {
     const tokens = play?.payload.tokens;
     /* A drive card's play opened its drive where the drive is its own id (a later play's names the play that opened it); a play with no drive says neither. */
     const drive = play?.payload.drive;
-    const recorded = { ...(typeof tokens === 'number' && Number.isSafeInteger(tokens) ? { tokens } : {}), ...(typeof drive === 'string' ? { opened: drive === play?.id } : {}) };
+    const starts = play?.payload.starts;
+    const ends = play?.payload.ends;
+    const recorded = {
+      ...(typeof tokens === 'number' && Number.isSafeInteger(tokens) ? { tokens } : {}), ...(typeof drive === 'string' ? { opened: drive === play?.id } : {}),
+      ...(typeof starts === 'string' ? { starts } : {}), ...(typeof ends === 'string' ? { ends } : {}),
+    };
     const sentence = ui.cards.find((c) => c.key === key)?.logPlay?.(typeof config === 'object' && config !== null ? config as Readonly<Record<string, unknown>> : {}, recorded);
     return sentence ? [` ${sentence}`] : [];
   };
@@ -716,7 +750,8 @@ function cardRows(data: LogData, words: Words): LogRow[] {
     }
     /* A Use with a time up says when it ended, once that time has passed, whichever use card it was (the design's section 10: "a timed end"). */
     const ends = typeof play?.payload.ends === 'string' ? play.payload.ends : null;
-    if (ends && Date.parse(ends) <= Date.now()) {
+    /* A scored-as card's end is its window's: the settlement's row (or the row of its own, `scoredAsRows`) says it, so no second row says it ended. */
+    if (ends && Date.parse(ends) <= Date.now() && !instance.cards.find((c) => c.key === e.card)?.scoresAs) {
       rows.push({
         key: `gimmickEnded:${e.act}`, kind: 'gimmickEnded', at: ends, what: `${cardName(e.card)}${place ? ` on ${place}` : ''} ended`,
         details: [`${cardName(e.card)} on `, link ?? 'your post', ' ended.'],
@@ -768,7 +803,7 @@ function cardRows(data: LogData, words: Words): LogRow[] {
       const target = p.reach === 'thread' ? (p.targetName ? `'${p.targetName}'` : 'a thread') : p.targetName ?? 'a character';
       rows.push({
         key: `onMine:${p.play}`, kind: 'onMine', at: p.at, what: `A card on your ${p.reach}`,
-        details: [`${cardName(play?.payload.card)} was played on ${target}${message ? `, with the message “${message}”` : ''}.`],
+        details: [`${cardName(play?.payload.card)} was played on ${target}${message ? `, with the message “${message}”` : ''}.`, ...said(play?.payload.card, play)],
         aura: 0, wallet: null, characters: p.targetCharacter ? [p.targetCharacter] : [],
       });
       continue;
@@ -869,7 +904,8 @@ const TRIGGERED: Readonly<Record<string, string>> = { cast: 'a cast', reaction: 
  * reached the wallet, from the player's own wallet event for the spring; a strike says what it laid.
  */
 function setEndRows(data: LogData, words: Words, take: (match: (w: WalletEvent) => boolean) => WalletEvent | undefined): LogRow[] {
-  const cardName = (key: unknown) => words.instance.cards.find((c) => c.key === key)?.name ?? 'a card';
+  const rules = (key: unknown) => words.instance.cards.find((c) => c.key === key);
+  const cardName = (key: unknown) => rules(key)?.name ?? 'a card';
   const nameOf = (id: Id | null | undefined) => (id ? data.mine.find((c) => c.id === id)?.name ?? data.names.get(id) ?? 'someone' : 'someone');
   const rows: LogRow[] = [];
   for (const e of data.log.setEnds) {
@@ -887,10 +923,22 @@ function setEndRows(data: LogData, words: Words, take: (match: (w: WalletEvent) 
       continue;
     }
     const did = spring?.payload.did;
-    if (did === 'landed' || did === 'caught' || did === 'ended') {
+    if (did === 'landed' || did === 'caught' || did === 'ended' || did === 'rode') {
       const by = typeof spring?.payload.by === 'string' ? data.acts.get(spring.payload.by) : undefined;
       if (did === 'ended') {
         rows.push({ key: `sprung:${e.play}`, kind: 'sprung', at: e.endedAt, what: `Your ${cardName(e.card)} sprang`, details: [`${cardName(e.card)} on `, on, ' sprang when a Mod Bot\'s visit began, and ended the visit.'], aura: 0, wallet: null, characters });
+        continue;
+      }
+      if (did === 'rode') {
+        const rode = typeof spring?.payload.by === 'string' ? data.acts.get(spring.payload.by) : undefined;
+        const move = cardName(rode?.payload.card);
+        const share = rules(e.card)?.trap?.outcome?.share;
+        const kind = typeof spring?.payload.quadrant === 'string' ? words.ui.quadrantLabels[spring.payload.quadrant as Quadrant] : undefined;
+        rows.push({
+          key: `sprung:${e.play}`, kind: 'sprung', at: e.endedAt, what: `Your ${cardName(e.card)} sprang`,
+          details: [`${cardName(e.card)} on `, on, ` sprang when ${nameOf(rode?.character)} cast ${move} on it. ${move} landed as usual, and its caster keeps what it earns. Each vote of ${kind ?? 'the kind it named'} it draws pays you ${share === undefined ? 'a share of a vote' : shareWords(share)}, in each settlement's lines.`],
+          aura: 0, wallet: null, characters,
+        });
         continue;
       }
       if (did === 'caught') {
@@ -958,16 +1006,34 @@ function estimateRows(data: LogData, words: Words, tab: Id | null): LogRow[] {
     }));
 }
 
+/**
+ * What the open window's estimate says of a character a card scores as a named class now (an Off Day whose window has opened and not closed, and that no admin ended),
+ * read from the plays the log holds (the player's own characters', named by `my_*` rows): " Scored as a Heel this window by Off Day.", or nothing.
+ */
+function scoredNow(character: Id, data: LogData, words: Words): string {
+  const now = Date.now();
+  const ended = new Set(data.log.ended.map((e) => e.play));
+  for (const a of data.acts.values()) {
+    if (a.kind !== 'card' || a.payload.reach !== 'character' || a.payload.character !== character || ended.has(a.id)) continue;
+    const rules = words.instance.cards.find((c) => c.key === a.payload.card);
+    const { starts, ends } = a.payload;
+    const named = typeof a.payload.config === 'object' && a.payload.config !== null ? (a.payload.config as { class?: unknown }).class : undefined;
+    if (!rules?.scoresAs || typeof starts !== 'string' || typeof ends !== 'string' || typeof named !== 'string') continue;
+    if (Date.parse(starts) <= now && now < Date.parse(ends)) return ` Scored as ${withArticle(className(words.instance, named))} this window by ${rules.name}.`;
+  }
+  return '';
+}
+
 function estimateWords(l: EstimateLine, data: LogData, words: Words, tab: Id | null): Segment[] {
   const who = tab === null ? `${data.mine.find((c) => c.id === l.character)?.name ?? ''}: ` : '';
   const after = ' It counts at the next settlement, before the shared vote and halving. Who reacted is never shown.';
   const link = l.act ? actLink(data.acts.get(l.act), data, words, l.character) : null;
   if (link && l.quadrant) {
     const label = words.ui.quadrantLabels[l.quadrant];
-    return [`${who}${withArticle(label).replace(/^a/u, 'A')} reaction on `, link, `.${after}`];
+    return [`${who}${withArticle(label).replace(/^a/u, 'A')} reaction on `, link, `.${after}${scoredNow(l.character, data, words)}`];
   }
   // The live estimate has no ledger row: it is said with the numbers in force, which it ran on.
-  return [`${who}${words.ui.reasonWords(l.reason, words.economy)}.${after}`];
+  return [`${who}${words.ui.reasonWords(l.reason, words.economy)}.${after}${scoredNow(l.character, data, words)}`];
 }
 
 /** The Acts the log's lines name: every share's, every estimate line's, every announcement's and every card line's; then the posts the card plays among them landed on. */

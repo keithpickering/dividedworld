@@ -17,7 +17,7 @@ declare
                            'reading', 'my_reactions', 'thread_view_counts',
                            'pip_styles', 'account_preferences', 'character_profiles',
                            'class_reveals', 'turns_announced',
-                           'my_characters', 'my_wallet', 'my_ledger', 'my_ledger_shares', 'my_wallet_events', 'my_card_ledger', 'my_posts_played_on', 'my_posts_written_on', 'screen_settings', 'thread_list', 'character_post_counts', 'season_size', 'board_counts', 'current_standings', 'current_season',
+                           'my_characters', 'my_wallet', 'my_ledger', 'my_ledger_shares', 'my_scored_as', 'my_wallet_events', 'my_card_ledger', 'my_posts_played_on', 'my_posts_written_on', 'screen_settings', 'thread_list', 'character_post_counts', 'season_size', 'board_counts', 'current_standings', 'current_season',
                            'staff_now', 'staff_office_now', 'staff_profile_now', 'boards_now', 'moves_log', 'bars_now', 'face_down', 'my_face_down', 'my_caught', 'my_cards_ended', 'play_reach', 'play_moments', 'play_moment_layers',
                            'alerts', 'thread_follows', 'my_followed_threads', 'thread_open',
                            -- The log's lines for the Mod Bots (0111): each the caller's own characters' rows.
@@ -39,7 +39,7 @@ declare
                            'finished_seasons()', 'results_page(integer,integer)', 'result_place(integer,uuid)',
                            -- A thread's page in one read (0094), a security invoker function.
                            'thread_page(uuid,integer,integer,integer,text[])',
-                           -- A drive's gifts (0150): its total, count and donor wall, and the next 20, security invoker reads of the donation Acts, which every Act is public.
+                           -- A drive's gifts (0152): its total, count and donor wall, and the next 20, security invoker reads of the donation Acts, which every Act is public.
                            'drive_gifts(uuid[])', 'drive_gifts_page(uuid,timestampwithtimezone,uuid)',
                            -- The frame and the HUD in one read (0097): a signed-in player's own boot document, stable, writing nothing.
                            'boot()',

@@ -324,6 +324,28 @@ describe('card backs, springs and catches', () => {
     expect(playOf(base('u1', 'card', { card: 'shield', layer: 1, ends: '2026-11-06T10:00:00.000Z' }))!.ends).toBe('2026-11-06T10:00:00.000Z');
   });
 
+  test('a cast that rode a ride back names the set, a scored-as play its start, and a ride spring shows its quadrant either side of its back', () => {
+    expect(playOf(base('k1', 'card', { card: 'whoops', rode: 's1' }))!.rode).toBe('s1');
+    expect(playOf(base('k1', 'card', { card: 'whoops', rode: 7 }))!.rode).toBeUndefined();
+    expect(playOf(base('o1', 'card', { card: 'off-day', starts: '2026-11-12T00:00:00.000Z' }))!.starts).toBe('2026-11-12T00:00:00.000Z');
+    expect(playOf(base('o1', 'card', { card: 'off-day', starts: 5 }))!.starts).toBeUndefined();
+    const spring = { card: 'chess', trigger: 'cast', did: 'rode', quadrant: 'excitedPositive', set: 's1', by: 'k2' };
+    const after = createPlays();
+    after.add([base('s1', 'set', {}), base('sp', 'spring', spring)]);
+    expect(after.get('p1').plays[0]!.revealed).toEqual({ card: 'chess', spring: 'sp', at, quadrant: 'excitedPositive' });
+    const before = createPlays();
+    before.add([base('sp', 'spring', spring)]);
+    before.add([base('s1', 'set', {})]);
+    expect(before.get('p1').plays[0]!.revealed?.quadrant).toBe('excitedPositive');
+    const numeric = createPlays();
+    numeric.add([base('s1', 'set', {}), base('sp', 'spring', { ...spring, quadrant: 7 })]);
+    expect(numeric.get('p1').plays[0]!.revealed).toEqual({ card: 'chess', spring: 'sp', at });
+    expect(numeric.get('p1').plays[0]!.revealed).not.toHaveProperty('quadrant');
+    const caught = createPlays();
+    caught.add([base('s1', 'set', {}), base('sp', 'spring', { card: 'snare', trigger: 'cast', did: 'caught', set: 's1', by: 'k2', caught: 'k2' })]);
+    expect(caught.get('p1').plays[0]!.revealed).toEqual({ card: 'snare', spring: 'sp', at });
+  });
+
   test('the setter\'s own card is kept for their screen alone, beside the back', () => {
     const plays = createPlays();
     plays.add([base('s1', 'set', {})]);

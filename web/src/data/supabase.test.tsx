@@ -2343,6 +2343,14 @@ describe('a screen in one call', () => {
       sources, shares: [], acts: [], states: [], people: [], threads: [], boards: [], standings: [], turns: [], season: null, ...rest,
     });
 
+    it('maps the top-level scoredAs rows (named_class to classKey), and an older payload without them reads as none', async () => {
+      const row = { settlement: 9, character: B, named_class: 'heel', play: C, card: 'offday', starts_at: '2026-10-29T08:17:00+00:00', ends_at: '2026-10-30T08:17:00+00:00' };
+      const page = await once('log_page', doc(SRC({ ledger: [LEDGER_ROW] }), { scoredAs: [row] })).api.logPage(null);
+      expect(page.log.scoredAs).toEqual([{ settlement: 9, character: B, classKey: 'heel', play: C, card: 'offday', startsAt: row.starts_at, endsAt: row.ends_at }]);
+      const older = await once('log_page', doc(SRC({ ledger: [LEDGER_ROW] }))).api.logPage(null);
+      expect(older.log).not.toHaveProperty('scoredAs');
+    });
+
     it('sends the cursor by name and maps the sources through the log\'s own mappers, and what the lines name', async () => {
       const answer = doc(SRC({
         ledger: [LEDGER_ROW], wallet: [{ settlement: 9, kind: 'settlement', change: 15, overflow: 0, floored: 0, balance_after: 472, ref: null, at: '2026-10-30T08:17:02+00:00' }],

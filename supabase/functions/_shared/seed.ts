@@ -44,11 +44,14 @@ export function instanceSeed(instance: Instance) {
       // How it is played and how rare it is, and a Set card's trap, a Use card's gimmick and time up (0054, 0148), which seed_instance
       // checks as instanceProblems does. A trap (with its match), a gimmick or a time up left out travels as none.
       rarity: c.rarity, play: c.play ?? 'cast', trap: c.trap, gimmick: c.gimmick, lasts: c.lasts,
+      // What a cast card's play pays its caster for votes on its post, and whether it names a class its target is scored as
+      // for a window (0151); a trap's outcome travels inside the trap. One left out travels as none.
+      skim: c.skim, scoresAs: c.scoresAs,
       // Where it reaches and whether a thread play of it pins (0055), which seed_instance checks against reachRarity and reachLasts.
       reaches: c.reaches ?? ['post'], pins: c.pins === true,
       // Whether its text is generated after it lands (0149): the SQL knows only this flag, never which card.
       writes: c.writes !== undefined,
-      // What the server draws one of at each play and the drive its plays share (0150), and the words a blank message is refused with (0150): data the SQL holds, never which card.
+      // What the server draws one of at each play and the drive its plays share (0152), and the words a blank message is refused with (0152): data the SQL holds, never which card.
       draws: c.draws, drive: c.drive, needsMessage: c.needsMessage,
     })),
     // The packs the instance sells, replaced each seed (0139), and the machine's slots in grid order: seed_instance adds a slot whose item the

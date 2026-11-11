@@ -75,6 +75,29 @@ import classClownArt from './cards/class-clown/art.json';
 import goodVibesCanvas from './cards/good-vibes/art.webp?url';
 import goodVibesMark from './cards/good-vibes/mark.svg?url';
 import goodVibesArt from './cards/good-vibes/art.json';
+import moochCanvas from './cards/mooch/art.webp?url';
+import moochMark from './cards/mooch/mark.svg?url';
+import moochArt from './cards/mooch/art.json';
+import tollCanvas from './cards/toll/art.webp?url';
+import tollMark from './cards/toll/mark.svg?url';
+import tollArt from './cards/toll/art.json';
+import fourDChessCanvas from './cards/4d-chess/art.webp?url';
+import fourDChessMark from './cards/4d-chess/mark.svg?url';
+import fourDChessArt from './cards/4d-chess/art.json';
+import offDayCanvas from './cards/off-day/art.webp?url';
+import offDayMark from './cards/off-day/mark.svg?url';
+import offDayArt from './cards/off-day/art.json';
+import { ConfigForm as MoochConfigForm } from '../cards/mooch/ConfigForm.tsx';
+import { ConfigForm as FourDChessConfigForm } from '../cards/4d-chess/ConfigForm.tsx';
+import { ConfigForm as OffDayConfigForm } from '../cards/off-day/ConfigForm.tsx';
+import { mooch } from '../cards/mooch.ts';
+import { toll } from '../cards/toll.ts';
+import { fourDChess } from '../cards/4d-chess.ts';
+import { offDay } from '../cards/off-day.ts';
+import { classes } from '../classes/index.ts';
+import { quadrantLabels } from './quadrant-labels.ts';
+import { shareWords } from '../../../engine/ui/copy-words.ts';
+import { utcWhen } from '../../../engine/ui/log/lines.ts';
 import { ConfigForm as WhoopsConfigForm } from '../cards/whoops/ConfigForm.tsx';
 import { rgbOf } from '../cards/whoops/splat.ts';
 
@@ -96,6 +119,38 @@ const priceAdd = (c: { readonly gimmick?: GimmickEffect }) => {
   if (c.gimmick?.kind !== 'price') throw new Error('card has no price gimmick');
   return orbs(c.gimmick.add);
 };
+
+/**
+ * What a payout card pays, in words, read from its own rules and never restated: Mooch's skim, Toll's ride Gimmick and 4D Chess's ride
+ * outcome ("a tenth of a vote", "half a vote", "a vote"). A card that has not that payout is a mistake in these words, so it throws.
+ */
+const skimShare = () => {
+  if (mooch.skim === undefined) throw new Error('Mooch has no skim');
+  return shareWords(mooch.skim.share);
+};
+const tollShare = () => {
+  if (toll.gimmick?.kind !== 'ride') throw new Error('Toll has no ride gimmick');
+  return shareWords(toll.gimmick.share);
+};
+const rideShare = () => {
+  if (fourDChess.trap?.outcome === undefined) throw new Error('4D Chess has no ride outcome');
+  return shareWords(fourDChess.trap.outcome.share);
+};
+
+/** A quadrant a play named, in the instance's own word for it; "reactions" where the play names none the card can read. */
+const quadrantOf = (config: Readonly<Record<string, unknown>> | undefined): string | undefined => {
+  const q = config?.quadrant;
+  return typeof q === 'string' && q in quadrantLabels ? quadrantLabels[q as keyof typeof quadrantLabels] : undefined;
+};
+
+/** The class a play named, with its article ("a Heel", "an Aura Farmer"); undefined where it names none the instance has. */
+const classWords = (config: Readonly<Record<string, unknown>> | undefined): string | undefined => {
+  const name = classes.find((c) => c.key === config?.class)?.name;
+  return name === undefined ? undefined : `${/^[aeiou]/iu.test(name) ? 'an' : 'a'} ${name}`;
+};
+
+/** The days a set card stays face down, as the machine says it. */
+const setLastsWords = (settings: Settings) => `${settings.setLasts.count} ${settings.setLasts.unit}${settings.setLasts.count === 1 ? '' : 's'}`;
 
 /** A price of a whole number of hundredths, as the shop says it: "1.00". */
 const orbs = (hundredths: number) => (hundredths / 100).toFixed(2);
@@ -362,5 +417,67 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
     status: 'Set, face down to everyone else',
     describe: (settings: Settings) =>
       `A Sweet card, uncommon, set face down on one of your own posts. Everyone sees a card back there, the same as any card set face down. The next time a Mod Bot's visit to that post starts, the visit ends there and then, before the Mod Bot does anything to the post; the visit's own posts stay. It springs once, or ends by itself after ${settings.setLasts.count} ${settings.setLasts.unit}${settings.setLasts.count === 1 ? '' : 's'} if no visit comes. It costs nothing more to set.`,
+  },
+  /*
+   * The payout cards (docs/plans/2026-11-11-card-notes-part-6-plan.md, "The cards"): Mooch, 4D Chess and Off Day are Salty's pink; Toll is Pepperoni's color.
+   * Each says what it pays from its own rules (`skimShare`, `tollShare`, `rideShare`), and Off Day names a class and when from the play's own record.
+   */
+  {
+    key: 'mooch',
+    art: { color: '#ff3d7f', ink: '#14030a', canvas: moochCanvas, mark: moochMark, credit: moochArt.credit, tagline: 'Ride a post\'s reactions.' },
+    summary: `Names one kind of reaction on a post. For ${spanWords(mooch.lasts!)}, each new vote the post draws there pays you a little, and costs its author nothing.`,
+    /* A play's configuration is the quadrant it names; the status is checked on plays that name none, so it never assumes one. */
+    status: (plays) => (plays.length === 1 ? `Mooching ${quadrantOf(plays[0]!.config) ?? 'reactions'} off this post` : `${plays.length} Mooches on this post`),
+    hint: 'A Mooch pays its caster when this post draws the reactions it named.',
+    ConfigForm: MoochConfigForm,
+    describe: (settings: Settings) =>
+      `A Salty card, ${mooch.rarity}. You name one of the four kinds of reaction. For ${spanWords(mooch.lasts!)}, each vote the post draws there, from a player who had not reacted to the post before, pays you ${skimShare()}, whatever the author's class. It takes nothing from the author, and it pays nothing on a post of your own. A post holds one Mooch for each kind of reaction. ${setMoveWords('the quoting post')} It costs nothing more to play.`,
+    logPlay: (config) => {
+      const l = quadrantOf(config);
+      return l === undefined ? undefined : `It names ${l}: for ${spanWords(mooch.lasts!)}, each new vote of ${l} this post draws pays its caster ${skimShare()}. The post's author loses nothing.`;
+    },
+  },
+  {
+    key: 'toll',
+    art: { color: '#d24a2c', ink: '#1a0602', canvas: tollCanvas, mark: tollMark, credit: tollArt.credit, tagline: 'Get paid when a Move lands here.' },
+    summary: `Used on your post. For ${spanWords(toll.lasts!)}, every reaction to a Move another player casts there pays you too.`,
+    status: 'Charging a toll on Moves',
+    hint: 'A Toll pays this post\'s author when a Move cast here draws reactions.',
+    describe: (settings: Settings) =>
+      `A Pepperoni card, ${toll.rarity}, used on one of your own posts. For ${spanWords(toll.lasts!)}, each vote on a Move another player casts on that post pays you ${tollShare()}, on top of everything its caster earns: the caster loses nothing. A Move cast by one of your own characters pays you nothing. It costs nothing more to use.`,
+    logPlay: () => `Until it ends, each vote on a Move another player casts on that post pays you ${tollShare()}.`,
+  },
+  {
+    key: '4d-chess',
+    art: { color: '#ff3d7f', ink: '#14030a', canvas: fourDChessCanvas, mark: fourDChessMark, credit: fourDChessArt.credit, tagline: 'Get paid for the Move you saw coming.' },
+    summary: `Set face down on your post, naming a Move up to ${fourDChess.rarity} and one kind of reaction. When that Move is cast there it lands as usual, and its reactions of that kind pay you.`,
+    /* As every Reversal's: the same words, so none can be told from another. */
+    status: 'Set, face down to everyone else',
+    ConfigForm: FourDChessConfigForm,
+    describe: (settings: Settings) =>
+      `A Salty card, ${fourDChess.rarity}, set face down on one of your own posts. Everyone sees a card back there, the same as any card set face down. You name one Move, ${fourDChess.rarity} or commoner, and one of the four kinds of reaction. When that Move is cast on your post, this springs and shows itself; the Move lands as usual and its caster keeps everything it earns, and from then on each vote of your kind on that Move pays you ${rideShare()}. A Move cast by one of your own characters springs it and pays you nothing. It springs once, or comes back to your hand after ${setLastsWords(settings)} if nothing springs it. It costs nothing more to set.`,
+  },
+  {
+    key: 'off-day',
+    art: { color: '#ff3d7f', ink: '#14030a', canvas: offDayCanvas, mark: offDayMark, credit: offDayArt.credit, tagline: 'Give a character somebody else\'s day.' },
+    summary: 'Cast on a character, naming a class. For the one settlement window after the next settlement, that character scores as that class.',
+    /* The window in force now, if one is; else the next one named. A play is checked with no record, so it never assumes a class or a time. */
+    status: (plays) => {
+      const now = Date.now();
+      const open = plays.find((p) => p.starts !== undefined && Date.parse(p.starts) <= now);
+      const named = open ?? plays.find((p) => p.starts !== undefined) ?? plays[0];
+      const as = classWords(named?.config) ?? 'another class';
+      return open !== undefined ? `Scoring as ${as} now` : `Scores as ${as} next window`;
+    },
+    hint: 'An Off Day makes a character score as another class for one settlement window.',
+    ConfigForm: OffDayConfigForm,
+    describe: (settings: Settings) =>
+      `A Salty card, ${offDay.rarity}, cast from any post by the character it lands on. You name a class, and everyone can see which. From the next settlement until the one after it, that character is scored as that class, whatever its own. Its own class does not change, no Turn is used and its Turn cooldown is untouched. You are never told whether it made a difference; the character's player is told exactly what happened. A character takes one Off Day for each window. ${setMoveWords("the quoting post's character")} It costs nothing more to play.`,
+    /* The window is the one the server recorded with the play, in UTC, as the log says its times. */
+    logPlay: (config, { starts, ends }) => {
+      const as = classWords(config);
+      return as === undefined || starts === undefined || ends === undefined ? undefined
+        : `From the settlement of ${utcWhen(starts)} UTC to the settlement of ${utcWhen(ends)} UTC, that character scores as ${as}. Its own class does not change, no Turn is used, and its Turn cooldown is untouched.`;
+    },
   },
 ] satisfies CardUi[]);

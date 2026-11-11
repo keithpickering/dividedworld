@@ -8,11 +8,12 @@ import { STROKES, whoops } from './whoops.ts';
 import { NAMED_COLORS } from '../../../engine/bbcode/parse.ts';
 import { cards } from './index.ts';
 import { instance } from '../index.ts';
-import { atOrBelow, castOnPost, giftSplit, openDrive, staffConfigOf, decidePlay, decideSet, postTarget, type CardRules } from '../../../engine/rules/cards.ts';
+import { atOrBelow, castOnPost, giftSplit, openDrive, staffConfigOf, decidePlay, decideSet, decideUse, postTarget, type CardRules } from '../../../engine/rules/cards.ts';
 import { PEELS, autocorrect } from './autocorrect.ts';
 import { decide } from '../../../engine/rules/actions.ts';
 import { instanceProblems, withOverrides } from '../../../engine/rules/instance.ts';
 import { defaults as settings } from '../settings.ts';
+import { QUADRANTS } from '../../../engine/rules/types.ts';
 import type { CardTarget } from '../../../engine/rules/cards.ts';
 
 /** What the machine sells a card for: its slot's price. */
@@ -21,7 +22,7 @@ const priceOf = (key: string): number => instance.machine.find((m) => 'card' in 
 const post = (length: number): CardTarget => ({ reach: 'post', act: 'p1', kind: 'post', length, text: '' });
 
 test('the instance sells its cards at their prices', () => {
-  assert.deepEqual(cards.map((c) => [c.key, c.alignment, priceOf(c.key)]), [['stick-around', 'sweet', 100], ['whoops', 'salty', 100], ['card-collector', 'salty', 150], ['hall-pass', 'sweet', 150], ['force-field', 'sweet', 150], ['publicity-tour', 'sweet', 150], ['heat-magnet', 'salty', 150], ['class-clown', 'pepperoni', 150], ['good-vibes', 'sweet', 150], ['glitter-bomb', 'pepperoni', 150], ['main-event', 'sweet', 300], ['feelin-fab', 'sweet', 20], ['autocorrect', 'pepperoni', 100], ['you-were-saying', 'pepperoni', 100], ['below-the-fold', 'salty', 100], ['jimmy-wails', 'sweet', 200]]);
+  assert.deepEqual(cards.map((c) => [c.key, c.alignment, priceOf(c.key)]), [['stick-around', 'sweet', 100], ['whoops', 'salty', 100], ['card-collector', 'salty', 150], ['hall-pass', 'sweet', 150], ['force-field', 'sweet', 150], ['publicity-tour', 'sweet', 150], ['heat-magnet', 'salty', 150], ['class-clown', 'pepperoni', 150], ['good-vibes', 'sweet', 150], ['glitter-bomb', 'pepperoni', 150], ['main-event', 'sweet', 300], ['feelin-fab', 'sweet', 20], ['autocorrect', 'pepperoni', 100], ['you-were-saying', 'pepperoni', 100], ['below-the-fold', 'salty', 100], ['mooch', 'salty', 150], ['toll', 'pepperoni', 150], ['4d-chess', 'salty', 150], ['off-day', 'salty', 500], ['jimmy-wails', 'sweet', 200]]);
   assert.deepEqual(instanceProblems(instance), []);
   assert.deepEqual(instance.cards, cards);
 });
@@ -437,11 +438,12 @@ const answers: Record<string, Record<string, unknown>> = {
   autocorrect: { phrase: 'the same old', replacement: 'something new' },
   'stick-around': { sentence: 'I have read every word of this' },
   'card-collector': { card: 'whoops' },
+  '4d-chess': { card: 'whoops', quadrant: 'calmPositive' },
 };
 
 test('each card that lets the model set options gives an object schema its own validateConfig accepts for a sample answer', () => {
   const keys = cards.filter((c) => c.staffOptions).map((c) => c.key).sort();
-  assert.deepEqual(keys, ['autocorrect', 'card-collector', 'stick-around', 'whoops']);
+  assert.deepEqual(keys, ['4d-chess', 'autocorrect', 'card-collector', 'stick-around', 'whoops']);
   for (const card of cards) {
     if (!card.staffOptions) continue;
     const { prompt, schema } = card.staffOptions;
@@ -501,18 +503,114 @@ test('Autocorrect\'s phrase is its set phrase', () => {
   assert.equal(by('card-collector').setPhrase, undefined);
 });
 
-test('the Booster\'s hit pull gives Main Event 25% and shares 75% among the uncommons, over the fifteen cards', async () => {
+test('the Booster\'s hit pull gives uncommon 74, rare 24 and legendary 2, over the nineteen cards', async () => {
   const { packOdds } = await import('../../../engine/rules/packs.ts');
   const booster = instance.packs.find((p) => p.key === 'booster')!;
+  assert.deepEqual(booster.pulls.at(-1)!.weights, { uncommon: 74, rare: 24, legendary: 2 });
   const hit = packOdds(booster, cards, instance.settings).at(-1)!;
   const chance = new Map(hit.flatMap((r) => r.cards.map((c) => [c.card, c.chance] as const)));
-  // The Gimmicks (the card types plan) joined the Booster by their rarity, as a new card does: nine uncommons share the 75 (You Were Saying? and Below the Fold are commons, and the hit pull takes none). Jimmy Wails is an uncommon, and joined the Booster by its rarity with nothing listed in packs.ts.
-  assert.equal(cards.length, 16);
-  assert.ok(Math.abs(chance.get('main-event')! - 0.25) < 1e-9, `Main Event at ${chance.get('main-event')}`);
+  // The Gimmicks, Part 6 and Jimmy Wails joined the Booster by their rarity, as a new card does, with nothing listed in packs.ts: twelve uncommons share the 74 (You Were Saying? and Below the Fold are commons, and the hit pull takes none).
+  assert.equal(cards.length, 20);
+  assert.ok(Math.abs(chance.get('main-event')! - 0.24) < 1e-9, `Main Event at ${chance.get('main-event')}`);
+  assert.ok(Math.abs(chance.get('off-day')! - 0.02) < 1e-9, `Off Day at ${chance.get('off-day')}`);
   const uncommons = cards.filter((c) => c.rarity === 'uncommon');
-  assert.equal(uncommons.length, 9);
-  for (const c of uncommons) assert.ok(Math.abs(chance.get(c.key)! - 0.75 / 9) < 1e-9, `${c.key} at ${chance.get(c.key)}`);
-  assert.equal(chance.size, uncommons.length + 1);
+  assert.equal(uncommons.length, 12);
+  for (const c of uncommons) assert.ok(Math.abs(chance.get(c.key)! - 0.74 / 12) < 1e-9, `${c.key} at ${chance.get(c.key)}`);
+  assert.equal(chance.size, uncommons.length + 2);
+});
+
+/* Card notes, Part 6 (docs/plans/2026-11-11-card-notes-part-6-plan.md, Task 7): Mooch, Toll, 4D Chess and Off Day. */
+test('Mooch, Toll, 4D Chess and Off Day are in the instance, sold as the plan says, and the instance stays whole', () => {
+  const rows = ['mooch', 'toll', '4d-chess', 'off-day'].map((k) => [k, by(k).alignment, by(k).rarity, by(k).play ?? 'cast', instance.machine.find((m) => 'card' in m.item && m.item.card === k)?.availability, instance.machine.find((m) => 'card' in m.item && m.item.card === k)?.price]);
+  assert.deepEqual(rows, [
+    ['mooch', 'salty', 'uncommon', 'cast', 'onSale', 150],
+    ['toll', 'pepperoni', 'uncommon', 'use', 'onSale', 150],
+    ['4d-chess', 'salty', 'uncommon', 'set', 'onSale', 150],
+    ['off-day', 'salty', 'legendary', 'cast', 'hidden', 500],
+  ]);
+  assert.deepEqual(by('mooch').skim, { share: 0.1 });
+  assert.deepEqual(by('toll').gimmick, { kind: 'ride', share: 0.5 });
+  assert.deepEqual(by('4d-chess').trap, { trigger: { on: 'cast' }, outcome: { kind: 'ride', share: 1 } });
+  assert.equal(by('off-day').scoresAs, true);
+  assert.deepEqual(by('off-day').reaches, ['character']);
+  assert.deepEqual(instanceProblems(instance), []);
+});
+
+test('Mooch lands with a quadrant, is refused on a quadrant already live and lands on another', () => {
+  const mooch = by('mooch');
+  const live = [{ card: 'mooch', act: 'k1', quadrant: 'excitedPositive' as const, ends: new Date(Date.now() + 86_400_000).toISOString() }];
+  assert.deepEqual(mooch.validateConfig({ quadrant: 'calmPositive' }), { ok: true, value: { quadrant: 'calmPositive' } });
+  assert.equal(mooch.validateConfig({}).ok, false, 'no quadrant');
+  assert.equal(mooch.validateConfig({ quadrant: 'loud' }).ok, false);
+  assert.equal(mooch.canApply(post(10), [], { quadrant: 'excitedPositive' }).ok, true);
+  assert.equal(decidePlay(mooch, settings, post(10), live, { quadrant: 'excitedPositive' }, '').ok, false, 'that quadrant is taken');
+  assert.equal(decidePlay(mooch, settings, post(10), live, { quadrant: 'calmPositive' }, '').ok, true, 'another lands');
+  assert.equal(decidePlay(mooch, settings, post(10), live, {}, '').ok, false, 'a configuration with none is refused');
+  assert.deepEqual(mooch.validateConfig({}), { ok: false, why: 'choose the reactions to mooch' });
+  assert.deepEqual(mooch.validateConfig({ quadrant: 'loud' }), { ok: false, why: 'choose the reactions to mooch' });
+  assert.deepEqual(mooch.lasts, { unit: 'week', count: 1 });
+});
+
+test('Mooch stacks four deep, one per quadrant, and a fifth is refused', () => {
+  const mooch = by('mooch');
+  const up = (n: number) => QUADRANTS.slice(0, n).map((quadrant, i) => ({ card: 'mooch', act: `k${i}`, reach: 'post' as const, quadrant, ends: new Date(Date.now() + 86_400_000).toISOString() }));
+  assert.equal(decidePlay(mooch, settings, post(10), up(3), { quadrant: QUADRANTS[3] }, '').ok, true, 'the fourth lands');
+  assert.deepEqual(decidePlay(mooch, settings, post(10), up(4), { quadrant: QUADRANTS[0] }, ''), { ok: false, why: 'this post already carries 4 of that card, the most it takes' });
+});
+
+test('Toll lands on a post through decideUse, is refused by decidePlay, and a second live one is refused', () => {
+  const toll = by('toll');
+  assert.equal(decideUse(toll, settings, post(10), [], {}, '').ok, true);
+  assert.equal(decidePlay(toll, settings, post(10), [], {}, '').ok, false, 'a Gimmick is not cast');
+  const live = [{ card: 'toll', act: 'k1', ends: new Date(Date.now() + 86_400_000).toISOString() }];
+  assert.equal(decideUse(toll, settings, post(10), live, {}, '').ok, false);
+  assert.deepEqual(toll.lasts, { unit: 'week', count: 1 });
+});
+
+test('4D Chess names only Moves cast on a post up to uncommon, and a quadrant', () => {
+  const chess = by('4d-chess');
+  assert.deepEqual(chess.validateConfig({ card: 'whoops', quadrant: 'excitedNegative' }), { ok: true, value: { card: 'whoops', quadrant: 'excitedNegative' } });
+  assert.equal(chess.validateConfig({ card: 'whoops' }).ok, false, 'a missing quadrant');
+  assert.equal(chess.validateConfig({ card: '', quadrant: 'calmPositive' }).ok, false);
+  const keyWords = 'the card is the key of the Move to wait for';
+  assert.deepEqual(chess.validateConfig({ card: '', quadrant: 'calmPositive' }), { ok: false, why: keyWords });
+  assert.deepEqual(chess.validateConfig({ card: 7, quadrant: 'calmPositive' }), { ok: false, why: keyWords });
+  assert.deepEqual(chess.validateConfig({ card: 'x'.repeat(65), quadrant: 'calmPositive' }), { ok: false, why: keyWords }, '65 is too long');
+  assert.deepEqual(chess.validateConfig({ card: 'x'.repeat(64), quadrant: 'calmPositive' }), { ok: true, value: { card: 'x'.repeat(64), quadrant: 'calmPositive' } }, '64 passes');
+  assert.deepEqual(chess.validateConfig({ card: 'whoops' }), { ok: false, why: 'choose the reactions it pays on' });
+  assert.deepEqual(chess.validateConfig({ card: 'whoops', quadrant: 'loud' }), { ok: false, why: 'choose the reactions it pays on' });
+  assert.equal(decideSet(chess, settings, on('a post'), [], { card: 'whoops', quadrant: 'calmPositive' }, cards).ok, true);
+  assert.equal(decideSet(chess, settings, on('a post'), [], { card: 'mooch', quadrant: 'calmPositive' }, cards).ok, true, 'an uncommon Move');
+  const rare = decideSet(chess, settings, on('a post'), [], { card: 'main-event', quadrant: 'calmPositive' }, cards);
+  assert.deepEqual(rare, { ok: false, why: '4D Chess names a card that is cast on a post' }, 'Main Event is a rare cast on a thread, so it is refused as not cast on a post');
+  // The instance has no rare Move cast on a post (Main Event, its only rare, is cast on a thread), so the rarity words are reached with a rare one added to the list decideSet is given.
+  const rareOnPost = { ...by('whoops'), key: 'rare-on-post', rarity: 'rare' as const };
+  assert.deepEqual(decideSet(chess, settings, on('a post'), [], { card: 'rare-on-post', quadrant: 'calmPositive' }, [...cards, rareOnPost]), { ok: false, why: '4D Chess names cards up to uncommon' });
+  assert.equal(decideSet(chess, settings, on('a post'), [], { card: 'off-day', quadrant: 'calmPositive' }, cards).ok, false, 'a card on a character is not cast on a post');
+  assert.equal(decideSet(chess, settings, on('a post'), [], { card: 'whoops' }, cards).ok, false);
+  const options = chess.staffOptions as unknown as { schema: { properties: { card: { enum: string[] }; quadrant: { enum: string[] } } } };
+  for (const card of options.schema.properties.card.enum) assert.equal(decideSet(chess, settings, on('a post'), [], { card, quadrant: 'calmPositive' }, cards).ok, true, card);
+  assert.deepEqual(options.schema.properties.card.enum, cards.filter((c) => castOnPost(c) && atOrBelow(c.rarity, 'uncommon')).map((c) => c.key));
+  for (const key of options.schema.properties.card.enum) assert.ok(atOrBelow(by(key).rarity, 'uncommon'), `${key} is no more than uncommon`);
+  assert.ok(options.schema.properties.card.enum.includes('mooch'));
+  assert.ok(!options.schema.properties.card.enum.includes('main-event'));
+  assert.deepEqual(options.schema.properties.quadrant.enum, [...QUADRANTS]);
+});
+
+test('Off Day refuses a class the instance lacks and lands on a character', () => {
+  const off = by('off-day');
+  const character = { reach: 'character' as const, act: 'c1', kind: 'post' as const, length: 0, text: '' } as unknown as CardTarget;
+  assert.deepEqual(off.validateConfig({ class: 'face' }), { ok: true, value: { class: 'face' } });
+  for (const bad of ['ghost', '', 7, undefined]) assert.equal(off.validateConfig({ class: bad }).ok, false, String(bad));
+  assert.equal(off.canApply(character, []).ok, true);
+  assert.equal(off.canApply(post(10), []).ok, false, 'not on a post');
+  assert.deepEqual(off.validateConfig({ class: 'ghost' }), { ok: false, why: 'choose the class to name' });
+  assert.deepEqual(off.validateConfig(null), { ok: false, why: 'choose the class to name' });
+  assert.deepEqual(off.lasts, { unit: 'day', count: 2 });
+  const chara = { reach: 'character' as const, character: 'c1' };
+  const up = (n: number) => Array.from({ length: n }, (_, i) => ({ card: 'off-day', act: `o${i}`, reach: 'character' as const, ends: new Date(Date.now() + 86_400_000).toISOString() }));
+  assert.equal(off.canApply(chara, up(1)).ok, true, 'the next window\'s lands while this one is live');
+  assert.deepEqual(off.canApply(chara, up(2)), { ok: false, why: 'this character already carries 2 of that card, the most it takes' });
 });
 
 // Jimmy Wails (docs/plans/2026-11-03-jimmy-wails-plan.md, Task 6): a Sweet uncommon Cast on a post whose plays share a drive, each drawing a plate and needing a sob story.

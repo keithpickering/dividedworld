@@ -188,7 +188,7 @@ describe('what an effect is given of a drive', () => {
 });
 
 /*
- * Which plays make a drive (#447): the one client helper that mirrors the server's drive_plays and place_cast (0150_drives.sql). Plays here are plain,
+ * Which plays make a drive (#447): the one client helper that mirrors the server's drive_plays and place_cast (0152_drives.sql). Plays here are plain,
  * so each test says which fact of a play it is about.
  */
 describe('drivesOfPlays: which plays make a drive', () => {

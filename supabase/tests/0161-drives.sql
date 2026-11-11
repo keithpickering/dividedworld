@@ -1,4 +1,4 @@
--- The draw and the drive (supabase/migrations/0150_drives.sql; docs/plans/2026-11-03-jimmy-wails-design.md, section 4; plan Task 2).
+-- The draw and the drive (supabase/migrations/0152_drives.sql; docs/plans/2026-11-03-jimmy-wails-design.md, section 4; plan Task 2).
 -- A card with `draws` gets a key drawn by the server at each play (`drawn`, never the caster's). A card with a `drive` has its plays on one post share a drive,
 -- which closes `lasts` after its latest play; a drive holds at most `stack` plays, and a play after the close opens a new one. card_kinds_problem refuses a bad
 -- `draws` or `drive` in instanceProblems's words, seed_instance writes both columns, and card_target gives each drive play its `drive` and `closes`.
@@ -906,7 +906,7 @@ begin
 end $$;
 
 -- ---- the log reads a gift: each side's page names the gift's Act, the drive's opening play and the post, and holds only its own wallet event ----
--- log_page (0150) names the Acts a `gift_out` or `gift_in` points at (`ref`, the gift) and follows them to the drive's play and the post, so the line can say the amount, the overhead, what arrived and where. The giver's page
+-- log_page (0152) names the Acts a `gift_out` or `gift_in` points at (`ref`, the gift) and follows them to the drive's play and the post, so the line can say the amount, the overhead, what arrived and where. The giver's page
 -- holds the giver's event and none of the author's; the author's holds the author's and the giver's public character, never an account.
 do $$
 declare

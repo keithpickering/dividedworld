@@ -10,6 +10,7 @@ import { psqlDb, sql, scratchSeed } from './psql-db.ts';
 import { instance } from '../../functions/_shared/instance.ts';
 import { estimateForOwner } from '../../../engine/rules/settle.ts';
 import { runEstimate } from '../../functions/estimate/core.ts';
+import { runSettlement } from '../../functions/settle/core.ts';
 import type { Db } from '../../functions/_shared/rpc.ts';
 import type { SettlementInput } from '../../../engine/rules/types.ts';
 
@@ -207,4 +208,65 @@ test('a card an admin reversed before the estimate\'s end is not estimated, nor 
   assert.equal(paid(plays['Rv Gone']!), 0, 'a reversed card draws nothing in the estimate');
   assert.ok(paid(plays['Rv Kept']!) > 0 || lines.some((l) => l.reason === 'heel.drewHeat'), `the control is estimated: ${JSON.stringify(lines)}`);
   assert.ok(lines.length > 0);
+});
+
+// The card payouts, read live (plan Task 5): the caster of a Mooch sees a skim line for another player's reaction and none for their own, and a character named an Off Day's class is estimated under that class.
+test('the caster\'s estimate shows a skim line for another\'s reaction and none for their own; the target\'s is under the named class', async () => {
+  const db = psqlDb();
+  await db.rpc('seed_instance', { payload: scratchSeed(instance) });
+  if (sql(`select count(*) from settlements`) === '0') {
+    const first = await runSettlement(db, instance, sql(`select to_jsonb(min(starts_at) + interval '1 day')#>>'{}' from seasons`));
+    assert.equal(first.status, 'applied', JSON.stringify(first));
+  }
+  const tag = Math.random().toString(36).slice(2, 7);
+  const start = sql(`select to_jsonb(max(ends_at))#>>'{}' from settlements`);
+  const at = (hours: number) => new Date(Date.parse(start) + hours * 3_600_000).toISOString();
+  const names = ['mc', 'po', 'f1', 'f2', 'tg', 'ct', 'oc'] as const;
+  const ids = JSON.parse(sql(`
+    with u as (insert into auth.users (email) values ${names.map((n) => `('estpay${tag}${n}@test.invalid')`).join(', ')} returning id, email),
+    a as (insert into accounts (id) select id from u returning id)
+    select json_object_agg(substr(split_part(email, '@', 1), length('estpay${tag}') + 1), id) from u`)) as Record<(typeof names)[number], string>;
+  const c = JSON.parse(sql(`
+    with c as (insert into characters (owner, name, created_at, debuted_at) values ${names.map((n) => `('${ids[n]}', 'Estpay ${tag} ${n}', '${at(-48)}', '${at(-48)}')`).join(', ')} returning id, name),
+    h as (insert into class_history (character, class_key, started_at) select id, case when name like '% po' then 'heel' else 'face' end, '${at(-48)}' from c returning 1)
+    select json_object_agg(substr(name, length('Estpay ${tag} ') + 1), id) from c`)) as Record<(typeof names)[number], string>;
+  const thread = sql(`insert into threads (board, title) select id, 'Estimated pay' from boards where slug = 'general' returning id`);
+  const act = (who: string, when: string, kind: string, payload: object, target?: string) =>
+    sql(`insert into acts (character, kind, thread, target_act_id, payload, created_at) values ('${who}', '${kind}', '${thread}', ${target ? `'${target}'` : 'null'}, '${JSON.stringify(payload)}', '${when}') returning id`);
+  let slot = 0;
+  const vote = (target: string, who: 'mc' | 'f1' | 'f2', kind: string, hours: number) => {
+    slot += 1;
+    sql(`insert into reactions (act, reactor_character, reactor_account, kind, slot, created_at) values ('${target}', '${c[who]}', '${ids[who]}', '${kind}', ${slot}, '${at(hours)}')`);
+  };
+  // A Mooch on a Heel's post, naming the heat's quadrant: another player's tomato after it, and the caster's own.
+  const pp = act(c.po, at(1), 'post', { body: 'Mooch me.' });
+  act(c.mc, at(2), 'card', { card: 'mooch', message: '', config: { quadrant: 'excitedNegative' }, layer: 1, ends: at(2 + 168) }, pp);
+  vote(pp, 'f1', 'tomato', 3);
+  vote(pp, 'mc', 'tomato', 4);
+  // An Off Day made in the last settled window, naming the Heel's class for a Face; a control Face with the same post and votes.
+  const anchor = act(c.oc, at(-3), 'post', { body: 'Naming a class.' });
+  act(c.oc, at(-2), 'card', { card: 'off-day', message: '', config: { class: 'heel' }, reach: 'character', character: c.tg, targetName: 'tg', starts: at(0), ends: at(24) }, anchor);
+  for (const who of ['tg', 'ct'] as const) {
+    const p = act(c[who], at(1), 'post', { body: `Post of ${who}.` });
+    vote(p, 'f1', 'tomato', 5); vote(p, 'f2', 'tomato', 6);
+  }
+  const until = at(24);
+  const read = (who: (typeof names)[number]) => {
+    const scoped = JSON.parse(sql(`select estimate_input('${ids[who]}', '${until}')`)) as SettlementInput & { player: string };
+    return { scoped, estimate: estimateForOwner(scoped, instance, scoped.player) };
+  };
+  const caster = read('mc');
+  const skim = caster.estimate.lines.filter((l) => l.reason === 'card.skim');
+  assert.equal(skim.reduce((n, l) => n + l.amount, 0), 1, 'one skim line, for the other player\'s reaction; none for the caster\'s own');
+  assert.equal(skim.length, 1);
+  const target = read('tg');
+  assert.deepEqual(target.scoped.scoredAs?.map((s) => s.class), ['heel'], 'the target\'s estimate says the class it is scored as');
+  assert.ok(target.estimate.lines.some((l) => l.reason === 'heel.drewHeat'), 'the Face named a Heel is estimated as one');
+  const control = read('ct');
+  assert.deepEqual(control.scoped.scoredAs, [], 'the control names none');
+  assert.ok(!control.estimate.lines.some((l) => l.reason.startsWith('heel.')), 'and is estimated as the Face it is');
+  // A bystander's input holds none of the plays' extra Acts.
+  const bystander = JSON.stringify(read('f2').scoped);
+  assert.ok(!bystander.includes('"card":"mooch"'), 'a bystander\'s estimate holds no skim play');
+  assert.deepEqual(read('f2').scoped.scoredAs, []);
 });

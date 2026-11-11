@@ -71,7 +71,7 @@ export const ALLOWED_READS = Object.freeze([
   // The season a screen names beside them, by the same rule; seasons itself is not here, for the same reason.
   'current_season',
   // The player's own.
-  'my_characters', 'my_wallet', 'my_ledger', 'my_ledger_shares', 'my_wallet_events', 'my_card_ledger', 'my_packs', 'my_posts_played_on', 'my_posts_written_on', 'my_cards', 'my_reactions', 'my_invites', 'reading', 'my_followed_threads',
+  'my_characters', 'my_wallet', 'my_ledger', 'my_ledger_shares', 'my_scored_as', 'my_wallet_events', 'my_card_ledger', 'my_packs', 'my_posts_played_on', 'my_posts_written_on', 'my_cards', 'my_reactions', 'my_invites', 'reading', 'my_followed_threads',
   'account_preferences', 'effect_releases',
   // The player's own cards set face down and plays a trap caught (0054_card_plays.sql), and the card plays an admin ended (0092_card_end.sql): each filtered to the caller's own characters on the server.
   'my_face_down', 'my_caught', 'my_cards_ended',
@@ -95,7 +95,7 @@ export const ALLOWED_COUNTS = Object.freeze(/** @type {readonly { table: string,
 // visit_quiz (0108): a thread_page helper that returns one visit's drawn question and its choices, never the answer.
 // search_posts, search_threads and search_suggest (0117) are the search screens' reads, held to the screen-function rules by supabase/tests/e2e/0016-screen-reads.ts. The functions they call (the matches, the
 // cursor check, the suggested threads and characters, the stemming language, the folded text, the plain words of a post) are not listed: the web never calls them, and a call to one is a fault.
-// drive_gifts and drive_gifts_page (0150): a drive's total, count and donor wall, by character, its public name and amount; security invoker over acts_public and characters_public, and nothing of any wallet or of who owns a character.
+// drive_gifts and drive_gifts_page (0152): a drive's total, count and donor wall, by character, its public name and amount; security invoker over acts_public and characters_public, and nothing of any wallet or of who owns a character.
 export const ALLOWED_RPCS = Object.freeze(['whoami', 'is_admin', 'next_settlement_at', 'mark_read', 'set_preferences', 'meet_card', 'see_welcome', 'see_tip', 'skip_tips', 'restore_tips', 'resume_tips', 'replay_tour', 'my_account_opened', 'see_alerts', 'see_settlement', 'follow_thread', 'following_thread', 'my_alerts', 'my_alerts_unread', 'my_settlement_moved', 'set_profile', 'release_effect', 'card_target', 'standing_place', 'standings_page', 'admin_queue', 'hold_move', 'reverse_move', 'replace_successor', 'replace_queued_description', 'describe_board', 'move_progress', 'here', 'presence_box', 'screen_refusal', 'boot', 'index_page', 'board_page', 'thread_page', 'intercept', 'profile_page', 'record_page', 'set_presence_hidden', 'effects_above', 'pinned_threads', 'post_tails', 'play_moment', 'updates', 'season_news', 'finished_seasons', 'results_page', 'result_place', 'post_update', 'staff_career', 'boss_roster_names', 'dismiss_handover_todo', 'admin_contact', 'set_admin_contact', 'visit_quiz', 'beat_mod_name', 'my_apologies', 'apologize', 'my_characters_page', 'season_page', 'alerts_page', 'updates_page', 'queue_page', 'log_page', 'search_posts', 'search_threads', 'search_suggest', 'admin_machine', 'set_slot', 'move_slot', 'save_machine', 'drive_gifts', 'drive_gifts_page']);
 /**
  * The functions a screen function may depend on without the web calling them (supabase/tests/e2e/0016-screen-reads.ts reads each screen function's recorded dependencies against

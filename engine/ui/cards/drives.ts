@@ -82,7 +82,7 @@ export interface PlayedDrive {
 
 /**
  * Which plays make a drive, and what a drive is of them. This is the ONE place on the client that says so, as `drive_plays` and `place_cast`
- * are the one place on the server (supabase/migrations/0150_drives.sql); the owner's question #447 (does an ended play still hold its drive?)
+ * are the one place on the server (supabase/migrations/0152_drives.sql); the owner's question #447 (does an ended play still hold its drive?)
  * changes this function and drive_plays and nothing else. A drive's plays are its card's plays on the post that are not caught and not ended
  * (an admin's end, `reversed`; a refund, `untaken`; a passed `ends`), and a play at the post, not beyond it (`reach`); a card back is no play
  * (`faceDown`). A play's drive is the one its payload names, or its own id when it names none. A drive closes `lasts` after its latest play
