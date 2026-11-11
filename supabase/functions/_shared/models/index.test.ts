@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { AnswerRejected, models as modelsFor } from './index.ts';
+import { AnswerRejected, SchemaRefused, models as modelsFor } from './index.ts';
 import type { ModelOptions } from './index.ts';
 import { PRICES } from './prices.ts';
 import { ProviderRefusal, TransportFailure } from './transport.ts';
@@ -30,7 +30,7 @@ const noRecord = async () => {};
 /** The tiers the instance's `modelTiers` setting would hand over. */
 const tiers = { strong: 'claude-opus-5-5', light: 'claude-haiku-5-5' };
 const models = (e: typeof env, record: Parameters<typeof modelsFor>[1], options: Partial<ModelOptions> = {}) => modelsFor(e, record, { tiers, ...options });
-const chat = { duty: 'microEvent', tier: 'light', system: 'You are the Director.', messages: [{ role: 'user', content: 'Go.' }], schema: { type: 'object' }, maxTokens: 300 } as const;
+const chat = { duty: 'microEvent', tier: 'light', system: 'You are the Director.', messages: [{ role: 'user', content: 'Go.' }], schema: { type: 'object', additionalProperties: false }, maxTokens: 300 } as const;
 
 test('chat asks the Messages API for structured output, with the key in a header and no sampling parameters', async () => {
   const f = fake([message('{"line":"hi"}')]);
@@ -44,7 +44,7 @@ test('chat asks the Messages API for structured output, with the key in a header
   assert.equal(body.max_tokens, 300);
   assert.equal(body.system, 'You are the Director.');
   assert.deepEqual(body.messages, [{ role: 'user', content: 'Go.' }]);
-  assert.deepEqual(body.output_config, { format: { type: 'json_schema', schema: { type: 'object' } } });
+  assert.deepEqual(body.output_config, { format: { type: 'json_schema', schema: { type: 'object', additionalProperties: false } } });
   for (const k of ['temperature', 'top_p', 'top_k', 'thinking']) assert.equal(k in body, false, k);
   assert.deepEqual(r.value, { line: 'hi' });
   assert.equal(r.provider, 'anthropic');
@@ -308,4 +308,33 @@ test('the card play a call was made for reaches its ledger row, and a call for n
   await models(env, n.record, { fetch: fake([json({ choices: [{ text: 'a line' }] })]).fetch, sleep: async () => {} })
     .complete({ duty: 'cardText', prompt: 'x', temperature: 1, topP: 1, stop: [], maxTokens: 10 });
   assert.equal(n.rows[0]?.play, null);
+});
+
+test('a schema the provider would refuse is never sent: SchemaRefused, one failed row naming the predicate, no usage and no cost', async () => {
+  const f = fake([message('{}')]);
+  const l = ledger();
+  const m = models(env, l.record, { fetch: f.fetch, sleep: async () => {} });
+  await assert.rejects(m.chat({ ...asked, schema: { type: 'object', properties: { x: {} }, required: ['x'], additionalProperties: false } }), (e: unknown) => e instanceof SchemaRefused && e instanceof AnswerRejected && e.predicate === 'emptySchema' && /the schema is refused: emptySchema at properties\.x/.test(e.message) && e.problems.length === 1);
+  assert.equal(f.calls.length, 0, 'nothing was sent');
+  assert.equal(l.rows.length, 1);
+  assert.equal(l.rows[0]?.outcome, 'failed');
+  assert.equal(l.rows[0]?.predicate, 'emptySchema');
+  assert.equal(l.rows[0]?.costMicrodollars, 0);
+  assert.equal(l.rows[0]?.inputTokens, null);
+  assert.equal(l.rows[0]?.retries, 0);
+  const g = fake([message('{}')]);
+  const n = ledger();
+  await assert.rejects(models({ ...env } as typeof env, n.record, { fetch: g.fetch }).chat({ ...asked, schema: { type: 'object', properties: { xs: { type: 'array', items: { type: 'string' }, maxItems: 2 } }, required: ['xs'], additionalProperties: false } }), (e: unknown) => e instanceof SchemaRefused && e.predicate === 'keyword(maxItems)' && /maxItems at properties\.xs/.test(e.message));
+  assert.equal(g.calls.length, 0);
+  assert.equal(n.rows[0]?.predicate, 'keyword(maxItems)');
+  // The check comes before the key is read: a refused schema is refused with no key set, too.
+  const o = ledger();
+  await assert.rejects(models(() => undefined, o.record, { fetch: g.fetch }).chat({ ...asked, schema: {} }), SchemaRefused);
+  assert.equal(o.rows[0]?.predicate, 'emptySchema');
+  // A clean one is sent as before.
+  const ok = fake([message('{"moves":["a"]}')]);
+  const k = ledger();
+  await models(env, k.record, { fetch: ok.fetch, sleep: async () => {} }).chat(asked);
+  assert.equal(ok.calls.length, 1);
+  assert.equal(k.rows[0]?.outcome, 'ok');
 });

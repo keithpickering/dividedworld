@@ -874,7 +874,7 @@ export function patrolPrompt(i: PatrolInput): { readonly system: string; readonl
   const properties: Record<string, unknown> = {
     findings: {
       type: 'array',
-      maxItems: most,
+      // No maxItems: the provider refuses it (engine/system/schema.ts). The prompt names the bound and `repairPatrol` holds it.
       items: {
         type: 'object',
         properties: {

@@ -21,9 +21,10 @@ import { join } from 'node:path';
 import { callKey } from '../../engine/rehearsal/cassette.ts';
 import { leastAnswer } from '../../engine/rehearsal/stub.ts';
 import type { ChatRequest, CompletionRequest, ModelResult, Models } from '../../engine/system/model.ts';
+import { schemaProblems } from '../../engine/system/schema.ts';
 import { repair } from '../../engine/system/validate.ts';
 import type { Trim } from '../../engine/system/validate.ts';
-import { AnswerRejected, models as realModels } from '../../supabase/functions/_shared/models/index.ts';
+import { AnswerRejected, SchemaRefused, models as realModels } from '../../supabase/functions/_shared/models/index.ts';
 import type { Env, ModelOptions } from '../../supabase/functions/_shared/models/index.ts';
 import type { ModelCallRow, RecordModelCall } from '../../supabase/functions/_shared/models/ledger.ts';
 
@@ -122,6 +123,17 @@ export function rehearsalModels(o: RehearsalModelsOptions): RehearsalModels {
         calls.push({ at: now(), duty: request.duty, staff: request.staff ?? null, key, request, ...extra });
       };
       const replayRow = (row: ModelCallRow): ModelCallRow => ({ ...row, staff: request.staff ?? null, meeting: request.meeting ?? null });
+
+      // Before the cassette is consulted, in every mode: a held answer must not hide a schema the provider would now refuse.
+      if (kind === 'chat') {
+        const problems = schemaProblems((request as ChatRequest).schema);
+        if (problems.length > 0) {
+          const refused = new SchemaRefused(problems);
+          await record(emptyRow(request.duty, request, { outcome: 'failed', predicate: refused.predicate }));
+          keep({ replayed: false, error: { message: refused.message, predicate: refused.predicate }, trims: [], cost: 0 });
+          throw refused;
+        }
+      }
 
       if (o.mode === 'stub') {
         const made = doStub();

@@ -95,3 +95,18 @@ export class AnswerRejected extends Error {
     this.predicate = predicate;
   }
 }
+
+/**
+ * A request whose schema the provider would refuse (engine/system/schema.ts), caught before anything is sent, in every mode.
+ * It is an `AnswerRejected` so a caller that already handles a call with no usable answer handles this one; the model layer
+ * writes its row as `failed`, not `rejected`, because nothing was asked and nothing was paid for. Its predicate is the first
+ * problem's (`keyword(maxItems)`), and its message names where.
+ */
+export class SchemaRefused extends AnswerRejected {
+  readonly problems: readonly { readonly path: string; readonly predicate: string }[];
+  constructor(problems: readonly { readonly path: string; readonly predicate: string }[]) {
+    const first = problems[0]!;
+    super(`the schema is refused: ${first.predicate.replace(/^keyword\((.*)\)$/, '$1')} at ${first.path || 'the top'}`, first.predicate);
+    this.problems = problems;
+  }
+}

@@ -4,12 +4,12 @@ import { mkdtempSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CassetteMiss, rehearsalFetch, rehearsalModels, type Mode } from './models.ts';
-import { AnswerRejected } from '../../supabase/functions/_shared/models/index.ts';
+import { AnswerRejected, SchemaRefused } from '../../supabase/functions/_shared/models/index.ts';
 import type { ModelCallRow } from '../../supabase/functions/_shared/models/ledger.ts';
 import type { ChatRequest, CompletionRequest, Models } from '../../engine/system/model.ts';
 
 const TIERS = { strong: 'big-model', light: 'small-model' } as const;
-const chat: ChatRequest = { duty: 'meeting', tier: 'strong', system: 's', messages: [{ role: 'user', content: 'go' }], schema: { type: 'object', properties: { words: { type: 'string' } }, required: ['words'] }, maxTokens: 100, staff: 'boss', meeting: 1 };
+const chat: ChatRequest = { duty: 'meeting', tier: 'strong', system: 's', messages: [{ role: 'user', content: 'go' }], schema: { type: 'object', properties: { words: { type: 'string' } }, required: ['words'], additionalProperties: false }, maxTokens: 100, staff: 'boss', meeting: 1 };
 const completion: CompletionRequest = { duty: 'chatter', prompt: 'say', temperature: 0.5, topP: 1, stop: [], maxTokens: 20 };
 const dir = (): string => mkdtempSync(join(tmpdir(), 'cassette-'));
 
@@ -132,7 +132,7 @@ test('stub never calls live: chat gets the least answer, complete fails as produ
 test('stub repairs a chat answer against its rules: a bound it cannot meet is a rejection naming the predicate', async () => {
   const s = setup('stub', dir());
   const rules = { type: 'object', fields: { words: { type: 'string', minLength: 1 }, mood: { type: 'enum', values: ['x'], optional: true } } } as const;
-  const r = await s.m.chat({ ...chat, rules, schema: { type: 'object', properties: { words: { type: 'string' } }, required: ['words'] } });
+  const r = await s.m.chat({ ...chat, rules, schema: { type: 'object', properties: { words: { type: 'string' } }, required: ['words'], additionalProperties: false } });
   assert.ok(r.value);
   const rejected = await s.m.chat({ ...chat, rules: { type: 'object', fields: { missing: { type: 'string' } } } }).catch((e) => e);
   assert.ok(rejected instanceof AnswerRejected);
@@ -185,11 +185,40 @@ test('record mode: two different live chats on one simulated day each reach the 
   const m = rehearsalModels({ mode: 'record', dir: d, cap: { dollars: 5 }, transport: provider });
   const env = (k: string) => (k === 'ANTHROPIC_API_KEY' ? 'placeholder' : undefined);
   const models = m(env, async () => {}, { tiers: { strong: 'claude-opus-5-5', light: 'claude-haiku-5-5' }, fetch: feeds });
-  const base = { duty: 'microEvent', tier: 'light', messages: [{ role: 'user', content: 'Go.' }], schema: { type: 'object' }, maxTokens: 300 } as const;
+  const base = { duty: 'microEvent', tier: 'light', messages: [{ role: 'user', content: 'Go.' }], schema: { type: 'object', additionalProperties: false }, maxTokens: 300 } as const;
   const a = await models.chat({ ...base, system: 'first prompt' } as never);
   const b = await models.chat({ ...base, system: 'second prompt' } as never);
   assert.equal(reached, 2, 'the second call reached the provider');
   assert.deepEqual(a.value, { line: 'first prompt' });
   assert.deepEqual(b.value, { line: 'second prompt' });
   assert.ok(!readdirSync(d).some((f) => f.startsWith('feed-')), 'no model call was saved as a feed');
+});
+
+const refused = { ...chat, schema: { type: 'object', properties: { xs: { type: 'array', items: { type: 'string' }, maxItems: 3 } }, required: ['xs'], additionalProperties: false } } as ChatRequest;
+
+test('stub holds a schema to the provider\'s rules: SchemaRefused, its failed row written, nothing answered', async () => {
+  const s = setup('stub', dir());
+  await assert.rejects(() => s.m.chat(refused), (e: unknown) => e instanceof SchemaRefused && e.predicate === 'keyword(maxItems)');
+  assert.equal(s.rows.length, 1);
+  assert.equal(s.rows[0]!.outcome, 'failed');
+  assert.equal(s.rows[0]!.predicate, 'keyword(maxItems)');
+  assert.equal(s.rows[0]!.costMicrodollars, 0);
+  assert.deepEqual(s.live.calls, []);
+});
+
+test('a cassette does not hide a refused schema: a held call whose schema is now refused throws in every mode, and goes nowhere live', async () => {
+  const d = dir();
+  // Hold a call under the refused request's key, as an older run would have.
+  const { callKey } = await import('../../engine/rehearsal/cassette.ts');
+  const { createHash } = await import('node:crypto');
+  const key = callKey('chat', refused, 'big-model', (t: string) => createHash('sha256').update(t).digest('hex'));
+  const { writeFileSync } = await import('node:fs');
+  const row = { duty: 'meeting', staff: null, provider: 'anthropic', model: 'big-model', serviceTier: null, inputTokens: 1, outputTokens: 1, cacheReadTokens: null, cacheWrite5mTokens: null, cacheWrite1hTokens: null, gpuSeconds: null, costMicrodollars: 5, outcome: 'ok', predicate: null, trims: [], retries: 0, meeting: null, play: null };
+  writeFileSync(join(d, `${key}.json`), JSON.stringify({ key, kind: 'chat', request: refused, result: { value: { xs: [] }, usage: {}, provider: 'anthropic', model: 'big-model', trims: [], retries: 0, costMicrodollars: 5 }, row }));
+  for (const mode of ['record', 'offline', 'fresh'] as const) {
+    const s = setup(mode, d);
+    await assert.rejects(() => s.m.chat(refused), (e: unknown) => e instanceof SchemaRefused && e.predicate === 'keyword(maxItems)', mode);
+    assert.deepEqual(s.live.calls, [], mode);
+    assert.deepEqual(s.rows.map((r) => [r.outcome, r.predicate]), [['failed', 'keyword(maxItems)']], mode);
+  }
 });
