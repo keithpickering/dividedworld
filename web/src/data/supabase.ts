@@ -658,7 +658,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
 
   /**
    * A read whose arguments the server may refuse (the search reads, through screen_refusal): a refusal carrying the hint is thrown in the
-   * server's own words, so a screen can tell a refused search from one that never reached the server (NOT_READ); anything else is `read`'s.
+   * server's own words, so a screen can tell a refused search from one that never reached the server (a `ReadFailure`); anything else is `read`'s.
    */
   async function refusableRead(run: () => PromiseLike<unknown>): Promise<Res> {
     let refused = null as string | null;

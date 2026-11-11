@@ -29,8 +29,7 @@ import { ALERT_KINDS, isWritten, type WrittenKind } from '../../rules/alerts.ts'
 import { DEFAULT_DEVELOPER } from '../../rules/instance.ts';
 import { normalizePronouns, pronounProblems, type PronounSet } from '../../rules/pronouns.ts';
 import type { Career } from '../../system/career.ts';
-import type { FailureKind } from './api.ts';
-import { ALERTS_PAGE, ALERTS_UNREAD_BOUND, CONTACT_HREF_MAX, CONTACT_LABEL_MAX, CONTACT_MOST, CONTACT_WS, DEFAULT_PREFERENCES, FOLLOWED_COUNT_CAP, LOST_ANSWER, MOVES_LOG_PAGE, ReadFailure, SEARCH_CARDS_MAX, SEARCH_COUNT_CAP, SEARCH_MATCHES_CAP, SEARCH_PER_PAGE, SEARCH_PER_PAGE_MAX, SEASON_NEWS_PAGE, SPUN_FROM_MAX, UPDATES_PAGE } from './api.ts';
+import { ALERTS_PAGE, ALERTS_UNREAD_BOUND, type FailureKind, CONTACT_HREF_MAX, CONTACT_LABEL_MAX, CONTACT_MOST, CONTACT_WS, DEFAULT_PREFERENCES, FOLLOWED_COUNT_CAP, LOST_ANSWER, MOVES_LOG_PAGE, ReadFailure, SEARCH_CARDS_MAX, SEARCH_COUNT_CAP, SEARCH_MATCHES_CAP, SEARCH_PER_PAGE, SEARCH_PER_PAGE_MAX, SEASON_NEWS_PAGE, SPUN_FROM_MAX, UPDATES_PAGE } from './api.ts';
 import { buildMoveNotice, toDemand, toProgress } from './moves.ts';
 import { TIP_KEYS, TOUR_KEYS } from '../tips/keys.ts';
 import { PLAYS_PER_POST } from '../cards/plays.ts';

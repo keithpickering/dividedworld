@@ -266,6 +266,12 @@ describe('review fixes', () => {
     expect(screen.getByRole('search', { name: 'Search the boards' })).toBeInTheDocument();
   });
 
+  test('a search the server answered with an error is not said to have bad words', async () => {
+    open('/search?q=zzz', { posts: new ReadFailure('server') });
+    expect(await screen.findByText('The search could not reach the server. Check your connection and try again.')).toBeInTheDocument();
+    expect(screen.queryByText(/Check the dates and the words/)).toBeNull();
+  });
+
   test('Q-1: a page number is shown only for a page walked in this search, not for one typed into the address', async () => {
     open('/search?q=green&page=9&after=%7C2026-10-05T00%3A00%3A00.000Z%7Cact-1', { posts: page([hit(9)], { count: 200, next: cursor(9) }) });
     const nav = await screen.findByRole('navigation', { name: 'Pages of results' });
