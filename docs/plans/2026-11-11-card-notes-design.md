@@ -413,3 +413,19 @@ comes.
    settlement exception; the plan accepts it and names it for the review.
 6. **Line Cutter, caught** (Part 2). A Card Collector that catches a Line Cutter posts no reply; the words stay in
    the caster's editor.
+
+### The owner's answers
+
+Answered the same day:
+
+1. **Whodunnit? and the Mod Bots:** "Plan is fine." A Mod Bot leaves a veiled post alone until the name is back.
+2. **The Unban:** "Ultra Happy Heart should work for any unban, I'd say. More flexible than hunting for a gold
+   ball." So the card is the permaban's way out too, when the permaban is built, in place of The System's design's
+   bound Unban from a gold Minus Ball. Whether a lifted permaban returns on parole is still asked then.
+3. **Patrols** as a weighted draw: "Makes sense."
+4. **A legendary in the Booster:** "Makes sense."
+5. **Mooch in a quiet window:** "Players can't react to their own masks, I don't think?" They cannot: `react` refuses
+   a reaction to one's own character (`supabase/migrations/0065_hints.sql` says so of `react`), so no reaction on a
+   post is ever its author's own player's, and a Mooch's sum cannot show one. What is left is only that a Mooch's
+   caster is paid nothing for their own reactions, which tells the caster a fact they already hold.
+6. **Line Cutter, caught:** "OK."
