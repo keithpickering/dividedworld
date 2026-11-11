@@ -49,6 +49,18 @@ describe('Divided World\'s onboarding words', () => {
   });
 });
 
+describe('Divided World\'s gear and trophy art', () => {
+  test('every gear has art and an aspect, and every trophy kind has a badge, and nothing else does', () => {
+    expect(Object.keys(instanceUi.gear).sort()).toEqual(instance.gear.map((g) => g.key).sort());
+    for (const g of instance.gear) {
+      expect(instanceUi.gear[g.key]?.art, `${g.key}'s art`).toEqual(expect.any(String));
+      expect(instanceUi.gear[g.key]!.aspect, `${g.key}'s aspect`).toBeGreaterThan(0);
+    }
+    expect(Object.keys(instanceUi.trophies).sort()).toEqual(instance.trophies.kinds.map((k) => k.key).sort());
+    for (const k of instance.trophies.kinds) expect(instanceUi.trophies[k.key]?.art, `${k.key}'s badge`).toEqual(expect.any(String));
+  });
+});
+
 describe('Divided World\'s Vending Machine words', () => {
   test('the shop is named plainly, and the sign has the design\'s twelve names, in order, each within the check', () => {
     expect(instanceUi.copy.shopName).toBe('Vending Machine');

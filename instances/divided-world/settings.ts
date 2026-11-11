@@ -119,6 +119,22 @@ export const defaults: Settings = deepFreeze<Settings>({
    * at most 80 words.
    */
   apology: { apologyEveryHours: 24, apologyJudgeBatch: 10, apologyRulingMaxWords: 80 },
+  /**
+   * The cosmetics (the cosmetics design): a character wears up to twelve pieces, each reaching up to 0.4 of the portrait's width past an
+   * edge; a postbit shows three trophies; a Random Event gets one chance per character in a 15-minute window and at most four in a rolling
+   * day, and is mostly a line, sometimes a found piece of gear, rarely a found card. Starting points the season review replaces.
+   */
+  cosmetics: {
+    gear: { wornMost: 12, reach: 0.4 },
+    trophies: { shownMost: 3 },
+    events: {
+      windowMinutes: 15,
+      dayMost: 4,
+      outcomes: { line: 70, gear: 20, card: 10 },
+      gearRarity: { common: 80, uncommon: 17, rare: 3 },
+      cardRarity: { common: 80, uncommon: 17, rare: 3 },
+    },
+  },
   /** A board's name is at most 60 characters, whoever proposes it. */
   boardNameMaxLength: 60,
   /** A starting point: no move runs longer than six weeks. */

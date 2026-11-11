@@ -11,6 +11,7 @@ import glassData from './glass.json';
 import { cardsUi } from './cards.ts';
 import { cards as instanceCards } from '../cards/index.ts';
 import { packsUi } from './packs.ts';
+import { gearUi, trophiesUi } from './cosmetics.ts';
 import theme from './theme.css?url';
 import themePreview from './theme.css?preview';
 import blueSteel from './themes/blue-steel.css?url';
@@ -172,6 +173,8 @@ export const instanceUi: InstanceUi = Object.freeze({
   glass,
   cards: cardsUi,
   packs: packsUi,
+  gear: gearUi,
+  trophies: trophiesUi,
   /* The back of a card wears the favicon's coin (the owner's word, 2026-11-07). */
   cardBack: { mark: coinUrl },
   onboarding,

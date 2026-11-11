@@ -15,7 +15,7 @@ import { PlayerProvider } from './player.tsx';
 import { ACTION_TIPS, TIP_KEYS } from './tips/keys.ts';
 import type { GuideUi } from './types.ts';
 import { RouterProvider } from './router.tsx';
-import { systemSettings, testSystem, testGroups } from '../rules/test-system.ts';
+import { systemSettings, testCosmeticsContent, testSystem, testGroups } from '../rules/test-system.ts';
 
 const settings: Settings = {
   walletCap: 600, vote: 10, halving: 0.5, reactionCap: 3, charactersPerPlayer: 3,
@@ -45,7 +45,7 @@ export const testInstance: Instance = {
     { key: 'tea', emoji: 'E', quadrant: 'calmPositive' }, { key: 'zzz', emoji: 'Z', quadrant: 'boredNegative' },
   ],
   settings,
-  packs: [],
+  packs: [], ...testCosmeticsContent,
   /* The Vending Machine sells the one card at 1.00. */
   machine: [{ item: { card: 'whoops' }, availability: 'onSale', price: 100 }],
   system: testSystem,

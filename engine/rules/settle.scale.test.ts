@@ -10,7 +10,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { settle, shareEntries } from './settle.ts';
 import type { ClassRules, Instance, InputAct, InputReaction, SettlementInput } from './types.ts';
-import { systemSettings, testSystem, testGroups } from './test-system.ts';
+import { systemSettings, testCosmeticsContent, testSystem, testGroups } from './test-system.ts';
 
 const counting: ClassRules = {
   key: 'counting',
@@ -28,7 +28,7 @@ const kinds = ['fire', 'tomato', 'tea', 'zzz'] as const;
 const instance: Instance = {
   key: 'busy', name: 'Busy', system: testSystem, classes: [counting], ranks: [{ name: 'Rookie', from: 0 }], groups: testGroups, pipStyles: [{ key: 'default', name: 'Default', full: '●', empty: '○' }], boards: [{ slug: 'b', name: 'B', description: '' }],
   copy: { announcementsThreadTitle: 'S{season} Promos' },
-  packs: [], machine: [],
+  packs: [], machine: [], ...testCosmeticsContent,
   cards: [{ key: 'splat', name: 'Splat', alignment: 'salty', rarity: 'common', playPrice: () => 0, canApply: () => ({ ok: true, value: undefined }), validateConfig: (c) => ({ ok: true, value: c }) }],
   reactions: [
     { key: 'fire', emoji: '🔥', quadrant: 'excitedPositive' }, { key: 'tomato', emoji: '🍅', quadrant: 'excitedNegative' },

@@ -14,7 +14,7 @@ import { TIP_KEYS } from '../tips/keys.ts';
 import { createFake, FAKE_BACKEND_MARKER, TEST_CODE } from './fake.ts';
 import { LOG_ROWS, micros } from './log-page.ts';
 import { actsFollowed, actsNamed } from '../log/lines.ts';
-import { systemSettings, testSystem, testGroups } from '../../rules/test-system.ts';
+import { systemSettings, testCosmeticsContent, testSystem, testGroups } from '../../rules/test-system.ts';
 import { ENGINE_DEFAULT_PRONOUNS, PRONOUN_PRESETS } from '../../rules/pronouns.ts';
 
 const settings: Settings = {
@@ -30,7 +30,7 @@ const earn = () => [];
 const instance: Instance = {
   key: 'test', name: 'Test',
   copy: { announcementsThreadTitle: 'Promos {season}' },
-  packs: [], machine: [],
+  packs: [], machine: [], ...testCosmeticsContent,
   classes: [{ key: 'face', name: 'Face', earn }, { key: 'heel', name: 'Heel', earn }, { key: 'lurker', name: 'Lurker', earn }],
   cards: [],
   reactions: [
