@@ -310,23 +310,80 @@ describe('the side by side avatar slot, in the stylesheet', () => {
   const css = readFileSync('engine/ui/postbit/postbit.css', 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '');
   /* The declarations of the first rule whose selector contains `selector`, in any media block. */
   const rule = (selector: string) => {
-    const at = css.indexOf(selector);
-    if (at < 0) return null;
-    return css.slice(css.indexOf('{', at) + 1, css.indexOf('}', at));
+    const found = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/gu)].filter((m) => m[1]!.split(',').some((x) => x.trim().endsWith(selector.replace(/ \{$/u, ''))));
+    return found.length === 0 ? null : found.map((m) => m[2]!).join('');
   };
 
   /* A portrait is any shape from 1:1 to 1:2 (profile-edit/frames.ts). A slot fixed at 1:2 with `cover` crops every
      portrait shorter than that, so the slot must take the picture's own shape once it loads. */
   test('a portrait\'s slot takes the portrait\'s own shape, not a fixed 1:2 crop', () => {
     expect(rule('.kb-postbit-avatar[data-kb-slot="portrait"] {')).toMatch(/aspect-ratio:\s*auto\s*;/u);
-    expect(rule('.kb-postbit-avatar[data-kb-slot="portrait"] img')).toMatch(/aspect-ratio:\s*auto 1 \/ 2\s*;/u);
-    expect(rule('.kb-postbit-avatar[data-kb-slot="portrait"] img')).toMatch(/height:\s*auto\s*;/u);
+    expect(rule('.kb-postbit-avatar[data-kb-slot="portrait"] > picture > img')).toMatch(/aspect-ratio:\s*auto 1 \/ 2\s*;/u);
+    expect(rule('.kb-postbit-avatar[data-kb-slot="portrait"] > picture > img')).toMatch(/height:\s*auto\s*;/u);
   });
 
   test('the phone keeps its small square, which the portrait\'s rules must not reach', () => {
     const phone = css.slice(css.indexOf('@media (max-width: 40em)'));
     expect(phone).not.toContain('data-kb-slot="portrait"');
     expect(css).toMatch(/@media not all and \(max-width: 40em\)\s*\{[^@]*data-kb-slot="portrait"/u);
+  });
+});
+
+describe('gear on the postbit', () => {
+  const worn = [{ gear: 'band', x: 0.5, y: 0, w: 0.5, turn: 0, layer: 0 }];
+  const SQUARE = { x: 0, y: 0, w: 1, h: 0.5 };
+
+  test('a portrait wears its pieces in a layer of its own, hidden from assistive tech', () => {
+    show(person({}, { outfit: worn, portraitTallness: 1.5 }));
+    const layer = slot().querySelector('.kb-outfit')!;
+    expect(layer).toHaveAttribute('aria-hidden', 'true');
+    expect(layer.querySelectorAll('img')).toHaveLength(1);
+    expect(slot().querySelector('picture img')).toHaveAttribute('src', 'tall.webp');
+  });
+
+  test('the tall slot takes the portrait\'s tallness as its aspect ratio', () => {
+    show(person({}, { portraitTallness: 1.4 }));
+    expect((slot() as HTMLElement).style.aspectRatio).toBe('1 / 1.4');
+  });
+
+  test('the stacked band and the phone draw the square, with the pieces cut through its frame', () => {
+    show(person({}, { outfit: [{ ...worn[0]!, y: 0.25 }], squareFrame: SQUARE, portraitTallness: 2 }), 'stacked');
+    expect(slot().querySelector('.kb-outfit')).toHaveAttribute('data-kb-on', 'square');
+    expect(slot().querySelector<HTMLElement>('.kb-outfit img')!.style.top).toBe('50%');
+    document.body.innerHTML = '';
+    widthOf(390);
+    show(person({}, { outfit: [{ ...worn[0]!, y: 0.25 }], squareFrame: SQUARE, portraitTallness: 2 }));
+    expect(slot()).toHaveAttribute('data-kb-slot', 'square');
+    expect(slot().querySelector('.kb-outfit')).toHaveAttribute('data-kb-on', 'square');
+  });
+
+  test('a mask with no portrait draws its square or initial and no gear', () => {
+    show(person({}, { avatarPortrait: null, outfit: worn }));
+    expect(slot().querySelector('.kb-outfit')).toBeNull();
+  });
+
+  test('a mask with a portrait and no gear draws no layer', () => {
+    show(person({}, { outfit: [] }));
+    expect(slot().querySelector('.kb-outfit')).toBeNull();
+  });
+});
+
+describe('the postbit\'s text over the outfit, in the stylesheet', () => {
+  const css = readFileSync('engine/ui/postbit/postbit.css', 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '');
+  const decls = (selector: string) => [...css.matchAll(/([^{}]+)\{([^{}]*)\}/gu)].filter((m) => m[1]!.split(',').some((x) => x.trim() === selector || x.trim().endsWith(` ${selector}`))).map((m) => m[2]!).join('');
+  const z = (d: string) => Number(/z-index:\s*(-?\d+)/u.exec(d)?.[1] ?? 'NaN');
+
+  test('the name, title, rank, trophies and counts are on a layer above the avatar slot, each run on the board\'s ground', () => {
+    const text = decls('.kb-postbit[data-kb-postbit="side"] .kb-postbit-text > *');
+    expect(z(text)).toBeGreaterThan(z(decls('.kb-postbit-avatar')));
+    expect(text).toMatch(/background:\s*var\(--kb-bg\)/u);
+    expect(decls('.kb-postbit-avatar')).toMatch(/position:\s*relative/u);
+  });
+
+  test('the tall slot lets gear reach past its edge and does not crop the portrait', () => {
+    const slot = decls('.kb-postbit-avatar[data-kb-slot="portrait"]');
+    expect(slot).toMatch(/overflow:\s*visible/u);
+    expect(decls('.kb-postbit-avatar[data-kb-slot="portrait"] > picture > img')).not.toMatch(/object-fit:\s*cover/u);
   });
 });
 

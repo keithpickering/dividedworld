@@ -86,9 +86,23 @@
   align-self: flex-start;
 }
 
-.kb-profile-avatar[data-kb-slot="portrait"] img {
+.kb-profile-avatar[data-kb-slot="portrait"] {
+  /* Gear may reach past the slot (gear/outfit.css cuts the reach), and the portrait is never cropped. */
+  position: relative;
+  overflow: visible;
+  container-type: inline-size;
+}
+
+.kb-profile-avatar[data-kb-slot="portrait"] > img {
   height: auto;
   aspect-ratio: auto 1 / 2;
+  object-fit: fill;
+}
+
+/* A portrait whose tallness is known sets the slot's shape inline (Outfit's slotShape), and the picture fills it. */
+.kb-profile-avatar[data-kb-slot="portrait"][data-kb-shaped] > img {
+  height: 100%;
+  aspect-ratio: auto;
 }
 
 .kb-profile-none {

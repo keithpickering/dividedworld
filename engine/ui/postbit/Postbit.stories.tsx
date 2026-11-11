@@ -2,6 +2,8 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import type { Character } from '../data/api.ts';
 import { Postbit, type PostbitPerson } from './Postbit.tsx';
 import { ENGINE_DEFAULT_PRONOUNS } from '../../rules/pronouns.ts';
+import type { Piece } from '../../rules/cosmetics.ts';
+import { useKayfa } from '../context.tsx';
 
 const meta: Meta<typeof Postbit> = {
   title: 'Postbit/Postbit',
@@ -48,3 +50,18 @@ export const Banned: Story = { args: { person: person({}, { bannedUntil: '2099-0
 export const Member: Story = { args: { person: person({}, { group: 'members' }), layout: 'side' } };
 export const TrialMember: Story = { args: { person: person({}, { group: 'trialMembers', warnPoints: 6 }), layout: 'side' } };
 export const Staff: Story = { args: { person: staffPerson({ name: 'The Clerk', title: 'Head of Board Operations', staff: 'the-clerk', office: 'boss', group: 'personalityCores' }), layout: 'side' } };
+
+/*
+ * A mask wearing gear: the first pieces the instance's own gear table offers (the engine names none), one reaching above the slot, one on the
+ * face, one turned. The portrait is 1:1.4 (its tallness), the square the portrait's top 1:1.4 (its frame), so the stacked band shows the same
+ * pieces cut through it. The name, title and rank stay on the board's ground over a piece that reaches behind them.
+ */
+function Wearing({ layout }: { readonly layout: 'side' | 'stacked' }) {
+  const { ui } = useKayfa();
+  const keys = Object.keys(ui.gear);
+  const spots = [{ x: 0.5, y: 0, w: 0.7, turn: -8 }, { x: 0.5, y: 0.3, w: 0.5, turn: 0 }, { x: 0.7, y: 0.62, w: 0.3, turn: 14 }];
+  const outfit: Piece[] = keys.slice(0, 3).map((gear, i) => ({ gear, layer: i, ...spots[i]! }));
+  return <Postbit person={person({}, { outfit, portraitTallness: 1.4, squareFrame: { x: 0, y: 0, w: 1, h: 1 / 1.4 } })} layout={layout} />;
+}
+export const WearingGear: Story = { render: () => <Wearing layout="side" /> };
+export const WearingGearStacked: Story = { render: () => <Wearing layout="stacked" /> };

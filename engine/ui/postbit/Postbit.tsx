@@ -18,6 +18,7 @@ import { rankIndex } from '../../rules/ranks.ts';
 import { monthYear, shortDate } from './dates.ts';
 import { Link } from '../router.tsx';
 import type { Statement } from './reveals.ts';
+import { Outfit, slotShape } from '../gear/Outfit.tsx';
 import { GroupBar } from './GroupBar.tsx';
 import { StaffBadge, showsStaffBadge } from './StaffBadge.tsx';
 import { WarnMeter } from './WarnMeter.tsx';
@@ -33,23 +34,31 @@ export interface PostbitPerson extends Statement {
 
 export type PostbitLayout = 'side' | 'stacked';
 
-/** The avatar slot: the portrait in the tall slot, the square where there is none, the initial where there is no avatar. */
-function Avatar({ character, layout }: { readonly character: Character; readonly layout: PostbitLayout }) {
-  const { avatarSquare: square, avatarPortrait: portrait } = character;
-  if (layout === 'stacked' || !portrait) {
-    const src = layout === 'stacked' ? square : square ?? portrait;
+/**
+ * The avatar slot: the portrait in the tall slot, the square where there is none, the initial where there is no avatar. A portrait draws at the shape it
+ * was cut (`portraitTallness`) and wears its outfit; the square, on the stacked band and on a phone, wears the same pieces cut through its own frame.
+ * A mask with no portrait wears nothing.
+ */
+function Avatar({ character, layout, narrow }: { readonly character: Character; readonly layout: PostbitLayout; readonly narrow: boolean }) {
+  const { avatarSquare: square, avatarPortrait: portrait, outfit, squareFrame, portraitTallness } = character;
+  const squareHere = layout === 'stacked' || (narrow && square);
+  if (squareHere || !portrait) {
+    const src = squareHere ? square : square ?? portrait;
+    const wears = portrait && src === square && outfit.length > 0;
     return (
-      <span className="kb-postbit-avatar" data-kb-slot={layout === 'side' && src ? 'tall' : 'square'} aria-hidden="true">
+      <span className="kb-postbit-avatar" data-kb-slot={layout === 'side' && !narrow && src ? 'tall' : 'square'} aria-hidden="true">
         {src ? <img src={src} alt="" loading="lazy" decoding="async" /> : <span className="kb-postbit-none">{character.name.slice(0, 1)}</span>}
+        {wears && <Outfit pieces={outfit} on="square" frame={squareFrame ?? (portraitTallness ? { x: 0, y: 0, w: 1, h: 1 / portraitTallness } : null)} />}
       </span>
     );
   }
   return (
-    <span className="kb-postbit-avatar" data-kb-slot="portrait" aria-hidden="true">
+    <span className="kb-postbit-avatar" data-kb-slot="portrait" data-kb-shaped={portraitTallness === null ? undefined : ''} aria-hidden="true" style={slotShape(portraitTallness)}>
       <picture>
         {square && <source media="(max-width: 40em)" srcSet={square} />}
         <img src={portrait} alt="" loading="lazy" decoding="async" />
       </picture>
+      <Outfit pieces={outfit} on="portrait" />
     </span>
   );
 }
@@ -87,7 +96,7 @@ export const Postbit = memo(function Postbit({ person, layout, marks = null, lin
   const pipImages = ui.pips?.[c.pipStyle] ?? ui.pips?.default;
   return (
     <div className="kb-postbit" role="group" aria-label={`About ${c.name}`} data-kb-postbit={layout}>
-      <Avatar character={c} layout={layout} />
+      <Avatar character={c} layout={layout} narrow={narrow} />
       <div className="kb-postbit-text">
         <span className="kb-postbit-name">{link ? <Link to={`/c/${encodeURIComponent(c.id)}`}>{c.name}</Link> : c.name}</span>
         {/* The group's bar under the name; a staff character's has its office title beside it. */}

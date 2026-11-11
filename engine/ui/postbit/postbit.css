@@ -5,6 +5,8 @@
  * whatever the reader chose. Percentages and em throughout.
  */
 .kb-postbit {
+  /* Its own stacking context: the outfit and the text over it (below) are ordered here and never against the page. */
+  isolation: isolate;
   display: flex;
   flex-direction: column;
   gap: 0.3em;
@@ -60,6 +62,9 @@
 
 /* The avatar slot */
 .kb-postbit-avatar {
+  /* The outfit's layer (gear/outfit.css) is placed against this box, under the text's layer (below). */
+  position: relative;
+  z-index: 1;
   display: block;
   border: 1px solid var(--kb-rule);
   overflow: hidden;
@@ -87,6 +92,19 @@
   display: contents;
 }
 
+/*
+ * Gear may reach past the tall slot (a cap above it), drawn under the text: the name, title, rank, trophies and counts are each on a layer
+ * above the slot, every run on the board's ground, so no piece is ever behind letters that are read over it (the cosmetics board 01). The
+ * ground is the theme's own token, so it holds in every theme, and Windows High Contrast paints it as Canvas.
+ */
+.kb-postbit[data-kb-postbit="side"] .kb-postbit-text > * {
+  position: relative;
+  z-index: 2;
+  align-self: flex-start;
+  max-width: 100%;
+  background: var(--kb-bg);
+}
+
 .kb-postbit[data-kb-postbit="side"] .kb-postbit-counts,
 .kb-postbit[data-kb-postbit="side"] .kb-postbit-class {
   order: 2;
@@ -111,6 +129,17 @@
   aspect-ratio: 1;
 }
 
+/* The portrait's slot lets its outfit reach past it (outfit.css cuts the reach); the portrait fills the slot at its own shape, never cropped. */
+.kb-postbit[data-kb-postbit="side"] .kb-postbit-avatar[data-kb-slot="portrait"] {
+  overflow: visible;
+  container-type: inline-size;
+}
+
+.kb-postbit[data-kb-postbit="side"] .kb-postbit-avatar[data-kb-slot="portrait"] > picture > img,
+.kb-postbit[data-kb-postbit="side"] .kb-postbit-avatar[data-kb-slot="portrait"] > picture {
+  object-fit: fill;
+}
+
 .kb-postbit[data-kb-postbit="side"] .kb-postbit-avatar[data-kb-slot="square"] {
   width: 3.2em;
   aspect-ratio: 1;
@@ -126,13 +155,20 @@
     aspect-ratio: auto;
   }
 
-  .kb-postbit[data-kb-postbit="side"] .kb-postbit-avatar[data-kb-slot="portrait"] picture {
+  .kb-postbit[data-kb-postbit="side"] .kb-postbit-avatar[data-kb-slot="portrait"] > picture {
     height: auto;
   }
 
-  .kb-postbit[data-kb-postbit="side"] .kb-postbit-avatar[data-kb-slot="portrait"] img {
+  .kb-postbit[data-kb-postbit="side"] .kb-postbit-avatar[data-kb-slot="portrait"] > picture > img {
     height: auto;
     aspect-ratio: auto 1 / 2;
+  }
+
+  /* A portrait whose tallness is known sets the slot's shape inline (Outfit's slotShape), and the picture fills it. */
+  .kb-postbit[data-kb-postbit="side"] .kb-postbit-avatar[data-kb-slot="portrait"][data-kb-shaped] > picture,
+  .kb-postbit[data-kb-postbit="side"] .kb-postbit-avatar[data-kb-slot="portrait"][data-kb-shaped] > picture > img {
+    height: 100%;
+    aspect-ratio: auto;
   }
 }
 
