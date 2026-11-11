@@ -1081,7 +1081,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const wanted = items.filter((i) => idOk(i.thread)).slice(0, 50);
       if (wanted.length === 0) return {};
       const d = (await read(() => client.rpc('move_thread_names', { items: wanted.map((i) => ({ thread: i.thread, act: i.act })) }))).data;
-      return Object.fromEntries(rowsOf(d).map((r) => [r['key'] as Id, { title: str(r['title']) ?? '', from: typeof r['from'] === 'string' ? r['from'] : null }]));
+      return Object.fromEntries(rowsOf(d).map((r) => [r['key'] as Id, { title: str(r['title']) ?? '', left: typeof r['left'] === 'string' ? r['left'] : null }]));
     },
     async moveNotice(id) {
       if (!idOk(id)) return null;

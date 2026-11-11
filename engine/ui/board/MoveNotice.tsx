@@ -29,7 +29,8 @@ import { Overlay } from '../glass/Overlay.tsx';
 import { shortDate } from '../postbit/dates.ts';
 import { readable } from '../reactions/Reactions.tsx';
 import { Link } from '../router.tsx';
-import { moveBoardNames, moveLabel, officeRole, useMovedThread, wayOut } from './move-words.ts';
+import { moveBoardNames, moveLabel, officeRole, wayOut } from './move-words.ts';
+import { useMovedThread } from './moved-thread.ts';
 import './move.css';
 
 /**

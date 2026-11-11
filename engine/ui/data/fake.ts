@@ -493,7 +493,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return found;
   };
   /** Where a landed `moveThread` took a thread from (thread_departures, 0158). */
-  const departures: { thread: Id; from: Id; to: Id; at: number }[] = [];
+  const departures: { thread: Id; origin: Id; to: Id; at: number }[] = [];
   /** A closed board: merged into another, or closed with where its threads went (boards_now.closed and merged_into, 0152). */
   const closedBoards = new Map<Id, { mergedInto: Id | null; fallback: Id | null }>();
   const isClosed = (b: Board): boolean => closedBoards.has(b.id);
@@ -2225,8 +2225,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const t = threads.get(i.thread);
       if (!t) return [];
       /* A landed move left the board it was taken from (the latest departure of the thread); a waiting one leaves the board the thread is on. */
-      const left = i.act === null ? t.board : departures.filter((d) => d.thread === i.thread).at(-1)?.from ?? null;
-      return [[i.act ?? i.thread, { title: t.title, from: left }] as const];
+      const left = i.act === null ? t.board : departures.filter((d) => d.thread === i.thread).at(-1)?.origin ?? null;
+      return [[i.act ?? i.thread, { title: t.title, left }] as const];
     })),
     boardNames: () => boards.map((b): BoardName => ({ id: b.id, slug: b.slug, name: boardNow(b).name, was: b.name })),
     moveNotice(id) {
@@ -3047,7 +3047,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const people = [...new Set([...threads.flatMap((t) => [t.firstCharacter, t.lastCharacter]), ...marked.map((a) => a.character)].filter((c): c is Id => c !== null))];
       /* The threads moved away within movedStubDays, newest move first, each once (the latest move of it away from here) and only if it is not back: the stub says where it is now. */
       const since = now() - settings.movedStubDays * 86_400_000;
-      const stubs = shown !== 1 ? [] : [...departures].filter((d) => d.from === board.id && d.at >= since).sort((x, y) => y.at - x.at)
+      const stubs = shown !== 1 ? [] : [...departures].filter((d) => d.origin === board.id && d.at >= since).sort((x, y) => y.at - x.at)
         .filter((d, i, all) => all.findIndex((e) => e.thread === d.thread) === i && core.thread(d.thread)!.board !== board.id)
         .map((d): BoardStub => {
           const moved = core.thread(d.thread)!;
@@ -3812,7 +3812,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const t = threads.get(thread);
       const to = boards.find((b) => b.slug === slug || b.id === slug);
       if (!t || !to) throw new Error(`cannot move ${thread} to ${slug}`);
-      departures.push({ thread, from: t.board, to: to.id, at: o?.at ?? now() });
+      departures.push({ thread, origin: t.board, to: to.id, at: o?.at ?? now() });
       t.board = to.id;
     },
     closeBoard(slug, how) {

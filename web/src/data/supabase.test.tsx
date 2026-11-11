@@ -2111,10 +2111,10 @@ describe('a screen in one call', () => {
   });
 
   it('move_thread_names: sends the thread and move of each item, and maps the titles and the boards left by key; a bad id is not sent', async () => {
-    const h = once('move_thread_names', [{ key: A, title: 'Best bread', from: C }, { key: T, title: 'Waiting', from: null }]);
+    const h = once('move_thread_names', [{ key: A, title: 'Best bread', left: C }, { key: T, title: 'Waiting', left: null }]);
     const got = await h.api.moveThreadNames([{ thread: T, act: A }, { thread: T, act: null }, { thread: 'nope', act: null }]);
     expect(only(h, 'move_thread_names')).toEqual({ items: [{ thread: T, act: A }, { thread: T, act: null }] });
-    expect(got).toEqual({ [A]: { title: 'Best bread', from: C }, [T]: { title: 'Waiting', from: null } });
+    expect(got).toEqual({ [A]: { title: 'Best bread', left: C }, [T]: { title: 'Waiting', left: null } });
   });
 
   it('search_posts and search_threads: send the filters by their column names and the cursor as given, and map the page to camelCase', async () => {

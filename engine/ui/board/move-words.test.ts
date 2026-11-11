@@ -60,7 +60,7 @@ test('a stripped, apologized and overturned move each say so plainly', () => {
 test('a thread move names the thread and both boards by their current names, in plain words', () => {
   const thread = '22222222-2222-4222-8222-222222222222';
   const to = '33333333-3333-4333-8333-333333333333';
-  const names = { thread: 'Best bread', from: 'General', board: 'Toast Corner' };
+  const names = { thread: 'Best bread', source: 'General', board: 'Toast Corner' };
   assert.deepEqual(moveParts('moveThread', { thread, board: to }, null, 'done', names), ['Moved Best bread from ', { board: '', name: 'General' }, ' to ', { board: to, name: 'Toast Corner' }]);
   assert.deepEqual(moveParts('moveThread', { thread, board: to }, null, 'plan', names), ['Move Best bread from ', { board: '', name: 'General' }, ' to ', { board: to, name: 'Toast Corner' }]);
   // Without the thread's or the first board's name the sentence still says what it can, plainly.
@@ -75,7 +75,7 @@ test('a board made and a board merged read as plain sentences naming the boards'
   assert.deepEqual(moveParts('createBoard', { name: 'Minus World', premise: 'p', description: 'd' }, null, 'plan'), ['Create a board named "Minus World"']);
   assert.deepEqual(moveParts('createBoard', { name: 'Minus World', premise: 'p', description: 'd' }, null, 'done'), ['Created a board named "Minus World"']);
   assert.deepEqual(moveParts('mergeBoard', { board: from, into }, 'Off Topic', 'plan', { board: 'General' }), ['Merge ', { board: from, name: 'Off Topic' }, ' into ', { board: into, name: 'General' }]);
-  assert.equal(moveKind('mergeBoard')!.template({ board: from, into }, 'The System', { from: 'Off Topic', board: 'General' }), 'The System merged Off Topic into General. Its threads moved with it, and the board is closed.');
+  assert.equal(moveKind('mergeBoard')!.template({ board: from, into }, 'The System', { source: 'Off Topic', board: 'General' }), 'The System merged Off Topic into General. Its threads moved with it, and the board is closed.');
   assert.equal(moveKind('createBoard')!.template({ name: 'Minus World', premise: 'Glitches.', description: 'd' }, 'The System'), 'The System made a board named "Minus World". Its subject is: Glitches.');
 });
 

@@ -5,7 +5,8 @@
 import { useKayfa } from '../context.tsx';
 import type { BoardName } from '../data/api.ts';
 import { Link } from '../router.tsx';
-import { moveBoardNames, moveParts, useMovedThread } from './move-words.ts';
+import { moveBoardNames, moveParts } from './move-words.ts';
+import { useMovedThread } from './moved-thread.ts';
 
 export function MoveSentence({ kind, params, boards, tense, was, bosses, unnamed, character, act }: {
   readonly kind: string;
@@ -31,7 +32,7 @@ export function MoveSentence({ kind, params, boards, tense, was, bosses, unnamed
   const moved = useMovedThread(kind, params, act, boards);
   const names = { ...(character !== undefined ? { character } : {}), ...(group !== undefined ? { group } : {}), ...moveBoardNames(kind, params, boards), ...(moved ?? {}) };
   /* A merge's source board is read by its name now; a rename's by the name it had before the move. */
-  const parts = moveParts(kind, params, was ?? boss ?? (kind === 'mergeBoard' ? names.from : named?.was) ?? null, tense, names);
+  const parts = moveParts(kind, params, was ?? boss ?? (kind === 'mergeBoard' ? names.source : named?.was) ?? null, tense, names);
   return (
     <>
       {parts.map((p, i) => {

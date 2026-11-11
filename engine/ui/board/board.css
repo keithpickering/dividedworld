@@ -125,9 +125,21 @@
 }
 
 /* A stub: a row a thread's move left, in the third gray, one cell across the table. It is no thread, so it has no folder and no counts. */
-.kb-table .kb-thread-stub > td {
+.kb-table .kb-thread-stub > td.kb-thread-stub-cell {
   background: var(--kb-row-3);
   padding: 6px 8px;
+}
+
+.kb-board-closed {
+  min-width: 0;
+}
+
+.kb-thread-stubs {
+  border-top: 1px solid var(--kb-grid);
+}
+
+.kb-thread-stub-where {
+  overflow-wrap: anywhere;
 }
 
 .kb-board-closed-line {
@@ -306,7 +318,7 @@
     margin-block: 0;
   }
 
-  .kb-table.kb-thread-list .kb-thread-stub > td {
+  .kb-table.kb-thread-list .kb-thread-stub > td.kb-thread-stub-cell {
     display: block;
   }
 
