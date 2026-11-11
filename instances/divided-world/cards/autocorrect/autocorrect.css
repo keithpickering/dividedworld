@@ -17,8 +17,8 @@
  * a layer for the eye: `.dw-ac-tape` holds one piece of tape for each line a strip crosses, each a canvas of paper (drawn when it
  * nears the viewport; the plain paper fill until then, so the words under it are never seen) with the replacement on it in marker,
  * and, under the pieces, one canvas of residue for everything peeled. The tape keeps its own colors on either board, since it is
- * a piece of the game laid on the 2003 page. Nothing in the layer takes a pointer: the anchors in the line are what a hand, a key
- * and a screen reader reach.
+ * a piece of the game laid on the 2003 page. The layer itself takes no pointer; each piece does (the hands), and the anchors in the line
+ * are what a key and a screen reader reach.
  */
 .dw-ac {
   position: relative;
@@ -32,17 +32,96 @@
 .dw-ac-piece {
   position: absolute;
   box-sizing: border-box;
-  background: var(--dw-ac-paper);
   color: var(--dw-ac-ink);
   transform: rotate(var(--dw-ac-tilt, 0deg));
   transform-origin: 0 50%;
   filter: drop-shadow(0 1px 1px rgb(0 0 0 / 0.3));
+}
+/*
+ * The hands (hands.ts): a piece takes a pointer. A pick held on a strip must not start a text selection or the long-press menu
+ * (iOS Safari), and a vertical swipe must still scroll the page while a sideways drag is the piece's own: `pan-y` leaves the
+ * vertical pan to the browser, which cancels the pointer when it takes it, and hands every sideways move to the peek or the pull.
+ */
+.dw-ac-piece[data-kb-ac-hand] {
+  pointer-events: auto;
+  cursor: grab;
+  touch-action: pan-y;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+/* The tape itself, which takes the mask of what is stuck; the roll, the corner and the flap sit beside it so the mask never clips them. */
+.dw-ac-body {
+  position: absolute;
+  inset: 0;
+  background: var(--dw-ac-paper);
   mask-repeat: no-repeat;
   -webkit-mask-repeat: no-repeat;
 }
 /* Once the paper is drawn its torn ends are the outline; the plain fill goes. */
-.dw-ac-piece[data-kb-ac-drawn] {
+.dw-ac-piece[data-kb-ac-drawn] .dw-ac-body {
   background: none;
+}
+/* Strain: the paper whitens toward the peel line as the hand gets ahead of it. */
+.dw-ac-body[data-tension]::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: var(--dw-ac-stretch, none);
+}
+/* The roll of peeled tape at a peel line: a cylinder lying across the strip, fatter the more it holds. */
+.dw-ac-roll {
+  position: absolute;
+  top: -1.5px;
+  bottom: -1.5px;
+  pointer-events: none;
+  border-radius: 45% / 3.2px;
+  background:
+    repeating-linear-gradient(90deg, rgb(120 95 40 / 0.07) 0 0.8px, transparent 0.8px 2.1px),
+    linear-gradient(90deg, #b9a676 0%, #e2d2a6 22%, #f6ecd0 40%, #e6d6ab 62%, #c4b080 86%, #9f8c5c 100%);
+  box-shadow: 1.5px 1px 2.5px rgb(0 0 0 / 0.28), -1px 0 1.5px rgb(0 0 0 / 0.12);
+}
+/* A strained roll shakes, by an amount that grows with the strain; reduced motion keeps it still. */
+.dw-ac-roll[data-shaking] {
+  animation: dw-ac-shake 90ms linear infinite;
+}
+@keyframes dw-ac-shake {
+  0%, 100% { transform: translateX(calc(var(--dw-ac-shake, 0px) * -1)); }
+  50% { transform: translateX(var(--dw-ac-shake, 0px)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-kb-motion='full']) .dw-ac-roll[data-shaking] { animation: none; }
+}
+:root[data-kb-motion='reduce'] .dw-ac-roll[data-shaking] {
+  animation: none;
+}
+/* The corner lifting while an end is picked. */
+.dw-ac-corner {
+  position: absolute;
+  top: 0;
+  pointer-events: none;
+  background: linear-gradient(135deg, #f8f0da, #e2d4ad);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.35);
+}
+/* A peek's flap: the lifted tape as a plane hinged at the fold, its sticky side up (lighter, with a gloss). */
+.dw-ac-flap {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  pointer-events: none;
+  background:
+    repeating-linear-gradient(90deg, rgb(120 95 40 / 0.05) 0 0.7px, transparent 0.7px 2px),
+    linear-gradient(180deg, #f6eed6, #ece0bd 55%, #e7d9b2);
+  box-shadow: 0 1.5px 3px rgb(0 0 0 / 0.3);
+}
+.dw-ac-flap::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(var(--dw-ac-fold, 90deg), transparent 55%, rgb(70 55 25 / 0.22)),
+    linear-gradient(100deg, transparent 20%, rgb(255 255 255 / 0.55) 45%, transparent 62%);
 }
 .dw-ac-paper {
   position: absolute;

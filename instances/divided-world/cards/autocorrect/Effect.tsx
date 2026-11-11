@@ -19,33 +19,46 @@
  * frame and never on a pointer move. Pieces belong to the screen and are never saved; what is saved is in shares of a strip
  * (autocorrect.ts), which each screen cuts at its own line breaks (tape.ts `piecesOf`).
  *
- * The author's peel is a PLACEHOLDER here, for the plan's Task 7 to replace with the hands (pick, pull, roll, tear, peek): holding
- * Enter or Space on an exposed anchor for PLACEHOLDER_HOLD_MS peels the whole strip, saved as the card's `peeled` places through the
- * same debounced, retried and refused-and-put-back flush the card has always had. A reader's hold does nothing yet.
+ * **The hands** (hands.ts; design sections 6 to 8). A piece takes a pointer: the author picks an end, pulls, rolls the tape up at
+ * the peel line and may tear it; a reader peeks, folding the tape back from an end as a flap in perspective, and everything a
+ * reader does lays back down and is never saved. The anchor takes a held key for the same (the author's cannot tear). One
+ * animation-frame loop runs while anything is in hand and ticks the state machine with the frame's time; it is idle otherwise.
+ * Only the pieces in hand are redrawn: a piece is memoized on its own mask and view, and the residue's films are kept by region and
+ * masked to what is peeled as they are laid, so the host is registered once however often what is peeled changes.
+ *
+ * **Saving.** On every change to an author's stuck model, debounced, the card's state is saved as `{ peeled, clean?, stuck }` built
+ * from the strips' stretches (`sharesOf`, through `fromPieces`): a strip with no stretch left is in `peeled`. One save is in flight
+ * per play, a save that got no answer is sent again, and a refusal puts back only the change it carried.
  *
  * `still` (a play's moment) draws the tape as saved, with no anchor a button, no input, no light moving and no measuring beyond
  * the first.
  */
-import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
+import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from 'react';
 import { parse } from '../../../../engine/bbcode/parse.ts';
 import { visibleText } from '../../../../engine/bbcode/visible.ts';
 import { TextLayer, type TextRun } from '../../../../engine/ui/bbcode/layers.tsx';
 import { LOST_ANSWER, type Answer } from '../../../../engine/ui/data/api.ts';
 import type { CardView, EffectProps } from '../../../../engine/ui/cards/types.ts';
+import { motionReduced } from '../../../../engine/ui/appearance.ts';
+import { useKayfa } from '../../../../engine/ui/context.tsx';
 import { bandFor, type Band } from '../../../../engine/ui/shine/band.ts';
 import { watchInView } from '../../../../engine/ui/shine/inView.ts';
 import { REST, type Light } from '../../../../engine/ui/shine/light.ts';
 import { register, unregister, wake, SPAN_MARGIN } from '../../../../engine/ui/shine/loop.ts';
 import { seeded } from '../../ui/seeded.ts';
 import type { Stretch } from '../autocorrect.ts';
+import { dropRoll } from './drop.ts';
+import { Hands, type HandEvent, type HandSettings, type PieceSpec, type PieceView } from './hands.ts';
 import { drawPaper, PAPER, type PaperContext } from './paper.ts';
 import { savedAfterPeel } from './peel.ts';
-import { filmAlpha, filmSize, GLOSS_ALPHA, residueInk } from './residue.ts';
-import { dealWords, exposed, piecesOf, roomOf, stripsOf, stuckOf, type Measure, type SavedTape, type TapeStrip } from './tape.ts';
+import { fibersAt, filmAlpha, filmSize, GLOSS_ALPHA, residueInk } from './residue.ts';
+import { dealWords, exposed, flapOf, piecesOf, rollDiameter, roomOf, stripsOf, stuckOf, type Measure, type SavedTape, type TapeStrip } from './tape.ts';
 import './autocorrect.css';
 
-/** The author's placeholder peel: how long a key is held on an exposed anchor before the whole strip comes off (Task 7 replaces it with the hands). */
-const PLACEHOLDER_HOLD_MS = 700;
+/** The numbers the hands read from the card's settings when the instance has not set them (autocorrect.ts `screenReads`). */
+const DEFAULTS = { pace: 90, pickMs: 450, give: 34, peekStayMs: 300, peekSettle: 300 } as const;
+/** What a screen reader hears when a strip is pressed under another. */
+const COVERED = 'Another strip is stuck over this one. That one comes off first.';
 const SAVE_AFTER_MS = 400;
 const RETRY_AFTER_MS = 1500;
 const MAX_SAVE_RETRIES = 3;
@@ -141,28 +154,51 @@ function maskOf(stuck: readonly Stretch[], w: number): string | undefined {
   return `linear-gradient(90deg, ${stops.join(', ')})`;
 }
 
+/** A piece's outline where an end of a stretch is a tear: ragged, cut as the bench cuts it. Undefined when no end is torn. */
+function tornPath(stuck: readonly Stretch[], h: number, seed: string): string | undefined {
+  if (!stuck.some((s) => Math.floor(s[2] / 3) === 2 || s[2] % 3 === 2)) return undefined;
+  const jag = (at: number): [number, number][] => {
+    const r = seeded(`${seed}:tear:${at.toFixed(0)}`);
+    const steps = Math.max(4, Math.round(h / 2.5));
+    return Array.from({ length: steps + 1 }, (_, i): [number, number] => [at + (r() - 0.5) * 3.2, (h * i) / steps]);
+  };
+  const shape = stuck.map(([lo, hi, edges]) => {
+    const left: [number, number][] = Math.floor(edges / 3) === 2 ? jag(lo) : [[lo, 0], [lo, h]];
+    const right: [number, number][] = edges % 3 === 2 ? jag(hi) : [[hi, 0], [hi, h]];
+    return `M ${[...left, ...[...right].reverse()].map(([x, y]) => `${x.toFixed(1)} ${y.toFixed(1)}`).join(' L ')} Z`;
+  });
+  return `path('${shape.join(' ')}')`;
+}
+
+/** Where a piece's stretches are torn inside it, in its local pixels: the torn fibers lie there on the residue. */
+const tearsOf = (stuck: readonly Stretch[], w: number): number[] => stuck.flatMap(([lo, hi, edges]) => [
+  ...(Math.floor(edges / 3) === 2 && lo > 0.5 && lo < w - 0.5 ? [lo] : []),
+  ...(edges % 3 === 2 && hi > 0.5 && hi < w - 0.5 ? [hi] : []),
+]);
+
 /** What one strip lets the Lens count: its stuck length and whether the author has begun on it. */
 const isWhole = (stuck: readonly Stretch[]) => stuck.length === 1 && stuck[0]![0] === 0 && stuck[0]![1] === 1;
+
+/** A piece with nothing in hand: no rolls, no strain, no corner, no flap. */
+const IDLE: PieceView = { stuck: [], shown: [], rolls: [], strain: null, corner: null, lift: null };
 
 interface AnchorProps {
   readonly strip: TapeStrip;
   readonly author: boolean;
   readonly still: boolean;
   readonly open: boolean;
-  readonly onPeel: (strip: TapeStrip, el: HTMLElement) => void;
-  readonly onMeet: () => void;
+  /** A key goes down on (or comes up from) the anchor. */
+  readonly onKey: (strip: TapeStrip, down: boolean) => void;
   readonly onFocus: (key: string | null) => void;
 }
 
 /**
  * A taped strip's anchor, in the line at the start of its words: visually hidden, focusable, named for the role, quoted as the
- * replacement. Not in the tab order while another strip lies over it. In a play's moment it is only words, with nothing to press.
+ * replacement. Not in the tab order while another strip lies over it. A held Enter or Space is the hands' keyboard path: the author's
+ * pick then peel at pace (it cannot tear), a reader's lift at a piece's width every 0.45 seconds. In a play's moment it is only
+ * words, with nothing to press.
  */
-function Anchor({ strip, author, still, open, onPeel, onMeet, onFocus }: AnchorProps) {
-  const ref = useRef<HTMLButtonElement>(null);
-  const held = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const letGo = useCallback(() => { if (held.current !== null) { clearTimeout(held.current); held.current = null; } }, []);
-  useEffect(() => letGo, [letGo]);
+function Anchor({ strip, author, still, open, onKey, onFocus }: AnchorProps) {
   const name = `Autocorrected text: “${strip.replacement}”. Hold Enter or Space to ${author ? 'peel it off for good' : 'lift it and read under it'}`;
   if (still) {
     return <span className="kb-visually-hidden" data-kb-ac-anchor={strip.key} data-kb-quotable={open ? 'shown' : 'hidden'}>{strip.replacement}</span>;
@@ -170,20 +206,20 @@ function Anchor({ strip, author, still, open, onPeel, onMeet, onFocus }: AnchorP
   const onKeyDown = (e: KeyboardEvent<HTMLElement>) => {
     if (e.key !== 'Enter' && e.key !== ' ') return;
     e.preventDefault();
-    if (e.repeat || held.current !== null) return;
-    onMeet();
-    if (!author || !open) return;
-    held.current = setTimeout(() => { held.current = null; if (ref.current) onPeel(strip, ref.current); }, PLACEHOLDER_HOLD_MS);
+    if (!e.repeat) onKey(strip, true);
   };
   return (
     <button
-      ref={ref} type="button" className="kb-visually-hidden dw-ac-anchor" data-kb-ac-anchor={strip.key} data-kb-quotable={open ? 'shown' : 'hidden'}
+      type="button" className="kb-visually-hidden dw-ac-anchor" data-kb-ac-anchor={strip.key} data-kb-quotable={open ? 'shown' : 'hidden'}
       tabIndex={open ? 0 : -1} aria-label={name}
-      onKeyDown={onKeyDown} onKeyUp={(e) => { if (e.key === 'Enter' || e.key === ' ') letGo(); }}
-      onFocus={() => onFocus(strip.key)} onBlur={() => { letGo(); onFocus(null); }}
+      onKeyDown={onKeyDown} onKeyUp={(e) => { if (e.key === 'Enter' || e.key === ' ') onKey(strip, false); }}
+      onFocus={() => onFocus(strip.key)} onBlur={() => { onKey(strip, false); onFocus(null); }}
     >{strip.replacement}</button>
   );
 }
+
+/** What a piece's pointer handlers need: which piece, and the event. */
+type PieceHandler = (e: PointerEvent<HTMLElement>, id: string) => void;
 
 interface PieceProps {
   readonly strip: TapeStrip;
@@ -192,12 +228,27 @@ interface PieceProps {
   readonly words: string;
   readonly fontPx: number;
   readonly pad: number;
+  /** The mask over what is stuck (less what a peek has lifted), and the ragged outline where an end is torn. */
   readonly mask: string | undefined;
+  readonly clip: string | undefined;
+  /** The stuck stretches in local pixels, for anyone reading the page. */
+  readonly stuck: string;
   readonly focused: boolean;
+  readonly view: PieceView;
+  readonly shake: boolean;
+  readonly still: boolean;
+  readonly onDown: PieceHandler;
+  readonly onMove: PieceHandler;
+  readonly onUp: PieceHandler;
 }
 
-/** One piece of tape over one line: a plain paper fill until its canvas is drawn, when it first comes near the viewport, and the marker's words on it. */
-function Piece({ strip, index, box, words, fontPx, pad, mask, focused }: PieceProps) {
+/**
+ * One piece of tape over one line: a plain paper fill until its canvas is drawn (when it first comes near the viewport), the marker's
+ * words on it, and what the hands do to it: the roll at a peel line, the paper whitening where the hand strains it, a corner lifting
+ * as an end is picked, and a peek's flap hinged at the fold, turned up in perspective with its sticky side showing. The tape's
+ * body takes the mask; the roll, the corner and the flap sit beside it so the mask never clips them.
+ */
+const Piece = memo(function Piece({ strip, index, box, words, fontPx, pad, mask, clip, stuck, focused, view, shake, still, onDown, onMove, onUp }: PieceProps) {
   const div = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const tilt = useMemo(() => ((seeded(strip.key)() - 0.5) * 2.4).toFixed(2), [strip.key]);
@@ -220,32 +271,72 @@ function Piece({ strip, index, box, words, fontPx, pad, mask, focused }: PiecePr
     }, { rootMargin: `${SPAN_MARGIN}px 0px` });
     return () => { stop(); div.current?.removeAttribute('data-kb-ac-drawn'); };
   }, [box.w, box.h, seed]);
-  const style = {
-    left: box.x, top: box.y, width: box.w, height: box.h, zIndex: strip.z + 1,
-    '--dw-ac-tilt': `${tilt}deg`,
+  const style = { left: box.x, top: box.y, width: box.w, height: box.h, zIndex: strip.z + 1, '--dw-ac-tilt': `${tilt}deg` } as CSSProperties;
+  const strain = view.strain;
+  const at = strain ? (strain.side === 'a' ? (strain.at / box.w) * 100 : 100 - (strain.at / box.w) * 100) : 0;
+  const body = {
     ...(mask ? { maskImage: mask, WebkitMaskImage: mask } : null),
+    ...(clip ? { clipPath: clip } : null),
+    ...(strain ? { '--dw-ac-stretch': `linear-gradient(${strain.side === 'a' ? 90 : 270}deg, transparent ${(at - 0.1).toFixed(1)}%, rgb(255 255 255 / ${(strain.amount * 0.6).toFixed(2)}) ${at.toFixed(1)}%, transparent ${(at + 22).toFixed(1)}%)` } : null),
   } as CSSProperties;
+  const flap = view.lift && view.lift.lift > 0.5 ? view.lift : null;
+  const hinge = flap ? flapOf(flap.lift, box.w, box.h) : null;
+  const handlers = still ? null : {
+    onPointerDown: (e: PointerEvent<HTMLElement>) => onDown(e, `${strip.key}:${index}`),
+    onPointerMove: (e: PointerEvent<HTMLElement>) => onMove(e, `${strip.key}:${index}`),
+    onPointerUp: (e: PointerEvent<HTMLElement>) => onUp(e, `${strip.key}:${index}`),
+    onPointerCancel: (e: PointerEvent<HTMLElement>) => onUp(e, `${strip.key}:${index}`),
+    onLostPointerCapture: (e: PointerEvent<HTMLElement>) => onUp(e, `${strip.key}:${index}`),
+    onContextMenu: (e: { preventDefault: () => void }) => e.preventDefault(),
+  };
   return (
-    <div ref={div} className="dw-ac-piece" style={style} data-kb-ac-piece={strip.key} data-kb-focus={focused ? 'true' : undefined}>
-      <canvas ref={canvas} className="dw-ac-paper" style={{ width: box.w, height: box.h }} />
-      {words ? <span className="dw-ac-ink" style={{ fontSize: fontPx, left: pad }}>{words}</span> : null}
+    <div ref={div} className="dw-ac-piece" style={style} data-kb-ac-piece={strip.key} data-kb-ac-line={index} data-kb-ac-stuck={stuck} data-kb-focus={focused ? 'true' : undefined} data-kb-ac-hand={still ? undefined : ''} {...handlers}>
+      <div className="dw-ac-body" style={body} data-tension={strain ? '' : undefined}>
+        <canvas ref={canvas} className="dw-ac-paper" style={{ width: box.w, height: box.h }} />
+        {words ? <span className="dw-ac-ink" style={{ fontSize: fontPx, left: pad }}>{words}</span> : null}
+      </div>
+      {view.rolls.map((r) => {
+        const d = rollDiameter(r.rolled);
+        const shaking = r.live && shake && strain !== null && strain.amount > 0.15;
+        return (
+          <div
+            key={r.side} className="dw-ac-roll" data-kb-ac-roll={r.live ? 'live' : 'waiting'} data-shaking={shaking ? '' : undefined}
+            style={{ left: r.side === 'a' ? r.x - d * 0.72 : r.x - d * 0.28, width: d, ...(shaking ? { '--dw-ac-shake': `${(strain.amount * 0.8).toFixed(2)}px` } : null) } as CSSProperties}
+          />
+        );
+      })}
+      {view.corner ? (() => {
+        const size = (0.25 + 0.6 * view.corner.t) * box.h;
+        return <div className="dw-ac-corner" style={{ left: view.corner.side === 'a' ? view.corner.at : view.corner.at - size, width: size, height: size, clipPath: view.corner.side === 'a' ? 'polygon(0 0, 100% 0, 0 100%)' : 'polygon(0 0, 100% 0, 100% 100%)' }} />;
+      })() : null}
+      {flap && hinge ? (
+        <div
+          className="dw-ac-flap" data-kb-ac-flap={flap.side}
+          style={{
+            left: flap.side === 'a' ? flap.fold - flap.lift : flap.fold, width: flap.lift, transformOrigin: flap.side === 'a' ? 'right center' : 'left center',
+            transform: `perspective(${hinge.perspective.toFixed(0)}px) rotateY(${(flap.side === 'a' ? hinge.theta : -hinge.theta).toFixed(1)}deg)`,
+            '--dw-ac-fold': flap.side === 'a' ? '90deg' : '270deg',
+          } as CSSProperties}
+        />
+      ) : null}
     </div>
   );
-}
+});
 
-/** A residue film's footprint in one piece: what is peeled of it, and what lay on a lower strip and is cut out, all in the piece's local pixels. */
+/** A residue film's footprint in one piece: what is peeled of it, what lay on a lower strip and is cut out, and where it is torn, all in the piece's local pixels. */
 interface Region {
   readonly key: string;
   readonly seed: string;
   readonly box: Box;
   readonly peeled: readonly [number, number][];
   readonly cut: readonly Box[];
+  readonly tears: readonly number[];
 }
 
 /** One scratch canvas the films are colored on. */
 let scratch: HTMLCanvasElement | null = null;
 
-/** A film, 1 where it is thick, as white with that alpha, masked to what is peeled and with what lay on a lower strip cut out. */
+/** A film, 1 where it is thick, as white with that alpha, with what lay on a lower strip cut out. What is peeled is applied as it is laid, so a film lives as long as its piece does. */
 function buildFilm(r: Region): HTMLCanvasElement | null {
   const { cols, rows } = filmSize(r.box.w, r.box.h);
   const film = document.createElement('canvas');
@@ -258,17 +349,13 @@ function buildFilm(r: Region): HTMLCanvasElement | null {
   for (let i = 0; i < alpha.length; i++) { img.data[i * 4] = 255; img.data[i * 4 + 1] = 255; img.data[i * 4 + 2] = 255; img.data[i * 4 + 3] = Math.round(alpha[i]! * 255); }
   c.putImageData(img, 0, 0);
   const sx = cols / Math.max(1, r.box.w), sy = rows / Math.max(1, r.box.h);
-  c.globalCompositeOperation = 'destination-in';
-  c.beginPath();
-  for (const [lo, hi] of r.peeled) c.rect(lo * sx, 0, (hi - lo) * sx, rows);
-  c.fill();
   c.globalCompositeOperation = 'destination-out';
   for (const q of r.cut) c.fillRect(q.x * sx, q.y * sy, q.w * sx, q.h * sy);
   return film;
 }
 
-/** A film in one color, drawn onto `ctx` over `box`. */
-function lay(ctx: CanvasRenderingContext2D, film: HTMLCanvasElement, color: string, alpha: number, x: number, y: number, w: number, h: number): void {
+/** A film in one color, masked to what is peeled, drawn onto `ctx` at its region's place (`top` is the canvas's top in the post). */
+function lay(ctx: CanvasRenderingContext2D, film: HTMLCanvasElement, color: string, alpha: number, r: Region, top: number): void {
   scratch ??= document.createElement('canvas');
   scratch.width = film.width;
   scratch.height = film.height;
@@ -278,12 +365,35 @@ function lay(ctx: CanvasRenderingContext2D, film: HTMLCanvasElement, color: stri
   s.globalCompositeOperation = 'source-in';
   s.fillStyle = color;
   s.fillRect(0, 0, film.width, film.height);
+  const sx = film.width / Math.max(1, r.box.w);
+  s.globalCompositeOperation = 'destination-in';
+  s.beginPath();
+  for (const [lo, hi] of r.peeled) s.rect(lo * sx, 0, (hi - lo) * sx, film.height);
+  s.fill();
   ctx.globalAlpha = alpha;
-  ctx.drawImage(scratch, x, y, w, h);
+  ctx.drawImage(scratch, r.box.x, r.box.y - top, r.box.w, r.box.h);
+}
+
+/** The torn fibers a tear leaves, as short pale strokes on the film (residue.ts `fibersAt`). */
+function layFibers(ctx: CanvasRenderingContext2D, r: Region, top: number, color: string): void {
+  ctx.globalAlpha = 0.85;
+  ctx.strokeStyle = color;
+  ctx.lineCap = 'round';
+  for (const x of r.tears) {
+    for (const f of fibersAt(r.seed, x, r.box.h)) {
+      ctx.lineWidth = f.width;
+      ctx.beginPath();
+      ctx.moveTo(r.box.x + f.x0, r.box.y - top + f.y0);
+      ctx.quadraticCurveTo(r.box.x + f.cx, r.box.y - top + f.cy, r.box.x + f.x1, r.box.y - top + f.y1);
+      ctx.stroke();
+    }
+  }
 }
 
 interface ResidueProps {
   readonly regions: readonly Region[];
+  /** The canvas's rows in the post: every strip's footprint, so it does not change while something is peeled. */
+  readonly span: { readonly top: number; readonly height: number };
   readonly width: number;
   readonly host: React.RefObject<HTMLElement | null>;
   readonly still: boolean;
@@ -291,19 +401,25 @@ interface ResidueProps {
 
 /**
  * The residue of every peeled stretch on the post, on one canvas: a tint in the tape's torn outline and a gloss the page's light
- * moves over it, both held inside the board's readable band. The canvas rides the shine loop as a quiet host at half the rate, so it
- * draws only while in view and never brings up the tilt tip; a play's moment draws it once, at the resting light.
+ * moves over it, both held inside the board's readable band, and the fibers of every tear. The canvas rides the shine loop as a
+ * quiet host at half the rate, so it draws only while in view and never brings up the tilt tip; a play's moment draws it once, at the
+ * resting light.
+ *
+ * The host is registered once for the canvas's size: the regions are read from a ref as they are painted, so a change in what is
+ * peeled only asks for a draw. A film is kept by its region (strip and piece, size and cut), built when first painted, and masked to
+ * what is peeled as it is laid, so a peel in hand redraws its own piece and rebuilds no film.
  */
-function Residue({ regions, width, host, still }: ResidueProps) {
+function Residue({ regions, span, width, host, still }: ResidueProps) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const token = useRef({});
-  const top = Math.min(...regions.map((r) => r.box.y));
-  const height = Math.max(...regions.map((r) => r.box.y + r.box.h)) - top;
-  const key = JSON.stringify([regions, width]);
+  const current = useRef(regions);
+  current.current = regions;
+  const redraw = useRef<(() => void) | null>(null);
+  const { top, height } = span;
   useEffect(() => {
     const cv = canvas.current;
     const el = host.current;
-    if (!cv || !el || !regions.length) return undefined;
+    if (!cv || !el) return undefined;
     const ctx = cv.getContext('2d');
     if (!ctx) return undefined;
     const films = new Map<string, HTMLCanvasElement | null>();
@@ -322,35 +438,45 @@ function Residue({ regions, width, host, still }: ResidueProps) {
       ctx.setTransform(density, 0, 0, density, 0, 0);
       if (!band) return;
       const ink = residueInk(band, light);
-      for (const r of regions) {
-        if (!films.has(r.key)) films.set(r.key, buildFilm(r));
-        const film = films.get(r.key);
+      for (const r of current.current) {
+        const id = `${r.key}|${r.box.w}|${r.box.h}|${JSON.stringify(r.cut)}`;
+        if (!films.has(id)) films.set(id, buildFilm(r));
+        const film = films.get(id);
         if (!film) continue;
-        lay(ctx, film, ink.tint, 1, r.box.x, r.box.y - top, r.box.w, r.box.h);
-        lay(ctx, film, ink.gloss, GLOSS_ALPHA, r.box.x, r.box.y - top, r.box.w, r.box.h);
+        lay(ctx, film, ink.tint, 1, r, top);
+        lay(ctx, film, ink.gloss, GLOSS_ALPHA, r, top);
+        layFibers(ctx, r, top, ink.gloss);
       }
       ctx.globalAlpha = 1;
     };
-    if (still) { size(); paint(REST); return () => films.clear(); }
+    if (still) { size(); paint(REST); redraw.current = () => paint(REST); return () => { redraw.current = null; films.clear(); }; }
     const me = token.current;
     density = register(me, cv, { w: width, h: height }, density, (frame) => { paint(frame.light); return false; }, { quiet: true, share: 0.5, hidden: () => { films.clear(); cv.width = 0; cv.height = 0; } });
     size();
+    redraw.current = () => wake(me);
     const board = typeof MutationObserver === 'function' ? new MutationObserver(() => { band = readBand(); wake(me); }) : null;
     board?.observe(document.documentElement, { attributes: true, attributeFilter: ['data-kb-mode', 'data-kb-effects'] });
-    return () => { board?.disconnect(); unregister(me); films.clear(); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, still, host]);
+    return () => { redraw.current = null; board?.disconnect(); unregister(me); films.clear(); };
+  }, [width, top, height, still, host]);
+  /* What is peeled changed: ask for a draw, which reads the regions as they are now. */
+  useLayoutEffect(() => { redraw.current?.(); }, [regions]);
   return <canvas ref={canvas} className="dw-ac-residue" style={{ top, width, height }} />;
 }
 
+/** The author's changes on their way to being saved, by play and place: the stretches still stuck, none once the strip is peeled. */
+type Local = Readonly<Record<string, Readonly<Record<string, readonly Stretch[]>>>>;
+
 export function AutocorrectEffect({ post, plays, states, reader, still, save, show, met, children }: EffectProps) {
+  const { settings } = useKayfa();
   const body = typeof post.currentPayload.body === 'string' ? post.currentPayload.body : '';
   const text = useMemo(() => visibleText(parse(body)), [body]);
-  /* The author's peels on their way to being saved, by play; a refused save's words, by play; and what the last peel uncovered. */
-  const [sending, setSending] = useState<Readonly<Record<string, readonly number[]>>>({});
+  /* The author's changes on their way to being saved; a refused save's words, by play; what the last peel uncovered or the last press said. */
+  const [local, setLocal] = useState<Local>({});
   const [refusals, setRefusals] = useState<Readonly<Record<string, string>>>({});
   const [uncovered, setUncovered] = useState('');
   const [focused, setFocused] = useState<string | null>(null);
+  /* A frame of the hands: the pieces in hand are drawn again. */
+  const [, setFrame] = useState(0);
   const report = Object.values(refusals).filter(Boolean).join(' ');
   const box = useRef<HTMLDivElement>(null);
 
@@ -365,42 +491,50 @@ export function AutocorrectEffect({ post, plays, states, reader, still, save, sh
   /* What was peeled before this load keeps no room (design section 1); what is peeled during the visit keeps its footprint until the next. */
   const [loaded] = useState<ReadonlySet<string>>(() => new Set(configs.flatMap((c) => savedOf(states[c.id]?.state).peeled.map((i) => `${c.id}:${i}`))));
 
-  /* Each strip's stretches still stuck: none if peeled (saved, or by the author's peel on its way), the whole strip if untouched. */
+  /* Each strip's stretches still stuck: the author's change on its way if there is one, else the saved ones, the whole strip if untouched. */
   const stuckBy = useMemo(() => {
-    const out = new Map<string, Stretch[]>();
+    const out = new Map<string, readonly Stretch[]>();
     for (const c of configs) {
       const saved = savedOf(states[c.id]?.state);
-      const merged: SavedTape = { peeled: [...saved.peeled, ...(sending[c.id] ?? [])], ...(saved.stuck ? { stuck: saved.stuck } : null) };
-      for (const s of strips) if (s.play === c.id) out.set(s.key, stuckOf(merged, s.index));
+      for (const s of strips) if (s.play === c.id) out.set(s.key, local[c.id]?.[s.index] ?? stuckOf(saved, s.index));
     }
     return out;
-  }, [configs, states, sending, strips]);
-  const live = useMemo(() => strips.filter((s) => (stuckBy.get(s.key)?.length ?? 0) > 0), [strips, stuckBy]);
+  }, [configs, states, local, strips]);
+  /* The strips with tape left, by key, so a peel in hand (which changes `stuckBy` every frame) does not change what is live. */
+  const liveKey = strips.filter((s) => (stuckBy.get(s.key)?.length ?? 0) > 0).map((s) => s.key).join('|');
+  const live = useMemo(() => { const keys = new Set(liveKey ? liveKey.split('|') : []); return strips.filter((s) => keys.has(s.key)); }, [strips, liveKey]);
   const liveKeys = useMemo(() => new Set(live.map((s) => s.key)), [live]);
 
   /*
-   * The author's peels, saved as Whoops!'s strokes are: debounced, one save on its way per play at a time, what is peeled meanwhile
+   * The author's changes, saved as Whoops!'s strokes are: debounced, one save on its way per play at a time, what changes meanwhile
    * sent after it, a save that got no answer sent again a little later each time and given up on after a few, and a refusal said,
-   * with its strips put back, since it would be the same again. Each save is the whole list of places, so sending it twice is the
-   * same as once. Stretches the card's state holds for strips still half peeled are sent back as they were.
+   * with what it carried put back, since it would be the same again. Each save is the whole state (the places peeled, and the
+   * stretches still stuck of those half peeled), so sending it twice is the same as once. A strip with no stretch left is in `peeled`.
    */
-  const now = useRef({ states, total, save, sending });
-  now.current = { states, total, save, sending };
+  const now = useRef({ states, total, save, local, cards: settings.cardSettings });
+  now.current = { states, total, save, local, cards: settings.cardSettings };
   const inFlight = useRef(new Set<string>());
   const dirty = useRef(new Set<string>());
   const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
-  /* Once the post has gone nothing is set and nothing retried, as Whoops! does; a peel still waiting on its debounce is sent at once. */
+  /* Once the post has gone nothing is set and nothing retried, as Whoops! does; a change still waiting on its debounce is sent at once. */
   const gone = useRef(false);
   const flush = useCallback(async (play: string, attempt = 0): Promise<void> => {
     if (inFlight.current.has(play)) { dirty.current.add(play); return; }
     dirty.current.delete(play);
     timers.current.delete(play);
-    const batch = [...(now.current.sending[play] ?? [])];
+    const batch = { ...(now.current.local[play] ?? {}) };
     const held = savedOf(now.current.states[play]?.state);
-    const places = [...held.peeled, ...batch];
-    if (!places.length) return;
-    const kept = savedAfterPeel(places, places[places.length - 1]!, now.current.total[play] ?? 0);
-    const stuck = Object.fromEntries(Object.entries(held.stuck ?? {}).filter(([place]) => !kept.peeled.includes(Number(place))));
+    const places = new Set(held.peeled);
+    const stuck: Record<string, readonly Stretch[]> = { ...(held.stuck ?? {}) };
+    for (const [key, shares] of Object.entries(batch)) {
+      if (held.peeled.includes(Number(key))) continue;
+      if (!shares.length) { places.add(Number(key)); delete stuck[key]; }
+      else if (isWhole(shares)) delete stuck[key];
+      else stuck[key] = shares;
+    }
+    const peeled = [...places].sort((a, b) => a - b);
+    if (!peeled.length && !Object.keys(stuck).length) return;
+    const kept = peeled.length ? savedAfterPeel(peeled, peeled[peeled.length - 1]!, now.current.total[play] ?? 0) : { peeled };
     const state = Object.keys(stuck).length ? { ...kept, stuck } : kept;
     inFlight.current.add(play);
     let answer: Answer<unknown>;
@@ -422,11 +556,12 @@ export function AutocorrectEffect({ post, plays, states, reader, still, save, sh
     }
     dirty.current.delete(play);
     setRefusals((was) => ({ ...was, [play]: answer.error }));
-    /* Only the places this save carried come back; any peeled since wait for their own. */
-    setSending((was) => {
-      const left = (was[play] ?? []).filter((i) => !batch.includes(i));
-      const next = { ...was, [play]: left };
-      now.current.sending = next;
+    /* Only what this save carried comes back; a strip changed since waits for its own save. */
+    setLocal((was) => {
+      const mine = { ...(was[play] ?? {}) };
+      for (const [key, shares] of Object.entries(batch)) if (sameJson(mine[key], shares)) delete mine[key];
+      const next = { ...was, [play]: mine };
+      now.current.local = next;
       return next;
     });
   }, []);
@@ -444,20 +579,33 @@ export function AutocorrectEffect({ post, plays, states, reader, still, save, sh
     if (was) clearTimeout(was);
     timers.current.set(play, setTimeout(() => { void flush(play); }, SAVE_AFTER_MS));
   }, [flush]);
+  /* Sets (or, with null, clears) the author's change to one strip, at once in the ref the flush reads and in the state the screen draws. */
+  const putLocal = useCallback((play: string, place: number, shares: readonly Stretch[] | null) => {
+    const was = now.current.local;
+    const mine = { ...(was[play] ?? {}) };
+    if (shares === null ? !(String(place) in mine) : sameJson(mine[place], shares)) return;
+    if (shares === null) delete mine[place]; else mine[place] = shares;
+    const next = { ...was, [play]: mine };
+    now.current.local = next;
+    setLocal(next);
+  }, []);
 
-  /* A save that landed is in `states`: what it carried is no longer on its way. */
+  /* A save that landed is in `states`: what it carried is no longer on its way (and a place the card holds as peeled is peeled). */
   useEffect(() => {
-    setSending((was) => {
+    setLocal((was) => {
       let changed = false;
-      const next: Record<string, readonly number[]> = {};
-      for (const [play, places] of Object.entries(was)) {
-        const held = savedOf(states[play]?.state).peeled;
-        const left = places.filter((i) => !held.includes(i));
-        if (left.length !== places.length) changed = true;
-        next[play] = left;
+      const next: Record<string, Record<string, readonly Stretch[]>> = {};
+      for (const [play, mine] of Object.entries(was)) {
+        const held = savedOf(states[play]?.state);
+        const kept: Record<string, readonly Stretch[]> = {};
+        for (const [key, shares] of Object.entries(mine)) {
+          if (held.peeled.includes(Number(key)) || sameJson(stuckOf(held, Number(key)), shares)) changed = true;
+          else kept[key] = shares;
+        }
+        next[play] = kept;
       }
       if (!changed) return was;
-      now.current.sending = next;
+      now.current.local = next;
       return next;
     });
   }, [states]);
@@ -465,27 +613,97 @@ export function AutocorrectEffect({ post, plays, states, reader, still, save, sh
   const meet = useRef(met);
   meet.current = met;
   const onMeet = useCallback(() => meet.current(), []);
-  const model = useRef({ live, text, author: reader.author });
-  model.current = { live, text, author: reader.author };
-  const onPeel = useCallback((strip: TapeStrip, el: HTMLElement) => {
-    /* A strip peeled while focused takes the reader's place with it: focus goes to the next exposed strip on the post, or to the post. */
-    if (el === document.activeElement) {
-      const left = model.current.live.filter((s) => s.key !== strip.key);
-      const next = left.filter((s) => exposed(s, left)).sort((a, b) => a.from - b.from).find((s) => s.from >= strip.from) ?? left.filter((s) => exposed(s, left)).sort((a, b) => a.from - b.from)[0];
-      const target = next ? box.current?.querySelector<HTMLElement>(`[data-kb-ac-anchor="${next.key}"]`) : null;
-      (target ?? box.current)?.focus();
+  const model = useRef({ live, strips, text, author: reader.author });
+  model.current = { live, strips, text, author: reader.author };
+  /* Said again when the same words come up twice: a trailing space every other time makes it new text, as Whoops! does. */
+  const say = useCallback((words: string) => setUncovered((was) => (was === words ? `${words} ` : words)), []);
+
+  /*
+   * The hands. The state machine is made on first use and takes the card's numbers as they stand, so a setting changed between visits
+   * reaches it. One animation-frame loop ticks it while anything is in hand and runs no more once nothing is.
+   */
+  const hands = useRef<Hands | null>(null);
+  const handsNow = useCallback((): Hands => {
+    const cards = now.current.cards;
+    const read = (key: keyof typeof DEFAULTS) => cards[`autocorrect.${key}`] ?? DEFAULTS[key];
+    const cfg: HandSettings = { pace: read('pace'), pickMs: read('pickMs'), give: read('give'), peekStayMs: read('peekStayMs'), peekSettle: read('peekSettle'), reduced: motionReduced(), author: model.current.author };
+    if (hands.current) hands.current.setSettings(cfg); else hands.current = new Hands(cfg);
+    return hands.current;
+  }, []);
+  /* A strip peeled while focused takes the reader's place with it: focus goes to the next exposed strip on the post, or to the post. */
+  const focusAfter = useCallback((strip: TapeStrip) => {
+    const el = box.current?.querySelector<HTMLElement>(`[data-kb-ac-anchor="${strip.key}"]`);
+    if (!el || el !== document.activeElement) return;
+    const left = model.current.live.filter((s) => s.key !== strip.key);
+    const open = left.filter((s) => exposed(s, left)).sort((a, b) => a.from - b.from);
+    const next = open.find((s) => s.from >= strip.from) ?? open[0];
+    const target = next ? box.current?.querySelector<HTMLElement>(`[data-kb-ac-anchor="${next.key}"]`) : null;
+    (target ?? box.current)?.focus();
+  }, []);
+  const apply = useCallback((events: readonly HandEvent[]) => {
+    for (const ev of events) {
+      const strip = ev.kind === 'change' || ev.kind === 'off' ? model.current.strips.find((s) => s.key === ev.strip) : undefined;
+      if (ev.kind === 'covered') say(COVERED);
+      else if (ev.kind === 'change' && strip && model.current.author) {
+        putLocal(strip.play, strip.index, handsNow().sharesOf(strip.key));
+        queue(strip.play);
+      } else if (ev.kind === 'off' && strip) {
+        say(`Peeled. Under it: “${model.current.text.slice(strip.from, strip.to)}”.`);
+        focusAfter(strip);
+      } else if (ev.kind === 'drop') {
+        /* The roll in the hand falls from where it is, and the one on the page is gone: a copy falls, or under reduced motion nothing. */
+        const line = ev.piece.slice(ev.piece.lastIndexOf(':') + 1), key = ev.piece.slice(0, ev.piece.lastIndexOf(':'));
+        const roll = box.current?.querySelector<HTMLElement>(`[data-kb-ac-piece="${key}"][data-kb-ac-line="${line}"] [data-kb-ac-roll="live"]`);
+        if (roll) { dropRoll(roll, { reduced: motionReduced(), seed: `${ev.piece}:drop:${ev.x.toFixed(0)}` }); roll.style.visibility = 'hidden'; }
+      }
     }
-    /* Said again when the same words are uncovered twice: a no-break space every other time makes it new text, as Whoops! does. */
-    const said = `Peeled. Under it: “${model.current.text.slice(strip.from, strip.to)}”.`;
-    setUncovered((was) => (was === said ? `${said} ` : said));
-    if (!model.current.author) return;
-    setSending((was) => {
-      const next = { ...was, [strip.play]: [...(was[strip.play] ?? []), strip.index] };
-      now.current.sending = next;
-      return next;
-    });
-    queue(strip.play);
-  }, [queue]);
+  }, [say, putLocal, queue, handsNow, focusAfter]);
+  const loop = useRef({ raf: 0, last: 0 });
+  const run = useCallback(() => {
+    if (loop.current.raf || typeof requestAnimationFrame !== 'function') return;
+    loop.current.last = 0;
+    const step = (t: number) => {
+      loop.current.raf = 0;
+      const hs = hands.current;
+      if (!hs) return;
+      const dt = loop.current.last ? Math.min(50, Math.max(0, t - loop.current.last)) : 16;
+      loop.current.last = t;
+      handsNow().tick(dt);
+      apply(hs.drain());
+      setFrame((n) => n + 1);
+      if (hs.busy()) loop.current.raf = requestAnimationFrame(step);
+    };
+    loop.current.raf = requestAnimationFrame(step);
+  }, [apply, handsNow]);
+  useEffect(() => () => { if (loop.current.raf && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(loop.current.raf); loop.current.raf = 0; }, []);
+  /* What the hands did just now is drawn, and the loop runs while they still have something to do. */
+  const after = useCallback((hs: Hands) => { apply(hs.drain()); setFrame((n) => n + 1); if (hs.busy()) run(); }, [apply, run]);
+
+  const onKey = useCallback((strip: TapeStrip, down: boolean) => {
+    const hs = handsNow();
+    if (down) { onMeet(); hs.keyDown(strip.key); } else hs.keyUp();
+    after(hs);
+  }, [handsNow, onMeet, after]);
+  /* The pointer's place on a piece, in the piece's own pixels. */
+  const placeOf = (e: PointerEvent<HTMLElement>) => e.clientX - e.currentTarget.getBoundingClientRect().left;
+  const onDown = useCallback<PieceHandler>((e, id) => {
+    if ((e.pointerType === 'mouse' && e.button !== 0) || e.isPrimary === false) return;
+    e.preventDefault();
+    const hs = handsNow();
+    onMeet();
+    const did = hs.press(id, placeOf(e), e.pointerId ?? 0);
+    if (did !== 'none' && did !== 'busy' && did !== 'covered') {
+      try { e.currentTarget.setPointerCapture?.(e.pointerId); } catch { /* A pointer already gone has nothing to capture. */ }
+    }
+    after(hs);
+  }, [handsNow, onMeet, after]);
+  const onMove = useCallback<PieceHandler>((e) => { hands.current?.move(e.pointerId ?? 0, placeOf(e)); }, []);
+  const onUp = useCallback<PieceHandler>((e) => {
+    const hs = hands.current;
+    if (!hs) return;
+    hs.release(e.pointerId ?? 0);
+    after(hs);
+  }, [after]);
 
   /* Rooms: break-spaces after a strip's words, by the end offset they follow, as this screen's measuring last found them. */
   const [rooms, setRooms] = useState<Rooms>({});
@@ -596,7 +814,7 @@ export function AutocorrectEffect({ post, plays, states, reader, still, save, sh
         render: ({ text: words, key }) => (
           <Fragment key={key}>
             {key === `ac:${id}@${start}` ? anchors.map((s) => (
-              <Anchor key={s.key} strip={s} author={reader.author} still={still} open={exposed(s, live)} onPeel={onPeel} onMeet={onMeet} onFocus={setFocused} />
+              <Anchor key={s.key} strip={s} author={reader.author} still={still} open={exposed(s, live)} onKey={onKey} onFocus={setFocused} />
             )) : null}
             <span data-kb-ac-seg={id} {...(covered ? { 'aria-hidden': true, 'data-kb-quotable': 'hidden' } : null)}>{words}</span>
           </Fragment>
@@ -604,7 +822,7 @@ export function AutocorrectEffect({ post, plays, states, reader, still, save, sh
         ...(room > 0 ? { trail: (key: string) => <span key={key} className="dw-ac-room" aria-hidden="true" data-kb-quotable="hidden" data-kb-ac-room={end}>{' '.repeat(room)}</span> } : null),
       };
     });
-  }), [stacks, liveKeys, live, rooms, reader.author, still, onPeel, onMeet]);
+  }), [stacks, liveKeys, live, rooms, reader.author, still, onKey]);
 
   /* The eye: each live strip's pieces, and the residue of what is peeled, cut where a lower strip lay under it. */
   const regions = useMemo<Region[]>(() => {
@@ -622,11 +840,51 @@ export function AutocorrectEffect({ post, plays, states, reader, still, save, sh
           const [x0, y0, x1, y1] = [Math.max(b.x, q.x), Math.max(b.y, q.y), Math.min(b.x + b.w, q.x + q.w), Math.min(b.y + b.h, q.y + q.h)];
           return x1 > x0 && y1 > y0 ? [{ x: x0 - b.x, y: y0 - b.y, w: x1 - x0, h: y1 - y0 }] : [];
         });
-        out.push({ key: `${s.key}:${i}`, seed: `${s.key}:${i}`, box: b, peeled, cut });
+        out.push({ key: `${s.key}:${i}`, seed: `${s.key}:${i}`, box: b, peeled, cut, tears: tearsOf(stuck[i] ?? [], b.w) });
       });
     }
     return out;
   }, [laid, strips, stuckBy]);
+
+  /* Every strip's footprint on the post: the residue's one canvas covers it, whatever is peeled. */
+  const span = useMemo(() => {
+    const boxes = laid ? Object.values(laid.strips).flatMap((l) => l.boxes) : [];
+    if (!boxes.length) return { top: 0, height: 0 };
+    const top = Math.min(...boxes.map((b) => b.y));
+    return { top, height: Math.max(...boxes.map((b) => b.y + b.h)) - top };
+  }, [laid]);
+
+  /*
+   * What the hands are given: every piece of every live strip, with its stuck stretches in local pixels, whether nothing lies over it,
+   * and the pieces of lower strips overlapping it on its line (highest first), which a peek lifts after it. A play's moment has no hands.
+   */
+  const specs = useMemo<PieceSpec[]>(() => {
+    if (!laid || still) return [];
+    const px = new Map<string, Stretch[][]>();
+    for (const s of live) {
+      const at = laid.strips[s.key];
+      if (at) px.set(s.key, piecesOf(stuckBy.get(s.key) ?? [], at.boxes.map((b) => b.w)));
+    }
+    const out: PieceSpec[] = [];
+    for (const s of live) {
+      const at = laid.strips[s.key];
+      if (!at) continue;
+      const open = exposed(s, live);
+      at.boxes.forEach((b, i) => {
+        const under = live.filter((q) => q.z < s.z).sort((a, c) => c.z - a.z).flatMap((q) => (laid.strips[q.key]?.boxes ?? []).flatMap((qb, j) => {
+          const line = Math.min(b.y + b.h, qb.y + qb.h) - Math.max(b.y, qb.y) > 0.5 * Math.min(b.h, qb.h);
+          return line && qb.x < b.x + b.w && qb.x + qb.w > b.x && (px.get(q.key)?.[j]?.length ?? 0) > 0 ? [`${q.key}:${j}`] : [];
+        }));
+        out.push({ id: `${s.key}:${i}`, strip: s.key, index: i, w: b.w, h: b.h, stuck: px.get(s.key)?.[i] ?? [], open, under });
+      });
+    }
+    return out;
+  }, [laid, live, stuckBy, still]);
+  /* The hands take the pieces before the page paints; a piece whose state they changed (a roll waiting from a saved peel line) is drawn again. */
+  useLayoutEffect(() => {
+    if (still) return;
+    if (handsNow().sync(specs)) setFrame((n) => n + 1);
+  }, [specs, still, handsNow]);
 
   /* The Lens's words (design section 12): how many strips, how many peeled and started, each play's phrase and places. */
   const all = strips.length;
@@ -645,7 +903,7 @@ export function AutocorrectEffect({ post, plays, states, reader, still, save, sh
     }
   }
   const view: CardView = {
-    progress: reader.author ? share : null,
+    progress: reader.author && share !== null ? Math.round(share * 1000) / 1000 : null,
     state: all ? `${all} ${all === 1 ? 'strip' : 'strips'}, ${done} peeled${reader.author && started > 0 ? `, ${started} started` : ''}` : 'Phrase not in this version',
     ends: reader.author ? LENS.authorEnds : LENS.readerEnds,
     yours: live.length > 0,
@@ -666,14 +924,24 @@ export function AutocorrectEffect({ post, plays, states, reader, still, save, sh
     <div ref={box} className="dw-ac" data-kb-autocorrect="" tabIndex={-1}>
       <TextLayer runs={runs}>{children}</TextLayer>
       <div className="dw-ac-tape" aria-hidden="true" style={tape}>
-        {laid && regions.length ? <Residue regions={regions} width={laid.w} host={box} still={still} /> : null}
+        {laid && regions.length ? <Residue regions={regions} span={span} width={laid.w} host={box} still={still} /> : null}
         {laid ? live.flatMap((s) => {
           const at = laid.strips[s.key];
           if (!at) return [];
-          const mask = piecesOf(stuckBy.get(s.key) ?? [], at.boxes.map((b) => b.w));
-          return at.boxes.map((b, i) => (
-            <Piece key={`${s.key}:${i}`} strip={s} index={i} box={b} words={at.words[i] ?? ''} fontPx={laid.base * MARKER * at.scale} pad={laid.base * PAD_EM} mask={maskOf(mask[i] ?? [], b.w)} focused={focused === s.key} />
-          ));
+          const px = piecesOf(stuckBy.get(s.key) ?? [], at.boxes.map((b) => b.w));
+          return at.boxes.flatMap((b, i) => {
+            const own = px[i] ?? [];
+            const view = hands.current?.view(`${s.key}:${i}`) ?? IDLE;
+            if (!own.length && !view.rolls.length) return [];
+            const shown = view.lift ? view.shown : own;
+            return [(
+              <Piece
+                key={`${s.key}:${i}`} strip={s} index={i} box={b} words={at.words[i] ?? ''} fontPx={laid.base * MARKER * at.scale} pad={laid.base * PAD_EM}
+                mask={maskOf(shown, b.w)} clip={tornPath(own, b.h, `${s.key}:${i}`)} stuck={own.map(([lo, hi]) => `${lo.toFixed(1)}-${hi.toFixed(1)}`).join(',')}
+                focused={focused === s.key} view={view} shake={!motionReduced()} still={still} onDown={onDown} onMove={onMove} onUp={onUp}
+              />
+            )];
+          });
         }) : null}
       </div>
       <p className="kb-visually-hidden" role="status" data-kb-report>{report || uncovered}</p>

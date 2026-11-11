@@ -3,7 +3,8 @@
  * phrase. The words stay in the line under it, with an anchor at each taped strip's start and the room after it; a layer over the
  * post draws the pieces. jsdom has no layout, so a stand-in lays every segment, room and Range out on one line at ten pixels a
  * letter and eight a break-space, a canvas ruler reads half an em a letter, and a size tag's class doubles the size it reads.
- * The author's peel here is Task 6's placeholder (a key held on the anchor); the hands are Task 7's.
+ * The hands (Task 7) are driven here by a held key on the anchor and by pointer events on a piece, with fake timers: the animation
+ * frame loop ticks the state machine with the frame's time, so a hold is as long as the time that passes.
  */
 import { act, fireEvent, screen } from '@testing-library/react';
 import { viewProblems } from '../../../../engine/ui/cards/lens-words.ts';
@@ -12,7 +13,9 @@ import { useState } from 'react';
 import type { Act, EffectState } from '../../../../engine/ui/data/api.ts';
 import type { CardPlay, CardView, EffectProps } from '../../../../engine/ui/cards/types.ts';
 import { BbCode } from '../../../../engine/ui/bbcode/render.tsx';
+import * as loop from '../../../../engine/ui/shine/loop.ts';
 import { probe } from '../../../../engine/ui/shine/loop.ts';
+import css from './autocorrect.css?raw';
 import { renderInWorld } from '../../../../engine/ui/test-world.tsx';
 import { AutocorrectEffect, LENS } from './Effect.tsx';
 import { readRange } from '../../../../engine/ui/thread/SelectionQuote.tsx';
@@ -22,6 +25,13 @@ vi.mock('../../../../engine/ui/shine/band.ts', async (original) => ({
   ...(await original<typeof import('../../../../engine/ui/shine/band.ts')>()),
   bandFor: () => ({ lo: 0.55, hi: 1, board: 'light', bright: false }),
 }));
+
+/* The shine loop as it is, with its registrations counted: a peel in hand must not register the residue host again. */
+vi.mock('../../../../engine/ui/shine/loop.ts', async (original) => {
+  const real = await original<typeof import('../../../../engine/ui/shine/loop.ts')>();
+  return { ...real, register: vi.fn(real.register), unregister: vi.fn(real.unregister) };
+});
+const registrations = { register: vi.mocked(loop.register), unregister: vi.mocked(loop.unregister) };
 
 const QUOTE = '[quote=0f8fad5b-d9cb-469f-a165-70867728950e]Mario in a quote[/quote]';
 const postOf = (body: string) => ({ id: 'post-1', character: 'author', kind: 'post', thread: 't', payload: { body }, currentPayload: { body }, targetActId: null, seq: 3, createdAt: '2026-11-03T10:00:00.000Z', editedAt: null, shownEditedAt: null }) as unknown as Act;
@@ -61,7 +71,17 @@ const anchors = () => [...document.querySelectorAll<HTMLElement>('[data-kb-ac-an
 const buttons = () => anchors().filter((a) => a.tagName === 'BUTTON');
 const rooms = () => [...document.querySelectorAll<HTMLElement>('.dw-ac-room')];
 const pieces = () => [...document.querySelectorAll<HTMLElement>('[data-kb-ac-piece]')];
-const hold = async (el: HTMLElement, ms: number) => { fireEvent.keyDown(el, { key: 'Enter' }); await act(async () => { vi.advanceTimersByTime(ms); }); };
+/* The card's defaults (the test world sets none): the pick, then the pace. */
+const PICK = 450;
+const PACE = 90;
+const wide = (el: HTMLElement) => Number.parseFloat(el.style.width);
+const pass = (ms: number) => act(async () => { vi.advanceTimersByTime(ms); });
+/** A key goes down on an anchor and is held for `ms`; it stays down until `letGo`. */
+const hold = async (el: HTMLElement, ms: number) => { fireEvent.keyDown(el, { key: 'Enter' }); await pass(ms); };
+const letGo = (el: HTMLElement | undefined) => { if (el) fireEvent.keyUp(el, { key: 'Enter' }); };
+/** How long it takes the key to peel a piece `w` pixels wide: the pick, then the pace, and a few frames' grace. */
+const through = (w: number) => PICK + (w / PACE) * 1000 + 80;
+const stuckOnPage = () => pieces().map((p) => p.getAttribute('data-kb-ac-stuck'));
 const last = (m: ReturnType<typeof mount>) => m.views.filter(Boolean).at(-1)!;
 
 /* The stand-in layout: every segment, room and Range on one line. */
@@ -76,6 +96,8 @@ const rectOf = (el: Element) => {
   return { left: 0, right: 0, top: 0, bottom: 0, width: 0, height: 0, x: 0, y: 0, toJSON: () => ({}) };
 };
 const sizeOf = (el: Element) => { for (let e: Element | null = el; e; e = e.parentElement) { const n = /kb-bb-size-(\d)/u.exec(e.className)?.[1]; if (n) return 16 * 2; } return 16; };
+/* A phone's narrow column: when set, every room breaks onto a second line. */
+let phone: number | null = null;
 let measures: ReturnType<typeof vi.spyOn>;
 let resizes: { cb: () => void; watching: Set<Element> }[] = [];
 class FakeResize {
@@ -88,6 +110,9 @@ class FakeResize {
 const resize = () => act(() => { for (const r of resizes) r.cb(); });
 
 beforeEach(() => {
+  registrations.register.mockClear();
+  registrations.unregister.mockClear();
+  phone = null;
   document.documentElement.removeAttribute('data-kb-motion');
   resizes = [];
   vi.stubGlobal('ResizeObserver', FakeResize);
@@ -101,7 +126,10 @@ beforeEach(() => {
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation((() => canvas) as never);
   measures = vi.spyOn(Element.prototype, 'getClientRects').mockImplementation(function (this: Element) { return (this.hasAttribute('data-kb-ac-seg') ? [rectOf(this)] : []) as unknown as DOMRectList; });
   (Range.prototype as unknown as { getClientRects: () => unknown[] }).getClientRects = function (this: Range) {
-    return [...document.querySelectorAll('[data-kb-ac-seg], .dw-ac-room')].filter((e) => this.intersectsNode(e)).map(rectOf);
+    return [...document.querySelectorAll('[data-kb-ac-seg], .dw-ac-room')].filter((e) => this.intersectsNode(e)).map((e) => {
+      const r = rectOf(e);
+      return phone !== null && e.classList.contains('dw-ac-room') ? { ...r, left: 0, right: r.width, top: 20, bottom: 40, y: 20 } : r;
+    });
   };
   vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(() => ({ x: 0, y: 0, left: 0, top: 0, right: 300, bottom: 60, width: 300, height: 60, toJSON: () => ({}) }));
   const real = window.getComputedStyle.bind(window);
@@ -157,43 +185,76 @@ describe('Autocorrect: the anchors', () => {
     expect(buttons().filter((a) => a.getAttribute('aria-label')?.includes('“tiny dogs”')).map((a) => a.tabIndex)).toEqual([0, -1]);
   });
 
-  test('a held key peels at the placeholder\'s time and not before; letting go early keeps the strip', async () => {
+  test('the author holding Enter for the pick and the pull peels a strip; held for half of that, one stretch is saved with a peel line at the right share and kind 1', async () => {
     vi.useFakeTimers();
-    mount({ author: true });
-    await hold(buttons()[0]!, 600);
-    expect(buttons()).toHaveLength(3);
-    fireEvent.keyUp(buttons()[0]!, { key: 'Enter' });
-    await act(async () => { vi.advanceTimersByTime(500); });
-    expect(buttons()).toHaveLength(3);
-    await hold(buttons()[0]!, 700);
-    expect(buttons()).toHaveLength(2);
-    expect([...document.querySelectorAll('[data-kb-ac-seg]')].filter((s) => !s.hasAttribute('aria-hidden')).map((s) => s.textContent)).toEqual(['Mario']);
+    const m = mount({ author: true, body: 'Mario' });
+    const w = wide(pieces()[0]!);
+    expect(w).toBeGreaterThan(50);
+    await hold(buttons()[0]!, through(w));
+    expect(buttons()).toHaveLength(0);
+    expect(pieces()).toHaveLength(0);
+    await pass(500);
+    expect(m.save).toHaveBeenCalledWith('k1', { peeled: [0], clean: true });
+    m.unmount();
+
+    const half = mount({ author: true, body: 'Mario' });
+    await hold(buttons()[0]!, PICK + (w / 2 / PACE) * 1000);
+    letGo(buttons()[0]!);
+    await pass(500);
+    expect(half.save).toHaveBeenCalledTimes(1);
+    const [, state] = half.save.mock.calls[0]! as unknown as [string, { peeled: number[]; stuck: Record<string, [number, number, number][]> }];
+    expect(state.peeled).toEqual([]);
+    expect(state.stuck['0']).toHaveLength(1);
+    const [from, to, edges] = state.stuck['0']![0]!;
+    expect(from).toBeCloseTo(0.5, 1);
+    expect([to, edges]).toEqual([1, 3]);
+    /* The roll waits at the peel line, and what is peeled shows its residue. */
+    expect(document.querySelector('[data-kb-ac-roll="waiting"]')).not.toBeNull();
+    expect(document.querySelector('.dw-ac-residue')).not.toBeNull();
   });
 
-  test('a reader\'s hold peels nothing and saves nothing', async () => {
+  test('a key let go before the pick is up keeps the strip; the pick is the same cost as a hand\'s', async () => {
     vi.useFakeTimers();
-    const m = mount();
-    await hold(buttons()[0]!, 5000);
-    expect(buttons()).toHaveLength(3);
+    const m = mount({ author: true, body: 'Mario' });
+    await hold(buttons()[0]!, PICK - 100);
+    letGo(buttons()[0]!);
+    await pass(2000);
+    expect(buttons()).toHaveLength(1);
+    expect(stuckOnPage()).toEqual([`0.0-${wide(pieces()[0]!).toFixed(1)}`]);
+    expect(m.save).not.toHaveBeenCalled();
+  });
+
+  test('a reader\'s held key peeks and lays down, and saves nothing', async () => {
+    vi.useFakeTimers();
+    const m = mount({ body: 'Mario' });
+    await hold(buttons()[0]!, 300);
+    expect(document.querySelector('.dw-ac-flap')).not.toBeNull();
+    letGo(buttons()[0]!);
+    await pass(5000);
+    expect(document.querySelector('.dw-ac-flap')).toBeNull();
+    expect(buttons()).toHaveLength(1);
     expect(m.save).not.toHaveBeenCalled();
   });
 
   test('Space held peels as Enter does', async () => {
     vi.useFakeTimers();
-    mount({ author: true });
+    const m = mount({ author: true, body: 'Mario' });
     fireEvent.keyDown(buttons()[0]!, { key: ' ' });
-    await act(async () => { vi.advanceTimersByTime(700); });
-    expect(buttons()).toHaveLength(2);
+    await pass(through(wide(pieces()[0]!)));
+    expect(buttons()).toHaveLength(0);
+    await pass(500);
+    expect(m.save).toHaveBeenCalledTimes(1);
   });
 
   test('letting go of another key does not end a hold', async () => {
     vi.useFakeTimers();
-    mount({ author: true });
+    mount({ author: true, body: 'Mario' });
+    const w = wide(pieces()[0]!);
     fireEvent.keyDown(buttons()[0]!, { key: 'Enter' });
-    await act(async () => { vi.advanceTimersByTime(300); });
+    await pass(300);
     fireEvent.keyUp(buttons()[0]!, { key: 'Shift' });
-    await act(async () => { vi.advanceTimersByTime(400); });
-    expect(buttons()).toHaveLength(2);
+    await pass(through(w) - 300);
+    expect(buttons()).toHaveLength(0);
   });
 
   test('strips follow the phrase through an edit: one edited away goes, one added comes', () => {
@@ -260,9 +321,12 @@ describe('Autocorrect: the tape', () => {
   });
 
   test('a half-peeled strip keeps its tape only where it is stuck, and residue where it was peeled', () => {
-    mount({ body: 'Mario', states: { k1: savedOf({ peeled: [], stuck: { 0: [[0.5, 1, 1]] } }) } });
+    mount({ body: 'Mario', states: { k1: savedOf({ peeled: [], stuck: { 0: [[0.5, 1, 3]] } }) } });
     expect(pieces()).toHaveLength(1);
-    expect(pieces()[0]!.style.maskImage || pieces()[0]!.getAttribute('style')).toMatch(/linear-gradient/u);
+    const body = pieces()[0]!.querySelector<HTMLElement>('.dw-ac-body')!;
+    expect(body.style.maskImage || body.getAttribute('style')).toMatch(/linear-gradient/u);
+    /* The roll waits at the saved peel line, and it is not inside the masked body. */
+    expect(document.querySelector('[data-kb-ac-roll="waiting"]')?.closest('.dw-ac-body')).toBeNull();
     expect(document.querySelector('.dw-ac-residue')).not.toBeNull();
   });
 
@@ -312,81 +376,321 @@ describe('Autocorrect: saving the author\'s peel', () => {
     vi.useFakeTimers();
     const m = mount({ author: true, states: { k1: savedOf({ peeled: [0, 2] }) } });
     expect(buttons()).toHaveLength(1);
-    await hold(buttons()[0]!, 700);
-    await act(async () => { vi.advanceTimersByTime(500); });
+    await hold(buttons()[0]!, through(wide(pieces()[0]!)));
+    await pass(500);
     expect(m.save).toHaveBeenCalledWith('k1', { peeled: [0, 1, 2], clean: true });
   });
 
   test('a saved stuck stretch of a strip still half peeled is sent back as it was', async () => {
     vi.useFakeTimers();
-    const m = mount({ author: true, states: { k1: savedOf({ peeled: [0], stuck: { 1: [[0.5, 1, 1]] } }) } });
-    await hold(buttons().find((b) => b.getAttribute('data-kb-ac-anchor') === 'k1:2')!, 700);
-    await act(async () => { vi.advanceTimersByTime(500); });
-    expect(m.save).toHaveBeenCalledWith('k1', { peeled: [0, 2], stuck: { 1: [[0.5, 1, 1]] } });
+    const m = mount({ author: true, states: { k1: savedOf({ peeled: [0], stuck: { 1: [[0.5, 1, 3]] } }) } });
+    const two = buttons().find((b) => b.getAttribute('data-kb-ac-anchor') === 'k1:2')!;
+    await hold(two, through(wide(pieces().find((p) => p.getAttribute('data-kb-ac-piece') === 'k1:2')!)));
+    await pass(500);
+    expect(m.save).toHaveBeenCalledWith('k1', { peeled: [0, 2], stuck: { 1: [[0.5, 1, 3]] } });
   });
 
-  test('the author\'s peels go in one save, one at a time, each later one after the last is answered', async () => {
+  test('the author\'s changes go in one save, one at a time, each later one after the last is answered', async () => {
     vi.useFakeTimers();
     let answer: (v: Awaited<ReturnType<EffectProps['save']>>) => void = () => {};
     const save = vi.fn(() => new Promise<Awaited<ReturnType<EffectProps['save']>>>((r) => { answer = r; }));
     mount({ author: true, save: save as unknown as EffectProps['save'] });
-    fireEvent.keyDown(buttons()[0]!, { key: 'Enter' });
-    fireEvent.keyDown(buttons()[1]!, { key: 'Enter' });
-    await act(async () => { vi.advanceTimersByTime(700); });
-    await act(async () => { vi.advanceTimersByTime(500); });
+    await hold(buttons()[0]!, through(wide(pieces()[0]!)));
+    await pass(500);
     expect(save).toHaveBeenCalledTimes(1);
-    expect(save).toHaveBeenLastCalledWith('k1', { peeled: [0, 1] });
-    await hold(buttons()[0]!, 700);
-    await act(async () => { vi.advanceTimersByTime(500); });
+    expect(save).toHaveBeenLastCalledWith('k1', { peeled: [0] });
+    await hold(buttons()[0]!, through(wide(pieces()[0]!)));
+    await pass(500);
     expect(save).toHaveBeenCalledTimes(1);
+    await hold(buttons()[0]!, through(wide(pieces()[0]!)));
     await act(async () => { answer({ ok: true, value: { play: 'k1', savedAt: '' } }); });
-    await act(async () => { vi.advanceTimersByTime(500); });
+    await pass(500);
     expect(save).toHaveBeenCalledTimes(2);
     expect(save).toHaveBeenLastCalledWith('k1', { peeled: [0, 1, 2], clean: true });
   });
 
+  test('a half peel is saved too, and the next change after it carries both', async () => {
+    vi.useFakeTimers();
+    const m = mount({ author: true, body: 'Mario and Mario' });
+    await hold(buttons()[0]!, PICK + 500);
+    letGo(buttons()[0]!);
+    await pass(500);
+    expect(m.save).toHaveBeenCalledTimes(1);
+    const first = m.save.mock.calls[0]![1] as { peeled: number[]; stuck: Record<string, unknown> };
+    expect(first.peeled).toEqual([]);
+    expect(Object.keys(first.stuck)).toEqual(['0']);
+    await hold(buttons()[1]!, through(wide(pieces()[1]!)));
+    letGo(buttons()[1]!);
+    await pass(500);
+    const second = m.save.mock.calls[1]![1] as { peeled: number[]; stuck: Record<string, unknown> };
+    expect(second.peeled).toEqual([1]);
+    expect(second.stuck['0']).toEqual(first.stuck['0']);
+  });
+
   test('an author\'s peel made just before leaving the post is still saved', async () => {
     vi.useFakeTimers();
-    const m = mount({ author: true });
-    await hold(buttons()[0]!, 700);
+    const m = mount({ author: true, body: 'Mario' });
+    await hold(buttons()[0]!, through(wide(pieces()[0]!)));
     expect(m.save).not.toHaveBeenCalled();
     m.unmount();
-    expect(m.save).toHaveBeenCalledWith('k1', { peeled: [0] });
+    expect(m.save).toHaveBeenCalledWith('k1', { peeled: [0], clean: true });
   });
 
   test('peeling the focused strip keeps the reader\'s place: focus goes to the next exposed strip, or to the post, and the peel is said', async () => {
     vi.useFakeTimers();
     mount({ body: 'Mario and Mario', author: true });
     buttons()[0]!.focus();
-    await hold(buttons()[0]!, 700);
+    await hold(buttons()[0]!, through(wide(pieces()[0]!)));
+    letGo(buttons()[0]!);
     expect(document.activeElement).toBe(buttons()[0]);
     expect(buttons()[0]).toHaveAttribute('data-kb-ac-anchor', 'k1:1');
     expect(screen.getAllByRole('status').at(-1)).toHaveTextContent('Peeled. Under it: “Mario”.');
-    await hold(buttons()[0]!, 700);
+    await hold(buttons()[0]!, through(wide(pieces()[0]!)));
     expect(buttons()).toHaveLength(0);
     expect(document.activeElement).toBe(document.querySelector('[data-kb-autocorrect]'));
   });
 
-  test('a save that got no answer is sent again, later; one the card refuses is said, and the strip comes back', async () => {
+  test('a save that got no answer is sent again, later; one the card refuses is said, and only the change it carried comes back', async () => {
     vi.useFakeTimers();
     const answers = [{ ok: false, error: 'lost', uncertain: true }, { ok: true, value: { play: 'k1', savedAt: '' } }];
     const save = vi.fn(async () => answers.shift()!);
-    mount({ author: true, save: save as unknown as EffectProps['save'] });
-    await hold(buttons()[0]!, 700);
-    await act(async () => { vi.advanceTimersByTime(500); });
+    mount({ author: true, body: 'Mario', save: save as unknown as EffectProps['save'] });
+    await hold(buttons()[0]!, through(wide(pieces()[0]!)));
+    await pass(500);
     expect(save).toHaveBeenCalledTimes(1);
-    await act(async () => { vi.advanceTimersByTime(2000); });
+    await pass(2000);
     expect(save).toHaveBeenCalledTimes(2);
 
-    const refused = vi.fn(async () => ({ ok: false as const, error: 'peeled is a list of places' }));
+    const refused = vi.fn(async () => ({ ok: false as const, error: 'a share is from 0 to 1' }));
     document.body.innerHTML = '';
     mount({ author: true, save: refused as unknown as EffectProps['save'] });
-    await hold(buttons()[0]!, 700);
+    const only = buttons()[0]!;
+    await hold(only, through(wide(pieces()[0]!)));
+    letGo(only);
     expect(buttons()).toHaveLength(2);
-    await act(async () => { vi.advanceTimersByTime(500); });
+    await pass(500);
     expect(refused).toHaveBeenCalledTimes(1);
     expect(buttons()).toHaveLength(3);
-    expect(screen.getAllByRole('status').at(-1)).toHaveTextContent('peeled is a list of places');
+    expect(screen.getAllByRole('status').at(-1)).toHaveTextContent('a share is from 0 to 1');
+  });
+
+  test('a refusal puts back only what it carried: a strip changed since keeps its own change for the next save', async () => {
+    vi.useFakeTimers();
+    let answer: (v: Awaited<ReturnType<EffectProps['save']>>) => void = () => {};
+    const save = vi.fn(() => new Promise<Awaited<ReturnType<EffectProps['save']>>>((r) => { answer = r; }));
+    mount({ author: true, body: 'Mario and Mario', save: save as unknown as EffectProps['save'] });
+    const first = buttons()[0]!;
+    await hold(first, through(wide(pieces()[0]!)));
+    letGo(first);
+    await pass(500);
+    expect(save).toHaveBeenCalledTimes(1);
+    const second = buttons()[0]!;
+    await hold(second, through(wide(pieces()[0]!)));
+    letGo(second);
+    expect(buttons()).toHaveLength(0);
+    await act(async () => { answer({ ok: false, error: 'refused' }); });
+    expect(buttons()).toHaveLength(1);
+    expect(buttons()[0]).toHaveAttribute('data-kb-ac-anchor', 'k1:0');
+  });
+});
+
+describe('Autocorrect: the hands on a piece', () => {
+  const down = (el: Element, x: number, id = 1) => fireEvent.pointerDown(el, { clientX: x, clientY: 5, pointerId: id, pointerType: 'mouse', button: 0, isPrimary: true });
+  const move = (el: Element, x: number, id = 1) => fireEvent.pointerMove(el, { clientX: x, clientY: 5, pointerId: id, pointerType: 'mouse' });
+  const up = (el: Element, id = 1) => fireEvent.pointerUp(el, { pointerId: id, pointerType: 'mouse' });
+
+  test('a reader\'s peek folds a flap in perspective from the end, lays down after its stay, and saves nothing', async () => {
+    vi.useFakeTimers();
+    const m = mount({ body: 'Mario' });
+    const piece = pieces()[0]!;
+    down(piece, 2);
+    move(piece, 40);
+    await pass(40);
+    const flap = document.querySelector<HTMLElement>('.dw-ac-flap')!;
+    expect(flap).not.toBeNull();
+    expect(flap.style.transform).toMatch(/^perspective\(\d+px\) rotateY\(-?[\d.]+deg\)$/u);
+    expect(flap.style.transformOrigin).toBe('right center');
+    expect(Number.parseFloat(flap.style.width)).toBeGreaterThan(30);
+    /* The words under the lifted part show: it is no longer stuck. */
+    expect(stuckOnPage()[0]).toMatch(/^0\.0-/u);
+    up(piece);
+    await pass(200);
+    expect(document.querySelector('.dw-ac-flap')).not.toBeNull();
+    await pass(2000);
+    expect(document.querySelector('.dw-ac-flap')).toBeNull();
+    expect(m.save).not.toHaveBeenCalled();
+    await pass(2000);
+    expect(m.save).not.toHaveBeenCalled();
+  });
+
+  test('a reader pressing a piece again before it is down picks the peek up where it is', async () => {
+    vi.useFakeTimers();
+    mount({ body: 'Mario' });
+    const piece = pieces()[0]!;
+    down(piece, 2);
+    move(piece, 30);
+    await pass(40);
+    up(piece);
+    await pass(320);
+    const before = Number.parseFloat(document.querySelector<HTMLElement>('.dw-ac-flap')!.style.width);
+    expect(before).toBeLessThan(28);
+    expect(before).toBeGreaterThan(15);
+    down(piece, 5, 2);
+    move(piece, 25, 2);
+    await pass(40);
+    expect(Number.parseFloat(document.querySelector<HTMLElement>('.dw-ac-flap')!.style.width)).toBeCloseTo(before + 20, 0);
+  });
+
+  test('the author picks an end with the pointer and pulls the tape off at the pace, the roll waiting where it is let go', async () => {
+    vi.useFakeTimers();
+    const m = mount({ author: true, body: 'Mario' });
+    const piece = pieces()[0]!;
+    const w = wide(piece);
+    down(piece, 3);
+    await pass(PICK - 100);
+    expect(document.querySelector('.dw-ac-corner')).not.toBeNull();
+    expect(stuckOnPage()).toEqual([`0.0-${w.toFixed(1)}`]);
+    await pass(200);
+    expect(document.querySelector('.dw-ac-corner')).toBeNull();
+    /* A hand a little ahead of the line takes the tape at the pace: about 90px in a second would be the whole piece, so go half a second. */
+    for (let i = 0; i < 30; i++) { move(piece, Math.min(w - 3, Number.parseFloat(stuckOnPage()[0]!.split('-')[0]!) + 12)); await pass(16); }
+    up(piece);
+    const lo = Number.parseFloat(stuckOnPage()[0]!.split('-')[0]!);
+    expect(lo).toBeGreaterThan(20);
+    expect(lo).toBeLessThan(60);
+    expect(document.querySelector('[data-kb-ac-roll="waiting"]')).not.toBeNull();
+    await pass(500);
+    expect(m.save).toHaveBeenCalledTimes(1);
+    expect((m.save.mock.calls[0]![1] as { stuck: Record<string, [number, number, number][]> }).stuck['0']![0]![2]).toBe(3);
+  });
+
+  test('a press away from an end does nothing', async () => {
+    vi.useFakeTimers();
+    const m = mount({ author: true, body: 'Mario', plays: [playOf(1, 'mario', 'Mr. Mario Mario')] });
+    const piece = pieces()[0]!;
+    const w = wide(piece);
+    expect(w).toBeGreaterThan(80);
+    down(piece, w / 2);
+    await pass(2000);
+    expect(document.querySelector('.dw-ac-corner')).toBeNull();
+    expect(stuckOnPage()).toEqual([`0.0-${w.toFixed(1)}`]);
+    expect(m.save).not.toHaveBeenCalled();
+  });
+
+  test('pressing a covered strip says another strip is over it, and moves nothing', async () => {
+    vi.useFakeTimers();
+    const m = mount({ author: true, body: 'Mario Kart', plays: [playOf(1, 'mario kart', 'Wii Sports'), playOf(2, 'mario', 'Luigi')] });
+    const under = pieces().find((p) => p.getAttribute('data-kb-ac-piece') === 'k1:0')!;
+    const before = stuckOnPage();
+    down(under, 3);
+    await pass(2000);
+    expect(screen.getAllByRole('status').at(-1)).toHaveTextContent('Another strip is stuck over this one. That one comes off first.');
+    expect(stuckOnPage()).toEqual(before);
+    expect(document.querySelector('.dw-ac-corner')).toBeNull();
+    expect(m.save).not.toHaveBeenCalled();
+    up(under);
+  });
+
+  test('a reader\'s peek on a stack lifts the strip beneath on the same pull', async () => {
+    vi.useFakeTimers();
+    mount({ body: 'Mario Kart', plays: [playOf(1, 'mario kart', 'Wii Sports'), playOf(2, 'mario', 'Luigi')] });
+    const top = pieces().find((p) => p.getAttribute('data-kb-ac-piece') === 'k2:0')!;
+    down(top, 2);
+    move(top, wide(top) + 40);
+    await pass(40);
+    const lifted = pieces().filter((p) => p.querySelector('.dw-ac-flap'));
+    expect(lifted.map((p) => p.getAttribute('data-kb-ac-piece')).sort()).toEqual(['k1:0', 'k2:0']);
+    up(top);
+  });
+
+  test('a strip torn by a hand too far ahead needs a new pick at the torn end', async () => {
+    vi.useFakeTimers();
+    const m = mount({ author: true, body: 'Mario', plays: [playOf(1, 'mario', 'Mr. Mario Mario')] });
+    const piece = pieces()[0]!;
+    const w = wide(piece);
+    down(piece, 3);
+    await pass(PICK + 20);
+    move(piece, w - 4);
+    await pass(100);
+    expect(piece.querySelector('.dw-ac-body')).toHaveAttribute('data-tension');
+    await pass(3000);
+    const torn = Number.parseFloat(stuckOnPage()[0]!.split('-')[0]!);
+    expect(torn).toBeGreaterThan(0);
+    expect(document.querySelector('[data-kb-ac-roll]')).toBeNull();
+    expect(piece.querySelector<HTMLElement>('.dw-ac-body')!.style.clipPath).toMatch(/^path\(/u);
+    up(piece);
+    await pass(500);
+    expect((m.save.mock.calls[0]![1] as { stuck: Record<string, [number, number, number][]> }).stuck['0']![0]![2]).toBe(6);
+    /* The same hold again, with no new pick, goes nowhere; a new pick carries on. */
+    const after = stuckOnPage()[0];
+    down(piece, torn + 3, 2);
+    await pass(200);
+    move(piece, torn + 20, 2);
+    await pass(200);
+    expect(stuckOnPage()[0]).toBe(after);
+    await pass(PICK);
+    for (let i = 0; i < 10; i++) { move(piece, Number.parseFloat(stuckOnPage()[0]!.split('-')[0]!) + 12, 2); await pass(16); }
+    expect(Number.parseFloat(stuckOnPage()[0]!.split('-')[0]!)).toBeGreaterThan(torn + 5);
+    up(piece, 2);
+  });
+
+  test('a saved stuck state from a desktop width loads at a phone width with the same shares stuck', () => {
+    const body = 'Mario';
+    const states = { k1: savedOf({ peeled: [], stuck: { 0: [[0.25, 0.9, 4]] } }) };
+    const share = () => {
+      const widths = pieces().map(wide);
+      const stuck = pieces().flatMap((p) => (p.getAttribute('data-kb-ac-stuck') ?? '').split(',').filter(Boolean).map((r) => r.split('-').map(Number) as [number, number]));
+      return { total: widths.reduce((a, b) => a + b, 0), stuck: stuck.reduce((a, [lo, hi]) => a + hi - lo, 0), lines: widths.length };
+    };
+    const desk = mount({ body, states });
+    const d = share();
+    desk.unmount();
+    document.body.innerHTML = '';
+    phone = 40;
+    try {
+      mount({ body, states });
+      const p = share();
+      expect(d.lines).toBe(1);
+      expect(p.lines).toBe(2);
+      expect(d.stuck / d.total).toBeCloseTo(0.65, 2);
+      expect(p.stuck / p.total).toBeCloseTo(0.65, 2);
+    } finally {
+      phone = null;
+    }
+  });
+
+  test('the pieces take no selection, no long-press menu, and leave the vertical pan to the page', () => {
+    expect(css).toMatch(/\.dw-ac-piece\[data-kb-ac-hand\]\s*\{[^}]*touch-action:\s*pan-y/u);
+    expect(css).toMatch(/\.dw-ac-piece\[data-kb-ac-hand\]\s*\{[^}]*user-select:\s*none/u);
+    expect(css).toMatch(/\.dw-ac-piece\[data-kb-ac-hand\]\s*\{[^}]*-webkit-touch-callout:\s*none/u);
+  });
+
+  test('a peel in hand redraws only its own pieces: the residue host is registered once and no film is built again', async () => {
+    vi.useFakeTimers();
+    /* A film is a canvas made in `buildFilm`; the stack says which. */
+    let built = 0;
+    const real = document.createElement.bind(document);
+    vi.spyOn(document, 'createElement').mockImplementation(((tag: string, o?: ElementCreationOptions) => { if (tag === 'canvas' && /buildFilm/u.test(new Error().stack ?? '')) built++; return real(tag, o); }) as never);
+    mount({ author: true, body: 'Mario and Mario', states: { k1: savedOf({ peeled: [0] }) } });
+    const registered = registrations.register.mock.calls.length;
+    const left = registrations.unregister.mock.calls.length;
+    expect(registered).toBeGreaterThan(0);
+    const base = built;
+    await hold(buttons()[0]!, PICK + 400);
+    letGo(buttons()[0]!);
+    await pass(1000);
+    const mid = built;
+    expect(mid).toBeGreaterThan(base);
+    /* The roll waits at the peel line, so the same strip peels again with no pick: more of it is peeled, and nothing is made again. */
+    const before = stuckOnPage()[0];
+    await hold(buttons()[0]!, 500);
+    await pass(500);
+    expect(stuckOnPage()[0]).not.toBe(before);
+    expect(registrations.register.mock.calls.length).toBe(registered);
+    expect(registrations.unregister.mock.calls.length).toBe(left);
+    /* The films of both strips were built once each: no more however many frames went by. */
+    expect(built).toBe(mid);
+    letGo(buttons()[0]!);
   });
 });
 
