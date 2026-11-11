@@ -217,7 +217,8 @@ describe('a finished season, beyond what the eye sees', () => {
       await waitFor(() => expect(screen.getByText(/Page 2 of 3/u)).toBeInTheDocument());
       expect(within(rowOf('Name 060')).getByText('(the character you followed)')).toBeInTheDocument();
       expect(within(rowOf('Name 061')).queryByText('(the character you followed)')).toBeNull();
-      expect(scroll).toHaveBeenCalledTimes(1);
+      /* The scroll is a passive effect, which can run after the table is in the DOM and the wait above has resolved. */
+      await waitFor(() => expect(scroll).toHaveBeenCalled());
       expect(scroll.mock.contexts[0]).toBe(rowOf('Name 060'));
     } finally {
       delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;

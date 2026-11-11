@@ -81,7 +81,8 @@ export function usePrepared<T, A = void>(read: (signal: AbortSignal, arg: A) => 
     return h;
   }, [drop]);
 
-  const early = useCallback((arg: A) => { start(arg).promise.catch(() => undefined); }, [start]);
+  /* A read that lands clears an earlier failure's note, whoever started it: a press that then finds the answer kept never calls `open`, which is the other place `failed` is cleared. */
+  const early = useCallback((arg: A) => { start(arg).promise.then(() => { if (alive.current) setFailed(false); }, () => undefined); }, [start]);
 
   const open = useCallback(async (arg: A): Promise<T | null> => {
     const mine = ++turn.current;
