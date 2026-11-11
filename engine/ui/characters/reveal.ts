@@ -1,9 +1,8 @@
 /**
- * A reveal of a character's own class, written once for the two dialogs that ask for it: the
- * board's (RevealModal.tsx, the composer's, in its own thread) and the glass's (RevealOverlay.tsx,
- * My characters', in a thread the player chooses). Each shell draws its world's controls around
- * this core, so neither world can say a reveal differently (the glass reveal design, §3). The
- * server checks the class and writes it; the dialogs only ask.
+ * A reveal of a character's own class: the rules of one dialog, RevealOverlay.tsx, which has two
+ * openers: the HUD's "Only you see this" (on a thread, so it opens ready) and My characters (a
+ * thread the player chooses). The board's reply box has no Reveal of its own. The server checks
+ * the class and writes it; the dialog only asks.
  */
 import { useState } from 'react';
 import { useKayfa } from '../context.tsx';

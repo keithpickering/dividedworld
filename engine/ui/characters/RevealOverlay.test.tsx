@@ -111,3 +111,47 @@ describe('RevealOverlay opened on nothing', () => {
     expect(within(dialog).queryByText('My characters › Reveal')).toBeNull();
   });
 });
+
+describe('RevealOverlay: the words and the refusals', () => {
+  const onTea = async (w: World) => {
+    const t = w.fake.seed.thread('general', w.stranger, 'The tea thread', 'x');
+    return { id: t.thread, title: 'The tea thread', board: await boardId(w, 'general') };
+  };
+
+  test('says the class and that it cannot be taken back, and counts the character\'s words', async () => {
+    const { dialog } = await overlay();
+    expect(within(dialog).getByText(/Pipewrench is a Face/u)).toBeInTheDocument();
+    expect(within(dialog).getByText(/this can.t be taken back/iu)).toBeInTheDocument();
+    await userEvent.type(within(dialog).getByLabelText(/In the character.s words/u), 'It was me.');
+    expect(within(dialog).getByText('10 of 200')).toBeInTheDocument();
+  });
+
+  test('sends the words, shows a refusal in the server\'s words, and clears it on the next try', async () => {
+    const w = world();
+    const at = await onTea(w);
+    const unmask = vi.spyOn(w.fake, 'unmask').mockResolvedValueOnce({ ok: false, error: 'this character\'s Turn takes effect at the settlement now due; reveal once it has run, or withdraw the Turn' });
+    const onDone = vi.fn();
+    const { dialog, character } = await overlay({ w, at, onDone });
+    await userEvent.type(within(dialog).getByLabelText(/In the character.s words/u), 'It was me.');
+    await userEvent.click(within(dialog).getByRole('button', { name: submitName }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('reveal once it has run, or withdraw the Turn');
+    expect(onDone).not.toHaveBeenCalled();
+    await userEvent.click(within(dialog).getByRole('button', { name: submitName }));
+    await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1));
+    expect(within(dialog).queryByRole('alert')).toBeNull();
+    expect(unmask).toHaveBeenLastCalledWith(character.id, at.id, 'It was me.');
+  });
+
+  test('over 200 characters, a notice says so and Reveal is disabled; at 200 it is enabled again', async () => {
+    const w = world();
+    const { dialog } = await overlay({ w, at: await onTea(w) });
+    const words = within(dialog).getByLabelText(/In the character.s words/u);
+    await userEvent.click(words);
+    await userEvent.paste('a'.repeat(201));
+    expect(within(dialog).getByRole('alert')).toHaveTextContent('The message is at most 200 characters.');
+    expect(within(dialog).getByRole('button', { name: submitName })).toBeDisabled();
+    await userEvent.type(words, '{Backspace}');
+    expect(within(dialog).queryByRole('alert')).toBeNull();
+    expect(within(dialog).getByRole('button', { name: submitName })).toBeEnabled();
+  });
+});
