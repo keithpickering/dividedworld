@@ -92,19 +92,6 @@
   display: contents;
 }
 
-/*
- * Gear may reach past the tall slot (a cap above it), drawn under the text: the name, title, rank, trophies and counts are each on a layer
- * above the slot, every run on the board's ground, so no piece is ever behind letters that are read over it (the cosmetics board 01). The
- * ground is the theme's own token, so it holds in every theme, and Windows High Contrast paints it as Canvas.
- */
-.kb-postbit[data-kb-postbit="side"] .kb-postbit-text > * {
-  position: relative;
-  z-index: 2;
-  align-self: flex-start;
-  max-width: 100%;
-  background: var(--kb-bg);
-}
-
 .kb-postbit[data-kb-postbit="side"] .kb-postbit-counts,
 .kb-postbit[data-kb-postbit="side"] .kb-postbit-class {
   order: 2;
@@ -151,6 +138,25 @@
  * nothing. The phone shows the square instead (the picture's source, below), so it keeps its own rule.
  */
 @media not all and (max-width: 40em) {
+  /*
+   * Gear may reach past the tall slot (a cap above it), drawn under the text: the name, title, rank, trophies and counts are each on a layer
+   * above the slot, every run on the post's own ground, so no piece is ever behind letters that are read over it (the cosmetics board 01).
+   * The ground is the post cell's token (thread.css sets it per row, even rows differ in several themes), with the board's where a postbit
+   * is shown outside a post. Wide windows only: the phone's slot is a small square and nothing overlaps.
+   */
+  .kb-postbit[data-kb-postbit="side"] .kb-postbit-text > * {
+    position: relative;
+    z-index: 2;
+    align-self: flex-start;
+    max-width: 100%;
+    background: var(--kb-post-bg, var(--kb-bg));
+  }
+
+  /* The square's gear is for the phone. */
+  .kb-postbit-avatar > .kb-outfit[data-kb-on="square"] {
+    display: none;
+  }
+
   .kb-postbit[data-kb-postbit="side"] .kb-postbit-avatar[data-kb-slot="portrait"] {
     aspect-ratio: auto;
   }
@@ -173,6 +179,20 @@
 }
 
 @media (max-width: 40em) {
+  /* The portrait's slot is the small square here, whatever shape it was given inline; the square's gear shows and the portrait's does not. */
+  .kb-postbit[data-kb-postbit="side"] .kb-postbit-avatar[data-kb-slot="portrait"] {
+    overflow: hidden;
+    aspect-ratio: 1 !important;
+  }
+
+  .kb-postbit-avatar[data-kb-square] > .kb-outfit[data-kb-on="portrait"] {
+    display: none;
+  }
+
+  .kb-postbit-avatar > .kb-outfit[data-kb-on="square"] {
+    display: block;
+  }
+
   .kb-postbit[data-kb-postbit="side"] {
     flex-direction: row;
     align-items: center;

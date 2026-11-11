@@ -324,7 +324,6 @@ describe('the side by side avatar slot, in the stylesheet', () => {
 
   test('the phone keeps its small square, which the portrait\'s rules must not reach', () => {
     const phone = css.slice(css.indexOf('@media (max-width: 40em)'));
-    expect(phone).not.toContain('data-kb-slot="portrait"');
     expect(css).toMatch(/@media not all and \(max-width: 40em\)\s*\{[^@]*data-kb-slot="portrait"/u);
   });
 });
@@ -350,11 +349,23 @@ describe('gear on the postbit', () => {
     show(person({}, { outfit: [{ ...worn[0]!, y: 0.25 }], squareFrame: SQUARE, portraitTallness: 2 }), 'stacked');
     expect(slot().querySelector('.kb-outfit')).toHaveAttribute('data-kb-on', 'square');
     expect(slot().querySelector<HTMLElement>('.kb-outfit img')!.style.top).toBe('50%');
-    document.body.innerHTML = '';
-    widthOf(390);
-    show(person({}, { outfit: [{ ...worn[0]!, y: 0.25 }], squareFrame: SQUARE, portraitTallness: 2 }));
-    expect(slot()).toHaveAttribute('data-kb-slot', 'square');
-    expect(slot().querySelector('.kb-outfit')).toHaveAttribute('data-kb-on', 'square');
+  });
+
+  test('a side by side portrait carries both layers in the DOM at every width, and the stylesheet shows one', () => {
+    const outfit = [{ ...worn[0]!, y: 0.25 }];
+    for (const w of [1440, 390]) {
+      document.body.innerHTML = '';
+      widthOf(w);
+      show(person({}, { outfit, squareFrame: SQUARE, portraitTallness: 2 }));
+      expect(slot()).toHaveAttribute('data-kb-slot', 'portrait');
+      expect(slot().querySelector('.kb-outfit[data-kb-on="portrait"]')).not.toBeNull();
+      expect(slot().querySelector('.kb-outfit[data-kb-on="square"]')).not.toBeNull();
+    }
+    const css = readFileSync('engine/ui/postbit/postbit.css', 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '');
+    const phone = css.slice(css.indexOf('@media (max-width: 40em)'));
+    expect(css).toMatch(/\.kb-outfit\[data-kb-on="square"\]\s*\{[^}]*display:\s*none/u);
+    expect(phone).toMatch(/data-kb-square[^{]*\.kb-outfit\[data-kb-on="portrait"\]\s*\{[^}]*display:\s*none/u);
+    expect(phone).toMatch(/\.kb-outfit\[data-kb-on="square"\]\s*\{[^}]*display:\s*block/u);
   });
 
   test('a mask with no portrait draws its square or initial and no gear', () => {
@@ -376,8 +387,15 @@ describe('the postbit\'s text over the outfit, in the stylesheet', () => {
   test('the name, title, rank, trophies and counts are on a layer above the avatar slot, each run on the board\'s ground', () => {
     const text = decls('.kb-postbit[data-kb-postbit="side"] .kb-postbit-text > *');
     expect(z(text)).toBeGreaterThan(z(decls('.kb-postbit-avatar')));
-    expect(text).toMatch(/background:\s*var\(--kb-bg\)/u);
+    expect(text).toMatch(/background:\s*var\(--kb-post-bg,\s*var\(--kb-bg\)\)/u);
+    expect(text).not.toMatch(/background:\s*var\(--kb-bg\)\s*;/u);
     expect(decls('.kb-postbit-avatar')).toMatch(/position:\s*relative/u);
+  });
+
+  test('the text-over-gear rule is scoped to wide windows and the phone side layout is not touched by it', () => {
+    expect(css).toMatch(/@media not all and \(max-width: 40em\)\s*\{[^@]*\.kb-postbit-text > \*/u);
+    const bare = css.replace(/@media[^{]*\{(?:[^{}]*\{[^{}]*\})*\s*\}/gu, '');
+    expect(bare).not.toMatch(/\.kb-postbit-text > \*/u);
   });
 
   test('the tall slot lets gear reach past its edge and does not crop the portrait', () => {
