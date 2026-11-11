@@ -840,7 +840,8 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     const [cs, ps, worn] = await Promise.all([
       byChunks(ids, (part) => list(() => client.from('characters_public').select('id,name,joined,staff,office,group').in('id', part))),
       byChunks(ids, (part) => list(() => client.from('character_profiles').select('character,title,signature,avatar_square,avatar_portrait,square_frame,portrait_frame,portrait_tallness,pip_style,pronouns').in('character', part))),
-      byChunks(ids, (part) => list(() => client.from('gear_worn').select('character,layer,gear,x,y,w,turn').in('character', part))),
+      /* Paged and ordered, since a chunk of masks can wear more than the row cap holds: a page cut short would drop pieces silently. */
+      byChunks(ids, (part) => every((start, end) => client.from('gear_worn').select('character,layer,gear,x,y,w,turn').in('character', part).order('character', { ascending: true }).order('layer', { ascending: true }).range(start, end))),
     ]);
     const outfits = new Map<string, Row[]>();
     for (const w of worn) outfits.set(w['character'] as string, [...(outfits.get(w['character'] as string) ?? []), w]);
@@ -1931,6 +1932,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     },
 
     async wardrobe() {
+      /* rpcWrite is the one rpc call that answers with the server's refusal words (a read() would throw them away); my_wardrobe writes nothing, so a lost answer costs only a look again. */
       const a = await rpcWrite(() => client.rpc('my_wardrobe'));
       return a.ok ? { ok: true, value: rowsOf(a.value).map((w): WardrobeItem => ({ gear: w['gear'], rarity: w['rarity'], held: num(w['held']), wornBy: Array.isArray(w['worn_by']) ? (w['worn_by'] as Id[]) : [] })) } : a;
     },
@@ -1944,6 +1946,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       return { awards: rowsOf(d?.['awards']).map(toTrophyItem), more: d?.['more'] === true };
     },
     async beltLineage(trophy) {
+      /* rpcWrite for its refusal words, as wardrobe does: "not a belt" is the server's answer to show. */
       const a = await rpcWrite(() => client.rpc('belt_lineage', { trophy_key: trophy }));
       return a.ok ? { ok: true, value: rowsOf(a.value).map((r): BeltReign => ({ award: r['award'], character: r['character'], name: r['name'], began: r['began'], ended: str(r['ended']) })) } : a;
     },
@@ -1955,7 +1958,13 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const a = await edge('wardrobe', { action: 'randomEvent', character }, LOST);
       if (!a.ok) return a;
       const e = isObject(a.value['event']) ? (a.value['event'] as Row) : null;
-      return { ok: true, value: e === null ? null : { event: e['event'], outcome: e['outcome'], item: str(e['item']), rarity: str(e['rarity']) as RandomEvent['rarity'], line: str(e['line']), character: e['character'] } };
+      if (e === null) return { ok: true, value: null };
+      /* An outcome or rarity the client does not know, or an item that is not text, is no event it can show: a bad answer, never an event made up from it. */
+      const outcome = e['outcome'];
+      const rarity = str(e['rarity']);
+      if ((outcome !== 'line' && outcome !== 'gear' && outcome !== 'card') || (rarity !== null && !['common', 'uncommon', 'rare', 'legendary'].includes(rarity)) || (e['item'] != null && typeof e['item'] !== 'string')) return refusal(NOT_READ);
+      const lineKey = str(e['lineKey']);
+      return { ok: true, value: { event: e['event'], outcome, item: str(e['item']), rarity: rarity as RandomEvent['rarity'], line: str(e['line']), ...(lineKey !== null ? { lineKey } : {}), character: e['character'] } };
     },
     async grantGear(character, gear, copies) {
       const a = await rpcWrite(() => client.rpc('grant_gear', { of_character: character, gear_key: gear, copies }));
@@ -1978,6 +1987,8 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
         const stored = await edge('trophy-art', form, LOST);
         if (!stored.ok) return stored;
         key = str(stored.value['key']);
+        /* A 200 with no key is no stored picture: a kind made without it would be pictureless, which is not what was asked. */
+        if (key === null) return refusal(NOT_DONE);
       }
       const a = await rpcWrite(() => client.rpc('make_trophy', { trophy_name: name, said: line, art_key: key, is_belt: belt }));
       return a.ok ? { ok: true, value: { trophy: a.value['trophy'] } } : a;

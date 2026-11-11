@@ -1842,7 +1842,13 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const belts = awards.filter((a) => a.character === character && !a.reversed && kindOf(a.trophy)?.belt && !c.shown.includes(a.id) && heldNow(a)).sort((x, y) => y.at - x.at).map(shownOf);
     return [...shown, ...belts];
   }
-  const WORDS: Record<string, string> = { season: 'the season', demand: 'a met demand', admin: 'an admin', boss: 'the Boss' };
+  const WORDS: Record<string, string> = { season: 'the season', demand: 'a met demand', admin: 'an admin'};
+  /** `trophy_item`'s words for who gave: the Boss's own name, "<Name>, the Boss", where one stands. */
+  const givenBy = (by: string): string => {
+    if (by !== 'boss') return WORDS[by]!;
+    const boss = [...characters.values()].find((c) => c.staff?.office === 'boss' && c.debutedAt !== null && c.retiredAt === null);
+    return boss ? `${boss.name}, the Boss` : 'the Boss';
+  };
   /** `piece_problem`'s words for the predicate `pieceProblem` names. */
   const pieceWords = (piece: Piece, most: number): string | null => {
     if (typeof piece !== 'object' || piece === null) return 'a piece is an object giving its gear, x, y, w, turn and layer';
@@ -1865,7 +1871,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (!account) return refuse('sign in to dress a character');
     return ok(Object.entries(account.gear).filter(([, held]) => held > 0).sort(([x], [y]) => (x < y ? -1 : x > y ? 1 : 0)).map(([gear, held]): WardrobeItem => ({
       gear, rarity: instance.gear.find((g) => g.key === gear)?.rarity ?? 'common', held,
-      wornBy: [...characters.values()].filter((c) => c.owner === account.id && c.outfit.some((o) => o.gear === gear)).map((c) => c.id).sort(),
+      /* One entry for each piece worn, as my_wardrobe lists them. */
+      wornBy: [...characters.values()].filter((c) => c.owner === account.id).flatMap((c) => c.outfit.filter((o) => o.gear === gear).map(() => c.id)).sort(),
     })));
   }
 
@@ -1897,7 +1904,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const all = awards.filter((a) => a.character === character && !a.reversed && (before === null || a.at < before || (a.at === before && a.id < cursor!.beforeId)))
       .sort((x, y) => y.at - x.at || (x.id < y.id ? 1 : x.id > y.id ? -1 : 0));
     return {
-      awards: all.slice(0, PAGE).map((a): TrophyItem => ({ ...shownOf(a), line: a.line ?? kindOf(a.trophy)!.line, at: iso(a.at), by: WORDS[a.by]!, season: a.season })),
+      awards: all.slice(0, PAGE).map((a): TrophyItem => ({ ...shownOf(a), line: a.line ?? kindOf(a.trophy)!.line, at: iso(a.at), by: givenBy(a.by), season: a.season })),
       more: all.length > PAGE,
     };
   }
@@ -1951,14 +1958,14 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     let outcome: RandomEvent['outcome'] | 'none';
     let item: string | null = null;
     let rarity: Rarity | null = null;
-    let line: string | null = null;
+    let lineKey: string | null = null;
     const next = scripted.shift();
     if (next === null) return ok(null);
     if (next !== undefined) {
       outcome = next.outcome;
       item = next.item ?? null;
       rarity = (outcome === 'gear' ? instance.gear.find((g) => g.key === item)?.rarity : outcome === 'card' ? instance.cards.find((k) => k.key === item)?.rarity : null) ?? null;
-      line = next.line ?? null;
+      lineKey = next.line ?? null;
     } else {
       const o = { ...cfg.outcomes, none: cfg.outcomes.none ?? 0 };
       const total = o.line + o.gear + o.card + o.none;
@@ -1972,12 +1979,14 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         rarity = drawn.rarity;
       }
       const lines = instance.events.lines.filter((l) => l.outcome === outcome).map((l) => l.key).sort();
-      line = lines.length > 0 ? lines[Math.floor(random() * lines.length)]! : null;
+      lineKey = lines.length > 0 ? lines[Math.floor(random() * lines.length)]! : null;
     }
     if (outcome === 'gear' && item) account.gear[item] = (account.gear[item] ?? 0) + 1;
     if (outcome === 'card' && item) account.cards[item] = (account.cards[item] ?? 0) + 1;
     account.eventsAt.push(now());
-    return ok({ event: uuid(), outcome, item, rarity, line, character });
+    /* The line is its text with `{item}` still in it, which the dialog fills; a key the instance does not have says nothing. */
+    const said = lineKey === null ? undefined : instance.events.lines.find((l) => l.key === lineKey);
+    return ok({ event: uuid(), outcome, item, rarity, line: said?.text ?? null, ...(said ? { lineKey: said.key } : {}), character });
   }
 
   /** The admin's hand over gear and trophies (0150, 0151): the words are `only_admins`'s and each function's own. */

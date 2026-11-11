@@ -543,13 +543,14 @@ export interface WardrobeItem {
   readonly wornBy: readonly Id[];
 }
 
-/** What a Random Event gave: `line` is the key of the words it said (the instance's `events.lines`), `item` the gear or card found, for an outcome of gear or card. */
+/** What a Random Event gave: `line` is the words it said (an instance's `events.lines` text, with `{item}` still in it for the dialog to fill), `lineKey` which line, `item` the gear or card found, for an outcome of gear or card. */
 export interface RandomEvent {
   readonly event: Id;
   readonly outcome: 'line' | 'gear' | 'card';
   readonly item: string | null;
   readonly rarity: Rarity | null;
   readonly line: string | null;
+  readonly lineKey?: string;
   readonly character: Id;
 }
 
@@ -2359,7 +2360,7 @@ export interface KayfaApi {
   awardTrophy(trophy: string, character: Id, line?: string): Promise<Answer<{ readonly award: Id }>>;
   /** Takes an award back (`reverse_award`); a belt it took returns to the holder before. An admin's alone. */
   reverseAward(award: Id): Promise<Answer<{ readonly reversed: Id }>>;
-  /** Makes a trophy kind of the admin's own: `art`, a WebP the `trophy-art` function stores first, then the kind (`make_trophy`). An admin's alone. */
+  /** Makes a trophy kind of the admin's own: `art`, a WebP the `trophy-art` function stores first, then the kind (`make_trophy`). An admin's alone. A `make_trophy` that fails after the art is stored leaves that file behind, unlisted and size-bound; nothing names it. */
   makeTrophy(name: string, line: string | null, art: Blob | null, belt: boolean): Promise<Answer<{ readonly trophy: string }>>;
   /** The awards that could not be written, newest first, for an admin to give by hand. An admin's alone. */
   trophyAwardFailures(): Promise<Answer<readonly TrophyAwardFailure[]>>;

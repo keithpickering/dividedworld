@@ -508,6 +508,22 @@ describe('reads and their rows', () => {
     ]);
   });
 
+  it('reads gear_worn a page at a time, ordered, so past the row cap no piece is cut off silently', async () => {
+    const pieces = Array.from({ length: 1500 }, (_, i) => ({ character: B, layer: i, gear: `g${i}`, x: 0.5, y: 0.5, w: 0.4, turn: 0 }));
+    const h = harness((r) => {
+      if (r.url.pathname.endsWith('/gear_worn')) {
+        const offset = Number(r.url.searchParams.get('offset') ?? 0);
+        return rows(pieces.slice(offset, offset + Number(r.url.searchParams.get('limit'))));
+      }
+      if (r.url.pathname.endsWith('/characters_public')) return rows([{ id: B, name: 'Bea', joined: '2026-10-01' }]);
+      return rows([{ character: B, title: '', signature: '', pip_style: 'default' }]);
+    });
+    const [bea] = await h.api.characters([B]);
+    expect(bea!.outfit).toHaveLength(1500);
+    expect(h.to('gear_worn').length).toBeGreaterThan(1);
+    expect(h.to('gear_worn')[0]?.url.searchParams.get('order')).toBe('character.asc,layer.asc');
+  });
+
   it('maps a profile projection\'s outfit and trophies (the shelf, with art URLs for an admin\'s kind)', async () => {
     const h = harness((r) => (r.url.pathname.endsWith('/rpc/set_profile') ? json({
       character: B, title: 'T', signature: 's', pip_style: 'default', pronouns: PRONOUN_PRESETS.she, portrait_tallness: 2,
@@ -542,7 +558,7 @@ describe('reads and their rows', () => {
 
   it('saves an outfit, the shown trophies and rolls an event through the wardrobe function, as the player\'s own session; null is a roll that found nothing', async () => {
     const piece = { gear: 'hat', x: 0.5, y: 0.1, w: 0.4, turn: 0, layer: 0 };
-    const found = { event: A, outcome: 'gear', item: 'hat', rarity: 'common', line: 'found', character: B };
+    const found = { event: A, outcome: 'gear', item: 'hat', rarity: 'common', line: 'You find {item}.', lineKey: 'found', character: B };
     const h = harness((r) => {
       const body = r.body as { action?: string } | null;
       if (r.url.pathname !== '/functions/v1/wardrobe') return undefined;
@@ -552,12 +568,19 @@ describe('reads and their rows', () => {
     });
     expect(await h.api.setOutfit(B, [piece])).toEqual({ ok: true, value: { worn: 1 } });
     expect(await h.api.showTrophies(B, [A, T, C])).toEqual({ ok: false, error: '3 trophies are shown; at most 2' });
-    expect(await h.api.randomEvent(B)).toEqual({ ok: true, value: { event: A, outcome: 'gear', item: 'hat', rarity: 'common', line: 'found', character: B } });
+    expect(await h.api.randomEvent(B)).toEqual({ ok: true, value: { event: A, outcome: 'gear', item: 'hat', rarity: 'common', line: 'You find {item}.', lineKey: 'found', character: B } });
     expect(h.log.filter((r) => r.url.pathname === '/functions/v1/wardrobe').map((r) => r.body)).toEqual([
       { action: 'setOutfit', character: B, pieces: [piece] }, { action: 'showTrophies', character: B, awards: [A, T, C] }, { action: 'randomEvent', character: B },
     ]);
     const none = harness((r) => (r.url.pathname === '/functions/v1/wardrobe' ? json({ event: null }) : undefined));
     expect(await none.api.randomEvent(B)).toEqual({ ok: true, value: null });
+    /* An answer that is not an event (an outcome or rarity it does not know) is no event, and nothing is invented from it. */
+    for (const bad of [{ ...found, outcome: 'jackpot' }, { ...found, rarity: 'mythic' }, { ...found, outcome: 'gear', item: 3 }]) {
+      const odd = harness((r) => (r.url.pathname === '/functions/v1/wardrobe' ? json({ event: bad }) : undefined));
+      expect(await odd.api.randomEvent(B), JSON.stringify(bad)).toMatchObject({ ok: false });
+    }
+    const noKey = harness((r) => (r.url.pathname === '/functions/v1/wardrobe' ? json({ event: { event: A, outcome: 'line', item: null, rarity: null, line: 'Nothing.', character: B } }) : undefined));
+    expect(await noKey.api.randomEvent(B)).toEqual({ ok: true, value: { event: A, outcome: 'line', item: null, rarity: null, line: 'Nothing.', character: B } });
     const lost = harness((r) => (r.url.pathname === '/functions/v1/wardrobe' ? new TypeError('network') : undefined));
     expect(await lost.api.randomEvent(B)).toMatchObject({ ok: false, uncertain: true });
   });
@@ -582,6 +605,10 @@ describe('reads and their rows', () => {
     expect(h.to('rpc/reverse_award')[0]?.body).toEqual({ of_award: A });
     expect(h.to('rpc/make_trophy').map((r) => r.body)).toEqual([{ trophy_name: 'Mine', said: 'words', art_key: 'art.webp', is_belt: true }, { trophy_name: 'Plain', said: null, art_key: null, is_belt: false }]);
     expect(h.log.filter((r) => r.url.pathname === '/functions/v1/trophy-art')).toHaveLength(1);
+    /* A stored picture that answers no key is no picture: the kind is not made without it. */
+    const keyless = harness((r) => (r.url.pathname === '/functions/v1/trophy-art' ? json({}) : undefined));
+    expect(await keyless.api.makeTrophy('Mine', null, new Blob(['x'], { type: 'image/webp' }), false)).toMatchObject({ ok: false });
+    expect(keyless.to('rpc/make_trophy')).toHaveLength(0);
     expect(await h.api.trophyAwardFailures()).toEqual({ ok: true, value: [{ id: A, move: T, season: null, at: '2026-10-01T00:00:00+00:00', error: 'x', trophy: 'met', characters: [{ id: B, name: 'Bea' }] }] });
   });
 

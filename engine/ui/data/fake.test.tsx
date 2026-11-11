@@ -3295,16 +3295,30 @@ describe('gear, trophies and Random Events', () => {
     expect(await fake.awardTrophy('pet', a1, 'x'.repeat(201))).toEqual(refused('a trophy\'s words are at most 200 characters'));
   });
 
+  test('the wardrobe lists a character once for each piece of a gear it wears, as my_wardrobe does', async () => {
+    const { fake, a1 } = dressing();
+    must(await fake.setOutfit(a1, [piece('mustache', 0), piece('mustache', 1)]));
+    expect(must(await fake.wardrobe()).find((w) => w.gear === 'mustache')?.wornBy).toEqual([a1, a1]);
+  });
+
+  test('the Boss who gave a trophy is named as the SQL names it, by the Boss character, and plainly where none stands', async () => {
+    const { fake, a1 } = dressing();
+    fake.seed.award(a1, 'pet', { by: 'boss' });
+    expect((await fake.trophies(a1)).awards[0]!.by).toBe('the Boss');
+    fake.seed.staff('boss1', 'Sighbot', 'boss', { debuted: true });
+    expect((await fake.trophies(a1)).awards[0]!.by).toBe('Sighbot, the Boss');
+  });
+
   test('a Random Event comes once a window and at most dayMost a day, from the scripted outcome, and a found gear is held at once', async () => {
     const { fake, a1 } = dressing();
     fake.seed.nextEvent({ outcome: 'gear', item: 'mustache', line: 'found' });
-    expect(must(await fake.randomEvent(a1))).toMatchObject({ outcome: 'gear', item: 'mustache', rarity: 'rare', line: 'found', character: a1 });
+    expect(must(await fake.randomEvent(a1))).toMatchObject({ outcome: 'gear', item: 'mustache', rarity: 'rare', line: 'You find {item}.', lineKey: 'found', character: a1 });
     expect(must(await fake.wardrobe()).find((w) => w.gear === 'mustache')?.held).toBe(3);
     // Inside the window: nothing, and nothing is used up.
     fake.seed.nextEvent({ outcome: 'line', line: 'nothing' });
     expect(must(await fake.randomEvent(a1))).toBeNull();
     fake.clock.advance(16 * MINUTE);
-    expect(must(await fake.randomEvent(a1))).toMatchObject({ outcome: 'line', line: 'nothing', item: null });
+    expect(must(await fake.randomEvent(a1))).toMatchObject({ outcome: 'line', line: 'Nothing happens.', lineKey: 'nothing', item: null });
     // The day's most is 2.
     fake.clock.advance(16 * MINUTE);
     fake.seed.nextEvent({ outcome: 'line', line: 'nothing' });

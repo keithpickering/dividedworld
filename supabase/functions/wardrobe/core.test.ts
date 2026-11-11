@@ -51,6 +51,10 @@ test('a session the database does not take is nobody: 401 at whoami(), and nothi
     assert.equal(out.status, 401);
     assert.deepEqual(w.calls.map((c) => c.split(':').slice(0, 2).join(':')), ['player:whoami']);
   }
+  /* The words are the same whatever was asked. */
+  for (const req of [{ action: 'setOutfit', character, pieces: [] }, { action: 'showTrophies', character, awards: [] }, { action: 'randomEvent', character }] as const) {
+    assert.deepEqual(await runWardrobe(world({ whoami: null }).dbs, req), { status: 401, body: { error: 'sign in first' } }, req.action);
+  }
 });
 
 test('a request that is not well formed is refused before anything is called', async () => {

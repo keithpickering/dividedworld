@@ -23,7 +23,7 @@
  *   allowed rpc), which holds the rules.
  * - `from`, `rpc` and `schema` taken off a client without being called at once (destructured,
  *   `.bind`-ed, assigned) fire; `.schema()` is read at once with `.from()`.
- * - `.storage.from('x')` names a bucket; only ALLOWED_BUCKETS (the public avatar and trophy buckets) is clean.
+ * - `.storage.from('x')` names a bucket; only ALLOWED_BUCKETS (the public avatar bucket) is clean.
  * - A string holding `/rest/v1/x` or `/rest/v1/rpc/x` is held to the same lists; one that ends at
  *   `/rest/v1`, `/rest/v1/` or `/rest/v1/rpc/` (a path built in pieces) fires, unreadable.
  * - A `.select()` that asks for a count (`{ count: 'exact' }`, and 'planned' and 'estimated' as well) fires
@@ -102,12 +102,12 @@ export const ALLOWED_RPCS = Object.freeze(['whoami', 'is_admin', 'next_settlemen
  * The functions a screen function may depend on without the web calling them (supabase/tests/e2e/0016-screen-reads.ts reads each screen function's recorded dependencies against
  * ALLOWED_RPCS and this list): the search reads' helpers (0117), stable, security invoker but the two definers, each a public fact about its arguments. A call to one from a screen is a fault.
  */
-export const SCREEN_HELPERS = Object.freeze(['search_matches', 'search_walk', 'search_cursor_ok', 'search_post_cards', 'search_thread_matches', 'search_suggest_threads', 'suggest_characters', 'search_lang', 'fold_text', 'bbcode_plain']);
+export const SCREEN_HELPERS = Object.freeze(['search_matches', 'search_walk', 'search_cursor_ok', 'search_post_cards', 'search_thread_matches', 'search_suggest_threads', 'suggest_characters', 'search_lang', 'fold_text', 'bbcode_plain', 'profile_cosmetics']);
 
 const WRITES = new Set(['insert', 'upsert', 'update', 'delete']);
 const NOT_A_CLIENT = new Set(['Array', 'Buffer', 'Object', 'Uint8Array', 'Set', 'Map']);
-/** The storage buckets a screen may touch: the avatar and trophy buckets are public by URL and listed by nobody, so a read of either proves nothing private. */
-export const ALLOWED_BUCKETS = Object.freeze(['avatars', 'trophies']);
+/** The storage buckets a screen may touch: the avatar bucket is public, so a read of it proves nothing private. */
+export const ALLOWED_BUCKETS = Object.freeze(['avatars']);
 const GLOBALS = new Set(['globalThis', 'window', 'self']);
 /** The members of a client the guard reads; each must be called at once, with a literal. */
 const CLIENT_MEMBERS = new Set(['from', 'rpc', 'schema']);
@@ -224,7 +224,7 @@ function fileFaults(file, text, allowedCounts = ALLOWED_COUNTS) {
       if (!called) fault(node, member, `a .${member} read without a call: the guard cannot tell what it will name`);
       else if (storage) {
         if (name === null) fault(call, null, 'a storage bucket the guard cannot read, which could be any bucket');
-        else if (!ALLOWED_BUCKETS.includes(name)) fault(call, name, 'not a public bucket (avatars, trophies)');
+        else if (!ALLOWED_BUCKETS.includes(name)) fault(call, name, 'not the public avatar bucket');
       } else if (member === 'schema') {
         const next = up(call).parent;
         if (!(next && memberName(next) === 'from')) fault(call, null, 'a .schema() is read at once with .from()');

@@ -30,10 +30,9 @@ export async function runWardrobe(dbs: { player: Db; service: Db }, request: War
   if (typeof r.character !== 'string' || !UUID.test(r.character)) return refused('character', 'is not an id');
   if (r.action === 'setOutfit' && (!Array.isArray(r.pieces) || r.pieces.length > MOST_ITEMS)) return refused('pieces', 'an outfit is a list of pieces');
   if (r.action === 'showTrophies' && (!Array.isArray(r.awards) || r.awards.length > MOST_ITEMS || !r.awards.every((a) => typeof a === 'string' && UUID.test(a)))) return refused('awards', 'the awards shown are a list of ids');
-  const word = r.action === 'setOutfit' ? 'dress a character' : r.action === 'showTrophies' ? 'choose trophies' : 'roll an event';
   try {
     const who = await dbs.player.rpc<string | null>('whoami', {}).catch((e) => { if (sessionRefused(e)) return null; throw e; });
-    if (!who) return { status: 401, body: { error: `sign in to ${word}` } };
+    if (!who) return { status: 401, body: { error: 'sign in first' } };
     if (r.action === 'setOutfit') return { status: 200, body: await dbs.service.rpc('set_outfit', { who, through: r.character, pieces: r.pieces }) };
     if (r.action === 'showTrophies') return { status: 200, body: await dbs.service.rpc('show_trophies', { who, through: r.character, awards: r.awards }) };
     // A roll that finds nothing answers null; the page needs an object, so the answer carries it under `event`.

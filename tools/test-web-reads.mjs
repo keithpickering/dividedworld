@@ -114,8 +114,7 @@ check('a dynamic import of supabase-js in the data layer is clean', fires(`const
 check('an export from supabase-js outside the data layer fires', fires(`export { createClient } from '@supabase/supabase-js';`, 'web/src/App.tsx').length === 1);
 check('an export from supabase-js in the data layer is clean', fires(`export { createClient } from '@supabase/supabase-js';`).length === 0);
 check('the public avatars bucket is clean', fires(`client.storage.from('avatars').getPublicUrl(p);`).length === 0);
-check('the public trophies bucket is clean (trophy art, public by URL like avatars)', fires(`client.storage.from('trophies').getPublicUrl(p);`).length === 0);
-check('a look-alike of a public bucket fires', fires(`client.storage.from('trophies-private').download(p);`).length === 1);
+check('a look-alike of a public bucket fires', fires(`client.storage.from('avatars-private').download(p);`).length === 1);
 check('any other bucket fires', fires(`client.storage.from('private').download(p);`).length === 1);
 check('a bucket the guard cannot read fires', fires(`client.storage.from(b).download(p);`).length === 1);
 check('globalThis.Array.from is clean', fires(`globalThis.Array.from(x);`).length === 0);
