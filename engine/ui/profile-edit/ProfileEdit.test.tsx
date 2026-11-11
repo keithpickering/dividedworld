@@ -1,4 +1,4 @@
-import { act, cleanup, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { buildWorld, holdReads, renderIn } from '../test-world.tsx';
@@ -113,6 +113,21 @@ describe('profile edit', () => {
     await userEvent.click(save);
     await waitFor(() => expect(setProfile).toHaveBeenCalledWith(w.pipe, '', '', 'default', { ...xe, subject: 'Xe' }));
     expect((await w.fake.characters([w.pipe]))[0]!.pronouns).toEqual(xe);
+  });
+
+  test('a face whose read carried no set shows no picker, says so, disables Save, and a submit sends nothing', async () => {
+    const w = world();
+    const real = w.fake.myCharactersPage.bind(w.fake);
+    vi.spyOn(w.fake, 'myCharactersPage').mockImplementation(async () => { const page = await real(); return { ...page, faces: page.faces.map((f) => ({ ...f, pronounsUnread: true as const })) }; });
+    const setProfile = vi.spyOn(w.fake, 'setProfile');
+    await open(w);
+    const title = await screen.findByLabelText('Title');
+    expect(screen.queryByRole('group', { name: 'Pronouns' })).toBeNull();
+    expect(screen.getByText("Pipewrench's pronouns could not be loaded, so this profile cannot be saved right now. Nothing has been changed. Reload the page to try again.")).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save the profile' })).toBeDisabled();
+    await userEvent.type(title, 'Champ{Enter}');
+    fireEvent.submit(screen.getByRole('form', { name: 'Profile' }));
+    expect(setProfile).not.toHaveBeenCalled();
   });
 
   test('opens on a stored custom set with its fields filled, and saves it untouched as it was', async () => {

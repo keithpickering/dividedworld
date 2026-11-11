@@ -500,8 +500,16 @@ describe('reads and their rows', () => {
     expect(h.to('character_profiles')[0]?.url.searchParams.get('select')?.split(',')).toContain('pronouns');
     expect(list).toEqual([
       { id: B, name: 'Bea', title: 'Champ', signature: '[b]hi[/b]', avatarSquare: `${URL_}/storage/v1/object/public/avatars/sq.webp`, avatarPortrait: `${URL_}/storage/v1/object/public/avatars/po.webp`, squareFrame: { x: 0, y: 0, w: 0.5, h: 0.5 }, portraitFrame: null, pipStyle: 'fancy', pronouns: PRONOUN_PRESETS.she, joined: '2026-10-01', group: '' },
-      { id: A, name: 'Al', title: '', signature: '', avatarSquare: null, avatarPortrait: null, squareFrame: null, portraitFrame: null, pipStyle: 'default', pronouns: ENGINE_DEFAULT_PRONOUNS, joined: '2026-09-01', group: '' },
+      { id: A, name: 'Al', title: '', signature: '', avatarSquare: null, avatarPortrait: null, squareFrame: null, portraitFrame: null, pipStyle: 'default', pronouns: ENGINE_DEFAULT_PRONOUNS, pronounsUnread: true, joined: '2026-09-01', group: '' },
     ]);
+  });
+
+  it('marks a character whose profile row carries no set as having an unread set, and no other', async () => {
+    const h = harness((r) => (r.url.pathname.endsWith('/characters_public') ? rows([{ id: A, name: 'Al', joined: '2026-09-01' }, { id: B, name: 'Bea', joined: '2026-10-01' }]) : rows([{ character: A, title: 'T' }, { character: B, pronouns: PRONOUN_PRESETS.she }])));
+    const [al, bea] = await h.api.characters([A, B]);
+    expect(al).toMatchObject({ pronouns: ENGINE_DEFAULT_PRONOUNS, pronounsUnread: true });
+    expect(bea?.pronouns).toEqual(PRONOUN_PRESETS.she);
+    expect(bea).not.toHaveProperty('pronounsUnread');
   });
 
   it('builds the board index from boards_now (the names as Acts say them now) and thread_list', async () => {
@@ -2093,7 +2101,7 @@ describe('a screen in one call', () => {
     expect(page?.states).toEqual({ [SET]: { state: { n: 1 }, savedAt: '2026-10-01T11:00:00+00:00' } });
     expect(page?.tallies).toEqual({ [SET]: { fire: 2 }, [SPRING]: {} });
     expect(page?.mine).toEqual([{ act: SET, kind: 'fire', character: B }]);
-    expect(page?.characters).toEqual([{ ...BEA, title: '', signature: '', avatarSquare: null, squareFrame: null, pipStyle: 'default', pronouns: ENGINE_DEFAULT_PRONOUNS }]);
+    expect(page?.characters).toEqual([{ ...BEA, title: '', signature: '', avatarSquare: null, squareFrame: null, pipStyle: 'default', pronouns: ENGINE_DEFAULT_PRONOUNS, pronounsUnread: true }]);
     expect(await once('board_page', null).api.boardPage('nowhere', 1, [])).toBeNull();
   });
 

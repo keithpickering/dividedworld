@@ -37,6 +37,9 @@ const SIGNATURE_MAX = 500;
 /** The character a navigation carried in history.state, if it is a string; whether it is the player's own is checked by the page. */
 const carriedBy = (state: unknown): unknown => (typeof state === 'object' && state !== null ? (state as { character?: unknown }).character : undefined);
 
+/** The set the form starts from: null for a face whose read carried none (its it/its is for display only), so no picker shows and nothing is saved. */
+const setOf = (c: Character | null): PronounSet | null => (c === null || c.pronounsUnread ? null : c.pronouns);
+
 /** The page draws the document My characters loaded (one document for both): whole on the first frame. Signed out, the marker is the sign-in line. */
 export function ProfileEdit({ doc, io }: { readonly doc: ScreenDoc<MyCharactersPage>; readonly io?: PictureIo }) {
   if (isSignedOutDoc(doc)) return <div className="kb-profile-edit"><SignInPrompt /></div>;
@@ -64,7 +67,7 @@ function Editor({ page, io }: { readonly page: MyCharactersPage; readonly io?: P
   const [title, setTitle] = useState(profile?.title ?? '');
   const [signature, setSignature] = useState(profile?.signature ?? '');
   const [pip, setPip] = useState(profile?.pipStyle ?? 'default');
-  const [pronouns, setPronouns] = useState<PronounSet | null>(profile?.pronouns ?? null);
+  const [pronouns, setPronouns] = useState<PronounSet | null>(setOf(profile));
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
   const [saved, setSaved] = useState('');
@@ -74,7 +77,7 @@ function Editor({ page, io }: { readonly page: MyCharactersPage; readonly io?: P
     setTitle(profile?.title ?? '');
     setSignature(profile?.signature ?? '');
     setPip(profile?.pipStyle ?? 'default');
-    setPronouns(profile?.pronouns ?? null);
+    setPronouns(setOf(profile));
     setSaved('');
     setRefusal(null);
   }
@@ -164,6 +167,7 @@ function Editor({ page, io }: { readonly page: MyCharactersPage; readonly io?: P
           </select>
         </label>
         {pronouns && <PronounPicker key={profile.id} name={mine.name} value={pronouns} onChange={setPronouns} />}
+        {pronouns === null && <CalmRegion as="p" className="kb-notice" data-kb-tone="refusal">{mine.name}'s pronouns could not be loaded, so this profile cannot be saved right now. Nothing has been changed. Reload the page to try again.</CalmRegion>}
         {refusal && <p role="alert" className="kb-notice" data-kb-tone="refusal">{refusal}</p>}
         <ButtonRow><GlassButton type="submit" kind="primary" busy={busy} disabled={pronouns === null || !pronounsHold(pronouns)}>Save the profile</GlassButton></ButtonRow>
         <div role="status">{saved && <p className="kb-notice">{saved}</p>}</div>

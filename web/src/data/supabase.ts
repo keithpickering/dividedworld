@@ -809,8 +809,9 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     squareFrame: toFrame(p?.['square_frame']),
     portraitFrame: toFrame(p?.['portrait_frame']),
     pipStyle: p?.['pip_style'] ?? 'default',
-    /* The set is read from the profile row; the engine's it/its stands only for a character with no profile row at all. */
-    pronouns: p ? pronounsOrDefault(p['pronouns']) : ENGINE_DEFAULT_PRONOUNS,
+    /* The set is the profile row's when the read carried one; else the engine's it/its stands for display only and `pronounsUnread` marks it, so Edit profile never offers it for saving. Every character has a profile row, so a missing set is a read that dropped it. */
+    pronouns: isObject(p?.['pronouns']) ? pronounsOrDefault(p!['pronouns']) : ENGINE_DEFAULT_PRONOUNS,
+    ...(isObject(p?.['pronouns']) ? {} : { pronounsUnread: true as const }),
     joined: c['joined'] ?? '',
     ...(typeof c['warn_points'] === 'number' && c['warn_points'] > 0 ? { warnPoints: c['warn_points'] } : {}),
     ...(typeof c['banned_until'] === 'string' && Date.parse(c['banned_until']) > Date.now() ? { bannedUntil: c['banned_until'] } : {}),
