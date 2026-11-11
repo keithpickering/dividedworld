@@ -20,6 +20,9 @@ const { MIGRATION_DATA } = (await import(files)) as { MIGRATION_DATA: readonly s
 const root = path.resolve(import.meta.dirname, '../../..');
 const migrations = path.join(root, 'supabase/migrations');
 
+/** The tables that hold a row in the fixture, before the round trip and again after the import (an empty table would round-trip as well, and prove nothing). */
+const HELD = ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'season_results', 'apologies', 'card_texts', 'card_writes', 'card_write_refunds', 'scored_as', 'play_reach', 'ledger'];
+
 const psqlOn = (url: string, text: string) =>
   execFileSync('psql', ['-v', 'ON_ERROR_STOP=1', '-qtAX', url, '-f', '-'], { input: text, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
 
@@ -173,16 +176,18 @@ test('an instance exported and imported into a fresh database is the same instan
       declare skim_post uuid; skim_play uuid; ride_post uuid; ride_play uuid; rode_post uuid; rode_cast uuid; score_play uuid;
       begin
         skim_post := tests.post(a, t, 'Skimmed, and carried across.');
-        insert into acts (character, kind, thread, target_act_id, payload) values (a, 'card', t, skim_post,
-          jsonb_build_object('card', 'expskim', 'message', '', 'config', jsonb_build_object('quadrant', 'excitedPositive'), 'layer', 1, 'ends', to_char(now() + interval '7 days', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'))) returning id into skim_play;
+        perform play_card(ann, 'expskim', a, skim_post, '{"quadrant": "excitedPositive"}', 0, '');
+        select id into skim_play from acts where kind = 'card' and target_act_id = skim_post and payload ->> 'card' = 'expskim';
         ride_post := tests.post(a, t, 'Ridden, and carried across.');
-        insert into acts (character, kind, thread, target_act_id, payload) values (a, 'card', t, ride_post,
-          jsonb_build_object('card', 'expride', 'message', '', 'config', '{}'::jsonb, 'layer', 1, 'ends', to_char(now() + interval '7 days', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'))) returning id into ride_play;
+        perform play_card(ann, 'expride', a, ride_post, '{}', 0, '');
+        select id into ride_play from acts where kind = 'card' and target_act_id = ride_post and payload ->> 'card' = 'expride';
         rode_post := tests.post(a, t, 'Under a ride back.');
         perform set_card(ann, 'exprode', a, rode_post, '{"quadrant": "excitedPositive"}', 0, 'blot');
         perform play_card(bob, 'blot', b, rode_post, '{}', 0, '');
         assert (select count(*) from acts where kind = 'spring' and payload ->> 'did' = 'rode' and payload ->> 'quadrant' = 'excitedPositive') = 1, 'the ride back sprang as a rode spring, carrying its quadrant';
         assert (select count(*) from acts where kind = 'card' and target_act_id = rode_post and payload ? 'rode') = 1, 'the cast that met it carries rode';
+        -- Raw rows, not play_card: play_card refuses a scored-as card unless scored_as_window names a window after the next settlement, and the settlements e2e/0001 and 0002 leave end in 2000, so
+        -- next_settlement_at is null here for good. The rows are the ones place_cast writes (a card Act with reach, starts and ends, and its play_reach).
         insert into acts (character, kind, thread, target_act_id, payload) values (a, 'card', t, p,
           jsonb_build_object('card', 'expscore', 'message', '', 'config', jsonb_build_object('class', 'heel'), 'layer', 1, 'reach', 'character', 'character', b,
             'starts', to_char(now() + interval '1 day', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'), 'ends', to_char(now() + interval '2 days', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'))) returning id into score_play;
@@ -366,10 +371,18 @@ test('an instance exported and imported into a fresh database is the same instan
     insert into public.export_probe values (1, 12.50, array['a,b', 'q"uote', null], 'astral 😀 and \\. alone');`);
   const before = contents(from);
   // The staff roster's tables hold a row in the fixture, so the comparison below carries each (an empty table would round-trip as well, and prove nothing).
-  for (const t of ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'season_results', 'apologies', 'card_texts', 'card_writes', 'card_write_refunds', 'scored_as', 'play_reach', 'ledger']) {
+  for (const t of HELD) {
     const rows = before.get(`public.${t}`);
     assert.ok(rows !== undefined && rows !== '[]', `${t} holds a row in the fixture (got ${rows === undefined ? 'no such table' : rows})`);
   }
+  // The payout cards' own rows, each asserted by what it holds (the table lists above are satisfied by any row): the ledger row naming the skim card, a scored-as row for the scored-as play,
+  // that play's `starts`, and the rode spring's quadrant.
+  const payouts = (url: string) => psqlOn(url, `select
+    (select count(*) from ledger where params ? 'card' and params ->> 'card' = 'expskim') || '|' ||
+    (select count(*) from scored_as s join acts k on k.id = s.play where k.payload ->> 'card' = 'expscore' and s.class_key = 'heel') || '|' ||
+    (select count(*) from acts where kind = 'card' and payload ->> 'card' = 'expscore' and payload ->> 'starts' is not null) || '|' ||
+    (select count(*) from acts where kind = 'spring' and payload ->> 'did' = 'rode' and payload ->> 'quadrant' = 'excitedPositive')`);
+  assert.equal(payouts(from), '1|1|1|1', 'the fixture holds the skim ledger row, the scored-as row, the play\'s starts and the rode spring\'s quadrant');
   // The cast's own set, its spring and the card it caught, by their ids, so the round trip is shown to carry a trap's rows
   // whatever else this database holds (#136 F1).
   const trapIds = sql(`select f.play || '|' || s.id || '|' || k.id from face_down f join auth.users u on u.id = f.account and u.email = 'exp-ann@test.invalid'
@@ -577,7 +590,8 @@ test('an instance exported and imported into a fresh database is the same instan
     const xe = '{"plural": false, "object": "xem", "subject": "xe", "reflexive": "xemself", "determiner": "xyr", "possessive": "xyrs"}';
     const setOf = (url: string) => psqlOn(url, `select p.pronouns::text from character_profiles p join characters c on c.id = p.character where c.name = 'Exported A'`).trim();
     assert.deepEqual(JSON.parse(setOf(fresh.toString())), JSON.parse(xe), 'a custom pronoun set survives the round trip');
-    for (const t of ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'season_results', 'apologies', 'card_texts', 'card_writes', 'card_write_refunds', 'scored_as', 'play_reach', 'ledger']) { const rows = after.get(`public.${t}`); assert.ok(rows !== undefined && rows !== '[]', `${t} is in the imported instance (got ${rows === undefined ? 'no such table' : rows})`); }
+    for (const t of HELD) { const rows = after.get(`public.${t}`); assert.ok(rows !== undefined && rows !== '[]', `${t} is in the imported instance (got ${rows === undefined ? 'no such table' : rows})`); }
+    assert.equal(payouts(fresh.toString()), payouts(from), 'the payout cards\' ledger row, scored_as row, starts and rode quadrant are in the imported instance');
     // A season's frozen results are carried as they were written, and the import (a replica's write, inserts only) leaves their guard firing always (0099).
     const guards = (url: string) => psqlOn(url, `select string_agg(tgname || ':' || tgenabled::text, ',' order by tgname) from pg_trigger where tgrelid = 'public.season_results'::regclass and not tgisinternal`);
     assert.equal(guards(fresh.toString()), 'season_results_no_truncate:A,season_results_no_update:A', 'the guards on season_results are still enabled always after the import');
