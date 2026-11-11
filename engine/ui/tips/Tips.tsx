@@ -64,7 +64,7 @@ export function TipsProvider({ children }: { readonly children: ReactNode }) {
   const { prefs, change, refusal } = usePreferenceSaves(session.account, account);
   /* Whether the tip's own tilt save was made: only its refusal is said here, never a settings read that failed. */
   const [tiltAsked, setTiltAsked] = useState(false);
-  /* Once the refusal is gone (a later save, or this line's Dismiss), a later refusal is not the tilt's. */
+  /* The refusal line ends with its Dismiss, which clears the flag; this provider's hook makes no other save (the tip is seen as it is tapped), so a refusal read later is never taken for the tilt's. If the refusal clears another way, the flag goes with it. */
   useEffect(() => { if (refusal === null) setTiltAsked(false); }, [refusal]);
   const changeRef = useRef(change);
   changeRef.current = change;
@@ -132,7 +132,7 @@ export function TipsProvider({ children }: { readonly children: ReactNode }) {
       {tiltAsked && refusal !== null && (
         <div className="kb-tips-refusal" role="alert">
           <p>{refusal}</p>
-          <button type="button" onClick={() => setTiltAsked(false)}>Dismiss</button>
+          <button type="button" className="kb-tips-button" onClick={() => setTiltAsked(false)}><b>Dismiss</b></button>
         </div>
       )}
     </TipsCtx.Provider>
