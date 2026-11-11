@@ -1523,6 +1523,14 @@ test('a ride gimmick pays nothing for the author\'s own cast, own vote, a cast o
   assert.equal(ride(settle(payBoard([toll({ ends: FROM + 10 * H }), cast()], [react('cast', 'bob', 'bob-1', 'fire', FROM + 10 * H), react('cast', 'cat', 'cat-1', 'fire', FROM + 10 * H - 1)]), payWorld), 'tom-1'), 5, 'a vote at its end pays nothing');
 });
 
+test('a ride gimmick pays nothing for a cast made exactly when it ends', () => {
+  const votes = [react('cast', 'bob', 'bob-1', 'fire', FROM + 3 * H - 1)];
+  assert.equal(ride(settle(payBoard([toll({ ends: FROM + 3 * H }), cast()], votes), payWorld), 'tom-1'), 0, 'a cast made at its end');
+});
+test('a ride gimmick pays a cast made at the same instant it was played', () => {
+  assert.equal(ride(settle(payBoard([toll({ at: FROM + 3 * H }), cast()], [react('cast', 'bob', 'bob-1', 'fire', FROM + 5 * H)]), payWorld), 'tom-1'), 5, 'a cast made at the instant it was played');
+});
+
 /** Tom's 4D Chess sprung by Ann's cast, setting the calm quadrant. */
 const spring = (over: Partial<InputAct> = {}): InputAct => ({ id: 'sp', character: 'tom-1', kind: 'spring', at: FROM + 4 * H, thread: 't1', target: 'tp', card: 'chess', by: 'cast', quadrant: 'calmPositive', ...over });
 
@@ -1534,6 +1542,10 @@ test('a ride spring pays a whole vote per vote in its quadrant on the cast that 
   const later = settle(payBoard([cast(), spring()], [...votes, react('cast', 'dee', 'dee-1', 'tea', TO + 2 * H)], { window: { id: 'w2', from: TO, to: TO + 24 * H } }), payWorld);
   assert.equal(ride(later, 'tom-1'), 10, 'a later window pays the votes it holds, with no end');
   assert.equal(ride(settle(payBoard([cast('cast', 'tom-2'), spring()], votes), payWorld), 'tom-1'), 0, 'a cast by the setter\'s own player');
+});
+test('a ride spring pays nothing for a vote by the setter\'s own player, on another mask', () => {
+  const r = settle(payBoard([cast(), spring()], [react('cast', 'tom', 'tom-2', 'tea', FROM + 5 * H), react('cast', 'bob', 'bob-1', 'tea', FROM + 6 * H)]), payWorld);
+  assert.equal(ride(r, 'tom-1'), 10, 'only Bob\'s calm vote pays');
 });
 test('a ride spring is still scored as a play of its card on the cast: a Salty one that outdraws it steals thunder', () => {
   const salty = { ...payWorld, cards: payWorld.cards.map((c) => (c.key === 'chess' ? { ...c, alignment: 'salty' as const } : c)) };
