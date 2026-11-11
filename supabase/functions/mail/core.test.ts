@@ -145,3 +145,14 @@ test('a null replyTo sends nothing and records nothing', async () => {
   assert.deepEqual(w.bans, []);
   assert.match(JSON.stringify(out), /waiting for the admin address/);
 });
+
+test('a render error is deterministic: recorded as refused, never retried', async () => {
+  const w = world([row()]);
+  const boom = () => { throw new Error('render: bad facts'); };
+  const out = await runMail(deps(w, okMailer(w), { render: boom }));
+  assert.equal(w.sent.length, 0);
+  assert.equal(w.attempts[0]!.kind, 'refused');
+  assert.match(w.attempts[0]!.error ?? '', /bad facts/);
+  assert.equal(out.status === 'done' && out.refused, 1);
+  assert.equal((await w.db.due(10)).length, 0);
+});

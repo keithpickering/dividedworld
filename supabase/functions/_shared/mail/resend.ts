@@ -5,8 +5,10 @@
  * "Three unrelated timeouts are not a poison pill": a 5xx, a 429 or no answer is a
  * `TransportFailure` and is retried on the request itself, waiting longer each time, at most
  * three times, as models/index.ts does; any other refusal is a `ProviderRefusal` carrying its
- * status and Resend's message, thrown at once for the caller to record. A retry repeats the same
- * Idempotency-Key, so a send whose answer was lost is never two emails.
+ * status and Resend's message, thrown at once for the caller to record. Delivery is at-least-once, guarded
+ * by the Idempotency-Key (`kayfabb-mail-<id>`, repeated by every retry and every later run). Resend dedupes a key for
+ * 24 hours, so a lost answer is never two emails inside that window; a database outage longer than 24 hours between
+ * Resend's answer and the attempt row being written could send the mail twice.
  *
  * The key (RESEND_API_KEY) and the from address (MAIL_FROM) come through `env`, an accessor
  * passed in. The key rides in a header only: it is never put in an error or a log line, and a

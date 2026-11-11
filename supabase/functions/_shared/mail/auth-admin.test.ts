@@ -4,9 +4,10 @@ import { authAdmin, banDuration } from './auth-admin.ts';
 
 const NOW = Date.parse('2026-11-11T12:00:00Z');
 
-test('banDuration rounds up to whole hours; indefinite is a very long time; the past is none', () => {
-  assert.equal(banDuration('2026-11-12T12:30:00Z', NOW), '25h');
-  assert.equal(banDuration('2026-11-12T12:00:00Z', NOW), '24h');
+test('banDuration rounds up to whole minutes; indefinite is a very long time; the past is none', () => {
+  assert.equal(banDuration('2026-11-12T12:30:00Z', NOW), '1470m');
+  assert.equal(banDuration('2026-11-12T12:00:00Z', NOW), '1440m');
+  assert.equal(banDuration('2026-11-12T12:00:01Z', NOW), '1441m');
   assert.equal(banDuration(null, NOW), '876000h');
   assert.equal(banDuration('2026-11-11T11:00:00Z', NOW), null);
 });
@@ -24,7 +25,7 @@ test('setBan and clearBan PUT ban_duration to the admin user endpoint with the s
   await a.setBan('u1', null);
   await a.clearBan('u1');
   assert.deepEqual(calls.map((c) => [c.url, c.init.method, JSON.parse(c.init.body as string)]), [
-    ['https://p.example/auth/v1/admin/users/u1', 'PUT', { ban_duration: '25h' }],
+    ['https://p.example/auth/v1/admin/users/u1', 'PUT', { ban_duration: '1470m' }],
     ['https://p.example/auth/v1/admin/users/u1', 'PUT', { ban_duration: '876000h' }],
     ['https://p.example/auth/v1/admin/users/u1', 'PUT', { ban_duration: 'none' }],
   ]);

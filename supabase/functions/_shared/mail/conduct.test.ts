@@ -26,3 +26,9 @@ test('the database\'s paths become addresses on the site and a section key becom
   const gone = renderOutboxRow({ template: 'nudge', facts: { ...facts, section: 'no-such-key' } });
   assert.ok(gone.text.includes('no-such-key'), 'a key the code no longer holds stays as written');
 });
+
+test('a {{ in an author\'s words or an admin note renders as escaped text, not an error', () => {
+  const r = renderOutboxRow({ template: 'hidden', facts: { post: '/t/abc', thread: '/t/abc', section: 'x', note: 'see {{name}} }}', words: 'hi {{name}}', conduct: '/conduct' } });
+  assert.ok(r.text.includes('{{name}}'), r.text);
+  assert.ok(r.html.includes('{{name}}'));
+});

@@ -29,6 +29,12 @@ import type { Block, Mail, MailTheme } from './types.ts';
 export interface RenderOptions {
   /** Placeholders a button's href may be, exactly (for example `{{ .ConfirmationURL }}`). */
   readonly slots?: readonly string[];
+  /**
+   * Whether the output goes through Go's text/template (Supabase Auth's templates), where a stray `{{` breaks the email. True by default;
+   * the guard above runs only then. Mail sent straight to a provider (the conduct mail) sets it false: an author's words may hold `{{`,
+   * and they are escaped as text like any other.
+   */
+  readonly goTemplate?: boolean;
 }
 
 const hex2 = (n: number) => Math.round(n).toString(16).padStart(2, '0');
@@ -61,16 +67,17 @@ function checkTheme(t: MailTheme): void {
   for (const f of t.fonts) if (/["'<>;{}\\]/.test(f.family)) throw new Error(`theme font ${f.family}: bad family`);
 }
 
-function checkHref(href: string, where: string, slots: readonly string[]): string {
+function checkHref(href: string, where: string, slots: readonly string[], goTemplate: boolean): string {
   if (!/^(https:|mailto:)/.test(href) && !slots.includes(href)) throw new Error(`${where}: href ${JSON.stringify(href)} is not https:, mailto: or a declared slot`);
   if (/[\u0000-\u001f\u007f]/.test(href)) throw new Error(`${where}: href holds a control character`);
-  guard(href, where, slots);
+  if (goTemplate) guard(href, where, slots);
   return esc(href);
 }
 
 export function renderHtml(theme: MailTheme, mail: Mail, options: RenderOptions = {}): string {
   checkTheme(theme);
   const slots = options.slots ?? [];
+  const goTemplate = options.goTemplate ?? true;
   const c = theme.colors;
   const D = theme.stacks.display;
   const B = theme.stacks.body;
@@ -81,7 +88,7 @@ export function renderHtml(theme: MailTheme, mail: Mail, options: RenderOptions 
 
   // Gmail's apps invert colors; wrapping text in two blended divs keeps it light there (the
   // `u + .body` selector matches only Gmail). The markup is inert everywhere else.
-  const t = (s: string, where: string) => esc(guard(s, where, slots));
+  const t = (s: string, where: string) => esc(goTemplate ? guard(s, where, slots) : s);
   const gm = (inner: string) => `<div class="gs"><div class="gd">${inner}</div></div>`;
   const line = (tag: string, style: string, text: string, where: string, cls = '') =>
     gm(`<${tag}${cls ? ` class="${cls}"` : ''} style="${style}">${t(text, where)}</${tag}>`);
@@ -106,7 +113,7 @@ export function renderHtml(theme: MailTheme, mail: Mail, options: RenderOptions 
 <td width="12" valign="top" style="width:12px;background:${c.field};border:1px solid ${c.neon};border-left:0;padding:0;line-height:0;vertical-align:top"><img src="${esc(theme.assets.cutPanel)}" width="13" height="13" alt="" style="display:block;margin:-1px -1px 0 0;border:0"></td></tr></table>`);
       case 'button':
         return row(`<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 26px"><tr>
-<td style="background:${c.neon};padding:14px 10px 14px 26px"><a href="${checkHref(b.href, where, slots)}" style="font-family:${B};font-weight:700;font-size:19px;letter-spacing:2px;text-transform:uppercase;color:${c.ink};text-decoration:none;display:inline-block">${t(b.label, where)}</a></td>
+<td style="background:${c.neon};padding:14px 10px 14px 26px"><a href="${checkHref(b.href, where, slots, goTemplate)}" style="font-family:${B};font-weight:700;font-size:19px;letter-spacing:2px;text-transform:uppercase;color:${c.ink};text-decoration:none;display:inline-block">${t(b.label, where)}</a></td>
 <td width="12" valign="bottom" style="width:12px;background:${c.neon};padding:0;line-height:0"><img src="${esc(theme.assets.cutButton)}" width="12" height="12" alt="" style="display:block;border:0"></td></tr></table>`);
       case 'facts':
         return row(`<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 22px;border-top:1px solid ${rule}">${b.rows

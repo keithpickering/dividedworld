@@ -24,7 +24,8 @@ function resolved(facts: Readonly<Record<string, unknown>>): Readonly<Record<str
   return out;
 }
 
+/** Sent straight to the provider, never through Go's templates, so an author's `{{` is only text (`goTemplate: false`). */
 export function renderOutboxRow(row: { readonly template: ConductTemplate; readonly facts: Readonly<Record<string, unknown>> }): { subject: string; text: string; html: string } {
   const mail = renderMail(row.template, resolved(row.facts), { override: conduct.mail });
-  return { subject: mail.subject, text: renderText(mail), html: renderHtml(mailTheme, mail) };
+  return { subject: mail.subject, text: renderText(mail), html: renderHtml(mailTheme, mail, { goTemplate: false }) };
 }

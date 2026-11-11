@@ -7,9 +7,10 @@
  * lack of an address) said no about this mail, so it is recorded as `refused` and the row is never due again. A
  * transport failure that outlasted the mailer's own retries, or an Auth failure, is `failed`, and
  * the database lists the row again after a backoff of 2^n minutes for n failures, at most a day
- * (mail_due). A send whose answer
- * was lost is never two emails: every send carries the key `kayfabb-mail-<id>`, which the provider
- * dedupes. One row failing never stops the rest.
+ * (mail_due). Delivery is at-least-once,
+ * guarded by the Idempotency-Key `kayfabb-mail-<id>` on every send. Resend dedupes a key for 24 hours, so a
+ * send whose answer was lost is never two emails within that window; a database outage longer than 24 hours
+ * between Resend's answer and the `sent` attempt row could send the mail twice. One row failing never stops the rest.
  *
  * A suspension or ban sets the login's ban through Supabase Auth's admin API, a lift clears it,
  * before the mail is sent, so the ban holds even where the mail fails. Task 2's SQL bar holds
@@ -97,9 +98,16 @@ export async function runMail(deps: MailDeps): Promise<MailOutcome> {
     }
     const to = await deps.db.address(row.account);
     if (to === null) { await fail('refused', 'no address'); continue; }
+    let mail: { subject: string; text: string; html: string };
+    try {
+      mail = deps.render(row);
+    } catch (e) {
+      // A render error is about this row's facts and the same every time: final, not retried.
+      await fail('refused', `render: ${words(e)}`);
+      continue;
+    }
     let id: string;
     try {
-      const mail = deps.render(row);
       ({ id } = await deps.mailer.send({ to, replyTo: deps.replyTo, ...mail, idempotencyKey: `kayfabb-mail-${row.id}` }));
     } catch (e) {
       // A 401 or a 403 is the key, which the owner can fix: it fails and is retried, where any other refusal is about this mail and final.

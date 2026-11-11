@@ -12,11 +12,11 @@ export interface AuthAdminOptions {
   readonly now?: () => number;
 }
 
-/** Whole hours from `now` to `until`, rounded up; indefinite is about a hundred years; an end already past is null. */
+/** Whole minutes from `now` to `until`, rounded up (so Auth never stays barred past `until` by more than a minute); indefinite is about a hundred years; an end already past is null. */
 export function banDuration(until: string | null, now: number): string | null {
   if (until === null) return '876000h';
-  const hours = Math.ceil((Date.parse(until) - now) / 3_600_000);
-  return hours >= 1 ? `${hours}h` : null;
+  const minutes = Math.ceil((Date.parse(until) - now) / 60_000);
+  return minutes >= 1 ? `${minutes}m` : null;
 }
 
 export function authAdmin(options: AuthAdminOptions) {
