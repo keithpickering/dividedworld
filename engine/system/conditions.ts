@@ -1,7 +1,7 @@
 /**
  * The conditions that unlock a beat (fangame split design, section 2): the engine's one fixed list of what the code checks before a beat's brief is shown. As
  * `engine/rules/predicates.ts` holds the rule predicates, this holds the conditions: `seed_instance` writes it to `condition_kinds` (supabase/functions/_shared/seed.ts), and
- * `beat_condition_holds` (supabase/migrations/0170_arcs.sql) has a branch for every key, which supabase/tests/0170-arcs.sql proves ("Two lists that must agree are one list").
+ * `beat_condition_holds` (supabase/migrations/0164_arcs.sql) has a branch for every key, which supabase/tests/0162-arcs.sql proves ("Two lists that must agree are one list").
  *
  * Every condition reads public facts only: posts per board, moves, demands, and beats. None reads who plays a character, a class, or who reacted ("A response never proves a
  * private fact"), so a condition can be checked by the tick on its own schedule and no response time varies with anything private.

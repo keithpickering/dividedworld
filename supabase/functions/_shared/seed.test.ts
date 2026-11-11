@@ -146,7 +146,7 @@ test('the seed carries the developer persona: the instance\'s, or the engine\'s 
   assert.ok(!('developer' in instanceSeed(instance).system), 'nothing under `system`, which is all the Director reads, names the developer');
 });
 
-test('the seed carries the conditions and each persona\'s arc as SQL checks it: keys, conditions, due points, held-back kinds and phase days, never a brief or a template (0170)', () => {
+test('the seed carries the conditions and each persona\'s arc as SQL checks it: keys, conditions, due points, held-back kinds and phase days, never a brief or a template (0164)', () => {
   const first = instance.system.roster[0]!;
   const arced: Persona = {
     ...first,

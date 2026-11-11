@@ -28,7 +28,7 @@ function quizOf(w: Weakness): { quiz: { question: string; choices: string[]; ans
 }
 
 /**
- * A persona's arc as the seed carries it to `persona_arcs` (0170): each beat's key, whether it is a mini-arc and repeatable, its unlock conditions and its due point, in the persona's
+ * A persona's arc as the seed carries it to `persona_arcs` (0164): each beat's key, whether it is a mini-arc and repeatable, its unlock conditions and its due point, in the persona's
  * order (the arc, then the mini-arcs). Never a brief or a bundle template: those are the instance's, read by the meeting in code, as the prompts are, so the database holds only what
  * it checks. An arc's beat is not a patrol `beats` (the boards a Mod Bot watches), which travels beside it unchanged.
  */
@@ -96,7 +96,7 @@ export function instanceSeed(instance: Instance) {
           visitHours: { least: p.strictness.visitHours.least, most: p.strictness.visitHours.most }, challenge: challengeOf(p.weakness), ...quizOf(p.weakness),
           // A persona's own pronouns (0124); left out, seed_instance gives it the instance's default.
           ...(p.pronouns !== undefined ? { pronouns: p.pronouns } : {}),
-          // The arc's part that SQL checks (0170): its beats, the kinds held back until a beat, and the phase lengths its conditions read.
+          // The arc's part that SQL checks (0164): its beats, the kinds held back until a beat, and the phase lengths its conditions read.
           arc: arcOf(p), holdsBack: (p.holdsBack ?? []).map((h) => ({ kind: h.kind, until: h.until })), phaseDays: phaseDaysOf(p) })),
       ],
       firstStaff: [...instance.system.firstStaff],
@@ -111,7 +111,7 @@ export function instanceSeed(instance: Instance) {
       // words with `{param}` where the parameter goes (`system_line` fills it).
       predicates: PREDICATES.map((p) => ({ key: p.key, param: p.param, least: p.bounds?.least ?? null, most: p.bounds?.most ?? null, plain: p.plain('{param}'), ...(p.param === 'tag' ? { tags: [...BBCODE_TAGS] } : {}) })),
       demands: DEMAND_KINDS.map((d) => ({ key: d.key })),
-      // The conditions that unlock a beat (0170): the keys `beat_condition_holds` has a branch for, which supabase/tests/0170-arcs.sql proves.
+      // The conditions that unlock a beat (0164): the keys `beat_condition_holds` has a branch for, which supabase/tests/0162-arcs.sql proves.
       conditions: CONDITIONS.map((c) => ({ key: c.key, plain: c.plain })),
     },
   };

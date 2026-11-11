@@ -224,7 +224,7 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into staff_memory (staff, meeting, body) select 'exp-boss', max(id), '{"opinions": [], "grudges": []}' from meetings;
       insert into staff_profiles (staff, meeting, interests, favorites, mood, signature) select 'exp-boss', max(id), '{pie}', array[a], 'smug', 'It is decided.' from meetings;
       insert into move_bank (staff, balance, as_of) values ('exp-boss', 3.5, now());
-      -- An arc (0170): a persona's plan (the catalog of conditions is the seed's), and a beat's events (insert-only, guards firing always), carried across with the rows they name.
+      -- An arc (0164): a persona's plan (the catalog of conditions is the seed's), and a beat's events (insert-only, guards firing always), carried across with the rows they name.
       insert into persona_arcs (staff, beats, holds_back, phase_days) values ('exp-boss', '[{"key": "split", "mini": false, "repeatable": false, "unlock": [{"kind": "phase", "phase": "reign"}], "due": null}]', '[{"kind": "createBoard", "until": "split"}]', '{"honeymoon": 3}');
       insert into arc_beat_events (season, staff, beat, event) select id, 'exp-boss', 'split', 'unlocked' from seasons where ends_at is null;
       perform write_staff_act('exp-boss', 'post', t, null, '{"body": "Carried across, with no account behind it."}');

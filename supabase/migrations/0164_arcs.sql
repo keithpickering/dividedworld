@@ -7,7 +7,7 @@
 -- NAMES. An arc's "beat" is a step of a persona's plan. A Mod Bot's patrol beat (the boards it watches: `staff_beats` 0103, `patrols` 0110, `Persona.beats`) is another thing, so the tables here
 -- are `arc_beat_events` and `persona_arcs`, and nothing here touches the patrol ones. `beat_condition_holds` and `condition_kinds` keep the plan's names.
 --
---   condition_kinds     the engine's catalog of conditions (engine/system/conditions.ts), written by seed_instance; `beat_condition_holds` has a branch for every key, which supabase/tests/0170-arcs.sql
+--   condition_kinds     the engine's catalog of conditions (engine/system/conditions.ts), written by seed_instance; `beat_condition_holds` has a branch for every key, which supabase/tests/0162-arcs.sql
 --                       proves by walking this table. No client reads it.
 --   persona_arcs        one row a persona, written by seed_instance: its beats (key, mini, repeatable, unlock, due; never a brief or a template, which the meeting reads in code from the instance), the
 --                       kinds it holds back until a beat (`holds_back`), and the phase lengths it overrides (`phase_days`), so SQL can read a persona's plan. No client reads it.
@@ -23,7 +23,7 @@
 --   system_tick         (0161) also makes that pass, after landing.
 --   seed_instance       (0150) also writes condition_kinds and persona_arcs. settings_held (0158) also holds bundleMostParts and bundleAuthoredMostParts (a whole number from 1 to 16).
 --
--- THE MASKS. A condition reads posts per board, moves, demands and beat events, and nothing else: no one's player, no class, no one who reacted. supabase/tests/0170-arcs.sql greps each of
+-- THE MASKS. A condition reads posts per board, moves, demands and beat events, and nothing else: no one's player, no class, no one who reacted. supabase/tests/0162-arcs.sql greps each of
 -- these definitions for the words that would say otherwise, and drives the grep red on a function planted with one.
 --
 -- Cost on a busy instance. A pass reads one persona's beats (at most 24, a bound the instance check holds) and the latest event of each in one read of arc_beat_events by (season, staff, beat);
@@ -479,11 +479,11 @@ begin
   on conflict (key) do update set param_kind = excluded.param_kind, least = excluded.least, most = excluded.most, tags = excluded.tags, plain = excluded.plain;
   insert into demand_kinds (key) select e ->> 'key' from jsonb_array_elements(coalesce(payload -> 'system' -> 'demands', '[]')) e
   on conflict (key) do nothing;
-  -- The conditions that unlock a beat (0170), as the engine lists them (engine/system/conditions.ts). A reseed upserts; a condition is never removed, since a persona's arc may name it.
+  -- The conditions that unlock a beat (0164), as the engine lists them (engine/system/conditions.ts). A reseed upserts; a condition is never removed, since a persona's arc may name it.
   insert into condition_kinds (key, plain)
   select e ->> 'key', e ->> 'plain' from jsonb_array_elements(coalesce(payload -> 'system' -> 'conditions', '[]')) e
   on conflict (key) do update set plain = excluded.plain;
-  -- A persona's arc (0170): one row each, rewritten by a reseed. An arc naming a condition the catalog lacks is refused, naming it: the check that no beat waits on a condition nothing reads.
+  -- A persona's arc (0164): one row each, rewritten by a reseed. An arc naming a condition the catalog lacks is refused, naming it: the check that no beat waits on a condition nothing reads.
   unknown := (select string_agg(distinct c ->> 'kind', ', ')
               from jsonb_array_elements(coalesce(payload -> 'system' -> 'staff', '[]')) p, jsonb_array_elements(coalesce(p -> 'arc', '[]')) b, jsonb_array_elements(coalesce(b -> 'unlock', '[]')) c
               where not exists (select 1 from condition_kinds k where k.key = c ->> 'kind'));
@@ -805,7 +805,7 @@ begin
     end loop;
   end if;
 
-  -- 1b. Arcs (0170): after landing, so a bundle that landed in this tick has unlocked what waited on it in the same one. Only while The System is on (a beat unlocks for a meeting). The pass reads the
+  -- 1b. Arcs (0164): after landing, so a bundle that landed in this tick has unlocked what waited on it in the same one. Only while The System is on (a beat unlocks for a meeting). The pass reads the
   -- season's Boss alone and costs the same however many Acts there are; a failure of it is counted and warned about and never stops the rest of the tick.
   if enabled then
     begin
