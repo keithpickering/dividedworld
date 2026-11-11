@@ -388,16 +388,21 @@ const iso = (ms: number) => new Date(ms).toISOString();
 /** The kinds of Act that take no place in a thread (`acts_take_seq`, supabase/migrations/0109): an edit, a card's marks and the Mod Bots' meta acts. */
 const UNPLACED: ReadonlySet<ActKind> = new Set<ActKind>(['edit', 'card', 'set', 'take_back', 'spring', 'card_end', 'visit', 'visit_join', 'visit_end', 'report', 'report_verdict', 'intercept', 'infraction', 'ban', 'appeal', 'appeal_ruling']);
 
+/**
+ * The api's writes: the one split `failNextRead` and `offline` share. Every method that answers an `Answer` is one, and `markRead` (a
+ * boolean) and `signOut` (nothing) besides; the record's type is computed from KayfaApi, so a write missing here, or a read listed, fails tsc.
+ */
+type WriteName = { [K in keyof KayfaApi]: KayfaApi[K] extends (...a: never[]) => Promise<infer R> ? (R extends Answer<unknown> ? K : never) : never }[keyof KayfaApi] | 'markRead' | 'signOut';
+const WRITES: ReadonlySet<string> = new Set(Object.keys({
+  requestCode: true, verifyCode: true, openAccount: true, signOut: true, postUpdate: true, dismissHandoverTodo: true, setAdminContact: true,
+  holdMove: true, reverseMove: true, reverseCard: true, replaceSuccessor: true, replaceQueuedDescription: true, describeBoard: true, setSlot: true,
+  moveSlot: true, saveMachine: true, intercept: true, fileReport: true, fileAppeal: true, markRead: true, setPresenceHidden: true,
+  setPreferences: true, meetCard: true, seeWelcome: true, seeTip: true, skipTips: true, resumeTips: true, restoreTips: true, replayTour: true,
+  seeAlerts: true, seeSettlement: true, follow: true, createInvite: true, reissueInvite: true, startThread: true, post: true, edit: true, spin: true,
+  apologize: true, buyCard: true, buyPack: true, playCard: true, setCard: true, takeBack: true, useCard: true, releaseEffect: true, saveEffect: true,
+  react: true, turn: true, withdrawTurn: true, unmask: true, createCharacter: true, setDebut: true, setProfile: true, setAvatar: true,
+} satisfies Record<WriteName, true>));
 /** The methods that are not a promise of something: everything else is made one. */
-/* The api's writes: the one split `failNextRead` and `offline` share. `markRead` answers a boolean and `signOut` nothing; the rest answer a refusal. */
-const WRITES = new Set([
-  'requestCode', 'verifyCode', 'openAccount', 'signOut', 'postUpdate', 'dismissHandoverTodo', 'setAdminContact', 'holdMove', 'reverseMove', 'reverseCard',
-  'replaceSuccessor', 'replaceQueuedDescription', 'describeBoard', 'setSlot', 'moveSlot', 'saveMachine', 'intercept', 'fileReport', 'fileAppeal',
-  'markRead', 'setPresenceHidden', 'setPreferences', 'meetCard', 'seeWelcome', 'seeTip', 'skipTips', 'resumeTips', 'restoreTips', 'replayTour',
-  'seeAlerts', 'seeSettlement', 'follow', 'createInvite', 'reissueInvite', 'startThread', 'post', 'edit', 'spin', 'apologize', 'buyCard', 'buyPack',
-  'playCard', 'setCard', 'takeBack', 'useCard', 'releaseEffect', 'saveEffect', 'react', 'turn', 'withdrawTurn', 'unmask', 'createCharacter',
-  'setDebut', 'setProfile', 'setAvatar',
-]);
 const NOT_PROMISED = new Set(['onSession', 'subscribeThread', 'subscribeBoard', 'subscribeAccount', 'subscribeReach']);
 type Sync<T> = { [K in keyof T]: T[K] extends (...a: infer A) => Promise<infer R> ? (...a: A) => R : T[K] };
 

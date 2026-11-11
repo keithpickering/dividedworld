@@ -854,6 +854,7 @@ describe('failures', () => {
       const off = harness(() => json({}));
       expect(await off.api.post(T, B, 'hi', null)).toEqual({ ok: false, error: NOT_SENT, notSent: true });
       expect(await off.api.setPreferences({ theme: 'dark' })).toEqual({ ok: false, error: NOT_SENT, notSent: true });
+      expect(await off.api.saveMachine([])).toEqual({ ok: false, error: NOT_SENT, notSent: true });
       expect(off.log.filter((r) => r.url.pathname === '/functions/v1/act' || r.url.pathname.includes('/rpc/'))).toHaveLength(0);
     } finally {
       if (was) Object.defineProperty(Navigator.prototype, 'onLine', was);

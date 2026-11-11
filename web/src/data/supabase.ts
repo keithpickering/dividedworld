@@ -1469,6 +1469,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       return a.ok ? { ok: true, value: { slot: a.value['slot'], moved: a.value['moved'] === true } } : a;
     },
     async saveMachine(changes) {
+      if (offline()) return notSent();
       let r: { readonly data: unknown; readonly error: { readonly message?: string; readonly details?: string; readonly hint?: string } | null; readonly status?: number };
       try {
         r = (await client.rpc('save_machine', { changes })) as typeof r;
