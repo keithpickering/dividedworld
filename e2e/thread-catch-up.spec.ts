@@ -17,7 +17,8 @@ async function openThread(page: Page): Promise<void> {
  * What lands between a thread document's read and its live channels hearing is in neither. A card
  * play, an edit and a reaction take no place in the thread's order, so no summary can say they
  * happened; the screen reads the pages it drew again once its channels are joined. Each case writes
- * on the fake with no listener hearing it, as another player's tab would.
+ * on the fake with no listener hearing it, as another player's tab would: a seed broadcasts nothing,
+ * and the edit is a real write sent while no thread screen is there to hear it.
  */
 test('Back to a thread drawn from memory shows a card played, a post edited and a reaction made while the reader was away', async ({ page }) => {
   await openThread(page);
@@ -33,10 +34,19 @@ test('Back to a thread drawn from memory shows a card played, a post edited and 
     const edited = await fake.edit(two!.id, demo.characters.pipewrench, 'It was me. Edited while you were away.');
     if (!edited.ok) throw new Error(edited.error);
     fake.seed.react(demo.other, demo.characters.spritey, four!.id, 'fire');
+    /* The thread's channels wait, so what Back draws first is the document alone. */
+    fake.broadcast.holdJoins();
   });
   await page.goBack();
   await expect(page.getByRole('heading', { level: 1, name: TITLE })).toBeVisible();
-  await expect(page.locator('#post-3').getByRole('button', { name: /^Whoops!, 1 play\b/u })).toBeVisible();
+  await expect(page.locator('#post-3')).toBeVisible();
+  const mark = page.locator('#post-3').getByRole('button', { name: /^Whoops!, 1 play\b/u });
+  /* Drawn from memory: a fresh read of the page would already hold all three. */
+  await expect(mark).toHaveCount(0);
+  await expect(page.locator('#post-2')).not.toContainText('Edited while you were away.');
+  await expect(page.locator('#post-4').getByText('Fire, 1')).toHaveCount(0);
+  await page.evaluate(() => { (globalThis as E2eWindow).__kbFake.broadcast.join(); });
+  await expect(mark).toBeVisible();
   await expect(page.locator('#post-2')).toContainText('Edited while you were away.');
   await expect(page.locator('#post-4').getByText('Fire, 1')).toBeVisible();
   expect(await page.evaluate(() => (globalThis as E2eWindow).__kbSurvivor)).toBe('same page');
@@ -52,6 +62,7 @@ test('a card played between the page read and the channel joining shows once it 
   await page.evaluate(() => { (globalThis as E2eWindow).__kbSurvivor = 'same page'; });
   await page.evaluate(async () => {
     const { __kbFake: fake, __kbDemo: demo } = globalThis as E2eWindow;
+    /* The demo thread's first posts, in order. */
     const [, , three] = await fake.acts(demo.thread, 1, 3);
     fake.seed.card(demo.characters.spritey, three!.id, 'whoops', { message: 'oops' });
   });
