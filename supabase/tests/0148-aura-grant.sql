@@ -67,23 +67,27 @@ begin
   perform tests.unbecome();
   update settings set value = '1000' where key = 'walletCap';
   if (r ->> 'granted')::integer is distinct from 0 then raise exception 'a wallet above the cap was granted %', r; end if;
+  if (r ->> 'overflow')::integer is distinct from 100 then raise exception 'what did not fit above a lowered cap should be the whole amount: %', r; end if;
   if (select balance from wallets where account = ann) is distinct from 1000 then raise exception 'the balance should be unchanged'; end if;
   if (select count(*) from wallet_events where account = ann) is distinct from 1 then raise exception 'no row for a grant that moved nothing'; end if;
 end $$;
 
 -- ---- Zero, a negative amount and an unknown account are refused, writing nothing ----
 do $$
-declare ann uuid := tests.account('g-refused'); code text;
+declare ann uuid := tests.account('g-refused'); nobody uuid := gen_random_uuid(); code text; why text; hint text;
 begin
   perform tests.become_service();
-  begin perform grant_aura(ann, 0); exception when others then code := sqlstate; end;
+  begin perform grant_aura(ann, 0); exception when others then code := sqlstate; get stacked diagnostics hint = pg_exception_hint; end;
   if code is distinct from '22023' then raise exception 'zero was not refused: %', code; end if;
+  if hint is distinct from 'kayfabb.refusal' then raise exception 'zero''s refusal should carry the refusal hint: %', hint; end if;
   code := null;
   begin perform grant_aura(ann, -5); exception when others then code := sqlstate; end;
   if code is distinct from '22023' then raise exception 'a negative amount was not refused: %', code; end if;
   code := null;
-  begin perform grant_aura(gen_random_uuid(), 5); exception when others then code := sqlstate; end;
+  hint := null;
+  begin perform grant_aura(nobody, 5); exception when others then code := sqlstate; why := sqlerrm; get stacked diagnostics hint = pg_exception_hint; end;
   if code is distinct from '22023' then raise exception 'an unknown account was not refused: %', code; end if;
+  if hint is distinct from 'kayfabb.refusal' or strpos(why, nobody::text) = 0 then raise exception 'an unknown account should be refused by name with the refusal hint: % (%)', why, hint; end if;
   code := null;
   begin perform grant_aura(null, 5); exception when others then code := sqlstate; end;
   if code is distinct from '22023' then raise exception 'a null account was not refused: %', code; end if;

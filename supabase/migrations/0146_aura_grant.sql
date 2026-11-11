@@ -10,7 +10,7 @@ alter table wallet_events add constraint wallet_events_kind_check check (kind in
 create function grant_aura(account uuid, amount integer default null) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
-  cap integer := (setting('walletCap'))::integer;
+  cap integer;
   was integer;
   now_is integer;
   ev record;
@@ -23,6 +23,7 @@ begin
   end if;
   insert into wallets (account) values (grant_aura.account) on conflict do nothing;
   select w.balance into was from wallets w where w.account = grant_aura.account for update;
+  cap := (setting('walletCap'))::integer;
   if was >= cap then
     return jsonb_build_object('granted', 0, 'overflow', coalesce(grant_aura.amount, 0), 'balance', was);
   end if;
