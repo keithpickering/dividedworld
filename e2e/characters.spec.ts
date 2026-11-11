@@ -205,7 +205,7 @@ async function openTurnAt(page: Page, width: number, height = 1000) {
   const dialog = page.getByRole('dialog', { name: 'Turn Pipewrench' });
   await expect(dialog).toBeVisible();
   /* The entrance scales the box's rect (motion tokens: scale 0.98) until it ends: measure from the boxes only once it has. */
-  await expect.poll(() => dialog.evaluate((el) => Math.abs(el.getBoundingClientRect().width - el.offsetWidth * ((el as HTMLElement & { currentCSSZoom?: number }).currentCSSZoom ?? 1)))).toBeLessThan(0.01);
+  await expect.poll(() => dialog.evaluate((el) => { const box = el as HTMLElement & { currentCSSZoom?: number }; return Math.abs(box.getBoundingClientRect().width - box.offsetWidth * (box.currentCSSZoom ?? 1)); })).toBeLessThan(0.01);
   return dialog;
 }
 const classGroup = (dialog: ReturnType<Page['locator']>) => dialog.getByRole('group', { name: 'Turn to' });
