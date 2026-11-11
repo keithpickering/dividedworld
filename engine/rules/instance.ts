@@ -485,7 +485,7 @@ function gimmickProblems(g: unknown, who: string, reactionKeys: ReadonlySet<stri
     if (e.flavors !== undefined && (!list(e.flavors) || flavorsBad(e.flavors))) out.push(`${who} has a ward of the flavors ${JSON.stringify(e.flavors)}; a flavor is ${ALIGNMENTS.join(', ')}`);
     if (e.cards !== undefined && (!list(e.cards) || e.cards.some((k) => typeof k !== 'string'))) out.push(`${who} has a ward of the cards ${JSON.stringify(e.cards)}; cards are named by key`);
   } else if (e.kind === 'earn') {
-    if (typeof e.by !== 'number' || !(e.by > 0 && e.by <= 1)) out.push(`${who} has an earn of ${JSON.stringify(e.by)}; by is above 0 and at most 1`);
+    if (typeof e.by !== 'number' || !(e.by > 0 && e.by <= 1)) out.push(e.by === undefined ? `${who} has an earn with no by; by is above 0 and at most 1` : `${who} has an earn of ${JSON.stringify(e.by)}; by is above 0 and at most 1`);
     if (e.quadrants === undefined && e.reactions === undefined) out.push(`${who} has an earn that names no quadrant and no reaction`);
     if (e.quadrants !== undefined) {
       if (!list(e.quadrants)) out.push(`${who} has an earn naming no quadrant; a quadrant is ${QUADRANTS.join(', ')}`);
