@@ -65,6 +65,23 @@ begin
   if said not like '4 pieces are worn; at most 3%' then raise exception 'too many pieces: %', said; end if;
   said := pg_temp.refusal(format('select set_outfit(%L, %L, %L)', ann, a2, '[{"gear": "tg-hat", "x": 1.5, "y": 0.5, "w": 0.3, "turn": 0, "layer": 0}]'));
   if said is distinct from 'a piece''s x is outside the portrait' then raise exception 'a piece off the portrait: %', said; end if;
+  -- Every bound of a piece: refused one step past it, accepted on it (wornMost is 3, so layers are 0 to 2).
+  foreach said in array array[
+    'layer=3', 'layer=-1', 'layer=1.5', 'layer="1"', 'layer=null',
+    'w=0.04', 'w=1.51', 'turn=-180.5', 'turn=181', 'x=-0.01', 'x=1.01', 'y=-0.01', 'y=1.01'] loop
+    if pg_temp.refusal(format('select set_outfit(%L, %L, %L)', ann, a2,
+         jsonb_set('[{"gear": "tg-hat", "x": 0.5, "y": 0.5, "w": 0.3, "turn": 0, "layer": 0}]'::jsonb, array['0', split_part(said, '=', 1)], split_part(said, '=', 2)::jsonb)::text)) is null
+      then raise exception 'a piece past a bound was accepted: %', said; end if;
+  end loop;
+  foreach said in array array[
+    '[{"gear": "tg-hat", "x": 0, "y": 0, "w": 0.05, "turn": -180, "layer": 0}]',
+    '[{"gear": "tg-hat", "x": 1, "y": 1, "w": 1.5, "turn": 180, "layer": 2}]'] loop
+    if pg_temp.refusal(format('select set_outfit(%L, %L, %L)', ann, a2, said)) is not null then raise exception 'a piece on a bound was refused: %', said; end if;
+  end loop;
+  perform set_outfit(ann, a2, '[]');
+  -- A mixed refusal reads layer collisions before copy shortfalls, as outfitProblems lists them (Ann holds two mustaches; her other mask wears one).
+  said := pg_temp.refusal(format('select set_outfit(%L, %L, %L)', ann, a2, '[{"gear": "tg-mustache", "x": 0.5, "y": 0.5, "w": 0.3, "turn": 0, "layer": 0}, {"gear": "tg-mustache", "x": 0.5, "y": 0.5, "w": 0.3, "turn": 0, "layer": 0}]'));
+  if said is distinct from '"tg-mustache" shares layer 0 with "tg-mustache"; "tg-mustache" is worn 2 times here, and 1 copy is free' then raise exception 'a mixed refusal''s order: %', said; end if;
   said := pg_temp.refusal(format('select set_outfit(%L, %L, %L)', ann, a2, '[{"gear": "tg-nothing", "x": 0.5, "y": 0.5, "w": 0.3, "turn": 0, "layer": 0}]'));
   if said is distinct from 'there is no gear "tg-nothing"' then raise exception 'gear that does not exist: %', said; end if;
   said := pg_temp.refusal(format('select set_outfit(%L, %L, %L)', ann, a2, '{"gear": "tg-hat"}'));

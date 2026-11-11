@@ -273,6 +273,14 @@ begin
   end loop;
   perform 1 from characters where id = through for no key update;
   perform pg_advisory_xact_lock(hashtext('kayfabb.outfit'), hashtext(who::text));
+  -- Layer collisions come before copy shortfalls, as outfitProblems lists them.
+  for g in
+    select pc ->> 'gear' as gear, (pc ->> 'layer')::integer as layer, row_number() over (partition by (pc ->> 'layer')::integer order by ord) as n,
+           first_value(pc ->> 'gear') over (partition by (pc ->> 'layer')::integer order by ord) as first
+    from jsonb_array_elements(pieces) with ordinality t(pc, ord) order by ord
+  loop
+    if g.n > 1 then problems := problems || format('"%s" shares layer %s with "%s"', g.gear, g.layer, g.first); end if;
+  end loop;
   for g in
     select pc ->> 'gear' as gear, count(*)::integer as here from jsonb_array_elements(pieces) pc group by pc ->> 'gear' order by pc ->> 'gear'
   loop
@@ -282,13 +290,6 @@ begin
         greatest(0, gear_held(who, g.gear) - (select count(*) from gear_worn w join characters c on c.id = w.character where c.owner = who and w.character <> through and w.gear = g.gear)),
         case when greatest(0, gear_held(who, g.gear) - (select count(*) from gear_worn w join characters c on c.id = w.character where c.owner = who and w.character <> through and w.gear = g.gear)) = 1 then 'copy is' else 'copies are' end);
     end if;
-  end loop;
-  for g in
-    select pc ->> 'gear' as gear, (pc ->> 'layer')::integer as layer, row_number() over (partition by (pc ->> 'layer')::integer order by ord) as n,
-           first_value(pc ->> 'gear') over (partition by (pc ->> 'layer')::integer order by ord) as first
-    from jsonb_array_elements(pieces) with ordinality t(pc, ord) order by ord
-  loop
-    if g.n > 1 then problems := problems || format('"%s" shares layer %s with "%s"', g.gear, g.layer, g.first); end if;
   end loop;
   if cardinality(problems) > 0 then
     raise exception '%', array_to_string(problems, '; ') using hint = 'kayfabb.refusal', errcode = '22023';
