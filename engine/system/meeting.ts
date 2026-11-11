@@ -114,11 +114,13 @@ function fieldRules(asked: boolean): Record<string, Rule> {
       },
       !asked,
     ),
+    // Required in the schema asked (an empty list says none), optional in the rule so a missing one still repairs.
     inherited: {
       type: 'list',
-      optional: true,
+      ...(asked ? {} : { optional: true as const }),
       of: { type: 'object', fields: { move_act: { type: 'string', maxLength: 64 }, decision: { type: 'enum', values: ['keep', 'end'] } } },
     },
+    // Optional in both: a blank successor has no convention (its `why` must be non-empty), so no successor is said by leaving it out.
     successor: { type: 'object', optional: true, fields: { boss: { type: 'string', maxLength: 80 }, why: { type: 'string', maxLength: WHY_MOST, minLength: 1 } } },
     // One order for each Mod on staff (Mod Bots design, section 2). Optional: an answer that leaves a Mod out leaves its beat, order and memory as they were
     // (the database carries them), and an order with no memory leaves that Mod's memory as it was. Nothing here is a reason to reject a paid answer.
@@ -289,7 +291,7 @@ export function meetingSystemPrompt(f: PromptFacts): string {
   const whole = Math.floor(f.bank);
   const { settings: s, phase } = f;
   const kinds = ASKABLE_MOVE_KINDS.map(
-    (k) => `- ${k.key}: ${k.label.toLowerCase()}. Made by ${k.offices.map((o) => (o === 'boss' ? 'the Boss' : 'a Mod Bot')).join(' or ')}. params: ${fieldsOf(k.params)}.${k.key === 'setRule' ? ` A rule never refuses a post; breaking one draws a visit. board is a board's id, or left out for every board. param is written as text: the number's digits, the word, the tag, or empty for none. It is ${PREDICATES.map((p) => `${p.key} (${p.param === 'none' ? 'none' : p.param === 'count' ? `a whole number ${p.bounds!.least} to ${p.bounds!.most}` : p.param === 'word' ? 'one word' : 'a BBCode tag'}): ${p.plain('N')}`).join('; ')}.` : ''}${k.structural ? ` It waits at least ${s.structuralHoldHours} hours in the admin queue before it lands, and an admin can hold it.` : ''}`,
+    (k) => `- ${k.key}: ${k.label.toLowerCase()}. Made by ${k.offices.map((o) => (o === 'boss' ? 'the Boss' : 'a Mod Bot')).join(' or ')}. params: ${fieldsOf(k.params)}.${k.key === 'setRule' ? ` A rule never refuses a post; breaking one draws a visit. board is a board's id, or empty text for every board. param is written as text: the number's digits, the word, the tag, or empty for none. It is ${PREDICATES.map((p) => `${p.key} (${p.param === 'none' ? 'none' : p.param === 'count' ? `a whole number ${p.bounds!.least} to ${p.bounds!.most}` : p.param === 'word' ? 'one word' : 'a BBCode tag'}): ${p.plain('N')}`).join('; ')}.` : ''}${k.structural ? ` It waits at least ${s.structuralHoldHours} hours in the admin queue before it lands, and an admin can hold it.` : ''}`,
   );
   const demands = MEETING_DEMAND_KINDS.map((d) => `- ${d.key}: params: ${fieldsOf(d.params)}.`);
   const m = machineLimits(s.economy);
@@ -309,6 +311,7 @@ export function meetingSystemPrompt(f: PromptFacts): string {
     [
       'The moves you may make (anything else is dropped):',
       ...kinds,
+      'In a move\'s params and demand, every field is written; a field the move\'s kind does not use is written blank (empty text, or 0) and is ignored.',
       `A move's go_live_at is a time (ISO 8601) from now to a day from now; a structural move is held at least ${s.structuralHoldHours} hours whatever you ask. Its expires_in_hours is from ${s.moveExpiryLeastHours} hours to ${Math.min(phase.numbers.moveExpiryMostDays, s.moveExpiryMostDays) * 24} hours. Its why is one line, at most ${WHY_MOST} characters, in your own words; the admins read it.`,
     ].join('\n'),
     [
@@ -316,7 +319,7 @@ export function meetingSystemPrompt(f: PromptFacts): string {
       `- pullSlot: params {slot}. Sells a slot out until the move ends. The slot is on sale, holds a single card, and that card can still come out of a pack on sale (packs are the floor: you never pull a pack). You may have at most ${m.pullMost} slots pulled at once.`,
       `- repriceSlot: params {slot, percent}. Sets an on-sale slot's price (a pack's too) to a percent of the price the admins set: ${m.repriceLeast} to ${m.repriceMost} percent, never 100.`,
       `- flashSale: params {slot, hours}. Puts a slot the admins hid on sale for hours (params.hours, ${m.flashHoursLeast} to ${m.flashHoursMost} hours; its expiry is that window), then it is hidden again. One flash sale at a time.`,
-      'A pullSlot and a repriceSlot above 100 percent punish, and carry a demand. A repriceSlot below 100 percent and a flashSale are favors: each carries no demand (leave "demand" out; one you give is dropped). An admin\'s sold out or hidden always wins over you. You read the machine\'s slots, prices and your moves in force, never who buys what.',
+      'A pullSlot and a repriceSlot above 100 percent punish, and carry a demand. A repriceSlot below 100 percent and a flashSale are favors: each carries no demand (give the demand an empty kind; one with a kind is dropped). An admin\'s sold out or hidden always wins over you. You read the machine\'s slots, prices and your moves in force, never who buys what.',
     ].join('\n'),
     [
       'Every other move carries a demand the characters can meet, and the move ends when it is met or when it expires. The demands you may set (anything else drops the move):',
@@ -326,7 +329,7 @@ export function meetingSystemPrompt(f: PromptFacts): string {
     ...groupsText(f.groups?.conferred ?? []),
     `Board names. ${f.system.nameStyleBrief} A renameBoard name is at most ${s.boardNameMaxLength} characters; its premise is a sentence saying what the board is now for. A name that is not in the style is dropped, not corrected. A renameBoard description is your own words, in character: the board's subtitle under its new name, a sentence or two.`,
     [
-      'Your memory. Your answer is your whole new memory: what you leave out is forgotten. Order every list most important first.',
+      'Your memory. The memory you answer in the self part is your whole new memory: what you leave out of it is forgotten. Order every list most important first.',
       `You keep at most ${s.memoryOpinions} opinions, ${s.memoryGrudges} grudges, ${s.memoryWheelhouse} wheelhouse subjects and ${s.memoryRealWorld} real-world subjects; the rest are cut from the end. Opinions and grudges name characters by the ids you are given, scored -5 to 5. Leave alone these subjects, and add to them: ${f.system.realWorld.join('; ')}.`,
       `Your profile: up to ${PROFILE_MOST.interests} interests, up to ${PROFILE_MOST.favorites} favorite characters (their ids), a mood and a signature. It is public and in your voice.`,
     ].join('\n'),
@@ -352,7 +355,7 @@ function groupsText(conferred: readonly ConferredGroup[]): string[] {
     [
       'Group moves. A conferGroup move puts one character in one of these groups, named by its key:',
       ...conferred.map((g) => `- ${g.key} (${g.name}): a ${g.tone}.`),
-      'A punishment may name one board (board, the id of a board of the players); then its demand is an accepted apology, which the code sets whatever you write, and the character cannot post on that board until an apology is accepted or the move runs out. A punishment may instead name no board, with a demand of your choice. A punishment carries no checkAt. A favor bars nothing and names no board: it names a checkAt (a time, ISO 8601, between its go-live and its expiry; left out, it is set to half the favor\'s length) and a demand the character should meet by then, such as posting a number of times on a board; a favor not met at its check is withdrawn, and one met is kept to its expiry. Each character is in at most one group move at a time. Characters who are capped (punished as often as staff may in the window) or held (already in a group move) cannot be chosen: a move that names one is dropped.',
+      'A punishment may name one board (board, the id of a board of the players); then its demand is an accepted apology, which the code sets whatever you write, and the character cannot post on that board until an apology is accepted or the move runs out. A punishment may instead name no board, with a demand of your choice. A punishment carries no checkAt. A favor bars nothing and names no board: it names a checkAt (a time, ISO 8601, between its go-live and its expiry; blank, it is set to half the favor\'s length) and a demand the character should meet by then, such as posting a number of times on a board; a favor not met at its check is withdrawn, and one met is kept to its expiry. Each character is in at most one group move at a time. Characters who are capped (punished as often as staff may in the window) or held (already in a group move) cannot be chosen: a move that names one is dropped.',
     ].join('\n'),
   ];
 }

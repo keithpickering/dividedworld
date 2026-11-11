@@ -204,6 +204,13 @@ test('a setRule on a listed board, or on every board, is kept; a numeric param s
   assert.equal(all.ok && all.moves[0]!.params['board'], null);
 });
 
+test('a setRule\'s param given as the number\'s digits in text is read as a number, and the trim is recorded', () => {
+  const r = repairAnswer(ruleAnswer({ board: BOARD, predicate: 'minLength', param: '20', band: 'minor' }), ctx());
+  assert.ok(r.ok && r.moves.length === 1, JSON.stringify(r));
+  assert.equal(r.ok && r.moves[0]!.params['param'], 20);
+  assert.ok(r.ok && r.trims.some((t) => t.path === 'moves[0].params.param' && t.predicate === 'asNumber'), JSON.stringify(r.ok && r.trims));
+});
+
 test('a setRule\'s param given as text is read as its predicate wants it, and the trim is recorded', () => {
   const count = repairAnswer(ruleAnswer({ board: BOARD, predicate: 'minLength', param: '3', band: 'minor' }), ctx());
   assert.ok(count.ok && count.moves.length === 1, JSON.stringify(count));
@@ -605,6 +612,29 @@ test('the reference text lists the machine\'s slots with their ids, and says the
   assert.match(moved, /pullSlot in force/);
 });
 
+test('a field two kinds share is dropped without a trim for the kind that has none, and kept for the kind that has it', () => {
+  const r = plan([
+    machineMove('repriceSlot', { slot: SLOT_C, percent: 60, board: BOARD }, { demand: undefined }),
+    move(PULL_DEMAND),
+  ]);
+  assert.equal(r.moves.length, 2, JSON.stringify(r.trims));
+  assert.ok(!('board' in r.moves[0]!.params), JSON.stringify(r.moves[0]));
+  assert.equal(r.moves[1]!.params['board'], BOARD);
+  assert.ok(!r.trims.some((t) => t.path.startsWith('moves[0].params.board')), JSON.stringify(r.trims));
+  const favor = repairAnswer(withMoves(machineMove('flashSale', { slot: SLOT_HIDDEN, hours: 24, board: BOARD }, { demand: undefined })), withMachine());
+  assert.ok(favor.ok && favor.moves.length === 1 && !('board' in favor.moves[0]!.params), JSON.stringify(favor));
+});
+
+test('the prompt no longer tells the Boss to leave out a demand or a rule\'s board, which its schema requires', () => {
+  const served = meetingSystemPrompt({ boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.it, system: testSystem, settings, phase: ctx().phase, bank: 2, mods: [], characterName: () => 'someone', successorAllowed: false, roster: [], career: { led: [], offices: [] }, notes: [] });
+  assert.ok(!/leave "demand" out/.test(served) && !/left out for every board/.test(served), served);
+  assert.match(served, /empty kind/);
+  assert.match(served, /empty text for every board/);
+  assert.match(served, /every field is written[^\n]*blank[^\n]*ignored/);
+  assert.ok(!/Your answer is your whole new memory/.test(served));
+  assert.match(served, /memory you answer in the self part/);
+});
+
 test('the prompt tells the Boss the machine\'s three moves, their bounds and which carry a demand', () => {
   const served = meetingSystemPrompt({ boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.it, system: testSystem, settings, phase: ctx().phase, bank: 2, mods: [], characterName: () => 'someone', successorAllowed: false, roster: [], career: { led: [], offices: [] }, notes: [] });
   assert.match(served, /pullSlot/);
@@ -768,7 +798,7 @@ test('every field of the answer is in exactly one part, and MEETING_RULE is buil
 });
 
 const DESIGN_PROPERTIES = { moves: 36, staff: 23, self: 20 } as const;
-const OPTIONAL = { moves: 2, staff: 7, self: 1 } as const;
+const OPTIONAL = { moves: 1, staff: 7, self: 1 } as const;
 for (const key of ['moves', 'staff', 'self'] as const) {
   const t = tally(partSchema(key));
   test(`the ${key} part's schema is accepted by the provider's rules: ${t.properties} properties, ${t.optional} optional, ${t.unions} unions`, () => {
@@ -779,7 +809,8 @@ for (const key of ['moves', 'staff', 'self'] as const) {
 
 test('the moves part asks for every field of a move, and its loose params and demand are all required', () => {
   const schema = partSchema('moves') as any;
-  assert.deepEqual(schema.required, ['moves']);
+  assert.deepEqual([...schema.required].sort(), ['inherited', 'moves'], 'an empty list says none, so inherited is required; successor has no blank that says none');
+  assert.ok(!schema.required.includes('successor'));
   const item = schema.properties.moves.items;
   assert.deepEqual([...item.required].sort(), ['demand', 'expires_in_hours', 'go_live_at', 'kind', 'params', 'why']);
   assert.deepEqual([...item.properties.params.required].sort(), Object.keys(item.properties.params.properties).sort());

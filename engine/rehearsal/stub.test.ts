@@ -71,7 +71,7 @@ test('each part of the meeting, answered by the stub from its own schema, passes
     assert.ok(shaped.ok, `${key}: ${JSON.stringify(shaped)}`);
     const r = repairAnswer(answer, ctx);
     assert.ok(r.ok, `${key}: ${JSON.stringify(r)}`);
-    assert.deepEqual(keys(answer), key === 'moves' ? ['moves'] : key === 'staff' ? [] : ['memory', 'profile']);
+    assert.deepEqual(keys(answer), key === 'moves' ? ['moves', 'inherited'] : key === 'staff' ? [] : ['memory', 'profile']);
     if (r.ok) assert.equal(r.memory !== undefined, key === 'self');
   }
 });
