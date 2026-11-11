@@ -5,10 +5,6 @@ import type { World } from '../story.tsx';
 import { ProfileScreen } from './Profile.tsx';
 import { RecordScreen } from './Record.tsx';
 import { LoadedProfile, LoadedRecord } from '../loaded.tsx';
-import { Avatar } from './Avatar.tsx';
-import type { Character } from '../data/api.ts';
-import type { Piece } from '../../rules/cosmetics.ts';
-import { ENGINE_DEFAULT_PRONOUNS } from '../../rules/pronouns.ts';
 
 const meta: Meta<typeof ProfileScreen> = { title: 'Profile/Profile', component: ProfileScreen };
 export default meta;
@@ -45,19 +41,25 @@ export const Full: Story = { render: () => <Top />, parameters: { world: full, p
 export const NotFound: Story = { render: () => <LoadedProfile id="nobody" />, parameters: { world: ((fake) => { fake.signInAs(fake.seed.account('story-player')); }) satisfies World, path: '/c/nobody' } };
 export const Record: Story = { render: () => <Top record />, parameters: { world: full, path: '/' } };
 
-/* A mask wearing gear on the profile's tall avatar: the first pieces the instance's own gear table offers, one reaching above the slot. */
-function WearingAvatar() {
-  const { ui } = useKayfa();
-  const spots = [{ x: 0.5, y: 0, w: 0.7, turn: -8 }, { x: 0.5, y: 0.3, w: 0.5, turn: 0 }, { x: 0.7, y: 0.62, w: 0.3, turn: 14 }];
-  const outfit: Piece[] = Object.keys(ui.gear).slice(0, 3).map((gear, i) => ({ gear, layer: i, ...spots[i]! }));
+/* A mask wearing gear on the profile's tall avatar: the first pieces the instance's own gear table offers, one reaching above the slot, on the profile screen that names them in its Wearing row. */
+const wearingWorld: World = (fake, instance) => {
+  const owner = fake.seed.account('story-owner');
+  const mask = fake.seed.character(owner, 'Pipewrench', instance.classes[0]!.key, { at: T0 });
   const picture = (w: number, h: number) => `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}"><rect width="${w}" height="${h}"/><circle cx="${w / 2}" cy="${h / 4}" r="${w / 4}"/></svg>`;
-  const character: Character = {
-    id: 'story-character', name: 'Pipewrench', title: '', signature: '', avatarSquare: picture(100, 100), avatarPortrait: picture(100, 140),
-    squareFrame: { x: 0, y: 0, w: 1, h: 1 / 1.4 }, portraitFrame: null, portraitTallness: 1.4, outfit, trophies: [], pipStyle: 'default', pronouns: ENGINE_DEFAULT_PRONOUNS, joined: '2026-10-01', group: 'members',
-  };
-  return <div style={{ padding: '3em 3em 1em' }}><Avatar character={character} /></div>;
+  fake.seed.avatar(mask, { square: picture(100, 100), portrait: picture(100, 140) });
+  const gear = instance.gear.slice(0, 3);
+  fake.seed.gear(owner, Object.fromEntries(gear.map((g) => [g.key, 1])));
+  fake.signInAs(owner);
+  const spots = [{ x: 0.5, y: 0, w: 0.7, turn: -8 }, { x: 0.5, y: 0.3, w: 0.5, turn: 0 }, { x: 0.7, y: 0.62, w: 0.3, turn: 14 }];
+  void fake.setOutfit(mask, gear.map((g, i) => ({ gear: g.key, layer: i, ...spots[i]! })));
+};
+function Mine({ name }: { readonly name: string }) {
+  const { api } = useKayfa();
+  const [id, setId] = useState<string | null>(null);
+  useEffect(() => { void api.myCharacters().then((mine) => setId(mine.find((c) => c.name === name)?.id ?? 'nobody')); }, [api, name]);
+  return id === null ? null : <LoadedProfile id={id} />;
 }
-export const WearingGear: Story = { render: () => <WearingAvatar />, parameters: { world: () => {} } };
+export const WearingGear: Story = { render: () => <Mine name="Pipewrench" />, parameters: { world: wearingWorld, path: '/' } };
 
 /** Spritey in its trophy case (the cosmetics design, section 4): the instance's first trophy kinds given by the season and an admin, a belt (its own kind, else the first) passed from one holder to the next, and a portrait wearing the first pieces of gear its table offers. */
 const trophyWorld: World = (fake, instance) => {
@@ -76,10 +78,4 @@ const trophyWorld: World = (fake, instance) => {
   fake.signInAs(owner);
   void fake.setOutfit(mask, gear.map((g, i) => ({ gear: g.key, x: 0.5, y: 0.1 + i * 0.25, w: 0.4, turn: 0, layer: i })));
 };
-function Bones() {
-  const { api } = useKayfa();
-  const [id, setId] = useState<string | null>(null);
-  useEffect(() => { void api.myCharacters().then((mine) => setId(mine.find((c) => c.name === 'Dr. Bones')?.id ?? 'nobody')); }, [api]);
-  return id === null ? null : <LoadedProfile id={id} />;
-}
-export const TrophyCaseAndWearing: Story = { render: () => <Bones />, parameters: { world: trophyWorld, path: '/' } };
+export const TrophyCaseAndWearing: Story = { render: () => <Mine name="Dr. Bones" />, parameters: { world: trophyWorld, path: '/' } };

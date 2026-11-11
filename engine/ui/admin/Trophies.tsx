@@ -142,10 +142,14 @@ export function TrophiesScreen({ makeArt = browserArt }: { readonly makeArt?: (f
       {failed && <CalmRegion as="p" className="kb-trophies-note" role="alert">This page could not be read. Reload the page to try again.</CalmRegion>}
       {awards && failures && (
         <div className="kb-trophies-grid">
-          <AwardForm kinds={kinds} reload={load} />
-          <GrantForm reload={load} gear={instance.gear.map((g) => ({ key: g.key, name: g.name }))} />
-          <MakeForm makeArt={makeArt} reload={load} />
-          <Recent awards={awards} more={more} artOf={artOf} reload={load} older={older} />
+          <div className="kb-trophies-col">
+            <AwardForm kinds={kinds} reload={load} />
+            <GrantForm reload={load} gear={instance.gear.map((g) => ({ key: g.key, name: g.name }))} />
+          </div>
+          <div className="kb-trophies-col">
+            <MakeForm makeArt={makeArt} reload={load} />
+            <Recent awards={awards} more={more} artOf={artOf} reload={load} older={older} />
+          </div>
           <Failures failures={failures} more={moreFailures} kinds={kinds} places={instance.trophies.seasonPlaces} reload={load} older={olderFailures} />
         </div>
       )}
@@ -232,14 +236,22 @@ function GrantForm({ gear, reload }: { readonly gear: readonly { readonly key: s
     <CalmRegion as="section" aria-labelledby={`${id}-h`} className="kb-trophies-panel">
       <h2 id={`${id}-h`} className="kb-trophies-head">Grant gear</h2>
       <form onSubmit={(e) => void submit(e)} noValidate>
-        <label className="kb-trophies-label" htmlFor={`${id}-item`}>Gear</label>
-        <select id={`${id}-item`} className="kb-trophies-field" value={chosen?.key ?? ''} onChange={(e) => setItem(e.target.value)}>
-          {gear.map((g) => <option key={g.key} value={g.key}>{g.name}</option>)}
-        </select>
-        <label className="kb-trophies-label" htmlFor={`${id}-who`}>To the character</label>
-        <input id={`${id}-who`} className="kb-trophies-field" autoComplete="off" value={who} onChange={(e) => setWho(e.target.value)} aria-describedby={write.problem ? `${id}-problem` : undefined} />
-        <label className="kb-trophies-label" htmlFor={`${id}-copies`}>Copies</label>
-        <input id={`${id}-copies`} className="kb-trophies-field kb-trophies-short" type="number" inputMode="numeric" min={1} max={100} value={copies} onChange={(e) => setCopies(e.target.value)} />
+        <div className="kb-trophies-row kb-trophies-grant">
+          <div className="kb-trophies-pair">
+          <label className="kb-trophies-label" htmlFor={`${id}-item`}>Gear</label>
+          <select id={`${id}-item`} className="kb-trophies-field" value={chosen?.key ?? ''} onChange={(e) => setItem(e.target.value)}>
+            {gear.map((g) => <option key={g.key} value={g.key}>{g.name}</option>)}
+          </select>
+          </div>
+          <div className="kb-trophies-pair">
+          <label className="kb-trophies-label" htmlFor={`${id}-who`}>To the character</label>
+          <input id={`${id}-who`} className="kb-trophies-field" autoComplete="off" value={who} onChange={(e) => setWho(e.target.value)} aria-describedby={write.problem ? `${id}-problem` : undefined} />
+          </div>
+          <div className="kb-trophies-pair">
+          <label className="kb-trophies-label" htmlFor={`${id}-copies`}>Copies</label>
+          <input id={`${id}-copies`} className="kb-trophies-field kb-trophies-short" type="number" inputMode="numeric" min={1} max={100} value={copies} onChange={(e) => setCopies(e.target.value)} />
+          </div>
+        </div>
         <p className="kb-trophies-note">The copies go to the wardrobe of whoever plays that character. This page never says who that is.</p>
         <ButtonRow><GlassButton type="submit" kind="primary" disabled={write.busy || !chosen}>Grant</GlassButton></ButtonRow>
         <Said write={write} id={id} />
@@ -290,13 +302,19 @@ function MakeForm({ makeArt, reload }: { readonly makeArt: (file: File) => Promi
         <input id={`${id}-name`} className="kb-trophies-field" autoComplete="off" maxLength={60} value={name} onChange={(e) => setName(e.target.value)} aria-describedby={write.problem ? `${id}-problem` : undefined} />
         <label className="kb-trophies-label" htmlFor={`${id}-line`}>Its line (optional)</label>
         <input id={`${id}-line`} className="kb-trophies-field" autoComplete="off" maxLength={200} value={line} onChange={(e) => setLine(e.target.value)} />
-        <label className="kb-trophies-label" htmlFor={`${id}-file`}>Picture (any picture; it is drawn down to 48 pixels and kept under 16 KB)</label>
-        <input id={`${id}-file`} ref={picker} className="kb-trophies-field" type="file" accept="image/*" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
-        <label className="kb-trophies-label" htmlFor={`${id}-belt`}>Kind</label>
-        <select id={`${id}-belt`} className="kb-trophies-field" value={belt ? 'belt' : 'trophy'} onChange={(e) => setBelt(e.target.value === 'belt')}>
-          <option value="trophy">A trophy</option>
-          <option value="belt">A belt (one holder at a time)</option>
-        </select>
+        <div className="kb-trophies-row">
+          <div className="kb-trophies-pair">
+          <label className="kb-trophies-label" htmlFor={`${id}-file`}>Picture (any picture; it is drawn down to 48 pixels and kept under 16 KB)</label>
+          <input id={`${id}-file`} ref={picker} className="kb-trophies-field" type="file" accept="image/*" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+          </div>
+          <div className="kb-trophies-pair">
+          <label className="kb-trophies-label" htmlFor={`${id}-belt`}>Kind</label>
+          <select id={`${id}-belt`} className="kb-trophies-field" value={belt ? 'belt' : 'trophy'} onChange={(e) => setBelt(e.target.value === 'belt')}>
+            <option value="trophy">A trophy</option>
+            <option value="belt">A belt (one holder at a time)</option>
+          </select>
+          </div>
+        </div>
         <ButtonRow><GlassButton type="submit" kind="primary" disabled={write.busy}>Make it</GlassButton></ButtonRow>
         <Said write={write} id={id} />
       </form>
@@ -330,7 +348,7 @@ function Recent({ awards, more, artOf, reload, older }: {
     return { said: `Took back ${a.name} from ${a.to}.${a.belt ? ' If the belt was theirs, it goes back to whoever held it before, if anyone did.' : ''}` };
   });
   return (
-    <CalmRegion as="section" aria-labelledby={`${id}-h`} className="kb-trophies-panel kb-trophies-wide">
+    <CalmRegion as="section" aria-labelledby={`${id}-h`} className="kb-trophies-panel">
       <h2 id={`${id}-h`} className="kb-trophies-head">Recent awards</h2>
       {awards.length === 0 ? <p className="kb-trophies-note">No trophy has been given yet.</p> : (
         <table ref={table} className="kb-trophies-table" aria-describedby={write.problem ? `${id}-problem` : undefined}>

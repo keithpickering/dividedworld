@@ -15,7 +15,7 @@ import type { RandomEvent as Event } from '../data/api.ts';
 import { faceOf, withCardEconomy } from '../cards/faces.ts';
 import { Postcard } from '../cards/Postcard.tsx';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
-import { Modal } from '../modal.tsx';
+import { Overlay } from '../glass/Overlay.tsx';
 import { usePlayer } from '../player.tsx';
 import './events.css';
 
@@ -59,7 +59,7 @@ function Dialog({ event, onClose }: { readonly event: Event; readonly onClose: (
   const art = gear !== undefined ? ui.gear[gear.key]?.art : undefined;
   const face = rules !== undefined ? faceOf(rules, ui.cards.find((c) => c.key === rules.key), withCardEconomy(instance.settings, settings.cardEconomy), ui.copy.cardKinds) : null;
   return (
-    <Modal title="SOMETHING HAPPENED!" onClose={onClose}>
+    <Overlay title="SOMETHING HAPPENED!" surface="effect" className="kb-event-overlay" onClose={onClose}>
       <div className="kb-event">
         {(art !== undefined || face !== null) && (
           <span className="kb-event-art" aria-hidden="true">
@@ -78,6 +78,6 @@ function Dialog({ event, onClose }: { readonly event: Event; readonly onClose: (
         {gear !== undefined && <GlassButton to="/wardrobe" kind="primary" state={{ character: event.character, wear: gear.key }} onClick={onClose}>Wear it</GlassButton>}
         <GlassButton onClick={onClose}>OK</GlassButton>
       </ButtonRow>
-    </Modal>
+    </Overlay>
   );
 }

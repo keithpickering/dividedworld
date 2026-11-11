@@ -399,6 +399,16 @@ describe('the Wearing row and the trophy case', () => {
     expect(screen.queryByRole('button', { name: 'More trophies' })).toBeNull();
   });
 
+  test('a belt whose name begins with "The" is not given a second one in its lineage heading', async () => {
+    const the: Instance = { ...shop, trophies: { ...shop.trophies, kinds: shop.trophies.kinds.map((k) => (k.key === 'belt' ? { ...k, name: 'The Test Belt' } : k)) } };
+    const fake = buildWorld(undefined, the);
+    const spritey = fake.seed.character(fake.seed.account('owner'), 'Spritey', 'face', { at: T0 });
+    fake.seed.award(spritey, 'belt', { at: Date.UTC(2026, 10, 2, 12), by: 'boss' });
+    fake.signInAs(fake.seed.account('me'));
+    renderIn(fake, <LoadedProfile id={spritey} />, { path: `/c/${spritey}`, instance: the });
+    expect(await screen.findByRole('heading', { name: "The Test Belt's lineage" })).toBeInTheDocument();
+  });
+
   test('a belt\'s lineage is under the case, newest holder first, each holder a link', async () => {
     const { fake, spritey, rival } = await dressed();
     fake.seed.award(rival, 'belt', { at: Date.UTC(2026, 9, 9, 12), by: 'admin' });

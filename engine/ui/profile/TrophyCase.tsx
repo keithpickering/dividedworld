@@ -28,6 +28,9 @@ const source = (t: TrophyItem) => {
   return null;
 };
 
+/** A belt's name with its article, once: a kind called "The Hardcore Belt" already has one. */
+const theBelt = (name: string) => (/^The /u.test(name) ? name : `The ${name}`);
+
 export function TrophyCase({ character, name }: { readonly character: Id; readonly name: string }) {
   const { api } = useKayfa();
   const [items, setItems] = useState<readonly TrophyItem[]>([]);
@@ -139,13 +142,13 @@ export function TrophyCase({ character, name }: { readonly character: Id; readon
       {belts.map(([key, belt]) => {
         const lineage = lineages[key];
         if (!lineage) return null;
-        if (lineage === 'failed') return <p key={key} className="kb-small kb-profile-all">The {belt}'s lineage could not be read. <button type="button" className="kb-link" onClick={() => { retryLineage(key); }}>Try again</button></p>;
+        if (lineage === 'failed') return <p key={key} className="kb-small kb-profile-all">{theBelt(belt)}'s lineage could not be read. <button type="button" className="kb-link" onClick={() => { retryLineage(key); }}>Try again</button></p>;
         const reigns = lineage.reigns;
         return (
           <Fragment key={key}>
           <table className="kb-table kb-lineage" role="table">
-            <caption className="kb-visually-hidden">The {belt}'s holders, newest first</caption>
-            <thead role="rowgroup"><tr role="row"><td role="cell" className="kb-bar" colSpan={3}><h2>The {belt}'s lineage</h2></td></tr></thead>
+            <caption className="kb-visually-hidden">{theBelt(belt)}'s holders, newest first</caption>
+            <thead role="rowgroup"><tr role="row"><td role="cell" className="kb-bar" colSpan={3}><h2>{theBelt(belt)}'s lineage</h2></td></tr></thead>
             <tbody role="rowgroup">
               {reigns.map((r) => (
                 <tr key={r.award} role="row">

@@ -40,6 +40,14 @@
   min-width: 0;
 }
 
+/* Two columns, as the board draws them: Award and Grant down the left, Make and Recent down the right, each column its own height. */
+.kb-trophies-col {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  min-width: 0;
+}
+
 .kb-trophies-head {
   margin: 0 0 14px;
   font-size: var(--kb-glass-size-body);
@@ -47,6 +55,21 @@
   letter-spacing: 2.5px;
   text-transform: uppercase;
   color: var(--kb-glass-neon-text);
+}
+
+.kb-trophies-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 14px;
+}
+
+/* Grant gear's item, character and copies stand in one row, as the board draws them. */
+.kb-trophies-grant {
+  grid-template-columns: 2fr 2fr 1fr;
+}
+
+.kb-trophies-pair {
+  min-width: 0;
 }
 
 .kb-trophies-label {
@@ -81,8 +104,8 @@ input[type='file'].kb-trophies-field {
 }
 
 .kb-trophies-short {
-  width: 8em;
-  text-align: right;
+  width: 100%;
+  text-align: left;
 }
 
 .kb-trophies-panel .kb-button-row {
@@ -189,7 +212,12 @@ input[type='file'].kb-trophies-field {
 }
 
 /* A phone: one column, and each award is a plate of its own. */
-:where(:root[data-kb-layout='phone']) .kb-trophies-grid {
+:where(:root[data-kb-layout='phone']) .kb-trophies-row {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-trophies-grid,
+:where(:root[data-kb-layout='phone']) .kb-trophies-col {
   grid-template-columns: minmax(0, 1fr);
 }
 

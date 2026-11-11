@@ -72,7 +72,7 @@ export const PAGES: readonly Screen[] = [
   { name: 'The admin queue', board: '2026-11-05-backfill/37-admin-queue', path: '/admin/queue', asAdmin: true },
   /* The machine's admin page, read as an admin: the strip under its lead, the slots, one Save changes. */
   { name: 'The machine\'s admin page', board: '2026-11-07-booster-packs/05-admin', path: '/admin/machine', asAdmin: true },
-  /* The trophies and gear admin page, read as an admin: the strip, the three forms, the recent awards and the failures. Its board is still pending (the cosmetics plan, Task 11 builds the page; the manifest follows). */
+  /* The trophies and gear admin page, read as an admin: the strip, the three forms, the recent awards and the failures. Its board is held by e2e/boards/2026-11-04-cosmetics/05-admin.ts. */
   { name: 'The trophies admin page', board: '2026-11-04-cosmetics/05-admin', path: '/admin/trophies', asAdmin: true },
   /* Updates as an admin with Write an update open, and its preview of what everyone will see. */
   {
