@@ -40,7 +40,7 @@ import { ALERT_KINDS, type AlertKind } from '../../../engine/rules/alerts.ts';
 import type { Career } from '../../../engine/system/career.ts';
 import type {
   AdminQueue, Apology, Bar, BoardName, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesLog, QueuedMove, StaffCardPlay, StaffProfile,
-  Act, ActKind, Answer, AvatarUpload, Board, Bought, BoardSummary, CardEnded, ScoredAs, CardEvent, PackEvent, WrittenOnMine, CaughtPlay, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd,
+  Act, ActKind, Answer, AvatarUpload, Board, Bought, Donated, DriveGift, DriveGifts, BoardSummary, CardEnded, ScoredAs, CardEvent, PackEvent, WrittenOnMine, CaughtPlay, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd,
   Alert, ContactLink, EffectState, Tail, PostHit, SearchCursor, SearchPage, SearchQuery, Suggestions, ThreadHit, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, SeasonShown, TallyName, Update, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
   Tally, StandingPlace, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, TurnAsked, Wallet, WalletEvent,
   Boot, BoardPage, IndexPage, Opened, AdminSlot, Slot, SlotMove, Presence, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, LogPage,
@@ -245,6 +245,7 @@ function toThread(r: Row): ThreadSummary {
   };
 }
 
+const toDriveGifts = (v: unknown): DriveGift[] => (Array.isArray(v) ? (v as Row[]) : []).map((g): DriveGift => ({ id: String(g['id']), character: typeof g['character'] === 'string' ? g['character'] : null, name: typeof g['name'] === 'string' ? g['name'] : null, amount: num(g['amount']), at: String(g['at']) }));
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const isText = (v: unknown): v is string => typeof v === 'string';
 
@@ -857,15 +858,24 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
   interface Topic {
     readonly channel: ReturnType<SupabaseClient['channel']>;
     readonly listeners: Set<(event: string, payload: Row) => void>;
+    /** Each listener's own "the channel is joined" callback, for the ones that asked (a screen that reads what it missed before the join). */
+    readonly joiners: Map<(event: string, payload: Row) => void, () => void>;
+    /** The channel last reported SUBSCRIBED and has not reported anything else since: events are heard from now. */
+    joined: boolean;
     closed: boolean;
   }
   const topics = new Map<string, Topic>();
 
-  function join(name: string, events: readonly string[], listener: (event: string, payload: Row) => void): () => void {
+  /**
+   * `joined` is called when the channel is joined (Realtime's SUBSCRIBED) and again each time it rejoins after a drop; an event that
+   * landed while the channel was not joined is never replayed, so a listener that must not miss one reads again on it. A listener
+   * added to a topic that is already joined is told in a microtask, if it is still listening then.
+   */
+  function join(name: string, events: readonly string[], listener: (event: string, payload: Row) => void, joined?: () => void): () => void {
     let topic = topics.get(name);
     if (!topic) {
       const channel = client.channel(name, { config: { private: true } });
-      const made: Topic = { channel, listeners: new Set(), closed: false };
+      const made: Topic = { channel, listeners: new Set(), joiners: new Map(), joined: false, closed: false };
       for (const event of events) {
         channel.on('broadcast', { event }, (m: { payload?: unknown }) => {
           const payload = (m.payload ?? {}) as Row;
@@ -882,12 +892,21 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
         } catch {
           /* subscribed anyway: the server refuses a channel it does not authorize */
         }
-        if (!made.closed) channel.subscribe();
+        if (made.closed) return;
+        channel.subscribe((status: string) => {
+          made.joined = status === 'SUBSCRIBED';
+          if (made.joined) for (const told of [...made.joiners.values()]) told();
+        });
       })();
     }
     const mine = topic;
     mine.listeners.add(listener);
+    if (joined) {
+      mine.joiners.set(listener, joined);
+      if (mine.joined) queueMicrotask(() => { if (mine.joined && mine.joiners.get(listener) === joined) joined(); });
+    }
     return () => {
+      mine.joiners.delete(listener);
       if (!mine.listeners.delete(listener) || mine.listeners.size > 0) return;
       mine.closed = true;
       topics.delete(name);
@@ -1229,7 +1248,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       return r[0] ? toThread(r[0]) : null;
     },
     async acts(thread, fromSeq, toSeq) {
-      const rows = await list(() => client.from('acts_public').select('*').eq('thread', thread).gte('seq', fromSeq).lte('seq', toSeq).not('kind', 'in', '(edit,card)').order('seq', { ascending: true }));
+      const rows = await list(() => client.from('acts_public').select('*').eq('thread', thread).gte('seq', fromSeq).lte('seq', toSeq).not('kind', 'in', '(edit,card,donation)').order('seq', { ascending: true }));
       return rows.map(toAct);
     },
     async act(id) {
@@ -1341,6 +1360,21 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     /* A purchase names its slot and the price the screen showed; the database holds the slot and refuses a price that has since changed. */
     buyCard: (slot) => act({ action: 'buyCard', slot: slot.id, price: slot.price }, (r): Bought => ({ card: r['card'], balance: num(r['balance']), held: num(r['held']) })),
     buyPack: (slot) => act({ action: 'buyPack', slot: slot.id, price: slot.price }, (r): Opened => ({ pack: r['pack'], contents: Array.isArray(r['contents']) ? r['contents'].filter((c): c is string => typeof c === 'string') : [], balance: num(r['balance']) })),
+    /* A gift: the Edge Function's answer is the gift's projection and the giver's own balance after. */
+    donate: (character, drive, amount) => act({ action: 'donate', character, drive, amount }, (r): Donated => ({ act: toAct(r['gift'] as Row), balance: num(r['balance']) })),
+    async driveGifts(drives) {
+      /* drive_gifts holds a call to 100 drives and answers each in the order asked; a page's drives are one call. */
+      const wanted = [...new Set(drives)].filter(idOk).slice(0, 100);
+      if (wanted.length === 0) return [];
+      const r = await read(() => client.rpc('drive_gifts', { drives: wanted }));
+      return (Array.isArray(r.data) ? (r.data as Row[]) : []).map((d): DriveGifts => ({ id: String(d['drive']), total: num(d['total']), count: num(d['count']), gifts: toDriveGifts(d['gifts']) }));
+    },
+    async driveGiftsPage(drive, before) {
+      if (!idOk(drive) || !idOk(before.id)) return { gifts: [], more: false };
+      const r = await read(() => client.rpc('drive_gifts_page', { drive, before_at: before.at, before_id: before.id }));
+      const d = isObject(r.data) ? r.data : {};
+      return { gifts: toDriveGifts(d['gifts']), more: d['more'] === true };
+    },
     playCard: (card, character, target, config, message, reach, fromPost) => act({ action: 'playCard', card, character, target, config, message, ...beyond(reach, fromPost) }, toAct),
     setCard: (card, character, target, config, when) => act({ action: 'setCard', card, character, target, config, ...(when ? { when } : {}) }, toAct),
     takeBack: (character, set) => act({ action: 'takeBack', character, set }, toAct),
@@ -1926,7 +1960,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
         else if (event === 'tally') l.onTally?.(p['act'], (p['tally'] ?? {}) as Tally);
         else if (event === 'effect') l.onEffect?.(p['play'], p['saved_at']);
         else if (event === 'card_text') l.onText?.(p['play'], p['version']);
-      });
+      }, l.onJoined);
     },
     subscribeBoard(board, l) {
       return join(`board:${board}`, ['thread'], (_event, p) => {
@@ -1954,7 +1988,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
         if (event === 'news') l.onNews?.({ kind: p['kind'], sub: p['sub'] ?? null, act: p['act'] ?? null, at: p['at'] });
         else if (event === 'settled') l.onSettled?.({ id: String(p['id']), at: p['at'] });
         else l.onPlay?.(toAct(p));
-      });
+      }, l.onJoined);
     },
   };
   return api;

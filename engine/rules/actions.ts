@@ -68,6 +68,12 @@ const shownPrice = (r: Fields): number => {
   if (typeof v !== 'number' || !Number.isInteger(v) || v < 1 || v > 2_147_483_647) throw new Refused('price', 'is not a price the machine shows');
   return v;
 };
+/** The amount of a gift: a whole number of hundredths above 0 and within the database's integer; which amounts a drive offers is the database's to say. */
+const giftAmount = (r: Fields): number => {
+  const v = r.amount;
+  if (typeof v !== 'number' || !Number.isInteger(v) || v < 1 || v > 2_147_483_647) throw new Refused('amount', 'is not a whole amount of hundredths');
+  return v;
+};
 const optionalId = (r: Fields, field: string): string | null => (r[field] === undefined || r[field] === null ? null : id(r, field));
 /**
  * The characters a body puts words in the mouth of (the BBCode design, "The framed alert"): a list of ids the page found in its counterfeit quotes. The first five
@@ -242,6 +248,8 @@ const ACTIONS: Record<string, (r: Fields, instance: Instance) => Decided> = {
   // refuses, in plain words, a price that is no longer its own, so an admin's change between the look and the press is never charged unseen.
   buyCard: (r) => ({ rpc: 'buy_card', args: { slot: id(r, 'slot'), price: shownPrice(r) }, asService: true }),
   buyPack: (r) => ({ rpc: 'buy_pack', args: { slot: id(r, 'slot'), price: shownPrice(r) }, asService: true }),
+  // A gift to a drive (supabase/migrations/0153_drives.sql, donate): the service's call for the account, as a purchase is. The drive's open time, the amounts it offers, the split and the wallet are the database's to say.
+  donate: (r) => ({ rpc: 'donate', args: { through: id(r, 'character'), drive: id(r, 'drive'), amount: giftAmount(r) }, asService: true }),
   playCard: (r, instance) => ({
     rpc: 'play_card',
     // The message is the card's rules' to read (decidePlay), with the target they price.

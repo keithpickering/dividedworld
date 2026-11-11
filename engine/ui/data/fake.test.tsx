@@ -607,6 +607,62 @@ describe('live events', () => {
     await flush();
     expect(got).toEqual([]);
   });
+  test('a listener is told when it is joined, a microtask after it subscribes, and an event sent in the same tick is still heard', async () => {
+    const { fake, anaFace, thread } = world();
+    const told: string[] = [];
+    fake.subscribeThread(thread, { onJoined: () => told.push('thread'), onAct: (a) => told.push(`act ${a.seq}`) });
+    fake.subscribeReach({ onJoined: () => told.push('reach') });
+    expect(told).toEqual([]);
+    await fake.post(thread, anaFace, 'two', null);
+    await flush();
+    expect(told).toEqual(['thread', 'reach', 'act 2']);
+  });
+  test('with joins held an event reaches no listener, and after join() the listener has been told and hears the next one', async () => {
+    const { fake, anaFace, thread } = world();
+    const told: string[] = [];
+    const got: number[] = [];
+    fake.broadcast.holdJoins();
+    fake.subscribeThread(thread, { onJoined: () => told.push('thread'), onAct: (a) => got.push(a.seq!) });
+    fake.subscribeReach({ onJoined: () => told.push('reach') });
+    await flush();
+    expect(told).toEqual([]);
+    await fake.post(thread, anaFace, 'two', null);
+    await flush();
+    expect(got).toEqual([]);
+    expect(fake.broadcast.join()).toBe(2);
+    expect(told).toEqual(['thread', 'reach']);
+    await fake.post(thread, anaFace, 'three', null);
+    await flush();
+    expect(got).toEqual([3]);
+    // The hold ended with the join: the next listener joins on its own.
+    fake.subscribeReach({ onJoined: () => told.push('later') });
+    await flush();
+    expect(told).toEqual(['thread', 'reach', 'later']);
+  });
+  test('rejoin() tells every joined thread and reach listener again, and one that left or never joined is not told', async () => {
+    const { fake, thread } = world();
+    const told: string[] = [];
+    fake.subscribeThread(thread, { onJoined: () => told.push('thread') });
+    fake.subscribeReach({ onJoined: () => told.push('reach') });
+    fake.subscribeThread(thread, { onJoined: () => told.push('left') })();
+    await flush();
+    expect(told).toEqual(['thread', 'reach']);
+    fake.broadcast.rejoin();
+    expect(told).toEqual(['thread', 'reach', 'thread', 'reach']);
+    fake.broadcast.holdJoins();
+    fake.subscribeThread(thread, { onJoined: () => told.push('waiting') });
+    fake.broadcast.rejoin();
+    expect(told.filter((t) => t === 'waiting')).toEqual([]);
+  });
+  test('a listener that left while joins were held is never told', async () => {
+    const { fake, thread } = world();
+    const told = vi.fn();
+    fake.broadcast.holdJoins();
+    fake.subscribeThread(thread, { onJoined: told })();
+    expect(fake.broadcast.join()).toBe(0);
+    await flush();
+    expect(told).not.toHaveBeenCalled();
+  });
 });
 
 describe('reading', () => {
@@ -3248,6 +3304,135 @@ describe('a card that writes: its tails, as post_tails and the worker leave them
   test('more than 200 posts are refused as the server refuses them', async () => {
     const { fake } = world();
     await expect(Promise.resolve().then(() => fake.tails(Array.from({ length: 201 }, (_, i) => `p${i}`)))).rejects.toThrow('at most 200');
+  });
+});
+
+describe('a drive and its gifts, refused and split as the database does', () => {
+  /* A drive card: gifts of 0.10 and 0.25, of which The System keeps 20 percent, rounded up; a drive lasts 7 days from its latest play. */
+  const appeal = {
+    key: 'appeal', name: 'Appeal', alignment: 'sweet' as const, rarity: 'uncommon' as const, stack: 3,
+    drive: { lasts: { unit: 'day' as const, count: 7 }, gifts: ['driveGift1', 'driveGift2'], overhead: 'driveOverhead' },
+    playPrice: () => 0, validateConfig: (c: unknown) => ({ ok: true as const, value: c ?? {} }),
+    canApply: () => ({ ok: true as const, value: undefined }),
+  };
+  const drives: Instance = { ...instance, cards: [appeal], settings: { ...settings, economy: { driveGift1: 10, driveGift2: 25, driveOverhead: 20 } } };
+  function driveWorld(wallet = 100) {
+    const fake = createFake({ instance: drives });
+    const ana = fake.seed.account('ana');
+    const bo = fake.seed.account('bo');
+    const anaFace = fake.seed.character(ana, 'Ana Face', 'face');
+    const boFace = fake.seed.character(bo, 'Bo Face', 'face');
+    const { thread, act: opener } = fake.seed.thread('general', boFace, 'Hello', 'First post');
+    const drive = fake.seed.card(boFace, opener, 'appeal');
+    fake.seed.wallet(ana, wallet);
+    fake.seed.wallet(bo, 0);
+    fake.signInAs(ana);
+    return { fake, ana, bo, anaFace, boFace, thread, opener, drive };
+  }
+  const walletOf = async (fake: ReturnType<typeof driveWorld>['fake'], who: string) => { fake.signInAs(who); return (await fake.wallet()).balance; };
+
+  test('a gift takes the amount from the giver, sends the rest to the post\'s author, and answers with the Act and the giver\'s balance', async () => {
+    const { fake, ana, bo, anaFace, thread, drive } = driveWorld();
+    const given = must(await fake.donate(anaFace, drive, 25));
+    expect(given.balance).toBe(75);
+    expect(given.act).toMatchObject({ kind: 'donation', character: anaFace, thread, targetActId: drive, seq: null, payload: { amount: 25, overhead: 5, arrives: 20 } });
+    expect(await walletOf(fake, ana)).toBe(75);
+    expect(await walletOf(fake, bo)).toBe(20);
+    expect((await fake.log()).wallet[0]).toMatchObject({ kind: 'gift_in', change: 20, ref: given.act.id });
+    fake.signInAs(ana);
+    expect((await fake.log()).wallet[0]).toMatchObject({ kind: 'gift_out', change: -25, balanceAfter: 75, ref: given.act.id });
+    expect(must(await fake.donate(anaFace, drive, 10)).act.payload).toMatchObject({ amount: 10, overhead: 2, arrives: 8 });
+  });
+
+  test('a gift is refused in the database\'s words: a closed drive, an amount not offered, a short wallet, no drive, a ban', async () => {
+    const { fake, anaFace, opener, drive } = driveWorld(20);
+    expect(await fake.donate(anaFace, drive, 12)).toEqual(refused('a gift here is one of 0.10, 0.25'));
+    expect(await fake.donate(anaFace, drive, 25)).toEqual(refused('your wallet holds less than that'));
+    expect(await fake.donate(anaFace, opener, 10)).toEqual(refused('that is not a drive'));
+    expect(await fake.donate(anaFace, '99999999-9999-4999-8999-999999999999', 10)).toEqual(refused('that is not a drive'));
+    expect(await fake.donate(anaFace, drive, 0)).toMatchObject({ ok: false, field: 'amount' });
+    const until = fake.clock.now() + 24 * 3_600_000;
+    fake.seed.ban(anaFace, until, { infraction: fake.seed.infraction(fake.seed.visit(fake.seed.staff('mod', 'Mod Bot', 'mod'), opener)) });
+    expect(await fake.donate(anaFace, drive, 10)).toMatchObject({ ok: false, error: `this character is banned until ${new Date(until).toISOString()}; the ban ends by itself then` });
+    fake.clock.advance(8 * DAY);
+    expect(await fake.donate(anaFace, drive, 10)).toMatchObject({ ok: false });
+  });
+
+  test('a closed drive says so, and a later play keeps it open', async () => {
+    const { fake, anaFace, boFace, opener, drive } = driveWorld();
+    fake.clock.advance(6 * DAY);
+    fake.seed.card(boFace, opener, 'appeal');
+    fake.clock.advance(6 * DAY);
+    expect(must(await fake.donate(anaFace, drive, 10)).balance).toBe(90);
+    fake.clock.advance(2 * DAY);
+    expect(await fake.donate(anaFace, drive, 10)).toEqual(refused('this drive has ended'));
+  });
+
+  test('a staff post\'s gift is all overhead, and the giver is told no differently', async () => {
+    const { fake, ana, anaFace, thread } = driveWorld();
+    const staff = fake.seed.staff('boss', 'The Boss', 'boss');
+    const post = fake.seed.staffPost(staff, thread, 'Hello from the glass.');
+    const drive = fake.seed.card(staff, post, 'appeal');
+    const given = must(await fake.donate(anaFace, drive, 25));
+    expect(given.act.payload).toMatchObject({ amount: 25, overhead: 25, arrives: 0 });
+    expect(await walletOf(fake, ana)).toBe(75);
+  });
+
+  test('the answer is the same whether or not the author\'s wallet is full, and the overflow is lost without a word', async () => {
+    const a = driveWorld();
+    const b = driveWorld();
+    b.fake.seed.wallet(b.bo, 600);
+    const [x, y] = [must(await a.fake.donate(a.anaFace, a.drive, 25)), must(await b.fake.donate(b.anaFace, b.drive, 25))];
+    expect({ ...x.act.payload, balance: x.balance }).toEqual({ ...y.act.payload, balance: y.balance });
+    expect(await walletOf(b.fake, b.bo)).toBe(600);
+    expect((await b.fake.log()).wallet[0]).toMatchObject({ kind: 'gift_in', change: 0, overflow: 20 });
+  });
+
+  test('a gift to a drive on one\'s own post costs the overhead and is not refused', async () => {
+    const { fake, ana, bo, boFace, drive } = driveWorld();
+    fake.signInAs(bo);
+    fake.seed.wallet(bo, 100);
+    expect(must(await fake.donate(boFace, drive, 25)).balance).toBe(95);
+    expect(await walletOf(fake, bo)).toBe(95);
+    void ana;
+  });
+
+  test('the wall holds the totals, the count and the latest gifts, newest first, and pages by a keyset cursor', async () => {
+    const { fake, anaFace, drive } = driveWorld(10_000);
+    fake.seed.wallet(fake.seed.account('rich'), 0);
+    const ids: string[] = [];
+    for (let i = 0; i < 23; i += 1) { ids.push(must(await fake.donate(anaFace, drive, 10)).act.id); fake.clock.advance(MINUTE); }
+    const [wall, none] = await fake.driveGifts([drive, '99999999-9999-4999-8999-999999999999']);
+    expect(wall).toMatchObject({ id: drive, total: 230, count: 23 });
+    expect(wall!.gifts.map((g) => g.id)).toEqual(ids.slice(3).reverse());
+    expect(wall!.gifts[0]).toEqual({ id: ids[22], character: anaFace, name: 'Ana Face', amount: 10, at: expect.any(String) });
+    expect(none).toEqual({ id: '99999999-9999-4999-8999-999999999999', total: 0, count: 0, gifts: [] });
+    const last = wall!.gifts.at(-1)!;
+    const page = await fake.driveGiftsPage(drive, { at: last.at, id: last.id });
+    expect(page.gifts.map((g) => g.id)).toEqual(ids.slice(0, 3).reverse());
+    expect(page.more).toBe(false);
+    expect(page.gifts.every((g) => g.name === 'Ana Face')).toBe(true);
+    expect(JSON.stringify(wall)).not.toMatch(/overhead|arrives/);
+  });
+
+  test('a thread holding gifts lists the same posts, counts and unread marks as one without them', async () => {
+    const plain = driveWorld(1_000);
+    const gifted = driveWorld(1_000);
+    for (const w of [plain, gifted]) w.fake.seed.post(w.thread, w.boFace, 'A reply.');
+    for (let i = 0; i < 3; i += 1) must(await gifted.fake.donate(gifted.anaFace, gifted.drive, 10));
+    const read = async (w: typeof plain) => {
+      w.fake.signInAs(w.ana);
+      await w.fake.follow(w.thread, true);
+      const summary = (await w.fake.thread(w.thread))!;
+      const unread = (await w.fake.followed()).map((f) => ({ ...f, thread: 0, board: 0, newestAt: 0 }));
+      return {
+        summary: { ...summary, id: 0, board: 0, firstAct: 0, lastAct: 0, originActId: 0, lastAt: 0, createdAt: 0 },
+        posts: (await w.fake.acts(w.thread, 1, 50)).map((a) => [a.kind, a.seq]), unread,
+        counts: [await w.fake.characterCounts(w.boFace), await w.fake.characterStats([w.boFace])],
+        alerts: await w.fake.alertsUnread(),
+      };
+    };
+    expect(await read(gifted)).toEqual(await read(plain));
   });
 });
 

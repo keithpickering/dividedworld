@@ -9,7 +9,7 @@ import { NAMED_COLORS } from '../../../engine/bbcode/parse.ts';
 import { cards } from './index.ts';
 import { instance } from '../index.ts';
 import { publicityTour } from './publicity-tour.ts';
-import { atOrBelow, castOnPost, staffOffers, staffConfigOf, decidePlay, decideSet, decideUse, postTarget, type CardRules } from '../../../engine/rules/cards.ts';
+import { atOrBelow, castOnPost, giftSplit, openDrive, staffOffers, staffConfigOf, decidePlay, decideSet, decideUse, postTarget, type CardRules } from '../../../engine/rules/cards.ts';
 import { PEELS, autocorrect } from './autocorrect.ts';
 import { decide } from '../../../engine/rules/actions.ts';
 import { instanceProblems, withOverrides } from '../../../engine/rules/instance.ts';
@@ -23,7 +23,7 @@ const priceOf = (key: string): number => instance.machine.find((m) => 'card' in 
 const post = (length: number): CardTarget => ({ reach: 'post', act: 'p1', kind: 'post', length, text: '' });
 
 test('the instance sells its cards at their prices', () => {
-  assert.deepEqual(cards.map((c) => [c.key, c.alignment, priceOf(c.key)]), [['stick-around', 'sweet', 100], ['whoops', 'salty', 100], ['card-collector', 'salty', 150], ['hall-pass', 'sweet', 150], ['force-field', 'sweet', 150], ['publicity-tour', 'sweet', 150], ['heat-magnet', 'salty', 150], ['class-clown', 'pepperoni', 150], ['good-vibes', 'sweet', 150], ['glitter-bomb', 'pepperoni', 150], ['main-event', 'sweet', 300], ['feelin-fab', 'sweet', 20], ['autocorrect', 'pepperoni', 100], ['you-were-saying', 'pepperoni', 100], ['below-the-fold', 'salty', 100], ['mooch', 'salty', 150], ['toll', 'pepperoni', 150], ['4d-chess', 'salty', 150], ['off-day', 'salty', 500], ['sugar-coat', 'sweet', 300], ['hype-up', 'sweet', 150], ['last-word', 'salty', 150]]);
+  assert.deepEqual(cards.map((c) => [c.key, c.alignment, priceOf(c.key)]), [['stick-around', 'sweet', 100], ['whoops', 'salty', 100], ['card-collector', 'salty', 150], ['hall-pass', 'sweet', 150], ['force-field', 'sweet', 150], ['publicity-tour', 'sweet', 150], ['heat-magnet', 'salty', 150], ['class-clown', 'pepperoni', 150], ['good-vibes', 'sweet', 150], ['glitter-bomb', 'pepperoni', 150], ['main-event', 'sweet', 300], ['feelin-fab', 'sweet', 20], ['autocorrect', 'pepperoni', 100], ['you-were-saying', 'pepperoni', 100], ['below-the-fold', 'salty', 100], ['mooch', 'salty', 150], ['toll', 'pepperoni', 150], ['4d-chess', 'salty', 150], ['off-day', 'salty', 500], ['jimmy-wails', 'sweet', 200], ['sugar-coat', 'sweet', 300], ['hype-up', 'sweet', 150], ['last-word', 'salty', 150]]);
   assert.deepEqual(instanceProblems(instance), []);
   assert.deepEqual(instance.cards, cards);
 });
@@ -504,20 +504,20 @@ test('Autocorrect\'s phrase is its set phrase', () => {
   assert.equal(by('card-collector').setPhrase, undefined);
 });
 
-test('the Booster\'s hit pull gives uncommon 74, rare 24 and legendary 2, over the twenty-two cards', async () => {
+test('the Booster\'s hit pull gives uncommon 74, rare 24 and legendary 2, over the twenty-three cards', async () => {
   const { packOdds } = await import('../../../engine/rules/packs.ts');
   const booster = instance.packs.find((p) => p.key === 'booster')!;
   assert.deepEqual(booster.pulls.at(-1)!.weights, { uncommon: 74, rare: 24, legendary: 2 });
   const hit = packOdds(booster, cards, instance.settings).at(-1)!;
   const chance = new Map(hit.flatMap((r) => r.cards.map((c) => [c.card, c.chance] as const)));
-  // The Gimmicks and Part 6 joined the Booster by their rarity, as a new card does: thirteen uncommons share the 74 (You Were Saying? and Below the Fold are commons, and the hit pull takes none); Part 4's Hype-Up and Last Word are uncommons and Sugar Coat a rare, which shares the 24 with Main Event.
-  assert.equal(cards.length, 22);
+  // The Gimmicks, Part 6, Jimmy Wails and Part 4 joined the Booster by their rarity, as a new card does, with nothing listed in packs.ts: fourteen uncommons share the 74 (You Were Saying? and Below the Fold are commons, and the hit pull takes none); Sugar Coat is a second rare, which shares the 24 with Main Event.
+  assert.equal(cards.length, 23);
   assert.ok(Math.abs(chance.get('main-event')! - 0.12) < 1e-9, `Main Event at ${chance.get('main-event')}`);
   assert.ok(Math.abs(chance.get('sugar-coat')! - 0.12) < 1e-9, `Sugar Coat at ${chance.get('sugar-coat')}`);
   assert.ok(Math.abs(chance.get('off-day')! - 0.02) < 1e-9, `Off Day at ${chance.get('off-day')}`);
   const uncommons = cards.filter((c) => c.rarity === 'uncommon');
-  assert.equal(uncommons.length, 13);
-  for (const c of uncommons) assert.ok(Math.abs(chance.get(c.key)! - 0.74 / 13) < 1e-9, `${c.key} at ${chance.get(c.key)}`);
+  assert.equal(uncommons.length, 14);
+  for (const c of uncommons) assert.ok(Math.abs(chance.get(c.key)! - 0.74 / 14) < 1e-9, `${c.key} at ${chance.get(c.key)}`);
   assert.equal(chance.size, uncommons.length + 3);
 });
 
@@ -660,4 +660,64 @@ test('Hype-Up lands on a character, is refused on a post, is not cast on a post 
   assert.equal(hypeUp.canApply(post(10), []).ok, false);
   assert.equal(castOnPost(hypeUp), false, 'Card Collector cannot name it');
   assert.equal(staffOffers(hypeUp), false);
+});
+
+// Jimmy Wails (docs/plans/2026-11-03-jimmy-wails-plan.md, Task 6): a Sweet uncommon Cast on a post whose plays share a drive, each drawing a plate and needing a sob story.
+const jimmy = () => cards.find((c) => c.key === 'jimmy-wails')!;
+const hour = 3_600_000;
+const play = (act: string, drive: string, closes: number): import('../../../engine/rules/cards.ts').CardEffect => ({ card: 'jimmy-wails', act, drive, closes: new Date(closes).toISOString() });
+
+test('Jimmy Wails is a Sweet uncommon Cast on a post, sold for 2.00, with a drive of a week and four gifts', () => {
+  const j = jimmy();
+  assert.equal(j.name, 'Jimmy Wails');
+  assert.equal(j.alignment, 'sweet');
+  assert.equal(j.rarity, 'uncommon');
+  assert.equal(j.stack, 3);
+  assert.equal(j.play ?? 'cast', 'cast');
+  assert.deepEqual(j.reaches ?? ['post'], ['post']);
+  assert.equal(priceOf('jimmy-wails'), 200, 'the machine slot, onSale');
+  assert.equal(instance.machine.find((m) => 'card' in m.item && m.item.card === 'jimmy-wails')!.availability, 'onSale');
+  assert.deepEqual(j.draws, ['blue-shirt', 'close-up', 'dark-logo']);
+  assert.deepEqual(j.drive, { lasts: { unit: 'day', count: 7 }, gifts: ['jimmyWails.gift1', 'jimmyWails.gift2', 'jimmyWails.gift3', 'jimmyWails.gift4'], overhead: 'jimmyWails.overhead' });
+  assert.deepEqual(['jimmyWails.gift1', 'jimmyWails.gift2', 'jimmyWails.gift3', 'jimmyWails.gift4', 'jimmyWails.overhead'].map((k) => settings.economy[k]), [10, 25, 50, 100, 25]);
+  assert.equal(giftSplit(10, settings.economy['jimmyWails.overhead']!).overhead, 3, 'a 0.10 gift keeps 0.03 of overhead');
+  assert.equal(j.playPrice(settings, post(100), {}), 0, 'a play costs nothing beyond the machine\'s price');
+  assert.equal(j.needsMessage, 'an appeal needs a sob story');
+  assert.deepEqual(instanceProblems(instance), []);
+  assert.deepEqual((j.reads ?? []).map((r) => (typeof r === 'string' ? r : r.key)), ['jimmyWails.gift1', 'jimmyWails.gift2', 'jimmyWails.gift3', 'jimmyWails.gift4', 'jimmyWails.overhead']);
+});
+
+test('Jimmy Wails accepts an empty configuration and nothing else', () => {
+  const j = jimmy();
+  assert.deepEqual(j.validateConfig({}), { ok: true, value: {} });
+  assert.equal(j.validateConfig({ ink: 'red' }).ok, false);
+  assert.equal(j.validateConfig(undefined).ok, false);
+  assert.equal(j.validateConfig('x').ok, false);
+  assert.equal(j.validateConfig(null).ok, false);
+  assert.equal(staffConfigOf(j, () => 0) !== null, true, 'a Mod Bot plays it as {}');
+});
+
+test('Jimmy Wails: a fourth play on an open drive is refused, and one after the close lands as the opening of another', () => {
+  const j = jimmy();
+  const now = new Date();
+  const open = (n: number) => Array.from({ length: n }, (_, i) => play(`a${i}`, 'a0', now.getTime() + 7 * 24 * hour));
+  assert.equal(decidePlay(j, settings, post(10), open(2), {}, 'Please.', { now }).ok, true, 'a third joins');
+  assert.deepEqual(decidePlay(j, settings, post(10), open(3), {}, 'Please.', { now }), { ok: false, why: 'this post\'s drive already carries 3 appeals' }, 'a fourth is refused, in the database\'s words');
+  const closed = Array.from({ length: 3 }, (_, i) => play(`c${i}`, 'c0', now.getTime() - hour));
+  assert.equal(decidePlay(j, settings, post(10), closed, {}, 'Please.', { now }).ok, true, 'a play after the close opens another drive');
+  assert.equal(decidePlay(j, settings, post(10), [...closed, ...open(2)], {}, 'Please.', { now }).ok, true, 'earlier closed drives do not count against the open one');
+  assert.equal(openDrive([...closed, ...open(3)], 'jimmy-wails', now)?.plays.length, 3);
+  // The landing's other refusals are the usual ones: a post only, a post's own kind.
+  assert.match((decidePlay(j, settings, { reach: 'thread', act: 't', title: 'x' } as never, [], {}, 'Please.', { now }) as { why: string }).why, /lands on a post/);
+});
+
+test('Jimmy Wails: a blank message is refused, in the card\'s words', () => {
+  const j = jimmy();
+  for (const blank of ['', '   ', undefined, null]) assert.deepEqual(decidePlay(j, settings, post(10), [], {}, blank), { ok: false, why: 'an appeal needs a sob story' }, String(blank));
+  assert.equal(decidePlay(j, settings, post(10), [], {}, 'My cat needs a sweater.').ok, true);
+});
+
+test('Jimmy Wails cannot be set face down: it draws, runs a drive and needs a message, so it is cast now and face up (issue #446)', () => {
+  const j = jimmy();
+  assert.deepEqual(decideSet(j, settings, on('a post'), [], {}, cards), { ok: false, why: 'Jimmy Wails is cast face up and never set face down' });
 });

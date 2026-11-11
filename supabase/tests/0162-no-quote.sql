@@ -1,4 +1,4 @@
--- A post may carry No quote (supabase/migrations/0153_card_notes_part_4.sql; docs/plans/2026-11-11-card-notes-part-4-plan.md, Task 3, sections 3 to 7; engine/rules/cards.ts, noQuoteWords, decideUse and decideSet).
+-- A post may carry No quote (supabase/migrations/0158_card_notes_part_4.sql; docs/plans/2026-11-11-card-notes-part-4-plan.md, Task 3, sections 3 to 7; engine/rules/cards.ts, noQuoteWords, decideUse and decideSet).
 -- While a use card whose gimmick is `noQuote` is live on a post, a post, a thread's first post, a spin or an edit that quotes it is refused before it is written, in the same words for every writer (the quoted
 -- post's author and a staff character included): its quoting target, or any real quote of it in the body at any depth. A counterfeit quote, copied words and a spin or an edit OF the post are not quotes. An edit
 -- is refused only for a quote it adds. When the play's time has passed, or an admin has ended it, quotes are written again. The card is refused on a post with a live back and no card is set face down on a post with

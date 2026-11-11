@@ -83,6 +83,14 @@ test('a play on a post hands play_card the version it was decided against, and i
   assert.deepEqual(calls.at(-1), `service:play_card:${JSON.stringify({ card: 'whoops', through: id, target, config: { color: 'red' }, message: '', who: whoami, price: 0, reach: 'post', from_post: null, version: edit })}`);
 });
 
+test('a card that needs a message, played with none, is refused on the message field, and never written', async () => {
+  const pleading = { ...instance, cards: instance.cards.map((c) => (c.key === 'whoops' ? { ...c, needsMessage: 'say why' } : c)) };
+  const { dbs, calls } = pair({ whoami, card_target_reach: { reach: 'post', act: target, kind: 'post', length: 10, body: 'x'.repeat(10), effects: [] } });
+  const out = await runAction(dbs, pleading, { action: 'playCard', card: 'whoops', character: id, target, config: { color: 'red' }, message: '  ' });
+  assert.deepEqual({ status: out.status, body: out.body }, { status: 400, body: { field: 'message', error: 'say why' } });
+  assert.ok(!calls.some((c) => c.startsWith('service:play_card:')), calls.join('\n'));
+});
+
 test('a play whose message is too long is refused by its field, and never written', async () => {
   const { dbs, calls } = pair({ whoami, card_target_reach: { reach: 'post', act: target, kind: 'post', length: 10, body: 'x'.repeat(10), effects: [] } });
   const out = await runAction(dbs, instance, { action: 'playCard', card: 'whoops', character: id, target, config: { color: 'red' }, message: 'x'.repeat(201) });
@@ -924,6 +932,17 @@ test('the kick: a refused play or edit kicks nothing, and a kick that throws is 
     await handleAction({ dbs, instance: kicking, body: { action: 'edit', post: target, character: id, body: 'y' }, send: async () => {}, drain: async () => {}, after: (w) => { later = w; }, write: async () => { throw new Error('endpoint down'); } });
     await later();
   } finally { console.error = was; }
+});
+
+test('a gift is the service\'s, for whoever the session is, and only the gift\'s projection is broadcast, never a balance', async () => {
+  const thread = '66666666-6666-4666-8666-666666666666';
+  const gift = { id: '77777777-7777-4777-8777-777777777777', kind: 'donation', thread, character: id, targetActId: target, seq: null, payload: { amount: 25 } };
+  const { dbs, calls } = pair({ whoami, donate: { gift, balance: 475 } });
+  const out = await runAction(dbs, instance, { action: 'donate', character: id, drive: target, amount: 25 });
+  assert.ok(calls.includes(`service:donate:${JSON.stringify({ through: id, drive: target, amount: 25, who: whoami })}`), calls.join('\n'));
+  assert.deepEqual(out.body, { gift, balance: 475 }, 'the giver is answered with the gift and their own balance');
+  assert.deepEqual(out.broadcasts, [{ topic: `thread:${thread}`, event: 'act', payload: gift }]);
+  assert.doesNotMatch(JSON.stringify(out.broadcasts), /balance|475/, 'no wallet or balance is sent live');
 });
 
 // Task 6 (card notes, Part 6): what a skim play, a ride set and a scored-as play send play_card and set_card, and how the server's refusals of them come back.

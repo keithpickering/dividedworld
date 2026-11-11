@@ -28,7 +28,7 @@
 -- runs only for a body that holds `[quote=`, which is the writer's own text, so its timing says nothing of anyone else. place_cast and place_set refuse on public facts alone (a back and a face-up play are both drawn for everyone),
 -- doing the same reads whatever card is face down. Hype-Up's boost is applied in the settlement, which shows only each settled window's sums, and in the target's own estimate, from a play that is a public Act on the target's character;
 -- the caster is told nothing that depends on what the target earns, on its class or on who owns it, and a cast on one's own other mask is not refused. A pool reply to a stopped post is a plain reply for a public reason.
--- Each function below is copied from its latest definition (0142, 0144, 0151), changing only what is named at it; lock order and `set search_path` are as written there. post(), edit_post, spin_written, start_thread, lock_for_quote,
+-- Each function below is copied from its latest definition (0142, 0144, 0151, and 0153_drives for card_kinds_problem, place_cast, settlement_input and estimate_input, which keep its drive and needs-message words), changing only what is named at it; lock order and `set search_path` are as written there. post(), edit_post, spin_written, start_thread, lock_for_quote,
 -- spring_facts, spring_traps and lay_sprung are not replaced: the guard takes no lock, and a quote already past it when a Last Word commits lands (the race the plan accepts).
 
 -- ===================================================================================== 1. the catalog ====
@@ -39,8 +39,8 @@ alter table card_kinds add constraint card_kinds_gimmick_kind check (gimmick is 
 -- A no-quote stops quotes of the post it is on: a card that has one reaches a post alone.
 alter table card_kinds add constraint card_kinds_no_quote_post check (gimmick ->> 'kind' is distinct from 'noQuote' or reaches = '{post}');
 
--- card_kinds_problem (0151), holding instanceProblems's three new rules in the engine's words: a gimmick on a card that is not a use card unless it is a cast card on a character alone with an earn, the kind list with noQuote,
--- and a no-quote card that reaches anything but a post. Everything else as 0151 wrote it.
+-- card_kinds_problem (0153_drives), holding instanceProblems's three new rules in the engine's words: a gimmick on a card that is not a use card unless it is a cast card on a character alone with an earn, the kind list with noQuote,
+-- and a no-quote card that reaches anything but a post. Everything else as 0153_drives wrote it (its drive and needs-message words included).
 create or replace function card_kinds_problem(cards jsonb) returns text
 language sql stable set search_path = public, pg_temp as $$
   with c as (
@@ -49,6 +49,22 @@ language sql stable set search_path = public, pg_temp as $$
       case when jsonb_typeof(e -> 'reaches') = 'array' then exists (select 1 from jsonb_array_elements_text(e -> 'reaches') r where r <> 'post') else false end as beyond,
       coalesce(e -> 'reaches' = '["character"]'::jsonb, false) as character_alone
     from jsonb_array_elements(coalesce(cards, '[]')) e
+  ), eco as (
+    -- The economy and the wallet's cap as the settings hold them now: a drive's gifts and overhead are economy numbers, read when the seed is checked and again at each gift.
+    select coalesce((select s.value from settings s where s.key = 'economy' and jsonb_typeof(s.value) = 'object'), '{}'::jsonb) as v,
+           (select (s.value #>> '{}')::numeric from settings s where s.key = 'walletCap') as cap
+  ), dv as (
+    select c.key, c.e, c.e -> 'drive' as d, format('card "%s" has a drive', c.key) as who from c where c.e ? 'drive'
+  ), dobj as (
+    select dv.*, coalesce(jsonb_typeof(dv.d -> 'lasts') = 'object' and dv.d #>> '{lasts,unit}' in ('hour', 'day', 'week')
+             and case when jsonb_typeof(dv.d #> '{lasts,count}') = 'number'
+                      then (dv.d #>> '{lasts,count}')::numeric between 1 and 1000 and (dv.d #>> '{lasts,count}')::numeric = trunc((dv.d #>> '{lasts,count}')::numeric)
+                      else false end, false) as span_ok
+    from dv where jsonb_typeof(dv.d) = 'object'
+  ), gifts as (
+    select dobj.key, dobj.who, g.v, g.n from dobj, jsonb_array_elements(case when jsonb_typeof(dobj.d -> 'gifts') = 'array' then dobj.d -> 'gifts' else '[]'::jsonb end) with ordinality g(v, n)
+  ), draws as (
+    select c.key, d.v, d.n from c, jsonb_array_elements(case when jsonb_typeof(c.e -> 'draws') = 'array' then c.e -> 'draws' else '[]'::jsonb end) with ordinality d(v, n)
   )
   select string_agg(why, '; ' order by key, n) from (
     select c.key, w.n, w.why from c, unnest(array[
@@ -114,6 +130,64 @@ language sql stable set search_path = public, pg_temp as $$
       case when c.e -> 'scoresAs' = 'true'::jsonb and c.play <> 'cast' then format('card "%s" scores as a class, and only a cast card does', c.key) end,
       case when c.e -> 'scoresAs' = 'true'::jsonb and not c.character_alone then format('card "%s" scores as a class, and a card that does reaches a character alone', c.key) end
     ]) with ordinality w(why, n)
+    -- engine/rules/instance.ts, drawProblems: a draw is a list of distinct keys the server can store on a play.
+    union all
+    select c.key, 101, format('card "%s" draws %s; draws is a list of keys', c.key, compact_json(c.e -> 'draws')) from c where c.e ? 'draws' and jsonb_typeof(c.e -> 'draws') <> 'array'
+    union all
+    select c.key, 102, format('card "%s" draws nothing; a card with a draw lists at least one key, or leaves draws out', c.key) from c
+    where jsonb_typeof(c.e -> 'draws') = 'array' and jsonb_array_length(c.e -> 'draws') = 0
+    union all
+    select d.key, 110 + d.n, format('card "%s" draws %s; a draw is lowercase letters, digits and hyphens, 1 to 40', d.key, compact_json(d.v)) from draws d
+    where jsonb_typeof(d.v) <> 'string' or d.v #>> '{}' !~ '^[a-z0-9-]{1,40}$'
+    union all
+    select d.key, 200 + min(d.n), format('card "%s" draws "%s" twice', d.key, d.v #>> '{}') from draws d
+    where jsonb_typeof(d.v) = 'string' group by d.key, d.v #>> '{}' having count(*) > 1
+    -- engine/rules/instance.ts, driveProblems: a Cast reaching a post alone, a span of at most 30 days, and gifts and an overhead that are economy numbers in range.
+    union all
+    select dv.key, 300, dv.who || ', and only a cast card does' from dv where coalesce(dv.e ->> 'play', 'cast') <> 'cast'
+    union all
+    select dv.key, 301, dv.who || ', and a drive card reaches a post alone' from dv where coalesce(dv.e -> 'reaches', '["post"]'::jsonb) is distinct from '["post"]'::jsonb
+    union all
+    select dv.key, 302, dv.who || ' that is not an object of lasts, gifts and overhead' from dv where jsonb_typeof(dv.d) <> 'object'
+    union all
+    select o.key, 303, format('%s that lasts %s; it must be a span: a unit of hour, day or week and a whole count from 1 to 1000', o.who, coalesce(compact_json(o.d -> 'lasts'), 'undefined')) from dobj o where not o.span_ok
+    union all
+    -- A drive's unit is never a month (span_interval counts a calendar month, the engine's spanMs thirty days), so the bound is the same in both.
+    select o.key, 303, format('%s that lasts %s, longer than the 30 days a drive may', o.who, span_words(o.d -> 'lasts')) from dobj o where o.span_ok and span_interval(o.d -> 'lasts') > interval '30 days'
+    union all
+    select o.key, 304, o.who || ' with no gift amounts (gifts); a drive lists the economy keys of at least one' from dobj o
+    where jsonb_typeof(o.d -> 'gifts') is distinct from 'array' or jsonb_array_length(o.d -> 'gifts') = 0
+    union all
+    select g.key, 350 + min(g.n), format('%s that lists gift "%s" twice', min(g.who), g.v #>> '{}') from gifts g
+    where jsonb_typeof(g.v) = 'string' group by g.key, g.v #>> '{}' having count(*) > 1
+    union all
+    select g.key, 400 + g.n, format('%s gift %s, which is not a number the economy holds', g.who, compact_json(g.v)) from gifts g, eco
+    where jsonb_typeof(g.v) <> 'string' or jsonb_typeof(eco.v -> (g.v #>> '{}')) is distinct from 'number'
+    union all
+    select g.key, 400 + g.n, format('%s gift %s of %s; a gift is a positive whole number of hundredths, at most the wallet''s cap (%s)', g.who, compact_json(g.v), eco.v ->> (g.v #>> '{}'), eco.cap)
+    from gifts g, eco
+    where jsonb_typeof(g.v) = 'string' and jsonb_typeof(eco.v -> (g.v #>> '{}')) = 'number'
+      and ((eco.v ->> (g.v #>> '{}'))::numeric <> trunc((eco.v ->> (g.v #>> '{}'))::numeric) or (eco.v ->> (g.v #>> '{}'))::numeric < 1 or (eco.v ->> (g.v #>> '{}'))::numeric > eco.cap)
+    union all
+    select o.key, 500, format('%s overhead %s, which is not a number the economy holds', o.who, coalesce(compact_json(o.d -> 'overhead'), 'undefined')) from dobj o, eco
+    where jsonb_typeof(o.d -> 'overhead') is distinct from 'string' or jsonb_typeof(eco.v -> (o.d ->> 'overhead')) is distinct from 'number'
+    union all
+    select o.key, 500, format('%s overhead of %s; it is a whole number from 0 to 100', o.who, eco.v ->> (o.d ->> 'overhead')) from dobj o, eco
+    where jsonb_typeof(o.d -> 'overhead') = 'string' and jsonb_typeof(eco.v -> (o.d ->> 'overhead')) = 'number'
+      and ((eco.v ->> (o.d ->> 'overhead'))::numeric <> trunc((eco.v ->> (o.d ->> 'overhead'))::numeric) or (eco.v ->> (o.d ->> 'overhead'))::numeric < 0 or (eco.v ->> (o.d ->> 'overhead'))::numeric > 100)
+    -- engine/rules/instance.ts, needsMessageProblems: the words a blank message is refused with are a sentence, and only a cast or a use carries a message to need.
+    union all
+    select c.key, 600, format('card "%s" needsMessage %s; it is the sentence a blank message is refused with', c.key, compact_json(c.e -> 'needsMessage')) from c
+    where c.e ? 'needsMessage' and jsonb_typeof(c.e -> 'needsMessage') <> 'string'
+    union all
+    select c.key, 601, format('card "%s" needs a message, and its refusal is empty', c.key) from c
+    where jsonb_typeof(c.e -> 'needsMessage') = 'string' and btrim(c.e ->> 'needsMessage') = ''
+    union all
+    select c.key, 602, format('card "%s" needsMessage is longer than 200 characters', c.key) from c
+    where jsonb_typeof(c.e -> 'needsMessage') = 'string' and char_length(c.e ->> 'needsMessage') > 200
+    union all
+    select c.key, 603, format('card "%s" needs a message, and only a cast or a use carries one', c.key) from c
+    where jsonb_typeof(c.e -> 'needsMessage') = 'string' and c.play = 'set'
   ) p where why is not null
 $$;
 
@@ -573,10 +647,10 @@ revoke execute on function write_staff_act(text, text, uuid, uuid, jsonb) from p
 grant execute on function write_staff_act(text, text, uuid, uuid, jsonb) to service_role;
 
 -- ===================================================================================== 6. place_cast ====
--- place_cast (0151), with three additions. (a) A staff character's cast card that carries a gimmick is refused with a plain exception (no refusal hint): the settlement leaves a staff character's Acts out, so a cast earn it
+-- place_cast (0153_drives), with three additions. (a) A staff character's cast card that carries a gimmick is refused with a plain exception (no refusal hint): the settlement leaves a staff character's Acts out, so a cast earn it
 -- played would claim a boost that is never paid. (b) At post reach, after the own-post check, a use card whose gimmick is a noQuote is refused where the post holds a live back (the predicate place_set uses), in decideUse's words. The
 -- post's row is already locked, and place_set takes the same row first, so the two are laid one at a time. (c) At character reach the use-card check is unchanged: a cast card that carries an earn passes it and lands on any
--- character, by the stack count that follows. Everything else, the lock order included, as 0151 wrote it. Callable by no API role, as before.
+-- character, by the stack count that follows. Everything else, the lock order included, as 0153_drives wrote it (its drive plays and needs-message refusal included). Callable by no API role, as before.
 
 create or replace function place_cast(caster uuid, card text, target uuid, config jsonb, message text, reach text, from_post uuid, payer uuid, price integer, marker jsonb default '{}')
 returns jsonb
@@ -598,6 +672,8 @@ declare
   where_words text;
   target_name text;
   staff_caster boolean;
+  drive_id uuid;
+  drive_up integer;
   quad text;
   w_why text;
   w_opens timestamptz;
@@ -667,6 +743,19 @@ begin
       into up, layer
     from acts k where k.kind = 'card' and k.target_act_id = target and k.payload ->> 'card' = card and not (k.payload ? 'caught')
       and coalesce(k.payload ->> 'reach', 'post') = 'post';
+    -- A drive card's stack is counted in the post's open drive only: the drive whose latest play, plus the card's `lasts`, is still ahead. A play joins it, or opens a drive of its own id.
+    if kind_of.drive is not null then
+      select d.drive, count(*) into drive_id, drive_up from drive_plays(target, card) d
+      group by d.drive having max(d.created_at) + span_interval(kind_of.drive -> 'lasts') > now()
+      order by max(d.created_at) desc limit 1;
+      if drive_id is null then
+        drive_id := written;
+        up := 0;
+      else
+        up := drive_up;
+        if up >= kind_of.stack then raise exception 'this post''s drive already carries % appeals', kind_of.stack using hint = 'kayfabb.refusal', errcode = '23505'; end if;
+      end if;
+    end if;
     if kind_of.skim is not null then
       -- A skim card's stack is one live play of it per quadrant on the post (the plays still up, as above), whatever the card's `stack` says.
       select count(*) into up from acts k
@@ -754,15 +843,21 @@ begin
     if kind_of.scores_as then ends := w_closes; end if;
   end if;
 
+  -- A card that needs words refuses a blank message in its own words, after the landing's refusals as the engine says them (decided, engine/rules/cards.ts); the message is trimmed as casterMessage trims it.
+  if kind_of.needs_message is not null and btrim(said, E' \t\r\n\f\v') = '' then
+    raise exception '%', kind_of.needs_message using hint = 'kayfabb.refusal', errcode = '22023';
+  end if;
   begin
     insert into acts (id, character, kind, thread, target_act_id, payload)
     values (written, caster, 'card', in_thread, on_post, jsonb_build_object('card', card, 'message', said,
-      'config', case when kind_of.seeded then coalesce(config, '{}') - 'seed' else coalesce(config, '{}') end)
+      'config', (case when kind_of.seeded then coalesce(config, '{}') - 'seed' else coalesce(config, '{}') end) - case when kind_of.draws is not null then array['drawn'] else '{}'::text[] end)
       || case when reach <> 'post' then jsonb_build_object('reach', reach, reach, target, 'ends', ends, 'targetName', target_name)
               when sprung is not null and not rode then jsonb_build_object('caught', sprung -> 'payload' ->> 'set')
               when rode then jsonb_build_object('layer', layer, 'rode', sprung -> 'payload' ->> 'set') else jsonb_build_object('layer', layer) end
       || case when kind_of.scores_as then jsonb_build_object('starts', w_opens) else '{}'::jsonb end
       || case when kind_of.seeded then jsonb_build_object('seed', floor(random() * 2147483648)::bigint) else '{}'::jsonb end
+      || case when kind_of.draws is not null then jsonb_build_object('drawn', kind_of.draws[1 + floor(random() * cardinality(kind_of.draws))::integer]) else '{}'::jsonb end
+      || case when reach = 'post' and drive_id is not null then jsonb_build_object('drive', drive_id) else '{}'::jsonb end
       || case when reach = 'post' and (kind_of.play = 'use' or kind_of.skim is not null) and kind_of.lasts is not null then jsonb_build_object('ends', now() + kind_of.lasts) else '{}'::jsonb end
       || coalesce(marker, '{}'::jsonb));
   exception when unique_violation then
@@ -914,8 +1009,8 @@ end $$;
 revoke execute on function place_set(uuid, text, uuid, jsonb, uuid, integer, text, text, text, uuid[], boolean) from public, anon, authenticated, service_role;
 
 -- ===================================================================================== 8. settlement_input and estimate_input ====
--- settlement_input (0151), `ends` sent for a card Act whose kind holds a gimmick (in place of a use card alone), and earn_up finding the Earn plays of earlier windows among every card that has an earn, not use cards alone
--- (its filter and its longest-`lasts` subquery). Everything else as 0151 wrote it.
+-- settlement_input (0153_drives), `ends` sent for a card Act whose kind holds a gimmick (in place of a use card alone), and earn_up finding the Earn plays of earlier windows among every card that has an earn, not use cards alone
+-- (its filter and its longest-`lasts` subquery). Everything else as 0153_drives wrote it.
 
 create or replace function settlement_input(window_start timestamptz, window_end timestamptz) returns jsonb
 language sql stable security definer set search_path = public, pg_temp as $$
@@ -934,9 +1029,12 @@ language sql stable security definer set search_path = public, pg_temp as $$
       and (k.payload ->> 'ends')::timestamptz > window_start and k.id not in (select id from ended)),
   -- The System's own Acts (the reveal) are no character's, and nobody's to settle; a staff character's
   -- are The System's too (0043): staff earn nothing, and a card on a staff Act is nobody's to score.
-  win_acts as (select * from acts a where a.created_at >= window_start and a.created_at < window_end and a.character is not null
+  -- A gift (a donation) is no one's to settle (design, section 5): it earns nothing, is never counted as posting or in the halving, and is no one's reaction to count. It is left out here, of the window's Acts and of
+  -- the reactions to one; `all_acts` leaves it out once more, since an Act a reaction touched is read whatever its kind.
+  win_acts as (select * from acts a where a.created_at >= window_start and a.created_at < window_end and a.character is not null and a.kind <> 'donation'
                and not is_staff_side(a.character, a.kind, a.target_act_id) and a.id not in (select id from ended)),
-  win_reactions as (select * from reactions r where r.created_at >= window_start and r.created_at < window_end and r.act not in (select id from ended)),
+  win_reactions as (select * from reactions r where r.created_at >= window_start and r.created_at < window_end and r.act not in (select id from ended)
+                    and not exists (select 1 from acts d where d.id = r.act and d.kind = 'donation')),
   reacted as (select distinct act from win_reactions),
   earlier_reactions as (select r.* from reactions r join reacted x on x.act = r.act where r.created_at < window_start),
   -- Every skim play made before the window and still up in it (a play inside it is a window Act already), as earn_up carries Earn plays: live is not ended by an admin, not caught, and ending after the window's start;
@@ -980,7 +1078,7 @@ language sql stable security definer set search_path = public, pg_temp as $$
     union select id from skim_up union select post from skim_up
     union select id from ride_springs union select id from ride_gimmicks union select post from rc
   ),
-  all_acts as (select a.* from acts a join touched t on t.id = a.id where a.created_at < window_end and a.character is not null
+  all_acts as (select a.* from acts a join touched t on t.id = a.id where a.created_at < window_end and a.character is not null and a.kind <> 'donation'
                and not is_staff_side(a.character, a.kind, a.target_act_id) and a.id not in (select id from ended)),
   -- A staff post a window's card landed on (0054): named with its reactions, so the card is judged against it, and paid nobody.
   unscored as (select a.* from acts a join characters c on c.id = a.character
@@ -1029,9 +1127,9 @@ language sql stable security definer set search_path = public, pg_temp as $$
       from paid_votes p join reacted r on r.act = p.act), '[]'))
 $$;
 
--- estimate_input (0151), the same two changes, and in earn_up the creation-time bound is the window's end in place of its start, so an Earn another player cast on the caller's character inside the open window is in the
+-- estimate_input (0153_drives), the same two changes, and in earn_up the creation-time bound is the window's end in place of its start, so an Earn another player cast on the caller's character inside the open window is in the
 -- caller's estimate (a window Act of the caller's own already is; `touched` is a union, so nothing is counted twice). The play is a public Act on the caller's own character, the same fact the settlement reads. Everything
--- else as 0151 wrote it.
+-- else as 0153_drives wrote it.
 
 create or replace function estimate_input(account uuid, until timestamptz default now()) returns jsonb
 language plpgsql stable security definer set search_path = public, pg_temp as $$
@@ -1070,7 +1168,7 @@ begin
       and (k.payload ->> 'ends')::timestamptz > window_start and k.id not in (select id from ended)
       and case when coalesce(k.payload ->> 'reach', 'post') = 'character' then (k.payload ->> 'character')::uuid in (select id from mine)
                else exists (select 1 from acts p join mine m on m.id = p.character where p.id = k.target_act_id) end),
-  win_acts as (select a.* from acts a join mine m on m.id = a.character where a.created_at >= window_start and a.created_at < window_end
+  win_acts as (select a.* from acts a join mine m on m.id = a.character where a.created_at >= window_start and a.created_at < window_end and a.kind <> 'donation'
                and a.id not in (select id from ended)),
   -- (Task 5) The caller's skim plays made before the window and still up in it, by acts_card_plays (the caller's own plays), with their posts: the posts' reactions are read, as settlement_input reads them.
   skim_up as (
@@ -1136,7 +1234,7 @@ begin
           where a.kind in ('card', 'spin', 'spring') and a.target_act_id is not null and coalesce(a.payload ->> 'reach', 'post') = 'post'
   ),
   -- As settlement_input (0004, as 0043 changed it): a staff character's Acts, and a card on one, are named and pay nobody.
-  all_acts as (select a.* from acts a join touched t on t.id = a.id where a.created_at < window_end and a.character is not null
+  all_acts as (select a.* from acts a join touched t on t.id = a.id where a.created_at < window_end and a.character is not null and a.kind <> 'donation'
                and not is_staff_side(a.character, a.kind, a.target_act_id) and a.id not in (select id from ended)),
   -- A staff post a window's card of the caller's landed on, as settlement_input names it (0054).
   unscored as (select a.* from acts a join characters c on c.id = a.character join touched t on t.id = a.id
@@ -1159,7 +1257,7 @@ begin
   all_reactions as (
     select r.* from reactions r join voted v on v.id = r.act
     join acts a on a.id = r.act join characters c on c.id = a.character
-    where r.created_at < window_end and not (r.reactor_account = account and c.owner = account) and r.act not in (select id from ended)
+    where r.created_at < window_end and not (r.reactor_account = account and c.owner = account) and r.act not in (select id from ended) and a.kind <> 'donation'
       and (not is_staff_side(a.character, a.kind, a.target_act_id) or a.id in (select id from unscored))
   ),
   -- Each reaction's voter and mask as the engine reads them: the caller's own, as the caller's;

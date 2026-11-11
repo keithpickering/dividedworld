@@ -193,7 +193,7 @@ test('an instance exported and imported into a fresh database is the same instan
             'starts', to_char(now() + interval '1 day', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'), 'ends', to_char(now() + interval '2 days', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'))) returning id into score_play;
         insert into play_reach (play, reach, character, ends_at) values (score_play, 'character', b, now() + interval '2 days');
       end;
-      -- The card notes, Part 4 (0153): a cast Earn on a character alone, with a group and a time up, played on Bob's character; and a No quote on a post, played after Bob
+      -- The card notes, Part 4 (0158): a cast Earn on a character alone, with a group and a time up, played on Bob's character; and a No quote on a post, played after Bob
       -- quotes that post. The quote is written first, since a quote of a post under a live No quote is refused (acts_quote_guard); the import writes it as a replica.
       insert into card_kinds (key, name, alignment, rarity, play, trap, reaches, lasts, gimmick) values
         ('expearn', 'Exported Earn', 'sweet', 'uncommon', 'cast', null, '{character}', interval '36 hours', '{"kind": "earn", "quadrants": ["excitedPositive", "calmPositive"], "by": 0.1, "group": "publicity"}'),
@@ -380,6 +380,20 @@ test('an instance exported and imported into a fresh database is the same instan
         insert into acts (character, kind, thread, payload) values (null, 'reveal', old_thread, '{"season": 0, "body": "Every mask.", "characters": 0}') returning id into old_head;
         update seasons set reveal_act = old_head where number = (select max(number) - 1 from seasons);
       end;
+      -- A drive and its gifts (0153): a drive card with a draw and a blank-message refusal, Bob's play of it on a post of Ann's (which opens the drive and draws a key), a gift from Bob
+      -- that overflows Ann's full wallet, and a gift from Ann to her own mask, so donation Acts and the gift_out and gift_in events, an overflow among them, are carried across.
+      declare dp uuid; dplay uuid;
+      begin
+        insert into settings (key, value) values ('economy', '{"exp.g1": 10, "exp.g2": 25, "exp.over": 25}') on conflict (key) do update set value = settings.value || excluded.value;
+        insert into card_kinds (key, name, alignment, rarity, play, stack, draws, drive, needs_message)
+        values ('expdrive', 'Exported Drive', 'sweet', 'uncommon', 'cast', 2, '{exp-a,exp-b}', '{"lasts": {"unit": "day", "count": 2}, "gifts": ["exp.g1", "exp.g2"], "overhead": "exp.over"}', 'Say what the drive is for.');
+        insert into card_ledger (account, card, kind, price) values (bob, 'expdrive', 'bought', 0);
+        dp := tests.post(a, t, 'A post that asks for gifts.');
+        dplay := (play_card(bob, 'expdrive', b, dp, '{}', 0, 'Please give.') ->> 'id')::uuid;
+        insert into wallets (account, balance) values (bob, 100), (ann, 595) on conflict (account) do update set balance = excluded.balance;
+        perform donate(bob, b, dplay, 25);
+        perform donate(ann, a, dplay, 10);
+      end;
     end $$;
     -- A table holding what the instance's own do not yet: a type whose name has a comma, an
     -- array, an astral character. Made here and in the fresh database alike.
@@ -426,6 +440,14 @@ test('an instance exported and imported into a fresh database is the same instan
   assert.equal(sql(`select count(*) from card_ledger l join auth.users u on u.id = l.account and u.email = 'exp-ann@test.invalid' where l.kind = 'returned' and l.card = 'expmatch'`), '1', 'the taken-back Reversal is returned to the setter\'s ledger');
   assert.equal(sql(`select count(*) from acts where kind = 'take_back' and payload ->> 'set' in (select f.play::text from face_down f where f.card = 'expmatch')`), '1', 'the take-back Act names the back it takes back');
   assert.equal(sql(`select ends_at <= now() from face_down where card = 'exptime'`), 't', 'a back whose time passed is held as ended');
+  // The drive and its gifts (0153): the play opened a drive with a drawn key, both gifts are `donation` Acts, and each wallet event names its gift; Ann's full wallet cut off part of what arrived.
+  const gifts = `select d.id from acts d join acts o on o.id = d.target_act_id and o.payload ->> 'card' = 'expdrive' where d.kind = 'donation'`;
+  assert.match(sql(`select payload ->> 'drawn' from acts where kind = 'card' and payload ->> 'card' = 'expdrive'`), /^exp-[ab]$/, 'the drive\'s play drew a key');
+  assert.equal(sql(`select count(*) from (${gifts}) g`), '2', 'two gifts are two donation Acts');
+  assert.equal(sql(`select count(*) from wallet_events where kind = 'gift_out' and ref in (${gifts})`), '2', 'each gift left a wallet');
+  assert.equal(sql(`select count(*) from wallet_events where kind = 'gift_in' and ref in (${gifts})`), '2', 'each gift arrived in a wallet');
+  assert.equal(sql(`select max(overflow) from wallet_events where kind = 'gift_in' and ref in (${gifts})`), '13', 'a full wallet cut off part of a gift');
+  assert.equal(sql(`select draws::text || '|' || (drive ->> 'overhead') || '|' || needs_message from card_kinds where key = 'expdrive'`), '{exp-a,exp-b}|exp.over|Say what the drive is for.', 'the drive card keeps its columns');
   // Every table of ours holds a row to carry across, read from the database rather than listed
   // here, so a table a later change adds is seeded or the round trip goes red ("Two lists that
   // must agree are one list"); the migrations' own data is held to a fresh database below.
