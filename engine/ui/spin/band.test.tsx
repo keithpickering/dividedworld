@@ -24,21 +24,23 @@ describe('the ORIGIN box', () => {
     expect(own).toMatch(/background:\s*var\(--kb-row-2\)/u);
     expect(own).toMatch(/--kb-post-bg:\s*var\(--kb-row-2\)/u);
     expect(own).not.toMatch(/double/u);
-    expect(rules(spin, '.kb-origin').join(';')).not.toMatch(/padding:[^;]*%/u);
+    expect(own).not.toMatch(/padding(?:-\w+)?:[^;]*%/u);
   });
 
   test('the band is the column head\'s: its ground, ink, shadow, weight and rule come from the head tokens, and it keeps the date row\'s min-height', () => {
     const band = rules(spin, '.kb-origin-head').join(';');
     expect(band).toMatch(/background:\s*var\(--kb-head-bg\)/u);
-    expect(band).toMatch(/color:\s*var\(--kb-head-fg\)/u);
+    expect(band).toMatch(/(?<![-\w])color:\s*var\(--kb-head-fg\)/u);
     expect(band).toMatch(/text-shadow:\s*var\(--kb-head-shadow\)/u);
     expect(band).toMatch(/font-weight:\s*bold/u);
     expect(band).toMatch(/border-bottom:\s*1px solid var\(--kb-grid\)/u);
     expect(band).toMatch(/min-height:\s*calc\(var\(--kb-meta-tile\) - 0\.4rem\)/u);
   });
 
-  test('the band takes back the box\'s inset: the box sets it, the band\'s margin is its negation and its padding is it', () => {
-    expect(rules(spin, '.kb-origin').join(';')).toMatch(/--kb-origin-inset:/u);
+  test('the band takes back the box\'s inset: the box sets it and pads by it, the band\'s margin is its negation and its padding is it', () => {
+    const box = rules(spin, '.kb-origin').join(';');
+    expect(box).toMatch(/--kb-origin-inset:/u);
+    expect(box).toMatch(/padding:[^;]*var\(--kb-origin-inset\)/u);
     const band = rules(spin, '.kb-origin-head').join(';');
     expect(band).toMatch(/margin:[^;]*calc\(-1 \* var\(--kb-origin-inset\)\)/u);
     expect(band).toMatch(/padding:[^;]*var\(--kb-origin-inset\)/u);
