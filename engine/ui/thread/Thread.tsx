@@ -173,18 +173,28 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
    * and card backs, the tallies, the player's own reactions and the threads spun from them, all ready to show, and each post's plays billed
    * (cards/billing.ts), once for this page: a live count moves no tag. No read: the document holds what a page used to read in a dozen.
    */
+  /* The plays above the posts that each page number's last read held, so a later read of the same page can tell which have left it. */
+  const aboveOf = useRef(new Map<number, ReadonlySet<Id>>());
   const absorb = useCallback((page: ThreadPage) => {
     const said = reveals(page.people.flatMap((p) => p.reveals), page.people.flatMap((p) => p.turns));
     for (const p of page.people) {
       const statement = said.get(p.character.id);
-      people.current.set(p.character.id, {
+      const person: PostbitPerson = {
         character: p.character, posts: p.posts, standing: p.standing,
         revealed: statement?.revealed ?? null, turnedAt: statement?.turnedAt ?? null,
-      });
+      };
+      /* A person read again who is as they were stays the same object, so a page read again redraws no post for it. */
+      const held = people.current.get(p.character.id);
+      if (!held || JSON.stringify(held) !== JSON.stringify(person)) people.current.set(p.character.id, person);
       asked.current.set(p.character.id, Promise.resolve());
     }
     const played = [...page.plays, ...page.above.map((x) => x.act)];
     hydrate(plays, played, page.states, page.releases, page.faces);
+    /* A play above the posts that an admin ended, or that left with a thread's move, leaves a page's `above` and sends no `card_end` with it: a page read again says so by what it no longer holds. */
+    const above = new Set(page.above.map((x) => x.act.id));
+    const was = aboveOf.current.get(page.page);
+    if (was) plays.setEnded([...was].filter((id) => !above.has(id)));
+    aboveOf.current.set(page.page, above);
     const posts = page.acts.filter((a) => a.kind === 'post').map((a) => a.id);
     const ids = [...new Set([...page.acts.map((a) => a.id), ...played.map((a) => a.id)])];
     for (const [id, t] of Object.entries(page.tallies)) tallies.merge(id, t);
@@ -393,6 +403,86 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
     }
   }, [thread, P, readPage, navigate]);
 
+  /*
+   * The window between the server reading the document and this screen's channels being joined: whatever lands in it is neither in the
+   * document nor heard, and so is whatever lands while a dropped channel is rejoining. Not only posts: a card played, set face down or
+   * sprung, an admin's end of a play, an edit, a reaction, a saved effect state and a play beyond a post take no place in the thread, and
+   * nothing a summary says moves for them. So once both channels have said they are joined (and again each time either rejoins) the
+   * pages the screen draws are read again, as the router read them: a page is everything it draws, so each kind it draws is caught up, and
+   * a kind it comes to draw is caught up with no change here. Every store takes a page in idempotently; an Act already shown or held is
+   * given to the feed as it is now (an edit is the newer version), and a post it has not met is held behind the bar, as a live one is. A
+   * play above the posts that a page no longer holds is marked ended (`absorb`). The drawn pages are read quietly, one after another,
+   * since the reader asked for nothing; pages beyond the drawn tail, for posts that landed in the window, are read on the meter as a gap
+   * is. Nothing moves under the reader: no scroll, no focus, and a post already announced is not announced again. One catch-up runs at a
+   * time, and joins that arrive during one make exactly one more. A read that fails is asked again twice, at the gap's pace, and then the
+   * run is left: a reload, or the next join, reads it.
+   */
+  const joined = useRef({ thread: false, reach: false });
+  const running = useRef({ going: false, again: false });
+  const sleeping = useRef(new Set<() => void>());
+  const catchUpWith = useRef<() => Promise<void>>(async () => {});
+  catchUpWith.current = async () => {
+    const asked = async <T,>(read: () => Promise<T | null>): Promise<T | null> => {
+      for (let attempt = 0; attempt < 3; attempt++) {
+        if (!mounted.current) return null;
+        try {
+          const got = await read();
+          if (got) return got;
+        } catch { /* asked again below */ }
+        if (attempt < 2) await new Promise<void>((resolve) => {
+          const wake = () => { clearTimeout(timer); sleeping.current.delete(wake); resolve(); };
+          const timer = setTimeout(wake, Math.min(GAP_FILL_MS * 2 ** attempt, GAP_RETRY_MAX_MS));
+          sleeping.current.add(wake);
+        });
+      }
+      return null;
+    };
+    const start = feedRef.current;
+    if (!start.ready) return;
+    let lastSeq = start.serverLast;
+    for (let page = start.firstPage; page <= start.lastPage; page++) {
+      const read = await asked(() => api.threadPage(thread, { page }, P, effectList));
+      if (!read || !mounted.current) return;
+      absorb(read);
+      lastSeq = Math.max(lastSeq, read.thread.lastSeq);
+      const fresh: Act[] = [];
+      for (const a of read.acts) {
+        const f = feedRef.current;
+        const was = f.shown.get(a.id) ?? f.held.get(a.id);
+        if (!was) fresh.push(a);
+        else if (JSON.stringify(was) !== JSON.stringify(a)) dispatch({ type: 'live', act: a });
+      }
+      if (fresh.length > 0 && feedRef.current.tailLoaded) dispatch({ type: 'fill', acts: fresh });
+    }
+    /* Posts on pages beyond the drawn tail: read as a gap is, on the meter. */
+    for (let from = pageRange(feedRef.current.lastPage, P).end + 1; feedRef.current.tailLoaded && from <= lastSeq; ) {
+      const at = from;
+      const read = await asked(async () => { try { return await readPage({ seq: at }); } catch { return null; } });
+      if (!read || !mounted.current) return;
+      lastSeq = Math.max(lastSeq, read.thread.lastSeq);
+      if (feedRef.current.tailLoaded) dispatch({ type: 'fill', acts: read.acts.filter((a) => a.seq !== null && a.seq >= at) });
+      const next = pageRange(read.page, P).end + 1;
+      if (next <= from) break;
+      from = next;
+    }
+  };
+  const joinedAt = useCallback((which: 'thread' | 'reach') => {
+    joined.current[which] = true;
+    if (!joined.current.thread || !joined.current.reach || !mounted.current) return;
+    const run = running.current;
+    if (run.going) { run.again = true; return; }
+    run.going = true;
+    void (async () => {
+      try {
+        do {
+          run.again = false;
+          await catchUpWith.current().catch(() => { /* left for the next join */ });
+        } while (run.again && mounted.current);
+      } finally { run.going = false; }
+    })();
+  }, []);
+  useEffect(() => () => { for (const wake of [...sleeping.current]) wake(); }, []);
+
   /* ----------------------------------------------------------------------- live ---- */
   /* A live Act's follow-up read that goes wrong is dropped: the next read of the page shows what it would have, and nothing is thrown at the page. */
   const quietly = () => {};
@@ -444,6 +534,7 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
         /* A saved state is read where it is kept, by the play it names: the post author's newest version is what every reader loads. */
         void api.effectStates([play]).then((saved) => plays.setStates(saved), () => { /* the next save is heard again */ });
       },
+      onJoined() { joinedAt('thread'); },
       onTally(act, t) {
         const grew = tallies.merge(act, t);
         if (!grew) return;
@@ -455,39 +546,17 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
         void actLoader(api).ask(act).then((x) => landed(x?.character ?? null));
       },
     };
-    return api.subscribeThread(thread, listener);
-  }, [api, thread, ensurePeople, tallies, plays, effects, ui.copy.staffWord]);
-
-  /*
-   * The window between the server reading the document and the subscription above being set up: a post written in it is neither in the
-   * document nor heard. One cheap check once subscribed (the thread's summary, one row) finds it, and the existing gap read brings it in,
-   * on the meter. A tally that grew in the window is not re-read here: the next `onTally` for that Act carries the whole count
-   * (a tally only grows and each event is the Act's total), so a later reaction corrects it; until then it shows the document's count.
-   * Only the open tail is caught up: a page that is not the last takes what lies beyond it from its own next-page read.
-   */
-  useEffect(() => {
-    let live = true;
-    void api.thread(thread).then(async (summary) => {
-      const f = feedRef.current;
-      if (!live || !summary || !f.ready || !f.tailLoaded || summary.lastSeq <= f.knownLast) return;
-      const acts: Act[] = [];
-      for (let from = f.knownLast + 1; from <= summary.lastSeq; ) {
-        const read = await readPage({ seq: from });
-        acts.push(...read.acts.filter((a) => a.seq !== null && a.seq >= from && a.seq <= summary.lastSeq));
-        const next = pageRange(read.page, P).end + 1;
-        if (next <= from) break;
-        from = next;
-      }
-      if (live) dispatch({ type: 'fill', acts });
-    }).catch(() => { /* a later live Act shows the gap, as before */ });
-    return () => { live = false; };
-  }, [api, thread, P, readPage]);
+    const off = api.subscribeThread(thread, listener);
+    return () => { off(); joined.current.thread = false; };
+  }, [api, thread, ensurePeople, tallies, plays, effects, ui.copy.staffWord, joinedAt]);
 
   /* A play beyond a post is announced on `reach`, which every signed-in page hears, since it is played from a post in some other thread
      as often as this one (a character's) and on The System's announcements thread (a board's). This page keeps the plays whose target it
      shows: this thread, this thread's board, or a character with a post in view; the rest are dropped, so its memory is its screen's.
      It then reads the play as it reads one on its own thread (the caster's name first), so the mark is drawn the same. */
-  useEffect(() => api.subscribeReach({
+  useEffect(() => {
+    const off = api.subscribeReach({
+    onJoined() { joinedAt('reach'); },
     onPlay(a) {
       /* The end of a play beyond a post names only its play: the store marks it if the play is one this page keeps, and holds it otherwise. */
       if (a.kind === 'card_end') { plays.add([a]); return; }
@@ -499,7 +568,9 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
       if (!shown) return;
       void ensurePeople([a.character]).then(() => { plays.add([a]); return readEffects(api, plays, [a], effects); }).catch(quietly);
     },
-  }), [api, thread, ensurePeople, plays, effects]);
+    });
+    return () => { off(); joined.current.reach = false; };
+  }, [api, thread, ensurePeople, plays, effects, joinedAt]);
 
   /* At the bottom of the last page, held Acts come in, sliding. */
   useEffect(() => {

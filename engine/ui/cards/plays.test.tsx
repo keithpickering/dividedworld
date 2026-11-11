@@ -396,6 +396,42 @@ describe('a play an admin ended', () => {
   });
 });
 
+/* A play above the posts that a later read of its page no longer holds was ended with no `card_end` to say so: the screen ends it by absence. */
+describe('a play ended by being absent from a page read again', () => {
+  const at = '2026-10-30T10:00:00.000Z';
+  const card = (id: string): Act =>
+    ({ id, kind: 'card', character: 'c1', thread: 't', targetActId: 'p1', seq: null, createdAt: at, payload: { card: 'whoops' }, currentPayload: { card: 'whoops' }, editedAt: null, shownEditedAt: null });
+
+  test('marks a held play reversed in place, waking only its post, and says so', () => {
+    const plays = createPlays();
+    const heard = vi.fn();
+    plays.add([card('k1'), card('k2')]);
+    plays.subscribe('p1', heard);
+    expect(plays.setEnded(['k1'])).toBe(true);
+    expect(plays.get('p1').billed.map((p) => [p.id, p.reversed])).toEqual([['k1', true], ['k2', undefined]]);
+    expect(livePlays(plays.get('p1').plays).map((p) => p.id)).toEqual(['k2']);
+    expect(heard).toHaveBeenCalledTimes(1);
+  });
+
+  test('remembers a play not held yet, which arrives reversed, as an early card_end does', () => {
+    const plays = createPlays();
+    expect(plays.setEnded(['k1'])).toBe(true);
+    expect(plays.get('p1').plays).toEqual([]);
+    plays.add([card('k1')]);
+    expect(plays.get('p1').plays.map((p) => p.reversed)).toEqual([true]);
+  });
+
+  test('says nothing changed for a play already ended, or for nothing', () => {
+    const plays = createPlays();
+    plays.add([card('k1')]);
+    expect(plays.setEnded(['k1'])).toBe(true);
+    const before = plays.get('p1');
+    expect(plays.setEnded(['k1'])).toBe(false);
+    expect(plays.setEnded([])).toBe(false);
+    expect(plays.get('p1')).toBe(before);
+  });
+});
+
 /* A play whose first generation failed is refunded and over (0149): the read says so (`untaken` on its Act), and the client reads the flag, never works it out. */
 describe('a play that did not take', () => {
   const at = '2026-10-30T10:00:00.000Z';

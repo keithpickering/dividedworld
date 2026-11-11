@@ -8,9 +8,10 @@ import type { Fake } from '../data/fake.ts';
 import { buildWorld, holdReads, renderIn } from '../test-world.tsx';
 import { pageOf, pageRange, threadHref } from './pages.ts';
 import { createTallies } from './tallies.ts';
-import { GAP_FILL_MS, READ_DEBOUNCE_MS, ThreadScreen } from './Thread.tsx';
+import { GAP_FILL_MS, GAP_RETRY_MAX_MS, READ_DEBOUNCE_MS, ThreadScreen } from './Thread.tsx';
 import { ACT_CACHE_SIZE, actLoader } from './locate.tsx';
 import { returnState } from '../glass/back.ts';
+import { useNavigation } from '../router.tsx';
 import { LoadedThread } from '../loaded.tsx';
 import { spunLoader } from '../spin/spun.ts';
 
@@ -207,13 +208,14 @@ describe('pages and permalinks', () => {
     const page = vi.spyOn(w.fake, 'threadPage');
     const names = ['acts', 'characters', 'characterStats', 'standingAmounts', 'classReveals', 'turnsAnnounced', 'tallies', 'myReactions', 'cardsOnMany', 'effectsAbove', 'board', 'boards', 'preferences', 'reading', 'following', 'standingsPage'] as const;
     const spies = names.map((m) => [m, vi.spyOn(w.fake, m)] as const);
-    /* The one summary read after the subscription (the live window's catch-up) is the only other read, and finds nothing to fetch. */
+    /* The page is read twice: once for the document, and once more by the catch-up when the channels are joined. The summary is no longer read. */
     const summary = vi.spyOn(w.fake, 'thread');
     open(w);
     await screen.findByRole('article', { name: /^Post 20 /u });
-    await act(async () => {});
-    expect(page).toHaveBeenCalledTimes(1);
-    expect(summary).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(page).toHaveBeenCalledTimes(2));
+    await act(async () => { await pause(20); });
+    expect(page).toHaveBeenCalledTimes(2);
+    expect(summary).not.toHaveBeenCalled();
     expect(spies.map(([name, spy]) => [name, spy.mock.calls.length])).toEqual(names.map((n) => [n, 0]));
   });
 
@@ -414,8 +416,10 @@ describe('Acts that are not posts', () => {
     expect(await within(post(2)).findByRole('button', { name: 'Whoops!, 1 play. Opens the cards on this post.' })).toBeInTheDocument();
     expect(await within(post(3)).findByRole('button', { name: 'Whoops!, 1 play. Opens the cards on this post.' })).toBeInTheDocument();
     expect(screen.getAllByRole('article')).toHaveLength(5);
-    /* The whole page's plays are in the page's own document: one request, whatever the plays. */
-    expect(page).toHaveBeenCalledTimes(1);
+    /* The whole page's plays are in the page's own document: one request, whatever the plays, and the catch-up's read of it again once the channels are joined. */
+    await waitFor(() => expect(page).toHaveBeenCalledTimes(2));
+    await act(async () => { await pause(20); });
+    expect(page).toHaveBeenCalledTimes(2);
     expect(many).not.toHaveBeenCalled();
     expect(one).not.toHaveBeenCalled();
   });
@@ -502,7 +506,8 @@ describe('the plays on a post: their tallies, own reactions and spins, read with
     open(w);
     await screen.findByRole('article', { name: /^Post 3 /u });
     await waitFor(() => expect(billed(2)).toHaveLength(2));
-    expect(page).toHaveBeenCalledTimes(1);
+    /* The document, and the catch-up's read of the page again. */
+    await waitFor(() => expect(page).toHaveBeenCalledTimes(2));
     expect(tallies).not.toHaveBeenCalled();
     expect(own).not.toHaveBeenCalled();
     const doc = await page.mock.results[0]!.value;
@@ -557,7 +562,8 @@ describe('the plays on a post: their tallies, own reactions and spins, read with
     open(w);
     await waitFor(() => expect(billed(4)).toHaveLength(1));
     expect(billed(2)).toHaveLength(2);
-    expect(page).toHaveBeenCalledTimes(1);
+    /* The document, and the catch-up's read of the page again. */
+    await waitFor(() => expect(page).toHaveBeenCalledTimes(2));
     expect(many).not.toHaveBeenCalled();
     expect(spins).not.toHaveBeenCalled();
     expect(one).not.toHaveBeenCalled();
@@ -1287,6 +1293,8 @@ describe('a gap in the live Acts', () => {
     open(w);
     await screen.findByRole('article', { name: /^Post 5 /u });
     see(sentinel(), true);
+    /* The catch-up's read of the page (the channels joined) is over before the window the test means. */
+    await advance(50);
     const read = vi.spyOn(w.fake, 'threadPage');
     w.fake.seed.post(w.thread, w.pipe, 'post 6');
     w.fake.seed.post(w.thread, w.spritey, 'post 7');
@@ -1309,6 +1317,8 @@ describe('a gap in the live Acts', () => {
     open(w);
     await screen.findByRole('article', { name: /^Post 5 /u });
     see(sentinel(), true);
+    /* The catch-up's read of the page (the channels joined) is over before the window the test means. */
+    await advance(50);
     const read = vi.spyOn(w.fake, 'threadPage').mockRejectedValue(new Error('down'));
     deliver(() => tapped().onAct?.(live(w.thread, 7, w.spritey)));
     await advance(50);
@@ -1328,6 +1338,8 @@ describe('a gap in the live Acts', () => {
     open(w);
     await screen.findByRole('article', { name: /^Post 5 /u });
     see(sentinel(), true);
+    /* The catch-up's read of the page (the channels joined) is over before the window the test means. */
+    await advance(50);
     w.fake.seed.post(w.thread, w.pipe, 'post 6');
     w.fake.seed.post(w.thread, w.spritey, 'post 7');
     const seven = (await w.fake.acts(w.thread, 7, 7))[0]!;
@@ -1634,13 +1646,14 @@ describe('who is browsing', () => {
 /* ------------------------------------------------------------------ the document ---- */
 describe('a thread drawn from its document (the forum-load plan, Task 13)', () => {
   /** The thread's first page as the router would hand it over, with the backend held to the reads a landed page makes. */
-  async function landed(w: ReturnType<typeof world>, at: { page?: number; seq?: number } = { page: 1 }, allowed: readonly string[] = [], between?: () => void | Promise<void>) {
+  async function landed(w: ReturnType<typeof world>, at: { page?: number; seq?: number } = { page: 1 }, allowed: readonly string[] = [], between?: () => void | Promise<void>, cards: readonly CardUi[] = []) {
     const boot = await w.fake.boot();
-    const doc = (await w.fake.threadPage(w.thread, at, 20, []))!;
+    const doc = (await w.fake.threadPage(w.thread, at, 20, cards.map((c) => c.key)))!;
     /* What happens after the server has read the page and before the screen is drawn. */
     await between?.();
-    const read = holdReads(w.fake, ['markRead', 'here', 'session', 'thread', ...allowed]);
-    renderIn(w.fake, <ThreadScreen thread={w.thread} doc={doc} />, { path: `/t/${w.thread}?page=${at.page ?? 1}`, boot });
+    /* The screen reads its drawn pages again once its channels are joined (the catch-up): `threadPage` is its read, and the summary is not. */
+    const read = holdReads(w.fake, ['markRead', 'here', 'session', 'threadPage', ...allowed]);
+    renderIn(w.fake, <ThreadScreen thread={w.thread} doc={doc} />, { path: `/t/${w.thread}?page=${at.page ?? 1}`, boot, ...(cards.length > 0 ? { cards } : {}) });
     return { read, doc };
   }
 
@@ -1680,7 +1693,7 @@ describe('a thread drawn from its document (the forum-load plan, Task 13)', () =
   test('a post written after the server read the document and before the subscription shows with no later live event', async () => {
     const w = world(45);
     clock();
-    const { doc } = await landed(w, { page: 3 }, ['threadPage', 'thread'], async () => { w.fake.seed.post(w.thread, w.pipe, 'post 46'); });
+    const { doc } = await landed(w, { page: 3 }, [], async () => { w.fake.seed.post(w.thread, w.pipe, 'post 46'); });
     expect(doc.thread.lastSeq).toBe(45);
     await act(async () => { await vi.advanceTimersByTimeAsync(50); });
     expect(await screen.findByRole('button', { name: '1 new post' })).toBeInTheDocument();
@@ -1703,19 +1716,16 @@ describe('a thread drawn from its document (the forum-load plan, Task 13)', () =
     const w = world(45);
     const listener = tap(w.fake);
     const page = vi.spyOn(w.fake, 'threadPage');
-    /* The catch-up check has its own test below; here the summary is held at the document's, so the gap is the live Act's to find. */
-    const realThread = w.fake.thread.bind(w.fake);
-    vi.spyOn(w.fake, 'thread').mockImplementation(async (id) => { const t = await realThread(id); return t && { ...t, lastSeq: 45 }; });
     clock();
-    /* Posts 46 and 47 were written between the server's read and the subscription; 48 is the first the channel hears. */
-    let last!: Act;
-    const { doc, read } = await landed(w, { page: 3 }, ['threadPage'], async () => {
-      w.fake.seed.post(w.thread, w.pipe, 'post 46');
-      w.fake.seed.post(w.thread, w.spritey, 'post 47');
-      w.fake.seed.post(w.thread, w.pipe, 'post 48');
-      last = (await w.fake.acts(w.thread, 48, 48))[0]!;
-    });
+    const { doc, read } = await landed(w, { page: 3 }, ['acts']);
     expect(doc.thread.lastSeq).toBe(45);
+    /* The catch-up (the channels joined) reads the page once; what lands after it is the live channel's, and a gap in it is read from the document's last seq. */
+    await screen.findByRole('article', { name: /^Post 45 /u });
+    await act(async () => { await vi.advanceTimersByTimeAsync(50); });
+    w.fake.seed.post(w.thread, w.pipe, 'post 46');
+    w.fake.seed.post(w.thread, w.spritey, 'post 47');
+    w.fake.seed.post(w.thread, w.pipe, 'post 48');
+    const last = (await w.fake.acts(w.thread, 48, 48))[0]!;
     page.mockClear();
     deliver(() => listener().onAct?.(last));
     /* The held post is in before the gap's clock starts. */
@@ -1726,6 +1736,257 @@ describe('a thread drawn from its document (the forum-load plan, Task 13)', () =
     expect(page.mock.calls[0]![1]).toEqual({ seq: 46 });
     expect(read).toEqual([]);
     expect(await screen.findByRole('button', { name: '3 new posts' })).toBeInTheDocument();
+  });
+
+  /*
+   * The catch-up (the thread catch-up plan, Task 2): once its channels are joined the screen reads the pages it draws again, so whatever
+   * landed between the server's read and the join (a play, a back, a spring, an end, an edit, a reaction, a saved state, a play beyond a post) is
+   * shown with no later live event. Each `between` writes what nobody hears: a muted seed, or a real write made before the screen subscribes.
+   */
+  describe('the catch-up reads the drawn pages again', () => {
+    const mark = /^Whoops!, 1 play\b/u;
+    const article = (n: number) => screen.findByRole('article', { name: new RegExp(`^Post ${n} `, 'u') });
+
+    test('a card played on a shown post in the window shows its mark', async () => {
+      const w = world(3);
+      await landed(w, { page: 1 }, [], () => { w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'oops' }); });
+      expect(await within(post(2)).findByRole('button', { name: mark })).toBeInTheDocument();
+    });
+
+    test('a card set face down in the window shows its back, and one sprung in the window shows revealed', async () => {
+      const w = world(3);
+      /* A back is drawn until its end, read against the browser's clock while the fake dates its Acts on its own: the browser's is set to the fake's. */
+      vi.useFakeTimers({ shouldAdvanceTime: true, now: w.fake.clock.now() });
+      /* A back is set on its setter's own post: post 2 is Pipewrench's, posts 1 and 3 are Spritey's. */
+      w.fake.seed.set(w.pipe, w.ids[1]!, 'whoops');
+      const springing = w.fake.seed.set(w.spritey, w.ids[2]!, 'whoops');
+      const boot = await w.fake.boot();
+      const doc = (await w.fake.threadPage(w.thread, { page: 1 }, 20, []))!;
+      w.fake.seed.set(w.spritey, w.ids[0]!, 'whoops');
+      w.fake.seed.spring(springing, { trigger: 'quote', by: w.me });
+      renderIn(w.fake, <ThreadScreen thread={w.thread} doc={doc} />, { path: `/t/${w.thread}?page=1`, boot });
+      const back = (seq: number) => post(seq).querySelector('[data-kb-back]');
+      await waitFor(() => expect(back(1)?.getAttribute('data-kb-back')).toBe('down'));
+      expect(back(2)?.getAttribute('data-kb-back')).toBe('down');
+      expect(back(3)?.getAttribute('data-kb-back')).toBe('sprung');
+    });
+
+    test('a play on a shown post that an admin ended in the window (after the document, before the join) is drawn ended', async () => {
+      const w = world(3);
+      w.fake.seed.admin(w.me);
+      const played = w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'live' });
+      const boot = await w.fake.boot();
+      const doc = (await w.fake.threadPage(w.thread, { page: 1 }, 20, ['whoops']))!;
+      expect((await w.fake.reverseCard(played)).ok).toBe(true);
+      renderIn(w.fake, <ThreadScreen thread={w.thread} doc={doc} />, { path: `/t/${w.thread}?page=1`, boot, cards: [fx('whoops')] });
+      await article(2);
+      await waitFor(() => expect(within(post(2)).queryByTestId('fx-whoops')).toBeNull());
+      expect(within(post(2)).getByRole('button', { name: mark })).toBeInTheDocument();
+    });
+
+    test('a post edited in the window shows its new words', async () => {
+      const w = world(3);
+      await landed(w, { page: 1 }, [], async () => { expect((await w.fake.edit(w.ids[1]!, w.pipe, 'post two, mended')).ok).toBe(true); });
+      expect(await within(post(2)).findByText('post two, mended')).toBeInTheDocument();
+    });
+
+    test('a reaction made in the window shows in the tally', async () => {
+      const w = world(3);
+      await landed(w, { page: 1 }, [], () => { w.fake.seed.react(w.other, w.spritey, w.ids[1]!, 'fire'); });
+      expect(await within(post(2)).findByText('Fire, 1')).toBeInTheDocument();
+    });
+
+    test('a saved effect state written in the window is the state shown', async () => {
+      const w = world(3);
+      const played = w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'oops' });
+      expect((await w.fake.saveEffect(played, w.pipe, { v: 1 })).ok).toBe(true);
+      await landed(w, { page: 1 }, [], async () => { w.fake.clock.advance(1000); expect((await w.fake.saveEffect(played, w.pipe, { v: 2 })).ok).toBe(true); }, [fx('whoops')]);
+      const wrapped = await within(await article(2)).findByTestId('fx-whoops');
+      await waitFor(() => expect(JSON.parse(wrapped.dataset.states!)[played].state).toEqual({ v: 2 }));
+    });
+
+    test('a play beyond a post made in the window is drawn, and one in the document that was ended in the window is not', async () => {
+      const w = world(3);
+      w.fake.seed.admin(w.me);
+      const ended = w.fake.seed.reach(w.spritey, 'thread', w.thread, 'whoops', { ends: Date.now() + 86_400_000, message: 'first' });
+      const head = () => document.querySelector('.kb-thread-head') as HTMLElement;
+      const beyond = /^Whoops!, \d plays?\b.*Opens the cards on this thread\./u;
+      const boot = await w.fake.boot();
+      const doc = (await w.fake.threadPage(w.thread, { page: 1 }, 20, []))!;
+      expect(doc.above.map((x) => x.act.id)).toContain(ended);
+      expect((await w.fake.reverseCard(ended)).ok).toBe(true);
+      w.fake.seed.reach(w.pipe, 'thread', w.thread, 'whoops', { ends: Date.now() + 86_400_000, message: 'second' });
+      renderIn(w.fake, <ThreadScreen thread={w.thread} doc={doc} />, { path: `/t/${w.thread}?page=1`, boot });
+      /* The head first draws the document's one play; then the read after the join ends it and draws the new one. */
+      await waitFor(() => expect(within(head()).getByRole('button', { name: /^Whoops!, 1 play\b.*Opens the cards on this thread\./u })).toBeInTheDocument());
+      const lens = async () => {
+        await userEvent.click(within(head()).getByRole('button', { name: beyond }));
+        const dialog = await screen.findByRole('dialog');
+        return dialog;
+      };
+      const dialog = await lens();
+      /* One play, and it is the new one's caster's, not the ended one's. */
+      expect(dialog).toHaveTextContent('1 play · Pipewrench');
+      expect(dialog).not.toHaveTextContent('Spritey');
+    });
+
+    test('the same card play on a page that is not the last is caught up, and no page beyond it is read', async () => {
+      const w = world(45);
+      const page = vi.spyOn(w.fake, 'threadPage');
+      await landed(w, { page: 1 }, [], () => { page.mockClear(); w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'oops' }); });
+      await article(2);
+      expect(await within(post(2)).findByRole('button', { name: mark })).toBeInTheDocument();
+      await act(async () => { await pause(30); });
+      expect(page.mock.calls.map((c) => c[1])).toEqual([{ page: 1 }]);
+    });
+
+    test('a post written in the window is held behind the bar, as the thread\'s catch-up always has', async () => {
+      const w = world(45);
+      clock();
+      await landed(w, { page: 3 }, [], async () => { w.fake.seed.post(w.thread, w.pipe, 'post 46'); });
+      await act(async () => { await vi.advanceTimersByTimeAsync(50); });
+      expect(await screen.findByRole('button', { name: '1 new post' })).toBeInTheDocument();
+      expect(document.getElementById('post-46')).toBeNull();
+    });
+
+    test('with joins held nothing is read until the join, and a card played after the mount and before it is caught up by the read the join starts', async () => {
+      const w = world(3);
+      w.fake.broadcast.holdJoins();
+      const page = vi.spyOn(w.fake, 'threadPage');
+      await landed(w, { page: 1 }, [], () => { page.mockClear(); });
+      await article(2);
+      /* Played after the document and after the screen drew, before its channels joined: no listener could hear it. */
+      w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'oops' });
+      await act(async () => { await pause(30); });
+      expect(page).not.toHaveBeenCalled();
+      expect(within(post(2)).queryByRole('button', { name: mark })).toBeNull();
+      await act(async () => { w.fake.broadcast.join(); });
+      expect(await within(post(2)).findByRole('button', { name: mark })).toBeInTheDocument();
+      expect(page).toHaveBeenCalledTimes(1);
+    });
+
+    test('it waits for both channels: the thread\'s joined alone reads nothing', async () => {
+      const w = world(3);
+      const page = vi.spyOn(w.fake, 'threadPage');
+      const reach = w.fake.subscribeReach.bind(w.fake);
+      /* The reach channel never reports joined until released. */
+      let release: (() => void) | undefined;
+      w.fake.subscribeReach = (l) => {
+        const gated = { ...l, onJoined: () => { release = () => l.onJoined?.(); } };
+        return reach(gated);
+      };
+      await landed(w, { page: 1 }, [], () => { page.mockClear(); });
+      await article(2);
+      w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'oops' });
+      await act(async () => { await pause(30); });
+      expect(page).not.toHaveBeenCalled();
+      await act(async () => { release!(); });
+      expect(await within(post(2)).findByRole('button', { name: mark })).toBeInTheDocument();
+      expect(page).toHaveBeenCalledTimes(1);
+    });
+
+    test('a rejoin reads the drawn pages again, and two rejoins during one run make one more run, not two', async () => {
+      const w = world(3);
+      const { read } = await landed(w, { page: 1 });
+      await article(2);
+      await act(async () => { await pause(30); });
+      const real = w.fake.threadPage.bind(w.fake);
+      let gate!: () => void;
+      const held = new Promise<void>((r) => { gate = r; });
+      const page = vi.spyOn(w.fake, 'threadPage').mockImplementation(async (...a) => { if (page.mock.calls.length === 1) await held; return real(...a); });
+      w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'oops' });
+      await act(async () => { w.fake.broadcast.rejoin(); });
+      expect(page).toHaveBeenCalledTimes(1);
+      await act(async () => { w.fake.broadcast.rejoin(); w.fake.broadcast.rejoin(); });
+      expect(page).toHaveBeenCalledTimes(1);
+      await act(async () => { gate(); await pause(30); });
+      expect(await within(post(2)).findByRole('button', { name: mark })).toBeInTheDocument();
+      await act(async () => { await pause(30); });
+      expect(page).toHaveBeenCalledTimes(2);
+      expect(read).toEqual([]);
+    });
+
+    /* The thread channel's listener, to tell it alone that it rejoined (the fake's `rejoin` tells every listener, the reach channel's too). */
+    const threadChannel = (fake: Fake) => {
+      const seen: ThreadListener[] = [];
+      const real = fake.subscribeThread.bind(fake);
+      fake.subscribeThread = (t, l) => { seen.push(l); return real(t, l); };
+      return () => seen.at(-1)!;
+    };
+
+    test('a catch-up read that fails is asked again, and lands; after three failures nothing more is asked', async () => {
+      const w = world(3);
+      const channel = threadChannel(w.fake);
+      clock();
+      await landed(w, { page: 1 });
+      await article(2);
+      await act(async () => { await vi.advanceTimersByTimeAsync(50); });
+      const real = w.fake.threadPage.bind(w.fake);
+      let failing = 2;
+      const page = vi.spyOn(w.fake, 'threadPage').mockImplementation(async (...a) => { if (failing-- > 0) throw new Error('the network went'); return real(...a); });
+      w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'oops' });
+      await act(async () => { channel().onJoined?.(); });
+      expect(page).toHaveBeenCalledTimes(1);
+      await act(async () => { await vi.advanceTimersByTimeAsync(GAP_FILL_MS + 50); });
+      expect(page).toHaveBeenCalledTimes(2);
+      await act(async () => { await vi.advanceTimersByTimeAsync(GAP_FILL_MS * 2 + 50); });
+      expect(page).toHaveBeenCalledTimes(3);
+      expect(await within(post(2)).findByRole('button', { name: mark })).toBeInTheDocument();
+      /* Settled: nothing more is asked. */
+      await act(async () => { await vi.advanceTimersByTimeAsync(GAP_RETRY_MAX_MS * 3); });
+      expect(page).toHaveBeenCalledTimes(3);
+    });
+
+    test('three failures end the run quietly: nothing more is asked until the next join', async () => {
+      const w = world(3);
+      const channel = threadChannel(w.fake);
+      clock();
+      await landed(w, { page: 1 });
+      await article(2);
+      await act(async () => { await vi.advanceTimersByTimeAsync(50); });
+      const page = vi.spyOn(w.fake, 'threadPage').mockRejectedValue(new Error('the network went'));
+      await act(async () => { channel().onJoined?.(); });
+      await act(async () => { await vi.advanceTimersByTimeAsync(GAP_RETRY_MAX_MS * 4); });
+      expect(page).toHaveBeenCalledTimes(3);
+      expect(screen.queryByRole('alert')).toBeNull();
+      await act(async () => { channel().onJoined?.(); });
+      expect(page).toHaveBeenCalledTimes(4);
+    });
+
+    test('a landed page makes exactly one threadPage read (the catch-up\'s) and no thread read, and the router\'s meter never shows for it', async () => {
+      const w = world(3);
+      const page = vi.spyOn(w.fake, 'threadPage');
+      const summary = vi.spyOn(w.fake, 'thread');
+      const tracking: number[] = [];
+      function Meter() {
+        tracking.push(useNavigation().tracking);
+        return null;
+      }
+      const boot = await w.fake.boot();
+      const doc = (await w.fake.threadPage(w.thread, { page: 1 }, 20, []))!;
+      page.mockClear();
+      holdReads(w.fake, ['markRead', 'here', 'session', 'threadPage']);
+      renderIn(w.fake, <><ThreadScreen thread={w.thread} doc={doc} /><Meter /></>, { path: `/t/${w.thread}?page=1`, boot });
+      await article(2);
+      await waitFor(() => expect(page).toHaveBeenCalledTimes(1));
+      await act(async () => { await pause(30); });
+      expect(page).toHaveBeenCalledTimes(1);
+      expect(page.mock.calls[0]![1]).toEqual({ page: 1 });
+      expect(summary).not.toHaveBeenCalled();
+      expect(Math.max(...tracking)).toBe(0);
+    });
+
+    test('it moves nothing the reader is looking at: no scroll, no focus change, no announcement of a post already announced', async () => {
+      const w = world(3);
+      await landed(w, { page: 1 }, [], () => { w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'oops' }); });
+      await article(2);
+      const scrolled = vi.mocked(Element.prototype.scrollIntoView).mock.calls.length;
+      const focused = document.activeElement;
+      expect(await within(post(2)).findByRole('button', { name: mark })).toBeInTheDocument();
+      expect(vi.mocked(Element.prototype.scrollIntoView).mock.calls.length).toBe(scrolled);
+      expect(document.activeElement).toBe(focused);
+      expect(announcer()).toHaveTextContent('');
+    });
   });
 });
 
