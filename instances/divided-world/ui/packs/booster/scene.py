@@ -35,7 +35,7 @@ HW, HH = PW / 2, PH / 2
 CRIMP = 0.62                 # each sealed end's height
 VC = HH - CRIMP
 COIN = (0.0, 0.8, 1.3)       # x, z, radius
-NAME, NAME_Z, NAME_H = 'BOOSTER', -1.25, 0.85      # the name, its middle and its capitals' height
+NAME, NAME_Z, NAME_H = 'BOOSTER', -1.25, 0.85      # the name in capitals, its middle and its height (a letter that hangs below the line would shrink the rest)
 QUIET = (4.2 - 0.84 * 8.4, 4.2 - 0.73 * 8.4)       # the count's band in z, with a margin either side of 74% to 82%
 
 sm = lambda a: a * a * (3 - 2 * a)
@@ -60,19 +60,20 @@ quiet = 1 - sm(unit((Z - QUIET[0] + 0.12) / 0.12)) * sm(unit((QUIET[1] + 0.12 - 
 # ---- the name: the face's outlines, filled, read into the grid as a mask ---------------------------------------------
 def name_mask():
     from fontTools.ttLib import TTFont                    # Blender reads no WOFF2: unpack the face to a TTF it can
-    ttf = os.path.join(tempfile.mkdtemp(), 'face.ttf'); f = TTFont(FACE); f.flavor = None; f.save(ttf)
-    cu = bpy.data.curves.new('name', 'FONT'); cu.body = NAME; cu.font = bpy.data.fonts.load(ttf); cu.space_character = 1.06
-    o = bpy.data.objects.new('name', cu); sc.collection.objects.link(o)
-    ev = o.evaluated_get(bpy.context.evaluated_depsgraph_get()); tm = ev.to_mesh()
-    vs = np.array([v.co[:] for v in tm.vertices]); polys = [tuple(p.vertices) for p in tm.polygons]
+    with tempfile.TemporaryDirectory() as tmp:            # gone once the letters are a mesh
+        ttf = os.path.join(tmp, 'face.ttf'); f = TTFont(FACE); f.flavor = None; f.save(ttf)
+        cu = bpy.data.curves.new('name', 'FONT'); cu.body = NAME; cu.font = bpy.data.fonts.load(ttf); cu.space_character = 1.06
+        o = bpy.data.objects.new('name', cu); sc.collection.objects.link(o)
+        ev = o.evaluated_get(bpy.context.evaluated_depsgraph_get()); tm = ev.to_mesh()
+        vs = np.array([v.co[:] for v in tm.vertices]); polys = [tuple(p.vertices) for p in tm.polygons]
     lo, hi = vs.min(0), vs.max(0); k = NAME_H / (hi[1] - lo[1]); mid = (lo + hi) / 2
     vs = (vs - mid) * k; vs[:, 2] = 0
     tree = BVHTree.FromPolygons([tuple(v) for v in vs], polys)
     ev.to_mesh_clear(); bpy.data.objects.remove(o)
     mask = np.zeros((TH, TW), np.float32)
     w = (hi[0] - lo[0]) * k / 2
-    c0, c1 = int((-w + HW) * PX) - 2, int((w + HW) * PX) + 3
-    r0, r1 = int((NAME_Z - NAME_H / 2 + HH) * PX) - 2, int((NAME_Z + NAME_H / 2 + HH) * PX) + 3
+    c0, c1 = max(0, int((-w + HW) * PX) - 2), min(TW, int((w + HW) * PX) + 3)
+    r0, r1 = max(0, int((NAME_Z - NAME_H / 2 + HH) * PX) - 2), min(TH, int((NAME_Z + NAME_H / 2 + HH) * PX) + 3)
     down = (0, 0, -1)
     for r in range(r0, r1):
         z = (r + 0.5) / PX - HH - NAME_Z

@@ -93,8 +93,8 @@ A pack has a folder of its own, `instances/divided-world/ui/packs/booster/`, wit
 `art.json` and the scene both pictures come from. The picture is the whole pack, 1080 by 1680 on a transparent ground,
 lit evenly: its outline is the pack's edge, and the engine prints only the count on it. The relief is the same scene at
 540 by 840, colored by which way each bit of film faces, and the engine draws the pack's moving highlight from it. The
-scene reads the name's face from `instances/divided-world/ui/fonts/`, which is what `fonttools brotli` in the install
-line are for. From that folder:
+scene takes the name's face from `instances/divided-world/ui/fonts/` and unpacks it to a TTF Blender can read, which is
+what `fonttools brotli` in the install line are for. From that folder:
 
 ```
 python scene.py art.webp
