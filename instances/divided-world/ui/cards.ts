@@ -280,19 +280,19 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
   },
   /*
    * Laugh Track (docs/plans/2026-11-11-laugh-track-design.md): Pepperoni's color. Its effect is the audience, heard and captioned as a
-   * reader reaches each cued phrase (ui/laugh-track/Effect.tsx); the form picks the cues (ui/laugh-track/ConfigForm.tsx).
+   * reader points at or taps each cued phrase (ui/laugh-track/Effect.tsx); the form picks the cues (ui/laugh-track/ConfigForm.tsx).
    */
   {
     key: 'laugh-track',
     art: { color: '#d24a2c', ink: '#1a0602', canvas: laughTrackCanvas, mark: laughTrackMark, credit: laughTrackArt.credit, tagline: 'Give a post a studio audience.' },
     summary: 'Cues a studio audience to laugh, cheer or boo at the words you choose, wherever they appear in a post.',
     status: 'A studio audience on cue',
-    hint: 'A Laugh Track: the audience reacts when you reach certain words. Turn on Game sounds in Settings to hear it.',
+    hint: 'A Laugh Track: the audience stirs as you get close to certain words. Point at one, or tap it, to hear them react. Turn on Game sounds in Settings to hear it.',
     Effect: LaughTrackEffect,
     ConfigForm: LaughTrackConfigForm,
     surcharge: (s: Settings) => `Many places, +${orbs(s.economy['laughTrack.perPlace'] ?? 0)} per place past ${s.economy['laughTrack.freePlaces'] ?? 0}`,
     describe: () =>
-      `A Pepperoni card, ${laughTrack.rarity}. You choose up to five phrases in a post and give each a sound: the audience laughs, cheers or boos. Wherever a phrase appears in the post's own words, the audience reacts as a reader reaches it, and builds up as they get close. Every reaction is also shown as a caption, so it works with sound off. One audience fits on a post. ${setMoveWords('the quoting post')} Set face down, it waits for a quote that says its first phrase. It costs more to play the more places its phrases cover.`,
+      `A Pepperoni card, ${laughTrack.rarity}. You choose up to five phrases in a post and give each a sound: the audience laughs, cheers or boos. Wherever a phrase appears in the post's own words, the audience stirs as a reader gets close and the phrase's underline fades in. Pointing at the phrase, tapping it, or pressing Enter on it plays the reaction. Every reaction is also shown as a caption, so it works with sound off. One audience fits on a post. ${setMoveWords('the quoting post')} Set face down, it waits for a quote that says its first phrase. It costs more to play the more places its phrases cover.`,
     logPlay: () => 'It gave the post a studio audience.',
   },
   /*
