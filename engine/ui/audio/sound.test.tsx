@@ -249,6 +249,32 @@ describe('the page sound', () => {
     expect(captions.current()).toBeNull();
   });
 
+  test('a stop in the gap between the mixer\'s answer and its handle arriving still ends the source', async () => {
+    const { result } = renderHook(() => useSound(), { wrapper: wrap });
+    on('game');
+    await gesture();
+    let handle!: Loop;
+    /* The mixer asks `cancelled` once, right after the file decodes and before it starts the source; a stop that comes from another microtask after that
+       (here the source's own start) is past the mixer's check and reaches the handle before the page's `.then` has run. */
+    const created = makeContext.getMockImplementation()!;
+    makeContext.mockImplementationOnce(() => {
+      const ctx = created();
+      const make = ctx.createBufferSource;
+      ctx.createBufferSource = () => { const s = make(); const start = s.start; s.start = vi.fn((...a: []) => { start(...a); handle.stop(0); }); return s; };
+      return ctx;
+    });
+    resetSound({ makeContext, fetchBytes });
+    on('game');
+    await gesture();
+    await act(async () => {
+      handle = result.current.loop('build', { id: 'meter' });
+      for (let i = 0; i < 8; i++) await Promise.resolve();
+    });
+    expect(sources).toHaveLength(1);
+    expect(sources[0]!.stop).toHaveBeenCalled();
+    expect(captions.current()).toBeNull();
+  });
+
   test('a loop skipped for a bus that is off still holds and releases its game caption by gain', async () => {
     const { result } = renderHook(() => useSound(), { wrapper: wrap });
     const handle = await loopLoaded(result.current, 'build', { id: 'meter' });
