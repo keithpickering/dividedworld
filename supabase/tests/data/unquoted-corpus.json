@@ -1,0 +1,3534 @@
+[
+ {
+  "name": "structured 1: W [quote=H]W W[/quote] W",
+  "body": "mk1x [quote=11111111-1111-4111-8111-111111111111]mk2x mk3x[/quote] mk4x",
+  "removed": [
+   "mk2x",
+   "mk3x"
+  ]
+ },
+ {
+  "name": "structured 2: W [quote=H]W W",
+  "body": "mk1x [quote=11111111-1111-4111-8111-111111111111]mk2x mk3x",
+  "removed": [
+   "mk2x",
+   "mk3x"
+  ]
+ },
+ {
+  "name": "structured 3: W [quote=H]W [b]W[/b] W",
+  "body": "mk1x [quote=11111111-1111-4111-8111-111111111111]mk2x [b]mk3x[/b] mk4x",
+  "removed": [
+   "mk2x",
+   "mk3x",
+   "mk4x"
+  ]
+ },
+ {
+  "name": "structured 4: [b][quote=H]W[/b] W",
+  "body": "[b][quote=11111111-1111-4111-8111-111111111111]mk1x[/b] mk2x",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "structured 5: [b]W [quote=H]W[/b] W[/quote] W",
+  "body": "[b]mk1x [quote=11111111-1111-4111-8111-111111111111]mk2x[/b] mk3x[/quote] mk4x",
+  "removed": [
+   "mk2x"
+  ]
+ },
+ {
+  "name": "structured 6: [i][b][quote=H]W[/i] W[/b] W[/quote] W",
+  "body": "[i][b][quote=11111111-1111-4111-8111-111111111111]mk1x[/i] mk2x[/b] mk3x[/quote] mk4x",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "structured 7: [url=https://e.com/]W [quote=H]W[/url] W[/quote] W",
+  "body": "[url=https://e.com/]mk1x [quote=11111111-1111-4111-8111-111111111111]mk2x[/url] mk3x[/quote] mk4x",
+  "removed": [
+   "mk2x"
+  ]
+ },
+ {
+  "name": "structured 8: [quote=H]W [quote=S]W[/quote] W[/quote] W",
+  "body": "[quote=11111111-1111-4111-8111-111111111111]mk1x [quote=22222222-2222-4222-8222-222222222222]mk2x[/quote] mk3x[/quote] mk4x",
+  "removed": [
+   "mk1x",
+   "mk2x",
+   "mk3x"
+  ]
+ },
+ {
+  "name": "structured 9: [quote=H]W [quote=S]W [quote=H]W[/quote] W[/quote] W[/quote] W",
+  "body": "[quote=11111111-1111-4111-8111-111111111111]mk1x [quote=22222222-2222-4222-8222-222222222222]mk2x [quote=11111111-1111-4111-8111-111111111111]mk3x[/quote] mk4x[/quote] mk5x[/quote] mk6x",
+  "removed": [
+   "mk1x",
+   "mk2x",
+   "mk3x",
+   "mk4x",
+   "mk5x"
+  ]
+ },
+ {
+  "name": "structured 10: [quote=H]W [quote=S]W W",
+  "body": "[quote=11111111-1111-4111-8111-111111111111]mk1x [quote=22222222-2222-4222-8222-222222222222]mk2x mk3x",
+  "removed": [
+   "mk1x",
+   "mk2x",
+   "mk3x"
+  ]
+ },
+ {
+  "name": "structured 11: [quote=H]W[quote=S]W[/quote]",
+  "body": "[quote=11111111-1111-4111-8111-111111111111]mk1x[quote=22222222-2222-4222-8222-222222222222]mk2x[/quote]",
+  "removed": [
+   "mk1x",
+   "mk2x"
+  ]
+ },
+ {
+  "name": "structured 12: [quote=H]W [/b] W[/quote] W",
+  "body": "[quote=11111111-1111-4111-8111-111111111111]mk1x [/b] mk2x[/quote] mk3x",
+  "removed": [
+   "mk1x",
+   "mk2x"
+  ]
+ },
+ {
+  "name": "structured 13: [quote=H]W [/quote] W [/quote] W",
+  "body": "[quote=11111111-1111-4111-8111-111111111111]mk1x [/quote] mk2x [/quote] mk3x",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "structured 14: [quote=H]W[/quote][quote=S]W[/quote]W",
+  "body": "[quote=11111111-1111-4111-8111-111111111111]mk1x[/quote][quote=22222222-2222-4222-8222-222222222222]mk2x[/quote]mk3x",
+  "removed": [
+   "mk1x",
+   "mk2x"
+  ]
+ },
+ {
+  "name": "structured 15: [quote=H]W[/quote][quote=S]W",
+  "body": "[quote=11111111-1111-4111-8111-111111111111]mk1x[/quote][quote=22222222-2222-4222-8222-222222222222]mk2x",
+  "removed": [
+   "mk1x",
+   "mk2x"
+  ]
+ },
+ {
+  "name": "structured 16: W [quote=zz]W[/quote] W",
+  "body": "mk1x [quote=zz]mk2x[/quote] mk3x",
+  "removed": []
+ },
+ {
+  "name": "structured 17: W [quote=zz]W [quote=H]W[/quote] W",
+  "body": "mk1x [quote=zz]mk2x [quote=11111111-1111-4111-8111-111111111111]mk3x[/quote] mk4x",
+  "removed": [
+   "mk3x"
+  ]
+ },
+ {
+  "name": "structured 18: [quote=zz]W [quote=H]W [/quote] W [/quote] W",
+  "body": "[quote=zz]mk1x [quote=11111111-1111-4111-8111-111111111111]mk2x [/quote] mk3x [/quote] mk4x",
+  "removed": [
+   "mk2x"
+  ]
+ },
+ {
+  "name": "structured 19: [quote]W[/quote] W",
+  "body": "[quote]mk1x[/quote] mk2x",
+  "removed": []
+ },
+ {
+  "name": "structured 20: [quote=Bob]W [quote=H]W[/quote]",
+  "body": "[quote=Bob]mk1x [quote=11111111-1111-4111-8111-111111111111]mk2x[/quote]",
+  "removed": [
+   "mk2x"
+  ]
+ },
+ {
+  "name": "structured 21: [code][quote=H]W[/quote][/code] W",
+  "body": "[code][quote=11111111-1111-4111-8111-111111111111]mk1x[/quote][/code] mk2x",
+  "removed": []
+ },
+ {
+  "name": "structured 22: [code][quote=H]W[/code] W [/quote] W",
+  "body": "[code][quote=11111111-1111-4111-8111-111111111111]mk1x[/code] mk2x [/quote] mk3x",
+  "removed": []
+ },
+ {
+  "name": "structured 23: [noparse][quote=H]W[/quote][/noparse] W",
+  "body": "[noparse][quote=11111111-1111-4111-8111-111111111111]mk1x[/quote][/noparse] mk2x",
+  "removed": []
+ },
+ {
+  "name": "structured 24: [quote=H][noparse]W [/quote] W[/noparse]W[/quote] W",
+  "body": "[quote=11111111-1111-4111-8111-111111111111][noparse]mk1x [/quote] mk2x[/noparse]mk3x[/quote] mk4x",
+  "removed": [
+   "mk1x",
+   "mk2x",
+   "mk3x"
+  ]
+ },
+ {
+  "name": "structured 25: [quote=H][code]W [/quote] W[/code] W[/quote] W",
+  "body": "[quote=11111111-1111-4111-8111-111111111111][code]mk1x [/quote] mk2x[/code] mk3x[/quote] mk4x",
+  "removed": [
+   "mk1x",
+   "mk2x",
+   "mk3x"
+  ]
+ },
+ {
+  "name": "structured 26: [quote=\"H\"]W[/quote] W",
+  "body": "[quote=\"11111111-1111-4111-8111-111111111111\"]mk1x[/quote] mk2x",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "structured 27: [QUOTE=H]W[/QUOTE] W",
+  "body": "[QUOTE=11111111-1111-4111-8111-111111111111]mk1x[/QUOTE] mk2x",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "structured 28: [quote=H]W[/QUOTE]W",
+  "body": "[quote=11111111-1111-4111-8111-111111111111]mk1x[/QUOTE]mk2x",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "structured 29: [quote=H user=S]W[/quote] W",
+  "body": "[quote=11111111-1111-4111-8111-111111111111 user=22222222-2222-4222-8222-222222222222]mk1x[/quote] mk2x",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "structured 30: [quote=H]W[/quote] [quote=H]W [b]W[/quote] W[/b]",
+  "body": "[quote=11111111-1111-4111-8111-111111111111]mk1x[/quote] [quote=11111111-1111-4111-8111-111111111111]mk2x [b]mk3x[/quote] mk4x[/b]",
+  "removed": [
+   "mk1x",
+   "mk2x",
+   "mk3x"
+  ]
+ },
+ {
+  "name": "structured 31: [b][b][b][b][b][b][b][b][b][b][b][b][quote=H]W[/quote]W",
+  "body": "[b][b][b][b][b][b][b][b][b][b][b][b][quote=11111111-1111-4111-8111-111111111111]mk1x[/quote]mk2x",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "structured 32: [spoiler=x][quote=H]W[/spoiler] W[/quote] W",
+  "body": "[spoiler=x][quote=11111111-1111-4111-8111-111111111111]mk1x[/spoiler] mk2x[/quote] mk3x",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "structured 33: [list][*][quote=H]W[*]W[/quote][/list] W",
+  "body": "[list][*][quote=11111111-1111-4111-8111-111111111111]mk1x[*]mk2x[/quote][/list] mk3x",
+  "removed": [
+   "mk1x",
+   "mk2x"
+  ]
+ },
+ {
+  "name": "structured 34: [list][*]W[quote=H]W[/list] W",
+  "body": "[list][*]mk1x[quote=11111111-1111-4111-8111-111111111111]mk2x[/list] mk3x",
+  "removed": [
+   "mk2x"
+  ]
+ },
+ {
+  "name": "structured 35: [img]https://e.com/a.png[/img][quote=H]W[/quote]W",
+  "body": "[img]https://e.com/a.png[/img][quote=11111111-1111-4111-8111-111111111111]mk1x[/quote]mk2x",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "structured 36: [url][quote=H]W[/quote][/url] W",
+  "body": "[url][quote=11111111-1111-4111-8111-111111111111]mk1x[/quote][/url] mk2x",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "structured 37: [url]https://e.com/[/url][quote=H]W",
+  "body": "[url]https://e.com/[/url][quote=11111111-1111-4111-8111-111111111111]mk1x",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "random 1",
+  "body": "[quote=zz][quote=22222222-2222-4222-8222-222222222222]mk1x[quote=22222222-2222-4222-8222-222222222222]mk2x",
+  "removed": [
+   "mk1x",
+   "mk2x"
+  ]
+ },
+ {
+  "name": "random 2",
+  "body": "[quote=22222222-2222-4222-8222-222222222222][i][url=https://e.com/]mk1x] [/url][quote=zz]][code]mk2x",
+  "removed": [
+   "mk1x",
+   "mk2x"
+  ]
+ },
+ {
+  "name": "random 3",
+  "body": "[quote][][/quote][/code][/ispoiler]][/noparse][/url][/noparse]",
+  "removed": []
+ },
+ {
+  "name": "random 4",
+  "body": "[/noparse]mk1x[/b][/quote][/i]",
+  "removed": []
+ },
+ {
+  "name": "random 5",
+  "body": "[/quote][list]mk1x[quote=zz][",
+  "removed": []
+ },
+ {
+  "name": "random 6",
+  "body": "[[quote=22222222-2222-4222-8222-222222222222]mk1x[quote][/url][code][noparse][/code][quote=zz]mk2x[/code]",
+  "removed": [
+   "mk1x",
+   "mk2x"
+  ]
+ },
+ {
+  "name": "random 7",
+  "body": "[ispoiler][url=https://e.com/][/i]][noparse][/code][b][/quote][quote][i][noparse]",
+  "removed": []
+ },
+ {
+  "name": "random 8",
+  "body": "mk1x [b][[*]mk2x[/b][[list][/code][url=https://e.com/]",
+  "removed": []
+ },
+ {
+  "name": "random 9",
+  "body": "[quote][ispoiler][/code][[/i] [quote=zz]mk1x[/list][code]][/noparse][quote]",
+  "removed": []
+ },
+ {
+  "name": "random 10",
+  "body": "[/ispoiler][i]][/url][/noparse]",
+  "removed": []
+ },
+ {
+  "name": "random 11",
+  "body": "mk1x[list][quote]mk2x[/i][url=https://e.com/]",
+  "removed": []
+ },
+ {
+  "name": "random 12",
+  "body": "[/noparse]][/noparse][[i][*][/ispoiler][noparse][/i][url=https://e.com/][/noparse]",
+  "removed": []
+ },
+ {
+  "name": "random 13",
+  "body": "[quote=zz][quote=22222222-2222-4222-8222-222222222222][/quote][quote=11111111-1111-4111-8111-111111111111][/list]",
+  "removed": []
+ },
+ {
+  "name": "random 14",
+  "body": "[/ispoiler][*][url=https://e.com/][/quote][quote][list]",
+  "removed": []
+ },
+ {
+  "name": "random 15",
+  "body": "mk1x[/url][/quote][quote=zz][quote=22222222-2222-4222-8222-222222222222]]",
+  "removed": []
+ },
+ {
+  "name": "random 16",
+  "body": "mk1x[i][i]",
+  "removed": []
+ },
+ {
+  "name": "random 17",
+  "body": "[/ispoiler][/i][/ispoiler][/ispoiler][b][code]mk1x[url=https://e.com/]]",
+  "removed": []
+ },
+ {
+  "name": "random 18",
+  "body": "[/i][i][ispoiler][/noparse]]",
+  "removed": []
+ },
+ {
+  "name": "random 19",
+  "body": "[/b][ispoiler][quote=11111111-1111-4111-8111-111111111111][quote]",
+  "removed": []
+ },
+ {
+  "name": "random 20",
+  "body": "[quote] [/ispoiler]",
+  "removed": []
+ },
+ {
+  "name": "random 21",
+  "body": "[/noparse][url=https://e.com/][ [/ispoiler]",
+  "removed": []
+ },
+ {
+  "name": "random 22",
+  "body": "][quote=11111111-1111-4111-8111-111111111111]",
+  "removed": []
+ },
+ {
+  "name": "random 23",
+  "body": "[/b] [/noparse]",
+  "removed": []
+ },
+ {
+  "name": "random 24",
+  "body": "[/list][b][code][url=https://e.com/] [b][][/i][i]]]",
+  "removed": []
+ },
+ {
+  "name": "random 25",
+  "body": "[/i][/noparse][url=https://e.com/][quote][b][/url]mk1x[code]",
+  "removed": []
+ },
+ {
+  "name": "random 26",
+  "body": " [/ispoiler][/list][list]mk1xmk2x[quote=22222222-2222-4222-8222-222222222222][url=https://e.com/][/list][/ispoiler][/ispoiler][/list][/quote] [b]",
+  "removed": []
+ },
+ {
+  "name": "random 27",
+  "body": "[/noparse][b][quote=11111111-1111-4111-8111-111111111111][quote][/ispoiler] [*][url=https://e.com/][quote=22222222-2222-4222-8222-222222222222]",
+  "removed": []
+ },
+ {
+  "name": "random 28",
+  "body": " [ispoiler][i]",
+  "removed": []
+ },
+ {
+  "name": "random 29",
+  "body": "[i][noparse]mk1x",
+  "removed": []
+ },
+ {
+  "name": "random 30",
+  "body": " [/list][/url][url=https://e.com/][url=https://e.com/] [/code][noparse]",
+  "removed": []
+ },
+ {
+  "name": "random 31",
+  "body": "[quote=zz][/code][/noparse][*][/noparse][quote][/code][quote=zz][noparse]",
+  "removed": []
+ },
+ {
+  "name": "random 32",
+  "body": "[/list][/noparse][/code][/i][quote=22222222-2222-4222-8222-222222222222][quote]mk1x[/b][b]",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "random 33",
+  "body": "[/b][url=https://e.com/][[/code][quote][code][/quote]",
+  "removed": []
+ },
+ {
+  "name": "random 34",
+  "body": "[code][mk1x[/noparse]",
+  "removed": []
+ },
+ {
+  "name": "random 35",
+  "body": "[/i][/url][/i] [quote][ispoiler][quote=11111111-1111-4111-8111-111111111111]mk1x[quote][list]",
+  "removed": []
+ },
+ {
+  "name": "random 36",
+  "body": "[/list][/i]]mk1x[quote][/i][quote=11111111-1111-4111-8111-111111111111][code][/i][/url][/url][",
+  "removed": []
+ },
+ {
+  "name": "random 37",
+  "body": "[list][/ispoiler][url=https://e.com/]mk1x[/ispoiler][/quote]",
+  "removed": []
+ },
+ {
+  "name": "random 38",
+  "body": "mk1x[i]",
+  "removed": []
+ },
+ {
+  "name": "random 39",
+  "body": "[quote=11111111-1111-4111-8111-111111111111][/list][quote=zz]][/list][i][mk1xmk2x[i][/ispoiler][/list]mk3x",
+  "removed": [
+   "mk1x",
+   "mk2x",
+   "mk3x"
+  ]
+ },
+ {
+  "name": "random 40",
+  "body": "[b]mk1x[/url][code][/noparse][/list][/i][ispoiler]][[/code]mk2x[/code][quote]",
+  "removed": []
+ },
+ {
+  "name": "random 41",
+  "body": "[ispoiler][/ispoiler]",
+  "removed": []
+ },
+ {
+  "name": "random 42",
+  "body": "[b][/list][/b][noparse]mk1x[/list][list][mk2x[quote]",
+  "removed": []
+ },
+ {
+  "name": "random 43",
+  "body": "[b][quote=zz][list]",
+  "removed": []
+ },
+ {
+  "name": "random 44",
+  "body": "[url=https://e.com/][code][list][i]",
+  "removed": []
+ },
+ {
+  "name": "random 45",
+  "body": "[quote][[url=https://e.com/][quote]mk1x[url=https://e.com/]mk2x[/code]mk3x",
+  "removed": []
+ },
+ {
+  "name": "random 46",
+  "body": "[b][*][code]  mk1x[url=https://e.com/][/list][b]mk2xmk3x[i]",
+  "removed": []
+ },
+ {
+  "name": "random 47",
+  "body": "[/code][/ispoiler][/i][b][noparse][quote=22222222-2222-4222-8222-222222222222][noparse][quote=zz]mk1x[/url][quote=11111111-1111-4111-8111-111111111111][quote=11111111-1111-4111-8111-111111111111][quote][list]",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "random 48",
+  "body": "[i]][/ispoiler][noparse][noparse][/noparse][/ispoiler][/list][quote][quote=zz]mk1x[ispoiler][noparse]mk2x[ispoiler]",
+  "removed": []
+ },
+ {
+  "name": "random 49",
+  "body": "mk1x[/noparse][/code]mk2xmk3x[ispoiler][quote=zz][[b][b]",
+  "removed": []
+ },
+ {
+  "name": "random 50",
+  "body": "[b][b][noparse]mk1x[url=https://e.com/][quote=11111111-1111-4111-8111-111111111111][noparse][list][b][/list]mk2x[",
+  "removed": [
+   "mk2x"
+  ]
+ },
+ {
+  "name": "random 51",
+  "body": "[mk1x[b][/b][/list]",
+  "removed": []
+ },
+ {
+  "name": "random 52",
+  "body": "[/ispoiler][quote=zz][/list][ispoiler][/noparse][/code][/i][b][code][/code]",
+  "removed": []
+ },
+ {
+  "name": "random 53",
+  "body": "[quote=22222222-2222-4222-8222-222222222222][quote=zz][ispoiler][/code] mk1x[b][noparse][quote=11111111-1111-4111-8111-111111111111][/b][code][list][/ispoiler][list]",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "random 54",
+  "body": "[b][noparse][b][/url][quote][quote=22222222-2222-4222-8222-222222222222][/b][noparse][b]mk1x [ispoiler][noparse][/i]",
+  "removed": []
+ },
+ {
+  "name": "random 55",
+  "body": "][/quote][quote=zz][/quote][[/i][/noparse][b]",
+  "removed": []
+ },
+ {
+  "name": "random 56",
+  "body": "[ispoiler][noparse]",
+  "removed": []
+ },
+ {
+  "name": "random 57",
+  "body": "[[/list][/b][ispoiler][/url][*] mk1x[code][quote=zz]",
+  "removed": []
+ },
+ {
+  "name": "random 58",
+  "body": "[/url][*]][*][/noparse]mk1x",
+  "removed": []
+ },
+ {
+  "name": "random 59",
+  "body": "[/b][/list][/list][quote=22222222-2222-4222-8222-222222222222][/list][quote=11111111-1111-4111-8111-111111111111][/list][noparse][*][quote=zz][url=https://e.com/][/noparse][quote=zz][quote=22222222-2222-4222-8222-222222222222][/list]",
+  "removed": []
+ },
+ {
+  "name": "random 60",
+  "body": "[code][ispoiler]",
+  "removed": []
+ },
+ {
+  "name": "random 61",
+  "body": "[/quote][/url][/list][/url][b]",
+  "removed": []
+ },
+ {
+  "name": "random 62",
+  "body": "[quote=11111111-1111-4111-8111-111111111111][/url][i][code]",
+  "removed": []
+ },
+ {
+  "name": "random 63",
+  "body": "[quote=22222222-2222-4222-8222-222222222222][*][noparse][quote=11111111-1111-4111-8111-111111111111][list][/url]][/b][b] ",
+  "removed": []
+ },
+ {
+  "name": "random 64",
+  "body": "[/code][list][quote=22222222-2222-4222-8222-222222222222]] [",
+  "removed": []
+ },
+ {
+  "name": "random 65",
+  "body": "[/quote] [quote][quote=zz][quote=zz]",
+  "removed": []
+ },
+ {
+  "name": "random 66",
+  "body": "[quote][quote=zz]",
+  "removed": []
+ },
+ {
+  "name": "random 67",
+  "body": "[ispoiler][i][*][ispoiler][quote=22222222-2222-4222-8222-222222222222][b][list]",
+  "removed": []
+ },
+ {
+  "name": "random 68",
+  "body": "[/url][]",
+  "removed": []
+ },
+ {
+  "name": "random 69",
+  "body": "][/quote][noparse][i][quote=22222222-2222-4222-8222-222222222222][/url][quote]",
+  "removed": []
+ },
+ {
+  "name": "random 70",
+  "body": "[code]][*]mk1x[[/i]]",
+  "removed": []
+ },
+ {
+  "name": "random 71",
+  "body": "[url=https://e.com/][quote=zz][list][/i][noparse][quote=22222222-2222-4222-8222-222222222222][/b][*][quote=11111111-1111-4111-8111-111111111111]",
+  "removed": []
+ },
+ {
+  "name": "random 72",
+  "body": "[/quote][/i][/b][i][code][quote=11111111-1111-4111-8111-111111111111] [/b][noparse][/quote]",
+  "removed": []
+ },
+ {
+  "name": "random 73",
+  "body": "][b][*][quote=22222222-2222-4222-8222-222222222222][/url][/code]",
+  "removed": []
+ },
+ {
+  "name": "random 74",
+  "body": "[code][/code]",
+  "removed": []
+ },
+ {
+  "name": "random 75",
+  "body": "[mk1x[/code]",
+  "removed": []
+ },
+ {
+  "name": "random 76",
+  "body": "[url=https://e.com/]mk1x[/i][i][/url][/noparse][ispoiler][url=https://e.com/][list][/quote]mk2x[/i][list][quote]",
+  "removed": []
+ },
+ {
+  "name": "random 77",
+  "body": "[/quote][noparse][/code][list][quote][i][quote=22222222-2222-4222-8222-222222222222][quote=11111111-1111-4111-8111-111111111111][b]mk1x[code][/list]mk2x",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "random 78",
+  "body": "[/b][b]",
+  "removed": []
+ },
+ {
+  "name": "random 79",
+  "body": "[list][noparse][/ispoiler][/noparse][/url]mk1x  [quote=zz][quote=11111111-1111-4111-8111-111111111111][/i][quote=22222222-2222-4222-8222-222222222222][ispoiler]",
+  "removed": []
+ },
+ {
+  "name": "random 80",
+  "body": "[*] [/ispoiler][noparse]mk1x[quote=22222222-2222-4222-8222-222222222222][*]",
+  "removed": []
+ },
+ {
+  "name": "random 81",
+  "body": "mk1x[quote][/noparse][/quote][*][quote][quote=zz][/ispoiler] [/list][b][quote][/code]",
+  "removed": []
+ },
+ {
+  "name": "random 82",
+  "body": "[code] [/i][/quote]mk1x]",
+  "removed": []
+ },
+ {
+  "name": "random 83",
+  "body": "[[list]mk1xmk2x[/i][/ispoiler][i][ispoiler][list][code][/list]",
+  "removed": []
+ },
+ {
+  "name": "random 84",
+  "body": "[b]mk1x[b][/url][quote=zz][quote=zz]mk2xmk3x[quote=11111111-1111-4111-8111-111111111111]mk4x[quote][/url][quote=11111111-1111-4111-8111-111111111111][code]]",
+  "removed": [
+   "mk4x"
+  ]
+ },
+ {
+  "name": "random 85",
+  "body": "[quote][/noparse][code][/code][b][i][b][url=https://e.com/][quote][noparse][/b][i][[/b]",
+  "removed": []
+ },
+ {
+  "name": "random 86",
+  "body": "mk1x[[/list][/b][/url]",
+  "removed": []
+ },
+ {
+  "name": "random 87",
+  "body": "[/code] [[/b][quote=11111111-1111-4111-8111-111111111111][/ispoiler][/list][/ispoiler][i][b]mk1x",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "random 88",
+  "body": "[quote=22222222-2222-4222-8222-222222222222][quote=zz][list]][/noparse][*][ispoiler]",
+  "removed": []
+ },
+ {
+  "name": "random 89",
+  "body": "[quote=22222222-2222-4222-8222-222222222222][/list][quote=11111111-1111-4111-8111-111111111111][/b]",
+  "removed": []
+ },
+ {
+  "name": "random 90",
+  "body": "[*][quote=zz][ispoiler][noparse][code][/noparse][ispoiler][/i][list][quote=22222222-2222-4222-8222-222222222222][quote=22222222-2222-4222-8222-222222222222][/url]",
+  "removed": []
+ },
+ {
+  "name": "random 91",
+  "body": "[[noparse][quote=11111111-1111-4111-8111-111111111111][/list][list][/i][/ispoiler]mk1x[/list][b]",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "random 92",
+  "body": "[quote=22222222-2222-4222-8222-222222222222][i][/url] mk1xmk2x[url=https://e.com/]mk3x[/noparse][/code]]mk4x[quote=22222222-2222-4222-8222-222222222222][/i][ispoiler]",
+  "removed": [
+   "mk1x",
+   "mk2x",
+   "mk3x",
+   "mk4x"
+  ]
+ },
+ {
+  "name": "random 93",
+  "body": "[/url][noparse][i][/quote]mk1x",
+  "removed": []
+ },
+ {
+  "name": "random 94",
+  "body": "[/url][/list][/list][quote=11111111-1111-4111-8111-111111111111]mk1xmk2x",
+  "removed": [
+   "mk1x",
+   "mk2x"
+  ]
+ },
+ {
+  "name": "random 95",
+  "body": "[noparse]mk1xmk2x[/noparse] [quote=22222222-2222-4222-8222-222222222222][noparse][code] [/code][url=https://e.com/][i][quote=22222222-2222-4222-8222-222222222222][ispoiler][/ispoiler]",
+  "removed": []
+ },
+ {
+  "name": "random 96",
+  "body": "[noparse][b][noparse]mk1x[/code]mk2x[/code][ispoiler][quote][url=https://e.com/][/ispoiler][noparse]",
+  "removed": []
+ },
+ {
+  "name": "random 97",
+  "body": "[i][/url]mk1x[url=https://e.com/][/noparse]mk2x[[/list][/i][quote][quote=11111111-1111-4111-8111-111111111111]",
+  "removed": []
+ },
+ {
+  "name": "random 98",
+  "body": "[quote][i][/i]",
+  "removed": []
+ },
+ {
+  "name": "random 99",
+  "body": "[noparse][/b][/b][noparse][mk1x[/b][/list][[i][i][ispoiler] [[/quote]",
+  "removed": []
+ },
+ {
+  "name": "random 100",
+  "body": "[quote=zz][/list][i][quote=11111111-1111-4111-8111-111111111111][quote=zz][/b][/noparse][list][list] [quote=11111111-1111-4111-8111-111111111111][noparse][i]",
+  "removed": []
+ },
+ {
+  "name": "random 101",
+  "body": "[quote][list][ispoiler][/i]mk1x[quote=22222222-2222-4222-8222-222222222222][quote][*][code]mk2x[list]",
+  "removed": []
+ },
+ {
+  "name": "random 102",
+  "body": "mk1x][[quote=11111111-1111-4111-8111-111111111111][quote=11111111-1111-4111-8111-111111111111][ispoiler]",
+  "removed": []
+ },
+ {
+  "name": "random 103",
+  "body": "[url=https://e.com/][i]mk1x][quote=22222222-2222-4222-8222-222222222222][quote][/i][/ispoiler][/list][/noparse]][i][ispoiler][/b][/list]",
+  "removed": []
+ },
+ {
+  "name": "random 104",
+  "body": "mk1xmk2x[/i][quote=22222222-2222-4222-8222-222222222222]",
+  "removed": []
+ },
+ {
+  "name": "random 105",
+  "body": "[*]]",
+  "removed": []
+ },
+ {
+  "name": "random 106",
+  "body": "[/b][quote=22222222-2222-4222-8222-222222222222][/i]mk1x[b][/b][noparse][/code]",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "random 107",
+  "body": "[quote=zz][/i][list]",
+  "removed": []
+ },
+ {
+  "name": "random 108",
+  "body": "[quote=11111111-1111-4111-8111-111111111111][quote=22222222-2222-4222-8222-222222222222] [/url][noparse][/url]mk1x[i][/quote][quote=22222222-2222-4222-8222-222222222222][i] ",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "random 109",
+  "body": "[quote=11111111-1111-4111-8111-111111111111]mk1x[/b]mk2x[quote] [code][code]mk3x[quote=22222222-2222-4222-8222-222222222222][quote=22222222-2222-4222-8222-222222222222][/quote]",
+  "removed": [
+   "mk1x",
+   "mk2x",
+   "mk3x"
+  ]
+ },
+ {
+  "name": "random 110",
+  "body": "[/ispoiler][quote][b]mk1x[noparse]",
+  "removed": []
+ },
+ {
+  "name": "random 111",
+  "body": "[quote=22222222-2222-4222-8222-222222222222]mk1x[url=https://e.com/][/noparse][ispoiler][/noparse][quote=zz]",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "random 112",
+  "body": "[/url][/noparse]",
+  "removed": []
+ },
+ {
+  "name": "random 113",
+  "body": "[/i][/list][/b][/code][/noparse][/i]mk1x[ispoiler][b][i][/code]",
+  "removed": []
+ },
+ {
+  "name": "random 114",
+  "body": "[quote][quote=zz][list][i][quote=11111111-1111-4111-8111-111111111111][noparse]mk1x[*][list][/noparse][/code][[noparse][b]",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "random 115",
+  "body": "[noparse][quote][noparse][noparse][/ispoiler]",
+  "removed": []
+ },
+ {
+  "name": "random 116",
+  "body": "mk1x[ispoiler]",
+  "removed": []
+ },
+ {
+  "name": "random 117",
+  "body": "[/ispoiler]mk1x[ispoiler][i][ispoiler][list][/b][list][quote=11111111-1111-4111-8111-111111111111][/b]mk2xmk3x[/ispoiler][quote=22222222-2222-4222-8222-222222222222][url=https://e.com/]",
+  "removed": []
+ },
+ {
+  "name": "random 118",
+  "body": "[/list][code][url=https://e.com/][/list][/ispoiler][/noparse][/b]",
+  "removed": []
+ },
+ {
+  "name": "random 119",
+  "body": "[quote=zz][quote=22222222-2222-4222-8222-222222222222][/i]",
+  "removed": []
+ },
+ {
+  "name": "random 120",
+  "body": "[/quote][/noparse][quote=zz][quote=zz]",
+  "removed": []
+ },
+ {
+  "name": "random 121",
+  "body": " [i][quote=11111111-1111-4111-8111-111111111111][noparse][code][/quote][i][/code]][quote=22222222-2222-4222-8222-222222222222][/quote][quote]",
+  "removed": []
+ },
+ {
+  "name": "random 122",
+  "body": "][ispoiler][/url]",
+  "removed": []
+ },
+ {
+  "name": "random 123",
+  "body": "[list][quote=zz] ",
+  "removed": []
+ },
+ {
+  "name": "random 124",
+  "body": "[/quote][quote=22222222-2222-4222-8222-222222222222][url=https://e.com/][/noparse][/ispoiler]mk1x[code][ispoiler][b][/noparse]",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "random 125",
+  "body": "[/i][*]mk1x[*][quote][quote]][/i][/ispoiler]mk2x[quote]",
+  "removed": []
+ },
+ {
+  "name": "random 126",
+  "body": "[/i][list]",
+  "removed": []
+ },
+ {
+  "name": "random 127",
+  "body": "[quote=zz][url=https://e.com/][/quote][url=https://e.com/]",
+  "removed": []
+ },
+ {
+  "name": "random 128",
+  "body": "[quote=22222222-2222-4222-8222-222222222222][list][quote=zz][ispoiler][list][i]",
+  "removed": []
+ },
+ {
+  "name": "random 129",
+  "body": "mk1x[ [[[/code][/i] mk2x[/quote][[/url][/url]",
+  "removed": []
+ },
+ {
+  "name": "random 130",
+  "body": "[*]][quote][/noparse]mk1x[[/list][list][noparse]",
+  "removed": []
+ },
+ {
+  "name": "random 131",
+  "body": "[noparse][/url][url=https://e.com/]",
+  "removed": []
+ },
+ {
+  "name": "random 132",
+  "body": "[url=https://e.com/][[i][b][url=https://e.com/]mk1x",
+  "removed": []
+ },
+ {
+  "name": "random 133",
+  "body": "[*][/code][/url][/b][list][quote][/ispoiler][code][noparse]",
+  "removed": []
+ },
+ {
+  "name": "random 134",
+  "body": "[quote=zz][*][list][*] [/b][ispoiler] [mk1x]",
+  "removed": []
+ },
+ {
+  "name": "random 135",
+  "body": "[[/list][/quote]",
+  "removed": []
+ },
+ {
+  "name": "random 136",
+  "body": "[quote=22222222-2222-4222-8222-222222222222] [url=https://e.com/]mk1x[*][[i] [/url]",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "random 137",
+  "body": "[ispoiler]][code][code][/list][b][/ispoiler]",
+  "removed": []
+ },
+ {
+  "name": "random 138",
+  "body": "mk1x[/quote]mk2x[/i][/ispoiler][list][list][b]mk3x[noparse][/ispoiler][/i][/code]mk4x",
+  "removed": []
+ },
+ {
+  "name": "random 139",
+  "body": "[/noparse][noparse][quote=zz][/code][/code][[i][noparse][b][/i]",
+  "removed": []
+ },
+ {
+  "name": "random 140",
+  "body": "[/b][ispoiler][[quote=zz][/noparse][noparse]",
+  "removed": []
+ },
+ {
+  "name": "random 141",
+  "body": "[url=https://e.com/] mk1x[ispoiler][/list][/list][b][ispoiler][[/i][ispoiler]",
+  "removed": []
+ },
+ {
+  "name": "random 142",
+  "body": "[/quote][b] [/code][url=https://e.com/][quote=zz]mk1xmk2x[/code]",
+  "removed": []
+ },
+ {
+  "name": "random 143",
+  "body": "[quote=11111111-1111-4111-8111-111111111111][/ispoiler][quote][code]",
+  "removed": []
+ },
+ {
+  "name": "random 144",
+  "body": "[/b][noparse][/b][quote][quote=zz][code][quote=zz] mk1x[code]",
+  "removed": []
+ },
+ {
+  "name": "random 145",
+  "body": "[b][/url][/url][/noparse]mk1x][/noparse][ispoiler]mk2x[*][b]",
+  "removed": []
+ },
+ {
+  "name": "random 146",
+  "body": "[b] [list][url=https://e.com/]mk1x[code][quote=22222222-2222-4222-8222-222222222222][/b][quote][i][/list][b][/url][ispoiler]",
+  "removed": []
+ },
+ {
+  "name": "random 147",
+  "body": "[/ispoiler][/i][/noparse][noparse][/code][i][/code]mk1x[/ispoiler][ispoiler]mk2x[quote=11111111-1111-4111-8111-111111111111][/url][/b]",
+  "removed": []
+ },
+ {
+  "name": "random 148",
+  "body": "[noparse][/code][i][b]mk1x[ispoiler]",
+  "removed": []
+ },
+ {
+  "name": "random 149",
+  "body": "mk1x[list][ispoiler][*]]",
+  "removed": []
+ },
+ {
+  "name": "random 150",
+  "body": "mk1x[b][url=https://e.com/]",
+  "removed": []
+ },
+ {
+  "name": "random 151",
+  "body": "[[/quote] [/code][/ispoiler][b][/b]mk1x",
+  "removed": []
+ },
+ {
+  "name": "random 152",
+  "body": "[quote=11111111-1111-4111-8111-111111111111][code][/list][url=https://e.com/][/noparse][[/noparse][list][quote][/noparse][code]",
+  "removed": []
+ },
+ {
+  "name": "random 153",
+  "body": "[ispoiler][quote=22222222-2222-4222-8222-222222222222][url=https://e.com/][b]mk1x[/list][quote=22222222-2222-4222-8222-222222222222][noparse][*][b][/url][*][quote=22222222-2222-4222-8222-222222222222] ",
+  "removed": []
+ },
+ {
+  "name": "random 154",
+  "body": "[quote][/url][b]][/code][/url]",
+  "removed": []
+ },
+ {
+  "name": "random 155",
+  "body": " [/quote][quote][quote=22222222-2222-4222-8222-222222222222]mk1x[noparse][url=https://e.com/][list][/code][*][quote=11111111-1111-4111-8111-111111111111][/url]",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "random 156",
+  "body": "[ispoiler][quote][i][quote=zz]mk1x",
+  "removed": []
+ },
+ {
+  "name": "random 157",
+  "body": "[/noparse][quote]]]",
+  "removed": []
+ },
+ {
+  "name": "random 158",
+  "body": "[ispoiler][/noparse][quote=zz][quote=11111111-1111-4111-8111-111111111111][*][*]]mk1x",
+  "removed": []
+ },
+ {
+  "name": "random 159",
+  "body": "[/noparse][*][/ispoiler][i][/code]][quote=zz][/ispoiler][b][i][url=https://e.com/][/url]]",
+  "removed": []
+ },
+ {
+  "name": "random 160",
+  "body": "mk1xmk2x[/quote][quote][noparse][/url]][/code][/url][/code][[quote][/code][quote]",
+  "removed": []
+ },
+ {
+  "name": "random 161",
+  "body": " [/i]mk1x[/b][quote=22222222-2222-4222-8222-222222222222][/i][quote=22222222-2222-4222-8222-222222222222][quote][/url][code][quote=22222222-2222-4222-8222-222222222222]",
+  "removed": []
+ },
+ {
+  "name": "random 162",
+  "body": "mk1x[/noparse][*][url=https://e.com/][ispoiler]mk2xmk3x[quote][/b][/list][/url][/b][code]",
+  "removed": []
+ },
+ {
+  "name": "random 163",
+  "body": "[*]mk1x[quote=22222222-2222-4222-8222-222222222222][ispoiler][i][list][i]",
+  "removed": []
+ },
+ {
+  "name": "random 164",
+  "body": "[/i][quote=11111111-1111-4111-8111-111111111111][/i][/code][*]",
+  "removed": []
+ },
+ {
+  "name": "random 165",
+  "body": "[ispoiler][quote=11111111-1111-4111-8111-111111111111][/noparse][/list]mk1xmk2xmk3x",
+  "removed": []
+ },
+ {
+  "name": "random 166",
+  "body": "[/noparse][/quote]mk1x[/quote][noparse][*][noparse][noparse][i][quote=22222222-2222-4222-8222-222222222222]",
+  "removed": []
+ },
+ {
+  "name": "random 167",
+  "body": "[url=https://e.com/][/b][/url][quote=11111111-1111-4111-8111-111111111111][/code][b][][list][*][",
+  "removed": []
+ },
+ {
+  "name": "random 168",
+  "body": "[code] [quote=zz]",
+  "removed": []
+ },
+ {
+  "name": "random 169",
+  "body": "[noparse][/b][[/quote][quote][quote=22222222-2222-4222-8222-222222222222][/i]mk1x",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "random 170",
+  "body": "[quote=22222222-2222-4222-8222-222222222222][url=https://e.com/][/noparse] mk1xmk2x[quote][quote][ispoiler][quote]]mk3x[*]",
+  "removed": [
+   "mk1x",
+   "mk2x",
+   "mk3x"
+  ]
+ },
+ {
+  "name": "random 171",
+  "body": "[i]][/list][/url]",
+  "removed": []
+ },
+ {
+  "name": "random 172",
+  "body": "[*][b] [/list][/b][ispoiler][quote=zz]",
+  "removed": []
+ },
+ {
+  "name": "random 173",
+  "body": "[url=https://e.com/][url=https://e.com/] [/code]",
+  "removed": []
+ },
+ {
+  "name": "random 174",
+  "body": "[quote=zz][/i][/ispoiler][*][/code][/quote][list][b]mk1x[/quote][*]",
+  "removed": []
+ },
+ {
+  "name": "random 175",
+  "body": "[/list][quote=22222222-2222-4222-8222-222222222222][[*]",
+  "removed": []
+ },
+ {
+  "name": "random 176",
+  "body": "][/quote] ",
+  "removed": []
+ },
+ {
+  "name": "random 177",
+  "body": "[noparse] [/noparse][/quote][/url][quote=11111111-1111-4111-8111-111111111111][i][*]][[/b]",
+  "removed": []
+ },
+ {
+  "name": "random 178",
+  "body": "[[/quote][/code] [/b]",
+  "removed": []
+ },
+ {
+  "name": "random 179",
+  "body": "[/b][/i][quote=11111111-1111-4111-8111-111111111111][noparse][list][/b]",
+  "removed": []
+ },
+ {
+  "name": "random 180",
+  "body": "[/list][/list][ispoiler][/noparse][/b]",
+  "removed": []
+ },
+ {
+  "name": "random 181",
+  "body": "[/quote]mk1x[quote=11111111-1111-4111-8111-111111111111][/noparse][[b][list]mk2x[b][quote][/quote][quote][/b][quote][",
+  "removed": [
+   "mk2x"
+  ]
+ },
+ {
+  "name": "random 182",
+  "body": "[/i][b][*]",
+  "removed": []
+ },
+ {
+  "name": "random 183",
+  "body": "[b][url=https://e.com/][/noparse][url=https://e.com/][quote][noparse][noparse]",
+  "removed": []
+ },
+ {
+  "name": "random 184",
+  "body": "[url=https://e.com/][list]mk1x[quote=zz]mk2x[*]mk3x][list]][[ispoiler]][/quote]",
+  "removed": []
+ },
+ {
+  "name": "random 185",
+  "body": "[][code][quote=11111111-1111-4111-8111-111111111111][list][/url]",
+  "removed": []
+ },
+ {
+  "name": "random 186",
+  "body": "[quote=11111111-1111-4111-8111-111111111111][i][b][",
+  "removed": []
+ },
+ {
+  "name": "random 187",
+  "body": "[[/quote][/i][/quote]][list][code][url=https://e.com/] [b] [code]",
+  "removed": []
+ },
+ {
+  "name": "random 188",
+  "body": "[*][/i][/code] [quote][url=https://e.com/][/noparse][i][ispoiler][quote=22222222-2222-4222-8222-222222222222]mk1x[/noparse][/b]]",
+  "removed": []
+ },
+ {
+  "name": "random 189",
+  "body": "[quote] ",
+  "removed": []
+ },
+ {
+  "name": "random 190",
+  "body": "[quote=22222222-2222-4222-8222-222222222222][[/b][/i][*][[quote=11111111-1111-4111-8111-111111111111][/ispoiler][*][quote=11111111-1111-4111-8111-111111111111][/code][quote=11111111-1111-4111-8111-111111111111]",
+  "removed": []
+ },
+ {
+  "name": "random 191",
+  "body": "[quote=zz][b][quote=11111111-1111-4111-8111-111111111111][/list] [/ispoiler][code][b]mk1x[code]mk2x[quote][/url]",
+  "removed": [
+   "mk1x",
+   "mk2x"
+  ]
+ },
+ {
+  "name": "random 192",
+  "body": "[noparse][b][list][code]mk1x[quote=11111111-1111-4111-8111-111111111111][list][quote=11111111-1111-4111-8111-111111111111]",
+  "removed": []
+ },
+ {
+  "name": "random 193",
+  "body": "[/quote][ispoiler][quote=zz][list][quote=22222222-2222-4222-8222-222222222222][/noparse][b][/noparse][/i][list] ",
+  "removed": []
+ },
+ {
+  "name": "random 194",
+  "body": "[quote=22222222-2222-4222-8222-222222222222][noparse][/code][url=https://e.com/][/ispoiler][quote=22222222-2222-4222-8222-222222222222][quote=22222222-2222-4222-8222-222222222222][/url]][/quote][quote=22222222-2222-4222-8222-222222222222][code][url=https://e.com/][quote=11111111-1111-4111-8111-111111111111][/list]",
+  "removed": []
+ },
+ {
+  "name": "random 195",
+  "body": "[quote=zz][quote=zz][/b]mk1x[/list] ",
+  "removed": []
+ },
+ {
+  "name": "random 196",
+  "body": "[/ispoiler]mk1xmk2x[url=https://e.com/][quote=11111111-1111-4111-8111-111111111111] [code][/i][quote][ispoiler][code][/noparse][/ispoiler]",
+  "removed": []
+ },
+ {
+  "name": "random 197",
+  "body": "mk1x[b][*][/list]]",
+  "removed": []
+ },
+ {
+  "name": "random 198",
+  "body": "[/url][quote=zz][[code][list][/ispoiler][quote=22222222-2222-4222-8222-222222222222][noparse]",
+  "removed": []
+ },
+ {
+  "name": "random 199",
+  "body": "[list][*][b][b][[/b][url=https://e.com/][ispoiler][/quote][/noparse]",
+  "removed": []
+ },
+ {
+  "name": "random 200",
+  "body": "mk1x[/b][quote=zz]mk2x[quote=zz][ispoiler][*]mk3x[ispoiler][/b][i]",
+  "removed": []
+ },
+ {
+  "name": "random 201",
+  "body": "mk1x[noparse][list]mk2x[url=https://e.com/][*][/quote][/code][code][b]",
+  "removed": []
+ },
+ {
+  "name": "random 202",
+  "body": "[/ispoiler][/list]",
+  "removed": []
+ },
+ {
+  "name": "random 203",
+  "body": "mk1x[/quote][noparse][b]mk2x [/quote]mk3x",
+  "removed": []
+ },
+ {
+  "name": "random 204",
+  "body": "] [i][/url][quote=11111111-1111-4111-8111-111111111111][/code][noparse]mk1x][/b][/b]",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "random 205",
+  "body": " [quote=22222222-2222-4222-8222-222222222222][/i][list][*] [/list][/list][ispoiler][b]mk1x[noparse][quote=zz]mk2xmk3x",
+  "removed": [
+   "mk1x",
+   "mk2x",
+   "mk3x"
+  ]
+ },
+ {
+  "name": "random 206",
+  "body": "[ispoiler][/list][quote=11111111-1111-4111-8111-111111111111][quote][[/list][[ispoiler]",
+  "removed": []
+ },
+ {
+  "name": "random 207",
+  "body": "[code] [noparse][i]",
+  "removed": []
+ },
+ {
+  "name": "random 208",
+  "body": "[ispoiler][quote][/url][code][/b][/list][/ispoiler][quote=zz]mk1xmk2x[/list][i]",
+  "removed": []
+ },
+ {
+  "name": "random 209",
+  "body": "[/list][[ispoiler][b][/i][quote=zz][/quote][/quote][b][url=https://e.com/][ispoiler][/i][quote=22222222-2222-4222-8222-222222222222][[quote]",
+  "removed": []
+ },
+ {
+  "name": "random 210",
+  "body": "[/ispoiler]mk1x[/ispoiler]",
+  "removed": []
+ },
+ {
+  "name": "random 211",
+  "body": "[[/list][noparse][quote=22222222-2222-4222-8222-222222222222][b]mk1x[/url]",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "random 212",
+  "body": "[/i][quote=22222222-2222-4222-8222-222222222222][/quote][[quote=zz][quote=11111111-1111-4111-8111-111111111111][ispoiler][i][ispoiler][/url][quote][ispoiler][code][",
+  "removed": []
+ },
+ {
+  "name": "random 213",
+  "body": "[/i][noparse][ [/b][list][code] ][list][quote=22222222-2222-4222-8222-222222222222][i][b]",
+  "removed": []
+ },
+ {
+  "name": "random 214",
+  "body": "[ispoiler][/list][ispoiler][/quote][/ispoiler]mk1x[/quote][/code][quote=11111111-1111-4111-8111-111111111111][ispoiler][noparse][/quote]",
+  "removed": []
+ },
+ {
+  "name": "random 215",
+  "body": "[/code][/url][quote=zz][url=https://e.com/][/b]",
+  "removed": []
+ },
+ {
+  "name": "random 216",
+  "body": "[list][/b][*][/ispoiler][/url][/b][noparse][/url][quote][/quote]][quote=11111111-1111-4111-8111-111111111111][*]",
+  "removed": []
+ },
+ {
+  "name": "random 217",
+  "body": "[i][list][/i][/list][list][/code][quote=22222222-2222-4222-8222-222222222222]",
+  "removed": []
+ },
+ {
+  "name": "random 218",
+  "body": "[b] [url=https://e.com/]",
+  "removed": []
+ },
+ {
+  "name": "random 219",
+  "body": "[/i][noparse][quote]",
+  "removed": []
+ },
+ {
+  "name": "random 220",
+  "body": "[quote=22222222-2222-4222-8222-222222222222][/list][url=https://e.com/][",
+  "removed": []
+ },
+ {
+  "name": "random 221",
+  "body": "]mk1x [i][/b]",
+  "removed": []
+ },
+ {
+  "name": "random 222",
+  "body": "[ispoiler][[/code][i][/code][*]mk1x ][quote=22222222-2222-4222-8222-222222222222]]",
+  "removed": []
+ },
+ {
+  "name": "random 223",
+  "body": "[[quote=22222222-2222-4222-8222-222222222222][quote=zz]][quote=22222222-2222-4222-8222-222222222222]",
+  "removed": []
+ },
+ {
+  "name": "random 224",
+  "body": "[*][code]]mk1x[b][/i][code][list][/i][url=https://e.com/][/code]]",
+  "removed": []
+ },
+ {
+  "name": "random 225",
+  "body": "[/quote][ispoiler][/ispoiler][/ispoiler][/url][/quote]]][][/list]",
+  "removed": []
+ },
+ {
+  "name": "random 226",
+  "body": "[list][/noparse][/code]",
+  "removed": []
+ },
+ {
+  "name": "random 227",
+  "body": "[/url] [quote=22222222-2222-4222-8222-222222222222][/noparse][noparse]",
+  "removed": []
+ },
+ {
+  "name": "random 228",
+  "body": "[/url][/url][url=https://e.com/][i]",
+  "removed": []
+ },
+ {
+  "name": "random 229",
+  "body": "[quote=22222222-2222-4222-8222-222222222222][/code][ispoiler][b][/i]][quote=zz][list][quote][*][list][noparse][quote=22222222-2222-4222-8222-222222222222][code]",
+  "removed": []
+ },
+ {
+  "name": "random 230",
+  "body": "[/quote][list][/i][/code]mk1x[quote=zz][noparse][i][/list][code][list][url=https://e.com/]",
+  "removed": []
+ },
+ {
+  "name": "random 231",
+  "body": "[code][i][i][noparse]mk1x]",
+  "removed": []
+ },
+ {
+  "name": "random 232",
+  "body": "[code][ispoiler][[*]",
+  "removed": []
+ },
+ {
+  "name": "random 233",
+  "body": "[ispoiler][/list][/quote][quote=zz][quote=22222222-2222-4222-8222-222222222222][/code][/i][/code][*][code][*][/b][quote=22222222-2222-4222-8222-222222222222]",
+  "removed": []
+ },
+ {
+  "name": "random 234",
+  "body": "[url=https://e.com/][/i][list][quote=zz]mk1x[quote][*]][code][*][/noparse]",
+  "removed": []
+ },
+ {
+  "name": "random 235",
+  "body": "[/list][quote=zz]",
+  "removed": []
+ },
+ {
+  "name": "random 236",
+  "body": "[noparse]mk1x][/url][*]mk2x",
+  "removed": []
+ },
+ {
+  "name": "random 237",
+  "body": "[quote=11111111-1111-4111-8111-111111111111][b][quote][code][list][/code][list][]mk1x[quote=zz][/noparse][/b][/noparse][quote=11111111-1111-4111-8111-111111111111]",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "random 238",
+  "body": "[/noparse][b]mk1x",
+  "removed": []
+ },
+ {
+  "name": "random 239",
+  "body": "[/list]][/quote][/code][",
+  "removed": []
+ },
+ {
+  "name": "random 240",
+  "body": "[code][b]mk1x[ispoiler][list][/ispoiler][/quote][/ispoiler][list]",
+  "removed": []
+ },
+ {
+  "name": "random 241",
+  "body": "[/i][b][/b]mk1x[code][/i][/quote]",
+  "removed": []
+ },
+ {
+  "name": "random 242",
+  "body": "[quote][/list][/quote][list][code]mk1x",
+  "removed": []
+ },
+ {
+  "name": "random 243",
+  "body": "[ispoiler]]",
+  "removed": []
+ },
+ {
+  "name": "random 244",
+  "body": "mk1x[/list][noparse][noparse][url=https://e.com/][*][[quote]",
+  "removed": []
+ },
+ {
+  "name": "random 245",
+  "body": "[quote=zz][/list]][list][/url][*][ispoiler]mk1x[/list][code][/quote] [/noparse]",
+  "removed": []
+ },
+ {
+  "name": "random 246",
+  "body": "][ispoiler]",
+  "removed": []
+ },
+ {
+  "name": "random 247",
+  "body": "mk1xmk2x[code]mk3x[/b][i][ispoiler][quote=11111111-1111-4111-8111-111111111111][*][/i][quote=11111111-1111-4111-8111-111111111111][/list][ispoiler]",
+  "removed": []
+ },
+ {
+  "name": "random 248",
+  "body": "[/quote][list][quote=22222222-2222-4222-8222-222222222222][/i][quote=22222222-2222-4222-8222-222222222222][quote=zz][i][[quote][noparse][/ispoiler]mk1x[/i]",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "random 249",
+  "body": "[/code][/code][/code]mk1x[noparse][quote=22222222-2222-4222-8222-222222222222][mk2x",
+  "removed": [
+   "mk2x"
+  ]
+ },
+ {
+  "name": "random 250",
+  "body": "[/list][list][b][/ispoiler][/code][/noparse]mk1x[noparse][quote=22222222-2222-4222-8222-222222222222][/list][/quote][noparse]mk2x[quote=11111111-1111-4111-8111-111111111111]",
+  "removed": []
+ },
+ {
+  "name": "random 251",
+  "body": "mk1xmk2x[/code]mk3x[/i][b][/b][/i]mk4x[quote][quote=22222222-2222-4222-8222-222222222222][/i][quote=11111111-1111-4111-8111-111111111111]",
+  "removed": []
+ },
+ {
+  "name": "random 252",
+  "body": "[noparse]mk1x[ispoiler][/quote]mk2x[b][quote=zz]",
+  "removed": []
+ },
+ {
+  "name": "random 253",
+  "body": "mk1x[noparse][i]mk2x[code][*][ispoiler][/ispoiler]mk3x[/noparse][i]][noparse][quote]",
+  "removed": []
+ },
+ {
+  "name": "random 254",
+  "body": "mk1x[quote][noparse][/url][list]",
+  "removed": []
+ },
+ {
+  "name": "random 255",
+  "body": "[code][quote][*][url=https://e.com/]mk1x[/i][/i]",
+  "removed": []
+ },
+ {
+  "name": "random 256",
+  "body": "[*][code][quote]",
+  "removed": []
+ },
+ {
+  "name": "random 257",
+  "body": "[ispoiler][b][[quote=22222222-2222-4222-8222-222222222222]mk1xmk2x[",
+  "removed": []
+ },
+ {
+  "name": "random 258",
+  "body": "mk1x[quote][noparse][code]",
+  "removed": []
+ },
+ {
+  "name": "random 259",
+  "body": "mk1x[/ispoiler][quote=zz][list][/quote][/code][/ispoiler][list][/list][quote=11111111-1111-4111-8111-111111111111] [/ispoiler][/i][quote=zz][url=https://e.com/]",
+  "removed": []
+ },
+ {
+  "name": "random 260",
+  "body": "[/ispoiler][/quote][/noparse][[/noparse]][/code]",
+  "removed": []
+ },
+ {
+  "name": "random 261",
+  "body": "[][list][[quote=22222222-2222-4222-8222-222222222222]mk1x",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "random 262",
+  "body": "[/noparse][quote=zz][/quote][quote=11111111-1111-4111-8111-111111111111][code]]mk1x[/list]mk2xmk3x[i][*][/code]",
+  "removed": [
+   "mk1x",
+   "mk2x",
+   "mk3x"
+  ]
+ },
+ {
+  "name": "random 263",
+  "body": "[/list][noparse][/list][quote][noparse][/b]",
+  "removed": []
+ },
+ {
+  "name": "random 264",
+  "body": "[url=https://e.com/][/i][/url][*][noparse] [/i][*][/quote][/url]",
+  "removed": []
+ },
+ {
+  "name": "random 265",
+  "body": "[/b][noparse][noparse][/code][*][/noparse][list][/list][i][/b][code][ispoiler]",
+  "removed": []
+ },
+ {
+  "name": "random 266",
+  "body": "[b][/list][/quote][b][quote=22222222-2222-4222-8222-222222222222][/quote]",
+  "removed": []
+ },
+ {
+  "name": "random 267",
+  "body": "[list][code][quote=zz][/noparse]",
+  "removed": []
+ },
+ {
+  "name": "random 268",
+  "body": "[code][quote=11111111-1111-4111-8111-111111111111][i][list]mk1x[b][*][quote=22222222-2222-4222-8222-222222222222][/quote]",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "random 269",
+  "body": "mk1x[code][/url]mk2x",
+  "removed": []
+ },
+ {
+  "name": "random 270",
+  "body": "[noparse][/quote][/code][ispoiler][list][/i]mk1x[i][quote=zz][quote=22222222-2222-4222-8222-222222222222]",
+  "removed": []
+ },
+ {
+  "name": "random 271",
+  "body": "[list][/noparse][noparse][quote][ispoiler][[noparse][/code][][list][url=https://e.com/]",
+  "removed": []
+ },
+ {
+  "name": "random 272",
+  "body": "[quote=11111111-1111-4111-8111-111111111111]mk1x[/quote]mk2x[/list] [list][quote][*][/list][/url]",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "random 273",
+  "body": "mk1x[i][quote][/i][/noparse][/i][/i]mk2x[/ispoiler][quote=22222222-2222-4222-8222-222222222222][/quote][/quote][code][/list]",
+  "removed": []
+ },
+ {
+  "name": "random 274",
+  "body": "mk1x[code]mk2x[i][quote=zz][quote=11111111-1111-4111-8111-111111111111]mk3x[quote][url=https://e.com/][",
+  "removed": [
+   "mk3x"
+  ]
+ },
+ {
+  "name": "random 275",
+  "body": "[/ispoiler][b][/quote][/b]",
+  "removed": []
+ },
+ {
+  "name": "random 276",
+  "body": "[[list][quote=22222222-2222-4222-8222-222222222222]mk1x[/quote]",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "random 277",
+  "body": "mk1x[code][code][/code][/code][noparse]mk2xmk3x[quote][/ispoiler]mk4x[noparse]",
+  "removed": []
+ },
+ {
+  "name": "random 278",
+  "body": "[/noparse]mk1xmk2x[[/quote][/list][/url][url=https://e.com/][list][list]",
+  "removed": []
+ },
+ {
+  "name": "random 279",
+  "body": " [quote=22222222-2222-4222-8222-222222222222][/i][list]mk1x[code][/quote][ispoiler][/list][/b][  ",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "random 280",
+  "body": "[quote][code]mk1x [*][b][list]",
+  "removed": []
+ },
+ {
+  "name": "random 281",
+  "body": "[quote][quote][ispoiler]mk1x[quote=zz]",
+  "removed": []
+ },
+ {
+  "name": "random 282",
+  "body": "[quote][/ispoiler][/b][/list][/quote]mk1x ][url=https://e.com/]mk2x[quote]]",
+  "removed": []
+ },
+ {
+  "name": "random 283",
+  "body": "[i][ispoiler][*][/i]",
+  "removed": []
+ },
+ {
+  "name": "random 284",
+  "body": "[noparse]mk1x [list][/list][i][quote][/url] [noparse]mk2x[/b][quote]",
+  "removed": []
+ },
+ {
+  "name": "random 285",
+  "body": "[i][quote=zz][/ispoiler][list][noparse][/ispoiler][list][/url][code]",
+  "removed": []
+ },
+ {
+  "name": "random 286",
+  "body": "[/i][/ispoiler][*][*]",
+  "removed": []
+ },
+ {
+  "name": "random 287",
+  "body": "][/ispoiler][/url][/url][b]",
+  "removed": []
+ },
+ {
+  "name": "random 288",
+  "body": "[i][url=https://e.com/][quote=zz][i][/ispoiler][i][url=https://e.com/][/b][quote=zz][/url][list][b]",
+  "removed": []
+ },
+ {
+  "name": "random 289",
+  "body": "[noparse][noparse][/code][/ispoiler]mk1x[/i][code]",
+  "removed": []
+ },
+ {
+  "name": "random 290",
+  "body": "[code][i][code][b][noparse][/list][/url][/ispoiler][/b] [ispoiler]",
+  "removed": []
+ },
+ {
+  "name": "random 291",
+  "body": "[quote][list]mk1x",
+  "removed": []
+ },
+ {
+  "name": "random 292",
+  "body": "][quote=zz][quote=11111111-1111-4111-8111-111111111111][noparse][quote=22222222-2222-4222-8222-222222222222][/quote][/i][/ispoiler][code]",
+  "removed": []
+ },
+ {
+  "name": "random 293",
+  "body": "[*]mk1x[mk2xmk3x[quote=11111111-1111-4111-8111-111111111111][/ispoiler][/url][quote=11111111-1111-4111-8111-111111111111][[list]",
+  "removed": []
+ },
+ {
+  "name": "random 294",
+  "body": "[/quote]mk1x[i][*] [code]mk2x",
+  "removed": []
+ },
+ {
+  "name": "random 295",
+  "body": "[*][/b][/quote][ [quote][quote=22222222-2222-4222-8222-222222222222][quote=zz][*][*]",
+  "removed": []
+ },
+ {
+  "name": "random 296",
+  "body": "[mk1x",
+  "removed": []
+ },
+ {
+  "name": "random 297",
+  "body": "[noparse][*][list][quote=22222222-2222-4222-8222-222222222222][noparse][code]mk1x",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "random 298",
+  "body": "[/list][url=https://e.com/][/b]   [/quote][*][/i]",
+  "removed": []
+ },
+ {
+  "name": "random 299",
+  "body": "[/i] [/url]]",
+  "removed": []
+ },
+ {
+  "name": "random 300",
+  "body": "[b][[list][/i]",
+  "removed": []
+ },
+ {
+  "name": "random 301",
+  "body": "mk1x[code][/list][url=https://e.com/][/url]",
+  "removed": []
+ },
+ {
+  "name": "random 302",
+  "body": "[quote=zz][[b][*][list]",
+  "removed": []
+ },
+ {
+  "name": "random 303",
+  "body": "[/url][/quote]mk1x[list]",
+  "removed": []
+ },
+ {
+  "name": "random 304",
+  "body": "[quote=22222222-2222-4222-8222-222222222222]][/b][[/i]",
+  "removed": []
+ },
+ {
+  "name": "random 305",
+  "body": "[quote=zz][/list][/b]mk1x[/url][quote=22222222-2222-4222-8222-222222222222]",
+  "removed": []
+ },
+ {
+  "name": "random 306",
+  "body": "[quote=22222222-2222-4222-8222-222222222222][/ispoiler][/quote][*][/b][quote=11111111-1111-4111-8111-111111111111]",
+  "removed": []
+ },
+ {
+  "name": "random 307",
+  "body": "[/url][*][quote][/quote][code][quote=11111111-1111-4111-8111-111111111111][list][quote=22222222-2222-4222-8222-222222222222][/noparse][*][*][/ispoiler]",
+  "removed": []
+ },
+ {
+  "name": "random 308",
+  "body": "][code][quote=22222222-2222-4222-8222-222222222222][/ispoiler]",
+  "removed": []
+ },
+ {
+  "name": "random 309",
+  "body": "[/ispoiler][*][list][b][[url=https://e.com/][/ispoiler][/code][quote=22222222-2222-4222-8222-222222222222][/ispoiler][/list]",
+  "removed": []
+ },
+ {
+  "name": "random 310",
+  "body": "[/url][/ispoiler]mk1x[code][b]",
+  "removed": []
+ },
+ {
+  "name": "random 311",
+  "body": "[*]mk1x[/quote]mk2x[url=https://e.com/]mk3x[i]",
+  "removed": []
+ },
+ {
+  "name": "random 312",
+  "body": "[*] mk1x",
+  "removed": []
+ },
+ {
+  "name": "random 313",
+  "body": "[/b][list][noparse][/quote][quote=22222222-2222-4222-8222-222222222222]",
+  "removed": []
+ },
+ {
+  "name": "random 314",
+  "body": "[noparse][/ispoiler][b][quote=22222222-2222-4222-8222-222222222222][/code][noparse]mk1xmk2x[/list]",
+  "removed": [
+   "mk1x",
+   "mk2x"
+  ]
+ },
+ {
+  "name": "random 315",
+  "body": "mk1x[noparse][b][url=https://e.com/][/noparse]mk2x[/url][noparse][/ispoiler]mk3x[code]",
+  "removed": []
+ },
+ {
+  "name": "random 316",
+  "body": "[/i][noparse][list][/i][quote=zz][quote=11111111-1111-4111-8111-111111111111][quote=zz][/ispoiler][quote=11111111-1111-4111-8111-111111111111][/i][code][/b]mk1x",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "random 317",
+  "body": "[ispoiler][/quote]mk1x",
+  "removed": []
+ },
+ {
+  "name": "random 318",
+  "body": "[b][/url][/i]",
+  "removed": []
+ },
+ {
+  "name": "random 319",
+  "body": "[i]mk1xmk2x[quote][list][/ispoiler][code][quote=22222222-2222-4222-8222-222222222222]",
+  "removed": []
+ },
+ {
+  "name": "random 320",
+  "body": "mk1x[i]",
+  "removed": []
+ },
+ {
+  "name": "random 321",
+  "body": "[noparse][i][/noparse][list]]mk1x[b]mk2x[code][/i][/ispoiler][/list]",
+  "removed": []
+ },
+ {
+  "name": "random 322",
+  "body": "mk1x[/ispoiler][quote][quote=22222222-2222-4222-8222-222222222222][*]mk2x[b] [i][i][/code][*][code]",
+  "removed": [
+   "mk2x"
+  ]
+ },
+ {
+  "name": "random 323",
+  "body": "mk1x[/list][quote]",
+  "removed": []
+ },
+ {
+  "name": "random 324",
+  "body": "[noparse]mk1x[/i]",
+  "removed": []
+ },
+ {
+  "name": "random 325",
+  "body": " [quote=11111111-1111-4111-8111-111111111111][/b][quote=zz] mk1x[list][noparse]mk2x[/code]mk3xmk4x[/b]",
+  "removed": [
+   "mk1x",
+   "mk2x",
+   "mk3x",
+   "mk4x"
+  ]
+ },
+ {
+  "name": "random 326",
+  "body": "[list][/noparse][mk1x[url=https://e.com/][ispoiler][/quote]",
+  "removed": []
+ },
+ {
+  "name": "random 327",
+  "body": "mk1x[quote=11111111-1111-4111-8111-111111111111][url=https://e.com/]mk2x[*][*][[quote=22222222-2222-4222-8222-222222222222] [list][url=https://e.com/][/i][/code]",
+  "removed": [
+   "mk2x"
+  ]
+ },
+ {
+  "name": "random 328",
+  "body": "mk1x[url=https://e.com/]",
+  "removed": []
+ },
+ {
+  "name": "random 329",
+  "body": "mk1x[/i][noparse][/i][code]mk2x[ispoiler][/noparse][/i][b][quote=22222222-2222-4222-8222-222222222222][code][url=https://e.com/]",
+  "removed": []
+ },
+ {
+  "name": "random 330",
+  "body": "mk1x[/url][/list][/code]",
+  "removed": []
+ },
+ {
+  "name": "random 331",
+  "body": "[code][noparse][quote=22222222-2222-4222-8222-222222222222][*][/noparse][/code][quote=11111111-1111-4111-8111-111111111111][/b]",
+  "removed": []
+ },
+ {
+  "name": "random 332",
+  "body": "[b][/ispoiler][url=https://e.com/][quote=11111111-1111-4111-8111-111111111111]mk1x[list][list][/url][ispoiler][/quote]mk2xmk3x[/ispoiler]",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "random 333",
+  "body": "mk1x[quote=zz][quote=11111111-1111-4111-8111-111111111111][quote=11111111-1111-4111-8111-111111111111]][noparse]]][noparse][b][/quote][quote][i][quote]",
+  "removed": []
+ },
+ {
+  "name": "random 334",
+  "body": "[quote][noparse]]mk1xmk2x",
+  "removed": []
+ },
+ {
+  "name": "random 335",
+  "body": "[/quote][b][/i][/noparse][/quote][quote=11111111-1111-4111-8111-111111111111]mk1x[url=https://e.com/][quote=zz][/noparse][b]",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "random 336",
+  "body": "[/noparse]mk1x[list][b][b][/noparse][/code][*]mk2xmk3x[url=https://e.com/][/i]",
+  "removed": []
+ },
+ {
+  "name": "random 337",
+  "body": "mk1x[/i][quote=11111111-1111-4111-8111-111111111111]][[/code][ispoiler] [noparse][/noparse][url=https://e.com/]",
+  "removed": []
+ },
+ {
+  "name": "random 338",
+  "body": "mk1x[url=https://e.com/][noparse][i] [/ispoiler][ispoiler][url=https://e.com/][quote]mk2xmk3x[b]",
+  "removed": []
+ },
+ {
+  "name": "random 339",
+  "body": "[url=https://e.com/][code][quote][quote=22222222-2222-4222-8222-222222222222][b][url=https://e.com/][url=https://e.com/][i]",
+  "removed": []
+ },
+ {
+  "name": "random 340",
+  "body": " [/code][/url][/i][quote=11111111-1111-4111-8111-111111111111][ispoiler][/noparse][/code][/b]",
+  "removed": []
+ },
+ {
+  "name": "random 341",
+  "body": "[/url][/url]",
+  "removed": []
+ },
+ {
+  "name": "random 342",
+  "body": "[code][quote=22222222-2222-4222-8222-222222222222][quote=zz][url=https://e.com/][/ispoiler]][/list][ispoiler][",
+  "removed": []
+ },
+ {
+  "name": "random 343",
+  "body": "mk1x mk2x[*][quote=11111111-1111-4111-8111-111111111111]][list]mk3x[quote=zz][/ispoiler][/code][quote=zz][ispoiler][i]",
+  "removed": [
+   "mk3x"
+  ]
+ },
+ {
+  "name": "random 344",
+  "body": "[i]][quote=11111111-1111-4111-8111-111111111111][quote=22222222-2222-4222-8222-222222222222][/ispoiler]",
+  "removed": []
+ },
+ {
+  "name": "random 345",
+  "body": "mk1xmk2x[quote=11111111-1111-4111-8111-111111111111][*][/code]mk3x[/url][b][quote=22222222-2222-4222-8222-222222222222][noparse][",
+  "removed": [
+   "mk3x"
+  ]
+ },
+ {
+  "name": "random 346",
+  "body": "[quote=22222222-2222-4222-8222-222222222222][noparse][quote=zz][i]",
+  "removed": []
+ },
+ {
+  "name": "random 347",
+  "body": "[b] [noparse]][/url][list][/quote][url=https://e.com/][ispoiler]mk1xmk2x",
+  "removed": []
+ },
+ {
+  "name": "random 348",
+  "body": "[*]mk1x[quote=11111111-1111-4111-8111-111111111111][/ispoiler][quote=22222222-2222-4222-8222-222222222222]",
+  "removed": []
+ },
+ {
+  "name": "random 349",
+  "body": "][/code]mk1x[i][/noparse][quote=11111111-1111-4111-8111-111111111111]mk2x[/quote][quote=22222222-2222-4222-8222-222222222222]",
+  "removed": [
+   "mk2x"
+  ]
+ },
+ {
+  "name": "random 350",
+  "body": " mk1x[*][quote]mk2xmk3x[/list]mk4x[i][/list][/url]",
+  "removed": []
+ },
+ {
+  "name": "random 351",
+  "body": "[quote=zz][i][/noparse][i]mk1x[/url][/b][/i][/ispoiler]",
+  "removed": []
+ },
+ {
+  "name": "random 352",
+  "body": "mk1x[/b][/b][/url]mk2x[[/url][quote=11111111-1111-4111-8111-111111111111][/i][quote][/noparse][quote=zz]mk3xmk4x",
+  "removed": [
+   "mk3x",
+   "mk4x"
+  ]
+ },
+ {
+  "name": "random 353",
+  "body": "[noparse][quote=22222222-2222-4222-8222-222222222222][noparse][/code]mk1x[url=https://e.com/]mk2x ",
+  "removed": [
+   "mk1x",
+   "mk2x"
+  ]
+ },
+ {
+  "name": "random 354",
+  "body": "[ispoiler][i][i][ispoiler]",
+  "removed": []
+ },
+ {
+  "name": "random 355",
+  "body": "[/b][/noparse][quote=11111111-1111-4111-8111-111111111111][url=https://e.com/][mk1x",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "random 356",
+  "body": "[/code][*][noparse][b][noparse]mk1x[quote=22222222-2222-4222-8222-222222222222][i]",
+  "removed": []
+ },
+ {
+  "name": "random 357",
+  "body": "[/noparse][/code][/code][quote=22222222-2222-4222-8222-222222222222][/code]mk1x[/b][ispoiler]",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "random 358",
+  "body": "mk1xmk2x[/quote][quote=zz][/list][/list][/i]mk3xmk4x[noparse][quote=zz]",
+  "removed": []
+ },
+ {
+  "name": "random 359",
+  "body": "mk1x[quote=22222222-2222-4222-8222-222222222222][/ispoiler][/list][quote=zz][ispoiler][quote=22222222-2222-4222-8222-222222222222][*]mk2x[/i][code]mk3x[/b]mk4x",
+  "removed": [
+   "mk2x",
+   "mk3x",
+   "mk4x"
+  ]
+ },
+ {
+  "name": "random 360",
+  "body": "[/noparse][/noparse][i][/b][[/noparse][quote=zz][/i][code][quote=22222222-2222-4222-8222-222222222222]",
+  "removed": []
+ },
+ {
+  "name": "random 361",
+  "body": "[/i][/url]mk1x[*]mk2xmk3x[quote=zz][ispoiler][quote=22222222-2222-4222-8222-222222222222][quote=zz][/list]",
+  "removed": []
+ },
+ {
+  "name": "random 362",
+  "body": "[quote][/noparse][url=https://e.com/]",
+  "removed": []
+ },
+ {
+  "name": "random 363",
+  "body": "[/ispoiler][/i][code][/code][mk1x[noparse]",
+  "removed": []
+ },
+ {
+  "name": "random 364",
+  "body": "[quote=22222222-2222-4222-8222-222222222222][/quote][/quote][ispoiler]",
+  "removed": []
+ },
+ {
+  "name": "random 365",
+  "body": "[list]mk1x[/code][noparse][code][quote=11111111-1111-4111-8111-111111111111][/url]mk2x[ispoiler]mk3x[code]][/quote][",
+  "removed": [
+   "mk2x",
+   "mk3x"
+  ]
+ },
+ {
+  "name": "random 366",
+  "body": "mk1x[[quote=22222222-2222-4222-8222-222222222222][quote][quote=11111111-1111-4111-8111-111111111111][*]mk2xmk3x[list][code]mk4xmk5x[url=https://e.com/]",
+  "removed": [
+   "mk2x",
+   "mk3x",
+   "mk4x",
+   "mk5x"
+  ]
+ },
+ {
+  "name": "random 367",
+  "body": "[/list][/i][*][quote=22222222-2222-4222-8222-222222222222][ispoiler]mk1x",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "random 368",
+  "body": "[/i][quote=zz][quote][url=https://e.com/]",
+  "removed": []
+ },
+ {
+  "name": "random 369",
+  "body": "[/list] [b][[list]][[b]",
+  "removed": []
+ },
+ {
+  "name": "random 370",
+  "body": "[ispoiler][list][list][/ispoiler]]",
+  "removed": []
+ },
+ {
+  "name": "random 371",
+  "body": "[quote=zz][b][/b][quote=11111111-1111-4111-8111-111111111111]mk1x [/i][b][code][quote=zz][/list]",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "random 372",
+  "body": "[/code][[quote=22222222-2222-4222-8222-222222222222][code]mk1x][quote=11111111-1111-4111-8111-111111111111][/b]][list][quote=22222222-2222-4222-8222-222222222222]",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "random 373",
+  "body": "[code][i][/quote][*]mk1x",
+  "removed": []
+ },
+ {
+  "name": "random 374",
+  "body": "[/ispoiler][quote][ispoiler][/list][i][noparse]mk1x[quote=11111111-1111-4111-8111-111111111111]mk2xmk3x[/ispoiler]mk4x[noparse][code][/url]",
+  "removed": []
+ },
+ {
+  "name": "random 375",
+  "body": "[quote=11111111-1111-4111-8111-111111111111][quote=zz][/code][quote=22222222-2222-4222-8222-222222222222]mk1x[quote=22222222-2222-4222-8222-222222222222][/b][/code][noparse][/b][code]",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "random 376",
+  "body": "[/list][url=https://e.com/][quote=zz][i][/quote][list][quote=zz]",
+  "removed": []
+ },
+ {
+  "name": "random 377",
+  "body": "[list] [/list][quote][quote=zz][list][quote=zz][/quote]mk1x[[noparse][list][/url]mk2x[url=https://e.com/]",
+  "removed": []
+ },
+ {
+  "name": "random 378",
+  "body": "[url=https://e.com/][b]",
+  "removed": []
+ },
+ {
+  "name": "random 379",
+  "body": "[/b][quote=11111111-1111-4111-8111-111111111111][/i]mk1x[/list][code]",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "random 380",
+  "body": "][/i][list][quote]  [[/list][*][quote=zz][*]mk1x[quote=22222222-2222-4222-8222-222222222222][list]",
+  "removed": []
+ },
+ {
+  "name": "random 381",
+  "body": "[/list][url=https://e.com/]",
+  "removed": []
+ },
+ {
+  "name": "random 382",
+  "body": "[url=https://e.com/][/url][/list][/url][i][",
+  "removed": []
+ },
+ {
+  "name": "random 383",
+  "body": "mk1x[url=https://e.com/][list][quote=zz][/noparse]",
+  "removed": []
+ },
+ {
+  "name": "random 384",
+  "body": "[/list][url=https://e.com/] [*][*][list][quote=22222222-2222-4222-8222-222222222222][list][/i][b][/i][i][/quote][/noparse]",
+  "removed": []
+ },
+ {
+  "name": "random 385",
+  "body": "[/code][noparse][code][/url][/noparse][[quote][quote][url=https://e.com/] [ispoiler]",
+  "removed": []
+ },
+ {
+  "name": "random 386",
+  "body": "[/noparse][/b][i][[quote=11111111-1111-4111-8111-111111111111][i][[quote=zz][/ispoiler]][/i][/i][b]",
+  "removed": []
+ },
+ {
+  "name": "random 387",
+  "body": "[url=https://e.com/]][ispoiler][url=https://e.com/][url=https://e.com/][/noparse][quote]",
+  "removed": []
+ },
+ {
+  "name": "random 388",
+  "body": "[b]mk1x",
+  "removed": []
+ },
+ {
+  "name": "random 389",
+  "body": "[[i][ispoiler][/quote][/code][/url][/code]",
+  "removed": []
+ },
+ {
+  "name": "random 390",
+  "body": "][/i]][i][quote=22222222-2222-4222-8222-222222222222][noparse][quote][url=https://e.com/][/list][quote=11111111-1111-4111-8111-111111111111][quote=22222222-2222-4222-8222-222222222222]",
+  "removed": []
+ },
+ {
+  "name": "random 391",
+  "body": "[i][*]][/code]mk1x[quote=22222222-2222-4222-8222-222222222222][ispoiler][url=https://e.com/][quote=zz][/b][/list]mk2x[/quote][/i]",
+  "removed": [
+   "mk2x"
+  ]
+ },
+ {
+  "name": "random 392",
+  "body": "[b][noparse][/i]mk1xmk2x[code] [list][/url][list]",
+  "removed": []
+ },
+ {
+  "name": "random 393",
+  "body": "[/noparse][/code][i][/quote][quote=22222222-2222-4222-8222-222222222222]mk1x[[code] [quote=22222222-2222-4222-8222-222222222222][quote=22222222-2222-4222-8222-222222222222]mk2x[quote=22222222-2222-4222-8222-222222222222]mk3x",
+  "removed": [
+   "mk1x",
+   "mk2x",
+   "mk3x"
+  ]
+ },
+ {
+  "name": "random 394",
+  "body": "[quote=22222222-2222-4222-8222-222222222222][code][/ispoiler][*][noparse][/noparse]mk1x[noparse][/code]",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "random 395",
+  "body": "[/noparse][/b][/code][quote=11111111-1111-4111-8111-111111111111][/code]mk1xmk2x][/quote]",
+  "removed": [
+   "mk1x",
+   "mk2x"
+  ]
+ },
+ {
+  "name": "random 396",
+  "body": "[noparse][*]",
+  "removed": []
+ },
+ {
+  "name": "random 397",
+  "body": " [quote][quote=22222222-2222-4222-8222-222222222222]",
+  "removed": []
+ },
+ {
+  "name": "random 398",
+  "body": "[quote=zz]][quote][*][code][i][code]]]",
+  "removed": []
+ },
+ {
+  "name": "random 399",
+  "body": "[quote][b][/noparse][/code]][i][/ispoiler][/b]",
+  "removed": []
+ },
+ {
+  "name": "random 400",
+  "body": "[/quote][i][quote][/i][url=https://e.com/]mk1x][/ispoiler][list][/b][[/url][/quote]][quote]",
+  "removed": []
+ },
+ {
+  "name": "random 401",
+  "body": "[/url][/list][code][/code]mk1xmk2x][ispoiler][ispoiler][b][code][/b][*]mk3x[b]",
+  "removed": []
+ },
+ {
+  "name": "random 402",
+  "body": "[/i]mk1x[/list][list][/code]]",
+  "removed": []
+ },
+ {
+  "name": "random 403",
+  "body": "[quote=22222222-2222-4222-8222-222222222222][url=https://e.com/][/ispoiler][/code][list][/code][noparse][quote=11111111-1111-4111-8111-111111111111][list]mk1x[/ispoiler][/quote][noparse]",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "random 404",
+  "body": "[/quote][b][noparse][quote=11111111-1111-4111-8111-111111111111][/list][quote=22222222-2222-4222-8222-222222222222][quote][/noparse][*][quote=22222222-2222-4222-8222-222222222222]][i]",
+  "removed": []
+ },
+ {
+  "name": "random 405",
+  "body": "[code][i][list]mk1x[noparse][/ispoiler][[/i]",
+  "removed": []
+ },
+ {
+  "name": "random 406",
+  "body": "[b][quote=22222222-2222-4222-8222-222222222222][url=https://e.com/]][url=https://e.com/][b][/i][quote=11111111-1111-4111-8111-111111111111][list] [ispoiler][/noparse][quote=zz][/url] ",
+  "removed": []
+ },
+ {
+  "name": "random 407",
+  "body": "[b]mk1x[b][url=https://e.com/][/list]mk2x[quote][quote][/ispoiler]",
+  "removed": []
+ },
+ {
+  "name": "random 408",
+  "body": "[url=https://e.com/]mk1x[code][quote=22222222-2222-4222-8222-222222222222][/quote][quote=11111111-1111-4111-8111-111111111111][quote][list][quote=11111111-1111-4111-8111-111111111111][quote]][i][quote=zz]",
+  "removed": []
+ },
+ {
+  "name": "random 409",
+  "body": "[/b][/b]mk1x[ispoiler] [/noparse][quote=zz][noparse][ispoiler][/code][",
+  "removed": []
+ },
+ {
+  "name": "random 410",
+  "body": "[url=https://e.com/]  [/ispoiler][code][/quote][/ispoiler]",
+  "removed": []
+ },
+ {
+  "name": "random 411",
+  "body": "[quote=22222222-2222-4222-8222-222222222222][/quote][noparse][[i][b][/list][code][/noparse][quote=22222222-2222-4222-8222-222222222222][/b]mk1xmk2x",
+  "removed": [
+   "mk1x",
+   "mk2x"
+  ]
+ },
+ {
+  "name": "random 412",
+  "body": "mk1x[/i]mk2x[b]",
+  "removed": []
+ },
+ {
+  "name": "random 413",
+  "body": "[b][b]mk1x[i][quote=zz]",
+  "removed": []
+ },
+ {
+  "name": "random 414",
+  "body": "[/quote][[[/ispoiler][[quote][/list][/url]",
+  "removed": []
+ },
+ {
+  "name": "random 415",
+  "body": "[/url][url=https://e.com/][/quote][*][*][noparse]][quote=11111111-1111-4111-8111-111111111111][/i]][b]",
+  "removed": []
+ },
+ {
+  "name": "random 416",
+  "body": "[quote]mk1x[/noparse][mk2x[/url][list][/b][list][url=https://e.com/]mk3x[code][/code] ",
+  "removed": []
+ },
+ {
+  "name": "random 417",
+  "body": "[/list][*][/quote]][",
+  "removed": []
+ },
+ {
+  "name": "random 418",
+  "body": "[/noparse][[url=https://e.com/]mk1xmk2x[/quote]",
+  "removed": []
+ },
+ {
+  "name": "random 419",
+  "body": "[/list] [/b][quote][url=https://e.com/][ispoiler]mk1x[/b][quote=11111111-1111-4111-8111-111111111111][i][/i][/quote][quote][/list]",
+  "removed": []
+ },
+ {
+  "name": "random 420",
+  "body": "[quote=11111111-1111-4111-8111-111111111111]mk1x[code][/noparse]][noparse][[*][quote][noparse][/b][/noparse][code]]",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "random 421",
+  "body": " [quote=22222222-2222-4222-8222-222222222222][/quote][i][quote=zz][/i][list][/i][/quote][noparse]",
+  "removed": []
+ },
+ {
+  "name": "random 422",
+  "body": "[ispoiler][/quote][/b][list][ispoiler][/i][ispoiler][/i]",
+  "removed": []
+ },
+ {
+  "name": "random 423",
+  "body": "[/quote][ispoiler][quote=11111111-1111-4111-8111-111111111111][quote] [i][/ispoiler][/list][ispoiler]",
+  "removed": []
+ },
+ {
+  "name": "random 424",
+  "body": "[list][/list]][quote=11111111-1111-4111-8111-111111111111][/b]mk1x[b][/code]",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "random 425",
+  "body": "[quote=11111111-1111-4111-8111-111111111111][/i][quote=11111111-1111-4111-8111-111111111111][/url][/ispoiler]mk1x[i]",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "random 426",
+  "body": "][ispoiler]",
+  "removed": []
+ },
+ {
+  "name": "random 427",
+  "body": "[/code][/quote][*][/b]",
+  "removed": []
+ },
+ {
+  "name": "random 428",
+  "body": "[quote=zz][/url][code]]mk1x[code]][code][quote=22222222-2222-4222-8222-222222222222][/quote]mk2x[*][/b][quote=11111111-1111-4111-8111-111111111111][url=https://e.com/]",
+  "removed": []
+ },
+ {
+  "name": "random 429",
+  "body": "mk1x[ispoiler]][*][b]",
+  "removed": []
+ },
+ {
+  "name": "random 430",
+  "body": "[/quote]mk1xmk2x[/quote][b]mk3x[/i][quote][quote][ispoiler][code][/code][/url][/url]",
+  "removed": []
+ },
+ {
+  "name": "random 431",
+  "body": "[quote=22222222-2222-4222-8222-222222222222][*][noparse][quote=11111111-1111-4111-8111-111111111111][quote]mk1x[code][i][/url][/b][/i]",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "random 432",
+  "body": "[*][url=https://e.com/][/list][ispoiler][/url]][noparse]",
+  "removed": []
+ },
+ {
+  "name": "random 433",
+  "body": "[/code][/noparse][quote=11111111-1111-4111-8111-111111111111] [noparse][/b][i][quote=zz]mk1x [/url]",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "random 434",
+  "body": "[b][/noparse]]mk1x[/code]",
+  "removed": []
+ },
+ {
+  "name": "random 435",
+  "body": "[/i][*][b][quote][[/url] [quote][/noparse][ispoiler][/quote]mk1x[url=https://e.com/]",
+  "removed": []
+ },
+ {
+  "name": "random 436",
+  "body": " [/code][list][quote=11111111-1111-4111-8111-111111111111][/quote][quote=22222222-2222-4222-8222-222222222222]mk1x[/quote][ispoiler][list]][/list][/i][/noparse]mk2x",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "random 437",
+  "body": "mk1x[quote=11111111-1111-4111-8111-111111111111][/i][/b][*][list]mk2x [/list][b][list]",
+  "removed": [
+   "mk2x"
+  ]
+ },
+ {
+  "name": "random 438",
+  "body": "[/list][/b][/code] [*][ispoiler][/ispoiler][list][list]mk1x",
+  "removed": []
+ },
+ {
+  "name": "random 439",
+  "body": "[quote=zz][code][/quote]mk1x[quote][/code]",
+  "removed": []
+ },
+ {
+  "name": "random 440",
+  "body": "[/list][/quote]mk1x][/noparse][list][b][quote=22222222-2222-4222-8222-222222222222][[/quote][code][b][/b][/url]",
+  "removed": []
+ },
+ {
+  "name": "random 441",
+  "body": "[noparse][*][url=https://e.com/][b]mk1x[/list]",
+  "removed": []
+ },
+ {
+  "name": "random 442",
+  "body": "[*][i][i][/noparse][/url]mk1x[[list][ispoiler]mk2x[url=https://e.com/]]mk3x",
+  "removed": []
+ },
+ {
+  "name": "random 443",
+  "body": "[quote=zz]mk1x[/i][b][*]mk2x[/code]mk3x[quote=11111111-1111-4111-8111-111111111111][url=https://e.com/]",
+  "removed": []
+ },
+ {
+  "name": "random 444",
+  "body": "[url=https://e.com/] [quote=zz][list][/list] [list][/quote]][code][/code][quote=zz]][b]",
+  "removed": []
+ },
+ {
+  "name": "random 445",
+  "body": "[quote][*][quote=zz][code][i]",
+  "removed": []
+ },
+ {
+  "name": "random 446",
+  "body": "[b][/noparse]mk1x[list]mk2x[ispoiler]mk3x",
+  "removed": []
+ },
+ {
+  "name": "random 447",
+  "body": "[/b][code][quote=zz][noparse][ispoiler][noparse][b]][/quote]",
+  "removed": []
+ },
+ {
+  "name": "random 448",
+  "body": "[/b]]mk1x[quote]",
+  "removed": []
+ },
+ {
+  "name": "random 449",
+  "body": "mk1x[quote=11111111-1111-4111-8111-111111111111][/i][/url][/b][b][ispoiler]",
+  "removed": []
+ },
+ {
+  "name": "random 450",
+  "body": " [b][/ispoiler][list][/ispoiler][i][list][quote=22222222-2222-4222-8222-222222222222][/list] [[/b]",
+  "removed": []
+ },
+ {
+  "name": "random 451",
+  "body": "[b]mk1x]mk2x[ispoiler][/code][/b][quote=22222222-2222-4222-8222-222222222222][quote=11111111-1111-4111-8111-111111111111]]mk3x[code][b][/list]",
+  "removed": [
+   "mk3x"
+  ]
+ },
+ {
+  "name": "random 452",
+  "body": "[quote][*][/i][code][url=https://e.com/]",
+  "removed": []
+ },
+ {
+  "name": "random 453",
+  "body": " [quote=11111111-1111-4111-8111-111111111111] [/url][/url]][/list][url=https://e.com/]",
+  "removed": []
+ },
+ {
+  "name": "random 454",
+  "body": "[/url][/code][[quote=zz][quote=22222222-2222-4222-8222-222222222222][/list][/i][/ispoiler][list][ispoiler][/ispoiler][/list][b]",
+  "removed": []
+ },
+ {
+  "name": "random 455",
+  "body": "[i][[/code][/b][noparse][i]mk1x[i][url=https://e.com/][b][/i][mk2x",
+  "removed": []
+ },
+ {
+  "name": "random 456",
+  "body": "[quote=11111111-1111-4111-8111-111111111111][*][*][noparse][i][noparse]mk1x",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "random 457",
+  "body": "[noparse]mk1x",
+  "removed": []
+ },
+ {
+  "name": "random 458",
+  "body": "mk1x[/i][/ispoiler]mk2x[code] mk3x[/url]mk4x[i][/noparse]",
+  "removed": []
+ },
+ {
+  "name": "random 459",
+  "body": "mk1x][/noparse][/noparse][/code][quote]mk2x",
+  "removed": []
+ },
+ {
+  "name": "random 460",
+  "body": "[ispoiler][[*][/noparse][[/url][/i] [/quote][/i][url=https://e.com/]",
+  "removed": []
+ },
+ {
+  "name": "random 461",
+  "body": "[quote][quote=zz]mk1x [url=https://e.com/][*][/i][quote=zz]mk2xmk3x[b]mk4x[quote=zz][/b]",
+  "removed": []
+ },
+ {
+  "name": "random 462",
+  "body": "[/noparse][/ispoiler][/b][url=https://e.com/][/quote][quote][quote=22222222-2222-4222-8222-222222222222][/list]",
+  "removed": []
+ },
+ {
+  "name": "random 463",
+  "body": "[ispoiler]mk1x",
+  "removed": []
+ },
+ {
+  "name": "random 464",
+  "body": "[/list]mk1x[/code][quote=zz][code][/list][quote]",
+  "removed": []
+ },
+ {
+  "name": "random 465",
+  "body": "[/list][quote=22222222-2222-4222-8222-222222222222] mk1x[*][quote=22222222-2222-4222-8222-222222222222]mk2x[/code]",
+  "removed": [
+   "mk1x",
+   "mk2x"
+  ]
+ },
+ {
+  "name": "random 466",
+  "body": "[quote=22222222-2222-4222-8222-222222222222]mk1xmk2x[quote=zz][/code][/ispoiler]",
+  "removed": [
+   "mk1x",
+   "mk2x"
+  ]
+ },
+ {
+  "name": "random 467",
+  "body": "[[/url][quote=zz][/ispoiler][quote=11111111-1111-4111-8111-111111111111][/url][/noparse][/b][]mk1x[b]mk2xmk3x",
+  "removed": [
+   "mk1x",
+   "mk2x",
+   "mk3x"
+  ]
+ },
+ {
+  "name": "random 468",
+  "body": "[/noparse][/i][/i][quote]]]mk1x[*]mk2x][url=https://e.com/][*][/noparse]",
+  "removed": []
+ },
+ {
+  "name": "random 469",
+  "body": "[quote=11111111-1111-4111-8111-111111111111][/noparse][/url][quote=22222222-2222-4222-8222-222222222222][quote=zz][/quote][quote=zz]mk1xmk2x[quote=22222222-2222-4222-8222-222222222222][list] [/noparse][/quote][/quote]",
+  "removed": [
+   "mk1x",
+   "mk2x"
+  ]
+ },
+ {
+  "name": "random 470",
+  "body": "[noparse][/ispoiler][list][quote=zz][b][ispoiler][/quote][/i]",
+  "removed": []
+ },
+ {
+  "name": "random 471",
+  "body": "[list]mk1xmk2x[noparse][quote=zz]",
+  "removed": []
+ },
+ {
+  "name": "random 472",
+  "body": "[[quote][url=https://e.com/][ispoiler]",
+  "removed": []
+ },
+ {
+  "name": "random 473",
+  "body": "[/b][quote=11111111-1111-4111-8111-111111111111]mk1x[i][quote=11111111-1111-4111-8111-111111111111][/noparse][ispoiler]mk2x[quote=22222222-2222-4222-8222-222222222222][code][[quote=zz]",
+  "removed": [
+   "mk1x",
+   "mk2x"
+  ]
+ },
+ {
+  "name": "random 474",
+  "body": "[/url][quote=11111111-1111-4111-8111-111111111111]",
+  "removed": []
+ },
+ {
+  "name": "random 475",
+  "body": "[quote=zz] [/list][list][/list][ispoiler][quote]mk1x[list]][/ispoiler][quote=11111111-1111-4111-8111-111111111111]",
+  "removed": []
+ },
+ {
+  "name": "random 476",
+  "body": "[list]mk1x[*]][/ispoiler][i][quote=11111111-1111-4111-8111-111111111111][url=https://e.com/][quote]][list]mk2x[i]mk3x",
+  "removed": [
+   "mk2x",
+   "mk3x"
+  ]
+ },
+ {
+  "name": "random 477",
+  "body": "[/ispoiler][quote=22222222-2222-4222-8222-222222222222][/code][url=https://e.com/][/noparse][quote=22222222-2222-4222-8222-222222222222] [/ispoiler]",
+  "removed": []
+ },
+ {
+  "name": "random 478",
+  "body": "[quote=11111111-1111-4111-8111-111111111111][ispoiler][/ispoiler]mk1x[url=https://e.com/][quote=zz][quote]",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "random 479",
+  "body": "[i] mk1x",
+  "removed": []
+ },
+ {
+  "name": "random 480",
+  "body": "[/noparse] [quote=zz]][url=https://e.com/][quote=11111111-1111-4111-8111-111111111111][url=https://e.com/][quote=22222222-2222-4222-8222-222222222222][noparse][noparse][/b][noparse][/list][ispoiler]",
+  "removed": []
+ },
+ {
+  "name": "random 481",
+  "body": "[/code][/ispoiler]mk1x[/i]mk2x",
+  "removed": []
+ },
+ {
+  "name": "random 482",
+  "body": "[/b][/list]mk1x[/quote][/b]",
+  "removed": []
+ },
+ {
+  "name": "random 483",
+  "body": "mk1x[/b][noparse][/noparse][ispoiler]mk2x[quote=22222222-2222-4222-8222-222222222222][quote]",
+  "removed": []
+ },
+ {
+  "name": "random 484",
+  "body": "[/ispoiler][quote=11111111-1111-4111-8111-111111111111][/noparse][ispoiler][*][quote=zz]",
+  "removed": []
+ },
+ {
+  "name": "random 485",
+  "body": " mk1x[noparse][b][quote=11111111-1111-4111-8111-111111111111][/noparse][code]",
+  "removed": []
+ },
+ {
+  "name": "random 486",
+  "body": " [b][/quote][/noparse][quote=22222222-2222-4222-8222-222222222222][i][quote=zz]",
+  "removed": []
+ },
+ {
+  "name": "random 487",
+  "body": "[/quote][/list]",
+  "removed": []
+ },
+ {
+  "name": "random 488",
+  "body": "[url=https://e.com/][/b]mk1xmk2x[/url][/noparse][quote=zz][/url]mk3x[quote=22222222-2222-4222-8222-222222222222][/noparse][quote=22222222-2222-4222-8222-222222222222] [quote=22222222-2222-4222-8222-222222222222]",
+  "removed": []
+ },
+ {
+  "name": "random 489",
+  "body": "[quote=11111111-1111-4111-8111-111111111111][/quote][/noparse][i][list][/quote][url=https://e.com/][list][list][b]mk1x[/noparse][quote=zz][/b]]",
+  "removed": []
+ },
+ {
+  "name": "random 490",
+  "body": "mk1x[b][quote=22222222-2222-4222-8222-222222222222][ispoiler][/url]",
+  "removed": []
+ },
+ {
+  "name": "random 491",
+  "body": "[/b][code]mk1x[/code] [/noparse][i][list][i]mk2x[/noparse][ispoiler]",
+  "removed": []
+ },
+ {
+  "name": "random 492",
+  "body": "[list][i][/code][/b] [/quote][*][/b]mk1x[quote=zz][i][/url]",
+  "removed": []
+ },
+ {
+  "name": "random 493",
+  "body": "[[code][ispoiler][i][*]",
+  "removed": []
+ },
+ {
+  "name": "random 494",
+  "body": "[code][b]][list][i][i][quote=11111111-1111-4111-8111-111111111111] ",
+  "removed": []
+ },
+ {
+  "name": "random 495",
+  "body": "[/i][/quote][quote][noparse][quote=11111111-1111-4111-8111-111111111111][mk1x[quote][quote=zz][quote][[quote=zz][/list]",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "random 496",
+  "body": "[/noparse][/url][list][i]",
+  "removed": []
+ },
+ {
+  "name": "random 497",
+  "body": "[list]mk1x[/ispoiler][list]mk2x[/noparse][*][/url][/quote][/b] ",
+  "removed": []
+ },
+ {
+  "name": "random 498",
+  "body": "[quote=zz][/list][/ispoiler]mk1x[quote][quote][/b][quote=zz][b][[url=https://e.com/][noparse]",
+  "removed": []
+ },
+ {
+  "name": "random 499",
+  "body": "[quote=zz][quote=zz][ispoiler][quote][/noparse][list][/list][url=https://e.com/][code] mk1x[code][/url][quote=22222222-2222-4222-8222-222222222222]",
+  "removed": []
+ },
+ {
+  "name": "random 500",
+  "body": "[i]mk1x[quote=11111111-1111-4111-8111-111111111111][code][i][code][i]]]",
+  "removed": []
+ },
+ {
+  "name": "random 501",
+  "body": "[/ispoiler]][quote=22222222-2222-4222-8222-222222222222][quote=11111111-1111-4111-8111-111111111111][ispoiler]",
+  "removed": []
+ },
+ {
+  "name": "random 502",
+  "body": "[quote=zz][/noparse]mk1x [/ispoiler][quote=22222222-2222-4222-8222-222222222222][noparse][quote=11111111-1111-4111-8111-111111111111][quote=11111111-1111-4111-8111-111111111111]mk2x[b][quote=zz][quote=11111111-1111-4111-8111-111111111111][/i][/quote]",
+  "removed": [
+   "mk2x"
+  ]
+ },
+ {
+  "name": "random 503",
+  "body": "[quote=22222222-2222-4222-8222-222222222222][url=https://e.com/]mk1x[url=https://e.com/]mk2x[quote=11111111-1111-4111-8111-111111111111][quote=zz][/i]mk3x[quote=11111111-1111-4111-8111-111111111111][code][/ispoiler]",
+  "removed": [
+   "mk1x",
+   "mk2x",
+   "mk3x"
+  ]
+ },
+ {
+  "name": "random 504",
+  "body": "[code]mk1x[ispoiler][*][list][/noparse][quote]][list][][i][quote][quote=22222222-2222-4222-8222-222222222222]",
+  "removed": []
+ },
+ {
+  "name": "random 505",
+  "body": "[*][/ispoiler][/i][/url]",
+  "removed": []
+ },
+ {
+  "name": "random 506",
+  "body": "[i][quote=11111111-1111-4111-8111-111111111111] ][b][/list]mk1x[*][ispoiler][mk2x[i]",
+  "removed": [
+   "mk1x",
+   "mk2x"
+  ]
+ },
+ {
+  "name": "random 507",
+  "body": "[/b][noparse][list][quote=22222222-2222-4222-8222-222222222222]",
+  "removed": []
+ },
+ {
+  "name": "random 508",
+  "body": "][i][quote=11111111-1111-4111-8111-111111111111][ispoiler][list]",
+  "removed": []
+ },
+ {
+  "name": "random 509",
+  "body": "] ",
+  "removed": []
+ },
+ {
+  "name": "random 510",
+  "body": "[/quote][i]][[url=https://e.com/]mk1x",
+  "removed": []
+ },
+ {
+  "name": "random 511",
+  "body": "[/noparse][b][quote=11111111-1111-4111-8111-111111111111][/code]mk1xmk2x[/ispoiler][b]mk3x[noparse]mk4x[quote=11111111-1111-4111-8111-111111111111]mk5x[/ispoiler][b]",
+  "removed": [
+   "mk1x",
+   "mk2x",
+   "mk3x",
+   "mk4x",
+   "mk5x"
+  ]
+ },
+ {
+  "name": "random 512",
+  "body": "[b][/list]",
+  "removed": []
+ },
+ {
+  "name": "random 513",
+  "body": "mk1x[/b][url=https://e.com/][/code][quote=22222222-2222-4222-8222-222222222222][/code][/noparse][quote=22222222-2222-4222-8222-222222222222][list][/code][list][i][/quote][mk2x",
+  "removed": [
+   "mk2x"
+  ]
+ },
+ {
+  "name": "random 514",
+  "body": "[/b]][*][quote=zz][/b][noparse][i][/ispoiler][/noparse][quote]",
+  "removed": []
+ },
+ {
+  "name": "random 515",
+  "body": "[ispoiler][/url][*][/url][/code][*][/i][/list][quote][/list][quote=11111111-1111-4111-8111-111111111111][/ispoiler][/b][/quote][",
+  "removed": []
+ },
+ {
+  "name": "random 516",
+  "body": "mk1x[list][/ispoiler][/i][code]",
+  "removed": []
+ },
+ {
+  "name": "random 517",
+  "body": "[i][/quote][/code][quote=22222222-2222-4222-8222-222222222222][/code][*][/ispoiler][/url][/b]mk1x",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "random 518",
+  "body": "[url=https://e.com/][/url][/code]mk1xmk2xmk3xmk4x [quote=11111111-1111-4111-8111-111111111111]]",
+  "removed": []
+ },
+ {
+  "name": "random 519",
+  "body": "[quote=zz][i][/quote][url=https://e.com/][/noparse]mk1x[/url][quote=11111111-1111-4111-8111-111111111111][quote=zz][*]",
+  "removed": []
+ },
+ {
+  "name": "random 520",
+  "body": "[i]mk1x",
+  "removed": []
+ },
+ {
+  "name": "random 521",
+  "body": "[*][/ispoiler][/noparse][/b][ispoiler][quote]",
+  "removed": []
+ },
+ {
+  "name": "random 522",
+  "body": "[b][i][quote][/noparse][/url]mk1x[/code][b][[quote=11111111-1111-4111-8111-111111111111][/b][i]",
+  "removed": []
+ },
+ {
+  "name": "random 523",
+  "body": "[/list][quote=zz]",
+  "removed": []
+ },
+ {
+  "name": "random 524",
+  "body": "[noparse][quote=zz][/url][/i][/code][[/i][/url]mk1xmk2x[/b]",
+  "removed": []
+ },
+ {
+  "name": "random 525",
+  "body": " [/url][list][/quote][list][noparse][/noparse][b][code][quote][quote=11111111-1111-4111-8111-111111111111][",
+  "removed": []
+ },
+ {
+  "name": "random 526",
+  "body": "[b]mk1x[code][/code][/quote][/b][quote]",
+  "removed": []
+ },
+ {
+  "name": "random 527",
+  "body": "[noparse] [b][/i] [[b][quote=zz][/quote][/i][/code][i]mk1x",
+  "removed": []
+ },
+ {
+  "name": "random 528",
+  "body": "[/b]mk1x[/b]][list][/url][/code]mk2x[code][quote=zz][/url]][*][quote=11111111-1111-4111-8111-111111111111]",
+  "removed": []
+ },
+ {
+  "name": "random 529",
+  "body": "[noparse]][i][list]]mk1x[code][/b]][code][ispoiler]",
+  "removed": []
+ },
+ {
+  "name": "random 530",
+  "body": "[/quote][/url][noparse]mk1x][/b][/i]",
+  "removed": []
+ },
+ {
+  "name": "random 531",
+  "body": "[/noparse]][/noparse][quote=zz]mk1x[/code][*] [quote=zz][quote=11111111-1111-4111-8111-111111111111][quote=11111111-1111-4111-8111-111111111111][code]",
+  "removed": []
+ },
+ {
+  "name": "random 532",
+  "body": "[/b]mk1x[ispoiler][quote=zz]",
+  "removed": []
+ },
+ {
+  "name": "random 533",
+  "body": "[/noparse][/ispoiler][noparse][[/list]][/noparse][quote]mk1x[quote]][i]",
+  "removed": []
+ },
+ {
+  "name": "random 534",
+  "body": "[/b][ispoiler][code][list][/noparse]mk1x[i]mk2x[ispoiler][quote=11111111-1111-4111-8111-111111111111][quote=22222222-2222-4222-8222-222222222222]][/i][/url]",
+  "removed": []
+ },
+ {
+  "name": "random 535",
+  "body": "[[code]mk1x[noparse][quote=22222222-2222-4222-8222-222222222222]][mk2x[*]mk3x[/list]mk4x",
+  "removed": [
+   "mk2x",
+   "mk3x",
+   "mk4x"
+  ]
+ },
+ {
+  "name": "random 536",
+  "body": "[/url][/ispoiler][ispoiler]mk1x[/b][i][noparse][i][*][quote=zz]",
+  "removed": []
+ },
+ {
+  "name": "random 537",
+  "body": "[[quote=11111111-1111-4111-8111-111111111111]][quote=22222222-2222-4222-8222-222222222222][*][quote][quote=22222222-2222-4222-8222-222222222222][/url][/b][url=https://e.com/]",
+  "removed": []
+ },
+ {
+  "name": "random 538",
+  "body": " [quote=11111111-1111-4111-8111-111111111111][/noparse]][[*][/url][list][noparse]",
+  "removed": []
+ },
+ {
+  "name": "random 539",
+  "body": "[quote=11111111-1111-4111-8111-111111111111][code][/quote]][/b][mk1x",
+  "removed": []
+ },
+ {
+  "name": "random 540",
+  "body": "[/list][/b][noparse][i][b]mk1x[quote][[/code]",
+  "removed": []
+ },
+ {
+  "name": "random 541",
+  "body": "[quote=11111111-1111-4111-8111-111111111111]mk1x[/ispoiler] ][quote][quote=22222222-2222-4222-8222-222222222222][/code][b][*][[ispoiler][/list]mk2x",
+  "removed": [
+   "mk1x",
+   "mk2x"
+  ]
+ },
+ {
+  "name": "random 542",
+  "body": "mk1x[quote][b][/list]mk2x",
+  "removed": []
+ },
+ {
+  "name": "random 543",
+  "body": "[quote=22222222-2222-4222-8222-222222222222][b][quote=zz][*][/quote]mk1x",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "random 544",
+  "body": "][*]",
+  "removed": []
+ },
+ {
+  "name": "random 545",
+  "body": "[b][/url][/i][/ispoiler][url=https://e.com/][[*][/i][/ispoiler][url=https://e.com/][list][quote=11111111-1111-4111-8111-111111111111]",
+  "removed": []
+ },
+ {
+  "name": "random 546",
+  "body": " [*][b][list][code][quote=zz][code]",
+  "removed": []
+ },
+ {
+  "name": "random 547",
+  "body": "[[url=https://e.com/]][list][quote]",
+  "removed": []
+ },
+ {
+  "name": "random 548",
+  "body": "[quote=22222222-2222-4222-8222-222222222222][i][quote=11111111-1111-4111-8111-111111111111][quote][b][i][/b][/noparse]mk1x[noparse][b]",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "random 549",
+  "body": "[*] [/i][code]][code]]]mk1x [quote=22222222-2222-4222-8222-222222222222][code]",
+  "removed": []
+ },
+ {
+  "name": "random 550",
+  "body": "[noparse][quote]",
+  "removed": []
+ },
+ {
+  "name": "random 551",
+  "body": "[b][i][url=https://e.com/]mk1x[/list][quote=22222222-2222-4222-8222-222222222222][code][/code]",
+  "removed": []
+ },
+ {
+  "name": "random 552",
+  "body": "[quote=zz][b]mk1x[/ispoiler][[code][/list]mk2x[quote=11111111-1111-4111-8111-111111111111][/ispoiler][/ispoiler][/ispoiler][/ispoiler][/list][*]",
+  "removed": []
+ },
+ {
+  "name": "random 553",
+  "body": "[quote] [noparse][/i]][/b]][code][ispoiler][/i][/code][i]",
+  "removed": []
+ },
+ {
+  "name": "random 554",
+  "body": "[quote=11111111-1111-4111-8111-111111111111][quote=zz]mk1x[i][quote=11111111-1111-4111-8111-111111111111]",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "random 555",
+  "body": "[*][b][/code][quote=zz][code][[/quote][[url=https://e.com/][url=https://e.com/][list][quote=zz][list]",
+  "removed": []
+ },
+ {
+  "name": "random 556",
+  "body": "mk1x [b][[quote=11111111-1111-4111-8111-111111111111][/i][/code][/url][code][/code][/ispoiler]",
+  "removed": []
+ },
+ {
+  "name": "random 557",
+  "body": "[url=https://e.com/][ispoiler][list][code][/quote]",
+  "removed": []
+ },
+ {
+  "name": "random 558",
+  "body": "[list][[/i][/ispoiler]] [/url]mk1x[/b][/noparse]",
+  "removed": []
+ },
+ {
+  "name": "random 559",
+  "body": "[/noparse] [*][*][list][ispoiler]mk1x[/i][url=https://e.com/][/code] [/noparse][/code][i]",
+  "removed": []
+ },
+ {
+  "name": "random 560",
+  "body": "[*][/ispoiler]]mk1x[b][list][/i][/list][b]mk2x[[code][quote][/noparse]mk3x",
+  "removed": []
+ },
+ {
+  "name": "random 561",
+  "body": "[/quote][ispoiler][*][quote=zz][b][b][/noparse] [/b]mk1x[quote=11111111-1111-4111-8111-111111111111]",
+  "removed": []
+ },
+ {
+  "name": "random 562",
+  "body": "[quote=11111111-1111-4111-8111-111111111111][quote=22222222-2222-4222-8222-222222222222][url=https://e.com/]mk1x][quote=11111111-1111-4111-8111-111111111111][quote]",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "random 563",
+  "body": "[*]mk1x[/code][/b][ispoiler]]",
+  "removed": []
+ },
+ {
+  "name": "random 564",
+  "body": "[url=https://e.com/][/ispoiler][noparse][b][/ispoiler][/quote]",
+  "removed": []
+ },
+ {
+  "name": "random 565",
+  "body": "[quote][code][quote=zz][/i][b][list][quote=zz]mk1xmk2x[list][ispoiler][list][/ispoiler]",
+  "removed": []
+ },
+ {
+  "name": "random 566",
+  "body": "mk1x[*][/url]mk2x[quote=11111111-1111-4111-8111-111111111111][/url][quote=11111111-1111-4111-8111-111111111111][quote=zz][quote]mk3x[b][/ispoiler][list]mk4x[b]",
+  "removed": [
+   "mk3x",
+   "mk4x"
+  ]
+ },
+ {
+  "name": "random 567",
+  "body": "[quote]][quote=22222222-2222-4222-8222-222222222222][/b][quote=22222222-2222-4222-8222-222222222222][b][*][/code][url=https://e.com/][/b][quote=zz][noparse][noparse][list]",
+  "removed": []
+ },
+ {
+  "name": "random 568",
+  "body": "[/ispoiler][*]mk1x[/list][",
+  "removed": []
+ },
+ {
+  "name": "random 569",
+  "body": "] ][/ispoiler][/list][/i][/ispoiler][code][/noparse][quote=22222222-2222-4222-8222-222222222222]",
+  "removed": []
+ },
+ {
+  "name": "random 570",
+  "body": "][quote=zz][/quote][list][*][code][/i]mk1x",
+  "removed": []
+ },
+ {
+  "name": "random 571",
+  "body": "[list][/i][/b][/url][/i][/quote][[ispoiler][list][quote]mk1xmk2x",
+  "removed": []
+ },
+ {
+  "name": "random 572",
+  "body": "[b][/noparse][/quote][[/code]mk1x[/ispoiler][/ispoiler][*]mk2x",
+  "removed": []
+ },
+ {
+  "name": "random 573",
+  "body": "[/quote][quote=zz][/ispoiler][/ispoiler][quote=11111111-1111-4111-8111-111111111111][code][quote=22222222-2222-4222-8222-222222222222]",
+  "removed": []
+ },
+ {
+  "name": "random 574",
+  "body": "[i][/i][b]",
+  "removed": []
+ },
+ {
+  "name": "random 575",
+  "body": "[/list]mk1x[/i][b][noparse][/b]mk2x ",
+  "removed": []
+ },
+ {
+  "name": "random 576",
+  "body": "[quote=zz][noparse][quote=11111111-1111-4111-8111-111111111111][quote=zz][[/b][/i]mk1x[ispoiler][quote=11111111-1111-4111-8111-111111111111][/list]",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "random 577",
+  "body": "[quote=zz] [/i][/b][/code][list][/ispoiler]",
+  "removed": []
+ },
+ {
+  "name": "random 578",
+  "body": "[b][b][/b][[quote=22222222-2222-4222-8222-222222222222] [quote]][ispoiler][/code][b]][*]",
+  "removed": []
+ },
+ {
+  "name": "random 579",
+  "body": "[/ispoiler][/ispoiler][b]mk1x[quote=22222222-2222-4222-8222-222222222222][quote=11111111-1111-4111-8111-111111111111]mk2x[noparse][quote=zz][b]",
+  "removed": [
+   "mk2x"
+  ]
+ },
+ {
+  "name": "random 580",
+  "body": "[[/i][ [quote][/noparse]mk1x[code]",
+  "removed": []
+ },
+ {
+  "name": "random 581",
+  "body": "mk1xmk2x[/ispoiler][quote=zz]",
+  "removed": []
+ },
+ {
+  "name": "random 582",
+  "body": "[list][noparse][/ispoiler]mk1xmk2x[code][/noparse][/ispoiler]",
+  "removed": []
+ },
+ {
+  "name": "random 583",
+  "body": "[/quote][quote=11111111-1111-4111-8111-111111111111]mk1x[/ispoiler] [code][b]]",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "random 584",
+  "body": "][quote=22222222-2222-4222-8222-222222222222][b]",
+  "removed": []
+ },
+ {
+  "name": "random 585",
+  "body": "[[code][b]mk1x[code][ispoiler]",
+  "removed": []
+ },
+ {
+  "name": "random 586",
+  "body": "[list][quote=22222222-2222-4222-8222-222222222222][quote=zz][code][/b][ispoiler]",
+  "removed": []
+ },
+ {
+  "name": "random 587",
+  "body": "[/ispoiler][ispoiler][quote=zz]",
+  "removed": []
+ },
+ {
+  "name": "random 588",
+  "body": "[/url][quote=zz][/url][b][i][quote=zz][i][ispoiler][code][quote=11111111-1111-4111-8111-111111111111][quote=zz] [/ispoiler][/url]",
+  "removed": []
+ },
+ {
+  "name": "random 589",
+  "body": "]mk1x[/code][code][/noparse][mk2x[/i][/ispoiler][b]",
+  "removed": []
+ },
+ {
+  "name": "random 590",
+  "body": "[/code]][noparse][ispoiler]][noparse][ispoiler][code][[quote=11111111-1111-4111-8111-111111111111][i][b][/quote]",
+  "removed": []
+ },
+ {
+  "name": "random 591",
+  "body": "[/b][/list][quote=11111111-1111-4111-8111-111111111111][b][quote=22222222-2222-4222-8222-222222222222]mk1x[/ispoiler]",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "random 592",
+  "body": "[quote=zz]mk1x[quote=11111111-1111-4111-8111-111111111111]",
+  "removed": []
+ },
+ {
+  "name": "random 593",
+  "body": "[/url][/noparse][",
+  "removed": []
+ },
+ {
+  "name": "random 594",
+  "body": "[quote=22222222-2222-4222-8222-222222222222]][/b][ispoiler]mk1x[quote=11111111-1111-4111-8111-111111111111]",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "random 595",
+  "body": "[*][quote=22222222-2222-4222-8222-222222222222][quote][/list][/ispoiler]][ispoiler][list][noparse][code] [i][/b] [noparse]",
+  "removed": []
+ },
+ {
+  "name": "random 596",
+  "body": "mk1x [/list][/quote][quote][quote=zz][list][/noparse][quote=zz]",
+  "removed": []
+ },
+ {
+  "name": "random 597",
+  "body": "[noparse][ispoiler][quote=11111111-1111-4111-8111-111111111111][/i][/code]",
+  "removed": []
+ },
+ {
+  "name": "random 598",
+  "body": "[quote=11111111-1111-4111-8111-111111111111][url=https://e.com/][/i][/i][[/noparse][quote] [/noparse][[/list][b][/i]mk1x",
+  "removed": [
+   "mk1x"
+  ]
+ },
+ {
+  "name": "random 599",
+  "body": "mk1x[list][[b][i]",
+  "removed": []
+ },
+ {
+  "name": "random 600",
+  "body": "[/code][/ispoiler][/b][/list][quote]mk1x [/quote][quote][ispoiler][noparse][quote=22222222-2222-4222-8222-222222222222][list][/noparse]",
+  "removed": []
+ }
+]

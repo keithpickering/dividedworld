@@ -47,10 +47,10 @@ export interface Session {
 /** The little of Supabase Auth this needs (supabase/functions/_shared/gotrue.ts). */
 export interface Auth {
   /** Emails a code and a link; `create` lets it make a login for an address with none, carrying the invite. */
-  requestCode(email: string, options: { create: boolean; invite: string | null; redirect: string }): Promise<void>;
-  verifyCode(email: string, code: string): Promise<{ session: Session } | { refused: 'code' }>;
+  requestCode(email: string, options: { create: boolean; invite: string | null; redirect: string; conduct?: number }): Promise<void>;
+  verifyCode(email: string, code: string): Promise<{ session: Session } | { refused: 'code' | 'barred' }>;
   /** The same token as the code, by the hash the email's link carries. */
-  verifyLink(tokenHash: string): Promise<{ session: Session } | { refused: 'link' }>;
+  verifyLink(tokenHash: string): Promise<{ session: Session } | { refused: 'link' | 'barred' }>;
 }
 
 export interface Clock {
@@ -66,6 +66,7 @@ export interface AccountAnswer {
 }
 
 const SENT_CODE = 'If this address can sign in here, a code and a link to sign in are on their way to it. A new login needs an invite where this instance asks for one. If nothing comes in a few minutes, ask again.';
+const BARRED = 'this account is locked, so it cannot sign in; reach an admin through Contact to appeal';
 const NO_MATCH = 'that code does not match, or it has expired: ask for a new one';
 const NO_LINK = 'that link does not work, or it has expired: ask for a new code';
 
@@ -92,7 +93,9 @@ const tokenHash = (r: Fields): string | AccountAnswer => {
 async function opened(deps: { player: (token: string) => Db }, session: Session): Promise<AccountAnswer> {
   const invite = session.user.user_metadata?.invite;
   try {
-    await deps.player(session.access_token).rpc('open_account', { code: typeof invite === 'string' ? invite : null });
+    const agreed = session.user.user_metadata?.conduct;
+    // open_account records the acceptance only when this is the current version.
+    await deps.player(session.access_token).rpc('open_account', { code: typeof invite === 'string' ? invite : null, ...(typeof agreed === 'number' && Number.isSafeInteger(agreed) ? { conduct_version: agreed } : {}) });
     return { status: 200, body: { session, account: true } };
   } catch (e) {
     if (e instanceof DatabaseError && e.hint === REFUSAL_HINT) {
@@ -130,7 +133,10 @@ async function answer(deps: { auth: Auth; service: Db; player: (token: string) =
       const create = opens === 'opens';
       const invite = create ? asked : null;
       const note = !given || create ? {} : { invite: opens === 'closed' ? 'registration is closed, so no new login is made' : 'that invite opens nothing, so no new login is made with it' };
-      return { status: 202, body: { message: SENT_CODE, ...note }, later: () => deps.auth.requestCode(address, { create, invite, redirect: redirect(deps.site, create, r.next) }) };
+      // The version of the code the register form's checkbox agreed to rides with the login (Auth keeps it in the user's metadata) until the account opens; anything
+      // but a positive whole number is no version, and nothing is then recorded as accepted.
+      const conduct = typeof r.conduct === 'number' && Number.isSafeInteger(r.conduct) && r.conduct >= 1 ? r.conduct : undefined;
+      return { status: 202, body: { message: SENT_CODE, ...note }, later: () => deps.auth.requestCode(address, { create, invite, redirect: redirect(deps.site, create, r.next), ...(conduct === undefined ? {} : { conduct }) }) };
     }
     case 'verifyCode': {
       const address = email(r);
@@ -138,6 +144,8 @@ async function answer(deps: { auth: Auth; service: Db; player: (token: string) =
       const digits = code(r);
       if (typeof digits !== 'string') return digits;
       const out = await deps.auth.verifyCode(address, digits);
+      /* Said only after a correct code, so it proves nothing to anyone who does not hold the address; plain, never "try again". The hint is the one the screens read as a bar. */
+      if ('refused' in out && out.refused === 'barred') return { status: 403, body: { error: BARRED, hint: 'kayfabb.barred' } };
       if ('refused' in out) return refused('code', NO_MATCH);
       return opened(deps, out.session);
     }
@@ -145,6 +153,8 @@ async function answer(deps: { auth: Auth; service: Db; player: (token: string) =
       const hash = tokenHash(r);
       if (typeof hash !== 'string') return hash;
       const out = await deps.auth.verifyLink(hash);
+      /* The same plain answer as a code's: a banned login following its emailed link lands on the bar, never "try again". */
+      if ('refused' in out && out.refused === 'barred') return { status: 403, body: { error: BARRED, hint: 'kayfabb.barred' } };
       if ('refused' in out) return refused('link', NO_LINK);
       return opened(deps, out.session);
     }

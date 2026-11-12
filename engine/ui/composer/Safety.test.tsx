@@ -157,7 +157,7 @@ describe('a box that is kept for one account and thread', () => {
 
   test('signed in with no account open, a plain note stands where the box would be', async () => {
     const w = threadWorld();
-    vi.spyOn(w.fake, 'session').mockResolvedValue({ signedIn: true, account: null });
+    vi.spyOn(w.fake, 'session').mockResolvedValue({ signedIn: true, account: null, bar: null, conductAccepted: true });
     openThread(w);
     expect(await screen.findByText(/account is not open yet/u)).toBeInTheDocument();
     expect(screen.queryByRole('textbox', { name: 'Your reply' })).toBeNull();

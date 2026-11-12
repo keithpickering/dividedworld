@@ -203,6 +203,20 @@ function apologyRule(v: unknown): string | null {
   return null;
 }
 
+/** The code of conduct's numbers (`Settings.conduct`): the most open reports an account holds, and the admin address replies go to (null until the owner sets it). */
+const CONDUCT_KEYS = ['openReportsMost', 'adminAddress'] as const;
+function conductRule(v: unknown): string | null {
+  const shape = 'an object giving openReportsMost (the most reports to admins one account holds open, a whole number, at least 1) and adminAddress (null, or an email address containing "@")';
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) return shape;
+  const extra = Object.keys(v).find((k) => !(CONDUCT_KEYS as readonly string[]).includes(k));
+  if (extra !== undefined) return `${shape}; "${extra}" is not one of its fields`;
+  const o = v as Record<string, unknown>;
+  if (!isWhole(o['openReportsMost'], 1)) return `${shape}; "openReportsMost" is not`;
+  const a = o['adminAddress'];
+  if (a !== null && !(typeof a === 'string' && a.includes('@'))) return `${shape}; "adminAddress" is not`;
+  return null;
+}
+
 /**
  * The cosmetics' settings (`Settings.cosmetics`): exactly the fields of CosmeticsSettings, each held as its own words say. Every
  * weight is a positive whole number, and only an event's `none` may be 0.
@@ -311,6 +325,7 @@ const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | nul
   modBots: modBotsRule,
   warnBar: warnBarRule,
   apology: apologyRule,
+  conduct: conductRule,
   boardNameMaxLength: whole(1, 'characters'),
   moveExpiryMostDays: whole(1, 'days'),
   moveExpiryLeastHours: whole(1, 'hours'),

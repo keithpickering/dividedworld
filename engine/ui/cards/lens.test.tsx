@@ -748,6 +748,9 @@ describe('Who across tabs', () => {
   });
 });
 
+/** The plain link at the very foot of a post's Lens: the last stop in it. */
+const reportToAdmins = () => within(lens()).getByRole('button', { name: 'Report to admins' });
+
 describe('the Tab order around a Lens drawn at the end of the body', () => {
   test('Tab past its last control goes to the element after the mark, Shift+Tab before its first goes back to the mark, and it stays open', async () => {
     width(false);
@@ -756,12 +759,12 @@ describe('the Tab order around a Lens drawn at the end of the body', () => {
     open(w);
     const mark = await markOf(2, 'Card 2');
     await userEvent.click(mark);
-    /* The first stop is the open tab and the last is Who's disclosure. */
+    /* The first stop is the open tab and the last is Report to admins, the plain link at the foot of the Lens (the conduct plan, Task 6). */
     expect(tab('Card 2')).toHaveFocus();
     await userEvent.tab({ shift: true });
     expect(mark).toHaveFocus();
     expect(lens()).toBeInTheDocument();
-    whoButton().focus();
+    reportToAdmins().focus();
     await userEvent.tab();
     expect(within(await article(2)).getByRole('link', { name: 'Permalink to post #2' })).toHaveFocus();
     expect(lens()).toBeInTheDocument();
@@ -781,7 +784,7 @@ describe('the Tab order around a Lens drawn at the end of the body', () => {
       mark.closest('header')!.insertBefore(hidden, link);
     }
     await userEvent.click(mark);
-    whoButton().focus();
+    reportToAdmins().focus();
     await userEvent.tab();
     expect(link).toHaveFocus();
   });
@@ -1650,7 +1653,8 @@ describe('a visit\'s tab', () => {
       expect(within(l).getByRole('tab', { name: 'Dropped' })).toHaveAttribute('aria-selected', 'true');
       expect(within(l).getByRole('heading', { name: 'The Clerk could not be filed and was dropped' })).toBeInTheDocument();
       expect(l).toHaveTextContent(/The visit could not be filed and was dropped on .*Nothing landed on Spritey\./u);
-      expect(l).not.toHaveTextContent(/admin/u);
+      /* The words about the visit send nobody to an admin; the post's own Report to admins link, at the foot of every Lens (the conduct plan), is not the visit's words. */
+      expect((l.textContent ?? '').replace('Report to admins', '')).not.toMatch(/admin/u);
     });
 
     test('trapped, it says a trap on the post ended it', async () => {
@@ -1961,8 +1965,8 @@ describe('a play that did not take', () => {
     expect(within(row(live)).queryByText(/Didn't take/u)).toBeNull();
     /* It stays an Act the room can react to. */
     expect(within(row(lost)).getByRole('button', { name: /react/iu })).toBeInTheDocument();
-    /* Nothing says an admin did anything. */
-    expect(within(lens()).queryByText(/admin/iu)).toBeNull();
+    /* Nothing says an admin did anything (the Report to admins button at the foot is a button, and says nothing of this play). */
+    expect(within(lens()).queryByText(/admin/iu, { ignore: 'button' })).toBeNull();
   });
 
   test('its effect is not drawn: the card\'s effect is given the plays that took alone', async () => {
