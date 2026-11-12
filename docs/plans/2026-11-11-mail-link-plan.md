@@ -176,11 +176,100 @@ The build session does not run this task: build sessions touch no deployed servi
 description for the owner:
 1. Paste `supabase/templates/sign-in.html` and `supabase/templates/sign-up.html` into the dashboard's Magic Link and
    Confirm signup templates (`README.md`, step 4.4). Do not run `supabase config push`.
-2. Ask for a code as a returning player, and press the email's button: the panel, the press, the address.
+2. Ask for a code as a returning player, from "Sign in" on a thread's page, and press the email's button: the panel,
+   the press, the address, and "Continue" landing on that thread (Task 7).
 3. Register a fresh address with an invite, and press that email's button.
 4. Press a link a second time: the refusal, and the form.
 
 The owner's findings, if any, become issues.
+
+## Task 7. The link carries `next` (issue #223)
+
+Model: sonnet
+
+Added 2026-11-12 by the build session, as a plan gap: the plan above builds a link that opens `/sign-in` or
+`/register` bare, so a visitor who came from a thread and presses the email's button lands on the Index (#223). The
+owner's decision, given to the merging session that day: "Carry `next` in the emailed link, read back through the
+existing safe-redirect check. It is the only option that works when the mail is opened on another device. Add a browser
+copy only if Auth can't put a per-request value in the link." Auth can (see "What was read" below), so no browser copy
+is built. It is built after Task 4 and before Task 5, and it changes the link Task 4 writes, so Task 4 is built with
+this task's `href` from the start.
+
+**Layer:** engine for the rule, the action and the screen; the composition root hands the function its site.
+
+**The link.** The button's `href` in both templates is `{{ .RedirectTo }}#token_hash={{ .TokenHash }}`: Auth's own
+placeholder for the request's redirect, then the fragment of §2.1. The redirect is the instance's own page, built by
+the `account` function for each request: `<site>/sign-in` or `<site>/register`, with `?next=<path>` where the caller
+gave one. So `next` is a query on the instance's page, ahead of the fragment, and the page reads it as it reads a typed
+address.
+
+- `engine/rules/next.ts` (new, pure): `sameSitePath(next: unknown, origin: string): string | null`. A string that
+  starts with `/`, is at most 512 characters, and resolves against `origin` to the same origin is returned as its path,
+  query and fragment; anything else is `null`. `engine/ui/account/next.ts`'s `safeNext` becomes
+  `sameSitePath(next, location.origin) ?? '/'`, so the browser and the server hold one rule ("Two lists that must
+  agree are one list").
+- `supabase/functions/account/core.ts`:
+  - `runAccount`'s deps gain `site: string`, the instance's site.
+  - `requestCode` reads `r.next` through `sameSitePath(r.next, new URL(site).origin)`. A `next` that fails it, or is
+    `/`, is dropped without a word: the answer and its status are the same as with none.
+  - `Auth.requestCode`'s options gain `redirect: string`: `new URL(create ? '/register' : '/sign-in', site)`, with
+    `next` set on its query where one was kept. The page follows `create`, a fact about the invite, never the address.
+  - The header comment says where `next` comes from (the caller) and why that keeps both closures whole.
+- `supabase/functions/_shared/gotrue.ts`: `requestCode` posts to `otp?redirect_to=<redirect, encoded>`, as Auth's own
+  client does. The log lines for a refused or unanswered request name `otp` alone, never the redirect.
+- `supabase/functions/account/index.ts`: passes `site: mailTheme.site`.
+- `engine/ui/data/api.ts`, `web/src/data/supabase.ts`, `engine/ui/data/fake.ts`: `requestCode(email, invite, next)`,
+  `next` a `string | null`; the web client sends it in the action's body.
+- `engine/ui/account/SignIn.tsx`: asking for a code passes `safeNext(query.get('next'))`, or `null` where that is `/`.
+  The read back is Task 3's: the fragment is stripped with the query kept, and "Continue" and "Stay signed in" move on
+  through `safeNext`.
+- `supabase/functions/_shared/mail/auth.ts` (changing Task 4): no `link(path)`. `LINK` is
+  `'{{ .RedirectTo }}#token_hash={{ .TokenHash }}'` for both emails; `slots` is `[CODE, REDIRECT, HASH]`.
+- `engine/mail/render.ts`: `checkHref` takes an `href` that begins with a declared slot, as it takes one that is a
+  declared slot.
+- `tools/check-mail.mjs` (changing Task 4's fault): the button's `href` must be exactly
+  `{{ .RedirectTo }}#token_hash={{ .TokenHash }}`. A third poison in `tools/test-mail.mjs`: a template whose link is
+  the site's page written out (`https://…/sign-in#token_hash={{ .TokenHash }}`), which would drop `next`.
+- `README.md`, step 4.4: the button's link must keep `{{ .RedirectTo }}` and `{{ .TokenHash }}`; and Auth's Site URL
+  must be the instance's own site (scheme, host and port), since Auth takes a redirect only on its Site URL or its
+  allow list and otherwise puts the Site URL in the link.
+
+**The masks.** `next` and the page come from the caller and the invite, never from the address: `requestCode`'s answer,
+its status and its floor are the same for every address, with or without `next`, kept or dropped. Auth is still asked
+only after the answer.
+
+**Tests first:**
+- `engine/rules/next.test.ts`: `sameSitePath` over a plain path, a path with a query and a fragment, `//evil.example`,
+  `/\evil.example`, a tab inside the slashes, an absolute URL, a path of 513 characters, a number, `null`.
+  `engine/ui/account/next.test.ts` (or wherever `safeNext`'s cases are) stays green unchanged.
+- `supabase/functions/account/core.test.ts`: `requestCode` with `next: '/board/general?page=2'` and no invite hands
+  Auth `<site>/sign-in?next=%2Fboard%2Fgeneral%3Fpage%3D2`; with an invite that opens, `<site>/register?next=…`; with
+  no `next`, `<site>/sign-in`; with `next` `//evil.example`, a number or 600 characters, `<site>/sign-in` and the
+  same 202 body as with none; every answer on a whole number of `ANSWER_FLOOR_MS`.
+- `supabase/functions/_shared/gotrue.test.ts`: `requestCode` posts to `/auth/v1/otp?redirect_to=` the encoded
+  redirect; a refused request's log line holds no part of it.
+- `web/src/data/supabase.test.tsx` and the fake's test: `next` goes in the body; the fake keeps it.
+- `engine/ui/account/SignIn.test.tsx`: asking for a code on `/sign-in?next=/board/general` calls `requestCode` with
+  `/board/general`, and on `/sign-in` with `null`; opened at `/sign-in?next=/board/general#token_hash=<TEST_LINK>`,
+  "Continue" lands on `/board/general`; signed in as another address, "Stay signed in" lands there too; opened at
+  `/sign-in?next=//evil.example#token_hash=<TEST_LINK>`, "Continue" lands on `/`.
+- `supabase/functions/_shared/mail/auth.test.ts` (changing Task 4's): each button's `href` is exactly
+  `{{ .RedirectTo }}#token_hash={{ .TokenHash }}`.
+- `tools/test-mail.mjs`: the third poison, red.
+- Task 5's first case asks for its code on `/sign-in?next=<a thread>` and opens the link with that query; "Continue"
+  lands on the thread.
+
+**What was read, and what no test here shows.** No Auth runs in a build session, so these are read from Auth's source
+(`supabase/auth`, master, 2026-11-12) and from Go's own `html/template`, run on the `href` above:
+- `internal/mailer/templatemailer`: both emails' data hold `RedirectTo`, the request's referrer.
+- `internal/utilities/request.go`: the referrer is the `redirect_to` header or query where `IsRedirectURLValid`, which
+  takes a redirect whose scheme, host and port are the Site URL's with the allow list empty; otherwise it is the Site
+  URL, and the link would open the Index with a hash nothing reads.
+- `html/template` leaves `https://dw.gripe/sign-in?next=%2Fboard%2Fgeneral%3Fpage%3D2` and the hash whole in the
+  `href`.
+
+The owner's first real emails (Task 6) are what show it on the deployed Auth: step 2 is done from a thread's address,
+and "Continue" must land on that thread.
 
 ## Review focus
 
@@ -193,5 +282,7 @@ The owner's findings, if any, become issues.
   new code, never on a page with nothing to press.
 - The hash must reach no server but the `account` function: not a query, not a log line in `account` or `gotrue.ts`,
   not a history entry after the page arrives.
+- Task 7: `next` reaches the link from the caller alone. Read that `requestCode`'s answer, status and timing are the
+  same with any `next` and any address, and that no `next` can make the link or the page leave the instance's site.
 - With the link held, the screen's move-on effect is paused. Read that a signed-in player who opens `/sign-in` with no
   link is still moved on at once, as today.
