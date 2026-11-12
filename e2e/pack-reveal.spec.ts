@@ -93,16 +93,20 @@ async function lightOf(page: Page) {
     let sum = 0;
     let weight = 0;
     let weightedX = 0;
-    for (let i = 0; i < d.length; i += 4) { if (d[i + 3]! > 0) lit++; weight += d[i + 3]!; weightedX += d[i + 3]! * (((i / 4) % c.width) + 0.5); sum = (sum * 31 + d[i]! + d[i + 1]! * 3 + d[i + 2]! * 7 + d[i + 3]! * 11) % 2147483647; }
-    /* The alpha-weighted centroid's x as a fraction of the bitmap's width (0.5 when nothing is lit). */
-    return { width: c.width, lit, sum, centroidX: weight > 0 ? weightedX / weight / c.width : 0.5 };
+    let glint = 0;
+    let glintX = 0;
+    for (let i = 0; i < d.length; i += 4) { if (d[i + 3]! > 0) lit++; weight += d[i + 3]!; weightedX += d[i + 3]! * (((i / 4) % c.width) + 0.5); if (d[i + 3]! > 128) { glint++; glintX += ((i / 4) % c.width) + 0.5; } sum = (sum * 31 + d[i]! + d[i + 1]! * 3 + d[i + 2]! * 7 + d[i + 3]! * 11) % 2147483647; }
+    /* The alpha-weighted centroid's x as a fraction of the bitmap's width (0.5 when nothing is lit), and the same for only the pixels with alpha above 128, the tight glint. */
+    return { width: c.width, lit, sum, centroidX: weight > 0 ? weightedX / weight / c.width : 0.5, glint, glintX: glint > 0 ? glintX / glint / c.width : 0.5 };
   });
 }
 
 /** How far right, as a fraction of the bitmap's width, the light's centroid must move. */
 const MOVED = 0.15;
-/** The same for a pointer moved across the pack's own box, 10% to 90% of its width (about 0.21 measured; idle drift alone moves it by about 0.05). */
-const NEAR_MOVED = 0.12;
+/** How near, as a fraction of the pack's width, the tight glint's centroid must stand to the pointer's share across the pack (measured within 0.15; the pillow's edges lean it toward the middle). */
+const GLINT_NEAR = 0.2;
+/** How far right the glint must move between the pointer at 25% and at 75% across the pack (measured 0.39, 0.49 and 0.66 at 25%, 50% and 75%, so about 0.27: the pillow's edges lean the glint toward the middle). */
+const GLINT_MOVED = 0.2;
 
 async function theSlotsPack(page: Page) {
   await page.setViewportSize({ width: 1440, height: 1080 });
@@ -125,13 +129,19 @@ test('the Booster in the slot is a picture with a light: after a pointer move it
   const left = (await lightOf(page)).centroidX;
   await page.mouse.move(1438, 1078, { steps: 6 });
   await expect.poll(async () => (await lightOf(page)).centroidX, { timeout: 5000 }).toBeGreaterThan(left + MOVED);
-  /* A pack is lit from near: the pointer across the pack's own 50 px moves the highlight with it, and not only the drift's worth. */
-  await page.mouse.move(box.x + box.width * 0.1, box.y + box.height / 2, { steps: 6 });
-  await expect.poll(async () => (await lightOf(page)).lit, { timeout: 5000 }).toBeGreaterThan(0);
-  await page.waitForTimeout(600);
-  const leftEdge = (await lightOf(page)).centroidX;
-  await page.mouse.move(box.x + box.width * 0.9, box.y + box.height / 2, { steps: 6 });
-  await expect.poll(async () => (await lightOf(page)).centroidX, { timeout: 5000 }).toBeGreaterThan(leftEdge + NEAR_MOVED);
+  /* A pack is lit from near: with the pointer on the pack, the tight glint stands at the pointer (alpha above 128; its centroid's share of the bitmap's width is the pointer's share of the pack). */
+  const glintAt = async (share: number) => {
+    await page.mouse.move(box.x + box.width * share, box.y + box.height / 2, { steps: 6 });
+    await expect.poll(async () => (await lightOf(page)).glint, { timeout: 5000 }).toBeGreaterThan(0);
+    await page.waitForTimeout(700); // the light's ease (110 ms) and the redraw have settled
+    const at = (await lightOf(page)).glintX;
+    expect(Math.abs(at - share), `the glint at ${at.toFixed(3)} for a pointer ${share} across the pack`).toBeLessThan(GLINT_NEAR);
+    return at;
+  };
+  const at25 = await glintAt(0.25);
+  await glintAt(0.5);
+  const at75 = await glintAt(0.75);
+  expect(at75 - at25).toBeGreaterThan(GLINT_MOVED);
 });
 
 test.describe('with motion reduced', () => {

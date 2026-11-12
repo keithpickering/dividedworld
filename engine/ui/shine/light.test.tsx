@@ -100,29 +100,64 @@ describe('lightAt for a near host', () => {
       }
     }
   });
-  it('adds 0.7 of the pointer offset from the host center, in half-widths and half-heights', () => {
-    const off = lightAt(at(500, 500), pack, vp, 0, 0, false);
-    const on = lightAt(at(550, 575), pack, vp, 0, 0, true);
-    const plain = lightAt(at(550, 575), pack, vp, 0, 0, false);
-    near(on.x - plain.x, 0.7 * 0.5);
-    near(on.y - plain.y, 0.7 * 0.5);
-    /* A pointer at the host's own center adds nothing. */
-    const centered = lightAt(at(500, 500), pack, vp, 0, 0, true);
-    near(centered.x, off.x);
-    near(centered.y, off.y);
+  /* The relief puts a light of (nx / 1.3, ny / 1.3) at the pointer's place on the box; the idle drift (t, phase) is all that is added to it. */
+  const SCALE = 1 / 1.3;
+  const DRIFT_X = 0.125;
+  const DRIFT_Y = 0.1;
+  const withinDrift = (l: { x: number; y: number }, want: { x: number; y: number }) => {
+    expect(Math.abs(l.x - want.x)).toBeLessThanOrEqual(DRIFT_X + 1e-9);
+    expect(Math.abs(l.y - want.y)).toBeLessThanOrEqual(DRIFT_Y + 1e-9);
+  };
+  /* A pointer at (nx, ny) half-extents from the center of `rect`, as the store holds it. */
+  const onBox = (rect: { top: number; height: number; left: number; width: number }, nx: number, ny: number): LightInput =>
+    at(rect.left + rect.width / 2 + nx * rect.width / 2, rect.top + rect.height / 2 + ny * rect.height / 2);
+
+  it('a pointer at the box center puts the light at (0, 0), within the drift', () => {
+    for (const [t, phase] of [[0, 0], [1234, 7], [99999, 2.4], [1700 * Math.PI / 2, 0]] as const) withinDrift(lightAt(onBox(pack, 0, 0), pack, vp, t, phase, true), { x: 0, y: 0 });
+    const l = lightAt(onBox(pack, 0, 0), pack, vp, 0, 0, true);
+    near(l.x, 0);
+    near(l.y, 0.1);
   });
-  it('clamps the offset to -1..1, so a pointer far from the host holds the light at the host edge', () => {
-    const edge = lightAt(at(600, 650), pack, vp, 0, 0, true);
-    const plainEdge = lightAt(at(600, 650), pack, vp, 0, 0, false);
-    near(edge.x - plainEdge.x, 0.7);
-    const far = lightAt(at(800, 800), pack, vp, 0, 0, true);
-    const plainFar = lightAt(at(800, 800), pack, vp, 0, 0, false);
-    near(far.x - plainFar.x, 0.7);
-    near(far.y - plainFar.y, 0.7);
-    const farLeft = lightAt(at(200, 200), pack, vp, 0, 0, true);
-    const plainLeft = lightAt(at(200, 200), pack, vp, 0, 0, false);
-    near(farLeft.x - plainLeft.x, -0.7);
-    near(farLeft.y - plainLeft.y, -0.7);
+  it('a pointer on the box puts the light at (nx / 1.3, ny / 1.3) within the drift, wherever the box is in the window', () => {
+    const boxes = [pack, { top: 0, height: 300, left: 0, width: 200 }, { top: 700, height: 300, left: 800, width: 200 }, { top: 700, height: 300, left: 0, width: 200 }];
+    for (const rect of boxes) for (const [nx, ny] of [[0.5, -0.5], [-0.8, 0.3], [1, 1], [-1, -1]] as const) for (const [t, phase] of [[0, 0], [1234, 7], [99999, 2.4]] as const) {
+      withinDrift(lightAt(onBox(rect, nx, ny), rect, vp, t, phase, true), { x: nx * SCALE, y: ny * SCALE });
+    }
+  });
+  it('with the pointer at d >= 2.5 half-extents the light is exactly the page\'s', () => {
+    for (const [nx, ny] of [[2.5, 0], [0, -2.5], [-3, 1], [4, 4], [2.5, 2.5]] as const) {
+      const input = onBox(pack, nx, ny);
+      for (const [t, phase] of [[0, 0], [1234, 7]] as const) {
+        const got = lightAt(input, pack, vp, t, phase, true);
+        const page = lightAt(input, pack, vp, t, phase, false);
+        near(got.x, page.x);
+        near(got.y, page.y);
+      }
+    }
+  });
+  it('the light is continuous in the pointer, across d = 1 and d = 2.5 and everywhere between', () => {
+    const EPS = 1e-4;
+    /* Each step of the pointer is EPS of a half-extent; the light may move by a few EPS and no more (no jump). */
+    for (const d of [0.5, 1, 1.5, 2, 2.5, 3]) for (const [ax, ay] of [[1, 0], [0, 1], [-1, 0], [0.6, -0.8]] as const) {
+      const a = lightAt(onBox(pack, ax * d, ay * d), pack, vp, 500, 1, true);
+      const b = lightAt(onBox(pack, ax * (d + EPS), ay * (d + EPS)), pack, vp, 500, 1, true);
+      expect(Math.abs(a.x - b.x), `x at d=${d} along (${ax}, ${ay})`).toBeLessThan(EPS * 5);
+      expect(Math.abs(a.y - b.y), `y at d=${d} along (${ax}, ${ay})`).toBeLessThan(EPS * 5);
+    }
+  });
+  it('between d = 1 and d = 2.5 the light walks from the pointed light to the page\'s', () => {
+    const input = onBox(pack, 1.75, 0);
+    const got = lightAt(input, pack, vp, 0, 0, true);
+    const page = lightAt(input, pack, vp, 0, 0, false);
+    const pointed = { x: SCALE + 0, y: 0 + 0.1 };
+    near(got.x, (page.x + pointed.x) / 2);
+    near(got.y, (page.y + pointed.y) / 2);
+  });
+  it('clamps the pointed offset to -1..1, so a pointer just off the box holds the light at the box edge', () => {
+    /* The pointer is 1% off the box, so the blend is 0.9999 pointed: the page's light is felt by about 1e-4 of its distance. */
+    const l = lightAt(onBox(pack, 1.01, -1.01), pack, vp, 0, 0, true);
+    expect(Math.abs(l.x - SCALE)).toBeLessThan(1e-3);
+    expect(Math.abs(l.y - (-SCALE + 0.1))).toBeLessThan(1e-3);
   });
   it('still clamps the result to +-1.5', () => {
     expect(lightAt({ ...at(1000, 1000), px: 1, py: 1 }, { top: 5000, height: 10, left: 0, width: 10 }, vp, 0, 0, true)).toEqual({ x: 1.5, y: 1.5 });

@@ -134,7 +134,7 @@ the engine's tear line, so every pack tears the same way.
 
 With a relief as well, one canvas over the picture holds the highlight the page's light adds
 (`engine/ui/shine/relief.ts`, `engine/ui/vending/packLight.ts`): the light is the page's, and it also follows the pointer across the
-pack itself (the pack asks the loop to light it from near, so the highlight sits near the pointer while it is over the pack),
+pack itself (the pack asks the loop to light it from near: the highlight stands under the pointer while it is on the pack, and the light walks back to the page's as the pointer moves away),
 it rests under reduced motion, and the canvas never holds the pack itself. So a pack with no relief, a relief that fails to load or
 cannot be read, and a browser with no canvas all show the still picture, whole.
 
