@@ -50,6 +50,11 @@ begin
   perform auth.assert_impersonating();
   if (select title from character_profiles where character = a) is distinct from 'The Profiled One' then raise exception 'a profile is read by every signed-in player'; end if;
   if pg_temp.refusal('select updated_at from character_profiles') is null then raise exception 'when a profile was set was read'; end if;
+  -- The columns the client's own read names (web/src/data/supabase.ts, `characters`), each granted one by one: a column added to a profile and to that read,
+  -- and never granted, refuses the whole read (0205 added portrait_tallness so; 0343 grants it).
+  if pg_temp.refusal('select character, title, signature, avatar_square, avatar_portrait, square_frame, portrait_frame, portrait_tallness, pip_style, pronouns from character_profiles') is not null then
+    raise exception 'the client''s read of a profile is refused: %', pg_temp.refusal('select character, title, signature, avatar_square, avatar_portrait, square_frame, portrait_frame, portrait_tallness, pip_style, pronouns from character_profiles');
+  end if;
   if exists (select 1 from account_preferences) then raise exception 'another account read preferences'; end if;
   if (select count(*) from pip_styles) < 2 then raise exception 'the pip styles are read by every player'; end if;
   perform tests.unbecome();
