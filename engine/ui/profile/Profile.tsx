@@ -23,6 +23,7 @@ import { FrontDoor } from '../front-door/FrontDoor.tsx';
 import { GroupBar } from '../postbit/GroupBar.tsx';
 import { Pips } from '../postbit/Postbit.tsx';
 import { Avatar } from './Avatar.tsx';
+import { TrophyCase } from './TrophyCase.tsx';
 import { StaffProfile } from './Staff.tsx';
 import { monthYear, shortDate } from '../postbit/dates.ts';
 import { reveals } from '../postbit/reveals.ts';
@@ -77,6 +78,8 @@ function Profile({ character: c, doc }: { readonly character: Character; readonl
   const monthJoined = monthYear(c.joined);
   const signed = c.signature.trim() !== '';
   const group = settings.groups.find((g) => g.key === c.group);
+  /* What it wears, each piece's gear named in words in layer order; a bare mask has no row. */
+  const worn = [...c.outfit].sort((a, b) => a.layer - b.layer).map((p) => instance.gear.find((g) => g.key === p.gear)?.name ?? p.gear);
   /* Each fact is a row: its label a row header, its words and links as they were a line of a paragraph. `lead` marks the two that stand beside the avatar on a phone. */
   const facts: readonly Fact[] = [
     ...(c.title ? [{ key: 'title', label: 'Title', lead: true, value: c.title }] : []),
@@ -88,13 +91,16 @@ function Profile({ character: c, doc }: { readonly character: Character; readonl
     ...(data.standing && data.settledAt
       ? [
         { key: 'aura', label: 'Aura this season', value: <><b>{figure(data.standing.standing)}</b> <span className="kb-muted">(settled {dayAndTime(data.settledAt)})</span></> },
-        { key: 'place', label: 'Place', value: <>{data.standing.place}{data.standing.of > 0 && <> of {data.standing.of}</>}{data.season !== null && <> in season {data.season}</>} · <Link to="/season?tab=rankings">season standings</Link></> },
+        { key: 'place', label: 'Place', value: <>{data.standing.place === null
+          ? <>Unplaced <span className="kb-muted">(a place needs Aura above 0)</span></>
+          : <>{data.standing.place}{data.standing.of > 0 && <> of {data.standing.of}</>}</>}{data.season !== null && <> in season {data.season}</>} · <Link to="/season?tab=rankings">season standings</Link></> },
       ]
       : [{ key: 'aura', label: 'Aura this season', value: <span className="kb-muted">Nothing has settled for {pronounWords(c.pronouns).them} yet. <Link to="/season?tab=rankings">Season standings</Link></span> }]),
     { key: 'posts', label: 'Posts', value: data.counts.posts },
     { key: 'spins', label: 'Threads spun', value: data.counts.spins },
     { key: 'cards', label: 'Cards played', value: data.counts.cards },
     ...(monthJoined ? [{ key: 'joined', label: 'Joined', value: monthJoined }] : []),
+    ...(worn.length > 0 ? [{ key: 'wearing', label: 'Wearing', value: worn.join(', ') }] : []),
     ...(stated?.revealed
       ? [{ key: 'class', label: 'Class', value: <>Revealed: {className(stated.revealed.class)} ({shortDate(stated.revealed.at)}){stated.turnedAt && <> · Has Turned since ({shortDate(stated.turnedAt)})</>}</> }]
       : []),
@@ -120,6 +126,7 @@ function Profile({ character: c, doc }: { readonly character: Character; readonl
           </tbody>
         </table>
       </section>
+      <TrophyCase character={c.id} name={c.name} />
       <section className="kb-profile-record" aria-label="Public record">
         {data.rows.length === 0
           ? <><h2 className="kb-heading">Public record</h2><p>Nothing yet.</p></>

@@ -24,7 +24,7 @@ export interface LogMeeting {
   readonly error: string | null;
   readonly bankBefore: number | null;
   readonly bankAfter: number | null;
-  /** One per part the meeting's record holds, in order (moves, staff, self), each with its outcome and the call kept for it, if any. An old record with no parts has one "unknown" entry per kept call. */
+  /** One per part the meeting's record holds, in order (moves, bundle, staff, self), each with its outcome and the call kept for it, if any. An old record with no parts has one "unknown" entry per kept call. */
   readonly parts: readonly LogMeetingPart[];
   readonly memoryBefore: unknown;
   readonly memoryAfter: unknown;

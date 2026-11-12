@@ -253,7 +253,8 @@ describe('My log', () => {
     await open(fake, me, hoo);
     await screen.findByRole('table');
     const named = () => (into.mock.contexts as HTMLElement[]).map((e) => e.textContent);
-    expect(named()[0], 'the first frame scrolls the tab that is current').toBe('Mrs. Hooligan');
+    /* The scroll is an effect of the frame that drew the table, and an effect can run a moment after its frame is found on a busy machine. */
+    await waitFor(() => expect(named()[0], 'the first frame scrolls the tab that is current').toBe('Mrs. Hooligan'));
     expect(into).toHaveBeenLastCalledWith({ block: 'nearest', inline: 'center' });
     into.mockClear();
     fireEvent.click(tab('All'));

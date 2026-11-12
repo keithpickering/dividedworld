@@ -18,9 +18,11 @@
  */
 import type { Quadrant, Span } from '../../rules/types.ts';
 import type { PronounSet } from '../../rules/pronouns.ts';
+import type { Piece } from '../../rules/cosmetics.ts';
 import type { BeyondPost, Rarity, Reach, SetConditions } from '../../rules/cards.ts';
 import type { AlertKind } from '../../rules/alerts.ts';
 import type { Career } from '../../system/career.ts';
+import type { HandoffFacts } from '../../system/meeting.ts';
 import type { RecordKind } from '../profile/record.ts';
 
 export type Id = string;
@@ -311,7 +313,27 @@ export type ActKind = 'post' | 'spin' | 'card' | 'edit' | 'tally' | 'reveal' | '
   /* The Mod Bots' Acts (supabase/migrations/0104 to 0109): meta acts like a card play, none a place in the thread (`seq` null). */
   | 'visit' | 'visit_join' | 'visit_end' | 'report' | 'report_verdict' | 'intercept' | 'infraction' | 'ban' | 'appeal' | 'appeal_ruling'
   /* A gift to a drive (0153): an Act of the drive's thread on its opening play, no place in the thread (`seq` null). */
-  | 'donation';
+  | 'donation'
+  /* A surface's layer (0317): a draw adds strokes to a play, a wash by the post's character takes ink off. Acts of the play's thread on the play, no place in the thread (`seq` null), and no post to draw. */
+  | 'draw' | 'wash';
+
+/**
+ * A draw or a wash on a surface, as every reader sees it (`surface_acts`, 0317): the Act, whose payload holds its `strokes` and its `cells`
+ * (a 10,000-character bit string). A draw read from the surface carries `share`, the cells of the layer it owns now (what a wash has not
+ * taken and no later draw has painted over); a wash, and an Act just written, carry none.
+ */
+export interface SurfaceAct extends Act { readonly share?: number }
+/** A draw or a wash just written (`draw_on_surface`, `wash_surface`): the Act and how the surface stands with it. */
+export interface SurfaceWritten extends SurfaceAct {
+  /** The cells the layer covers now. */
+  readonly covered: number;
+  /** The ids of the live draws and washes, oldest first. */
+  readonly live: readonly Id[];
+}
+/** What a surface holds that a page's read gives without its strokes (`thread_page`'s `surfaces`): the cells covered and the live Acts' ids. */
+export interface SurfaceNow { readonly covered: number; readonly live: readonly Id[] }
+/** A surface's live Acts (`surface_acts`), oldest first, with the cells covered and how many older draws are no longer live. */
+export interface SurfaceActs { readonly covered: number; readonly acts: readonly SurfaceAct[]; readonly older: number }
 
 /**
  * One gift on a drive's wall: who gave (a character, never a player), how much (hundredths) and when. What the drive kept and what arrived are not shown.
@@ -540,6 +562,12 @@ export interface Character {
   readonly avatarPortrait: string | null;
   readonly squareFrame: Frame | null;
   readonly portraitFrame: Frame | null;
+  /** How tall its portrait is as a multiple of its width, 1 to 2 (character_profiles.portrait_tallness); null for an avatar written before it was kept, or none. */
+  readonly portraitTallness: number | null;
+  /** The pieces it wears, in layer order (gear_worn, public by character). Empty without a portrait. */
+  readonly outfit: readonly Piece[];
+  /** The awards its postbit shows in the order its player chose, then each belt it holds (`profile_projection`'s `trophies`). Empty where a read carries none. */
+  readonly trophies: readonly ShownTrophy[];
   readonly pipStyle: string;
   /** Its pronouns (character_profiles.pronouns, public like a title): copy about this one character is written with them. A character with no profile row, or whose set a read did not carry (`pronounsUnread`), has the engine's it/its. */
   readonly pronouns: PronounSet;
@@ -562,22 +590,192 @@ export interface Character {
 /** An office a staff character holds (0082). `waiting` is never shown on a character (a persona that has not debuted is in no public list); `developer` is the developer persona's, which holds no office. */
 export type Office = 'boss' | 'mod' | 'member' | 'benched' | 'waiting' | 'developer';
 
+/**
+ * One standing award as a screen shows it. `trophy` is the kind's key: an instance's own kind draws its art from the instance's UI by it, and `art` is the URL of a
+ * picture an admin made (the `trophies` bucket), null for an instance's kind. `held` is whether a belt is held now; false for a trophy that is no belt.
+ */
+export interface ShownTrophy {
+  readonly award: Id;
+  readonly trophy: string;
+  readonly name: string;
+  readonly art: string | null;
+  readonly belt: boolean;
+  readonly held: boolean;
+}
+
+/** An award on a character's trophies page: what its postbit shows, and the words it was given with (`trophies_of`). Never which admin. */
+export interface TrophyItem extends ShownTrophy {
+  /** The words it carries: the award's own, else the kind's; null for none. */
+  readonly line: string | null;
+  readonly at: string;
+  /** Who gave it, in plain words ("the season", "a met demand", "an admin", or the Boss's name). */
+  readonly by: string;
+  /** The season's number for a season's place; null for any other award. */
+  readonly season: number | null;
+  /** The move that gave it, for the Boss's award and a met demand's: its Act, its thread and its number there (the address of a post); null for any other award. */
+  readonly move: TrophyMove | null;
+  /** Whether the character's posts show this award (its own choice, which a post makes public). */
+  readonly shown: boolean;
+}
+
+/** A move's Act and where it stands: `/t/<thread>#post-<seq>`. Public, as every move is. */
+export interface TrophyMove {
+  readonly act: Id;
+  readonly thread: Id;
+  readonly seq: number;
+}
+
+/** How many awards a page of `trophies` holds. */
+export const TROPHIES_PAGE = 50;
+
+/** A page of a character's standing awards, newest first; `more` is whether older ones remain. */
+export interface TrophyPage {
+  readonly awards: readonly TrophyItem[];
+  readonly more: boolean;
+}
+
+/** Where a page of trophies continues from: the last award of the page before it, by its instant and id (`trophies_of`'s `before` and `before_id`). */
+export interface TrophyCursor {
+  readonly before: string;
+  readonly beforeId: Id;
+}
+
+/** One reign of a belt: its holder and when it began and ended (null for the holder now). */
+export interface BeltReign {
+  readonly award: Id;
+  readonly character: Id;
+  readonly name: string;
+  readonly began: string;
+  readonly ended: string | null;
+  /** How the reign began, in the words `TrophyItem.by` uses ("<Name>, the Boss", "an admin"); never which admin. */
+  readonly by: string;
+}
+
+/** How many reigns a page of `beltLineage` holds. */
+export const REIGNS_PAGE = 20;
+
+/** A page of a belt's reigns, newest first; `more` is whether earlier ones remain. */
+export interface BeltPage {
+  readonly reigns: readonly BeltReign[];
+  readonly more: boolean;
+}
+
+/** Where a page of reigns continues from: the last reign of the page before it, by when it began and its award (`belt_lineage`'s `before` and `before_id`). */
+export interface BeltCursor {
+  readonly before: string;
+  readonly beforeId: Id;
+}
+
+/** A gear the player holds: how many copies, its rarity, and which of the player's own characters wear it (`my_wardrobe`). Private to the player. */
+export interface WardrobeItem {
+  readonly gear: string;
+  readonly rarity: Rarity;
+  readonly held: number;
+  readonly wornBy: readonly Id[];
+}
+
+/** What a Random Event gave: `line` is the words it said (an instance's `events.lines` text, with `{item}` still in it for the dialog to fill), `lineKey` which line, `item` the gear or card found, for an outcome of gear or card. */
+export interface RandomEvent {
+  readonly event: Id;
+  readonly outcome: 'line' | 'gear' | 'card';
+  readonly item: string | null;
+  readonly rarity: Rarity | null;
+  readonly line: string | null;
+  readonly lineKey?: string;
+  readonly character: Id;
+}
+
+/** An award that could not be written, kept for an admin to give by hand (`trophy_award_failures`). */
+export interface TrophyAwardFailure {
+  readonly id: Id;
+  /** The move's Act for a met demand's; null for a season's. */
+  readonly move: Id | null;
+  readonly season: number | null;
+  readonly at: string;
+  readonly error: string;
+  readonly trophy: string | null;
+  /** Whether an award is still owed: no character has had it from an admin yet, one has not, or the characters cannot be read now. A failure with every character given is closed. */
+  readonly open: boolean;
+  /** Who the trophy was for, where that can be read now (null where it cannot), and whether an admin has given each theirs by hand (`give_failed_award`). */
+  readonly characters: readonly { readonly id: Id; readonly name: string; readonly place?: number; readonly given: boolean }[] | null;
+}
+
+/** How many failed awards a page of `trophyAwardFailures` holds. */
+export const TROPHY_FAILURES_PAGE = 50;
+
+/** A page of the failed awards, the unresolved first and each group newest first; `more` is whether later ones remain. */
+export interface TrophyAwardFailuresPage {
+  readonly failures: readonly TrophyAwardFailure[];
+  readonly more: boolean;
+}
+
+/** Where a page of `trophyAwardFailures` continues from: the last failure of the page before it, by its instant, id and whether it was open. */
+export interface TrophyAwardFailuresCursor {
+  readonly before: string;
+  readonly beforeId: Id;
+  readonly beforeOpen: boolean;
+}
+
+/** A trophy kind as the admin page's choice lists it (`admin_awards`'s `kinds`): `made` is whether an admin made it, `art` the picture's URL for an admin's kind (null for the instance's). */
+export interface AdminKind {
+  readonly key: string;
+  readonly name: string;
+  readonly belt: boolean;
+  readonly made: boolean;
+  readonly art: string | null;
+}
+
+/** One award as the admin page lists it: to which character, in what words it was given, and whether it was taken back (a taken-back award stays listed, marked). Never which admin. */
+export interface AdminAward {
+  readonly award: Id;
+  readonly trophy: string;
+  readonly name: string;
+  readonly belt: boolean;
+  readonly art: string | null;
+  readonly character: Id;
+  readonly to: string;
+  /** Who gave it, in plain words ("an admin", "a met demand", the Boss's name). */
+  readonly by: string;
+  readonly at: string;
+  readonly line: string | null;
+  readonly reversed: boolean;
+}
+
+/** How many awards a page of `adminAwards` holds. */
+export const ADMIN_AWARDS_PAGE = 20;
+
+/** A page of recent awards, newest first, with every kind there is; `more` is whether older ones remain. */
+export interface AdminAwardsPage {
+  readonly awards: readonly AdminAward[];
+  readonly kinds: readonly AdminKind[];
+  readonly more: boolean;
+}
+
+/** Where a page of `adminAwards` continues from: the last award of the page before it, by its instant and id. */
+export interface AdminAwardsCursor {
+  readonly before: string;
+  readonly beforeId: Id;
+}
+
 /** A character's season standing and its place, as a page of the standings lists it (standings_page). */
 export interface Standing {
   readonly character: Id;
   readonly name: string;
   /** Hundredths. */
   readonly standing: number;
-  /** Ties share a place. */
-  readonly place: number;
+  /**
+   * Ties share a place, and the next standing takes the next place (dense, #453). Only a standing above zero is placed: a standing of 0 or below is
+   * `null`, unplaced (#492), as the season's results list it.
+   */
+  readonly place: number | null;
 }
 
 /** A character's standing, its place and how many characters have debuted (`standing_place`). */
 export interface StandingPlace {
   /** Hundredths. */
   readonly standing: number;
-  /** Ties share a place. */
-  readonly place: number;
+  /** Ties share a place, and the next standing takes the next place (dense, #453); `null` for a standing of 0 or below, unplaced (#492). */
+  readonly place: number | null;
   readonly of: number;
 }
 
@@ -765,6 +963,12 @@ export interface QueuedMove {
   readonly replacedAt: string | null;
   /** The words an admin has put in the place of the rename's description (`replace_queued_description`, 0101); null when none did. The Boss's own stay in `params`. */
   readonly adminDescription: string | null;
+  /** The queued moves it builds on that have not landed (admin_queue, 0331): it lands after them. Empty for a move that waits for none. */
+  readonly waitsFor: readonly { readonly id: number; readonly role: string | null; readonly kind: string; readonly name: string | null }[];
+  /** The bundle the move is a part of (admin_queue, 0329), the part's role in it and the bundle's name; all null for a move that is no part of a bundle. */
+  readonly bundle: Id | null;
+  readonly role: string | null;
+  readonly bundleName: string | null;
 }
 
 /** A landed move with no end yet (admin_queue). */
@@ -781,6 +985,10 @@ export interface MoveInForce {
   readonly landedAt: string;
   readonly expiresAt: string | null;
   readonly progress: DemandProgress;
+  /** The bundle the move is a part of (admin_queue, 0329), the part's role in it and the bundle's name; all null for a move that is no part of a bundle. */
+  readonly bundle: Id | null;
+  readonly role: string | null;
+  readonly bundleName: string | null;
 }
 
 /** A move that ended, or was held or refused and never landed, in the last 30 days (admin_queue). */
@@ -803,6 +1011,10 @@ export interface MoveEnded {
   readonly card?: string | null;
   /** For a rule refused when it came to land (`how: 'refused'`): the server's reason, in its words. */
   readonly reason?: string | null;
+  /** The bundle the move is a part of (admin_queue, 0329), the part's role in it and the bundle's name; all null for a move that is no part of a bundle. */
+  readonly bundle: Id | null;
+  readonly role: string | null;
+  readonly bundleName: string | null;
 }
 
 /** A face-up play of a staff character, still in force (admin_queue's `staffCards`), for an admin to end. */
@@ -838,6 +1050,13 @@ export interface HandoverTodo {
   /** How the new Boss was chosen: `nomination` or `rotation`. */
   readonly how: string;
   readonly landedAt: string;
+  /**
+   * The outgoing Boss's handoff note (0337): out of character, written at its last meeting, for the next Boss and for admins; players never see it. Null where none stands (the last meeting failed).
+   * It is the Boss's own words, shown as its note and never as the glass's.
+   */
+  readonly note: string | null;
+  /** What the code knows of the season that ended (`handoff_facts`): boards made, merged and closed, beats played, moves in force, the busiest and quietest boards. True whatever the note says. */
+  readonly facts: HandoffFacts;
 }
 
 /** What the admin screen shows. Each group holds at most `cap` rows; `more` says a group was cut. */
@@ -966,6 +1185,14 @@ export interface Preferences {
   readonly tilt: 'off' | 'on';
   /** Whether card effects use their full colors even below the usual contrast standard; standard until the player turns it on. */
   readonly effects: 'standard' | 'bright';
+  /** Whether the game's own sounds (a card's, a mark's) play; off until the player turns it on. */
+  readonly gameSound: 'off' | 'on';
+  /** The game sounds' volume, 0 to 100 in steps of 5. */
+  readonly gameVolume: number;
+  /** Whether the interface's sounds play; off until the player turns it on. */
+  readonly interfaceSound: 'off' | 'on';
+  /** The interface sounds' volume, 0 to 100 in steps of 5. */
+  readonly interfaceVolume: number;
   /**
    * The card kinds (their keys) this account has met: a kind's first mark on a page shows its callout until the kind is in this
    * set. Changed only by `meetCard` and `restoreTips`, never by `setPreferences`; at most 64, read by its own account alone.
@@ -998,7 +1225,7 @@ export interface Preferences {
 export type PreferencesPatch = Partial<Omit<Preferences, 'cardsMet' | 'alertsSeenAt' | 'settlementSeen' | 'welcomedAt' | 'tips' | 'tipsSeen'>>;
 
 /** What an account's preferences are before it has set any (account_preferences' defaults). */
-export const DEFAULT_PREFERENCES: Preferences = { theme: 'default', mode: 'system', postbit: 'side', motion: 'system', smoke: 'full', contrast: 'standard', textSize: 100, tilt: 'off', effects: 'standard', cardsMet: [], alertsSeenAt: null, settlementSeen: null, toasts: null, welcomedAt: null, tips: 'on', tipsSeen: [] };
+export const DEFAULT_PREFERENCES: Preferences = { theme: 'default', mode: 'system', postbit: 'side', motion: 'system', smoke: 'full', contrast: 'standard', textSize: 100, tilt: 'off', effects: 'standard', gameSound: 'off', gameVolume: 80, interfaceSound: 'off', interfaceVolume: 80, cardsMet: [], alertsSeenAt: null, settlementSeen: null, toasts: null, welcomedAt: null, tips: 'on', tipsSeen: [] };
 
 export interface MyInvite {
   readonly id: number;
@@ -1096,7 +1323,7 @@ export interface LogShare {
   readonly amount: number;
 }
 
-/** One reason's settled amount for one of the player's characters in one window (`my_ledger`), with its shares (`my_ledger_shares`). */
+/** One reason's settled amount for one of the player's characters in one window (`my_ledger`), with its shares (`my_ledger_shares`), each filed under its line by character, reason and card. */
 export interface LogLine {
   readonly character: Id;
   readonly reason: string;
@@ -1144,7 +1371,7 @@ export interface CardEvent {
    * `returned`: a card back in the hand. A face-down card taken back (0148; its `act` is the take-back) or whose time passed unsprung (no
    * `act`), or a play whose old voice did not answer, so its price went back and its card with it (0149; its `act` is the play).
    */
-  readonly kind: 'bought' | 'played' | 'pulled' | 'caught' | 'returned';
+  readonly kind: 'bought' | 'played' | 'pulled' | 'caught' | 'returned' | 'found';
   /** The play's Act, or the spring for a caught card; null for a purchase and a pulled card. */
   readonly act: Id | null;
   /** The pack a pulled card came from; absent on any other row. */
@@ -1305,14 +1532,19 @@ export interface SeasonFinished {
 export interface SeasonResultRow {
   readonly character: Id;
   readonly name: string;
-  readonly place: number;
+  /**
+   * Dense, as the live standings' (#453): a tie shares a place and the next standing takes the next one. `null` where the season ended with the mask at
+   * 0 or below: unplaced, with no place trophy (#492). The table lists the placed first, then the unplaced by standing.
+   */
+  readonly place: number | null;
   readonly standing: number;
   readonly shown: readonly SeasonShown[];
 }
 /** One of a character's past seasons (`profile_page` and `record_page`, 0099): where it finished, and when the results landed. */
 export interface SeasonRecordRow {
   readonly season: number;
-  readonly place: number;
+  /** `null` where it finished at 0 or below, unplaced (#492). */
+  readonly place: number | null;
   readonly standing: number;
   readonly at: string;
 }
@@ -1367,6 +1599,23 @@ export interface WrittenOnMine {
   readonly opening: boolean;
   readonly over: boolean;
   readonly at: string;
+}
+
+/**
+ * A draw or a wash on a surface as the player's log reads it (`my_draws` and `my_walls_drawn_on`, 0317): the Act, the surface play and the post it is on, the Act's character, the player's own
+ * character the line is for (`mine`), when, and the cells it counts, of the grid's 10,000. `kind` is 'draw' (a draw: the cells its strokes cover, public in its payload), 'wash' (the post's own wash: the cells it
+ * uncovered, none for a wash over bare cells) or 'cut' (a wash that took cells of the player's own draw: the cells of theirs it took, the washer the post's character). Public facts and the reader's own character
+ * alone: nothing of an owner, a class or a reaction.
+ */
+export interface SurfaceLogRow {
+  readonly act: Id;
+  readonly kind: 'draw' | 'wash' | 'cut';
+  readonly play: Id;
+  readonly post: Id;
+  readonly character: Id;
+  readonly mine: Id;
+  readonly at: string;
+  readonly cells: number;
 }
 
 /** When the effect of a play on one of the player's posts was last saved: the post's author's save, which may wash it clean. */
@@ -1586,6 +1835,10 @@ export interface Log {
   readonly playsOnMine: readonly PlayOnMine[];
   /** The texts and failures of cards that write on the player's posts, by when each was made (`my_posts_written_on`). */
   readonly writes: readonly WrittenOnMine[];
+  /** The draws the player's characters made on surfaces, and the washes that cut them, by when each landed (`my_draws`). Absent from a payload older than the surface; read it as none. */
+  readonly draws?: readonly SurfaceLogRow[];
+  /** The draws on, and the washes of, the surfaces on the player's own posts, by when each landed (`my_walls_drawn_on`). Absent from a payload older than the surface; read it as none. */
+  readonly wallsDrawn?: readonly SurfaceLogRow[];
   readonly saves: readonly EffectSaved[];
   /** The player's cards set face down that sprang or ended, by when. */
   readonly setEnds: readonly FaceDownEnd[];
@@ -1595,8 +1848,35 @@ export interface Log {
   readonly scoredAs?: readonly ScoredAs[];
   /** The card plays an admin ended that the player cast or that landed on theirs, by when each was ended. */
   readonly ended: readonly CardEnded[];
+  /** What happened to the player's characters beside the game's Aura: a Random Event's find, an admin's gear, a trophy given or taken back and a belt lost, by when each happened (`my_cosmetic_log`). */
+  readonly cosmetics: readonly LogCosmetic[];
   /** The next page's cursor: pass it to `log` for what is older. Null when nothing older is left. */
   readonly before: string | null;
+}
+
+/**
+ * One line of the cosmetics log (`my_cosmetic_log`, 0213), the caller's own and never another account's. A `found` row is a Random Event of the character (`outcome`: the line it said, a piece of gear or a card, `item` the gear's or card's key,
+ * `text` the line the Event was rolled with); a `granted` row is gear an admin gave (`item`, `copies`, `character` the mask it was given through, or null where the grant did not name one); an `awarded` row is a trophy given
+ * (`by`, and the Boss's name in `byName`; a season's `season` and `place`; the award's own `line` where an admin wrote one); a `reversed` row is an award an admin took back; a `lost` row is a belt that passed from the character to
+ * `toName`, a character's name, which is public (`by`, `byName` as an award's). A field a kind does not use is null.
+ */
+export interface LogCosmetic {
+  readonly kind: 'found' | 'granted' | 'awarded' | 'reversed' | 'lost' | 'beltBack';
+  readonly id: string;
+  readonly at: string;
+  readonly character: Id | null;
+  readonly outcome: 'line' | 'gear' | 'card' | null;
+  readonly item: string | null;
+  readonly text: string | null;
+  readonly copies: number | null;
+  readonly trophy: string | null;
+  readonly name: string | null;
+  readonly by: 'season' | 'boss' | 'demand' | 'admin' | null;
+  readonly byName: string | null;
+  readonly season: number | null;
+  readonly place: number | null;
+  readonly line: string | null;
+  readonly toName: string | null;
 }
 
 /* ------------------------------------------------------------------ actions ---- */
@@ -1639,6 +1919,8 @@ export interface ThreadListener {
   /** A tally that only grows: keep each kind's largest. */
   readonly onTally?: (act: Id, tally: Tally) => void;
   readonly onEffect?: (play: Id, savedAt: string) => void;
+  /** A draw or a wash landed on a surface: the play and the cells it now covers (the `surface` event). Read the play's live Acts again if they are drawn. */
+  readonly onSurface?: (play: Id, covered: number) => void;
   /** A writing play made a tail (`card_text`): the play and the version of its post and nothing else. Read the post's tails again. */
   readonly onText?: (play: Id, version: Id) => void;
   /**
@@ -1764,9 +2046,43 @@ export interface IndexPage {
   readonly unread: number;
 }
 
+/** A board named where a closed board's threads went, or where a thread moved to: enough to link it. */
+export interface BoardRef {
+  readonly id: Id;
+  readonly slug: string;
+  readonly name: string;
+}
+
+/**
+ * A thread that was moved away from the board whose page lists it, within the instance's `movedStubDays` (board_page, 0326): a row that links to the thread
+ * and names the board it is on now. It is a fact of the move, public as the move is.
+ */
+export interface BoardStub {
+  readonly thread: Id;
+  readonly title: string;
+  readonly movedTo: BoardRef;
+  /** When the move landed. */
+  readonly movedAt: string;
+}
+
+/**
+ * A board that is closed (board_page, 0326): merged into another (`mergedInto`), or made by a move that was reversed (`fallback`, where its threads went). Exactly one is set.
+ * Its page lists no threads and no stubs.
+ */
+export interface BoardClosed {
+  readonly mergedInto: BoardRef | null;
+  readonly fallback: BoardRef | null;
+  /** The first open board its threads are in, following merges and fallbacks on (the board above may itself be closed since); null when none can be named. */
+  readonly goesTo: BoardRef | null;
+}
+
 /** A board's page (board_page, 0095). `page` is the page shown, clamped to the board's last. */
 export interface BoardPage {
   readonly board: Board;
+  /** Null for an open board. */
+  readonly closed: BoardClosed | null;
+  /** The threads moved away from this board within `movedStubDays`, newest move first: drawn below the board's own threads, taking none of the page's slots. */
+  readonly stubs: readonly BoardStub[];
   readonly total: number;
   readonly page: number;
   readonly threads: readonly ThreadSummary[];
@@ -1806,6 +2122,8 @@ export interface ThreadPage {
   readonly people: readonly ThreadPerson[];
   /** The plays on the page's posts (`cardsOnMany`). */
   readonly plays: Awaited<ReturnType<KayfaApi['cardsOnMany']>>;
+  /** Each surface play among them: the cells it covers and its live Acts' ids, never a stroke (`surfaces` in thread_page, 0317). */
+  readonly surfaces: Readonly<Record<Id, SurfaceNow>>;
   readonly above: Awaited<ReturnType<KayfaApi['effectsAbove']>>;
   readonly faces: Awaited<ReturnType<KayfaApi['myFaceDown']>>;
   readonly states: Awaited<ReturnType<KayfaApi['effectStates']>>;
@@ -1984,9 +2302,9 @@ export interface KayfaApi {
    */
   setAdminContact(links: readonly ContactLink[]): Promise<Answer<readonly ContactLink[]>>;
   /** Holds a move that is waiting: it never lands. An admin's alone, and it cannot be taken back. */
-  holdMove(id: number): Promise<Answer<{ readonly id: number; readonly heldAt: string }>>;
+  holdMove(id: number): Promise<Answer<{ readonly id: number; readonly heldAt: string; /** The queued moves held with it, which build on it. */ readonly heldAlso: readonly number[] }>>;
   /** Ends a move in force now as reversed by an admin; the old name returns at once. An admin's alone. */
-  reverseMove(act: Id): Promise<Answer<{ readonly act: Id; readonly endedBy: Id }>>;
+  reverseMove(act: Id): Promise<Answer<{ readonly act: Id; readonly endedBy: Id; /** The moves in force that built on it, ended with it. */ readonly alsoEnded: readonly Id[]; /** The queued moves held with it. */ readonly heldAlso: readonly number[] }>>;
   /**
    * Ends a card play as reversed by an admin (`reverse_card`, 0092): a `card_end` Act of no character is written beside the play, the
    * layer comes off and the card stops counting; the original play is never changed. An admin's alone; a caught play, one that has
@@ -2021,6 +2339,11 @@ export interface KayfaApi {
   board(slugOrId: string): Promise<Board | null>;
   /** Every board's name now and the name it had before any move: a handful of rows, for the words that name a board (the moderation log, the admin queue). */
   boardNames(): Promise<readonly BoardName[]>;
+  /**
+   * The words that name the threads a `moveThread` moves (move_thread_names, 0327): each thread's title now and the board it left (`left`), keyed by the move's Act when it has landed, else by
+   * the thread (a waiting move leaves the board the thread is on now). A thread that cannot be read is left out, and the sentence says "a thread".
+   */
+  moveThreadNames(items: readonly { readonly thread: Id; readonly act: Id | null }[]): Promise<Readonly<Record<Id, { readonly title: string; readonly left: Id | null }>>>;
   /**
    * A move in force, as its board shows it, or null when the Act is no move (or none the reader may see). The progress is
    * `move_progress`, a public read: it counts characters, posts and public tallies and never players.
@@ -2109,8 +2432,9 @@ export interface KayfaApi {
   season(): Promise<Season | null>;
   /**
    * A page of the open season's standings: every debuted character, ranked by standing (ties share a place, and the next
-   * place skips), then by name; at most 1,000 rows, empty past the end. The whole season is never read at once, and a
-   * page costs the page on the server (one range of an index, never a ranking of the season).
+   * standing takes the next place: dense, #453), then by name; at most 1,000 rows, empty past the end. The whole season is
+   * never read at once, and a page costs the page on the server (one range of an index, and a probe for each distinct
+   * standing above it, never a ranking of the season).
    */
   standingsPage(offset: number, limit: number): Promise<readonly Standing[]>;
   /**
@@ -2339,9 +2663,10 @@ export interface KayfaApi {
    * Play a card the player holds on a post, as one of their characters: the card's own settings (`config`), the caster's message (plain
    * text, at most 200 characters, may be empty), the price its rules decide from the post as it stands. The card's Act comes back.
    * Beyond a post (`reach`), `target` is the character, the thread or the board, and a character play names the post whose postbit
-   * took it (`fromPost`); the Act comes back with its reach, its target and its end in its payload (0055_card_reach.sql).
+   * took it (`fromPost`); the Act comes back with its reach, its target and its end in its payload (0055_card_reach.sql). A surface card's play carries
+   * its first draw (`first`, the card's own shape): a play without one is refused ("draw your tag first"), the refusal on the field `first`.
    */
-  playCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, message: string, reach?: Reach, fromPost?: Id): Promise<Answer<Act>>;
+  playCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, message: string, reach?: Reach, fromPost?: Id, first?: unknown): Promise<Answer<Act>>;
   /**
    * Give `amount` (hundredths, one the drive offers) to a drive, as one of the player's characters: the gift's Act and the giver's balance after.
    * A closed drive, an amount not offered, a short wallet, a banned character and a thing that is no drive are refused in the database's words.
@@ -2354,9 +2679,9 @@ export interface KayfaApi {
   /**
    * Set a card the player holds face down on a post of the character's own (the card mechanic's design, section 3): its Act, a card
    * back, comes back naming no card. A trap that strikes carries the struck card's settings (`config`), which that card's rules check.
-   * A Move may be set with `when`, its conditions (quote-conditions design, section 1): sent only when one is set, and never for a set card.
+   * A Move may be set with `when`, its conditions (quote-conditions design, section 1): sent only when one is set, and never for a set card. A surface card is set with its first draw (`first`).
    */
-  setCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, when?: SetConditions): Promise<Answer<Act>>;
+  setCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, when?: SetConditions, first?: unknown): Promise<Answer<Act>>;
   /**
    * Take a card the player set face down back into the hand, before it springs and before its time ends (`take_back`): the setter's own back on a post
    * of the character's, free, and its Act (a take-back, naming the set) comes back. A back that is not the player's, or that has ended, is refused in the same words.
@@ -2370,6 +2695,15 @@ export interface KayfaApi {
   releaseEffect(play: Id): Promise<Answer<{ readonly play: Id; readonly releasedAt: string }>>;
   /** Save the state of a play's effect, as the character that wrote the post it landed on (no one else may); the card's rules bound what it holds. */
   saveEffect(play: Id, character: Id, state: Readonly<Record<string, unknown>>): Promise<Answer<{ readonly play: Id; readonly savedAt: string }>>;
+  /**
+   * Add a drawing to a surface play (a play of a card with `CardRules.surface`), as one of the player's characters: the card's rules check its shape
+   * and the database holds the limits (its refusal comes back in its words). The Act comes back with the cells covered and the live list.
+   */
+  draw(play: Id, character: Id, input: unknown): Promise<Answer<SurfaceWritten>>;
+  /** Take ink off a surface play, as the character that wrote the post (any other is refused); the same answer as a draw. */
+  wash(play: Id, character: Id, input: unknown): Promise<Answer<SurfaceWritten>>;
+  /** A surface play's live draws and washes, oldest first (`surface_acts`); null where the play has no surface. */
+  surfaceActs(play: Id): Promise<SurfaceActs | null>;
   react(act: Id, character: Id, kind: string): Promise<Answer<{ readonly act: Id; readonly tally: Tally }>>;
   turn(character: Id, to: string, loudness: 'silent' | 'announced', showFrom: boolean, showTo: boolean): Promise<Answer<TurnAsked>>;
   withdrawTurn(character: Id): Promise<Answer<{ readonly withdrawn: true }>>;
@@ -2380,6 +2714,39 @@ export interface KayfaApi {
   /** `pronouns` left out: the stored set stays. */
   setProfile(character: Id, title: string, signature: string, pipStyle: string, pronouns?: PronounSet): Promise<Answer<Character>>;
   setAvatar(upload: AvatarUpload): Promise<Answer<Character>>;
+
+  /* Gear, trophies and Random Events (the cosmetics design). */
+  /** Each gear the player holds with its copies and where they are worn: the player's own, empty for one who holds none. */
+  wardrobe(): Promise<Answer<readonly WardrobeItem[]>>;
+  /** Saves what a character wears, the whole outfit replacing the one before (`set_outfit`); refused in the server's words (a layer shared, a copy not free, too many pieces). Through a character the player plays. */
+  setOutfit(character: Id, pieces: readonly Piece[]): Promise<Answer<{ readonly worn: number }>>;
+  /** A page of a character's standing awards, newest first, `TROPHIES_PAGE` to a page; `cursor` continues after the last of the page before. Public. */
+  trophies(character: Id, cursor?: TrophyCursor): Promise<TrophyPage>;
+  /** A page of a belt's holders, newest first, each reign with how it began and its end (`belt_lineage`); refused for a trophy that is no belt. */
+  beltLineage(trophy: string, cursor?: BeltCursor): Promise<Answer<BeltPage>>;
+  /** Chooses which of a character's standing awards its postbit shows, in order, the whole set replacing the one before (`show_trophies`). Through a character the player plays. */
+  showTrophies(character: Id, awards: readonly Id[]): Promise<Answer<{ readonly shown: number }>>;
+  /** A chance at a Random Event for a character the player plays: null where none comes (inside the window, at the day's most, or a draw of nothing). Never says which. */
+  randomEvent(character: Id): Promise<Answer<RandomEvent | null>>;
+  /** Gives copies of a gear to whoever plays a character (`grant_gear`, 1 to 100). An admin's alone. */
+  grantGear(character: Id, gear: string, copies: number): Promise<Answer<{ readonly granted: number }>>;
+  /** Gives a trophy to a character, with words of its own or none (`award_trophy`). An admin's alone. */
+  awardTrophy(trophy: string, character: Id, line?: string): Promise<Answer<{ readonly award: Id }>>;
+  /** Takes an award back (`reverse_award`); a belt it took passes back to whoever held it before, if anyone did. An admin's alone. */
+  reverseAward(award: Id): Promise<Answer<{ readonly reversed: Id }>>;
+  /** Makes a trophy kind of the admin's own: `art`, a WebP the `trophy-art` function stores first, then the kind (`make_trophy`). An admin's alone. A `make_trophy` that fails after the art is stored leaves that file behind, unlisted and size-bound; nothing names it. */
+  makeTrophy(name: string, line: string | null, art: Blob | null, belt: boolean): Promise<Answer<{ readonly trophy: string }>>;
+  /** The awards that could not be written, the unresolved first and each group newest first, a page at a time (`trophy_award_failures`). An admin's alone. */
+  trophyAwardFailures(cursor?: TrophyAwardFailuresCursor): Promise<Answer<TrophyAwardFailuresPage>>;
+  /**
+   * Gives a failed award by hand to one of the characters it was for and records that, in one step (`give_failed_award`): the kind is the failure's own (a met demand's, or the
+   * season place's). Refused for a character already given it, one the failure was not for, and a failure whose characters cannot be read now. An admin's alone.
+   */
+  giveFailedAward(failure: Id, character: Id): Promise<Answer<{ readonly award: Id }>>;
+  /** The recent awards, newest first, with every trophy kind (`admin_awards`): the trophies admin page's list. An admin's alone. */
+  adminAwards(cursor?: AdminAwardsCursor): Promise<Answer<AdminAwardsPage>>;
+  /** The character a name means, folded as names are kept (`admin_character_named`), or null for none; its id and name only, never who plays it. An admin's alone. */
+  adminCharacterNamed(name: string): Promise<Answer<{ readonly id: Id; readonly name: string } | null>>;
 
   /* Live: Acts, tallies and saved effects on a thread; new threads on a board. Each returns its unsubscribe. */
   subscribeThread(thread: Id, listener: ThreadListener): () => void;

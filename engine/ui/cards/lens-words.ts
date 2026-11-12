@@ -6,7 +6,7 @@
  * tests run `viewProblems` over the views it can show.
  */
 import type { Id, KayfaApi } from '../data/api.ts';
-import type { CardView } from './types.ts';
+import type { CardUi, CardView } from './types.ts';
 
 /** The most words a state or status may run: a heading, not a description. */
 export const STATUS_MAX_WORDS = 6;
@@ -123,4 +123,40 @@ export async function readCaughtFate(api: Pick<KayfaApi, 'actsById' | 'character
   /* A setter that could not be read is no claim at all: the card was not shown to be spent. */
   if (!setter) return null;
   return setter.staff === undefined ? { taken: setter.name } : {};
+}
+
+/** The words a surface is said in, the card's (`CardUi.logDraw`, `CardUi.logWash`) or the engine's own where it gives none: the engine names no card, no can and no stencil. */
+export interface SurfaceWords {
+  /** Follows a drawer: "tagged". */
+  readonly verb: string;
+  /** One draw and several: "tag", "tags". */
+  readonly noun: string;
+  readonly nouns: string;
+  /** What a share is of: "the wall". */
+  readonly surface: string;
+  /** The post's own wash, after its subject: "washed". */
+  readonly washVerb: string;
+}
+
+export const SURFACE_WORDS: SurfaceWords = { verb: 'drew on', noun: 'drawing', nouns: 'drawings', surface: 'the surface', washVerb: 'washed' };
+
+export function surfaceWords(card: Pick<CardUi, 'logDraw' | 'logWash'> | undefined): SurfaceWords {
+  return { ...SURFACE_WORDS, ...card?.logDraw, ...(card?.logWash ? { washVerb: card.logWash.verb } : {}) };
+}
+
+/** The cells of the grid (100 by 100): a share of the surface is its count of them over this. */
+const GRID_CELLS = 10_000;
+
+/**
+ * A count of cells as a share of the surface, in whole percents rounded down: "6% of the wall". A share too small for one percent says "under 1%", never 0%, since
+ * the draw did cover something. The count is a fact of the Acts (a draw's own cells, a wash's cells uncovered, or the cells a draw owns now), so the sentence is as true as the Acts are.
+ */
+export function surfaceShare(cells: number, surface: string): string {
+  const whole = Math.floor((Math.max(0, cells) * 100) / GRID_CELLS);
+  return `${cells > 0 && whole === 0 ? 'under 1' : String(whole)}% of ${surface}`;
+}
+
+/** The Lens's one line for the draws that are no longer live: "and 14 older tags, washed or painted over". */
+export function olderWords(count: number, words: SurfaceWords): string {
+  return `and ${count} older ${count === 1 ? words.noun : words.nouns}, washed or painted over`;
 }

@@ -62,3 +62,45 @@ export const StartAThreadOpen: Story = {
   parameters: { world: threads, path: '/b/general' },
   play: async ({ canvasElement }) => { await userEvent.click(await within(canvasElement).findByRole('button', { name: 'Start a thread' })); },
 };
+
+/** A thread was moved to another board a few days ago: its old board lists a stub under its own threads, saying where it went. */
+export const MovedAwayStub: Story = {
+  parameters: {
+    world: ((fake, instance) => {
+      const w = players(fake, instance);
+      fake.seed.board('off-topic', 'Off Topic', 'Elsewhere.');
+      const a = fake.seed.thread(w.general, w.spritey, 'The Crimson Incident', 'It began.', { at: T0 });
+      const b = fake.seed.thread(w.general, w.spritey, 'Best bread, ranked', 'Discuss.', { at: T0 + 2 * HOUR });
+      fake.seed.moveThread(b.thread, 'off-topic', { at: fake.clock.now() - 2 * 86_400_000 });
+      void fake.markRead(a.thread, 1, null);
+    }) satisfies World,
+    path: '/b/general',
+  },
+};
+
+/** A board merged into another: one plain line that links to where its threads went, and nothing to do here. */
+export const ClosedMerged: Story = {
+  args: { slug: 'off-topic' },
+  parameters: {
+    world: ((fake, instance) => {
+      const w = players(fake, instance);
+      fake.seed.board('off-topic', 'Off Topic', 'Elsewhere.');
+      fake.seed.thread('off-topic', w.spritey, 'Best bread, ranked', 'Discuss.', { at: T0 });
+      fake.seed.closeBoard('off-topic', { mergedInto: w.general });
+    }) satisfies World,
+    path: '/b/off-topic',
+  },
+};
+
+/** A board whose making was reversed: closed, and says where its threads are. */
+export const ClosedNotMerged: Story = {
+  args: { slug: 'short-lived' },
+  parameters: {
+    world: ((fake, instance) => {
+      const w = players(fake, instance);
+      fake.seed.board('short-lived', 'Short Lived', 'Briefly.');
+      fake.seed.closeBoard('short-lived', { fallback: w.general });
+    }) satisfies World,
+    path: '/b/short-lived',
+  },
+};

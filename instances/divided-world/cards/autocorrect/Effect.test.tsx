@@ -20,6 +20,7 @@ import { piecesOf } from './tape.ts';
 import { renderInWorld } from '../../../../engine/ui/test-world.tsx';
 import { AutocorrectEffect, LENS } from './Effect.tsx';
 import { readRange } from '../../../../engine/ui/thread/SelectionQuote.tsx';
+import { NO_INK } from '../../../../engine/ui/cards/claims.ts';
 
 /* The board's tokens are not in jsdom: the residue's band is a light board's. */
 vi.mock('../../../../engine/ui/shine/band.ts', async (original) => ({
@@ -66,7 +67,7 @@ function mount(o: Options = {}) {
       <AutocorrectEffect
         post={postOf(body)} plays={o.plays ?? [playOf(1, 'mario', 'Luigi')]} states={held} released={new Set()} written={new Map()} reader={{ author: o.author ?? false, caster: false }}
         place="thread" reach="post" still={o.still ?? false} save={save} release={async (play) => ({ ok: true, value: { play, releasedAt: '' } })} show={(v) => { views.push(v); }} met={() => {}}
-        holdScreen={() => {}} marks={null} nameOf={() => 'Spritey'} give={async () => ({ ok: false, error: 'no' })} moreGifts={async () => {}} wallet={null}
+        ink={NO_INK} holdScreen={() => {}} marks={null} nameOf={() => 'Spritey'} give={async () => ({ ok: false, error: 'no' })} moreGifts={async () => {}} wallet={null}
       >
         <BbCode text={body} />
       </AutocorrectEffect>

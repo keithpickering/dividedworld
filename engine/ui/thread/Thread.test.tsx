@@ -1,11 +1,15 @@
-import { act, screen, waitFor, within } from '@testing-library/react';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { act, cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { useLayoutEffect } from 'react';
+import { useEffect, useLayoutEffect, useState } from 'react';
 import { afterEach, beforeEach, describe, expect, onTestFinished, test, vi } from 'vitest';
 import type { CardUi } from '../cards/types.ts';
 import type { Act, Id, ThreadListener } from '../data/api.ts';
 import type { Fake } from '../data/fake.ts';
-import { buildWorld, holdReads, renderIn } from '../test-world.tsx';
+import { buildWorld, holdReads, renderIn, testInstance } from '../test-world.tsx';
+import { landsOn, ok, refuse, type CardRules } from '../../rules/cards.ts';
+import type { Instance } from '../../rules/types.ts';
 import { pageOf, pageRange, threadHref } from './pages.ts';
 import { createTallies } from './tallies.ts';
 import { GAP_FILL_MS, GAP_RETRY_MAX_MS, READ_DEBOUNCE_MS, ThreadScreen } from './Thread.tsx';
@@ -14,12 +18,36 @@ import { returnState } from '../glass/back.ts';
 import { useNavigation } from '../router.tsx';
 import { LoadedThread } from '../loaded.tsx';
 import { spunLoader } from '../spin/spun.ts';
+import { SIGNED_OUT_DOC } from '../screen-docs.ts';
+import { tokensOf } from '../contrast.ts';
+import { POST_INK } from '../shine/band.ts';
+import { cling, landAll, loose, makeFlakes } from '../shine/flakes.ts';
+import { probe } from '../shine/landing.ts';
 
 /* The HUD's estimate is asked for through the player; this test file watches that call. */
 const landed = vi.hoisted(() => vi.fn());
 vi.mock('../player.tsx', async (original) => {
   const m = await original<typeof import('../player.tsx')>();
   return { ...m, usePlayer: () => ({ ...m.usePlayer(), reactionLanded: landed }) };
+});
+
+/* Glitter's landing places: the real ones, counted, so a test can ask what is registered and what has been let go. */
+const landing = vi.hoisted(() => ({ posts: new Set<HTMLElement>(), pages: 0, pageCalls: 0 }));
+vi.mock('../shine/landing.ts', async (original) => {
+  const m = await original<typeof import('../shine/landing.ts')>();
+  return {
+    ...m,
+    landPost: (article: HTMLElement) => {
+      const off = m.landPost(article);
+      landing.posts.add(article);
+      return () => { landing.posts.delete(article); off(); };
+    },
+    landPage: () => {
+      const off = m.landPage();
+      landing.pages++; landing.pageCalls++;
+      return () => { landing.pages--; off(); };
+    },
+  };
 });
 
 /* What a post's words cost to draw: every render of a body, and every parse of a long one. */
@@ -62,6 +90,7 @@ const watched = (el: Element | null) => waitFor(() => expect(MockObserver.all.so
 const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 beforeEach(() => {
+  landing.posts.clear(); landing.pages = 0; landing.pageCalls = 0;
   MockObserver.all = [];
   drawn.bodies = [];
   drawn.parses = [];
@@ -73,8 +102,8 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 /* ---------------------------------------------------------------------------- the world ---- */
-function world(acts: number, settings: Parameters<typeof buildWorld>[0] = undefined) {
-  const fake = buildWorld(settings);
+function world(acts: number, settings: Parameters<typeof buildWorld>[0] = undefined, instance: Instance = testInstance) {
+  const fake = buildWorld(settings, instance);
   const me = fake.seed.account('me');
   const other = fake.seed.account('other');
   const pipe = fake.seed.character(me, 'Pipewrench', 'heel');
@@ -534,9 +563,13 @@ describe('the plays on a post: their tallies, own reactions and spins, read with
   test('a live reaction that makes a later play the most drawn leaves the order as it was, and a reread of the page reorders it', async () => {
     const w = played(25);
     const tapped = tap(w.fake);
+    const page = vi.spyOn(w.fake, 'threadPage');
     open(w);
     await waitFor(() => expect(billed(2)).toHaveLength(2));
     expect(billed(2)).toEqual(['whoops:2', 'stick-around:1']);
+    /* The catch-up's read of the page bills the post again, so it is taken in before the reactions land: on a slow machine it came after them and read them. */
+    await waitFor(() => expect(page).toHaveBeenCalledTimes(2));
+    await act(async () => { await page.mock.results[1]!.value; });
     w.fake.seed.react(w.other, w.spritey, w.second, 'fire');
     w.fake.seed.react(w.other, w.spritey, w.second, 'tea');
     deliver(() => tapped().onTally?.(w.second, { fire: 1, tea: 1 }));
@@ -2086,6 +2119,85 @@ describe('a thread drawn from its document (the forum-load plan, Task 13)', () =
   });
 });
 
+/* ------------------------------------------------------------------------ a post that cannot be quoted ---- */
+describe('a post under a no-quote card', () => {
+  const stops = {
+    ...testInstance,
+    cards: testInstance.cards.map((c, i) => (i === 0 ? { ...c, key: 'stopper', name: 'Stopper', play: 'use' as const, gimmick: { kind: 'noQuote' as const }, lasts: { unit: 'day' as const, count: 7 } } : c)),
+  };
+  /* Post 2 is Spritey's and carries the card; posts 1 and 3 are quotable. */
+  function stopped(over: { ends?: string; reversed?: boolean } = {}) {
+    const w = world(3, undefined, stops);
+    w.fake.seed.admin(w.me);
+    w.fake.clock.advance(60_000);
+    const played = w.fake.seed.card(w.spritey, w.ids[1]!, 'stopper', { ends: over.ends ?? new Date(Date.now() + 3_600_000).toISOString() });
+    return { w, played };
+  }
+  const quoteOf = (seq: number) => within(post(seq)).queryByRole('button', { name: 'Quote' });
+  const openStopped = (w: { fake: Fake; thread: Id }) => renderIn(w.fake, <LoadedThread thread={w.thread} />, { path: `/t/${w.thread}`, instance: stops });
+
+  test('has no Quote button while the play is live, and its neighbors do', async () => {
+    const { w } = stopped();
+    openStopped(w);
+    await screen.findByRole('article', { name: /^Post 3 /u });
+    await within(post(2)).findByRole('button', { name: /^Stopper, 1 play\b/u });
+    expect(quoteOf(2)).toBeNull();
+    expect(quoteOf(1)).not.toBeNull();
+    expect(quoteOf(3)).not.toBeNull();
+  });
+
+  test('a selection inside it shows no Quote, and one inside a neighbor does', async () => {
+    const { w } = stopped();
+    openStopped(w);
+    await within(await screen.findByRole('article', { name: /^Post 2 /u })).findByRole('button', { name: /^Stopper, 1 play\b/u });
+    const select = (seq: number) => {
+      const text = post(seq).querySelector('.kb-bb')!.firstChild!;
+      const range = document.createRange();
+      range.setStart(text, 0); range.setEnd(text, 4);
+      const selection = window.getSelection()!;
+      selection.removeAllRanges(); selection.addRange(range);
+      act(() => { document.dispatchEvent(new Event('selectionchange')); });
+    };
+    select(2);
+    await pause(30);
+    expect(screen.queryByRole('button', { name: 'Quote the selected text' })).toBeNull();
+    select(3);
+    expect(await screen.findByRole('button', { name: 'Quote the selected text' })).toBeInTheDocument();
+  });
+
+  test('the toolbar\'s Quote is absent when the last post shown is one, and there when it is not', async () => {
+    const { w } = stopped();
+    openStopped(w);
+    await within(await screen.findByRole('article', { name: /^Post 3 /u })).findByRole('button', { name: 'Quote' });
+    expect(screen.getByRole('button', { name: 'Quote the last post shown' })).toBeInTheDocument();
+    /* A post under the card is the last one shown. */
+    const t = world(2, undefined, stops);
+    t.fake.clock.advance(60_000);
+    t.fake.seed.card(t.spritey, t.ids[1]!, 'stopper', { ends: new Date(Date.now() + 3_600_000).toISOString() });
+    cleanup();
+    openStopped(t);
+    await within(await screen.findByRole('article', { name: /^Post 2 /u })).findByRole('button', { name: /^Stopper, 1 play\b/u });
+    expect(screen.queryByRole('button', { name: 'Quote the last post shown' })).toBeNull();
+  });
+
+  test('with the play ended, or reversed, the button is there', async () => {
+    const ended = stopped({ ends: new Date(Date.now() - 60_000).toISOString() });
+    openStopped(ended.w);
+    /* The mark stays on an ended play: it proves the plays were read before the button is asserted. */
+    await within(await screen.findByRole('article', { name: /^Post 2 /u })).findByRole('button', { name: /^Stopper, 1 play\b/u });
+    expect(quoteOf(2)).not.toBeNull();
+  });
+
+  test('a play reversed by an admin leaves the Quote button', async () => {
+    const { w, played } = stopped();
+    expect((await w.fake.reverseCard(played)).ok).toBe(true);
+    openStopped(w);
+    /* The mark stays on an ended play: it proves the plays were read before the button is asserted. */
+    await within(await screen.findByRole('article', { name: /^Post 2 /u })).findByRole('button', { name: /^Stopper, 1 play\b/u });
+    expect(quoteOf(2)).not.toBeNull();
+  });
+});
+
 /* An admin's end of a card (supabase/migrations/0092_card_end.sql): its layer is off for everyone, whether the page read it ended or heard it end. */
 describe('a card an admin ended', () => {
   test('draws no effect on its post, where the same card live beside it does, and its mark stays', async () => {
@@ -2110,5 +2222,230 @@ describe('a card an admin ended', () => {
     /* The end comes from the admin's call, not the Lens: only the broadcast carries it to this page. */
     await act(async () => { expect((await w.fake.reverseCard(played)).ok).toBe(true); });
     await waitFor(() => expect(within(post(2)).queryByTestId('fx-whoops')).toBeNull());
+  });
+});
+
+/* A surface on a post (0317): the page carries each surface's cells and live ids; its live Acts are read where a wall is near, and again, for that wall alone, when the channel says it changed. */
+describe('a surface on a post', () => {
+  const strokes = (input: unknown) => (typeof input === 'object' && input !== null && Array.isArray((input as { strokes?: unknown }).strokes)
+    ? ok({ strokes: (input as { strokes: never[] }).strokes, payload: { strokes: (input as { strokes: unknown[] }).strokes } }) : refuse('a drawing holds its strokes as a list'));
+  const slab: CardRules<unknown> = {
+    key: 'slab', name: 'Slab', alignment: 'salty', rarity: 'common', stack: 1, reaches: ['post'], playPrice: () => 0,
+    canApply: (target, effects, _config, now) => landsOn({ key: 'slab', reaches: ['post'] }, target, effects, now),
+    validateConfig: (c) => ok(c), surface: { limitKey: 'slab.limit', mostLive: 48, validateDraw: strokes, validateWash: strokes },
+  };
+  const surfaced: Instance = { ...testInstance, cards: [...testInstance.cards, slab as unknown as CardRules], settings: { ...testInstance.settings, cardSettings: { ...testInstance.settings.cardSettings, 'slab.limit': 40 } } };
+  const near = new Set<Id>();
+  const wallUi = (): CardUi => ({
+    key: 'slab', art: { color: '#000000', ink: '#ffffff', canvas: '', mark: '', credit: 'Test' }, describe: () => 'slab',
+    Effect: ({ plays, surface, children }) => {
+      const play = plays[0]!.id;
+      useEffect(() => { if (near.has(play)) surface?.near(); }, [play, surface]);
+      return <div data-testid={`wall-${play}`} data-covered={surface?.covered} data-most={surface?.most} data-acts={surface?.acts === null ? 'unread' : surface?.acts?.map((a) => a.kind).join(',')}>{children}</div>;
+    },
+  });
+  const dab = (x: number) => ({ strokes: [{ width: 0.04, aspect: 1, points: [[x, 0.5]] }] });
+  function walls() {
+    const w = world(4, undefined, surfaced);
+    const a = w.fake.seed.card(w.spritey, w.ids[1]!, 'slab');
+    const b = w.fake.seed.card(w.spritey, w.ids[2]!, 'slab');
+    const c = w.fake.seed.card(w.spritey, w.ids[3]!, 'slab');
+    near.clear();
+    near.add(a); near.add(b);
+    return { ...w, a, b, c };
+  }
+  const openWalls = (w: { fake: Fake; thread: Id }) => renderIn(w.fake, <LoadedThread thread={w.thread} />, { path: `/t/${w.thread}`, cards: [wallUi()], instance: surfaced });
+
+  test('the page\'s surfaces are in its document: a wall far from the viewport is read for its cells and nothing more, and the limit is the card\'s in cells', async () => {
+    const w = walls();
+    const reads = vi.spyOn(w.fake, 'surfaceActs');
+    await w.fake.draw(w.c, w.pipe, dab(0.5));
+    openWalls(w);
+    const far = await screen.findByTestId(`wall-${w.c}`);
+    await waitFor(() => expect(Number(far.getAttribute('data-covered'))).toBeGreaterThan(0));
+    expect(far).toHaveAttribute('data-most', '4000');
+    expect(far).toHaveAttribute('data-acts', 'unread');
+    await waitFor(() => expect(screen.getByTestId(`wall-${w.a}`)).toHaveAttribute('data-acts', ''));
+    expect(reads.mock.calls.map((c) => c[0]).sort()).toEqual([w.a, w.b].sort());
+  });
+
+  test('a surface broadcast reads that play\'s acts again and no other\'s', async () => {
+    const w = walls();
+    openWalls(w);
+    await waitFor(() => expect(screen.getByTestId(`wall-${w.a}`)).toHaveAttribute('data-acts', ''));
+    await waitFor(() => expect(screen.getByTestId(`wall-${w.b}`)).toHaveAttribute('data-acts', ''));
+    const reads = vi.spyOn(w.fake, 'surfaceActs');
+    reads.mockClear();
+    await act(async () => { expect((await w.fake.draw(w.a, w.pipe, dab(0.5))).ok).toBe(true); });
+    await waitFor(() => expect(screen.getByTestId(`wall-${w.a}`)).toHaveAttribute('data-acts', 'draw'));
+    expect(reads.mock.calls.map((c) => c[0])).toEqual([w.a]);
+    expect(screen.getByTestId(`wall-${w.b}`)).toHaveAttribute('data-acts', '');
+  });
+
+  test('a surface broadcast for a wall nobody asked to read moves its cells and reads nothing', async () => {
+    const w = walls();
+    openWalls(w);
+    await waitFor(() => expect(screen.getByTestId(`wall-${w.a}`)).toHaveAttribute('data-acts', ''));
+    const reads = vi.spyOn(w.fake, 'surfaceActs');
+    reads.mockClear();
+    await act(async () => { expect((await w.fake.draw(w.c, w.pipe, dab(0.5))).ok).toBe(true); });
+    await waitFor(() => expect(Number(screen.getByTestId(`wall-${w.c}`).getAttribute('data-covered'))).toBeGreaterThan(0));
+    expect(reads).not.toHaveBeenCalled();
+    expect(screen.getByTestId(`wall-${w.c}`)).toHaveAttribute('data-acts', 'unread');
+  });
+});
+
+describe('where glitter lands in a thread', () => {
+  test('a mounted post is registered as a landing place, and one that unmounts lets go of it', async () => {
+    const w = world(3);
+    const shown = open(w);
+    const second = await screen.findByRole('article', { name: /^Post 2 /u });
+    await waitFor(() => expect(landing.posts.has(second)).toBe(true));
+    expect(landing.posts.size).toBe(3);
+    shown.unmount();
+    expect(landing.posts.size).toBe(0);
+  });
+
+  test('a post that comes live is registered, and the one before it keeps its registration', async () => {
+    const w = world(2);
+    const tapped = tap(w.fake);
+    open(w);
+    await screen.findByRole('article', { name: /^Post 2 /u });
+    await waitFor(() => expect(landing.posts.size).toBe(2));
+    see(sentinel(), true);
+    deliver(() => tapped().onAct?.(live(w.thread, 3, w.pipe)));
+    await screen.findByRole('article', { name: /^Post 3 /u });
+    await waitFor(() => expect(landing.posts.size).toBe(3));
+    expect(landing.posts.has(post(1))).toBe(true);
+  });
+
+  /* Real glitter on the page and on a post cell: a sticky host far off lends flakes, a pointer move drops them where `elementFromPoint` says. */
+  const tokens = tokensOf(readFileSync(join(process.cwd(), 'engine/ui/tokens.css'), 'utf8')).light;
+  function seedGlitter(): { cell: HTMLElement; undo: () => void } {
+    const cell = post(2).querySelector<HTMLElement>('.kb-act-main')!;
+    for (const el of [document.body, ...Array.from(post(2).children).filter((c): c is HTMLElement => c instanceof HTMLElement)]) {
+      for (const k of ['--kb-bg', ...POST_INK]) el.style.setProperty(k, tokens[k]!);
+    }
+    const rect = (l: number, t: number, w: number, h: number) => () => ({ left: l, top: t, right: l + w, bottom: t + h, width: w, height: h, x: l, y: t, toJSON() {} });
+    cell.getBoundingClientRect = rect(100, 130, 600, 300);
+    const source = document.createElement('div');
+    source.getBoundingClientRect = rect(5000, 0, 300, 300);
+    document.body.append(source);
+    const ctx = new Proxy({}, { get: (_t, k) => (k === 'createRadialGradient' ? () => ({ addColorStop() {} }) : () => {}), set: () => true });
+    const realCtx = HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.getContext = (() => ctx) as never;
+    const realAt = document.elementFromPoint;
+    let target: Element = source;
+    document.elementFromPoint = () => target;
+    vi.stubGlobal('devicePixelRatio', 1);
+    document.documentElement.setAttribute('data-kb-motion', 'full');
+    const realMedia = window.matchMedia;
+    vi.stubGlobal('matchMedia', (q: string) => ({ get matches() { return q.includes('hover: hover'); }, addEventListener() {}, removeEventListener() {} }));
+    window.matchMedia = globalThis.matchMedia;
+    const flakes = makeFlakes({ seed: 'lend', box: { w: 300, h: 300 }, inks: ['#ff3b4a', '#2fd6ff', '#dfe4ec'], holo: 7, density: 70, glint: '#ffffff' });
+    landAll(flakes);
+    const unreg = cling.register(source, { sticky: true, flakes });
+    let t = 0;
+    const pointer = (x: number, y: number, over: Element) => {
+      const e = new MouseEvent('pointermove', { clientX: x, clientY: y, bubbles: true });
+      Object.defineProperty(e, 'pointerType', { value: 'mouse' });
+      Object.defineProperty(e, 'timeStamp', { value: (t += 1) });
+      Object.defineProperty(e, 'target', { value: over });
+      return e as PointerEvent;
+    };
+    const move = (x: number, y: number, over: Element) => window.dispatchEvent(pointer(x, y, over));
+    const drop = (x: number, y: number, over: Element) => {
+      target = source;
+      for (let i = 0; i < 400; i++) { const x0 = 5010 + (i % 2) * 120; cling.over(pointer(x0, 100, source)); move(x0, 100, source); }
+      target = over;
+      move(x, y, over);
+      for (let ms = 0; (cling.falling() || cling.carried()) && ms < 12000; ms += 16) cling.tick(ms);
+    };
+    drop(300, 250, cell);
+    drop(900, 300, document.body);
+    return { cell, undo: () => { unreg(); source.remove(); HTMLCanvasElement.prototype.getContext = realCtx; document.elementFromPoint = realAt; window.matchMedia = realMedia; } };
+  }
+
+  test('the thread screen holds the page while it is on screen, and leaving sweeps it: no loose flake, no tile, no cell marked landed', async () => {
+    const w = world(2);
+    const shown = open(w);
+    await screen.findByRole('article', { name: /^Post 2 /u });
+    await waitFor(() => expect(landing.pages).toBe(1));
+    vi.stubGlobal('requestAnimationFrame', () => 1);
+    vi.stubGlobal('cancelAnimationFrame', () => {});
+    const seeded = seedGlitter();
+    try {
+      const was = probe.landed();
+      expect(was.cell).toBeGreaterThan(5);
+      expect(was.page).toBeGreaterThan(5);
+      expect(loose(seeded.cell).length).toBe(was.cell);
+      expect(seeded.cell.hasAttribute('data-kb-landed')).toBe(true);
+      expect(document.querySelectorAll('canvas[data-kb-landing]').length).toBeGreaterThan(1);
+      shown.unmount();
+      expect(landing.pages).toBe(0);
+      expect(landing.posts.size).toBe(0);
+      expect(probe.landed()).toEqual({ effect: 0, cell: 0, page: 0 });
+      expect(document.querySelectorAll('canvas[data-kb-landing]')).toHaveLength(0);
+      expect(document.querySelectorAll('[data-kb-landed]')).toHaveLength(0);
+    } finally {
+      seeded.undo();
+      cling.reset();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  /* A thread (or the front door) is swapped in the same tree: the page is held by one thread view at a time. */
+  function Swap({ docs }: { readonly docs: Record<string, Awaited<ReturnType<Fake['threadPage']>> | typeof SIGNED_OUT_DOC>; }) {
+    const [at, setAt] = useState(Object.keys(docs)[0]!);
+    (Swap as unknown as { go: (k: string) => void }).go = setAt;
+    const [thread] = at.split('|');
+    return <ThreadScreen thread={thread!} doc={docs[at]! as never} />;
+  }
+  const swapTo = (k: string) => act(() => { (Swap as unknown as { go: (k: string) => void }).go(k); });
+
+  test('switching threads releases the old thread\'s page and holds the new one: 1, 0, 1 and never 2', async () => {
+    const w = world(2);
+    const other = w.fake.seed.thread('general', w.spritey, 'Another thread', 'other 1').thread;
+    const boot = await w.fake.boot();
+    const a = (await w.fake.threadPage(w.thread, { page: 1 }, 20, []))!;
+    const b = (await w.fake.threadPage(other, { page: 1 }, 20, []))!;
+    renderIn(w.fake, <Swap docs={{ [`${w.thread}|1`]: a, [`${other}|1`]: b }} />, { path: `/t/${w.thread}?page=1`, boot });
+    await screen.findByRole('article', { name: /^Post 2 /u });
+    await waitFor(() => expect(landing.pages).toBe(1));
+    const calls = landing.pageCalls;
+    await swapTo(`${other}|1`);
+    await screen.findByText('other 1');
+    expect(landing.pages).toBe(1);
+    expect(landing.pageCalls).toBe(calls + 1);
+    expect(screen.queryByRole('article', { name: /^Post 2 /u })).toBeNull();
+  });
+
+  test('a reader who signs out leaves the thread: the page is let go, and stays so', async () => {
+    const w = world(2);
+    const boot = await w.fake.boot();
+    const a = (await w.fake.threadPage(w.thread, { page: 1 }, 20, []))!;
+    renderIn(w.fake, <Swap docs={{ [`${w.thread}|in`]: a, [`${w.thread}|out`]: SIGNED_OUT_DOC }} />, { path: `/t/${w.thread}?page=1`, boot });
+    await screen.findByRole('article', { name: /^Post 2 /u });
+    await waitFor(() => expect(landing.pages).toBe(1));
+    const calls = landing.pageCalls;
+    await swapTo(`${w.thread}|out`);
+    expect(await screen.findByRole('heading', { level: 1, name: 'How do we explain this' })).toBeInTheDocument();
+    expect(landing.pages).toBe(0);
+    expect(landing.posts.size).toBe(0);
+    expect(landing.pageCalls).toBe(calls);
+    expect(probe.landed()).toEqual({ effect: 0, cell: 0, page: 0 });
+  });
+
+  /* Source-level guard: jsdom has no layout or stacking, so the stacking of a landed cell can only be asserted on the stylesheet's text. */
+  test('thread.css (source-level guard): a landed meta cell keeps a positive stack level over the body, so its hung marks and callout are not trapped under it', () => {
+    const css = readFileSync(join(process.cwd(), 'engine/ui/thread/thread.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '');
+    const rule = /(^|\})\s*\.kb-act\s*>\s*\.kb-act-meta\[data-kb-landed\]\s*\{([^}]*)\}/u.exec(css);
+    expect(rule, 'a rule for .kb-act > .kb-act-meta[data-kb-landed]').not.toBeNull();
+    const z = /z-index:\s*(\d+)/u.exec(rule![2]!);
+    expect(z, 'with a z-index').not.toBeNull();
+    expect(Number(z![1])).toBeGreaterThan(0);
+    /* Over the body's own level, which the body takes so a moment's glow covers the actions (and the postbit's gear is under it). */
+    const main = [...css.matchAll(/(?:^|\})\s*\.kb-act-main\s*\{([^}]*)\}/gu)].map((m) => /z-index:\s*(-?\d+)/u.exec(m[1]!)?.[1]).find((v) => v !== undefined);
+    expect(Number(z![1])).toBeGreaterThan(Number(main ?? 0));
   });
 });

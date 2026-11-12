@@ -34,7 +34,7 @@ import { lowerFirst } from '../copy-words.ts';
 import { billPost, drawnOf } from '../cards/billing.ts';
 import { CalloutProvider } from '../cards/Callout.tsx';
 import { LensProvider } from '../cards/Lens.tsx';
-import { createPlays, effectCards, hydrate, readEffects } from '../cards/plays.ts';
+import { createPlays, effectCards, hydrate, readEffects, readSurface, rereadSurfaces, usePlays } from '../cards/plays.ts';
 import { Composer, SystemBoardNote, type ComposerHandle } from '../composer/Composer.tsx';
 import { useKayfa } from '../context.tsx';
 import { ENGINE_DEFAULT_PRONOUNS } from '../../rules/pronouns.ts';
@@ -44,7 +44,9 @@ import { useBoot } from '../boot.tsx';
 import { isSignedOutDoc, type ScreenDoc } from '../screen-docs.ts';
 import { FrontDoor } from '../front-door/FrontDoor.tsx';
 import { motionReduced } from '../appearance.ts';
+import { RandomEvent } from '../events/RandomEvent.tsx';
 import { usePlayer } from '../player.tsx';
+import { landPage } from '../shine/landing.ts';
 import { PresenceBox } from '../presence/PresenceBox.tsx';
 import type { PostbitLayout, PostbitPerson } from '../postbit/Postbit.tsx';
 import { reveals } from '../postbit/reveals.ts';
@@ -54,7 +56,7 @@ import { emptyFeed, feedReducer, newer, ordered, shownEnd, waitingPosts, type Fe
 import { ActIndex, actLoader, type Located } from './locate.tsx';
 import { pageEndsThread, pageOf, pageRange, seqOfHash, threadHref } from './pages.ts';
 import { FollowControl } from './Follow.tsx';
-import { ActArticle, ThreadHead } from './Post.tsx';
+import { ActArticle, quoteStopped, ThreadHead } from './Post.tsx';
 import { SelectionQuote } from './SelectionQuote.tsx';
 import { ThreadCtx, type ThreadContext } from './context.ts';
 import { text } from './lines.tsx';
@@ -92,9 +94,11 @@ function loadedFrom(page: ThreadPage, perPage: number, back: ThreadReturn | null
 const keyOf = (l: { query: URLSearchParams; hash: string }) => `${l.query.toString() ? `?${l.query.toString()}` : ''}${l.hash ? `#${l.hash}` : ''}`;
 
 function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: ThreadPage }) {
-  const { api, settings, ui } = useKayfa();
+  const { api, settings, ui, instance } = useKayfa();
   const P = settings.postsPerPage;
   const player = usePlayer();
+  /* The page is a landing place for glitter while a thread is on screen (docs/plans/2026-11-11-shake-design.md section 5); leaving sweeps it. */
+  useEffect(() => landPage(), []);
   /* Only an admin's Lens offers "End this card": the page asks once, as Updates does. */
   const admin = useIsAdmin(api, player.session.signedIn);
   const navigate = useNavigate();
@@ -194,7 +198,9 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
       asked.current.set(p.character.id, Promise.resolve());
     }
     const played = [...page.plays, ...page.above.map((x) => x.act)];
-    hydrate(plays, played, page.states, page.releases, page.faces);
+    hydrate(plays, played, page.states, page.releases, page.faces, page.surfaces);
+    /* A wall whose Acts are drawn and whose live list this page says has changed (a read again after a rejoin) reads them again. */
+    void rereadSurfaces(api, plays, page.surfaces);
     /* A play leaves a page's `above` when an admin ended it, when its thread moved, or when its time ran out (the server drops a play past its
        end; a reach play past its time is already hidden by the clock, so marking it changes nothing a reader sees), and sends no `card_end`
        with it: a page read again says so by what it no longer holds. Only a read asked after the remembered one says so. */
@@ -536,6 +542,8 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
     };
     const listener: ThreadListener = {
       onAct(a) {
+        /* A draw or a wash is no post and no line of the thread: the surface it is on is told on its own event (`onSurface`). */
+        if (a.kind === 'draw' || a.kind === 'wash') return;
         /* A card play is a tag on its post, never a place in the thread: it is added to the post it names, wherever that post is, once its caster is known. */
         if (a.kind === 'card') {
           void ensurePeople([a.character]).then(() => { plays.add([a]); return readEffects(api, plays, [a], effects); }).catch(quietly);
@@ -569,6 +577,11 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
       onEffect(play) {
         /* A saved state is read where it is kept, by the play it names: the post author's newest version is what every reader loads. */
         void api.effectStates([play]).then((saved) => plays.setStates(saved), () => { /* the next save is heard again */ });
+      },
+      onSurface(play, covered) {
+        /* A draw or a wash landed: the cells it covers now, for every wall of the page; the live Acts of the play alone, and only if they are drawn (a wall that was near). */
+        plays.setSurfaces({ [play]: { covered } });
+        if (plays.wantsSurface(play)) void readSurface(api, plays, play);
       },
       onJoined() { joinedAt('thread'); },
       onTally(act, t) {
@@ -674,17 +687,24 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
   const shown = useMemo(() => ordered(feed.shown), [feed.shown]);
   const quotableAt = useCallback((seq: number) => {
     const a = shown.find((x) => x.seq === seq);
-    return a && (a.kind === 'post' || a.kind === 'spin') ? a : undefined;
-  }, [shown]);
+    /* A post under a live no-quote offers nothing to quote: read from the plays as they are when the selection is made. */
+    return a && (a.kind === 'post' || a.kind === 'spin') && !quoteStopped(plays.get(a.id).plays, instance) ? a : undefined;
+  }, [shown, plays, instance]);
 
   /* The last post shown, to quote from the toolbar (the thread's latest only when its tail is on screen). */
-  const latest = useMemo(() => {
+  const lastPost = useMemo(() => {
     for (let i = shown.length - 1; i >= 0; i--) {
       const a = shown[i]!;
-      if (a.kind === 'post' || a.kind === 'spin') return { id: a.id, body: text(a.currentPayload.body) };
+      if (a.kind === 'post' || a.kind === 'spin') return a;
     }
     return null;
   }, [shown]);
+  /* Drawn again when the last post's plays change, so a no-quote that lands or is reversed there takes the toolbar's Quote away or gives it back; one that merely runs out is seen at the next such draw or page read, not at its end. The server's guard decides a quote regardless. */
+  const lastPlays = usePlays(plays, lastPost?.id ?? '');
+  const latest = useMemo(
+    () => (lastPost && !quoteStopped(lastPlays.plays, instance) ? { id: lastPost.id, body: text(lastPost.currentPayload.body) } : null),
+    [lastPost, lastPlays, instance],
+  );
 
   /* A reply the player just made: shown at once at the foot, or, when the foot is not loaded, opened at its page. Focus goes to it and the polite region says so. */
   const posted = async (a: Act) => {
@@ -754,6 +774,7 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
 
   return (
     <div className="kb-thread" data-kb-thread={thread} data-kb-known={feed.knownLast} aria-busy={busy || undefined}>
+      <RandomEvent />
       <p className="kb-crumb"><Link to="/">Index</Link> › {crumbBoard && <><Link to={`/b/${crumbBoard.slug}`}>{crumbBoard.name}</Link> › </>}{summary.title}</p>
       <ActIndex.Provider value={index}>
         <ThreadCtx.Provider value={context}>

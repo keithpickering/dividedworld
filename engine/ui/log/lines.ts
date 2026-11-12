@@ -22,14 +22,14 @@ import { ENGINE_DEFAULT_PRONOUNS, words as pronounWords } from '../../rules/pron
 import { playOf as playKindOf, reachesOf } from '../../rules/cards.ts';
 import { rankIndex } from '../../rules/ranks.ts';
 import type { Instance, Quadrant } from '../../rules/types.ts';
-import type { Act, CardEvent, MyBan, Estimate, EstimateLine, Id, Log, LogLine, LogSettlement, MyCharacter, ScoredAs, Season, TurnAnnounced, WalletEvent } from '../data/api.ts';
+import type { Act, CardEvent, LogCosmetic, MyBan, SurfaceLogRow, Estimate, EstimateLine, Id, Log, LogLine, LogSettlement, MyCharacter, ScoredAs, Season, TurnAnnounced, WalletEvent } from '../data/api.ts';
 import { micros } from '../data/log-page.ts';
 import { officeRole } from '../board/move-words.ts';
 import { pageOf, threadHref } from '../thread/pages.ts';
 import { paramsOf } from '../economy.ts';
 import type { InstanceUi } from '../types.ts';
 import { shareWords, upperFirst } from '../copy-words.ts';
-import { quotedWords, shortQuote, springConditions, whoWords } from '../cards/lens-words.ts';
+import { quotedWords, shortQuote, springConditions, surfaceShare, surfaceWords, whoWords } from '../cards/lens-words.ts';
 
 /** A piece of a line's words: plain text, or a link to an Act or a thread. */
 export type Segment = string | { readonly text: string; readonly href: string };
@@ -45,8 +45,12 @@ export type LineKind = 'estimate' | 'settlement' | 'turn' | 'rank' | 'bought' | 
   | 'grouped'
   /* The aura-grant design, section 2: an admin gave the player Aura (docs/plans/2026-11-08-aura-grant-design.md). */
   | 'grant'
+  /* The cosmetics plan, Task 12: a Random Event's find, gear an admin gave, a trophy given or taken back, and a belt lost. */
+  | 'found' | 'gearGranted' | 'trophy' | 'beltLost' | 'beltBack'
   /* A drive's gift, the giver's and the post's author's (docs/plans/2026-11-03-jimmy-wails-design.md, section 10). */
-  | 'gift';
+  | 'gift'
+  /* A surface (docs/plans/2026-11-11-graffiti-design.md, sections 3 and 11): a draw on one, and a wash of one. */
+  | 'drew' | 'washed';
 
 /** One row of the log. */
 export interface LogRow {
@@ -373,9 +377,11 @@ export function logRows(data: LogData, words: Words, cap: number, tab: Id | null
   rows.push(...modRows(data, words).filter((r) => inTab(r.characters)));
   rows.push(...groupRows(data, words).filter((r) => inTab(r.characters)));
   rows.push(...grantRows(data).filter((r) => inTab(r.characters)));
+  rows.push(...cosmeticRows(data, words).filter((r) => inTab(r.characters)));
   rows.push(...giftRows(data, words).filter((r) => inTab(r.characters)));
+  rows.push(...surfaceRows(data, words).filter((r) => inTab(r.characters)));
 
-  const ORDER: Record<LineKind, number> = { estimate: 0, settlement: 1, turn: 2, rank: 3, bought: 4, pack: 4, played: 4, returned: 4, onMine: 4, saved: 4, written: 4, set: 4, sprung: 4, payout: 4, setEnded: 4, caught: 4, struck: 4, gimmickEnded: 4, ended: 4, infraction: 4, ban: 4, report: 4, appeal: 4, bribe: 4, grouped: 4, grant: 4, gift: 4 };
+  const ORDER: Record<LineKind, number> = { estimate: 0, settlement: 1, turn: 2, rank: 3, bought: 4, pack: 4, played: 4, returned: 4, onMine: 4, saved: 4, written: 4, set: 4, sprung: 4, payout: 4, setEnded: 4, caught: 4, struck: 4, gimmickEnded: 4, ended: 4, infraction: 4, ban: 4, report: 4, appeal: 4, bribe: 4, grouped: 4, grant: 4, found: 4, gearGranted: 4, trophy: 4, beltLost: 4, beltBack: 4, gift: 4, drew: 4, washed: 4 };
   rows.sort((a, b) => micros(b.at) - micros(a.at) || ORDER[a.kind] - ORDER[b.kind]);
   return [...estimateRows(data, words, tab), ...rows];
 }
@@ -418,6 +424,61 @@ function grantRows(data: LogData): LogRow[] {
       details: [`An admin gave you ${plain(w.change)} Aura.${w.overflow > 0 ? ` ${plain(w.overflow)} more didn't fit under your wallet's cap.` : ''}`],
       aura: w.change, wallet: w.balanceAfter, characters: [],
     });
+  }
+  return rows;
+}
+
+const aOrAn = (name: string) => `${/^[aeiou]/iu.test(name) ? 'an' : 'a'} ${name}`;
+/** A name's plural as a sentence needs it: "Headbands", "Mustaches", and a name already in the plural ("Shades") as it is. */
+const pluralName = (name: string) => (/s$/iu.test(name) ? name : /(x|z|ch|sh)$/iu.test(name) ? `${name}es` : `${name}s`);
+/** A trophy's name inside a sentence: "The Hardcore Belt" is "the Hardcore Belt". */
+export const inSentence = (name: string) => name.replace(/^The /u, 'the ');
+const PLACES = ['first', 'second', 'third'];
+
+/**
+ * The cosmetics lines (the cosmetics plan, Task 12): the rows of `my_cosmetic_log`, which are the caller's own and name no other account. A Random Event's find says what the character found and
+ * its rarity in words; an admin's gear says how many copies and the mask it went through; a trophy says who gave it, and why where the season or a met demand did; a belt lost names the character that
+ * took it (public) and whose move it was; a taken-back award says an admin did. Each is true and plain: none says who reacted or any class, and none moves Aura.
+ */
+function cosmeticRows(data: LogData, words: Words): LogRow[] {
+  const { instance } = words;
+  const nameOf = (id: Id | null) => (id === null ? 'one of your characters' : data.mine.find((c) => c.id === id)?.name ?? data.names.get(id) ?? 'one of your characters');
+  const gearName = (key: string | null) => instance.gear.find((g) => g.key === key)?.name ?? null;
+  const rows: LogRow[] = [];
+  for (const e of data.log.cosmetics) {
+    const mine = e.character !== null ? [e.character] : [];
+    const row = (key: string, kind: LineKind, what: string, sentence: string, characters: readonly Id[]): LogRow =>
+      ({ key, kind, at: e.at, what, details: [sentence], aura: 0, wallet: null, characters });
+    const who = nameOf(e.character);
+    const trophy = inSentence(e.name ?? 'a trophy');
+    const role = lowerFirst(words.ui.copy.roleWord);
+    const byWords = e.by === 'boss' ? `by ${e.byName === null ? role : `${e.byName}, ${role}`}` : e.by === 'season' ? 'by the season' : e.by === 'demand' ? 'by a met demand' : 'by an admin';
+    if (e.kind === 'found') {
+      let found: string;
+      if (e.outcome === 'gear') {
+        const g = instance.gear.find((x) => x.key === e.item);
+        found = g ? `you found ${aOrAn(g.name)} (${g.rarity} gear)` : 'you found a piece of gear';
+      } else if (e.outcome === 'card') {
+        const c = instance.cards.find((x) => x.key === e.item);
+        found = c ? `you found ${aOrAn(c.name)} (${c.rarity} card)` : 'you found a card';
+      } else found = (e.text ?? 'something odd').replace(/[.!?]$/u, '');
+      rows.push(row(`found:${e.id}`, 'found', `Something happened to ${who}`, `Something happened to ${who}: ${found}.`, mine));
+    } else if (e.kind === 'granted') {
+      const name = gearName(e.item);
+      const copies = e.copies ?? 1;
+      const what = name === null ? (copies === 1 ? 'a piece of gear' : `${copies} pieces of gear`) : copies === 1 ? aOrAn(name) : `${copies} ${pluralName(name)}`;
+      rows.push(row(`gearGranted:${e.id}`, 'gearGranted', 'An admin gave you gear', `An admin gave you ${what}${e.character === null ? '' : `, through ${who}`}.`, []));
+    } else if (e.kind === 'awarded') {
+      const why = e.by === 'season' ? `, for ${e.place !== null ? PLACES[e.place - 1] ?? `place ${e.place}` : 'its place'} place${e.season !== null ? ` in Season ${e.season}` : ''}` : e.by === 'demand' ? ', for posting toward it' : ` ${byWords}`;
+      rows.push(row(`trophy:${e.id}`, 'trophy', `${who} was given a trophy`, `${who} was given ${trophy}${why}.`, mine));
+    } else if (e.kind === 'reversed') {
+      rows.push(row(`reversed:${e.id}`, 'trophy', `A trophy was taken back from ${who}`, `An admin took back ${who}'s ${e.name ?? 'trophy'}.`, mine));
+    } else if (e.kind === 'beltBack') {
+      rows.push(row(`beltBack:${e.id}`, 'beltBack', `${who} holds ${trophy} again`, `An admin took back ${trophy} from ${e.toName ?? 'another character'}; ${who} holds it again.`, mine));
+    } else {
+      const by = e.by === 'boss' ? `by ${e.byName ?? role}'s move` : byWords;
+      rows.push(row(`lost:${e.id}`, 'beltLost', `${who} lost ${trophy}`, `${who} lost ${trophy} to ${e.toName ?? 'another character'}, ${by}.`, mine));
+    }
   }
   return rows;
 }
@@ -669,6 +730,8 @@ function cardRows(data: LogData, words: Words): LogRow[] {
   /* A pack is one line: its pulled rows (one per card) with the pack row that holds its kind, its price and the cards in pull order. */
   const packsDone = new Set<Id>();
   data.log.cards.forEach((e, i) => {
+    /* A card an Event found is the Event's line (`cosmeticRows`), once. */
+    if (e.kind === 'found') return;
     if (e.kind === 'bought') {
       const spent = take((w) => w.kind === 'purchase' && at(w.at) === at(e.at) && w.change === -e.price);
       rows.push({
@@ -871,6 +934,57 @@ function cardRows(data: LogData, words: Words): LogRow[] {
 }
 
 /**
+ * What was drawn and washed on a surface, for the player's own characters (`my_draws`, `my_walls_drawn_on`), in plain words and true, never in character: the drawer's own draw, the post's author's
+ * "<name> drew on your post", the author's own wash and the washer's line to a drawer whose draw it cut. A share is a count of cells, public in the Acts: a draw's own cells at the time it landed
+ * and a wash's cells uncovered, so a line never changes. The words are the card's (`CardUi.logDraw`, `CardUi.logWash`) and the engine's own where it gives none. A row for a character that is not the
+ * player's is none (the views answer only the player's own, so this holds a third character's log empty whatever it is handed), and no line says who owns a character or a class.
+ */
+function surfaceRows(data: LogData, words: Words): LogRow[] {
+  const rows: LogRow[] = [];
+  const mine = (id: Id) => data.mine.some((c) => c.id === id);
+  const nameOf = (id: Id | null | undefined, unknown: string) => (id ? data.mine.find((c) => c.id === id)?.name ?? data.names.get(id) ?? unknown : unknown);
+  const post = (r: SurfaceLogRow, text: (post: Act | undefined) => string): Segment => {
+    const p = data.acts.get(r.post);
+    return p && p.seq !== null ? { text: text(p), href: threadHref(p.thread, pageOf(p.seq, words.postsPerPage), p.seq) } : text(undefined);
+  };
+  const said = (r: SurfaceLogRow) => surfaceWords(words.ui.cards.find((c) => c.key === data.acts.get(r.play)?.payload.card));
+  /* Where the drawer is the post's own player's other character, the views read the line once (the drawer's), so a draw is "yours" by `mine` alone. */
+  const lines = [...(data.log.draws ?? []).map((r) => ({ r, own: true })), ...(data.log.wallsDrawn ?? []).map((r) => ({ r, own: false }))];
+  for (const { r, own } of lines) {
+    if (!mine(r.mine)) continue;
+    const w = said(r);
+    const base = { at: r.at, aura: 0, wallet: null, characters: [r.mine] };
+    const author = nameOf(data.acts.get(r.post)?.character, 'Someone');
+    if (r.kind === 'draw' && own) {
+      rows.push({
+        ...base, key: `drew:${r.act}:${r.mine}`, kind: 'drew', what: `You ${w.verb} a post`,
+        details: [`You ${w.verb} `, post(r, (p) => (p && p.seq !== null ? `${author}'s post #${p.seq}` : 'a post')), ` (${surfaceShare(r.cells, w.surface)}).`],
+      });
+    } else if (r.kind === 'draw') {
+      const drawer = nameOf(r.character, 'Someone');
+      rows.push({
+        ...base, key: `wallDrew:${r.act}:${r.mine}`, kind: 'drew', what: `${drawer} ${w.verb} your post`,
+        details: [`${drawer} ${w.verb} `, post(r, (p) => (p && p.seq !== null ? `your post #${p.seq}` : 'your post')), ` (${surfaceShare(r.cells, w.surface)}).`],
+      });
+    } else if (r.kind === 'wash') {
+      rows.push({
+        ...base, key: `washed:${r.act}:${r.mine}`, kind: 'washed', what: `You ${w.washVerb} your post`,
+        details: r.cells > 0
+          ? [`You ${w.washVerb} ${surfaceShare(r.cells, w.surface)} off `, post(r, (p) => (p && p.seq !== null ? `your post #${p.seq}` : 'your post')), '.']
+          : [`You ${w.washVerb} `, post(r, (p) => (p && p.seq !== null ? `your post #${p.seq}` : 'your post')), ', and nothing came off.'],
+      });
+    } else {
+      const washer = nameOf(r.character, 'Someone');
+      rows.push({
+        ...base, key: `cut:${r.act}:${r.mine}`, kind: 'washed', what: `${washer} ${w.washVerb} your ${w.noun}`,
+        details: [`${washer} ${w.washVerb} your ${w.noun} on `, post(r, (p) => (p && p.seq !== null ? `their post #${p.seq}` : 'their post')), '.'],
+      });
+    }
+  }
+  return rows;
+}
+
+/**
  * The cards an admin ended (`my_cards_ended`): plain and true, never in character. The caster's player is told it was ended and that
  * nothing came back; the one it landed on is told whose card it was. A reversal between two other players is in neither's view, so no
  * line. Each line follows to the play (`actsFollowed` reads the post it landed on), but a post is named by its author from the view, so
@@ -1058,6 +1172,8 @@ export function actsNamed(log: Log, estimate: Estimate | null, turns: readonly T
   for (const c of log.cards) if (c.act) ids.add(c.act);
   for (const p of log.playsOnMine) { ids.add(p.play); ids.add(p.post); }
   for (const w of log.writes) { ids.add(w.play); ids.add(w.post); }
+  /* A draw's or a wash's own Act holds its strokes and is never named: its play and post are, and its character is named beside the page. */
+  for (const r of [...(log.draws ?? []), ...(log.wallsDrawn ?? [])]) { ids.add(r.play); ids.add(r.post); }
   for (const s of log.saves) { ids.add(s.play); ids.add(s.post); }
   for (const e of log.setEnds) { ids.add(e.post); if (e.spring) ids.add(e.spring); }
   for (const c of log.caught) { ids.add(c.play); ids.add(c.post); ids.add(c.spring); }

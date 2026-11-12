@@ -22,30 +22,37 @@
 import type { Instance, Quadrant, Settings, Span } from '../../rules/types.ts';
 import { decide } from '../../rules/actions.ts';
 import { rollPack } from '../../rules/packs.ts';
-import { atOrBelow, giftSplit, spanMs, OLD_VOICE_OFF, withheld, playOf as kindOfPlay, postTarget, casterMessage, decidePlay, decideSet, decideUse, effectsOnTarget, type BeyondPost, type CardEffect, type CardRules, type CardTarget, type EffectsAbove, type PostTarget, type Reach, type SetConditions } from '../../rules/cards.ts';
+import { beltHolder, outfitProblems, PIECE_TURN_MOST, PIECE_WIDTH, type Piece } from '../../rules/cosmetics.ts';
+import { RARITIES, type Rarity } from '../../rules/cards.ts';
+import { atOrBelow, giftSplit, spanMs, OLD_VOICE_OFF, withheld, playOf as kindOfPlay, postTarget, casterMessage, decidePlay, decideSet, decideUse, decideDraw, decideWash, effectsOnTarget, noQuoteWords, quoteStop, type BeyondPost, type CardEffect, type CardRules, type CardTarget, type EffectsAbove, type PostTarget, type Reach, type SetConditions } from '../../rules/cards.ts';
 import { sameName } from '../../rules/names.ts';
+import { GRID, count, fromBits, minus, union, type Cells } from '../../rules/surface.ts';
 import { earnedGroup } from '../../rules/groups.ts';
 import { ALERT_KINDS, isWritten, type WrittenKind } from '../../rules/alerts.ts';
 import { DEFAULT_DEVELOPER } from '../../rules/instance.ts';
 import { normalizePronouns, pronounProblems, type PronounSet } from '../../rules/pronouns.ts';
 import type { Career } from '../../system/career.ts';
-import { ALERTS_PAGE, ALERTS_UNREAD_BOUND, type FailureKind, CONTACT_HREF_MAX, CONTACT_LABEL_MAX, CONTACT_MOST, CONTACT_WS, DEFAULT_PREFERENCES, FOLLOWED_COUNT_CAP, LOST_ANSWER, MOVES_LOG_PAGE, NOT_SENT, ReadFailure, SEARCH_CARDS_MAX, SEARCH_COUNT_CAP, SEARCH_MATCHES_CAP, SEARCH_PER_PAGE, SEARCH_PER_PAGE_MAX, SEASON_NEWS_PAGE, SPUN_FROM_MAX, UPDATES_PAGE } from './api.ts';
+import type { HandoffFacts } from '../../system/meeting.ts';
+import { ADMIN_AWARDS_PAGE, ALERTS_PAGE, ALERTS_UNREAD_BOUND, type FailureKind, CONTACT_HREF_MAX, CONTACT_LABEL_MAX, CONTACT_MOST, CONTACT_WS, DEFAULT_PREFERENCES, FOLLOWED_COUNT_CAP, LOST_ANSWER, MOVES_LOG_PAGE, NOT_SENT, ReadFailure, REIGNS_PAGE, TROPHIES_PAGE, TROPHY_FAILURES_PAGE, SEARCH_CARDS_MAX, SEARCH_COUNT_CAP, SEARCH_MATCHES_CAP, SEARCH_PER_PAGE, SEARCH_PER_PAGE_MAX, SEASON_NEWS_PAGE, SPUN_FROM_MAX, UPDATES_PAGE } from './api.ts';
 import { buildMoveNotice, toDemand, toProgress } from './moves.ts';
 import { TIP_KEYS, TOUR_KEYS } from '../tips/keys.ts';
 import { PLAYS_PER_POST } from '../cards/plays.ts';
-import { visibleText } from '../../bbcode/visible.ts';
+import { quotedActs, visibleText } from '../../bbcode/visible.ts';
 import { parse } from '../../bbcode/parse.ts';
 import { pageOf } from '../thread/pages.ts';
 import { PROFILE_ROWS, RECORD_PAGE, type RecordKind } from '../profile/record.ts';
 import { actsFollowed, actsNamed } from '../log/lines.ts';
 import { micros, readLogPageNow, type LedgerRow, type ShareRow } from './log-page.ts';
 import type {
+  SurfaceLogRow,
   AdminQueue, BoardName, Demand, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesCursor, MovesLog, QueuedMove, StaffCardPlay, StaffProfile,
-  Act, Apology, Bar, AccountListener, Tail, ActKind, Alert, ContactLink, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, TallyName, SeasonShown, Update, UpdateChange, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, CardEvent, PackEvent, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, DebutLoudness, EffectState, PlayMoment,
+  Act, Apology, Bar, AccountListener, Tail, ActKind, Alert, ContactLink, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResult, SeasonResultRow, TallyName, SeasonShown, Update, UpdateChange, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, CardEvent, PackEvent, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, DebutLoudness, EffectState, PlayMoment,
   DebutTiming, Estimate, EstimateLine, FollowedThread, Frame, HeldCard, Id, KayfaApi, LogShare, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, PreferencesPatch, Refusal,
-  Boot, BoardPage, IndexPage, Opened, AdminSlot, Slot, SlotMove, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, LogPage,
+  Boot, BoardPage, BoardRef, BoardStub, IndexPage, Opened, AdminSlot, Slot, SlotMove, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, LogPage,
+  SurfaceActs, SurfaceNow, SurfaceWritten, SurfaceAct,
+  AdminAward, AdminKind, BeltCursor, BeltPage, BeltReign, RandomEvent, ShownTrophy, TrophyAwardFailure, TrophyCursor, TrophyItem, TrophyPage, WardrobeItem,
   PostHit, ThreadHit, SearchCursor, SearchPage, SearchQuery, SearchSort, Suggestions,
-  AppealResult, AppealVerdict, LogAppeal, LogBan, LogGroupMove, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
+  AppealResult, AppealVerdict, LogAppeal, LogBan, LogCosmetic, LogGroupMove, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
   Donated, DriveGift, DriveGifts, Presence, PresencePlace, ReachListener, ScreenSettings, Season, Session, Standing, Tally, ThreadListener, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, Wallet, WalletEvent,
 } from './api.ts';
 
@@ -70,7 +77,7 @@ export const START = Date.UTC(2026, 9, 29, 12);
 
 export interface LiveEvent {
   readonly topic: string;
-  readonly event: 'act' | 'tally' | 'thread' | 'effect' | 'card_text' | 'alert' | 'news' | 'settled';
+  readonly event: 'act' | 'tally' | 'thread' | 'effect' | 'surface' | 'card_text' | 'alert' | 'news' | 'settled';
 }
 
 export interface Seed {
@@ -120,9 +127,9 @@ export interface Seed {
    * dated `at` (else now). Season news then holds the Boss's arrival and departure, quoting the first post each wrote in the announcements thread dated
    * at exactly `at` (`staffPost`), as the server finds it; a later remark is not its words. A change of Boss is also a to-do in the admin queue
    * (`how` rotation unless said, `bossWas` the new Boss's office before, `outgoingOffice` member unless said), until an update is seeded or posted
-   * after `at` or an admin dismisses it. The season is the next number: the first season is the seed's, and each handover opens the one after.
+   * after `at` or an admin dismisses it. The to-do carries the outgoing Boss's handoff `note` (null: none) and the season's `facts` (empty lists unless said), as admin_queue does (0337). The season is the next number: the first season is the seed's, and each handover opens the one after.
    */
-  handover(handover: { outgoing?: string | null; boss: string; at?: number; how?: 'nomination' | 'rotation'; bossWas?: string | null; outgoingOffice?: string | null }): void;
+  handover(handover: { outgoing?: string | null; boss: string; at?: number; how?: 'nomination' | 'rotation'; bossWas?: string | null; outgoingOffice?: string | null; note?: string | null; facts?: Partial<HandoffFacts> }): void;
   /**
    * An update by the developer persona (what `post_update` writes, 0062), dated `at` (else now): the developer character is made on its first
    * update, from the instance's persona (else the engine's plain one), and so is the updates thread on The System's board. Returns the Act.
@@ -131,6 +138,16 @@ export interface Seed {
   /** The contact an admin set (`set_admin_contact`, 0081), past its admin check and held to its rules: a seed is the database's own hand. Refused in the server's words. */
   contact(links: readonly ContactLink[]): void;
   cards(account: Id, held: Readonly<Record<string, number>>): void;
+  /** Copies of gear the account holds (`gear_ledger`), added to any it holds. */
+  gear(account: Id, held: Readonly<Record<string, number>>): void;
+  /** A standing award of a trophy kind (the instance's or an admin's) for a character, dated `at` (else now), by the season unless `by` says; returns its id. A belt's holder is the latest. */
+  award(character: Id, trophy: string, options?: { at?: number; by?: 'season' | 'boss' | 'demand' | 'admin'; line?: string; move?: Id }): Id;
+  /** The outcome of the next Random Event roll that comes past the window and the day's most, in place of the weighted draw; null is a roll that finds nothing. */
+  nextEvent(event: { outcome: RandomEvent['outcome']; item?: string; line?: string } | null): void;
+  /** Turns on the weighted draw from the settings' odds for a roll nothing scripted; off at first, so an unscripted fake never opens a dialog over a page a test or story is about something else. */
+  eventsOn(on?: boolean): void;
+  /** An award that could not be written, as `trophyAwardFailures` lists it, for an admin to give by hand. */
+  awardFailure(failure: Omit<TrophyAwardFailure, 'id' | 'open' | 'characters'> & { readonly characters: readonly { readonly id: Id; readonly name: string; readonly place?: number }[] | null }): Id;
   /** The account's settled wallet, as a purchase or a card play leaves it between settlements (`settle` sets it at one, and dates it). Writes no wallet event: it is the state the seed starts from. */
   wallet(account: Id, balance: number): void;
   /**
@@ -169,7 +186,7 @@ export interface Seed {
    * dated `at` (else now). The fake never ends a season itself; this is the state its end would have left. Written once: a second call for the
    * season throws, as the table refuses an edit.
    */
-  seasonResults(season: number, rows: readonly { character: Id; name?: string; place: number; standing: number; shown?: readonly SeasonShown[] }[], options?: { at?: number }): void;
+  seasonResults(season: number, rows: readonly { character: Id; name?: string; place: number | null; standing: number; shown?: readonly SeasonShown[] }[], options?: { at?: number }): void;
   avatar(character: Id, urls: { square?: string; portrait?: string }): void;
   /** A tally on an Act as if that many others had reacted, kind by kind: no one's reaction (no account or character stands behind it), only the counts every reader sees. */
   tally(act: Id, counts: Readonly<Record<string, number>>): void;
@@ -185,6 +202,8 @@ export interface Seed {
    * A conferGroup move that has landed (what `apply_mod_move`/`apply_meeting` write): `staff` moved `character` into `group` (a key of the instance's groups), barring it from `board` (a
    * slug; absent: no bar). It asks for an accepted apology (`apologyAccepted`) and runs to `expiresAt` (default three days on; null: it has no end date). Returns the move's Act.
    */
+  /** The Boss's trophy award, landed: a move Act of kind awardTrophy (no demand; it ends at once in the real thing, which the notice does not need). */
+  trophyMove(staff: string, move: { readonly character: Id; readonly trophy: string; readonly body?: string; readonly at?: number }): Id;
   groupMove(staff: string, move: { readonly office?: 'boss' | 'mod' | null; readonly character: Id; readonly group: string; readonly board?: string; readonly body?: string; readonly at?: number; readonly expiresAt?: number | null; readonly demand?: boolean }): Id;
   /** A staff character's office changes (a handover, a reassignment): moves it made before keep the office stamped on them. */
   setOffice(staff: string, office: 'boss' | 'mod' | 'member' | 'benched'): void;
@@ -194,13 +213,25 @@ export interface Seed {
    * A landed move: the Boss's `move` Act in a thread of The System's board (the first thread there is used, or one is made), as the
    * tick writes it. A rename takes the board's slug; the demand's board is the same board unless the demand names another.
    */
-  move(staff: string, move: SeedMove): Id;
+  move(staff: string, move: SeedMove & { lasting?: { readonly kind: string; readonly params: Readonly<Record<string, unknown>> }; bundle?: SeedBundle }): Id;
   /** A move's end, as end_move writes it: the board's old name returns. */
   endMove(act: Id, end: { why: 'met' | 'expired' | 'reversed' | 'superseded' | 'spent'; by?: string; at?: number }): Id;
   /** The new Boss keeps a move of an earlier Boss after a handover (a `move_keep` Act): the move's log row says who keeps it. */
   keepMove(act: Id, staff: string, options?: { at?: number }): Id;
   /** A move the Boss chose that waits in the admin queue; returns its queue id. */
-  queueMove(staff: string, move: SeedMove & { goLiveAt: number; why?: string; failure?: { at: number; text: string }; refusal?: { at: number; text: string } }): number;
+  queueMove(staff: string, move: SeedMove & { goLiveAt: number; why?: string; failure?: { at: number; text: string }; refusal?: { at: number; text: string };
+    /** A lasting move (`createBoard`, `moveThread`, `mergeBoard`) in place of a rename: its kind and params, a board or thread named by slug or id as the move's params name them. */
+    lasting?: { readonly kind: string; readonly params: Readonly<Record<string, unknown>> };
+    /** The move as a part of a bundle: the bundle's id and name (the same for every part) and the part's role, which another part's board param may name as `{role}`. */
+    bundle?: SeedBundle;
+    /** Queue ids of moves it builds on without naming them by role (a later move into a board one made): it waits for them. */
+    waitsOn?: readonly number[] }): number;
+  /** A board of the players beyond the instance's own, for a scene that moves threads between boards or closes one. */
+  board(slug: string, name: string, description?: string): void;
+  /** A thread moved to another board (a landed `moveThread`), dated `at` (default now): it is on the new board, and the board it left lists it as a stub until `movedStubDays` pass. */
+  moveThread(thread: Id, board: string, options?: { at?: number }): void;
+  /** A board closed: merged into another (its threads go there), or closed with its threads going to `fallback` (default: the first open board of the players). */
+  closeBoard(board: string, how: { mergedInto: string } | { fallback?: string }): void;
   /** A nomination of a successor waiting in the admin queue (`boss` is a roster key); returns its queue id. */
   queueSuccessor(staff: string, boss: string, options: { goLiveAt: number; why?: string }): number;
   /** An admin's hold on a queued move, dated `at`: it never lands. */
@@ -286,6 +317,13 @@ export interface SeedLine {
 }
 
 /** A rename a seed lands or queues: the board by slug, its new name, subject and description, and the demand it carries. */
+/** A part of a bundle (0329): the bundle's id and name, and the part's role in it. */
+export interface SeedBundle {
+  readonly id: string;
+  readonly name: string;
+  readonly role?: string;
+}
+
 export interface SeedMove {
   readonly board: string;
   readonly name: string;
@@ -364,6 +402,11 @@ interface CharRec {
   portrait: string | null;
   squareFrame: Frame | null;
   portraitFrame: Frame | null;
+  portraitTallness: number | null;
+  /** gear_worn: the pieces it wears, in layer order. */
+  outfit: Piece[];
+  /** trophies_shown: the awards its postbit shows, in order. */
+  shown: Id[];
   /** Set for a staff character. */
   staff?: { readonly key: string; readonly office: Office };
 }
@@ -378,7 +421,7 @@ interface ActRec {
   readonly at: number;
   readonly payload: Readonly<Record<string, unknown>>;
 }
-interface ThreadRec { readonly id: Id; readonly board: Id; readonly title: string; readonly origin: Id | null; readonly at: number; nextSeq: number }
+interface ThreadRec { readonly id: Id; board: Id; readonly title: string; readonly origin: Id | null; readonly at: number; nextSeq: number }
 interface AccountRec {
   readonly id: Id;
   readonly email: string;
@@ -388,6 +431,11 @@ interface AccountRec {
   prefs: Preferences;
   wallet: number;
   cards: Record<string, number>;
+  /** gear_ledger counted by gear: the copies the account holds. */
+  gear: Record<string, number>;
+  /** random_event_rolls: when it last rolled, and the Random Events it has had. */
+  rolledAt: number | null;
+  eventsAt: number[];
   reading: Map<Id, number>;
   /** The account's follow choices over the default (thread_follows, 0059). */
   follows: Map<Id, boolean>;
@@ -399,8 +447,10 @@ interface InviteRec { readonly id: number; readonly owner: Id; code: string; rea
 const refuse = (error: string, field?: string): Refusal => (field === undefined ? { ok: false, error } : { ok: false, error, field });
 const ok = <T,>(value: T): Answer<T> => ({ ok: true, value });
 const iso = (ms: number) => new Date(ms).toISOString();
+/** A `my_cosmetic_log` row with nothing said: each kind fills what it uses. */
+const NO_COSMETIC = { character: null, outcome: null, item: null, text: null, copies: null, trophy: null, name: null, by: null, byName: null, season: null, place: null, line: null, toName: null } as const;
 /** The kinds of Act that take no place in a thread (`acts_take_seq`, supabase/migrations/0109): an edit, a card's marks and the Mod Bots' meta acts. */
-const UNPLACED: ReadonlySet<ActKind> = new Set<ActKind>(['edit', 'card', 'set', 'take_back', 'spring', 'card_end', 'visit', 'visit_join', 'visit_end', 'report', 'report_verdict', 'intercept', 'infraction', 'ban', 'appeal', 'appeal_ruling', 'donation']);
+const UNPLACED: ReadonlySet<ActKind> = new Set<ActKind>(['edit', 'card', 'set', 'take_back', 'spring', 'card_end', 'visit', 'visit_join', 'visit_end', 'report', 'report_verdict', 'intercept', 'infraction', 'ban', 'appeal', 'appeal_ruling', 'donation', 'draw', 'wash']);
 
 /**
  * The api's writes: the one split `failNextRead` and `offline` share. Every method that answers an `Answer` is one, and `markRead` (a
@@ -413,8 +463,10 @@ const WRITES: ReadonlySet<string> = new Set(Object.keys({
   moveSlot: true, saveMachine: true, intercept: true, fileReport: true, fileAppeal: true, markRead: true, setPresenceHidden: true,
   setPreferences: true, meetCard: true, seeWelcome: true, seeTip: true, skipTips: true, resumeTips: true, restoreTips: true, replayTour: true,
   seeAlerts: true, donate: true, seeSettlement: true, follow: true, createInvite: true, reissueInvite: true, startThread: true, post: true, edit: true, spin: true,
-  apologize: true, buyCard: true, buyPack: true, playCard: true, setCard: true, takeBack: true, useCard: true, releaseEffect: true, saveEffect: true,
+  apologize: true, buyCard: true, buyPack: true, playCard: true, setCard: true, takeBack: true, useCard: true, releaseEffect: true, saveEffect: true, draw: true, wash: true,
   react: true, turn: true, withdrawTurn: true, unmask: true, createCharacter: true, setDebut: true, setProfile: true, setAvatar: true,
+  wardrobe: true, setOutfit: true, beltLineage: true, showTrophies: true, randomEvent: true, grantGear: true, awardTrophy: true, reverseAward: true, makeTrophy: true,
+  trophyAwardFailures: true, giveFailedAward: true, adminAwards: true, adminCharacterNamed: true,
 } satisfies Record<WriteName, true>));
 /** The methods that are not a promise of something: everything else is made one. */
 const NOT_PROMISED = new Set(['onSession', 'subscribeThread', 'subscribeBoard', 'subscribeAccount', 'subscribeReach']);
@@ -426,7 +478,7 @@ type Sync<T> = { [K in keyof T]: T[K] extends (...a: infer A) => Promise<infer R
  * export and keeps a property of an object that is built.
  */
 export const FAKE_BACKEND_MARKER = 'KAYFA_FAKE_BACKEND';
-export function createFake(options: { instance: Instance; settings?: Partial<ScreenSettings>; now?: () => number }): Fake {
+export function createFake(options: { instance: Instance; settings?: Partial<ScreenSettings>; now?: () => number; /** Applied to every character the fake shows, as the adapter's `face` is (engine/ui/data/staff-faces.ts). */ face?: (character: Character) => Character }): Fake {
   /* A screen's economy (ScreenSettings.economy) is laid over the instance's, as economyNow does, never in place of it: a world given the
      web's fallback, which holds none, keeps the compiled numbers. */
   const settings: Settings = { ...options.instance.settings, ...options.settings, economy: { ...options.instance.settings.economy, ...options.settings?.economy } };
@@ -460,6 +512,18 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const accounts = new Map<Id, AccountRec>();
   const byEmail = new Map<string, Id>();
   const characters = new Map<Id, CharRec>();
+  /** trophy_awards and trophy_reversals (0206): an award stands until `reversed`. */
+  const awards: { id: Id; trophy: string; character: Id; at: number; by: 'season' | 'boss' | 'demand' | 'admin'; line: string | null; season: number | null; move: Id | null; reversed: boolean; reversedAt?: number }[] = [];
+  /** What `my_cosmetic_log` reads beside the awards: the finds of Random Events and the gear an admin gave, each of one account, newest last. */
+  const cosmeticEvents: { account: Id; ms: number; row: LogCosmetic }[] = [];
+  /** The kinds an admin made (`make_trophy`), beside the instance's own. */
+  const madeKinds: { key: string; name: string; line: string | null; belt: boolean; art: string | null }[] = [];
+  /** The Random Events a test scripted (`Seed.nextEvent`), taken in order before the weighted draw; null is a roll that finds nothing. */
+  let weightedEvents = false;
+  const scripted: (Pick<RandomEvent, 'outcome'> & { item?: string; line?: string } | null)[] = [];
+  const awardFailures: (Omit<TrophyAwardFailure, 'open' | 'characters'> & { characters: readonly { readonly id: Id; readonly name: string; readonly place?: number }[] | null })[] = [];
+  /** trophy_failure_resolutions: `${failure}:${character}` for each award an admin gave by hand. */
+  const failureGiven = new Set<string>();
   const acts = new Map<Id, ActRec>();
   /** Moves whose demand the tick has not counted (SeedMove.uncounted). */
   const uncounted = new Set<Id>();
@@ -488,8 +552,43 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const moveEnds = new Map<Id, { why: 'met' | 'expired' | 'reversed' | 'superseded' | 'spent' | 'overturned'; by: string; at: number }>();
   const careers = new Map<string, Career>();
   const staffProfiles: { key: string; at: number; interests: string[]; favorites: Id[]; mood: string; signature: string }[] = [];
-  interface QueueRec { id: number; staff: string; successor?: string; move: SeedMove; why: string; goLiveAt: number; failure: { at: number; text: string } | null; refusal?: { at: number; text: string }; heldAt: number | null; landed: Id | null; replacedAt?: number; adminDescription?: string }
+  interface QueueRec { id: number; staff: string; successor?: string; lasting?: { kind: string; params: Readonly<Record<string, unknown>> }; bundle?: { id: string; name: string; role: string | null }; waitsOn?: readonly number[]; move: SeedMove; why: string; goLiveAt: number; failure: { at: number; text: string } | null; refusal?: { at: number; text: string }; heldAt: number | null; landed: Id | null; replacedAt?: number; adminDescription?: string }
   const queue: QueueRec[] = [];
+  /** A queued part's bundle, role and the bundle's name, as admin_queue says them (null for a move that is no part of one). */
+  const bundleOf = (q: QueueRec | undefined) => ({ bundle: q?.bundle?.id ?? null, role: q?.bundle?.role ?? null, bundleName: q?.bundle?.name ?? null });
+  /** The parts of the same bundle that build on `root`, breadth first: those whose board params name its role, and those that name theirs. */
+  const followers = (root: QueueRec): QueueRec[] => {
+    const found: QueueRec[] = [];
+    let frontier = [root];
+    while (frontier.length > 0) {
+      const next: QueueRec[] = [];
+      for (const r of frontier) {
+        const role = r.bundle?.role;
+        if (!role) continue;
+        for (const x of queue) {
+          if (x === root || found.includes(x) || x.bundle?.id !== r.bundle!.id) continue;
+          if (['board', 'into', 'fallback'].some((k) => (x.lasting?.params[k] as { role?: unknown } | undefined)?.role === role)) { found.push(x); next.push(x); }
+        }
+      }
+      frontier = next;
+    }
+    return found;
+  };
+  /** Where a landed `moveThread` took a thread from (thread_departures, 0326). */
+  const departures: { thread: Id; origin: Id; to: Id; at: number }[] = [];
+  /** A closed board: merged into another, or closed with where its threads went (boards_now.closed and merged_into, 0320). */
+  const closedBoards = new Map<Id, { mergedInto: Id | null; fallback: Id | null }>();
+  const isClosed = (b: Board): boolean => closedBoards.has(b.id);
+  /** The first open board a closed board's threads are in, following merges and fallbacks on. */
+  const openEnd = (id: Id): Id | null => {
+    let here: Id | null = id;
+    for (let hops = 0; hops < 50 && here !== null; hops++) {
+      const gone = closedBoards.get(here);
+      if (!gone) return here === id ? null : here;
+      here = gone.mergedInto ?? gone.fallback;
+    }
+    return null;
+  };
   /** The staff key of the Boss that keeps each move after a handover, by the move's Act. */
   const moveKeeps = new Map<Id, string>();
   const playersBoard = boards.find((b) => !b.isSystem);
@@ -733,15 +832,15 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return latest;
   };
   function publicCharacter(c: CharRec): Character {
-    return {
+    return (options.face ?? ((x: Character) => x))({
       id: c.id, name: c.name, title: c.title, signature: c.signature, avatarSquare: c.square, avatarPortrait: c.portrait, squareFrame: c.squareFrame,
-      portraitFrame: c.portraitFrame, pipStyle: c.pipStyle, pronouns: c.pronouns,
+      portraitFrame: c.portraitFrame, portraitTallness: c.portraitTallness, outfit: c.outfit.map((o) => ({ ...o })), trophies: shelf(c.id), pipStyle: c.pipStyle, pronouns: c.pronouns,
       joined: `${iso(c.debutedAt!).slice(0, 7)}-01`,
       ...(warnOf(c.id) > 0 ? { warnPoints: warnOf(c.id) } : {}),
       ...(bannedUntilOf(c.id) !== null ? { bannedUntil: iso(bannedUntilOf(c.id)!) } : {}),
       ...(c.staff ? { staff: c.staff.key, office: c.staff.office } : {}),
       group: groupOf(c),
-    };
+    });
   }
   /** The group a character is in: the highest rung it holds (a conferred group is the moves' business, not this fake's). */
   function groupOf(c: CharRec): string {
@@ -781,6 +880,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const moveParams = (m: SeedMove) => ({
     board: boards.find((b) => b.slug === m.board)?.id ?? m.board, name: m.name, premise: m.premise ?? `The subject of ${m.name}`, description: m.description ?? `About ${m.name}`,
   });
+  /** A lasting move's params as its Act carries them: a board named by slug becomes its id. */
+  const lastingParams = (p: Readonly<Record<string, unknown>>): Record<string, unknown> =>
+    Object.fromEntries(Object.entries(p).map(([k, v]) => [k, (k === 'board' || k === 'into' || k === 'fallback') && typeof v === 'string' ? boards.find((b) => b.slug === v)?.id ?? v : v]));
   const moveDemand = (m: SeedMove): Demand | null => {
     if (!m.demand) return null;
     const named = m.demand.params['board'];
@@ -847,7 +949,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       id: uuid(), owner: '', name: persona.name, createdAt: at, debutedAt: at, retiredAt: null, loudness: 'silent', history: [{ cls: '', at }], pending: null, presenceHidden: false,
       title: persona.tagline.slice(0, 40), signature: '', pipStyle: options.instance.pipStyles[0]?.key ?? 'default',
       pronouns: persona.pronouns ?? settings.pronouns,
-      square: null, portrait: null, squareFrame: null, portraitFrame: null, staff: { key: 'developer', office: 'developer' },
+      square: null, portrait: null, squareFrame: null, portraitFrame: null, portraitTallness: null, outfit: [], shown: [], staff: { key: 'developer', office: 'developer' },
     };
     characters.set(c.id, c);
     developerId = c.id;
@@ -914,7 +1016,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   }
   /* ------------------------------------------------------------------ season news ---- */
   /** The Boss changes the fake's seeds hold (`season_handovers`, 0051): who left, who arrived, and when. */
-  const handovers: { readonly outgoing: string | null; readonly boss: string; readonly at: number; readonly how: string; readonly bossWas: string | null; readonly outgoingOffice: string | null }[] = [];
+  const handovers: { readonly outgoing: string | null; readonly boss: string; readonly at: number; readonly how: string; readonly bossWas: string | null; readonly outgoingOffice: string | null; readonly note: string | null; readonly facts: HandoffFacts }[] = [];
   /** The seasons whose to-do an admin dismissed (`handover_dismissals`). */
   const dismissedTodos = new Set<number>();
   /** The to-dos the admin queue holds: each change of Boss with no update after it and no dismissal, newest first (admin_queue's `todos`). */
@@ -926,7 +1028,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       return [{
         season, boss: h.boss, bossName: staffByKey(h.boss)?.name ?? h.boss, bossPronouns: staffByKey(h.boss)?.pronouns ?? settings.pronouns, bossWas: h.bossWas, outgoing: h.outgoing, outgoingName: h.outgoing === null ? null : staffByKey(h.outgoing)?.name ?? h.outgoing,
         outgoingPronouns: (h.outgoing === null ? undefined : staffByKey(h.outgoing)?.pronouns) ?? settings.pronouns,
-        outgoingOffice: h.outgoing === null ? null : h.outgoingOffice, how: h.how, landedAt: iso(h.at),
+        outgoingOffice: h.outgoing === null ? null : h.outgoingOffice, how: h.how, landedAt: iso(h.at), note: h.note, facts: h.facts,
       }];
     }).reverse();
   }
@@ -946,14 +1048,21 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const row = r.rows.find((x) => x.character === id);
     return row ? [{ season, place: row.place, standing: row.standing, at: iso(r.at) }] : [];
   }).slice(0, 50);
-  /** The final table's order (`season_results_by_place`): place, then name, then character. */
+  /**
+   * The final table's order (`season_results_by_standing`, 0206): standing, highest first, then name, then character. Places are dense by standing, so the
+   * placed come first by place and the unplaced (a standing of 0 or below, #492) follow them by standing.
+   */
   const resultOrder = (rows: readonly SeasonResultRow[]): SeasonResultRow[] =>
-    [...rows].sort((x, y) => x.place - y.place || (x.name < y.name ? -1 : x.name > y.name ? 1 : 0) || (x.character < y.character ? -1 : x.character > y.character ? 1 : 0));
+    [...rows].sort((x, y) => y.standing - x.standing || (x.name < y.name ? -1 : x.name > y.name ? 1 : 0) || (x.character < y.character ? -1 : x.character > y.character ? 1 : 0));
   /** `season_news` (0063, 0099, 0100) over what the fake holds: a results item from each season's rows, each landing of announce Acts and each old tally with names, the Boss's arrival and farewell. */
   function newsItems(): SeasonNewsItem[] {
     const out: SeasonNewsItem[] = [];
     const base = { act: null, thread: null, seq: null, name: null, quote: null, count: null, top: [], debuts: [], turns: [] } as const;
-    for (const [season, r] of results) out.push({ ...base, kind: 'results', at: iso(r.at), season, count: r.rows.length, top: resultOrder(r.rows).slice(0, 3) });
+    /* The podium is the first three placed rows (season_news, 0206): an unplaced mask is on no podium (#492). */
+    for (const [season, r] of results) {
+      const top = resultOrder(r.rows).flatMap((x): SeasonResult[] => (x.place === null ? [] : [{ ...x, place: x.place }])).slice(0, 3);
+      out.push({ ...base, kind: 'results', at: iso(r.at), season, count: r.rows.length, top });
+    }
     for (const a of acts.values()) {
       if (a.kind !== 'tally') continue;
       const debuts = names(a.payload['debuts']);
@@ -1107,6 +1216,27 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     }
   }
 
+  /**
+   * The acts_quote_guard (Task 3): the refusal for the first Act a body or a target quotes that carries a live no-quote, in the words every writer is given, or null.
+   * The quoted Acts are the target (a post's `quoting`) and every real quote the body holds, less those the edited post's current body already held. `thread` is where the
+   * Act is written (null for a thread not yet made), so a quote from another thread says so.
+   */
+  function stoppedQuote(thread: Id | null, target: Id | null, body: string, already: string = ''): string | null {
+    // As the guard on acts does, a body is walked only where it holds a quote tag, and the current body only where the first list holds an Act.
+    const inBody = (text: string): string[] => (/\[quote=/i.test(text) ? quotedActs(parse(text)) : []);
+    const named = [...new Set([...(target === null ? [] : [target]), ...inBody(body)])];
+    if (named.length === 0) return null;
+    const held = new Set(inBody(already));
+    const quoted = named.filter((q) => !held.has(q));
+    for (const q of quoted) {
+      const stop = quoteStop(effectsOn(q), new Date(now()));
+      if (!stop) continue;
+      const quotedPost = acts.get(q)!;
+      return noQuoteWords(instance.cards.find((c) => c.key === stop.card)?.name ?? String(stop.card), stop.ends, thread !== null && quotedPost.thread === thread ? quotedPost.seq : null);
+    }
+    return null;
+  }
+
   function post(thread: Id, character: Id, body: string, quote: Id | null, framing?: readonly Id[]): Answer<Act> {
     const bad = request({ action: 'post', thread, character, body, quote, ...(framing ? { framing } : {}) });
     if (bad) return bad;
@@ -1116,6 +1246,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (isRefusal(found)) return found;
     if (found.board.isSystem) return refuse(SYSTEM_BOARD);
     if (quote !== null && !acts.has(quote)) return refuse('there is no such Act to quote');
+    const stopped = stoppedQuote(thread, quote, body);
+    if (stopped) return refuse(stopped);
     const written = write({ character, kind: 'post', thread, target: quote, payload: { body } });
     sendAct(written);
     writeFramed(body, framing, written);
@@ -1130,6 +1262,15 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const board = boards.find((b) => b.slug === boardSlug);
     if (!board) return refuse('there is no such board');
     if (board.isSystem) return refuse(SYSTEM_BOARD);
+    const closed = closedBoards.get(board.id);
+    if (closed) {
+      const went = boards.find((b) => b.id === (closed.mergedInto ?? closed.fallback));
+      return refuse(closed.mergedInto !== null
+        ? `this board was merged into ${went ? boardNow(went).name : 'another board'}${openEnd(board.id) !== closed.mergedInto && openEnd(board.id) !== null ? `, which was closed too; its threads are in ${boardNow(boards.find((b) => b.id === openEnd(board.id))!).name}, so start your thread there instead` : ', and its threads are there; start your thread there instead'}`
+        : `this board was closed, and its threads are in ${boardNow(boards.find((b) => b.id === (openEnd(board.id) ?? closed.fallback))!).name}; start your thread there instead`);
+    }
+    const stopped = stoppedQuote(null, null, body);
+    if (stopped) return refuse(stopped);
     const t = openThread(board.id, title, null);
     const written = write({ character, kind: 'post', thread: t.id, payload: { body } });
     sendThread(t);
@@ -1147,6 +1288,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (!from || from.kind === 'edit') return refuse('there is no such Act to spin from');
     const home = boards.find((b) => b.id === threads.get(from.thread)!.board)!;
     const board = home.isSystem ? playersBoard! : home;
+    const stopped = stoppedQuote(null, null, body);
+    if (stopped) return refuse(stopped);
     const t = openThread(board.id, title, origin);
     const written = write({ character, kind: 'spin', thread: t.id, target: origin, payload: { title, body } });
     sendThread(t);
@@ -1275,6 +1418,148 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return [...plays, ...ends].map(publicAct);
   };
   const playOf = (id: Id) => { const a = acts.get(id); return a && a.kind === 'card' ? a : null; };
+
+  /* ------------------------------------------------------------------ surfaces (0317) ---- */
+  /** A surface as the database's `surfaces` row holds it: the cells covered, the live draw (1-based place in `live`, 0 for none) that last inked each, and the live list. */
+  interface SurfaceRec { cover: Cells; owners: Uint16Array; live: Id[]; readonly cells: Map<Id, Cells> }
+  const surfaceRecs = new Map<Id, SurfaceRec>();
+  const hasCell = (c: Cells, i: number): boolean => (c[i >> 3]! & (0x80 >> (i & 7))) !== 0;
+  const meets = (a: Cells, b: Cells): boolean => a.some((v, i) => (v & b[i]!) !== 0);
+  const inside = (a: Cells, b: Cells): boolean => a.every((v, i) => (v & ~b[i]! & 0xff) === 0);
+  /** The surface of a play of a card with one: opened with the play (open_surface), here the first time it is asked for. Null for any other Act. */
+  function surfaceOf(play: Id): SurfaceRec | null {
+    const p = playOf(play);
+    if (!p || p.target === null || typeof p.payload.card !== 'string' || instance.cards.find((c) => c.key === p.payload.card)?.surface === undefined) return null;
+    let s = surfaceRecs.get(play);
+    if (!s) { s = { cover: new Uint8Array(GRID * GRID / 8), owners: new Uint16Array(GRID * GRID), live: [], cells: new Map() }; surfaceRecs.set(play, s); }
+    return s;
+  }
+  /**
+   * surface_step (0317): the one transition. A draw covers its cells and owns each; a wash uncovers them and leaves them owned by no one; the Act joins the
+   * live list unless it is a wash that uncovered nothing; then the list is pruned (a draw that owns no cell, a wash that uncovers nothing a kept draw
+   * inked or that a later wash covers whole) and renumbered.
+   */
+  function surfaceStep(s: SurfaceRec, kind: 'draw' | 'wash', id: Id, cells: Cells): { cover: Cells; owners: Uint16Array; live: Id[] } {
+    const draw = kind === 'draw';
+    const index = s.live.length + 1;
+    const cover = draw ? union(s.cover, cells) : minus(s.cover, cells);
+    const owners = s.owners.map((o, i) => (!hasCell(cells, i) ? o : draw ? index : 0));
+    let live = draw || meets(s.cover, cells) ? [...s.live, id] : s.live;
+    const cellsOfLive = (at: Id): Cells => (at === id ? cells : s.cells.get(at)!);
+    const kindOf = (at: Id): 'draw' | 'wash' => (at === id ? kind : acts.get(at)!.kind as 'draw' | 'wash');
+    const owning = new Set(owners);
+    const kept = live.map((at, k) => {
+      const place = k + 1;
+      if (kindOf(at) === 'draw') return owning.has(place);
+      const mine = cellsOfLive(at);
+      const earlier = live.some((d, j) => j < k && kindOf(d) === 'draw' && owning.has(j + 1) && meets(cellsOfLive(d), mine));
+      const covered = live.some((w, j) => j > k && kindOf(w) === 'wash' && inside(mine, cellsOfLive(w)));
+      return earlier && !covered;
+    });
+    if (kept.some((k) => !k)) {
+      const remap = new Map<number, number>();
+      kept.forEach((k, j) => { if (k) remap.set(j + 1, remap.size + 1); });
+      for (let i = 0; i < owners.length; i++) if (owners[i] !== 0) owners[i] = remap.get(owners[i]!) ?? 0;
+      live = live.filter((_, j) => kept[j]);
+    }
+    return { cover, owners, live };
+  }
+  /** draw_on_surface and wash_surface (0317), in the order they refuse: the character, the wall, the lock, then the limits; a draw alone is held to them. */
+  function writeSurface(kind: 'draw' | 'wash', play: Id, character: Id, input: unknown): Answer<SurfaceWritten> {
+    const account = me();
+    if (!account) return refuse('sign in to act');
+    const p = playOf(play);
+    const rules = p && typeof p.payload.card === 'string' ? instance.cards.find((c) => c.key === p.payload.card) : undefined;
+    const author = p?.target == null ? undefined : acts.get(p.target)?.character;
+    if (kind === 'wash') {
+      /* The post's own player answers for the mask that wrote it, retired or not (0038); every other case is acting()'s. */
+      const mine = characters.get(character);
+      if (!(author === character && mine !== undefined && mine.owner === account.id && mine.debutedAt !== null)) {
+        const c = acting(character);
+        if (isRefusal(c)) return c;
+      }
+    } else {
+      const c = acting(character);
+      if (isRefusal(c)) return c;
+    }
+    const s = rules?.surface === undefined ? null : surfaceOf(play);
+    if (!p || !rules || !s || author === undefined) return refuse('there is no wall on that post');
+    if (kind === 'wash' && author !== character) return refuse('only the post\'s author washes what is on it');
+    if (reversedPlays.has(play)) return refuse('an admin ended that card');
+    if (untakenPlays.has(play)) return refuse(DID_NOT_TAKE);
+    const drawn = kind === 'draw' ? decideDraw(rules, settings, input) : null;
+    const decided = drawn ?? decideWash(rules, settings, input);
+    if (!decided.ok) return refuse(decided.why);
+    const cells = fromBits(decided.value.cells);
+    const written = uuid();
+    const next = surfaceStep(s, kind, written, cells);
+    if (drawn?.ok) {
+      const most = drawn.value.most;
+      const before = count(s.cover);
+      const after = count(next.cover);
+      if (after > most && after > before) {
+        return refuse(`this wall is ${Math.floor(before / 100)}% covered, and its limit is ${Math.floor(most / 100)}%; this tag would take it to ${Math.ceil(after / 100)}%`);
+      }
+      const mostLive = rules.surface!.mostLive;
+      if (new Set([...next.owners].filter((o) => o !== 0)).size > mostLive) return refuse(`this wall holds ${mostLive} tags; paint over one or wait for a wash`);
+    }
+    /* A wash records what it uncovered and the draws it cut, read from the owners before it (surface_apply, 0317): the server's own keys, which a payload that arrives with them loses. */
+    const cut = new Map<Id, number>();
+    if (kind === 'wash') for (let i = 0; i < s.owners.length; i++) if (s.owners[i] !== 0 && hasCell(cells, i)) { const d = s.live[s.owners[i]! - 1]!; cut.set(d, (cut.get(d) ?? 0) + 1); }
+    const { cut: _cut, uncovered: _uncovered, ...sent } = decided.value.payload as Record<string, unknown>;
+    const rec = write({ id: written, character, kind, thread: p.thread, target: play, payload: { ...sent, cells: decided.value.cells, ...(kind === 'wash' ? { uncovered: [...cut.values()].reduce((n, c) => n + c, 0), cut: [...cut].map(([draw, n]) => ({ draw, took: n })) } : {}) } });
+    s.cells.set(written, cells);
+    s.cover = next.cover; s.owners = next.owners; s.live = next.live;
+    const covered = count(next.cover);
+    send(`thread:${p.thread}`, 'surface', () => { for (const l of [...(threadListeners.get(p.thread) ?? [])]) l.onSurface?.(play, covered); });
+    return ok({ ...publicAct(rec), covered, live: [...next.live] });
+  }
+  /** surface_acts (0317): a play's live draws and washes, oldest first, each draw with the cells it owns now; null where the play has no surface. */
+  function surfaceActs(play: Id): SurfaceActs | null {
+    const s = surfaceOf(play);
+    if (!s) return null;
+    const owned = (place: number): number => { let n = 0; for (const o of s.owners) if (o === place) n++; return n; };
+    const shown = s.live.map((id, k): SurfaceAct => {
+      const a = publicAct(acts.get(id)!);
+      return a.kind === 'draw' ? { ...a, share: owned(k + 1) } : a;
+    });
+    const older = [...acts.values()].filter((a) => a.kind === 'draw' && a.target === play && !s.live.includes(a.id)).length;
+    return { covered: count(s.cover), acts: shown, older };
+  }
+  /**
+   * `my_draws` and `my_walls_drawn_on` (0317) for an account, as the views read them: the account's characters' draws and the washes that cut them (not by the account's own washer), and the draws and washes on
+   * walls on the account's own posts (not the account's own characters' draws). Newest first is the log's: the caller sorts.
+   */
+  function surfaceLog(account: Id): { readonly draws: { ms: number; order: number; r: SurfaceLogRow }[]; readonly walls: { ms: number; order: number; r: SurfaceLogRow }[] } {
+    const owns = (character: Id | null): boolean => character !== null && characters.get(character)?.owner === account;
+    const row = (a: ActRec, kind: SurfaceLogRow['kind'], play: Id, mine: Id, cells: number) => ({ ms: a.at, order: a.order, r: { act: a.id, kind, play, post: playOf(play)!.target!, character: a.character!, mine, at: iso(a.at), cells } satisfies SurfaceLogRow });
+    const onSurface = (a: ActRec): boolean => (a.kind === 'draw' || a.kind === 'wash') && a.target !== null && a.character !== null && surfaceRecs.has(a.target) && playOf(a.target) !== undefined;
+    const draws: { ms: number; order: number; r: SurfaceLogRow }[] = [];
+    const walls: { ms: number; order: number; r: SurfaceLogRow }[] = [];
+    const all = [...acts.values()].filter(onSurface);
+    for (const a of all) {
+      const play = a.target!;
+      const author = acts.get(playOf(play)!.target ?? '')?.character ?? null;
+      if (a.kind === 'draw') {
+        if (owns(a.character)) draws.push(row(a, 'draw', play, a.character!, count(fromBits(String(a.payload.cells)))));
+        else if (owns(author)) walls.push(row(a, 'draw', play, author!, count(fromBits(String(a.payload.cells)))));
+        continue;
+      }
+      if (owns(author)) walls.push(row(a, 'wash', play, author!, typeof a.payload.uncovered === 'number' ? a.payload.uncovered : 0));
+      if (owns(a.character)) continue;
+      /* One row for each of the account's characters whose draws it cut, with the cells of theirs it took. */
+      const cut = Array.isArray(a.payload.cut) ? a.payload.cut as { draw: Id; took: number }[] : [];
+      const by = new Map<Id, number>();
+      for (const c of cut) { const drawer = acts.get(c.draw)?.character; if (drawer && owns(drawer)) by.set(drawer, (by.get(drawer) ?? 0) + c.took); }
+      for (const [drawer, cells] of by) draws.push(row(a, 'cut', play, drawer, cells));
+    }
+    return { draws, walls };
+  }
+  /** thread_page's `surfaces`: for each surface play among the page's plays, its covered cells and its live Acts' ids, never a stroke or an owner. */
+  const surfacesOn = (plays: readonly Act[]): Readonly<Record<Id, SurfaceNow>> => Object.fromEntries(plays.flatMap((a): [Id, SurfaceNow][] => {
+    const s = a.kind === 'card' ? surfaceOf(a.id) : null;
+    return s ? [[a.id, { covered: count(s.cover), live: [...s.live] }]] : [];
+  }));
 
   /* The player's log: the settlements' ledger with its shares, every wallet event and the card ledger, each by account (0003, 0006, 0034). */
   interface SettlementRec { readonly id: number; readonly startsAt: number; readonly endsAt: number; readonly sharesKept: boolean; readonly lines: readonly (LedgerLine & { readonly account: Id })[] }
@@ -1467,8 +1752,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
    * The Edge Function's reading of a play, then `play_card` (0016_cards_screens.sql): the post is read and priced by its card's rules
    * (`decidePlay`), then the character, the card in hand and the layer are the database's, in that order.
    */
-  function playCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, message: string, reach: Reach = 'post', fromPost?: Id): Answer<Act> {
-    const bad = request({ action: 'playCard', card, character, target, config, message, ...(reach !== 'post' ? { reach, post: fromPost } : {}) });
+  function playCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, message: string, reach: Reach = 'post', fromPost?: Id, first?: unknown): Answer<Act> {
+    const bad = request({ action: 'playCard', card, character, target, config, message, ...(reach !== 'post' ? { reach, post: fromPost } : {}), ...(first === undefined ? {} : { first }) });
     if (bad) return bad;
     if (reach !== 'post') return playBeyond('cast', card, character, target, config, message, reach, fromPost);
     const on = acts.get(target);
@@ -1477,8 +1762,13 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const text = (publicAct(on).currentPayload as { body?: unknown }).body;
     const effects = effectsOn(target);
     // Decided and written in one step, with no gap for an edit to land in, so the fake checks no version (play_card does, 0070).
-    const decided = decidePlay(rules, settings, postTarget(on.id, on.kind as PostTarget['kind'], text), effects, config, message, { now: new Date(now()), nameOf: (k) => instance.cards.find((c) => c.key === k)?.name ?? k });
+    const decided = decidePlay(rules, settings, postTarget(on.id, on.kind as PostTarget['kind'], text), effects, config, message, { now: new Date(now()), nameOf: (k) => instance.cards.find((c) => c.key === k)?.name ?? k, first });
     if (!decided.ok) return refuse(decided.why, (message !== undefined && !casterMessage(message).ok) || decided.why === rules.needsMessage ? 'message' : 'config');
+    /* The one transaction of play_surface_card: a first draw past the wall's limit refuses the whole play, so none of it is written. */
+    if (decided.value.draw) {
+      const tag = count(fromBits(decided.value.draw.cells));
+      if (tag > decided.value.draw.most) return refuse(`this wall is 0% covered, and its limit is ${Math.floor(decided.value.draw.most / 100)}%; this tag would take it to ${Math.ceil(tag / 100)}%`, 'first');
+    }
     const c = acting(character);
     if (isRefusal(c)) return c;
     const account = me()!;
@@ -1516,6 +1806,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     spend(account, decided.value.price, 'play', written.id);
     recordCard(account.id, written.at, { card, kind: 'played', act: written.id, price: decided.value.price });
     sendAct(written);
+    /* A surface card's play opens its wall with the caster's first draw (play_surface_card: play_card, then draw_on_surface as the caster); a caught play opens none. */
+    if (decided.value.draw !== undefined && !(catches && !rides)) writeSurface('draw', written.id, character, first);
     if (spring) {
       /* The caught card is the setter's (a ride takes none): one more in the hand, and a `caught` row in their own ledger (nothing is paid). */
       const setter = rides ? undefined : accounts.get(faceDown.get(trap!.set)!.account);
@@ -1600,7 +1892,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   /**
    * The cards set face down (face_down, 0054): which card a set is, its setter's account alone; when it ends; the spring that ended it.
    * Mirrored: a catching set card catches the one card it names on a cast (the setter takes the card, a `caught` ledger row, no payout). NOT mirrored: a Move set face down never springs on a quote
-   * (no card lands on the quoting post, character, thread or board, and its phrase is never matched), a Hall Pass never ends a visit, and a ward does not stop a landing. Those are the server's to test
+   * (no card lands on the quoting post, character, thread or board, and its phrase is never matched), a Hall Pass never ends a visit, a ward does not stop a landing, an Earn lays no boost (settlement is the server's), and a staff character is not refused a cast earn or given a plain reply where its target cannot be quoted (write_staff_act). A no-quote is mirrored: a post, a new thread, a spin and an edit are refused a quote of a stopped post in noQuoteWords. Those are the server's to test
    * (supabase/tests/0135-face-down-moves.sql); a test that needs one writes the spring with `seed.spring`.
    */
   /** The back of each card set face down: `catches` is the card a catching set card names and `phrase` the words a Move waits for, both from the card's own rules (decideSet), as set_card stores them. */
@@ -1737,14 +2029,14 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   }
 
   /** set_card (0142): a Move or another set card, decided by the card's rules (decideSet, whose catch and phrase the back keeps), then the author, the hand and the post's one back are the database's. */
-  function setCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, when?: SetConditions): Answer<Act> {
-    const bad = request({ action: 'setCard', card, character, target, config, ...(when ? { when } : {}) });
+  function setCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, when?: SetConditions, first?: unknown): Answer<Act> {
+    const bad = request({ action: 'setCard', card, character, target, config, ...(when ? { when } : {}), ...(first === undefined ? {} : { first }) });
     if (bad) return bad;
     const on = acts.get(target);
     if (!on) return refuse('there is no such post', 'target');
     const rules = instance.cards.find((c) => c.key === card)!;
     const text = (publicAct(on).currentPayload as { body?: unknown }).body;
-    const decided = decideSet(rules, settings, postTarget(on.id, on.kind as PostTarget['kind'], text), effectsOn(target), config, instance.cards, when ?? {}, new Date(now()));
+    const decided = decideSet(rules, settings, postTarget(on.id, on.kind as PostTarget['kind'], text), effectsOn(target), config, instance.cards, { ...(when ?? {}), first }, new Date(now()));
     if (!decided.ok) return refuse(decided.why, 'config');
     /* As set_card (0144) says it: a named id that is not a debuted character, one message for a missing and an undebuted one, by its place in the list. */
     const unknown = (decided.value.who?.characters ?? []).findIndex((id) => characters.get(id)?.debutedAt == null);
@@ -1825,6 +2117,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (isRefusal(c)) return c;
     const original = acts.get(target);
     if (!original || original.kind !== 'post' || original.character !== character) return refuse('that is not a post of this character\'s');
+    const stopped = stoppedQuote(original.thread, null, body, String(edits(original).at(-1)?.payload.body ?? original.payload.body ?? ''));
+    if (stopped) return refuse(stopped);
     write({ character, kind: 'edit', thread: original.thread, target, payload: { body } });
     sendAct(original);
     return ok(publicAct(original));
@@ -1916,7 +2210,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       id: uuid(), owner, name, createdAt: at, debutedAt: o.debuted ? at : null, retiredAt: o.retired ? at : null, loudness: o.loudness,
       history: [{ cls, at }], pending: null, presenceHidden: false, title: '', signature: '', pipStyle: options.instance.pipStyles[0]?.key ?? 'default',
       pronouns: o.pronouns ?? settings.pronouns,
-      square: null, portrait: null, squareFrame: null, portraitFrame: null,
+      square: null, portrait: null, squareFrame: null, portraitFrame: null, portraitTallness: null, outfit: [], shown: [],
     };
     characters.set(c.id, c);
     return c;
@@ -1956,9 +2250,217 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return { account: account.id };
   }
 
+  /* ------------------------------------------------------- gear, trophies, events ---- */
+  const cosmetics = () => instance.settings.cosmetics;
+  /** A trophy kind as `trophy_kinds` holds it: the instance's own, then an admin's. `art` is a URL for an admin's kind, null for the instance's (whose art is its UI's). */
+  const kindOf = (key: string): { key: string; name: string; line: string | null; belt: boolean; art: string | null } | undefined => {
+    const own = instance.trophies.kinds.find((k) => k.key === key);
+    if (own) return { key: own.key, name: own.name, line: own.line ?? null, belt: own.belt === true, art: null };
+    const made = madeKinds.find((k) => k.key === key);
+    return made ? { ...made, art: made.art === null ? null : `https://trophies.fake.test/${made.art}` } : undefined;
+  };
+  const standing = (trophy: string) => awards.filter((a) => a.trophy === trophy && !a.reversed);
+  /** Whether an award of a belt is the one held now: the latest standing award of its kind (`beltHolder`), its holder's latest. */
+  const heldNow = (a: (typeof awards)[number]): boolean => {
+    if (beltHolder(standing(a.trophy).map((x) => ({ character: x.character, at: iso(x.at) }))) !== a.character) return false;
+    return standing(a.trophy).filter((x) => x.character === a.character).every((x) => x.at <= a.at);
+  };
+  const shownOf = (a: (typeof awards)[number]): ShownTrophy => {
+    const k = kindOf(a.trophy)!;
+    return { award: a.id, trophy: a.trophy, name: k.name, art: k.art, belt: k.belt, held: k.belt && heldNow(a) };
+  };
+  /** `trophy_shelf`: the awards a character shows in its order, then every belt it holds that is not among them. */
+  function shelf(character: Id): ShownTrophy[] {
+    const c = characters.get(character)!;
+    const shown = c.shown.map((id) => awards.find((a) => a.id === id)).filter((a): a is (typeof awards)[number] => a !== undefined && !a.reversed).map(shownOf);
+    const belts = awards.filter((a) => a.character === character && !a.reversed && kindOf(a.trophy)?.belt && !c.shown.includes(a.id) && heldNow(a)).sort((x, y) => y.at - x.at).map(shownOf);
+    return [...shown, ...belts];
+  }
+  const WORDS: Record<string, string> = { season: 'the season', demand: 'a met demand', admin: 'an admin'};
+  /** The link data `trophy_item` gives for a Boss's or a met demand's award: the move's Act, thread and number there. */
+  const moveOf = (a: (typeof awards)[number]): TrophyItem['move'] => {
+    const m = a.move === null ? undefined : acts.get(a.move);
+    return m && m.kind === 'move' && m.seq !== null ? { act: m.id, thread: m.thread, seq: m.seq } : null;
+  };
+  /** `trophy_item`'s words for who gave: the Boss's own name, "<Name>, the Boss", where one stands. */
+  const givenBy = (by: string): string => {
+    if (by !== 'boss') return WORDS[by]!;
+    const boss = [...characters.values()].find((c) => c.staff?.office === 'boss' && c.debutedAt !== null && c.retiredAt === null);
+    return boss ? `${boss.name}, the Boss` : 'the Boss';
+  };
+  /** `piece_problem`'s words for the predicate `pieceProblem` names. */
+  const pieceWords = (piece: Piece, most: number): string | null => {
+    if (typeof piece !== 'object' || piece === null) return 'a piece is an object giving its gear, x, y, w, turn and layer';
+    if (typeof piece.gear !== 'string') return 'a piece names its gear';
+    const why = ((): string | null => {
+      const within = (n: unknown, lo: number, hi: number) => typeof n === 'number' && Number.isFinite(n) && n >= lo && n <= hi;
+      if (!within(piece.x, 0, 1)) return 'a piece\'s x is outside the portrait';
+      if (!within(piece.y, 0, 1)) return 'a piece\'s y is outside the portrait';
+      if (!within(piece.w, PIECE_WIDTH.least, PIECE_WIDTH.most)) return 'a piece\'s width is from 0.05 to 1.5 of the portrait\'s width';
+      if (!within(piece.turn, -PIECE_TURN_MOST, PIECE_TURN_MOST)) return 'a piece\'s turn is from -180 to 180 degrees';
+      if (!Number.isInteger(piece.layer) || !within(piece.layer, 0, most - 1)) return `a piece's layer is a whole number below ${most}`;
+      return null;
+    })();
+    return why;
+  };
+
+  /** `my_wardrobe`: each gear the player holds, with where its copies are worn among the player's own characters. */
+  function wardrobe(): Answer<WardrobeItem[]> {
+    const account = me();
+    if (!account) return refuse('sign in to dress a character');
+    return ok(Object.entries(account.gear).filter(([, held]) => held > 0).sort(([x], [y]) => (x < y ? -1 : x > y ? 1 : 0)).map(([gear, held]): WardrobeItem => ({
+      gear, rarity: instance.gear.find((g) => g.key === gear)?.rarity ?? 'common', held,
+      /* One entry for each piece worn, as my_wardrobe lists them. */
+      wornBy: [...characters.values()].filter((c) => c.owner === account.id).flatMap((c) => c.outfit.filter((o) => o.gear === gear).map(() => c.id)).sort(),
+    })));
+  }
+
+  /** `set_outfit` (0205): the checks in the server's order and words, the whole outfit replacing the one before. */
+  function setOutfit(character: Id, pieces: readonly Piece[]): Answer<{ worn: number }> {
+    const c = acting(character);
+    if (isRefusal(c)) return c;
+    const account = me()!;
+    const most = cosmetics().gear.wornMost;
+    if (!Array.isArray(pieces)) return refuse('an outfit is a list of pieces');
+    if (pieces.length > most) return refuse(`${pieces.length} pieces are worn; at most ${most}`);
+    for (const piece of pieces) {
+      const why = pieceWords(piece, most);
+      if (why) return refuse(why);
+      if (!instance.gear.some((g) => g.key === piece.gear)) return refuse(`there is no gear "${piece.gear}"`);
+    }
+    const elsewhere: Record<string, number> = {};
+    for (const o of characters.values()) if (o.owner === account.id && o.id !== c.id) for (const w of o.outfit) elsewhere[w.gear] = (elsewhere[w.gear] ?? 0) + 1;
+    const problems = outfitProblems(pieces, account.gear, elsewhere, cosmetics());
+    if (problems.length > 0) return refuse(problems.join('; '));
+    c.outfit = pieces.map((p) => ({ gear: p.gear, x: p.x, y: p.y, w: p.w, turn: p.turn, layer: p.layer })).sort((a, b) => a.layer - b.layer);
+    return ok({ worn: pieces.length });
+  }
+
+  /** `trophies_of` (0206): a page of a character's standing awards, newest first. */
+  function trophiesOf(character: Id, cursor?: TrophyCursor): TrophyPage {
+    const PAGE = TROPHIES_PAGE;
+    const before = cursor ? Date.parse(cursor.before) : null;
+    const all = awards.filter((a) => a.character === character && !a.reversed && (before === null || a.at < before || (a.at === before && a.id < cursor!.beforeId)))
+      .sort((x, y) => y.at - x.at || (x.id < y.id ? 1 : x.id > y.id ? -1 : 0));
+    return {
+      awards: all.slice(0, PAGE).map((a): TrophyItem => ({ ...shownOf(a), line: a.line ?? kindOf(a.trophy)!.line, at: iso(a.at), by: givenBy(a.by), season: a.season, move: moveOf(a), shown: characters.get(a.character)?.shown.includes(a.id) === true })),
+      more: all.length > PAGE,
+    };
+  }
+
+  /** `belt_lineage` (0206, 0211): a page of reigns, newest first, from the cursor (the last reign's `began` and award). */
+  function beltLineage(trophy: string, cursor?: BeltCursor): Answer<BeltPage> {
+    const k = kindOf(trophy);
+    if (!k) return refuse(`there is no trophy "${trophy}"`);
+    if (!k.belt) return refuse(`"${trophy}" is not a belt`);
+    const line = standing(trophy).sort((x, y) => x.at - y.at || (x.id < y.id ? -1 : 1));
+    const before = cursor ? Date.parse(cursor.before) : null;
+    const newest = line.map((a, i) => ({ a, ended: line[i + 1] ? iso(line[i + 1]!.at) : null })).reverse()
+      .filter(({ a }) => before === null || a.at < before || (a.at === before && a.id < cursor!.beforeId));
+    return ok({
+      reigns: newest.slice(0, REIGNS_PAGE).map(({ a, ended }): BeltReign => ({ award: a.id, character: a.character, name: characters.get(a.character)?.name ?? '', began: iso(a.at), ended, by: givenBy(a.by) })),
+      more: newest.length > REIGNS_PAGE,
+    });
+  }
+
+  /** `show_trophies` (0206): the whole set replaces the one before. */
+  function showTrophies(character: Id, chosen: readonly Id[]): Answer<{ shown: number }> {
+    const c = acting(character);
+    if (isRefusal(c)) return c;
+    if (!Array.isArray(chosen)) return refuse('the awards shown are a list');
+    const most = cosmetics().trophies.shownMost;
+    if (chosen.length > most) return refuse(`${chosen.length} trophies are shown; at most ${most}`);
+    if (new Set(chosen).size !== chosen.length) return refuse('a trophy is shown once');
+    for (const id of chosen) {
+      const a = awards.find((x) => x.id === id);
+      if (!a || a.character !== character) return refuse('that trophy is not this character\'s');
+      if (a.reversed) return refuse('that trophy has been taken back');
+    }
+    c.shown = [...chosen];
+    return ok({ shown: chosen.length });
+  }
+
+  /** The weighted pick `draw_by_rarity` makes: a rarity by its weight, then one of that rarity's keys, from the fake's own random. */
+  function drawByRarity(pool: readonly { key: string; rarity?: Rarity }[], weights: Readonly<Partial<Record<Rarity, number>>>): { key: string; rarity: Rarity } | null {
+    const live = RARITIES.filter((r) => (weights[r] ?? 0) > 0 && pool.some((x) => x.rarity === r));
+    const total = live.reduce((n, r) => n + weights[r]!, 0);
+    if (total === 0) return null;
+    let at = random() * total;
+    const rarity = live.find((r) => (at -= weights[r]!) < 0) ?? live[live.length - 1]!;
+    const keys = pool.filter((x) => x.rarity === rarity);
+    return { key: keys[Math.floor(random() * keys.length)]!.key, rarity };
+  }
+
+  /** `random_event` (0207): null inside the window, at the day's most, or on a draw of nothing; a found item is the account's at once. */
+  function randomEvent(character: Id): Answer<RandomEvent | null> {
+    const c = acting(character);
+    if (isRefusal(c)) return c;
+    const account = me()!;
+    const cfg = cosmetics().events;
+    if (account.rolledAt !== null && account.rolledAt > now() - cfg.windowMinutes * MINUTE) return ok(null);
+    if (account.eventsAt.filter((t) => t > now() - DAY).length >= cfg.dayMost) return ok(null);
+    /* Nothing scripted and the odds not turned on (`Seed.eventsOn`): the roll finds nothing and uses nothing up. */
+    if (scripted.length === 0 && !weightedEvents) return ok(null);
+    account.rolledAt = now();
+    let outcome: RandomEvent['outcome'] | 'none';
+    let item: string | null = null;
+    let rarity: Rarity | null = null;
+    let lineKey: string | null = null;
+    const next = scripted.shift();
+    if (next === null) return ok(null);
+    if (next !== undefined) {
+      outcome = next.outcome;
+      item = next.item ?? null;
+      rarity = (outcome === 'gear' ? instance.gear.find((g) => g.key === item)?.rarity : outcome === 'card' ? instance.cards.find((k) => k.key === item)?.rarity : null) ?? null;
+      lineKey = next.line ?? null;
+    } else {
+      const o = { ...cfg.outcomes, none: cfg.outcomes.none ?? 0 };
+      const total = o.line + o.gear + o.card + o.none;
+      let at = random() * total;
+      outcome = (['line', 'gear', 'card', 'none'] as const).find((k) => (at -= o[k]) < 0 && o[k] > 0) ?? 'none';
+      if (outcome === 'none') return ok(null);
+      if (outcome !== 'line') {
+        const drawn = outcome === 'gear' ? drawByRarity(instance.gear, cfg.gearRarity) : drawByRarity(instance.cards.map((k) => ({ key: k.key, rarity: k.rarity })), cfg.cardRarity);
+        if (!drawn) return ok(null);
+        item = drawn.key;
+        rarity = drawn.rarity;
+      }
+      const lines = instance.events.lines.filter((l) => l.outcome === outcome).map((l) => l.key).sort();
+      lineKey = lines.length > 0 ? lines[Math.floor(random() * lines.length)]! : null;
+    }
+    if (outcome === 'gear' && item) account.gear[item] = (account.gear[item] ?? 0) + 1;
+    if (outcome === 'card' && item) account.cards[item] = (account.cards[item] ?? 0) + 1;
+    account.eventsAt.push(now());
+    /* The line is its text with `{item}` still in it, which the dialog fills; a key the instance does not have says nothing. */
+    const said = lineKey === null ? undefined : instance.events.lines.find((l) => l.key === lineKey);
+    const event = uuid();
+    cosmeticEvents.push({ account: account.id, ms: now(), row: { ...NO_COSMETIC, kind: 'found', id: event, at: iso(now()), character, outcome, item, text: said?.text ?? null } });
+    return ok({ event, outcome, item, rarity, line: said?.text ?? null, ...(said ? { lineKey: said.key } : {}), character });
+  }
+
+  /** The admin's hand over gear and trophies (0205, 0206): the words are `only_admins`'s and each function's own. */
+  const adminOnly = (doing: string): Refusal | null => (me()?.admin ? null : refuse(`only an admin ${doing}`));
+  /** award_trophy's checks and its row, once an admin is known to be the caller. */
+  const awardByAdmin = (trophy: string, character: Id, line?: string): Answer<{ readonly award: Id }> => {
+    if (!kindOf(trophy)) return refuse(`there is no trophy "${trophy}"`);
+    const said = lineWords(line);
+    if (typeof said === 'object' && said !== null) return said;
+    const c = characters.get(character);
+    if (!c) return refuse('there is no such character');
+    if (c.staff) return refuse('a staff character is never given a trophy');
+    if (c.debutedAt === null) return refuse('that character has not debuted');
+    const id = uuid();
+    awards.push({ id, trophy, character, at: now(), by: 'admin', line: said, season: null, move: null, reversed: false });
+    return ok({ award: id });
+  };
+  const lineWords = (said: string | null | undefined): string | Refusal | null => {
+    const t = said == null ? null : said.trim() === '' ? null : said.trim();
+    return t !== null && [...t].length > 200 ? refuse('a trophy\'s words are at most 200 characters') : t;
+  };
+
   function addAccount(email: string, createdAt = now()): AccountRec {
     const a: AccountRec = {
-      id: uuid(), email, createdAt, admin: false, prefs: DEFAULT_PREFERENCES, wallet: 0, cards: {}, reading: new Map(), follows: new Map(),
+      id: uuid(), email, createdAt, admin: false, prefs: DEFAULT_PREFERENCES, wallet: 0, cards: {}, gear: {}, rolledAt: null, eventsAt: [], reading: new Map(), follows: new Map(),
       estimate: { entries: [], lines: [] }, asked: null,
     };
     accounts.set(a.id, a);
@@ -1967,12 +2469,16 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   }
 
   /* ------------------------------------------------------------------ the api ---- */
-  /** The season's standings, every debuted character ranked, as standings_page pages them: by standing, ties sharing a place, then by name. In memory, so the whole of it. */
+  /**
+   * The season's standings, every debuted character ranked, as standings_page pages them: by standing, ties sharing a place, then by name. A place is dense (#453): one
+   * more than the distinct standings above, so a tie never costs the next standing its place. Only a standing above zero is placed: 0 or below is null (#492).
+   * In memory, so the whole of it.
+   */
   const ranking = (): Standing[] => {
     const listed = [...characters.values()].filter((c) => c.debutedAt !== null).map((c) => ({ character: c.id, name: c.name, standing: standingOf.get(c.id) ?? 0 }));
     return listed
-      .map((s): Standing => ({ ...s, place: 1 + listed.filter((o) => o.standing > s.standing).length }))
-      .sort((a, b) => a.place - b.place || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+      .map((s): Standing => ({ ...s, place: s.standing > 0 ? 1 + new Set(listed.filter((o) => o.standing > s.standing).map((o) => o.standing)).size : null }))
+      .sort((a, b) => b.standing - a.standing || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   };
   /** A place's presence box (presence_box, 0093): the characters present within the window, longest there first. It marks no one present. */
   function presenceAt(where: PresencePlace): Presence {
@@ -2032,6 +2538,37 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const charges = (visit?.payload.charges ?? []) as { rule?: string; rule_number?: number | null }[];
     const found = charges.find((c) => c.rule_number === (inf.payload.rule_number ?? null) && c.rule)?.rule;
     return found ?? (typeof inf.payload.rule_number === 'number' ? `Rule ${inf.payload.rule_number}` : 'the board\'s premise');
+  }
+  /**
+   * `my_cosmetic_log` (0213): the finds and gear grants of the account, and the awards, takings back and passed belts of its own characters, newest first. A belt passes from
+   * the holder to the next award of its kind to another character, a line that stays when that award is taken back, and a belt taken back from the taker is a `beltBack` line for the holder before.
+   */
+  function cosmeticLogOf(account: Id | undefined, fits: (ms: number) => boolean, cap: <T>(rows: T[]) => T[]): LogCosmetic[] {
+    if (account === undefined) return [];
+    const owned = (id: Id) => characters.get(id)?.owner === account;
+    const bossName = () => [...characters.values()].find((c) => c.staff?.office === 'boss' && c.debutedAt !== null && c.retiredAt === null)?.name ?? null;
+    const place = (trophy: string): number | null => { const i = instance.trophies.seasonPlaces.indexOf(trophy); return i < 0 ? null : i + 1; };
+    const rows: { ms: number; row: LogCosmetic }[] = cosmeticEvents.filter((e) => e.account === account && fits(e.ms)).map((e) => ({ ms: e.ms, row: e.row }));
+    for (const a of awards) {
+      if (!owned(a.character)) continue;
+      const kind = kindOf(a.trophy)!;
+      const given = { trophy: a.trophy, name: kind.name, by: a.by, byName: a.by === 'boss' ? bossName() : null, season: a.season, place: a.by === 'season' ? place(a.trophy) : null };
+      if (fits(a.at)) rows.push({ ms: a.at, row: { ...NO_COSMETIC, ...given, kind: 'awarded', id: a.id, at: iso(a.at), character: a.character, line: a.line } });
+      if (a.reversed && a.reversedAt !== undefined && fits(a.reversedAt)) rows.push({ ms: a.reversedAt, row: { ...NO_COSMETIC, trophy: a.trophy, name: kind.name, kind: 'reversed', id: a.id, at: iso(a.reversedAt), character: a.character } });
+      /* A belt passes to the next award of its kind, standing or not (it happened); the holder before it is the latest award not yet taken back when it came. */
+      const next = kind.belt ? awards.filter((x) => x.trophy === a.trophy && x.at > a.at).sort((x, y) => x.at - y.at)[0] : undefined;
+      const heldAt = (ms: number) => !(a.reversed && a.reversedAt !== undefined && a.reversedAt <= ms);
+      const latestBefore = (ms: number, x: typeof a) => !awards.some((y) => y.trophy === a.trophy && y.at > a.at && y.at < x.at && (!(y.reversed && y.reversedAt !== undefined && y.reversedAt <= ms)));
+      if (next && next.character !== a.character && heldAt(next.at) && latestBefore(next.at, next) && fits(next.at)) {
+        rows.push({ ms: next.at, row: { ...NO_COSMETIC, ...given, by: next.by, byName: next.by === 'boss' ? bossName() : null, season: null, place: null, kind: 'lost', id: next.id, at: iso(next.at), character: a.character, toName: characters.get(next.character)?.name ?? null } });
+      }
+      /* When that next award is taken back and no later one stands, the belt is back with this holder. */
+      if (next && next.reversed && next.reversedAt !== undefined && next.character !== a.character && heldAt(next.reversedAt) && latestBefore(next.reversedAt, next) && fits(next.reversedAt)
+        && !awards.some((y) => y.trophy === a.trophy && y.at > next.at && !(y.reversed && y.reversedAt !== undefined && y.reversedAt <= next.reversedAt!) && y.at <= next.reversedAt!)) {
+        rows.push({ ms: next.reversedAt, row: { ...NO_COSMETIC, trophy: a.trophy, name: kind.name, kind: 'beltBack', id: next.id, at: iso(next.reversedAt), character: a.character, toName: characters.get(next.character)?.name ?? null } });
+      }
+    }
+    return cap(rows.sort((x, y) => y.ms - x.ms).map((r) => r.row));
   }
   /**
    * The log's Mod Bots sources as the views read them (my_infractions, my_bans, my_reports, my_appeals, 0111): the rows of the account's own characters, each as the view says
@@ -2329,7 +2866,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     setAdminContact: (links) => (me()?.admin ? writeContact(links) : refuse('only an admin sets how players reach the admins')),
     settings: () => screen,
 
-    boards: () => boards.map((b): BoardSummary => {
+    boards: () => boards.filter((b) => !isClosed(b)).map((b): BoardSummary => {
       const mine = [...threads.values()].filter((t) => t.board === b.id && listed(t)).map(summary);
       const latest = mine.sort((x, y) => Date.parse(y.lastAt) - Date.parse(x.lastAt) || y.id.localeCompare(x.id))[0];
       return { ...boardNow(b), threadCount: mine.length, lastAt: latest?.lastAt ?? null, lastCharacter: latest?.lastCharacter ?? null, lastThread: latest?.id ?? null, lastTitle: latest?.title ?? null };
@@ -2338,6 +2875,13 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const found = boards.find((b) => b.slug === slugOrId || b.id === slugOrId);
       return found ? boardNow(found) : null;
     },
+    moveThreadNames: (items) => Object.fromEntries(items.flatMap((i) => {
+      const t = threads.get(i.thread);
+      if (!t) return [];
+      /* A landed move left the board it was taken from (the latest departure of the thread); a waiting one leaves the board the thread is on. */
+      const left = i.act === null ? t.board : departures.filter((d) => d.thread === i.thread).at(-1)?.origin ?? null;
+      return [[i.act ?? i.thread, { title: t.title, left }] as const];
+    })),
     boardNames: () => boards.map((b): BoardName => ({ id: b.id, slug: b.slug, name: boardNow(b).name, was: b.name })),
     moveNotice(id) {
       const a = acts.get(id);
@@ -2430,11 +2974,14 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const demandFor = moveDemand;
       const waiting = queue.filter((q) => q.landed === null && q.heldAt === null && !q.refusal).sort((a, b) => a.goLiveAt - b.goLiveAt || a.id - b.id).map((q): QueuedMove => q.successor !== undefined ? ({
         id: q.id, staff: q.staff, boss: nameOf(q.staff), bossPronouns: pronounsOf(q.staff), kind: 'nameSuccessor', params: { boss: q.successor }, demand: null, why: q.why, goLiveAt: iso(q.goLiveAt),
-        expiresAt: null, structural: true, boardName: null, failedAt: null, failure: null, replacedAt: q.replacedAt === undefined ? null : iso(q.replacedAt), adminDescription: null,
+        expiresAt: null, structural: true, boardName: null, failedAt: null, failure: null, replacedAt: q.replacedAt === undefined ? null : iso(q.replacedAt), adminDescription: null, waitsFor: [], ...bundleOf(q),
       }) : ({
-        id: q.id, staff: q.staff, boss: nameOf(q.staff), bossPronouns: pronounsOf(q.staff), kind: 'renameBoard', params: paramsOf(q.move), demand: demandFor(q.move), why: q.why, goLiveAt: iso(q.goLiveAt),
-        expiresAt: q.move.expiresAt === undefined ? null : iso(q.move.expiresAt), structural: true, boardName: boards.find((b) => b.slug === q.move.board) ? boardNow(boards.find((b) => b.slug === q.move.board)!).name : null,
-        failedAt: q.failure ? iso(q.failure.at) : null, failure: q.failure?.text ?? null, replacedAt: null, adminDescription: q.adminDescription ?? null,
+        id: q.id, staff: q.staff, boss: nameOf(q.staff), bossPronouns: pronounsOf(q.staff), kind: q.lasting?.kind ?? 'renameBoard', params: q.lasting?.params ?? paramsOf(q.move), demand: q.lasting ? null : demandFor(q.move), why: q.why, goLiveAt: iso(q.goLiveAt),
+        expiresAt: q.lasting || q.move.expiresAt === undefined ? null : iso(q.move.expiresAt), structural: q.lasting?.kind !== 'moveThread', boardName: boards.find((b) => b.slug === q.move.board) ? boardNow(boards.find((b) => b.slug === q.move.board)!).name : null,
+        failedAt: q.failure ? iso(q.failure.at) : null, failure: q.failure?.text ?? null, replacedAt: null, adminDescription: q.adminDescription ?? null, ...bundleOf(q),
+        waitsFor: queue.filter((d) => d !== q && d.landed === null && d.heldAt === null && !d.refusal
+          && ((q.waitsOn?.includes(d.id) ?? false) || (q.bundle !== undefined && d.bundle?.id === q.bundle.id && !!d.bundle?.role && ['board', 'into', 'fallback'].some((k) => (q.lasting?.params[k] as { role?: unknown } | undefined)?.role === d.bundle!.role))))
+          .map((d) => ({ id: d.id, role: d.bundle?.role ?? null, kind: d.lasting?.kind ?? 'renameBoard', name: typeof d.lasting?.params['name'] === 'string' ? d.lasting.params['name'] : null })),
       }));
       const rowOf = (a: ActRec) => {
         const q = queue.find((x) => x.landed === a.id);
@@ -2445,7 +2992,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         const { q, staff, boss, bossPronouns } = rowOf(a);
         return {
           act: a.id, id: q?.id ?? null, staff, boss, bossPronouns, kind: String(a.payload['kind']), params: (a.payload['params'] ?? {}) as Record<string, unknown>, demand: demandOf(a.id),
-          why: q?.why ?? null, landedAt: iso(a.at), expiresAt: typeof a.payload['expires_at'] === 'string' ? a.payload['expires_at'] : null, progress: toProgress(progressOf(a)),
+          why: q?.why ?? null, landedAt: iso(a.at), expiresAt: typeof a.payload['expires_at'] === 'string' ? a.payload['expires_at'] : null, progress: toProgress(progressOf(a)), ...bundleOf(q),
         };
       });
       const since = now() - 30 * DAY;
@@ -2453,21 +3000,21 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         ...[...moveEnds.entries()].filter(([, e]) => e.at >= since).map(([id, e]): MoveEnded => {
           const a = acts.get(id)!;
           const { q, staff, boss, bossPronouns } = rowOf(a);
-          return { how: e.why, by: e.by, at: iso(e.at), act: id, id: q?.id ?? null, staff, boss, bossPronouns, kind: String(a.payload['kind']), params: (a.payload['params'] ?? {}) as Record<string, unknown>, demand: demandOf(id), why: q?.why ?? null, landedAt: iso(a.at) };
+          return { how: e.why, by: e.by, at: iso(e.at), act: id, id: q?.id ?? null, staff, boss, bossPronouns, kind: String(a.payload['kind']), params: (a.payload['params'] ?? {}) as Record<string, unknown>, demand: demandOf(id), why: q?.why ?? null, landedAt: iso(a.at), ...bundleOf(q) };
         }),
         ...[...acts.values()].filter((e) => e.kind === 'card_end' && e.target !== null && e.at >= since).map((e): MoveEnded => {
           const play = acts.get(e.target!)!;
           return {
             how: 'reversed', by: 'admin', at: iso(e.at), act: play.id, id: null, staff: play.character ? characters.get(play.character)?.staff?.key ?? null : null,
             boss: play.character ? characters.get(play.character)?.name ?? null : null, bossPronouns: (play.character ? characters.get(play.character)?.pronouns : undefined) ?? settings.pronouns, kind: 'card', params: {}, demand: null, why: null, landedAt: iso(play.at),
-            card: instance.cards.find((c) => c.key === play.payload.card)?.name ?? String(play.payload.card ?? ''),
+            card: instance.cards.find((c) => c.key === play.payload.card)?.name ?? String(play.payload.card ?? ''), ...bundleOf(undefined),
           };
         }),
         ...queue.filter((q) => q.refusal && q.heldAt === null && q.refusal.at >= since).map((q): MoveEnded => ({
-          how: 'refused', by: 'tick', at: iso(q.refusal!.at), act: null, id: q.id, staff: q.staff, boss: nameOf(q.staff), bossPronouns: pronounsOf(q.staff), kind: 'renameBoard', params: paramsOf(q.move), demand: demandFor(q.move), why: q.why, landedAt: null, reason: q.refusal!.text,
+          how: 'refused', by: 'tick', at: iso(q.refusal!.at), act: null, id: q.id, staff: q.staff, boss: nameOf(q.staff), bossPronouns: pronounsOf(q.staff), kind: 'renameBoard', params: paramsOf(q.move), demand: demandFor(q.move), why: q.why, landedAt: null, reason: q.refusal!.text, ...bundleOf(q),
         })),
         ...queue.filter((q) => q.heldAt !== null && q.heldAt >= since).map((q): MoveEnded => ({
-          how: 'held', by: 'admin', at: iso(q.heldAt!), act: null, id: q.id, staff: q.staff, boss: nameOf(q.staff), bossPronouns: pronounsOf(q.staff), kind: 'renameBoard', params: paramsOf(q.move), demand: demandFor(q.move), why: q.why, landedAt: null,
+          how: 'held', by: 'admin', at: iso(q.heldAt!), act: null, id: q.id, staff: q.staff, boss: nameOf(q.staff), bossPronouns: pronounsOf(q.staff), kind: q.lasting?.kind ?? 'renameBoard', params: q.lasting?.params ?? paramsOf(q.move), demand: q.lasting ? null : demandFor(q.move), why: q.why, landedAt: null, ...bundleOf(q),
         })),
       ].sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
       /* The Mod Bots' cards in force: a face-up `card` Act of a staff character, from the last 30 days, not caught, not worn off, not ended. */
@@ -2501,7 +3048,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (q.landed !== null) return refuse('that move has already landed; reverse it instead');
       if (q.heldAt !== null) return refuse('that move is already held');
       q.heldAt = now();
-      return ok({ id, heldAt: iso(q.heldAt) });
+      /* What builds on it is held with it, at the same instant; the parts it builds on are left. */
+      const also = followers(q).filter((f) => f.landed === null && f.heldAt === null && !f.refusal);
+      for (const f of also) f.heldAt = q.heldAt;
+      return ok({ id, heldAt: iso(q.heldAt), heldAlso: also.map((f) => f.id) });
     },
     replaceSuccessor(id, boss) {
       if (!me()?.admin) return refuse('only an admin replaces a successor');
@@ -2554,7 +3104,22 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (moveEnds.has(act)) return refuse('that move has already ended');
       moveEnds.set(act, { why: 'reversed', by: 'admin', at: now() });
       const end = write({ character: null, kind: 'move_end', thread: a.thread, target: act, payload: { why: 'reversed', by: 'admin' } });
-      return ok({ act, endedBy: end.id });
+      /* What builds on it follows: a landed part is reversed with an end of its own, and a part still waiting is held. */
+      const root = queue.find((x) => x.landed === act);
+      const alsoEnded: Id[] = [];
+      const heldAlso: number[] = [];
+      for (const f of root ? followers(root) : []) {
+        if (f.landed !== null && !moveEnds.has(f.landed)) {
+          const fa = acts.get(f.landed)!;
+          moveEnds.set(f.landed, { why: 'reversed', by: 'admin', at: now() });
+          write({ character: null, kind: 'move_end', thread: fa.thread, target: f.landed, payload: { why: 'reversed', by: 'admin' } });
+          alsoEnded.push(f.landed);
+        } else if (f.landed === null && f.heldAt === null && !f.refusal) {
+          f.heldAt = now();
+          heldAlso.push(f.id);
+        }
+      }
+      return ok({ act, endedBy: end.id, alsoEnded, heldAlso });
     },
     reverseCard(play) {
       if (!me()?.admin) return refuse('only an admin ends a card');
@@ -2779,7 +3344,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
           .flatMap((x) => x.lines.filter((l) => l.account === account).map((l) => ({ settlement: x.id, startsAt: iso(x.startsAt), endsAt: iso(x.endsAt), sharesKept: x.sharesKept, character: l.character, reason: l.reason, amount: l.amount, ...(l.params ? { params: l.params } : {}) }))));
         const read = new Set(ledger.map((l) => l.settlement));
         const shares: ShareRow[] = settlements.filter((x) => read.has(x.id))
-          .flatMap((x) => x.lines.filter((l) => l.account === account).flatMap((l) => l.shares.map((sh) => ({ settlement: x.id, character: l.character, reason: l.reason, ...sh }))));
+          .flatMap((x) => x.lines.filter((l) => l.account === account).flatMap((l) => l.shares.map((sh) => ({ settlement: x.id, character: l.character, reason: l.reason, card: typeof l.params?.card === 'string' ? l.params.card : null, ...sh }))));
         /* my_posts_played_on: the plays other players landed on the player's posts, characters, and threads their characters started (0056).
            A board has no owner, so a board play is no one's row. */
         const reachOf = (a: ActRec): 'post' | 'character' | 'thread' | 'board' => (a.payload.reach ?? 'post') as 'post' | 'character' | 'thread' | 'board';
@@ -2798,12 +3363,18 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         const onMine = [...acts.values()].filter((a) => a.kind === 'card' && a.target !== null && a.character !== null
           && targetOwner(a) === account && characters.get(a.character)?.owner !== account);
         return {
+          cosmetics: cosmeticLogOf(account, fits, cap),
           ledger,
           shares,
           wallet: newest(walletEvents.filter((e) => e.account === account && fits(e.ms))).map((e) => e.event),
           cards: newest([...cardLedger, ...endedLedger()].filter((e) => e.account === account && fits(e.ms))).map((e) => e.event),
           packs: newest(packLedger.filter((e) => e.account === account && fits(e.ms))).map((e) => e.event),
           playsOnMine: newest(onMine.filter((a) => fits(a.at)).map((a) => ({ ms: a.at, order: a.order, a }))).map(({ a }) => ({ play: a.id, post: a.target!, at: iso(a.at), reach: reachOf(a) as 'post' | 'character' | 'thread', targetName: targetName(a), targetCharacter: targetCharacter(a) })),
+          /* my_draws and my_walls_drawn_on (0317): what was drawn on surfaces by the player's characters and washed off them, and what was drawn on and washed off the player's own posts. */
+          ...((surfaces) => ({
+            draws: newest(surfaces.draws.filter((x) => fits(x.ms))).map(({ r }) => r),
+            wallsDrawn: newest(surfaces.walls.filter((x) => fits(x.ms))).map(({ r }) => r),
+          }))(account === undefined ? { draws: [], walls: [] } : surfaceLog(account)),
           /* my_posts_written_on (0149): each text or failure of a card that writes on a post one of the player's characters wrote, whoever played it. */
           writes: newest(texts.flatMap((t) => {
             const play = acts.get(t.play);
@@ -2851,6 +3422,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     myReleases: (plays) => plays.filter((play) => me() !== null && releases.has(`${me()!.id} ${play}`)),
     releaseEffect,
     saveEffect,
+    draw: (play, character, input) => writeSurface('draw', play, character, input),
+    wash: (play, character, input) => writeSurface('wash', play, character, input),
+    surfaceActs,
     buyCard: lossy(buyCard),
     buyPack: lossy(buyPack),
     machine: () => machine(),
@@ -3128,6 +3702,15 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     boardPage(slug, page, effectCards): BoardPage | null {
       const board = core.board(slug);
       if (!board) return null;
+      /* A closed board lists no thread and no stub, and says where its threads went (board_page, 0326). */
+      const gone = closedBoards.get(board.id);
+      if (gone) {
+        const ref = (id: Id | null): BoardRef | null => { const b = boards.find((x) => x.id === id); return b ? { id: b.id, slug: b.slug, name: boardNow(b).name } : null; };
+        return {
+          board, closed: { mergedInto: ref(gone.mergedInto), fallback: ref(gone.fallback), goesTo: ref(openEnd(board.id)) }, stubs: [], total: 0, page: 1, threads: [], pins: [], banner: [], states: {}, releases: [], tallies: {}, mine: [],
+          reading: {}, views: {}, characters: [], presence: presenceAt({ kind: 'board', board: board.id }), unread: core.alertsUnread(),
+        };
+      }
       const THREADS = 20; // THREADS_PER_PAGE (engine/ui/board/Board.tsx), which the SQL's board_page also holds.
       const want = Math.max(1, page);
       let listed = core.threads(board.id, { offset: (want - 1) * THREADS, limit: THREADS });
@@ -3140,8 +3723,17 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const threads = [...pins.map((p) => p.thread), ...listed.threads];
       const ids = [...new Set(threads.map((t) => t.id))];
       const people = [...new Set([...threads.flatMap((t) => [t.firstCharacter, t.lastCharacter]), ...marked.map((a) => a.character)].filter((c): c is Id => c !== null))];
+      /* The threads moved away within movedStubDays, newest move first, each once (the latest move of it away from here) and only if it is not back: the stub says where it is now. */
+      const since = now() - settings.movedStubDays * 86_400_000;
+      const stubs = shown !== 1 ? [] : [...departures].filter((d) => d.origin === board.id && d.at >= since).sort((x, y) => y.at - x.at)
+        .filter((d, i, all) => all.findIndex((e) => e.thread === d.thread) === i && core.thread(d.thread)!.board !== board.id)
+        .map((d): BoardStub => {
+          const moved = core.thread(d.thread)!;
+          const here = boards.find((b) => b.id === moved.board)!;
+          return { thread: d.thread, title: moved.title, movedTo: { id: here.id, slug: here.slug, name: boardNow(here).name }, movedAt: iso(d.at) };
+        });
       return {
-        board, total: listed.total, page: shown, threads: listed.threads, pins, banner, states: core.effectStates(wanted), releases: core.myReleases(wanted),
+        board, closed: null, stubs, total: listed.total, page: shown, threads: listed.threads, pins, banner, states: core.effectStates(wanted), releases: core.myReleases(wanted),
         tallies: core.tallies(marked.map((a) => a.id)), mine: core.myReactions(marked.map((a) => a.id)), reading: core.reading(ids), views: core.viewCounts(ids),
         characters: core.characters(people), presence: presenceAt({ kind: 'board', board: board.id }), unread: core.alertsUnread(),
       };
@@ -3172,7 +3764,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
           character, posts: stats[character.id]?.posts ?? 0, standing: standings[character.id] ?? 0,
           reveals: reveals.filter((r) => r.character === character.id), turns: turns.filter((t) => t.character === character.id),
         })),
-        plays, above, faces: core.myFaceDown(played.filter((a) => a.kind === 'set').map((a) => a.id)), states: core.effectStates(wanted), releases: core.myReleases(wanted),
+        plays, surfaces: surfacesOn(plays), above, faces: core.myFaceDown(played.filter((a) => a.kind === 'set').map((a) => a.id)), states: core.effectStates(wanted), releases: core.myReleases(wanted),
         visits,
         tallies: core.tallies(ids), mine: core.myReactions(ids), spun: core.spunFromMany(ids, SPUN_FROM_MAX), reading: core.reading([thread]),
         board: core.board(summary.board), following: core.following(thread), presence: presenceAt({ kind: 'thread', thread }), unread: core.alertsUnread(),
@@ -3306,6 +3898,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (p.mode !== undefined && p.mode !== 'system' && p.mode !== 'light' && p.mode !== 'dark') return refuse('the mode follows the device, or is light or dark');
       if (p.tilt !== undefined && p.tilt !== 'off' && p.tilt !== 'on') return refuse('tilt is off or on');
       if (p.effects !== undefined && p.effects !== 'standard' && p.effects !== 'bright') return refuse('effects are standard or bright');
+      if (p.gameSound !== undefined && p.gameSound !== 'off' && p.gameSound !== 'on') return refuse('game sounds are off or on');
+      if (p.interfaceSound !== undefined && p.interfaceSound !== 'off' && p.interfaceSound !== 'on') return refuse('interface sounds are off or on');
+      for (const v of [p.gameVolume, p.interfaceVolume]) if (v !== undefined && !(Number.isInteger(v) && v >= 0 && v <= 100 && v % 5 === 0)) return refuse('a volume is 0 to 100, in steps of 5');
       /* As set_preferences (0064) keeps the toasts: the kinds of alert there are, each once in the order first named, null for the defaults. */
       let toasts = account.prefs.toasts;
       if (p.toasts === null) toasts = null;
@@ -3479,7 +4074,108 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       c.square = `https://avatars.fake.test/${c.id}-${n}-square.webp`;
       if (upload.portrait !== null) { c.portrait = `https://avatars.fake.test/${c.id}-${n}-portrait.webp`; c.portraitFrame = upload.portraitFrame; }
       c.squareFrame = upload.squareFrame;
+      /* A new portrait takes its outfit off: the pieces were placed over the old picture (set_avatar, 0205). */
+      if (upload.portrait !== null) c.outfit = [];
       return ok(publicCharacter(c));
+    },
+
+    wardrobe: () => wardrobe(),
+    setOutfit: lossy(setOutfit),
+    trophies: (character, cursor) => trophiesOf(character, cursor),
+    beltLineage: (trophy, cursor) => beltLineage(trophy, cursor),
+    showTrophies: lossy(showTrophies),
+    randomEvent: lossy(randomEvent),
+    grantGear(character, gear, copies) {
+      const no = adminOnly('grants gear');
+      if (no) return no;
+      if (!Number.isInteger(copies) || copies < 1 || copies > 100) return refuse('a grant is 1 to 100 copies');
+      if (!instance.gear.some((g) => g.key === gear)) return refuse(`there is no gear "${gear}"`);
+      const c = characters.get(character);
+      if (!c) return refuse('there is no such character');
+      const owner = accounts.get(c.owner)!;
+      owner.gear[gear] = (owner.gear[gear] ?? 0) + copies;
+      cosmeticEvents.push({ account: owner.id, ms: now(), row: { ...NO_COSMETIC, kind: 'granted', id: uuid(), at: iso(now()), character, item: gear, copies } });
+      return ok({ granted: copies });
+    },
+    awardTrophy(trophy, character, line) {
+      const no = adminOnly('gives a trophy');
+      if (no) return no;
+      return awardByAdmin(trophy, character, line);
+    },
+    reverseAward(award) {
+      const no = adminOnly('takes a trophy back');
+      if (no) return no;
+      const a = awards.find((x) => x.id === award);
+      if (!a) return refuse('there is no such trophy');
+      if (a.reversed) return refuse('that trophy was already taken back');
+      a.reversed = true;
+      a.reversedAt = now();
+      for (const c of characters.values()) c.shown = c.shown.filter((id) => id !== award);
+      return ok({ reversed: award });
+    },
+    makeTrophy(name, line, art, belt) {
+      const no = adminOnly('makes a trophy');
+      if (no) return no;
+      const n = name.trim();
+      if ([...n].length < 1 || [...n].length > 60) return refuse('a trophy\'s name is 1 to 60 characters');
+      const said = lineWords(line);
+      if (typeof said === 'object' && said !== null) return said;
+      const key = `made-${uuid()}`;
+      madeKinds.push({ key, name: n, line: said, belt, art: art === null ? null : `${key}.webp` });
+      return ok({ trophy: key });
+    },
+    trophyAwardFailures(cursor) {
+      const no = adminOnly('reads the trophies that could not be given');
+      if (no) return no;
+      const view = (f: (typeof awardFailures)[number]): TrophyAwardFailure => {
+        const characters = f.characters === null ? null : f.characters.map((c) => ({ ...c, given: failureGiven.has(`${f.id}:${c.id}`) }));
+        return { ...f, characters, open: characters === null || characters.length === 0 || characters.some((c) => !c.given) };
+      };
+      /* The unresolved first, each group newest first; the cursor continues from the last row's open, instant and id. */
+      const order = (x: TrophyAwardFailure, y: TrophyAwardFailure): number => Number(y.open) - Number(x.open) || (x.at < y.at ? 1 : x.at > y.at ? -1 : x.id < y.id ? 1 : x.id > y.id ? -1 : 0);
+      const all = awardFailures.map(view).sort(order)
+        .filter((f) => !cursor || order({ ...f, open: cursor.beforeOpen, at: cursor.before, id: cursor.beforeId }, f) < 0);
+      return ok({ failures: all.slice(0, TROPHY_FAILURES_PAGE), more: all.length > TROPHY_FAILURES_PAGE });
+    },
+    giveFailedAward(failure, character) {
+      const no = adminOnly('gives an award that could not be written');
+      if (no) return no;
+      const f = awardFailures.find((x) => x.id === failure);
+      if (!f) return refuse('there is no such failed award');
+      if (failureGiven.has(`${failure}:${character}`)) return refuse('that award was already given to that character');
+      if (f.characters === null) return refuse('the characters that award was for cannot be read now; give it from Award a trophy');
+      const c = f.characters.find((x) => x.id === character);
+      const key = f.trophy ?? (c?.place === undefined ? undefined : instance.trophies.seasonPlaces[c.place - 1]);
+      if (!c || key === undefined) return refuse('that character was not one the failed award was for');
+      const done = awardByAdmin(key, character);
+      if (done.ok) failureGiven.add(`${failure}:${character}`);
+      return done;
+    },
+    adminAwards(cursor) {
+      const no = adminOnly('reads the trophies given');
+      if (no) return no;
+      const before = cursor ? Date.parse(cursor.before) : null;
+      const all = [...awards].filter((a) => before === null || a.at < before || (a.at === before && a.id < cursor!.beforeId))
+        .sort((x, y) => y.at - x.at || (x.id < y.id ? 1 : x.id > y.id ? -1 : 0));
+      const kinds = [...instance.trophies.kinds.map((k) => k.key), ...madeKinds.map((k) => k.key)].map((key): AdminKind => {
+        const k = kindOf(key)!;
+        return { key, name: k.name, belt: k.belt, made: key.startsWith('made-'), art: k.art };
+      }).sort((x, y) => (x.name < y.name ? -1 : x.name > y.name ? 1 : 0));
+      return ok({
+        awards: all.slice(0, ADMIN_AWARDS_PAGE).map((a): AdminAward => {
+          const k = kindOf(a.trophy)!;
+          return { award: a.id, trophy: a.trophy, name: k.name, belt: k.belt, art: k.art, character: a.character, to: characters.get(a.character)?.name ?? '', by: givenBy(a.by), at: iso(a.at), line: a.line, reversed: a.reversed };
+        }),
+        kinds,
+        more: all.length > ADMIN_AWARDS_PAGE,
+      });
+    },
+    adminCharacterNamed(name) {
+      const no = adminOnly('looks a character up by name');
+      if (no) return no;
+      const want = name.trim().toLowerCase();
+      const c = [...characters.values()].find((x) => !x.staff && x.name.toLowerCase() === want);
+      return ok(c ? { id: c.id, name: c.name } : null);
     },
 
     subscribeThread(thread, listener) {
@@ -3652,6 +4348,31 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (!accounts.has(account)) throw new Error(`no such account ${account}`);
       return addCharacter(account, name, cls, { debuted: o?.debuted ?? true, loudness: o?.loudness ?? 'announced', retired: o?.retired, at: o?.at, ...(o?.pronouns === undefined ? {} : { pronouns: o.pronouns }) }).id;
     },
+    /** Copies of gear the account holds (`gear_ledger`): the state a seed starts from, past the Random Events and grants that would have made it. */
+    gear(account, held) {
+      const a = accounts.get(account);
+      if (!a) throw new Error(`no such account ${account}`);
+      for (const [gear, n] of Object.entries(held)) {
+        if (!instance.gear.some((g) => g.key === gear)) throw new Error(`no gear ${gear}`);
+        a.gear[gear] = (a.gear[gear] ?? 0) + n;
+      }
+    },
+    /** An award a character stands with, dated `at` (else now): what the season, a met demand or the Boss would have written. */
+    award(character, trophy, o) {
+      if (!characters.has(character)) throw new Error(`no such character ${character}`);
+      if (!kindOf(trophy)) throw new Error(`no trophy ${trophy}`);
+      const id = uuid();
+      awards.push({ id, trophy, character, at: o?.at ?? now(), by: o?.by ?? 'season', line: o?.line ?? null, season: o?.by === undefined || o.by === 'season' ? 1 : null, move: o?.move ?? null, reversed: false });
+      return id;
+    },
+    /** The outcome of the next Random Event roll that comes past the window and the day's most, in place of the draw; null is a roll that finds nothing. */
+    nextEvent(event) { scripted.push(event); },
+    eventsOn(on = true) { weightedEvents = on; },
+    awardFailure(failure) {
+      const id = uuid();
+      awardFailures.push({ id, ...failure });
+      return id;
+    },
     retire(character) {
       const c = characters.get(character)!;
       c.retiredAt = now();
@@ -3722,7 +4443,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     handover(h) {
       if (h.outgoing !== null && h.outgoing !== undefined) staffId(h.outgoing);
       staffId(h.boss);
-      handovers.push({ outgoing: h.outgoing ?? null, boss: h.boss, at: h.at ?? now(), how: h.how ?? 'rotation', bossWas: h.bossWas ?? null, outgoingOffice: h.outgoingOffice ?? 'member' });
+      handovers.push({ outgoing: h.outgoing ?? null, boss: h.boss, at: h.at ?? now(), how: h.how ?? 'rotation', bossWas: h.bossWas ?? null, outgoingOffice: h.outgoingOffice ?? 'member',
+        note: h.note ?? null, facts: { created: [], merged: [], closed: [], beats: [], moves: [], busiest: [], quietest: [], ...h.facts } });
       /* A change of Boss is two items of news, as news_announce (0063) queues them: the one who left, where there was one, and the one who arrived. */
       const at = iso(h.at ?? now());
       if (h.outgoing != null && h.outgoing !== h.boss) {
@@ -3818,7 +4540,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         id: uuid(), owner: '', name, createdAt: at, debutedAt: o?.debuted === false ? null : at, retiredAt: null, loudness: 'silent', history: [{ cls: '', at }], pending: null, presenceHidden: false,
         title: o?.title ?? '', signature: o?.signature ?? '', pipStyle: options.instance.pipStyles[0]?.key ?? 'default',
         pronouns: o?.pronouns ?? options.instance.system.roster.find((r) => r.key === key)?.pronouns ?? settings.pronouns,
-        square: null, portrait: null, squareFrame: null, portraitFrame: null, staff: { key, office },
+        square: null, portrait: null, squareFrame: null, portraitFrame: null, portraitTallness: null, outfit: [], shown: [], staff: { key, office },
       };
       characters.set(c.id, c);
       return c.id;
@@ -3840,6 +4562,13 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const c = characters.get(staffId(staff));
       if (!c?.staff) throw new Error(`no staff member ${staff}`);
       c.staff = { ...c.staff, office };
+    },
+    trophyMove(staff, m) {
+      const at = m.at ?? now();
+      return write({
+        character: staffId(staff), kind: 'move', thread: announcements(),
+        payload: { kind: 'awardTrophy', office: 'boss', body: m.body ?? 'Behold, a trophy.', params: { character: m.character, trophy: m.trophy }, expires_at: iso(at + 3 * DAY) }, at,
+      }).id;
     },
     groupMove(staff, m) {
       const at = m.at ?? now();
@@ -3870,9 +4599,12 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const demand = moveDemand(m);
       const id = write({
         character: boss, kind: 'move', thread: announcements(),
-        payload: { kind: 'renameBoard', body: m.body ?? 'This board has a new name.', params: moveParams(m), ...(demand ? { demand } : {}), expires_at: iso(m.expiresAt ?? at + 3 * DAY) }, at,
+        payload: m.lasting
+          ? { kind: m.lasting.kind, body: m.body ?? 'It is done.', params: lastingParams(m.lasting.params) }
+          : { kind: 'renameBoard', body: m.body ?? 'This board has a new name.', params: moveParams(m), ...(demand ? { demand } : {}), expires_at: iso(m.expiresAt ?? at + 3 * DAY) }, at,
       }).id;
       if (m.uncounted) uncounted.add(id);
+      if (m.bundle) queue.push({ id: queue.length + 1, staff, ...(m.lasting ? { lasting: { kind: m.lasting.kind, params: lastingParams(m.lasting.params) } } : {}), bundle: { id: m.bundle.id, name: m.bundle.name, role: m.bundle.role ?? null }, move: m, why: 'it seemed time', goLiveAt: at, failure: null, heldAt: null, landed: id });
       return id;
     },
     endMove(act, end) {
@@ -3895,9 +4627,29 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       moveKeeps.set(act, staff);
       return write({ character: staffId(staff), kind: 'move_keep', thread: a.thread, target: act, payload: {}, at: o?.at }).id;
     },
+    board(slug, name, description = `About ${name}`) {
+      if (boards.some((x) => x.slug === slug)) throw new Error(`there is a board ${slug} already`);
+      boards.push({ id: uuid(), slug, name, description, isSystem: false, moveAct: null });
+    },
+    moveThread(thread, slug, o) {
+      const t = threads.get(thread);
+      const to = boards.find((b) => b.slug === slug || b.id === slug);
+      if (!t || !to) throw new Error(`cannot move ${thread} to ${slug}`);
+      departures.push({ thread, origin: t.board, to: to.id, at: o?.at ?? now() });
+      t.board = to.id;
+    },
+    closeBoard(slug, how) {
+      const b = boards.find((x) => x.slug === slug || x.id === slug);
+      if (!b) throw new Error(`no board ${slug}`);
+      const into = 'mergedInto' in how ? boards.find((x) => x.slug === how.mergedInto || x.id === how.mergedInto) : boards.find((x) => !x.isSystem && !isClosed(x) && x.id !== b.id && ('fallback' in how && how.fallback ? x.slug === how.fallback : true));
+      if (!into) throw new Error('no board for its threads to go to');
+      closedBoards.set(b.id, 'mergedInto' in how ? { mergedInto: into.id, fallback: null } : { mergedInto: null, fallback: into.id });
+      for (const t of threads.values()) if (t.board === b.id) t.board = into.id;
+    },
     queueMove(staff, m) {
       staffId(staff);
-      const rec: QueueRec = { id: queue.length + 1, staff, move: m, why: m.why ?? 'it seemed time', goLiveAt: m.goLiveAt, failure: m.failure ?? null, ...(m.refusal ? { refusal: m.refusal } : {}), heldAt: null, landed: null };
+      const lasting = m.lasting === undefined ? undefined : { kind: m.lasting.kind, params: lastingParams(m.lasting.params) };
+      const rec: QueueRec = { id: queue.length + 1, staff, ...(lasting ? { lasting } : {}), ...(m.bundle ? { bundle: { id: m.bundle.id, name: m.bundle.name, role: m.bundle.role ?? null } } : {}), ...(m.waitsOn ? { waitsOn: m.waitsOn } : {}), move: m, why: m.why ?? 'it seemed time', goLiveAt: m.goLiveAt, failure: m.failure ?? null, ...(m.refusal ? { refusal: m.refusal } : {}), heldAt: null, landed: null };
       queue.push(rec);
       return rec.id;
     },

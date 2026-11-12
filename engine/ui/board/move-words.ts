@@ -9,7 +9,7 @@
 import { demandAsk, demandKind } from '../../system/demands.ts';
 import { moveKind, type MoveNames, type MoveParts } from '../../system/moves.ts';
 import { modRole } from '../cards/visit.ts';
-import type { Demand, DemandProgress, MoveEnd, Office } from '../data/api.ts';
+import type { BoardName, Demand, DemandProgress, MoveEnd, Office } from '../data/api.ts';
 import type { UiCopy } from '../types.ts';
 import { shortDate } from '../postbit/dates.ts';
 
@@ -71,4 +71,23 @@ export function moveParts(kind: string, params: Readonly<Record<string, unknown>
 
 /** What a move asks, without progress: for a move that has not landed. */
 export const demandNeeds = (demand: Demand | null, kind?: string): string =>
-  demand ? demandAsk(demand) : kind === 'nameSuccessor' ? 'It asks nothing: it ends at the handover, or when an admin reverses it.' : 'It asks nothing: it ends at its expiry, or when an admin reverses it.';
+  demand ? demandAsk(demand)
+    : kind === 'nameSuccessor' ? 'It asks nothing: it ends at the handover, or when an admin reverses it.'
+      : kind !== undefined && moveKind(kind)?.lasting ? 'It asks nothing and does not run out: it stays until an admin reverses it or a later move replaces it.'
+        : 'It asks nothing: it ends at its expiry, or when an admin reverses it.';
+
+
+/**
+ * The boards a move names, by their names now: the board a rename or a thread move names (`board`), and for a merge the board that takes the threads (`into`) as the sentence's second
+ * board and the one that closes (`board`) as `source`. A board the list does not hold is left out, and the sentence falls to its neutral words rather than name another.
+ */
+export function moveBoardNames(kind: string, params: Readonly<Record<string, unknown>>, boards: readonly BoardName[]): MoveNames {
+  const named = (id: unknown) => boards.find((b) => b.id === id)?.name;
+  if (kind === 'mergeBoard') {
+    const into = named(params['into']);
+    const closed = named(params['board']);
+    return { ...(into !== undefined ? { board: into } : {}), ...(closed !== undefined ? { source: closed } : {}) };
+  }
+  const board = named(params['board']);
+  return board !== undefined ? { board } : {};
+}

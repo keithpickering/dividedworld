@@ -13,7 +13,8 @@ test('the defaults hold every setting the engine reads, in range', () => {
 });
 
 test('the toast defaults are the alerts design\'s section 8: news of your own characters toasts, followed threads, hints and season news do not', () => {
-  assert.deepEqual([...defaults.toastDefaults].sort(), ['cardEnded', 'cardOnYours', 'quote', 'ruling', 'settlement', 'trapSprang', 'trapStruck', 'update']);
+  // A trophy given, a belt lost and a belt come back are news of the player's own characters (the cosmetics plan, Task 12).
+  assert.deepEqual([...defaults.toastDefaults].sort(), ['beltBack', 'beltLost', 'cardEnded', 'cardOnYours', 'quote', 'ruling', 'settlement', 'trapSprang', 'trapStruck', 'trophy', 'update']);
   assert.deepEqual(playtest.toastDefaults, defaults.toastDefaults);
   assert.deepEqual(settingsProblems({ ...defaults, toastDefaults: ['quote', 'quote'] }).length > 0, true, 'a kind named twice is a problem');
 });
@@ -51,6 +52,7 @@ test('the classes\' and cards\' numbers are the table\'s, as settings', () => {
     'technician.evergreen': 5, 'technician.evergreenDays': 3,
     'whoops.perLength': 25, 'whoops.lengthStep': 500, 'whoops.mostAdded': 200,
     'autocorrect.perVolume': 25, 'autocorrect.volumeStep': 50, 'autocorrect.mostAdded': 200,
+    'laughTrack.perPlace': 5, 'laughTrack.freePlaces': 5, 'laughTrack.mostAdded': 100,
     'youWereSaying.baseTokens': 25, 'youWereSaying.stepTokens': 25, 'youWereSaying.stepPrice': 25, 'youWereSaying.mostTokens': 200,
     'jimmyWails.gift1': 10, 'jimmyWails.gift2': 25, 'jimmyWails.gift3': 50, 'jimmyWails.gift4': 100, 'jimmyWails.overhead': 25,
     'machine.pullMost': 2, 'machine.moveDaysMost': 7, 'machine.repriceLeast': 50, 'machine.repriceMost': 200, 'machine.flashHoursLeast': 24, 'machine.flashHoursMost': 48,

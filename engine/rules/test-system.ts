@@ -4,7 +4,7 @@
  * They say nothing about any real instance, and `instance.test.ts` builds its own to test these.
  */
 import { PRONOUN_PRESETS } from './pronouns.ts';
-import type { Settings, SystemContent } from './types.ts';
+import type { Instance, Settings, SystemContent } from './types.ts';
 import type { GroupsContent } from './groups.ts';
 import { STOCK_LINE_KEYS } from '../system/stock.ts';
 import { DEFAULT_STRENGTHS } from '../system/pool.ts';
@@ -22,7 +22,14 @@ export const testWarnBar: Settings['warnBar'] = { size: 10, bands: { minor: 2, m
 /** The apology's numbers as a test world holds them. */
 export const testApologySettings: Settings['apology'] = { apologyEveryHours: 24, apologyJudgeBatch: 10, apologyRulingMaxWords: 80 };
 
-export const systemSettings: Pick<Settings, 'modBots' | 'warnBar' | 'apology' | 'systemEnabled' | 'oldVoice' | 'cardWriteSettleSeconds' | 'pronouns' | 'meetingCron' | 'phases' | 'inheritanceGraceDays' | 'rosterRecentExcluded' | 'structuralHoldHours' | 'microEventDailyCalls' | 'digestThreads' | 'digestExcerpts' | 'digestExcerptChars' | 'memoryOpinions' | 'memoryGrudges' | 'memoryWheelhouse' | 'memoryRealWorld' | 'pool' | 'boardNameMaxLength' | 'moveExpiryMostDays' | 'moveExpiryLeastHours' | 'demandCheckMinutes' | 'demandChecksPerTick' | 'modelTiers'> = {
+/** The cosmetics content of a test world that has none: no gear, a catalog of three places and a demand, no event lines. */
+export const testCosmeticsContent: Pick<Instance, 'gear' | 'trophies' | 'events'> = {
+  gear: [],
+  trophies: { kinds: [{ key: 'p1', name: 'P1' }, { key: 'p2', name: 'P2' }, { key: 'p3', name: 'P3' }, { key: 'met', name: 'Met' }], seasonPlaces: ['p1', 'p2', 'p3'], boss: [], demandMet: 'met' },
+  events: { lines: [] },
+};
+
+export const systemSettings: Pick<Settings, 'modBots' | 'warnBar' | 'apology' | 'systemEnabled' | 'oldVoice' | 'cardWriteSettleSeconds' | 'pronouns' | 'meetingCron' | 'phases' | 'inheritanceGraceDays' | 'rosterRecentExcluded' | 'structuralHoldHours' | 'microEventDailyCalls' | 'digestThreads' | 'digestBoards' | 'digestBoardDays' | 'movedStubDays' | 'farewellWindowHours' | 'bundleMostParts' | 'bundleAuthoredMostParts' | 'digestExcerpts' | 'digestExcerptChars' | 'memoryOpinions' | 'memoryGrudges' | 'memoryWheelhouse' | 'memoryRealWorld' | 'pool' | 'boardNameMaxLength' | 'moveExpiryMostDays' | 'moveExpiryLeastHours' | 'demandCheckMinutes' | 'demandChecksPerTick' | 'modelTiers' | 'cosmetics'> = {
   systemEnabled: false,
   oldVoice: true,
   cardWriteSettleSeconds: 30,
@@ -33,9 +40,10 @@ export const systemSettings: Pick<Settings, 'modBots' | 'warnBar' | 'apology' | 
     reign: { weeklyMoves: 5, bankCap: 10, moveExpiryMostDays: 28 },
     meltdown: { days: 21, weeklyMoves: 8, bankCap: 14, moveExpiryMostDays: 42 },
   },
-  inheritanceGraceDays: 3, rosterRecentExcluded: 2, structuralHoldHours: 24, microEventDailyCalls: 20, digestThreads: 10, digestExcerpts: 8,
+  inheritanceGraceDays: 3, rosterRecentExcluded: 2, structuralHoldHours: 24, microEventDailyCalls: 20, digestThreads: 10, digestBoards: 30, digestBoardDays: 21, movedStubDays: 7, farewellWindowHours: 36, bundleMostParts: 4, bundleAuthoredMostParts: 8, digestExcerpts: 8,
   digestExcerptChars: 280, memoryOpinions: 40, memoryGrudges: 20, memoryWheelhouse: 30, memoryRealWorld: 30, pool: testPool, modBots: testModBots, warnBar: testWarnBar, apology: testApologySettings, boardNameMaxLength: 60, moveExpiryMostDays: 42, moveExpiryLeastHours: 24, demandCheckMinutes: 5, demandChecksPerTick: 40,
   modelTiers: { strong: 'claude-opus-5-5', light: 'claude-haiku-5-5' },
+  cosmetics: { gear: { wornMost: 12, reach: 0.4 }, trophies: { shownMost: 3 }, events: { windowMinutes: 15, dayMost: 4, outcomes: { line: 70, gear: 20, card: 10 }, gearRarity: { common: 80, uncommon: 17, rare: 3 }, cardRarity: { common: 80, uncommon: 17, rare: 3 } } },
 };
 
 const botFields = {

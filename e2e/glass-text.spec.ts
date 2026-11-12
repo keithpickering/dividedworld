@@ -19,7 +19,7 @@ import { settled } from './settled.ts';
  * line on a surface's smoke, then the text is made transparent and the window photographed, and
  * the pixels under each line are read from the photograph. A page taller than the window is read a
  * window at a time, each line where it first lies wholly in view (an open overlay scrolls itself,
- * not the page). The poisons below plant each defect the measurement exists to catch in a real page
+ * not the page; the Main board's open hand, a modal, is read with the HUD's inert faded parts passed over, as the page behind an open overlay is). The poisons below plant each defect the measurement exists to catch in a real page
  * and expect it named; none ships in the page.
  *
  * It needs styles and scripts put into the page, which the site's policy would refuse
@@ -528,6 +528,25 @@ test.describe('the poisons, planted in a real page', () => {
     await page.locator('.kb-rankings-lead').evaluate((el) => el.setAttribute('inert', ''));
     await plant(page, '.kb-rankings-lead { color: rgba(228, 222, 247, 0.8) !important; }');
     expect(await measure(page)).toContainEqual(expect.stringMatching(/ p\.kb-rankings-lead \(surface rankings\): its color rgba\(228, 222, 247, 0\.8\) is translucent/u));
+  });
+
+  test('with the hand open, the HUD\'s inert faded parts are passed over, and a translucent line in a part that is not inert is still read', async ({ page }) => {
+    /* The open hand is a modal: the plate, the aura, Alerts and Menu are inert and fade to 40% (frame.css), the page behind it. The gatherer must not read their dimmed text, nor skip all of the HUD. */
+    await open(page, PAGES.find((p) => p.name === 'The hand, open')!);
+    expect(await measure(page)).toEqual([]);
+    const plantIn = (selector: string, id: string) => page.locator(selector).first().evaluate((host, cls) => {
+      const p = document.createElement('p');
+      p.className = cls;
+      p.style.cssText = 'color: rgba(228, 222, 247, 0.8); margin: 0';
+      p.textContent = 'A translucent line planted here';
+      host.append(p);
+    }, id);
+    /* In the faded, inert plate: passed over (the gatherer would otherwise name it, as it names the faded text it reads in the real HUD). */
+    await plantIn('.kb-hud-plate', 'kb-planted-dim');
+    expect((await measure(page)).filter((m) => m.includes('kb-planted-dim'))).toEqual([]);
+    /* In the hand's own button, which stays live as the way to close it: still read (the wide layout's open hand draws its cards and no text of its own). */
+    await plantIn('.kb-hud-hand', 'kb-planted-live');
+    expect(await measure(page)).toContainEqual(expect.stringMatching(/ p\.kb-planted-live .*its color rgba\(228, 222, 247, 0\.8\) is translucent/u));
   });
 
   test('a class\'s large color under WCAG\'s large size, bare on the react smoke (#54)', async ({ page }) => {

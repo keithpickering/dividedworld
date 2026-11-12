@@ -15,6 +15,7 @@ let nextId = 1;
 const mouse = (x = 100, y = 100, pointerType = 'mouse') => ({ clientX: x, clientY: y, pointerType });
 const sponge = () => document.querySelector<HTMLElement>('[data-kb-cursor="sponge"]');
 const pen = () => document.querySelector<HTMLElement>('[data-kb-cursor="pen"]');
+const can = () => document.querySelector<HTMLElement>('[data-kb-cursor="can"]');
 const shown = (el: Element | null) => el !== null && !el.hasAttribute('hidden');
 
 beforeEach(() => {
@@ -172,6 +173,99 @@ describe('the pen', () => {
     expect(cursor.drips()).toBe(0);
   });
 });
+
+describe('the can', () => {
+  test('shows in the color of the can held, in place of the sponge and the pen, tilted 20 degrees', () => {
+    cursor.over(host, mouse(), 'sponge');
+    cursor.over(host, mouse(), 'can', '#ff3d9a');
+    expect(shown(can())).toBe(true);
+    expect(shown(sponge())).toBe(false);
+    expect(shown(pen())).toBe(false);
+    expect(can()?.style.getPropertyValue('--kb-can-color')).toBe('#ff3d9a');
+    expect(can()?.getAttribute('aria-hidden')).toBe('true');
+    expect(can()?.style.pointerEvents).toBe('none');
+    expect(can()?.querySelector('g')?.getAttribute('transform')).toMatch(/^rotate\(20 /);
+    expect(host.style.cursor).toBe('none');
+  });
+
+  test('its nozzle is at the pointer', () => {
+    cursor.over(host, mouse(200, 150), 'can', '#000');
+    const el = can()!;
+    const dx = Number(el.dataset.kbTipX), dy = Number(el.dataset.kbTipY);
+    expect(Number.isFinite(dx) && Number.isFinite(dy)).toBe(true);
+    expect(el.style.transform).toBe(`translate(${200 - dx}px, ${150 - dy}px)`);
+  });
+
+  test('the next can shown takes the color it is given, and the sponge comes back in its place', () => {
+    cursor.over(host, mouse(), 'can', '#ff3d9a');
+    cursor.over(host, mouse(), 'can', '#14b8a6');
+    expect(can()?.style.getPropertyValue('--kb-can-color')).toBe('#14b8a6');
+    cursor.over(host, mouse(), 'sponge');
+    expect(shown(can())).toBe(false);
+    expect(shown(sponge())).toBe(true);
+  });
+
+  test('a touch or a pen pointer never shows it', () => {
+    cursor.over(host, mouse(100, 100, 'touch'), 'can', '#000');
+    cursor.over(host, mouse(100, 100, 'pen'), 'can', '#000');
+    expect(can()).toBeNull();
+  });
+
+  test('sheds no drips', () => {
+    cursor.over(host, mouse(), 'can', '#000');
+    cursor.press(true);
+    frames(300);
+    expect(cursor.drips()).toBe(0);
+    cursor.press(false);
+  });
+
+  test('puffs spray while pressed and not otherwise, and the puffs thin out once it lets go', () => {
+    cursor.over(host, mouse(), 'can', '#ff3d9a');
+    const rest = frames(60);
+    expect(cursor.puffs()).toBe(0);
+    cursor.press(true);
+    const t = frames(40, rest);
+    expect(cursor.puffs()).toBeGreaterThan(0);
+    cursor.press(false);
+    frames(80, t);
+    expect(cursor.puffs()).toBe(0);
+  });
+
+  test('puffs are drawn on the cursor\'s canvas in the can\'s color', () => {
+    const { ctx, fns } = recordingContext();
+    const styles: unknown[] = [];
+    Object.defineProperty(ctx, 'fillStyle', { set: (v: unknown) => { styles.push(v); }, get: () => '' });
+    vi.mocked(HTMLCanvasElement.prototype.getContext).mockReturnValue(ctx);
+    cursor.over(host, mouse(), 'can', '#ff3d9a');
+    fns.arc!.mockClear();
+    fns.fill!.mockClear();
+    styles.length = 0;
+    cursor.press(true);
+    frames(40);
+    expect(fns.arc!.mock.calls.length).toBeGreaterThan(0);
+    expect(fns.fill!.mock.calls.length).toBeGreaterThan(0);
+    expect(styles).toContain('#ff3d9a');
+    cursor.press(false);
+  });
+
+  test('under reduced motion the can still shows and no puff is made', () => {
+    document.documentElement.setAttribute('data-kb-motion', 'reduce');
+    cursor.over(host, mouse(), 'can', '#000');
+    expect(shown(can())).toBe(true);
+    cursor.press(true);
+    frames(120);
+    expect(cursor.puffs()).toBe(0);
+    cursor.press(false);
+  });
+
+  test('the can does not squish the sponge: pressing marks no sponge', () => {
+    cursor.over(host, mouse(), 'can', '#000');
+    cursor.press(true);
+    expect(sponge()?.classList.contains('kb-whoops-pressing') ?? false).toBe(false);
+    cursor.press(false);
+  });
+});
+
 
 describe('the drips', () => {
   test('a sponge at rest sheds drops, more while pressed', () => {

@@ -10,6 +10,7 @@ import type { Act } from '../../../../engine/ui/data/api.ts';
 import type { CardPlay, CardView, EffectProps } from '../../../../engine/ui/cards/types.ts';
 import { viewProblems } from '../../../../engine/ui/cards/lens-words.ts';
 import { BelowTheFoldEffect } from './Effect.tsx';
+import { NO_INK } from '../../../../engine/ui/cards/claims.ts';
 
 const post: Act = { id: 'p1', character: 'c1', kind: 'post', thread: 't1', targetActId: null, seq: 1, createdAt: '2026-11-11T12:00:00Z', payload: { body: 'hi' }, currentPayload: { body: 'hi' }, editedAt: null } as unknown as Act;
 const play: CardPlay = { id: 'f1', card: 'below-the-fold', layer: 1, caster: 'c2', message: '', config: {}, playedAt: '2026-11-11T12:00:00Z', post: 'p1' };
@@ -20,7 +21,7 @@ function setup(over: Partial<EffectProps> = {}) {
   const met = vi.fn();
   const props: EffectProps = {
     post, plays: [play], states: {}, released: new Set(), written: new Map(), reader: { author: false, caster: false }, place: 'thread', reach: 'post', still: false,
-    show, met, holdScreen: () => {}, marks: null, save: async () => ({ ok: false, error: 'no' }), release: async () => ({ ok: false, error: 'no' }), nameOf: () => 'Spritey', give: async () => ({ ok: false, error: 'no' }), moreGifts: async () => {}, wallet: null,
+    show, met, ink: NO_INK, holdScreen: () => {}, marks: null, save: async () => ({ ok: false, error: 'no' }), release: async () => ({ ok: false, error: 'no' }), nameOf: () => 'Spritey', give: async () => ({ ok: false, error: 'no' }), moreGifts: async () => {}, wallet: null,
     children: <p>The words of the post.</p>, ...over,
   };
   const rendered = render(<BelowTheFoldEffect {...props} />);

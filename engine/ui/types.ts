@@ -10,6 +10,7 @@
 import type { Quadrant, Span } from '../rules/types.ts';
 import type { CardArt, CardUi } from './cards/types.ts';
 import type { Alert } from './data/api.ts';
+import type { SoundsUi } from './audio/types.ts';
 import type { TipKey } from './tips/keys.ts';
 
 /**
@@ -385,6 +386,8 @@ export interface GlassTheme {
 export interface InstanceUi {
   /** The themes a player may pick; the first is the house theme, used when the account says "system". */
   readonly themes: readonly ThemeOption[];
+  /** The sounds the instance supplies, each with its bus and caption (docs/plans/2026-11-11-laugh-track-plan.md); none means a silent instance. */
+  readonly sounds?: SoundsUi;
   /** The four quadrants' labels on the reaction picker. */
   readonly quadrantLabels: Readonly<Record<Quadrant, string>>;
   /**
@@ -413,10 +416,19 @@ export interface InstanceUi {
   readonly glass: GlassTheme;
   /** The instance's pictures for its personas, by the key its rules name (`DeveloperPersona.avatar`) as a URL; a persona with none is drawn as an initial. */
   readonly avatars?: Readonly<Record<string, string>>;
+  /**
+   * The instance's pictures for its staff personas, by the roster key (`Persona.key`): a square, and a portrait where it has one (engine/ui/data/staff-faces.ts
+   * gives them to the persona's character); a persona with none is drawn as an initial.
+   */
+  readonly staffAvatars?: Readonly<Record<string, { readonly square: string; readonly portrait?: string }>>;
   /** How each card draws and describes itself, one per card key the instance sells; a card with none is shown as its tag alone (engine/ui/cards/types.ts). */
   readonly cards: readonly CardUi[];
   /** How each pack the instance sells draws itself, by the rules' `PackRules.key`: its name and its face art, placed as a card's face art is (engine/ui/cards/types.ts, `CardArt`). */
   readonly packs: Readonly<Record<string, { readonly name: string; readonly art: CardArt }>>;
+  /** Each piece of gear's art, by the rules' `GearRules.key`: a URL the bundler resolved, and the art's height over its width. */
+  readonly gear: Readonly<Record<string, { readonly art: string; readonly aspect: number }>>;
+  /** Each trophy kind's badge art, by the rules' `TrophyRules.key`, as a URL the bundler resolved. */
+  readonly trophies: Readonly<Record<string, { readonly art: string }>>;
   /**
    * The instance's look for a card's back (`PostcardBack`), each a URL the bundler resolved. `mark` is drawn at the center of the
    * back's crossed bands; without it the back is the bands alone. `canvas` is a picture for the back, a canvas as a card's is

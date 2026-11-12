@@ -297,7 +297,8 @@ const inky = { ...base, key: 'test-inky', name: 'Test Inky', rarity: 'common' as
 const snare = { ...base, key: 'test-snare', name: 'Test Snare', rarity: 'uncommon' as const, play: 'set' as const, trap: { trigger: { on: 'visit' as const } }, validateConfig: inky.validateConfig };
 const move = { ...base, key: 'test-move', name: 'Test Move', rarity: 'common' as const, validateConfig: (c: unknown) => ok(c) };
 const shield = { ...base, key: 'test-shield', name: 'Test Shield', rarity: 'uncommon' as const, play: 'use' as const, gimmick: { kind: 'ward' as const, upTo: 'uncommon' as const }, lasts: { unit: 'day' as const, count: 7 }, validateConfig: (c: unknown) => ok(c) };
-const tested = { ...instance, cards: [...instance.cards, inky, snare, move, shield] };
+const hush = { ...base, key: 'test-hush', name: 'Test Hush', rarity: 'uncommon' as const, play: 'use' as const, gimmick: { kind: 'noQuote' as const }, lasts: { unit: 'day' as const, count: 7 }, validateConfig: (c: unknown) => ok(c) };
+const tested = { ...instance, cards: [...instance.cards, inky, snare, move, shield, hush] };
 const setAct = { id: 'k', kind: 'set', thread: 'th', payload: {} };
 
 test('a Set is decided by its card\'s rules and written by set_card; its answer and its broadcast carry no card key', async () => {
@@ -1025,4 +1026,128 @@ test('each refusal of a skim, a ride and a scored-as play comes back as a plain 
     const out = await runAction({ player: make(), service: make() }, instance, { action: 'playCard', card: 'mooch', character: id, target, config: { quadrant: 'excitedPositive' }, message: '' });
     assert.deepEqual({ status: out.status, body: out.body }, { status, body: { error: words, code } }, words);
   }
+});
+
+// A surface card (docs/plans/2026-11-11-graffiti-plan.md, Task 3). The act function names no instance's card, so the case uses a fixture: Whoops!'s rules with a surface.
+{
+  const dab = { strokes: [{ width: 0.012, aspect: 1, points: [[0.505, 0.505]] }] };
+  const strokes = (i: unknown) => (typeof i === 'object' && i !== null && Array.isArray((i as { strokes?: unknown }).strokes)
+    ? { ok: true as const, value: { strokes: (i as { strokes: never[] }).strokes, payload: { strokes: (i as { strokes: unknown[] }).strokes } } } : { ok: false as const, why: 'draw some strokes' });
+  const base = instance.cards.find((c) => c.key === 'whoops')!;
+  const wall = { ...base, key: 'wall', name: 'Wall', stack: 1, screenReads: [{ key: 'wall.limit', whole: true, min: 1, max: 100 }], surface: { limitKey: 'wall.limit', mostLive: 7, validateDraw: strokes, validateWash: strokes } };
+  const walled = { ...instance, cards: [...instance.cards, wall], settings: { ...instance.settings, cardSettings: { ...instance.settings.cardSettings, 'wall.limit': 40 } } };
+  const rows = (limit: number) => ({ economy: instance.settings.economy, cardSettings: { ...instance.settings.cardSettings, 'wall.limit': limit } });
+  const thread = '44444444-4444-4444-8444-444444444444';
+
+  test('a draw reads its wall\'s card, decides the drawing by that card, and takes the limit from the settings rows, not from the deployed code', async () => {
+    for (const [limit, most] of [[10, 1000], [25, 2500]] as const) {
+      const { dbs, calls } = pair({ instance_settings: rows(limit), whoami, card_of_play: 'wall', draw_on_surface: { id: 'd', thread, covered: 1, live: ['d'] } });
+      const out = await runAction(dbs, walled, { action: 'draw', character: id, play: target, input: dab });
+      assert.equal(out.status, 200);
+      const sent = calls.find((c) => c.startsWith('service:draw_on_surface:'))!;
+      const args = JSON.parse(sent.slice('service:draw_on_surface:'.length));
+      assert.equal(args.most, most, `the rows say ${limit}%, the code 40%`);
+      assert.deepEqual({ who: args.who, through: args.through, play: args.play, payload: args.payload }, { who: whoami, through: id, play: target, payload: { strokes: dab.strokes } });
+      assert.equal(args.cells.length, 10000);
+      assert.equal(args.cells.split('1').length - 1, 1);
+      assert.equal('input' in args, false);
+    }
+  });
+
+  test('a draw or a wash on a card that holds no wall is refused, and a drawing the card refuses says why; nothing is written', async () => {
+    for (const action of ['draw', 'wash']) {
+      const none = pair({ whoami, card_of_play: 'whoops' });
+      const out = await runAction(none.dbs, walled, { action, character: id, play: target, input: dab });
+      assert.deepEqual({ status: out.status, body: out.body }, { status: 400, body: { field: 'play', error: 'this card holds no wall' } }, action);
+      assert.ok(!none.calls.some((c) => /service:(draw_on_surface|wash_surface)/.test(c)));
+    }
+    const bad = pair({ whoami, card_of_play: 'wall' });
+    const out = await runAction(bad.dbs, walled, { action: 'draw', character: id, play: target, input: 'scribble' });
+    assert.deepEqual({ status: out.status, body: out.body }, { status: 400, body: { field: 'input', error: 'draw some strokes' } });
+    assert.ok(!bad.calls.some((c) => c.includes('draw_on_surface')));
+  });
+
+  test('a surface card played with no first draw is refused before the database is asked', async () => {
+    for (const action of ['playCard']) {
+      const { dbs, calls } = pair({ whoami });
+      const out = await runAction(dbs, walled, { action, card: 'wall', character: id, target, config: {}, message: '' });
+      assert.deepEqual({ status: out.status, body: out.body }, { status: 400, body: { field: 'first', error: 'draw your tag first' } }, action);
+      assert.equal(calls.length, 0);
+    }
+  });
+
+  test('a surface card played with its first draw is written by play_surface_card, with the draw\'s cells, the limit from the rows and the card\'s most live draws', async () => {
+    const { dbs, calls } = pair({ instance_settings: rows(30), whoami, card_target_reach: { reach: 'post', act: target, kind: 'post', length: 10, body: 'hello', effects: [] },
+      play_surface_card: { id: 'k', kind: 'card', thread, draw: { id: 'd', thread, covered: 1, live: ['d'], payload: { strokes: [] } } } });
+    const out = await runAction(dbs, walled, { action: 'playCard', card: 'wall', character: id, target, config: { color: 'red' }, message: '', first: dab });
+    assert.equal(out.status, 200);
+    const sent = JSON.parse(calls.find((c) => c.startsWith('service:play_surface_card:'))!.slice('service:play_surface_card:'.length));
+    assert.deepEqual({ card: sent.card, first: sent.first, most: sent.most, most_live: sent.most_live, who: sent.who }, { card: 'wall', first: { strokes: dab.strokes }, most: 3000, most_live: 7, who: whoami });
+    assert.equal(sent.first_cells.length, 10000);
+    assert.ok(!calls.some((c) => c.includes('service:play_card:')));
+    // The play is heard as a play, without the drawing in it; the wall's own count follows, and never its strokes.
+    assert.deepEqual(out.broadcasts, [
+      { topic: `thread:${thread}`, event: 'act', payload: { id: 'k', kind: 'card', thread } },
+      { topic: `thread:${thread}`, event: 'surface', payload: { play: 'k', covered: 1 } },
+    ]);
+  });
+
+  test('a surface card (a cast card) set face down is written by set_surface_card with its draft, and refused without a first draw', async () => {
+    const { dbs, calls } = pair({ instance_settings: rows(30), whoami, card_target_reach: { reach: 'post', act: target, kind: 'post', length: 10, body: 'hello', effects: [] }, set_surface_card: { id: 's', thread } });
+    const out = await runAction(dbs, walled, { action: 'setCard', card: 'wall', character: id, target, config: { color: 'red' }, first: dab });
+    assert.equal(out.status, 200, JSON.stringify(out.body));
+    const sent = JSON.parse(calls.find((c) => c.startsWith('service:set_surface_card:'))!.slice('service:set_surface_card:'.length));
+    assert.deepEqual({ draft: sent.draft, most: sent.most, most_live: sent.most_live, first: sent.first, who: sent.who }, { draft: { strokes: dab.strokes }, most: 3000, most_live: 7, first: undefined, who: whoami });
+    assert.equal(sent.draft_cells.length, 10000);
+    assert.ok(!calls.some((c) => c.includes('service:set_card:')));
+    const none = pair({ whoami });
+    const refused = await runAction(none.dbs, walled, { action: 'setCard', card: 'wall', character: id, target, config: {} });
+    assert.deepEqual(refused.body, { field: 'first', error: 'draw your tag first' });
+    assert.equal(none.calls.length, 0);
+  });
+
+  test('a first draw the card refuses is refused on the field `first`, so the screen shows it on the drawing', async () => {
+    for (const action of ['playCard', 'setCard']) {
+      const { dbs } = pair({ instance_settings: rows(30), whoami, card_target_reach: { reach: 'post', act: target, kind: 'post', length: 10, body: 'hello', effects: [] } });
+      const out = await runAction(dbs, walled, { action, card: 'wall', character: id, target, config: { color: 'red' }, message: '', first: 'scribble' });
+      assert.deepEqual({ status: out.status, body: out.body }, { status: 400, body: { field: 'first', error: 'draw some strokes' } }, action);
+    }
+  });
+
+  test('a draw\'s and a wash\'s broadcast is the wall\'s count on its thread, and holds no strokes', async () => {
+    for (const [action, rpc] of [['draw', 'draw_on_surface'], ['wash', 'wash_surface']] as const) {
+      const answer = { id: 'd', thread, kind: action, payload: { strokes: dab.strokes }, covered: 12, live: ['d'] };
+      const { dbs } = pair({ instance_settings: rows(30), whoami, card_of_play: 'wall', [rpc]: answer });
+      const out = await runAction(dbs, walled, { action, character: id, play: target, input: dab });
+      assert.deepEqual(out.broadcasts, [{ topic: `thread:${thread}`, event: 'surface', payload: { play: target, covered: 12 } }], action);
+      assert.ok(!JSON.stringify(out.broadcasts).includes('strokes'));
+    }
+  });
+
+  test('neither a draw nor a wash is repeated after a lost answer, which is said as lost', async () => {
+    assert.equal(SAFE_TO_REPEAT('draw_on_surface'), false);
+    assert.equal(SAFE_TO_REPEAT('wash_surface'), false);
+    for (const action of ['draw', 'wash']) {
+      const db: Db = { rpc: async <T>(fn: string) => { if (fn === 'draw_on_surface' || fn === 'wash_surface') throw new TransportError('gone'); return (fn === 'instance_settings' ? rows(30) : fn === 'card_of_play' ? 'wall' : whoami) as T; } };
+      const out = await runAction({ player: db, service: db }, walled, { action, character: id, play: target, input: dab });
+      assert.equal(out.status, 503, action);
+      assert.match(JSON.stringify(out.body), /may have gone through/);
+    }
+  });
+}
+
+test('a no-quote card is refused before SQL on a post whose read holds a live back, and in its own words', async () => {
+  const { dbs, calls } = pair({ whoami, card_target_reach: { reach: 'post', act: target, kind: 'post', length: 10, body: 'x'.repeat(10), effects: [{ card: null, act: 'b', faceDown: true, ends: new Date(Date.now() + 1e6).toISOString() }] } });
+  const out = await runAction(dbs, tested, { action: 'useCard', card: 'test-hush', character: id, target, config: {} });
+  assert.deepEqual({ status: out.status, body: out.body }, { status: 400, body: { field: 'config', error: 'Test Hush stops quotes, and this post holds a card face down; take that card back first' } });
+  assert.ok(!calls.some((c) => c.startsWith('service:play_card:')), calls.join('\n'));
+});
+
+test('a Set is refused before SQL on a post whose read holds a live no-quote, in the words of decideSet', async () => {
+  const ends = new Date(Date.now() + 1e6).toISOString();
+  const { dbs, calls } = pair({ whoami, card_target_reach: { reach: 'post', act: target, kind: 'post', length: 10, body: 'x'.repeat(10), effects: [{ card: 'test-hush', act: 'h', gimmick: { kind: 'noQuote' }, ends }] } });
+  const out = await runAction(dbs, tested, { action: 'setCard', card: 'test-move', character: id, target });
+  assert.equal(out.status, 400);
+  assert.match(String((out.body as { error: string }).error), /^this post's Test Hush stops quotes until .+, so no card is set face down here until then$/);
+  assert.ok(!calls.some((c) => c.startsWith('service:set_card:')), calls.join('\n'));
 });

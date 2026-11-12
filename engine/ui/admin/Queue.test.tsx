@@ -69,6 +69,29 @@ describe('the admin queue', () => {
     expect(within(waiting).getByRole('link', { name: w.secondName })).toHaveAttribute('href', `/b/${w.second}`);
   });
 
+  test('a waiting createBoard and mergeBoard read in the queue\'s words: the board made, the boards merged (linked), and that neither expires', async () => {
+    const { w } = open({
+      build: (fake, w) => {
+        const soon = fake.clock.now() + 3_600_000;
+        fake.seed.queueMove('director', { board: '', name: '', goLiveAt: soon, why: 'The forum needs a basement.', lasting: { kind: 'createBoard', params: { name: 'Minus World', premise: 'Where the glitches live.', description: 'Walk through walls.' } } });
+        fake.seed.queueMove('director', { board: '', name: '', goLiveAt: soon + 60_000, why: 'Too many rooms.', lasting: { kind: 'mergeBoard', params: { board: w.second, into: w.general } } });
+      },
+    });
+    const waiting = await group(/^Waiting to land/u);
+    const make = within(waiting).getAllByRole('heading', { level: 3 }).find((h) => /^Create a board/u.test(h.textContent ?? ''))!;
+    expect(make).toHaveTextContent('Create a board named "Minus World"');
+    expect(make.closest('article')).toHaveTextContent('New subject: Where the glitches live.');
+    /* The board that took the threads is named as it is called now (the first board's rename is in force). */
+    const merge = within(waiting).getAllByRole('heading', { level: 3 }).find((h) => /^Merge /u.test(h.textContent ?? ''))!;
+    expect(merge).toHaveTextContent(`Merge ${w.secondName} into Pointless Toast Palace`);
+    expect(within(merge).getByRole('link', { name: w.secondName })).toHaveAttribute('href', `/b/${w.second}`);
+    expect(within(merge).getByRole('link', { name: 'Pointless Toast Palace' })).toHaveAttribute('href', `/b/${w.general}`);
+    expect(waiting).toHaveTextContent('Why, in The Director\'s words: “Too many rooms.”');
+    expect(waiting).toHaveTextContent(/does not run out: it stays until an admin reverses it or a later move replaces it/u);
+    expect(waiting).not.toHaveTextContent(/it ends at its expiry/u);
+    expect(within(waiting).getByRole('button', { name: 'Hold: Minus World' })).toBeInTheDocument();
+  });
+
   test('a move the tick could not land shows the failure in the server\'s words, and stays open to a hold', async () => {
     open({ build: (fake, w) => { fake.seed.queueMove('director', { board: w.second, name: 'Stuck Hall', goLiveAt: fake.clock.now() - 60_000, failure: { at: fake.clock.now() - 30_000, text: 'the board no longer exists' } }); } });
     const waiting = await group(/^Waiting to land/u);
@@ -426,6 +449,40 @@ describe('a nomination of a successor', () => {
       expect(dismiss).toHaveBeenCalledWith(2);
     });
 
+    test('the to-do shows the outgoing Boss\'s handoff note and the code\'s facts of its season, out of character; where the last meeting failed it says there is no note and shows the facts alone', async () => {
+      const facts = {
+        created: [{ board: 'b1', name: 'Pirate Puns Palace' }], merged: [{ board: 'b2', name: 'Old Corner', into: 'b1', intoName: 'General' }],
+        busiest: [{ board: 'b1', name: 'Pirate Puns Palace', posts: 41 }], quietest: [{ board: 'b2', name: 'Old Corner', posts: 0 }],
+      };
+      open({
+        build: (fake) => {
+          fake.seed.staff('old-boss', 'Old Boss', 'boss');
+          fake.seed.staff('comptroller', 'Comptroller', 'mod');
+          fake.seed.handover({ outgoing: 'old-boss', boss: 'comptroller', at: fake.clock.now() - 3_600_000, how: 'rotation', bossWas: 'mod', outgoingOffice: 'member', note: 'Merge the fangame board first.', facts });
+        },
+      });
+      const todo = await group(/^To do/u);
+      expect(todo).toHaveTextContent('Merge the fangame board first.');
+      expect(todo).toHaveTextContent(/Old Boss.s handoff note/u);
+      expect(todo).toHaveTextContent(/Players never see/u);
+      expect(todo).toHaveTextContent('Pirate Puns Palace');
+      expect(todo).toHaveTextContent('Old Corner into General');
+      expect(todo).toHaveTextContent('Pirate Puns Palace (41 posts)');
+    });
+
+    test('a handover whose outgoing Boss left no note says so, and still shows the facts', async () => {
+      open({
+        build: (fake) => {
+          fake.seed.staff('old-boss', 'Old Boss', 'boss');
+          fake.seed.staff('comptroller', 'Comptroller', 'mod');
+          fake.seed.handover({ outgoing: 'old-boss', boss: 'comptroller', at: fake.clock.now() - 3_600_000, how: 'rotation', bossWas: 'mod', outgoingOffice: 'member', facts: { created: [{ board: 'b1', name: 'Toast Corner' }] } });
+        },
+      });
+      const todo = await group(/^To do/u);
+      expect(todo).toHaveTextContent(/left no handoff note/u);
+      expect(todo).toHaveTextContent('Toast Corner');
+    });
+
     test('a change of Boss is a row above Waiting, with the plain facts, a link to the form for that season, and a Dismiss', async () => {
       open({ build: (fake) => handover(fake) });
       const todo = await group(/^To do/u);
@@ -769,5 +826,157 @@ describe('replacing a description', () => {
     vi.spyOn(fake, 'describeBoard').mockResolvedValueOnce({ ok: false, error: 'there is no such board' });
     await userEvent.click(within(card).getByRole('button', { name: `Save the description of ${first.name}` }));
     expect(await within(card).findByRole('alert')).toHaveTextContent('there is no such board');
+  });
+});
+
+describe('a bundle', () => {
+  const thread = '22222222-2222-4222-8222-222222222222';
+  const split = { id: 'the-split', name: 'The Split' };
+  /** Two parts of one bundle waiting: World -1 is made (role `minus`), and a thread is moved into it (role `move`, which names `minus`). */
+  const waitingParts = (fake: ReturnType<typeof buildWorld>) => {
+    const soon = fake.clock.now() + 3_600_000;
+    fake.seed.queueMove('director', { board: '', name: '', goLiveAt: soon, why: 'World -1 first.', bundle: { ...split, role: 'minus' }, lasting: { kind: 'createBoard', params: { name: 'World -1', premise: 'Everything that is not about fangames.', description: 'Technically fangames.' } } });
+    fake.seed.queueMove('director', { board: '', name: '', goLiveAt: soon, why: 'Then the thread.', bundle: { ...split, role: 'move' }, lasting: { kind: 'moveThread', params: { thread, board: { role: 'minus' } } } });
+  };
+
+  test('its waiting parts are one group headed by the bundle\'s name, each part with its own Hold, and the role is said in words', async () => {
+    open({ build: (fake) => waitingParts(fake) });
+    const waiting = await group(/^Waiting to land/u);
+    const bundle = await within(waiting).findByRole('group', { name: 'The Split' });
+    expect(within(bundle).getAllByRole('article')).toHaveLength(2);
+    expect(within(bundle).getByRole('button', { name: 'Hold: World -1' })).toBeInTheDocument();
+    expect(within(bundle).getByRole('button', { name: 'Hold: the part "move" of The Split' })).toBeInTheDocument();
+    expect(bundle).toHaveTextContent('Create a board named "World -1"');
+    expect(bundle).toHaveTextContent('the board the part "minus" makes');
+    expect(bundle).toHaveTextContent('Why, in The Director\'s words: “Then the thread.”');
+    /* The move that is no part of a bundle is outside it, with its own Hold. */
+    expect(within(bundle).queryByText(/Small Soldiers Situation Room/u)).toBeNull();
+    expect(within(waiting).getAllByRole('button', { name: /^Hold/u })).toHaveLength(3);
+    expect(within(waiting).getAllByRole('group')).toHaveLength(1);
+  });
+
+  test('holding the first part says the parts that build on it are held with it, and holds them; the second held alone leaves the first', async () => {
+    const { fake } = open({ build: (fake) => waitingParts(fake) });
+    const waiting = await group(/^Waiting to land/u);
+    await userEvent.click(within(waiting).getByRole('button', { name: 'Hold: the part "move" of The Split' }));
+    const alone = await screen.findByRole('dialog', { name: 'Hold this move?' });
+    expect(alone).toHaveTextContent('Any part of “The Split” that builds on it is held with it. The parts it builds on are left.');
+    await userEvent.click(within(alone).getByRole('button', { name: 'Hold it' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    const after = await within(await group(/^Waiting to land/u)).findByRole('group', { name: 'The Split' });
+    expect(within(after).getAllByRole('article')).toHaveLength(1);
+    expect(within(after).getByRole('button', { name: 'Hold: World -1' })).toBeInTheDocument();
+    await userEvent.click(within(after).getByRole('button', { name: 'Hold: World -1' }));
+    await userEvent.click(within(await screen.findByRole('dialog', { name: 'Hold this move?' })).getByRole('button', { name: 'Hold it' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect((await fake.adminQueue()).waiting.filter((q) => q.bundle !== null)).toHaveLength(0);
+    expect((await fake.adminQueue()).ended.filter((e) => e.how === 'held' && e.bundle === 'the-split')).toHaveLength(2);
+  });
+
+  test('holding the first of two held at once holds both in one press', async () => {
+    const { fake } = open({ build: (fake) => waitingParts(fake) });
+    const waiting = await group(/^Waiting to land/u);
+    await userEvent.click(within(waiting).getByRole('button', { name: 'Hold: World -1' }));
+    await userEvent.click(within(await screen.findByRole('dialog', { name: 'Hold this move?' })).getByRole('button', { name: 'Hold it' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await waitFor(() => expect(within(screen.getByRole('region', { name: /^Waiting to land/u })).queryByRole('group')).toBeNull());
+    const held = (await fake.adminQueue()).ended.filter((e) => e.how === 'held' && e.bundle === 'the-split');
+    expect(held.map((e) => e.role).sort()).toEqual(['minus', 'move']);
+    expect(new Set(held.map((e) => e.at)).size).toBe(1);
+  });
+
+  test('its parts in force are one group too, each with its own Reverse; reversing the first reverses the part that builds on it', async () => {
+    const { fake } = open({
+      build: (fake) => {
+        fake.seed.move('director', { board: '', name: '', lasting: { kind: 'createBoard', params: { name: 'World -1', premise: 'p', description: 'd' } }, bundle: { ...split, role: 'minus' } });
+        fake.seed.move('director', { board: '', name: '', lasting: { kind: 'moveThread', params: { thread, board: { role: 'minus' } } }, bundle: { ...split, role: 'move' } });
+      },
+    });
+    const live = await group(/^In force/u);
+    const bundle = await within(live).findByRole('group', { name: 'The Split' });
+    expect(within(bundle).getAllByRole('button', { name: /^Reverse/u })).toHaveLength(2);
+    await userEvent.click(within(bundle).getByRole('button', { name: 'Reverse: World -1' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Reverse this move?' });
+    expect(dialog).toHaveTextContent('What builds on it is reversed with it: the parts of “The Split” that name it, and later moves into a board it made.');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Reverse it' }));
+    await waitFor(() => expect(within(screen.getByRole('region', { name: /^In force/u })).queryByRole('group')).toBeNull());
+    const ended = (await fake.adminQueue()).ended.filter((e) => e.bundle === 'the-split');
+    expect(ended.map((e) => `${e.role}:${e.how}`).sort()).toEqual(['minus:reversed', 'move:reversed']);
+  });
+});
+
+describe('a bundle: each part named, and what waits says so', () => {
+  const split = { id: 'plain-parts', name: 'Plain Parts' };
+  const threadA = '22222222-2222-4222-8222-222222222222';
+  const threadB = '33333333-3333-4333-8333-333333333333';
+
+  test('two parts with no role and no name have buttons of their own: the kind\'s plain sentence, then a place in the group', async () => {
+    open({
+      build: (fake, w) => {
+        const soon = fake.clock.now() + 3_600_000;
+        fake.seed.queueMove('director', { board: '', name: '', goLiveAt: soon, why: 'One.', bundle: split, lasting: { kind: 'moveThread', params: { thread: threadA, board: w.general } } });
+        fake.seed.queueMove('director', { board: '', name: '', goLiveAt: soon, why: 'Two.', bundle: split, lasting: { kind: 'moveThread', params: { thread: threadB, board: w.general } } });
+      },
+    });
+    const bundle = await within(await group(/^Waiting to land/u)).findByRole('group', { name: 'Plain Parts' });
+    const names = within(bundle).getAllByRole('button', { name: /^Hold/u }).map((b) => b.getAttribute('aria-label'));
+    expect(names).toHaveLength(2);
+    expect(new Set(names).size).toBe(2);
+    for (const n of names) expect(n).toMatch(/^Hold: Move a thread to .+ \(\d of 2\)$/u);
+    expect(names.some((n) => /this move/u.test(n ?? ''))).toBe(false);
+  });
+
+  test('a part that waits for its role\'s part says so, plainly, and the part it waits for says nothing of the kind', async () => {
+    open({
+      build: (fake) => {
+        const soon = fake.clock.now() - 60_000;
+        fake.seed.queueMove('director', { board: '', name: '', goLiveAt: soon, why: 'First.', bundle: { id: 'w', name: 'The Waits', role: 'minus' }, lasting: { kind: 'createBoard', params: { name: 'World -1', premise: 'p', description: 'd' } } });
+        fake.seed.queueMove('director', { board: '', name: '', goLiveAt: soon, why: 'Second.', bundle: { id: 'w', name: 'The Waits', role: 'move' }, lasting: { kind: 'moveThread', params: { thread: threadA, board: { role: 'minus' } } } });
+      },
+    });
+    const bundle = await within(await group(/^Waiting to land/u)).findByRole('group', { name: 'The Waits' });
+    const [first, second] = within(bundle).getAllByRole('article');
+    expect(second).toHaveTextContent('Waits for the part “minus” (World -1) to land first.');
+    expect(first).not.toHaveTextContent(/Waits for/u);
+  });
+});
+
+describe('a bundle: a merge\'s label and a wait on a move', () => {
+  test('a part that merges one board into another is named for both, in the right order', async () => {
+    const { w } = open({
+      build: (fake, w) => {
+        fake.seed.queueMove('director', { board: '', name: '', goLiveAt: fake.clock.now() + 3_600_000, why: 'Merge.', bundle: { id: 'mg', name: 'The Merge' }, lasting: { kind: 'mergeBoard', params: { board: w.second, into: w.general } } });
+      },
+    });
+    const bundle = await within(await group(/^Waiting to land/u)).findByRole('group', { name: 'The Merge' });
+    expect(within(bundle).getByRole('button', { name: `Hold: Merge ${w.secondName} into Pointless Toast Palace` })).toBeInTheDocument();
+  });
+
+  test('a wait with no role says it waits for a move, not a part', async () => {
+    open({
+      build: (fake, w) => {
+        const soon = fake.clock.now() - 60_000;
+        const first = fake.seed.queueMove('director', { board: '', name: '', goLiveAt: soon, why: 'A.', bundle: { id: 'nr', name: 'No Roles' }, lasting: { kind: 'createBoard', params: { name: 'Roomy', premise: 'p', description: 'd' } } });
+        fake.seed.queueMove('director', { board: '', name: '', goLiveAt: soon, why: 'B.', bundle: { id: 'nr', name: 'No Roles' }, waitsOn: [first], lasting: { kind: 'mergeBoard', params: { board: w.second, into: w.general } } });
+      },
+    });
+    const bundle = await within(await group(/^Waiting to land/u)).findByRole('group', { name: 'No Roles' });
+    expect(bundle).toHaveTextContent('Waits for the move it builds on to land first.');
+    expect(bundle).not.toHaveTextContent(/Waits for the part/u);
+  });
+});
+
+describe('a trophy award in the queue', () => {
+  test('names the character it gives the trophy to, never "a member"', async () => {
+    const { w } = open({
+      build: (fake) => {
+        const ann = fake.seed.character(fake.seed.account('queue-ann'), 'Queue Ann', testInstance.classes[0]!.key);
+        fake.seed.trophyMove('director', { character: ann, trophy: 'p1' });
+      },
+    });
+    const force = await group(/^In force/u);
+    await waitFor(() => expect(force).toHaveTextContent('Queue Ann'));
+    expect(force).not.toHaveTextContent('a member');
+    expect(w.second).toBeTruthy();
   });
 });

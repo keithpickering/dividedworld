@@ -11,6 +11,8 @@
  * (the `boards_now` view, supabase/migrations/0046_moves.sql), so ending a move brings the old name back with nothing
  * rewritten.
  *
+ * `createBoard`, `moveThread` and `mergeBoard` are lasting (below, `CREATE_BOARD`): they build the board and stay until reversed or superseded.
+ *
  * The machine's three moves (booster packs design, section 6) are small moves over the Vending Machine's slots: `pullSlot` sells a card's slot out, `repriceSlot` sets a
  * price to a percent of the admin's, `flashSale` opens a hidden slot for a window. Their numbers are the economy's `machine.*` (`machineLimits`), checked here
  * for the params, in the meeting for what the machine holds (the slot, the pulls in force, one move per slot) and again in SQL at the queue and at landing
@@ -36,6 +38,37 @@ export interface BoardRef {
   readonly name: string;
 }
 
+/**
+ * A part of a bundle names the board another part of the same bundle makes by that part's role (`{role: 'minus'}`), where a board's uuid would go; or, from an authored bundle, the board a
+ * part of an earlier beat's bundle made (`{role: 'minus', beat: 'split'}`, the beat's key). The database resolves it to the board when the part lands (supabase/migrations/0302_bundles.sql,
+ * `role_board`; supabase/migrations/0307_meeting_bundles.sql, `beat_role_board`); the engine only holds the shape. A role is lowercase letters, digits, hyphens and underscores, from a
+ * letter; a beat's key is written the same way.
+ */
+export interface RoleRef {
+  readonly role: string;
+  readonly beat?: string;
+}
+
+/** What a role (and a beat's key) may be called; SQL holds the same. */
+export const ROLE = /^[a-z][a-z0-9_-]{0,39}$/;
+
+/** Whether a value is a role, with or without the beat it comes from, and nothing more. */
+export function isRoleRef(v: unknown): v is RoleRef {
+  if (v === null || typeof v !== 'object' || Array.isArray(v)) return false;
+  const o = v as Record<string, unknown>;
+  const keys = Object.keys(o);
+  if (typeof o['role'] !== 'string' || !ROLE.test(o['role'])) return false;
+  if (keys.length === 1) return true;
+  return keys.length === 2 && typeof o['beat'] === 'string' && ROLE.test(o['beat']);
+}
+
+/** The params of the moves that build the board where a role may stand for a board's uuid. A thread is never a role: nothing makes one. */
+const ROLE_PARAMS = ['board', 'into', 'fallback'] as const;
+
+/** A board in a move's words: a link to the board, or, where the board is a part's role not yet made, plain words, since there is no board to link to. */
+const boardPart = (v: unknown, name: string): string | BoardRef =>
+  isRoleRef(v) ? `the board the part "${v.role}" makes` : { board: text(v), name };
+
 /** The move as one short plain sentence, in pieces: words, and the boards it names. */
 export type MoveParts = readonly (string | BoardRef)[];
 
@@ -58,6 +91,21 @@ export interface MachineLimits {
   /** A flash sale's window in hours, from and to. */
   readonly flashHoursLeast: number;
   readonly flashHoursMost: number;
+  /**
+   * What the Boss's trophy award is held to (cosmetics design, section 4), read from the database by the meeting: the instance's Boss list and what stands now. Left out, no
+   * trophy is on a list, so an award is refused: the limit fails closed.
+   */
+  readonly trophies?: TrophyFacts;
+}
+
+/**
+ * The trophies as an award reads them: the kinds the Boss may give with each belt's holder now, the characters no award may name (staff and retired ones), and the
+ * standing awards of this season as `trophy:character` (lowercase). All of it is public in play: a trophy shows on a postbit, and a belt's holder is on its page.
+ */
+export interface TrophyFacts {
+  readonly boss: readonly { readonly key: string; readonly name: string; readonly belt: boolean; readonly holder: string | null; readonly holderName: string | null }[];
+  readonly barred: ReadonlySet<string>;
+  readonly given: ReadonlySet<string>;
 }
 
 export function machineLimits(economy: Readonly<Record<string, number>> = {}): MachineLimits {
@@ -73,6 +121,11 @@ export interface MoveKind {
   readonly structural: boolean;
   /** Whether the move shapes a board, so a new Boss reviews it when it inherits it (the inheritance review). */
   readonly shapesBoard: boolean;
+  /**
+   * Whether the move builds something that stays: it has no expiry and carries no demand, and ends only when it is reversed or superseded. A lasting move changes where
+   * threads are (`threads.board`, derived from the Acts by `thread_place`), and the inheritance review does not hand it on (a new Boss inherits moves that expire).
+   */
+  readonly lasting: boolean;
   /** Whether the Boss may propose it among its `moves`. A move that is not is queued by the meeting from another answer. */
   readonly askable: boolean;
   /**
@@ -115,7 +168,15 @@ export interface MoveKind {
 export interface MoveNames {
   readonly character?: string;
   readonly group?: string;
+  /** The board a move names: a rename's, a thread's new board, the board a merge goes into. */
   readonly board?: string;
+  /** The title of the thread a `moveThread` moves, as it is called now. */
+  readonly thread?: string;
+  /** The board a `moveThread` took the thread from, or the board a `mergeBoard` closes (and its id, so the sentence can link it), as it is called now. */
+  readonly source?: string;
+  readonly sourceId?: string;
+  /** A trophy's name, for a move that gives one (params hold only its key). */
+  readonly trophy?: string;
 }
 
 const text = (v: unknown): string => (typeof v === 'string' ? v : '');
@@ -126,6 +187,7 @@ export const RENAME_BOARD: MoveKind = {
   offices: ['boss'],
   structural: true,
   shapesBoard: true,
+  lasting: false,
   askable: true,
   label: '{role} renamed this board',
   params: {
@@ -150,6 +212,7 @@ export const NAME_SUCCESSOR: MoveKind = {
   offices: ['boss'],
   structural: true,
   shapesBoard: false,
+  lasting: false,
   askable: false,
   label: '{role} named its successor',
   params: { type: 'object', fields: { boss: { type: 'string', minLength: 1, maxLength: 80 } } },
@@ -168,6 +231,7 @@ export const SET_RULE: MoveKind = {
   offices: ['boss', 'mod'],
   structural: false,
   shapesBoard: false,
+  lasting: false,
   askable: true,
   label: 'Set a rule',
   params: {
@@ -208,6 +272,7 @@ export const CONFER_GROUP: MoveKind = {
   offices: ['boss', 'mod'],
   structural: false,
   shapesBoard: false,
+  lasting: false,
   askable: true,
   label: '{role} moved a member',
   params: {
@@ -250,6 +315,7 @@ export const PULL_SLOT: MoveKind = {
   offices: ['boss'],
   structural: false,
   shapesBoard: false,
+  lasting: false,
   askable: true,
   label: '{role} pulled a card from the machine',
   params: { type: 'object', fields: { slot: slotField } },
@@ -269,6 +335,7 @@ export const REPRICE_SLOT: MoveKind = {
   offices: ['boss'],
   structural: false,
   shapesBoard: false,
+  lasting: false,
   askable: true,
   label: '{role} repriced a slot at the machine',
   params: { type: 'object', fields: { slot: slotField, percent: { type: 'number' } } },
@@ -293,6 +360,7 @@ export const FLASH_SALE: MoveKind = {
   offices: ['boss'],
   structural: false,
   shapesBoard: false,
+  lasting: false,
   askable: true,
   label: '{role} opened a flash sale at the machine',
   params: { type: 'object', fields: { slot: slotField, hours: { type: 'number' } } },
@@ -310,7 +378,111 @@ export const FLASH_SALE: MoveKind = {
   parts: (p, was, tense) => [tense === 'plan' ? 'Open a flash sale on ' : 'Opened a flash sale on ', was ?? 'a slot', ` for ${num(p['hours'])} hours`],
 };
 
-export const MOVE_KINDS: readonly MoveKind[] = [RENAME_BOARD, NAME_SUCCESSOR, SET_RULE, CONFER_GROUP, PULL_SLOT, REPRICE_SLOT, FLASH_SALE];
+/**
+ * The three moves that build the board and stay (the fangame split, section 4): each is lasting, with no expiry and no demand, and ends only when a later move
+ * supersedes it or an admin reverses it. A board made, a thread moved and a board merged away are Acts; where a thread is now, and whether a board is open, are
+ * computed from them (`thread_place`, `boards_now`), so a reversal brings the old place back with nothing rewritten.
+ * `createBoard` and `mergeBoard` reshape a board, so each waits in the admin queue about a day; `moveThread` is small. The name a `createBoard` gives is held to
+ * the instance's name style and `boardNameMaxLength` by the meeting, as `renameBoard`'s is; its `fallback` is where threads started in the board go if the move is
+ * reversed (null: the instance's first open board).
+ */
+export const CREATE_BOARD: MoveKind = {
+  key: 'createBoard',
+  offices: ['boss'],
+  structural: true,
+  shapesBoard: true,
+  lasting: true,
+  askable: true,
+  label: 'Created a board',
+  params: {
+    type: 'object',
+    fields: {
+      name: { type: 'string', minLength: 1, maxLength: 200 },
+      premise: { type: 'string', minLength: 1, maxLength: 500 },
+      description: { type: 'string', minLength: 1, maxLength: 2000 },
+      fallback: { type: 'string', minLength: 36, maxLength: 36, optional: true },
+    },
+  },
+  uuids: ['fallback'],
+  demand: () => 'none',
+  plain: 'the making of a board named "{name}"',
+  template: (p, role) => `${role} made a board named "${text(p['name'])}". Its subject is: ${text(p['premise'])}`,
+  parts: (p, _was, tense) => [`${tense === 'plan' ? 'Create' : 'Created'} a board named "${text(p['name'])}"`],
+};
+
+/** The Boss moves one thread to another board. A second move of the same thread supersedes the first; reversing one returns the thread to where the one before it put it. */
+export const MOVE_THREAD: MoveKind = {
+  key: 'moveThread',
+  offices: ['boss'],
+  structural: false,
+  shapesBoard: false,
+  lasting: true,
+  askable: true,
+  label: 'Moved a thread',
+  params: { type: 'object', fields: { thread: { type: 'string', minLength: 36, maxLength: 36 }, board: { type: 'string', minLength: 36, maxLength: 36 } } },
+  uuids: ['thread', 'board'],
+  demand: () => 'none',
+  plain: 'the moving of a thread to another board',
+  template: (p, role, names) => `${role} moved ${names?.thread ?? 'a thread'}${names?.source ? ` from ${names.source}` : ''} to ${names?.board ?? 'another board'}. Nothing in the thread was changed; the board it left lists where it went for a few days.`,
+  parts: (p, _was, tense, names) => {
+    const head = `${tense === 'plan' ? 'Move' : 'Moved'} ${names?.thread ?? 'a thread'}`;
+    const to = boardPart(p['board'], names?.board ?? 'a board');
+    return names?.source ? [`${head} from `, { board: names.sourceId ?? '', name: names.source }, ' to ', to] : [`${head} to `, to];
+  },
+};
+
+/** The Boss merges one board into another: its threads join the other and it closes, kept as a record. `board` and `into` differ; the database also refuses a cycle. */
+export const MERGE_BOARD: MoveKind = {
+  key: 'mergeBoard',
+  offices: ['boss'],
+  structural: true,
+  shapesBoard: true,
+  lasting: true,
+  askable: true,
+  label: 'Merged a board',
+  params: { type: 'object', fields: { board: { type: 'string', minLength: 36, maxLength: 36 }, into: { type: 'string', minLength: 36, maxLength: 36 } } },
+  uuids: ['board', 'into'],
+  check: (g) => (text(g['board']) === text(g['into']) ? { path: 'into', predicate: 'differsFromBoard' } : null),
+  demand: () => 'none',
+  plain: 'the merging of a board into another',
+  template: (_p, role, names) => `${role} merged ${names?.source ?? 'a board'} into ${names?.board ?? 'another'}. Its threads moved with it, and the board is closed.`,
+  parts: (p, was, tense, names) => [tense === 'plan' ? 'Merge ' : 'Merged ', boardPart(p['board'], was ?? 'a board'), ' into ', boardPart(p['into'], names?.board ?? 'a board')],
+};
+
+/**
+ * The Boss gives a character a trophy from the instance's Boss list, or a belt (cosmetics design, section 4). A favor: it carries no demand, and the award is its whole effect,
+ * so the move ends the moment it lands and the trophy stays (an admin can take it back). The limits are the list, the character (not staff, not retired), a trophy that is not a
+ * belt given at most once a season to a character, and a belt never to its holder. The shape is checked here; the list and what stands are `limits.trophies`, read from the
+ * database, and SQL holds the same limits at landing (supabase/migrations/0208_award_trophy_move.sql).
+ */
+export const AWARD_TROPHY: MoveKind = {
+  key: 'awardTrophy',
+  offices: ['boss'],
+  structural: false,
+  shapesBoard: false,
+  lasting: false,
+  askable: true,
+  label: '{role} gave out a trophy',
+  params: { type: 'object', fields: { trophy: { type: 'string', minLength: 1, maxLength: 60 }, character: { type: 'string', minLength: 36, maxLength: 36 } } },
+  uuids: ['character'],
+  check: (g, limits) => {
+    const trophies = limits.trophies;
+    const kind = trophies?.boss.find((t) => t.key === text(g['trophy']));
+    if (!trophies || !kind) return { path: 'trophy', predicate: 'onBossList' };
+    const who = text(g['character']);
+    if (trophies.barred.has(who)) return { path: 'character', predicate: 'notStaffOrRetired' };
+    if (kind.belt) return kind.holder === who ? { path: 'trophy', predicate: 'notItsHolder' } : null;
+    return trophies.given.has(`${kind.key}:${who}`.toLowerCase()) ? { path: 'trophy', predicate: 'notGivenThisSeason' } : null;
+  },
+  demand: () => 'none',
+  plain: 'the giving of the {trophyName} trophy to {characterName}',
+  /** SQL's `system_line` fills them: the trophy's name from `trophy_kinds`, the character's from its row (both public: a trophy shows on a postbit). */
+  derived: ['trophyName', 'characterName'],
+  template: (p, role, names) => `${role} gave ${names?.character ?? 'a member'} the trophy ${names?.trophy ?? text(p['trophy'])}.`,
+  parts: (p, _was, tense, names) => [`${tense === 'plan' ? 'Give' : 'Gave'} ${names?.character ?? 'a member'} the trophy ${names?.trophy ?? text(p['trophy'])}`],
+};
+
+export const MOVE_KINDS: readonly MoveKind[] = [RENAME_BOARD, NAME_SUCCESSOR, SET_RULE, CONFER_GROUP, PULL_SLOT, REPRICE_SLOT, FLASH_SALE, AWARD_TROPHY, CREATE_BOARD, MOVE_THREAD, MERGE_BOARD];
 
 /** The moves the Boss may propose among its `moves`: the catalog less the ones another answer queues. */
 export const ASKABLE_MOVE_KINDS: readonly MoveKind[] = MOVE_KINDS.filter((k) => k.askable);
@@ -323,11 +495,32 @@ export function moveKind(key: string): MoveKind | undefined {
  * A move's params against its kind: the shape and string bounds through `repair` (a string over its bound is trimmed and
  * recorded; a missing or mistyped field is rejected), then each uuid param, then the kind's own check. A key outside the catalog is rejected, naming it.
  * A machine move's numbers are held to `limits` (the economy's `machine.*`; the engine's defaults where none is given).
+ * Inside a bundle (`inBundle`), a lasting move's `board`, `into` or `fallback` may be a `{role}` where a board's uuid goes: it is kept as it is, for the database to resolve when the part lands,
+ * and is refused outside a bundle (`roleInsideBundle`). Each role stands for a board of its own while the kind's own check reads the params, so a merge of one role into another is no merge into itself.
  */
-export function moveParamsProblems(key: string, params: unknown, limits: MachineLimits = machineLimits()): Repaired {
+export function moveParamsProblems(key: string, params: unknown, limits: MachineLimits = machineLimits(), inBundle = false): Repaired {
   const kind = moveKind(key);
   if (!kind) return { ok: false, path: 'kind', predicate: `oneOf(${MOVE_KINDS.map((k) => k.key).join(', ')})`, trims: [] };
-  const out = repair(params, kind.params);
+  const roles = new Map<string, RoleRef>();
+  let offered = params;
+  if (kind.lasting && params !== null && typeof params === 'object' && !Array.isArray(params)) {
+    const copy: Record<string, unknown> = { ...(params as Record<string, unknown>) };
+    const standIns: string[] = [];
+    for (const name of ROLE_PARAMS) {
+      const v = copy[name];
+      if (!kind.uuids.includes(name) || v === null || typeof v !== 'object' || Array.isArray(v)) continue;
+      if (!inBundle) return { ok: false, path: name, predicate: 'roleInsideBundle', trims: [] };
+      if (!isRoleRef(v)) return { ok: false, path: name, predicate: 'isRole', trims: [] };
+      // A role of this bundle and the same role of another beat are two boards.
+      const stand = `${v.beat ?? ''}/${v.role}`;
+      let at = standIns.indexOf(stand);
+      if (at < 0) at = standIns.push(stand) - 1;
+      roles.set(name, v.beat === undefined ? { role: v.role } : { role: v.role, beat: v.beat });
+      copy[name] = `00000000-0000-4000-8000-${String(at + 1).padStart(12, '0')}`;
+    }
+    offered = copy;
+  }
+  const out = repair(offered, kind.params);
   if (!out.ok) return out;
   const given = out.value as Record<string, unknown>;
   for (const name of kind.uuids) {
@@ -343,5 +536,7 @@ export function moveParamsProblems(key: string, params: unknown, limits: Machine
     const bad = kind.check(given, limits);
     if (bad) return { ok: false, path: bad.path, predicate: bad.predicate, trims: out.trims };
   }
+  // The roles go back where the stand-ins were.
+  for (const [name, ref] of roles) given[name] = ref;
   return out;
 }

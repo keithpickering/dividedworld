@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { RARITIES, quadrantFree, faceUpOnly, openDrive, giftSplit, wardTurnsAway, SET_PHRASE_MOST, atOrBelow, drawnInMoment, refusalTime, spanMs, decidePlay, decideSet, decideUse, effectsOnTarget, landsOn, ok, staffConfigOf, staffOffers, refuse, type CardEffect, type CardRules, type CardTarget } from './cards.ts';
+import { RARITIES, quadrantFree, faceUpOnly, openDrive, giftSplit, wardTurnsAway, SET_PHRASE_MOST, atOrBelow, drawnInMoment, refusalTime, spanMs, decidePlay, decideSet, decideDraw, decideWash, decideUse, effectsOnTarget, landsOn, noQuoteWords, quoteStop, ok, staffConfigOf, staffDrawOf, staffOffers, refuse, type CardEffect, type CardRules, type CardTarget } from './cards.ts';
 import type { Settings } from './types.ts';
 
 // The engine's own test cards: no instance's names (the engine/instance boundary).
@@ -264,6 +264,13 @@ test('staffConfigOf: the default as {}, else a valid staffConfigs pick at either
   const stocked: CardRules = { ...inky, staffConfigs: [{ ink: 'red' }, { ink: 'blue' }] };
   for (const edge of [0, 0.9999999999]) assert.deepEqual(staffConfigOf(stocked, () => edge), { ink: 'red' }, `rng ${edge} lands on a config the card accepts (the invalid one is never picked)`);
   assert.equal(staffConfigOf({ ...inky, staffConfigs: [{ ink: 'blue' }] }, () => 0), null, 'staffConfigs the card itself refuses leave nothing to play');
+});
+
+test('staffOffers: a cast card that carries a gimmick is never offered, and is again without it', () => {
+  const earner: CardRules = { ...plain, reaches: ['character'], lasts: { unit: 'hour', count: 36 }, gimmick: { kind: 'earn', quadrants: ['calmPositive'], by: 0.1 } };
+  assert.equal(staffOffers(earner), false, 'a staff character\'s Acts are not settled, so an earn a persona cast would never be paid');
+  const { gimmick: _gone, ...bare } = earner;
+  assert.equal(staffOffers(bare as CardRules), true, 'the same card without the earn');
 });
 
 test('staffOffers: a card with staffOptions and no default is offered, and a card with neither is not', () => {
@@ -567,4 +574,125 @@ test('a ride trap names its quadrant in its configuration: a card that drops it 
   assert.match((decideSet(ride, settings, post, [], { ...named, card: 'nothing' }, [inky]) as { why: string }).why, /names a card that is cast on a post/);
   // A catching trap has no outcome and needs no quadrant.
   assert.equal(decideSet(snare, settings, post, [], { card: 'inky' }, [inky]).ok, true);
+});
+
+test('a card\'s repairStaff is the persona\'s alone: a player\'s play with the same options is decided as given, never repaired', () => {
+  const trimmed = { path: 'card.config.fixer.list', predicate: 'mostTwo', before: 3, after: 2 };
+  const fixer: CardRules = {
+    ...cast('fixer', 'common'),
+    validateConfig: (c) => ((c as { list?: unknown[] }).list?.length ?? 0) <= 2 ? ok(c) : refuse('a play holds at most two'),
+    repairStaff: (c, target) => ({ config: { list: (c as { list: unknown[] }).list.slice(0, 2), seen: target.text }, trims: [trimmed] }),
+  };
+  const target = { reach: 'post', act: 'p', kind: 'post', length: 3, text: 'abc' } as const satisfies CardTarget;
+  const repaired = fixer.repairStaff!({ list: [1, 2, 3] }, target);
+  assert.deepEqual(repaired, { config: { list: [1, 2], seen: 'abc' }, trims: [trimmed] });
+  assert.equal(decidePlay(fixer, settings, target, [], { list: [1, 2, 3] }, '').ok, false, 'decidePlay never calls it');
+  assert.equal(decidePlay(fixer, settings, target, [], repaired.config, '').ok, true);
+});
+
+// A surface card: its draws and washes are the card's to keep; the engine counts their cells and reads the limit from the settings.
+const strokeOf = (input: unknown) => (typeof input === 'object' && input !== null && Array.isArray((input as { strokes?: unknown }).strokes) ? ok({ strokes: (input as { strokes: never[] }).strokes, payload: { kept: true } }) : refuse('draw some strokes'));
+const wall: CardRules = { ...cast('wall', 'rare'), screenReads: [{ key: 'wall.limit', whole: true, min: 1, max: 100 }], surface: { limitKey: 'wall.limit', mostLive: 48, validateDraw: strokeOf, validateWash: (i) => (i === 'nothing' ? refuse('wash something') : strokeOf(i)) } };
+const dab = { strokes: [{ width: 0.012, aspect: 1, points: [[0.505, 0.505]] }] };
+const walled = { cardSettings: { 'wall.limit': 40 } } as unknown as Settings;
+
+test('a draw is refused with the card\'s own words, and kept with its cells and the limit from the settings', () => {
+  assert.deepEqual(decideDraw(wall, walled, 'scribble'), { ok: false, why: 'draw some strokes' });
+  const drawn = decideDraw(wall, walled, dab);
+  assert.equal(drawn.ok, true);
+  if (!drawn.ok) return;
+  assert.deepEqual(drawn.value.payload, { kept: true });
+  assert.equal(drawn.value.cells.length, 10000);
+  assert.equal(drawn.value.cells.indexOf('1'), 50 * 100 + 50);
+  assert.equal(drawn.value.cells.split('1').length - 1, 1);
+  assert.equal(drawn.value.most, 4000);
+  const other = decideDraw(wall, { cardSettings: { 'wall.limit': 7 } } as unknown as Settings, dab);
+  assert.equal(other.ok && other.value.most, 700);
+});
+
+test('a wash is refused with the card\'s own words, and kept with its cells', () => {
+  assert.deepEqual(decideWash(wall, walled, 'nothing'), { ok: false, why: 'wash something' });
+  const washed = decideWash(wall, walled, dab);
+  assert.equal(washed.ok && washed.value.cells.indexOf('1'), 5050);
+  assert.equal(washed.ok && washed.value.payload.kept, true);
+});
+
+test('a card with no surface takes no draw and no wash, and a limit the settings do not hold is a fault', () => {
+  assert.equal(decideDraw(plain, walled, dab).ok, false);
+  assert.equal(decideWash(plain, walled, dab).ok, false);
+  assert.throws(() => decideDraw(wall, { cardSettings: {} } as unknown as Settings, dab), /wall\.limit/);
+});
+
+test('a surface card is played with its first draw, and refused without it; other cards are untouched', () => {
+  const none = decidePlay(wall, walled, post, [], {}, '');
+  assert.deepEqual(none, { ok: false, why: 'draw your tag first' });
+  const played = decidePlay(wall, walled, post, [], {}, '', { first: dab });
+  assert.equal(played.ok && played.value.draw?.most, 4000);
+  assert.equal(played.ok && played.value.draw?.cells.indexOf('1'), 5050);
+  assert.deepEqual(decidePlay(wall, walled, post, [], {}, '', { first: 'scribble' }), { ok: false, why: 'draw some strokes' });
+  const plainPlay = decidePlay(plain, settings, post, [], {}, '');
+  assert.equal(plainPlay.ok && plainPlay.value.draw, undefined);
+  assert.deepEqual(decideSet(wall, walled, post, [], {}, [plain]), { ok: false, why: 'draw your tag first' });
+  const set = decideSet(wall, walled, post, [], {}, [plain], { first: dab });
+  assert.equal(set.ok && set.value.draw?.cells.indexOf('1'), 5050);
+});
+
+test('a second play of a surface card is refused as a wall, in the words the database uses; other cards keep the stack\'s words', () => {
+  const post: CardTarget = { reach: 'post', act: 'p', kind: 'post', length: 1, body: 'x', version: 'v', effects: [] } as unknown as CardTarget;
+  const up = [{ card: 'wall', act: 'k1' }] as unknown as CardEffect[];
+  assert.deepEqual(landsOn({ key: 'wall', surface: true }, post, up), { ok: false, why: 'This post is already a wall. Draw on it instead.' });
+  assert.deepEqual(landsOn({ key: 'wall' }, post, up), { ok: false, why: 'this post already carries that card' });
+  assert.equal(landsOn({ key: 'wall', surface: true }, post, []).ok, true);
+});
+
+// A Mod Bot's first draw on a surface card: staffConfigOf returns {} where validateConfig({}) accepts, so it never reaches staffConfigs; staffDrawOf does.
+test('a surface card\'s fallback first draw is one of its staffConfigs that the card\'s own validateDraw accepts, chosen by the seed', () => {
+  const stencils = [{ strokes: [{ width: 0.012, aspect: 1, points: [[0.505, 0.505]] }] }, { strokes: [{ width: 0.012, aspect: 1, points: [[0.205, 0.205]] }] }];
+  const staffed: CardRules = { ...wall, staffConfigs: [...stencils, { strokes: 'junk' } as never] };
+  assert.deepEqual(staffConfigOf(staffed, () => 0), {}, 'the play\'s configuration is still the default');
+  assert.deepEqual(staffDrawOf(staffed, () => 0), stencils[0]);
+  assert.deepEqual(staffDrawOf(staffed, () => 0.99), stencils[1], 'the junk entry is never chosen');
+  assert.equal(staffDrawOf({ ...wall, staffConfigs: [{ strokes: 'junk' } as never] }, () => 0), null);
+  assert.equal(staffDrawOf(plain, () => 0), null, 'a card with no surface has no draw');
+  assert.equal(staffOffers(staffed), true);
+  assert.equal(staffOffers({ ...wall }), false, 'a surface card with no draw to fall back on and no options is not offered');
+  assert.equal(staffOffers({ ...wall, staffOptions: { prompt: 'p', schema: { type: 'object' } } }), true);
+  assert.equal(staffOffers({ ...staffed, play: 'set' }), false, 'a surface card is played, never set');
+});
+
+const hush: CardRules = { ...base, key: 'hush', name: 'Test Hush', rarity: 'uncommon', play: 'use', gimmick: { kind: 'noQuote' }, lasts: { unit: 'day', count: 7 }, canApply: (t, e, _config, now) => landsOn({ key: 'hush' }, t, e, now) };
+
+test('quoteStop finds a live no-quote on a post, and not an ended one or one on a thread', () => {
+  const stop: CardEffect = { card: 'hush', act: 'h', gimmick: { kind: 'noQuote' }, ends: soon };
+  assert.equal(quoteStop([stop])?.act, 'h');
+  assert.equal(quoteStop([{ ...stop, reach: 'post' }])?.act, 'h');
+  assert.equal(quoteStop([{ ...stop, ends: gone }]), undefined);
+  assert.equal(quoteStop([{ ...stop, reach: 'thread' }]), undefined);
+  assert.equal(quoteStop([{ card: 'shield', act: 'w', gimmick: { kind: 'ward', upTo: 'uncommon' }, ends: soon }]), undefined);
+  assert.equal(quoteStop([stop], new Date(Date.parse(soon) + 1000)), undefined, 'read on the clock it is given');
+});
+
+test('noQuoteWords names the post by its number where it is in the thread, and says so where it is not', () => {
+  const ends = '2030-01-02T03:04:05.000Z';
+  assert.equal(noQuoteWords('Test Hush', ends, 4), `post 4 carries Test Hush, so it cannot be quoted until ${refusalTime(ends)}; take that quote out and send again`);
+  assert.equal(noQuoteWords('Test Hush', ends, null), `a post in another thread carries Test Hush, so it cannot be quoted until ${refusalTime(ends)}; take that quote out and send again`);
+  assert.equal(noQuoteWords('Test Hush', undefined, 4), 'post 4 carries Test Hush, so it cannot be quoted until it ends; take that quote out and send again');
+});
+
+test('a no-quote is refused on a post that holds a live back, and accepted once the back has ended', () => {
+  const back: CardEffect = { card: null, act: 'b', faceDown: true, ends: soon };
+  assert.deepEqual(decideUse(hush, settings, post, [back], {}, ''), { ok: false, why: 'Test Hush stops quotes, and this post holds a card face down; take that card back first' });
+  assert.equal(decideUse(hush, settings, post, [{ ...back, ends: gone }], {}, '').ok, true);
+  assert.equal(decideUse(hush, settings, post, [], {}, '').ok, true);
+  assert.equal(decideUse(shield, settings, post, [back], {}, '').ok, true, 'a ward is no no-quote');
+});
+
+test('a card is not set face down on a post with a live no-quote, and is once it has ended', () => {
+  const stop: CardEffect = { card: 'hush', act: 'h', gimmick: { kind: 'noQuote' }, ends: soon };
+  const why = `this post's Test Hush stops quotes until ${refusalTime(soon)}, so no card is set face down here until then`;
+  assert.deepEqual(decideSet(snare, settings, post, [stop], { card: 'inky' }, [inky, hush]), { ok: false, why });
+  assert.deepEqual(decideSet(inky, settings, post, [stop], { ink: 'red' }, [inky, hush]), { ok: false, why }, 'a Move too');
+  assert.deepEqual(decideSet(watcher, settings, post, [stop], {}, [hush]), { ok: false, why }, 'a Reversal that springs on a visit too');
+  assert.equal(decideSet(snare, settings, post, [{ ...stop, ends: gone }], { card: 'inky' }, [inky, hush]).ok, true);
+  assert.match((decideSet(watcher, settings, post, [stop], {}, []) as { why: string }).why, /this post's hush stops quotes until/, 'the key where the card is not found');
 });

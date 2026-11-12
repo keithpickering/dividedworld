@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { StrictMode, useEffect, useState } from 'react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { KayfaProvider, type Kayfa } from './context.tsx';
-import { addressOf, Link, RouterProvider, searchOf, useLocation, useNavigate, useNavigation, usePendingFrom, usePrefetch, useRouterAccount, useRouterInternals, type Location } from './router.tsx';
+import { addressOf, Link, RouterProvider, searchOf, useLocation, useNavigate, useNavigation, usePendingFrom, usePrefetch, useNavigationGuard, useRouterAccount, useRouterInternals, type Location, type NavigationGuard } from './router.tsx';
 import { Routes, type Route } from './routes.tsx';
 import { ReadFailure } from './data/api.ts';
 
@@ -1063,5 +1063,85 @@ describe('a navigation names its source', () => {
     expect(calls).toHaveLength(1);
     expect(navigation.pending).not.toBeNull();
     expect(navigation.pending?.source).toBeNull();
+  });
+});
+
+describe('the navigation guard', () => {
+  function Guarded({ guard }: { readonly guard: NavigationGuard }) { useNavigationGuard(guard); return null; }
+  function Moves() {
+    const navigate = useNavigate();
+    return <><button onClick={() => navigate('/signed-out', { afterAccountChange: true })}>account</button><button onClick={() => navigate('/')}>here</button></>;
+  }
+  const mountGuarded = (guard: NavigationGuard) => render(<RouterProvider><Guarded guard={guard} /><Link to="/a">a</Link><Moves /><Where /></RouterProvider>);
+  const path = () => window.location.pathname;
+
+  test('a guard that takes a link over stops it until it proceeds; Stay is never calling proceed', async () => {
+    let proceed: () => void = () => undefined;
+    const guard = vi.fn((p: () => void) => { proceed = p; return true; });
+    mountGuarded(guard);
+    await userEvent.click(screen.getByRole('link', { name: 'a' }));
+    expect(guard).toHaveBeenCalledTimes(1);
+    expect(path()).toBe('/');
+    expect(screen.getByTestId('path').textContent).toBe('/');
+    act(() => proceed());
+    expect(path()).toBe('/a');
+    expect(screen.getByTestId('path').textContent).toBe('/a');
+  });
+  test('a guard that lets it go (false) does not stop it, and the same address is not asked', async () => {
+    const guard = vi.fn(() => false);
+    mountGuarded(guard);
+    act(() => screen.getByText('here').click());
+    expect(guard).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole('link', { name: 'a' }));
+    expect(guard).toHaveBeenCalledTimes(1);
+    expect(path()).toBe('/a');
+  });
+  test('a move the account change makes is never asked', () => {
+    const guard = vi.fn(() => true);
+    mountGuarded(guard);
+    act(() => screen.getByText('account').click());
+    expect(guard).not.toHaveBeenCalled();
+    expect(path()).toBe('/signed-out');
+  });
+  test('Back that the guard takes over is undone by the way it came: Stay changes no history, Leave goes to the entry Back named', async () => {
+    let proceed: () => void = () => undefined;
+    const guard = vi.fn((p: () => void) => { proceed = p; return true; });
+    const open = { current: false };
+    const wrapped: NavigationGuard = (p) => (open.current ? guard(p) : false);
+    mountGuarded(wrapped);
+    await userEvent.click(screen.getByRole('link', { name: 'a' }));
+    expect(path()).toBe('/a');
+    const length = window.history.length;
+    open.current = true;
+    act(() => window.history.back());
+    await waitFor(() => expect(guard).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(path()).toBe('/a'));
+    expect(window.history.length).toBe(length);
+    expect(screen.getByTestId('path').textContent).toBe('/a');
+    /* Leave: the browser goes to the entry Back named, by history, and is not asked again. */
+    open.current = false;
+    act(() => proceed());
+    await waitFor(() => expect(path()).toBe('/'));
+    expect(screen.getByTestId('path').textContent).toBe('/');
+    expect(window.history.length).toBe(length);
+    expect(guard).toHaveBeenCalledTimes(1);
+  });
+  test('Forward is asked the same way, and Leave goes forward', async () => {
+    let proceed: () => void = () => undefined;
+    const open = { current: false };
+    const guard = vi.fn((p: () => void) => { proceed = p; return open.current; });
+    mountGuarded(guard);
+    await userEvent.click(screen.getByRole('link', { name: 'a' }));
+    act(() => window.history.back());
+    await waitFor(() => expect(path()).toBe('/'));
+    open.current = true;
+    act(() => window.history.forward());
+    await waitFor(() => expect(guard).toHaveBeenCalled());
+    await waitFor(() => expect(path()).toBe('/'));
+    expect(screen.getByTestId('path').textContent).toBe('/');
+    open.current = false;
+    act(() => proceed());
+    await waitFor(() => expect(path()).toBe('/a'));
+    expect(screen.getByTestId('path').textContent).toBe('/a');
   });
 });

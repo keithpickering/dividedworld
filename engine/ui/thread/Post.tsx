@@ -15,9 +15,15 @@ import { PostEffects } from '../cards/Effects.tsx';
 import { PostMarks, type FormAsk } from '../cards/Marks.tsx';
 import { AppealCtx, ViolationNotice } from '../cards/Visit.tsx';
 import { useReachShown } from '../cards/PlayActions.tsx';
+import { effectsOf } from '../cards/land.ts';
+import { usePlays } from '../cards/plays.ts';
+import type { CardPlay } from '../cards/types.ts';
+import { quoteStop } from '../../rules/cards.ts';
+import type { Instance } from '../../rules/types.ts';
 import { EditPost } from '../composer/EditPost.tsx';
 import type { Act, Id, Visit } from '../data/api.ts';
 import { useNarrow } from '../media.ts';
+import { landPost } from '../shine/landing.ts';
 import { usePlayer } from '../player.tsx';
 import { Postbit, Signature, type PostbitLayout, type PostbitPerson } from '../postbit/Postbit.tsx';
 import { Link } from '../router.tsx';
@@ -58,6 +64,9 @@ function Body({ act, name, spoken, person, editing, onDone, marks, visit }: { re
           <Reactions act={act.id} author={act.character} authorName={spoken} tallies={tallies} mine={mine} />
         </>
       );
+    /* A draw or a wash is a surface's layer, drawn by its card's effect on the post it is on: it is nothing to draw as a post. */
+    case 'draw':
+    case 'wash': return null;
     case 'move_end': return <MoveEndLine act={act} />;
     case 'move_keep': return <MoveKeepLine name={name} pronouns={person?.character.pronouns ?? ENGINE_DEFAULT_PRONOUNS} />;
     case 'move':
@@ -109,19 +118,32 @@ function Body({ act, name, spoken, person, editing, onDone, marks, visit }: { re
 /** What the post's spin form is open for: the post itself, or a play on it (from its Lens), with what gives focus back when it closes. */
 export interface SpinOrigin { readonly id: Id; readonly label: string | null; readonly opener: HTMLElement | null }
 
+/**
+ * Whether a post's plays stop a quote of it as of the moment this is called (`quoteStop`). `quotableAt` calls it when a selection is made, so it reads the
+ * time then. The post's own Quote link and the toolbar's (`Thread.tsx`, `latest`, a `useMemo`) call it while drawing, so a play that has ended frees them
+ * when that post or the toolbar next renders after the end (a change to that post's plays, or a new page read), not at the moment itself. Meanwhile nothing
+ * on the client refuses a quote typed by hand; the server's guard is the authority.
+ */
+export function quoteStopped(plays: readonly CardPlay[], instance: Pick<Instance, 'cards' | 'settings'>): boolean {
+  return quoteStop(effectsOf(plays, instance.cards)) !== undefined;
+}
+
 function Actions({ act, editing, onEdit, editButton, spinOrigin, setSpinOrigin, onReport }: {
   /** Opens the post's report form; absent where the post cannot be reported by this reader (a staff post, the current mask's own, no mask to report through). */
   readonly onReport: ((opener: HTMLElement) => void) | null;
   readonly act: Act; readonly editing: boolean; readonly onEdit: () => void; readonly editButton: React.RefObject<HTMLButtonElement | null>;
   readonly spinOrigin: SpinOrigin | null; readonly setSpinOrigin: (o: SpinOrigin | null) => void;
 }) {
-  const { quote } = useThread();
+  const { quote, plays } = useThread();
+  const { instance } = useKayfa();
   const { actingCharacters } = usePlayer();
   const spinButton = useRef<HTMLButtonElement>(null);
   /* One draft per origin: the form is keyed by its origin, so a switch between the post and a play would otherwise lose what was typed (#100). */
   const drafts = useSpinDrafts();
   const history = useHistory(act.id);
-  const quotable = (act.kind === 'post' || act.kind === 'spin') && quote !== null;
+  const stopped = quoteStopped(usePlays(plays, act.id).plays, instance);
+  /* A post under a no-quote has no Quote link: left out, not disabled, since its mark and Lens say why. */
+  const quotable = (act.kind === 'post' || act.kind === 'spin') && quote !== null && !stopped;
   const mine = act.kind === 'post' && act.character !== null && actingCharacters.some((c) => c.id === act.character);
   /* The post's own Spin thread is pressed while its form is open for the post; a play's form is opened from its row in the Lens. */
   const spinning = spinOrigin?.id === act.id;
@@ -167,6 +189,11 @@ export const ActArticle = memo(function ActArticle({ act, person, layout, slid }
     observer.observe(el);
     return () => observer.unobserve(el);
   }, [observer]);
+  /* Glitter lands on this post's cells (docs/plans/2026-11-11-shake-design.md section 4); the way out lets go of them. Strict-mode safe: each run's way out undoes that run. */
+  useEffect(() => {
+    const el = ref.current;
+    return el ? landPost(el) : undefined;
+  }, []);
   const name = nameOf(act, person, ui.copy.staffWord);
   /* The name as it reads inside a sentence: the staff's word is set for a name slot ("The staff"), so it is lowered here ("Post 3 by the staff"). */
   const spoken = act.character === null ? lowerFirst(name) : name;

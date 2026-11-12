@@ -83,10 +83,10 @@ test("a record with no parts gives one unknown entry per kept call, never an inv
   }
 });
 
-test("three ok parts each take their own call, whatever order the calls come in", () => {
-  const calls = [meetingCall("self", 3000), meetingCall("moves", 1000), meetingCall("staff", 2000)];
+test("every ok part takes its own call, whatever order the calls come in", () => {
+  const calls = [meetingCall("self", 4000), meetingCall("moves", 1000), meetingCall("staff", 3000), meetingCall("bundle", 2000)];
   const record = { parts: MEETING_PARTS.map((p) => ({ part: p.key, outcome: "ok" })) };
   const parts = meetingParts(record, calls);
-  assert.deepEqual(parts.map((p) => p.sent?.system), ["SYS-moves", "SYS-staff", "SYS-self"]);
-  assert.deepEqual(parts.map((p) => p.answer), [{ answered: "moves" }, { answered: "staff" }, { answered: "self" }]);
+  assert.deepEqual(parts.map((p) => p.sent?.system), ["SYS-moves", "SYS-bundle", "SYS-staff", "SYS-self"]);
+  assert.deepEqual(parts.map((p) => p.answer), [{ answered: "moves" }, { answered: "bundle" }, { answered: "staff" }, { answered: "self" }]);
 });

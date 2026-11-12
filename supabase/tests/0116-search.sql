@@ -876,7 +876,13 @@ begin
   if jsonb_array_length(search_posts('zebrafish', null, b1, null, null, false, null, null, 20) -> 'results') is distinct from 2 or jsonb_array_length(search_posts('zebrafish', null, b2, null, null, false, null, null, 20) -> 'results') is distinct from 0 then
     raise exception 'before the move the posts are in board 1'; end if;
   perform tests.unbecome();
-  update threads set board = b2 where id = t;
+  -- A moveThread in force and the rebuild that lands it (0339): the thread's board and its posts' search copy move together, in rebuild_thread_places, the one writer of threads.board.
+  -- (The Act is written in replica mode, which skips the staff-character check this test has no staff for; its open_moves row is what the move's trigger would write.)
+  set local session_replication_role = replica;
+  insert into acts (id, character, kind, thread, payload, seq) values (gen_random_uuid(), c, 'move', t, jsonb_build_object('kind', 'moveThread', 'body', 'Moved.', 'params', jsonb_build_object('thread', t, 'board', b2)), 3);
+  insert into open_moves (move_act, landed_at) select a.id, a.created_at from acts a where a.thread = t and a.kind = 'move';
+  set local session_replication_role = origin;
+  if rebuild_thread_places(array[t]) is distinct from 1 then raise exception 'the rebuild did not move the thread'; end if;
   perform tests.become(who);
   if jsonb_array_length(search_posts('zebrafish', null, b2, null, null, false, null, null, 20) -> 'results') is distinct from 2 or jsonb_array_length(search_posts('zebrafish', null, b1, null, null, false, null, null, 20) -> 'results') is distinct from 0 then
     raise exception 'a thread moved to another board did not take its posts in board-filtered search'; end if;
