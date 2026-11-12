@@ -1,0 +1,47 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Gear renders bench</title>
+<style>
+  body { margin: 0; padding: 24px; background: #142833; color: #cfe0f2; font: 14px/1.4 system-ui, sans-serif; }
+  h2 { font-size: 14px; font-weight: 600; margin: 24px 0 10px; }
+  .row { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; }
+  .ref { width: 420px; border-radius: 12px; }
+  .tiles { display: grid; grid-template-columns: 200px 200px; gap: 20px; }
+  .tile { background: #28456a; border: 3px solid #3d6190; border-radius: 18px; height: 196px; display: grid; place-items: center; }
+  .tile img { width: 170px; }
+  .worn { position: relative; overflow: hidden; border-radius: 6px; }
+  .worn > img:first-child { display: block; width: 100%; }
+  .worn .g { position: absolute; transform: translate(-50%, -50%) rotate(var(--r, 0deg)); }
+  .light { background: #f3f1ea; padding: 14px; border-radius: 12px; }
+</style>
+<h2>The owner's flat art, and the four renders on the same tiles</h2>
+<div class="row">
+  <img class="ref" src="reference.png" alt="The Minus World art: glasses, a cigar and two mustaches">
+  <div class="tiles">
+    <div class="tile"><img src="glasses.png" alt="Rendered glasses"></div>
+    <div class="tile"><img src="cigar.png" alt="Rendered cigar"></div>
+    <div class="tile"><img src="mustache-a.png" alt="Rendered handlebar mustache"></div>
+    <div class="tile"><img src="mustache-b.png" alt="Rendered scalloped mustache"></div>
+  </div>
+</div>
+<h2>Worn, at 354, 177 and 88 pixels wide</h2>
+<div class="row" id="worn"></div>
+<h2>On a light ground, where a soft edge or a dark fringe would show</h2>
+<div class="row light">
+  <img src="glasses.png" width="200" alt=""><img src="cigar.png" width="200" alt=""><img src="mustache-a.png" width="200" alt=""><img src="mustache-b.png" width="200" alt="">
+</div>
+<script>
+  // each piece: its file, where its middle sits on the portrait (as shares of the width and height), its width, its turn
+  const looks = [
+    [['mustache-a', 0.47, 0.565, 0.3, -6]],
+    [['mustache-b', 0.47, 0.56, 0.3, -6], ['cigar', 0.33, 0.6, 0.3, 14]],
+    [['glasses', 0.485, 0.465, 0.44, 3], ['cigar', 0.33, 0.585, 0.3, 14]],
+  ];
+  const row = document.getElementById('worn');
+  for (const w of [354, 177, 88]) for (const look of looks) {
+    const d = document.createElement('div'); d.className = 'worn'; d.style.width = w + 'px';
+    d.innerHTML = '<img src="../../../instances/divided-world/ui/avatars/dguy_portrait.jpg" alt="">' + look.map(([f, x, y, s, r]) =>
+      `<img class="g" src="${f}.png" alt="" style="left:${x * 100}%;top:${y * 100}%;width:${s * 100}%;--r:${r}deg">`).join('');
+    row.append(d);
+  }
+</script>
