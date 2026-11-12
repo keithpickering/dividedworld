@@ -1219,9 +1219,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   }
 
   function react(act: Id, character: Id, kind: string): Answer<{ act: Id; tally: Tally | null }> {
-    /* A post-local kind (a card added it to one post, key `x-…`) is no instance kind, so the decision is asked about a kind it knows; the post's own kinds are read below (react, 0300). */
+    /* A post-local kind (a card added it to one post, key `x-…`) passes the rules by its shape; the post's own kinds are read below, as `react` reads them. */
     const local = emojiOfKey(kind) !== null;
-    const bad = request({ action: 'react', act, character, kind: local ? instance.reactions[0]?.key ?? kind : kind });
+    const bad = request({ action: 'react', act, character, kind });
     if (bad) return bad;
     const c = acting(character);
     if (isRefusal(c)) return c;
