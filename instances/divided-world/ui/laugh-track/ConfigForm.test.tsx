@@ -138,6 +138,19 @@ describe('Laugh Track\'s play form', () => {
     expect(onChange).toHaveBeenLastCalledWith({ cues: [{ phrase: 'waved at', sound: 'laugh' }] });
   });
 
+  test('a stale selection in the copy never refills a row the player is typing in', () => {
+    const { onChange } = form({ cues: [{ phrase: '', sound: 'laugh' }] });
+    phrase(1).focus();
+    fireEvent.change(phrase(1), { target: { value: 'typed' } });
+    onChange.mockClear();
+    select('Luigi waved');
+    expect(onChange).not.toHaveBeenCalled();
+    expect(phrase(1)).toHaveValue('typed');
+    (document.activeElement as HTMLElement).blur();
+    select('Luigi waved');
+    expect(onChange).toHaveBeenCalledWith({ cues: [{ phrase: 'Luigi waved', sound: 'laugh' }] });
+  });
+
   test('a selection outside the copy fills nothing; one inside fills the focused row', () => {
     const { onChange } = form({ cues: [{ phrase: '', sound: 'laugh' }] });
     onChange.mockClear();

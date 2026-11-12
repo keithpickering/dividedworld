@@ -60,6 +60,7 @@ export function ConfigForm({ config, onChange, post, id }: ConfigFormProps) {
   const lastFocused = useRef(0);
   const refocus = useRef<number | null>(null);
   const copy = useRef<HTMLQuoteElement>(null);
+  const form = useRef<HTMLFieldSetElement>(null);
   const body = typeof post.currentPayload?.body === 'string' ? post.currentPayload.body : '';
   const text = useMemo(() => visibleText(parse(body)), [body]);
   const all = useMemo(() => placesOf(text, cues), [text, cues]);
@@ -79,6 +80,9 @@ export function ConfigForm({ config, onChange, post, id }: ConfigFormProps) {
       const el = copy.current;
       const sel = window.getSelection();
       if (!el || !sel || sel.rangeCount === 0 || sel.isCollapsed) return;
+      /* Some browsers leave the document selection on the copy while the player types in a row: a stale one must not refill it. */
+      const active = document.activeElement;
+      if (active && active !== el && form.current?.contains(active) && active.matches('input, select, button')) return;
       const range = sel.getRangeAt(0);
       if (!el.contains(range.commonAncestorContainer)) return;
       const phrase = wholeWords(range.toString(), latest.current.text);
@@ -106,7 +110,7 @@ export function ConfigForm({ config, onChange, post, id }: ConfigFormProps) {
   };
 
   return (
-    <fieldset className="dw-lt-form">
+    <fieldset ref={form} className="dw-lt-form">
       <legend className="dw-lt-form-legend">Your audience&apos;s cues</legend>
       <blockquote ref={copy} className="dw-lt-form-copy" aria-label="The post's words, to select from" tabIndex={0}>
         {text}
@@ -117,7 +121,7 @@ export function ConfigForm({ config, onChange, post, id }: ConfigFormProps) {
           <div key={key} className="dw-lt-form-row">
             <div className="dw-lt-form-fields">
               <label htmlFor={`${id}-phrase-${key}`} className="dw-lt-form-label">
-                Phrase<span className="dw-lt-form-hidden"> for cue {i + 1}</span>
+                Phrase<span className="kb-visually-hidden"> for cue {i + 1}</span>
               </label>
               <input
                 id={`${id}-phrase-${key}`} type="text" value={cue.phrase} maxLength={PHRASE.most} autoComplete="off" spellCheck={false}
@@ -125,7 +129,7 @@ export function ConfigForm({ config, onChange, post, id }: ConfigFormProps) {
                 onChange={(e) => edit(i, { phrase: e.target.value })}
               />
               <label htmlFor={`${id}-sound-${key}`} className="dw-lt-form-label">
-                Sound<span className="dw-lt-form-hidden"> for cue {i + 1}</span>
+                Sound<span className="kb-visually-hidden"> for cue {i + 1}</span>
               </label>
               <select
                 id={`${id}-sound-${key}`} value={cue.sound} onFocus={() => { lastFocused.current = i; }}
