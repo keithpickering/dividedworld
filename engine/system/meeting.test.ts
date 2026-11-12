@@ -5,6 +5,7 @@ import { systemSettings, testSystem } from '../rules/test-system.ts';
 import { DEMAND_KINDS } from './demands.ts';
 import { DEMAND_ID_ROLES, MEETING_FIELDS, MEETING_PARTS, MEETING_RULE, partRule, partSchema, inheritedText, meetingSystemPrompt, namedCharacters, referenceText, repairAnswer, ruleSchema, type InheritedMove, type MachineSlotFacts, type RepairContext } from './meeting.ts';
 import { noteMost } from './memory.ts';
+import type { TrophyFacts } from './moves.ts';
 import { schemaProblems } from './schema.ts';
 import { repair } from './validate.ts';
 import { phaseAt } from './phases.ts';
@@ -100,7 +101,7 @@ test('a nomination is not a move the Boss may propose, and the prompt does not o
   const r = repairAnswer({ ...answer({ kind: 'postsOnBoard', params: { board: BOARD, count: 5 } }), moves: [{ ...move({ kind: 'postsOnBoard', params: { board: BOARD, count: 5 } }), kind: 'nameSuccessor', params: { boss: 'someone' } }] }, ctx());
   assert.ok(r.ok);
   assert.equal(r.moves.length, 0);
-  assert.ok(r.trims.some((t) => t.path === 'moves[0].kind' && t.predicate === 'oneOf(renameBoard, setRule, conferGroup, pullSlot, repriceSlot, flashSale)'), JSON.stringify(r.trims));
+  assert.ok(r.trims.some((t) => t.path === 'moves[0].kind' && t.predicate === 'oneOf(renameBoard, setRule, conferGroup, pullSlot, repriceSlot, flashSale, awardTrophy)'), JSON.stringify(r.trims));
 });
 
 test('a demand only the code sets is dropped when the Boss chooses it, and recorded', () => {
@@ -776,6 +777,65 @@ test('a first group move dropped for its board does not reserve its character: a
   assert.ok(!r.trims.some((t) => t.path === 'moves[1].params.character'), JSON.stringify(r.trims));
 });
 
+// ---- The Boss's trophies (cosmetics plan, Task 5) ----
+
+const TROPHIES: TrophyFacts = {
+  boss: [{ key: 'pet', name: 'Pet', belt: false, holder: null, holderName: null }, { key: 'belt', name: 'Belt', belt: true, holder: ANN, holderName: 'Ann' }],
+  barred: new Set(),
+  given: new Set([`pet:${BOB}`]),
+};
+const award = (trophy: string, character: string) => ({ ...move(null), kind: 'awardTrophy', params: { trophy, character }, demand: undefined });
+const awarded = (moves: unknown[], extra: Partial<RepairContext> = {}) => {
+  const r = repairAnswer({ ...answer(null), moves }, { ...ctx(), trophies: TROPHIES, ...extra });
+  assert.ok(r.ok, JSON.stringify(r));
+  return r;
+};
+
+test('an award of a trophy not on the Boss\'s list is dropped and recorded; one on the list is kept as a favor', () => {
+  const r = awarded([award('hat', ANN), award('pet', ANN)]);
+  assert.deepEqual(r.moves.map((m) => [m.kind, m.params, m.demand]), [['awardTrophy', { trophy: 'pet', character: ANN }, null]]);
+  assert.ok(r.trims.some((t) => t.path === 'moves[0].params.trophy' && t.predicate === 'onBossList'), JSON.stringify(r.trims));
+});
+
+test('an award to a character not public, one given the trophy this season and a belt to its holder are each dropped, naming the predicate', () => {
+  const r = awarded([award('pet', HIDDEN), award('pet', BOB), award('belt', ANN), award('belt', BOB)]);
+  assert.deepEqual(r.moves.map((m) => m.params), [{ trophy: 'belt', character: BOB }]);
+  const why = (path: string) => r.trims.find((t) => t.path === path)?.predicate;
+  assert.equal(why('moves[0].params.character'), 'publicCharacter');
+  assert.equal(why('moves[1].params.trophy'), 'notGivenThisSeason');
+  assert.equal(why('moves[2].params.trophy'), 'notItsHolder');
+});
+
+test('with no trophy list the repair cannot name a trophy, so every award is dropped', () => {
+  const r = repairAnswer({ ...answer(null), moves: [award('pet', ANN)] }, ctx());
+  assert.ok(r.ok && r.moves.length === 0 && r.trims.some((t) => t.predicate === 'onBossList'), JSON.stringify(r));
+});
+
+test('two awards of one non-belt trophy to one character in one answer: the second is dropped', () => {
+  const r = awarded([award('pet', ANN), award('pet', ANN)]);
+  assert.equal(r.moves.length, 1);
+  assert.ok(r.trims.some((t) => t.path === 'moves[1].params.trophy' && t.predicate === 'notGivenThisSeason'));
+});
+
+test('a stray demand on an award is set aside, as on any favor', () => {
+  const r = awarded([{ ...award('pet', ANN), demand: { kind: 'postsOnBoard', params: { board: BOARD, count: 5 } } }]);
+  assert.equal(r.moves[0]!.demand, null);
+  assert.ok(r.trims.some((t) => t.predicate === 'noDemand'));
+});
+
+test('the reference text lists the Boss\'s trophies by key and name, and each belt\'s holder', () => {
+  const text = referenceText({ boards: [], threads: [], characters: [], trophies: TROPHIES });
+  assert.match(text, /## Trophies you may give/);
+  assert.match(text, /- pet: Pet/);
+  assert.match(text, /- belt: Belt \(a belt, held by Ann\)/);
+  assert.doesNotMatch(referenceText({ boards: [], threads: [], characters: [] }), /Trophies/);
+});
+
+test('the prompt tells the Boss the award move and that it carries no demand', () => {
+  const served = meetingSystemPrompt({ boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.it, system: testSystem, settings, phase: ctx().phase, bank: 2, mods: [], characterName: () => 'someone', successorAllowed: false, roster: [], career: { led: [], offices: [] }, notes: [] });
+  assert.match(served, /awardTrophy: .*params: .*trophy.*character/);
+});
+
 /* ------------------------------------------------------------------ the three parts (provider schemas plan, Task 4) ---- */
 
 const tally = (schema: any): { properties: number; optional: number; unions: number } => {
@@ -809,7 +869,8 @@ test('every field of the answer is in exactly one part, and MEETING_RULE is buil
   assert.ok(MEETING_PARTS[0]!.ask.includes('Hold your meeting.'));
 });
 
-const DESIGN_PROPERTIES = { moves: 36, staff: 23, self: 20 } as const;
+// The design's 36 for moves, plus awardTrophy's trophy param (cosmetics plan, Task 5): 37 of the provider's 40.
+const DESIGN_PROPERTIES = { moves: 37, staff: 23, self: 20 } as const;
 const OPTIONAL = { moves: 1, staff: 7, self: 1 } as const;
 for (const key of ['moves', 'staff', 'self'] as const) {
   const t = tally(partSchema(key));
@@ -841,7 +902,7 @@ test('a schema merged from all three parts is too large for the provider, by pro
   assert.ok(schemaProblems(merged).some((p) => p.predicate.startsWith('propertiesTotal')), JSON.stringify(schemaProblems(merged)));
 });
 
-const BLANK_PARAMS = { board: '', name: '', premise: '', description: '', predicate: '', param: '', band: '', character: '', group: '', checkAt: '', slot: '', percent: 0, hours: 0 };
+const BLANK_PARAMS = { board: '', name: '', premise: '', description: '', predicate: '', param: '', band: '', character: '', group: '', checkAt: '', slot: '', percent: 0, hours: 0, trophy: '' };
 const BLANK_DEMAND = { kind: '', params: { board: '', count: 0, quadrant: '', character: '', thread: '', a: '', b: '', reactions: 0 } };
 const askedMove = (kind: string, params: Record<string, unknown>, demand: unknown = BLANK_DEMAND) => ({
   kind, params: { ...BLANK_PARAMS, ...params }, demand, go_live_at: new Date(NOW + 30 * H).toISOString(), expires_in_hours: 72, why: 'Because.',
@@ -852,6 +913,11 @@ const plain = (raw: unknown, c: RepairContext = ctx()) => {
   assert.ok(r.ok, JSON.stringify(r));
   return r;
 };
+
+test('an award in the moves part\'s asked shape, every other param blank and an empty demand kind, is kept as a favor with exactly its two params', () => {
+  const r = plain(movesOnly(askedMove('awardTrophy', { trophy: 'pet', character: ANN })), { ...ctx(), trophies: TROPHIES });
+  assert.deepEqual(r.moves.map((m) => [m.kind, m.params, m.demand]), [['awardTrophy', { trophy: 'pet', character: ANN }, null]], JSON.stringify(r.trims));
+});
 
 test('a rename with a 0 in percent and a blank predicate keeps exactly its four params, with no trim for the rest', () => {
   const r = plain(movesOnly(askedMove('renameBoard', { board: BOARD, name: 'Pirate Puns Palace', premise: 'Everything about puns.', description: 'Ahoy.' }, { kind: 'postsOnBoard', params: { ...BLANK_DEMAND.params, board: BOARD, count: 4, thread: THREAD, a: ANN } })));

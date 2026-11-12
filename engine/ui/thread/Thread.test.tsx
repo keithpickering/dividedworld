@@ -2294,5 +2294,8 @@ describe('where glitter lands in a thread', () => {
     const z = /z-index:\s*(\d+)/u.exec(rule![2]!);
     expect(z, 'with a z-index').not.toBeNull();
     expect(Number(z![1])).toBeGreaterThan(0);
+    /* Over the body's own level, which the body takes so a moment's glow covers the actions (and the postbit's gear is under it). */
+    const main = [...css.matchAll(/(?:^|\})\s*\.kb-act-main\s*\{([^}]*)\}/gu)].map((m) => /z-index:\s*(-?\d+)/u.exec(m[1]!)?.[1]).find((v) => v !== undefined);
+    expect(Number(z![1])).toBeGreaterThan(Number(main ?? 0));
   });
 });

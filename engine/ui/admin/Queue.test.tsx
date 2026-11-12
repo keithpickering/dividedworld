@@ -771,3 +771,18 @@ describe('replacing a description', () => {
     expect(await within(card).findByRole('alert')).toHaveTextContent('there is no such board');
   });
 });
+
+describe('a trophy award in the queue', () => {
+  test('names the character it gives the trophy to, never "a member"', async () => {
+    const { w } = open({
+      build: (fake) => {
+        const ann = fake.seed.character(fake.seed.account('queue-ann'), 'Queue Ann', testInstance.classes[0]!.key);
+        fake.seed.trophyMove('director', { character: ann, trophy: 'p1' });
+      },
+    });
+    const force = await group(/^In force/u);
+    await waitFor(() => expect(force).toHaveTextContent('Queue Ann'));
+    expect(force).not.toHaveTextContent('a member');
+    expect(w.second).toBeTruthy();
+  });
+});

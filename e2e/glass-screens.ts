@@ -54,6 +54,7 @@ export const PAGES: readonly Screen[] = [
   { name: 'Reach a person', board: '2026-11-05-backfill/16-contact', path: '/contact', signedOut: true },
   { name: 'Welcome', board: '2026-11-05-backfill/19-welcome', path: '/welcome' },
   { name: 'My log, before anything has settled', board: '2026-11-05-backfill/30-log-empty', path: '/log' },
+  { name: 'The wardrobe', board: '2026-11-04-cosmetics/02-dressup', path: '/wardrobe' },
   { name: 'The Vending Machine', board: '07-vending', path: '/vending' },
   { name: 'The hand, open', board: '05-cards', path: '/b/general', then: async (page) => { await page.getByRole('button', { name: /^Hand, \d+ postcards?$/ }).click(); } },
   /* The armed card, with its floating tag where the layout keeps the hand open to show it. */
@@ -71,6 +72,8 @@ export const PAGES: readonly Screen[] = [
   { name: 'The admin queue', board: '2026-11-05-backfill/37-admin-queue', path: '/admin/queue', asAdmin: true },
   /* The machine's admin page, read as an admin: the strip under its lead, the slots, one Save changes. */
   { name: 'The machine\'s admin page', board: '2026-11-07-booster-packs/05-admin', path: '/admin/machine', asAdmin: true },
+  /* The trophies and gear admin page, read as an admin: the strip, the three forms, the recent awards and the failures. Its board is held by e2e/boards/2026-11-04-cosmetics/05-admin.ts. */
+  { name: 'The trophies admin page', board: '2026-11-04-cosmetics/05-admin', path: '/admin/trophies', asAdmin: true },
   /* Updates as an admin with Write an update open, and its preview of what everyone will see. */
   {
     name: 'Updates, with Write an update open', board: '2026-11-05-backfill/38-write-update', path: '/updates', asAdmin: true,

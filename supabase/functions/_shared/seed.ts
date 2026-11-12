@@ -58,6 +58,16 @@ export function instanceSeed(instance: Instance) {
     // database does not hold yet and never changes one that is there, since a slot's place, availability and price are an admin's.
     packs: instance.packs.map((p) => ({ key: p.key, pulls: p.pulls.map((pull) => ({ weights: { ...pull.weights } })), leaves: [...(p.leaves ?? [])] })),
     machine: instance.machine.map((m) => ({ ...('card' in m.item ? { card: m.item.card } : { pack: m.item.pack }), availability: m.availability, price: m.price })),
+    // The gear the instance offers (0205): keys and rarities only, which seed_instance adds and keeps current; names, lines and art stay in the instance.
+    gear: instance.gear.map((g) => ({ key: g.key, rarity: g.rarity })),
+    // The lines a Random Event says (0207), each with the outcome it belongs to: seed_instance replaces its event_lines with these.
+    eventLines: instance.events.lines.map((l) => ({ key: l.key, outcome: l.outcome, text: l.text })),
+    // The trophy catalog (0206): each kind's key, name, words and whether it is a belt, and where the lists point (the place for each of first, second and third, the kinds the Boss
+    // may give, the one a met demand gives). seed_instance writes the kinds and sets the three as columns of the kinds they name; the badges stay in the instance's UI.
+    trophies: {
+      kinds: instance.trophies.kinds.map((k) => ({ key: k.key, name: k.name, ...(k.line !== undefined ? { line: k.line } : {}), belt: k.belt === true })),
+      seasonPlaces: [...instance.trophies.seasonPlaces], boss: [...instance.trophies.boss], demandMet: instance.trophies.demandMet,
+    },
     // The developer persona (0062): the instance's, else the engine's plain one. It is not in `system`, which a model reads, and its tagline is its
     // profile title. seed_instance makes the character and the updates thread from it; `avatar` is a key the UI turns into a picture.
     developer: { name: dev.name, title: dev.tagline, ...(dev.avatar !== undefined ? { avatar: dev.avatar } : {}), ...(dev.pronouns !== undefined ? { pronouns: dev.pronouns } : {}) },

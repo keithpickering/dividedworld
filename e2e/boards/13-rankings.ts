@@ -13,6 +13,15 @@
  * stand 16px further left than the board draws them and are 16px narrower and wider; the landmarks of those two columns are compared by their
  * y and height, and the other columns, which keep their places, in full.
  *
+ * Departure by the owner's answer on #492 (a standing of 0 or below takes no place): the four Ringside rows stand at 0.00, so the build draws
+ * each one's place as a dash, which a screen reader hears as "Unplaced", where the board, drawn before the answer, draws "6". Those four
+ * place cells are found by the build's name, "Unplaced", and compared by their y and height as before. The lead gains the answer's sentence, "A
+ * character at 0 Aura or below takes no place.", after its first, and is found by the build's words. The rows' order and heights do not change:
+ * the four tie at 0.00 and are ordered by name, as the board draws them. The class column's dashes are now every other dash in the table, the
+ * place dash of each Ringside row coming before its class dash, so each is found by its place among the build's dashes (`buildNth`), not the
+ * board's. The place dash is not compared with the board: it takes the place column's size and weight, as the number it stands for does, in the
+ * class dash's quieter color, and the board draws nothing it could be held to (its "6" is the cell's own text, so not even its place lines up).
+ *
  * The season's line and the dates are in the reader's own time; the board draws them in UTC, and the
  * board match opens both pages in UTC (e2e/boards.spec.ts), whatever the machine's zone.
  */
@@ -27,13 +36,16 @@ const cell = (id: string, name: string, box?: Landmark['box']): Landmark => {
 };
 
 /** A row: its header (the name, with Yours on the player's own), its link, and its place, rank and standing. */
-function row(n: number, name: string, place: string, rank: string, standing: string, own: boolean): Landmark[] {
+function row(n: number, name: string, place: string, rank: string, standing: string, own: boolean, buildPlace?: string): Landmark[] {
   const id = `row-${n}`;
+  const placeCell = cell(`${id}-place`, place, 'height');
   return [
     { id, role: 'rowheader', name: own ? `${name} Yours` : name, within: 'table', type: false, origin: 'table', box: 'height' },
     { id: `${id}-name`, role: 'link', name, within: id, origin: 'table', box: 'height' },
     ...(own ? [{ id: `${id}-yours`, role: 'text', name: 'Yours', within: id, origin: 'table', box: 'height' as const }] : []),
-    cell(`${id}-place`, place, 'height'),
+    /* The board's "6" cells are the build's "Unplaced" ones, in the same order, so the place among them (`nth`) holds on both sides. */
+    /* Its word is hidden from the eye and its dash from a reader, so it has no type to read; the board draws no dash to hold the dash's own type to (the header). */
+    buildPlace === undefined ? placeCell : { ...placeCell, buildName: buildPlace, type: false },
     cell(`${id}-rank`, rank),
     cell(`${id}-standing`, standing),
   ];
@@ -76,7 +88,11 @@ const manifest: BoardManifest = {
      */
     { id: 'title', role: 'heading', name: 'Rankings', buildName: 'Season 1', box: 'none' },
     { id: 'season', role: 'text', name: 'Season 1 · Settled Oct 30, 8:17 AM', box: 'none' },
-    { id: 'lead', box: 'none', role: 'text', name: 'The season\'s standings, as the last settlement left them. Your own characters are marked, with their classes, which only you see here. Anyone else\'s class shows only once its player has revealed it.' },
+    {
+      id: 'lead', box: 'none', role: 'text', name: 'The season\'s standings, as the last settlement left them. Your own characters are marked, with their classes, which only you see here. Anyone else\'s class shows only once its player has revealed it.',
+      /* Departure by #492 (the header): the lead says why a row at 0 takes no place. */
+      buildName: 'The season\'s standings, as the last settlement left them. A character at 0 Aura or below takes no place. Your own characters are marked, with their classes, which only you see here. Anyone else\'s class shows only once its player has revealed it.',
+    },
 
     /* The table and its heads. */
     { id: 'table', role: 'table', name: 'Season 1 rankings, highest standing first', type: false, box: 'across' },
@@ -92,10 +108,11 @@ const manifest: BoardManifest = {
     ...row(3, 'Pipewrench', '3', 'Midcarder', '3.30', true),
     ...row(4, 'Gloomba', '4', 'Enhancement Talent', '1.80', false),
     ...row(5, 'Thwompson', '5', 'Jobber', '0.40', false),
-    ...row(6, 'Ringside 1', '6', 'Jobber', '0.00', false),
-    ...row(7, 'Ringside 2', '6', 'Jobber', '0.00', false),
-    ...row(8, 'Ringside 3', '6', 'Jobber', '0.00', false),
-    ...row(9, 'Ringside 4', '6', 'Jobber', '0.00', false),
+    /* At 0.00, unplaced by #492 (the header): the build's place cell is named "Unplaced". */
+    ...row(6, 'Ringside 1', '6', 'Jobber', '0.00', false, 'Unplaced'),
+    ...row(7, 'Ringside 2', '6', 'Jobber', '0.00', false, 'Unplaced'),
+    ...row(8, 'Ringside 3', '6', 'Jobber', '0.00', false, 'Unplaced'),
+    ...row(9, 'Ringside 4', '6', 'Jobber', '0.00', false, 'Unplaced'),
 
     /* The classes, by their words in the table: the player's own filled, the two said in public outlined with their dates. */
     { id: 'class-spritey', role: 'text', name: 'Jabroni', within: 'table', origin: 'table' },
@@ -106,8 +123,11 @@ const manifest: BoardManifest = {
     { id: 'class-thwompson', role: 'text', name: 'Lurker', within: 'table', origin: 'table' },
     { id: 'revealed-thwompson', role: 'text', name: 'Revealed Oct 8', within: 'table', origin: 'table' },
     { id: 'turned-thwompson', role: 'text', name: 'Has Turned since Oct 30', within: 'table', origin: 'table' },
-    /* No class for the rest: the dash is hidden from a reader and "Not revealed" from the eye, so each dash is compared by its box and type. */
-    ...[1, 2, 3, 4].map((n): Landmark => ({ id: `none-ringside-${n}`, role: 'text', name: '—', within: 'table', nth: n - 1, origin: 'table' })),
+    /*
+     * No class for the rest: the dash is hidden from a reader and "Not revealed" from the eye, so each dash is compared by its box and type. In the
+     * build each Ringside row's place dash (#492, the header) comes before its class dash, so the class dashes are the build's second, fourth, sixth and eighth.
+     */
+    ...[1, 2, 3, 4].map((n): Landmark => ({ id: `none-ringside-${n}`, role: 'text', name: '—', within: 'table', nth: n - 1, buildNth: 2 * n - 1, origin: 'table' })),
   ],
 };
 
