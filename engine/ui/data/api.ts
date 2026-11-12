@@ -1281,7 +1281,7 @@ export interface LogShare {
   readonly amount: number;
 }
 
-/** One reason's settled amount for one of the player's characters in one window (`my_ledger`), with its shares (`my_ledger_shares`). */
+/** One reason's settled amount for one of the player's characters in one window (`my_ledger`), with its shares (`my_ledger_shares`), each filed under its line by character, reason and card. */
 export interface LogLine {
   readonly character: Id;
   readonly reason: string;
