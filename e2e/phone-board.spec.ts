@@ -4,9 +4,11 @@ import { standInFaces } from './board-snapshot.ts';
 import { START } from '../engine/ui/data/fake.ts';
 
 /**
- * The board look's phone (the plan's Task 8, docs/research/2026-11-06-board-look/03-phone.html): at 390 a thread row's counts, and the
- * index's, fold into one line ("169 replies · 4 views · last: Pipewrench, Oct 5"), where each took a line before, and a date never breaks
- * across two. The poison puts the counts back on a line each.
+ * The board look's phone (the plan's Task 8, docs/research/2026-11-06-board-look/03-phone.html): at 390 a thread row's counts fold into one line
+ * ("169 replies · 4 views"), where each took a line before, and a date never breaks across two. The last post, which the board look folded into
+ * the counts' line, stands on the line under them ("last: Pipewrench, Oct 5"): docs/plans/2026-11-12-list-rows-design.md, section 2.1, which
+ * replaces that one decision of the board look. The index folds the same way (its threads on one line, its last post on the next). The poison
+ * puts the counts back on a line each.
  */
 test.use({ reducedMotion: 'reduce', bypassCSP: true, viewport: { width: 390, height: 844 } });
 
@@ -27,13 +29,16 @@ const middles = (page: Page, row: string, parts: readonly string[]) => page.eval
 
 const sameLine = (rows: (number | null)[][]) => rows.map((ys) => Math.max(...(ys as number[])) - Math.min(...(ys as number[])));
 
-test('a thread row\'s replies, views and last post share one line at 390', async ({ page }) => {
+test('a thread row\'s replies and views share one line, and its last post is on the next, at 390', async ({ page }) => {
   await open(page, 'boards-02-board--board', '.kb-thread-row');
   const rows = await middles(page, '.kb-thread-row', ['.kb-thread-replies', '.kb-thread-views', '.kb-thread-last .kb-who']);
   expect(rows.length).toBeGreaterThan(2);
   for (const ys of rows) expect(ys.every((y) => y !== null)).toBe(true);
-  /* Within a line's own height: the counts are 13.75px type, the last post's name a 24px target. */
-  for (const spread of sameLine(rows)) expect(spread).toBeLessThanOrEqual(12);
+  /* The counts are 13.75px type on one line; the last post, a 24px target, is a line below them (section 2.1 of the design). */
+  for (const [replies, views, last] of rows as number[][]) {
+    expect(Math.abs(replies! - views!), 'replies and views on one line').toBeLessThanOrEqual(6);
+    expect(last! - Math.max(replies!, views!), 'the last post under the counts').toBeGreaterThanOrEqual(12);
+  }
 });
 
 test('the date of a thread row\'s last post never breaks across lines', async ({ page }) => {
@@ -43,15 +48,17 @@ test('the date of a thread row\'s last post never breaks across lines', async ({
   expect(lines.every((n) => n === 1)).toBe(true);
 });
 
-test('the index\'s threads and last post share one line at 390', async ({ page }) => {
+test('the index\'s threads are on one line and its last post is on the next, at 390', async ({ page }) => {
   await open(page, 'boards-01-index--index', '.kb-board-row');
-  const rows = await page.evaluate(() => [...document.querySelectorAll('.kb-board-row:not([data-kb-system])')].map((r) => ['.kb-board-threads', '.kb-board-last .kb-who'].map((s) => {
+  const rows = await page.evaluate(() => [...document.querySelectorAll('.kb-board-row:not([data-kb-system])')].map((r) => ['.kb-board-threads', '.kb-board-last'].map((s) => {
     const b = r.querySelector(s)?.getBoundingClientRect();
-    return b ? Math.round(b.y + b.height / 2) : null;
+    return b ? { top: b.top, bottom: b.bottom } : null;
   })));
   expect(rows.length).toBeGreaterThan(0);
-  for (const ys of rows) expect(ys.every((y) => y !== null)).toBe(true);
-  for (const spread of sameLine(rows)) expect(spread).toBeLessThanOrEqual(12);
+  for (const [threads, last] of rows) {
+    expect(threads && last).toBeTruthy();
+    expect(last!.top, 'the last post under the threads').toBeGreaterThanOrEqual(threads!.bottom - 0.5);
+  }
 });
 
 test('a record row\'s date stacks above its words, and the six kinds fit one row, at 390', async ({ page }) => {
@@ -114,8 +121,21 @@ test('poison: counts that each take a line are named as not sharing one', async 
     });
   });
   await open(page, 'boards-02-board--board', '.kb-thread-row');
-  const rows = await middles(page, '.kb-thread-row', ['.kb-thread-replies', '.kb-thread-views', '.kb-thread-last .kb-who']);
-  expect(sameLine(rows).some((spread) => spread > 12)).toBe(true);
+  const rows = await middles(page, '.kb-thread-row', ['.kb-thread-replies', '.kb-thread-views']);
+  expect(sameLine(rows).some((spread) => spread > 6)).toBe(true);
+});
+
+test('poison: an index whose threads and last post run on one line is named as not under them', async ({ page }) => {
+  await page.addInitScript(() => {
+    document.addEventListener('DOMContentLoaded', () => {
+      const style = document.createElement('style');
+      style.textContent = '.kb-board-threads, .kb-board-last { display: inline !important }';
+      document.head.append(style);
+    });
+  });
+  await open(page, 'boards-01-index--index', '.kb-board-row');
+  const gaps = await page.evaluate(() => [...document.querySelectorAll('.kb-board-row:not([data-kb-system])')].map((r) => r.querySelector('.kb-board-last')!.getBoundingClientRect().top - r.querySelector('.kb-board-threads')!.getBoundingClientRect().bottom));
+  expect(gaps.some((g) => g < -0.5)).toBe(true);
 });
 
 /** The reply box's pieces at 390: the thread, the 01-main moment, whose last post stands over the box. */
