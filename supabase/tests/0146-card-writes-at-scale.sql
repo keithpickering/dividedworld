@@ -39,6 +39,15 @@ begin
   end if;
 end $$;
 
+-- The instance this file measures has never seen a play. A database that earlier files of the suite have run on does not: it holds their committed
+-- leftovers (issue #579), and the analyze below would count those cards and estimate `kind = 'card'` at a few dozen rows, which is the one estimate that
+-- makes a planner choose a probe, so the stale measurement could not catch the view it exists for. So, inside this transaction only (the runner rolls it
+-- back), the triggers are turned off and the Acts of kind card, set and spring the database already holds are deleted, and what hangs on them with them.
+set local session_replication_role = replica;
+delete from card_texts;
+delete from acts where kind in ('card', 'set', 'spring');
+set local session_replication_role = origin;
+
 do $$
 declare
   base timestamptz := '2031-01-01T00:00:00Z';
