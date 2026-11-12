@@ -38,7 +38,7 @@ Two things came out of the conversation that are not part of this design:
   which waits on the owner. Open.
 - **A caster calling off their own landed Cast.** The owner believed a Feelin' Fab caster could revoke it. No such path
   exists: a landed Cast ends only by its time or an admin's `reverse_card`; `take_back` is for a face-down back. Filed
-  as an issue for its own design. Open.
+  as issue #511 for its own design. Open.
 
 ## 3. How it is built: Glam's `keeps`, widened
 
@@ -97,6 +97,6 @@ posts, which is the case the loop and Shake's limits (at most 400 flakes in the 
 ## 8. Open
 
 - The rule's rewording (section 2).
-- A caster's own end of a landed Cast (section 2, the issue).
+- A caster's own end of a landed Cast (section 2, issue #511).
 - Kept glitter is drawn in the post's thread only. The record page and the profile draw no effects above a post today
   (Part 2's "Decided in planning" says the same of Glam), and that is not changed here.
