@@ -153,15 +153,21 @@ export function Toolbar(p: ToolbarProps) {
     if (!el) return undefined;
     const root = document.documentElement;
     const column = el.closest<HTMLElement>('.kb-acts') ?? el.closest<HTMLElement>('.kb-page');
+    const watched = new Set<Element>();
+    let resize: ResizeObserver | null = null;
     const size = () => {
       root.style.setProperty('--kb-graffiti-dock-h', `${el.offsetHeight}px`);
       /* The HUD's peek hangs over the dock's right end on a wide screen and takes no pointer: the played card over the dock's lower rows, and its "Playing · post #N" tag, wider than the
          card, over the header's buttons. The dock keeps clear of what is measured: its body of the card's left edge, the header's buttons of the tag's, whatever the window's width or the tag's words. */
-      const right = el.getBoundingClientRect().right;
+      const own = el.getBoundingClientRect();
+      const right = own.right;
       const leftOf = (sel: string) => {
-        /* The hand and the HUD each keep a copy of the tag, one of them hidden (no width). */
-        const seen = [...document.querySelectorAll(sel)].map((e) => e.getBoundingClientRect()).filter((r) => r.width > 0 && r.left < right && r.right > right - 400);
-        return seen.length > 0 ? Math.min(...seen.map((r) => r.left)) : null;
+        /* The hand and the HUD each keep a copy of the tag, one of them hidden (no box): every copy with a box is measured, and only those that lie over the dock's rows count. */
+        const seen = [...document.querySelectorAll<HTMLElement>(sel)].filter((e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; });
+        for (const e of seen) if (!watched.has(e)) { watched.add(e); resize?.observe(e); }
+        for (const e of watched) if (!e.isConnected) { watched.delete(e); resize?.unobserve(e); }
+        const rects = seen.map((e) => e.getBoundingClientRect()).filter((r) => r.left < right && r.right > right - 400 && r.top < own.bottom && r.bottom > own.top);
+        return rects.length > 0 ? Math.min(...rects.map((r) => r.left)) : null;
       };
       const card = leftOf('.kb-hand-peek-card'), tag = leftOf('.kb-hand-armed');
       const cardGap = card === null ? 0 : Math.ceil(right - card) + 12;
@@ -174,15 +180,22 @@ export function Toolbar(p: ToolbarProps) {
       root.style.setProperty('--kb-graffiti-dock-right', `${Math.max(0, Math.round(root.clientWidth - at.right))}px`);
     };
     root.setAttribute('data-kb-graffiti-dock', '');
+    resize = typeof ResizeObserver === 'function' ? new ResizeObserver(size) : null;
+    resize?.observe(el);
+    if (column) resize?.observe(column);
     size();
-    const watch = typeof ResizeObserver === 'function' ? new ResizeObserver(size) : null;
-    watch?.observe(el);
-    if (column) watch?.observe(column);
     window.addEventListener('resize', size);
-    const tag = document.querySelector('.kb-hand-armed');
-    if (tag) watch?.observe(tag);
+    /* The peek and the tags come and go with the hand (opened, put away, a card armed or played), and move when the HUD's classes change: one watch on the HUD's parent for what is added, removed, hidden or reclassed,
+       measured once a frame at most, and never on a style change, so it costs no layout while the page animates. */
+    let frame = 0;
+    const later = () => { if (!frame) frame = requestAnimationFrame(() => { frame = 0; size(); }); };
+    const hud = document.querySelector('[aria-label="Game HUD"]')?.parentElement ?? document.body;
+    const mutations = typeof MutationObserver === 'function' ? new MutationObserver(later) : null;
+    mutations?.observe(hud, { childList: true, subtree: true, attributes: true, attributeFilter: ['hidden', 'class'] });
     return () => {
-      watch?.disconnect();
+      resize?.disconnect();
+      mutations?.disconnect();
+      if (frame) cancelAnimationFrame(frame);
       window.removeEventListener('resize', size);
       root.removeAttribute('data-kb-graffiti-dock');
       for (const v of ['--kb-graffiti-dock-h', '--kb-graffiti-dock-left', '--kb-graffiti-dock-right', '--kb-graffiti-dock-peek', '--kb-graffiti-dock-tag']) root.style.removeProperty(v);

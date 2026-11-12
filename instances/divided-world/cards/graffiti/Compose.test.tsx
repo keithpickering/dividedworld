@@ -75,6 +75,15 @@ describe('Compose, on the post a card is played on', () => {
     expect(props.ready).toHaveBeenCalledTimes(1);
   });
 
+  test('the toolbar mounts once at open, in the host it is portaled to, so its mount effect and its fold state are not run twice', async () => {
+    const focus = vi.spyOn(HTMLElement.prototype, 'focus');
+    try {
+      mountCompose();
+      await waitFor(() => expect(document.documentElement.hasAttribute('data-kb-graffiti-dock')).toBe(true));
+      expect(focus.mock.calls.filter(([o]) => (o as FocusOptions | undefined)?.preventScroll === true)).toHaveLength(1);
+    } finally { focus.mockRestore(); }
+  });
+
   test('draws the post\'s words as given, and the drawing and its surface in the element around them, lifted so no other card\'s ink takes a press there', () => {
     const { container, surface, under } = mountCompose();
     expect(container).toHaveTextContent('The post\'s words.');

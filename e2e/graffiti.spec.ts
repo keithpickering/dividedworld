@@ -517,6 +517,17 @@ const clear = (page: Page) => page.evaluate((n) => {
   const d = document.querySelector('.kb-graffiti-dock')!.getBoundingClientRect();
   return { top: b.top, bottom: b.bottom, clearTop: top, dockTop: d.top };
 }, POST);
+/** The post is clear and has stopped moving: two polls in a row read the same top, so a smooth scroll still on its way is not taken for its end. */
+async function settledClear(page: Page): Promise<void> {
+  let last: number | null = null;
+  await expect.poll(async () => {
+    const r = await clear(page);
+    const still = last !== null && Math.abs(r.top - last) < 0.5;
+    last = r.top;
+    try { expectClear(r, 'settling'); } catch { return false; }
+    return still;
+  }, { message: 'the post comes to rest clear of the dock', timeout: 10_000 }).toBe(true);
+}
 function expectClear(r: { top: number; bottom: number; clearTop: number; dockTop: number }, how: string): void {
   if (r.bottom - r.top > r.dockTop - r.clearTop) expect(Math.abs(r.top - r.clearTop), `${how}: a tall body's top at the clear top`).toBeLessThanOrEqual(2);
   else {
@@ -538,7 +549,7 @@ async function lowThenPress(page: Page, share: number, tile: boolean): Promise<v
     await post(page).getByRole('button', { name: /^Play Graffiti on post \d+$/ }).click();
   }
   await expect(dock(page)).toBeVisible();
-  await page.waitForTimeout(1000);
+  await settledClear(page);
 }
 
 for (const [name, reduced] of [['smooth', 'no-preference'], ['reduced motion', 'reduce']] as const) {
@@ -580,22 +591,44 @@ test.describe('the post is brought clear of the dock, on a phone', () => {
 for (const width of [1024, 1280, 1600]) {
   test.describe(`the HUD's peek covers no dock control, ${width}px`, () => {
     test.use({ viewport: { width, height: 800 }, reducedMotion: 'reduce' });
+    /** The peek's visible boxes against every dock button's: what meets, and how many peek boxes there were to meet. */
+    const met = (page: Page) => page.evaluate(() => {
+      const dock = document.querySelector('.kb-graffiti-dock')!;
+      const peeks = [...document.querySelectorAll('.kb-hand-armed, .kb-hand-peek-card')].map((e) => ({ name: e.className, r: e.getBoundingClientRect() })).filter((p) => p.r.width > 0);
+      const meets = [...dock.querySelectorAll<HTMLElement>('button, [role="tab"]')].flatMap((b) => {
+        const r = b.getBoundingClientRect();
+        if (r.height === 0) return [];
+        return peeks.filter(({ r: p }) => r.left + 2 < p.right && r.right - 2 > p.left && r.top + 2 < p.bottom && r.bottom - 2 > p.top).map((p) => `${b.getAttribute('aria-label') ?? b.textContent?.trim()} meets ${p.name}`);
+      });
+      return { meets, peeks: peeks.length };
+    });
+    /** Wide enough, the peek is on screen and clear of every button; narrower, there is none, and the check says so rather than pass on nothing. */
+    async function clearOfPeek(page: Page, how: string): Promise<void> {
+      const peeking = width >= 1280;
+      if (peeking) await expect(peek(page, `Playing · post #${POST}`).first()).toBeVisible();
+      await expect.poll(async () => (await met(page)).peeks > 0, { message: `${how}: ${peeking ? 'the peek is shown' : 'no peek is shown at this width'}` }).toBe(peeking);
+      expect((await met(page)).meets, `${how}: controls under the peek`).toEqual([]);
+    }
     test('expanded and folded', async ({ page }) => {
       await dockOpen(page);
-      if (width >= 1280) await expect(peek(page, `Playing · post #${POST}`).first()).toBeVisible();
-      const met = () => page.evaluate(() => {
-        const dock = document.querySelector('.kb-graffiti-dock')!;
-        const peeks = [...document.querySelectorAll('.kb-hand-armed, .kb-hand-peek-card')].map((e) => ({ name: e.className, r: e.getBoundingClientRect() })).filter((p) => p.r.width > 0);
-        return [...dock.querySelectorAll<HTMLElement>('button, [role="tab"]')].flatMap((b) => {
-          const r = b.getBoundingClientRect();
-          if (r.height === 0) return [];
-          return peeks.filter(({ r: p }) => r.left + 2 < p.right && r.right - 2 > p.left && r.top + 2 < p.bottom && r.bottom - 2 > p.top).map((p) => `${b.getAttribute('aria-label') ?? b.textContent?.trim()} meets ${p.name}`);
-        });
-      });
-      expect(await met(), 'expanded: controls under the peek').toEqual([]);
+      await clearOfPeek(page, 'expanded');
       await dock(page).getByRole('button', { name: 'Hide tools' }).click();
       await expect(dock(page).getByRole('tab')).toHaveCount(0);
-      expect(await met(), 'folded: controls under the peek').toEqual([]);
+      await clearOfPeek(page, 'folded');
     });
+    if (width === 1280) {
+      test('the hand opened and put away again over the open dock', async ({ page }) => {
+        await dockOpen(page);
+        await clearOfPeek(page, 'before');
+        const hand = page.getByRole('dialog', { name: 'Your hand' });
+        await page.getByRole('button', { name: /^Hand, \d+ postcards?/ }).click();
+        await expect(hand).toBeVisible();
+        /* The hand's own close control is not offered while a card is playing; the HUD's Hand button, which reads "open", puts it away. */
+        await page.getByRole('button', { name: /^Hand, \d+ postcards?, open$/ }).click();
+        await expect(hand).toBeHidden();
+        await expect(dock(page)).toBeVisible();
+        await clearOfPeek(page, 'after the hand closed');
+      });
+    }
   });
 }

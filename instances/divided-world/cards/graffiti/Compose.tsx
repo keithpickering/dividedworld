@@ -61,6 +61,8 @@ export interface DrawModeProps {
   readonly most: number;
   /** Where the toolbar is drawn (a portal), or null to draw it beside the surface. */
   readonly dockHost: HTMLElement | null;
+  /** The host is not resolved yet: the toolbar waits, so it mounts once, where it stays. */
+  readonly dockPending?: boolean;
   /** Ask the question before leaving here (a host that is no engine compose); false where the engine asks (`hold`, `cancel`). */
   readonly asks: boolean;
   /** Land the drawing: `{ strokes }` or `{ stencil, can, spot }`. The answer is the server's, or its refusal in its words. */
@@ -336,7 +338,7 @@ export function DrawMode(p: DrawModeProps) {
   return (
     <>
       {p.overlayHost ? createPortal(surface, p.overlayHost) : surface}
-      {p.dockHost ? createPortal(dock, p.dockHost) : dock}
+      {p.dockPending ? null : p.dockHost ? createPortal(dock, p.dockHost) : dock}
     </>
   );
 }
@@ -359,8 +361,9 @@ export function Compose({ box, under, submit, cancel, hold, ready, children }: C
     return () => { under.style.position = was; };
   }, [under]);
   useLayoutEffect(() => { setDockHost(dockHostOf(under) ?? fallback); }, [under, fallback]);
-  /* This component is a lazy chunk, so it mounts after the commit that opened the compose, which the engine measured the post in before any dock covered it. The dock's own
-     layout effect (Toolbar.tsx) has set the root's scroll padding by this effect, so the engine is told now and measures again. */
+  /* This component is a lazy chunk, so it mounts after the commit that opened the compose, which the engine measured the post in before any dock covered it. The dock
+     mounts once its host resolves (the layout effect above sets it, in the same commit pass), and its own layout effect (Toolbar.tsx) sets the root's scroll padding as it
+     mounts; that is in place by the time the engine's frame, which this tells to measure again, runs. */
   useEffect(() => { ready(); }, [ready]);
 
   /* The box is the post body's (`.kb-act-main`), the one the wall paints in and Whoops! measures, and not the words' element, which on a one-line post is a strip:
@@ -398,7 +401,7 @@ export function Compose({ box, under, submit, cancel, hold, ready, children }: C
       {children}
       {under && size && createPortal(<canvas ref={canvasRef} className="kb-graffiti-ink" data-kb-effect-ink aria-hidden="true" style={onBox} />, under)}
       <DrawMode
-        box={size} wall={NO_ACTS} covered={0} most={most} dockHost={dockHost} asks={false}
+        box={size} wall={NO_ACTS} covered={0} most={most} dockHost={dockHost} dockPending={dockHost === null} asks={false}
         submit={(first) => submit({}, first)} cancel={cancel} hold={hold} onDraft={setDraft} overlayStyle={onBox} overlayHost={under}
       />
       <div ref={setFallback} className="kb-graffiti-dockhost" />

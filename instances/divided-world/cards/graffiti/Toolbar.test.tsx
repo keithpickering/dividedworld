@@ -4,10 +4,10 @@
  * says and calls: the controls are reachable by Tab and named, the cans and the caps are radiogroups with arrow keys, and Tag it says why it is
  * not ready.
  */
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
-import { describe, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { CANS, type Can, type Cap } from '../graffiti.ts';
 import { STENCIL_KEYS, type StencilKey } from './stencils.ts';
 import { dockHostOf, Toolbar, type ToolbarProps } from './Toolbar.tsx';
@@ -290,6 +290,54 @@ describe('the Stencils tab', () => {
       unmount();
       for (const v of ['--kb-graffiti-dock-left', '--kb-graffiti-dock-right', '--kb-graffiti-dock-h']) expect(root.style.getPropertyValue(v)).toBe('');
     } finally { rect.mockRestore(); width.mockRestore(); }
+  });
+
+  /* The HUD's peek: boxes are mocked by class (jsdom has no layout). The dock is 800 to 920 wide, 700 to 800 tall. */
+  describe('the dock keeps clear of the HUD\'s peek', () => {
+    type Box = { left: number; right: number; top: number; bottom: number };
+    const boxes = new Map<string, Box>();
+    let rect: ReturnType<typeof vi.spyOn>;
+    const peekVar = () => document.documentElement.style.getPropertyValue('--kb-graffiti-dock-peek');
+    const tagVar = () => document.documentElement.style.getPropertyValue('--kb-graffiti-dock-tag');
+    beforeEach(() => {
+      boxes.clear();
+      boxes.set('kb-graffiti-dock', { left: 400, right: 920, top: 700, bottom: 800 });
+      rect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+        const b = [...boxes].find(([c]) => this.classList.contains(c) || (c.startsWith('#') && this.id === c.slice(1)))?.[1] ?? { left: 0, right: 0, top: 0, bottom: 0 };
+        return { ...b, width: b.right - b.left, height: b.bottom - b.top, x: b.left, y: b.top, toJSON: () => ({}) } as DOMRect;
+      });
+    });
+    afterEach(() => { rect.mockRestore(); document.body.innerHTML = ''; });
+
+    test('a hidden copy of the tag first in the DOM is ignored and the visible one is measured', async () => {
+      document.body.innerHTML = '<div id="hud"><span class="kb-hand-armed" id="hidden"></span><span class="kb-hand-armed" id="seen"></span></div>';
+      boxes.set('#seen', { left: 760, right: 900, top: 710, bottom: 740 });
+      const { unmount } = render(<Toolbar {...propsOf()} />);
+      await waitFor(() => expect(tagVar()).toBe('172px'));
+      unmount();
+    });
+
+    test('a tag that does not overlap the dock vertically adds nothing', () => {
+      document.body.innerHTML = '<span class="kb-hand-armed" id="far"></span>';
+      boxes.set('#far', { left: 760, right: 900, top: 100, bottom: 130 });
+      const { unmount } = render(<Toolbar {...propsOf()} />);
+      expect(tagVar()).toBe('');
+      unmount();
+    });
+
+    test('a peek card added after mount sets the variable and removing it clears it; unmount removes the variables', async () => {
+      const { unmount } = render(<Toolbar {...propsOf()} />);
+      expect(peekVar()).toBe('');
+      boxes.set('kb-hand-peek-card', { left: 780, right: 940, top: 720, bottom: 790 });
+      act(() => { const c = document.createElement('div'); c.className = 'kb-hand-peek-card'; document.body.append(c); });
+      await waitFor(() => expect(peekVar()).toBe('152px'));
+      act(() => { document.querySelector('.kb-hand-peek-card')!.remove(); });
+      await waitFor(() => expect(peekVar()).toBe(''));
+      act(() => { const c = document.createElement('div'); c.className = 'kb-hand-peek-card'; document.body.append(c); });
+      await waitFor(() => expect(peekVar()).toBe('152px'));
+      unmount();
+      for (const v of ['--kb-graffiti-dock-h', '--kb-graffiti-dock-peek', '--kb-graffiti-dock-tag']) expect(document.documentElement.style.getPropertyValue(v)).toBe('');
+    });
   });
 
   test('the dock is hosted by the posts\' table, never inside a post, whose isolation would trap its z-index under the posts that follow', () => {

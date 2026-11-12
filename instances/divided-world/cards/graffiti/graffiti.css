@@ -224,8 +224,8 @@
     gap: 9px 12px;
   }
 
-  .kb-graffiti-label,
-  .kb-graffiti-reason {
+  .kb-graffiti-dock .kb-graffiti-label,
+  .kb-graffiti-dock .kb-graffiti-reason {
     line-height: 1.2;
   }
 
