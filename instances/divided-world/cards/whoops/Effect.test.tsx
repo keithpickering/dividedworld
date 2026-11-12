@@ -188,7 +188,7 @@ const px = (x: number, y: number): [number, number] => [x * boxNow().w, y * boxN
 function drag(frame: HTMLElement, points: readonly (readonly [number, number])[]) {
   const [first, ...rest] = points.map(([x, y]) => px(x, y));
   act(() => { fireEvent.pointerDown(frame, { clientX: first![0], clientY: first![1], pointerId: 1, button: 0, pointerType: 'mouse' }); });
-  for (const [x, y] of rest) act(() => { fireEvent.pointerMove(frame, { clientX: x, clientY: y, pointerId: 1, pointerType: 'mouse' }); });
+  for (const [x, y] of rest) act(() => { fireEvent.pointerMove(frame, { buttons: 1, clientX: x, clientY: y, pointerId: 1, pointerType: 'mouse' }); });
   const [lx, ly] = rest[rest.length - 1] ?? first!;
   act(() => { fireEvent.pointerUp(frame, { clientX: lx, clientY: ly, pointerId: 1, pointerType: 'mouse' }); });
 }
@@ -498,7 +498,7 @@ describe('scrubbing', () => {
     const { frame, root, save } = mount({ author: true, clean: 40 });
     const [first, ...rest] = scrubPath(inkOf(0), 0.5).map(([x, y]) => px(x, y));
     act(() => { fireEvent.pointerDown(frame, { clientX: first![0], clientY: first![1], pointerId: 1, button: 0, pointerType: 'mouse' }); });
-    for (const [x, y] of rest) act(() => { fireEvent.pointerMove(frame, { clientX: x, clientY: y, pointerId: 1, pointerType: 'mouse' }); });
+    for (const [x, y] of rest) act(() => { fireEvent.pointerMove(frame, { buttons: 1, clientX: x, clientY: y, pointerId: 1, pointerType: 'mouse' }); });
     expect(states(root), 'clean before the button is let go').toEqual(['clean']);
     const [lx, ly] = rest[rest.length - 1]!;
     act(() => { fireEvent.pointerUp(frame, { clientX: lx, clientY: ly, pointerId: 1, pointerType: 'mouse' }); });
@@ -983,7 +983,7 @@ describe('the body\'s box', () => {
   function press(target: HTMLElement, points: readonly (readonly [number, number])[], pointerType = 'mouse') {
     const [first, ...rest] = points.map(([x, y]) => px(x, y));
     const down = fireEvent.pointerDown(target, { clientX: first![0], clientY: first![1], pointerId: 1, button: 0, pointerType });
-    for (const [x, y] of rest) act(() => { fireEvent.pointerMove(target, { clientX: x, clientY: y, pointerId: 1, pointerType }); });
+    for (const [x, y] of rest) act(() => { fireEvent.pointerMove(target, { buttons: 1, clientX: x, clientY: y, pointerId: 1, pointerType }); });
     const [lx, ly] = rest[rest.length - 1] ?? first!;
     act(() => { fireEvent.pointerUp(target, { clientX: lx, clientY: ly, pointerId: 1, pointerType }); });
     return down;
@@ -1036,7 +1036,7 @@ describe('the body\'s box', () => {
     const [x, y] = inkSpot(inkOf(0));
     const [a, b] = [px(x, y), px(x + 0.06, y)];
     act(() => { fireEvent.pointerDown(cell, { clientX: a[0], clientY: a[1], pointerId: 1, button: 0, pointerType: 'mouse' }); });
-    act(() => { fireEvent.pointerMove(cell, { clientX: b[0], clientY: b[1], pointerId: 1, pointerType: 'mouse' }); });
+    act(() => { fireEvent.pointerMove(cell, { buttons: 1, clientX: b[0], clientY: b[1], pointerId: 1, pointerType: 'mouse' }); });
     unmount();
     act(() => { vi.advanceTimersByTime(SAVE_AFTER_MS * 2); });
     expect(save).toHaveBeenCalledTimes(1);
@@ -1053,7 +1053,7 @@ describe('the body\'s box', () => {
     const [a, b] = [px(x, y), px(x + 0.06, y)];
     const stroke = (target: HTMLElement, id: number, dy = 0) => {
       act(() => { fireEvent.pointerDown(target, { clientX: a[0], clientY: a[1] + dy, pointerId: id, button: 0, pointerType: 'mouse' }); });
-      act(() => { fireEvent.pointerMove(target, { clientX: b[0], clientY: b[1] + dy, pointerId: id, pointerType: 'mouse' }); });
+      act(() => { fireEvent.pointerMove(target, { buttons: 1, clientX: b[0], clientY: b[1] + dy, pointerId: id, pointerType: 'mouse' }); });
       act(() => { fireEvent.pointerUp(target, { clientX: b[0], clientY: b[1] + dy, pointerId: id, pointerType: 'mouse' }); });
     };
     stroke(frame, 1);
@@ -1076,7 +1076,7 @@ describe('the body\'s box', () => {
     away.append(root);
     /* The core is ink on the screen's old box as well as on the moved one: the press that finds the words moved is taken on the model as it stood. */
     const [x, y] = coreSpot(new LayerInk(splatFor(0), [], moved));
-    const at = (b: Box, dx = 0) => ({ clientX: (x + dx) * b.w, clientY: y * b.h, pointerId: 1, button: 0, pointerType: 'mouse' as const });
+    const at = (b: Box, dx = 0) => ({ buttons: 1, clientX: (x + dx) * b.w, clientY: y * b.h, pointerId: 1, button: 0, pointerType: 'mouse' as const });
     /* The old cell is told nothing and does nothing. */
     expect(fireEvent.pointerDown(cell, at(moved)), 'the cell it left takes nothing').toBe(true);
     expect(washed(root)[0]).toBe(0);
@@ -1097,7 +1097,7 @@ describe('the body\'s box', () => {
     frameBox = null;
     cell.append(root);
     const [x2, y2] = coreSpot(inkOf(0));
-    const gutter = (dx: number) => ({ clientX: (x2 + dx) * boxNow().w, clientY: (y2 + 6 * LINE_PX / boxNow().h) * boxNow().h, pointerId: 2, button: 0, pointerType: 'mouse' as const });
+    const gutter = (dx: number) => ({ buttons: 1, clientX: (x2 + dx) * boxNow().w, clientY: (y2 + 6 * LINE_PX / boxNow().h) * boxNow().h, pointerId: 2, button: 0, pointerType: 'mouse' as const });
     for (let pass = 0; pass < PASSES; pass++) {
       act(() => { fireEvent.pointerDown(cell, gutter(0)); });
       act(() => { fireEvent.pointerMove(cell, gutter(0.06)); });
@@ -1111,12 +1111,12 @@ describe('the body\'s box', () => {
     const { frame, root } = mount();
     const [x, y] = inkSpot(inkOf(0));
     const [a, b] = [px(x, y), px(x + 0.06, y)];
-    act(() => { fireEvent.pointerMove(frame, { clientX: a[0], clientY: a[1], pointerId: 1, pointerType: 'mouse' }); });
+    act(() => { fireEvent.pointerMove(frame, { buttons: 1, clientX: a[0], clientY: a[1], pointerId: 1, pointerType: 'mouse' }); });
     expect(vi.mocked(cursor.over), 'one move is read once').toHaveBeenCalledTimes(1);
     vi.mocked(cursor.over).mockClear();
     act(() => { fireEvent.pointerDown(frame, { clientX: a[0], clientY: a[1], pointerId: 1, button: 0, pointerType: 'mouse' }); });
     expect(vi.mocked(cursor.press), 'one press is taken once').toHaveBeenCalledTimes(1);
-    act(() => { fireEvent.pointerMove(frame, { clientX: b[0], clientY: b[1], pointerId: 1, pointerType: 'mouse' }); });
+    act(() => { fireEvent.pointerMove(frame, { buttons: 1, clientX: b[0], clientY: b[1], pointerId: 1, pointerType: 'mouse' }); });
     expect(vi.mocked(suds.wash), 'one move throws its suds once').toHaveBeenCalledTimes(1);
     act(() => { fireEvent.pointerUp(frame, { clientX: b[0], clientY: b[1], pointerId: 1, pointerType: 'mouse' }); });
     expect(washed(root)[0]).toBeGreaterThan(0);
@@ -1195,7 +1195,7 @@ describe('the body\'s box', () => {
 
   describe('the drawn cursor', () => {
     const over = vi.mocked(cursor.over);
-    const move = (target: HTMLElement, at: readonly [number, number], pointerType = 'mouse') => act(() => { fireEvent.pointerMove(target, { clientX: px(...at)[0], clientY: px(...at)[1], pointerId: 1, pointerType }); });
+    const move = (target: HTMLElement, at: readonly [number, number], pointerType = 'mouse') => act(() => { fireEvent.pointerMove(target, { buttons: 1, clientX: px(...at)[0], clientY: px(...at)[1], pointerId: 1, pointerType }); });
     const modes = () => over.mock.calls.map((c) => c[2]);
 
     test('is a sponge over ink a stroke would take, and nothing over bare margin', () => {
@@ -1278,12 +1278,12 @@ describe('a finger', () => {
       const line: [number, number][] = [[0.03, 0.985], [0.08, 0.985], [0.13, 0.985]];
       const [first, ...rest] = line.map(([x, y]) => px(x, y));
       act(() => { fireEvent.pointerDown(frame, { clientX: first![0], clientY: first![1], pointerId: 1, button: 0, pointerType: 'mouse' }); });
-      act(() => { fireEvent.pointerMove(frame, { clientX: rest[0]![0], clientY: rest[0]![1], pointerId: 1, pointerType: 'mouse' }); });
+      act(() => { fireEvent.pointerMove(frame, { buttons: 1, clientX: rest[0]![0], clientY: rest[0]![1], pointerId: 1, pointerType: 'mouse' }); });
       /* A finger taps while the pen is down: the pen's stroke is the one live, and stays so. */
       const tap = px(0.5, 0.5);
       touch(cell, 'touchstart', [{ id: 7, at: tap }], [{ id: 7, at: tap }]);
       touch(cell, 'touchend', [], [{ id: 7, at: tap }]);
-      act(() => { fireEvent.pointerMove(frame, { clientX: rest[1]![0], clientY: rest[1]![1], pointerId: 1, pointerType: 'mouse' }); });
+      act(() => { fireEvent.pointerMove(frame, { buttons: 1, clientX: rest[1]![0], clientY: rest[1]![1], pointerId: 1, pointerType: 'mouse' }); });
       act(() => { fireEvent.pointerUp(frame, { clientX: rest[1]![0], clientY: rest[1]![1], pointerId: 1, pointerType: 'mouse' }); });
       expect(errors, 'no handler threw').toEqual([]);
       await settle(SAVE_AFTER_MS);
@@ -2035,7 +2035,7 @@ describe('the ink field: the picture a layer is drawn from', () => {
   /** A pointer event with a time of its own (jsdom stamps every event within a millisecond of the last). */
   function at(el: HTMLElement, type: 'pointerDown' | 'pointerMove' | 'pointerUp', [x, y]: readonly [number, number], t: number) {
     const [cx, cy] = px(x, y);
-    const ev = createEvent[type](el, { clientX: cx, clientY: cy, pointerId: 1, button: 0, pointerType: 'mouse' });
+    const ev = createEvent[type](el, { buttons: type === 'pointerMove' ? 1 : 0, clientX: cx, clientY: cy, pointerId: 1, button: 0, pointerType: 'mouse' });
     Object.defineProperty(ev, 'timeStamp', { value: t });
     act(() => { fireEvent(el, ev); });
   }
@@ -2199,9 +2199,9 @@ describe('the ink field: the picture a layer is drawn from', () => {
     const path: Pt[] = [[x, y], [x + 0.01, y], [x + 0.02, y], [x + 0.03, y], [x + 0.04, y], [x + 0.05, y]];
     const px2 = (p: Pt) => px(p[0], p[1]);
     act(() => { fireEvent.pointerDown(frame, { clientX: px2(path[0]!)[0], clientY: px2(path[0]!)[1], pointerId: 1, button: 0, pointerType: 'mouse' }); });
-    for (const p of path.slice(1, 3)) act(() => { fireEvent.pointerMove(frame, { clientX: px2(p)[0], clientY: px2(p)[1], pointerId: 1, pointerType: 'mouse' }); });
+    for (const p of path.slice(1, 3)) act(() => { fireEvent.pointerMove(frame, { buttons: 1, clientX: px2(p)[0], clientY: px2(p)[1], pointerId: 1, pointerType: 'mouse' }); });
     replay();
-    for (const p of path.slice(3)) act(() => { fireEvent.pointerMove(frame, { clientX: px2(p)[0], clientY: px2(p)[1], pointerId: 1, pointerType: 'mouse' }); });
+    for (const p of path.slice(3)) act(() => { fireEvent.pointerMove(frame, { buttons: 1, clientX: px2(p)[0], clientY: px2(p)[1], pointerId: 1, pointerType: 'mouse' }); });
     act(() => { fireEvent.pointerUp(frame, { clientX: px2(path.at(-1)!)[0], clientY: px2(path.at(-1)!)[1], pointerId: 1, pointerType: 'mouse' }); });
     const whole = inkOf(0, [{ tool: 'wash', ...brush(), points: path }]);
     expect(whole.washed).toBeGreaterThan(0);
@@ -2474,5 +2474,125 @@ describe('the ink field: the picture a layer is drawn from', () => {
     mount({ states: { 'play-1': { state: { strokes: [packStroke({ tool: 'wash', ...brush(), points: [[0.5, 0.5], [0.6, 0.5]] })] }, savedAt: SAVED_AT } } });
     frames();
     expect(held.requested).toEqual([layerKey('play-1', boxNow(), 1, [{ tool: 'wash', ...brush(), points: [[0.5, 0.5], [0.6, 0.5]] }])]);
+  });
+});
+
+/* A save that got no answer may still have been stored: its strokes are then in the state heard, and must be counted once, here and in the retry. */
+describe('a save whose answer was lost', () => {
+  const lost = { ok: false as const, error: LOST_ANSWER, uncertain: true as const };
+  const lineAt = (): [number, number][] => { const [x, y] = inkSpot(inkOf(0)); return [[x, y], [x + 0.03, y], [x + 0.05, y]]; };
+
+  test('that the server stored: its state heard afterwards holds the stroke, counted once in the model, and the retry sends it once', async () => {
+    authorClock();
+    const net = gated();
+    const line = lineAt();
+    const { frame, root, hear, replay } = mount({ author: true, save: net.save });
+    drag(frame, line);
+    const once = inkOf(0, [washStroke(line)]).washed;
+    const twice = inkOf(0, [washStroke(line), washStroke(line)]).washed;
+    expect(twice, 'the premise: a second wash over the same line takes more').toBeGreaterThan(once + 0.001);
+    await settle(SAVE_AFTER_MS);
+    expect(net.calls).toHaveLength(1);
+    await act(async () => { net.calls[0]!.answer(lost); });
+    /* The server did store it, and the state reaches this screen (the page is also drawn again, so the layer is built from it). */
+    await act(async () => { replay(); hear({ [net.calls[0]!.play]: { state: net.calls[0]!.state, savedAt: SAVED_AT } }); });
+    expect(washed(root)[0], 'the stroke in the saved state is not added again from the ones kept').toBeCloseTo(once, 3);
+    await settle(RETRY_AFTER_MS);
+    expect(net.calls).toHaveLength(2);
+    expect((net.calls[1]!.state as { strokes: unknown[] }).strokes, 'the retry holds the stroke once').toHaveLength(1);
+    await net.accept(1);
+    await settle(SAVE_AFTER_MS * 4);
+    expect(net.calls, 'and nothing is left to send').toHaveLength(2);
+    expect(washed(root)[0]).toBeCloseTo(once, 3);
+  });
+
+  test('that the server did not store: the state heard is unchanged, and the retry still carries the stroke', async () => {
+    authorClock();
+    const net = gated();
+    const line = lineAt();
+    const { frame, root } = mount({ author: true, save: net.save });
+    drag(frame, line);
+    await settle(SAVE_AFTER_MS);
+    await act(async () => { net.calls[0]!.answer(lost); });
+    expect(washed(root)[0]).toBeCloseTo(inkOf(0, [washStroke(line)]).washed, 3);
+    await settle(RETRY_AFTER_MS);
+    expect(net.calls).toHaveLength(2);
+    expect((net.calls[1]!.state as { strokes: unknown[] }).strokes).toHaveLength(1);
+  });
+
+  test('refused outright: every stroke is kept, and the next save carries them all', async () => {
+    authorClock();
+    const net = gated();
+    const [a, b] = rows();
+    const { frame } = mount({ author: true, save: net.save });
+    drag(frame, a!);
+    await settle(SAVE_AFTER_MS);
+    await act(async () => { net.calls[0]!.answer({ ok: false, error: 'at most 200 strokes' }); });
+    drag(frame, b!);
+    await settle(SAVE_AFTER_MS);
+    expect(net.calls).toHaveLength(2);
+    expect((net.calls[1]!.state as { strokes: unknown[] }).strokes).toHaveLength(2);
+  });
+});
+
+/* No player is ever stuck: a stroke whose pointerup never came ends by the other signs a browser gives, and never washes on hover or refuses a finger for good. */
+describe('a stroke whose pointerup was lost', () => {
+  /** A finger wipe sideways from `at`: the touch events as a browser sends them. */
+  const wipe = (target: HTMLElement, at: readonly [number, number]) => {
+    const send = (type: 'touchstart' | 'touchmove' | 'touchend', dx: number) => {
+      const list = [{ identifier: 1, clientX: at[0] + dx, clientY: at[1], target }];
+      const event = new TouchEvent(type, { bubbles: true, cancelable: true });
+      Object.defineProperties(event, { touches: { value: type === 'touchend' ? [] : list }, targetTouches: { value: type === 'touchend' ? [] : list }, changedTouches: { value: list } });
+      act(() => { target.dispatchEvent(event); });
+    };
+    send('touchstart', 0);
+    send('touchmove', 30);
+    send('touchmove', 90);
+    send('touchmove', 150);
+    send('touchend', 150);
+  };
+  /** A mouse press and a move with the button down, and no lift. */
+  function hold() {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const m = mount();
+    const [x, y] = inkSpot(inkOf(0));
+    const [a, b] = [px(x, y), px(x + 0.06, y)];
+    act(() => { fireEvent.pointerDown(m.frame, { clientX: a[0], clientY: a[1], pointerId: 1, button: 0, buttons: 1, pointerType: 'mouse' }); });
+    act(() => { fireEvent.pointerMove(m.frame, { clientX: b[0], clientY: b[1], pointerId: 1, buttons: 1, pointerType: 'mouse' }); });
+    return { ...m, a, b };
+  }
+  const wipesAfter = (m: ReturnType<typeof hold>) => {
+    vi.mocked(suds.wash).mockClear();
+    wipe(m.cell, px(...coreSpot(inkOf(0))));
+    expect(vi.mocked(suds.wash), 'a finger wipes again: no stroke is left live to refuse it').toHaveBeenCalled();
+  };
+
+  test('lostpointercapture ends it, and a finger wipes after', () => {
+    const m = hold();
+    act(() => { fireEvent.lostPointerCapture(m.frame, { pointerId: 1, pointerType: 'mouse' }); });
+    wipesAfter(m);
+  });
+
+  test('the window losing focus ends it, and a finger wipes after', () => {
+    const m = hold();
+    act(() => { fireEvent.blur(window); });
+    wipesAfter(m);
+  });
+
+  test('the page being hidden ends it, and a finger wipes after', () => {
+    const m = hold();
+    Object.defineProperty(document, 'hidden', { configurable: true, value: true });
+    try { act(() => { fireEvent(document, new Event('visibilitychange')); }); } finally { delete (document as { hidden?: unknown }).hidden; }
+    wipesAfter(m);
+  });
+
+  test('a mouse move with no button down ends it, and washes nothing: the hover after a lost pointerup is only a hover', () => {
+    const m = hold();
+    vi.mocked(suds.wash).mockClear();
+    const [cx, cy] = px(...coreSpot(inkOf(0)));
+    act(() => { fireEvent.pointerMove(m.frame, { clientX: cx, clientY: cy, pointerId: 1, buttons: 0, pointerType: 'mouse' }); });
+    act(() => { fireEvent.pointerMove(m.frame, { clientX: cx + 20, clientY: cy, pointerId: 1, buttons: 0, pointerType: 'mouse' }); });
+    expect(vi.mocked(suds.wash), 'the hover throws no suds: it washes nothing').not.toHaveBeenCalled();
+    wipesAfter(m);
   });
 });

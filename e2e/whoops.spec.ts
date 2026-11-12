@@ -587,6 +587,8 @@ test('a reader scrubs the core: one pass leaves it see-through and not gone, and
   expect(seen[0], `after one pass: ${seen.join(', ')}`).toBeGreaterThan(0);
   expect(seen.at(-1), `the alpha after each pass: ${seen.join(', ')}`).toBe(0);
   expect(seen.length, `the alpha after each pass: ${seen.join(', ')}`).toBeGreaterThan(1);
+  /* Not endless either: a core takes two to six passes (the design), and the canvas lags one pass here, so no more than seven reads show it. Counting the passes would catch a wash that stopped taking enough. */
+  expect(seen.length, `the alpha after each pass: ${seen.join(', ')}`).toBeLessThanOrEqual(7);
   /* See-through before gone: some pass leaves the core lowered and above 0, and it never darkens. */
   expect(seen.some((a) => a > 0 && a < full), `the alpha after each pass: ${seen.join(', ')} from ${full}`).toBe(true);
   for (let i = 1; i < seen.length; i++) expect(seen[i]!).toBeLessThanOrEqual(seen[i - 1]!);

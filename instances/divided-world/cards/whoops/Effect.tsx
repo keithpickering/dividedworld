@@ -29,7 +29,7 @@
  * can hold many splatted posts and a canvas is megabytes. A layer's picture is its build (build.ts): made on the spot when the
  * layer is light and in a worker when it is heavy, with a stand-in (paint.ts `paintStandIn`) drawn meanwhile, and a stroke made
  * while a build is out is applied to it once it arrives. Live strokes then go into the layer's grid and only the rectangle they
- * changed is shaded again. A layer washed clean lets its picture go at once. The grids are let go with the post (a post that has
+ * changed is shaded again. A layer washed clean lets its picture go once it has faded (at once under reduced motion). The grids are let go with the post (a post that has
  * left holds only the strokes made on this screen) and are built again when it returns.
  *
  * Whose strokes. A stroke scrubs the top layer that still has ink where it starts. A reader's strokes
@@ -324,12 +324,19 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
   /** How many of `mine` the save on its way carries: they are in the state the server holds as soon as it is heard, which can be before the save's own answer. */
   const sentCount = useRef(new Map<string, number>());
   /**
+   * A save that got no answer may still have been stored: its state and how many of `mine` it carried, kept until a definite answer to a later save.
+   * A saved state heard equal to it holds those strokes already, so they are neither counted nor sent again (a wash takes some of the field a pass, so a stroke twice is not harmless).
+   */
+  const unanswered = useRef(new Map<string, { readonly state: string; readonly count: number }>());
+  /**
    * The strokes made on this screen that the saved state does not hold yet. While a save is on its way its state may be heard before its
    * answer (another channel); the strokes it carried are then in the saved state and still in `mine`, and must not be counted from both.
    */
   const unsavedOf = (id: string, saved: string = canonical(now.current.states[id]?.state)): Stroke[] => {
     const all = mine.current.get(id) ?? [];
-    return sending.current.has(id) && saved === lastSent.current.get(id) ? all.slice(sentCount.current.get(id) ?? 0) : all;
+    if (sending.current.has(id) && saved === lastSent.current.get(id)) return all.slice(sentCount.current.get(id) ?? 0);
+    const maybe = unanswered.current.get(id);
+    return maybe && saved === maybe.state ? all.slice(maybe.count) : all;
   };
   /** How many saves in a row have not got through, by play. */
   const failures = useRef(new Map<string, number>());
@@ -765,9 +772,12 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
         continue;
       }
       const kept = [...(mine.current.get(id) ?? [])];
+      /* A saved state that already holds what an unanswered save carried: those strokes are in it, and are not sent on top of it. */
+      const held = unanswered.current.get(id);
+      const fresh = held && canonical(now.current.states[id]?.state) === held.state ? kept.slice(held.count) : kept;
       const cleanNow = wantClean.current.has(id);
       const clean = cleanNow || savedFor(id).clean;
-      const all = [...savedFor(id).strokes, ...kept];
+      const all = [...savedFor(id).strokes, ...fresh];
       const room = fits(all);
       /* A layer with no room for more strokes can still be marked clean: the saved strokes go again with the mark, so a post the author washed clean is never left splatted for everyone. */
       if (!room && !cleanNow) {
@@ -788,6 +798,8 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
       sending.current.delete(id);
       if (!answer.ok) {
         say(answer.error);
+        if (answer.uncertain) unanswered.current.set(id, { state: lastSent.current.get(id)!, count: sentCount.current.get(id) ?? 0 });
+        else unanswered.current.delete(id);
         /* A refusal is the card's answer and would be the same again. A save that got no answer is sent again, a little later each time, and given up on after a few: the strokes stay, and the author's next one sends them. */
         const failed = (failures.current.get(id) ?? 0) + 1;
         failures.current.set(id, failed);
@@ -795,6 +807,7 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
         continue;
       }
       failures.current.delete(id);
+      unanswered.current.delete(id);
       const savedAt = (answer.value as { readonly savedAt?: unknown } | null)?.savedAt;
       if (typeof savedAt === 'string') acked.current.set(id, { state, savedAt });
       say('');
@@ -936,7 +949,7 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
   /**
    * Begins a stroke at `p`, on the layer it takes: false when there is none, or when a stroke is already live. One hand makes one stroke:
    * a mouse press while a stroke is live is refused (`onPointerDown`), and a finger is refused the same way, so the stroke under way ends
-   * with its own pointer and is saved whole. Finishing it for the finger would cut a pen line short on a palm resting on the screen.
+   * with its own pointer (its pointerup, or the signs a pointerup was lost: capture lost, the window blurred or hidden, a mouse moving with no button down) and is saved whole. Finishing it for the finger would cut a pen line short on a palm resting on the screen.
    */
   const begin = (p: Pt, pointer: number, touch: boolean, t: number = performance.now()): boolean => {
     if (live.current) return false;
@@ -1027,7 +1040,11 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
     if (e.pointerType === 'touch') return;
     ensure();
     const s = live.current;
-    if (s && !s.touch && (s.pointer === null || e.pointerId === s.pointer)) extend(s, shareAt(e.clientX, e.clientY), e.timeStamp);
+    /* A mouse moving with no button down has lost its pointerup (released outside the window, say): the stroke ends here and the move is a hover. */
+    if (s && !s.touch && e.pointerType === 'mouse' && e.buttons === 0 && (s.pointer === null || e.pointerId === s.pointer)) {
+      finish();
+      cursor.press(false);
+    } else if (s && !s.touch && (s.pointer === null || e.pointerId === s.pointer)) extend(s, shareAt(e.clientX, e.clientY), e.timeStamp);
     showCursor(e);
   };
 
@@ -1042,6 +1059,16 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
       if (e.type === 'pointerup') showCursor(e);
       else if (now.current.surface) cursor.leave(now.current.surface);
     }
+  };
+
+  /** The stroke's pointer was taken from it (capture lost), or the window lost focus or went hidden: no pointerup may come, so a mouse or pen stroke ends here, kept as at any end. */
+  const onStrokeLost = (e?: PointerEvent) => {
+    const s = live.current;
+    if (!s || s.touch) return;
+    if (e && s.pointer !== null && e.pointerId !== s.pointer) return;
+    finish();
+    cursor.press(false);
+    if (now.current.surface) cursor.leave(now.current.surface);
   };
 
   const onPointerLeave = (e: PointerEvent) => {
@@ -1124,8 +1151,8 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
    */
   const finishNow = useRef(finish);
   finishNow.current = finish;
-  const handlers = useRef({ onPointerDown, onPointerMove, onPointerEnd, onPointerLeave, onTouchStart, onTouchMove, onTouchEnd });
-  handlers.current = { onPointerDown, onPointerMove, onPointerEnd, onPointerLeave, onTouchStart, onTouchMove, onTouchEnd };
+  const handlers = useRef({ onPointerDown, onPointerMove, onPointerEnd, onStrokeLost, onPointerLeave, onTouchStart, onTouchMove, onTouchEnd });
+  handlers.current = { onPointerDown, onPointerMove, onPointerEnd, onStrokeLost, onPointerLeave, onTouchStart, onTouchMove, onTouchEnd };
   useEffect(() => {
     const f = frameRef.current;
     if (!f || still) return;
@@ -1154,6 +1181,7 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
       const down = (e: PointerEvent) => { if (mine(el, e)) handlers.current.onPointerDown(e); };
       const move = (e: PointerEvent) => { if (mine(el, e)) handlers.current.onPointerMove(e); };
       const end = (e: PointerEvent) => { if (mine(el, e)) handlers.current.onPointerEnd(e); };
+      const lostCapture = (e: PointerEvent) => { if (mine(el, e)) handlers.current.onStrokeLost(e); };
       const leave = (e: PointerEvent) => { if (mine(el, e)) handlers.current.onPointerLeave(e); };
       const tstart = (e: TouchEvent) => { if (mine(el, e)) handlers.current.onTouchStart(e); };
       const tmove = (e: TouchEvent) => { if (mine(el, e)) handlers.current.onTouchMove(e); };
@@ -1163,6 +1191,7 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
       el.addEventListener('pointermove', move);
       el.addEventListener('pointerup', end);
       el.addEventListener('pointercancel', end);
+      el.addEventListener('lostpointercapture', lostCapture);
       el.addEventListener('pointerleave', leave);
       el.addEventListener('touchstart', tstart, { passive: true });
       el.addEventListener('touchmove', tmove, { passive: false });
@@ -1174,6 +1203,7 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
         el.removeEventListener('pointermove', move);
         el.removeEventListener('pointerup', end);
         el.removeEventListener('pointercancel', end);
+        el.removeEventListener('lostpointercapture', lostCapture);
         el.removeEventListener('pointerleave', leave);
         el.removeEventListener('touchstart', tstart);
         el.removeEventListener('touchmove', tmove);
@@ -1184,7 +1214,14 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
         cursor.leave(el);
       };
     });
+    /* A window that loses focus or is hidden may never send the pointerup (an alt-tab or a dialog mid-stroke). */
+    const away = () => handlers.current.onStrokeLost();
+    const hidden = () => { if (document.hidden) away(); };
+    window.addEventListener('blur', away);
+    document.addEventListener('visibilitychange', hidden);
     return () => {
+      window.removeEventListener('blur', away);
+      document.removeEventListener('visibilitychange', hidden);
       for (const off of offs) off();
       if (gesture.current) { settle(gesture.current); gesture.current = null; }
       /* A stroke under way when the listeners go is the author's work: it is kept and saved as at any end. */
