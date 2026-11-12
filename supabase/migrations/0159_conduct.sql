@@ -183,8 +183,9 @@ $$;
 -- only an `unhide` or an `approve` of that version brings its words back). What the author's edit ends is the post being hidden until edited: its new current version has
 -- no decision of its own and shows, and the re-review list (reviews_due) holds it. The second time a post is hidden until edited, the edits written after it are hidden
 -- too, until an `approve` on the post; and so are the edits written after a plain `hide` of any version of the post, until an `approve` on the post or an `unhide` of the
--- version that was hidden (an admin hid those words, and an edit that keeps them is not a way back). An approve or an unhide frees the edits written after it, and the
--- approved version itself: an edit written before it, with no decision of its own, stays hidden, as every version that was hidden does unless unhidden. For a post nobody ever decided on it is one index lookup, empty; for a decided post, one more on the post's decisions.
+-- version that was hidden (an admin hid those words, and an edit that keeps them is not a way back). An approve frees the edits written after it, and the
+-- approved version itself: an edit written before it, with no decision of its own, stays hidden, as every version that was hidden does unless unhidden. An unhide of
+-- the version a plain hide covered frees every edit written after that hide, whenever the unhide is written: the admin undid the hide, so the post shows its latest version. For a post nobody ever decided on it is one index lookup, empty; for a decided post, one more on the post's decisions.
 create function version_hidden(w uuid, pst uuid) returns boolean
 language plpgsql stable security definer set search_path = public, pg_temp as $$
 declare
@@ -207,8 +208,9 @@ begin
     select 1 from conduct_decisions x
     where x.post = pst and x.at < made and x.outcome in ('hide', 'hideUntilEdited')
       and (x.outcome = 'hide' or exists (select 1 from conduct_decisions y where y.post = pst and y.outcome = 'hideUntilEdited' and y.id < x.id))
-      and not exists (select 1 from conduct_decisions z where z.post = pst and z.id > x.id and z.at < made
-                      and (z.outcome = 'approve' or (x.outcome = 'hide' and z.outcome = 'unhide' and z.version_act = x.version_act))));
+      and not exists (select 1 from conduct_decisions z where z.post = pst and z.id > x.id
+                      and ((z.outcome = 'approve' and z.at < made)
+                           or (x.outcome = 'hide' and z.outcome = 'unhide' and z.version_act = x.version_act))));
 end $$;
 
 create function version_hidden(w uuid) returns boolean
@@ -261,23 +263,78 @@ begin
   return left(s, 1) = '/' and left(s, 2) <> '//';
 end $$;
 
--- Whether `content` is what a `[video]` or `[youtube]` shows as a video (parse.ts with video.ts's videoOf): an http(s) address on one of the hosts it knows, or an
--- https address ending .mp4 or .webm; a `[youtube]` also takes a bare 11-character id. The path shape a known host wants is not mirrored: an address on a known host
--- whose path is wrong, and which holds a bracket, is read here as a video and by the parser as words.
+-- Whether `content` is what a `[video]` or `[youtube]` shows as a video: engine/bbcode/video.ts's videoOf, read as it does. A `[youtube]` also takes a bare 11-character
+-- id. Otherwise an http(s) address with no explicit port (the scheme's own is none), on a host the table knows, with the path shape that host wants (youtu.be/<id>,
+-- youtube.com/watch?v=<id> or /shorts/<id> or /live/<id>, vimeo.com/<digits>, clips.twitch.tv/<clip>, twitch.tv/<name>/clip/<clip>, streamable.com/<id>,
+-- nicovideo.jp/watch/<id>, soundcloud.com/<a>/<b>); a known host with any other path is not a video, and only a host the table does not know can be a file, an https
+-- address ending .mp4 or .webm. A query or path the URL parser would rewrite (a percent sign in a parameter name, a dot segment) is read as not a video: the error is
+-- then over-emptying a quote the parser would have kept inside a video, and never keeping words the parser would show. Only a body with `[quote=` in it reaches this.
 create function bb_video_like(content text, is_youtube boolean) returns boolean
 language plpgsql immutable set search_path = public, pg_temp as $$
 declare
   s text := regexp_replace(content, '^\s+|\s+$', '', 'g');
   m text[];
+  host text;
+  path text;
+  query text;
+  port text;
+  segs text[];
+  n integer;
+  a text;
+  b text;
+  c text;
+  kv text;
+  nm text;
+  dflt integer;
 begin
   if s = '' then return false; end if;
   if is_youtube and s ~ '^[A-Za-z0-9_-]{11}$' then return true; end if;
   if not bb_safe_href(s) or s !~* '^https?:' then return false; end if;
-  m := regexp_match(s, '^[a-zA-Z]+://([^/?#:]*)([^?#]*)', 'i');
+  m := regexp_match(s, '^([a-zA-Z]+)://([^/?#]*)([^?#]*)(?:\?([^#]*))?', 'i');
   if m is null then return false; end if;
-  return lower(m[1]) in ('youtu.be', 'youtube.com', 'www.youtube.com', 'm.youtube.com', 'vimeo.com', 'www.vimeo.com', 'clips.twitch.tv', 'twitch.tv', 'www.twitch.tv',
-                         'streamable.com', 'www.streamable.com', 'nicovideo.jp', 'www.nicovideo.jp', 'soundcloud.com', 'www.soundcloud.com')
-      or (s ~* '^https:' and m[2] ~* '\.(mp4|webm)$');
+  host := lower(split_part(m[2], ':', 1));
+  port := case when strpos(m[2], ':') > 0 then substr(m[2], strpos(m[2], ':') + 1) end;
+  path := m[3];
+  query := m[4];
+  if port is not null and port <> '' then
+    dflt := (case when lower(m[1]) = 'https' then 443 else 80 end);
+    if port::integer > 65535 or port::integer <> dflt then return false; end if;
+  end if;
+  segs := string_to_array(regexp_replace(path, '/$', ''), '/');
+  if array_length(segs, 1) is null then
+    segs := '{}';
+  else
+    segs := segs[2:];
+  end if;
+  n := coalesce(array_length(segs, 1), 0);
+  if exists (select 1 from unnest(segs) x where x ~* '^(\.|%2e)(\.|%2e)?$') then return false; end if;
+  a := segs[1]; b := segs[2]; c := segs[3];
+  if host = 'youtu.be' then
+    return n = 1 and a ~ '^[A-Za-z0-9_-]{11}$';
+  elsif host in ('youtube.com', 'www.youtube.com', 'm.youtube.com') then
+    if n = 1 and a = 'watch' then
+      for kv in select unnest(string_to_array(coalesce(query, ''), '&')) loop
+        nm := split_part(kv, '=', 1);
+        if nm ~ '[%+]' then return false; end if;
+        if nm = 'v' then return substr(kv, 3) ~ '^[A-Za-z0-9_-]{11}$' and strpos(kv, '=') = 2; end if;
+      end loop;
+      return false;
+    end if;
+    return n = 2 and a in ('shorts', 'live') and b ~ '^[A-Za-z0-9_-]{11}$';
+  elsif host in ('vimeo.com', 'www.vimeo.com') then
+    return n = 1 and a ~ '^[0-9]{1,12}$';
+  elsif host = 'clips.twitch.tv' then
+    return n = 1 and a ~ '^[A-Za-z0-9_-]{1,100}$';
+  elsif host in ('twitch.tv', 'www.twitch.tv') then
+    return n = 3 and a ~ '^[A-Za-z0-9_-]{1,100}$' and b = 'clip' and c ~ '^[A-Za-z0-9_-]{1,100}$';
+  elsif host in ('streamable.com', 'www.streamable.com') then
+    return n = 1 and a ~* '^[a-z0-9]{3,16}$';
+  elsif host in ('nicovideo.jp', 'www.nicovideo.jp') then
+    return n = 2 and a = 'watch' and b ~ '^(sm|nm|so)[0-9]{1,12}$';
+  elsif host in ('soundcloud.com', 'www.soundcloud.com') then
+    return n = 2 and a ~ '^[A-Za-z0-9_-]{1,100}$' and b ~ '^[A-Za-z0-9_-]{1,100}$';
+  end if;
+  return lower(m[1]) = 'https' and path ~* '\.(mp4|webm)$';
 end $$;
 
 -- What follows `quote` in a quote opener, read as parse.ts's quoteHead does: 'real:<id>' for a quote of an Act (the name an id, quoted or not, with or without ` user=<id>`
@@ -323,11 +380,13 @@ end $$;
 -- is inside it); inside an open inline spoiler the block tags are words; and the tags still open at the end are closed there. A hidden quote that never closes is
 -- emptied to the end of the body, as the parser's own reading of it is. A quote of a hidden post inside a quote already emptied is inside it. The parser keeps a
 -- shared fixture, supabase/tests/data/conduct-quote-corpus.json, that 0164-conduct-leaks.sql runs through this function and engine/bbcode/conceal.test.ts runs
--- through the parser, so neither reading can move without the other failing. It runs only on a body that contains `[quote=` (public_payload asks). Known gap, not a
+-- through the parser, so neither reading can move without the other failing. It runs only on a body that contains `[quote=` (public_payload asks), and walks it only if one of its quote openers names a post with a hidden version. Known gap, not a
 -- leak: tags past 32 real ones deep (the parser's MAX_DEPTH) count every tag as real here.
 create function conceal_quotes(body text) returns text
 language plpgsql stable security definer set search_path = public, pg_temp as $$
 declare
+  qid text;
+  found_hidden boolean;
   pieces text[];
   tags text[];
   starts integer[] := '{}';
@@ -369,6 +428,12 @@ declare
   blocks constant text[] := array['quote','code','list','spoiler','center','left','right','hr','video','youtube','marquee'];
 begin
   if body is null or body !~* '\[quote=' then return body; end if;
+  -- Nothing to do unless an opener names a hidden post: the ids the openers could name (a superset of what bb_quote_head reads) and one indexed probe each.
+  found_hidden := false;
+  for qid in select distinct lower(m[1]) from regexp_matches(body, '\[quote=\s*"?\s*([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})', 'gi') m loop
+    if quote_hidden(qid::uuid) then found_hidden := true; exit; end if;
+  end loop;
+  if not found_hidden then return body; end if;
   pieces := regexp_split_to_array(body, '\[[^\[\]]*\]');
   tags := array(select m[1] from regexp_matches(body, '(\[[^\[\]]*\])', 'g') m);
   n := coalesce(array_length(tags, 1), 0);
@@ -439,11 +504,15 @@ begin
           rawat := jsonb_set(rawat, array[nm], to_jsonb(raw_at));
         end if;
         if raw_at > 0 then
-          within := substr(body, tend, starts[raw_at] - tend);
+          -- parse.ts gives an image or a video contents of at most MAX_URL_LENGTH + 64 characters; longer is words, and is decided by the length alone, so the
+          -- stretch to the closer is never copied for every opener in front of it
           if nm in ('code', 'noparse') then skip := true;
-          elsif length(within) > 2048 + 64 then skip := false;
-          elsif nm = 'img' then skip := bb_safe_href(within) and within ~* '^\s*https?:';
-          else skip := bb_video_like(within, nm = 'youtube');
+          elsif starts[raw_at] - tend > 2048 + 64 then skip := false;
+          else
+            within := substr(body, tend, starts[raw_at] - tend);
+            if nm = 'img' then skip := bb_safe_href(within) and within ~* '^\s*https?:';
+            else skip := bb_video_like(within, nm = 'youtube');
+            end if;
           end if;
           if skip then i := raw_at + 1; end if;
         end if;

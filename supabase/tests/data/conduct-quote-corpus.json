@@ -198,5 +198,30 @@
   "name": "a body that is only a hidden quote",
   "body": "[quote={H}]all[/quote]",
   "expect": "[quote={H}][/quote]"
+ },
+ {
+  "name": "a video on a known host whose path is wrong is not one",
+  "body": "[video]https://youtube.com/[quote={H}]cruel-words-here[/quote][/video]",
+  "expect": "[video]https://youtube.com/[quote={H}][/quote][/video]"
+ },
+ {
+  "name": "a youtube on another known host whose path is wrong is not one",
+  "body": "[youtube]https://vimeo.com/[quote={H}]cruel-words-here[/quote][/youtube]",
+  "expect": "[youtube]https://vimeo.com/[quote={H}][/quote][/youtube]"
+ },
+ {
+  "name": "a video that is one holds a quote-like string as words",
+  "body": "a[video]https://youtu.be/abcdefghijk?x=[quote={H}]y[/video]b",
+  "expect": "a[video]https://youtu.be/abcdefghijk?x=[quote={H}]y[/video]b"
+ },
+ {
+  "name": "a bare id is a video only in a youtube",
+  "body": "[video]abcdefghijk[quote={H}]y[/quote][/video]z",
+  "expect": "[video]abcdefghijk[quote={H}][/quote][/video]z"
+ },
+ {
+  "name": "a file on a path the host table does not know is a video when it ends .mp4",
+  "body": "a[video]https://example.com/[quote={H}]y.mp4[/video]b",
+  "expect": "a[video]https://example.com/[quote={H}]y.mp4[/video]b"
  }
 ]

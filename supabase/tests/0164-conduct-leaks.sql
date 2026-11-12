@@ -60,6 +60,53 @@ begin
   end loop;
   if ran < 30 then raise exception 'the quote corpus did not load (% cases)', ran; end if;
 
+  -- bb_video_like says "a video" for exactly the addresses engine/bbcode/video.ts's videoOf plays: a known host with a path shape it does not want is words, as is an
+  -- explicit port and a file on a known host. Saying video for what the parser shows as words keeps a hidden quote's words in the open (corpus: the two known-host cases).
+  for c in select * from jsonb_array_elements('[
+    ["https://youtu.be/abcdefghijk", true], ["https://youtu.be/abcdefghijk?t=90", true], ["https://youtube.com/watch?v=abcdefghijk", true],
+    ["https://www.youtube.com/watch?x=1&v=abcdefghijk", true], ["https://youtube.com/shorts/abcdefghijk/", true], ["https://m.youtube.com/live/abcdefghijk", true],
+    ["https://vimeo.com/123456", true], ["https://clips.twitch.tv/SomeClip-1", true], ["https://www.twitch.tv/name/clip/SomeClip", true],
+    ["https://streamable.com/abc123", true], ["https://www.nicovideo.jp/watch/sm9", true], ["https://soundcloud.com/a/b", true], ["https://example.com/a/b.mp4", true],
+    ["https://youtu.be:443/abcdefghijk", true], ["http://youtu.be:80/abcdefghijk", true],
+    ["https://youtube.com/", false], ["https://youtube.com/[quote=x]y", false], ["https://youtube.com/watch", false], ["https://youtube.com/watch?v=short", false],
+    ["https://youtube.com/watch?x=abcdefghijk", false], ["https://youtube.com/shorts/abcdefghijk/extra", false], ["https://youtube.com/x.mp4", false],
+    ["https://vimeo.com/", false], ["https://vimeo.com/abc", false], ["https://vimeo.com/123/456", false], ["https://clips.twitch.tv/a/b", false],
+    ["https://twitch.tv/name/clip", false], ["https://soundcloud.com/a", false], ["https://nicovideo.jp/watch/xx9", false],
+    ["https://youtu.be:8080/abcdefghijk", false], ["http://example.com/a.mp4", false], ["https://example.com/a.txt", false]
+  ]'::jsonb) loop
+    if bb_video_like(c ->> 0, false) is distinct from (c ->> 1)::boolean then raise exception 'bb_video_like(%) is %, the parser reads it as %', c ->> 0, bb_video_like(c ->> 0, false), c ->> 1; end if;
+  end loop;
+  if bb_video_like('abcdefghijk', true) is not true or bb_video_like('abcdefghijk', false) is not false then raise exception 'a bare id is a video in a youtube only'; end if;
+
+  -- ---- conceal_quotes is linear: one poster's body cannot make a thread unreadable ----
+  -- An opener for a raw tag ([img], [video], [youtube]) used to copy everything up to the next closer, for every opener: a body of a quote and thousands of `[img]` with
+  -- one `[/img]` at the end took 357 ms at 20,000 characters and 1.3 s at 40,000, and a thread page of such posts passed the statement timeout. Both the quote of a shown post
+  -- (nothing to conceal, so the body is returned as it is) and of a hidden one (walked) must stay far under that.
+  declare
+    t0 timestamptz;
+    ms numeric;
+    who text;
+    bodies text[];
+    k integer;
+  begin
+    foreach who in array array[ps::text, p1::text] loop
+      for k in 1 .. 2 loop
+        bodies := array[
+          format('[quote=%s]', who) || repeat('[img]', 3996 * k) || '[/img]',
+          format('[quote=%s]', who) || repeat('[video]', 2850 * k) || '[/video]',
+          format('[quote=%s]', who) || repeat('[youtube]', 2220 * k) || '[/youtube]'];
+        for j in 1 .. 3 loop
+          t0 := clock_timestamp();
+          words := conceal_quotes(bodies[j]);
+          ms := extract(epoch from clock_timestamp() - t0) * 1000;
+          if ms > 150 * k then raise exception 'conceal_quotes took % ms on % characters of a quote of a % post and repeated raw openers (body %)', round(ms), length(bodies[j]), case when who = p1::text then 'hidden' else 'shown' end, j; end if;
+        end loop;
+      end loop;
+    end loop;
+    -- A quote of a shown post is returned untouched, and one of a hidden post is emptied up to the end.
+    if conceal_quotes(format('[quote=%s]x[quote=%s]y[/quote]', ps, ps)) is distinct from format('[quote=%s]x[quote=%s]y[/quote]', ps, ps) then raise exception 'a body quoting only shown posts changed'; end if;
+  end;
+
   -- ---- The screens' functions over a hidden post: hidden, and no words ----
   perform tests.become(other);
   j := thread_page(th, 1, 20, null, null);

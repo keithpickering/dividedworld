@@ -513,6 +513,33 @@ begin
     select (a.current_payload ->> 'body'), a.hidden into words, hid from acts_public a where a.id = ph;
     perform tests.unbecome();
     if words is distinct from 'Softer still.' or hid is distinct from false then raise exception 'an edit after an unhide stayed hidden: % %', words, hid; end if;
+    -- A plain hide, the author's edit (waiting), then an admin's unhide of the original version written after the edit: the unhide frees every edit written after
+    -- that hide, so the post shows the latest edit's words, nothing waits on the author or on the re-review list, and the author is not told "waiting".
+    declare pu uuid; eu uuid; mine jsonb; due bigint;
+    begin
+      pu := tests.post(ch_author, th, 'Too cruel.', now() - interval '9 minutes');
+      perform tests.become(admin_a);
+      perform decide(null, pu, 'hide', null, 'unhide after an edit');
+      perform tests.unbecome();
+      eu := tests.act(ch_author, 'edit', th, '{"body": "Kinder."}', pu, now() + interval '6 minutes');
+      perform tests.become(author);
+      mine := my_hidden_version(pu);
+      perform tests.unbecome();
+      if mine ->> 'status' is distinct from 'waiting' then raise exception 'before the unhide the author is not told the edit is waiting: %', mine; end if;
+      insert into conduct_decisions (version_act, admin, outcome, note, at) values (pu, admin_a, 'unhide', 'a mistake', now() + interval '7 minutes');
+      perform tests.become(other);
+      select (a.current_payload ->> 'body'), a.hidden into words, hid from acts_public a where a.id = pu;
+      perform tests.unbecome();
+      if words is distinct from 'Kinder.' or hid is distinct from false then raise exception 'an unhide after the author''s edit left the post hidden: % %', words, hid; end if;
+      perform tests.become(author);
+      mine := my_hidden_version(pu);
+      perform tests.unbecome();
+      if mine is not null then raise exception 'after an unhide the author is still told the edit waits: %', mine; end if;
+      perform tests.become(admin_a);
+      select count(*) into due from reviews_due where post = pu;
+      perform tests.unbecome();
+      if due is distinct from 0 then raise exception 'an unhidden post is still on the re-review list'; end if;
+    end;
   end;
   perform tests.become(other);
   perform tests.unbecome();
