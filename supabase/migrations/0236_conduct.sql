@@ -296,6 +296,11 @@ begin
   port := case when strpos(m[2], ':') > 0 then substr(m[2], strpos(m[2], ':') + 1) end;
   path := m[3];
   query := m[4];
+  -- A host the URL parser refuses is not a video, and the parser then reads a quote inside the address as a quote: an `xn--` label (which must be valid punycode, and is not
+  -- checked here) and a last label that is a number (`example.123`) or hex (`example.0x1f`), which the parser reads as an IPv4 address and refuses unless it is a valid one.
+  -- A valid IPv4 file address and a valid internationalized name are over-emptied by this, which is the safe error.
+  if exists (select 1 from unnest(string_to_array(host, '.')) l where l ~ '^xn--') then return false; end if;
+  if (string_to_array(host, '.'))[cardinality(string_to_array(host, '.'))] ~ '^([0-9]+|0x[0-9a-f]*)$' then return false; end if;
   if port is not null and port <> '' then
     dflt := (case when lower(m[1]) = 'https' then 443 else 80 end);
     if port::integer > 65535 or port::integer <> dflt then return false; end if;
@@ -343,6 +348,8 @@ create function bb_quote_head(rest text) returns text
 language plpgsql immutable set search_path = public, pg_temp as $$
 declare
   uuid_re constant text := '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
+  -- JavaScript's `\s` and `trim()`: WhiteSpace and LineTerminator, which Postgres's `\s` is not (it leaves out U+00A0, U+FEFF and the rest above U+007F)
+  ws constant text := '[\t\n\v\f\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]';
   v text;
   nm text;
   tail text;
@@ -357,16 +364,16 @@ begin
       nm := substr(v, 2, j - 1);
       tail := substr(v, j + 2);
     else
-      m := regexp_match(v, '^(.*?)(\suser=.*)$', 'i');
+      m := regexp_match(v, '^(.*?)(' || ws || 'user=.*)$', 'i');
       if m is null then nm := v; tail := ''; else nm := m[1]; tail := m[2]; end if;
     end if;
-    nm := regexp_replace(nm, '^\s+|\s+$', '', 'g');
+    nm := regexp_replace(nm, '^' || ws || '+|' || ws || '+$', '', 'g');
     if nm = '' or length(nm) > 80 then return null; end if;
   else
     tail := rest;
   end if;
   if tail <> '' then
-    m := regexp_match(tail, '^\s+user=(.*)$', 'i');
+    m := regexp_match(tail, '^' || ws || '+user=(.*)$', 'i');
     if m is null or m[1] !~* uuid_re then return null; end if;
   end if;
   if nm is not null and nm ~* uuid_re then return 'real:' || lower(nm); end if;
@@ -387,6 +394,7 @@ language plpgsql stable security definer set search_path = public, pg_temp as $$
 declare
   qid text;
   found_hidden boolean;
+  ws constant text := '[\t\n\v\f\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]';
   pieces text[];
   tags text[];
   starts integer[] := '{}';
@@ -428,9 +436,10 @@ declare
   blocks constant text[] := array['quote','code','list','spoiler','center','left','right','hr','video','youtube','marquee'];
 begin
   if body is null or body !~* '\[quote=' then return body; end if;
-  -- Nothing to do unless an opener names a hidden post: the ids the openers could name (a superset of what bb_quote_head reads) and one indexed probe each.
+  -- Nothing to do unless the body holds the id of a hidden post. A pure superset of what bb_quote_head reads: every UUID-shaped run anywhere in the body, whatever surrounds it (an id
+  -- an opener reads is whole, so no run that is part of one is missed), and one indexed probe for each until one is hidden.
   found_hidden := false;
-  for qid in select distinct lower(m[1]) from regexp_matches(body, '\[quote=\s*"?\s*([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})', 'gi') m loop
+  for qid in select distinct lower(m[1]) from regexp_matches(body, '([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})', 'gi') m loop
     if quote_hidden(qid::uuid) then found_hidden := true; exit; end if;
   end loop;
   if not found_hidden then return body; end if;
@@ -456,7 +465,7 @@ begin
       nm := lower(substr(b, 2));
       if not nm = any (closers) then continue; end if;
       isc := true;
-    elsif b ~* '^quote($|=|\s)' then
+    elsif b ~* ('^quote($|=|' || ws || ')') then
       nm := 'quote';
       qrest := substr(b, 6);
     else

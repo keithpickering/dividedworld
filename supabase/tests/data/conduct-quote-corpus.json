@@ -223,5 +223,170 @@
   "name": "a file on a path the host table does not know is a video when it ends .mp4",
   "body": "a[video]https://example.com/[quote={H}]y.mp4[/video]b",
   "expect": "a[video]https://example.com/[quote={H}]y.mp4[/video]b"
+ },
+ {
+  "name": "a video the URL parser refuses is words: a punycode label that is not punycode",
+  "body": "a[video]https://xn--a.example/[quote={H}]y[/quote].mp4[/video]b",
+  "expect": "a[video]https://xn--a.example/[quote={H}][/quote].mp4[/video]b"
+ },
+ {
+  "name": "a video the URL parser refuses is words: a numeric last label",
+  "body": "a[video]https://example.123/[quote={H}]y[/quote].mp4[/video]b",
+  "expect": "a[video]https://example.123/[quote={H}][/quote].mp4[/video]b"
+ },
+ {
+  "name": "a video the URL parser refuses is words: an IPv4 address with an octet over 255",
+  "body": "a[video]https://1.2.3.256/[quote={H}]y[/quote].mp4[/video]b",
+  "expect": "a[video]https://1.2.3.256/[quote={H}][/quote].mp4[/video]b"
+ },
+ {
+  "name": "a video the URL parser refuses is words: a hex last label",
+  "body": "a[video]https://example.0x1f/[quote={H}]y[/quote].mp4[/video]b",
+  "expect": "a[video]https://example.0x1f/[quote={H}][/quote].mp4[/video]b"
+ },
+ {
+  "name": "a video the URL parser refuses is words: an xn-- label in the middle",
+  "body": "a[video]https://www.xn--zz.example.com/[quote={H}]y[/quote].mp4[/video]b",
+  "expect": "a[video]https://www.xn--zz.example.com/[quote={H}][/quote].mp4[/video]b"
+ },
+ {
+  "name": "a youtube the URL parser refuses is words: a numeric last label",
+  "body": "a[youtube]https://example.123/[quote={H}]y[/quote][/youtube]b",
+  "expect": "a[youtube]https://example.123/[quote={H}][/quote][/youtube]b"
+ },
+ {
+  "name": "a quote whose id has U+00A0 before it, bare",
+  "body": "a[quote=\u00a0{H}]secret[/quote]b",
+  "expect": "a[quote=\u00a0{H}][/quote]b"
+ },
+ {
+  "name": "a quote whose id has U+00A0 before it, quoted",
+  "body": "a[quote=\"\u00a0{H}\"]secret[/quote]b",
+  "expect": "a[quote=\"\u00a0{H}\"][/quote]b"
+ },
+ {
+  "name": "a quote whose id has U+00A0 after it, bare",
+  "body": "a[quote={H}\u00a0]secret[/quote]b",
+  "expect": "a[quote={H}\u00a0][/quote]b"
+ },
+ {
+  "name": "a quote whose id has U+00A0 after it, quoted",
+  "body": "a[quote=\"{H}\u00a0\"]secret[/quote]b",
+  "expect": "a[quote=\"{H}\u00a0\"][/quote]b"
+ },
+ {
+  "name": "a quote whose id has U+FEFF before it, bare",
+  "body": "a[quote=\ufeff{H}]secret[/quote]b",
+  "expect": "a[quote=\ufeff{H}][/quote]b"
+ },
+ {
+  "name": "a quote whose id has U+FEFF before it, quoted",
+  "body": "a[quote=\"\ufeff{H}\"]secret[/quote]b",
+  "expect": "a[quote=\"\ufeff{H}\"][/quote]b"
+ },
+ {
+  "name": "a quote whose id has U+FEFF after it, bare",
+  "body": "a[quote={H}\ufeff]secret[/quote]b",
+  "expect": "a[quote={H}\ufeff][/quote]b"
+ },
+ {
+  "name": "a quote whose id has U+FEFF after it, quoted",
+  "body": "a[quote=\"{H}\ufeff\"]secret[/quote]b",
+  "expect": "a[quote=\"{H}\ufeff\"][/quote]b"
+ },
+ {
+  "name": "a quote whose id has U+202F before it, bare",
+  "body": "a[quote=\u202f{H}]secret[/quote]b",
+  "expect": "a[quote=\u202f{H}][/quote]b"
+ },
+ {
+  "name": "a quote whose id has U+202F before it, quoted",
+  "body": "a[quote=\"\u202f{H}\"]secret[/quote]b",
+  "expect": "a[quote=\"\u202f{H}\"][/quote]b"
+ },
+ {
+  "name": "a quote whose id has U+202F after it, bare",
+  "body": "a[quote={H}\u202f]secret[/quote]b",
+  "expect": "a[quote={H}\u202f][/quote]b"
+ },
+ {
+  "name": "a quote whose id has U+202F after it, quoted",
+  "body": "a[quote=\"{H}\u202f\"]secret[/quote]b",
+  "expect": "a[quote=\"{H}\u202f\"][/quote]b"
+ },
+ {
+  "name": "a quote whose id has U+3000 before it, bare",
+  "body": "a[quote=\u3000{H}]secret[/quote]b",
+  "expect": "a[quote=\u3000{H}][/quote]b"
+ },
+ {
+  "name": "a quote whose id has U+3000 before it, quoted",
+  "body": "a[quote=\"\u3000{H}\"]secret[/quote]b",
+  "expect": "a[quote=\"\u3000{H}\"][/quote]b"
+ },
+ {
+  "name": "a quote whose id has U+3000 after it, bare",
+  "body": "a[quote={H}\u3000]secret[/quote]b",
+  "expect": "a[quote={H}\u3000][/quote]b"
+ },
+ {
+  "name": "a quote whose id has U+3000 after it, quoted",
+  "body": "a[quote=\"{H}\u3000\"]secret[/quote]b",
+  "expect": "a[quote=\"{H}\u3000\"][/quote]b"
+ },
+ {
+  "name": "a quote whose id has U+1680 before it, bare",
+  "body": "a[quote=\u1680{H}]secret[/quote]b",
+  "expect": "a[quote=\u1680{H}][/quote]b"
+ },
+ {
+  "name": "a quote whose id has U+1680 before it, quoted",
+  "body": "a[quote=\"\u1680{H}\"]secret[/quote]b",
+  "expect": "a[quote=\"\u1680{H}\"][/quote]b"
+ },
+ {
+  "name": "a quote whose id has U+1680 after it, bare",
+  "body": "a[quote={H}\u1680]secret[/quote]b",
+  "expect": "a[quote={H}\u1680][/quote]b"
+ },
+ {
+  "name": "a quote whose id has U+1680 after it, quoted",
+  "body": "a[quote=\"{H}\u1680\"]secret[/quote]b",
+  "expect": "a[quote=\"{H}\u1680\"][/quote]b"
+ },
+ {
+  "name": "a quote whose id has U+2028 before it, bare",
+  "body": "a[quote=\u2028{H}]secret[/quote]b",
+  "expect": "a[quote=\u2028{H}][/quote]b"
+ },
+ {
+  "name": "a quote whose id has U+2028 before it, quoted",
+  "body": "a[quote=\"\u2028{H}\"]secret[/quote]b",
+  "expect": "a[quote=\"\u2028{H}\"][/quote]b"
+ },
+ {
+  "name": "a quote whose id has U+2028 after it, bare",
+  "body": "a[quote={H}\u2028]secret[/quote]b",
+  "expect": "a[quote={H}\u2028][/quote]b"
+ },
+ {
+  "name": "a quote whose id has U+2028 after it, quoted",
+  "body": "a[quote=\"{H}\u2028\"]secret[/quote]b",
+  "expect": "a[quote=\"{H}\u2028\"][/quote]b"
+ },
+ {
+  "name": "a quote whose id has a vertical tab and a form feed around it",
+  "body": "a[quote=\u000b{H}\f]secret[/quote]b",
+  "expect": "a[quote=\u000b{H}\f][/quote]b"
+ },
+ {
+  "name": "a quote whose user= follows a no-break space",
+  "body": "a[quote={H}\u00a0user={S}]secret[/quote]b",
+  "expect": "a[quote={H}\u00a0user={S}][/quote]b"
+ },
+ {
+  "name": "a quote tag whose name is followed by a no-break space",
+  "body": "a[quote\u00a0user={S}]x[quote={H}]secret[/quote][/quote]b",
+  "expect": "a[quote\u00a0user={S}]x[quote={H}][/quote][/quote]b"
  }
 ]
