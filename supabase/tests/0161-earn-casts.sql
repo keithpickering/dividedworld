@@ -1,4 +1,4 @@
--- An Earn a cast card carries (supabase/migrations/0158_card_notes_part_4.sql; docs/plans/2026-11-11-card-notes-part-4-plan.md, Task 3, sections 1, 5, 6 and 8). A cast card that reaches a character alone may
+-- An Earn a cast card carries (supabase/migrations/0240_card_notes_part_4.sql; docs/plans/2026-11-11-card-notes-part-4-plan.md, Task 3, sections 1, 5, 6 and 8). A cast card that reaches a character alone may
 -- carry an earn Gimmick: it lands on any character, anyone's, by the stack count; a use card with an earn is still used on one's own character alone; a staff character casts none (the settlement leaves a
 -- staff character's Acts out, so it would never be paid); set face down it lands on the quoting post's character as a cast does. settlement_input carries its play with its end and the character it is on,
 -- in its own window and, through earn_up, in the next, and estimate_input for the target's player carries another's play made inside the open window and for a third player does not.
