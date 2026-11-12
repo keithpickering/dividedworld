@@ -77,8 +77,8 @@ test('the cursor is the source\'s own time, to the microsecond, so a row a milli
 test('each line carries its shares, largest first, and a line the estimate valued nothing for carries none', () => {
   const ledger = [line(7, '2026-10-30T08:17:00Z', 'p', 'heel.drewHeat', 20), line(7, '2026-10-30T08:17:00Z', 'p', 'heel.shrugged', -5)];
   const shares: ShareRow[] = [
-    { settlement: 7, character: 'p', reason: 'heel.drewHeat', act: 'a1', quadrant: 'excitedNegative', amount: 8 },
-    { settlement: 7, character: 'p', reason: 'heel.drewHeat', act: 'a2', quadrant: 'excitedNegative', amount: 12 },
+    { settlement: 7, character: 'p', reason: 'heel.drewHeat', card: null, act: 'a1', quadrant: 'excitedNegative', amount: 8 },
+    { settlement: 7, character: 'p', reason: 'heel.drewHeat', card: null, act: 'a2', quadrant: 'excitedNegative', amount: 12 },
   ];
   const [s] = cutLog({ ...none, ledger, shares }).settlements;
   assert.deepEqual(s!.lines, [
@@ -90,8 +90,8 @@ test('each line carries its shares, largest first, and a line the estimate value
 test('shares of one size are ordered by their Act, and lines by character and then reason, so both backends hand the same order', () => {
   const ledger = [line(7, '2026-10-30T08:17:00Z', 'q', 'heel.shrugged', -5), line(7, '2026-10-30T08:17:00Z', 'p', 'heel.stoleThunder', 4), line(7, '2026-10-30T08:17:00Z', 'p', 'heel.drewHeat', 4)];
   const shares: ShareRow[] = [
-    { settlement: 7, character: 'p', reason: 'heel.drewHeat', act: 'b', quadrant: 'excitedNegative', amount: 2 },
-    { settlement: 7, character: 'p', reason: 'heel.drewHeat', act: 'a', quadrant: 'excitedNegative', amount: 2 },
+    { settlement: 7, character: 'p', reason: 'heel.drewHeat', card: null, act: 'b', quadrant: 'excitedNegative', amount: 2 },
+    { settlement: 7, character: 'p', reason: 'heel.drewHeat', card: null, act: 'a', quadrant: 'excitedNegative', amount: 2 },
   ];
   const [s] = cutLog({ ...none, ledger, shares }).settlements;
   assert.deepEqual(s!.lines.map((l) => [l.character, l.reason]), [['p', 'heel.drewHeat'], ['p', 'heel.stoleThunder'], ['q', 'heel.shrugged']]);
@@ -154,4 +154,18 @@ test('the microsecond before an instant is written in UTC to the microsecond, wh
   assert.equal(justBefore('2026-10-30T08:17:00Z'), '2026-10-30T08:16:59.999999+00:00');
   assert.equal(justBefore('2026-01-01T00:00:00+00:00'), '2025-12-31T23:59:59.999999+00:00');
   for (const iso of ['2026-10-30T10:17:00.5+02:00', '2026-10-30T08:17:00.123456-05:30', '2026-10-30T08:17:00Z']) assert.equal(micros(iso) - micros(justBefore(iso)), 1);
+});
+
+test('a share finds the line of its own card: two card lines of one character and reason each hold only their own share', () => {
+  const ride = (card: string, amount: number): LedgerRow => ({ ...line(5, '2026-10-30T08:17:00Z', 'p', 'card.ride', amount), params: { card } });
+  const share = (card: string | null, amount: number): ShareRow => ({ settlement: 5, character: 'p', reason: 'card.ride', card, act: 'a1', quadrant: 'excitedPositive', amount });
+  const log = cutLog({ ...none, ledger: [ride('y', 7), ride('x', 3)], shares: [share('x', 3), share('y', 7)] });
+  assert.deepEqual(log.settlements[0]!.lines.map((l) => [l.params?.card, l.shares.map((s) => s.amount)]), [['x', [3]], ['y', [7]]]);
+});
+
+test('lines of one character and reason are ordered by card, no card first, and a share with no card never files under a card', () => {
+  const ride = (card: string | null, amount: number): LedgerRow => ({ ...line(5, '2026-10-30T08:17:00Z', 'p', 'card.ride', amount), ...(card === null ? {} : { params: { card } }) });
+  const share = (card: string | null, amount: number): ShareRow => ({ settlement: 5, character: 'p', reason: 'card.ride', card, act: 'a1', quadrant: 'excitedPositive', amount });
+  const log = cutLog({ ...none, ledger: [ride('y', 7), ride('x', 3), ride(null, 1)], shares: [share('y', 7), share(null, 1), share('x', 3)] });
+  assert.deepEqual(log.settlements[0]!.lines.map((l) => [l.params?.card ?? null, l.shares.map((s) => s.amount)]), [[null, [1]], ['x', [3]], ['y', [7]]]);
 });

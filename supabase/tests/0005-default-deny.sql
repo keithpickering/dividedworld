@@ -12,7 +12,7 @@ declare
                            'characters_public', 'acts_public', 'accounts', 'characters', 'class_history', 'reaction_tallies',
                            'seasons', 'season_results', 'seasons_finished', 'settlements', 'standings', 'ledger', 'wallets', 'wallet_events',
                            'card_ledger', 'my_cards', 'effect_state',
-                           -- A surface's derived row (0241): the covered cells, the owners and the live list, all of them public facts of public Acts.
+                           -- A surface's derived row (0317): the covered cells, the owners and the live list, all of them public facts of public Acts.
                            'surfaces',
                            -- Gear (0205): the kinds and what each mask wears are public, the ledger is cut to the caller's own rows by its policy, and the wardrobe and an admin's grant check the caller inside.
                            'gear_kinds', 'gear_ledger', 'gear_worn',
@@ -73,7 +73,7 @@ declare
                            -- The refusal a SQL-standard screen function raises through (0094).
                            'screen_refusal(text)',
                            -- Cards beyond a post (0055): a target's effects for the act function, and a page's plays above its posts and its board's pins.
-                           -- A surface's live Acts and each draw's share, for the Lens (0241): a security invoker read of public Acts and the row's counts.
+                           -- A surface's live Acts and each draw's share, for the Lens (0317): a security invoker read of public Acts and the row's counts.
                            'surface_acts(uuid)',
                            'card_target_reach(text,uuid,uuid)', 'effects_above(uuid[],uuid,uuid)', 'pinned_threads(uuid)',
                            -- Updates (0062): an admin's post_update, and the page's read.

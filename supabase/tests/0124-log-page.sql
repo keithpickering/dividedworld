@@ -1,5 +1,5 @@
 -- log_page(before) (supabase/migrations/0123_log_page.sql; the glass-load design, section 7; its plan, Task 9): /log and /log/settlement in one read.
--- `sources` holds the nineteen reads (the cosmetics log's since 0213, the group moves' since 0134, the packs' since 0139, the texts written on the caller's posts since 0149, the draws and the washes on surfaces since 0241) the adapter's log() makes, each its view's rows newest first at or before `before`, at most LOG_ROWS (200), with the
+-- `sources` holds the nineteen reads (the cosmetics log's since 0213, the group moves' since 0134, the packs' since 0139, the texts written on the caller's posts since 0149, the draws and the washes on surfaces since 0317) the adapter's log() makes, each its view's rows newest first at or before `before`, at most LOG_ROWS (200), with the
 -- same columns and filters; `shares` the shares of the settlements read, whole; and the pieces useLog's `around` reads for them, computed over every row
 -- read: the Acts the lines name and the two rounds those follow, the saved states of the plays, the characters, threads and boards named, the caller's
 -- characters' standings and announced Turns, and the season. Another player's rows are absent; a visitor is refused.
@@ -167,7 +167,7 @@ begin
 
   -- ---- The shares of the settlements read, whole ----
   if doc -> 'shares' is distinct from pg_temp.arr((select jsonb_agg(to_jsonb(r)) from (
-       select settlement, character, reason, act, quadrant, amount from my_ledger_shares where settlement in (s1, s2) order by settlement desc, character, reason, act, quadrant) r))
+       select settlement, character, reason, act, quadrant, amount, card from my_ledger_shares where settlement in (s1, s2) order by settlement desc, character, reason, card, act, quadrant) r))
      or jsonb_array_length(doc -> 'shares') is distinct from 4 then raise exception 'shares: %', doc -> 'shares'; end if;
 
   -- ---- What `around` reads for them ----
@@ -215,7 +215,7 @@ begin
     raise exception 'ledger before the cursor: %', later -> 'sources' -> 'ledger';
   end if;
   if later -> 'shares' is distinct from pg_temp.arr((select jsonb_agg(to_jsonb(r)) from (
-       select settlement, character, reason, act, quadrant, amount from my_ledger_shares where settlement = s1 order by settlement desc, character, reason, act, quadrant) r)) then raise exception 'shares before the cursor: %', later -> 'shares'; end if;
+       select settlement, character, reason, act, quadrant, amount, card from my_ledger_shares where settlement = s1 order by settlement desc, character, reason, card, act, quadrant) r)) then raise exception 'shares before the cursor: %', later -> 'shares'; end if;
   if jsonb_array_length(later -> 'sources' -> 'wallet') is distinct from 0 or jsonb_array_length(later -> 'sources' -> 'cards') is distinct from 0 then raise exception 'nothing else is that old'; end if;
   perform tests.unbecome();
 

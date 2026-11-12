@@ -1319,7 +1319,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   };
   const playOf = (id: Id) => { const a = acts.get(id); return a && a.kind === 'card' ? a : null; };
 
-  /* ------------------------------------------------------------------ surfaces (0241) ---- */
+  /* ------------------------------------------------------------------ surfaces (0317) ---- */
   /** A surface as the database's `surfaces` row holds it: the cells covered, the live draw (1-based place in `live`, 0 for none) that last inked each, and the live list. */
   interface SurfaceRec { cover: Cells; owners: Uint16Array; live: Id[]; readonly cells: Map<Id, Cells> }
   const surfaceRecs = new Map<Id, SurfaceRec>();
@@ -1335,7 +1335,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return s;
   }
   /**
-   * surface_step (0241): the one transition. A draw covers its cells and owns each; a wash uncovers them and leaves them owned by no one; the Act joins the
+   * surface_step (0317): the one transition. A draw covers its cells and owns each; a wash uncovers them and leaves them owned by no one; the Act joins the
    * live list unless it is a wash that uncovered nothing; then the list is pruned (a draw that owns no cell, a wash that uncovers nothing a kept draw
    * inked or that a later wash covers whole) and renumbered.
    */
@@ -1364,7 +1364,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     }
     return { cover, owners, live };
   }
-  /** draw_on_surface and wash_surface (0241), in the order they refuse: the character, the wall, the lock, then the limits; a draw alone is held to them. */
+  /** draw_on_surface and wash_surface (0317), in the order they refuse: the character, the wall, the lock, then the limits; a draw alone is held to them. */
   function writeSurface(kind: 'draw' | 'wash', play: Id, character: Id, input: unknown): Answer<SurfaceWritten> {
     const account = me();
     if (!account) return refuse('sign in to act');
@@ -1403,7 +1403,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const mostLive = rules.surface!.mostLive;
       if (new Set([...next.owners].filter((o) => o !== 0)).size > mostLive) return refuse(`this wall holds ${mostLive} tags; paint over one or wait for a wash`);
     }
-    /* A wash records what it uncovered and the draws it cut, read from the owners before it (surface_apply, 0241): the server's own keys, which a payload that arrives with them loses. */
+    /* A wash records what it uncovered and the draws it cut, read from the owners before it (surface_apply, 0317): the server's own keys, which a payload that arrives with them loses. */
     const cut = new Map<Id, number>();
     if (kind === 'wash') for (let i = 0; i < s.owners.length; i++) if (s.owners[i] !== 0 && hasCell(cells, i)) { const d = s.live[s.owners[i]! - 1]!; cut.set(d, (cut.get(d) ?? 0) + 1); }
     const { cut: _cut, uncovered: _uncovered, ...sent } = decided.value.payload as Record<string, unknown>;
@@ -1414,7 +1414,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     send(`thread:${p.thread}`, 'surface', () => { for (const l of [...(threadListeners.get(p.thread) ?? [])]) l.onSurface?.(play, covered); });
     return ok({ ...publicAct(rec), covered, live: [...next.live] });
   }
-  /** surface_acts (0241): a play's live draws and washes, oldest first, each draw with the cells it owns now; null where the play has no surface. */
+  /** surface_acts (0317): a play's live draws and washes, oldest first, each draw with the cells it owns now; null where the play has no surface. */
   function surfaceActs(play: Id): SurfaceActs | null {
     const s = surfaceOf(play);
     if (!s) return null;
@@ -1427,7 +1427,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return { covered: count(s.cover), acts: shown, older };
   }
   /**
-   * `my_draws` and `my_walls_drawn_on` (0241) for an account, as the views read them: the account's characters' draws and the washes that cut them (not by the account's own washer), and the draws and washes on
+   * `my_draws` and `my_walls_drawn_on` (0317) for an account, as the views read them: the account's characters' draws and the washes that cut them (not by the account's own washer), and the draws and washes on
    * walls on the account's own posts (not the account's own characters' draws). Newest first is the log's: the caller sorts.
    */
   function surfaceLog(account: Id): { readonly draws: { ms: number; order: number; r: SurfaceLogRow }[]; readonly walls: { ms: number; order: number; r: SurfaceLogRow }[] } {
@@ -3204,7 +3204,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
           .flatMap((x) => x.lines.filter((l) => l.account === account).map((l) => ({ settlement: x.id, startsAt: iso(x.startsAt), endsAt: iso(x.endsAt), sharesKept: x.sharesKept, character: l.character, reason: l.reason, amount: l.amount, ...(l.params ? { params: l.params } : {}) }))));
         const read = new Set(ledger.map((l) => l.settlement));
         const shares: ShareRow[] = settlements.filter((x) => read.has(x.id))
-          .flatMap((x) => x.lines.filter((l) => l.account === account).flatMap((l) => l.shares.map((sh) => ({ settlement: x.id, character: l.character, reason: l.reason, ...sh }))));
+          .flatMap((x) => x.lines.filter((l) => l.account === account).flatMap((l) => l.shares.map((sh) => ({ settlement: x.id, character: l.character, reason: l.reason, card: typeof l.params?.card === 'string' ? l.params.card : null, ...sh }))));
         /* my_posts_played_on: the plays other players landed on the player's posts, characters, and threads their characters started (0056).
            A board has no owner, so a board play is no one's row. */
         const reachOf = (a: ActRec): 'post' | 'character' | 'thread' | 'board' => (a.payload.reach ?? 'post') as 'post' | 'character' | 'thread' | 'board';
@@ -3230,7 +3230,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
           cards: newest([...cardLedger, ...endedLedger()].filter((e) => e.account === account && fits(e.ms))).map((e) => e.event),
           packs: newest(packLedger.filter((e) => e.account === account && fits(e.ms))).map((e) => e.event),
           playsOnMine: newest(onMine.filter((a) => fits(a.at)).map((a) => ({ ms: a.at, order: a.order, a }))).map(({ a }) => ({ play: a.id, post: a.target!, at: iso(a.at), reach: reachOf(a) as 'post' | 'character' | 'thread', targetName: targetName(a), targetCharacter: targetCharacter(a) })),
-          /* my_draws and my_walls_drawn_on (0241): what was drawn on surfaces by the player's characters and washed off them, and what was drawn on and washed off the player's own posts. */
+          /* my_draws and my_walls_drawn_on (0317): what was drawn on surfaces by the player's characters and washed off them, and what was drawn on and washed off the player's own posts. */
           ...((surfaces) => ({
             draws: newest(surfaces.draws.filter((x) => fits(x.ms))).map(({ r }) => r),
             wallsDrawn: newest(surfaces.walls.filter((x) => fits(x.ms))).map(({ r }) => r),

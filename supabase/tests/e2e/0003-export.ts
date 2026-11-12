@@ -215,7 +215,7 @@ test('an instance exported and imported into a fresh database is the same instan
             'starts', to_char(now() + interval '1 day', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'), 'ends', to_char(now() + interval '2 days', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'))) returning id into score_play;
         insert into play_reach (play, reach, character, ends_at) values (score_play, 'character', b, now() + interval '2 days');
       end;
-      -- A surface (0241): a play of a surface card on a post, a draw by Bob's mask and a wash by the post's own character (each an Act, with its cells in the payload), so the row that is derived from them is carried;
+      -- A surface (0317): a play of a surface card on a post, a draw by Bob's mask and a wash by the post's own character (each an Act, with its cells in the payload), so the row that is derived from them is carried;
       -- and a surface card set face down with its draft, whose private row is carried too.
       insert into card_kinds (key, name, alignment, rarity, play, reaches, stack, surface) values ('expwall', 'Exported Wall', 'pepperoni', 'rare', 'cast', '{post}', 1, true);
       insert into card_ledger (account, card, kind, price) values (ann, 'expwall', 'bought', 0);
@@ -278,6 +278,8 @@ test('an instance exported and imported into a fresh database is the same instan
       -- What a settlement scored a character as (0151, append-only), and a ledger row that names the card that paid it (0150: params.card).
       insert into scored_as (settlement, character, class_key, play) select (select max(id) from settlements), b, 'heel', id from acts where kind = 'card' and payload ->> 'card' = 'expscore';
       insert into ledger (settlement, account, character, reason, amount, params) select max(id), ann, a, 'card.skim', 7, jsonb_build_object('card', 'expskim', 'share', 0.1) from settlements;
+      -- A share of that card-naming row (0290): its owner's my_ledger_shares reads the card it was paid by.
+      insert into ledger_shares (ledger, act, quadrant, amount) select max(id), p, 'excitedPositive', 7 from ledger where reason = 'card.skim' and params ->> 'card' = 'expskim';
       -- A ledger line with the numbers its words state (0073), and a settle run's claim on a window long settled.
       insert into ledger (settlement, account, character, reason, amount, params) select max(id), ann, a, 'lurker.postedTooMuch', -10, '{"lurker.postsAllowed": 3}' from settlements;
       insert into settlement_claims (window_start, window_end, claimed_at) values ('2000-01-01T00:00:00Z', '2000-01-02T00:00:00Z', '2000-01-02T00:00:00Z') on conflict do nothing;
@@ -667,6 +669,10 @@ test('an instance exported and imported into a fresh database is the same instan
     assert.equal(surfaceRows(fresh.toString()), '1|0', 'an imported surface is the row its Acts rebuild');
     assert.equal(narrowRows(fresh.toString()), '2|1|0|0|0|0', 'the imported marks and cuts are the rows the Acts give');
     assert.equal(payouts(fresh.toString()), payouts(from), 'the payout cards\' ledger row, scored_as row, starts and rode quadrant are in the imported instance');
+    // A share of the skim ledger row carries across, and its owner reads the card it was paid by through my_ledger_shares (0290).
+    const skimShare = (url: string) => psqlOn(url, `begin; select set_config('request.jwt.claims', jsonb_build_object('sub', (select id from auth.users where email = 'exp-ann@test.invalid'), 'role', 'authenticated')::text, true); set local role authenticated; select string_agg(coalesce(to_jsonb(s) ->> 'card', '-') || ':' || s.amount, ',' order by s.amount) from my_ledger_shares s where s.reason = 'card.skim'; rollback;`).split('\n').pop();
+    assert.equal(skimShare(from), 'expskim:7', 'the skim share reads its card in the fixture');
+    assert.equal(skimShare(fresh.toString()), 'expskim:7', 'the skim share reads its card after the round trip');
     // A season's frozen results are carried as they were written, and the import (a replica's write, inserts only) leaves their guard firing always (0099).
     const guards = (url: string) => psqlOn(url, `select string_agg(tgname || ':' || tgenabled::text, ',' order by tgname) from pg_trigger where tgrelid = 'public.season_results'::regclass and not tgisinternal`);
     assert.equal(guards(fresh.toString()), 'season_results_no_truncate:A,season_results_no_update:A', 'the guards on season_results are still enabled always after the import');

@@ -1723,7 +1723,7 @@ describe('the log', () => {
       if (name === 'my_posts_written_on') {
         return rows([{ play: C, post: A, version: A, failed: false, opening: true, over: false, at: '2026-10-29T22:30:00+00:00' }, { play: C, post: A, version: SET, failed: true, opening: false, over: false, at: '2026-10-29T22:20:00+00:00' }]);
       }
-      /* A surface in the log (0241): the drawer's own draw and the wash that cut it, and the draws and washes on the player's own post. */
+      /* A surface in the log (0317): the drawer's own draw and the wash that cut it, and the draws and washes on the player's own post. */
       if (name === 'my_draws') {
         return rows([{ act: SET, kind: 'cut', play: C, post: A, character: B, mine: A, at: '2026-10-29T22:40:00+00:00', cells: 300 }, { act: A, kind: 'draw', play: C, post: A, character: A, mine: A, at: '2026-10-29T22:10:00+00:00', cells: 600 }]);
       }
@@ -1798,7 +1798,7 @@ describe('the log', () => {
     expect(saves?.url.searchParams.get('saved_at')).toBe('not.is.null');
     const [written] = h.to('my_posts_written_on');
     expect([written?.url.searchParams.get('order'), written?.url.searchParams.get('limit')]).toEqual(['at.desc,play.asc,version.asc', '200']);
-    /* The surface's two views (0241): newest first by when each landed, then in a fixed order, a page long. */
+    /* The surface's two views (0317): newest first by when each landed, then in a fixed order, a page long. */
     for (const name of ['my_draws', 'my_walls_drawn_on']) {
       const [req] = h.to(name);
       expect([name, req?.url.searchParams.get('order'), req?.url.searchParams.get('limit'), req?.url.searchParams.get('select')]).toEqual([name, 'at.desc,act.asc,mine.asc', '200', 'act,kind,play,post,character,mine,at,cells']);
@@ -2065,6 +2065,22 @@ describe('reads by many ids', () => {
     for (const r of reqs) expect(r.url.toString().length).toBeLessThan(8000);
     expect(reqs.flatMap(askedIn).map(Number).sort((a, b) => a - b)).toEqual(settlements);
     expect(log.settlements.every((s) => s.lines[0]?.shares.length === 1)).toBe(true);
+  });
+
+  it('reads the log\'s shares with their card, ordered by it between reason and act, and files each card\'s shares under its own line', async () => {
+    const ledger = (card: string | null, amount: number) => ({ settlement: 9, starts_at: 'a', ends_at: '2026-10-01T00:00:00Z', character: B, reason: 'card.ride', amount, shares_kept: true, params: card === null ? null : { card } });
+    const share = (card: string | null, amount: number) => ({ settlement: 9, character: B, reason: 'card.ride', card, act: A, quadrant: 'excitedPositive', amount });
+    const h = harness((r) => {
+      const name = r.url.pathname.replace(`${REST}/`, '');
+      if (name === 'my_ledger') return rows([ledger('x', 3), ledger('y', 7)]);
+      if (name === 'my_ledger_shares') return rows([share('x', 3), share('y', 7)]);
+      return rows([]);
+    });
+    const log = await h.api.log();
+    const [req] = h.to('my_ledger_shares');
+    expect(req?.url.searchParams.get('select')).toBe('settlement,character,reason,card,act,quadrant,amount');
+    expect(req?.url.searchParams.get('order')).toBe('settlement.desc,character.asc,reason.asc,card.asc,act.asc,quadrant.asc');
+    expect(log.settlements[0]!.lines.map((l) => [l.params?.['card'], l.shares.map((s) => s.amount)])).toEqual([['x', [3]], ['y', [7]]]);
   });
 
   /** A table of rows the harness answers as one PostgREST query would: filtered by the request's `in.(…)`, ordered by `order`, cut at `limit`. */
@@ -2694,6 +2710,13 @@ describe('a screen in one call', () => {
       expect(older.log).not.toHaveProperty('scoredAs');
     });
 
+    it('files each card\'s shares under its own line, where two lines of one character and reason name two cards', async () => {
+      const ride = (card: string, amount: number) => ({ ...LEDGER_ROW, reason: 'card.ride', amount, params: { card } });
+      const share = (card: string | null, amount: number) => ({ settlement: 9, character: B, reason: 'card.ride', card, act: A, quadrant: 'excitedPositive', amount });
+      const page = await once('log_page', doc(SRC({ ledger: [ride('x', 3), ride('y', 7)] }), { shares: [share('x', 3), share('y', 7)] })).api.logPage(null);
+      expect(page.log.settlements[0]!.lines.map((l) => [l.params?.['card'], l.shares.map((s) => s.amount)])).toEqual([['x', [3]], ['y', [7]]]);
+    });
+
     it('sends the cursor by name and maps the sources through the log\'s own mappers, and what the lines name', async () => {
       const answer = doc(SRC({
         ledger: [LEDGER_ROW], wallet: [{ settlement: 9, kind: 'settlement', change: 15, overflow: 0, floored: 0, balance_after: 472, ref: null, at: '2026-10-30T08:17:02+00:00' }],
@@ -2717,7 +2740,7 @@ describe('a screen in one call', () => {
       expect(page.log.saves).toEqual([{ play: C, post: A, savedAt: '2026-10-29T23:00:00+00:00' }]);
       /* The texts cards wrote on the player's posts (log_page, 0149), mapped as log() maps my_posts_written_on. */
       expect(page.log.writes).toEqual([{ play: C, post: A, version: A, failed: true, opening: true, over: true, at: '2026-10-29T22:30:00+00:00' }]);
-      /* The surface's two sources (log_page, 0241), mapped as log() maps my_draws and my_walls_drawn_on. */
+      /* The surface's two sources (log_page, 0317), mapped as log() maps my_draws and my_walls_drawn_on. */
       expect(page.log.draws).toEqual([{ act: SET, kind: 'cut', play: C, post: A, character: B, mine: A, at: '2026-10-29T22:40:00+00:00', cells: 300 }]);
       expect(page.log.wallsDrawn).toEqual([{ act: SPRING, kind: 'wash', play: C, post: A, character: B, mine: B, at: '2026-10-29T22:50:00+00:00', cells: 450 }]);
       /* The group moves (log_page, 0134), mapped as log() maps my_group_moves. */

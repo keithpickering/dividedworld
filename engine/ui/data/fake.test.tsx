@@ -1864,6 +1864,20 @@ describe('the player\'s own log: the ledger with its shares, the wallet\'s event
     expect(log.wallet.map((e) => [e.settlement, e.change, e.floored, e.balanceAfter])).toEqual([[2, 4, 0, 4], [1, -3, 2, 0]]);
   });
 
+  test('two card lines of one character and reason each read their own shares', async () => {
+    const { fake, anaFace, mine, opener } = logWorld();
+    fake.seed.settle({
+      at: fake.clock.now(),
+      ledger: [
+        { character: anaFace, reason: 'card.ride', amount: 10, params: { card: 'y' }, shares: [{ act: mine, quadrant: 'excitedPositive', amount: 10 }] },
+        { character: anaFace, reason: 'card.ride', amount: 4, params: { card: 'x' }, shares: [{ act: mine, quadrant: 'excitedPositive', amount: 4 }] },
+        { character: anaFace, reason: 'face.cheered', amount: 2, shares: [{ act: opener, quadrant: 'excitedPositive', amount: 2 }] },
+      ],
+    });
+    const lines = (await fake.log()).settlements[0]!.lines;
+    expect(lines.map((l) => [l.reason, l.params?.['card'] ?? null, l.shares.map((s) => s.amount)])).toEqual([['card.ride', 'x', [4]], ['card.ride', 'y', [10]], ['face.cheered', null, [2]]]);
+  });
+
   test('a settlement made before the shares were kept says so and carries none; seeding it shares is a mistake', async () => {
     const { fake, anaFace, mine } = logWorld();
     fake.seed.settle({ sharesKept: false, ledger: [{ character: anaFace, reason: 'face.cheered', amount: 10 }] });
@@ -3968,7 +3982,7 @@ describe('the log\'s scored-as rows (card notes, Part 6, Task 6)', () => {
 
 /* ---------------------------------------------------------------------------------- a surface ---- */
 describe('a surface, as the server keeps it', () => {
-  const sql = readFileSync(resolve(process.cwd(), 'supabase/migrations/0241_surfaces.sql'), 'utf8');
+  const sql = readFileSync(resolve(process.cwd(), 'supabase/migrations/0317_surfaces.sql'), 'utf8');
   /** The sentence the SQL raises, found in its text: `format('...')` or the literal, with each `%` and `%s` in place. */
   const sayings = {
     limit: /format\('(this wall is [^']*)'/.exec(sql)![1]!,

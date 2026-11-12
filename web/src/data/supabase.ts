@@ -576,7 +576,7 @@ function toAdminQueue(v: unknown): AdminQueue {
 /** One of the roster rows `boss_roster_names` answers. */
 const toBosses = (v: unknown): { readonly staff: string; readonly name: string; readonly pronouns: PronounSet }[] => rowsOf(v).flatMap((x) => (typeof x['staff'] === 'string' ? [{ staff: x['staff'], name: String(x['name'] ?? x['staff']), pronouns: pronounsOrDefault(x['pronouns']) }] : []));
 
-/** A draw or a wash on a surface, as the log reads it (`my_draws`, `my_walls_drawn_on`, 0241): public facts and the reader's own character. */
+/** A draw or a wash on a surface, as the log reads it (`my_draws`, `my_walls_drawn_on`, 0317): public facts and the reader's own character. */
 const surfaceLogRow = (r: Row): SurfaceLogRow => ({ act: r['act'], kind: r['kind'], play: r['play'], post: r['post'], character: r['character'], mine: r['mine'], at: r['at'], cells: num(r['cells']) });
 const COSMETIC_KINDS = ['found', 'granted', 'awarded', 'reversed', 'lost', 'beltBack'] as const;
 const COSMETIC_OUTCOMES = ['line', 'gear', 'card'] as const;
@@ -589,7 +589,7 @@ function toLogRead(src: Readonly<Record<'ledger' | 'wallet' | 'cards' | 'packs' 
     character: r['character'], reason: r['reason'], amount: num(r['amount']), ...((p) => (p ? { params: p } : {}))(numbers(r['params'])),
   }));
   const shares: ShareRow[] = [...shareRows].sort((a, b) => num(b['settlement']) - num(a['settlement']))
-    .map((r) => ({ settlement: num(r['settlement']), character: r['character'], reason: r['reason'], act: r['act'], quadrant: r['quadrant'] ?? null, amount: num(r['amount']) }));
+    .map((r) => ({ settlement: num(r['settlement']), character: r['character'], reason: r['reason'], card: r['card'] ?? null, act: r['act'], quadrant: r['quadrant'] ?? null, amount: num(r['amount']) }));
   return {
     ledger,
     shares,
@@ -1058,7 +1058,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       rows(() => client.from('my_posts_played_on').select('play,post,at,reach,target_name,target_character'), 'at', (q) => q, ['play']),
       /* The texts and failures of cards that write on the posts the player's characters wrote (0149): the rows are the author's alone, and public facts. */
       rows(() => client.from('my_posts_written_on').select('play,post,version,failed,opening,over,at'), 'at', (q) => q.order('play', { ascending: true }).order('version', { ascending: true }), ['play', 'version']),
-      /* What was drawn and washed on a surface (0241): the player's own draws and the washes that cut them, and what was drawn on and washed off the walls of their own posts; each reads the caller's own characters. */
+      /* What was drawn and washed on a surface (0317): the player's own draws and the washes that cut them, and what was drawn on and washed off the walls of their own posts; each reads the caller's own characters. */
       rows(() => client.from('my_draws').select('act,kind,play,post,character,mine,at,cells'), 'at', (q) => q.order('act', { ascending: true }).order('mine', { ascending: true }), ['act', 'mine']),
       rows(() => client.from('my_walls_drawn_on').select('act,kind,play,post,character,mine,at,cells'), 'at', (q) => q.order('act', { ascending: true }).order('mine', { ascending: true }), ['act', 'mine']),
       rows(() => client.from('my_posts_played_on').select('play,post,saved_at').not('saved_at', 'is', null), 'saved_at', (q) => q, ['play']),
@@ -1083,8 +1083,8 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
        by settlement alone, newest first, which keeps that order inside each settlement. The log files each share
        under its line (engine/ui/data/log-page.ts), so no screen sees the order across settlements; the sort keeps
        the read's promise of each source newest first, as one query answered it. */
-    const shareRows = ids.length === 0 ? [] : await byChunks(ids, (part) => every((start, end) => client.from('my_ledger_shares').select('settlement,character,reason,act,quadrant,amount').in('settlement', part)
-      .order('settlement', { ascending: false }).order('character', { ascending: true }).order('reason', { ascending: true }).order('act', { ascending: true }).order('quadrant', { ascending: true })
+    const shareRows = ids.length === 0 ? [] : await byChunks(ids, (part) => every((start, end) => client.from('my_ledger_shares').select('settlement,character,reason,card,act,quadrant,amount').in('settlement', part)
+      .order('settlement', { ascending: false }).order('character', { ascending: true }).order('reason', { ascending: true }).order('card', { ascending: true }).order('act', { ascending: true }).order('quadrant', { ascending: true })
       .range(start, end)));
     return toLogRead({ ledger: ledgerRows, wallet: walletRows, cards: cardRows, packs: packRows, playsOnMine: playRows, writes: writeRows, draws: drawRows, wallsDrawn: wallRows, saves: saveRows, setEnds: endRows, caught: caughtRows, ended: endedRows, infractions: infractionRows, bans: banRows, groupMoves: groupMoveRows, reports: reportRows, appeals: appealRows, cosmetics: cosmeticRows }, shareRows, await readBacks(cardRows));
   };

@@ -313,11 +313,11 @@ export type ActKind = 'post' | 'spin' | 'card' | 'edit' | 'tally' | 'reveal' | '
   | 'visit' | 'visit_join' | 'visit_end' | 'report' | 'report_verdict' | 'intercept' | 'infraction' | 'ban' | 'appeal' | 'appeal_ruling'
   /* A gift to a drive (0153): an Act of the drive's thread on its opening play, no place in the thread (`seq` null). */
   | 'donation'
-  /* A surface's layer (0241): a draw adds strokes to a play, a wash by the post's character takes ink off. Acts of the play's thread on the play, no place in the thread (`seq` null), and no post to draw. */
+  /* A surface's layer (0317): a draw adds strokes to a play, a wash by the post's character takes ink off. Acts of the play's thread on the play, no place in the thread (`seq` null), and no post to draw. */
   | 'draw' | 'wash';
 
 /**
- * A draw or a wash on a surface, as every reader sees it (`surface_acts`, 0241): the Act, whose payload holds its `strokes` and its `cells`
+ * A draw or a wash on a surface, as every reader sees it (`surface_acts`, 0317): the Act, whose payload holds its `strokes` and its `cells`
  * (a 10,000-character bit string). A draw read from the surface carries `share`, the cells of the layer it owns now (what a wash has not
  * taken and no later draw has painted over); a wash, and an Act just written, carry none.
  */
@@ -1301,7 +1301,7 @@ export interface LogShare {
   readonly amount: number;
 }
 
-/** One reason's settled amount for one of the player's characters in one window (`my_ledger`), with its shares (`my_ledger_shares`). */
+/** One reason's settled amount for one of the player's characters in one window (`my_ledger`), with its shares (`my_ledger_shares`), each filed under its line by character, reason and card. */
 export interface LogLine {
   readonly character: Id;
   readonly reason: string;
@@ -1580,7 +1580,7 @@ export interface WrittenOnMine {
 }
 
 /**
- * A draw or a wash on a surface as the player's log reads it (`my_draws` and `my_walls_drawn_on`, 0241): the Act, the surface play and the post it is on, the Act's character, the player's own
+ * A draw or a wash on a surface as the player's log reads it (`my_draws` and `my_walls_drawn_on`, 0317): the Act, the surface play and the post it is on, the Act's character, the player's own
  * character the line is for (`mine`), when, and the cells it counts, of the grid's 10,000. `kind` is 'draw' (a draw: the cells its strokes cover, public in its payload), 'wash' (the post's own wash: the cells it
  * uncovered, none for a wash over bare cells) or 'cut' (a wash that took cells of the player's own draw: the cells of theirs it took, the washer the post's character). Public facts and the reader's own character
  * alone: nothing of an owner, a class or a reaction.
@@ -2066,7 +2066,7 @@ export interface ThreadPage {
   readonly people: readonly ThreadPerson[];
   /** The plays on the page's posts (`cardsOnMany`). */
   readonly plays: Awaited<ReturnType<KayfaApi['cardsOnMany']>>;
-  /** Each surface play among them: the cells it covers and its live Acts' ids, never a stroke (`surfaces` in thread_page, 0241). */
+  /** Each surface play among them: the cells it covers and its live Acts' ids, never a stroke (`surfaces` in thread_page, 0317). */
   readonly surfaces: Readonly<Record<Id, SurfaceNow>>;
   readonly above: Awaited<ReturnType<KayfaApi['effectsAbove']>>;
   readonly faces: Awaited<ReturnType<KayfaApi['myFaceDown']>>;

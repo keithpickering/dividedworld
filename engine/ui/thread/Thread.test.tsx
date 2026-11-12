@@ -2146,7 +2146,7 @@ describe('a card an admin ended', () => {
   });
 });
 
-/* A surface on a post (0241): the page carries each surface's cells and live ids; its live Acts are read where a wall is near, and again, for that wall alone, when the channel says it changed. */
+/* A surface on a post (0317): the page carries each surface's cells and live ids; its live Acts are read where a wall is near, and again, for that wall alone, when the channel says it changed. */
 describe('a surface on a post', () => {
   const strokes = (input: unknown) => (typeof input === 'object' && input !== null && Array.isArray((input as { strokes?: unknown }).strokes)
     ? ok({ strokes: (input as { strokes: never[] }).strokes, payload: { strokes: (input as { strokes: unknown[] }).strokes } }) : refuse('a drawing holds its strokes as a list'));

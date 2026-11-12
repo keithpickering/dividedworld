@@ -59,7 +59,7 @@ const DATA_LAYER = /^web\/src\/data\//;
 export const ALLOWED_READS = Object.freeze([
   // Public: what anyone could have watched.
   'boards', 'boards_now', 'moves_log', 'staff_profile_now', 'threads', 'thread_list', 'thread_open', 'acts_public', 'characters_public', 'character_profiles', 'gear_worn', 'class_kinds', 'reaction_kinds', 'card_kinds', 'machine_now',
-  // A surface's derived row (0241): the covered cells, the owners and the live list of a play whose layer any character may add to, all public facts of public Acts. The web reads it only through thread_page and surface_acts.
+  // A surface's derived row (0317): the covered cells, the owners and the live list of a play whose layer any character may add to, all public facts of public Acts. The web reads it only through thread_page and surface_acts.
   'surfaces',
   'reaction_tallies', 'effect_state', 'pip_styles', 'thread_view_counts', 'settlements',
   'class_reveals', 'turns_announced', 'post_search', 'screen_settings', 'character_post_counts', 'season_size', 'board_counts',
@@ -96,7 +96,7 @@ export const ALLOWED_COUNTS = Object.freeze(/** @type {readonly { table: string,
 // visit_quiz (0108): a thread_page helper that returns one visit's drawn question and its choices, never the answer.
 // search_posts, search_threads and search_suggest (0117) are the search screens' reads, held to the screen-function rules by supabase/tests/e2e/0016-screen-reads.ts. The functions they call (the matches, the
 // cursor check, the suggested threads and characters, the stemming language, the folded text, the plain words of a post) are not listed: the web never calls them, and a call to one is a fault.
-// surface_acts (0241): a surface play's live draws and washes and each draw's share, security invoker over acts_public and surfaces, the same for everyone; the owners of the cells are never returned, only how many each draw owns.
+// surface_acts (0317): a surface play's live draws and washes and each draw's share, security invoker over acts_public and surfaces, the same for everyone; the owners of the cells are never returned, only how many each draw owns.
 // my_wardrobe, trophies_of, belt_lineage (0205, 0206): a player's own copies of gear and where their own masks wear them, a character's standing awards and a belt's holders, each as the SQL computes it for the caller.
 // grant_gear, award_trophy, reverse_award, make_trophy, trophy_award_failures: an admin's alone (only_admins; a player is refused with 42501). set_outfit, show_trophies and random_event are the service's alone and go through the wardrobe function.
 // drive_gifts and drive_gifts_page (0153): a drive's total, count and donor wall, by character, its public name and amount; security invoker over acts_public and characters_public, and nothing of any wallet or of who owns a character.

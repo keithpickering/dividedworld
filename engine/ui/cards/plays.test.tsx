@@ -495,7 +495,7 @@ describe('a play that did not take', () => {
   });
 });
 
-/* A surface (0241): what the page's read carries of it is its covered cells and its live Acts' ids; the live Acts' own words are read where a wall is near. */
+/* A surface (0317): what the page's read carries of it is its covered cells and its live Acts' ids; the live Acts' own words are read where a wall is near. */
 describe('a surface, in the store', () => {
   const wall = 'k-wall';
   const drawn = (id: string): Act => ({ id, kind: 'draw', character: 'c1', thread: 't', targetActId: wall, seq: null, createdAt: '2026-10-30T10:00:00.000Z', payload: { strokes: [], cells: '0'.repeat(10000) }, currentPayload: {}, editedAt: null, shownEditedAt: null });

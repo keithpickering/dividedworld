@@ -1716,7 +1716,7 @@ begin atomic
     from cosmetic_log_rows(in_before, 200) c
     order by c.at desc, c.kind, c.id
   ), sh as materialized (
-    select s.settlement, s.character, s.reason, s.act, s.quadrant, s.amount
+    select s.settlement, s.character, s.reason, s.act, s.quadrant, s.amount, s.card
     from my_ledger_shares s where s.settlement in (select x.settlement from lg x)
   ), sa as materialized (
     select s.settlement, s.character, s.named_class, s.play, s.card, s.starts_at, s.ends_at
@@ -1792,7 +1792,7 @@ begin atomic
       'reports', coalesce((select jsonb_agg(to_jsonb(x) order by x.at desc, x.report) from rp x), '[]'::jsonb),
       'appeals', coalesce((select jsonb_agg(to_jsonb(x) order by x.at desc, x.appeal) from ap x), '[]'::jsonb),
       'cosmetics', coalesce((select jsonb_agg(to_jsonb(x) order by x.at desc, x.kind, x.id) from cs x), '[]'::jsonb)),
-    'shares', coalesce((select jsonb_agg(to_jsonb(x) order by x.settlement desc, x.character, x.reason, x.act, x.quadrant) from sh x), '[]'::jsonb),
+    'shares', coalesce((select jsonb_agg(to_jsonb(x) order by x.settlement desc, x.character, x.reason, x.card, x.act, x.quadrant) from sh x), '[]'::jsonb),
     'scoredAs', coalesce((select jsonb_agg(to_jsonb(x) order by x.ends_at desc, x.settlement, x.character) from sa x), '[]'::jsonb),
     'acts', coalesce((select jsonb_agg(to_jsonb(a) order by a.created_at, a.id::text collate "C") from ac a), '[]'::jsonb),
     'states', coalesce((select jsonb_agg(to_jsonb(e) order by e.play::text collate "C") from (
