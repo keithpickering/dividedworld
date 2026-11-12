@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { tokensOf, ratio } from '../contrast.ts';
 import { POST_INK } from './band.ts';
-import { cling, dropLoose, DRAG, GRAVITY, HANG_S, IDLE_MS, landAll, loose, MAX_AIR, MAX_CARRIED, MAX_LOOSE, makeFlakes, shake, SHAKE_FLICK_S, SHAKE_PER_FLICK, SHAKE_SPEED, SPRAY, sweepLoose, THROW, burst, type Flakes } from './flakes.ts';
+import { cling, dropLoose, DRAG, GRAVITY, HANG_S, IDLE_MS, landAll, loose, MAX_AIR, MAX_CARRIED, MAX_LOOSE, makeFlakes, shake, SHAKE_PER_FLICK, SHAKE_SPEED, SPRAY, sweepLoose, THROW, burst, type Flakes } from './flakes.ts';
 
 /* Divided World's glint (the engine may not import the instance, so the tests carry a copy). */
 const GLINT = '#ffffff';
@@ -514,12 +514,14 @@ describe('a fast scroll shakes glitter off', () => {
     cling.tick(t);
     return [...drawn.at];
   }
+  /** A frame long enough to shake a good many off at once (a scroll's distance is its speed times this). */
+  const LONG_FRAME = 0.4;
   const median = (xs: number[]): number => [...xs].sort((p, q) => p - q)[xs.length >> 1]!;
 
   it('sends copies of flakes on the post on screen into the falling layer and leaves the post as it was, so nothing repaints it', () => {
     const { f, told } = posts();
     const before = [...f.settled];
-    const n = shake(SHAKE_SPEED * 2, 0, SHAKE_FLICK_S);
+    const n = shake(SHAKE_SPEED * 2, 0, LONG_FRAME);
     expect(n).toBeGreaterThan(0);
     expect(cling.falling()).toBe(n);
     expect(layer()).not.toBeNull();
@@ -531,7 +533,7 @@ describe('a fast scroll shakes glitter off', () => {
   it('throws them the way the page was moving, at about half its speed: up the screen on a scroll down, sprayed both ways', () => {
     posts();
     const v = SHAKE_SPEED * 2;
-    shake(v, 0, SHAKE_FLICK_S);
+    shake(v, 0, LONG_FRAME);
     const first = placesAt(0), next = placesAt(16);
     expect(next.length).toBe(first.length);
     expect(first.length).toBeGreaterThan(20);
@@ -549,7 +551,7 @@ describe('a fast scroll shakes glitter off', () => {
   it('throws them down the screen on a scroll up', () => {
     posts();
     const v = -SHAKE_SPEED * 2;
-    shake(v, 0, SHAKE_FLICK_S);
+    shake(v, 0, LONG_FRAME);
     const first = placesAt(0), next = placesAt(16);
     const dy = first.map((p, i) => (next[i]![1] - p[1]) / 0.016);
     expect(median(dy)).toBeGreaterThan(-v * THROW * 0.7);
@@ -558,7 +560,7 @@ describe('a fast scroll shakes glitter off', () => {
 
   it('draws nothing in the air below full alpha: the fade is gone', () => {
     posts();
-    shake(SHAKE_SPEED * 2, 0, SHAKE_FLICK_S);
+    shake(SHAKE_SPEED * 2, 0, LONG_FRAME);
     drawn.alphas.length = 0;
     let t = 0;
     for (; cling.falling() && t < 60000; t += 16) cling.tick(t);
@@ -569,7 +571,7 @@ describe('a fast scroll shakes glitter off', () => {
 
   it('drag settles a flake to between 60 and 80 px a second within a second', () => {
     posts();
-    shake(SHAKE_SPEED * 2, 0, SHAKE_FLICK_S);
+    shake(SHAKE_SPEED * 2, 0, LONG_FRAME);
     /* The settling speed the constants name: gravity against drag. */
     expect(GRAVITY / DRAG).toBeGreaterThan(60);
     expect(GRAVITY / DRAG).toBeLessThan(80);
@@ -587,17 +589,57 @@ describe('a fast scroll shakes glitter off', () => {
     expect(median(speeds)).toBeLessThan(80);
   });
 
-  it('sheds about 40 off a post in a flick\'s first 0.4 s at twice the threshold, and 40% of that at the threshold', () => {
-    posts();
+  /*
+   * The count follows the scroll's distance, not the clock (docs/plans/2026-11-11-shake-design.md section 3): a ~130 px post crosses a
+   * ~1,000 px view in 1,130 px of scrolling, and a full flick sheds SHAKE_PER_FLICK off it over that pass whatever the frame rate.
+   */
+  const PASS_PX = 1130;
+  /** Scrolls `px` at `v` a second as frames of `hz`, a shake each, and returns what was shaken off the one post on screen. */
+  function scrolled(v: number, px: number, hz: number): number {
+    const frames = Math.round(px / (Math.abs(v) / hz));
     let n = 0;
-    for (let i = 0; i < 25; i++) n += shake(SHAKE_SPEED * 2, i * 16, 0.016);
-    expect(n).toBeGreaterThanOrEqual(SHAKE_PER_FLICK * 0.75);
-    expect(n).toBeLessThanOrEqual(SHAKE_PER_FLICK * 1.25);
+    for (let i = 0; i < frames; i++) n += shake(v, i * 1000 / hz, 1 / hz);
+    return n;
+  }
+
+  it('sheds about 40 off a post over its whole pass through the view at twice the threshold, and 40% of that at the threshold', () => {
+    posts();
+    const n = scrolled(SHAKE_SPEED * 2, PASS_PX, 60);
+    expect(n).toBeGreaterThanOrEqual(30);
+    expect(n).toBeLessThanOrEqual(50);
+    expect(SHAKE_PER_FLICK).toBe(40);
     cling.reset();
     posts();
-    const slow = shake(SHAKE_SPEED, 0, SHAKE_FLICK_S);
-    expect(slow).toBeGreaterThanOrEqual(SHAKE_PER_FLICK * 0.4 * 0.8);
-    expect(slow).toBeLessThanOrEqual(SHAKE_PER_FLICK * 0.4 * 1.2);
+    const slow = scrolled(SHAKE_SPEED, PASS_PX, 60);
+    expect(slow).toBeGreaterThanOrEqual(SHAKE_PER_FLICK * 0.4 * 0.6);
+    expect(slow).toBeLessThanOrEqual(SHAKE_PER_FLICK * 0.4 * 1.4);
+  });
+
+  it('sheds the same for the same distance at 60 Hz and at 144 Hz', () => {
+    posts();
+    const a = scrolled(SHAKE_SPEED * 2, PASS_PX, 60);
+    cling.reset();
+    posts();
+    const b = scrolled(SHAKE_SPEED * 2, PASS_PX, 144);
+    expect(a).toBeGreaterThanOrEqual(30);
+    expect(b).toBeGreaterThanOrEqual(30);
+    expect(Math.abs(a - b)).toBeLessThanOrEqual(6);
+  });
+
+  it('a fling of 4 frames sheds as many as the same distance in 30 frames, and twice the distance sheds twice as many', () => {
+    const v = SHAKE_SPEED * 2, px = 4 * (v / 60);
+    posts();
+    const few = scrolled(v, px, 60);
+    cling.reset();
+    posts();
+    const many = scrolled(v, px, 60 * 30 / 4);
+    expect(few).toBeGreaterThanOrEqual(5);
+    expect(Math.abs(few - many)).toBeLessThanOrEqual(3);
+    cling.reset();
+    posts();
+    const twice = scrolled(v, px * 2, 60);
+    expect(twice).toBeGreaterThanOrEqual(few * 1.5);
+    expect(twice).toBeLessThanOrEqual(few * 2.6);
   });
 
   it('keeps at most 400 in the air, however long the scroll', () => {
@@ -609,16 +651,16 @@ describe('a fast scroll shakes glitter off', () => {
 
   it('shakes nothing under its speed, under reduced motion, or off a post still bursting', () => {
     const { f } = posts();
-    expect(shake(SHAKE_SPEED * 0.5, 0, SHAKE_FLICK_S)).toBe(0);
+    expect(shake(SHAKE_SPEED * 0.5, 0, LONG_FRAME)).toBe(0);
     document.documentElement.setAttribute('data-kb-motion', 'reduce');
-    expect(shake(SHAKE_SPEED * 3, 0, SHAKE_FLICK_S)).toBe(0);
+    expect(shake(SHAKE_SPEED * 3, 0, LONG_FRAME)).toBe(0);
     document.documentElement.setAttribute('data-kb-motion', 'full');
     cling.reset();
     const flying: Flakes = makeFlakes({ seed: 'mid', box: { w: 300, h: 300 }, inks: GLITTER, holo: 7, density: 70, glint: GLINT });
     burst(flying, 0);
     cling.register(host(100, 100), { sticky: true, flakes: flying });
     expect(flying.flying).toBeGreaterThan(0);
-    expect(shake(SHAKE_SPEED * 3, 0, SHAKE_FLICK_S)).toBe(0);
+    expect(shake(SHAKE_SPEED * 3, 0, LONG_FRAME)).toBe(0);
     expect(f.settled.length).toBe(f.total);
   });
 
@@ -647,7 +689,7 @@ describe('a fast scroll shakes glitter off', () => {
    */
   it('hit-tests a flake past its hang about every 100 ms, not every frame, and still lands it within one interval of a place coming under it', () => {
     posts();
-    for (let i = 0; i < 10; i++) shake(-SHAKE_SPEED * 1.1, 0, 1);
+    for (let i = 0; i < 12; i++) shake(-SHAKE_SPEED * 1.1, 0, 1);
     expect(cling.falling()).toBe(MAX_AIR);
     /* Nothing to land on: the posts are gone from under them. */
     placed = [];
@@ -662,7 +704,8 @@ describe('a fast scroll shakes glitter off', () => {
     /* 400 flakes over 60 frames, every frame: 24,000. Every 100 ms: about 4,000. */
     expect(asks.mock.calls.length).toBeLessThan(MAX_AIR * 60 / 4);
     /* A place comes under them all: within one interval (and a frame) every one of them has landed on it. */
-    const under = host(0, 0, 1024, 768);
+    /* Reaching 10 px past the view each way, where a flake is not yet culled: the edge itself is not a landing place the browser can find. */
+    const under = host(0, -10, 1024, 788);
     let told = 0;
     cling.register(under, { landed: () => told++ });
     const air = cling.falling();
@@ -678,7 +721,7 @@ describe('a fast scroll shakes glitter off', () => {
   it('a flake 10 px past the bottom or the sides is gone: none is drawn out there, and all leave', () => {
     posts();
     /* Thrown down the screen at up to 1.4 x 0.55 x 11,000 px a second: the first frames carry many past the bottom. */
-    shake(-SHAKE_SPEED * 5, 0, SHAKE_FLICK_S);
+    shake(-SHAKE_SPEED * 5, 0, LONG_FRAME);
     const start = cling.falling();
     expect(start).toBeGreaterThan(20);
     let left = 0;
@@ -696,11 +739,28 @@ describe('a fast scroll shakes glitter off', () => {
     expect(left).toBe(start);
   });
 
+  it('a flake 10 px above the top is gone, as one past the bottom is: none is drawn up there, and none comes back down', () => {
+    posts();
+    /* Thrown up the screen at 0.6 to 1.4 x 0.55 x 4,400 px a second from a post 100 to 400 px down: many are over the top in a few frames. */
+    shake(SHAKE_SPEED * 2, 0, LONG_FRAME);
+    const start = cling.falling();
+    expect(start).toBeGreaterThan(20);
+    let prev = start;
+    for (let t = 0; cling.falling() && t < 60000; t += 16) {
+      for (const [, y] of placesAt(t)) expect(y).toBeGreaterThanOrEqual(-10);
+      expect(cling.falling()).toBeLessThanOrEqual(prev);
+      prev = cling.falling();
+    }
+    expect(cling.falling()).toBe(0);
+    /* Some left over the top rather than landing: the post took fewer than were shaken. */
+    expect(loose(document.body.children[0]!).length).toBeLessThan(start);
+  });
+
   /* The layer covers the viewport; a frame that cleared all of it rastered the whole screen on every frame of a fast scroll
      (e2e/shine.spec.ts's raster share, p95 4.5 against its bound of 1.5). It clears only the squares it drew in last time. */
   it('a frame of falling glitter clears only where it drew the frame before, not the whole layer', () => {
     posts();
-    shake(SHAKE_SPEED * 3, 0, SHAKE_FLICK_S);
+    shake(SHAKE_SPEED * 3, 0, LONG_FRAME);
     const c = layer() as HTMLCanvasElement;
     const whole = c.width * c.height;
     expect(whole).toBeGreaterThan(500_000);

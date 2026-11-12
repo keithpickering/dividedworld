@@ -59,6 +59,13 @@ the header comment's cling and shake bullets), `engine/ui/shine/flakes.test.tsx`
   - The existing "clears only where it drew the frame before" and "listens to the page's scroll only while a sticky
     post is registered" tests still pass.
 
+Amended 2026-11-12 by the owner (design sections 3, 4 and 7): the bullets above that shake `dt / SHAKE_FLICK_S` a frame,
+and that a flake above the top comes back down, are superseded and left as written. `SHAKE_FLICK_S` is gone; `shake(v,
+now, dt)` sheds `SHAKE_PER_PX × |v| × dt × (0.4 + 0.6 × strength)` a post, `SHAKE_PER_PX = SHAKE_PER_FLICK /
+SHAKE_PASS_PX = 40 / 1130`, so a post's whole pass at a full flick sheds about 40 whatever the frame rate. A flake that
+leaves the top of the viewport by 10 px is gone as one past the bottom or the sides is, and landing no longer waits on
+`y >= 0`.
+
 ## Task 3. Landing surfaces and tiles
 
 Model: sonnet.

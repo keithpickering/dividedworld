@@ -19,7 +19,7 @@
  * - Shake: a scroll of the page past `SHAKE_SPEED` shakes copies of settled flakes off the sticky hosts on screen, a frame at a time
  *   for as long as it stays that fast (`shake`), onto that same layer: they are thrown the way the page was moving at about half its
  *   speed, sprayed sideways, tumble as air drag slows them, settle at a slow flutter and land on the host under them after their
- *   hang, or leave the screen past its bottom or sides, never fading (docs/plans/2026-11-11-shake-design.md section 3). The touch
+ *   hang, or leave the screen past its top, bottom or sides (by 10 px: culled), never fading, a number per px scrolled so the frame rate never changes how many (docs/plans/2026-11-11-shake-design.md section 3). The touch
  *   reader's way to move the glitter, where a mouse picks it up.
  * - The dark board (a band that ends far short of white): each ink is taken at the ceiling, saturated (`ceilingOf`), and a
  *   flake facing the light glints: its flare is added, in its own hue at full brightness with the instance's glint at its
@@ -1160,15 +1160,22 @@ function onMove(e: PointerEvent): void {
  */
 export const SHAKE_SPEED = 2200;
 /*
- * The flight (docs/plans/2026-11-11-shake-design.md section 3), exported so a test can state the numbers it holds to. A full flick
- * shakes `SHAKE_PER_FLICK` flakes off each post over its first `SHAKE_FLICK_S` seconds, at most `MAX_AIR` are in the air across
- * the page. A flake leaves at `THROW` of the scroll's speed (0.6 to 1.4 times it) and up to `SPRAY` of it sideways either way; each
+ * The flight (docs/plans/2026-11-11-shake-design.md section 3), exported so a test can state the numbers it holds to. A scroll sheds
+ * `SHAKE_PER_PX` flakes for each px it scrolls (its speed times the frame's gap, so the count never depends on the frame rate), off
+ * each post in view; at most `MAX_AIR` are in the air across the page. A flake leaves at `THROW` of the scroll's speed (0.6 to 1.4 times it) and up to `SPRAY` of it sideways either way; each
  * frame drag (`DRAG`) slows it and gravity adds to its fall, so it settles to about `GRAVITY / DRAG` px a second, swaying up to
  * `FLUTTER` px a second at `FLUTTER_RATE` radians a second. After its hang (`HANG_S` times 0.6 to 1.4) it lands where it is over a
  * landing place.
  */
+/**
+ * What a full flick (twice `SHAKE_SPEED`) sheds off one post over its whole pass through the view, the number the rate is chosen for.
+ * A post about 130 px tall crosses a view about 1,000 px tall in `SHAKE_PASS_PX` = 130 + 1,000 = 1,130 px of scrolling, so the per-px
+ * rate is 40 / 1,130 = 0.0354 a px; strength 1 sheds that and a scroll at the threshold 0.4 of it (about 16). A 6,000 px/s fling puts
+ * the post in view for only about four frames, so the count follows the distance each frame scrolled, never the time it took.
+ */
 export const SHAKE_PER_FLICK = 40;
-export const SHAKE_FLICK_S = 0.4;
+export const SHAKE_PASS_PX = 1130;
+export const SHAKE_PER_PX = SHAKE_PER_FLICK / SHAKE_PASS_PX;
 export const THROW = 0.55;
 export const SPRAY = 0.11;
 export const DRAG = 7;
@@ -1223,7 +1230,7 @@ function onScroll(e: Event): void {
 
 /**
  * Shakes glitter off the sticky hosts on screen, as a scroll at `v` px a second does (down is positive) over a frame of `dt`
- * seconds: `SHAKE_PER_FLICK x (0.4 + 0.6 x strength) x dt / SHAKE_FLICK_S` flakes off each post (the fraction carried by a draw),
+ * seconds, which scrolled `|v| x dt` px: `SHAKE_PER_PX x |v| x dt x (0.4 + 0.6 x strength)` flakes off each post (the fraction carried by a draw),
  * strength running from 0 at `SHAKE_SPEED` to 1 at twice it. They are copies of settled flakes on screen, thrown up the screen on a
  * scroll down and down it on a scroll up. The post itself is not redrawn. A post mid-burst sheds nothing, reduced motion shakes
  * nothing, and no more than `MAX_AIR` are in the air. Returns how many were shaken off. Exposed so a test can shake.
@@ -1242,7 +1249,7 @@ export function shake(v: number, now: number, dt: number): number {
     if (r.bottom <= 0 || r.top >= vh || r.right <= 0 || r.left >= vw) continue;
     const band = bandAt(host, now);
     if (!band) continue;
-    const want = SHAKE_PER_FLICK * (0.4 + 0.6 * strength) * dt / SHAKE_FLICK_S;
+    const want = SHAKE_PER_PX * Math.abs(v) * dt * (0.4 + 0.6 * strength);
     const n = Math.min(Math.floor(want) + (cr() < want % 1 ? 1 : 0), MAX_AIR - falling.length);
     let off = 0;
     for (let tries = 0; off < n && tries < n * 4; tries++) {
@@ -1392,9 +1399,9 @@ export const cling = {
       b.age += dt;
       b.x += (b.vx + FLUTTER * Math.sin(b.f.tph + b.age * FLUTTER_RATE)) * dt; b.y += b.vy * dt;
       b.ph += dt * b.spin * (0.35 + 0.65 * Math.min(1, Math.hypot(b.vx, b.vy) / 400 + 0.3));
-      /* Off the bottom or the sides, it is gone, as glitter thrown off a table is; off the top, it comes back down. */
-      if (b.y > vh + 10 || b.x < -10 || b.x > vw + 10) { falling.splice(i, 1); continue; }
-      if (b.age >= b.hang && b.age >= b.next && b.y >= 0) {
+      /* Off the bottom, the top or the sides (by 10 px), it is gone, as glitter thrown off a table is: a flake that flies off the screen is culled. */
+      if (b.y > vh + 10 || b.y < -10 || b.x < -10 || b.x > vw + 10) { falling.splice(i, 1); continue; }
+      if (b.age >= b.hang && b.age >= b.next) {
         b.next = b.age + CHECK_S;
         if (landOn(b, now)) { falling.splice(i, 1); continue; }
       }

@@ -119,9 +119,10 @@ async function fling(page: Page, dir: 1 | -1 = 1): Promise<void> {
 }
 
 /**
- * A post 130 px tall is in view for four frames of a 6,000 px/s fling (100 px a frame), so one fling shakes a handful of flakes off it,
- * and where each lands (a post cell, or the gutters and gaps that are the page's ground) is the flake's own. So flings go down and back up
- * until glitter has landed on a post cell and on the page, each given the plan's 3 s, at most `FLINGS` of them.
+ * A post 130 px tall is in view for four frames of a 6,000 px/s fling (100 px a frame), and a flake sheds per px scrolled, about 40 over
+ * the post's whole pass at a full flick; a flake that flies over the top or past the bottom is culled, and where the rest land (a post cell,
+ * or the gutters and gaps that are the page's ground) is the flake's own. So flings go down and back up until glitter has landed on a post
+ * cell and on the page, each given the plan's 3 s, at most `FLINGS` of them.
  */
 const FLINGS = 8;
 async function flingUntilLanded(page: Page): Promise<void> {

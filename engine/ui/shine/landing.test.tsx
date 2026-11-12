@@ -251,7 +251,7 @@ describe('where a flake lands', () => {
     landAll(flakes);
     const posts = box(100, 100, 300, 300);
     keep(cling.register(posts, { sticky: true, flakes }));
-    for (let i = 0; i < 10; i++) shake(-SHAKE_SPEED * 1.1, 0, 1);
+    for (let i = 0; i < 12; i++) shake(-SHAKE_SPEED * 1.1, 0, 1);
     expect(cling.falling()).toBe(MAX_AIR);
     /* Under them now: a bar with a ground, two plain wrappers and a leaf, so the walk up passes three elements before it stops. */
     placed = [];
