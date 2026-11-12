@@ -19,7 +19,8 @@
 --
 -- The live list. A draw stays live while it owns at least one cell. A wash stays live while some cell of it is inked by a live draw before it in the list (the draw's own cells) and is not covered by the live washes after it: it is
 -- needed by a renderer that draws the live Acts in order, and by nothing else. A wash that uncovers no cell is written and never enters the list. (The plan's "owns a cell under the
--- wash's cells" cannot be read of the owners as they stand after the wash: the wash has just taken them. It is read of the draws' own cells.) Indices in `owners` are renumbered with `live` after a prune.
+-- wash's cells" cannot be read of the owners as they stand after the wash: the wash has just taken them. It is read of the draws' own cells. What a
+-- wash took from each draw is read of the owners before it, under the lock, and kept in the wash as `uncovered` and `cut`.) Indices in `owners` are renumbered with `live` after a prune.
 --
 -- Bound on the live list. Every live wash is the last live wash over at least one cell (a later live wash that covers all of its cells replaces it), so the live washes each own a cell the others do not, and at most
 -- 10,000 washes are live: the case where the author washes one cell at a time and each wash cuts a drawing that is still live. Only the post's own character writes a wash, so only the author's own washes, of one
@@ -311,7 +312,7 @@ begin
   if jsonb_typeof(in_payload) is distinct from 'object' or jsonb_typeof(in_payload -> 'strokes') is distinct from 'array' then
     raise exception 'a drawing holds its strokes as a list' using hint = 'kayfabb.refusal', errcode = '22023';
   end if;
-  if octet_length((in_payload - 'cells')::text) > 65536 then raise exception 'a drawing is at most 64 KiB' using hint = 'kayfabb.refusal', errcode = '22001'; end if;
+  if octet_length((in_payload - 'cells' - 'uncovered' - 'cut')::text) > 65536 then raise exception 'a drawing is at most 64 KiB' using hint = 'kayfabb.refusal', errcode = '22001'; end if;
 end $$;
 revoke execute on function surface_check_payload(jsonb) from public, anon, authenticated, service_role;
 

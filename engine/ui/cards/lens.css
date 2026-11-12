@@ -296,6 +296,11 @@
  * A surface play's rows under its Who (Lens.tsx `SurfaceRows`): one line for each live draw and wash, small, each with its character's face; then one line for the older draws that left the list.
  * They are plain lines and not plates: the plates are the plays', and a draw is no play.
  */
+.kb-lens-surface {
+  display: grid;
+  gap: 4px;
+}
+
 .kb-lens-draws {
   display: grid;
   gap: 6px;
