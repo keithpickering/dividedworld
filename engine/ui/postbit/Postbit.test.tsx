@@ -409,11 +409,20 @@ describe('the post cells over the postbit\'s gear, in the stylesheet', () => {
   const decls = (sel: string) => [...css.matchAll(/([^{}]+)\{([^{}]*)\}/gu)].filter((m) => m[1]!.split(',').some((x) => x.trim() === sel)).map((m) => m[2]!).join('');
   const z = (d: string) => Number(/z-index:\s*(-?\d+)/u.exec(d)?.[1] ?? 'NaN');
 
-  /* Gear may reach right past the postbit's cell; the post's meta, words, actions and panels are cells on their own ground, one layer above it, so the text always wins. */
-  test('the meta, words, actions and panels cells are on a layer above the postbit\'s cell', () => {
-    const bit = decls('.kb-act > .kb-postbit');
-    expect(z(bit)).toBe(0);
-    for (const sel of ['.kb-act-meta', '.kb-act-main', '.kb-act-foot', '.kb-act-panels']) expect(z(decls(sel)), sel).toBeGreaterThan(z(bit));
+  /*
+   * Gear may reach right past the postbit's cell; the post's meta, words, actions and panels are cells on their own ground over it, so the text
+   * always wins. The postbit goes under them (-1, in the post's own stacking context) rather than lifting them: a lifted line above would trap
+   * the marks strip and the callout that hang from it over the words (thread.css). jsdom has no stacking: e2e/post-layers.spec.ts holds this
+   * in a browser, and these hold the rules it rests on.
+   */
+  test('the post is a stacking context and the postbit\'s cell lies under the others at a negative level', () => {
+    expect(decls('.kb-act')).toMatch(/isolation:\s*isolate/u);
+    expect(z(decls('.kb-act > .kb-postbit'))).toBeLessThan(0);
+    expect(z(decls('.kb-act-main'))).toBeGreaterThan(z(decls('.kb-act > .kb-postbit')));
+  });
+
+  test('the line above, the actions and the panels take no level, so what hangs from the line above stays in the post\'s stack', () => {
+    for (const sel of ['.kb-act-meta', '.kb-act-foot', '.kb-act-panels']) expect(decls(sel), sel).not.toMatch(/z-index/u);
   });
 
   test('every post cell keeps the post ground the lift relies on', () => {

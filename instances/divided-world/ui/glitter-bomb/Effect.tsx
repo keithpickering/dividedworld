@@ -34,7 +34,7 @@
  * Where. The glitter covers the post, not only its words (2026-11-06: "the card effect should apply to the entire post in all cases"):
  * the three canvases stand on one surface, an element placed inline over the box the effect paints (engine/ui/cards/body.ts): in the
  * thread the post body's padding box (`.kb-act-main`, bar to bar), anywhere else (the ORIGIN box, Stick Around's view) the host's own.
- * The surface is what cling knows, so a flake that falls lands anywhere on the post, in the surface's px. Painting the body, the host
+ * The surface is what cling knows, so a flake can land anywhere on the post, in the surface's px. Painting the body, the host
  * marks itself `data-kb-bleed` and glitter.css puts the flakes under everything in the body (its reactions, its signature, an ORIGIN
  * box above the words), not only under the words. The host watches the body's size as well as its own.
  *

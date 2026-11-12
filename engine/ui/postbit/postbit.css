@@ -193,6 +193,18 @@
     background: var(--kb-post-bg, var(--kb-bg));
   }
 
+  /*
+   * Except the character's marks strip, which is no run of words: it lies over the postbit's top corner out of the flow (cards/marks.css,
+   * `.kb-postbit .kb-postbit-marks`), and the rule above, more specific, would put it back in the flow on a ground of its own with the runs
+   * after it covering its tiles. At auto, its tiles (z-index 3) are over the runs and the gear in the postbit's own stack.
+   */
+  .kb-postbit[data-kb-postbit="side"] .kb-postbit-text > .kb-postbit-marks {
+    position: absolute;
+    z-index: auto;
+    max-width: none;
+    background: none;
+  }
+
   /* The square's gear is for the phone. */
   .kb-postbit[data-kb-postbit="side"] .kb-postbit-avatar[data-kb-slot="portrait"] > .kb-outfit[data-kb-on="square"] {
     display: none;
