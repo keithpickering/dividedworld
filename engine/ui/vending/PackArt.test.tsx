@@ -69,8 +69,12 @@ describe('the stylesheet', () => {
     expect(at, selector).toBeGreaterThanOrEqual(0);
     return css.slice(at, css.indexOf('}', at));
   };
-  /* The tear's vertices (thirteen, so twelve segments): the ones written with the tear's two heights. */
-  const tear = (b: string) => [...b.matchAll(/([\d.]+%) var\(--kb-tear-(?:hi|lo)\)/gu)].map((m) => m[0]);
+  /* The tear is written once, as the custom property `--kb-tear` (a point list, x in percent and y in units of `--kb-u`), and each of the four polygons spells it `var(--kb-tear)`. */
+  const tearDef = (): { x: number; y: number }[] => {
+    const at = css.indexOf('--kb-tear:');
+    expect(at, 'the tear is defined').toBeGreaterThanOrEqual(0);
+    return [...css.slice(at, css.indexOf(';', at)).matchAll(/([\d.]+)% calc\(var\(--kb-u\) \* ([\d.]+)\)/gu)].map((m) => ({ x: Number(m[1]), y: Number(m[2]) }));
+  };
 
   test('a pictured whole pack has no clip and no background', () => {
     const b = block(".kb-pack[data-kb-pictured]");
@@ -78,13 +82,41 @@ describe('the stylesheet', () => {
     expect(b).toMatch(/background:\s*none/u);
   });
 
-  test('the pictured torn parts\' tear points are the drawn pack\'s', () => {
+  test('the tear is one line in all four polygons: each torn part, drawn and pictured, takes it from the one definition', () => {
     for (const part of ['opened', 'top']) {
-      const drawnTear = tear(block(`.kb-pack[data-part='${part}']`));
-      const picturedTear = tear(block(`.kb-pack[data-kb-pictured][data-part='${part}']`));
-      expect(drawnTear).toHaveLength(13);
-      expect(picturedTear).toEqual(drawnTear);
+      for (const sel of [`.kb-pack[data-part='${part}']`, `.kb-pack[data-kb-pictured][data-part='${part}']`]) {
+        const b = block(sel);
+        expect(b, sel).toContain('var(--kb-tear)');
+        expect(b, `${sel} writes no tear points of its own`).not.toMatch(/calc\(var\(--kb-u\) \* [\d.]+\)/u);
+      }
     }
+    expect(css).not.toMatch(/--kb-tear-(?:hi|lo)/u);
+  });
+
+  test('the tear is an irregular line of 22 vertices from edge to edge, within 7.5 to 14.5 units', () => {
+    const t = tearDef();
+    expect(t).toHaveLength(22);
+    expect(t[0]!.x).toBe(0);
+    expect(t.at(-1)!.x).toBe(100);
+    for (let i = 1; i < t.length; i++) expect(t[i]!.x, `x at vertex ${i}`).toBeGreaterThan(t[i - 1]!.x);
+    const steps = new Set(t.slice(1).map((p, i) => Math.round((p.x - t[i]!.x) * 100)));
+    expect(steps.size, 'the x steps are not all equal').toBeGreaterThan(1);
+    expect(new Set(t.map((p) => p.y)).size, 'the y values take more than two values').toBeGreaterThan(2);
+    for (const p of t) {
+      expect(p.y).toBeGreaterThanOrEqual(7.5);
+      expect(p.y).toBeLessThanOrEqual(14.5);
+    }
+  });
+
+  test('the top part traces the same tear as the opened part, so they meet at rest with no gap or overlap', () => {
+    /* Opened walks the tear left to right and drops to the foot; the top walks it left to right and closes through the crimp back to the start: the same
+       points in the same place, so the two parts share every vertex. A polygon's winding does not change what it fills. */
+    const opened = block(".kb-pack[data-part='opened']");
+    const top = block(".kb-pack[data-part='top']");
+    expect(opened.match(/var\(--kb-tear\)/gu)).toHaveLength(1);
+    expect(top.match(/var\(--kb-tear\)/gu)).toHaveLength(1);
+    expect(opened.indexOf('var(--kb-tear)')).toBeLessThan(opened.indexOf('100% calc(100% - var(--kb-crimp))'));
+    expect(top.indexOf('var(--kb-tear)')).toBeLessThan(top.indexOf('100% var(--kb-crimp)'));
   });
 
   test('the pictured rules come after the drawn pack\'s rules they override', () => {

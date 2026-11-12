@@ -7,7 +7,7 @@
  * had (an image that does not load, a canvas with no 2D context, pixels the browser will not hand over) leaves the pack as its picture alone, with
  * one warning naming the address. The canvas is never sized past the relief's own 540 by 840.
  *
- * Units: `w` and `h` are canvas px; a relief's rows are canvas rows from the top; `rows` are shares of the bitmap's height (`TEAR_HI`, `TEAR_LO`).
+ * Units: `w` and `h` are canvas px; a relief's rows are canvas rows from the top; `rows` are shares of the bitmap's height (`TEAR_LOWEST`, `TEAR_HIGHEST`).
  * The picture is as tall as the pack's 2:3 box, so the bitmap's height is the box's height (unless it is capped at 540 by 840) and the shares are shares of the pack's height.
  */
 import { createElement, useEffect, useRef } from 'react';
@@ -18,12 +18,16 @@ import { MAX_DENSITY, register, unregister } from '../shine/loop.ts';
 const MAX_W = 540;
 const MAX_H = 840;
 /**
- * The tear's lower and upper points as shares of the pack's height. These are the plan's numbers (14% and 9%), not pack.css's own heights (about
- * 9.3% and 6% of the height): they overshoot the tear's own heights, about half again, so each torn part lights its whole jagged edge, and the
- * part's clip-path in pack.css cuts what overshoots.
+ * The tear line's extent in pack.css (`--kb-tear`), in units of `--kb-u` (a hundredth of the pack's width) from the pack's top, and the box's height in
+ * the same units (2:3, so 150): the tear's lowest point (its largest y) and its highest (its smallest). packLight.test.tsx reads pack.css and fails
+ * until these cover its line.
  */
-const TEAR_HI = 0.14;
-const TEAR_LO = 0.09;
+const TEAR_LOW_UNITS = 14.5;
+const TEAR_HIGH_UNITS = 7.5;
+const BOX_UNITS = 150;
+/** The tear's lowest and highest points as shares of the pack's height. The top part is lit down to the first, the opened part from the second; each is rounded outward when taken as a row, so no torn tip is left unlit, and the part's clip-path cuts what overshoots. */
+export const TEAR_LOWEST = TEAR_LOW_UNITS / BOX_UNITS;
+export const TEAR_HIGHEST = TEAR_HIGH_UNITS / BOX_UNITS;
 /** A box change restarts the light only once the box has held still this long (trailing), so a drag across many sizes decodes once. */
 export const RESIZE_DEBOUNCE_MS = 150;
 
@@ -114,10 +118,10 @@ export interface PackLightProps {
   readonly part: 'whole' | 'opened' | 'top';
 }
 
-/** The rows of a `h`-row canvas the part lights: the top piece to the tear's lower points, the body from its upper points, a whole pack all. */
+/** The rows of a `h`-row canvas the part lights: the top piece down to the tear's lowest point, the body from its highest point, a whole pack all; both rounded outward. */
 const rowsOf = (part: PackLightProps['part'], h: number): { top: number; bottom: number } | undefined => {
-  if (part === 'top') return { top: 0, bottom: Math.round(TEAR_HI * h) };
-  if (part === 'opened') return { top: Math.round(TEAR_LO * h), bottom: h };
+  if (part === 'top') return { top: 0, bottom: Math.ceil(TEAR_LOWEST * h) };
+  if (part === 'opened') return { top: Math.floor(TEAR_HIGHEST * h), bottom: h };
   return undefined;
 };
 

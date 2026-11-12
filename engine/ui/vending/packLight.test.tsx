@@ -9,7 +9,10 @@ vi.mock('../shine/relief.ts', async (importOriginal) => {
   const real = await importOriginal<typeof import('../shine/relief.ts')>();
   return { ...real, makeRelief: vi.fn((normals, tint, w, h) => { lit.tints.push(tint); return real.makeRelief(normals, tint, w, h); }), lightRelief: vi.fn((relief, light, out, rows) => { lit.calls.push({ rows, w: relief.w, h: relief.h, light: { ...light } }); real.lightRelief(relief, light, out, rows); }) };
 });
-import { PackLight, RESIZE_DEBOUNCE_MS } from './packLight.ts';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { PackLight, RESIZE_DEBOUNCE_MS, TEAR_HIGHEST, TEAR_LOWEST } from './packLight.ts';
 
 /* A fake rAF the test flushes by hand, and a fake IntersectionObserver and ResizeObserver it drives. */
 let queue = new Map<number, FrameRequestCallback>();
@@ -198,16 +201,40 @@ describe('the pack\'s light', () => {
     expect(lit.calls).toHaveLength(2);
   });
 
-  test('part top and part opened hand lightRelief their rows; a whole pack hands none', async () => {
-    for (const [part, rows] of [['top', { top: 0, bottom: Math.round(0.14 * 420) }], ['opened', { top: Math.round(0.09 * 420), bottom: 420 }], ['whole', undefined]] as const) {
+  test('part top and part opened hand lightRelief rows that cover the tear\'s whole range; a whole pack hands none', async () => {
+    /* A box 400 by 540 gives a bitmap 347 by 540 (the largest 540:840 shape inside it). The tear runs 7.5 to 14.5 units of a box 150 tall. */
+    size = { w: 400, h: 540 };
+    for (const part of ['top', 'opened', 'whole'] as const) {
       lit.calls = [];
       const view = await mount(fresh(), part);
       see(canvas(), true);
       frames(3);
-      expect(lit.calls.at(-1)!.rows).toEqual(rows);
+      const call = lit.calls.at(-1)!;
+      expect(call.h).toBe(540);
+      if (part === 'top') {
+        expect(call.rows!.top).toBe(0);
+        expect(call.rows!.bottom).toBeGreaterThanOrEqual(Math.ceil((14.5 / 150) * 540));
+        expect(call.rows!.bottom).toBe(Math.ceil(TEAR_LOWEST * 540));
+      } else if (part === 'opened') {
+        expect(call.rows!.top).toBeLessThanOrEqual(Math.floor((7.5 / 150) * 540));
+        expect(call.rows!.top).toBe(Math.floor(TEAR_HIGHEST * 540));
+        expect(call.rows!.bottom).toBe(540);
+      } else {
+        expect(call.rows).toBeUndefined();
+      }
       view.unmount();
       probe.reset();
     }
+  });
+
+  test('the light\'s constants cover pack.css\'s tear: its lowest and highest points, in shares of the box\'s 150 units', () => {
+    const css = fs.readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'pack.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '');
+    const at = css.indexOf('--kb-tear:');
+    expect(at).toBeGreaterThanOrEqual(0);
+    const ys = [...css.slice(at, css.indexOf(';', at)).matchAll(/calc\(var\(--kb-u\) \* ([\d.]+)\)/gu)].map((m) => Number(m[1]));
+    expect(ys.length).toBeGreaterThan(2);
+    expect(TEAR_LOWEST, 'the top part is lit to the tear\'s lowest point').toBeGreaterThanOrEqual(Math.max(...ys) / 150 - 1e-9);
+    expect(TEAR_HIGHEST, 'the opened part is lit from the tear\'s highest point').toBeLessThanOrEqual(Math.min(...ys) / 150 + 1e-9);
   });
 
   test('the canvas is never sized past 540 by 840, and a resized box is registered again at its new size', async () => {

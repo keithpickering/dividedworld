@@ -8,8 +8,10 @@
   --kb-pack-w: 86px;
   --kb-u: calc(var(--kb-pack-w) / 100);
   --kb-crimp: calc(var(--kb-u) * 3.2);
-  --kb-tear-hi: calc(var(--kb-u) * 14);
-  --kb-tear-lo: calc(var(--kb-u) * 9);
+  /* The tear line, written once: twenty-two vertices from the left edge to the right, x in percent of the width and y in units of `--kb-u` from the top
+     (7.5 to 14.5). Every torn part below spells it `var(--kb-tear)`, so the parts meet exactly and a drawn and a pictured pack tear alike. packLight.ts's
+     TEAR_LOW_UNITS and TEAR_HIGH_UNITS are its lowest and highest y; packLight.test.tsx reads this list and fails until they follow a change. */
+  --kb-tear: 0% calc(var(--kb-u) * 11), 4% calc(var(--kb-u) * 8.5), 7.5% calc(var(--kb-u) * 12.5), 13% calc(var(--kb-u) * 9.5), 16% calc(var(--kb-u) * 14), 22% calc(var(--kb-u) * 10), 27.5% calc(var(--kb-u) * 13), 30% calc(var(--kb-u) * 8), 36% calc(var(--kb-u) * 11.5), 41% calc(var(--kb-u) * 14.5), 44.5% calc(var(--kb-u) * 9), 51% calc(var(--kb-u) * 12), 55% calc(var(--kb-u) * 7.5), 60.5% calc(var(--kb-u) * 13.5), 66% calc(var(--kb-u) * 10.5), 69% calc(var(--kb-u) * 14), 75% calc(var(--kb-u) * 9), 79.5% calc(var(--kb-u) * 12.5), 85% calc(var(--kb-u) * 8), 88% calc(var(--kb-u) * 13), 94% calc(var(--kb-u) * 10), 100% calc(var(--kb-u) * 12.5);
   position: relative;
   display: block;
   width: var(--kb-pack-w);
@@ -23,23 +25,24 @@
 
 .kb-pack[data-part='opened'] {
   clip-path: polygon(
-    0% var(--kb-tear-hi), 8.33% var(--kb-tear-lo), 16.67% var(--kb-tear-hi), 25% var(--kb-tear-lo), 33.33% var(--kb-tear-hi), 41.67% var(--kb-tear-lo), 50% var(--kb-tear-hi), 58.33% var(--kb-tear-lo), 66.67% var(--kb-tear-hi), 75% var(--kb-tear-lo), 83.33% var(--kb-tear-hi), 91.67% var(--kb-tear-lo), 100% var(--kb-tear-hi),
+    var(--kb-tear),
     100% calc(100% - var(--kb-crimp)), 90% 100%, 80% calc(100% - var(--kb-crimp)), 70% 100%, 60% calc(100% - var(--kb-crimp)), 50% 100%, 40% calc(100% - var(--kb-crimp)), 30% 100%, 20% calc(100% - var(--kb-crimp)), 10% 100%, 0% calc(100% - var(--kb-crimp))
   );
 }
 
-/* The crimped top that tore away: everything above the same jagged line, so with the opened body it is the whole pack. */
+/* The crimped top that tore away: everything above the same jagged line, so with the opened body it is the whole pack. It walks the tear left to right like the
+   opened body and closes up through the crimp back to the start; a polygon's winding changes nothing about what it fills. */
 .kb-pack[data-part='top'] {
   clip-path: polygon(
-    0% var(--kb-crimp), 10% 0, 20% var(--kb-crimp), 30% 0, 40% var(--kb-crimp), 50% 0, 60% var(--kb-crimp), 70% 0, 80% var(--kb-crimp), 90% 0, 100% var(--kb-crimp),
-    100% var(--kb-tear-hi), 91.67% var(--kb-tear-lo), 83.33% var(--kb-tear-hi), 75% var(--kb-tear-lo), 66.67% var(--kb-tear-hi), 58.33% var(--kb-tear-lo), 50% var(--kb-tear-hi), 41.67% var(--kb-tear-lo), 33.33% var(--kb-tear-hi), 25% var(--kb-tear-lo), 16.67% var(--kb-tear-hi), 8.33% var(--kb-tear-lo), 0% var(--kb-tear-hi)
+    var(--kb-tear),
+    100% var(--kb-crimp), 90% 0, 80% var(--kb-crimp), 70% 0, 60% var(--kb-crimp), 50% 0, 40% var(--kb-crimp), 30% 0, 20% var(--kb-crimp), 10% 0, 0% var(--kb-crimp)
   );
 }
 
 /*
  * A pictured pack (`data-kb-pictured`, PackArt.tsx): the picture is the whole pack on a transparent ground, so its outline is the pack's and the box
- * carries no background and no crimp clip. Torn, the box is cut along the tear line alone, closed by the box's plain corners. The tear's thirteen
- * vertices (twelve segments) are the same as the polygons above; PackArt.test.tsx reads both and compares them, so a change to one fails until the other follows.
+ * carries no background and no crimp clip. Torn, the box is cut along the tear line alone, closed by the box's plain corners. The tear is
+ * the one `--kb-tear` line the polygons above use, so a drawn and a pictured pack tear alike.
  */
 .kb-pack[data-kb-pictured] {
   background: none;
@@ -48,15 +51,15 @@
 
 .kb-pack[data-kb-pictured][data-part='opened'] {
   clip-path: polygon(
-    0% var(--kb-tear-hi), 8.33% var(--kb-tear-lo), 16.67% var(--kb-tear-hi), 25% var(--kb-tear-lo), 33.33% var(--kb-tear-hi), 41.67% var(--kb-tear-lo), 50% var(--kb-tear-hi), 58.33% var(--kb-tear-lo), 66.67% var(--kb-tear-hi), 75% var(--kb-tear-lo), 83.33% var(--kb-tear-hi), 91.67% var(--kb-tear-lo), 100% var(--kb-tear-hi),
+    var(--kb-tear),
     100% 100%, 0% 100%
   );
 }
 
 .kb-pack[data-kb-pictured][data-part='top'] {
   clip-path: polygon(
-    0% 0%, 100% 0%,
-    100% var(--kb-tear-hi), 91.67% var(--kb-tear-lo), 83.33% var(--kb-tear-hi), 75% var(--kb-tear-lo), 66.67% var(--kb-tear-hi), 58.33% var(--kb-tear-lo), 50% var(--kb-tear-hi), 41.67% var(--kb-tear-lo), 33.33% var(--kb-tear-hi), 25% var(--kb-tear-lo), 16.67% var(--kb-tear-hi), 8.33% var(--kb-tear-lo), 0% var(--kb-tear-hi)
+    var(--kb-tear),
+    100% 0%, 0% 0%
   );
 }
 
