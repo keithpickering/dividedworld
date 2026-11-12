@@ -30,6 +30,17 @@ test('a band that would pass the top of the window or the HUD\'s top is cut to t
   assert.equal(low.bottom, 611);
 });
 
+test('a band wider than the whole reading space is the whole space, and a band of 0 percent is a point at the line', () => {
+  assert.deepEqual(bandOf(800, 189, 40, 200), { top: 0, bottom: 611 });
+  const point = bandOf(800, 189, 40, 0);
+  near(point.top, 244.4);
+  near(point.bottom, 244.4);
+});
+
+test('a HUD taller than the window leaves no reading space, and the band is a point at 0, never inverted', () => {
+  assert.deepEqual(bandOf(100, 150, 40, 34), { top: 0, bottom: 0 });
+});
+
 test('a place is in the band when the middle of any box is, and a box that only overlaps its edge is not', () => {
   const band = { top: 100, bottom: 300 };
   assert.equal(inBand([{ top: 190, bottom: 210, left: 0, right: 50 }], band), true);
@@ -37,6 +48,22 @@ test('a place is in the band when the middle of any box is, and a box that only 
   assert.equal(inBand([{ top: 290, bottom: 330, left: 0, right: 50 }], band), false);
   assert.equal(inBand([{ top: 60, bottom: 110, left: 0, right: 50 }], band), false);
   assert.equal(inBand([], band), false);
+});
+
+test('the band\'s edges are inside it: a middle exactly on the top or the bottom is in the band', () => {
+  const band = { top: 100, bottom: 300 };
+  assert.equal(inBand([{ top: 90, bottom: 110, left: 0, right: 50 }], band), true);
+  assert.equal(inBand([{ top: 290, bottom: 310, left: 0, right: 50 }], band), true);
+  assert.equal(inBand([{ top: 89, bottom: 109, left: 0, right: 50 }], band), false);
+  assert.equal(inBand([{ top: 291, bottom: 311, left: 0, right: 50 }], band), false);
+});
+
+test('a box of no height has its top for a middle', () => {
+  const band = { top: 100, bottom: 300 };
+  assert.equal(inBand([{ top: 200, bottom: 200, left: 0, right: 50 }], band), true);
+  assert.equal(inBand([{ top: 100, bottom: 100, left: 0, right: 50 }], band), true);
+  assert.equal(inBand([{ top: 301, bottom: 301, left: 0, right: 50 }], band), false);
+  assert.equal(distance([{ top: 50, bottom: 50, left: 0, right: 50 }], band), 50);
 });
 
 test('a place in the band is at distance 0, and one off it is as far as its middle from the band\'s nearer edge', () => {

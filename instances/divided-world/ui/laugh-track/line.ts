@@ -9,20 +9,21 @@
 export interface Rect { readonly top: number; readonly bottom: number; readonly left: number; readonly right: number }
 export interface Point { readonly x: number; readonly y: number }
 
-/** The line's place in the window, in pixels from its top: `percent` of the way down the space above the HUD. */
-export const readingLine = (viewportHeight: number, hudHeight: number, percent: number): number => ((viewportHeight - hudHeight) * percent) / 100;
-
 /** The band a place must be in to be read: a stretch of the window, in pixels from its top. */
 export interface Band { readonly top: number; readonly bottom: number }
+
+/** The line's place in the window, in pixels from its top: `percent` of the way down the space above the HUD. */
+export const readingLine = (viewportHeight: number, hudHeight: number, percent: number): number => ((viewportHeight - hudHeight) * percent) / 100;
 
 /**
  * The band, centered on the reading line and `bandPercent` of the reading space (the window above the HUD) tall, cut to that space where
  * it would pass the window's top or the HUD's top. It replaced the line's rest: a place fires from being in the band, not from a row on a
- * line with no thickness.
+ * line with no thickness. A HUD taller than the window leaves no reading space, not a negative one, which would invert the band, so the
+ * space is floored at 0 and the band is a point at the window's top.
  */
 export function bandOf(viewportHeight: number, hudHeight: number, linePercent: number, bandPercent: number): Band {
-  const space = viewportHeight - hudHeight;
-  const line = readingLine(viewportHeight, hudHeight, linePercent);
+  const space = Math.max(viewportHeight - hudHeight, 0);
+  const line = readingLine(space, 0, linePercent);
   const half = (space * bandPercent) / 200;
   return { top: Math.max(line - half, 0), bottom: Math.min(line + half, space) };
 }
