@@ -21,6 +21,7 @@ import { mooch } from '../cards/mooch.ts';
 import { toll } from '../cards/toll.ts';
 import { fourDChess } from '../cards/4d-chess.ts';
 import { offDay } from '../cards/off-day.ts';
+import { CUES, laughTrack } from '../cards/laugh-track.ts';
 import { wordsProblems } from '../../../engine/ui/cards/lens-words.ts';
 import type { CardPlay } from '../../../engine/ui/cards/types.ts';
 import { ENGINE_DEFAULT_PRONOUNS, PRONOUN_PRESETS } from '../../../engine/rules/pronouns.ts';
@@ -89,7 +90,7 @@ describe('Divided World\'s cards in the guide, in the glass\'s words about setti
     for (const text of [t.describe, t.summary]) expect(text).not.toMatch(/pays you|what it cost|wallet|what the caster paid/u);
   });
   test('each Move says what setting it does, landing at its own reach and no other', () => {
-    const lands = { whoops: 'the quoting post', 'stick-around': 'the quoting post', autocorrect: 'the quoting post', 'feelin-fab': 'the quoting post', 'below-the-fold': 'the quoting post', 'glitter-bomb': "the quoting post's character", 'main-event': "the quoting post's thread" };
+    const lands = { whoops: 'the quoting post', 'stick-around': 'the quoting post', autocorrect: 'the quoting post', 'feelin-fab': 'the quoting post', 'below-the-fold': 'the quoting post', 'laugh-track': 'the quoting post', 'glitter-bomb': "the quoting post's character", 'main-event': "the quoting post's thread" };
     for (const [key, reach] of Object.entries(lands)) {
       expect(face(key).describe, key).toContain(`You can also set it face down on one of your own posts: it springs on the next quote of that post and lands on ${reach} at no further cost, using up the card.`);
     }
@@ -254,6 +255,33 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     const whoops = instanceUi.cards.find((c) => c.key === 'whoops')!;
     expect(whoops.describe(instance.settings)).toContain('0.25 more for every 500 characters');
     expect(whoops.describe({ ...instance.settings, economy: { ...instance.settings.economy, 'whoops.perLength': 250 } })).toContain('2.50 more');
+  });
+  test('Laugh Track has its face, its machine slot and its rules in words true to the card and the settings', () => {
+    const ui = instanceUi.cards.find((c) => c.key === 'laugh-track')!;
+    expect(ui.art.color).toBe('#d24a2c');
+    expect(ui.art.ink).toBe('#1a0602');
+    expect(ui.art.tagline).toBe('Give a post a studio audience.');
+    expect(ui.summary).toBe('Cues a studio audience to laugh, cheer or boo at the words you choose, wherever they appear in a post.');
+    expect(ui.status).toBe('A studio audience on cue');
+    expect(ui.hint).toBe('A Laugh Track: the audience reacts when you reach certain words. Turn on Game sounds in Settings to hear it.');
+    expect(ui.Effect).toBeDefined();
+    expect(ui.ConfigForm).toBeDefined();
+    expect(ui.logPlay!({}, {} as never)).toBe('It gave the post a studio audience.');
+    const e = instance.settings.economy;
+    const surcharge = ui.surcharge as (s: typeof instance.settings) => string;
+    expect(surcharge(instance.settings)).toBe(`Many places, +${e['laughTrack.perPlace']! / 100} per place past ${e['laughTrack.freePlaces']}`);
+    const said = ui.describe(instance.settings);
+    expect(said).toBe(`A Pepperoni card, ${laughTrack.rarity}. You choose up to five phrases in a post and give each a sound: the audience laughs, cheers or boos. Wherever a phrase appears in the post's own words, the audience reacts as a reader reaches it, and builds up as they get close. Every reaction is also shown as a caption, so it works with sound off. One audience fits on a post. You can also set it face down on one of your own posts: it springs on the next quote of that post and lands on the quoting post at no further cost, using up the card. Set face down, it waits for a quote that says its first phrase. It costs more to play the more places its phrases cover.`);
+    // True to the rules: five cues, three sounds, one audience, a first phrase to spring on, a price that grows with places.
+    expect(CUES.most).toBe(5);
+    expect(laughTrack.rarity).toBe('uncommon');
+    expect(laughTrack.alignment).toBe('pepperoni');
+    expect(laughTrack.setPhrase!({ cues: [{ phrase: 'first one', sound: 'boo' }, { phrase: 'second', sound: 'cheer' }] })).toBe('first one');
+    const post = (text: string) => ({ reach: 'post', text } as never);
+    const cue = { cues: [{ phrase: 'abcd', sound: 'laugh' as const }] };
+    expect(laughTrack.playPrice!(instance.settings, post('abcd '.repeat(e['laughTrack.freePlaces']!)), cue)).toBe(0);
+    expect(laughTrack.playPrice!(instance.settings, post('abcd '.repeat(e['laughTrack.freePlaces']! + 1)), cue)).toBe(e['laughTrack.perPlace']);
+    expect(instance.machine.at(-3)).toEqual({ item: { card: 'laugh-track' }, availability: 'onSale', price: 150 });
   });
   test('Whoops! draws its effect and its ink form, and each play\'s tag takes its own ink', () => {
     const whoops = instanceUi.cards.find((c) => c.key === 'whoops')!;

@@ -23,7 +23,7 @@ const priceOf = (key: string): number => instance.machine.find((m) => 'card' in 
 const post = (length: number): CardTarget => ({ reach: 'post', act: 'p1', kind: 'post', length, text: '' });
 
 test('the instance sells its cards at their prices', () => {
-  assert.deepEqual(cards.map((c) => [c.key, c.alignment, priceOf(c.key)]), [['stick-around', 'sweet', 100], ['whoops', 'salty', 100], ['card-collector', 'salty', 150], ['hall-pass', 'sweet', 150], ['force-field', 'sweet', 150], ['publicity-tour', 'sweet', 150], ['heat-magnet', 'salty', 150], ['class-clown', 'pepperoni', 150], ['good-vibes', 'sweet', 150], ['glitter-bomb', 'pepperoni', 150], ['main-event', 'sweet', 300], ['feelin-fab', 'sweet', 20], ['autocorrect', 'pepperoni', 100], ['you-were-saying', 'pepperoni', 100], ['below-the-fold', 'salty', 100], ['mooch', 'salty', 150], ['toll', 'pepperoni', 150], ['4d-chess', 'salty', 150], ['off-day', 'salty', 500], ['jimmy-wails', 'sweet', 200]]);
+  assert.deepEqual(cards.map((c) => [c.key, c.alignment, priceOf(c.key)]), [['stick-around', 'sweet', 100], ['whoops', 'salty', 100], ['card-collector', 'salty', 150], ['hall-pass', 'sweet', 150], ['force-field', 'sweet', 150], ['publicity-tour', 'sweet', 150], ['heat-magnet', 'salty', 150], ['class-clown', 'pepperoni', 150], ['good-vibes', 'sweet', 150], ['glitter-bomb', 'pepperoni', 150], ['main-event', 'sweet', 300], ['feelin-fab', 'sweet', 20], ['autocorrect', 'pepperoni', 100], ['you-were-saying', 'pepperoni', 100], ['below-the-fold', 'salty', 100], ['mooch', 'salty', 150], ['toll', 'pepperoni', 150], ['4d-chess', 'salty', 150], ['off-day', 'salty', 500], ['jimmy-wails', 'sweet', 200], ['laugh-track', 'pepperoni', 150]]);
   assert.deepEqual(instanceProblems(instance), []);
   assert.deepEqual(instance.cards, cards);
 });
@@ -505,19 +505,19 @@ test('Autocorrect\'s phrase is its set phrase', () => {
   assert.equal(by('card-collector').setPhrase, undefined);
 });
 
-test('the Booster\'s hit pull gives uncommon 74, rare 24 and legendary 2, over the nineteen cards', async () => {
+test('the Booster\'s hit pull gives uncommon 74, rare 24 and legendary 2, over the twenty cards', async () => {
   const { packOdds } = await import('../../../engine/rules/packs.ts');
   const booster = instance.packs.find((p) => p.key === 'booster')!;
   assert.deepEqual(booster.pulls.at(-1)!.weights, { uncommon: 74, rare: 24, legendary: 2 });
   const hit = packOdds(booster, cards, instance.settings).at(-1)!;
   const chance = new Map(hit.flatMap((r) => r.cards.map((c) => [c.card, c.chance] as const)));
-  // The Gimmicks, Part 6 and Jimmy Wails joined the Booster by their rarity, as a new card does, with nothing listed in packs.ts: twelve uncommons share the 74 (You Were Saying? and Below the Fold are commons, and the hit pull takes none).
-  assert.equal(cards.length, 20);
+  // The Gimmicks, Part 6, Jimmy Wails and Laugh Track joined the Booster by their rarity, as a new card does, with nothing listed in packs.ts: thirteen uncommons share the 74 (You Were Saying? and Below the Fold are commons, and the hit pull takes none).
+  assert.equal(cards.length, 21);
   assert.ok(Math.abs(chance.get('main-event')! - 0.24) < 1e-9, `Main Event at ${chance.get('main-event')}`);
   assert.ok(Math.abs(chance.get('off-day')! - 0.02) < 1e-9, `Off Day at ${chance.get('off-day')}`);
   const uncommons = cards.filter((c) => c.rarity === 'uncommon');
-  assert.equal(uncommons.length, 12);
-  for (const c of uncommons) assert.ok(Math.abs(chance.get(c.key)! - 0.74 / 12) < 1e-9, `${c.key} at ${chance.get(c.key)}`);
+  assert.equal(uncommons.length, 13);
+  for (const c of uncommons) assert.ok(Math.abs(chance.get(c.key)! - 0.74 / 13) < 1e-9, `${c.key} at ${chance.get(c.key)}`);
   assert.equal(chance.size, uncommons.length + 2);
 });
 
