@@ -19,7 +19,7 @@ import type { Stroke } from './scrub.ts';
  * to 300ns and a wash about 12 to 40ns a point visit (the dearer figure is the thin brush, where the capsule or disc
  * is mostly its edge). The weights take the dearer figure, because a layer called light that is not blocks the page. A
  * browser's main thread differs from Node by some factor, and the owner tunes these on a device. A review's re-measure
- * on a busier run (240x240 light layers at 17.7 to 26.8ms) raised the box to 330 and the wash to 60, so a layer called
+ * on a busier run (240x240 light layers at 17.7 to 26.8ms in single runs) raised the box to 330 and the wash to 60, so a layer called
  * light stays near its target when the machine is not idle.
  */
 export const BOX_NS = 330;

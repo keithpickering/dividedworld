@@ -74,9 +74,12 @@ test('estimateWork: nanoseconds of work, the box plus each segment; the two inpu
   assert.ok(estimateWork({ w: 390, h: 1000 }, 1.5, []) > QUICK_WORK, 'a long post at density 1.5 is heavy');
 });
 
-test('estimateWork is calibrated: a layer it calls light builds in under 4x the target, in Node (fastest of 5 runs)', () => {
-  const light: BuildInput = { ...SMALL, box: { w: 200, h: 200 }, strokes: [] };
-  assert.ok(estimateWork(light.box, 1, light.strokes) < QUICK_WORK);
+test('estimateWork is calibrated: the largest layer it calls light builds in under 2.5x the target, in Node (fastest of 5)', () => {
+  // The largest square box the estimate still calls light: if the box's weight were set too low, this box would be
+  // larger and its real build slower, so the bound catches an underestimate of about 2.5x or more.
+  let side = Math.floor(Math.sqrt(QUICK_WORK / BOX_NS));
+  while (estimateWork({ w: side, h: side }, 1, []) >= QUICK_WORK) side--;
+  const light: BuildInput = { ...SMALL, box: { w: side, h: side }, strokes: [] };
   buildLayer(light);
   let ms = Infinity;
   for (let i = 0; i < 5; i++) {
@@ -84,11 +87,8 @@ test('estimateWork is calibrated: a layer it calls light builds in under 4x the 
     buildLayer(light);
     ms = Math.min(ms, performance.now() - t);
   }
-  // The fastest of five runs is the build's cost without a GC pause or a busy neighbor; the old weights (250ns a cell)
-  // called a 390x1000 layer at density 1.5 light at ~227ms, which this bound catches with room for a slow CI runner.
-  assert.ok(ms < 4 * QUICK_WORK / 1e6, `${ms}ms for a layer called light`);
-  const slow = { ...light, box: { w: 390, h: 1000 }, density: 1.5 };
-  assert.ok(estimateWork(slow.box, slow.density, slow.strokes) > QUICK_WORK);
+  // The fastest of five runs is the build's cost without a GC pause or a busy neighbor.
+  assert.ok(ms < 2.5 * QUICK_WORK / 1e6, `${ms}ms for a ${side}x${side} layer called light`);
 });
 
 test('buildLayer refuses a density that makes more than MAX_CANVAS_PX', () => {
