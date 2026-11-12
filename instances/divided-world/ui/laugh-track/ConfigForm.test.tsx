@@ -131,9 +131,11 @@ describe('Laugh Track\'s play form', () => {
     const { onChange } = form({ cues: [{ phrase: 'mario', sound: 'laugh' }, { phrase: 'luigi', sound: 'laugh' }, { phrase: 'again', sound: 'laugh' }] });
     fireEvent.focus(phrase(3));
     fireEvent.click(screen.getByRole('button', { name: 'Remove cue 3' }));
+    copy().focus();
     select('Luigi waved');
     expect(onChange).toHaveBeenLastCalledWith({ cues: [{ phrase: 'mario', sound: 'laugh' }, { phrase: 'Luigi waved', sound: 'laugh' }] });
     fireEvent.click(screen.getByRole('button', { name: 'Remove cue 1' }));
+    copy().focus();
     select('waved at');
     expect(onChange).toHaveBeenLastCalledWith({ cues: [{ phrase: 'waved at', sound: 'laugh' }] });
   });
