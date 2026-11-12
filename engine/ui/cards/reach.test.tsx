@@ -122,7 +122,7 @@ describe('a character card armed', () => {
     await open(w);
     const user = userEvent.setup();
     await user.click(await screen.findByRole('button', { name: /^Hand, \d postcards?/u }));
-    await user.click(within(screen.getByRole('region', { name: 'Your hand' })).getAllByRole('button', { name: /^Sparkle, Pepperoni, Cast, uncommon postcard/u })[0]!);
+    await user.click(within(screen.getByRole('dialog', { name: 'Your hand' })).getAllByRole('button', { name: /^Sparkle, Pepperoni, Cast, uncommon postcard/u })[0]!);
     const ghost = (seq: number) => within(postbit(seq)).queryByRole('button', { name: /^Play Sparkle on /u });
     await waitFor(() => expect(ghost(1)).not.toBeNull());
     expect(ghost(1)).toHaveAccessibleName('Play Sparkle on Spritey');
@@ -148,7 +148,7 @@ describe('a thread card armed', () => {
     await open(w);
     const user = userEvent.setup();
     await user.click(await screen.findByRole('button', { name: /^Hand, \d postcards?/u }));
-    await user.click(within(screen.getByRole('region', { name: 'Your hand' })).getAllByRole('button', { name: /^Beacon, Pepperoni, Cast, rare postcard/u })[0]!);
+    await user.click(within(screen.getByRole('dialog', { name: 'Your hand' })).getAllByRole('button', { name: /^Beacon, Pepperoni, Cast, rare postcard/u })[0]!);
     const head = document.querySelector('.kb-thread-head') as HTMLElement;
     const ghost = await within(head).findByRole('button', { name: 'Play Beacon on “Glitter everywhere”' });
     for (const seq of [1, 2, 3, 4, 5]) expect(within(post(seq)).queryByRole('button', { name: /^Play Beacon/u })).toBeNull();
@@ -221,7 +221,7 @@ describe('a use card armed on a thread or a board', () => {
     await screen.findByRole('article', { name: /^Post 1 /u });
     const user = userEvent.setup();
     await user.click(await screen.findByRole('button', { name: /^Hand, \d postcards?/u }));
-    await user.click(within(screen.getByRole('region', { name: 'Your hand' })).getAllByRole('button', { name: /^Vibes, .*postcard/u })[0]!);
+    await user.click(within(screen.getByRole('dialog', { name: 'Your hand' })).getAllByRole('button', { name: /^Vibes, .*postcard/u })[0]!);
     return document.querySelector('.kb-thread-head') as HTMLElement;
   }
 
@@ -236,7 +236,7 @@ describe('a use card armed on a thread or a board', () => {
     renderIn(w.fake, <Frame><LoadedBoard slug="general" /></Frame>, { path: '/b/general', instance, cards });
     const user = userEvent.setup();
     await user.click(await screen.findByRole('button', { name: /^Hand, \d postcards?/u }));
-    await user.click(within(screen.getByRole('region', { name: 'Your hand' })).getAllByRole('button', { name: /^Vibes, .*postcard/u })[0]!);
+    await user.click(within(screen.getByRole('dialog', { name: 'Your hand' })).getAllByRole('button', { name: /^Vibes, .*postcard/u })[0]!);
     await new Promise((r) => setTimeout(r, 50));
     expect(screen.queryByRole('button', { name: /^Use Vibes/u })).toBeNull();
   });

@@ -99,6 +99,18 @@ import { mooch } from '../cards/mooch.ts';
 import { toll } from '../cards/toll.ts';
 import { fourDChess } from '../cards/4d-chess.ts';
 import { offDay } from '../cards/off-day.ts';
+import sugarCoatCanvas from './cards/sugar-coat/art.webp?url';
+import sugarCoatMark from './cards/sugar-coat/mark.svg?url';
+import sugarCoatArt from './cards/sugar-coat/art.json';
+import hypeUpCanvas from './cards/hype-up/art.webp?url';
+import hypeUpMark from './cards/hype-up/mark.svg?url';
+import hypeUpArt from './cards/hype-up/art.json';
+import lastWordCanvas from './cards/last-word/art.webp?url';
+import lastWordMark from './cards/last-word/mark.svg?url';
+import lastWordArt from './cards/last-word/art.json';
+import { sugarCoat } from '../cards/sugar-coat.ts';
+import { hypeUp } from '../cards/hype-up.ts';
+import { lastWord } from '../cards/last-word.ts';
 import { classes } from '../classes/index.ts';
 import { quadrantLabels } from './quadrant-labels.ts';
 import { shareWords } from '../../../engine/ui/copy-words.ts';
@@ -300,6 +312,23 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
    * The Gimmicks of the card types design (docs/plans/2026-11-11-card-types-design.md, section 8). Their art is placeholder, in each card's flavor's color.
    */
   {
+    key: 'sugar-coat',
+    art: { color: '#2ee6ff', ink: '#03141a', canvas: sugarCoatCanvas, mark: sugarCoatMark, credit: sugarCoatArt.credit, tagline: 'Only Sweet cards land on your post.' },
+    summary: `Used on your post. Turns away Salty and Pepperoni cards for ${spanWords(sugarCoat.lasts!)}.`,
+    status: 'Turning away Salty and Pepperoni cards',
+    describe: (settings: Settings) =>
+      `A Sweet card, ${sugarCoat.rarity}, used on one of your own posts. For ${spanWords(sugarCoat.lasts!)}, every Salty or Pepperoni card cast there is turned away before it lands, whatever its rarity, and its caster is told so; a Sweet card lands as usual. It does not stop a card from being set face down there. It costs nothing more to use.`,
+  },
+  {
+    key: 'last-word',
+    art: { color: '#ff3d7f', ink: '#14030a', canvas: lastWordCanvas, mark: lastWordMark, credit: lastWordArt.credit, tagline: 'Stop quotes of your post.' },
+    summary: `Used on your post. Nobody can quote it for ${spanWords(lastWord.lasts!)}.`,
+    status: 'Stopping quotes of this post',
+    describe: (settings: Settings) =>
+      `A Salty card, ${lastWord.rarity}, used on one of your own posts. For ${spanWords(lastWord.lasts!)}, a post that quotes it is refused before it is written, for everyone alike, you included; a reply without the quote always goes through. Quotes made before it was played stay as they are. It cannot share a post with a card set face down: take that card back first, and no card can be set face down there until it ends. It costs nothing more to use.`,
+    logPlay: () => 'Nobody can quote that post until it ends.',
+  },
+  {
     key: 'publicity-tour',
     art: { color: '#2ee6ff', ink: '#03141a', canvas: publicityTourCanvas, mark: publicityTourMark, credit: publicityTourArt.credit, tagline: 'Earn more from positive reactions.' },
     summary: `Used on your own character. For ${spanWords(publicityTour.lasts!)}, what it earns from positive reactions is ${earnBy(publicityTour)} higher. A loss is never made worse.`,
@@ -307,6 +336,15 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
     describe: (settings: Settings) =>
       `A Sweet card, ${publicityTour.rarity}, used on your own character, the one playing it. For ${spanWords(publicityTour.lasts!)}, whatever that character earns from a positive reaction (excited or calm) to its posts is ${earnBy(publicityTour)} higher, and then it stops by itself. It never makes a loss worse. It costs nothing more to use.`,
     logPlay: () => `What that character earns from positive reactions is ${earnBy(publicityTour)} higher until it ends.`,
+  },
+  {
+    key: 'hype-up',
+    art: { color: '#2ee6ff', ink: '#03141a', canvas: hypeUpCanvas, mark: hypeUpMark, credit: hypeUpArt.credit, tagline: 'Give a character a push.' },
+    summary: `Cast on a character. For ${spanWords(hypeUp.lasts!)}, what it earns from positive reactions is ${earnBy(hypeUp)} higher. A loss is never made worse.`,
+    status: 'Earns more from positive reactions',
+    describe: (settings: Settings) =>
+      `A Sweet card, ${hypeUp.rarity}, cast from any post by the character it lands on. For ${spanWords(hypeUp.lasts!)}, whatever that character earns from a positive reaction (excited or calm) to its posts is ${earnBy(hypeUp)} higher, and then it stops by itself. It never makes a loss worse, and it takes nothing from you. It does not add to that character's own Publicity Tour: while both are up, the larger of the two applies. A Mod Bot earns nothing, so it gains nothing from one. ${setMoveWords("the quoting post's character")} It costs nothing more to play.`,
+    logPlay: () => `What that character earns from positive reactions is ${earnBy(hypeUp)} higher until it ends.`,
   },
   {
     key: 'heat-magnet',

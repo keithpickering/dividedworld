@@ -3976,3 +3976,94 @@ describe('the log\'s scored-as rows (card notes, Part 6, Task 6)', () => {
     expect(cutLog({ ...full, ledger: [{ settlement: 2, startsAt: rows[1]!.startsAt, endsAt: rows[1]!.endsAt, sharesKept: true, character: 'c1', reason: 'r', amount: 1 }, { settlement: 2, startsAt: rows[1]!.startsAt, endsAt: rows[1]!.endsAt, sharesKept: true, character: 'c2', reason: 'r', amount: 1 }] }, 2).scoredAs).toEqual([rows[0]]);
   });
 });
+
+/* No quote and a cast earn (card notes part 4, Tasks 3 and 4), as the fake mirrors them; the cards are this test's own. */
+describe('a no-quote on a post, and a cast card that carries an earn', () => {
+  const ok = <T,>(value: T) => ({ ok: true as const, value });
+  const base = { playPrice: () => 0, validateConfig: (c: unknown) => ok(c ?? {}), canApply: () => ok(undefined) };
+  const hush = { ...base, key: 'hush', name: 'Hush', alignment: 'sweet' as const, rarity: 'uncommon' as const, play: 'use' as const, gimmick: { kind: 'noQuote' as const }, reaches: ['post' as const], lasts: { unit: 'day' as const, count: 1 } };
+  const move = { ...base, key: 'move', name: 'Move', alignment: 'salty' as const, rarity: 'common' as const, play: 'set' as const, trap: { trigger: { on: 'cast' as const } } };
+  const glow = {
+    ...base, key: 'glow', name: 'Glow', alignment: 'sweet' as const, rarity: 'uncommon' as const, reaches: ['character' as const], gimmick: { kind: 'earn' as const, by: 0.1 }, lasts: { unit: 'day' as const, count: 3 },
+    canApply: (t: CardTarget, e: readonly CardEffect[], _config?: unknown, now?: Date) => landsOn({ key: 'glow', reaches: ['character'] }, t, e, now),
+  };
+  const items = [hush, move, glow].map((c) => ({ item: { card: c.key }, availability: 'onSale' as const, price: 100 }));
+  /* On the wall clock: a card's own rules (quoteStop, landsOn) read the time as the server does. */
+  function setup() {
+    const fake = createFake({ instance: { ...instance, cards: [hush, move, glow], machine: items, settings: { ...settings, economy: {}, postMaxLength: 2000 } }, now: () => Date.now() });
+    const ana = fake.seed.account('ana');
+    const bo = fake.seed.account('bo');
+    const anaFace = fake.seed.character(ana, 'Ana Face', 'face');
+    const boFace = fake.seed.character(bo, 'Bo Face', 'face');
+    const { thread, act: opener } = fake.seed.thread('general', anaFace, 'Hello', 'First post');
+    fake.seed.wallet(ana, 500);
+    fake.seed.cards(ana, { hush: 2, move: 2, glow: 2 });
+    fake.signInAs(ana);
+    return { fake, ana, bo, anaFace, boFace, thread, opener };
+  }
+  const words = (seq: number | null) => `${seq === null ? 'a post in another thread' : `post ${seq}`} carries Hush, so it cannot be quoted until`;
+
+  test('a quote of a stopped post is refused in the words of noQuoteWords, and the plain reply is written', async () => {
+    const { fake, bo, boFace, thread, opener, anaFace } = setup();
+    must(await fake.useCard('hush', anaFace, opener, {}, ''));
+    fake.signInAs(bo);
+    const via = await fake.post(thread, boFace, `Replying.`, opener);
+    expect(via).toMatchObject({ ok: false });
+    expect((via as Refusal).error).toContain(words(1));
+    expect((via as Refusal).error).toMatch(/; take that quote out and send again$/);
+    const inBody = await fake.post(thread, boFace, `[quote=${opener}]yes[/quote] no`, null);
+    expect((inBody as Refusal).error).toContain(words(1));
+    expect(must(await fake.post(thread, boFace, `Replying.`, null)).kind).toBe('post');
+    /* A thread started or spun with the quote in its words is refused too, and a spin from the stopped post is not. */
+    expect((await fake.startThread('general', boFace, 'New', `[quote=${opener}]x[/quote]`) as Refusal).error).toContain('a post in another thread');
+    expect((await fake.spin(opener, boFace, 'Spun', `[quote=${opener}]x[/quote]`) as Refusal).error).toContain('a post in another thread');
+    expect(must(await fake.spin(opener, boFace, 'Spun', `Plain.`)).act.kind).toBe('spin');
+  });
+
+  test('the post\'s own author is refused the same way, a quote inside code is no quote, and an ended play stops nothing', async () => {
+    const { fake, thread, opener, anaFace } = setup();
+    must(await fake.useCard('hush', anaFace, opener, {}, ''));
+    expect(((await fake.post(thread, anaFace, `Me.`, opener)) as Refusal).error).toContain(words(1));
+    expect(must(await fake.post(thread, anaFace, `[code][quote=${opener}]x[/quote][/code]`, null)).kind).toBe('post');
+    fake.clock.advance(2 * 86_400_000);
+    expect(must(await fake.post(thread, anaFace, `Me again.`, opener)).kind).toBe('post');
+  });
+
+  test('an edit that adds the quote is refused; one that keeps a quote the post already held is written', async () => {
+    const { fake, thread, opener, anaFace } = setup();
+    const held = must(await fake.post(thread, anaFace, `[quote=${opener}]x[/quote] first`, null));
+    must(await fake.useCard('hush', anaFace, opener, {}, ''));
+    expect(must(await fake.edit(held.id, anaFace, `[quote=${opener}]x[/quote] changed words`)).kind).toBe('post');
+    const plain = must(await fake.post(thread, anaFace, `No quote yet.`, null));
+    const refusedEdit = await fake.edit(plain.id, anaFace, `[quote=${opener}]x[/quote] now`);
+    expect((refusedEdit as Refusal).error).toContain(words(1));
+    /* An edit compares against the post's current body: once an edit drops the quote, one that puts it back adds it. */
+    expect(must(await fake.edit(held.id, anaFace, `Dropped the quote.`)).kind).toBe('post');
+    const readded = await fake.edit(held.id, anaFace, `[quote=${opener}]x[/quote] back again`);
+    expect((readded as Refusal).error).toContain(words(1));
+  });
+
+  test('a no-quote card is refused on a post with a live back, and a set is refused on a stopped post', async () => {
+    const { fake, anaFace, thread, opener } = setup();
+    const back = must(await fake.setCard('move', anaFace, opener, {}));
+    expect(await fake.useCard('hush', anaFace, opener, {}, '')).toEqual(refused('Hush stops quotes, and this post holds a card face down; take that card back first', 'config'));
+    must(await fake.takeBack(anaFace, back.id));
+    must(await fake.useCard('hush', anaFace, opener, {}, ''));
+    const second = must(await fake.post(thread, anaFace, `Another.`, null));
+    must(await fake.useCard('hush', anaFace, second.id, {}, ''));
+    const set = await fake.setCard('move', anaFace, opener, {});
+    expect(set).toMatchObject({ ok: false });
+    expect((set as Refusal).error).toMatch(/^this post's Hush stops quotes until .+, so no card is set face down here until then$/);
+  });
+
+  test('a cast card that carries an earn lands on another account\'s character and shows among that character\'s effects', async () => {
+    const { fake, boFace, thread, anaFace } = setup();
+    const theirs = fake.seed.post(thread, boFace, 'Bo here.');
+    const board = (await fake.thread(thread))!.board;
+    const played = must(await fake.playCard('glow', anaFace, boFace, {}, '', 'character', theirs));
+    expect(played).toMatchObject({ kind: 'card', payload: { card: 'glow', reach: 'character', character: boFace } });
+    expect(typeof played.payload.ends).toBe('string');
+    expect((await fake.effectsAbove([boFace], thread, board)).map((e) => [e.play, e.target])).toEqual([[played.id, boFace]]);
+    expect(await fake.playCard('glow', anaFace, boFace, {}, '', 'character', theirs)).toEqual(refused('this character already carries that card', 'config'));
+  });
+});
