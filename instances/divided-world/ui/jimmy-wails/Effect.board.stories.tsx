@@ -4,6 +4,8 @@
  * Storybook and the story route look; the card's screens are in cards/jimmy-wails/.)
  *
  * - `blue-short`, `blue-long`, `close-short`, `close-long`, `dark-short`, `dark-long`: one plate each, with a short appeal and with one of 200 characters.
+ * - `black-short`, `gray-short`, `away-short`, `away-long`, `red-short`, `red-long`, `full-short`, `pinstripe-short`, `pinstripe-long`: the six later plates;
+ *   the ones whose words sit on the picture's own ground have the 200-character appeal too.
  * - `three`: a drive of three appeals, one on each plate, at its first banner; press Next, or a dot, to see another. With `reduced` the rotation is
  *   off and the swap has no fade.
  * - `wall`: three appeals and 26 gifts, so the wall holds its latest 20 and says "and 6 more".
@@ -22,8 +24,9 @@ import { useKayfa } from '../../../../engine/ui/context.tsx';
 import type { Fake } from '../../../../engine/ui/data/fake.ts';
 import { useLocation } from '../../../../engine/ui/router.tsx';
 import { LoadedThread } from '../../../../engine/ui/loaded.tsx';
+import { PLATES } from './plates.ts';
 
-type Case = 'blue-short' | 'blue-long' | 'close-short' | 'close-long' | 'dark-short' | 'dark-long' | 'three' | 'wall' | 'closed' | 'earlier' | 'origin' | 'short';
+type Case = 'black-short' | 'gray-short' | 'away-short' | 'away-long' | 'red-short' | 'red-long' | 'full-short' | 'pinstripe-short' | 'pinstripe-long' | 'blue-short' | 'blue-long' | 'close-short' | 'close-long' | 'dark-short' | 'dark-long' | 'three' | 'wall' | 'closed' | 'earlier' | 'origin' | 'short';
 
 interface Args {
   readonly shown: Case;
@@ -36,13 +39,19 @@ const SHORT = ['Please, a few Aura keep the Mushroom Kingdom online.', 'The Thwo
 /** Exactly 200 characters. */
 const LONG = 'Every year I ask, and every year the Mushroom Kingdom answers with a polite silence. This year I only need enough Aura to keep the lights on, the pipes warm and the Goombas fed, so, please, read this.';
 const DONORS = ['Gloomba', 'Spritey', 'Toadette', 'Mrs. Hooligan', 'Wiggler', 'Koopa Kid', 'Blooper', 'Lakitu Jr.', 'Bob-omb', 'Thwomp', 'Shy Guy', 'Boo Hoo', 'Pokey', 'Chain Chomp', 'Cheep Cheep', 'Fuzzy', 'Podoboo', 'Rex', 'Dry Bones', 'Monty Mole', 'Birdo', 'Petey', 'Hammer Bro', 'Piranha', 'Amazing Flyin', 'Magikoopa'];
-const PLATE_KEYS = ['blue-shirt', 'close-up', 'dark-logo'] as const;
+/** The pool's keys in its own order (plates.ts), so a case's `plate` is a plate's place in the pool. */
+const PLATE_KEYS = PLATES.map((p) => p.key);
 const DAY = 86_400_000;
 
 const SINGLE: Partial<Record<Case, { readonly plate: number; readonly long: boolean }>> = {
   'blue-short': { plate: 0, long: false }, 'blue-long': { plate: 0, long: true },
   'close-short': { plate: 1, long: false }, 'close-long': { plate: 1, long: true },
   'dark-short': { plate: 2, long: false }, 'dark-long': { plate: 2, long: true },
+  'black-short': { plate: 3, long: false }, 'gray-short': { plate: 4, long: false },
+  'away-short': { plate: 5, long: false }, 'away-long': { plate: 5, long: true },
+  'red-short': { plate: 6, long: false }, 'red-long': { plate: 6, long: true },
+  'full-short': { plate: 7, long: false },
+  'pinstripe-short': { plate: 8, long: false }, 'pinstripe-long': { plate: 8, long: true },
 };
 
 /** What was seeded for a thread of an api, so a story rendered twice (strict mode) seeds once. */
@@ -79,7 +88,7 @@ async function seedCase(fake: Fake, thread: string, shown: Case, instanceClass: 
   let shownThread = thread;
   let wallet = 500;
   if (single) {
-    play(single.plate, single.long ? LONG : SHORT[single.plate]!);
+    play(single.plate, single.long ? LONG : SHORT[single.plate % SHORT.length]!);
   } else if (shown === 'three' || shown === 'wall') {
     const first = play(0, SHORT[0]!);
     play(1, SHORT[1]!);
@@ -177,6 +186,43 @@ export const DarkLongLight: Story = { args: { shown: 'dark-long', mode: 'light' 
 export const DarkLongDark: Story = { args: { shown: 'dark-long', mode: 'dark' } };
 export const DarkLongPhone: Story = { args: { shown: 'dark-long', mode: 'light' }, ...phone };
 export const DarkLongPhoneDark: Story = { args: { shown: 'dark-long', mode: 'dark' }, ...phone };
+
+export const BlackShortLight: Story = { args: { shown: 'black-short', mode: 'light' } };
+export const BlackShortDark: Story = { args: { shown: 'black-short', mode: 'dark' } };
+export const BlackShortPhone: Story = { args: { shown: 'black-short', mode: 'light' }, ...phone };
+export const BlackShortPhoneDark: Story = { args: { shown: 'black-short', mode: 'dark' }, ...phone };
+export const GrayShortLight: Story = { args: { shown: 'gray-short', mode: 'light' } };
+export const GrayShortDark: Story = { args: { shown: 'gray-short', mode: 'dark' } };
+export const GrayShortPhone: Story = { args: { shown: 'gray-short', mode: 'light' }, ...phone };
+export const GrayShortPhoneDark: Story = { args: { shown: 'gray-short', mode: 'dark' }, ...phone };
+export const AwayShortLight: Story = { args: { shown: 'away-short', mode: 'light' } };
+export const AwayShortDark: Story = { args: { shown: 'away-short', mode: 'dark' } };
+export const AwayShortPhone: Story = { args: { shown: 'away-short', mode: 'light' }, ...phone };
+export const AwayShortPhoneDark: Story = { args: { shown: 'away-short', mode: 'dark' }, ...phone };
+export const AwayLongLight: Story = { args: { shown: 'away-long', mode: 'light' } };
+export const AwayLongDark: Story = { args: { shown: 'away-long', mode: 'dark' } };
+export const AwayLongPhone: Story = { args: { shown: 'away-long', mode: 'light' }, ...phone };
+export const AwayLongPhoneDark: Story = { args: { shown: 'away-long', mode: 'dark' }, ...phone };
+export const RedShortLight: Story = { args: { shown: 'red-short', mode: 'light' } };
+export const RedShortDark: Story = { args: { shown: 'red-short', mode: 'dark' } };
+export const RedShortPhone: Story = { args: { shown: 'red-short', mode: 'light' }, ...phone };
+export const RedShortPhoneDark: Story = { args: { shown: 'red-short', mode: 'dark' }, ...phone };
+export const RedLongLight: Story = { args: { shown: 'red-long', mode: 'light' } };
+export const RedLongDark: Story = { args: { shown: 'red-long', mode: 'dark' } };
+export const RedLongPhone: Story = { args: { shown: 'red-long', mode: 'light' }, ...phone };
+export const RedLongPhoneDark: Story = { args: { shown: 'red-long', mode: 'dark' }, ...phone };
+export const FullShortLight: Story = { args: { shown: 'full-short', mode: 'light' } };
+export const FullShortDark: Story = { args: { shown: 'full-short', mode: 'dark' } };
+export const FullShortPhone: Story = { args: { shown: 'full-short', mode: 'light' }, ...phone };
+export const FullShortPhoneDark: Story = { args: { shown: 'full-short', mode: 'dark' }, ...phone };
+export const PinstripeShortLight: Story = { args: { shown: 'pinstripe-short', mode: 'light' } };
+export const PinstripeShortDark: Story = { args: { shown: 'pinstripe-short', mode: 'dark' } };
+export const PinstripeShortPhone: Story = { args: { shown: 'pinstripe-short', mode: 'light' }, ...phone };
+export const PinstripeShortPhoneDark: Story = { args: { shown: 'pinstripe-short', mode: 'dark' }, ...phone };
+export const PinstripeLongLight: Story = { args: { shown: 'pinstripe-long', mode: 'light' } };
+export const PinstripeLongDark: Story = { args: { shown: 'pinstripe-long', mode: 'dark' } };
+export const PinstripeLongPhone: Story = { args: { shown: 'pinstripe-long', mode: 'light' }, ...phone };
+export const PinstripeLongPhoneDark: Story = { args: { shown: 'pinstripe-long', mode: 'dark' }, ...phone };
 
 export const ThreeLight: Story = { args: { shown: 'three', mode: 'light' } };
 export const ThreeDark: Story = { args: { shown: 'three', mode: 'dark' } };
