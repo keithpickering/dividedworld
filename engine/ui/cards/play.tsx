@@ -37,7 +37,7 @@ import { plainRefusal } from './faces.ts';
 import type { Plays } from './plays.ts';
 import type { PronounSet } from '../../rules/pronouns.ts';
 import type { BeyondPost, EffectsAbove } from '../../rules/cards.ts';
-import { motionReduced } from '../appearance.ts';
+import { bringClear } from './clear.ts';
 import { Layers } from '../glass/layer.tsx';
 import { PREPARED_FAILED, usePrepared } from '../glass/prepared.ts';
 
@@ -117,21 +117,6 @@ export interface Composing {
 /** Where focus goes when a compose is left: the post's ghost mark, or the post itself once that mark is gone. */
 const focusTarget = (seq: number | null): HTMLElement | null => (seq === null ? null : document.querySelector<HTMLElement>(`#post-${seq} .kb-ghost-mark`) ?? document.getElementById(`post-${seq}`));
 const focusPost = (seq: number | null): void => { setTimeout(() => focusTarget(seq)?.focus(), 0); };
-
-/**
- * The post's body is brought to the top of the screen when its top is not on it, so the drawing has room under it. The sticky menu bar is accounted
- * for the way the thread's own jumps account for it (Thread.tsx's scrollIntoView): `scroll-padding-top` on the root (glass/shell.css, from the bar's
- * measured height) holds the scroll clear of it, so none is added here; the same value is what "on screen" starts below.
- */
-function bringIntoView(seq: number | null): void {
-  if (seq === null) return;
-  const body = document.querySelector<HTMLElement>(`#post-${seq} .kb-act-main`);
-  if (!body || typeof body.scrollIntoView !== 'function') return;
-  const bar = parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop);
-  const top = body.getBoundingClientRect().top;
-  if (top >= (Number.isFinite(bar) ? bar : 0) && top < window.innerHeight) return;
-  body.scrollIntoView({ block: 'start', behavior: motionReduced() ? 'auto' : 'smooth' });
-}
 
 /** What a trigger reads for: the card and the target's own id. */
 const askOf = (card: string, target: PlayTarget): string => `${card}:${target.reach ? target.reach.target : target.post?.id ?? ''}`;
@@ -255,7 +240,6 @@ export function PlayProvider({ children }: { readonly children: ReactNode }) {
       endCompose(false);
       setComposeHeld({ card, target, for: accountNow.current });
       setSaid(`${nameOf(card)} is open on ${target.author}'s post #${target.post?.seq ?? ''}. Esc leaves it.`);
-      bringIntoView(target.post?.seq ?? null);
     };
     if (same) leave(open); else open();
   }, [setHandOpen, endCompose, leave, nameOf, setSaid]);
@@ -303,6 +287,22 @@ export function PlayProvider({ children }: { readonly children: ReactNode }) {
     void run.then(done, done);
     return run;
   }, [api, endCompose, nameOf, setArmed, setSaid]);
+  /*
+   * The post's body is brought clear of what covers the window's edges (the sticky bar, the HUD and the dock a card's screen sets at the foot) when a compose
+   * opens, so the drawing has room. It is measured here, after the commit that mounted the card's `Compose` and after its layout effects set the root's scroll
+   * padding, and one frame later still so a dock's measured height is in place: measured inside `openCompose` it would run before any of that and see no padding.
+   * Keyed on the compose's card and post, so it runs once per compose, not on each render, and the compose ending runs nothing.
+   */
+  const composeKey = compose === null ? null : `${compose.card}:${compose.target.post?.id ?? ''}`;
+  const composeSeq = compose?.target.post?.seq ?? null;
+  useEffect(() => {
+    if (composeKey === null || composeSeq === null) return undefined;
+    const frame = requestAnimationFrame(() => {
+      const body = document.querySelector<HTMLElement>(`#post-${composeSeq} .kb-act-main`);
+      if (body) bringClear(body);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [composeKey, composeSeq]);
   /* Esc leaves a compose before anything else answers it (the armed card's own Esc, a Lens): captured at the window so it comes first. */
   const open = compose !== null;
   useEffect(() => {

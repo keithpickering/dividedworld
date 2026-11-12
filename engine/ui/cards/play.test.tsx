@@ -1254,8 +1254,27 @@ describe('a card that is played on the post (CardUi.Compose)', () => {
 
   describe('opening a compose brings the post into view', () => {
     const body = (seq: number) => post(seq).querySelector<HTMLElement>('.kb-act-main')!;
-    const topAt = (seq: number, top: number) => { body(seq).getBoundingClientRect = () => ({ top, bottom: top + 200, left: 0, right: 300, width: 300, height: 200, x: 0, y: top, toJSON: () => ({}) }); };
-    afterEach(() => { document.documentElement.removeAttribute('data-kb-motion'); });
+    const boxAt = (seq: number, top: number, height = 200) => { body(seq).getBoundingClientRect = () => ({ top, bottom: top + height, left: 0, right: 300, width: 300, height, x: 0, y: top, toJSON: () => ({}) }); };
+    const topAt = (seq: number, top: number) => boxAt(seq, top);
+    /* The measure waits a frame, for the card's own screen to have mounted and set its scroll padding. */
+    const frame = () => act(async () => { await new Promise((done) => requestAnimationFrame(() => done(null))); });
+    const open = async (user: ReturnType<typeof userEvent.setup>, seq = 2) => {
+      await armTagger(user);
+      await user.click(within(post(seq)).getByRole('button', { name: `Play Tagger on post ${seq}` }));
+      await screen.findByTestId('compose');
+      await frame();
+    };
+    beforeEach(() => {
+      vi.stubGlobal('innerHeight', 800);
+      document.documentElement.style.scrollPaddingTop = '60px';
+      document.documentElement.style.scrollPaddingBottom = '400px';
+    });
+    afterEach(() => {
+      vi.unstubAllGlobals();
+      document.documentElement.removeAttribute('data-kb-motion');
+      document.documentElement.style.removeProperty('scroll-padding-top');
+      document.documentElement.style.removeProperty('scroll-padding-bottom');
+    });
 
     test('a post whose top is off screen is scrolled to, smoothly', async () => {
       const user = userEvent.setup();
@@ -1263,9 +1282,7 @@ describe('a card that is played on the post (CardUi.Compose)', () => {
       const scroll = vi.fn();
       body(2).scrollIntoView = scroll;
       topAt(2, -400);
-      await armTagger(user);
-      await user.click(within(post(2)).getByRole('button', { name: 'Play Tagger on post 2' }));
-      await screen.findByTestId('compose');
+      await open(user);
       expect(scroll).toHaveBeenCalledWith({ block: 'start', behavior: 'smooth' });
     });
 
@@ -1276,22 +1293,55 @@ describe('a card that is played on the post (CardUi.Compose)', () => {
       const scroll = vi.fn();
       body(2).scrollIntoView = scroll;
       topAt(2, -400);
-      await armTagger(user);
-      await user.click(within(post(2)).getByRole('button', { name: 'Play Tagger on post 2' }));
-      await screen.findByTestId('compose');
+      await open(user);
       expect(scroll).toHaveBeenCalledWith({ block: 'start', behavior: 'auto' });
     });
 
-    test('a post whose top is in view is not scrolled', async () => {
+    test('a post wholly inside the clear area is not scrolled', async () => {
       const user = userEvent.setup();
       await onPost();
       const scroll = vi.fn();
       body(2).scrollIntoView = scroll;
-      topAt(2, 120);
+      boxAt(2, 120, 200);
+      await open(user);
+      expect(scroll).not.toHaveBeenCalled();
+    });
+
+    test('a post whose top is on screen but whose bottom is behind the dock is scrolled to the top of the clear area', async () => {
+      const user = userEvent.setup();
+      await onPost();
+      const scroll = vi.fn();
+      body(2).scrollIntoView = scroll;
+      boxAt(2, 300, 300);
+      await open(user);
+      expect(scroll).toHaveBeenCalledWith({ block: 'start', behavior: 'smooth' });
+    });
+
+    test('a post taller than the clear area whose top is already at its top is not scrolled again', async () => {
+      const user = userEvent.setup();
+      await onPost();
+      const scroll = vi.fn();
+      body(2).scrollIntoView = scroll;
+      boxAt(2, 60, 900);
+      await open(user);
+      expect(scroll).not.toHaveBeenCalled();
+    });
+
+    test('the measure is made after the card has set the scroll padding, and only once for one compose', async () => {
+      const user = userEvent.setup();
+      await onPost();
+      const scroll = vi.fn();
+      body(2).scrollIntoView = scroll;
+      boxAt(2, 300, 300);
       await armTagger(user);
       await user.click(within(post(2)).getByRole('button', { name: 'Play Tagger on post 2' }));
       await screen.findByTestId('compose');
-      expect(scroll).not.toHaveBeenCalled();
+      await frame();
+      expect(scroll).toHaveBeenCalledTimes(1);
+      await frame();
+      await user.keyboard('{Escape}');
+      await frame();
+      expect(scroll).toHaveBeenCalledTimes(1);
     });
   });
 });

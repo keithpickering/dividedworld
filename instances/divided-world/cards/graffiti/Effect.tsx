@@ -30,6 +30,7 @@
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { motionReduced } from '../../../../engine/ui/appearance.ts';
+import { bringClear } from '../../../../engine/ui/cards/clear.ts';
 import { LOST_ANSWER, type Answer, type SurfaceAct } from '../../../../engine/ui/data/api.ts';
 import { usePlayer } from '../../../../engine/ui/player.tsx';
 import type { CardView, EffectProps, KitControl } from '../../../../engine/ui/cards/types.ts';
@@ -152,6 +153,18 @@ export function Effect({ plays, reader, surface, ink: registry, place, show, met
   }, [drawing]);
 
   const bleed = place === 'thread';
+  /* Draw mode mounts the toolbar's dock over the window's foot, which can cover the post being drawn on, as a compose opened on a post does (the engine's play.tsx):
+     the post's body is brought clear once the dock is mounted and has set the root's scroll padding (its layout effect, then a frame for its measured height).
+     Keyed on `drawing` opening alone, so no render and no close scrolls. */
+  useEffect(() => {
+    if (!drawing) return undefined;
+    const frame = requestAnimationFrame(() => {
+      const f = frameRef.current;
+      const body = f ? (bleed ? f.closest<HTMLElement>('.kb-act-main') : null) ?? f : null;
+      if (body) bringClear(body);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [drawing, bleed]);
   const rootRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<HTMLDivElement>(null);
   const tileRef = useRef<HTMLButtonElement>(null);
