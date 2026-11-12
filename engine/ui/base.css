@@ -103,6 +103,16 @@ h1 {
   border: 0;
 }
 
+/* Glitter that landed on the page, drawn on tiles (docs/plans/2026-11-11-shake-design.md section 5; engine/ui/shine/landing.ts places
+   each tile at its own corner of the document). They lie at the bottom of the page's stacking order, under the frame and the posts, so
+   they show only where the page's own ground does: `html` paints none and the body's ground propagates to the canvas. A post cell's tiles
+   are placed by thread.css. */
+canvas[data-kb-landing='page'] {
+  position: absolute;
+  z-index: -1;
+  pointer-events: none;
+}
+
 /* The page: a column with the HUD's height kept clear at its foot. */
 .kb-page {
   box-sizing: border-box;
