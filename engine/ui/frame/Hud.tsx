@@ -41,8 +41,8 @@
  * transparent div between the board and the cards, or on the HUD's own faded parts, which are inert and sit above it: either closes the hand on the press, and the click
  * that ends the press is swallowed, since by then the backdrop is gone and the click would land on
  * whatever lay beneath it, a link or a post's button the player only meant to dismiss the hand from.
- * Arming a card closes the hand, as on the phone, and leaves the armed card's postcard standing over
- * the hand button (the peek), so the player can see what is in hand while they pick a post; pressing
+ * Arming a card closes the hand, as on the phone, and leaves the armed card's postcard peeking from behind
+ * the HUD above the hand button (the peek: its top 90px and its tag above the seam), so the player can see what is in hand while they pick a post; pressing
  * the armed card in the hand puts it back and leaves the hand open.
  *
  * The swap is named "Swap mask" on the Main board's layout and "Posting as" on the Phone board's.

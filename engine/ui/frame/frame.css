@@ -1271,14 +1271,15 @@ button.kb-hud-secret:focus-visible {
 /*
  * The peek: while a card is armed and the hand is closed, the armed card's postcard stands over the hand button, upright,
  * its top 90px above the HUD's seam, with the armed tag. It is the drawer's own box (same grid, height and zoom), so the
- * card stands over the hand button at any width, and it takes no press.
+ * card is placed over the hand button's column at any width but stands behind the HUD (z-index under the HUD's 30), so only its top 90px
+ * and its tag show above the seam and the HUD's own words stay on top; it takes no press.
  */
 .kb-hand-peek {
   position: fixed;
   left: 0;
   right: 0;
   bottom: 0;
-  z-index: 31;
+  z-index: 29;
   box-sizing: border-box;
   max-width: 1440px;
   height: max(13.25rem, calc(var(--kb-hud-measured, 0px) / var(--kb-board-scale, 1)));
@@ -1304,7 +1305,8 @@ button.kb-hud-secret:focus-visible {
 .kb-hand-armed {
   position: absolute;
   z-index: 9;
-  left: -56px;
+  /* Anchored to the card's right edge, so the plate stays inside the window where the card stands near it. */
+  right: -40px;
   top: -38px;
   padding: 2px 12px;
   background: var(--kb-glass-ground);
@@ -1436,6 +1438,7 @@ button.kb-hud-secret:focus-visible {
 }
 
 :where(:root[data-kb-layout='phone']) .kb-hand-armed {
+  right: auto;
   left: 8px;
   top: -14px;
   font-size: var(--kb-glass-size-phone-small);
