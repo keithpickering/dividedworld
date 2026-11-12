@@ -1,7 +1,7 @@
 """Spike: four pieces of Minus World Gear as renders. Each is seen straight on by an orthographic camera, on a
 transparent ground, since Gear is laid over a portrait.
 
-    python scene.py glasses glasses.png        (also: cigar, mustache-a, mustache-b)
+    python scene.py glasses glasses.png        (also: cigar, mustache-a, mustache-b, hair)
 
 It uses the cards' rig, and needs scipy and shapely beside Blender's Python module."""
 import sys, os, math
@@ -54,7 +54,7 @@ def puff(name, parts, half_w, z0, z1, mat, cells=1100, mirror=True):
     nx = cells; nz = round(cells * (z1 - z0) / (2 * half_w))
     X, Z = np.meshgrid(np.linspace(-half_w, half_w, nx + 1), np.linspace(z0, z1, nz + 1))
     P = np.stack([np.abs(X).ravel() if mirror else X.ravel(), Z.ravel()], 1)
-    H = np.zeros(len(P)); inside = np.zeros(len(P), bool)
+    H = np.zeros(len(P)); inside = np.zeros(len(P), bool); streak = np.zeros(len(P))
     for pts, lift, base, strands in parts:
         q = spine(pts); tan = np.gradient(q[:, :2], axis=0)
         for a in range(0, len(P), 40000):
@@ -63,10 +63,16 @@ def puff(name, parts, half_w, z0, z1, mat, cells=1100, mirror=True):
             r = np.hypot(d[..., 0], d[..., 1]) / q[None, :, 2]
             i = r.argmin(1); k = np.arange(len(p)); rm = r[k, i]
             side = np.sign(tan[i, 0] * d[k, i, 1] - tan[i, 1] * d[k, i, 0])
-            h = base + lift * q[i, 2] * np.sqrt(np.clip(1 - rm ** 2, 0, 1)) * (1 - 0.09 * (0.5 - 0.5 * np.cos(math.tau * strands * rm * side)))
-            hit = rm < 1
-            H[a:a + 40000] = np.where(hit & (h > H[a:a + 40000]), h, H[a:a + 40000]); inside[a:a + 40000] |= hit
-    H = H.reshape(X.shape); inside = inside.reshape(X.shape)
+            wave = 0.5 - 0.5 * np.cos(math.tau * strands * rm * side)
+            h = base + lift * q[i, 2] * np.sqrt(np.clip(1 - rm ** 2, 0, 1)) * (1 - 0.09 * wave)
+            hit = rm < 1; top = hit & (h > H[a:a + 40000])
+            H[a:a + 40000] = np.where(top, h, H[a:a + 40000]); streak[a:a + 40000] = np.where(top, 1 - wave, streak[a:a + 40000]); inside[a:a + 40000] |= hit
+    return field(name, X, Z, H.reshape(X.shape), inside.reshape(X.shape), mat, streak)
+
+
+def field(name, X, Z, H, inside, mat, streak=None):
+    """A height field as a mesh: the cells that touch the shape, raised toward the camera. `streak` (0..1 at each
+    point) is kept on the mesh for a material to color by."""
     keep = inside[:-1, :-1] | inside[1:, :-1] | inside[:-1, 1:] | inside[1:, 1:]
     idx = np.arange(X.size).reshape(X.shape)
     faces = np.stack([idx[:-1, :-1][keep], idx[:-1, 1:][keep], idx[1:, 1:][keep], idx[1:, :-1][keep]], 1)
@@ -79,13 +85,18 @@ def puff(name, parts, half_w, z0, z1, mat, cells=1100, mirror=True):
     me.polygons.foreach_set('loop_total', np.full(len(faces), 4, np.int32))
     me.update(); me.validate()
     me.polygons.foreach_set('use_smooth', np.ones(len(me.polygons), bool))
+    if streak is not None:
+        at = me.attributes.new('streak', 'FLOAT', 'POINT'); at.data.foreach_set('value', streak.ravel()[used].astype(np.float32))
     o = bpy.data.objects.new(name, me); sc.collection.objects.link(o); me.materials.append(mat)
     return o
 
 
-def hair(name, hx):
+def hair(name, hx, light=None):
     m, n, l, b = rig.material(name)
     b.inputs['Base Color'].default_value = (*rig.hexrgb(hx), 1); b.inputs['Roughness'].default_value = 0.38
+    if light:                                        # two colors, by the mesh's streak
+        at = n.new('ShaderNodeAttribute'); at.attribute_name = 'streak'
+        l.new(rig.mix_color(n, l, at.outputs['Fac'], rig.hexrgb(hx), rig.hexrgb(light)), b.inputs['Base Color'])
     b.inputs['Coat Weight'].default_value = 0.35; b.inputs['Coat Roughness'].default_value = 0.2
     return m
 
@@ -103,6 +114,39 @@ def mustache_b():
     tufts = [[(0.75, -0.75, 0.85), (1.0, -0.8, 0.85)], [(2.1, -0.55, 0.72), (2.3, -0.5, 0.7)], [(3.2, -0.2, 0.5), (3.35, -0.1, 0.48)]]
     puff('mustache', [(band, 0.8, 0.3, 2)] + [(t, 0.7, 0.0, 1) for t in tufts], 5.0, -1.9, 1.8, hair('hair', '#463d34'))
     frame(10.0, 3.7, (0, -0.05)); lights()
+
+
+def swoop():
+    """The hair: a combed-over cap whose strands fan from its point, and a lock hanging at each side. It is the piece
+    that wraps a head, with the face showing through the gap."""
+    from scipy.interpolate import splprep, splev
+    from scipy.ndimage import distance_transform_edt, gaussian_filter
+    import shapely
+    from shapely.geometry import Polygon
+    u = lambda px, py: ((px - 322) / 60, (312 - py) / 60)             # the drawing's pixels to the scene's units
+    rim = [u(*p) for p in ((48, 262), (55, 200), (85, 140), (140, 90), (220, 55), (320, 42), (420, 55), (500, 95), (560, 160), (595, 220),
+                           (605, 242), (570, 262), (480, 268), (380, 277), (280, 275), (190, 262), (110, 250))]
+    tck, _ = splprep(np.array(rim + rim[:1]).T, s=0, per=True)
+    cap = Polygon(np.array(splev(np.linspace(0, 1, 400, endpoint=False), tck)).T)
+    half_w, z0, z1, nx = 5.3, 0.3, 4.8, 1200; nz = round(nx * (z1 - z0) / (2 * half_w))
+    X, Z = np.meshgrid(np.linspace(-half_w, half_w, nx + 1), np.linspace(z0, z1, nz + 1))
+    inside = shapely.contains_xy(cap, X, Z)
+    d = distance_transform_edt(inside) * (2 * half_w / nx)            # how far in from the rim
+    fx, fz = u(640, 262)                                               # the strands fan from just past the point
+    r = np.hypot(X - fx, Z - fz); turn = np.arctan2(Z - fz, fx - X) + 0.11 * r
+    phase = turn * 17 + 1.6 * np.sin(turn * 5 + 1)
+    ridge = np.abs(np.sin(phase / 2)) ** 0.6                                                # rounded locks with a sharp parting between them
+    fine = 0.5 + 0.5 * np.cos(turn * 95 + 2 * np.sin(turn * 11))
+    dome = gaussian_filter(1.7 * np.sqrt(1 - (1 - np.clip(d / 2.0, 0, 1)) ** 2), 14)       # smoothed, or the field's ridge shows as a crease
+    H = dome * (0.84 + 0.14 * ridge + 0.02 * fine) + 0.1 * np.sqrt(np.clip(d / 0.1, 0, 1))
+    lock = 0.5 + 0.5 * np.sin(turn * 3.1 + 0.7) * np.sin(r * 0.9 + turn * 4)                # which locks catch the light, and where along them
+    streak = np.clip(ridge ** 2 * (0.15 + 1.0 * lock) * (0.8 + 0.2 * fine), 0, 1)
+    field('cap', X, Z, H * inside, inside, hair('gold', '#e2a04e', '#fae49c'), streak)
+    pale = hair('pale', '#f0c98c', '#fff0d2')
+    for k, lock in enumerate(([(72, 245, 30), (80, 310, 36), (62, 390, 26), (80, 470, 24), (100, 530, 20), (112, 566, 4)],
+                              [(515, 262, 34), (540, 330, 34), (535, 410, 24), (522, 480, 20), (524, 552, 6)])):
+        puff(f'lock{k}', [([(*u(x, y), w / 60) for x, y, w in lock], 0.7, 0.0, 2.5)], 5.3, -4.6, 1.2, pale, mirror=False)
+    frame(10.9, 10.4, (0, 0)); lights(key=2400, fill=1000)
 
 
 # ---- the glasses ---------------------------------------------------------------------------------------------------
@@ -241,7 +285,7 @@ def cigar():
     frame(9.6, 3.0, (-0.1, 0)); lights(key=3000, fill=1100)
 
 
-{'glasses': glasses, 'cigar': cigar, 'mustache-a': mustache_a, 'mustache-b': mustache_b}[ITEM]()
+{'glasses': glasses, 'cigar': cigar, 'mustache-a': mustache_a, 'mustache-b': mustache_b, 'hair': swoop}[ITEM]()
 sc.render.image_settings.file_format = 'WEBP' if OUT.endswith('.webp') else 'PNG'
 sc.render.image_settings.color_mode = 'RGBA'; sc.render.image_settings.quality = 90
 sc.render.filepath = os.path.abspath(OUT)

@@ -4,7 +4,8 @@ Record, written 2026-11-12. The owner asked whether the Blender renders that mad
 would work for equippable Gear, and gave four pieces of Minus World art to try: glasses, a cigar and two mustaches.
 Nothing here ships; the instance's Gear is still the placeholders in `instances/divided-world/ui/gear/`.
 
-- `reference.png`: the owner's flat art, as given.
+- `reference.png`: the owner's flat art, as given, and `reference-hair.png`, the hair the owner gave next as a stress
+  test ("The Trump Hair might be a good stress test").
 - `scene.py`: one script that builds and renders any of the four, with the cards' rig. From this folder, with Blender's
   Python module as `instances/divided-world/ui/cards/README.md` says, plus `scipy` and `shapely`:
 
@@ -12,9 +13,9 @@ Nothing here ships; the instance's Gear is still the placeholders in `instances/
   python scene.py glasses glasses.png
   ```
 
-  The other names are `cigar`, `mustache-a` and `mustache-b`. `GEAR_PX` is the picture's width (1024) and
+  The other names are `cigar`, `mustache-a`, `mustache-b` and `hair`. `GEAR_PX` is the picture's width (1024) and
   `ART_SAMPLES` the samples (96). Each takes under a minute on four CPU cores.
-- `glasses.png`, `cigar.png`, `mustache-a.png`, `mustache-b.png`: the renders, on a transparent ground.
+- `glasses.png`, `cigar.png`, `mustache-a.png`, `mustache-b.png`, `hair.png`: the renders, on a transparent ground.
 - `bench.html` and `bench.png`: the renders beside the flat art, worn on a portrait at three sizes, and on a light
   ground.
 
@@ -24,6 +25,9 @@ Nothing here ships; the instance's Gear is still the placeholders in `instances/
   and nothing else, and its edge is the renderer's own antialiased alpha.
 - **The mustaches** are tubes of changing width laid flat (a spine with a radius at each point), raised into a height
   field with strands running along them. One function makes both from a list of spines.
+- **The hair** is the same height field over a drawn outline: a cap whose locks fan from its point, with sharp
+  partings between them and two colors along them, and a tube for the lock at each side. Its outline is traced from the
+  flat art's own pixels.
 - **The glasses** are a 2D outline (lens shapes, grown into rims, joined with a bridge and two wings) extruded with a
   rounded edge, with steel rivets and a lens that is clear but for a sheen.
 - **The cigar** is turned about its length, with a painted spiral leaf, a band with a seal, lumpy ash and a glowing
@@ -40,5 +44,12 @@ Nothing here ships; the instance's Gear is still the placeholders in `instances/
 - **Rough in this draft:** the mustaches came out lighter and glossier than the flat art; the scalloped one's tufts
   read as beads; the glasses' lens sheen grays what is behind it a little; the handlebar's brow is flatter than the
   drawing's.
-- **Not tried:** a piece that wraps a head (a hat), where a straight-on view may not be enough; a normal pass so the
+- **The hair held up.** A piece that wraps a head is still one flat picture with a gap for the face, so it rendered
+  like the others, in about a minute, and sat on two differently drawn heads. Its three tries showed where the work
+  goes: the outline came right at once, and the strands took two more passes (first too faint, then a crease from the
+  height field's own ridge, which a blur removed).
+- **What the hair cannot do** is turn. Every piece here is a front, raised from a flat outline, with nothing behind it,
+  so it fits a head seen straight on and only leans on one seen from the side. A piece that must be seen at an angle
+  needs a full model, as the cigar has.
+- **Not tried:** a normal pass so the
   page's light could move across a piece as it does the pack.
