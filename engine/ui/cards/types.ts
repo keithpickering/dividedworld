@@ -303,6 +303,15 @@ export interface CardArt {
   readonly tagline?: string;
 }
 
+/** A pack's art: a card's, where the canvas is foil the engine crimps and prints on, or a picture of the whole pack on a transparent ground (specs/card-art.md). */
+export interface PackArtLook extends Omit<CardArt, 'canvas'> {
+  readonly canvas?: string;
+  /** The whole pack, 1080 by 1680 on a transparent ground: its outline is the pack's, and the engine prints only the count on it. */
+  readonly picture?: string;
+  /** The picture's relief, 540 by 840: which way the film faces, for the page's light. Only with `picture`. */
+  readonly relief?: string;
+}
+
 /**
  * A card whose play is made on the post itself (`CardUi.Compose`): mounted in the post's effect slot, innermost, where the card draws what it
  * plays. The engine knows nothing of what is drawn; it says when to open, lands the play and holds the ways out.

@@ -8,7 +8,7 @@
  * log never does"). The System's in-character words are the rules' `Copy`.
  */
 import type { Quadrant, Span } from '../rules/types.ts';
-import type { CardArt, CardUi } from './cards/types.ts';
+import type { CardArt, CardUi, PackArtLook } from './cards/types.ts';
 import type { Alert } from './data/api.ts';
 import type { SoundsUi } from './audio/types.ts';
 import type { TipKey } from './tips/keys.ts';
@@ -424,7 +424,7 @@ export interface InstanceUi {
   /** How each card draws and describes itself, one per card key the instance sells; a card with none is shown as its tag alone (engine/ui/cards/types.ts). */
   readonly cards: readonly CardUi[];
   /** How each pack the instance sells draws itself, by the rules' `PackRules.key`: its name and its face art, placed as a card's face art is (engine/ui/cards/types.ts, `CardArt`). */
-  readonly packs: Readonly<Record<string, { readonly name: string; readonly art: CardArt }>>;
+  readonly packs: Readonly<Record<string, { readonly name: string; readonly art: PackArtLook }>>;
   /** Each piece of gear's art, by the rules' `GearRules.key`: a URL the bundler resolved, and the art's height over its width. */
   readonly gear: Readonly<Record<string, { readonly art: string; readonly aspect: number }>>;
   /** Each trophy kind's badge art, by the rules' `TrophyRules.key`, as a URL the bundler resolved. */
