@@ -1320,16 +1320,20 @@ function unhit(host: HTMLElement, options: ClingOptions): void {
 
 /**
  * Lands a flake that is past its hang if a landing place is under it, and says whether it did. In order: the registered host whose hit
- * the browser finds there (task order: an effect's surface, then a post cell), in that host's own px; else, where the thread's page
+ * the browser finds there (task order: an effect's surface, then a post cell), where the point lies in that host's box, in that host's
+ * own px; else, where the thread's page
  * surface is live and the point's ground is the page's, the page, in document px; else it keeps flying (chrome with a ground of its
  * own would hide glitter lying on the page under it). The one hit test a flake costs per `CHECK_S`; the host's rect is the one measure a landing costs.
  */
 function landOn(b: Falling, now: number): boolean {
   const el = elementAt(b.x, b.y);
   const host = hostOf(el);
+  /* A host holds only what lies in its own box, where its tiles draw: a child hanging past it (As it landed's tag under the date bar)
+   * is the host's hit but not its surface, and a flake there would be held and never drawn (#520). */
+  const r = host?.getBoundingClientRect();
+  const inBox = !!r && b.x >= r.left && b.x < r.right && b.y >= r.top && b.y < r.bottom;
   let on: object, x: number, y: number, band: Band | null, told: (() => void) | undefined;
-  if (host) {
-    const r = host.getBoundingClientRect();
+  if (host && r && inBox) {
     on = host; x = b.x - r.left; y = b.y - r.top; band = bandAt(host, now);
     told = hosts.get(host)?.landed;
   } else if (landing?.page && el && landing.ground(el)) {

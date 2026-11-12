@@ -232,6 +232,32 @@ describe('where a flake lands', () => {
     expect(probe.landed().page).toBeGreaterThan(5);
   });
 
+  it('a cell\'s child hanging past the cell\'s box (As it landed\'s tag under the date bar) takes none: a cell holds only what lies in its box, where its tiles can draw it', () => {
+    const { article, meta } = post();
+    keep(landPost(article));
+    /* The tag is the date bar's child but stands right of it, past its 600 px: a point over it is the date bar's hit, outside its box. */
+    const tag = box(720, 100, 120, 80, meta);
+    drop(780, 140);
+    settle(0, 3000);
+    expect(tag.parentElement).toBe(meta);
+    expect(loose(meta)).toHaveLength(0);
+    expect(probe.landed().cell).toBe(0);
+    expect(cellTiles(meta)).toHaveLength(0);
+  });
+
+  it('every flake a cell holds lies in the cell\'s box, so a tile is drawn for each and none is taken away while it holds one', () => {
+    const { article, meta, main } = post();
+    keep(landPost(article));
+    box(720, 100, 120, 80, meta);
+    for (const x of [300, 780, 500, 760]) { drop(x, x > 700 ? 140 : 250); settle(0, 3000); }
+    for (const cell of [meta, main]) {
+      const r = cell.getBoundingClientRect();
+      for (const f of loose(cell)) expect(f.x >= 0 && f.x < r.width && f.y >= 0 && f.y < r.height, `${f.x},${f.y} in ${r.width}x${r.height}`).toBe(true);
+    }
+    expect(loose(main).length).toBeGreaterThan(5);
+    expect(probe.tiles().cell).toBeGreaterThan(0);
+  });
+
   it('an element whose ancestor paints a ground is not the page\'s ground, however plain it is itself', () => {
     keep(landPage());
     const wrap = box(0, 0, 1024, 768, document.body, false);
