@@ -14,9 +14,10 @@ import { useKayfa } from '../../../../engine/ui/context.tsx';
 import type { Fake } from '../../../../engine/ui/data/fake.ts';
 import { useLocation } from '../../../../engine/ui/router.tsx';
 import { probe } from '../../../../engine/ui/shine/loop.ts';
+import { probe as landing } from '../../../../engine/ui/shine/landing.ts';
 import { LoadedThread } from '../../../../engine/ui/loaded.tsx';
 
-declare global { interface Window { __kbShineDraws?: (nth: number) => number } }
+declare global { interface Window { __kbShineDraws?: (nth: number) => number; __kbLanding?: typeof landing } }
 
 interface Args {
   readonly mode: 'light' | 'dark';
@@ -36,7 +37,8 @@ function Glittering({ mode, reduced }: Args) {
   }, [mode, reduced]);
   useEffect(() => {
     window.__kbShineDraws = (nth) => probe.draws(document.querySelectorAll('[data-kb-glitter]')[nth] ?? {});
-    return () => { delete window.__kbShineDraws; };
+    window.__kbLanding = landing;
+    return () => { delete window.__kbShineDraws; delete window.__kbLanding; };
   }, []);
   useEffect(() => {
     if (thread === null) return;
