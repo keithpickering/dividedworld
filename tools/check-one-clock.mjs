@@ -8,7 +8,7 @@
  * and fails when the calendar date meets the fixtures' (issue #244: thirteen tests, on 2026-11-12). So a screen asks `api.now()` (engine/ui/data/api.ts),
  * which the real backend answers with the real clock and the fake with its own, and a pure helper is given `now` by its caller.
  *
- * Read: every non-test, non-story `.ts`/`.tsx` under engine/ui, from the TypeScript AST. A call of `Date.now()` or `new Date()` with no argument
+ * Read: every non-test, non-story `.ts`/`.tsx` under engine/ui, from the TypeScript AST. A call of `Date.now()` or `new Date()` with no argument, or a `Date.now` passed on as a value,
  * is a read of the page's clock. It must be in WALL_CLOCK, which lists the files that read it for a reason that is not a data time (a timer's
  * length, a cache's age, an id), each with how many reads and why; a file reading more than listed, or a listed file reading fewer (a stale
  * entry), fails. tools/test-one-clock.mjs drives it red on a planted call. A test that must set the real clock shifts it instead:
@@ -34,18 +34,24 @@ const NOT_SCREEN = /\.test\.tsx?$|\.stories\.tsx?$/;
 export const WALL_CLOCK = {
   'engine/ui/router.tsx': { count: 8, why: 'navigation ids, the age of a cached page and of a prefetch, and how long a load took: durations on the page\'s own timers' },
   'engine/ui/player.tsx': { count: 4, why: 'how long an estimate stays fresh, counted from receipt (the header says so): elapsed time between two reads of the same clock' },
+  'engine/ui/spin/spun.ts': { count: 1, why: 'the spun loader\'s cache age (SPUN_TTL_MS), `Date.now` passed as its `now`: elapsed time between two reads of the same clock, compared with no data time' },
   'engine/ui/alerts/Toasts.tsx': { count: 2, why: 'the time a toast has left on its own countdown, which pauses under a pointer: elapsed time' },
 };
 
-/** Each no-argument `Date.now()` / `new Date()` in a source text, with its line. */
+/** Each no-argument `Date.now()` / `new Date()` (also via `globalThis.` / `window.`) and each bare `Date.now` value in a source text, with its line. */
 export function clockReads(text, file) {
   const sf = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, file.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
   const out = [];
   const at = (node) => sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1;
+  /* `Date`, `globalThis.Date` or `window.Date`. */
+  const isDate = (e) => (ts.isIdentifier(e) && e.text === 'Date')
+    || (ts.isPropertyAccessExpression(e) && e.name.text === 'Date' && ts.isIdentifier(e.expression) && (e.expression.text === 'globalThis' || e.expression.text === 'window'));
+  const isDateNow = (e) => ts.isPropertyAccessExpression(e) && e.name.text === 'now' && isDate(e.expression);
   const visit = (node) => {
-    if (ts.isCallExpression(node) && node.arguments.length === 0 && ts.isPropertyAccessExpression(node.expression)
-      && ts.isIdentifier(node.expression.expression) && node.expression.expression.text === 'Date' && node.expression.name.text === 'now') out.push({ line: at(node), what: 'Date.now()' });
-    else if (ts.isNewExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'Date' && (node.arguments?.length ?? 0) === 0) out.push({ line: at(node), what: 'new Date()' });
+    if (ts.isCallExpression(node) && node.arguments.length === 0 && isDateNow(node.expression)) out.push({ line: at(node), what: 'Date.now()' });
+    /* A bare `Date.now` that is not a call's callee (handed on as a callback) is the same read, made later. */
+    else if (isDateNow(node) && !(ts.isCallExpression(node.parent) && node.parent.expression === node)) out.push({ line: at(node), what: 'Date.now (as a value)' });
+    else if (ts.isNewExpression(node) && isDate(node.expression) && (node.arguments?.length ?? 0) === 0) out.push({ line: at(node), what: 'new Date()' });
     ts.forEachChild(node, visit);
   };
   visit(sf);

@@ -39,6 +39,12 @@ check('a default parameter of Date.now() fires', faults(`export const ago = (iso
 check('a plain .ts file is read', faults(`export const t = () => new Date().toISOString();`, 'engine/ui/x/x.ts').length === 1);
 
 /* ---- what only looks like one ---- */
+check('a bare Date.now passed as a callback fires', faults(`const l = make(api, Date.now);`, 'engine/ui/x/x.ts').length === 1);
+check('and it names the value', faults(`const l = make(api, Date.now);`, 'engine/ui/x/x.ts')[0]?.what === 'Date.now (as a value)');
+check('globalThis.Date.now() fires', faults(`const a = globalThis.Date.now();`, 'engine/ui/x/x.ts').length === 1);
+check('window.Date.now() fires', faults(`const a = window.Date.now();`, 'engine/ui/x/x.ts').length === 1);
+check('a bare window.Date.now fires', faults(`const f = window.Date.now;`, 'engine/ui/x/x.ts').length === 1);
+check('a call is counted once, not as call and value', faults(`const a = Date.now();`, 'engine/ui/x/x.ts').length === 1);
 check('a dated new Date(x) is no read of the clock', faults(`const d = new Date(iso); const e = new Date(api.now());`).length === 0);
 check('Date.parse and Date.UTC are no read of the clock', faults(`const a = Date.parse(x) + Date.UTC(2026, 9, 29);`).length === 0);
 check('a comment is not read', faults(`// Date.now()\n/* new Date() */\nconst a = 1;`).length === 0);

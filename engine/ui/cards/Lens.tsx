@@ -670,7 +670,7 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
   const onInk = useOnInk();
   const host = useLensHost();
   const now = useUntil(here.billed);
-  const billed = markedPlays(shownPlays(here.billed, now), now);
+  const billed = markedPlays(shownPlays(here.billed, api.now()), now);
   const admin = useLensAdmin();
   const cardKinds = kindsOf(billed);
   /* A form is the panel's one tab while it is open; a visit's tab is ahead of the cards'. */
