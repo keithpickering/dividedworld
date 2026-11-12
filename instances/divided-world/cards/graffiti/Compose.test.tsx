@@ -13,7 +13,9 @@ import type { Act, Answer } from '../../../../engine/ui/data/api.ts';
 import { LOST_ANSWER } from '../../../../engine/ui/data/api.ts';
 import { renderInWorld } from '../../../../engine/ui/test-world.tsx';
 import { cursor } from '../whoops/cursor.ts';
-import { CANS } from '../graffiti.ts';
+import { landing } from '../../../../engine/ui/cards/land.ts';
+import { instance } from '../../index.ts';
+import { CANS, graffiti } from '../graffiti.ts';
 import { Compose, DrawMode, type DrawModeProps } from './Compose.tsx';
 import * as spray from './spray.ts';
 
@@ -219,6 +221,14 @@ describe('a stencil', () => {
 });
 
 describe('review fixes', () => {
+  test('the real card is offered on a bare post, and says so on a wall (what the ghost mark is drawn from)', () => {
+    const post = { ...POST, payload: { body: 'hi' }, currentPayload: { body: 'hi' } } as Act;
+    const cards = instance.cards;
+    expect(landing(graffiti, post, [], { cards })).toEqual({ ok: true, value: undefined });
+    const wall = { id: 'g1', card: 'graffiti', layer: 1, caster: 'c2', message: '', config: {}, playedAt: '2026-10-29T21:16:00Z', post: post.id };
+    expect(landing(graffiti, post, [wall], { cards })).toEqual({ ok: false, why: 'This post is already a wall. Draw on it instead.' });
+  });
+
   /* The composer's box is the post body's (`.kb-act-main`), the box the wall paints in, not the words' element, which on a one-line post is a strip (found in a browser: a Fat stroke read 84%). */
   test('a stroke on a one-line post is kept in the body\'s box, aspect and shares, and the surface covers that box', async () => {
     const user = userEvent.setup();

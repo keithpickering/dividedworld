@@ -59,6 +59,9 @@ function useSeeded(thread: string | null, post: number): boolean {
       const play = fake.seed.card(caster, target.id, 'graffiti', { layer: 2 });
       const drawn = await api.draw(play, drawer, { strokes: TAG });
       if (!drawn.ok) throw new Error(`the tag was refused: ${drawn.error}`);
+      /* The story's name is its figure: a wall that is not 31% is a story that says what it is not. */
+      const covered = (await api.surfaceActs(play))?.covered;
+      if (covered === undefined || Math.floor(covered / 100) !== 31) throw new Error(`the Graffiti wall story's wall is ${covered === undefined ? 'unread' : `${Math.floor(covered / 100)}%`}, not 31%`);
       if (live) setReady(true);
       /* A seed or a draw refused leaves the story loading (aria-busy), and says why, rather than drawing a state its name does not. */
     })().catch((e: unknown) => { console.error('the Graffiti wall story could not be seeded', e); });
@@ -76,6 +79,7 @@ function Look({ drawing, post: n }: { readonly drawing: boolean; readonly post: 
     /* The phone's toolbar is fixed to the foot, so the post is put at the top of the window above it. */
     const place: ScrollLogicalPosition = window.matchMedia?.('(max-width: 719px)').matches ? 'start' : 'center';
     let tiled = false;
+    const moves: ReturnType<typeof setTimeout>[] = [];
     const timer = setInterval(() => {
       const post = document.getElementById(`post-${n}`);
       if (!post) return;
@@ -102,9 +106,9 @@ function Look({ drawing, post: n }: { readonly drawing: boolean; readonly post: 
         bubbles: true, cancelable: true, pointerId: 7, pointerType: 'mouse', button: 0, buttons: 1, clientX: r.left + x * r.width, clientY: r.top + y * r.height,
       }));
       const path = wave(0.72, 0.58, 0.9, 0.16, 16);
-      path.forEach(([x, y], i) => setTimeout(() => at(x, y, i === 0 ? 'pointerdown' : 'pointermove'), i * 30));
+      path.forEach(([x, y], i) => moves.push(setTimeout(() => at(x, y, i === 0 ? 'pointerdown' : 'pointermove'), i * 30)));
     }, 100);
-    return () => clearInterval(timer);
+    return () => { clearInterval(timer); for (const m of moves) clearTimeout(m); };
   }, [drawing, n]);
   return null;
 }

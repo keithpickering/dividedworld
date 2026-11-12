@@ -29,10 +29,10 @@ const NEAR: readonly Spec[] = [...SOME, ['pink', 'stock', 0.82, 0.05, 0.6, 0.06]
 
 /**
  * Hands the demo player a Graffiti card (and a Whoops!, so the hand is not one card) before the app reads its hand, and, for `wall`, Mrs. Hooligan's play of
- * the card on post 2 with her tag on it, as a real draw so the fake's surface model counts it. `__kbWall` settles to the play's id once it is written.
+ * the card on post 2 with her tag on it (`by` Spritey, another player's mask, for a reader who is neither tagger nor author), as a real draw so the fake's surface model counts it. `__kbWall` settles to the play's id once it is written.
  */
-async function world(page: Page, wall: readonly Spec[] | null = null): Promise<void> {
-  await page.addInitScript((strokes) => {
+async function world(page: Page, wall: readonly Spec[] | null = null, by: 'hooligan' | 'spritey' = 'hooligan'): Promise<void> {
+  await page.addInitScript(([strokes, by]) => {
     let demo: unknown;
     Object.defineProperty(globalThis, '__kbDemo', {
       configurable: true,
@@ -47,18 +47,23 @@ async function world(page: Page, wall: readonly Spec[] | null = null): Promise<v
         w.__kbWall = (async () => {
           const fake = w.__kbFake;
           const target = (await fake.acts(v.thread, 1, 3)).find((a) => a.seq === 2)!;
-          const play = fake.seed.card(v.characters.hooligan, target.id, 'graffiti', { layer: 1 });
+          const tagger = v.characters[by];
+          const play = fake.seed.card(tagger, target.id, 'graffiti', { layer: 1 });
           const wave = ([can, cap, y, x0, x1, amp]: readonly [string, string, number, number, number, number]) => ({
             can, cap, aspect: 3,
             points: Array.from({ length: 25 }, (_, i) => [Math.round((x0 + (x1 - x0) * (i / 24)) * 1e4) / 1e4, Math.round((y + amp * Math.sin((i / 24) * Math.PI * 2)) * 1e4) / 1e4]),
           });
-          const drawn = await fake.draw(play, v.characters.hooligan, { strokes: strokes.map(wave) });
+          /* Spritey is another player's: the draw is made as that account (the call reads the session as it starts), and the player is signed back in at once. */
+          if (by === 'spritey') fake.signInAs(v.other);
+          const drawing = fake.draw(play, tagger, { strokes: strokes.map(wave) });
+          if (by === 'spritey') fake.signInAs(v.me);
+          const drawn = await drawing;
           if (!drawn.ok) throw new Error(drawn.error);
           return play;
         })();
       },
     });
-  }, wall);
+  }, [wall, by] as const);
 }
 
 async function openThread(page: Page): Promise<void> {
@@ -171,25 +176,45 @@ test.describe('on a wide screen', () => {
     await expect(dock(page)).toBeHidden();
     const both = await meter(page);
     expect(both, 'two tags cover more than one').toBeGreaterThan(first);
+    /* The other mask reads the same wall before the wash. */
+    await swap(page, 'Mrs. Hooligan');
+    expect(await meter(page)).toBe(both);
+    await swap(page, 'Pipewrench');
     /* The author washes: held on the Lens's Wash (Space), the wall is swept and saved for everyone. */
     await hold(page, 'Wash', 6000);
     await expect.poll(() => meter(page), { timeout: 15_000 }).toBeLessThan(both);
     const washed = await meter(page);
-    /* The same figure on the other mask: the wall is one, not each mask's own. */
+    /* The fall is the other mask's too: the wall is one, not each mask's own. */
     await swap(page, 'Mrs. Hooligan');
     expect(await meter(page)).toBe(washed);
+    expect(washed).toBeLessThan(both);
   });
 
-  test('a reader scrubs on their own screen, and the wall is back after a reload', async ({ page }) => {
-    await world(page, SOME);
+  test('a reader who neither tagged nor wrote the post scrubs on their own screen only, and the wall is back on coming to the page again', async ({ page }) => {
+    /* Spritey's tag on Pipewrench's post: the signed-in player's Mrs. Hooligan is the reader. */
+    await world(page, SOME, 'spritey');
     await openThread(page);
     await expect(wallInk(page)).toBeVisible();
     await expect.poll(() => inked(page)).toBeGreaterThan(1500);
     const before = await inked(page);
+    const wall = () => page.evaluate(async () => {
+      const w = globalThis as E2eWindow;
+      const s = (await w.__kbFake.surfaceActs(await w.__kbWall!))!;
+      return { acts: s.acts.map((a) => a.id + a.kind), covered: s.covered };
+    });
+    const saved = await wall();
+    const figure = await meter(page);
     await hold(page, 'Hold to scrub', 3000);
     await expect.poll(() => inked(page)).toBeLessThan(before * 0.9);
-    /* The demo world starts over on a load, and seeds the wall again: a scrub was never the wall's. */
-    await openThread(page);
+    /* The scrub is this screen's: the wall's own Acts and the covered figure are what they were, and the toolbar still reads them. */
+    await page.waitForTimeout(1500);
+    expect(await wall()).toEqual(saved);
+    expect(await meter(page)).toBe(figure);
+    /* Leaving the page and coming back (client-side: a reload would seed the demo again) brings the paint back. */
+    await page.getByRole('link', { name: 'General', exact: true }).first().click();
+    await expect(page.getByRole('heading', { level: 1, name: 'General' })).toBeVisible();
+    await page.getByRole('link', { name: THREAD, exact: true }).click();
+    await expect(wallInk(page)).toBeVisible();
     await expect.poll(() => inked(page)).toBeGreaterThan(before * 0.95);
   });
 
