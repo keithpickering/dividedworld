@@ -1,6 +1,7 @@
 /**
  * Laugh Track (Pepperoni, uncommon): the caster picks one to five cues, each a phrase in the post and the sound of an audience (a laugh,
- * a cheer or a boo), and a reader who reaches a cued place hears it (docs/plans/2026-11-11-laugh-track-design.md, section 5).
+ * a cheer or a boo), and a reader who points at a cued place hears it (docs/plans/2026-11-11-laugh-track-design.md, section 5;
+ * docs/plans/2026-11-12-laugh-track-point-design.md, section 1).
  *
  * Its rules here are its bounds, where it lands and its price; the sounds and the caption are the screens'. Both find a phrase with the
  * engine's one matcher (engine/bbcode/phrase.ts) over the post's visible text, so the places a screen cues are the ones the server priced.
