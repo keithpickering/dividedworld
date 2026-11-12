@@ -4,10 +4,10 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { light as pageLight } from '../shine/light.ts';
 import { probe } from '../shine/loop.ts';
 
-const lit = vi.hoisted(() => ({ calls: [] as { rows: { top: number; bottom: number } | undefined; w: number; h: number }[] }));
+const lit = vi.hoisted(() => ({ calls: [] as { rows: { top: number; bottom: number } | undefined; w: number; h: number }[], tints: [] as (Uint8ClampedArray | null)[] }));
 vi.mock('../shine/relief.ts', async (importOriginal) => {
   const real = await importOriginal<typeof import('../shine/relief.ts')>();
-  return { ...real, lightRelief: vi.fn((relief, light, out, rows) => { lit.calls.push({ rows, w: relief.w, h: relief.h }); real.lightRelief(relief, light, out, rows); }) };
+  return { ...real, makeRelief: vi.fn((normals, tint, w, h) => { lit.tints.push(tint); return real.makeRelief(normals, tint, w, h); }), lightRelief: vi.fn((relief, light, out, rows) => { lit.calls.push({ rows, w: relief.w, h: relief.h }); real.lightRelief(relief, light, out, rows); }) };
 });
 import { PackLight, RESIZE_DEBOUNCE_MS } from './packLight.ts';
 
@@ -55,11 +55,14 @@ class FakeImage {
 let noContext = false;
 let visibleNoContext = false;
 let unreadable = false;
-const ctx = { drawImage: vi.fn(), getImageData: (_x: number, _y: number, w: number, h: number) => (unreadable ? (() => { throw new DOMException('tainted', 'SecurityError'); })() : { data: new Uint8ClampedArray(w * h * 4).fill(255), width: w, height: h }), createImageData: (w: number, h: number) => ({ data: new Uint8ClampedArray(w * h * 4), width: w, height: h }), putImageData: vi.fn() };
+/* Reads of pixels so far, and the one read (counted from 1) that throws; 0 for none. */
+let reads = 0;
+let throwAtRead = 0;
+const ctx = { drawImage: vi.fn(), getImageData: (_x: number, _y: number, w: number, h: number) => (unreadable || ++reads === throwAtRead ? (() => { throw new DOMException('tainted', 'SecurityError'); })() : { data: new Uint8ClampedArray(w * h * 4).fill(255), width: w, height: h }), createImageData: (w: number, h: number) => ({ data: new Uint8ClampedArray(w * h * 4), width: w, height: h }), putImageData: vi.fn() };
 let size = { w: 270, h: 420 };
 
 beforeEach(() => {
-  queue = new Map(); nextId = 1; observers = []; resizes = []; loads = []; broken = new Set(); held = new Map(); holding = false; noContext = false; visibleNoContext = false; unreadable = false; lit.calls = []; size = { w: 270, h: 420 };
+  queue = new Map(); nextId = 1; observers = []; resizes = []; loads = []; broken = new Set(); held = new Map(); holding = false; noContext = false; visibleNoContext = false; unreadable = false; reads = 0; throwAtRead = 0; lit.calls = []; lit.tints = []; size = { w: 270, h: 420 };
   ctx.putImageData.mockClear(); ctx.drawImage.mockClear();
   vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => { const id = nextId++; queue.set(id, cb); return id; });
   vi.stubGlobal('cancelAnimationFrame', (id: number) => { queue.delete(id); });
@@ -229,12 +232,16 @@ describe('the pack\'s light', () => {
     const b = render(<PackLight picture="/pack.webp" relief={url} part="whole" />);
     await settle();
     a.unmount();
-    b.unmount();
-    expect(loads.filter((u) => u === url)).toHaveLength(1);
+    /* A third pack mounted between the two unmounts still shares the decode the first one's release must not have dropped. */
     const c = render(<PackLight picture="/pack.webp" relief={url} part="whole" />);
     await settle();
-    expect(loads.filter((u) => u === url)).toHaveLength(2);
+    expect(loads.filter((u) => u === url)).toHaveLength(1);
+    b.unmount();
     c.unmount();
+    const d = render(<PackLight picture="/pack.webp" relief={url} part="whole" />);
+    await settle();
+    expect(loads.filter((u) => u === url)).toHaveLength(2);
+    d.unmount();
   });
 
   test('a light that changes size lets go of its old size', async () => {
@@ -312,13 +319,17 @@ describe('the pack\'s light', () => {
     frames(3);
     expect(lit.calls).toHaveLength(0);
     expect(ctx.putImageData).not.toHaveBeenCalled();
+    /* The stale load gave its use back, so the same relief at the same size has to be decoded again. */
+    const again = await mount(url);
+    expect(loads.filter((u) => u === url)).toHaveLength(2);
+    again.unmount();
   });
 
   test('a box changed while a load is pending registers only the newest size, once', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     holding = true;
     const url = fresh();
-    render(<PackLight picture="/pack.webp" relief={url} part="whole" />);
+    const view = render(<PackLight picture="/pack.webp" relief={url} part="whole" />);
     await settle();
     /* The first size's load is held. Change the box twice more, releasing each load in turn, the oldest last. */
     await resize(100, 150);
@@ -332,6 +343,48 @@ describe('the pack\'s light', () => {
     frames(3);
     expect(lit.calls).toHaveLength(1);
     expect(lit.calls[0]).toMatchObject({ w: 135, h: 210 });
+    /* The two superseded loads gave their uses back: with every light gone, the first size is decoded again. */
+    view.unmount();
+    size = { w: 270, h: 420 };
+    const again = await mount(url);
+    expect(loads.filter((u) => u === url)).toHaveLength(4);
+    again.unmount();
+  });
+
+  test('a relief that decoded at one size and fails at another keeps the first size\'s decode for a further light', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const url = fresh();
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const first = await mount(url);
+    /* The first light's decode read the relief and the picture; the next read, at the new size, throws. */
+    throwAtRead = reads + 1;
+    await resize(100, 150);
+    expect(loads.filter((u) => u === url)).toHaveLength(2);
+    /* A further light at the first size shares the live decode (no request) and registers; its release and the next light's do not touch the first light's use. */
+    size = { w: 270, h: 420 };
+    for (let i = 0; i < 2; i++) {
+      const extra = await mount(url);
+      expect(loads.filter((u) => u === url)).toHaveLength(2);
+      lit.calls = [];
+      const mine = [...document.querySelectorAll('canvas.kb-pack-light')].at(-1)!;
+      see(mine, true);
+      frames(3);
+      expect(lit.calls).toHaveLength(1);
+      extra.unmount();
+    }
+    first.unmount();
+  });
+
+  test('a picture that is unreadable while the relief reads gives a light with no tint, and no warning', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    /* Reads go relief then picture: the second one throws. */
+    throwAtRead = 2;
+    await mount(fresh());
+    see(canvas(), true);
+    frames(3);
+    expect(lit.tints).toEqual([null]);
+    expect(lit.calls).toHaveLength(1);
+    expect(warn).not.toHaveBeenCalled();
   });
 
   test('a relief the browser will not hand pixels for (SecurityError) warns once with its address, registers nothing, and throws nothing', async () => {

@@ -8,7 +8,7 @@
  * one warning naming the address. The canvas is never sized past the relief's own 540 by 840.
  *
  * Units: `w` and `h` are canvas px; a relief's rows are canvas rows from the top; `rows` are shares of the bitmap's height (`TEAR_HI`, `TEAR_LO`).
- * The picture is as tall as the pack's 2:3 box, so the bitmap's height is the box's height and the shares are shares of the pack's height.
+ * The picture is as tall as the pack's 2:3 box, so the bitmap's height is the box's height (unless it is capped at 540 by 840) and the shares are shares of the pack's height.
  */
 import { createElement, useEffect, useRef } from 'react';
 import { lightRelief, makeRelief, type Relief } from '../shine/relief.ts';
@@ -59,14 +59,18 @@ function pixels(img: HTMLImageElement, w: number, h: number): Uint8ClampedArray 
 
 /**
  * The relief at `reliefUrl` decoded at `w` by `h`, tinted from the picture at `pictureUrl`, or null. Every call is one use of the entry for that
- * address and size, which stays until each use is given back with `releaseRelief` (a call for an address that failed uses nothing and needs no
- * release; releasing it is harmless). A picture that cannot be read while the relief can gives a relief with no tint.
+ * address and size, which stays until each use is given back with `releaseRelief`, whatever the call returns: even for an address that failed, a
+ * call takes a use, so a release always pairs with one use and never takes another light's. A picture that cannot be read while the relief can gives a relief with no tint.
  */
-export function loadRelief(reliefUrl: string, pictureUrl: string, w: number, h: number): Promise<Relief | null> {
-  if (failed.has(reliefUrl)) return Promise.resolve(null);
+function loadRelief(reliefUrl: string, pictureUrl: string, w: number, h: number): Promise<Relief | null> {
   const key = keyOf(reliefUrl, w, h);
   const kept = cache.get(key);
   if (kept) { kept.users++; return kept.made; }
+  if (failed.has(reliefUrl)) {
+    const none = Promise.resolve(null);
+    cache.set(key, { made: none, users: 1 });
+    return none;
+  }
   const made = (async () => {
     try {
       const [relief, picture] = await Promise.all([image(reliefUrl), image(pictureUrl).catch(() => null)]);
@@ -87,7 +91,7 @@ export function loadRelief(reliefUrl: string, pictureUrl: string, w: number, h: 
 }
 
 /** Gives back one use taken by `loadRelief` with the same address and size; the last release drops the decode. */
-export function releaseRelief(reliefUrl: string, w: number, h: number): void {
+function releaseRelief(reliefUrl: string, w: number, h: number): void {
   const key = keyOf(reliefUrl, w, h);
   const entry = cache.get(key);
   if (!entry) return;
@@ -99,7 +103,7 @@ export function releaseRelief(reliefUrl: string, w: number, h: number): void {
  * picture and relief are 9:14 and `object-fit: contain` letterboxes the picture in the (2:3) box, so a bitmap of this shape is letterboxed the
  * same way and sits exactly over the picture.
  */
-export function bitmapFor(boxW: number, boxH: number, density: number): { w: number; h: number } {
+function bitmapFor(boxW: number, boxH: number, density: number): { w: number; h: number } {
   const scale = Math.min(1, (boxW * density) / MAX_W, (boxH * density) / MAX_H);
   return { w: Math.max(1, Math.round(MAX_W * scale)), h: Math.max(1, Math.round(MAX_H * scale)) };
 }
