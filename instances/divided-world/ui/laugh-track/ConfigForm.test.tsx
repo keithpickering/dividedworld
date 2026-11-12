@@ -360,6 +360,29 @@ describe('Laugh Track\'s play form', () => {
     expect(total()).toHaveTextContent('All five cues are filled. Clear one to pick another phrase.');
   });
 
+  test('D. a same-gesture shrink to a phrase another cue holds leaves the cue as it is, and growing again still rewrites it', () => {
+    form({ cues: [{ phrase: 'Luigi', sound: 'laugh' }, { phrase: '', sound: 'laugh' }] });
+    select('Luigi waved');
+    expect([1, 2].map((n) => phrase(n).value)).toEqual(['Luigi', 'Luigi waved']);
+    grow('luigi');
+    expect([1, 2].map((n) => phrase(n).value)).toEqual(['Luigi', 'Luigi waved']);
+    grow('Luigi waved at');
+    expect([1, 2].map((n) => phrase(n).value)).toEqual(['Luigi', 'Luigi waved at']);
+  });
+
+  test('E. many reports of one blocked gesture are announced once; the next blocked gesture is announced afresh', () => {
+    const five = ['mario', 'luigi', 'again', 'waved', 'met'].map((p) => ({ phrase: p, sound: 'laugh' }));
+    form({ cues: five });
+    const said = () => within(total() as HTMLElement).getByText(/All five cues are filled/);
+    select('Luigi waved');
+    const first = said();
+    grow('Luigi waved at');
+    grow('Luigi waved at');
+    expect(said()).toBe(first);
+    select('waved at');
+    expect(said()).not.toBe(first);
+  });
+
   test('a selection of no whole word of the post fills nothing', () => {
     const { onChange } = form({ cues: [{ phrase: '', sound: 'laugh' }] });
     onChange.mockClear();

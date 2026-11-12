@@ -77,6 +77,7 @@ export function ConfigForm({ config, onChange, post, id }: ConfigFormProps) {
   const [full, setFull] = useState(false);
   /* Each refusal gets its own number, so the live words are drawn as a new node and a reader hears a repeated refusal. */
   const [refusals, setRefusals] = useState(0);
+  const refusedGesture = useRef<number | null>(null);
   const cues = useMemo(() => rows.map((r) => r.cue), [rows]);
   const refocus = useRef<number | null>(null);
   const form = useRef<HTMLFieldSetElement>(null);
@@ -127,14 +128,16 @@ export function ConfigForm({ config, onChange, post, id }: ConfigFormProps) {
     /* The same gesture as the one that wrote a cue, while that cue still holds what it wrote, is the same selection grown or shrunk. */
     const last = lastFilled.current;
     const same = last && last.gesture === gesture ? rs.findIndex((r) => r.key === last.key && r.cue.phrase === last.phrase) : -1;
+    /* A phrase another cue holds is already a cue: the matcher reads phrases in any case. */
+    const kept = (p: string) => p.trim().toLowerCase();
     if (last && same >= 0) {
       if (phrase === last.phrase) return;
+      /* A rewrite into another cue's phrase leaves the cue as it is, still the gesture's, so growing again rewrites it. */
+      if (rs.some((r, j) => j !== same && kept(r.cue.phrase) === kept(phrase))) return;
       lastFilled.current = { key: last.key, phrase, gesture };
       edit(same, { phrase });
       return;
     }
-    /* A phrase another cue holds is already a cue: the matcher reads phrases in any case. */
-    const kept = (p: string) => p.trim().toLowerCase();
     if (rs.some((r) => kept(r.cue.phrase) === kept(phrase))) return;
     const empty = rs.findIndex((r) => r.cue.phrase.trim() === '');
     if (empty >= 0) {
@@ -146,7 +149,11 @@ export function ConfigForm({ config, onChange, post, id }: ConfigFormProps) {
       lastFilled.current = { key, phrase, gesture };
     } else {
       setFull(true);
-      setRefusals((n) => n + 1);
+      /* Said once per gesture: the reports of one blocked gesture do not repeat it. */
+      if (refusedGesture.current !== gesture) {
+        refusedGesture.current = gesture;
+        setRefusals((n) => n + 1);
+      }
     }
   };
 
