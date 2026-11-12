@@ -57,11 +57,12 @@ export function IndexScreen({ doc }: { readonly doc: ScreenDoc<IndexPage> }) {
                       {b.lastThread && b.lastTitle && (
                         <>
                           <Link to={`/t/${b.lastThread}`} className="kb-board-last-title">{b.lastTitle}</Link>
-                          <span className="kb-board-sep" aria-hidden="true"> · </span>
+                          {' '}
                           <br />
                         </>
                       )}
                       <span className="kb-board-last-by">
+                        {b.lastThread && b.lastTitle && <span className="kb-board-sep" aria-hidden="true">· </span>}
                         <Byline character={who} id={b.lastCharacter} name={who?.name} link avatar={false} />
                         <span className="kb-board-sep" aria-hidden="true">, </span>
                         <br />

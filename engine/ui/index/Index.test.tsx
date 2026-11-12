@@ -195,12 +195,18 @@ describe('the index rows\' units and last post (list-rows plan, Task 1)', () => 
     expect(three.querySelector('.kb-board-threads')!.textContent).toBe('3 threads');
   });
 
-  test('the last post reads "last: ", the title, " · ", then the name, ", " and the date', async () => {
+  test('the last post reads "last: ", the title, then the unit: "· ", the name, ", " and the date', async () => {
     const row = await lastCell(1);
     const cell = row.querySelector('.kb-board-last')!;
     const title = cell.querySelector('.kb-board-last-title')!;
     /* The mini avatar's initial (aria-hidden) sits before the name. */
     expect(cell.textContent!.startsWith(`last: ${title.textContent} · `)).toBe(true);
+    /* The "·" leads the by-unit, so it moves with the unit and no line ends on it. */
+    const by = cell.querySelector('.kb-board-last-by')!;
+    expect(by.firstElementChild!.className).toBe('kb-board-sep');
+    expect(by.firstElementChild!.textContent).toBe('· ');
+    expect(cell.querySelectorAll('.kb-board-sep')).toHaveLength(2);
+    expect(title.nextElementSibling!.tagName).toBe('BR');
     expect(cell.textContent!).toMatch(/ · S?Spritey, Oct/u);
   });
 

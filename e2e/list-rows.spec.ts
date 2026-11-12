@@ -57,13 +57,8 @@ const baselines = (page: Page, row: string, parts: readonly string[]) => page.ev
   return [...document.querySelectorAll(rowSel!)].map((r) => (sels as string[]).map((s) => { const e = r.querySelector(s); return e ? probe(e) : null; }));
 }, [row, parts] as const);
 
-/**
- * How far a thread row is past the case-1 tolerance: its title, replies and views within half a pixel of one baseline, and its last post's name within
- * 1.5px of the title's. The name gets more room because the unit it sits in (`.kb-who`, an inline-flex of the avatar and the name, engine/ui/mini.css)
- * takes its baseline from the avatar, which is centered on the name's capitals and not on its baseline, so the name stands about 0.9px under the
- * line the cell shares with the counts (a plan gap, reported with Task 3).
- */
-const pastCase1 = (rows: (number | null)[][]) => rows.map(([title, replies, views, name]) => Math.max(Math.max(title!, replies!, views!) - Math.min(title!, replies!, views!) - 0.5, Math.abs(name! - title!) - 1.5));
+/** How far a thread row is past the case-1 tolerance: its title, replies, views and last post's name within half a pixel of one baseline. */
+const pastCase1 = (rows: (number | null)[][]) => rows.map(([title, replies, views, name]) => Math.max(title!, replies!, views!, name!) - Math.min(title!, replies!, views!, name!) - 0.5);
 
 const spreads = (rows: (number | null)[][]) => rows.map((ys) => Math.max(...(ys as number[])) - Math.min(...(ys as number[])));
 const complete = (rows: (number | null)[][]) => rows.every((ys) => ys.every((y) => y !== null));
@@ -155,9 +150,8 @@ for (const size of [{ width: 390, height: 844 }, { width: 360, height: 800 }]) {
     });
   });
 
-  /* (The long-titled index is left out of this case: its title wraps and the byline moves whole to the next line, so the title's "·" ends a line there; a plan gap, reported with Task 3.) */
   /* A visible separator ends no line: the next visible thing after it begins on the separator's own line. */
-  for (const [story, ready, label] of [[BOARD, '.kb-thread-row', 'a thread list'], [SPUN, '.kb-thread-spun', 'the spun list'], [INDEX, '.kb-board-row', 'the index']] as const) {
+  for (const [story, ready, label] of [[BOARD, '.kb-thread-row', 'a thread list'], [SPUN, '.kb-thread-spun', 'the spun list'], [INDEX, '.kb-board-row', 'the index'], [LONG, '.kb-board-last-title', 'the long-titled index']] as const) {
     test(`6: no line of ${label} ends in "·" or "," ${at}`, async ({ page }) => {
       await open(page, story, ready, size);
       const stray = await page.evaluate(() => {
