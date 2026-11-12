@@ -64,8 +64,9 @@ ended by the suite long before the job's limit, and the limit only has to be wel
 is slow.
 
 Forty-five minutes is a little over twice the 20 minutes a slow runner will need once #575 lands. It is not the 30
-minutes of the build and the e2e shards: at 30 the room would be 10 minutes, and the suite gained about 7 minutes on a
-slow runner in the five days measured. The number buys time; it does not make the suite shorter, and Task 2 files that.
+minutes of the build and the e2e shards: at 30 the room would be 10 minutes, and the suite gained 7 minutes or more in
+the five days measured (420s to between 830s and about 940s). The number buys time; it does not make the suite
+shorter, and Task 2 files that.
 
 ## Tasks
 

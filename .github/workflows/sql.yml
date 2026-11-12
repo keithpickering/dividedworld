@@ -26,13 +26,13 @@ jobs:
     runs-on: ubuntu-latest
     # A limit that ends a job that will never end, and the last of four: inside the suite a lock wait ends at 30s, a
     # statement at 300s and a file at 10 minutes (tools/test-sql.mjs), so a hang is ended long before this.
-    # At 15 minutes, jobs in which no test failed were cancelled with under a minute of the suite left
+    # At 15 minutes, jobs in which no test failed were cancelled with a minute or less of the suite left
     # (docs/plans/2026-11-12-sql-job-bound-plan.md). Measured on 2026-11-12: the suite runs one file after another
     # and is all of the job; the same suite took 9 to 13.5 minutes by which runner it drew (issue #515: a slow
     # runner's four CPUs do about two CPUs' work); with 197 migrations, 205 assertion files and 26 end-to-end files a
     # slow runner needs about 16 minutes; and the suite had doubled in five days. 45 is a little over twice the 20
     # minutes a slow runner is expected to need once PR #575's statistics step lands. Not the build's 30: that would
-    # leave 10 minutes, and the suite gained 7 on a slow runner in those five days.
+    # leave 10 minutes, and the suite gained 7 minutes or more in those five days.
     timeout-minutes: 45
     services:
       postgres:
