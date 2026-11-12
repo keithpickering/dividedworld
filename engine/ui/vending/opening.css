@@ -242,7 +242,9 @@
 }
 
 .kb-opening-spot[data-kb-hit] .kb-postcard[data-size='sheet'] {
-  box-shadow: 0 0 0 2px var(--kb-glass-ready), 0 0 46px color-mix(in srgb, var(--kb-glass-ready) 75%, transparent), 0 30px 50px color-mix(in srgb, var(--kb-glass-ground) 90%, transparent);
+  /* The whole frame goes gold, whatever the card's type draws it as: a Set's second line and a Use's dashes with the ring. */
+  --kb-pc-line: var(--kb-glass-ready);
+  box-shadow: 0 0 0 var(--kb-pc-ring) var(--kb-pc-ring-color), 0 0 46px color-mix(in srgb, var(--kb-glass-ready) 75%, transparent), 0 30px 50px color-mix(in srgb, var(--kb-glass-ground) 90%, transparent);
 }
 
 /* ---- the row ---- */

@@ -327,11 +327,10 @@ describe('the frame says how a card is played', () => {
     for (const width of [.../--kb-pc-ring:\s*([\d.]+)px/gu[Symbol.matchAll](css)].map((m) => Number(m[1]))) expect(width).toBeGreaterThanOrEqual(1.5);
     expect(body('.kb-postcard')).toMatch(/--kb-pc-ring:\s*1\.5px/u);
     /* A shadow keeps 1.5px at a pixel ratio of 1, where a border of that width is floored to 1px. */
-    expect(body(".kb-postcard[data-kb-play='set']::before")).toMatch(/box-shadow:\s*0 0 0 var\(--kb-pc-ring\) var\(--kb-card-color\)/u);
+    expect(body(".kb-postcard[data-kb-play='set']::before")).toMatch(/box-shadow:\s*0 0 0 var\(--kb-pc-ring\) var\(--kb-pc-line\)/u);
     expect(/\[data-kb-play='set'\]::before\s*\{([^}]*)\}/u.exec(css.slice(0, css.indexOf('@media (forced-colors')))![1]).not.toMatch(/border:/u);
-    expect(body(".kb-postcard[data-kb-play='use']::before")).toMatch(/border:\s*(?:1\.5|[2-9])px dashed var\(--kb-card-color\)/u);
-    /* No line starts a fixed length outside the card: a Use's box is the outline's own, and a Set's is inside the card (e2e/card-frames.spec.ts measures both). */
-    expect(css).not.toMatch(/inset:\s*-\d/u);
+    expect(body(".kb-postcard[data-kb-play='use']::before")).toMatch(/border:\s*(?:1\.5|[2-9])px dashed var\(--kb-pc-line\)/u);
+    /* A Use's box is the outline's own, never a fixed length outside the card (e2e/card-frames.spec.ts measures it, and a Set's inside the card). */
     expect(body(".kb-postcard[data-kb-play='use']::before")).toMatch(/inset:\s*calc\(-1 \* var\(--kb-pc-ring\)\)/u);
     expect(body(".kb-postcard[data-kb-play='cast']::before")).toBe('');
     expect(body('.kb-postcard-fold')).toMatch(/left:\s*0/u);
@@ -348,4 +347,23 @@ describe('the frame says how a card is played', () => {
     expect(forced).toMatch(/data-kb-play='use'\]::before[^{]*\{[^}]*CanvasText/u);
     expect(forced).toMatch(/\.kb-postcard-fold[^{]*\{[^}]*CanvasText/u);
   });
+
+  /* A Use's ring is not painted, so a rule that paints a card's ring itself would lay a solid ring under its dashes: every such rule reads the card's own ring. */
+  test('no other stylesheet of the engine paints a card\'s ring in a width or color of its own', () => {
+    expect(ringFaults(path.join(path.dirname(fileURLToPath(import.meta.url)), '..'))).toEqual([]);
+  });
 });
+
+/** Each rule under `root`, outside postcard.css, that paints a ring on a card (a shadow with no offset or blur) in a width or color of its own. */
+function ringFaults(root: string): string[] {
+  const faults: string[] = [];
+  for (const file of fs.readdirSync(root, { recursive: true, encoding: 'utf8' }).filter((f) => f.endsWith('.css') && path.basename(f) !== 'postcard.css' && !f.includes('node_modules'))) {
+    for (const m of fs.readFileSync(path.join(root, file), 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '').matchAll(/([^{}]+)\{([^{}]*)\}/gu)) {
+      if (!/\.kb-postcard(?![-\w])/u.test(m[1]!)) continue;
+      for (const shadow of /box-shadow:([^;]*)/u.exec(m[2]!)?.[1]?.split(/,(?![^(]*\))/u) ?? []) {
+        if (/^\s*0 0 0 \S/u.test(shadow) && !shadow.includes('inset') && shadow.trim() !== '0 0 0 var(--kb-pc-ring) var(--kb-pc-ring-color)') faults.push(`${file}: ${m[1]!.trim()} { ${shadow.trim()} }`);
+      }
+    }
+  }
+  return faults;
+}

@@ -18,7 +18,10 @@
   /* The card's outline: a ring this wide outside its box, in every type and on the back. A type changes how the ring is drawn and
      what is inside it, never where it ends (docs/plans/2026-11-12-card-frame-outline.md). */
   --kb-pc-ring: 1.5px;
-  --kb-pc-ring-color: var(--kb-card-color);
+  /* The frame's color, for every line of it: a rule that recolors the frame (the pack's hit pull) sets this, and one that restyles the
+     card's shadow paints the ring as `0 0 0 var(--kb-pc-ring) var(--kb-pc-ring-color)`, so a Use's stays unpainted under its dashes. */
+  --kb-pc-line: var(--kb-card-color);
+  --kb-pc-ring-color: var(--kb-pc-line);
   position: relative;
   display: block;
   box-sizing: border-box;
@@ -71,7 +74,7 @@ button.kb-postcard {
   --kb-pc-second: calc(var(--kb-pc-gap) + var(--kb-pc-ring));
   inset: var(--kb-pc-second);
   border-radius: calc(var(--kb-pc-radius) - var(--kb-pc-second));
-  box-shadow: 0 0 0 var(--kb-pc-ring) var(--kb-card-color);
+  box-shadow: 0 0 0 var(--kb-pc-ring) var(--kb-pc-line);
 }
 
 /* The glow, and at the larger sizes the card's shadow, stay as every card's: only the ring's own paint is dropped. */
@@ -81,7 +84,7 @@ button.kb-postcard {
 
 .kb-postcard[data-kb-play='use']::before {
   inset: calc(-1 * var(--kb-pc-ring));
-  border: 2px dashed var(--kb-card-color);
+  border: 2px dashed var(--kb-pc-line);
   border-radius: calc(var(--kb-pc-radius) + var(--kb-pc-ring));
 }
 
@@ -428,8 +431,8 @@ button.kb-postcard {
   .kb-postcard,
   .kb-postcard-back { outline: 1px solid CanvasText; }
   .kb-postcard-gem { outline: 1px solid CanvasText; }
-  /* How a card is played is a border, which forced colors keep, in the system's text color. */
-  /* A Set's second line as a border, drawn inward from where the shadow's outer edge was: its box starts at the gap, so the line is still on the card's border and clear of the canvas. */
+  /* How a card is played is a border, which forced colors keep, in the system's text color. A Set's second line is drawn inward
+     from where the shadow's outer edge was (its box starts at the gap), so it is still on the card's border and clear of the canvas. */
   .kb-postcard[data-kb-play='set']::before { inset: var(--kb-pc-gap); border-radius: calc(var(--kb-pc-radius) - var(--kb-pc-gap)); box-shadow: none; border: 2px solid CanvasText; }
   .kb-postcard[data-kb-play='use']::before { border-color: CanvasText; }
   .kb-postcard-fold { background: CanvasText; }

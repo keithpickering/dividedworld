@@ -22,6 +22,8 @@ interface Frame {
   /** The ::before's border style, and where its box starts from the card's edge (negative is outside). */
   readonly beforeStyle: string;
   readonly beforeInset: number | null;
+  /** Where the canvas starts from the card's edge: the border's width. */
+  readonly canvas: number;
 }
 
 test('every card type has the same outline at a size, and its own line inside it', async ({ page }) => {
@@ -65,6 +67,7 @@ test('every card type has the same outline at a size, and its own line inside it
         solid,
         beforeStyle: drawn ? before.borderTopStyle : 'none',
         beforeInset: inset,
+        canvas: parseFloat(getComputedStyle(card.querySelector('.kb-postcard-canvas')!).top),
       };
     });
   });
@@ -84,7 +87,9 @@ test('every card type has the same outline at a size, and its own line inside it
   expect(use.solid, 'a Use has no solid ring under its dashes').toBe(false);
   const set = slots.find((f) => f.play === 'set')!;
   expect(set.solid, 'a Set keeps the solid ring').toBe(true);
-  expect(set.beforeInset, 'a Set\'s second line is inside the card').toBeGreaterThan(0);
+  /* The second line is a ring drawn outward from its box, so the box's edge is the line's inner edge: a gap and a ring in from the outline, and before the canvas. */
+  expect(set.beforeInset, 'a Set\'s second line is inside the card, a gap in from its outline').toBeGreaterThanOrEqual(3);
+  expect(set.beforeInset, 'and ends on the card\'s border, before the canvas').toBeLessThan(set.canvas);
 });
 
 test.describe('under forced colors', () => {

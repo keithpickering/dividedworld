@@ -43,9 +43,18 @@ Weighed and turned down:
 - **The same reserved space around every card, lines left where they were.** It fixes spacing in a layout and leaves
   the three outlines three sizes, which is the thing the owner saw.
 
+- **A rule that restyles a card's shadow reads the card's ring.** Two rules outside the card's stylesheet painted a solid
+  ring of their own (the machine's drop tray, a pack's hit pull), which sat under a Use's dashes before this change and
+  would have gone on doing so. They now paint `0 0 0 var(--kb-pc-ring) var(--kb-pc-ring-color)`, and a test in each layer
+  holds every stylesheet to that.
+- **A hit pull turns the whole frame gold.** The frame's color is one variable, `--kb-pc-line`, read by the ring, a
+  Set's second line and a Use's dashes; the hit sets it, where it used to recolor the ring alone.
+
 ## Rules it touches
 
-- Engine only: `engine/ui/cards/postcard.css`. No instance content, no new interface.
+- Engine: `engine/ui/cards/postcard.css`, and the pack reveal's hit ring in `engine/ui/vending/opening.css`. Instance:
+  the drop tray's card in `instances/divided-world/ui/vending/vending.css`. Both read the card's own custom properties,
+  as an instance's stylesheet already reads `--kb-card-color`; no new interface.
 - No state, response, payload or timing is added, so there is no way out to name and no mask to hold.
 - Accessibility: the type is still said in words in each card's name (`cardLabel`), and forced colors keep both lines
   (the Set's second line as a border, the Use's dashes in the system's text color).
@@ -74,6 +83,21 @@ Files: `engine/ui/cards/postcard.css`, `engine/ui/cards/postcard.test.tsx`, `e2e
    `--kb-pc-ring-color: transparent` in place of its `box-shadow`.
 3. `postcard.test.tsx`: the stylesheet test of the frames reads the new rules (the ring's width is never under 1.5px,
    no line starts a fixed length outside the card).
+
+### Task 2: the rules that paint a ring of their own
+
+Model: inline
+
+Added in the build, from the quality review (a plan gap: the plan's first form named `postcard.css` alone).
+
+Files: `engine/ui/vending/opening.css`, `instances/divided-world/ui/vending/vending.css`,
+`engine/ui/cards/postcard.css`, `engine/ui/cards/postcard.test.tsx`, `instances/divided-world/ui/index.test.tsx`.
+
+1. Tests first: in each layer, every stylesheet but `postcard.css` is read, and a rule on `.kb-postcard` whose
+   `box-shadow` has a ring (no offset, no blur, not inset) must paint it as
+   `0 0 0 var(--kb-pc-ring) var(--kb-pc-ring-color)`. Red on the two rules above.
+2. `--kb-pc-line` on `.kb-postcard`, read by `--kb-pc-ring-color`, the Set's second line and the Use's dashes; the
+   two rules read the ring, and the hit sets `--kb-pc-line`.
 
 ## Review focus
 
