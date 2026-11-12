@@ -11,6 +11,7 @@
  * Pure: nothing here reads a clock or a database.
  */
 import { BBCODE_TAGS } from '../bbcode/parse.ts';
+import type { Trim } from '../system/validate.ts';
 
 export type ParamKind = 'none' | 'count' | 'word' | 'tag';
 
@@ -47,6 +48,25 @@ export interface PredicateProblem {
   readonly path: 'predicate' | 'param';
   /** The predicate that failed, in `repair`'s words (`atMost(200)`, `oneOf(...)`). */
   readonly predicate: string;
+}
+
+/**
+ * A model's parameter read as its predicate wants it: a count given as digits is its number, and "no parameter" given as empty text is none (a parameter left out is none too, with no trim: nothing was converted).
+ * Both are the same choice written another way, so each is a repair with a trim at `param` (`asNumber`, `asNone`); `before` is the length of the text given
+ * and `after` the number (0 for none). Anything else comes back unchanged for `predicateProblems` to judge by name.
+ */
+export function readParam(predicateKey: string, given: unknown): { value: unknown; trim?: Trim } {
+  const p = predicate(predicateKey);
+  if (p?.param === 'count' && typeof given === 'string' && /^\s*\d+\s*$/.test(given)) {
+    const value = Number(given);
+    return { value, trim: { path: 'param', predicate: 'asNumber', before: given.length, after: value } };
+  }
+  if (p?.param === 'none') {
+    // A field left out is not a repair; only text that was converted (the empty text a schema's required field sends) is recorded.
+    if (given === undefined) return { value: null };
+    if (given === '') return { value: null, trim: { path: 'param', predicate: 'asNone', before: 0, after: 0 } };
+  }
+  return { value: given };
 }
 
 /** A rule's key and parameter against the catalog: null when both hold, else the one thing that failed. */

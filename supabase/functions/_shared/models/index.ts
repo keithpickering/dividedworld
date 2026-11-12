@@ -19,8 +19,9 @@
  * here names a model id as a default, so the setting is the one place a tier's model is chosen.
  */
 import type { CallContext, ChatRequest, CompletionRequest, ModelResult, Models, Tier, Usage } from '../../../../engine/system/model.ts';
-import { AnswerRejected } from '../../../../engine/system/model.ts';
-export { AnswerRejected };
+import { AnswerRejected, SchemaRefused } from '../../../../engine/system/model.ts';
+import { schemaProblems } from '../../../../engine/system/schema.ts';
+export { AnswerRejected, SchemaRefused };
 import { cutCompletion, repair } from '../../../../engine/system/validate.ts';
 import type { Trim } from '../../../../engine/system/validate.ts';
 import { anthropicChat } from './anthropic.ts';
@@ -95,7 +96,9 @@ export function models(env: Env, record: RecordModelCall, options: ModelOptions)
     } catch (e) {
       threw = true;
       failure = e;
-      if (e instanceof AnswerRejected) { call.outcome = 'rejected'; call.predicate = e.predicate; }
+      // A refused schema was never sent: nothing was asked or paid for, so its row is `failed`, with the predicate.
+      if (e instanceof SchemaRefused) { call.outcome = 'failed'; call.predicate = e.predicate; }
+      else if (e instanceof AnswerRejected) { call.outcome = 'rejected'; call.predicate = e.predicate; }
       throw e;
     } finally {
       const u = call.usage;
@@ -126,6 +129,9 @@ export function models(env: Env, record: RecordModelCall, options: ModelOptions)
     chat(request: ChatRequest): Promise<ModelResult<unknown>> {
       const model = options.tiers[request.tier];
       return ledgered(request, { provider: 'anthropic', model }, async (call) => {
+        // Before the key is read and before anything is sent: a schema the provider refuses is a fact about the request.
+        const problems = schemaProblems(request.schema);
+        if (problems.length > 0) throw new SchemaRefused(problems);
         const key = env('ANTHROPIC_API_KEY');
         if (!key) throw new Error('ANTHROPIC_API_KEY is not set');
         const raw = await withRetries(call, () => anthropicChat(request, model, key, wire));

@@ -3,6 +3,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseArgs } from "./cli.ts";
 import type { Scenario } from "../../engine/rehearsal/types.ts";
+import { PRICES } from "../../supabase/functions/_shared/models/prices.ts";
+
+const [opus, sonnet, haiku] = Object.keys(PRICES.anthropic.models) as [string, string, string];
 
 const base: Scenario = {
   key: "tiny", seed: 1, players: 4, charactersPerPlayer: { least: 2, most: 3 }, startThreads: 2, backstoryDays: 1,
@@ -65,4 +68,28 @@ test("an unknown flag, a missing value and a bad number are refused with the usa
     assert.ok(!r.ok, argv.join(" "));
     assert.match(r.error, /Usage: npm run rehearse/);
   }
+});
+
+test("--strong and --light name a model each, and a tier left out stays out", () => {
+  const both = parseArgs(["tiny", "--strong", opus, "--light", haiku], known);
+  assert.ok(both.ok);
+  assert.deepEqual(both.tiers, { strong: opus, light: haiku });
+  const one = parseArgs(["tiny", "--light", sonnet], known);
+  assert.ok(one.ok);
+  assert.deepEqual(one.tiers, { light: sonnet });
+  const none = parseArgs(["tiny"], known);
+  assert.ok(none.ok);
+  assert.deepEqual(none.tiers, {});
+});
+
+test("a model the price table does not list, or a missing value, is refused with its own message", () => {
+  for (const [argv, flag, value] of [[["tiny", "--strong", "gpt-9"], "--strong", "gpt-9"], [["tiny", "--light", "claude-opus-4"], "--light", "claude-opus-4"]] as const) {
+    const r = parseArgs(argv, known);
+    assert.ok(!r.ok, argv.join(" "));
+    assert.match(r.error, new RegExp(`^${flag} needs a model the price table lists, not "${value}"\\. Listed: `));
+    for (const m of Object.keys(PRICES.anthropic.models)) assert.ok(r.error.includes(m), m);
+  }
+  const bare = parseArgs(["tiny", "--strong"], known);
+  assert.ok(!bare.ok);
+  assert.match(bare.error, /^--strong needs a value\./);
 });

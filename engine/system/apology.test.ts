@@ -2,6 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { testSystem } from '../rules/test-system.ts';
 import { APOLOGY_RULE, APOLOGY_VERDICTS, apologyPrompt, repairApology } from './apology.ts';
+import { schemaProblems } from './schema.ts';
+import { POSTING_OFFICES } from './pool.ts';
 import type { Persona } from '../rules/types.ts';
 
 const words = (n: number) => Array.from({ length: n }, (_, i) => `w${i + 1}`).join(' ');
@@ -55,4 +57,8 @@ test('the judge is told the premise of the office it holds: a Mod\'s, a Boss\'s 
     const p = apologyPrompt(testSystem, persona, office, 'Ann was made Pariah on Games.', 'Sorry.', 80);
     assert.ok(p.system.startsWith(premise), office);
   }
+});
+
+test('the apology schema is one the provider accepts', () => {
+  for (const office of POSTING_OFFICES) assert.deepEqual(schemaProblems(apologyPrompt(testSystem, persona, office, 'Ann was made Pariah on Games.', 'Sorry.', 80).schema), [], office);
 });

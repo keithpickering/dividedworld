@@ -1,7 +1,8 @@
 // The collector's two pure joins: a call to the Act it produced, and a ledger row to the call that made it. No database.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { pairLedger, takeCall } from "./collect.ts";
+import { MEETING_PARTS } from "../../engine/system/meeting.ts";
+import { meetingParts, pairLedger, takeCall } from "./collect.ts";
 import type { KeptCall } from "./models.ts";
 
 const MIN = 60_000;
@@ -47,4 +48,45 @@ test("a row far from every call in its key is unmatched", () => {
   const r = pairLedger([{ id: 1, ms: 10 * MIN, duty: "chatter", staff: "a", meeting: null, cost: 1 }], calls);
   assert.equal(r.pairs.size, 0);
   assert.equal(r.unmatched.length, 1);
+});
+
+// A meeting's parts come from its record; each takes the kept call that asked for it, matched on the ask the call's last message ends with.
+const asks = Object.fromEntries(MEETING_PARTS.map((p) => [p.key, p.ask]));
+const meetingCall = (key: string, at: number, over: Partial<KeptCall> = {}): KeptCall =>
+  kept("meeting", null, at, { request: { system: `SYS-${key}`, messages: [{ role: "user", content: "earlier" }, { role: "user", content: `Context. ${asks[key]}` }], meeting: 1 } as unknown as KeptCall["request"], value: { answered: key }, ...over });
+
+test("a part the call was not kept for shows its own error, and the other parts keep their own calls", () => {
+  const staff = meetingCall("staff", 2000);
+  const self = meetingCall("self", 3000, { replayed: true });
+  const record = { parts: [{ part: "moves", outcome: "failed", error: "TRANSPORT-BOOM" }, { part: "staff", outcome: "ok" }, { part: "self", outcome: "ok" }] };
+  const parts = meetingParts(record, [staff, self]);
+  assert.deepEqual(parts.map((p) => [p.part, p.outcome]), [["moves", "failed"], ["staff", "ok"], ["self", "ok"]]);
+  assert.equal(parts[0]!.error, "TRANSPORT-BOOM");
+  assert.equal(parts[0]!.sent, null);
+  assert.equal(parts[0]!.answer, null);
+  assert.equal(parts[0]!.replayed, null);
+  assert.equal(parts[1]!.sent?.system, "SYS-staff");
+  assert.deepEqual(parts[1]!.answer, { answered: "staff" });
+  assert.equal(parts[2]!.sent?.system, "SYS-self");
+  assert.equal(parts[2]!.replayed, true);
+});
+
+test("a record with no parts gives one unknown entry per kept call, never an invented part or outcome", () => {
+  const a = meetingCall("moves", 1000);
+  const b = meetingCall("staff", 2000, { error: { message: "NOPE", predicate: "p" }, value: undefined });
+  for (const record of [null, {}, { parts: [] }]) {
+    const parts = meetingParts(record, [a, b]);
+    assert.deepEqual(parts.map((p) => [p.part, p.outcome]), [["unknown", "unknown"], ["unknown", "unknown"]]);
+    assert.equal(parts[0]!.error, null);
+    assert.equal(parts[1]!.error, "NOPE");
+    assert.equal(parts[0]!.sent?.system, "SYS-moves");
+  }
+});
+
+test("three ok parts each take their own call, whatever order the calls come in", () => {
+  const calls = [meetingCall("self", 3000), meetingCall("moves", 1000), meetingCall("staff", 2000)];
+  const record = { parts: MEETING_PARTS.map((p) => ({ part: p.key, outcome: "ok" })) };
+  const parts = meetingParts(record, calls);
+  assert.deepEqual(parts.map((p) => p.sent?.system), ["SYS-moves", "SYS-staff", "SYS-self"]);
+  assert.deepEqual(parts.map((p) => p.answer), [{ answered: "moves" }, { answered: "staff" }, { answered: "self" }]);
 });

@@ -32,6 +32,7 @@ import {
 import { PREDICATES } from '../rules/predicates.ts';
 import { PRONOUN_PRESETS } from '../rules/pronouns.ts';
 import { repair } from './validate.ts';
+import { schemaProblems } from './schema.ts';
 import { testSystem } from '../rules/test-system.ts';
 import { personaPrompt } from './prompt.ts';
 
@@ -55,6 +56,16 @@ test('a whole move passes, its board in lowercase and its parameter as the predi
   assert.deepEqual(count.move?.params, { board: GAMES, predicate: 'minLength', param: 12, band: 'moderate' }, 'a count given as digits is a number');
   const none = repairModMove({ ...good, params: { board: GAMES, predicate: 'noAllCaps', param: '', band: 'minor' } }, ctx);
   assert.equal(none.move?.params['param'], null, 'a predicate with no parameter takes the empty text as none');
+});
+
+test('a count given as digits is read as its number, with the trim under move.params, and a none given as empty text or left out is read as none with no trim', () => {
+  const count = repairModMove({ ...good, params: { board: GAMES, predicate: 'minLength', param: ' 12 ', band: 'moderate' } }, ctx);
+  assert.deepEqual(count.trims, [{ path: 'move.params.param', predicate: 'asNumber', before: 4, after: 12 }]);
+  const none = repairModMove({ ...good, params: { board: GAMES, predicate: 'noAllCaps', param: '', band: 'minor' } }, ctx);
+  assert.deepEqual(none.trims, [], 'the Mod\'s empty param is no field, so it is no repair');
+  const left = repairModMove({ ...good, params: { board: GAMES, predicate: 'noAllCaps', band: 'minor' } }, ctx);
+  assert.deepEqual(left.trims, [], 'a parameter left out is not a repair');
+  assert.equal(left.move?.params['param'], null);
 });
 
 test('a move is dropped when the Mod has no allowance, and the reason is the allowance', () => {
@@ -686,7 +697,6 @@ test('the patrol schema asks for findings from the sample\'s ids, each with a ch
   assert.deepEqual(item.properties.post.enum, [P1, P2, P3]);
   assert.deepEqual(item.properties.charge.properties.rule.enum, ['premise', 'House Rule 1', 'Rule 2']);
   assert.deepEqual(item.required, ['post', 'charge']);
-  assert.equal(s.properties['findings'].maxItems, 3);
   assert.ok('move' in s.properties);
   const none = patrolPrompt(patrol({ allowance: 0, beat: [] })).schema as { properties: Record<string, unknown> };
   assert.deepEqual(Object.keys(none.properties), ['findings']);
@@ -701,4 +711,26 @@ test('no patrol prompt holds an owner, a class or a reactor', () => {
   const p = patrolPrompt(patrol());
   for (const text of [p.system, p.message]) assert.ok(!/\bowner|\breactor|\bclass\b|\bclasses\b|\baccount\b|\bplayer behind/i.test(text), text.slice(0, 200));
   assert.match(p.system, /cannot know who is behind/);
+});
+
+test('every schema a judgment builds is one the provider accepts: a filing (with and without a move, with conferred punishments), a report, an appeal, a patrol', () => {
+  const conferred = [{ key: 'trial', name: 'Trial Members', tone: 'punishment' as const }];
+  const schemas: [string, Record<string, unknown>][] = [
+    ['filing with a move on offer', filingPrompt(filing()).schema],
+    ['filing with no move on offer', filingPrompt(filing({ allowance: 0, beat: [] })).schema],
+    ['filing with conferred punishments', filingPrompt(filing({ conferred })).schema],
+    ['report', reportPrompt(report()).schema],
+    ['report with no move on offer', reportPrompt(report({ allowance: 0, beat: [] })).schema],
+    ['appeal', appealPrompt(appeal()).schema],
+    ['patrol', patrolPrompt(patrol()).schema],
+    ['patrol with no move on offer', patrolPrompt(patrol({ allowance: 0, beat: [] })).schema],
+  ];
+  for (const [name, schema] of schemas) assert.deepEqual(schemaProblems(schema), [], name);
+});
+
+test('a patrol\'s findings are bounded by the rule, not the schema: no maxItems, and the repair still never lets them outnumber the sample', () => {
+  const s = patrolPrompt(patrol()).schema as { properties: Record<string, any> };
+  assert.ok(!('maxItems' in s.properties['findings']), 'the provider refuses maxItems');
+  const many = Array.from({ length: 5 }, () => finding(P1, { rule: 'premise', band: 'minor' }));
+  assert.equal(repairPatrol({ findings: many }, { ...pctx, sample: [pctx.sample[0]!] }).findings.length, 1);
 });
