@@ -13,7 +13,7 @@
  * it ends or is replaced, over at least `EDGE_MS`, because a level that jumps is a click in the speaker. A play may ask for a `tailMs`,
  * a fade to nothing over the last of its file, so a take ends by fading, not by stopping. A bus's volume moves to its new level over
  * a few milliseconds for the same reason. Each slot's `gain` multiplies the level its voice ramps to, so an instance levels its files
- * against each other (a gain that is not a finite number above 0 is read as 1).
+ * against each other (a gain that is not a finite number above 0 is read as 1). A level the caller hands in that is not a finite number (a bus's volume, a loop's `setGain`) is read as 0, since a param throws on it.
  *
  * Engine code: it names no card and no instance.
  */
@@ -54,11 +54,12 @@ export function createMixer(deps: MixerDeps): Mixer {
     interface: { on: false, volume: 100, node: null },
   };
   const loops: Record<SoundBus, Set<(why: LoopStop) => void>> = { game: new Set(), interface: new Set() };
-  /** A group's current voice, and the way to end it over `fadeMs` (a play fades out, a loop stops). A play's fade-out never outlasts its file. */
+  /** A group's current voice, and the way to end it over `fadeMs` (a play fades out, a loop stops). A play's fade-out ends by its file's end, but never takes less than `EDGE_MS`, so a play replaced in its last few milliseconds outlasts its file by up to that. */
   const groups = new Map<string, { source: SourceLike; end(fadeMs: number): void }>();
   const buffers = new Map<string, Promise<{ readonly duration: number } | null>>();
 
-  const level = (b: SoundBus): number => (buses[b].on ? Math.min(Math.max(buses[b].volume, 0), 100) / 100 : 0);
+  /** A bus's level: 0 when it is off or its volume is not a finite number (a NaN handed to a param throws), else the volume over 100, clamped to 0..1. */
+  const level = (b: SoundBus): number => (buses[b].on && Number.isFinite(buses[b].volume) ? Math.min(Math.max(buses[b].volume, 0), 100) / 100 : 0);
   /** A slot's own level: its `gain`, or 1 when it has none or it is not a finite number above 0. */
   const gainOf = (slot: SoundSlot): number => (typeof slot.gain === 'number' && Number.isFinite(slot.gain) && slot.gain > 0 ? slot.gain : 1);
   function busNode(c: AudioContextLike, b: SoundBus): GainNodeLike {
@@ -122,15 +123,14 @@ export function createMixer(deps: MixerDeps): Mixer {
     const now = c.currentTime;
     voice.gain.setValueAtTime(0, now);
     const naturalEnd = looped ? undefined : now + buffer.duration;
-    if (!looped) {
+    if (naturalEnd !== undefined) {
       const level = gainOf(slot);
-      const end = now + buffer.duration;
       const fadeIn = Math.min(Math.max(fadeInMs, EDGE_MS) / 1000, buffer.duration / 2);
       const tail = Math.max(tailMs, EDGE_MS) / 1000;
       const rampedUp = now + fadeIn;
       voice.gain.linearRampToValueAtTime(level, rampedUp);
-      voice.gain.setValueAtTime(level, Math.max(end - tail, rampedUp));
-      voice.gain.linearRampToValueAtTime(0, end);
+      voice.gain.setValueAtTime(level, Math.max(naturalEnd - tail, rampedUp));
+      voice.gain.linearRampToValueAtTime(0, naturalEnd);
     }
     source.connect(voice);
     voice.connect(bus);
@@ -212,7 +212,7 @@ export function createMixer(deps: MixerDeps): Mixer {
             const now = c.currentTime;
             voice.gain.cancelScheduledValues(now);
             voice.gain.setValueAtTime(voice.gain.value, now);
-            voice.gain.setTargetAtTime(Math.min(Math.max(g, 0), 1) * gainOf(slot), now, 0.05);
+            voice.gain.setTargetAtTime((typeof g === 'number' && Number.isFinite(g) ? Math.min(Math.max(g, 0), 1) : 0) * gainOf(slot), now, 0.05);
           },
           stop(fadeMs) { end('stopped', fadeMs); },
         };

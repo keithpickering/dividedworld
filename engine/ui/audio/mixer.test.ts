@@ -3,18 +3,65 @@ import { describe, it, mock } from 'node:test';
 import { createMixer, EDGE_MS } from './mixer.ts';
 import type { SoundSlot } from './types.ts';
 
+const finite = (n: number, what: string) => { if (!Number.isFinite(n)) throw new TypeError(`${what}: ${n} is not a finite number`); };
 class FakeParam {
-  value = 1;
+  cur = 1;
   log: string[] = [];
   targets: Array<[number, number, number]> = [];
   ramps: Array<[number, number]> = [];
-  setValueAtTime(v: number, t: number) { this.value = v; this.log.push(`set ${v} ${t}`); }
+  /** Like the real param, a non-finite value throws a TypeError. */
+  get value(): number { return this.cur; }
+  set value(v: number) { finite(v, 'value'); this.cur = v; }
+  setValueAtTime(v: number, t: number) { finite(v, 'setValueAtTime'); this.cur = v; this.log.push(`set ${v} ${t}`); }
   cancelScheduledValues(t: number) { this.log.push(`cancel ${t}`); }
-  linearRampToValueAtTime(v: number, t: number) { this.ramps.push([v, t]); this.log.push(`ramp ${v} ${t}`); }
-  setTargetAtTime(v: number, t: number, c: number) { this.targets.push([v, t, c]); this.log.push(`target ${v} ${t}`); }
+  linearRampToValueAtTime(v: number, t: number) { finite(v, 'linearRampToValueAtTime'); this.ramps.push([v, t]); this.log.push(`ramp ${v} ${t}`); }
+  setTargetAtTime(v: number, t: number, c: number) { finite(v, 'setTargetAtTime'); this.targets.push([v, t, c]); this.log.push(`target ${v} ${t}`); }
+}
+type Ev = { type: 'set' | 'ramp' | 'target'; v: number; t: number; c: number; sched: number };
+/**
+ * A param that evaluates its timeline by the Web Audio spec's rules, for the cases the mixer uses: events ordered by time (ties in call order);
+ * a ramp runs from the previous event's time and value to its own; a target approaches exponentially from the value where it starts;
+ * cancelScheduledValues(t) drops every event at or after t (a ramp still in progress is dropped whole). `value` is the level last rendered, as
+ * in a browser: it moves when the clock moves or an event is set, never when events are cancelled, so a read after a cancel is still the level heard.
+ */
+class EvalParam extends FakeParam {
+  events: Ev[] = [];
+  rendered = 1;
+  clock: { currentTime: number };
+  constructor(clock: { currentTime: number }) { super(); this.clock = clock; }
+  override get value(): number { return this.rendered; }
+  override set value(v: number) { finite(v, 'value'); this.push('set', v, this.clock.currentTime, 0); }
+  push(type: Ev['type'], v: number, t: number, c: number) {
+    this.events.push({ type, v, t, c, sched: this.clock.currentTime });
+    this.render();
+  }
+  render() { this.rendered = this.at(this.clock.currentTime); }
+  override setValueAtTime(v: number, t: number) { finite(v, 'setValueAtTime'); this.push('set', v, t, 0); }
+  override linearRampToValueAtTime(v: number, t: number) { finite(v, 'linearRampToValueAtTime'); this.push('ramp', v, t, 0); }
+  override setTargetAtTime(v: number, t: number, c: number) { finite(v, 'setTargetAtTime'); this.push('target', v, t, c); }
+  override cancelScheduledValues(t: number) { this.events = this.events.filter((e) => e.t < t); }
+  /** The level the param has at time `T`, by the timeline as it stands now. */
+  at(T: number): number {
+    type Seg = { from: number; to: number; t: number; c: number };
+    const seg = (s: Seg, x: number) => (s.c === 0 ? s.from : s.to + (s.from - s.to) * Math.exp(-(x - s.t) / s.c));
+    const evs = [...this.events].sort((a, b) => a.t - b.t);
+    let cur: Seg = { from: 1, to: 1, t: -Infinity, c: 0 };
+    for (let i = 0; i < evs.length; i++) {
+      const e = evs[i]!;
+      if (e.t > T) {
+        if (e.type !== 'ramp') break;
+        const t0 = i > 0 ? evs[i - 1]!.t : e.sched;
+        const v0 = seg(cur, t0);
+        return t0 >= e.t ? e.v : v0 + (e.v - v0) * ((T - t0) / (e.t - t0));
+      }
+      cur = e.type === 'target' ? { from: seg(cur, e.t), to: e.v, t: e.t, c: e.c } : { from: e.v, to: e.v, t: e.t, c: 0 };
+    }
+    return seg(cur, T);
+  }
 }
 class FakeGain {
-  gain = new FakeParam();
+  gain: FakeParam;
+  constructor(gain: FakeParam = new FakeParam()) { this.gain = gain; }
   disconnected = false;
   connect() {}
   disconnect() { this.disconnected = true; }
@@ -33,7 +80,12 @@ class FakeSource {
   stop(when?: number) { this.stops += 1; this.stoppedAt = when ?? 0; }
 }
 class FakeContext {
-  currentTime = 10;
+  now = 10;
+  /** True once a test wants every gain to evaluate its timeline (EvalParam). */
+  timeline = false;
+  evals: EvalParam[] = [];
+  get currentTime() { return this.now; }
+  set currentTime(t: number) { this.now = t; for (const p of this.evals) p.render(); }
   destination = {};
   gains: FakeGain[] = [];
   sources: FakeSource[] = [];
@@ -41,7 +93,13 @@ class FakeContext {
   failDecode = false;
   resume = mock.fn(async () => {});
   suspend = mock.fn(async () => {});
-  createGain() { const g = new FakeGain(); this.gains.push(g); return g; }
+  createGain() {
+    let p: FakeParam | undefined;
+    if (this.timeline) { const e = new EvalParam(this); this.evals.push(e); p = e; }
+    const g = new FakeGain(p);
+    this.gains.push(g);
+    return g;
+  }
   createBufferSource() { const s = new FakeSource(); this.sources.push(s); return s; }
   async decodeAudioData(_b: ArrayBuffer) {
     this.decoded += 1;
@@ -281,7 +339,7 @@ describe('mixer', () => {
     assert.deepEqual(stops, ['a:bus', 'b:replaced', 'c:stopped']);
   });
 
-  const near = (a: number, b: number) => Math.abs(a - b) < 1e-9;
+  const near = (a: number, b: number, tol = 1e-9) => Math.abs(a - b) < tol;
   /** The `[value, time]` pairs a param was told with `set` (setValueAtTime) and `ramp` (linearRampToValueAtTime). */
   const marks = (g: FakeGain, kind: 'set' | 'ramp'): Array<[number, number]> => g.gain.log
     .filter((l) => l.startsWith(`${kind} `)).map((l) => l.split(' ').slice(1).map(Number) as [number, number]);
@@ -466,7 +524,7 @@ describe('mixer', () => {
     assert.ok(near(marks(ctx.gains[2]!, 'ramp').at(-1)![1], 60.35));
   });
 
-  it('24. a replaced voice stops once and disconnects once whichever of its natural end or its fade-out comes first; a bus going off stops no play twice', async () => {
+  it('24. a replaced voice stops once and disconnects once whichever of its natural end or its fade-out comes first; a bus going off stops no play, only loops', async () => {
     const m = make();
     await m.unlock();
     m.setBus('game', { on: true, volume: 100 });
@@ -484,5 +542,83 @@ describe('mixer', () => {
     assert.equal(second.stops, 0, 'a voice that ended before it was replaced is not stopped');
     m.setBus('game', { on: false, volume: 100 });
     assert.deepEqual(ctx.sources.map((s) => s.stops), [1, 0, 0]);
+  });
+  it('25. a loop\'s setGain(NaN) targets 0 and does not throw', async () => {
+    const m = make();
+    await m.unlock();
+    m.setBus('game', { on: true, volume: 100 });
+    const h = (await m.loop(slot('build', { loop: true })))!;
+    assert.doesNotThrow(() => h.setGain(Number.NaN));
+    assert.equal(ctx.gains[1]!.gain.targets.at(-1)![0], 0);
+  });
+
+  it('26. a loop\'s setGain(Infinity) and setGain of a non-number are not finite, so they read as 0 (Infinity does not clamp to 1), and do not throw', async () => {
+    const m = make();
+    await m.unlock();
+    m.setBus('game', { on: true, volume: 100 });
+    const h = (await m.loop(slot('build', { loop: true, gain: 2 })))!;
+    for (const g of [Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, '0.5' as unknown as number, undefined as unknown as number]) {
+      assert.doesNotThrow(() => h.setGain(g), String(g));
+      assert.equal(ctx.gains[1]!.gain.targets.at(-1)![0], 0, `setGain(${String(g)})`);
+    }
+  });
+
+  it('27. a bus volume that is not finite reads as 0, whether its node exists yet or not, and setBus does not throw', async () => {
+    const m = make();
+    await m.unlock();
+    assert.doesNotThrow(() => m.setBus('game', { on: true, volume: Number.NaN }));
+    await m.play(boo);
+    const bus = ctx.gains[0]!;
+    assert.equal(bus.gain.value, 0, 'the first busNode reads NaN as 0');
+    m.setBus('game', { on: true, volume: 100 });
+    for (const volume of [Number.NaN, Number.POSITIVE_INFINITY, undefined as unknown as number]) {
+      assert.doesNotThrow(() => m.setBus('game', { on: true, volume }), String(volume));
+      assert.equal(bus.gain.targets.at(-1)![0], 0, `volume ${String(volume)}`);
+    }
+  });
+
+  const level = (g: FakeGain) => g.gain as EvalParam;
+  const EPS = 1e-6;
+  const make4 = async () => {
+    const m = make();
+    ctx.timeline = true;
+    await m.unlock();
+    m.setBus('game', { on: true, volume: 100 });
+    longer(4);
+    return m;
+  };
+
+  it('28. a voice replaced in the middle of its fade-in has no jump in the level heard, and reaches 0 by its fade-out\'s end', async () => {
+    const m = await make4();
+    await m.play(boo, { group: 'g', fadeMs: 2000 });
+    const old = level(ctx.gains[1]!);
+    ctx.currentTime = 10.5;
+    const before = old.at(10.5 - EPS);
+    assert.ok(near(before, 0.25, 1e-3), 'mid fade-in');
+    await m.play(cheer, { group: 'g', fadeMs: 2000 });
+    assert.ok(Math.abs(old.at(10.5 + EPS) - before) < 1e-3, `no jump: ${before} then ${old.at(10.5 + EPS)}`);
+    assert.ok(near(old.at(12.5), 0) && near(old.at(13), 0), 'at 0 by the end of the fade-out');
+  });
+
+  it('29. a voice replaced in the middle of its tail has no jump in the level heard, and reaches 0 by its fade-out\'s end', async () => {
+    const m = await make4();
+    await m.play(boo, { group: 'g', fadeMs: 100, tailMs: 1000 });
+    const old = level(ctx.gains[1]!);
+    ctx.currentTime = 13.5;
+    const before = old.at(13.5 - EPS);
+    assert.ok(near(before, 0.5, 1e-3), 'mid tail');
+    await m.play(cheer, { group: 'g', fadeMs: 100 });
+    assert.ok(Math.abs(old.at(13.5 + EPS) - before) < 1e-3, `no jump: ${before} then ${old.at(13.5 + EPS)}`);
+    assert.ok(near(old.at(13.6), 0) && near(old.at(14), 0), 'at 0 by the end of the fade-out');
+  });
+
+  it('30. a fresh play\'s level at its start time is 0, and it is at its level once the fade-in is done', async () => {
+    const m = await make4();
+    ctx.currentTime = 20;
+    await m.play(boo, { tailMs: 500 });
+    const v = level(ctx.gains[1]!);
+    assert.equal(v.at(20), 0);
+    assert.equal(v.value, 0, 'and so is the level read now');
+    assert.ok(near(v.at(20 + EDGE), 1));
   });
 });
