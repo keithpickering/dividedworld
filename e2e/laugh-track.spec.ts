@@ -206,7 +206,7 @@ const READER_CUES = [{ phrase: 'fan game', sound: 'boo' }, { phrase: 'forums', s
 /** 14 places: 5, 5 and 4 by paragraph. A phrase is a place at each of its occurrences. */
 const READER_PLACES = READER_PARAGRAPHS.join('\n\n').match(/fan game|forums|Mario/gu)?.length ?? 0;
 
-const PLACES = READER_PARAGRAPHS.join('\n\n').match(/fan game|forums|Mario/gu) ?? [];
+const PLACES: readonly string[] = READER_PARAGRAPHS.join('\n\n').match(/fan game|forums|Mario/gu) ?? [];
 const NAME_UNHEARD = (words: string) => `${words}. Play the audience's reaction`;
 
 async function openReader(page: Page, size: { width: number; height: number }) {

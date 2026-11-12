@@ -6,7 +6,7 @@
  * Each place (a cue's phrase found by `placesOf`, the engine's one matcher, over the post's visible text) is a `wrap` run of a `TextLayer`,
  * drawn as `span.dw-lt-cue`. 1. Only a gesture fires a place: a mouse that moves onto it, a tap or click, Enter or Space. Scrolling never does,
  * and neither does a place that scrolls under a mouse at rest: a `pointerenter` at the position the mouse last was (one position for the page, shared by every post, and kept by the
- * one document `pointermove` listener) is not a gesture, and neither is one when no position is known yet: it records where it was. The next `pointermove` over
+ * one document `pointermove` listener) is not a gesture, and neither is an enter or a move when no position is known yet: it records where it was. The next `pointermove` over
  * the place, at a new position, is a gesture. A touch that only brushes a place does nothing. The reaction plays at once and fades in over
  * one already sounding (the mixer's `audience` group); a second gesture on a place inside 300 ms is the same gesture and plays nothing.
  * 2. Nearness marks the place before it is heard: the watcher (watch.ts) tells each unheard place how near the reader is, 0 to 1, and this effect writes
@@ -44,7 +44,6 @@ import { seeded } from '../seeded.ts';
 import { forgetVoice, quiet, register, type Screen, type Unregister } from './watch.ts';
 import './laugh-track.css';
 
-/** The numbers the screens read from the card's settings when the instance has not set them (laugh-track.ts `screenReads`). */
 /* Where the mouse last moved on this page, and how many effects are listening: one document `pointermove` listener serves every post, so a post mounted
    later (a navigation, a lazy mount) already knows where the mouse was, and forty posts are not forty listeners. */
 let lastPointer: { x: number; y: number } | null = null;
@@ -55,6 +54,7 @@ const unlisten = () => { if (--listeners === 0) document.removeEventListener('po
 /** For tests: forget where the mouse was. */
 export const __resetPointer = () => { lastPointer = null; };
 
+/** The numbers the screens read from the card's settings when the instance has not set them (laugh-track.ts `screenReads`). */
 export const DEFAULTS = { line: 40, reachRem: 12, murmurMost: 35, fadeMs: 250, markMost: 100 } as const;
 /** The loop that builds before each kind of hit, by sound. */
 const LOOPS: Readonly<Record<Sound, string>> = { laugh: 'laugh-track.titter', cheer: 'laugh-track.ooh', boo: 'laugh-track.grumble' };
@@ -221,12 +221,13 @@ function Live({ post, plays, show, met, children }: EffectProps) {
   }, []);
 
   useEffect(() => { listen(); return unlisten; }, []);
-  /* The mouse's position is the page's: a place that mounts or scrolls under a mouse at rest is entered at that position, and that is not a gesture. An enter with
-     no position known yet only records where it was; either way the position is kept, so the same-position `pointermove` a browser sends after an enter does not fire. */
-  const moved = (e: { clientX: number; clientY: number }, entering: boolean) => {
+  /* The mouse's position is the page's: a place that mounts or scrolls under a mouse at rest is entered at that position, and that is not a gesture. An enter or
+     a move with no position known yet only records where it was (a browser may send either to a place drawn under a still mouse); either way the position is kept, so
+     the same-position `pointermove` a browser sends after an enter does not fire. The document's listener is a bubble listener, so it records after these handlers compare. */
+  const moved = (e: { clientX: number; clientY: number }) => {
     const was = lastPointer;
     lastPointer = { x: e.clientX, y: e.clientY };
-    if (was === null) return !entering;
+    if (was === null) return false;
     return was.x !== e.clientX || was.y !== e.clientY;
   };
 
@@ -260,8 +261,8 @@ function Live({ post, plays, show, met, children }: EffectProps) {
   const runs = useMemo<TextRun[]>(() => spots.map((spot) => {
     const done = fired.has(spot.key);
     /* A mouse that has moved onto the place fires it once, until it leaves. */
-    const gesture = (entering: boolean) => (e: { clientX: number; clientY: number; pointerType: string }) => {
-      if (e.pointerType !== 'mouse' || over.current.has(spot.key) || !moved(e, entering)) return;
+    const gesture = (e: { clientX: number; clientY: number; pointerType: string }) => {
+      if (e.pointerType !== 'mouse' || over.current.has(spot.key) || !moved(e)) return;
       over.current.add(spot.key);
       fire(spot);
     };
@@ -275,8 +276,8 @@ function Live({ post, plays, show, met, children }: EffectProps) {
         };
         return pieceOf(spot, key, text, {
           className: done ? 'dw-lt-cue dw-lt-fired' : 'dw-lt-cue',
-          onPointerEnter: gesture(true),
-          onPointerMove: gesture(false),
+          onPointerEnter: gesture,
+          onPointerMove: gesture,
           onPointerLeave: (e: PointerEvent) => {
             const into = e.relatedTarget;
             if (into instanceof Element && into.closest(`[data-lt-place="${spot.key}"]`)) return;

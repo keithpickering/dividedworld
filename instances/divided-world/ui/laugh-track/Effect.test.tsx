@@ -351,6 +351,17 @@ describe('Laugh Track: where the mouse last was (the design\'s section 1, "The m
     expect(heard.play).toHaveBeenCalledTimes(1);
   });
 
+  test('with no last position at all and no enter seen, a move over a place fires nothing; the next move elsewhere plays once', () => {
+    mount();
+    const [p] = pieces();
+    act(() => { move(p!, 50, 50); });
+    expect(heard.play).not.toHaveBeenCalled();
+    act(() => { move(p!, 50, 50); });
+    expect(heard.play).not.toHaveBeenCalled();
+    act(() => { move(p!, 51, 50); });
+    expect(heard.play).toHaveBeenCalledTimes(1);
+  });
+
   test('an enter that fires is not fired again by the same-position move that follows it', () => {
     mount();
     const [p] = pieces();
