@@ -4,7 +4,7 @@
  * arming a card closes it and leaves the card's peek over the hand button. The Phone board's sheet is none of that.
  * The Frame here is the real one over a fake API, as Frame.test.tsx draws it.
  */
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { KayfaApi, MyCharacter } from '../data/api.ts';
@@ -107,7 +107,7 @@ describe('the hand on the Main board is a modal', () => {
     await userEvent.click(hand);
     const backdrop = document.querySelector('.kb-hand-backdrop')!;
     expect(backdrop).toHaveAttribute('aria-hidden', 'true');
-    expect(fireEvent.pointerDown(backdrop)).toBe(false);
+    fireEvent.pointerDown(backdrop, { button: 0 });
     expect(hand).toHaveAttribute('aria-expanded', 'false');
     expect(hand).toHaveFocus();
     expect(document.querySelector('.kb-hand-backdrop')).toBeNull();
@@ -119,20 +119,54 @@ describe('the hand on the Main board is a modal', () => {
     expect(under).toHaveBeenCalledTimes(1);
   });
 
+  test('a right or middle press on the backdrop does nothing: the hand stays open', async () => {
+    setup();
+    const hand = await handButton();
+    await userEvent.click(hand);
+    for (const button of [1, 2]) fireEvent.pointerDown(document.querySelector('.kb-hand-backdrop')!, { button });
+    expect(hand).toHaveAttribute('aria-expanded', 'true');
+    expect(document.querySelector('.kb-hand-backdrop')).not.toBeNull();
+  });
+
+  test('a press that ends without a click (a touch that becomes a scroll, a context menu, a drag) leaves no swallower for the next real click', async () => {
+    const under = vi.fn();
+    setup(<button type="button" onClick={under}>beneath</button>);
+    const hand = await handButton();
+    for (const ends of ['pointercancel', 'contextmenu'] as const) {
+      await userEvent.click(hand);
+      fireEvent.pointerDown(document.querySelector('.kb-hand-backdrop')!, { button: 0, pointerId: 7 });
+      expect(hand).toHaveAttribute('aria-expanded', 'false');
+      fireEvent(window, new Event(ends === 'contextmenu' ? 'contextmenu' : 'pointercancel', { bubbles: true }));
+      fireEvent.click(screen.getByRole('button', { name: 'beneath' }));
+      expect(under, ends).toHaveBeenCalledTimes(ends === 'pointercancel' ? 1 : 2);
+    }
+  });
+
+  test('a later press drops the swallower of an earlier one', async () => {
+    const under = vi.fn();
+    setup(<button type="button" onClick={under}>beneath</button>);
+    const hand = await handButton();
+    await userEvent.click(hand);
+    fireEvent.pointerDown(document.querySelector('.kb-hand-backdrop')!, { button: 0 });
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'beneath' }), { button: 0 });
+    fireEvent.click(screen.getByRole('button', { name: 'beneath' }));
+    expect(under).toHaveBeenCalledTimes(1);
+  });
+
   test('a press on the HUD itself (its plate, or its bare ground) closes the hand like the backdrop, but a press on the hand button is the button\'s', async () => {
     const under = vi.fn();
     setup(<button type="button" onClick={under}>beneath</button>);
     const hand = await handButton();
     await userEvent.click(hand);
     const plate = document.querySelector('.kb-hud-plate')!;
-    expect(fireEvent.pointerDown(plate)).toBe(false);
+    fireEvent.pointerDown(plate, { button: 0 });
     expect(hand).toHaveAttribute('aria-expanded', 'false');
     expect(hand).toHaveFocus();
     fireEvent.click(plate);
     expect(under).not.toHaveBeenCalled();
     await userEvent.click(hand);
     expect(hand).toHaveAttribute('aria-expanded', 'true');
-    expect(fireEvent.pointerDown(document.querySelector('.kb-hud')!)).toBe(false);
+    fireEvent.pointerDown(document.querySelector('.kb-hud')!, { button: 0 });
     expect(hand).toHaveAttribute('aria-expanded', 'false');
     /* The press's own click is swallowed once, then the hand button's press is not a dismissal: its click opens the hand. */
     fireEvent.click(screen.getByRole('button', { name: 'beneath' }));
@@ -194,7 +228,8 @@ describe('the hand on the Main board, reopened while it gathers', () => {
     expect(drawer).not.toHaveAttribute('inert');
     expect(document.querySelector('.kb-hud')).toHaveAttribute('data-kb-hand-open');
     /* The stopped gather's committed pose is not left on the cards for the deal to start from or to keep: each card is back on its slot's stylesheet. */
-    await act(async () => { for (const r of dealing) r.settle(); await new Promise((r) => setTimeout(r, 50)); });
+    await act(async () => { for (const r of dealing) r.settle(); });
+    await waitFor(() => expect(drawer.querySelector<HTMLElement>('li.kb-hand-card')!.style.transform).toBe(''));
     for (const li of drawer.querySelectorAll<HTMLElement>('li.kb-hand-card')) {
       expect(li.style.opacity).toBe('');
       expect(li.style.transform).toBe('');
@@ -209,6 +244,22 @@ describe('the hand on the Main board, reopened while it gathers', () => {
     expect(document.querySelector('[inert]')).toBeNull();
     expect(document.querySelector('.kb-hud')).not.toHaveAttribute('data-kb-hand-open');
     expect(hand).toHaveFocus();
+  });
+});
+
+describe('the hand on the Main board, a gather stopped by switching motion Off', () => {
+  test('the stopped gather gives each card its stylesheet transition back', async () => {
+    document.documentElement.setAttribute('data-kb-motion', 'full');
+    setup();
+    const hand = await handButton();
+    await userEvent.click(hand);
+    await act(async () => { for (const r of runs) r.settle(); });
+    await waitFor(() => expect(document.querySelector<HTMLElement>('li.kb-hand-card')!.style.transition).toBe(''));
+    await userEvent.click(hand);
+    expect(document.querySelector<HTMLElement>('li.kb-hand-card')!.style.transition).toBe('none');
+    await act(async () => { document.documentElement.setAttribute('data-kb-motion', 'reduce'); });
+    await userEvent.click(hand);
+    for (const li of document.querySelectorAll<HTMLElement>('li.kb-hand-card')) expect(li.style.transition).toBe('');
   });
 });
 

@@ -303,20 +303,34 @@ export function Hud() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [handOpen]);
 
-  /* The click that ends a press on the backdrop is stopped once, in the capture phase, before it reaches what lay beneath the backdrop; it is dropped if no click comes. */
+  /*
+   * The click that ends a press on the backdrop is stopped once, in the capture phase, before it reaches what lay beneath the backdrop. It belongs to that
+   * press alone: it is dropped when the press ends without a click (the touch becomes a scroll and is cancelled, a context menu opens, a drag leaves
+   * nothing to click), when any later press begins, and, as a last resort, after 700ms. Only a primary press dismisses; a right or middle press does
+   * nothing, and the backdrop, which covers the page, keeps its context menu and auxiliary click from reaching what is beneath.
+   */
   const stopClick = useRef<(() => void) | null>(null);
   useEffect(() => () => stopClick.current?.(), []);
   const dismiss = (e: ReactPointerEvent) => {
+    if (e.button !== 0) return;
     e.preventDefault();
     stopClick.current?.();
     const swallow = (c: Event) => { c.stopPropagation(); c.preventDefault(); drop(); };
+    const ends = ['pointercancel', 'contextmenu', 'pointerdown'] as const;
     const timer = setTimeout(() => drop(), 700);
-    const drop = () => { clearTimeout(timer); window.removeEventListener('click', swallow, true); stopClick.current = null; };
+    const drop = () => {
+      clearTimeout(timer);
+      window.removeEventListener('click', swallow, true);
+      for (const t of ends) window.removeEventListener(t, drop, true);
+      stopClick.current = null;
+    };
     window.addEventListener('click', swallow, true);
+    for (const t of ends) window.addEventListener(t, drop, true);
     stopClick.current = drop;
     setHandOpen(false);
     handButton.current?.focus();
   };
+  const ignoreAside = (e: { preventDefault: () => void }) => e.preventDefault();
 
   /*
    * The hand drawer opens from the hand button and its close plays out (glass/play.ts, motion.ts `overlay`). It stays on the page, so on a close it is
@@ -370,7 +384,8 @@ export function Hud() {
           runs.push(() => { stop(); rest(); });
           return;
         }
-        runs.push(playOut(li, p, () => { rest(); if (--left === 0) setDrawerLeaving(false); }));
+        const stop = playOut(li, p, () => { rest(); if (--left === 0) setDrawerLeaving(false); });
+        runs.push(() => { stop(); rest(); });
       });
       drawerRun.current = () => { for (const stop of runs) stop(); };
       return;
@@ -437,7 +452,7 @@ export function Hud() {
 
   return (
     <>
-      {signedIn && modal && <div className="kb-hand-backdrop" aria-hidden="true" onPointerDown={dismiss} />}
+      {signedIn && modal && <div className="kb-hand-backdrop" aria-hidden="true" onPointerDown={dismiss} onContextMenu={ignoreAside} onAuxClick={ignoreAside} />}
       {signedIn && (
         <div ref={drawer} id={drawerId} className="kb-glass kb-hand-drawer" role={wide ? 'dialog' : 'region'} {...(modal ? { 'aria-modal': true } : {})} aria-label="Your hand" tabIndex={-1} hidden={!handOpen && !drawerLeaving} {...(drawerLeaving && !handOpen ? { inert: true, 'aria-hidden': true, 'data-kb-exiting': '' } : {})} style={{ ...handCalm, '--kb-hand-lift-ms': feel ? `${feel.enter}ms` : '0ms', '--kb-hand-lift-ease': feel?.ease ?? 'ease' } as CSSProperties}>
           <Smoke surface="hand">

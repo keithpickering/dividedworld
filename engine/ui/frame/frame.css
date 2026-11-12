@@ -1215,6 +1215,9 @@ button.kb-hud-secret:focus-visible {
  * nothing, the card would drop, and it would loop. So the lifted card carries a pad beneath it that reaches down over the
  * box it stood in (the pad is in the card's own scaled coordinates: 110px of them is 137px on the screen, the lift's 110
  * less the growth of the card's foot, with room to spare). A hover on the pad is a hover on the card.
+ *
+ * The pad stays on the li, so it is the card's and not a layer of its own, and it sits above the neighbors. A press on it, the
+ * space the lifted card left, does nothing; moving off it drops the lift.
  */
 :where(:root:not([data-kb-layout='phone'])) .kb-hand-card:hover::after {
   content: '';

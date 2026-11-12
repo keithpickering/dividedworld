@@ -2,7 +2,7 @@
  * The hand drawer's plays (play.ts): each returns a stop; a stopped run neither clears the element nor calls `end` when its animation settles,
  * so a reopen during the exit keeps the entrance's values. `animate` is stubbed (jsdom has no WAAPI).
  */
-import { afterEach, describe, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 interface Fake { settle: () => void; stop: ReturnType<typeof vi.fn> }
 const fakes: Fake[] = [];
@@ -18,9 +18,10 @@ vi.mock('motion/react', () => ({
 const { playIn, playOut } = await import('./play.ts');
 
 const el = document.createElement('div');
-afterEach(() => { fakes.length = 0; el.removeAttribute('style'); });
-/* A settled entrance clears on the next animation frame. */
-const flush = () => new Promise((r) => setTimeout(r, 50));
+/* A settled entrance clears on the next animation frame; the frame is a microtask here, so one turn of the event loop lets every pending one run, whatever the machine's speed. */
+beforeEach(() => { vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => { queueMicrotask(() => cb(0)); return 0; }); });
+afterEach(() => { fakes.length = 0; el.removeAttribute('style'); vi.unstubAllGlobals(); });
+const flush = () => new Promise((r) => setTimeout(r, 0));
 
 describe('the drawer plays', () => {
   test('a reopen during the exit: the exit\'s completion does not clear the entrance or end the close', async () => {
