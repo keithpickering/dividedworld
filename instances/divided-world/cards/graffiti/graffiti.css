@@ -119,6 +119,7 @@
   max-width: none;
   margin: 0;
   display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 9px;
   padding: 10px 12px calc(12px + max(0px, env(safe-area-inset-bottom, 0px) - var(--kb-hud-measured, 0px)));
   max-height: calc(70vh - var(--kb-hud-measured, 0px));
@@ -132,10 +133,130 @@
   z-index: 6;
 }
 
+/*
+ * What is in the dock, phone first: the meter at the left with the fold button at its right (the header, which stays when the tools are folded away), the tools
+ * (`hidden` when folded, so out of the tab order and the accessibility tree, and still mounted, so the choices stay), then everything else a row across. Cancel and
+ * Tag it and the reason are never folded.
+ */
+.kb-graffiti-dock > * {
+  grid-column: 1 / -1;
+}
+
+.kb-graffiti-dock > .kb-graffiti-label,
+.kb-graffiti-dock > .kb-graffiti-meter {
+  grid-column: 1;
+}
+
+.kb-graffiti-dock > .kb-graffiti-meter {
+  align-self: start;
+}
+
+.kb-graffiti-dock > .kb-graffiti-fold {
+  grid-column: 2;
+  grid-row: 1 / 3;
+  align-self: center;
+}
+
+.kb-graffiti-tools {
+  display: grid;
+  gap: 9px;
+}
+
+.kb-graffiti-tools[hidden] {
+  display: none;
+}
+
+/*
+ * From 720px up the dock is as wide as the thread's column and the same controls take the width there is: the header row holds the meter, the fold button, Cancel and
+ * Tag it (sized to their words), with the reason under the meter; the tools take one row (the tabs, the cans, the caps and Undo), wrapping only where the column is
+ * too narrow; the Stencils tab puts its spots beside the stencils and the cans. Rows have no gap of their own, so a row that is empty is no height; the rows that come
+ * and go carry their own margin.
+ */
 @media (min-width: 720px) {
   .kb-graffiti-dock.kb-graffiti-dock {
     left: var(--kb-graffiti-dock-left, 0px);
     right: var(--kb-graffiti-dock-right, 0px);
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    column-gap: 12px;
+    row-gap: 0;
+  }
+
+  .kb-graffiti-dock > .kb-graffiti-label { grid-row: 1; }
+  .kb-graffiti-dock > .kb-graffiti-meter { grid-row: 2; margin-top: 6px; }
+  .kb-graffiti-dock > .kb-graffiti-fold { grid-column: 2; grid-row: 1 / 4; }
+  .kb-graffiti-dock > .kb-graffiti-tools { grid-row: 4; margin-top: 9px; }
+  .kb-graffiti-dock > :is(.kb-graffiti-notice, .kb-graffiti-refusal, .kb-graffiti-ask) { margin-top: 9px; }
+  .kb-graffiti-dock > .kb-graffiti-notice { grid-row: 5; }
+  .kb-graffiti-dock > .kb-graffiti-refusal { grid-row: 6; }
+  .kb-graffiti-dock > .kb-graffiti-ask { grid-row: 7; }
+  .kb-graffiti-dock > .kb-graffiti-actions { grid-column: 3; grid-row: 1 / 4; align-self: center; }
+  .kb-graffiti-dock > .kb-graffiti-reason { grid-column: 1; grid-row: 3; margin-top: 4px; }
+
+  .kb-graffiti-actions > .kb-graffiti-go {
+    flex: none;
+    padding-inline: 24px;
+  }
+
+  .kb-graffiti-tools {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 9px 12px;
+  }
+
+  .kb-graffiti-tools[hidden] {
+    display: none;
+  }
+
+  .kb-graffiti-tools[data-tab="stencils"] {
+    align-items: flex-start;
+  }
+
+  .kb-graffiti-tools .kb-graffiti-panel {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .kb-graffiti-tools[data-tab="spray"] .kb-graffiti-panel {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 9px 12px;
+  }
+
+  .kb-graffiti-label,
+  .kb-graffiti-reason {
+    line-height: 1.2;
+  }
+
+  /* A pointer finer than a finger gives the cans a little less width, so the tools fit one row at the column's width; a touch screen keeps its 44px. */
+  @media (pointer: fine) {
+    .kb-graffiti-cans .kb-graffiti-pick {
+      width: 32px;
+    }
+  }
+
+  /* From 1024px the played card's peek (Hud.tsx) hangs over the dock's right edge, about 150px of it; the dock keeps its controls clear of it. */
+  @media (min-width: 1024px) {
+    .kb-graffiti-dock.kb-graffiti-dock {
+      padding-right: 162px;
+    }
+
+    .kb-graffiti-tools,
+    .kb-graffiti-tools[data-tab="spray"] .kb-graffiti-panel {
+      column-gap: 8px;
+    }
+  }
+
+  .kb-graffiti-tools[data-tab="stencils"] .kb-graffiti-panel {
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: 12px;
+  }
+
+  .kb-graffiti-tools[data-tab="stencils"] .kb-graffiti-spots {
+    grid-column: 2;
+    grid-row: 1 / 3;
+    align-self: start;
   }
 }
 

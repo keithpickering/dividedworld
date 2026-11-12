@@ -11,7 +11,7 @@
  * screen reader reaches and reads its reason from. Everything it draws is `data-kb-over-ink`: a press on it is the toolbar's and starts no
  * stroke, on this card or any other that is scrubbed.
  */
-import { createElement, useEffect, useId, useLayoutEffect, useRef, type KeyboardEvent, type ReactNode } from 'react';
+import { createElement, useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { CANS, CAPS, type Can, type Cap } from '../graffiti.ts';
 import { CAN_VIEWBOX, canShapes } from './can.svg.ts';
 import { overWords, percent, type Meter } from './draft.ts';
@@ -136,6 +136,8 @@ export function Toolbar(p: ToolbarProps) {
   const stay = useRef<HTMLButtonElement>(null);
   const cancel = useRef<HTMLButtonElement>(null);
   const wasAsking = useRef(false);
+  /* Open each time draw mode opens (the toolbar mounts with it); the tools are hidden when closed, never unmounted, so the choices stay. */
+  const [open, setOpen] = useState(true);
 
   useEffect(() => { if (p.focusOnMount) first.current?.focus({ preventScroll: true }); }, [p.focusOnMount]);
   useEffect(() => {
@@ -197,31 +199,36 @@ export function Toolbar(p: ToolbarProps) {
         <i className="kb-graffiti-meter-wall" style={{ width: `${fill}%` }} />
         <i className="kb-graffiti-meter-add" style={{ left: `${fill}%`, width: `${Math.max(0, reach - fill)}%` }} />
       </div>
+      <button type="button" className="kb-graffiti-btn kb-graffiti-fold" aria-expanded={open} aria-controls={`${id}-tools`} onClick={() => setOpen((o) => !o)}>
+        <span>{open ? 'Hide tools' : 'Show tools'}</span>
+      </button>
 
-      <div role="tablist" aria-label="Tools" className="kb-graffiti-tabs" onKeyDown={tabKey}>
-        {TABS.map((t, i) => (
-          <button
-            key={t.key} ref={i === 0 ? first : undefined} type="button" role="tab" id={`${id}-tab-${t.key}`} aria-selected={p.tab === t.key} aria-controls={`${id}-panel`}
-            tabIndex={p.tab === t.key ? 0 : -1} className="kb-graffiti-btn" onClick={() => p.onTab(t.key)}
-          >
-            <span>{t.name}</span>
-          </button>
-        ))}
-      </div>
+      <div id={`${id}-tools`} className="kb-graffiti-tools" data-tab={p.tab} hidden={!open}>
+        <div role="tablist" aria-label="Tools" className="kb-graffiti-tabs" onKeyDown={tabKey}>
+          {TABS.map((t, i) => (
+            <button
+              key={t.key} ref={i === 0 ? first : undefined} type="button" role="tab" id={`${id}-tab-${t.key}`} aria-selected={p.tab === t.key} aria-controls={`${id}-panel`}
+              tabIndex={p.tab === t.key ? 0 : -1} className="kb-graffiti-btn" onClick={() => p.onTab(t.key)}
+            >
+              <span>{t.name}</span>
+            </button>
+          ))}
+        </div>
 
-      <div role="tabpanel" id={`${id}-panel`} aria-labelledby={`${id}-tab-${p.tab}`} className="kb-graffiti-panel">
-        {p.tab === 'stencils' && (
-          <Radios label="Stencil" className="kb-graffiti-stencils" choices={STENCIL_CHOICES} value={p.stencil} onChange={p.onStencil} />
-        )}
-        <Radios label="Can" className="kb-graffiti-cans" choices={CAN_CHOICES} value={p.can} onChange={p.onCan} />
-        {p.tab === 'spray' ? (
-          <div className="kb-graffiti-row">
-            <Radios label="Cap" className="kb-graffiti-caps" choices={CAP_CHOICES} value={p.cap} onChange={p.onCap} />
-            <button type="button" className="kb-graffiti-btn" disabled={!p.canUndo} onClick={p.onUndo}><span>Undo</span></button>
-          </div>
-        ) : (
-          <Radios label="Spot" className="kb-graffiti-spots" choices={SPOT_CHOICES} value={p.spot} onChange={p.onSpot} cols={3} />
-        )}
+        <div role="tabpanel" id={`${id}-panel`} aria-labelledby={`${id}-tab-${p.tab}`} className="kb-graffiti-panel">
+          {p.tab === 'stencils' && (
+            <Radios label="Stencil" className="kb-graffiti-stencils" choices={STENCIL_CHOICES} value={p.stencil} onChange={p.onStencil} />
+          )}
+          <Radios label="Can" className="kb-graffiti-cans" choices={CAN_CHOICES} value={p.can} onChange={p.onCan} />
+          {p.tab === 'spray' ? (
+            <div className="kb-graffiti-row">
+              <Radios label="Cap" className="kb-graffiti-caps" choices={CAP_CHOICES} value={p.cap} onChange={p.onCap} />
+              <button type="button" className="kb-graffiti-btn" disabled={!p.canUndo} onClick={p.onUndo}><span>Undo</span></button>
+            </div>
+          ) : (
+            <Radios label="Spot" className="kb-graffiti-spots" choices={SPOT_CHOICES} value={p.spot} onChange={p.onSpot} cols={3} />
+          )}
+        </div>
       </div>
 
       {p.notice !== null && <p className="kb-graffiti-notice" role="status">{p.notice}</p>}
@@ -237,7 +244,7 @@ export function Toolbar(p: ToolbarProps) {
         </div>
       ) : (
         <>
-          <div className="kb-graffiti-row">
+          <div className="kb-graffiti-row kb-graffiti-actions">
             <button ref={cancel} type="button" className="kb-graffiti-btn" disabled={p.busy} onClick={p.onCancel}><span>Cancel</span></button>
             <button
               type="button" className="kb-graffiti-btn kb-graffiti-go" aria-disabled={!ready} aria-busy={p.busy || undefined} aria-describedby={reason !== null ? reasonId : undefined}

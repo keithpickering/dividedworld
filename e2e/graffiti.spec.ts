@@ -447,3 +447,61 @@ test.describe('focus under the dock, wide', () => {
     expect(hidden, 'post controls left behind the dock').toEqual([]);
   });
 });
+
+/*
+ * The dock is short on a wide screen and folds to its header at every width (Toolbar.tsx, graffiti.css): the same controls take the width there is, and "Hide tools"
+ * leaves the meter, Cancel and Tag it. Measured, with room to spare: the expanded dock is 162px at 1280px wide (Spray tab) and the bound below is 180.
+ */
+const WIDE_DOCK_MAX = 180;
+async function dockOpen(page: Page): Promise<void> {
+  await world(page);
+  await openThread(page);
+  await arm(page);
+  await post(page).getByRole('button', { name: /^Play Graffiti on post \d+$/ }).click();
+  await expect(dock(page)).toBeVisible();
+}
+const height = async (page: Page) => (await dock(page).boundingBox())!.height;
+async function inWindow(page: Page, name: string): Promise<void> {
+  const box = (await dock(page).getByRole('button', { name }).boundingBox())!;
+  const view = page.viewportSize()!;
+  expect(box.y, `${name} in the window`).toBeGreaterThanOrEqual(0);
+  expect(box.y + box.height, `${name} in the window`).toBeLessThanOrEqual(view.height);
+  expect(box.x + box.width, `${name} in the window`).toBeLessThanOrEqual(view.width + 0.5);
+}
+
+test.describe('the dock folds, wide', () => {
+  test.use({ viewport: { width: 1280, height: 800 }, reducedMotion: 'reduce' });
+  test('at most 180px tall expanded, shorter folded, with Cancel and Tag it in the window', async ({ page }) => {
+    await dockOpen(page);
+    const open = await height(page);
+    expect(open, 'expanded dock height').toBeLessThanOrEqual(WIDE_DOCK_MAX);
+    const fold = dock(page).getByRole('button', { name: 'Hide tools' });
+    await expect(fold).toHaveAttribute('aria-expanded', 'true');
+    for (const name of ['Cancel', 'Tag it']) expect((await dock(page).getByRole('button', { name }).boundingBox())!.height).toBeGreaterThanOrEqual(44);
+    await fold.click();
+    await expect(dock(page).getByRole('tab')).toHaveCount(0);
+    const shut = await height(page);
+    expect(shut, 'folded dock height').toBeLessThan(open - 40);
+    await inWindow(page, 'Cancel');
+    await inWindow(page, 'Tag it');
+    /* The page's foot follows the dock: the root's measured height is the dock's. */
+    expect(await page.evaluate(() => document.documentElement.style.getPropertyValue('--kb-graffiti-dock-h'))).toBe(`${Math.round(shut)}px`);
+    await dock(page).getByRole('button', { name: 'Show tools' }).click();
+    await expect(dock(page).getByRole('tab', { name: 'Spray' })).toBeVisible();
+    expect(await height(page)).toBeCloseTo(open, 0);
+  });
+});
+
+test.describe('the dock folds, on a phone', () => {
+  const { defaultBrowserType: _browser, ...pixel } = devices['Pixel 7'];
+  test.use({ ...pixel });
+  test('folded is shorter than expanded, with Cancel and Tag it in the window', async ({ page }) => {
+    await dockOpen(page);
+    const open = await height(page);
+    await dock(page).getByRole('button', { name: 'Hide tools' }).click();
+    const shut = await height(page);
+    expect(shut).toBeLessThan(open - 100);
+    await inWindow(page, 'Cancel');
+    await inWindow(page, 'Tag it');
+  });
+});

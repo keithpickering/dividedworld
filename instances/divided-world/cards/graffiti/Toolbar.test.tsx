@@ -43,8 +43,8 @@ describe('every control is reachable by Tab and named', () => {
     const user = userEvent.setup();
     render(<Toolbar {...propsOf({ canUndo: true, hasDraft: true })} />);
     const seen: (string | null)[] = [];
-    for (let i = 0; i < 6; i++) { await user.tab(); seen.push(focusedName()); }
-    expect(seen).toEqual(['Spray', 'Cyan', 'Stock', 'Undo', 'Cancel', 'Tag it']);
+    for (let i = 0; i < 7; i++) { await user.tab(); seen.push(focusedName()); }
+    expect(seen).toEqual(['Hide tools', 'Spray', 'Cyan', 'Stock', 'Undo', 'Cancel', 'Tag it']);
     for (const control of [...screen.getAllByRole('button'), ...screen.getAllByRole('radio'), ...screen.getAllByRole('tab')]) expect(control).toHaveAccessibleName();
   });
 
@@ -52,8 +52,8 @@ describe('every control is reachable by Tab and named', () => {
     const user = userEvent.setup();
     render(<Toolbar {...propsOf({ tab: 'stencils', stencil: 'crown', hasDraft: true })} />);
     const seen: (string | null)[] = [];
-    for (let i = 0; i < 6; i++) { await user.tab(); seen.push(focusedName()); }
-    expect(seen).toEqual(['Stencils', 'Crown', 'Cyan', 'Middle center', 'Cancel', 'Tag it']);
+    for (let i = 0; i < 7; i++) { await user.tab(); seen.push(focusedName()); }
+    expect(seen).toEqual(['Hide tools', 'Stencils', 'Crown', 'Cyan', 'Middle center', 'Cancel', 'Tag it']);
     for (const control of [...screen.getAllByRole('button'), ...screen.getAllByRole('radio'), ...screen.getAllByRole('tab')]) expect(control).toHaveAccessibleName();
   });
 
@@ -68,6 +68,7 @@ describe('every control is reachable by Tab and named', () => {
   test('the arrow keys move between the tabs', async () => {
     const user = userEvent.setup();
     render(<Kept />);
+    await user.tab();
     await user.tab();
     await user.keyboard('{ArrowRight}');
     expect(screen.getByRole('tab', { name: 'Stencils' })).toHaveAttribute('aria-selected', 'true');
@@ -300,5 +301,54 @@ describe('the Stencils tab', () => {
     expect(dockHostOf(document.getElementById('words'))).toBe(document.querySelector('.kb-act'));
     expect(dockHostOf(document.body)).toBeNull();
     expect(dockHostOf(null)).toBeNull();
+  });
+});
+
+describe('the dock collapses to its header', () => {
+  const toggle = () => screen.getByRole('button', { name: /^(Hide|Show) tools$/ });
+
+  test('a disclosure button in the header, open by default, controls the tools', () => {
+    render(<Toolbar {...propsOf()} />);
+    expect(toggle()).toHaveTextContent('Hide tools');
+    expect(toggle()).toHaveAttribute('aria-expanded', 'true');
+    const tools = document.getElementById(toggle().getAttribute('aria-controls')!)!;
+    expect(tools).not.toBeNull();
+    expect(tools).toContainElement(screen.getByRole('tablist'));
+    expect(tools).toContainElement(screen.getByRole('radiogroup', { name: 'Can' }));
+  });
+
+  test('collapsed, the tools leave the accessibility tree and Cancel, Tag it and the reason stay', async () => {
+    const user = userEvent.setup();
+    const onCancel = vi.fn();
+    render(<Toolbar {...propsOf({ onCancel })} />);
+    await user.click(toggle());
+    expect(toggle()).toHaveAttribute('aria-expanded', 'false');
+    expect(toggle()).toHaveTextContent('Show tools');
+    expect(screen.queryByRole('tab')).toBeNull();
+    expect(screen.queryByRole('radio')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Tag it' })).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByText('Draw something first')).toBeVisible();
+    expect(screen.getByText('Cyan')).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(onCancel).toHaveBeenCalled();
+  });
+
+  test('opened again, the same can, cap and tab are there, and a keyboard works the button', async () => {
+    const user = userEvent.setup();
+    render(<Kept />);
+    await user.click(screen.getByRole('radio', { name: 'Red' }));
+    await user.click(screen.getByRole('radio', { name: 'Fat' }));
+    await user.click(screen.getByRole('tab', { name: 'Stencils' }));
+    toggle().focus();
+    await user.keyboard('{Enter}');
+    expect(screen.queryByRole('tab')).toBeNull();
+    await user.keyboard(' ');
+    expect(toggle()).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('tab', { name: 'Stencils' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('radio', { name: 'Red' })).toBeChecked();
+    await user.click(screen.getByRole('tab', { name: 'Spray' }));
+    expect(screen.getByRole('radio', { name: 'Fat' })).toBeChecked();
   });
 });
