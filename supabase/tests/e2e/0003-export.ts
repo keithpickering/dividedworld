@@ -21,7 +21,7 @@ const root = path.resolve(import.meta.dirname, '../../..');
 const migrations = path.join(root, 'supabase/migrations');
 
 /** The tables that hold a row in the fixture, before the round trip and again after the import (an empty table would round-trip as well, and prove nothing). */
-const HELD = ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'season_results', 'apologies', 'card_texts', 'card_writes', 'card_write_refunds', 'scored_as', 'play_reach', 'ledger'];
+const HELD = ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'season_results', 'apologies', 'card_texts', 'card_writes', 'card_write_refunds', 'scored_as', 'play_reach', 'post_veils', 'ledger'];
 
 const psqlOn = (url: string, text: string) =>
   execFileSync('psql', ['-v', 'ON_ERROR_STOP=1', '-qtAX', url, '-f', '-'], { input: text, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
@@ -192,6 +192,8 @@ test('an instance exported and imported into a fresh database is the same instan
           jsonb_build_object('card', 'expscore', 'message', '', 'config', jsonb_build_object('class', 'heel'), 'layer', 1, 'reach', 'character', 'character', b,
             'starts', to_char(now() + interval '1 day', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'), 'ends', to_char(now() + interval '2 days', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'))) returning id into score_play;
         insert into play_reach (play, reach, character, ends_at) values (score_play, 'character', b, now() + interval '2 days');
+        -- A veil that has ended (0300): the one row post_veils holds here, so the table round-trips; Part 3's own fixture (a live and an ended veil of each kind, the stand-in) is its Task 12's. Ended, so no view shows a stand-in.
+        insert into post_veils (play, post, veil, author, caster_account, ends_at) values (score_play, p, 'author', a, null, now() - interval '1 day');
       end;
       -- The card notes, Part 4 (0194): a cast Earn on a character alone, with a group and a time up, played on Bob's character; and a No quote on a post, played after Bob
       -- quotes that post. The quote is written first, since a quote of a post under a live No quote is refused (acts_quote_guard); the import writes it as a replica.

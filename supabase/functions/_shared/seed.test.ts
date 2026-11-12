@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { instanceSeed } from './seed.ts';
+import { DEFAULT_ANONYMOUS } from '../../../engine/rules/instance.ts';
 import { chooseInstance, instance } from './instance.ts';
 import { MOVE_KINDS } from '../../../engine/system/moves.ts';
 import { BBCODE_TAGS } from '../../../engine/bbcode/parse.ts';
@@ -23,11 +24,11 @@ test('the seed carries every setting, class, reaction, card and board of the ins
   assert.deepEqual(seed.cards, instance.cards.map((c) => ({
     key: c.key, name: c.name, alignment: c.alignment, stack: c.stack ?? 1, seeded: c.seeded === true, reads: readKeys(c),
     rarity: c.rarity, play: c.play ?? 'cast', trap: c.trap, gimmick: c.gimmick, lasts: c.lasts, skim: c.skim, scoresAs: c.scoresAs, reaches: c.reaches ?? ['post'], pins: c.pins === true, writes: c.writes !== undefined,
-    draws: c.draws, drive: c.drive, needsMessage: c.needsMessage,
+    draws: c.draws, drive: c.drive, needsMessage: c.needsMessage, veil: c.veil, addsReaction: c.reaction === true,
   })));
   assert.deepEqual(seed.cards.find((c) => c.key === 'whoops'), {
     key: 'whoops', name: 'Whoops!', alignment: 'salty', stack: 3, seeded: true, reads: ['whoops.perLength', 'whoops.lengthStep', 'whoops.mostAdded'],
-    rarity: 'common', play: 'cast', trap: undefined, gimmick: undefined, lasts: undefined, skim: undefined, scoresAs: undefined, reaches: ['post'], pins: false, writes: false, draws: undefined, drive: undefined, needsMessage: undefined,
+    rarity: 'common', play: 'cast', trap: undefined, gimmick: undefined, lasts: undefined, skim: undefined, scoresAs: undefined, reaches: ['post'], pins: false, writes: false, draws: undefined, drive: undefined, needsMessage: undefined, veil: undefined, addsReaction: false,
   }, 'the stack, the seed, the economy numbers its rules read, its rarity and its play reach the SQL (0039, screen_settings\'s cardEconomy; 0054)');
   // The packs and the machine's slots (0139): the pulls as the instance writes them, a slot's item flattened to `card` or `pack`, in grid order.
   assert.deepEqual(seed.packs.map((p) => [p.key, p.pulls.length, p.leaves]), instance.packs.map((p) => [p.key, p.pulls.length, [...(p.leaves ?? [])]]));
@@ -153,4 +154,20 @@ test('the seed carries the developer persona: the instance\'s, or the engine\'s 
   assert.deepEqual(instanceSeed({ ...instance, developer: { name: 'Dev', tagline: 'Hi.' } }).developer, { name: 'Dev', title: 'Hi.' });
   assert.ok(!instanceSeed(instance).system.staff.some((s) => s.key === 'developer'), 'the developer is not in the roster a model is handed');
   assert.ok(!('developer' in instanceSeed(instance).system), 'nothing under `system`, which is all the Director reads, names the developer');
+});
+
+test('a card\'s veil and its reaction flag travel in the seed (0300), and an absent veil is absent in the JSON', () => {
+  const veil = { ...instance.cards[0]!, key: 'test-veil', veil: 'author' as const, lasts: { unit: 'day' as const, count: 3 } };
+  const react = { ...instance.cards[0]!, key: 'test-react', reaction: true as const };
+  const sent = JSON.parse(JSON.stringify(instanceSeed({ ...instance, cards: [veil, react] }).cards));
+  assert.deepEqual([sent[0].veil, sent[0].addsReaction], ['author', false], 'a veil reaches the SQL as its word, and a card that adds no reaction says so');
+  assert.deepEqual(['veil' in sent[1], sent[1].addsReaction], [false, true], 'a reaction card sends the flag and no veil');
+});
+
+test('the seed carries the anonymous poster: the instance\'s, or the engine\'s plain default, and no prompt (a model never writes it)', () => {
+  assert.deepEqual(instanceSeed({ ...instance, anonymous: undefined }).anonymous, { name: DEFAULT_ANONYMOUS.name, title: DEFAULT_ANONYMOUS.tagline }, 'an instance that names none gets the engine\'s plain one');
+  assert.deepEqual(instanceSeed({ ...instance, anonymous: { name: 'Nobody', tagline: 'Could be anyone.', avatar: 'nobody' } }).anonymous, { name: 'Nobody', title: 'Could be anyone.', avatar: 'nobody' }, 'the tagline is its profile title and the avatar a key');
+  assert.deepEqual(instanceSeed({ ...instance, anonymous: { name: 'Nobody', tagline: 'Hi.', pronouns: PRONOUN_PRESETS.they } }).anonymous, { name: 'Nobody', title: 'Hi.', pronouns: PRONOUN_PRESETS.they }, 'pronouns travel only when named');
+  assert.ok(!instanceSeed(instance).system.staff.some((s) => s.key === 'anonymous'), 'the anonymous poster is not in the roster a model is handed');
+  assert.ok(!('anonymous' in instanceSeed(instance).system), 'nothing under `system`, which is all the Director reads, names the anonymous poster');
 });

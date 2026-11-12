@@ -627,7 +627,7 @@ begin
     if asked[1] is distinct from asked[2] or asked[1] is distinct from none or asked[4] is distinct from asked[5] then raise exception 'an undebuted author and a random id answer differently'; end if;
     if (pg_temp.st(author => shy)) is distinct from (pg_temp.st(author => gen_random_uuid())) then raise exception 'search_threads answers an undebuted author differently'; end if;
     -- And the same posts are found by their words, under no author.
-    if not exists (select 1 from acts a where a.character = shy and a.id = any (pg_temp.acts_of(pg_temp.sp(q => 'shy', sort => 'newest')))) then raise exception 'the undebuted character''s post is not found by its words'; end if;
+    if not exists (select 1 from acts_public a where a.character = shy and a.id = any (pg_temp.acts_of(pg_temp.sp(q => 'shy', sort => 'newest')))) then raise exception 'the undebuted character''s post is not found by its words'; end if;
     perform tests.unbecome();
   end;
 

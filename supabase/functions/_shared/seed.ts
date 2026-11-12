@@ -7,7 +7,7 @@
  * use (supabase/migrations/0091_seed_reaction_kinds.sql).
  */
 import type { Instance, Weakness } from '../../../engine/rules/types.ts';
-import { DEFAULT_DEVELOPER } from '../../../engine/rules/instance.ts';
+import { DEFAULT_ANONYMOUS, DEFAULT_DEVELOPER } from '../../../engine/rules/instance.ts';
 import { MOVE_KINDS } from '../../../engine/system/moves.ts';
 import { BBCODE_TAGS } from '../../../engine/bbcode/parse.ts';
 import { PREDICATES } from '../../../engine/rules/predicates.ts';
@@ -27,6 +27,7 @@ function quizOf(w: Weakness): { quiz: { question: string; choices: string[]; ans
 
 export function instanceSeed(instance: Instance) {
   const dev = instance.developer ?? DEFAULT_DEVELOPER;
+  const anon = instance.anonymous ?? DEFAULT_ANONYMOUS;
   return {
     // The System's words travel as one setting, read by the SQL that posts them (0007).
     // The tick (0048) reads the stock lines and the moves' plain words from settings, so SQL names no instance and no kind.
@@ -53,6 +54,8 @@ export function instanceSeed(instance: Instance) {
       writes: c.writes !== undefined,
       // What the server draws one of at each play and the drive its plays share (0153), and the words a blank message is refused with (0153): data the SQL holds, never which card.
       draws: c.draws, drive: c.drive, needsMessage: c.needsMessage,
+      // What a cast card on a post withholds while it is up, and whether its play adds a reaction to that one post (0300): the SQL knows only these flags, never which card.
+      veil: c.veil, addsReaction: c.reaction === true,
     })),
     // The packs the instance sells, replaced each seed (0139), and the machine's slots in grid order: seed_instance adds a slot whose item the
     // database does not hold yet and never changes one that is there, since a slot's place, availability and price are an admin's.
@@ -61,6 +64,8 @@ export function instanceSeed(instance: Instance) {
     // The developer persona (0062): the instance's, else the engine's plain one. It is not in `system`, which a model reads, and its tagline is its
     // profile title. seed_instance makes the character and the updates thread from it; `avatar` is a key the UI turns into a picture.
     developer: { name: dev.name, title: dev.tagline, ...(dev.avatar !== undefined ? { avatar: dev.avatar } : {}), ...(dev.pronouns !== undefined ? { pronouns: dev.pronouns } : {}) },
+    // The anonymous poster (0300): the character shown in place of a veiled post's author, the instance's or the engine's plain one, made like the developer. It is not in `system`, which a model reads.
+    anonymous: { name: anon.name, title: anon.tagline, ...(anon.avatar !== undefined ? { avatar: anon.avatar } : {}), ...(anon.pronouns !== undefined ? { pronouns: anon.pronouns } : {}) },
     boards: instance.boards.map((b) => ({ slug: b.slug, name: b.name, description: b.description, system: b.system === true })),
     // The member groups (0128): the ladder, lowest first with each rung's index, then the groups a move confers with their tone. `condition` is the kind
     // (engine/rules/groups.ts CONDITION_KINDS), `atLeast` its count where it has one. seed_instance upserts them into group_kinds.
