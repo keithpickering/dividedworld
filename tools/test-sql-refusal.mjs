@@ -23,6 +23,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { ASSERTION_FILE, SESSION_BOUNDS, nullBlind, refusal } from './test-sql.mjs';
+/* A namespace import, so a runner without the constant fails the assertions below instead of failing to load. */
+import * as runner from './test-sql.mjs';
 
 let pass = 0;
 const failures = [];
@@ -95,16 +97,17 @@ fs.writeFileSync(hanger, `import fs from 'node:fs';
 fs.appendFileSync(${JSON.stringify(starts)}, Date.now() + '\\n');
 const sql = fs.readFileSync(0, 'utf8');
 fs.appendFileSync(${JSON.stringify(calls)}, process.argv.slice(2).join(' ') + '\\n' + sql + '\\n\\x1e\\n');
-if (sql.startsWith('begin;') && process.env.HANG && !fs.existsSync(${JSON.stringify(hung)})) {
+if (process.env.VACUUM_FAILS && sql.trim() === process.env.VACUUM_FAILS) { process.stderr.write('ERROR:  vacuum refused by the test'); process.exit(1); }
+if (sql.startsWith('begin;') && process.env.HANG &&!fs.existsSync(${JSON.stringify(hung)})) {
   fs.writeFileSync(${JSON.stringify(hung)}, String(Date.now()));
   setTimeout(() => {}, 60_000);
 }
 `);
-function boundedSuite(hang, timeoutMs = '1500') {
+function boundedSuite(hang, timeoutMs = '1500', vacuumFails = '') {
   fs.rmSync(calls, { force: true });
   fs.rmSync(hung, { force: true });
   fs.rmSync(starts, { force: true });
-  const env = { ...process.env, KAYFABB_PSQL_SHIM: hanger, DATABASE_URL: 'postgres://postgres:pg@localhost:5432/postgres', KAYFABB_SQL_FILE_TIMEOUT_MS: timeoutMs, HANG: hang ? '1' : '' };
+  const env = { ...process.env, KAYFABB_PSQL_SHIM: hanger, DATABASE_URL: 'postgres://postgres:pg@localhost:5432/postgres', KAYFABB_SQL_FILE_TIMEOUT_MS: timeoutMs, HANG: hang ? '1' : '', VACUUM_FAILS: vacuumFails };
   /* The suite's own end-to-end files would try the scratch database this psql never made; a bound keeps a slip here from hanging the
      build. It is wide, since the whole run under a busy build (a Node start for each psql, the end-to-end files) took 85s on Windows. */
   const r = spawnSync(process.execPath, ['tools/test-sql.mjs'], { env, encoding: 'utf8', timeout: 600_000 });
@@ -134,6 +137,32 @@ function boundedSuite(hang, timeoutMs = '1500') {
   check('and the failure names the file and says it was killed at the bound',
     new RegExp(`FAIL  ${first?.replace('.', '\\.')}\\s+did not finish within 1\\.5s and was killed`).test(r.out), r.out.split('\n').filter((l) => /FAIL/.test(l)).join(' | '));
   check('and the files after it still run', /PASS  0001-/.test(r.out), r.out.slice(0, 400));
+}
+/* ---- the statistics state ---- */
+/* Every file starts from the same statistics state: `vacuum (analyze)` on the scratch database, in a psql call of its own
+   (it cannot run in a transaction), immediately before each assertion file's call and each end-to-end file's step. The
+   scratch tests directory is the real one: the recorded calls are read, so no files are added. */
+{
+  const VACUUM = runner.VACUUM_STATEMENT;
+  const isVacuum = (c) => c.split('\n').slice(1).join('\n').trim() === VACUUM;
+  const onScratch = (c) => /\/kayfabb_scratch_\w+ -f/.test(c.split('\n')[0] ?? '');
+  const isFile = (c) => c.split('\n')[1]?.startsWith('begin;');
+  const r = boundedSuite(false);
+  const fileAt = r.records.map((c, i) => (isFile(c) ? i : -1)).filter((i) => i >= 0);
+  const e2eCount = fs.readdirSync('supabase/tests/e2e').filter((f) => /^\d{4}-[\w.-]+\.ts$/.test(f)).length;
+  check('the statement is `vacuum (analyze);`', VACUUM === 'vacuum (analyze);', String(VACUUM));
+  check('it is sent to the scratch database', r.records.filter(isVacuum).length > 0 && r.records.filter(isVacuum).every(onScratch));
+  check('immediately before each assertion file\'s own call', fileAt.length > 0 && fileAt.every((i) => i > 0 && isVacuum(r.records[i - 1])), `${fileAt.length} files; before them: ${fileAt.filter((i) => !(i > 0 && isVacuum(r.records[i - 1]))).length} without it`);
+  check('in a call of its own, outside the file\'s transaction', r.records.filter(isVacuum).every((c) => !c.includes('begin;')));
+  check('and once more for each end-to-end file', r.records.filter(isVacuum).length === fileAt.length + e2eCount, `${r.records.filter(isVacuum).length} vacuums for ${fileAt.length} files and ${e2eCount} end-to-end files`);
+
+  const bad = boundedSuite(false, '1500', VACUUM ?? 'vacuum (analyze);');
+  const first = fs.readdirSync('supabase/tests').filter((f) => ASSERTION_FILE.test(f)).sort()[0];
+  const e2eFirst = fs.readdirSync('supabase/tests/e2e').filter((f) => /^\d{4}-[\w.-]+\.ts$/.test(f)).sort()[0];
+  check('a failing vacuum fails the suite', bad.status === 1, `status ${bad.status}`);
+  check('it fails that file\'s step with the error', new RegExp(`FAIL  ${first?.replace('.', '\\.')}\\s+ERROR:  vacuum refused by the test`).test(bad.out), bad.out.split('\n').filter((l) => /FAIL/.test(l)).slice(0, 2).join(' | '));
+  check('and the file itself is not run', !bad.records.some(isFile));
+  check('the same for an end-to-end file', !e2eFirst || new RegExp(`FAIL  e2e/${e2eFirst.replace('.', '\\.')}\\s+ERROR:  vacuum refused by the test`).test(bad.out), bad.out.split('\n').filter((l) => /e2e/.test(l)).slice(0, 2).join(' | '));
 }
 fs.rmSync(bounded, { recursive: true, force: true });
 
