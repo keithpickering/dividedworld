@@ -55,7 +55,7 @@ import { cursor, type CursorMode } from './cursor.ts';
 import { readLines } from './lines.ts';
 import { MAX_CANVAS_PX, MAX_DPR, paint, paintSplat, paintStandIn, type Geometry, type PaintLayer } from './paint.ts';
 import {
-  BRUSH_PX, LayerInk, PEN_PX, ROW_PX, SWEEP_BRUSH_ROWS, bandsOf, brushOf, coveredLines, fits, fitStroke, minStepOf, sweepStep, topLayer,
+  BRUSH_PX, LayerInk, type LiveLine, PEN_PX, ROW_PX, SWEEP_BRUSH_ROWS, bandsOf, brushOf, coveredLines, fits, fitStroke, minStepOf, sweepStep, topLayer,
   type Pt, type Stroke, type Sweep, type TextLine,
 } from './scrub.ts';
 import { decodePoints, packStroke } from './points.ts';
@@ -139,7 +139,7 @@ export function savedOf(saved: unknown): { strokes: Stroke[]; clean: boolean } {
 const canonical = (state: unknown): string => JSON.stringify(savedOf(state));
 
 /** A stroke being made: its brush as the card keeps it (a share of the box's width, and the box's proportions), and its points in shares of the box. */
-interface Live { readonly layer: number; readonly tool: 'wash' | 'ink'; readonly width: number; readonly aspect: number; readonly color: string; readonly points: Pt[]; readonly pointer: number | null; readonly touch?: true }
+interface Live { readonly layer: number; readonly tool: 'wash' | 'ink'; readonly width: number; readonly aspect: number; readonly color: string; readonly points: Pt[]; readonly pointer: number | null; readonly touch?: true; /** The layer model's open line for this stroke, ended when the stroke is. */ line?: LiveLine }
 
 /** What a finger is doing: waiting to be told apart, wiping, or the page's. */
 interface Gesture { readonly id: number; readonly x0: number; readonly y0: number; cx: number; cy: number; state: 'wait' | 'wipe' | 'page'; timer: ReturnType<typeof setTimeout> | null }
@@ -394,10 +394,7 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
     inks.current = splats.map((splat, i) => {
       const id = layers[i]!.play.id;
       const ink = new LayerInk(splat, savedOf(states[id]?.state).strokes, box);
-      for (const s of mine.current.get(id) ?? []) {
-        if (s.tool === 'wash') ink.wash(s.points, s.width, s.aspect);
-        else ink.pen(s.points, s.width, s.aspect);
-      }
+      ink.add(mine.current.get(id) ?? []);
       return ink;
     });
     setHeld(inks.current.length);
@@ -652,6 +649,7 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
     const s = live.current;
     live.current = null;
     if (!s) return;
+    s.line?.end();
     keep(s);
     checkClean();
     refresh();
@@ -684,8 +682,9 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
     live.current = pen
       ? { layer, tool: 'ink', ...brush, color: now.current.layers[layer]!.color, points: [p], pointer, ...(touch ? { touch: true as const } : null) }
       : { layer, tool: 'wash', ...brush, color: '', points: [p], pointer, ...(touch ? { touch: true as const } : null) };
-    if (pen) inks.current[layer]!.pen([p], brush.width, brush.aspect);
-    else inks.current[layer]!.wash([p], brush.width, brush.aspect);
+    const line = inks.current[layer]!.begin(pen ? { tool: 'ink', color: live.current.color, ...brush, points: [] } : { tool: 'wash', ...brush, points: [] });
+    line.to(p);
+    live.current.line = line;
     suppress.current = false;
     schedulePaint();
     return true;
@@ -699,12 +698,12 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
     suppress.current = true;
     if (s.tool === 'wash') {
       const over = liveInks().some((ink) => ink?.has(p[0], p[1]));
-      inks.current[s.layer]?.wash([last, p], s.width, s.aspect);
+      s.line?.to(p);
       throwSuds(last, p, over);
       /* A layer that reaches the share clears under the hand; the stroke goes on, and is kept with the mark when it ends. */
       if (checkClean()) refresh();
     } else {
-      inks.current[s.layer]?.pen([last, p], s.width, s.aspect);
+      s.line?.to(p);
     }
     schedulePaint();
   };
@@ -931,6 +930,7 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
   const closeSweepStroke = useCallback(() => {
     const s = sweepStroke.current;
     sweepStroke.current = null;
+    s?.line?.end();
     if (s) keep(s);
   }, [keep]);
 
@@ -985,11 +985,12 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
         if (cur) {
           const last = cur.points[cur.points.length - 1]!;
           cur.points.push(p);
-          inks.current[layer]!.wash([last, p], brush.width, brush.aspect);
+          cur.line?.to(p);
           throwSuds(last, p, true);
         } else {
-          sweepStroke.current = { layer, tool: 'wash', ...brush, color: '', points: [p], pointer: null };
-          inks.current[layer]!.wash([p], brush.width, brush.aspect);
+          const line = inks.current[layer]!.begin({ tool: 'wash', ...brush, points: [] });
+          line.to(p);
+          sweepStroke.current = { layer, tool: 'wash', ...brush, color: '', points: [p], pointer: null, line };
           throwSuds(p, p, true);
         }
       }

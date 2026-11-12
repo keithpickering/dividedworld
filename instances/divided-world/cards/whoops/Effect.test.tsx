@@ -187,6 +187,13 @@ function inkSpot(ink: LayerInk): [number, number] {
   return ink.has(x, cy) ? [x, cy] : [x, cy + 0.05];
 }
 
+/** A wash through `points` on the model, as the Effect makes one: a line begun, moved along and lifted. */
+function washOn(ink: LayerInk, points: readonly Pt[], b: { width: number; aspect: number }): void {
+  const line = ink.begin({ tool: 'wash', ...b, points: [] });
+  for (const p of points) line.to(p);
+  line.end();
+}
+
 /** The points of a drag along y across the ink there: from its first inked point to its last. */
 function rowAcross(ink: LayerInk, y: number): [number, number][] {
   const row: [number, number][] = [];
@@ -201,7 +208,7 @@ function scrubTo(frame: HTMLElement, root: HTMLElement, layer: number, ink: Laye
     const row = rowAcross(ink, y);
     if (row.length >= 2) {
       drag(frame, row);
-      ink.wash(row, b.width, b.aspect);
+      washOn(ink, row, b);
     }
   }
 }
@@ -216,7 +223,7 @@ function scrubPath(ink: LayerInk, share: number): [number, number][] {
     if (row.length < 2) continue;
     if (back) row.reverse();
     back = !back;
-    ink.wash(path.length > 0 ? [path[path.length - 1]!, ...row] : row, b.width, b.aspect);
+    washOn(ink, path.length > 0 ? [path[path.length - 1]!, ...row] : row, b);
     path.push(...row);
   }
   return path;
@@ -321,7 +328,7 @@ describe('scrubbing', () => {
     /* Wash the top layer away around the spot, then start there again. */
     const around: [number, number][] = [[spot![0], spot![1]], [spot![0] + 0.06, spot![1]], [spot![0] + 0.12, spot![1]], [spot![0], spot![1]], [spot![0] - 0.06, spot![1]], [spot![0] - 0.12, spot![1]]];
     drag(frame, around);
-    top.wash(around, brush().width, brush().aspect);
+    washOn(top, around, brush());
     const before = washed(root);
     expect(before[1]).toBeGreaterThan(0);
     expect(before[0]).toBe(0);
@@ -1589,7 +1596,7 @@ describe('the share that counts as clean', () => {
       const row = rowAcross(ink, y);
       if (row.length < 2) continue;
       drag(frame, row);
-      ink.wash(row, b.width, b.aspect);
+      washOn(ink, row, b);
       seen.push({ share: washed(root)[0]!, clean: states(root)[0] === 'clean' });
     }
     return { seen, save };
@@ -1624,7 +1631,7 @@ describe('the share that counts as clean', () => {
     let share = 0;
     for (let y = 0; y <= 1 && share < 0.5; y += (BRUSH_PX * 0.7) / boxNow().h) {
       const row = rowAcross(mirror, y);
-      if (row.length >= 2) { mirror.wash(row, brush().width, brush().aspect); share = mirror.washed; }
+      if (row.length >= 2) { washOn(mirror, row, brush()); share = mirror.washed; }
     }
     expect(reach(share * 100 * (1 + 1e-6)).state, 'a hair under the share').toBe('live');
     expect(reach(share * 100).state, 'at the share').toBe('clean');
@@ -1745,7 +1752,7 @@ describe('in a moment, still', () => {
     for (let y = 0; y <= 1 && ink.washed < share; y += (BRUSH_PX * 0.7) / boxNow().h) {
       const row = rowAcross(ink, y);
       if (row.length < 2) continue;
-      ink.wash(row, brush().width, brush().aspect);
+      washOn(ink, row, brush());
       strokes.push(washStroke(row));
     }
     return { state: { strokes: strokes.map(packStroke) }, washed: ink.washed };
