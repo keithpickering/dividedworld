@@ -90,7 +90,6 @@ export const ALLOWED_HOOKS = new Set([
   'kb-thread-last-link',
   'kb-thread-started',
   'kb-thread-spun',
-  'kb-board-last-by',
 
   /* A profile's, a postbit's or a staff page's named part: text that takes the surrounding block's type and color,
   named so a theme can restyle it alone. */
