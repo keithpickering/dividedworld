@@ -38,3 +38,13 @@ test('the corpus has a case where the parser does hide a quote, and one where it
   assert.ok(emptiedSome.length > 20 && emptiedSome.length < corpus.length);
   for (const c of corpus) assert.equal(fill(c.expect) === fill(c.body), !emptiedSome.includes(c), c.name);
 });
+
+test('the parser measures a quote name in UTF-16 units, as bb_quote_head must (the SQL file asserts the same names)', () => {
+  const kind = (name: string) => (parse(`[quote=${name}]x[/quote]`)[0] as BbNode).type;
+  assert.equal(kind('\u{1F600}'.repeat(40)), 'counterfeit');
+  assert.equal(kind('\u{1F600}'.repeat(41)), 'text');
+  assert.equal(kind('x'.repeat(79) + '\u{1F600}'), 'text');
+  assert.equal(kind('x'.repeat(79) + 'y'), 'counterfeit');
+  assert.equal(kind('x'.repeat(80)), 'counterfeit');
+  assert.equal(kind('x'.repeat(81)), 'text');
+});

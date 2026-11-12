@@ -229,6 +229,18 @@ $$;
 
 -- ----------------------------------------------------------------------------- reading a body as the parser does ----
 
+-- Whether `s` is longer than `bound` as JavaScript counts it. parse.ts bounds a name, a tag and an address with `.length`, which counts UTF-16 code units, so a
+-- character above U+FFFF (an emoji) is two; Postgres's length() counts it one. A string cannot be longer in units than twice its characters, so the count is made
+-- only where the two could disagree.
+create function bb_over(s text, bound integer) returns boolean
+language sql immutable set search_path = public, pg_temp as $$
+  select case
+    when length(s) > bound then true
+    when length(s) * 2 <= bound then false
+    else length(s) + length(regexp_replace(s, '[^\U00010000-\U0010FFFF]', '', 'g')) > bound
+  end
+$$;
+
 -- Whether `v` is an address the parser accepts as a link (engine/bbcode/parse.ts, checkedUrl with safeHref's list: http, https, mailto, or a path on this
 -- site). Only the parser's own refusals are mirrored: length, a character no address may hold, the scheme list, and an http(s) authority with no credentials
 -- and a real host. The parser needs it to know whether a `[url=…]` is a real link (a real link is closed by the next one, which can close a quote with it).
@@ -242,7 +254,7 @@ declare
   host text;
   port text;
 begin
-  if s = '' or length(s) > 2048
+  if s = '' or bb_over(s, 2048)
      or s ~ '[\s\x01-\x1f\x7f-\x9f"''<>`\\­͏؀-؅؜۝܏᠎​-‏ -‮⁠-⁤⁦-⁯ᅟᅠ⠀ㅤ﻿ﾠ￹-￻]' then
     return false;
   end if;
@@ -368,7 +380,7 @@ begin
       if m is null then nm := v; tail := ''; else nm := m[1]; tail := m[2]; end if;
     end if;
     nm := regexp_replace(nm, '^' || ws || '+|' || ws || '+$', '', 'g');
-    if nm = '' or length(nm) > 80 then return null; end if;
+    if nm = '' or bb_over(nm, 80) then return null; end if;
   else
     tail := rest;
   end if;
@@ -459,7 +471,7 @@ begin
     tend := tstart + length(tag);
     b := substr(tag, 2, length(tag) - 2);
     i := i + 1;
-    if b = '' or length(b) > 2064 or b = '*' then continue; end if;
+    if b = '' or bb_over(b, 2064) or b = '*' then continue; end if;
     isc := false; val := null; qrest := null;
     if left(b, 1) = '/' then
       nm := lower(substr(b, 2));
@@ -519,7 +531,8 @@ begin
           elsif starts[raw_at] - tend > 2048 + 64 then skip := false;
           else
             within := substr(body, tend, starts[raw_at] - tend);
-            if nm = 'img' then skip := bb_safe_href(within) and within ~* '^\s*https?:';
+            if bb_over(within, 2048 + 64) then skip := false;
+            elsif nm = 'img' then skip := bb_safe_href(within) and within ~* '^\s*https?:';
             else skip := bb_video_like(within, nm = 'youtube');
             end if;
           end if;
@@ -2001,7 +2014,7 @@ revoke execute on function conduct_author(uuid), conduct_write(bigint, uuid, uui
 -- acts_public calls two functions with its readers' privileges (the digest's role and the service role read it too);
 -- every other helper is reached through those and runs as its owner.
 revoke execute on function version_hidden(uuid, uuid), version_hidden(uuid), quote_hidden(uuid), conceal_quotes(text), public_payload(jsonb, boolean),
-  bb_safe_href(text), bb_video_like(text, boolean), bb_quote_head(text) from public, anon, authenticated;
+  bb_over(text, integer), bb_safe_href(text), bb_video_like(text, boolean), bb_quote_head(text) from public, anon, authenticated;
 revoke execute on function version_hidden(uuid), conceal_quotes(text) from authenticated;
 grant execute on function version_hidden(uuid, uuid), quote_hidden(uuid), public_payload(jsonb, boolean) to authenticated, service_role, kayfabb_digest;
 revoke execute on function accept_conduct(integer), conduct_accepted(), report_post(uuid, text, text), decide_report(bigint, jsonb), decide(uuid, uuid, text, timestamptz, text),

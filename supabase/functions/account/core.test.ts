@@ -253,3 +253,22 @@ test('a banned login that gives the right code is told plainly it is barred (403
   const b = await runAccount({ auth: banned, service, player, clock }, { action: 'requestCode', email: UNKNOWN });
   assert.deepEqual([a.status, a.body], [b.status, b.body]);
 });
+
+test('asking for a code for a banned account\'s address answers as for any other address: same status, body, time and request to Auth (the owner: a refusal that proves nothing about who has an account)', async () => {
+  const seen: { email: string; options: unknown }[] = [];
+  const run = async (email: string) => {
+    let now = 0;
+    const clock = { now: () => now, sleep: async (ms: number) => { now += ms; } };
+    // Auth bans the known address's login: it says so only to a correct code, never to a request for one.
+    const auth: Auth = { requestCode: async (e, options) => { seen.push({ email: e, options }); }, verifyCode: async (e) => (e === KNOWN ? { refused: 'barred' } : { refused: 'code' }) };
+    const service: Db = { rpc: async <T>() => 'opens' as T };
+    const out = await runAccount({ auth, service, player: () => ({ rpc: async <T>() => null as T }), clock }, { action: 'requestCode', email });
+    await out.later?.();
+    return { status: out.status, body: out.body, took: now };
+  };
+  const banned = await run(KNOWN);
+  const other = await run(UNKNOWN);
+  assert.deepEqual(banned, other);
+  assert.deepEqual(seen[0]?.options, seen[1]?.options);
+  assert.equal(banned.status, 202);
+});

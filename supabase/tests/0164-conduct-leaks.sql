@@ -65,6 +65,21 @@ begin
   end loop;
   if ran < 30 then raise exception 'the quote corpus did not load (% cases)', ran; end if;
 
+  -- ---- the bounds the parser measures in UTF-16 units are measured so here (engine/bbcode/parse.ts reads `.length`; an emoji is two units and one character) ----
+  -- A quote's name of 80 units is a counterfeit and one of 81 is words; the emoji below are 40 characters in 80 units and 41 in 82. The corpus holds the tag, link and image bounds.
+  for c in select * from jsonb_array_elements(jsonb_build_array(
+    jsonb_build_array('=' || repeat(chr(128512), 40), 'counterfeit'), jsonb_build_array('=' || repeat(chr(128512), 41), null),
+    jsonb_build_array('="' || repeat(chr(128512), 41) || '"', null), jsonb_build_array('=' || repeat('x', 79) || chr(128512), null),
+    jsonb_build_array('=' || repeat('x', 79) || 'y', 'counterfeit'), jsonb_build_array('=' || repeat('x', 80), 'counterfeit'), jsonb_build_array('=' || repeat('x', 81), null)
+  )) loop
+    if bb_quote_head(c ->> 0) is distinct from (c ->> 1) then
+      raise exception 'bb_quote_head of a name of % characters is %, the parser reads %', char_length(c ->> 0) - 1, coalesce(bb_quote_head(c ->> 0), 'words'), coalesce(c ->> 1, 'words');
+    end if;
+  end loop;
+  if bb_safe_href('https://e.com/' || repeat(chr(128512), 1017)) is not true or bb_safe_href('https://e.com/' || repeat(chr(128512), 1018)) is not false then
+    raise exception 'bb_safe_href measures an address in characters, where the parser measures UTF-16 units';
+  end if;
+
   -- bb_video_like says "a video" for exactly the addresses engine/bbcode/video.ts's videoOf plays: a known host with a path shape it does not want is words, as is an
   -- explicit port and a file on a known host. Saying video for what the parser shows as words keeps a hidden quote's words in the open (corpus: the two known-host cases).
   for c in select * from jsonb_array_elements('[
