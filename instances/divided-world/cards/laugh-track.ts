@@ -1,0 +1,108 @@
+/**
+ * Laugh Track (Pepperoni, uncommon): the caster picks one to five cues, each a phrase in the post and the sound of an audience (a laugh,
+ * a cheer or a boo), and a reader who reaches a cued place hears it (docs/plans/2026-11-11-laugh-track-design.md, section 5).
+ *
+ * Its rules here are its bounds, where it lands and its price; the sounds and the caption are the screens'. Both find a phrase with the
+ * engine's one matcher (engine/bbcode/phrase.ts) over the post's visible text, so the places a screen cues are the ones the server priced.
+ *
+ * - **A cue** is a phrase, bounded as Autocorrect's is (4 to 100 characters, at least 4 letters or digits, one line), and a sound.
+ *   Two cues with the same words are one cue too many.
+ * - **It lands** only where every cue's phrase is in the post's own words, no two cued places overlap and at most `PLACES.most` places are
+ *   cued, on a post with no audience yet: it stacks one deep.
+ * - **Its price** is the base price at the machine, plus `perPlace` for each cued place past `freePlaces`, never more than `mostAdded`.
+ * - **No saved state:** nothing about it is the author's to save. The seed is the server's, and picks each place's take.
+ */
+import { economyOf, isLive, landsOn, ok, refuse, type CardRules } from '../../../engine/rules/cards.ts';
+import { occurrences, sameWords } from '../../../engine/bbcode/phrase.ts';
+import { PHRASE } from './autocorrect.ts';
+
+export type Sound = 'laugh' | 'cheer' | 'boo';
+export interface Cue { readonly phrase: string; readonly sound: Sound }
+export type LaughTrackConfig = { readonly cues: readonly Cue[]; readonly seed?: number };
+export const CUES = { most: 5 } as const;
+export const PLACES = { most: 30 } as const;
+
+const SOUNDS: readonly Sound[] = ['laugh', 'cheer', 'boo'];
+const WORDISH = /[\p{L}\p{N}]/gu;
+const LINE_BREAK = /[\n\r\v\f\u0085\u2028\u2029]/u;
+const characters = (s: string) => [...s].length;
+
+/** A cued place: where a cue's phrase is in the text, with the cue's index. */
+export interface Place { readonly from: number; readonly to: number; readonly cue: number }
+
+/** Every occurrence of each cue in the text, in the order of the text, with its cue's index; none is dropped, overlaps included. */
+export function placesOf(text: string, cues: readonly Pick<Cue, 'phrase'>[]): Place[] {
+  const places = cues.flatMap((c, cue) => occurrences(text, c.phrase).map((o) => ({ from: o.from, to: o.to, cue })));
+  return places.sort((a, b) => a.from - b.from || a.to - b.to || a.cue - b.cue);
+}
+
+const cuesOf = (config: unknown): readonly Cue[] | null => {
+  const cues = typeof config === 'object' && config !== null ? (config as { cues?: unknown }).cues : undefined;
+  return Array.isArray(cues) && cues.every((c) => typeof c?.phrase === 'string') ? (cues as readonly Cue[]) : null;
+};
+
+export const laughTrack: CardRules<LaughTrackConfig> = {
+  key: 'laugh-track',
+  name: 'Laugh Track',
+  alignment: 'pepperoni',
+  rarity: 'uncommon',
+  seeded: true,
+  setPhrase: (config) => config.cues[0]!.phrase,
+  /** What the screens read: where a reader's line is in the viewport (percent from the top), how long it must dwell on a place (ms), how far a cue reaches from the line (rem), the share of a hit a murmur is (percent) and the fade (ms). */
+  screenReads: [
+    { key: 'laughTrack.line', whole: true, min: 10, max: 90 },
+    { key: 'laughTrack.dwellMs', whole: true, min: 0, max: 2000 },
+    { key: 'laughTrack.reachRem', whole: true, min: 2, max: 40 },
+    { key: 'laughTrack.murmurMost', whole: true, min: 0, max: 100 },
+    { key: 'laughTrack.fadeMs', whole: true, min: 0, max: 2000 },
+  ],
+  reads: [{ key: 'laughTrack.perPlace', whole: true, min: 0 }, { key: 'laughTrack.freePlaces', whole: true, min: 0 }, { key: 'laughTrack.mostAdded', whole: true, min: 1 }],
+  playPrice: (settings, target, config) => {
+    if (target.reach !== 'post') return 0;
+    const room = economyOf(settings, 'laughTrack.mostAdded');
+    // A face asks the most a play could add, before anyone has picked a cue (engine/ui/cards/faces.ts).
+    const cues = cuesOf(config);
+    if (!cues) return Math.max(0, room);
+    const places = placesOf(target.text, cues).length;
+    return Math.max(0, Math.min(economyOf(settings, 'laughTrack.perPlace') * Math.max(0, places - economyOf(settings, 'laughTrack.freePlaces')), room));
+  },
+  canApply: (target, effects, config, now) => {
+    // One director: a post's audience is a single play, said in the card's own words rather than landsOn's.
+    if (target.reach === 'post' && effects.some((e) => e.card === laughTrack.key && (e.reach ?? 'post') === 'post' && isLive(e, now))) return refuse('this post already has an audience');
+    const lands = landsOn(laughTrack, target, effects, now);
+    const cues = cuesOf(config);
+    // The screens ask with whatever the form holds, which before a cue is picked has none.
+    if (!lands.ok || !cues || target.reach !== 'post') return lands;
+    for (const c of cues) if (!occurrences(target.text, c.phrase).length) return refuse(`“${c.phrase}” is not in this post's own words`);
+    const places = placesOf(target.text, cues);
+    for (let i = 1; i < places.length; i++) if (places[i]!.from < Math.max(...places.slice(0, i).map((p) => p.to))) return refuse('two cues cover the same words');
+    if (places.length > PLACES.most) return refuse(`these cues cover ${places.length} places in this post; a play covers at most ${PLACES.most}`);
+    return lands;
+  },
+  staffOptions: {
+    prompt: "Choose up to five cues: each a phrase copied exactly from the post you are replying to (whole words, on one line, at least 4 letters or digits) and the audience's sound when a reader reaches it: laugh, cheer or boo.",
+    schema: {
+      type: 'object',
+      properties: { cues: { type: 'array', items: { type: 'object', properties: { phrase: { type: 'string' }, sound: { type: 'string', enum: ['laugh', 'cheer', 'boo'] } }, required: ['phrase', 'sound'], additionalProperties: false } } },
+      required: ['cues'],
+      additionalProperties: false,
+    },
+  },
+  validateConfig: (config) => {
+    const { cues: raw, seed } = typeof config === 'object' && config !== null ? (config as { cues?: unknown; seed?: unknown }) : {};
+    if (!Array.isArray(raw) || raw.length < 1 || raw.length > CUES.most) return refuse(`a play holds 1 to ${CUES.most} cues`);
+    const cues: Cue[] = [];
+    for (const c of raw) {
+      const { phrase: p, sound } = typeof c === 'object' && c !== null ? (c as { phrase?: unknown; sound?: unknown }) : {};
+      if (typeof p !== 'string' || !SOUNDS.includes(sound as Sound)) return refuse('a cue is a phrase and Laugh, Cheer or Boo');
+      const phrase = p.trim();
+      if (characters(phrase) > PHRASE.most) return refuse(`the phrase is at most ${PHRASE.most} characters`);
+      if ((phrase.match(WORDISH) ?? []).length < PHRASE.least) return refuse(`the phrase has at least ${PHRASE.least} letters or digits`);
+      if (LINE_BREAK.test(phrase)) return refuse('the phrase is one line');
+      if (cues.some((o) => sameWords(o.phrase, phrase))) return refuse('two cues have the same phrase');
+      cues.push({ phrase, sound: sound as Sound });
+    }
+    // The seed is the server's, added after the caster's configuration is checked; it is kept when present, and nothing else is.
+    return ok({ cues, ...(Number.isSafeInteger(seed) ? { seed: seed as number } : {}) });
+  },
+};
