@@ -115,8 +115,8 @@ export const RevealAtEachFeel: Story = {
 };
 
 /** The engine's own test pictures (a 1080 by 1680 transparent-ground picture and its 540 by 840 relief, a plain rounded pack with a dome); they are not an instance's art. */
-const lookPictured = { color: '#ffd93d', ink: '#1a1403', picture: testPicture, relief: testRelief } as const;
-const lookDrawn = { color: '#ffd93d', ink: '#1a1403' } as const;
+const lookPictured = { color: 'var(--kb-glass-ready)', ink: 'var(--kb-glass-ground)', picture: testPicture, relief: testRelief } as const;
+const lookDrawn = { color: 'var(--kb-glass-ready)', ink: 'var(--kb-glass-ground)' } as const;
 
 function PicturedPacks() {
   const sizes = [86, 180] as const;
