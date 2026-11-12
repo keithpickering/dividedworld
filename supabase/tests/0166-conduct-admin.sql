@@ -231,6 +231,24 @@ begin
   perform tests.become(author);
   if my_hidden_version(p4) is not null then raise exception 'a version hidden outright is not read back to its author'; end if;
   perform tests.unbecome();
+  -- An edit after a plain hide waits for an admin (version_hidden), and is the author's own words to read: the status is "waiting", for the author alone.
+  declare p5 uuid; e5 uuid;
+  begin
+    p5 := tests.post(ch_author, th, 'Hidden, then edited.', now() - interval '9 minutes');
+    perform tests.claims(admin_a);
+    perform decide(null, p5, 'hide', null, '');
+    perform tests.unbecome();
+    e5 := tests.act(ch_author, 'edit', th, '{"body": "Hidden, then edited, the same."}', p5, now() + interval '3 minutes');
+    perform tests.become(author);
+    got := my_hidden_version(p5);
+    perform tests.unbecome();
+    if got ->> 'status' is distinct from 'waiting' or got ->> 'version' is distinct from e5::text or got ->> 'words' is distinct from 'Hidden, then edited, the same.' then
+      raise exception 'an edit after a plain hide waits, carrying the author''s own words: %', got;
+    end if;
+    perform tests.become(rep);
+    if my_hidden_version(p5) is not null then raise exception 'another player read the waiting state after a plain hide'; end if;
+    perform tests.unbecome();
+  end;
   -- any_hidden is the predicate a quote's note stands on: a post with any version hidden, though its current version shows (p3's first version was hidden until edited), and not one never decided on.
   if (select a.any_hidden from acts_public a where a.id = p3) is distinct from true or (select a.hidden from acts_public a where a.id = p3) is distinct from false then raise exception 'p3 shows, with an older version hidden'; end if;
   if (select a.any_hidden from acts_public a where a.id = p4) is distinct from true then raise exception 'p4 is hidden'; end if;

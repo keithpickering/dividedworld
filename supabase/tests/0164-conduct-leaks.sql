@@ -3,6 +3,11 @@
 -- public form, the screen functions give a hidden post no body, a search finds neither a hidden version's words nor a version a later hide
 -- covers, and the well-formedness trigger and decide_report refuse what they should.
 
+-- The corpus of bodies conceal_quotes is held to, shared with the parser's own test (engine/bbcode/conceal.test.ts): each case's body and what must come back
+-- once the post `{H}` is hidden and `{S}` is not. psql reads it from the repository root, where the suite runs; the setting carries it into the blocks below.
+\set corpus `cat supabase/tests/data/conduct-quote-corpus.json`
+select set_config('tests.corpus', :'corpus', true) as corpus_loaded \gset
+
 -- What a statement raises, as 'sqlstate|hint|message', or null when it ran. A helper of this file only; the rollback drops it.
 create function tests.refusal(stmt text) returns text language plpgsql as $$
 declare state text; hint text; msg text;
@@ -26,6 +31,7 @@ declare
   base timestamptz := now() - interval '1 day';
   rep uuid := tests.account('reporter');
   ch_rep uuid := tests.character(rep, 'Bo');
+  ps uuid; c jsonb; got text; ran integer := 0;
   p1 uuid; pz uuid; e1 uuid; e2 uuid; q uuid; p2 uuid; p3 uuid;
   r1 bigint; r2 bigint;
   words text; seen text; j jsonb; found boolean;
@@ -42,6 +48,17 @@ begin
   if words is distinct from format('[quote=zz[quote=%s][/quote] after', p1) then
     raise exception 'a quote opened after a stray bracket was not emptied: %', words;
   end if;
+
+  -- ---- conceal_quotes over the shared corpus: exactly the hidden quote's contents go, and nothing else changes ----
+  ps := tests.post(ch_author, th, 'Shown words.', base + interval '30 seconds');
+  for c in select * from jsonb_array_elements(current_setting('tests.corpus')::jsonb) loop
+    got := conceal_quotes(replace(replace(c ->> 'body', '{H}', p1::text), '{S}', ps::text));
+    if got is distinct from replace(replace(c ->> 'expect', '{H}', p1::text), '{S}', ps::text) then
+      raise exception 'conceal_quotes, case "%": got % for body %', c ->> 'name', got, c ->> 'body';
+    end if;
+    ran := ran + 1;
+  end loop;
+  if ran < 30 then raise exception 'the quote corpus did not load (% cases)', ran; end if;
 
   -- ---- The screens' functions over a hidden post: hidden, and no words ----
   perform tests.become(other);
@@ -102,4 +119,104 @@ begin
   end loop;
   perform tests.unbecome();
   if exists (select 1 from conduct_decisions where report = r2) then raise exception 'a refused decide_report still wrote a decision'; end if;
+end $$;
+
+-- ---- season_news reads a Boss's arrival post as a player would: hide the post and its words are gone from the item ----
+do $$
+begin
+  perform seed_instance(jsonb_build_object(
+    'settings', jsonb_build_object('systemEnabled', true, 'rosterRecentExcluded', 1,
+      'seasonLength', jsonb_build_object('unit', 'day', 'count', 1),
+      'systemLines', jsonb_build_object('bossFarewell', jsonb_build_array('Farewell from {boss}.'), 'bossArrival', jsonb_build_array('Hello from {boss}.'))),
+    'classes', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
+    'system', jsonb_build_object('announcementsTitle', 'Announcements', 'firstBoss', 'cn-a',
+      'staff', jsonb_build_array(
+        jsonb_build_object('key', 'cn-a', 'name', 'Cn A', 'title', 'Boss', 'signature', 'a'),
+        jsonb_build_object('key', 'cn-b', 'name', 'Cn B', 'title', 'Boss', 'signature', 'b')),
+      'firstStaff', '[]'::jsonb, 'moves', '[]'::jsonb, 'demands', '[]'::jsonb)));
+  update seasons set starts_at = now() - interval '60 days' where ends_at is null;
+  if reveal_season((select starts_at from seasons where ends_at is null) + interval '1 day') is null then raise exception 'the season did not roll over'; end if;
+end $$;
+
+do $$
+declare
+  admin_n uuid := tests.account('admin-news');
+  arrival uuid;
+  said text;
+begin
+  select a.id into arrival from acts a join characters c on c.id = a.character
+  where c.staff = 'cn-b' and a.kind = 'post' and a.thread = (select (value #>> '{}')::uuid from settings where key = 'systemAnnouncements');
+  select n.quote into said from season_news(null, 50) n where n.kind = 'bossArrived' and n.act = arrival;
+  if said is distinct from 'Hello from Cn B.' then raise exception 'the arrival quotes its post while the post shows: %', said; end if;
+  insert into admins (account) values (admin_n);
+  perform tests.become(admin_n);
+  perform decide(null, arrival, 'hide', null, 'news');
+  perform tests.unbecome();
+  select n.quote into said from season_news(null, 50) n where n.kind = 'bossArrived' and n.act = arrival;
+  if not found then raise exception 'the arrival item is gone once its post is hidden; it should stay, without the words'; end if;
+  if said is not null then raise exception 'season_news quotes a hidden arrival post: %', said; end if;
+end $$;
+
+-- ---- Nothing a player, a model or the digest can run reads a post's words from `acts` itself ----
+-- A function or a view that reads `payload ->> 'body'` or `'title'` from the `acts` table hands out what an admin hid, since a hide is a layer over the Act
+-- and `acts` holds the original. The way to read a post's words is acts_public, or public_payload(…, version_hidden(…)). This lists every function in `public` that
+-- a player (authenticated or anon), the digest or the service can execute, and every view they can select from, whose source reads a body or a title out of
+-- a payload and reads from `acts` itself, and refuses any that is not on the list below with its reason. A new reader fails here until someone looks at it and
+-- either fixes it or writes why it is safe.
+create function tests.body_readers() returns setof text language sql stable as $$
+  with src as (
+    -- A read through the public form (`public_payload(…) ->> 'body'`, with or without a `version_hidden(…)` inside it) is the safe way and is not a read.
+    select p.oid::regprocedure::text as name,
+           regexp_replace(p.prosrc, $re$public_payload\([^()]*(\([^()]*\))?[^()]*\)\s*(->>|->)\s*'(body|title)'$re$, '', 'gi') as code,
+           exists (select 1 from unnest(array['authenticated', 'anon', 'kayfabb_digest', 'service_role']) r where has_function_privilege(r, p.oid, 'execute')) as runnable
+    from pg_proc p where p.pronamespace = 'public'::regnamespace and p.prokind = 'f'
+    union all
+    select c.oid::regclass::text,
+           regexp_replace(pg_get_viewdef(c.oid), $re$public_payload\([^()]*(\([^()]*\))?[^()]*\)\s*(->>|->)\s*'(body|title)'$re$, '', 'gi'),
+           exists (select 1 from unnest(array['authenticated', 'anon', 'kayfabb_digest', 'service_role']) r where has_table_privilege(r, c.oid, 'select'))
+    from pg_class c where c.relnamespace = 'public'::regnamespace and c.relkind in ('v', 'm')
+  )
+  select s.name from src s
+  where s.runnable
+    and s.code ~* $re$(->>|->|#>>|#>)\s*'(\{)?(body|title)\M$re$
+    and s.code ~* $re$\m(from|join)\s+(public\.)?acts\M$re$
+$$;
+
+do $$
+declare
+  -- Each one, and why it may read a body or a title from `acts`:
+  allowed constant text[] := array[
+    -- Admin-only: the function refuses anyone who is not an admin (only_admins), and an admin reads the words in order to decide on them.
+    'admin_reports()', 'admin_version(uuid)',
+    -- The author's own words, for the author: my_hidden_version answers only for a version of the caller's own character, and mail_for_decision (service role only)
+    -- writes the author's own hidden words back to that author in the mail about the decision.
+    'my_hidden_version(uuid)', 'mail_for_decision(bigint)',
+    -- Runs from the service role to seed an instance from a document; its `'title'` is the document's, and its one read of `acts` is a move's kind.
+    'seed_instance(jsonb)',
+    -- A trigger function that indexes an Act as it is written, which only the table's trigger runs; acts_search_hidden and conduct_decisions_search (0159) take a hidden version's
+    -- words out of the index and keep them out.
+    'acts_search()',
+    -- Read a post's body through acts_public (card_target) or public_payload with version_hidden (claim_card_writes, which the check no longer sees in that form); the
+    -- other reads of `acts` in them are card plays and sets, whose payloads hold a card key and no words.
+    'card_target(uuid)', 'claim_card_writes(integer,uuid)',
+    -- The words of an apology, which is a spin; a decision names a post or an edit and refuses any other kind (conduct_decisions_well_formed), so an apology cannot be
+    -- hidden. The service role hands them to the judge.
+    'pending_apologies()',
+    -- Views whose titles are an update Act's (an admin's own words, on the Updates page, which are never hidden).
+    'thread_open', 'updates_read'
+  ];
+  found text[];
+  extra text[];
+begin
+  -- The check sees a reader: a poisoned function a player can run, reading a body from `acts`, is found.
+  create function public.poison_reader() returns text language sql stable security definer as $f$ select a.payload ->> 'body' from acts a limit 1 $f$;
+  grant execute on function public.poison_reader() to authenticated;
+  select array_agg(x) into found from tests.body_readers() x;
+  if not 'poison_reader()' = any (found) then raise exception 'the body-reader check does not see a function that reads acts.payload: %', found; end if;
+  drop function public.poison_reader();
+
+  select array_agg(x order by x) into extra from tests.body_readers() x where x <> all (allowed);
+  if extra is not null then
+    raise exception 'a function or view a player, the digest or the service can use reads a post''s words from acts itself, which gives away a hidden version; read acts_public or public_payload(…, version_hidden(…)) instead, or say why it is safe above: %', extra;
+  end if;
 end $$;

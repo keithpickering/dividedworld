@@ -462,6 +462,59 @@ begin
     where a.hidden and (a.current_payload ->> 'body' is not null or a.payload ->> 'body' is not null);
   if n is distinct from 0 then raise exception 'acts_public served the words of % hidden versions to an ordinary player', n; end if;
   if (select count(*) from acts_public a where a.hidden) is distinct from 2 then raise exception 'expected the hidden post and the hidden edit to be hidden, and no other: %', (select count(*) from acts_public a where a.hidden); end if;
+
+  -- ---- A plain hide, then the author's edit: the edit is not a way back; it waits, an admin hears of it, an approval shows it ----
+  perform tests.unbecome();
+  declare
+    ph uuid; eh uuid; eh2 uuid; w2 text; h2 boolean; m bigint;
+  begin
+    ph := tests.post(ch_author, th, 'The cruel part.', now() - interval '10 minutes');
+    perform tests.become(admin_a);
+    perform decide(null, ph, 'hide', null, 'too far');
+    perform tests.unbecome();
+    -- The author edits and keeps the same words.
+    eh := tests.act(ch_author, 'edit', th, '{"body": "The cruel part."}', ph, now() + interval '3 minutes');
+    perform tests.become(other);
+    select (a.current_payload ->> 'body'), a.hidden into words, hid from acts_public a where a.id = ph;
+    select (a.payload ->> 'body'), a.hidden into w2, h2 from acts_public a where a.id = eh;
+    perform tests.unbecome();
+    if words is not null or hid is distinct from true then raise exception 'an edit after a plain hide showed the post again: % %', words, hid; end if;
+    if w2 is not null or h2 is distinct from true then raise exception 'an edit after a plain hide shows its own words: % %', w2, h2; end if;
+    perform tests.become(admin_a);
+    select count(*) into n from reviews_due where post = ph and version_act = eh;
+    perform tests.unbecome();
+    if n is distinct from 1 then raise exception 'the re-review list does not hold the edit waiting after a plain hide (% rows)', n; end if;
+    -- A second edit while it waits is hidden too, and is the one the list names.
+    eh2 := tests.act(ch_author, 'edit', th, '{"body": "Softer."}', ph, now() + interval '4 minutes');
+    perform tests.become(admin_a);
+    select count(*) into n from reviews_due where post = ph and version_act = eh2;
+    select count(*) into m from reviews_due where post = ph;
+    perform tests.unbecome();
+    if n is distinct from 1 or m is distinct from 1 then raise exception 'the re-review list names the newest waiting edit once: % %', n, m; end if;
+    -- The approval is written with its own time, after both edits (the suite's edits are dated ahead of now).
+    insert into conduct_decisions (version_act, admin, outcome, note, at) values (eh2, admin_a, 'approve', 'fine now', now() + interval '4 minutes 30 seconds');
+    perform tests.become(admin_a);
+    select count(*) into n from reviews_due where post = ph;
+    perform tests.unbecome();
+    if n is distinct from 0 then raise exception 'an approved edit is still on the re-review list'; end if;
+    perform tests.become(other);
+    select (a.current_payload ->> 'body'), a.hidden into words, hid from acts_public a where a.id = ph;
+    select (a.payload ->> 'body') into w2 from acts_public a where a.id = eh;
+    perform tests.unbecome();
+    if words is distinct from 'Softer.' or hid is distinct from false then raise exception 'an approval did not show the approved edit after a plain hide: % %', words, hid; end if;
+    if w2 is not null then raise exception 'an approval brought back the earlier hidden edit: %', w2; end if;
+    -- An unhide of the hidden version also ends it: the next edit shows at once.
+    perform tests.become(admin_a);
+    perform decide(null, ph, 'hide', null, 'again');
+    perform tests.unbecome();
+    insert into conduct_decisions (version_act, admin, outcome, note, at) values (ph, admin_a, 'unhide', 'sorry', now() + interval '4 minutes 40 seconds');
+    eh := tests.act(ch_author, 'edit', th, '{"body": "Softer still."}', ph, now() + interval '5 minutes');
+    perform tests.become(other);
+    select (a.current_payload ->> 'body'), a.hidden into words, hid from acts_public a where a.id = ph;
+    perform tests.unbecome();
+    if words is distinct from 'Softer still.' or hid is distinct from false then raise exception 'an edit after an unhide stayed hidden: % %', words, hid; end if;
+  end;
+  perform tests.become(other);
   perform tests.unbecome();
 
   -- A card's moment (play_moment, 0092) serves the version a play landed on, and not its words when it is hidden.

@@ -112,8 +112,8 @@ end $$;
 -- who owns a mask to anyone who is not that mask's player, and does the same lookups for every caller so the time it takes says nothing either. Called for a post (or for one of its versions) it says:
 --   {"status": "hiddenUntilEdited", "version": <act>, "words": <the version's words>}   the author's edit is what ends it (the first time it shows again at once; the second time an
 --                                                                                       admin looks at the edit first)
---   {"status": "waiting", "version": <act>, "words": <the edit's words>}               the author's edit follows a second hide until edited and is hidden until an admin
---                                                                                       approves it; the words are the author's own, so Edit can start from them
+--   {"status": "waiting", "version": <act>, "words": <the edit's words>}               the author's edit follows a hide, or a second hide until edited, and is hidden until an
+--                                                                                       admin approves it; the words are the author's own, so Edit can start from them
 -- A player's words are never destroyed: the author reads their own, and this is the only door they have to them while an admin has them hidden.
 create function my_hidden_version(act uuid) returns jsonb
 language plpgsql stable security definer set search_path = public, pg_temp as $$

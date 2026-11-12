@@ -180,10 +180,11 @@ $$;
 -- ------------------------------------------------------------------------------------- what is hidden ----
 
 -- Whether version `w` (a post, or an edit of `pst`) is hidden now: its latest decision of its own is a hide or a hide until edited (a hide covers a version, and
--- only an `unhide` or an `approve` of that version brings its words back). What the author's edit ends is the post being hidden: its new current version has no
--- decision of its own and shows, and the re-review list (reviews_due) holds it. The second time a post is hidden until edited, the edits written after it are hidden
--- too, until an `approve` on the post; an approved version shows and the versions that were hidden stay hidden unless unhidden. For a post nobody ever decided on
--- it is one index lookup, empty.
+-- only an `unhide` or an `approve` of that version brings its words back). What the author's edit ends is the post being hidden until edited: its new current version has
+-- no decision of its own and shows, and the re-review list (reviews_due) holds it. The second time a post is hidden until edited, the edits written after it are hidden
+-- too, until an `approve` on the post; and so are the edits written after a plain `hide` of any version of the post, until an `approve` on the post or an `unhide` of the
+-- version that was hidden (an admin hid those words, and an edit that keeps them is not a way back). An approve or an unhide frees the edits written after it, and the
+-- approved version itself: an edit written before it, with no decision of its own, stays hidden, as every version that was hidden does unless unhidden. For a post nobody ever decided on it is one index lookup, empty; for a decided post, one more on the post's decisions.
 create function version_hidden(w uuid, pst uuid) returns boolean
 language plpgsql stable security definer set search_path = public, pg_temp as $$
 declare
@@ -204,9 +205,10 @@ begin
   if made is null then return false; end if;
   return exists (
     select 1 from conduct_decisions x
-    where x.post = pst and x.outcome = 'hideUntilEdited' and x.at < made
-      and exists (select 1 from conduct_decisions y where y.post = pst and y.outcome = 'hideUntilEdited' and y.id < x.id)
-      and not exists (select 1 from conduct_decisions z where z.post = pst and z.outcome = 'approve' and z.id > x.id));
+    where x.post = pst and x.at < made and x.outcome in ('hide', 'hideUntilEdited')
+      and (x.outcome = 'hide' or exists (select 1 from conduct_decisions y where y.post = pst and y.outcome = 'hideUntilEdited' and y.id < x.id))
+      and not exists (select 1 from conduct_decisions z where z.post = pst and z.id > x.id and z.at < made
+                      and (z.outcome = 'approve' or (x.outcome = 'hide' and z.outcome = 'unhide' and z.version_act = x.version_act))));
 end $$;
 
 create function version_hidden(w uuid) returns boolean
@@ -223,45 +225,273 @@ language sql stable security definer set search_path = public, pg_temp as $$
      and (version_hidden(q, q) or exists (select 1 from acts e where e.kind = 'edit' and e.target_act_id = q and version_hidden(e.id, q)))
 $$;
 
--- A body with the contents of every quote of a hidden post emptied. The quote keeps its opener and its closer, so it still names its Act and
--- the renderer shows the note in its place. A quote opens as `[quote=<id>]`, `[quote="<id>"]`, with or without ` user=<id>` after it (engine/
--- bbcode/parse.ts, quoteHead); every other `[quote` opener, a counterfeit or a bare one, is only counted so the hidden quote's own closer is
--- found. A hidden quote that never closes is emptied to the end of the body, the side an unclear case errs to. It runs only on a body that
--- contains `[quote=` (public_payload asks).
+-- ----------------------------------------------------------------------------- reading a body as the parser does ----
+
+-- Whether `v` is an address the parser accepts as a link (engine/bbcode/parse.ts, checkedUrl with safeHref's list: http, https, mailto, or a path on this
+-- site). Only the parser's own refusals are mirrored: length, a character no address may hold, the scheme list, and an http(s) authority with no credentials
+-- and a real host. The parser needs it to know whether a `[url=…]` is a real link (a real link is closed by the next one, which can close a quote with it).
+create function bb_safe_href(v text) returns boolean
+language plpgsql immutable set search_path = public, pg_temp as $$
+declare
+  s text := regexp_replace(v, '^\s+|\s+$', '', 'g');
+  sch text[];
+  rest text;
+  auth text;
+  host text;
+  port text;
+begin
+  if s = '' or length(s) > 2048
+     or s ~ '[\s\x01-\x1f\x7f-\x9f"''<>`\\­͏؀-؅؜۝܏᠎​-‏ -‮⁠-⁤⁦-⁯ᅟᅠ⠀ㅤ﻿ﾠ￹-￻]' then
+    return false;
+  end if;
+  sch := regexp_match(s, '^([^:/?#]*):');
+  if sch is not null then
+    if lower(sch[1]) not in ('http', 'https', 'mailto') then return false; end if;
+    rest := substr(s, length(sch[1]) + 2);
+    if lower(sch[1]) = 'mailto' then return rest <> ''; end if;
+    auth := (regexp_match(rest, '^//([^/?#]*)'))[1];
+    if auth is null then return false; end if;
+    host := split_part(auth, ':', 1);
+    if strpos(auth, ':') > 0 then
+      port := substr(auth, strpos(auth, ':') + 1);
+      if port !~ '^[0-9]{1,5}$' then return false; end if;
+    end if;
+    return host ~* '^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$' and strpos(host, '..') = 0;
+  end if;
+  return left(s, 1) = '/' and left(s, 2) <> '//';
+end $$;
+
+-- Whether `content` is what a `[video]` or `[youtube]` shows as a video (parse.ts with video.ts's videoOf): an http(s) address on one of the hosts it knows, or an
+-- https address ending .mp4 or .webm; a `[youtube]` also takes a bare 11-character id. The path shape a known host wants is not mirrored: an address on a known host
+-- whose path is wrong, and which holds a bracket, is read here as a video and by the parser as words.
+create function bb_video_like(content text, is_youtube boolean) returns boolean
+language plpgsql immutable set search_path = public, pg_temp as $$
+declare
+  s text := regexp_replace(content, '^\s+|\s+$', '', 'g');
+  m text[];
+begin
+  if s = '' then return false; end if;
+  if is_youtube and s ~ '^[A-Za-z0-9_-]{11}$' then return true; end if;
+  if not bb_safe_href(s) or s !~* '^https?:' then return false; end if;
+  m := regexp_match(s, '^[a-zA-Z]+://([^/?#:]*)([^?#]*)', 'i');
+  if m is null then return false; end if;
+  return lower(m[1]) in ('youtu.be', 'youtube.com', 'www.youtube.com', 'm.youtube.com', 'vimeo.com', 'www.vimeo.com', 'clips.twitch.tv', 'twitch.tv', 'www.twitch.tv',
+                         'streamable.com', 'www.streamable.com', 'nicovideo.jp', 'www.nicovideo.jp', 'soundcloud.com', 'www.soundcloud.com')
+      or (s ~* '^https:' and m[2] ~* '\.(mp4|webm)$');
+end $$;
+
+-- What follows `quote` in a quote opener, read as parse.ts's quoteHead does: 'real:<id>' for a quote of an Act (the name an id, quoted or not, with or without ` user=<id>`
+-- after it), 'counterfeit' for a quote with any other name or none, and null when the opener is only words. Case of the id is dropped.
+create function bb_quote_head(rest text) returns text
+language plpgsql immutable set search_path = public, pg_temp as $$
+declare
+  uuid_re constant text := '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
+  v text;
+  nm text;
+  tail text;
+  j integer;
+  m text[];
+begin
+  if left(rest, 1) = '=' then
+    v := substr(rest, 2);
+    if left(v, 1) = '"' then
+      j := strpos(substr(v, 2), '"');
+      if j = 0 then return null; end if;
+      nm := substr(v, 2, j - 1);
+      tail := substr(v, j + 2);
+    else
+      m := regexp_match(v, '^(.*?)(\suser=.*)$', 'i');
+      if m is null then nm := v; tail := ''; else nm := m[1]; tail := m[2]; end if;
+    end if;
+    nm := regexp_replace(nm, '^\s+|\s+$', '', 'g');
+    if nm = '' or length(nm) > 80 then return null; end if;
+  else
+    tail := rest;
+  end if;
+  if tail <> '' then
+    m := regexp_match(tail, '^\s+user=(.*)$', 'i');
+    if m is null or m[1] !~* uuid_re then return null; end if;
+  end if;
+  if nm is not null and nm ~* uuid_re then return 'real:' || lower(nm); end if;
+  return 'counterfeit';
+end $$;
+
+-- A body with the contents of every quote of a hidden post emptied. The quote keeps its opener and its closer, so it still names its Act and the renderer shows the
+-- note in its place. It reads the body as engine/bbcode/parse.ts does, so a quote is where the parser finds one: tags are `[`…`]` runs of up to MAX_TAG
+-- characters with no `[` inside; `[noparse]` and `[code]` (and a `[img]`, `[video]` or `[youtube]` the parser shows) hold their contents as words, which are no
+-- tag; a closer closes the nearest open tag of its name, closing whatever was opened inside it, and with none open it is words; a `[url]` closes an open link (and what
+-- is inside it); inside an open inline spoiler the block tags are words; and the tags still open at the end are closed there. A hidden quote that never closes is
+-- emptied to the end of the body, as the parser's own reading of it is. A quote of a hidden post inside a quote already emptied is inside it. The parser keeps a
+-- shared fixture, supabase/tests/data/conduct-quote-corpus.json, that 0164-conduct-leaks.sql runs through this function and engine/bbcode/conceal.test.ts runs
+-- through the parser, so neither reading can move without the other failing. It runs only on a body that contains `[quote=` (public_payload asks). Known gap, not a
+-- leak: tags past 32 real ones deep (the parser's MAX_DEPTH) count every tag as real here.
 create function conceal_quotes(body text) returns text
 language plpgsql stable security definer set search_path = public, pg_temp as $$
 declare
   pieces text[];
   tags text[];
-  result text;
-  depth integer := 0;
-  tag text;
-  named text[];
+  starts integer[] := '{}';
+  n integer;
   i integer;
+  j integer;
+  at integer := 1;
+  tag text;
+  b text;
+  nm text;
+  val text;
+  qrest text;
+  head text;
+  eqp integer;
+  isc boolean;
+  tend integer;
+  tstart integer;
+  within text;
+  skip boolean;
+  real_frame boolean;
+  -- the open tags, innermost last: the name, and whether the frame is a real one
+  st_name text[] := '{}';
+  st_real boolean[] := '{}';
+  cnt jsonb := '{}';
+  sz integer := 0;
+  nreal integer := 0;
+  nurl integer := 0;
+  nisp integer := 0;
+  hid integer := 0;
+  -- where each raw closer was last found: 0 not looked up yet, -1 none after this point
+  rawat jsonb := '{}';
+  raw_at integer;
+  result text := '';
+  copied integer := 1;
+  popped_name text;
+  popped_real boolean;
+  openers constant text[] := array['b','i','u','s','color','size','url','img','code','quote','list','spoiler','ispoiler','video','youtube','center','left','right','hr','sub','sup','font','marquee','glow','shadow','rainbow','highlight','noparse'];
+  closers constant text[] := array['b','i','u','s','color','size','url','quote','list','spoiler','ispoiler','video','youtube','center','left','right','sub','sup','font','marquee','glow','shadow','rainbow','highlight'];
+  blocks constant text[] := array['quote','code','list','spoiler','center','left','right','hr','video','youtube','marquee'];
 begin
   if body is null or body !~* '\[quote=' then return body; end if;
-  pieces := regexp_split_to_array(body, '\[/?quote(?:[=\s][^\[\]]*)?\]', 'i');
-  tags := array(select m[1] from regexp_matches(body, '(\[/?quote(?:[=\s][^\[\]]*)?\])', 'gi') m);
-  result := pieces[1];
-  for i in 1 .. coalesce(array_length(tags, 1), 0) loop
+  pieces := regexp_split_to_array(body, '\[[^\[\]]*\]');
+  tags := array(select m[1] from regexp_matches(body, '(\[[^\[\]]*\])', 'g') m);
+  n := coalesce(array_length(tags, 1), 0);
+  for i in 1 .. n loop
+    at := at + length(pieces[i]);
+    starts[i] := at;
+    at := at + length(tags[i]);
+  end loop;
+
+  i := 1;
+  while i <= n loop
     tag := tags[i];
-    if depth > 0 then
-      if tag ~* '^\[/quote\]$' then
-        depth := depth - 1;
-        if depth = 0 then result := result || tag || pieces[i + 1]; end if;
-      else
-        depth := depth + 1;
+    tstart := starts[i];
+    tend := tstart + length(tag);
+    b := substr(tag, 2, length(tag) - 2);
+    i := i + 1;
+    if b = '' or length(b) > 2064 or b = '*' then continue; end if;
+    isc := false; val := null; qrest := null;
+    if left(b, 1) = '/' then
+      nm := lower(substr(b, 2));
+      if not nm = any (closers) then continue; end if;
+      isc := true;
+    elsif b ~* '^quote($|=|\s)' then
+      nm := 'quote';
+      qrest := substr(b, 6);
+    else
+      eqp := strpos(b, '=');
+      nm := lower(case when eqp = 0 then b else left(b, eqp - 1) end);
+      if not nm = any (openers) then continue; end if;
+      if eqp > 0 then
+        val := substr(b, eqp + 1);
+        if length(val) >= 2 and left(val, 1) = '"' and right(val, 1) = '"' then val := substr(val, 2, length(val) - 2); end if;
+      end if;
+    end if;
+
+    -- inside an open inline spoiler, a block tag, a link and another spoiler are words
+    if nisp > 0 and (nm = any (blocks) or nm = 'url' or (nm = 'ispoiler' and not isc)) then continue; end if;
+
+    if isc then
+      -- the closer closes the nearest open tag of its name and what was opened inside it; with none open it is words
+      if coalesce((cnt ->> nm)::integer, 0) > 0 then
+        loop
+          popped_name := st_name[sz]; popped_real := st_real[sz];
+          st_name := st_name[1 : sz - 1]; st_real := st_real[1 : sz - 1];
+          cnt := jsonb_set(cnt, array[popped_name], to_jsonb((cnt ->> popped_name)::integer - 1));
+          if popped_real then
+            nreal := nreal - 1;
+            if popped_name = 'url' then nurl := nurl - 1; end if;
+            if popped_name = 'ispoiler' then nisp := nisp - 1; end if;
+          end if;
+          sz := sz - 1;
+          exit when popped_name = nm;
+        end loop;
+        if hid > sz then
+          -- the hidden quote ended here, closed by this tag or by the tag it was inside: what it held is dropped, and the tag stays
+          copied := tstart; hid := 0;
+        end if;
+      end if;
+    elsif nm in ('code', 'img', 'video', 'youtube', 'noparse') then
+      skip := false;
+      if val is null then
+        raw_at := coalesce((rawat ->> nm)::integer, 0);
+        if raw_at = 0 or (raw_at > 0 and raw_at < i) then
+          raw_at := -1;
+          for j in i .. n loop
+            if lower(tags[j]) = '[/' || nm || ']' then raw_at := j; exit; end if;
+          end loop;
+          rawat := jsonb_set(rawat, array[nm], to_jsonb(raw_at));
+        end if;
+        if raw_at > 0 then
+          within := substr(body, tend, starts[raw_at] - tend);
+          if nm in ('code', 'noparse') then skip := true;
+          elsif length(within) > 2048 + 64 then skip := false;
+          elsif nm = 'img' then skip := bb_safe_href(within) and within ~* '^\s*https?:';
+          else skip := bb_video_like(within, nm = 'youtube');
+          end if;
+          if skip then i := raw_at + 1; end if;
+        end if;
       end if;
     else
-      result := result || tag;
-      named := regexp_match(tag, '^\[quote=\s*"?\s*([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\s*"?', 'i');
-      if named is not null and quote_hidden(lower(named[1])::uuid) then
-        depth := 1;
-      else
-        result := result || pieces[i + 1];
+      real_frame := true;
+      if nm = 'url' then
+        if val is not null and not bb_safe_href(val) then
+          real_frame := false;
+        else
+          -- a new link closes an open one, and whatever was opened inside it
+          while nurl > 0 loop
+            popped_name := st_name[sz]; popped_real := st_real[sz];
+            st_name := st_name[1 : sz - 1]; st_real := st_real[1 : sz - 1];
+            cnt := jsonb_set(cnt, array[popped_name], to_jsonb((cnt ->> popped_name)::integer - 1));
+            if popped_real then
+              nreal := nreal - 1;
+              if popped_name = 'url' then nurl := nurl - 1; end if;
+              if popped_name = 'ispoiler' then nisp := nisp - 1; end if;
+            end if;
+            sz := sz - 1;
+          end loop;
+          if hid > sz then copied := tstart; hid := 0; end if;
+        end if;
+      elsif nm = 'quote' then
+        head := bb_quote_head(qrest);
+        if head is null then real_frame := false; end if;
+      elsif nm = 'ispoiler' then
+        if val is not null then real_frame := false; end if;
+      elsif nm = 'hr' then
+        continue;
+      end if;
+      if real_frame and nreal >= 32 then real_frame := false; end if;
+      st_name := st_name || nm; st_real := st_real || real_frame; sz := sz + 1;
+      cnt := jsonb_set(cnt, array[nm], to_jsonb(coalesce((cnt ->> nm)::integer, 0) + 1));
+      if real_frame then
+        nreal := nreal + 1;
+        if nm = 'url' then nurl := nurl + 1; end if;
+        if nm = 'ispoiler' then nisp := nisp + 1; end if;
+      end if;
+      if nm = 'quote' and hid = 0 and head like 'real:%' and quote_hidden(substr(head, 6)::uuid) then
+        -- the opener stays; what the quote holds goes, up to the tag that ends it
+        result := result || substr(body, copied, tend - copied);
+        copied := tend; hid := sz;
       end if;
     end if;
   end loop;
+  if hid = 0 then result := result || substr(body, copied); end if;
   return result;
 end $$;
 
@@ -401,20 +631,105 @@ begin
   return f;
 end $$;
 
--- Every version hidden now: a version an admin hid, and an edit that carries a second hide-until-edited. For the service and the admin screen; a player
+-- season_news (0100), its Boss items reading the arrival post's words through what a player would read: a hidden post gives the item no quote (the item still names
+-- the Act, which is public), and a quote in the post that quotes a hidden post is emptied. Everything else as 0100 wrote it. The function is security definer and every
+-- player calls it, so a read of `acts.payload` here would show every player what an admin hid; 0164-conduct-leaks.sql lists every function that reads a body from
+-- `acts` itself and refuses one it has not been told is safe.
+create or replace function season_news(before timestamptz default null, most integer default 20) returns setof season_news_row
+language sql stable security definer set search_path = public, pg_temp as $$
+  with
+  lim as (select coalesce($1, 'infinity'::timestamptz) as b, greatest(1, least(coalesce($2, 20), 50)) as k),
+  ann as (select (select (s.value #>> '{}')::uuid from settings s where s.key = 'systemAnnouncements') as thread),
+  r_floor as (
+    select coalesce((select s.results_at from seasons s where s.results_at is not null and s.results_at < (select b from lim)
+                     order by s.results_at desc, s.number desc offset (select k - 1 from lim) limit 1), '-infinity'::timestamptz) as at
+  ),
+  results as (
+    select 'results'::text as kind, null::uuid as act, null::uuid as thread, null::integer as seq, s.results_at as at, s.number as season,
+           null::text as name, null::text as quote, coalesce(s.results_count, 0) as count,
+           jsonb_build_object('top', (
+             select coalesce(jsonb_agg(jsonb_build_object('character', t.character, 'name', t.name, 'place', t.place, 'standing', t.standing, 'shown', t.shown)
+                                       order by t.place, t.name, t.character), '[]'::jsonb)
+             from (select r.* from season_results r where r.season = s.id order by r.place, r.name, r.character limit 3) t)) as detail
+    from seasons s
+    where s.results_at is not null and s.results_at < (select b from lim) and s.results_at >= (select at from r_floor)
+  ),
+  t_floor as (
+    select coalesce((select n.landed_at from news_landed n where n.kind in ('tally', 'announcements') and n.landed_at < (select b from lim)
+                     order by n.landed_at desc, n.act desc offset (select k - 1 from lim) limit 1), '-infinity'::timestamptz) as at
+  ),
+  tallies as (
+    select 'tally'::text as kind, a.id as act, a.thread, a.seq, n.landed_at as at,
+           case when n.kind = 'tally' then (a.payload ->> 'season')::integer else (select s.number from seasons s where s.turns_thread = a.thread) end as season,
+           null::text as name, null::text as quote,
+           case when n.kind = 'tally' then tally_names(a.payload)
+                else (select count(*) from acts x where x.kind = 'announce' and x.thread = a.thread and x.created_at = a.created_at)::integer end as count,
+           case when n.kind = 'tally' then
+             jsonb_build_object('debuts', case when jsonb_typeof(a.payload -> 'debuts') = 'array' then a.payload -> 'debuts' else '[]'::jsonb end,
+                                'turns', case when jsonb_typeof(a.payload -> 'turns') = 'array' then a.payload -> 'turns' else '[]'::jsonb end)
+           else (
+             select jsonb_build_object(
+               'debuts', coalesce(jsonb_agg(f.entry order by f.seq) filter (where f.what = 'debut'), '[]'::jsonb),
+               'turns', coalesce(jsonb_agg(f.entry order by f.seq) filter (where f.what = 'turn'), '[]'::jsonb))
+             from (
+               select x.seq, x.payload ->> 'what' as what,
+                      jsonb_build_object('character', x.character, 'name', c.name)
+                        || case when x.payload ? 'class' then jsonb_build_object('class', x.payload -> 'class') else '{}'::jsonb end
+                        || case when x.payload ? 'was' then jsonb_build_object('was', x.payload -> 'was') else '{}'::jsonb end as entry
+               from acts x join characters c on c.id = x.character
+               where x.kind = 'announce' and x.thread = a.thread and x.created_at = a.created_at
+               order by x.seq limit 20
+             ) f) end as detail
+    from news_landed n join acts a on a.id = n.act
+    where n.kind in ('tally', 'announcements') and n.landed_at < (select b from lim) and n.landed_at >= (select at from t_floor)
+  ),
+  boss_all as materialized (
+    select 'bossArrived'::text as kind, h.boss as who, h.landed_at as at, h.number as season, 'bossArrival'::text as line from season_boss_changes h
+    where h.landed_at < (select b from lim)
+    union all
+    select 'bossLeft', h.outgoing, h.landed_at, h.number - 1, 'bossFarewell' from season_boss_changes h
+    where h.outgoing is not null and h.landed_at < (select b from lim)
+  ),
+  boss_page as (
+    select * from boss_all c
+    where c.at >= coalesce((select c2.at from boss_all c2 order by c2.at desc offset (select k - 1 from lim) limit 1), '-infinity'::timestamptz)
+  ),
+  bosses as (
+    select c.kind, p.id as act, p.thread, p.seq, c.at, c.season, (select ch.name from characters ch where ch.staff = c.who) as name,
+           left(p.body, 600) as quote, null::integer as count, null::jsonb as detail
+    from boss_page c
+    left join lateral (
+      select a.id, a.thread, a.seq, public_payload(a.payload, version_hidden(a.id)) ->> 'body' as body
+      from characters ch join acts a on a.character = ch.id
+      where ch.staff = c.who and a.created_at = c.at and a.kind = 'post' and a.thread = (select thread from ann)
+        and exists (select 1 from settings s where s.key = 'systemLines' and jsonb_typeof(s.value -> c.line) = 'array' and jsonb_array_length(s.value -> c.line) > 0)
+      order by a.seq limit 1
+    ) p on true
+  ),
+  merged as (
+    select * from results union all select * from tallies union all select * from bosses
+  )
+  select m.kind, m.act, m.thread, m.seq, m.at, m.season, m.name, m.quote, m.count, m.detail
+  from merged m
+  where m.at >= coalesce((select m2.at from merged m2 order by m2.at desc offset (select k - 1 from lim) limit 1), '-infinity'::timestamptz)
+  order by m.at desc, m.kind, m.act nulls first
+$$;
+
+-- Every version hidden now: a version an admin hid, and an edit that follows a plain hide or carries a second hide-until-edited. For the service and the admin screen; a player
 -- reads which versions are hidden from acts_public's `hidden`.
 create view hidden_versions as
   select h.version_act
   from (
     select d.version_act from conduct_decisions d where d.version_act is not null and d.outcome in ('hide', 'hideUntilEdited', 'unhide', 'approve')
     union
-    select e.id from acts e where e.kind = 'edit' and e.target_act_id in (select d.post from conduct_decisions d where d.outcome = 'hideUntilEdited')
+    select e.id from acts e where e.kind = 'edit' and e.target_act_id in (select d.post from conduct_decisions d where d.outcome in ('hide', 'hideUntilEdited'))
   ) h
   where version_hidden(h.version_act);
 
--- Versions brought back by an author's edit with no decision since: the admin's re-review list. A post hidden until edited for the first time
--- shows its new version as soon as its author edits (the offending version stays hidden); this lists the newest version of each such post until an admin decides again (approve, hide again,
--- unhide). Admins read it, nobody else.
+-- Versions waiting on an admin after an author's edit with no decision since: the admin's re-review list. A post hidden until edited for the first time
+-- shows its new version as soon as its author edits (the offending version stays hidden); a post hidden outright, or hidden until edited a second time, keeps the edit hidden
+-- (version_hidden) until an admin approves it. Either way this lists the newest version of each such post until an admin decides again (approve, hide again, unhide), so an
+-- admin hears of the edit. Admins read it, nobody else.
 create view reviews_due as
   select d.id as decision, d.post,
          (select e.id from acts e where e.kind = 'edit' and e.target_act_id = d.post order by e.created_at desc, e.id desc limit 1) as version_act,
@@ -422,8 +737,9 @@ create view reviews_due as
          (select p.thread from acts p where p.id = d.post) as thread
   from conduct_decisions d
   where is_admin()
-    and d.outcome = 'hideUntilEdited'
-    and not exists (select 1 from conduct_decisions e where e.post = d.post and e.outcome = 'hideUntilEdited' and e.id < d.id)
+    and (d.outcome = 'hide'
+         or (d.outcome = 'hideUntilEdited'
+             and not exists (select 1 from conduct_decisions e where e.post = d.post and e.outcome = 'hideUntilEdited' and e.id < d.id)))
     and exists (select 1 from acts x where x.kind = 'edit' and x.target_act_id = d.post and x.created_at > d.at)
     and not exists (select 1 from conduct_decisions l where l.post = d.post and l.id > d.id and l.outcome in ('hide', 'hideUntilEdited', 'unhide', 'approve'));
 
@@ -1606,7 +1922,8 @@ revoke execute on function conduct_author(uuid), conduct_write(bigint, uuid, uui
   account_bar(uuid), refuse_if_barred(uuid) from public, anon, authenticated;
 -- acts_public calls two functions with its readers' privileges (the digest's role and the service role read it too);
 -- every other helper is reached through those and runs as its owner.
-revoke execute on function version_hidden(uuid, uuid), version_hidden(uuid), quote_hidden(uuid), conceal_quotes(text), public_payload(jsonb, boolean) from public, anon;
+revoke execute on function version_hidden(uuid, uuid), version_hidden(uuid), quote_hidden(uuid), conceal_quotes(text), public_payload(jsonb, boolean),
+  bb_safe_href(text), bb_video_like(text, boolean), bb_quote_head(text) from public, anon, authenticated;
 revoke execute on function version_hidden(uuid), conceal_quotes(text) from authenticated;
 grant execute on function version_hidden(uuid, uuid), quote_hidden(uuid), public_payload(jsonb, boolean) to authenticated, service_role, kayfabb_digest;
 revoke execute on function accept_conduct(integer), conduct_accepted(), report_post(uuid, text, text), decide_report(bigint, jsonb), decide(uuid, uuid, text, timestamptz, text),

@@ -1,0 +1,202 @@
+[
+ {
+  "name": "plain",
+  "body": "a[quote={H}]secret[/quote]b",
+  "expect": "a[quote={H}][/quote]b"
+ },
+ {
+  "name": "the reviewer's noparse poison",
+  "body": "[quote={H}][noparse]Fine words [/quote] then the cruel part.[/noparse][/quote]Wow.",
+  "expect": "[quote={H}][/quote]Wow."
+ },
+ {
+  "name": "code holds a closer",
+  "body": "[quote={H}][code]a [/quote] b[/code] c[/quote]d",
+  "expect": "[quote={H}][/quote]d"
+ },
+ {
+  "name": "noparse holds an opener",
+  "body": "[quote={H}]a[noparse][quote={S}][/noparse]b[/quote]c",
+  "expect": "[quote={H}][/quote]c"
+ },
+ {
+  "name": "a noparse before the quote",
+  "body": "[noparse]a[/noparse][quote={H}]x[/quote]",
+  "expect": "[noparse]a[/noparse][quote={H}][/quote]"
+ },
+ {
+  "name": "a quote inside a noparse is words",
+  "body": "[noparse][quote={H}]x[/quote][/noparse]y",
+  "expect": "[noparse][quote={H}]x[/quote][/noparse]y"
+ },
+ {
+  "name": "a quote inside a code is words",
+  "body": "[code][quote={H}]x[/quote][/code]y",
+  "expect": "[code][quote={H}]x[/quote][/code]y"
+ },
+ {
+  "name": "a noparse with no closer is words",
+  "body": "[noparse][quote={H}]x[/quote]",
+  "expect": "[noparse][quote={H}][/quote]"
+ },
+ {
+  "name": "a noparse with a value is words",
+  "body": "[noparse=1][quote={H}]x[/quote][/noparse]",
+  "expect": "[noparse=1][quote={H}][/quote][/noparse]"
+ },
+ {
+  "name": "a code in capitals",
+  "body": "[quote={H}][CODE]a[/quote][/Code]b[/quote]c",
+  "expect": "[quote={H}][/quote]c"
+ },
+ {
+  "name": "a visible quote inside a hidden one",
+  "body": "[quote={H}]a[quote={S}]b[/quote]c[/quote]d",
+  "expect": "[quote={H}][/quote]d"
+ },
+ {
+  "name": "a hidden quote inside a visible one",
+  "body": "[quote={S}]a[quote={H}]b[/quote]c[/quote]d",
+  "expect": "[quote={S}]a[quote={H}][/quote]c[/quote]d"
+ },
+ {
+  "name": "a counterfeit inside a hidden one",
+  "body": "[quote={H}]a[quote=Bob]b[/quote]c[/quote]d",
+  "expect": "[quote={H}][/quote]d"
+ },
+ {
+  "name": "a hidden quote inside a hidden one",
+  "body": "[quote={H}]a[quote={H}]b[/quote]c[/quote]d",
+  "expect": "[quote={H}][/quote]d"
+ },
+ {
+  "name": "two hidden quotes",
+  "body": "[quote={H}]a[/quote]m[quote={H}]b[/quote]n",
+  "expect": "[quote={H}][/quote]m[quote={H}][/quote]n"
+ },
+ {
+  "name": "a quote that never closes",
+  "body": "x[quote={H}]secret words",
+  "expect": "x[quote={H}]"
+ },
+ {
+  "name": "an inner quote that never closes",
+  "body": "[quote={H}]a[quote={S}]b[/quote]c",
+  "expect": "[quote={H}]"
+ },
+ {
+  "name": "a stray closer first",
+  "body": "a[/quote]b[quote={H}]c[/quote]d",
+  "expect": "a[/quote]b[quote={H}][/quote]d"
+ },
+ {
+  "name": "a stray closer after",
+  "body": "[quote={H}]a[/quote]b[/quote]c",
+  "expect": "[quote={H}][/quote]b[/quote]c"
+ },
+ {
+  "name": "a stray bracket in front of an opener",
+  "body": "[quote=zz[quote={H}]w[/quote] after",
+  "expect": "[quote=zz[quote={H}][/quote] after"
+ },
+ {
+  "name": "an empty tag between",
+  "body": "[quote={H}]a[]b[/quote]c",
+  "expect": "[quote={H}][/quote]c"
+ },
+ {
+  "name": "capitals",
+  "body": "[QUOTE={H}]x[/Quote]y",
+  "expect": "[QUOTE={H}][/Quote]y"
+ },
+ {
+  "name": "a quoted name",
+  "body": "[quote=\"{H}\"]x[/quote]y",
+  "expect": "[quote=\"{H}\"][/quote]y"
+ },
+ {
+  "name": "with a user",
+  "body": "[quote={H} user={S}]x[/quote]y",
+  "expect": "[quote={H} user={S}][/quote]y"
+ },
+ {
+  "name": "with a bad user is words",
+  "body": "[quote={H} user=nobody]x[/quote]y",
+  "expect": "[quote={H} user=nobody]x[/quote]y"
+ },
+ {
+  "name": "a head that is words",
+  "body": "[quote={H} junk]x[/quote]y",
+  "expect": "[quote={H} junk]x[/quote]y"
+ },
+ {
+  "name": "a visible quote alone",
+  "body": "[quote={S}]x[/quote]y",
+  "expect": "[quote={S}]x[/quote]y"
+ },
+ {
+  "name": "a closer of another tag ends it",
+  "body": "[b][quote={H}]x[/b]y[/quote]z",
+  "expect": "[b][quote={H}][/b]y[/quote]z"
+ },
+ {
+  "name": "a closer inside a literal tag",
+  "body": "[quote={H}][color=nope]x[/color]y[/quote]z",
+  "expect": "[quote={H}][/quote]z"
+ },
+ {
+  "name": "a new link ends it",
+  "body": "[url][quote={H}]x[url]y[/quote]z",
+  "expect": "[url][quote={H}][url]y[/quote]z"
+ },
+ {
+  "name": "a link with an address ends it",
+  "body": "[url=https://a.example/][quote={H}]x[url=https://b.example/]y[/quote]z",
+  "expect": "[url=https://a.example/][quote={H}][url=https://b.example/]y[/quote]z"
+ },
+ {
+  "name": "a link with a bad address does not",
+  "body": "[url=nope][quote={H}]x[url=nope]y[/quote]z",
+  "expect": "[url=nope][quote={H}][/quote]z"
+ },
+ {
+  "name": "block tags inside an inline spoiler are words",
+  "body": "[ispoiler]a[quote={H}]b[/quote]c[/ispoiler]",
+  "expect": "[ispoiler]a[quote={H}]b[/quote]c[/ispoiler]"
+ },
+ {
+  "name": "a closer inside an inline spoiler is words",
+  "body": "[quote={H}]a[ispoiler]b[/quote]c[/ispoiler]d[/quote]e",
+  "expect": "[quote={H}][/quote]e"
+ },
+ {
+  "name": "an image that holds a closer",
+  "body": "[quote={H}]a[img]http://x.example/[/quote][/img]b[/quote]c",
+  "expect": "[quote={H}][/quote]c"
+ },
+ {
+  "name": "an image that is not one",
+  "body": "[quote={H}]a[img]nope[/quote]b[/img]c",
+  "expect": "[quote={H}][/quote]b[/img]c"
+ },
+ {
+  "name": "a video that holds a closer",
+  "body": "[quote={H}]a[video]https://youtu.be/abcdefghijk?x=[/quote][/video]b[/quote]c",
+  "expect": "[quote={H}][/quote]c"
+ },
+ {
+  "name": "a tag too long to be one",
+  "body": "[quote={H}]a[/quote                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    ]b[/quote]c",
+  "expect": "[quote={H}][/quote]c"
+ },
+ {
+  "name": "an opener too long to be one",
+  "body": "[quote={H} xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx]x[quote={H}]y[/quote]z",
+  "expect": "[quote={H} xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx]x[quote={H}][/quote]z"
+ },
+ {
+  "name": "a body that is only a hidden quote",
+  "body": "[quote={H}]all[/quote]",
+  "expect": "[quote={H}][/quote]"
+ }
+]
