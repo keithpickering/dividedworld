@@ -167,7 +167,7 @@ begin
 
   -- ---- The shares of the settlements read, whole ----
   if doc -> 'shares' is distinct from pg_temp.arr((select jsonb_agg(to_jsonb(r)) from (
-       select settlement, character, reason, act, quadrant, amount from my_ledger_shares where settlement in (s1, s2) order by settlement desc, character, reason, act, quadrant) r))
+       select settlement, character, reason, act, quadrant, amount, card from my_ledger_shares where settlement in (s1, s2) order by settlement desc, character, reason, card, act, quadrant) r))
      or jsonb_array_length(doc -> 'shares') is distinct from 4 then raise exception 'shares: %', doc -> 'shares'; end if;
 
   -- ---- What `around` reads for them ----
@@ -215,7 +215,7 @@ begin
     raise exception 'ledger before the cursor: %', later -> 'sources' -> 'ledger';
   end if;
   if later -> 'shares' is distinct from pg_temp.arr((select jsonb_agg(to_jsonb(r)) from (
-       select settlement, character, reason, act, quadrant, amount from my_ledger_shares where settlement = s1 order by settlement desc, character, reason, act, quadrant) r)) then raise exception 'shares before the cursor: %', later -> 'shares'; end if;
+       select settlement, character, reason, act, quadrant, amount, card from my_ledger_shares where settlement = s1 order by settlement desc, character, reason, card, act, quadrant) r)) then raise exception 'shares before the cursor: %', later -> 'shares'; end if;
   if jsonb_array_length(later -> 'sources' -> 'wallet') is distinct from 0 or jsonb_array_length(later -> 'sources' -> 'cards') is distinct from 0 then raise exception 'nothing else is that old'; end if;
   perform tests.unbecome();
 
