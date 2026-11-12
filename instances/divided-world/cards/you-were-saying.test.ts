@@ -10,12 +10,14 @@ import { defaults as settings } from '../settings.ts';
 import { instance } from '../index.ts';
 import { instanceProblems, withOverrides } from '../../../engine/rules/instance.ts';
 import { postTarget, WRITE_TOKENS_MOST, type CardTarget } from '../../../engine/rules/cards.ts';
+import { tokenCounter } from '../../../engine/system/tokens.ts';
+import { mostSteps } from './you-were-saying.ts';
 
 const rules = youWereSaying;
 const writes = rules.writes!;
 const target = (body: string): CardTarget => postTarget('p1', 'post', body);
 const frame = (over: Partial<Parameters<typeof writes.frame>[0]> = {}) =>
-  writes.frame({ post: { name: 'Mario', text: 'I was going to say' }, before: [], title: 'Best level', tails: [], settings, budget: 1000, count: (t) => t.length, ...over });
+  writes.frame({ post: { name: 'Mario', text: 'I was going to say' }, before: [], title: 'Best level', tails: [], settings, budget: 100_000, count: (t) => t.length, ...over });
 
 test('its length and its price follow its steps', () => {
   assert.equal(writes.tokens({ steps: 0 }, settings), 25);
@@ -180,4 +182,134 @@ test('a most above what the server accepts is refused by the settings, and token
 test('the instance, with the card, has no problems', () => {
   assert.deepEqual(instanceProblems(instance), []);
   assert.ok(instance.cards.some((c) => c.key === 'you-were-saying'));
+});
+
+// The fitting of the frame (docs/plans/2026-11-12-old-voice-window-design.md, section 3).
+const bytes = tokenCounter('bytes');
+const fit = (budget: number, over: Partial<Parameters<typeof writes.frame>[0]> = {}, count: (t: string) => number = bytes) => frame({ budget, count, ...over });
+const LONE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/;
+const eight = Array.from({ length: 8 }, (_, i) => ({ name: `N${i}`, text: `earlier post number ${i}` }));
+
+test('fitting: under budget, the prompt is today\'s, byte for byte', () => {
+  // Today's frame, held here as it was before the budget existed.
+  const LS = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g;
+  const flat = (s: string) => s.replace(LS, '').replace(/[\s\u0085]+/g, ' ');
+  const one = (s: string) => flat(s).trim();
+  const clip = (s: string, most: number) => { const c = [...one(s)]; return c.length <= most ? c.join('') : `${c.slice(0, most).join('').trimEnd()}…`; };
+  const last = (s: string, most: number) => { const c = [...s]; return c.length <= most ? s : c.slice(-most).join('').trimStart(); };
+  const safe = (s: string) => (s.startsWith('---') || s.startsWith('Posted by ') || s.startsWith('Quote:') || s.startsWith(HEADER) ? ` ${s}` : s);
+  const today = (i: { post: { name: string; text: string }; before: { name: string; text: string }[]; title: string; tails: string[] }) => {
+    const lines = [HEADER, `Thread: ${clip(i.title, 200)}`, ''];
+    const post = (n: string, t: string) => void lines.push('---', `Posted by ${clip(n, 60)}:`, safe(t));
+    for (const p of i.before.slice(-8)) post(p.name, clip(p.text, 500));
+    post(i.post.name, last(one(i.post.text), 2000) + i.tails.map(flat).join(''));
+    return lines.join('\n');
+  };
+  const inputs = [
+    { post: { name: 'Mario', text: 'I was going to say' }, before: [], title: 'Best level', tails: [] },
+    { post: { name: 'Ma\ud800rio', text: '--- a\udc00b😀c\n  d ' + 'y'.repeat(2400) }, before: [...eight, { name: 'L', text: 'Quote: x '.repeat(100) }], title: ' T\udfffitle\n' + 't'.repeat(300), tails: [' and then\nI', ' went--- on.'] },
+    { post: { name: '', text: '' }, before: [], title: '', tails: ['--- x'] },
+  ];
+  for (const i of inputs) {
+    const expected = today(i);
+    assert.equal(fit(1_000_000, i).prompt, expected);
+    assert.equal(fit(bytes(expected), i).prompt, expected, 'a budget it exactly meets changes nothing');
+  }
+});
+
+test('fitting: over budget, the oldest earlier posts go first and the newest earlier post is the last to go', () => {
+  const full = fit(1_000_000, { before: eight, title: 'T' }).prompt;
+  const gone: number[] = [];
+  for (let budget = bytes(full); budget >= 0; budget--) {
+    const p = fit(budget, { before: eight, title: 'T' }).prompt;
+    const present = eight.map((_, i) => p.includes(`Posted by N${i}:`));
+    if (!present.includes(false)) continue;
+    // Once one is gone, every older one is gone too: what remains is a suffix of the thread.
+    assert.deepEqual(present, eight.map((_, i) => i >= present.lastIndexOf(false) + 1), `budget ${budget}`);
+    if (!p.includes('Thread: T')) break;
+    gone.push(present.filter((x) => !x).length);
+  }
+  assert.ok(gone.includes(1) && gone.includes(7), 'posts leave one at a time');
+  assert.ok(fit(bytes(full) - 1, { before: eight, title: 'T' }).prompt.includes('Posted by N7:'));
+  assert.ok(!fit(bytes(full) - 1, { before: eight, title: 'T' }).prompt.includes('Posted by N0:'));
+});
+
+test('fitting: with no earlier posts left, the title is clipped, then emptied, before the post loses a character', () => {
+  const title = 'a very long thread title that goes on and on and on past forty characters';
+  const post = 'I was going to say';
+  const base = { before: [], title, post: { name: 'Mario', text: post } };
+  const full = fit(1_000_000, base).prompt;
+  const clipped = fit(bytes(full) - 1, base).prompt;
+  assert.ok(clipped.includes('Thread: a very long thread title that goes on …') || /Thread: .{1,41}\n/.test(clipped));
+  assert.ok(clipped.length < full.length && clipped.endsWith(post));
+  const emptied = fit(bytes(clipped) - 1, base).prompt;
+  assert.ok(emptied.split('\n')[1] === 'Thread:', 'nothing after the colon');
+  assert.ok(emptied.endsWith(post), 'the post lost nothing');
+  const less = fit(bytes(emptied) - 1, base).prompt;
+  assert.ok(less.endsWith('was going to say') && !less.endsWith(post), 'only then does the post lose characters, from its start');
+});
+
+test('fitting: a 2,000-character post with a budget of 100 bytes keeps the header, the author and the post\'s end', () => {
+  const text = Array.from({ length: 2000 }, (_, i) => String.fromCharCode(97 + (i % 26))).join('');
+  const { prompt } = fit(100, { post: { name: 'Mario', text }, before: eight, title: 'Best level' });
+  assert.ok(prompt.startsWith(`${HEADER}\n`));
+  assert.ok(prompt.includes('---\nPosted by Mario:\n'));
+  assert.ok(prompt.endsWith(text.slice(-20)) && prompt.endsWith(text.at(-1)!));
+  assert.ok(bytes(prompt) <= 100);
+  assert.ok(bytes(prompt) >= 95, 'it keeps as much as fits');
+});
+
+test('fitting: three chained tails over budget keep their end', () => {
+  const tails = [' one '.repeat(30), ' two '.repeat(30), ' three and the very end'];
+  const base = { post: { name: 'Mario', text: 'I was going to say' }, tails, title: 'T' };
+  const header = fit(1_000_000, { ...base, tails: [] }).prompt.length;
+  const { prompt } = fit(header + 40, base);
+  assert.ok(prompt.endsWith('three and the very end'));
+  assert.ok(bytes(prompt) <= header + 40);
+  assert.ok(prompt.includes('I was going to say'.slice(-1)));
+  const tight = fit(header + 3, base).prompt;
+  assert.ok(tight.endsWith('end') && bytes(tight) <= header + 3);
+});
+
+test('fitting: with the gpt2 counter, a thread of 8 posts of 500 characters and a 2,000-character post fit 1,024 less 200', () => {
+  const gpt2 = tokenCounter('gpt2');
+  const words = 'the quick brown fox jumps over a lazy dog while Mario runs through World 1-1 '.repeat(40);
+  const before = Array.from({ length: 8 }, (_, i) => ({ name: `Player${i}`, text: words.slice(i, i + 500) }));
+  const post = { name: 'Mario', text: words.slice(0, 2000) };
+  const input = { before, post, title: 'A thread about the best level in the whole game '.repeat(3), tails: [] };
+  const unfitted = frame({ ...input, budget: 1_000_000, count: gpt2 }).prompt;
+  assert.ok(gpt2(unfitted) > 824, 'the case is over budget to begin with');
+  let calls = 0;
+  const counting = (t: string) => (calls++, gpt2(t));
+  const { prompt } = frame({ ...input, budget: 824, count: counting });
+  assert.ok(gpt2(prompt) <= 824, `${gpt2(prompt)} tokens`);
+  assert.ok(prompt.endsWith(post.text.slice(-30)));
+  assert.ok(calls <= 40, `${calls} counts`);
+});
+
+test('fitting: a clip never splits a surrogate pair, and a budget nothing can meet returns the smallest prompt without throwing', () => {
+  const emoji = '😀'.repeat(900) + 'z';
+  for (const budget of [60, 83, 84, 85, 90, 101]) {
+    const { prompt } = fit(budget, { post: { name: 'M', text: emoji }, tails: ['😀'.repeat(50)], title: '' });
+    assert.ok(!LONE.test(prompt), `budget ${budget}`);
+  }
+  const small = fit(0, { post: { name: 'Mario', text: 'abc def' }, tails: [' ghi', ' jkl'], before: eight, title: 'Title' });
+  assert.ok(small.prompt.startsWith(HEADER) && small.prompt.endsWith('l') && small.prompt.includes('Posted by Mario:'));
+  assert.ok(!small.prompt.includes('Posted by N'));
+  assert.deepEqual(small.stop, STOPS);
+});
+
+test('fitting: it clips with a bisection, a dozen counts a clip, not a thousand', () => {
+  let calls = 0;
+  const count = (t: string) => (calls++, bytes(t));
+  fit(100, { post: { name: 'Mario', text: 'x'.repeat(2000) } }, count);
+  assert.ok(calls <= 20, `${calls} counts`);
+  calls = 0;
+  fit(100, { post: { name: 'Mario', text: 'x'.repeat(2000) }, tails: ['y'.repeat(900)], before: eight, title: 't'.repeat(100) }, count);
+  assert.ok(calls <= 60, `${calls} counts`);
+});
+
+test('mostSteps follows the window less the floor', () => {
+  assert.equal(mostSteps(settings), 7);
+  assert.equal(mostSteps({ ...settings, oldVoiceWindow: 400, oldVoicePromptFloor: 256 }), 4);
 });

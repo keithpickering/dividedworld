@@ -10,15 +10,19 @@
  * - **Its state** is the author's clear, the version of the post whose tail was erased by hand; it holds until the next edit makes a new one.
  * - **A Mod Bot** plays it at the base length.
  */
-import { economyOf, landsOn, ok, refuse, WRITE_TOKENS_MOST, type CardRules } from '../../../engine/rules/cards.ts';
+import { economyOf, landsOn, ok, refuse, WRITE_TOKENS_MOST, writeTokensMost, type CardRules } from '../../../engine/rules/cards.ts';
 import { defaults } from '../settings.ts';
 import { youWereSayingFrame } from './you-were-saying/frame.ts';
 
 export type YouWereSayingConfig = { readonly steps: number };
 
-/** The most steps the economy allows: the whole number of steps from the base length up to the most. */
+/**
+ * The most steps the economy allows: the whole number of steps from the base length up to the most, the most being the smaller of the
+ * card's own `mostTokens` and the window less the prompt floor (`writeTokensMost`), so the slider, the price and the tokens a play records
+ * agree (docs/plans/2026-11-12-old-voice-window-design.md, section 4).
+ */
 export const mostSteps = (settings: Parameters<typeof economyOf>[0]): number => {
-  const [base, step, most] = [economyOf(settings, 'youWereSaying.baseTokens'), economyOf(settings, 'youWereSaying.stepTokens'), economyOf(settings, 'youWereSaying.mostTokens')];
+  const [base, step, most] = [economyOf(settings, 'youWereSaying.baseTokens'), economyOf(settings, 'youWereSaying.stepTokens'), Math.min(economyOf(settings, 'youWereSaying.mostTokens'), writeTokensMost(settings))];
   return Math.max(0, Math.floor((most - base) / step));
 };
 

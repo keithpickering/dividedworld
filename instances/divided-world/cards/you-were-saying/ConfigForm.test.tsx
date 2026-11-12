@@ -12,10 +12,10 @@ import { youWereSaying } from '../you-were-saying.ts';
 import { ConfigForm } from './ConfigForm.tsx';
 
 const post = { id: 'p', currentPayload: { body: 'Once upon a time' } } as unknown as Act;
-const form = (config: Record<string, unknown> | undefined, cardEconomy: Record<string, number> = {}) => {
+const form = (config: Record<string, unknown> | undefined, cardEconomy: Record<string, number> = {}, live: Record<string, number> = {}) => {
   cleanup();
   const onChange = vi.fn();
-  const kayfa = { instance: { settings: defaults }, settings: { cardEconomy } } as unknown as Kayfa;
+  const kayfa = { instance: { settings: defaults }, settings: { cardEconomy, ...live } } as unknown as Kayfa;
   render(<KayfaProvider value={kayfa}><ConfigForm config={config} onChange={onChange} post={post} id="play" /></KayfaProvider>);
   return { onChange, slider: screen.getByLabelText('How much it writes') as HTMLInputElement };
 };
@@ -79,6 +79,11 @@ describe("You Were Saying?'s play form", () => {
   test("the range's max follows the live settings when they lower it", () => {
     const { slider } = form({ steps: 1 }, { 'youWereSaying.mostTokens': 100 });
     expect(slider).toHaveAttribute('max', '3');
+  });
+
+  test("the slider's last stop fits the window: a window of 400 and a floor of 256 leave 144 tokens, step 4", () => {
+    const { slider } = form({ steps: 1 }, {}, { oldVoiceWindow: 400, oldVoicePromptFloor: 256 });
+    expect(slider).toHaveAttribute('max', '4');
   });
 
   test("the range's max never passes what the card's validateConfig accepts, whatever the live settings raise it to", () => {
