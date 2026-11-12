@@ -1119,8 +1119,9 @@ button.kb-hud-secret:focus-visible {
 /*
  * The hand (engine/ui/cards/Hand.tsx), one region that is two things by the board's layout.
  *
- * On the Main board's layout it is the cards alone, fanned through the HUD's seam over the hand
- * button (the Main board draws them at -11, -1 and 10 degrees, 150 by 225 each): the region is the
+ * On the Main board's layout it is the cards alone, on the arc that rises through the HUD's seam over
+ * the hand button (engine/ui/cards/arc.ts: one to three kinds stand at the board's -11, -1 and 10
+ * degrees, 150 by 225 each, more spread left in rows): the region is the
  * HUD's own box, on the HUD's own grid, so the cards stand over the hand button wherever the
  * button stands, and it takes no click but the cards'. Its sheet parts (the smoke, the heading
  * and Close, the line, the Vending Machine link) are the Phone board's and are not drawn there;
@@ -1161,9 +1162,13 @@ button.kb-hud-secret:focus-visible {
   display: none;
 }
 
-/* The hand button's box in the bar, which the fan stands over: 170 by 52, at the right end of the HUD's last column. */
+/*
+ * The arc's list spans the drawer's whole grid, since a hand of many kinds reaches left past the HUD's last column;
+ * the cards' left is still measured from the hand button's place, the fifth column's (256px + x, as the board's three
+ * stand), so the board's own three cards stand where they always did.
+ */
 :where(:root:not([data-kb-layout='phone'])) .kb-hand-cards {
-  grid-column: 5;
+  grid-column: 1 / -1;
   position: relative;
   align-self: stretch;
   margin: 0;
@@ -1173,8 +1178,8 @@ button.kb-hud-secret:focus-visible {
 
 :where(:root:not([data-kb-layout='phone'])) .kb-hand-card {
   position: absolute;
-  /* The fan's last card stands where its turn leaves it inside the window: 150px wide, and about 18px more a side where it leans. */
-  left: min(calc(256px + var(--kb-fan-x)), calc(100% - 134px));
+  /* The arc's card stands where its turn leaves it inside the window: 150px wide, and about 18px more a side where it leans. The fifth column starts at 420 + 44 + 452 + 28 = 944px of the grid, so the card's x is measured from there. */
+  left: min(calc(944px + 256px + var(--kb-fan-x)), calc(100% - 134px));
   top: calc(8.875rem + var(--kb-fan-y));
   z-index: var(--kb-fan-z);
   transform: rotate(var(--kb-fan-turn));
@@ -1184,16 +1189,34 @@ button.kb-hud-secret:focus-visible {
 /*
  * The cards stand over the HUD's clock, as the board draws them. A larger text size widens the clock
  * under them (its label and time grow with the text and reach the cards' left edge), and a card over
- * a player's words is a card over words they cannot read, so at any size but the board's own the fan
- * stands clear above the HUD: 7rem less 5px higher, which puts its foot at the clock's top.
+ * a player's words is a card over words they cannot read, so at any size but the board's own the arc
+ * stands clear above the HUD, every row of it: 7rem less 5px higher, which puts its foot at the clock's top.
  */
 :where(:root[data-kb-text-size]:not([data-kb-text-size='100'], [data-kb-layout='phone'])) .kb-hand-card {
   top: calc(8.875rem + var(--kb-fan-y) - 7rem + 5px);
 }
 
-/* The armed card stands 48px higher than the rest, as the Main board draws it. */
+/*
+ * The card under the pointer or the focus, and the armed card, stand upright, 110px higher and a quarter larger, above
+ * every card (the z indexes run from 1 up, so 100 more is above them all), so a card under its neighbors can be read.
+ * With motion it eases over the feel's enter time (the HUD sets --kb-hand-lift-ms and --kb-hand-lift-ease on the
+ * drawer); under Off the lift is instant, as the sheet's entrance is (base.css .kb-sheet).
+ */
+:where(:root:not([data-kb-layout='phone'])) .kb-hand-card:hover,
+:where(:root:not([data-kb-layout='phone'])) .kb-hand-card:focus-within,
 :where(:root:not([data-kb-layout='phone'])) .kb-hand-card[data-armed] {
-  margin-top: -48px;
+  z-index: calc(var(--kb-fan-z) + 100);
+  transform: translateY(-110px) rotate(0deg) scale(1.25);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  :where(:root:not([data-kb-layout='phone'], [data-kb-motion='reduce'])) .kb-hand-card {
+    transition: transform var(--kb-hand-lift-ms, 0ms) var(--kb-hand-lift-ease, ease);
+  }
+}
+
+:where(:root[data-kb-motion='full']:not([data-kb-layout='phone'])) .kb-hand-card {
+  transition: transform var(--kb-hand-lift-ms, 0ms) var(--kb-hand-lift-ease, ease);
 }
 
 /*

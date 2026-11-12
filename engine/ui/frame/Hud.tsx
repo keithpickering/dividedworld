@@ -371,7 +371,7 @@ export function Hud() {
   return (
     <>
       {signedIn && (
-        <div ref={drawer} id={drawerId} className="kb-glass kb-hand-drawer" role="region" aria-label="Your hand" tabIndex={-1} hidden={!handOpen && !drawerLeaving} {...(drawerLeaving && !handOpen ? { inert: true, 'aria-hidden': true, 'data-kb-exiting': '' } : {})} style={handCalm}>
+        <div ref={drawer} id={drawerId} className="kb-glass kb-hand-drawer" role="region" aria-label="Your hand" tabIndex={-1} hidden={!handOpen && !drawerLeaving} {...(drawerLeaving && !handOpen ? { inert: true, 'aria-hidden': true, 'data-kb-exiting': '' } : {})} style={{ ...handCalm, '--kb-hand-lift-ms': feel ? `${feel.enter}ms` : '0ms', '--kb-hand-lift-ease': feel?.ease ?? 'ease' } as CSSProperties}>
           <Smoke surface="hand">
             <Hand
               held={player.cards} faces={faces} vendingHref={GLASS_NAV.vending}
