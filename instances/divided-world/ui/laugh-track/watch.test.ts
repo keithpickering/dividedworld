@@ -36,7 +36,7 @@ const saved = { ...globalThis } as Record<string, unknown>;
 let registered: (() => void)[] = [];
 
 beforeEach(() => {
-  frames = []; listeners = new Map(); FakeObserver.all = [];
+  frames = []; listeners = new Map(); FakeObserver.all = []; current = null;
   const g = globalThis as unknown as Record<string, unknown>;
   g.IntersectionObserver = FakeObserver;
   g.requestAnimationFrame = (f: (t: number) => void) => { frames.push(f); return frames.length; };
@@ -57,12 +57,21 @@ afterEach(() => {
 
 /* The line is at (900 - 76) * 40% = 329.6, and the reach 12rem = 192px. */
 const SCREEN = { line: 40, dwellMs: 400, reachRem: 12, murmurMost: 35, fadeMs: 250 };
-interface Made { voices: { kind: string; gains: number[]; stops: number[] }[]; fires: number }
+interface FakeVoice { kind: string; gains: number[]; stops: number[]; dead: boolean }
+interface Made { voices: FakeVoice[]; fires: number }
 const made = (): Made => ({ voices: [], fires: 0 });
+/* The engine's mixer puts every build-up loop in one group: a loop made while another lives ends it ("replaced"), and a dead loop ignores its gain. */
+let current: FakeVoice | null = null;
+const voiceFor = (log: Made) => (k: string): Voice => {
+  if (current && !current.dead) current.dead = true;
+  const v: FakeVoice = { kind: k, gains: [], stops: [], dead: false };
+  current = v; log.voices.push(v);
+  return { setGain: (g) => { if (!v.dead) v.gains.push(g); }, stop: (f) => { v.stops.push(f); v.dead = true; if (current === v) current = null; } };
+};
 function place(log: Made, kind: string, e: FakeEl, extra: Partial<PlaceSpec> = {}) {
   const spec: PlaceSpec = {
     els: () => [e as unknown as Element], kind, screen: SCREEN,
-    voice: (k) => { const v = { kind: k, gains: [] as number[], stops: [] as number[] }; log.voices.push(v); return { setGain: (g) => { v.gains.push(g); }, stop: (f) => { v.stops.push(f); } } satisfies Voice; },
+    voice: voiceFor(log),
     fire: () => { log.fires++; },
     ...extra,
   };
@@ -105,18 +114,38 @@ test('a place that leaves the line and comes back starts its dwell again', () =>
   assert.equal(log.fires, 1);
 });
 
-test('the nearest place of a kind wins its murmur, on whichever post, and the page makes one loop for each kind', () => {
+test('the nearest place of the page decides the one murmur, whichever kind and post', () => {
   const a = made(); const b = made();
   const far = el(rect(500, 520)); const near = el(rect(400, 420)); const other = el(rect(480, 500));
   place(a, 'boo', far); place(b, 'boo', near); place(b, 'laugh', other);
   step(1000);
-  const boo = [...a.voices, ...b.voices].filter((v) => v.kind === 'boo');
-  assert.equal(boo.length, 1, 'one loop of a kind for the page');
+  const all = [...a.voices, ...b.voices];
+  assert.equal(all.length, 1, 'one loop for the page');
+  assert.equal(all[0]!.kind, 'boo');
+  assert.equal(all[0]!.dead, false);
   const expected = (35 / 100) * (1 - (400 - 329.6) / 192);
-  assert.ok(Math.abs(boo[0]!.gains.at(-1)! - expected) < 1e-9, `the nearer place sets the gain: ${boo[0]!.gains.at(-1)}`);
-  const laugh = [...a.voices, ...b.voices].filter((v) => v.kind === 'laugh');
-  assert.equal(laugh.length, 1);
-  assert.ok(Math.abs(laugh[0]!.gains.at(-1)! - (35 / 100) * (1 - (480 - 329.6) / 192)) < 1e-9, 'each kind has its own nearest place');
+  assert.ok(Math.abs(all[0]!.gains.at(-1)! - expected) < 1e-9, `the nearer place sets the gain: ${all[0]!.gains.at(-1)}`);
+});
+
+test('laugh and boo both near: exactly one live loop, of the nearer place\'s kind, and it is never made twice', () => {
+  const log = made(); const laugh = el(rect(380, 400)); const boo = el(rect(450, 470));
+  place(log, 'laugh', laugh); place(log, 'boo', boo);
+  step(1000); emit('scroll'); step(1100); emit('scroll'); step(1200);
+  assert.deepEqual(log.voices.map((v) => v.kind), ['laugh']);
+  assert.equal(log.voices.filter((v) => !v.dead).length, 1);
+  assert.ok(log.voices[0]!.gains.at(-1)! > 0);
+});
+
+test('the nearer place changing kind stops the old loop with the fade and makes the new kind\'s', () => {
+  const log = made(); const laugh = el(rect(380, 400)); const boo = el(rect(450, 470));
+  place(log, 'laugh', laugh); place(log, 'boo', boo);
+  step(1000);
+  laugh.rects = [rect(600, 620)]; boo.rects = [rect(340, 360)]; emit('scroll'); step(1100);
+  assert.deepEqual(log.voices.map((v) => v.kind), ['laugh', 'boo']);
+  assert.deepEqual(log.voices[0]!.stops, [250]);
+  assert.equal(log.voices.filter((v) => !v.dead).length, 1);
+  assert.equal(log.voices[1]!.dead, false);
+  assert.ok(log.voices[1]!.gains.at(-1)! > 0, 'the new loop is heard');
 });
 
 test('a place past the reach makes no loop at all, so nothing is fetched for it', () => {
@@ -138,34 +167,40 @@ test('a fine pointer near a place swells its murmur, and a touch does nothing', 
   assert.ok(log.voices[0]!.gains.at(-1)! > 0.3, `${log.voices[0]?.gains.at(-1)}`);
 });
 
-test('a place that fires stops its murmur and the kind\'s loop goes when no place of the kind is left', () => {
+test('a fire stops the live murmur with the fade, and a place that is near afterward gets a fresh loop', () => {
   const log = made(); const e = el(rect(320, 340)); const f = el(rect(400, 420));
   const off1 = place(log, 'boo', e); const off2 = place(log, 'boo', f);
-  step(1000); step(1401);
+  step(1000);
+  assert.equal(log.voices.length, 1);
+  step(1401);
   assert.equal(log.fires, 1);
-  const v = log.voices[0]!;
-  assert.ok(v.gains.at(-1)! > 0, 'the second place still builds');
-  assert.deepEqual(v.stops, []);
+  assert.deepEqual(log.voices[0]!.stops, [250], 'the fire fades the murmur over fadeMs');
+  assert.equal(log.voices.length, 1, 'no loop is made in the frame of the fire');
+  emit('scroll'); step(1500);
+  assert.equal(log.voices.length, 2, 'the next near place makes a fresh loop');
+  assert.equal(log.voices[1]!.dead, false);
+  assert.ok(log.voices[1]!.gains.at(-1)! > 0);
   off1();
-  assert.deepEqual(v.stops, [], 'one place going leaves the other\'s murmur');
+  assert.deepEqual(log.voices[1]!.stops, [], 'one place going leaves the other\'s murmur');
   off2();
-  assert.deepEqual(v.stops, [250], 'the last place of the kind going stops the loop with the fade');
+  assert.deepEqual(log.voices[1]!.stops, [250], 'the last place going stops the loop with the fade');
 });
 
-test('a kind with no unfired place left lets its loop go with the fade', () => {
+test('the last unfired place firing leaves no loop to leak', () => {
   const log = made(); const e = el(rect(320, 340));
   place(log, 'laugh', e);
   step(1000); step(1401);
   assert.equal(log.fires, 1);
-  assert.deepEqual(log.voices[0]!.gains.at(-1), 0);
-  assert.deepEqual(log.voices[0]!.stops, [250]);
+  assert.deepEqual(log.voices.map((v) => v.stops), [[250]]);
+  assert.equal(log.voices.filter((v) => !v.dead).length, 0);
 });
 
-test('two posts: one going leaves the other\'s murmur, and the last one stops the loop', () => {
+test('two posts share the one voice: one going leaves it, and the last one stops it', () => {
   const a = made(); const b = made();
   const offA = place(a, 'boo', el(rect(340))); const offB = place(b, 'boo', el(rect(360)));
   step(1000);
   const v = [...a.voices, ...b.voices][0]!;
+  assert.equal(a.voices.length + b.voices.length, 1);
   offA();
   assert.deepEqual(v.stops, []);
   step(1100);

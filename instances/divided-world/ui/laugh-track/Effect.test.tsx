@@ -149,7 +149,8 @@ describe('Laugh Track: the places', () => {
     expect(first).toHaveClass('dw-lt-fired');
     expect(first).toHaveAttribute('tabindex', '0');
     expect(first).toHaveAttribute('role', 'button');
-    expect(first).toHaveAttribute('aria-label', 'Replay: the audience boos');
+    expect(first).toHaveAttribute('aria-label', `${first!.textContent}. Replay: the audience boos`);
+    expect(first!.getAttribute('aria-label')!.startsWith(first!.textContent!)).toBe(true);
     expect(second).not.toHaveClass('dw-lt-fired');
     expect(pieces().filter((p) => p.getAttribute('data-sound') === 'boo')[1]).not.toHaveClass('dw-lt-fired');
     expect(document.activeElement).toBe(document.body);
@@ -157,7 +158,7 @@ describe('Laugh Track: the places', () => {
     fire(1);
     expect(m.met).toHaveBeenCalledTimes(1);
     expect(heard.play).toHaveBeenLastCalledWith(take('cheer', 1), { group: 'audience', fadeMs: 250 });
-    expect(pieces()[1]).toHaveAttribute('aria-label', 'Replay: the audience cheers');
+    expect(pieces()[1]).toHaveAttribute('aria-label', `${pieces()[1]!.textContent}. Replay: the audience cheers`);
   });
 
   test('the take comes from the play, its seed and the place, so two places of one cue may differ and every screen agrees', () => {

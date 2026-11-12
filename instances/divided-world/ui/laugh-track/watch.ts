@@ -8,11 +8,13 @@
  * never on an interval. A frame measures only the places the observer says are near, reads the line from `--kb-hud-measured` (the HUD's
  * measured height, frame/Hud.tsx), fires a place that has rested on the line for its dwell, and sets the murmurs.
  *
- * The page has one audience: the murmur is one loop for each kind, for the page and not for a post. The watcher owns those loops. A place
- * says how to make its kind's loop (`voice`), the first that needs one makes it (and only when a murmur is first wanted, so a page nobody
- * scrolls to a cue fetches nothing), and the nearest unfired place of a kind, on whichever post, sets its gain. A loop lives while any
- * unfired place of its kind is registered: the last place of a kind to fire or unregister (its post gone) stops it with the fade, so a
- * post going never silences a murmur another still drives, and no held caption outlives the last post (#496).
+ * The page has one audience: ONE build-up loop for the page, as the engine's mixer holds one voice in the group `audience-build` (a loop made
+ * there ends the group's prior one). The nearest unfired place on the page, of any kind and on whichever post, decides which murmur it is,
+ * at that place's gain. The watcher owns that one loop: a place says how to make its kind's loop (`voice`), the first frame that wants one
+ * makes it (so a page nobody scrolls to a cue fetches nothing), a nearer place of another kind stops it with the fade and then makes the
+ * new kind's, and a fire stops it with the fade (the take crosses over it) and makes none in that frame. It is stopped when no unfired place
+ * is left, and with the last place, so no held caption outlives the last post (#496). `reachRem` and the screen numbers are read from the
+ * first place to register: every place of an instance reads the same card settings.
  *
  * Nothing here reads who owns, wrote or cast anything, and nothing leaves the screen. Each listener is added when the first place
  * registers and removed with the last, and the module touches no global before then, so a test can fake the page.
@@ -31,7 +33,7 @@ export interface PlaceSpec {
   /** The sound's kind: `laugh`, `cheer` or `boo`. */
   readonly kind: string;
   readonly screen: Screen;
-  /** Makes the loop of `kind` for the page: called at most once while a kind has places. */
+  /** Makes the page's loop of `kind`: called when the nearest place's kind needs one and none lives. */
   voice(kind: string): Voice;
   /** The place has rested on the line for the dwell. Called once. */
   fire(): void;
@@ -54,14 +56,23 @@ interface Place {
 const places = new Set<Place>();
 const byElement = new Map<Element, Place>();
 const near = new Set<Place>();
-const voices = new Map<string, { readonly voice: Voice; gain: number; readonly fadeMs: number }>();
+let murmuring: { readonly kind: string; readonly voice: Voice; gain: number; readonly fadeMs: number } | null = null;
 let observer: IntersectionObserver | null = null;
 let frame: number | null = null;
 let pointer: Point | null = null;
 let rem = 16;
 let screen: Screen | null = null;
 
-const kindOf = (kind: string) => [...places].filter((p) => p.spec.kind === kind && !p.fired);
+const anyUnfired = (): boolean => [...places].some((p) => !p.fired);
+
+/** Lets the page's loop go with the fade; nothing is left to leak. */
+function hush(fadeMs?: number): void {
+  const m = murmuring;
+  if (!m) return;
+  murmuring = null;
+  m.voice.setGain(0);
+  m.voice.stop(fadeMs ?? m.fadeMs);
+}
 
 function onScroll(): void { wake(); }
 function onPointer(e: unknown): void {
@@ -110,28 +121,18 @@ function boxes(place: Place): Rect[] {
   return out;
 }
 
-/** Make, set or let go of each kind's loop from the unfired places' distances; the nearest place of a kind has the gain. */
-function murmur(gains: Map<string, { gain: number; place: Place }>, kinds: Iterable<string>): void {
-  for (const kind of kinds) {
-    const unfired = kindOf(kind);
-    const have = voices.get(kind);
-    if (unfired.length === 0) {
-      if (have) { have.voice.setGain(0); have.voice.stop(have.fadeMs); voices.delete(kind); }
-      continue;
-    }
-    const best = gains.get(kind);
-    const gain = best?.gain ?? 0;
-    if (!have) {
-      if (gain <= 0 || !best) continue;
-      const made = { voice: best.place.spec.voice(kind), gain: 0, fadeMs: best.place.spec.screen.fadeMs };
-      voices.set(kind, made);
-      made.voice.setGain(gain);
-      made.gain = gain;
-    } else if (have.gain !== gain) {
-      have.voice.setGain(gain);
-      have.gain = gain;
-    }
+/** The page's one loop: the nearest unfired place's kind, at its gain; none near sets the gain to 0, and none unfired lets it go. */
+function murmur(best: { gain: number; place: Place } | null): void {
+  if (!anyUnfired()) { hush(); return; }
+  if (!best || best.gain <= 0) { if (murmuring && murmuring.gain !== 0) { murmuring.voice.setGain(0); murmuring.gain = 0; } return; }
+  const { gain, place } = best;
+  const kind = place.spec.kind;
+  /* The old loop is stopped before the new is made: the group has no prior loop to replace, so the old one fades out under its own stop. */
+  if (murmuring && murmuring.kind !== kind) hush(place.spec.screen.fadeMs);
+  if (!murmuring) {
+    murmuring = { kind, voice: place.spec.voice(kind), gain: 0, fadeMs: place.spec.screen.fadeMs };
   }
+  if (murmuring.gain !== gain) { murmuring.voice.setGain(gain); murmuring.gain = gain; }
 }
 
 function tick(now: number): void {
@@ -149,7 +150,7 @@ function tick(now: number): void {
       if (now - place.since >= place.spec.screen.dwellMs) due.push(place); else waiting = true;
     } else place.since = null;
   }
-  const kinds = new Set<string>(voices.keys());
+  let fadeMs: number | null = null;
   for (const place of due) {
     place.fired = true;
     place.since = null;
@@ -157,19 +158,20 @@ function tick(now: number): void {
     measured.delete(place);
     if (observer) for (const e of place.watched) observer.unobserve(e);
     place.watched = new Set();
-    kinds.add(place.spec.kind);
+    fadeMs = place.spec.screen.fadeMs;
     place.spec.fire();
   }
-  /* A place that fired no longer builds: the next nearest of its kind does, or its kind's loop is let go. */
-  const gains = new Map<string, { gain: number; place: Place }>();
-  for (const [place, rects] of measured) {
-    const s = place.spec.screen;
-    const gain = murmurGain(distance(rects, lineY, pointer ?? undefined), s.reachRem * rem, s.murmurMost);
-    const best = gains.get(place.spec.kind);
-    if (!best || gain > best.gain) gains.set(place.spec.kind, { gain, place });
-    kinds.add(place.spec.kind);
+  /* A fire fades the murmur over the fade, under the take, and makes no loop in its frame; the next frame with a place near makes a fresh one. */
+  if (fadeMs !== null) { hush(fadeMs); if (!anyUnfired()) return; }
+  else {
+    let best: { gain: number; place: Place } | null = null;
+    for (const [place, rects] of measured) {
+      const s = place.spec.screen;
+      const gain = murmurGain(distance(rects, lineY, pointer ?? undefined), s.reachRem * rem, s.murmurMost);
+      if (!best || gain > best.gain) best = { gain, place };
+    }
+    murmur(best);
   }
-  murmur(gains, kinds);
   /* The next frame is asked for by the next scroll or move, or by a place still waiting out its dwell: a settled page asks for none. */
   if (waiting) wake();
 }
@@ -194,8 +196,8 @@ export function register(spec: PlaceSpec): Unregister {
     if (!places.delete(place)) return;
     for (const e of place.watched) { observer?.unobserve(e); byElement.delete(e); }
     near.delete(place);
-    if (places.size === 0) { for (const [kind, v] of voices) { v.voice.setGain(0); v.voice.stop(v.fadeMs); voices.delete(kind); } stop(); return; }
-    murmur(new Map(), [spec.kind]);
+    if (places.size === 0) { hush(); stop(); return; }
+    if (!anyUnfired()) hush();
     wake();
   }) as Unregister;
   off.refresh = () => { if (places.has(place)) observe(place); };

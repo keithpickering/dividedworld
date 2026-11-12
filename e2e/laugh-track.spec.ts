@@ -67,10 +67,7 @@ for (const [name, id, size] of [['Main', 'boards-21-laugh-track--main', MAIN], [
       expect(style).toEqual({ line: 'underline', style: 'dotted' });
     });
 
-    /* FIXME (Task 14 finding): axe's label-content-name-mismatch (WCAG 2.5.3, serious) on the fired place's first piece: its visible text is the
-       phrase ("Luigi") and its aria-label is "Replay: the audience boos", which does not contain it (Effect.tsx, the `role: 'button'` props). The
-       story ids boards-21-laugh-track--on-the-line-main and --on-the-line-phone fail e2e/a11y.spec.ts for the same cause. */
-    test.fixme('after a fire axe finds nothing', async ({ page }) => {
+    test('after a fire axe finds nothing', async ({ page }) => {
       await openStory(page, id, size);
       await toTheLine(page);
       await expect(page.locator('.dw-lt-fired').first()).toBeAttached({ timeout: 4000 });
@@ -90,11 +87,11 @@ for (const [name, id, size] of [['Main', 'boards-21-laugh-track--main', MAIN], [
       await toTheLine(page);
       await expect(page.locator('.dw-lt-fired').first()).toBeAttached({ timeout: 4000 });
       let name = '';
-      for (let i = 0; i < 80 && !name.startsWith('Replay:'); i++) {
+      for (let i = 0; i < 80 && !name.includes('Replay:'); i++) {
         await page.keyboard.press('Tab');
         name = await page.evaluate(() => document.activeElement?.getAttribute('aria-label') ?? '');
       }
-      expect(name).toBe('Replay: the audience boos');
+      expect(name).toBe('Luigi. Replay: the audience boos');
       expect(await page.evaluate(() => document.activeElement?.getAttribute('role'))).toBe('button');
       await page.keyboard.press('Enter');
       expect(await page.evaluate(() => document.activeElement?.classList.contains('dw-lt-fired'))).toBe(true);
@@ -204,6 +201,7 @@ async function barIsOnTop(page: Page) {
 
 const say = (page: Page) => page.evaluate(() => (globalThis as unknown as { __kbCaptions: { say(w: { text: string; ms: number }): void } }).__kbCaptions.say({ text: 'Crowd laughs', ms: 60_000 }));
 
+/* Whether a caption should show above a modal's scrim is a design question, in the PR's Design questions. */
 test('a caption said with a dialog open on a board stands clear of the dialog', async ({ page }) => {
   await page.setViewportSize(MAIN);
   await page.goto('/b/general');
@@ -219,18 +217,6 @@ test('a caption said with a dialog open on a board stands clear of the dialog', 
   if (!bar || !dialog) throw new Error('no box');
   const apart = bar.y >= dialog.y + dialog.height || bar.y + bar.height <= dialog.y || bar.x >= dialog.x + dialog.width || bar.x + bar.width <= dialog.x;
   expect(apart).toBe(true);
-});
-
-/* FIXME (Task 14 finding): the dialog's overlay (engine/ui/glass/shell.css `.kb-glass-overlay`, fixed over the whole window, z-index 50, a 72% scrim)
-   stands over the caption bar (engine/ui/audio/captions.css, z-index 30), so a caption said while a dialog is open is under the scrim. */
-test.fixme('a caption said with a dialog open on a board is not under the dialog\'s scrim', async ({ page }) => {
-  await page.setViewportSize(MAIN);
-  await page.goto('/b/general');
-  await page.getByRole('link', { name: 'Who keeps reacting with a thumbs up?', exact: true }).click();
-  await page.locator('#post-3').getByRole('button', { name: 'React' }).click();
-  await expect(page.getByRole('dialog', { name: /^React to / })).toBeVisible();
-  await say(page);
-  await barIsOnTop(page);
 });
 
 test('a caption said on the sound settings page is visible and not covered', async ({ page }) => {

@@ -4,7 +4,7 @@
  *
  * Each place (a cue's phrase found by `placesOf`, the engine's one matcher, over the post's visible text) is a `wrap` run of a `TextLayer`,
  * drawn as `span.dw-lt-cue`. Before its place fires nothing marks it, so the joke is not telegraphed. Once it fires the piece carries the
- * class `dw-lt-fired`, a dotted underline in its flavor ink (a `text-decoration`, so no word moves), and its first piece is a button that
+ * class `dw-lt-fired`, a dotted underline in its flavor ink (a `text-decoration`, so no word moves), and its first piece is a button, named by its own visible words and then "Replay: the audience boos" (WCAG 2.5.3, Label in Name), that
  * replays the take (hover with a mouse, focus, a press, Enter or Space).
  *
  * The page's watcher (watch.ts) says when a place fires and holds the page's audience, its murmurs: this effect only registers each place
@@ -200,7 +200,7 @@ function Live({ post, plays, show, met, children }: EffectProps) {
         onFocus: () => { replay(spot); },
         onClick: () => { replay(spot); },
         onKeyDown: press,
-        ...(first[spot.key] === key ? { tabIndex: 0, role: 'button', 'aria-label': `Replay: the audience ${VERBS[spot.sound]}` } : null),
+        ...(first[spot.key] === key ? { tabIndex: 0, role: 'button', 'aria-label': `${text}. Replay: the audience ${VERBS[spot.sound]}` } : null),
       }),
     };
   }), [spots, fired, first, replay]);
