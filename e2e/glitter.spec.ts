@@ -115,18 +115,30 @@ async function readPost(page: Page): Promise<void> {
  * post while it is near the top of the view and moves the page so little that the band above it is still in view where the flakes
  * come down: some come back to rest on the post's cell, some on the band, in every flick (measured, 30 flicks: 2 to 9 on the cell
  * and 7 to 19 on the page at 2,800 px/s a flick).
+ *
+ * The engine reads a scroll's speed from the page's own clock (the distance between two scroll events over the time between them), so
+ * each frame scrolls `JOSTLE` times the time the frame really took, never a capped one: with the gap capped at 50 ms, a frame of 65 ms
+ * or more on a busy CI shard read under SHAKE_SPEED and shook nothing (#520). The way back goes at a third of the pace by the same clock,
+ * frame by frame, until the page is where it began, however the frames fell.
  */
 const JOSTLE = 2800, JOSTLES = 10;
 async function flick(page: Page): Promise<void> {
   await page.evaluate(() => { window.scrollTo(0, 0); });
   await page.waitForTimeout(300);
   await page.evaluate(async ({ v, n }) => {
-    let last = performance.now(), k = 0;
+    let last = performance.now(), jostles = 0, back = 0;
     await new Promise<void>((done) => {
       const step = (now: number) => {
-        const dt = Math.min(0.05, (now - last) / 1000); last = now;
-        window.scrollBy(0, k % 4 === 0 ? v * dt : -v * dt / 3);
-        if (++k >= n * 4) done(); else requestAnimationFrame(step);
+        const dt = (now - last) / 1000; last = now;
+        if (back > 0) {
+          const up = Math.min(back, (v / 3) * dt);
+          window.scrollBy(0, -up); back -= up;
+        } else if (jostles++ < n) {
+          const before = window.scrollY;
+          window.scrollBy(0, v * dt);
+          back = window.scrollY - before;
+        } else { done(); return; }
+        requestAnimationFrame(step);
       };
       requestAnimationFrame(step);
     });
@@ -209,23 +221,25 @@ test('what landed shows, a scroll over it draws no tile, and the ground is not p
   /* A second flick, so that more than the first flake lies on each. */
   await flick(page);
   await page.waitForTimeout(3000);
-  /* A tile out of view has no backing store, so each kind's first tile is brought into view, read once it has drawn again, and its
-   * flakes' points compared with the ground there: the same screen with every tile hidden. A flake can lie where a word's pixel is
-   * painted over it, so the kind's strongest few are compared and at least one must differ (the page's own cells paint over the glitter
-   * under their words, as the post's do). */
+  /* A tile out of view has no backing store, so each tile is brought into view, read once it has drawn again, and its flakes' points
+   * compared with the ground there: the same screen with every tile hidden. A flake can lie where a word's pixel is painted over it,
+   * and one at rest under the glass HUD is on the page where nothing shows it (#493), so points are pooled across the kind's tiles, the
+   * strongest of each, until there are `SAMPLES`, and at least one must differ (the page's own cells paint over the glitter under their
+   * words, as the post's do). One tile's few flakes alone could all sit where the ground already looks the same (#520). */
   const SAMPLES = 6;
-  const withTiles = new Map<string, { at: { x: number; y: number; png: string }[]; scroll: number }>();
+  const withTiles = new Map<string, Array<{ at: { x: number; y: number; png: string }[]; scroll: number }>>();
   for (const kind of ['cell', 'page']) {
-    /* The first tile that shows a flake: a tile holds the flakes of its own patch of the surface, and a patch may hold only a few. */
     const tiles = page.locator(`canvas[data-kb-landing="${kind}"]`);
     expect(await tiles.count(), `${kind} tiles`).toBeGreaterThan(0);
-    let points: { x: number; y: number }[] = [];
-    for (let k = 0; k < await tiles.count() && points.length === 0; k++) {
+    const groups: Array<{ at: { x: number; y: number; png: string }[]; scroll: number }> = [];
+    let pooled = 0;
+    for (let k = 0; k < await tiles.count() && pooled < SAMPLES; k++) {
       const tile = tiles.nth(k);
       await tile.evaluate((t) => { t.scrollIntoView({ block: 'center' }); });
       await page.waitForTimeout(600);
-      points = await tile.evaluate((t: HTMLCanvasElement, n: number) => {
+      const points = await tile.evaluate((t: HTMLCanvasElement, n: number) => {
         const r = t.getBoundingClientRect();
+        if (!t.width || !t.height) return [];
         const { data } = t.getContext('2d')!.getImageData(0, 0, t.width, t.height);
         const painted: { p: number; a: number }[] = [];
         for (let i = 3; i < data.length; i += 4) if (data[i]! > 0) painted.push({ p: i >> 2, a: data[i]! });
@@ -238,12 +252,15 @@ test('what landed shows, a scroll over it draws no tile, and the ground is not p
           if (out.length >= n) break;
         }
         return out;
-      }, SAMPLES);
+      }, SAMPLES - pooled);
+      if (!points.length) continue;
+      const at = [];
+      for (const q of points) at.push({ ...q, png: await shot(page, q.x, q.y) });
+      groups.push({ at, scroll: await page.evaluate(() => window.scrollY) });
+      pooled += points.length;
     }
-    expect(points.length, `painted flakes on the ${kind}'s tile`).toBeGreaterThan(0);
-    const at = [];
-    for (const q of points) at.push({ ...q, png: await shot(page, q.x, q.y) });
-    withTiles.set(kind, { at, scroll: await page.evaluate(() => window.scrollY) });
+    expect(pooled, `painted flakes on the ${kind}'s tiles`).toBeGreaterThan(0);
+    withTiles.set(kind, groups);
     /* A scroll over landed glitter draws no tile. */
     const draws0 = await page.evaluate(() => window.__kbLanding!.draws());
     await page.evaluate(() => { window.scrollBy(0, 30); });
@@ -252,12 +269,14 @@ test('what landed shows, a scroll over it draws no tile, and the ground is not p
   }
   /* (The page's CSP takes no injected style sheet; the style property is the CSSOM's.) */
   await page.evaluate(() => { document.querySelectorAll<HTMLElement>('canvas[data-kb-landing]').forEach((c) => { c.style.visibility = 'hidden'; }); });
-  for (const [kind, w] of withTiles) {
-    await page.evaluate((y) => { window.scrollTo(0, y); }, w.scroll);
-    await nextFrame(page); await nextFrame(page);
-    let differ = 0;
-    for (const q of w.at) if ((await shot(page, q.x, q.y)) !== q.png) differ++;
-    expect(differ, `some of the ${kind}'s ${w.at.length} flakes' points are not the ground's`).toBeGreaterThan(0);
+  for (const [kind, groups] of withTiles) {
+    let differ = 0, n = 0;
+    for (const g of groups) {
+      await page.evaluate((y) => { window.scrollTo(0, y); }, g.scroll);
+      await nextFrame(page); await nextFrame(page);
+      for (const q of g.at) { n++; if ((await shot(page, q.x, q.y)) !== q.png) differ++; }
+    }
+    expect(differ, `some of the ${kind}'s ${n} flakes' points, across ${groups.length} tiles, are not the ground's`).toBeGreaterThan(0);
   }
 });
 
