@@ -32,6 +32,7 @@ test('what is not exactly one emoji is refused, with its words', () => {
   assert.deepEqual(localReaction({ emoji: 'ab', quadrant: 'excitedPositive' }, set), { ok: false, why: 'choose one emoji' });
   assert.deepEqual(localReaction({ emoji: '️', quadrant: 'excitedPositive' }, set), { ok: false, why: 'choose one emoji' });
   assert.deepEqual(localReaction('💀', set), { ok: false, why: 'choose one emoji' });
+  assert.deepEqual(localReaction({ emoji: 7, quadrant: 'excitedPositive' }, set), { ok: false, why: 'choose one emoji' });
   assert.deepEqual(localReaction({ emoji: '💀💀', quadrant: 'excitedPositive' }, set), { ok: false, why: 'that is more than one emoji' });
 });
 
