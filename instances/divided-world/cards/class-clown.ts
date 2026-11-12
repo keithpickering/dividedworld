@@ -1,6 +1,6 @@
 /**
  * Class Clown (Pepperoni, uncommon, Gimmick on a character): for 3 days, each 😂 and each 🙄 the character's posts earn counts double
- * more, then it ends by itself (the card types design). The keys are this instance's reactions.
+ * (it doubles what that reaction earns), then it ends by itself (the card types design). The keys are this instance's reactions.
  */
 import { landsOn, ok, type CardRules } from '../../../engine/rules/cards.ts';
 

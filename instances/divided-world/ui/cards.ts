@@ -132,11 +132,12 @@ const setMoveWords = (lands: string) => `You can also set it face down on one of
 /** A span in words: "a week", "3 days". */
 export const spanWords = (s: { readonly unit: string; readonly count: number }) => (s.unit === 'day' && s.count === 7 ? 'a week' : s.count === 1 ? `${s.unit === 'hour' ? 'an' : 'a'} ${s.unit}` : `${s.count} ${s.unit}s`);
 
-/** What an Earn Gimmick adds to a reaction's count, and what a Price Gimmick adds to a cast, read from the card's own rules: "20% higher", "doubled", "0.25". */
+/** What an Earn Gimmick adds to a reaction's count, as the end of a sentence, read from the card's own rules: "20% higher", or "doubled" at exactly 1. */
 const earnWords = (c: { readonly gimmick?: GimmickEffect }) => {
   if (c.gimmick?.kind !== 'earn') throw new Error('card has no earn gimmick');
   return c.gimmick.by === 1 ? 'doubled' : `${Math.round(c.gimmick.by * 100)}% higher`;
 };
+/** What a Price Gimmick adds to a cast, read from the card's own rules: "0.25". */
 const priceAdd = (c: { readonly gimmick?: GimmickEffect }) => {
   if (c.gimmick?.kind !== 'price') throw new Error('card has no price gimmick');
   return orbs(c.gimmick.add);
