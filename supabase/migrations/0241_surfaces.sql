@@ -997,7 +997,7 @@ language sql stable security definer set search_path = public, pg_temp as $$
   from acts_public a where a.id = target
 $$;
 
--- thread_page (0149), also returning `surfaces`: for each surface play among the page's plays, its covered cells (a count) and its live Acts' ids. Never a stroke, a cell or an owner. Everything else as 0149 wrote it.
+-- thread_page (0210), also returning `surfaces`: for each surface play among the page's plays, its covered cells (a count) and its live Acts' ids. Never a stroke, a cell or an owner. Everything else as 0210 wrote it (the profiles carrying profile_cosmetics).
 create or replace function thread_page(in_thread uuid, in_page integer, in_seq integer, per_page integer, effect_cards text[]) returns jsonb
 language sql stable security invoker set search_path = public, pg_temp
 begin atomic
@@ -1075,7 +1075,7 @@ begin atomic
         'character', jsonb_build_object('id', c.id, 'name', c.name, 'joined', c.joined, 'staff', c.staff, 'office', c.office,
           'warn_points', c.warn_points, 'banned_until', c.banned_until, 'group', c."group"),
         'profile', (select jsonb_build_object('character', p.character, 'title', p.title, 'signature', p.signature, 'avatar_square', p.avatar_square,
-                      'avatar_portrait', p.avatar_portrait, 'square_frame', p.square_frame, 'portrait_frame', p.portrait_frame, 'pip_style', p.pip_style, 'pronouns', p.pronouns)
+                      'avatar_portrait', p.avatar_portrait, 'square_frame', p.square_frame, 'portrait_frame', p.portrait_frame, 'pip_style', p.pip_style, 'pronouns', p.pronouns) || profile_cosmetics(p.character)
                     from character_profiles p where p.character = c.id),
         'posts', coalesce((select n.posts from character_post_counts n where n.character = c.id), 0),
         'standing', coalesce((select st.standing from current_standings st where st.character = c.id), 0),
@@ -1292,7 +1292,7 @@ alter table acts add constraint acts_spring_payload check (kind <> 'spring' or (
   and payload - array['card', 'trigger', 'outcome', 'did', 'set', 'by', 'caught', 'when', 'for', 'quadrant', 'drawn'] = '{}'::jsonb) is true);
 
 
--- seed_instance (0153), also writing whether a card is a surface card (`surface`, the code's, so a re-seed that drops it clears it). Everything else as 0153 wrote it.
+-- seed_instance (0153), also writing whether a card is a surface card (`surface`, the code's, so a re-seed that drops it clears it). Everything else as 0207 wrote it (the gear, the Event lines and the trophy kinds).
 create or replace function seed_instance(payload jsonb) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
@@ -1374,6 +1374,39 @@ begin
   select e ->> 'key', e -> 'pulls', coalesce(array(select jsonb_array_elements_text(e -> 'leaves')), '{}')
   from jsonb_array_elements(coalesce(payload -> 'packs', '[]')) e
   on conflict (key) do update set pulls = excluded.pulls, leaves = excluded.leaves;
+  if payload ? 'gear' then
+    insert into gear_kinds (key, rarity) select e ->> 'key', e ->> 'rarity' from jsonb_array_elements(payload -> 'gear') e
+    on conflict (key) do update set rarity = excluded.rarity;
+    delete from gear_kinds k where not exists (select 1 from jsonb_array_elements(payload -> 'gear') e where e ->> 'key' = k.key)
+      and not exists (select 1 from gear_ledger l where l.gear = k.key) and not exists (select 1 from gear_worn w where w.gear = k.key);
+  end if;
+  if payload ? 'eventLines' then
+    insert into event_lines (key, outcome, text) select e ->> 'key', e ->> 'outcome', e ->> 'text' from jsonb_array_elements(payload -> 'eventLines') e
+    on conflict (key) do update set outcome = excluded.outcome, text = excluded.text;
+    delete from event_lines l where not exists (select 1 from jsonb_array_elements(payload -> 'eventLines') e where e ->> 'key' = l.key);
+  end if;
+  -- The instance's trophy kinds (0206): added and brought up to date, the places, the Boss's kinds and the met demand's set as the catalog names them, and a kind the instance
+  -- dropped removed unless an award names it. An admin-made kind is never touched, and an instance key that begins `made-` is refused (those are the admin page's).
+  if payload ? 'trophies' then
+    select string_agg(e ->> 'key', ', ') into unknown from jsonb_array_elements(payload -> 'trophies' -> 'kinds') e where e ->> 'key' like 'made-%';
+    if unknown is not null then raise exception 'a trophy key begins "made-" only on the admin page: %', unknown using errcode = '22023'; end if;
+    select string_agg(k, ', ') into unknown
+    from (select jsonb_array_elements_text(coalesce(payload -> 'trophies' -> 'seasonPlaces', '[]') || coalesce(payload -> 'trophies' -> 'boss', '[]')
+                                           || case when payload -> 'trophies' ? 'demandMet' then jsonb_build_array(payload -> 'trophies' ->> 'demandMet') else '[]'::jsonb end) k) n
+    where not exists (select 1 from jsonb_array_elements(payload -> 'trophies' -> 'kinds') e where e ->> 'key' = n.k);
+    if unknown is not null then raise exception 'the trophy catalog names kinds it does not define: %', unknown using errcode = '22023'; end if;
+    -- The flags are cleared and set again, so that the unique indexes never see a place twice.
+    update trophy_kinds set season_place = null, boss_gives = false, demand_met = false where made_by is null and (season_place is not null or boss_gives or demand_met);
+    insert into trophy_kinds (key, name, line, belt) select e ->> 'key', e ->> 'name', nullif(e ->> 'line', ''), coalesce((e ->> 'belt')::boolean, false)
+    from jsonb_array_elements(payload -> 'trophies' -> 'kinds') e
+    on conflict (key) do update set name = excluded.name, line = excluded.line, belt = excluded.belt;
+    update trophy_kinds k set season_place = p.n::smallint
+    from jsonb_array_elements_text(coalesce(payload -> 'trophies' -> 'seasonPlaces', '[]')) with ordinality p(key, n) where k.key = p.key;
+    update trophy_kinds k set boss_gives = true where k.key in (select jsonb_array_elements_text(coalesce(payload -> 'trophies' -> 'boss', '[]')));
+    update trophy_kinds k set demand_met = true where k.key = payload -> 'trophies' ->> 'demandMet';
+    delete from trophy_kinds k where k.made_by is null and not exists (select 1 from jsonb_array_elements(payload -> 'trophies' -> 'kinds') e where e ->> 'key' = k.key)
+      and not exists (select 1 from trophy_awards a where a.trophy = k.key);
+  end if;
   insert into machine_slots (position, card, pack, availability, price)
   select (select coalesce(max(position), 0) from machine_slots) + row_number() over (order by m.i), m.e ->> 'card', m.e ->> 'pack', m.e ->> 'availability', (m.e ->> 'price')::integer
   from jsonb_array_elements(coalesce(payload -> 'machine', '[]')) with ordinality m(e, i)
@@ -1550,7 +1583,7 @@ end $$;
 
 -- ------------------------------------------------------------------------------------------------------ 6. the player's log ----
 -- What the log says of a surface (docs/plans/2026-11-11-graffiti-design.md, sections 3 and 11; plan Task 6), in plain words and from public Acts alone. Two views, each read by the reader's own characters, as
--- my_posts_written_on (0149) is read by the post's author; and `log_page` (0157) carries them as `draws` and `wallsDrawn`, its seventeenth and eighteenth sources.
+-- my_posts_written_on (0149) is read by the post's author; and `log_page` (0157) carries them as `draws` and `wallsDrawn`, its eighteenth and nineteenth sources.
 --
 --   my_draws          the drawer's: a row for each draw one of the caller's characters made (`kind` 'draw', `cells` the cells the drawing covers, public in its payload), and a row for each wash that cut one of those draws
 --                     (`kind` 'cut', `character` the washer, `cells` the caller's cells it took). A wash by the caller's own other mask is not a cut row: the author's own line says it.
@@ -1597,8 +1630,8 @@ create view my_walls_drawn_on as
 revoke all on my_walls_drawn_on from anon, public;
 grant select on my_walls_drawn_on to authenticated;
 
--- log_page (0157), also reading the two views above as `draws` and `wallsDrawn` (newest first by `at`, at most 200, the columns the adapter's log() reads). The plays and posts they name are among the Acts the page
--- names (never the draws' own Acts, which hold strokes), and the characters they name (a drawer, a washer) among its people. Everything else as 0157 wrote it.
+-- log_page (0213), also reading the two views above as `draws` and `wallsDrawn` (newest first by `at`, at most 200, the columns the adapter's log() reads). The plays and posts they name are among the Acts the page
+-- names (never the draws' own Acts, which hold strokes), and the characters they name (a drawer, a washer) among its people. Everything else as 0213 wrote it (the cosmetics source and the profiles carrying profile_cosmetics).
 create or replace function log_page(in_before timestamptz) returns jsonb
 language sql stable security invoker set search_path = public, pg_temp
 begin atomic
@@ -1678,6 +1711,10 @@ begin atomic
     select a.appeal, a.character, a.at, a.punishment, a.punishment_kind, a.post_seq, a.thread, a.verdict, a.ruled_at, a.points_delta, a.hearer_name, a.refund
     from my_appeals a where in_before is null or a.at <= in_before
     order by a.at desc, a.appeal limit 200
+  ), cs as materialized (
+    select c.kind, c.id, c.at, c.character, c.outcome, c.item, c.text, c.copies, c.trophy, c.name, c.by, c.by_name, c.season, c.place, c.line, c.to_name
+    from cosmetic_log_rows(in_before, 200) c
+    order by c.at desc, c.kind, c.id
   ), sh as materialized (
     select s.settlement, s.character, s.reason, s.act, s.quadrant, s.amount
     from my_ledger_shares s where s.settlement in (select x.settlement from lg x)
@@ -1753,7 +1790,8 @@ begin atomic
       'bans', coalesce((select jsonb_agg(to_jsonb(x) order by x.at desc, x.ban) from bn x), '[]'::jsonb),
       'groupMoves', coalesce((select jsonb_agg(to_jsonb(x) order by x.at desc, x.move) from gm x), '[]'::jsonb),
       'reports', coalesce((select jsonb_agg(to_jsonb(x) order by x.at desc, x.report) from rp x), '[]'::jsonb),
-      'appeals', coalesce((select jsonb_agg(to_jsonb(x) order by x.at desc, x.appeal) from ap x), '[]'::jsonb)),
+      'appeals', coalesce((select jsonb_agg(to_jsonb(x) order by x.at desc, x.appeal) from ap x), '[]'::jsonb),
+      'cosmetics', coalesce((select jsonb_agg(to_jsonb(x) order by x.at desc, x.kind, x.id) from cs x), '[]'::jsonb)),
     'shares', coalesce((select jsonb_agg(to_jsonb(x) order by x.settlement desc, x.character, x.reason, x.act, x.quadrant) from sh x), '[]'::jsonb),
     'scoredAs', coalesce((select jsonb_agg(to_jsonb(x) order by x.ends_at desc, x.settlement, x.character) from sa x), '[]'::jsonb),
     'acts', coalesce((select jsonb_agg(to_jsonb(a) order by a.created_at, a.id::text collate "C") from ac a), '[]'::jsonb),
@@ -1762,7 +1800,7 @@ begin atomic
     'people', coalesce((
       select jsonb_agg(f.face order by f.name, f.id) from (
         select cp.name, cp.id, to_jsonb(cp) || jsonb_build_object('profile', (
-          select to_jsonb(p) from (
+          select to_jsonb(p) || profile_cosmetics(p.character) from (
             select r.character, r.title, r.signature, r.avatar_square, r.avatar_portrait, r.square_frame, r.portrait_frame, r.pip_style, r.pronouns
             from character_profiles r where r.character = cp.id) p)) as face
         from (select c.id, c.name, c.joined, c.staff, c.office, c."group" from characters_public c where c.id in (select p.id from pe p)) cp) f), '[]'::jsonb),

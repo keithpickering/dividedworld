@@ -142,7 +142,7 @@ test('tuple items are a tuple type, named at items', () => {
 test('the table holds the design section 1 numbers and lists', () => {
   const r = ANTHROPIC_SCHEMA_RULES;
   assert.equal(r.provider, 'anthropic');
-  assert.equal(r.verifiedOn, '2026-11-11');
+  assert.equal(r.verifiedOn, '2026-11-12');
   assert.deepEqual(r.keywords, ['type', 'properties', 'required', 'additionalProperties', 'items', 'enum', 'const', 'anyOf', 'description', 'minItems']);
   assert.deepEqual(r.types, ['object', 'array', 'string', 'number', 'integer', 'boolean']);
   assert.deepEqual(r.minItems, [0, 1]);

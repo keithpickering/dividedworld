@@ -17,6 +17,7 @@ import { logRows } from '../../../engine/ui/log/lines.ts';
 import type { Act, Log } from '../../../engine/ui/data/api.ts';
 import { instanceUi, REASON_KEYS, wordsRead } from './index.ts';
 import { spanWords } from './cards.ts';
+import { gearUi } from './cosmetics.ts';
 import { mooch } from '../cards/mooch.ts';
 import { toll } from '../cards/toll.ts';
 import { fourDChess } from '../cards/4d-chess.ts';
@@ -53,6 +54,18 @@ describe('Divided World\'s onboarding words', () => {
   });
   test('the letter opens as Gabe\'s welcome does', () => {
     expect(instanceUi.onboarding.letter).toMatch(/^## After nine years of development/u);
+  });
+});
+
+describe('Divided World\'s gear and trophy art', () => {
+  test('every gear has art and an aspect, and every trophy kind has a badge, and nothing else does', () => {
+    expect(Object.keys(instanceUi.gear).sort()).toEqual(instance.gear.map((g) => g.key).sort());
+    for (const g of instance.gear) {
+      expect(instanceUi.gear[g.key]?.art, `${g.key}'s art`).toEqual(expect.any(String));
+      expect(instanceUi.gear[g.key]!.aspect, `${g.key}'s aspect`).toBeGreaterThan(0);
+    }
+    expect(Object.keys(instanceUi.trophies).sort()).toEqual(instance.trophies.kinds.map((k) => k.key).sort());
+    for (const k of instance.trophies.kinds) expect(instanceUi.trophies[k.key]?.art, `${k.key}'s badge`).toEqual(expect.any(String));
   });
 });
 
@@ -345,7 +358,7 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     const play = act('k1', 'card', 'them', { targetActId: 'post1', payload: { card: 'you-were-saying', config: { steps: 3 }, tokens: 175 } });
     const log: Log = { infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], settlements: [], wallet: [], cards: [{ card: 'you-were-saying', kind: 'played', act: 'k1', price: 75, at }], packs: [], playsOnMine: [],
       writes: [{ play: 'k1', post: 'post1', version: 'post1', failed: false, opening: true, over: false, at }, { play: 'k1', post: 'post1', version: 'e1', failed: false, opening: false, over: false, at }, { play: 'k1', post: 'post1', version: 'e2', failed: true, opening: false, over: true, at }],
-      saves: [{ play: 'k1', post: 'post1', savedAt: at }], setEnds: [], caught: [], ended: [], before: null };
+      saves: [{ play: 'k1', post: 'post1', savedAt: at }], setEnds: [], caught: [], ended: [], cosmetics: [], before: null };
     const mine = [{ id: 'me', name: 'Pipewrench', pronouns: ENGINE_DEFAULT_PRONOUNS, class: 'heel', classSince: at, classShownAt: null, classDueAt: null, turnOpensAt: null, debutedAt: at, debutLoudness: 'announced' as const, retiredAt: null, pendingTurn: null, presenceHidden: false }, { ...{ id: 'them', name: 'Spritey' }, pronouns: ENGINE_DEFAULT_PRONOUNS, class: 'heel', classSince: at, classShownAt: null, classDueAt: null, turnOpensAt: null, debutedAt: at, debutLoudness: 'announced' as const, retiredAt: null, pendingTurn: null, presenceHidden: false }];
     const rows = logRows({
       log, mine, estimate: null, standings: {}, season: null, turns: [], nextSettlement: null, acts: new Map([post, play].map((a) => [a.id, a])),
@@ -365,7 +378,7 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     const post = act('post1', 'post', 'me', { seq: 1, payload: { body: 'Mario wins.' }, currentPayload: { body: 'Mario wins again.' }, editedAt: '2026-10-31T10:00:00.000Z' });
     const play = act('k1', 'card', 'them', { targetActId: 'post1', payload: { card: 'autocorrect', config: { phrase: 'Mario', replacement: 'Luigi' } } });
     const edit = act('e1', 'edit', 'me', { targetActId: 'post1', createdAt: '2026-10-31T10:00:00.000Z', payload: { body: 'Mario wins again.' } });
-    const log: Log = { infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], settlements: [], wallet: [], cards: [], packs: [], playsOnMine: [], writes: [], saves: [{ play: 'k1', post: 'post1', savedAt: at }], setEnds: [], caught: [], ended: [], before: null };
+    const log: Log = { infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], settlements: [], wallet: [], cards: [], packs: [], playsOnMine: [], writes: [], saves: [{ play: 'k1', post: 'post1', savedAt: at }], setEnds: [], caught: [], ended: [], cosmetics: [], before: null };
     const mine = [{ id: 'me', name: 'Pipewrench', pronouns: ENGINE_DEFAULT_PRONOUNS, class: 'heel', classSince: at, classShownAt: null, classDueAt: null, turnOpensAt: null, debutedAt: at, debutLoudness: 'announced' as const, retiredAt: null, pendingTurn: null, presenceHidden: false }];
     const rows = logRows({
       log, mine, estimate: null, standings: {}, season: null, turns: [], nextSettlement: null, acts: new Map([post, play, edit].map((a) => [a.id, a])),
@@ -494,7 +507,7 @@ describe('a Booster in the log (the booster packs plan, Task 7)', () => {
   const contents = ['whoops', 'glitter-bomb', 'feelin-fab', 'stick-around', 'card-collector'];
   const pulled = contents.map((card) => ({ card, kind: 'pulled' as const, act: null, pack: 'pk1', price: 0, at }));
   const lines = (over: Partial<Log>, wallet: Log['wallet']) => logRows({
-    log: { infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], settlements: [], wallet, cards: [], packs: [], playsOnMine: [], writes: [], saves: [], setEnds: [], caught: [], ended: [], before: null, ...over },
+    log: { infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], settlements: [], wallet, cards: [], packs: [], playsOnMine: [], writes: [], saves: [], setEnds: [], caught: [], ended: [], cosmetics: [], before: null, ...over },
     mine: [], estimate: null, standings: {}, season: null, turns: [], nextSettlement: null, acts: new Map(), names: new Map(), titles: new Map(), states: new Map(),
   }, { instance, ui: instanceUi, postsPerPage: 20, economy: {} }, 600, null);
   const said = (r: { details: readonly unknown[] }) => r.details.map((d) => (typeof d === 'string' ? d : (d as { text: string }).text)).join('');
@@ -524,6 +537,32 @@ describe('a Booster in the log (the booster packs plan, Task 7)', () => {
     expect(rows.map((r) => r.kind)).toEqual(['pack', 'pack']);
     expect(new Set(rows.map((r) => r.wallet))).toEqual(new Set([900, 600]));
     expect(rows.map(said).sort()[0]).toContain('Glitter Bomb, Glitter Bomb, Glitter Bomb, Glitter Bomb and Glitter Bomb');
+  });
+});
+
+describe('the cosmetics art files', () => {
+  const dir = path.dirname(fileURLToPath(import.meta.url));
+  const files = (kind: 'gear' | 'trophies') => fs.readdirSync(path.join(dir, kind)).filter((f) => f.endsWith('.svg')).map((f) => [`${kind}/${f}`, fs.readFileSync(path.join(dir, kind, f), 'utf8')] as const);
+
+  test('each gear piece\'s aspect is its viewBox height over width', () => {
+    for (const [key, ui] of Object.entries(gearUi)) {
+      const svg = fs.readFileSync(path.join(dir, 'gear', `${key}.svg`), 'utf8');
+      const box = /viewBox="\s*[\d.-]+[\s,]+[\d.-]+[\s,]+([\d.]+)[\s,]+([\d.]+)\s*"/u.exec(svg);
+      expect(box, key).not.toBeNull();
+      expect(ui.aspect, key).toBeCloseTo(Number(box![2]) / Number(box![1]), 10);
+    }
+    expect(fs.readdirSync(path.join(dir, 'gear')).filter((f) => f.endsWith('.svg')).length).toBe(Object.keys(gearUi).length);
+  });
+
+  test('each art file is a bare SVG: no script, no link, no event attribute', () => {
+    const all = [...files('gear'), ...files('trophies')];
+    expect(all.length).toBeGreaterThan(0);
+    for (const [name, svg] of all) {
+      expect(svg.trimStart().startsWith('<svg'), name).toBe(true);
+      expect(/<script/iu.test(svg), `${name} has a script`).toBe(false);
+      expect(/href\s*=/iu.test(svg), `${name} has an href`).toBe(false);
+      expect(/\son[a-z]+\s*=/iu.test(svg), `${name} has an event attribute`).toBe(false);
+    }
   });
 });
 

@@ -1,10 +1,12 @@
 // The model tiers a rehearsal run names are written to the rehearsal's own `settings`, merged over the instance's, on a scratch
-// database on the local Postgres. Run by `npm run test:rehearse`.
+// database on the local Postgres built from every migration, so the settings guard the rehearsal meets (settings_held) is the one
+// tested: a bare table without it passed a write the real database refused. Run by `npm run test:rehearse`.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import pg from 'pg';
 // @ts-expect-error test-sql.mjs is untyped JavaScript
-import { LOCAL_HOSTS } from '../../test-sql.mjs';
+import { LOCAL_HOSTS, migrationFiles } from '../../test-sql.mjs';
+import { readFileSync } from 'node:fs';
 import { connectUrl, type Connection } from '../db.ts';
 import { writeModelTiers } from '../setup.ts';
 
@@ -27,7 +29,7 @@ before(async () => {
   await admin.connect();
   await admin.query(`create database ${name}`);
   conn = await connectUrl(scratch.toString());
-  await conn.sql('create table settings (key text primary key, value jsonb not null)');
+  for (const file of migrationFiles() as string[]) await conn.sql(readFileSync(file, 'utf8'));
 });
 after(async () => {
   await conn?.end();
@@ -36,8 +38,9 @@ after(async () => {
 });
 
 const reseed = async () => {
-  await conn.sql("delete from settings");
-  await conn.sql("insert into settings values ('modelTiers', $1::jsonb), ('systemEnabled', 'true')", [JSON.stringify(SEEDED)]);
+  await conn.sql("delete from settings where key = 'modelTiers'");
+  await conn.sql("insert into settings values ('modelTiers', $1::jsonb)", [JSON.stringify(SEEDED)]);
+  await conn.sql("insert into settings values ('systemEnabled', 'true') on conflict (key) do update set value = excluded.value");
 };
 
 test('neither tier named: the instance\'s setting is left as it is', async () => {
@@ -67,13 +70,13 @@ test('a row with an extra key keeps it through the merge', async () => {
 });
 
 test('no modelTiers row yet: both tiers named are written', async () => {
-  await conn.sql("delete from settings");
+  await conn.sql("delete from settings where key = 'modelTiers'");
   await writeModelTiers(conn, { strong: 'claude-opus-5-5', light: 'claude-haiku-5-5' });
   assert.deepEqual(await tiersNow(), SEEDED);
 });
 
 test('no modelTiers row yet and one tier named: refused in plain words naming the missing tier, nothing written', async () => {
-  await conn.sql("delete from settings");
+  await conn.sql("delete from settings where key = 'modelTiers'");
   await assert.rejects(writeModelTiers(conn, { strong: 'claude-opus-5-5' }), /no modelTiers setting.*"light"/);
   assert.equal(await tiersNow(), undefined);
   await assert.rejects(writeModelTiers(conn, { light: 'claude-opus-5-5' }), /no modelTiers setting.*"strong"/);

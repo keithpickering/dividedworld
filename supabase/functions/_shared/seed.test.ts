@@ -102,6 +102,7 @@ test('the seed carries the engine\'s catalogs of moves (with whether each is str
     { key: 'pullSlot', structural: false, shapesBoard: false, offices: ['boss'], derived: [] },
     { key: 'repriceSlot', structural: false, shapesBoard: false, offices: ['boss'], derived: [] },
     { key: 'flashSale', structural: false, shapesBoard: false, offices: ['boss'], derived: [] },
+    { key: 'awardTrophy', structural: false, shapesBoard: false, offices: ['boss'], derived: ['trophyName', 'characterName'] },
   ]);
   assert.deepEqual(demands.map((d) => d.key), DEMAND_KINDS.map((d) => d.key));
   assert.ok(demands.length >= 5);
@@ -155,4 +156,22 @@ test('the seed carries the developer persona: the instance\'s, or the engine\'s 
   assert.deepEqual(instanceSeed({ ...instance, developer: { name: 'Dev', tagline: 'Hi.' } }).developer, { name: 'Dev', title: 'Hi.' });
   assert.ok(!instanceSeed(instance).system.staff.some((s) => s.key === 'developer'), 'the developer is not in the roster a model is handed');
   assert.ok(!('developer' in instanceSeed(instance).system), 'nothing under `system`, which is all the Director reads, names the developer');
+});
+
+test('the seed carries the trophy catalog: the kinds with their words and belts, the three places, the Boss\'s kinds and the met demand\'s (0206)', () => {
+  const { trophies } = instanceSeed(instance);
+  assert.deepEqual(trophies.kinds.map((k) => k.key), instance.trophies.kinds.map((k) => k.key));
+  assert.deepEqual(trophies.kinds.filter((k) => k.belt).map((k) => k.key), instance.trophies.kinds.filter((k) => k.belt).map((k) => k.key), 'a belt is said as a belt');
+  for (const k of trophies.kinds) assert.equal(typeof k.belt, 'boolean');
+  assert.deepEqual(trophies.seasonPlaces, [...instance.trophies.seasonPlaces]);
+  assert.deepEqual(trophies.boss, [...instance.trophies.boss]);
+  assert.equal(trophies.demandMet, instance.trophies.demandMet);
+  assert.ok(trophies.kinds.every((k) => !k.key.startsWith('made-')), 'an instance key never begins with the admin page\'s prefix');
+});
+
+test('the seed carries the instance\'s Random Event lines, each with its key, outcome and text (0207)', () => {
+  const { eventLines } = instanceSeed(instance);
+  assert.ok(eventLines.length > 0, 'the instance has event lines');
+  assert.deepEqual(eventLines.map((l) => [l.key, l.outcome, l.text]), instance.events.lines.map((l) => [l.key, l.outcome, l.text]));
+  assert.ok(['line', 'gear', 'card'].every((o) => eventLines.some((l) => l.outcome === o)), 'every outcome has a line to say');
 });

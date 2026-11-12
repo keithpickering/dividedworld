@@ -15,6 +15,7 @@ import { pronounProblems } from './pronouns.ts';
 import { BEYOND_POST, GIMMICK_KINDS, INT4_MAX, PLAYS, RARITIES, REACHES, TRIGGERS, atOrBelow, spanMs } from './cards.ts';
 import type { CardRules } from './cards.ts';
 import type { Pull, SlotSeed } from './packs.ts';
+import type { EventLine } from './cosmetics.ts';
 
 /**
  * What a Mod Bot's bribe may cost, in hundredths of an orb, for every bot in every instance: dear enough to be a
@@ -200,6 +201,50 @@ function apologyRule(v: unknown): string | null {
   return null;
 }
 
+/**
+ * The cosmetics' settings (`Settings.cosmetics`): exactly the fields of CosmeticsSettings, each held as its own words say. Every
+ * weight is a positive whole number, and only an event's `none` may be 0.
+ */
+const COSMETICS_OUTCOMES = ['line', 'gear', 'card'] as const;
+function cosmeticsRule(v: unknown): string | null {
+  const shape = 'an object giving gear (wornMost, a whole number, at least 1; reach, a fraction of the portrait\'s width from 0 to 2), trophies (shownMost, a whole number, at least 1) and events (windowMinutes, a whole number from 1 to 1440; dayMost, a whole number, at least 1; outcomes, a positive whole weight for line, gear and card and an optional whole weight, at least 0, for none; gearRarity and cardRarity, each a positive whole weight for one or more of ' + RARITIES.join(', ') + ')';
+  const object = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null && !Array.isArray(x);
+  const exactly = (x: unknown, keys: readonly string[], name: string): string | null => {
+    if (!object(x)) return name === 'cosmetics' ? shape : `"${name}" must be an object giving ${keys.join(', ')}`;
+    const extra = Object.keys(x).find((k) => !keys.includes(k));
+    return extra === undefined ? null : `"${name}.${extra}" is not one of ${name}'s fields (${keys.join(', ')})`;
+  };
+  const weights = (x: unknown, keys: readonly string[], name: string, zeroOk: readonly string[] = []): string | null => {
+    const bad = exactly(x, keys, name);
+    if (bad) return bad;
+    const o = x as Record<string, unknown>;
+    if (!Object.keys(o).length) return `"${name}" must give at least one weight`;
+    for (const [k, w] of Object.entries(o)) if (!isWhole(w, zeroOk.includes(k) ? 0 : 1)) return `"${name}.${k}" has a weight of ${JSON.stringify(w)}, and a weight is a positive whole number`;
+    return null;
+  };
+  const top = exactly(v, ['gear', 'trophies', 'events'], 'cosmetics');
+  if (top) return top;
+  const c = v as Record<string, unknown>;
+  const gear = exactly(c.gear, ['wornMost', 'reach'], 'gear');
+  if (gear) return gear;
+  const g = c.gear as Record<string, unknown>;
+  if (!isWhole(g.wornMost, 1)) return `"gear.wornMost" must be a whole number, at least 1`;
+  if (!(typeof g.reach === 'number' && g.reach >= 0 && g.reach <= 2)) return `"gear.reach" must be a number from 0 to 2`;
+  const trophies = exactly(c.trophies, ['shownMost'], 'trophies');
+  if (trophies) return trophies;
+  if (!isWhole((c.trophies as Record<string, unknown>).shownMost, 1)) return `"trophies.shownMost" must be a whole number, at least 1`;
+  const events = exactly(c.events, ['windowMinutes', 'dayMost', 'outcomes', 'gearRarity', 'cardRarity'], 'events');
+  if (events) return events;
+  const e = c.events as Record<string, unknown>;
+  if (!isWhole(e.windowMinutes, 1) || e.windowMinutes > 1440) return `"events.windowMinutes" must be a whole number from 1 to 1440`;
+  if (!isWhole(e.dayMost, 1)) return `"events.dayMost" must be a whole number, at least 1`;
+  const outcomes = weights(e.outcomes, [...COSMETICS_OUTCOMES, 'none'], 'events.outcomes', ['none']);
+  if (outcomes) return outcomes;
+  const o = e.outcomes as Record<string, unknown>;
+  for (const k of COSMETICS_OUTCOMES) if (!(k in o)) return `"events.outcomes.${k}" is missing; it must be a positive whole weight`;
+  return weights(e.gearRarity, RARITIES, 'events.gearRarity') ?? weights(e.cardRarity, RARITIES, 'events.cardRarity');
+}
+
 /** Every setting the engine reads, each with what it must be. */
 const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | null } = {
   walletCap: (v) => (isWhole(v, 1) ? null : 'a whole number of hundredths, at least 1'),
@@ -266,6 +311,7 @@ const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | nul
     const t = v as Record<string, unknown>;
     return ['strong', 'light'].every((k) => typeof t[k] === 'string' && (t[k] as string).trim() !== '') ? null : shape;
   },
+  cosmetics: cosmeticsRule,
 };
 
 export function settingsProblems(settings: Settings): string[] {
@@ -348,6 +394,51 @@ function packProblems(instance: Instance): string[] {
   return out;
 }
 
+/** Problems with the gear, the trophy catalog, the event lines and the odds that draw from them, each a sentence naming what is wrong. */
+function cosmeticsProblems(instance: Instance): string[] {
+  const out: string[] = [];
+  const gear = Array.isArray(instance.gear) ? instance.gear : (out.push('the instance has no gear list'), []);
+  const catalog = instance.trophies;
+  const lines: readonly EventLine[] = Array.isArray(instance.events?.lines) ? instance.events.lines : (out.push('the instance has no event lines list'), []);
+  for (const k of duplicates(gear, (g) => g.key)) out.push(`gear key "${k}" is used twice`);
+  for (const g of gear) {
+    if (instance.cards.some((c) => c.key === g.key)) out.push(`gear key "${g.key}" is also a card's key; the log's lines name both`);
+    if (!RARITIES.includes(g.rarity)) out.push(`gear "${g.key}" has the rarity ${JSON.stringify(g.rarity)}; a rarity is ${RARITIES.slice(0, -1).join(', ')} or ${RARITIES.at(-1)}`);
+  }
+  if (typeof catalog !== 'object' || catalog === null || !Array.isArray(catalog.kinds)) out.push('the instance has no trophy catalog');
+  else {
+    for (const k of duplicates(catalog.kinds, (t) => t.key)) out.push(`trophy key "${k}" is used twice`);
+    // What trophy_kinds holds (supabase/migrations/0206_trophies.sql): a key of lower-case words, never the admin page's `made-` prefix, a short name, short words.
+    for (const t of catalog.kinds) {
+      if (typeof t.key === 'string' && t.key.startsWith('made-')) out.push(`trophy key "${t.key}" begins "made-", which is the admin page's`);
+      else if (typeof t.key !== 'string' || !/^[a-z][a-z0-9-]*$/.test(t.key)) out.push(`trophy key "${String(t.key)}" is not lower-case words (letters, digits and hyphens, beginning with a letter)`);
+      if (typeof t.name !== 'string' || t.name.length < 1 || t.name.length > 60) out.push(`trophy "${t.key}" has a name of ${typeof t.name === 'string' ? t.name.length : 0} characters; a name is 1 to 60`);
+      if (t.line !== undefined && t.line.length > 200) out.push(`trophy "${t.key}" has words of ${t.line.length} characters; at most 200`);
+    }
+    const kind = (key: string) => catalog.kinds.find((t) => t.key === key);
+    const named = (who: string, key: string) => (kind(key) ? true : (out.push(`${who} "${key}", and the instance has no such kind`), false));
+    (Array.isArray(catalog.seasonPlaces) ? catalog.seasonPlaces : []).forEach((key, i) => {
+      if (named(`season place ${i + 1} names the trophy`, key) && kind(key)!.belt) out.push(`season place ${i + 1} is the belt "${key}"; a belt has one holder, and a place is given to each who earns it`);
+    });
+    if (!Array.isArray(catalog.seasonPlaces) || catalog.seasonPlaces.length !== 3) out.push('the trophy catalog names three season places: first, second and third');
+    for (const key of catalog.boss ?? []) named('the Boss\'s trophies name', key);
+    if (named('the trophy for a met demand names', catalog.demandMet) && kind(catalog.demandMet)!.belt) out.push(`the trophy for a met demand is the belt "${catalog.demandMet}"; every counted character gets it, and a belt has one holder`);
+  }
+  for (const k of duplicates(lines, (l) => l.key)) out.push(`event line key "${k}" is used twice`);
+  for (const l of lines) {
+    if (typeof l.text !== 'string' || l.text.trim() === '') out.push(`event line "${l.key}" has no text`);
+    else if ((l.outcome === 'gear' || l.outcome === 'card') && !l.text.includes('{item}')) out.push(`event line "${l.key}" is a ${l.outcome} line and does not say {item}, the found item's name`);
+    if (!(COSMETICS_OUTCOMES as readonly string[]).includes(l.outcome)) out.push(`event line "${l.key}" has the outcome ${JSON.stringify(l.outcome)}; an outcome is line, gear or card`);
+  }
+  // Settings are checked on their own; the odds read here only once they hold.
+  const events = instance.settings?.cosmetics?.events;
+  if (cosmeticsRule(instance.settings?.cosmetics) === null && events) {
+    for (const o of COSMETICS_OUTCOMES) if (!lines.some((l) => l.outcome === o)) out.push(`the events' outcome "${o}" has no event line, and a Random Event that picks it would have nothing to say`);
+    for (const rarity of Object.keys(events.gearRarity)) if (!gear.some((g) => g.rarity === rarity)) out.push(`events.gearRarity names ${rarity}, and the instance has no gear of that rarity`);
+    for (const rarity of Object.keys(events.cardRarity)) if (!instance.cards.some((c) => c.rarity === rarity)) out.push(`events.cardRarity names ${rarity}, and the instance has no card of that rarity`);
+  }
+  return out;
+}
 export function instanceProblems(instance: Instance): string[] {
   const out: string[] = [];
   const lists = ['classes', 'cards', 'reactions', 'boards', 'ranks', 'pipStyles'] as const;
@@ -372,7 +463,7 @@ export function instanceProblems(instance: Instance): string[] {
   if (!systems.length) out.push('no board is The System\'s: exactly one board sets system: true, where The System posts');
   if (systems.length > 1) out.push(`${systems.length} boards are The System's (${systems.map((b) => b.slug).join(', ')}); exactly one is`);
   if (instance.boards.length && systems.length === instance.boards.length) out.push('the instance has no board for players: every board is The System\'s');
-  out.push(...developerProblems(instance.developer), ...packProblems(instance));
+  out.push(...developerProblems(instance.developer), ...packProblems(instance), ...cosmeticsProblems(instance));
   out.push(...groupsProblems(instance.groups));
   if (!instance.ranks.length) out.push('the instance has no rank');
   instance.ranks.forEach((r, i) => {

@@ -66,6 +66,11 @@ const settings: Settings = {
   demandChecksPerTick: 40,
   moveExpiryLeastHours: 24,
   modelTiers: { strong: 'claude-opus-5-5', light: 'claude-haiku-5-5' },
+  cosmetics: {
+    gear: { wornMost: 12, reach: 0.4 },
+    trophies: { shownMost: 3 },
+    events: { windowMinutes: 15, dayMost: 4, outcomes: { line: 70, gear: 20, card: 10 }, gearRarity: { common: 80, uncommon: 17, rare: 3 }, cardRarity: { common: 80, uncommon: 17, rare: 3 } },
+  },
   setLasts: { unit: 'day', count: 7 },
   reachRarity: { character: 'uncommon', thread: 'rare', board: 'legendary' },
   reachLasts: { character: { unit: 'day', count: 7 }, thread: { unit: 'day', count: 1 }, board: { unit: 'day', count: 1 } },
@@ -98,11 +103,16 @@ const system: SystemContent = {
   announcementsTitle: 'Announcements',
 };
 
+const testCard = (over: Record<string, unknown>) => ({ key: 'splat', name: 'Splat', alignment: 'salty' as const, rarity: 'common' as const, playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }), ...over });
+const packCards = [
+  testCard({ key: 'a', rarity: 'common' }), testCard({ key: 'b', rarity: 'uncommon' }), testCard({ key: 'c', rarity: 'rare' }),
+] as unknown as Instance['cards'];
+
 const good: Instance = {
   key: 'test-world',
   name: 'Test World',
   classes: [{ key: 'a', name: 'A', earn: () => [] }],
-  cards: [],
+  cards: packCards,
   reactions: [
     { key: 'fire', emoji: '🔥', quadrant: 'excitedPositive' },
     { key: 'zzz', emoji: '💤', quadrant: 'boredNegative' },
@@ -116,6 +126,22 @@ const good: Instance = {
   system,
   packs: [],
   machine: [],
+  gear: [
+    { key: 'cap', name: 'Cap', line: 'A cap.', rarity: 'common' },
+    { key: 'monocle', name: 'Monocle', line: 'A monocle.', rarity: 'uncommon' },
+    { key: 'crown', name: 'Crown', line: 'A crown.', rarity: 'rare' },
+  ],
+  trophies: {
+    kinds: [{ key: 'first', name: 'First' }, { key: 'second', name: 'Second' }, { key: 'third', name: 'Third' }, { key: 'pet', name: 'Pet' }, { key: 'met', name: 'Met' }, { key: 'belt', name: 'Belt', belt: true }],
+    seasonPlaces: ['first', 'second', 'third'],
+    boss: ['pet', 'belt'],
+    demandMet: 'met',
+  },
+  events: { lines: [
+    { key: 'plain', outcome: 'line', text: 'Something happened.' },
+    { key: 'found', outcome: 'gear', text: 'You found a {item}.' },
+    { key: 'stuck', outcome: 'card', text: 'A {item} was stuck to your shoe.' },
+  ] },
 };
 
 test('a whole instance has no problems', () => {
@@ -132,7 +158,7 @@ test('exactly one board is The System\'s, and at least one is not', () => {
 });
 
 test('a card\'s stack is a whole number, at least 1', () => {
-  const card = (stack: unknown) => ({ ...good, cards: [{ key: 'splat', name: 'Splat', alignment: 'salty' as const, rarity: 'common' as const, stack, playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) }] }) as unknown as Instance;
+  const card = (stack: unknown) => ({ ...good, cards: [testCard({ stack }), ...packCards] }) as unknown as Instance;
   assert.deepEqual(instanceProblems(card(3)), []);
   assert.deepEqual(instanceProblems(card(undefined)), []);
   for (const bad of [0, 1.5, '3', -1]) assert.match(instanceProblems(card(bad)).join('\n'), /card "splat" stacks .*; a stack is a whole number, at least 1/, String(bad));
@@ -179,7 +205,7 @@ test('the numbers a card gives the screens are an object of named numbers, like 
 });
 
 test('a number a card reads for the screens is one the settings hold, within the card\'s bounds', () => {
-  const card = (screenReads: unknown) => ({ ...good, cards: [{ key: 'splat', name: 'Splat', alignment: 'salty' as const, rarity: 'common' as const, screenReads, playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) }] }) as unknown as Instance;
+  const card = (screenReads: unknown) => ({ ...good, cards: [testCard({ screenReads }), ...packCards] }) as unknown as Instance;
   const reads = [{ key: 'splat.clean', whole: true, min: 1, max: 100 }];
   assert.deepEqual(instanceProblems(card(reads)), []);
   assert.match(instanceProblems(card([{ key: 'splat.other' }])).join('\n'), /card "splat" reads card setting "splat\.other", which the settings do not hold/);
@@ -191,7 +217,7 @@ test('a number a card reads for the screens is one the settings hold, within the
 
 test('a surface card is a cast card with a stack of 1, and its limit is a number it reads for the screens', () => {
   const surface = { limitKey: 'splat.clean', mostLive: 48, validateDraw: () => ({ ok: true as const, value: { strokes: [], payload: {} } }), validateWash: () => ({ ok: true as const, value: { strokes: [], payload: {} } }) };
-  const card = (extra: object) => ({ ...good, cards: [{ key: 'wall', name: 'Wall', alignment: 'salty' as const, rarity: 'rare' as const, surface, screenReads: ['splat.clean'], playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }), ...extra }] }) as unknown as Instance;
+  const card = (extra: object) => ({ ...good, cards: [{ key: 'wall', name: 'Wall', alignment: 'salty' as const, rarity: 'rare' as const, surface, screenReads: ['splat.clean'], playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }), ...extra }, ...packCards] }) as unknown as Instance;
   assert.deepEqual(instanceProblems(card({ stack: 1 })), []);
   assert.match(instanceProblems(card({ stack: 2 })).join('\n'), /card "wall" has a surface and a stack of 2; a surface card has a stack of 1/);
   assert.deepEqual(instanceProblems(card({})), [], 'a stack left out is 1');
@@ -674,8 +700,8 @@ test('toastDefaults: the kinds that toast until a player chooses, each a kind of
 });
 
 // The card mechanic's pairings (docs/plans/2026-11-01-card-plays-plan.md, Task 1): each refused, naming the card.
-const testCard = (over: Record<string, unknown>) => ({ key: 'splat', name: 'Splat', alignment: 'salty' as const, rarity: 'common' as const, playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }), ...over });
-const withCards = (...cards: Record<string, unknown>[]) => ({ ...good, cards: cards.map(testCard) }) as unknown as Instance;
+// The cards under test, beside the three whose rarities the event odds name.
+const withCards = (...cards: Record<string, unknown>[]) => ({ ...good, cards: [...cards.map(testCard), ...packCards] }) as unknown as Instance;
 
 test('a card carries one of the four rarities', () => {
   assert.deepEqual(instanceProblems(withCards({ rarity: 'legendary' })), []);
@@ -905,9 +931,6 @@ test('only a card that reaches a thread pins', () => {
 });
 
 // Packs and the machine's slots (docs/plans/2026-11-04-booster-packs-plan.md, Task 1).
-const packCards = [
-  testCard({ key: 'a', rarity: 'common' }), testCard({ key: 'b', rarity: 'uncommon' }), testCard({ key: 'c', rarity: 'rare' }),
-] as unknown as Instance['cards'];
 const stocked = (over: Partial<Instance>): Instance => ({ ...good, cards: packCards, packs: [{ key: 'p', pulls: [{ weights: { common: 1 } }, { weights: { uncommon: 3, rare: 1 } }] }], machine: [{ item: { card: 'a' }, availability: 'onSale', price: 100 }, { item: { pack: 'p' }, availability: 'onSale', price: 300 }], ...over });
 
 test('an instance with packs and slots that agree has no problems', () => {
@@ -988,11 +1011,108 @@ test('a scrubWords entry that is empty or not lower case is a problem', () => {
   assert.match(instanceProblems({ ...good, system: { ...system, scrubWords: undefined } } as unknown as Instance).join('\n'), /no system\.scrubWords list/);
 });
 
+// Cosmetics: gear, trophies and Random Events (docs/plans/2026-11-04-cosmetics-plan.md, Task 1).
+const cosmeticsSettings = (events: Partial<Settings['cosmetics']['events']>): Settings => ({ ...settings, cosmetics: { ...settings.cosmetics, events: { ...settings.cosmetics.events, ...events } } });
+const trophied = (over: Partial<Instance['trophies']>): Instance => ({ ...good, trophies: { ...good.trophies, ...over } });
+
+test('an instance with gear, trophies and event lines that agree has no problems', () => {
+  assert.deepEqual(instanceProblems(good), []);
+});
+
+test('a gear key is used once, a trophy key is used once, and no gear is named as a card is', () => {
+  const cap = good.gear[0]!;
+  assert.match(said({ ...good, gear: [...good.gear, cap] }), /gear key "cap" is used twice/);
+  assert.match(said(trophied({ kinds: [...good.trophies.kinds, { key: 'pet', name: 'Pet again' }] })), /trophy key "pet" is used twice/);
+  assert.match(said({ ...good, gear: [...good.gear, { key: 'a', name: 'A', line: 'x', rarity: 'common' }] }), /gear key "a" is also a card's key/);
+});
+
+test('a trophy kind is held to what the database holds: a key of lower-case words that never begins "made-", a name of 1 to 60 characters, words of at most 200 (0206)', () => {
+  const kinds = (k: Partial<Instance['trophies']['kinds'][number]> & { key: string }) => trophied({ kinds: [...good.trophies.kinds, { name: 'Ok', ...k }] });
+  assert.match(said(kinds({ key: 'made-1' })), /trophy key "made-1" begins "made-", which is the admin page's/);
+  assert.match(said(kinds({ key: 'Bad Key' })), /trophy key "Bad Key" is not lower-case words/);
+  assert.match(said(kinds({ key: 'long', name: 'x'.repeat(61) })), /trophy "long" has a name of 61 characters; a name is 1 to 60/);
+  assert.match(said(kinds({ key: 'wordy', line: 'x'.repeat(201) })), /trophy "wordy" has words of 201 characters; at most 200/);
+  assert.deepEqual(instanceProblems(kinds({ key: 'fine-one', line: 'x'.repeat(200) })), []);
+});
+
+test('the season places, the Boss\'s list and the demand name kinds the catalog has', () => {
+  assert.match(said(trophied({ seasonPlaces: ['first', 'ghost', 'third'] })), /season place 2 names the trophy "ghost", and the instance has no such kind/);
+  assert.match(said(trophied({ boss: ['pet', 'ghost'] })), /the Boss's trophies name "ghost", and the instance has no such kind/);
+  assert.match(said(trophied({ demandMet: 'ghost' })), /the trophy for a met demand names "ghost", and the instance has no such kind/);
+});
+
+test('the demand\'s trophy and the season places are never belts', () => {
+  assert.match(said(trophied({ demandMet: 'belt' })), /the trophy for a met demand is the belt "belt"/);
+  assert.match(said(trophied({ seasonPlaces: ['first', 'belt', 'third'] })), /season place 2 is the belt "belt"/);
+});
+
+test('an event outcome has a line, and a gear or card line says {item}', () => {
+  const lines = good.events.lines;
+  for (const outcome of ['line', 'gear', 'card'] as const) {
+    const without = lines.filter((l) => l.outcome !== outcome);
+    assert.match(said({ ...good, events: { lines: without } }), new RegExp(`outcome "${outcome}" has no event line`), outcome);
+  }
+  const noItem = lines.map((l) => (l.outcome === 'gear' ? { ...l, text: 'You found nothing.' } : l));
+  assert.match(said({ ...good, events: { lines: noItem } }), /event line "found" is a gear line and does not say \{item\}/);
+  const noCardItem = lines.map((l) => (l.outcome === 'card' ? { ...l, text: 'A card.' } : l));
+  assert.match(said({ ...good, events: { lines: noCardItem } }), /event line "stuck" is a card line and does not say \{item\}/);
+  assert.match(said({ ...good, events: { lines: [...lines, lines[0]!] } }), /event line key "plain" is used twice/);
+  assert.match(said({ ...good, events: { lines: lines.map((l) => (l.key === 'plain' ? { ...l, text: ' ' } : l)) } }), /event line "plain" has no text/);
+});
+
+test('the event odds are never a promise the draw cannot keep: a rarity with no item at it is a problem', () => {
+  assert.match(said({ ...good, settings: cosmeticsSettings({ gearRarity: { legendary: 1 } }) }), /events\.gearRarity names legendary, and the instance has no gear of that rarity/);
+  assert.match(said({ ...good, settings: cosmeticsSettings({ cardRarity: { legendary: 1 } }) }), /events\.cardRarity names legendary, and the instance has no card of that rarity/);
+  assert.match(said({ ...good, gear: good.gear.filter((g) => g.rarity !== 'rare') }), /events\.gearRarity names rare, and the instance has no gear of that rarity/);
+  assert.match(said({ ...good, settings: cosmeticsSettings({ gearRarity: {} }) }), /setting "cosmetics"/);
+});
+
+test('an event weight is a positive whole number, and only none may be 0', () => {
+  for (const w of [0, -1, 1.5, Number.NaN]) {
+    assert.match(said({ ...good, settings: cosmeticsSettings({ gearRarity: { common: w } }) }), /setting "cosmetics".*weight/, `gearRarity ${w}`);
+    assert.match(said({ ...good, settings: cosmeticsSettings({ outcomes: { line: w, gear: 20, card: 10 } }) }), /setting "cosmetics".*weight/, `outcomes ${w}`);
+  }
+  assert.deepEqual(instanceProblems({ ...good, settings: cosmeticsSettings({ outcomes: { line: 70, gear: 20, card: 10, none: 0 } }) }), []);
+  assert.deepEqual(instanceProblems({ ...good, settings: cosmeticsSettings({ outcomes: { line: 70, gear: 20, card: 10, none: 5 } }) }), []);
+  assert.match(said({ ...good, settings: cosmeticsSettings({ outcomes: { line: 70, gear: 20, card: 10, none: -1 } }) }), /setting "cosmetics"/);
+});
+
+test('the cosmetics settings are held as their words say', () => {
+  const bad = (cosmetics: unknown) => settingsProblems({ ...settings, cosmetics } as unknown as Settings).join('\n');
+  const c = settings.cosmetics;
+  assert.match(settingsProblems((({ cosmetics: _g, ...rest }) => rest)(settings) as unknown as Settings).join('\n'), /setting "cosmetics" is missing/);
+  assert.match(bad(null), /cosmetics/);
+  assert.match(bad({ ...c, gear: { ...c.gear, wornMost: 0 } }), /wornMost/);
+  assert.match(bad({ ...c, gear: { ...c.gear, reach: -0.1 } }), /reach/);
+  assert.match(bad({ ...c, gear: { ...c.gear, reach: 3 } }), /reach/);
+  assert.match(bad({ ...c, trophies: { shownMost: 0 } }), /shownMost/);
+  assert.match(bad({ ...c, events: { ...c.events, windowMinutes: 0 } }), /windowMinutes/);
+  assert.match(bad({ ...c, events: { ...c.events, dayMost: 0 } }), /dayMost/);
+  assert.match(bad({ ...c, events: { ...c.events, outcomes: { line: 1, gear: 1 } } }), /outcomes/);
+  assert.match(bad({ ...c, events: { ...c.events, outcomes: { ...c.events.outcomes, extra: 1 } } }), /outcomes/);
+  assert.match(bad({ ...c, events: { ...c.events, gearRarity: { epic: 1 } } }), /gearRarity/);
+  assert.match(bad({ ...c, stray: 1 }), /stray/);
+  assert.deepEqual(settingsProblems(settings), []);
+});
+
+test('a cosmetics field that fails names that one field and what it must be, and only the object failure gives the whole shape', () => {
+  const one = (cosmetics: unknown) => settingsProblems({ ...settings, cosmetics } as unknown as Settings).join('\n');
+  const c = settings.cosmetics;
+  const wornMost = one({ ...c, gear: { ...c.gear, wornMost: 0 } });
+  assert.match(wornMost, /"gear\.wornMost" must be a whole number, at least 1/);
+  assert.doesNotMatch(wornMost, /an object giving/);
+  assert.match(one({ ...c, gear: { ...c.gear, reach: 3 } }), /"gear\.reach" must be a number from 0 to 2/);
+  assert.match(one({ ...c, trophies: { shownMost: 0 } }), /"trophies\.shownMost" must be a whole number, at least 1/);
+  assert.match(one({ ...c, events: { ...c.events, windowMinutes: 2000 } }), /"events\.windowMinutes" must be a whole number from 1 to 1440/);
+  assert.match(one({ ...c, events: { ...c.events, dayMost: 0 } }), /"events\.dayMost" must be a whole number, at least 1/);
+  assert.match(one(null), /an object giving/);
+});
+
 // A draw and a drive (docs/plans/2026-11-03-jimmy-wails-plan.md, Task 1): each refused, naming the card.
 test('a draw is a list of distinct keys, and a drive is a Cast on a post with real gifts, an overhead and a span', () => {
   const eco = { ...good, settings: { ...settings, economy: { ...settings.economy, 'g.small': 10, 'g.big': 50, 'g.over': 25 } } };
-  const withDrive = (over: Record<string, unknown>, drive: Record<string, unknown> = {}) => ({ ...eco, cards: [testCard({ ...over, drive: { lasts: { unit: 'day', count: 7 }, gifts: ['g.small', 'g.big'], overhead: 'g.over', ...drive } })] }) as unknown as Instance;
-  const withDraws = (draws: unknown) => ({ ...good, cards: [testCard({ draws })] }) as unknown as Instance;
+  const withDrive = (over: Record<string, unknown>, drive: Record<string, unknown> = {}) => ({ ...eco, cards: [testCard({ ...over, drive: { lasts: { unit: 'day', count: 7 }, gifts: ['g.small', 'g.big'], overhead: 'g.over', ...drive } }), ...packCards] }) as unknown as Instance;
+  const withDraws = (draws: unknown) => ({ ...good, cards: [testCard({ draws }), ...packCards] }) as unknown as Instance;
   const say = (i: Instance) => instanceProblems(i).join('\n');
   assert.deepEqual(instanceProblems(withDraws(['a', 'b-2'])), []);
   assert.deepEqual(instanceProblems(withDrive({})), []);
@@ -1001,8 +1121,8 @@ test('a draw is a list of distinct keys, and a drive is a Cast on a post with re
   assert.match(say(withDraws(['Bad Key'])), /card "splat" draws "Bad Key"; a draw is lowercase letters, digits and hyphens, 1 to 40/);
   assert.match(say(withDraws('a')), /card "splat" draws "a"; draws is a list/);
   assert.match(say(withDraws([7])), /card "splat" draws 7; a draw is lowercase letters/);
-  assert.match(say({ ...eco, cards: [testCard({ drive: 'weekly' })] } as unknown as Instance), /card "splat" has a drive that is not an object of lasts, gifts and overhead/);
-  assert.match(say({ ...eco, cards: [testCard({ drive: null })] } as unknown as Instance), /card "splat" has a drive that is not an object/);
+  assert.match(say({ ...eco, cards: [testCard({ drive: 'weekly' }), ...packCards] } as unknown as Instance), /card "splat" has a drive that is not an object of lasts, gifts and overhead/);
+  assert.match(say({ ...eco, cards: [testCard({ drive: null }), ...packCards] } as unknown as Instance), /card "splat" has a drive that is not an object/);
   assert.match(say(withDrive({}, { gifts: ['g.small', 'g.small'] })), /card "splat" has a drive that lists gift "g\.small" twice/);
   assert.match(say({ ...withDrive({}), settings: { ...eco.settings, economy: { ...eco.settings.economy, 'g.small': 'ten' } } } as unknown as Instance), /card "splat" has a drive gift "g\.small", which is not a number the economy holds/);
   assert.match(say(withDrive({}, { gifts: [] })), /card "splat" has a drive with no gift amounts \(gifts\)/);
@@ -1028,8 +1148,8 @@ test('a draw is a list of distinct keys, and a drive is a Cast on a post with re
 
 // A card that needs a message (`needsMessage`): the refusal's words, for a card that carries a message, never a Set.
 test('needsMessage is a sentence for a cast or a use, and nothing for a set', () => {
-  const say = (over: Record<string, unknown>) => instanceProblems({ ...good, cards: [testCard(over)] } as unknown as Instance).join('\n');
-  assert.deepEqual(instanceProblems({ ...good, cards: [testCard({ needsMessage: 'say something' })] } as unknown as Instance), []);
+  const say = (over: Record<string, unknown>) => instanceProblems({ ...good, cards: [testCard(over), ...packCards] } as unknown as Instance).join('\n');
+  assert.deepEqual(instanceProblems({ ...good, cards: [testCard({ needsMessage: 'say something' }), ...packCards] } as unknown as Instance), []);
   assert.match(say({ needsMessage: '' }), /card "splat" needs a message, and its refusal is empty/);
   assert.match(say({ needsMessage: '   ' }), /card "splat" needs a message, and its refusal is empty/);
   assert.match(say({ needsMessage: true }), /card "splat" needsMessage true; it is the sentence a blank message is refused with/);

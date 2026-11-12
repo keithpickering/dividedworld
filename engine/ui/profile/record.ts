@@ -78,9 +78,10 @@ export function turnLinksFrom(targets: readonly Act[], perPage: number): Readonl
   return out;
 }
 
-/** A past season of this character, from its row in the season's results, linked to that row on Rankings. */
+/** A past season of this character, from its row in the season's results, linked to that row on Rankings. A season it finished at 0 or below is unplaced (#492). */
 export function seasonRow(s: SeasonRecordRow, character: Id, _w: Words): RecordRow {
-  return { key: `season-${s.season}`, at: s.at, text: `Season ${s.season}: finished #${s.place}`, href: seasonAt('rankings', 1, s.season, character) };
+  const finished = s.place === null ? 'finished unplaced, at 0 Aura or below' : `finished #${s.place}`;
+  return { key: `season-${s.season}`, at: s.at, text: `Season ${s.season}: ${finished}`, href: seasonAt('rankings', 1, s.season, character) };
 }
 
 export function turnRow(t: TurnAnnounced, w: Words, links: ReadonlyMap<Id, string> = new Map()): RecordRow {

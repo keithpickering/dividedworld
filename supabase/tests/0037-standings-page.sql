@@ -56,10 +56,10 @@ begin
   if not has_row then raise exception 'a character that debuted while a season opened has no row in the new season''s standings'; end if;
 end $$;
 
--- The ranking as season_standings lists it, ordered by place and then name, read as the view's owner: no
--- client reads the view (0030 revokes it), so the comparison takes it before turning back into the player.
+-- The ranking as season_standings lists it, ordered by standing and then name (the placed by place, then the unplaced at 0 or below, #492), read as the
+-- view's owner: no client reads the view (0030 revokes it), so the comparison takes it before turning back into the player.
 create function pg_temp.ranked() returns jsonb language sql as $$
-  select coalesce(jsonb_agg(jsonb_build_array(x.character, x.name, x.standing, x.place) order by x.place, x.name), '[]') from season_standings x
+  select coalesce(jsonb_agg(jsonb_build_array(x.character, x.name, x.standing, x.place) order by x.standing desc, x.name), '[]') from season_standings x
 $$;
 -- The page of that ranking standings_page(o, l) should be, and what it is, as two values.
 create function pg_temp.page_wanted(ranked jsonb, o integer, l integer) returns jsonb language sql as $$
@@ -132,7 +132,7 @@ begin
   perform tests.become(bob);
   perform auth.assert_impersonating();
   perform pg_temp.every_page('the open season', bob);
-  -- The cases by name: three tied at 300 split over pages of two share place 2; no row and a settled 0 alike stand at 0; debts last.
+  -- The cases by name: three tied at 300 split over pages of two share place 2; no row and a settled 0 alike stand at 0, unplaced (#492); debts last.
   if pg_temp.page_got(1, 2) -> 1 ->> 3 is distinct from '2' or pg_temp.page_got(3, 2) -> 0 ->> 3 is distinct from '2' then
     raise exception 'ties split across a page boundary share their place: % then %', pg_temp.page_got(1, 2), pg_temp.page_got(3, 2);
   end if;
@@ -155,12 +155,12 @@ begin
   end if;
   perform tests.unbecome();
 
-  -- A new season, nothing settled: every debuted character at 0, all in first place.
+  -- A new season, nothing settled: every debuted character at 0, none placed (#492: a place counts only a standing above zero).
   update seasons set ends_at = greatest(now(), starts_at + interval '1 second') where id = open_season;
   insert into seasons (number, starts_at) select max(number) + 1, greatest(now(), (select ends_at from seasons where id = open_season)) from seasons;
   perform tests.become(bob);
   perform pg_temp.every_page('a new season', bob);
-  if exists (select 1 from standings_page(0, 1000) p where p.standing <> 0 or p.place <> 1) then raise exception 'a season with nothing settled has everyone at 0, in first place'; end if;
+  if exists (select 1 from standings_page(0, 1000) p where p.standing <> 0 or p.place is not null) then raise exception 'a season with nothing settled has everyone at 0, unplaced (#492)'; end if;
   if (select count(*) from standings_page(0, 1000)) is distinct from (select characters::bigint from season_size) then raise exception 'a new season lists every debuted character: % of %', (select count(*) from standings_page(0, 1000)), (select characters from season_size); end if;
   perform tests.unbecome();
 

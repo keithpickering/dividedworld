@@ -33,19 +33,21 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { DEFAULT_PREFERENCES, LOST_ANSWER, NOT_SENT, ReadFailure, SPUN_FROM_MAX } from '../../../engine/ui/data/api.ts';
 import { readLogPage, type LedgerRow, type LogRange, type LogRead, type ShareRow } from '../../../engine/ui/data/log-page.ts';
 import { buildMoveNotice, toDemand, toProgress } from '../../../engine/ui/data/moves.ts';
-import { ALERTS_PAGE, ALERTS_UNREAD_BOUND, MOVES_LOG_PAGE, SEASON_NEWS_PAGE, UPDATES_PAGE } from '../../../engine/ui/data/api.ts';
+import { ADMIN_AWARDS_PAGE, ALERTS_PAGE, ALERTS_UNREAD_BOUND, MOVES_LOG_PAGE, REIGNS_PAGE, SEASON_NEWS_PAGE, TROPHIES_PAGE, TROPHY_FAILURES_PAGE, UPDATES_PAGE } from '../../../engine/ui/data/api.ts';
 import { RECORD_PAGE } from '../../../engine/ui/profile/record.ts';
 import { ENGINE_DEFAULT_PRONOUNS, normalizePronouns, type PronounSet } from '../../../engine/rules/pronouns.ts';
 import { ALERT_KINDS, type AlertKind } from '../../../engine/rules/alerts.ts';
+import type { Piece } from '../../../engine/rules/cosmetics.ts';
+import { RARITIES } from '../../../engine/rules/cards.ts';
 import type { Career } from '../../../engine/system/career.ts';
 import type {
   SurfaceAct, SurfaceNow, SurfaceWritten,
   AdminQueue, Apology, Bar, BoardName, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesLog, QueuedMove, StaffCardPlay, StaffProfile,
-  Act, ActKind, Answer, AvatarUpload, Board, Bought, Donated, DriveGift, DriveGifts, BoardSummary, CardEnded, ScoredAs, CardEvent, PackEvent, SurfaceLogRow, WrittenOnMine, CaughtPlay, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd,
+  Act, ActKind, AdminAward, AdminKind, Answer, AvatarUpload, BeltCursor, BeltPage, BeltReign, RandomEvent, ShownTrophy, TrophyAwardFailure, TrophyItem, WardrobeItem, Board, Bought, Donated, DriveGift, DriveGifts, BoardSummary, CardEnded, ScoredAs, CardEvent, PackEvent, SurfaceLogRow, WrittenOnMine, CaughtPlay, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd,
   Alert, ContactLink, EffectState, Tail, PostHit, SearchCursor, SearchPage, SearchQuery, Suggestions, ThreadHit, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, SeasonShown, TallyName, Update, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
   Tally, StandingPlace, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, TurnAsked, Wallet, WalletEvent,
   Boot, BoardPage, IndexPage, Opened, AdminSlot, Slot, SlotMove, Presence, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, LogPage,
-  AppealResult, AppealVerdict, InterceptResult, MyBan, LogAppeal, LogBan, LogGroupMove, GroupMoveEndWhy, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitChallenge, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
+  AppealResult, AppealVerdict, InterceptResult, MyBan, LogAppeal, LogBan, LogCosmetic, LogGroupMove, GroupMoveEndWhy, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitChallenge, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
 } from '../../../engine/ui/data/api.ts';
 
 export interface SupabaseApiOptions {
@@ -103,6 +105,8 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const str = (v: unknown): string | null => (typeof v === 'string' ? v : null);
 const num = (v: unknown, d = 0): number => (typeof v === 'number' && Number.isFinite(v) ? v : d);
+/** A season place as the reads answer it: a number, or null where the mask is unplaced (a standing of 0 or below, #492). */
+const placeOrNull = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 /** A jsonb object of numbers by key (a ledger row's `params`, 0073), and for a card's boost the card's key as a string; null where it is none or holds anything else. */
 const numbers = (v: unknown): Readonly<Record<string, number | string>> | null =>
   typeof v === 'object' && v !== null && !Array.isArray(v) && Object.values(v).every((x) => typeof x === 'string' || (typeof x === 'number' && Number.isFinite(x))) ? v as Record<string, number | string> : null;
@@ -198,12 +202,13 @@ function toShown(v: unknown): SeasonShown[] {
 /** One row of a finished season's table (`results_page`), or one of the top three a results item carries. A row with no character is no row. */
 function toResult(t: Row): SeasonResultRow[] {
   return typeof t?.['character'] === 'string'
-    ? [{ character: t['character'], name: String(t['name'] ?? ''), place: num(t['place']), standing: num(t['standing']), shown: toShown(t['shown']) }] : [];
+    ? [{ character: t['character'], name: String(t['name'] ?? ''), place: placeOrNull(t['place']), standing: num(t['standing']), shown: toShown(t['shown']) }] : [];
 }
 /** One row of `season_news` (0063, 0099, 0100). Its public detail is read as the server wrote it; what is not in the shape is left out. A results item has no Act, thread or sequence number. */
 function toSeasonNews(r: Row): SeasonNewsItem {
   const detail = (r['detail'] ?? {}) as Row;
-  const top = rowsOf(detail['top']).flatMap(toResult);
+  /* The podium is the placed rows alone (season_news, 0206); an unplaced row the server should not send is no step of it (#492). */
+  const top = rowsOf(detail['top']).flatMap(toResult).flatMap((t) => (t.place === null ? [] : [{ ...t, place: t.place }]));
   return {
     kind: r['kind'], act: r['act'] ?? null, thread: r['thread'] ?? null, seq: r['seq'] === null || r['seq'] === undefined ? null : num(r['seq']), at: String(r['at']),
     season: num(r['season']), name: str(r['name']), quote: str(r['quote']), count: r['count'] === null || r['count'] === undefined ? null : num(r['count']),
@@ -212,7 +217,7 @@ function toSeasonNews(r: Row): SeasonNewsItem {
 }
 /** One of a character's past seasons, as profile_page and record_page answer it; a row with no season number is no row. */
 function toSeasonRecord(r: Row): SeasonRecordRow[] {
-  return typeof r?.['season'] === 'number' ? [{ season: r['season'], place: num(r['place']), standing: num(r['standing']), at: String(r['at']) }] : [];
+  return typeof r?.['season'] === 'number' ? [{ season: r['season'], place: placeOrNull(r['place']), standing: num(r['standing']), at: String(r['at']) }] : [];
 }
 
 /** A search cursor as the search reads return it; one with no time or Act is no cursor. */
@@ -388,7 +393,7 @@ const toPlayAbove = (x: Row): PlayAbove => ({ play: x['play'], reach: x['reach']
 const toPinned = (x: Row): PinnedThread => ({ thread: toThread(x['thread']), play: x['play'], endsAt: x['ends_at'], act: toAct(x['act']) });
 /** standing_place's answer; null where it is none. */
 const toStandingPlace = (v: unknown): StandingPlace | null =>
-  v && typeof v === 'object' && !Array.isArray(v) ? { standing: num((v as Row)['standing']), place: num((v as Row)['place']), of: num((v as Row)['of']) } : null;
+  v && typeof v === 'object' && !Array.isArray(v) ? { standing: num((v as Row)['standing']), place: placeOrNull((v as Row)['place']), of: num((v as Row)['of']) } : null;
 /** The bell's count as alertsUnread() answers it: whole, at least 0, to the bound. */
 const toUnread = (v: unknown): number => Math.min(ALERTS_UNREAD_BOUND, Math.max(0, Math.floor(num(v))));
 /** character_post_counts' row, or none: a character that has done nothing counts zero. */
@@ -543,7 +548,7 @@ const toFinished = (x: Row): SeasonFinished[] => (typeof x?.['number'] === 'numb
   ? [{ number: x['number'], startsAt: String(x['starts_at']), endsAt: String(x['ends_at']), resultsAt: String(x['results_at']), characters: num(x['characters']) }] : []);
 
 /** One row of `standings_page`, or of the season page's standings. */
-const toStanding = (x: Row): Standing => ({ character: x['character'], name: x['name'], standing: num(x['standing']), place: num(x['place']) });
+const toStanding = (x: Row): Standing => ({ character: x['character'], name: x['name'], standing: num(x['standing']), place: placeOrNull(x['place']) });
 
 /** One row of `my_alerts`; a kind this build does not know (a newer server's) is no line, rather than a line a screen cannot word. */
 function toAlert(a: Row): Alert[] {
@@ -573,9 +578,12 @@ const toBosses = (v: unknown): { readonly staff: string; readonly name: string; 
 
 /** A draw or a wash on a surface, as the log reads it (`my_draws`, `my_walls_drawn_on`, 0241): public facts and the reader's own character. */
 const surfaceLogRow = (r: Row): SurfaceLogRow => ({ act: r['act'], kind: r['kind'], play: r['play'], post: r['post'], character: r['character'], mine: r['mine'], at: r['at'], cells: num(r['cells']) });
+const COSMETIC_KINDS = ['found', 'granted', 'awarded', 'reversed', 'lost', 'beltBack'] as const;
+const COSMETIC_OUTCOMES = ['line', 'gear', 'card'] as const;
+const COSMETIC_BYS = ['season', 'boss', 'demand', 'admin'] as const;
 
 /** The log's rows as `readLogPage` reads them, from the rows of the player's views (`log`) or of `log_page`'s sources: both name their columns the same. */
-function toLogRead(src: Readonly<Record<'ledger' | 'wallet' | 'cards' | 'packs' | 'playsOnMine' | 'writes' | 'draws' | 'wallsDrawn' | 'saves' | 'setEnds' | 'caught' | 'ended' | 'infractions' | 'bans' | 'groupMoves' | 'reports' | 'appeals', Row[]>>, shareRows: Row[], backs: ReadonlyMap<string, Row> = new Map()): LogRead {
+function toLogRead(src: Readonly<Record<'ledger' | 'wallet' | 'cards' | 'packs' | 'playsOnMine' | 'writes' | 'draws' | 'wallsDrawn' | 'saves' | 'setEnds' | 'caught' | 'ended' | 'infractions' | 'bans' | 'groupMoves' | 'reports' | 'appeals' | 'cosmetics', Row[]>>, shareRows: Row[], backs: ReadonlyMap<string, Row> = new Map()): LogRead {
   const ledger = src['ledger'].map((r): LedgerRow => ({
     settlement: num(r['settlement']), startsAt: r['starts_at'], endsAt: r['ends_at'], sharesKept: r['shares_kept'] !== false,
     character: r['character'], reason: r['reason'], amount: num(r['amount']), ...((p) => (p ? { params: p } : {}))(numbers(r['params'])),
@@ -635,6 +643,12 @@ function toLogRead(src: Readonly<Record<'ledger' | 'wallet' | 'cards' | 'packs' 
       report: r['report'], character: r['character'], at: r['at'], post: r['post'], postSeq: typeof r['post_seq'] === 'number' ? r['post_seq'] : null, thread: r['thread'],
       verdict: VERDICTS.find((v) => v === r['verdict']) ?? null, verdictAt: str(r['verdict_at']), mod: str(r['mod_name']), refund: r['refund'] === 'failed' || r['refund'] === 'stale' ? r['refund'] : null,
     })),
+    cosmetics: src['cosmetics'].map((r): LogCosmetic => ({
+      kind: COSMETIC_KINDS.find((k) => k === r['kind']) ?? 'found', id: String(r['id']), at: r['at'], character: str(r['character']),
+      outcome: COSMETIC_OUTCOMES.find((o) => o === r['outcome']) ?? null, item: str(r['item']), text: str(r['text']), copies: typeof r['copies'] === 'number' ? r['copies'] : null,
+      trophy: str(r['trophy']), name: str(r['name']), by: COSMETIC_BYS.find((b) => b === r['by']) ?? null, byName: str(r['by_name']),
+      season: typeof r['season'] === 'number' ? r['season'] : null, place: typeof r['place'] === 'number' ? r['place'] : null, line: str(r['line']), toName: str(r['to_name']),
+    })),
     appeals: src['appeals'].map((r): LogAppeal => ({
       appeal: r['appeal'], character: r['character'], at: r['at'], punishment: r['punishment'], punishmentKind: r['punishment_kind'] === 'ban' ? 'ban' : r['punishment_kind'] === 'move' ? 'move' : 'infraction',
       postSeq: typeof r['post_seq'] === 'number' ? r['post_seq'] : null, thread: r['thread'], verdict: RULINGS.find((v) => v === r['verdict']) ?? null, ruledAt: str(r['ruled_at']),
@@ -680,6 +694,8 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       global: { fetch: clientFetch },
     });
   const avatarUrl = (key: string | null): string | null => (key ? `${url}/storage/v1/object/public/avatars/${key}` : null);
+  /** An admin's trophy art, in the public `trophies` bucket (an instance's own kinds have none: their art is the instance UI's, by the kind's key). */
+  const trophyArtUrl = (key: string | null): string | null => (key ? `${url}/storage/v1/object/public/trophies/${key}` : null);
 
   /* ------------------------------------------------------------- the request layer ---- */
 
@@ -836,6 +852,13 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
   /** The office characters_public shows a staff character; anything else it might say is no office. */
   const toOffice = (o: unknown): Office | undefined => (o === 'boss' || o === 'mod' || o === 'member' || o === 'benched' || o === 'waiting' || o === 'developer' ? o : undefined);
 
+  /** A piece worn as gear_worn or a profile's `outfit` has it, in layer order. */
+  const toPieces = (v: unknown): Piece[] => rowsOf(v).map((w): Piece => ({ gear: w['gear'], x: num(w['x']), y: num(w['y']), w: num(w['w']), turn: num(w['turn']), layer: num(w['layer']) })).sort((a, b) => a.layer - b.layer);
+  /** An award as `trophy_item` has it; `held` is a belt's alone, null otherwise. */
+  const toShownTrophy = (t: Row): ShownTrophy => ({ award: t['award'], trophy: t['trophy'], name: t['name'], art: trophyArtUrl(str(t['art'])), belt: t['belt'] === true, held: t['held'] === true });
+  const toTrophyItem = (t: Row): TrophyItem => ({ ...toShownTrophy(t), line: str(t['line']), at: t['at'], by: t['by'], season: typeof t['season'] === 'number' ? t['season'] : null,
+    move: ((m: Row | null) => (m ? { act: m['act'], thread: m['thread'], seq: m['seq'] } : null))(typeof t['move'] === 'object' ? (t['move'] as Row | null) : null), shown: t['shown'] === true });
+
   /* A character from its row and its profile row. Where a profile row came without a set (a select or a projection dropped the column: the column is not null), the
      engine's it/its stands for display only and `pronounsUnread` marks it, so Edit profile never offers it for saving over the set the player chose. With no profile row
      at all (a character made before an instance was seeded, 0124) nothing is stored to overwrite: it/its is what a read shows, unmarked, and set_profile makes the row. */
@@ -850,6 +873,9 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       avatarPortrait: avatarUrl(p?.['avatar_portrait'] ?? null),
       squareFrame: toFrame(p?.['square_frame']),
       portraitFrame: toFrame(p?.['portrait_frame']),
+      portraitTallness: typeof p?.['portrait_tallness'] === 'number' ? p['portrait_tallness'] : null,
+      outfit: toPieces(p?.['outfit']),
+      trophies: rowsOf(p?.['trophies']).map(toShownTrophy),
       pipStyle: p?.['pip_style'] ?? 'default',
       pronouns: isObject(set) ? pronounsOrDefault(set) : ENGINE_DEFAULT_PRONOUNS,
       ...(p !== undefined && !isObject(set) ? { pronounsUnread: true as const } : {}),
@@ -866,11 +892,17 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
 
   async function characters(ids: readonly Id[]): Promise<readonly Character[]> {
     if (ids.length === 0) return [];
-    const [cs, ps] = await Promise.all([
+    /* Three reads in parallel, each a lookup by character: its name, its profile and the pieces it wears (gear_worn, public by character). The shelf of trophies has no
+       table to read (trophy_shelf is the server's): a face read here carries none, and a screen document carries it nested with the profile. */
+    const [cs, ps, worn] = await Promise.all([
       byChunks(ids, (part) => list(() => client.from('characters_public').select('id,name,joined,staff,office,group').in('id', part))),
-      byChunks(ids, (part) => list(() => client.from('character_profiles').select('character,title,signature,avatar_square,avatar_portrait,square_frame,portrait_frame,pip_style,pronouns').in('character', part))),
+      byChunks(ids, (part) => list(() => client.from('character_profiles').select('character,title,signature,avatar_square,avatar_portrait,square_frame,portrait_frame,portrait_tallness,pip_style,pronouns').in('character', part))),
+      /* Paged and ordered, since a chunk of masks can wear more than the row cap holds: a page cut short would drop pieces silently. */
+      byChunks(ids, (part) => every((start, end) => client.from('gear_worn').select('character,layer,gear,x,y,w,turn').in('character', part).order('character', { ascending: true }).order('layer', { ascending: true }).range(start, end))),
     ]);
-    const profile = new Map(ps.map((p) => [p['character'] as string, p]));
+    const outfits = new Map<string, Row[]>();
+    for (const w of worn) outfits.set(w['character'] as string, [...(outfits.get(w['character'] as string) ?? []), w]);
+    const profile = new Map(ps.map((p) => [p['character'] as string, { ...p, outfit: outfits.get(p['character'] as string) ?? [] }]));
     const byId = new Map(cs.map((c) => [c['id'] as string, c]));
     return ids.flatMap((id) => {
       const c = byId.get(id);
@@ -1016,7 +1048,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       if (!('at' in range)) return list(() => page((range.before ? from().lte(column, range.before) : from()).order(column, { ascending: false })).limit(range.limit));
       return every((start, end) => whole.reduce((q: Q, c) => q.order(c, { ascending: true }), from().eq(column, range.at)).range(start, end));
     };
-    const [ledgerRows, walletRows, cardRows, packRows, playRows, writeRows, drawRows, wallRows, saveRows, endRows, caughtRows, endedRows, infractionRows, banRows, groupMoveRows, reportRows, appealRows] = await Promise.all([
+    const [ledgerRows, walletRows, cardRows, packRows, playRows, writeRows, drawRows, wallRows, saveRows, endRows, caughtRows, endedRows, infractionRows, banRows, groupMoveRows, reportRows, appealRows, cosmeticRows] = await Promise.all([
       rows(() => client.from('my_ledger').select('settlement,starts_at,ends_at,character,reason,amount,shares_kept,params'), 'ends_at',
         (q) => q.order('character', { ascending: true }).order('reason', { ascending: true }), ['settlement', 'character', 'reason']),
       rows(() => client.from('my_wallet_events').select('settlement,kind,change,overflow,floored,balance_after,ref,at'), 'at', (q) => q, ['settlement', 'kind', 'ref', 'change', 'overflow', 'floored', 'balance_after']),
@@ -1042,6 +1074,8 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       rows(() => client.from('my_group_moves').select('move,character,at,thread,seq,group,board,board_name,expires_at,landed_until,check_at,demand,office,ended_why,ended_by,ended_at,ruling,ruled_at,ruled_until,ruled_office'), 'at', (q) => q, ['move']),
       rows(() => client.from('my_reports').select('report,character,at,post,post_seq,thread,verdict,verdict_at,mod_name,refund'), 'at', (q) => q, ['report']),
       rows(() => client.from('my_appeals').select('appeal,character,at,punishment,punishment_kind,post_seq,thread,verdict,ruled_at,points_delta,hearer_name,refund'), 'at', (q) => q, ['appeal']),
+      /* What happened to the player's characters beside Aura (0213): a find, an admin's gear, a trophy given or taken back, a belt lost; the caller's own rows alone. */
+      rows(() => client.from('my_cosmetic_log').select('kind,id,at,character,outcome,item,text,copies,trophy,name,by,by_name,season,place,line,to_name'), 'at', (q) => q, ['kind', 'id']),
     ]);
     const ids = [...new Set(ledgerRows.map((r) => num(r['settlement'])))];
     /* Paged within each chunk of settlements, then merged in the read's own order. A settlement's rows all come from
@@ -1052,7 +1086,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     const shareRows = ids.length === 0 ? [] : await byChunks(ids, (part) => every((start, end) => client.from('my_ledger_shares').select('settlement,character,reason,act,quadrant,amount').in('settlement', part)
       .order('settlement', { ascending: false }).order('character', { ascending: true }).order('reason', { ascending: true }).order('act', { ascending: true }).order('quadrant', { ascending: true })
       .range(start, end)));
-    return toLogRead({ ledger: ledgerRows, wallet: walletRows, cards: cardRows, packs: packRows, playsOnMine: playRows, writes: writeRows, draws: drawRows, wallsDrawn: wallRows, saves: saveRows, setEnds: endRows, caught: caughtRows, ended: endedRows, infractions: infractionRows, bans: banRows, groupMoves: groupMoveRows, reports: reportRows, appeals: appealRows }, shareRows, await readBacks(cardRows));
+    return toLogRead({ ledger: ledgerRows, wallet: walletRows, cards: cardRows, packs: packRows, playsOnMine: playRows, writes: writeRows, draws: drawRows, wallsDrawn: wallRows, saves: saveRows, setEnds: endRows, caught: caughtRows, ended: endedRows, infractions: infractionRows, bans: banRows, groupMoves: groupMoveRows, reports: reportRows, appeals: appealRows, cosmetics: cosmeticRows }, shareRows, await readBacks(cardRows));
   };
 
   const api: KayfaApi = {
@@ -1937,7 +1971,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const first = toLogRead({
         ledger: rowsOf(sources['ledger']), wallet: rowsOf(sources['wallet']), cards: rowsOf(sources['cards']), packs: rowsOf(sources['packs']), playsOnMine: rowsOf(sources['playsOnMine']), writes: rowsOf(sources['writes']), draws: rowsOf(sources['draws']), wallsDrawn: rowsOf(sources['wallsDrawn']), saves: rowsOf(sources['saves']),
         setEnds: rowsOf(sources['setEnds']), caught: rowsOf(sources['caught']), ended: rowsOf(sources['ended']),
-        infractions: rowsOf(sources['infractions']), bans: rowsOf(sources['bans']), groupMoves: rowsOf(sources['groupMoves']), reports: rowsOf(sources['reports']), appeals: rowsOf(sources['appeals']),
+        infractions: rowsOf(sources['infractions']), bans: rowsOf(sources['bans']), groupMoves: rowsOf(sources['groupMoves']), reports: rowsOf(sources['reports']), appeals: rowsOf(sources['appeals']), cosmetics: rowsOf(sources['cosmetics']),
       }, rowsOf(d['shares']), await readBacks(rowsOf(sources['cards'])));
       /* The scored-as rows (`my_scored_as`) ride beside the sources, newest first; the column is `named_class` (a readable view column may not be `class_key`), and an older payload has none. */
       const firstRead: LogRead = Array.isArray(d['scoredAs'])
@@ -2004,6 +2038,95 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       if (upload.portrait) form.append('portrait', upload.portrait, 'portrait.webp');
       const a = await edge('avatar', form, LOST);
       return a.ok ? { ok: true, value: await profileCharacter(a.value) } : a;
+    },
+
+    async wardrobe() {
+      /* rpcWrite is the one rpc call that answers with the server's refusal words (a read() would throw them away); my_wardrobe writes nothing, so a lost answer costs only a look again. */
+      const a = await rpcWrite(() => client.rpc('my_wardrobe'));
+      return a.ok ? { ok: true, value: rowsOf(a.value).map((w): WardrobeItem => ({ gear: w['gear'], rarity: w['rarity'], held: num(w['held']), wornBy: Array.isArray(w['worn_by']) ? (w['worn_by'] as Id[]) : [] })) } : a;
+    },
+    async setOutfit(character, pieces) {
+      const a = await edge('wardrobe', { action: 'setOutfit', character, pieces }, LOST);
+      return a.ok ? { ok: true, value: { worn: num(a.value['worn']) } } : a;
+    },
+    async trophies(character, cursor) {
+      /* A read of public facts about a character: the page is the same for everyone, and 50 awards to a page. */
+      const d = (await read(() => client.rpc('trophies_of', { of_character: character, before: cursor?.before ?? null, before_id: cursor?.beforeId ?? null, most: TROPHIES_PAGE }))).data as Row | null;
+      return { awards: rowsOf(d?.['awards']).map(toTrophyItem), more: d?.['more'] === true };
+    },
+    async beltLineage(trophy, cursor) {
+      /* rpcWrite for its refusal words, as wardrobe does: "not a belt" is the server's answer to show. */
+      const a = await rpcWrite(() => client.rpc('belt_lineage', { trophy_key: trophy, before: cursor?.before ?? null, before_id: cursor?.beforeId ?? null, most: REIGNS_PAGE }));
+      return a.ok ? { ok: true, value: { reigns: rowsOf(a.value['reigns']).map((r): BeltReign => ({ award: r['award'], character: r['character'], name: r['name'], began: r['began'], ended: str(r['ended']), by: r['by'] })), more: a.value['more'] === true } } : a;
+    },
+    async showTrophies(character, awards) {
+      const a = await edge('wardrobe', { action: 'showTrophies', character, awards }, LOST);
+      return a.ok ? { ok: true, value: { shown: num(a.value['shown']) } } : a;
+    },
+    async randomEvent(character) {
+      const a = await edge('wardrobe', { action: 'randomEvent', character }, LOST);
+      if (!a.ok) return a;
+      const e = isObject(a.value['event']) ? (a.value['event'] as Row) : null;
+      if (e === null) return { ok: true, value: null };
+      /* An outcome or rarity the client does not know, or an item that is not text, is no event it can show: a bad answer, never an event made up from it. */
+      const outcome = e['outcome'];
+      const rarity = str(e['rarity']);
+      if ((outcome !== 'line' && outcome !== 'gear' && outcome !== 'card') || (rarity !== null && !(RARITIES as readonly string[]).includes(rarity)) || (e['item'] != null && typeof e['item'] !== 'string')) return refusal(NOT_READ);
+      const lineKey = str(e['lineKey']);
+      return { ok: true, value: { event: e['event'], outcome, item: str(e['item']), rarity: rarity as RandomEvent['rarity'], line: str(e['line']), ...(lineKey !== null ? { lineKey } : {}), character: e['character'] } };
+    },
+    async grantGear(character, gear, copies) {
+      const a = await rpcWrite(() => client.rpc('grant_gear', { of_character: character, gear_key: gear, copies }));
+      return a.ok ? { ok: true, value: { granted: num(a.value['granted']) } } : a;
+    },
+    async awardTrophy(trophy, character, line) {
+      const a = await rpcWrite(() => client.rpc('award_trophy', { trophy_key: trophy, of_character: character, said: line ?? null }));
+      return a.ok ? { ok: true, value: { award: a.value['award'] } } : a;
+    },
+    async reverseAward(award) {
+      const a = await rpcWrite(() => client.rpc('reverse_award', { of_award: award }));
+      return a.ok ? { ok: true, value: { reversed: a.value['reversed'] } } : a;
+    },
+    async makeTrophy(name, line, art, belt) {
+      /* The picture is stored first, by the trophy-art function (an admin's alone), and make_trophy is given the key it answers; a kind that fails after leaves a file nobody names. */
+      let key: string | null = null;
+      if (art !== null) {
+        const form = new FormData();
+        form.append('file', art, 'art.webp');
+        const stored = await edge('trophy-art', form, LOST);
+        if (!stored.ok) return stored;
+        key = str(stored.value['key']);
+        /* A 200 with no key is no stored picture: a kind made without it would be pictureless, which is not what was asked. */
+        if (key === null) return refusal(NOT_DONE);
+      }
+      const a = await rpcWrite(() => client.rpc('make_trophy', { trophy_name: name, said: line, art_key: key, is_belt: belt }));
+      return a.ok ? { ok: true, value: { trophy: a.value['trophy'] } } : a;
+    },
+    async trophyAwardFailures(cursor) {
+      const a = await rpcWrite(() => client.rpc('trophy_award_failures', { before: cursor?.before ?? null, before_id: cursor?.beforeId ?? null, before_open: cursor?.beforeOpen ?? null, most: TROPHY_FAILURES_PAGE }));
+      return a.ok ? { ok: true, value: {
+        failures: rowsOf(a.value['failures']).map((f): TrophyAwardFailure => ({
+          id: f['id'], move: str(f['move']), season: typeof f['season'] === 'number' ? f['season'] : null, at: f['at'], error: f['error'], trophy: str(f['trophy']), open: f['open'] === true,
+          characters: Array.isArray(f['characters']) ? rowsOf(f['characters']).map((c) => ({ id: c['id'], name: c['name'], ...(typeof c['place'] === 'number' ? { place: c['place'] } : {}), given: c['given'] === true })) : null,
+        })),
+        more: a.value['more'] === true,
+      } } : a;
+    },
+    async giveFailedAward(failure, character) {
+      const a = await rpcWrite(() => client.rpc('give_failed_award', { failure, of_character: character }));
+      return a.ok ? { ok: true, value: { award: a.value['award'] } } : a;
+    },
+    async adminAwards(cursor) {
+      const a = await rpcWrite(() => client.rpc('admin_awards', { before: cursor?.before ?? null, before_id: cursor?.beforeId ?? null, most: ADMIN_AWARDS_PAGE }));
+      return a.ok ? { ok: true, value: {
+        awards: rowsOf(a.value['awards']).map((x): AdminAward => ({ award: x['award'], trophy: x['trophy'], name: x['name'], art: str(x['art']), belt: x['belt'] === true, character: x['character'], to: x['to'], by: x['by'], at: x['at'], line: str(x['line']), reversed: x['reversed'] === true })),
+        kinds: rowsOf(a.value['kinds']).map((k): AdminKind => ({ key: k['key'], name: k['name'], belt: k['belt'] === true, made: k['made'] === true, art: str(k['art']) })),
+        more: a.value['more'] === true,
+      } } : a;
+    },
+    async adminCharacterNamed(name) {
+      const a = await rpcWrite(() => client.rpc('admin_character_named', { of_name: name }));
+      return a.ok ? { ok: true, value: isObject(a.value) && typeof a.value['id'] === 'string' ? { id: a.value['id'], name: String(a.value['name']) } : null } : a;
     },
 
     subscribeThread(thread, l) {

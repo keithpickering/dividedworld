@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { decide } from './actions.ts';
 import type { Instance } from './types.ts';
-import { systemSettings, testSystem, testGroups } from './test-system.ts';
+import { systemSettings, testCosmeticsContent, testSystem, testGroups } from './test-system.ts';
 
 const splat = { key: 'splat', name: 'Splat', alignment: 'salty' as const, rarity: 'common' as const, playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) };
 // A card beyond a post (docs/plans/2026-11-01-card-reach-plan.md, Task 3).
@@ -17,7 +17,7 @@ const instance: Instance = {
   },
   ranks: [{ name: 'Rookie', from: 0 }], groups: testGroups, pipStyles: [{ key: 'default', name: 'Default', full: '●', empty: '○' }], boards: [{ slug: 'general', name: 'General', description: '' }],
   copy: { announcementsThreadTitle: 'S{season} Promos' },
-  packs: [], machine: [{ item: { card: 'splat' }, availability: 'onSale', price: 100 }],
+  packs: [], machine: [{ item: { card: 'splat' }, availability: 'onSale', price: 100 }], ...testCosmeticsContent,
 };
 const id = '11111111-1111-4111-8111-111111111111';
 const other = '22222222-2222-4222-8222-222222222222';

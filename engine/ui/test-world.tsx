@@ -15,7 +15,7 @@ import { PlayerProvider } from './player.tsx';
 import { ACTION_TIPS, TIP_KEYS } from './tips/keys.ts';
 import type { GuideUi, InstanceUi } from './types.ts';
 import { RouterProvider } from './router.tsx';
-import { systemSettings, testSystem, testGroups } from '../rules/test-system.ts';
+import { systemSettings, testCosmeticsContent, testSystem, testGroups } from '../rules/test-system.ts';
 
 const settings: Settings = {
   walletCap: 600, vote: 10, halving: 0.5, reactionCap: 3, charactersPerPlayer: 3,
@@ -45,7 +45,7 @@ export const testInstance: Instance = {
     { key: 'tea', emoji: 'E', quadrant: 'calmPositive' }, { key: 'zzz', emoji: 'Z', quadrant: 'boredNegative' },
   ],
   settings,
-  packs: [],
+  packs: [], ...testCosmeticsContent,
   /* The Vending Machine sells the one card at 1.00. */
   machine: [{ item: { card: 'whoops' }, availability: 'onSale', price: 100 }],
   system: testSystem,
@@ -105,7 +105,12 @@ const previewTokens = (page: string, banner: string, buttonCase = 'lowercase'): 
   ['--kb-bg', page], ['--kb-banner-bg', banner], ['--kb-button-case', buttonCase],
 ]);
 
-const ui = { glass: testGlass, themes: [{ key: 'house', name: 'House', href: '/house.css', modes: 'both', preview: { light: previewTokens('house-light', 'banner-light'), dark: previewTokens('house-dark', 'banner-dark') } }, { key: 'sepia', name: 'Sepia', href: '/sepia.css', modes: 'light', preview: { light: previewTokens('sepia-light', 'banner-sepia', 'none') } }], classLooks: { face: { color: 'currentColor', description: () => 'The crowd favorite: earns from cheers.', hurtsBy: () => 'Hurt by boos.', marks: { label: 'Earns from hype, hurt by the groan', earns: ['excitedPositive'], hurts: ['boredNegative'] } }, heel: { color: 'currentColor', description: () => 'Earns heat: boos and tomatoes.', hurtsBy: () => 'Hurt by the polite shrug.', marks: { label: 'Earns from heat, hurt by the calm', earns: ['excitedNegative'], hurts: ['calmPositive'] } } }, quadrantLabels: { excitedNegative: 'Heat', excitedPositive: 'Hype', boredNegative: 'Groan', calmPositive: 'Calm' }, reasonWords, quadrantClasses: { excitedNegative: 'heel', excitedPositive: 'face' }, copy: { siteName: 'Test', siteTagline: 'test', roleWord: 'The Boss', staffWord: 'The staff', gameWord: 'the game', staffBoardTag: 'Staff post here; you react and spin', shopName: 'Shop', reducedMotionCard: 'the test card still moves you, only instantly.' }, pips: { default: { full: 'full.svg', empty: 'empty.svg' } }, cards: [], packs: {}, onboarding: { tips: Object.fromEntries(TIP_KEYS.map((k) => [k, { title: `Title of ${k}`, line: `The line of ${k}.`, ...((ACTION_TIPS as readonly string[]).includes(k) ? { action: `Action of ${k}` } : {}) }])), letter: 'A letter.' }, frontDoor: { title: 'How do we explain this', label: 'Sample thread, made up', cast: [{ key: 'ann', name: 'Ann', rank: 0, posts: 12 }, { key: 'bo', name: 'Bo', title: 'Test Talent', rank: 2, posts: 340, revealed: { class: 'heel', at: '2026-10-03T12:00:00Z' } }], posts: [{ by: 'ann', body: 'Hello there.', reactions: { fire: 2 } }, { by: 'bo', body: 'It plays up to {{setting:charactersPerPlayer}} characters.', reactions: { tea: 1, tomato: 3 }, plays: [{ card: 'whoops', by: 'ann', config: { seed: 7 }, reactions: { fire: 1 } }] }], note: 'A note. It is by invite.', prompt: { title: 'Who will you play as?', line: 'A test game.' } }, guide: { markdown: '## Welcome letter\n\n<!-- kayfabb:letter -->\n\n## Classes\n\n<!-- kayfabb:classes -->', hints: { face: 'Get behind the posts you like.', heel: 'Being hated is a living.' } } } as unknown as Kayfa['ui'];
+/** Two neutral pieces of gear (a wide flat one, a tall one) for a screen that draws what a character wears; their keys name no instance's. */
+/** Neutral art for the test world's trophy kinds (the rules' test catalog: p1, p2, p3, met), and a belt a test adds to its instance; their keys name no instance's. */
+export const TEST_TROPHIES = { p1: { art: 'p1.svg' }, p2: { art: 'p2.svg' }, p3: { art: 'p3.svg' }, met: { art: 'met.svg' }, belt: { art: 'belt.svg' } } as const;
+export const TEST_GEAR = { band: { art: 'band.svg', aspect: 0.25 }, tall: { art: 'tall.svg', aspect: 2 } } as const;
+
+const ui = { glass: testGlass, themes: [{ key: 'house', name: 'House', href: '/house.css', modes: 'both', preview: { light: previewTokens('house-light', 'banner-light'), dark: previewTokens('house-dark', 'banner-dark') } }, { key: 'sepia', name: 'Sepia', href: '/sepia.css', modes: 'light', preview: { light: previewTokens('sepia-light', 'banner-sepia', 'none') } }], classLooks: { face: { color: 'currentColor', description: () => 'The crowd favorite: earns from cheers.', hurtsBy: () => 'Hurt by boos.', marks: { label: 'Earns from hype, hurt by the groan', earns: ['excitedPositive'], hurts: ['boredNegative'] } }, heel: { color: 'currentColor', description: () => 'Earns heat: boos and tomatoes.', hurtsBy: () => 'Hurt by the polite shrug.', marks: { label: 'Earns from heat, hurt by the calm', earns: ['excitedNegative'], hurts: ['calmPositive'] } } }, quadrantLabels: { excitedNegative: 'Heat', excitedPositive: 'Hype', boredNegative: 'Groan', calmPositive: 'Calm' }, reasonWords, quadrantClasses: { excitedNegative: 'heel', excitedPositive: 'face' }, copy: { siteName: 'Test', siteTagline: 'test', roleWord: 'The Boss', staffWord: 'The staff', gameWord: 'the game', staffBoardTag: 'Staff post here; you react and spin', shopName: 'Shop', reducedMotionCard: 'the test card still moves you, only instantly.' }, pips: { default: { full: 'full.svg', empty: 'empty.svg' } }, gear: TEST_GEAR, trophies: TEST_TROPHIES, cards: [], packs: {}, onboarding: { tips: Object.fromEntries(TIP_KEYS.map((k) => [k, { title: `Title of ${k}`, line: `The line of ${k}.`, ...((ACTION_TIPS as readonly string[]).includes(k) ? { action: `Action of ${k}` } : {}) }])), letter: 'A letter.' }, frontDoor: { title: 'How do we explain this', label: 'Sample thread, made up', cast: [{ key: 'ann', name: 'Ann', rank: 0, posts: 12 }, { key: 'bo', name: 'Bo', title: 'Test Talent', rank: 2, posts: 340, revealed: { class: 'heel', at: '2026-10-03T12:00:00Z' } }], posts: [{ by: 'ann', body: 'Hello there.', reactions: { fire: 2 } }, { by: 'bo', body: 'It plays up to {{setting:charactersPerPlayer}} characters.', reactions: { tea: 1, tomato: 3 }, plays: [{ card: 'whoops', by: 'ann', config: { seed: 7 }, reactions: { fire: 1 } }] }], note: 'A note. It is by invite.', prompt: { title: 'Who will you play as?', line: 'A test game.' } }, guide: { markdown: '## Welcome letter\n\n<!-- kayfabb:letter -->\n\n## Classes\n\n<!-- kayfabb:classes -->', hints: { face: 'Get behind the posts you like.', heel: 'Being hated is a living.' } } } as unknown as Kayfa['ui'];
 
 export interface WorldOptions {
   /** The address the screen opens at (a path, a query, a fragment). */
@@ -142,10 +147,10 @@ export interface WorldOptions {
 /**
  * Holds the backend to the reads a screen makes after it has landed: every other method of the api throws and is recorded, so a test that
  * renders a screen from its document finds any read it still makes in the first render (and, being recorded, one the screen swallows).
- * `signInAs`, the seeds, the clock and the live subscriptions are not reads.
+ * `signInAs`, the seeds, the clock and the live subscriptions are not reads, nor is `randomEvent`: a board or thread page's one roll is a chance, not a read of the page.
  */
 export function holdReads(fake: Fake, allowed: readonly string[] = []): readonly string[] {
-  const skip = new Set(['signInAs', 'emailOf', 'clock', 'broadcast', 'seed', 'loseNextAnswer', 'onSession', ...allowed]);
+  const skip = new Set(['signInAs', 'emailOf', 'clock', 'broadcast', 'seed', 'loseNextAnswer', 'onSession', 'randomEvent', ...allowed]);
   const read: string[] = [];
   for (const [name, value] of Object.entries(fake)) {
     if (typeof value !== 'function' || skip.has(name) || name.startsWith('subscribe')) continue;

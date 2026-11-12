@@ -13,7 +13,8 @@ test('the defaults hold every setting the engine reads, in range', () => {
 });
 
 test('the toast defaults are the alerts design\'s section 8: news of your own characters toasts, followed threads, hints and season news do not', () => {
-  assert.deepEqual([...defaults.toastDefaults].sort(), ['cardEnded', 'cardOnYours', 'quote', 'ruling', 'settlement', 'trapSprang', 'trapStruck', 'update']);
+  // A trophy given, a belt lost and a belt come back are news of the player's own characters (the cosmetics plan, Task 12).
+  assert.deepEqual([...defaults.toastDefaults].sort(), ['beltBack', 'beltLost', 'cardEnded', 'cardOnYours', 'quote', 'ruling', 'settlement', 'trapSprang', 'trapStruck', 'trophy', 'update']);
   assert.deepEqual(playtest.toastDefaults, defaults.toastDefaults);
   assert.deepEqual(settingsProblems({ ...defaults, toastDefaults: ['quote', 'quote'] }).length > 0, true, 'a kind named twice is a problem');
 });

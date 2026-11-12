@@ -31,6 +31,7 @@ export function mergeLogs(newer: Log, older: Log): Log {
     groupMoves: [...newer.groupMoves, ...older.groupMoves],
     reports: [...newer.reports, ...older.reports],
     appeals: [...newer.appeals, ...older.appeals],
+    cosmetics: [...newer.cosmetics, ...older.cosmetics],
     before: older.before,
   };
 }

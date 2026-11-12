@@ -26,6 +26,7 @@ import { SpinForm, useSpinDrafts } from '../spin/SpinForm.tsx';
 import { createTallies, type Tallies } from '../thread/tallies.ts';
 import type { SpinOrigin } from '../thread/Post.tsx';
 import { Ago, Byline, pageList, useIsAdmin, useSignedIn } from '../mini.tsx';
+import { RandomEvent } from '../events/RandomEvent.tsx';
 import { FrontDoor } from '../front-door/FrontDoor.tsx';
 import { Link } from '../router.tsx';
 import { isSignedOutDoc, type ScreenDoc } from '../screen-docs.ts';
@@ -140,6 +141,7 @@ function BoardView({ slug, doc }: { readonly slug: string; readonly doc: BoardPa
   const faceOf = (id: Id | null) => (id === null ? null : characters.get(id)?.avatarSquare ?? null);
   return (
     <div className="kb-board" data-kb-board={board.slug}>
+      <RandomEvent />
       <LensProvider admin={admin}>
       <p className="kb-crumb"><Link to="/">Index</Link> › {board.name}</p>
       <BoardBanner board={board} plays={plays} tallies={tallies} mine={mine} nameOf={nameOf} faceOf={faceOf} heading={heading} onSpin={setSpinOrigin} />

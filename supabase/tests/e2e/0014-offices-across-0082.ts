@@ -58,7 +58,7 @@ test('a staff_changes row becomes an office row, in order, with its move_act and
           ('bot-a', false, '2000-01-06', fire);
       end $$;`);
     const rowsBefore = psqlOn(db.toString(), `select string_agg(staff || ':' || coalesce(move_act::text, '-') || ':' || at::date, ',' order by id) from staff_changes`);
-    const keep = `select (select string_agg(to_jsonb(a)::text, ',' order by a.seq) from acts a) || '|' || (select string_agg((to_jsonb(p) - 'pronouns')::text, ',' order by p.character) from character_profiles p)
+    const keep = `select (select string_agg(to_jsonb(a)::text, ',' order by a.seq) from acts a) || '|' || (select string_agg((to_jsonb(p) - 'pronouns' - 'portrait_tallness')::text, ',' order by p.character) from character_profiles p)
       || '|' || (select string_agg(c.staff || ':' || c.name || ':' || c.debuted_at::text, ',' order by c.staff) from characters c where c.staff is not null)`;
     const kept = psqlOn(db.toString(), keep);
     assert.match(psqlOn(db.toString(), `select string_agg(staff_kind, ',' order by staff) from characters where staff is not null`), /^bot,bot,boss$/);
