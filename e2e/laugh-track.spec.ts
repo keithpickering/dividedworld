@@ -21,14 +21,14 @@ const openStory = async (page: Page, id: string, size: { width: number; height: 
 };
 
 /** Puts the first unheard cue's first line on the line (40% of the way down the space above the HUD, as the card's default reads it). */
-const toTheLine = (page: Page, phrase?: string) => page.evaluate((only) => {
-  const cue = Array.from(document.querySelectorAll('.dw-lt-cue:not(.dw-lt-fired)')).find((c) => only === undefined || c.textContent === only);
+const toTheLine = (page: Page) => page.evaluate(() => {
+  const cue = document.querySelector('.dw-lt-cue:not(.dw-lt-fired)');
   if (!cue) throw new Error('no unheard cue is drawn');
   const hud = Number.parseFloat(document.documentElement.style.getPropertyValue('--kb-hud-measured')) || 0;
   const line = ((window.innerHeight - hud) * 40) / 100;
   const box = cue.getClientRects()[0]!;
   window.scrollBy({ top: box.top + box.height / 2 - line, behavior: 'instant' });
-}, phrase);
+});
 
 /** The first unheard cue's first piece, brought to the line and clicked. */
 const heardAtTheLine = async (page: Page) => {
@@ -206,7 +206,6 @@ const READER_CUES = [{ phrase: 'fan game', sound: 'boo' }, { phrase: 'forums', s
 /** 14 places: 5, 5 and 4 by paragraph. A phrase is a place at each of its occurrences. */
 const READER_PLACES = READER_PARAGRAPHS.join('\n\n').match(/fan game|forums|Mario/gu)?.length ?? 0;
 
-const SOUNDS = { 'fan game': 'boo', forums: 'laugh', Mario: 'cheer' } as const;
 const PLACES = READER_PARAGRAPHS.join('\n\n').match(/fan game|forums|Mario/gu) ?? [];
 const NAME_UNHEARD = (words: string) => `${words}. Play the audience's reaction`;
 
@@ -230,7 +229,7 @@ async function openReader(page: Page, size: { width: number; height: number }) {
 }
 
 /** The Lens's line, as the post's mark names it (the Lens itself is closed): "Laugh Track, 1 play, N of M cues heard. Opens the cards on this post." */
-const lens = (page: Page, heard: number) => page.getByRole('button', { name: new RegExp(`${heard} of ${READER_PLACES} cues heard`, 'u') });
+const lens = (page: Page, heard: number) => page.getByRole('button', { name: new RegExp(`, ${heard} of ${READER_PLACES} cues heard`, 'u') });
 const heardPlaces = (page: Page) => page.evaluate(() => Array.from(new Set(Array.from(document.querySelectorAll('.dw-lt-fired')).map((e) => e.getAttribute('data-lt-place')))));
 /** A cue's first piece's center in the window, by its index among the page's cued places (the order of the text). The piece is brought a quarter of the way down the
     window: the toasts stand over the window's foot and would take a press made there. */
@@ -252,11 +251,13 @@ test.describe('a reader', () => {
     await openReader(page, MAIN);
     expect(await page.locator('.dw-lt-cue').count(), 'the post is drawn with its 14 cued places').toBeGreaterThanOrEqual(READER_PLACES);
     await page.mouse.move(5, 400);
+    expect(await page.evaluate(() => window.scrollY), 'the reading starts at the top').toBe(0);
     for (let i = 0; i < 400; i++) {
       if (await page.evaluate(() => Math.ceil(window.scrollY + window.innerHeight) >= document.documentElement.scrollHeight)) break;
       await page.mouse.wheel(0, 100);
       await page.waitForTimeout(300);
     }
+    expect(await page.evaluate(() => window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 1), 'the reading reached the foot of the page').toBe(true);
     await page.waitForTimeout(2000);
     await expect(page.locator('.dw-lt-fired')).toHaveCount(0);
     await expect(lens(page, 0)).toBeAttached();
@@ -280,9 +281,12 @@ test.describe('a reader', () => {
       expect(Math.min(...near), 'every piece of the place is near the line').toBeGreaterThanOrEqual(0.9);
     }).toPass({ timeout: 4000 });
     const far = await keyOf(page, PLACES.length - 1);
-    expect(Math.max(...(await nearOf(page, far))), 'the last place is more than the reach from the line').toBe(0);
+    const farPieces = await nearOf(page, far);
+    expect(farPieces.length, 'the last place is a real cued place with pieces on the page').toBeGreaterThan(0);
+    expect(Math.max(...farPieces), 'the last place is more than the reach from the line').toBe(0);
     /* A murmur's caption is held, not said: the bar draws it, and the live region (which announces what is said) stays empty. */
     await expect(async () => { expect(await page.locator('.kb-captions-text').textContent()).toBe('A grumble rises'); }).toPass({ timeout: 4000 });
+    await expect(region(page)).toHaveText('');
   });
 
   test('pointing plays the reaction: the mouse onto a cue marks it heard, and onto a second marks that one too', async ({ page }) => {
@@ -312,6 +316,7 @@ test.describe('a reader', () => {
       const r = document.querySelector(`.dw-lt-cue[data-lt-place="${key}"]`)!.getClientRects()[0]!;
       window.scrollBy({ top: r.top + r.height / 2 - 200, behavior: 'instant' });
     }, target.key);
+    expect(await page.evaluate(({ x, y, key }) => document.elementFromPoint(x, y)?.closest('.dw-lt-cue')?.getAttribute('data-lt-place') === key, { x: target.x, y: 200, key: target.key }), 'the cue stands under the resting mouse').toBe(true);
     await page.waitForTimeout(800);
     expect(await heardPlaces(page), 'the page moved under the mouse').toEqual([]);
     await page.mouse.move(target.x + 3, 200);
@@ -339,10 +344,10 @@ test.describe('a reader', () => {
       expect(await heardPlaces(page), 'a scroll by touch').toEqual([]);
       /* The card's first-time callout hangs off the post's mark and, at a phone's width, lies over the words: "Got it" puts it away, as a reader would. */
       const gotIt = page.getByRole('button', { name: 'Got it' });
-      if (await gotIt.count() > 0) await gotIt.click();
+      /* The callout may arrive late: give it a moment to show, and put it away if it does. */
+      if (await gotIt.waitFor({ state: 'visible', timeout: 2000 }).then(() => true, () => false)) await gotIt.click();
       const at = await placeCenter(page, 0);
-      await page.waitForTimeout(500);
-      expect(await page.evaluate((a) => document.elementFromPoint(a.x, a.y)?.closest('.dw-lt-cue') !== null, at), 'the cue is what stands at the tap').toBe(true);
+      await expect.poll(() => page.evaluate((a) => document.elementFromPoint(a.x, a.y)?.closest('.dw-lt-cue') !== null, at), { timeout: 4000, message: 'the cue is what stands at the tap' }).toBe(true);
       await page.touchscreen.tap(at.x, at.y);
       await expect.poll(() => heardPlaces(page), { timeout: 4000 }).toEqual([at.key]);
     });
@@ -363,7 +368,7 @@ test.describe('a reader', () => {
     await page.keyboard.press('ArrowRight');
     expect(await label()).toBe(NAME_UNHEARD(PLACES[1]!));
     await page.keyboard.press('Enter');
-    expect((await heardPlaces(page)).length).toBe(1);
+    expect(await heardPlaces(page)).toEqual([await keyOf(page, 1)]);
     expect(await page.evaluate(() => document.activeElement?.classList.contains('dw-lt-fired'))).toBe(true);
     await page.keyboard.press('Tab');
     expect(await page.evaluate(() => document.activeElement?.classList.contains('dw-lt-cue'))).toBe(false);
