@@ -5,8 +5,8 @@ Record, written 2026-11-12. A fix built straight from its issue (#495, its first
 left alone.
 
 Every task is test first: the test named, its red run recorded, then the code. No `check-*.mjs` is added. No
-migration. No deployed database, bucket or connector is touched. CLAUDE.md is not changed, and neither are the
-workflows or `tools/build.mjs`: CI still runs `npm run typecheck`, then `npm run build:ci`, over the one `STEPS` list.
+migration. No deployed database, bucket or connector is touched. CLAUDE.md is not changed, and neither is
+`tools/build.mjs`; of the workflows only the build job's time limit (Task 4): CI still runs `npm run typecheck`, then `npm run build:ci`, over the one `STEPS` list.
 
 ## The problem
 
@@ -48,7 +48,7 @@ Vitest's default is one worker fewer than the CPUs, so the run is now bound by i
 workers) and no longer by one file.
 
 The job's `timeout-minutes: 15` stays: at about 400s of `test:ui` the build is under half of it, and 15 minutes still
-ends a hang.
+ends a hang. (Wrong for CI; see "What CI showed" below.)
 
 ## Tasks
 
@@ -82,11 +82,35 @@ Model: inline
 `npm run build`, with the suite's JSON report read for: 428 story tests across the parts (the count before), each
 story once.
 
+### Task 4: the job's limit, added after CI ran
+
+Model: inline
+
+`.github/workflows/build.yml`: `timeout-minutes: 30`, as the issue asks ("what a slow runner needs with room").
+
+## What CI showed
+
+The first CI run on this branch (job 130960222627, head 3ea98808): 51 steps in 669s, `npm run test:ui` 600s, against
+638s on main's shape. The split's 40% on a 4-CPU machine was about 6% on the runner, within the spread between
+runners. The runner reports four CPUs and Vitest starts three workers on them, but the suite's work is about 900
+CPU-seconds on this machine and took 600s of wall there, so three workers on the runner do roughly what two CPUs do
+(an inference from the two totals; the runner's own Vitest report could not be read, the log tool returns only a log's
+tail). Before the split the sweep ran mostly alone and so at full speed; now nothing is idle and the runner is bound by
+the suite's whole work.
+
+So the split removes the one-file bound, and is what makes any later split over machines possible (the sweep can now be
+dealt out), but it does not by itself give the CI job room. Two things follow:
+
+- Task 4, the limit.
+- A question for the owner, not built here: running `test:ui` over several runners needs CI to run something other
+  than the same two commands, which "Two lists that must agree are one list" states. It is in the PR's `Design
+  questions` and has its own issue.
+
 ## Review focus
 
 - Every story the sweep held before is held now, exactly once, and a story added tomorrow is held with no edit.
 - The screens test is as strict as the test it replaces: a screen whose stories all render something else fails.
-- Nothing about `STEPS`, the workflows or the two commands CI runs changed.
+- Nothing about `STEPS` or the two commands CI runs changed; of the workflows, only the build job's limit.
 
 ## Not built here
 
