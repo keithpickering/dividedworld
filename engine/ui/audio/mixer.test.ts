@@ -42,10 +42,10 @@ class EvalParam extends FakeParam {
   override cancelScheduledValues(t: number) { this.events = this.events.filter((e) => e.t < t); }
   /** The level the param has at time `T`, by the timeline as it stands now. */
   at(T: number): number {
-    type Seg = { from: number; to: number; t: number; c: number };
-    const seg = (s: Seg, x: number) => (s.c === 0 ? s.from : s.to + (s.from - s.to) * Math.exp(-(x - s.t) / s.c));
+    type Seg = { start: number; to: number; t: number; c: number };
+    const seg = (s: Seg, x: number) => (s.c === 0 ? s.start : s.to + (s.start - s.to) * Math.exp(-(x - s.t) / s.c));
     const evs = [...this.events].sort((a, b) => a.t - b.t);
-    let cur: Seg = { from: 1, to: 1, t: -Infinity, c: 0 };
+    let cur: Seg = { start: 1, to: 1, t: -Infinity, c: 0 };
     for (let i = 0; i < evs.length; i++) {
       const e = evs[i]!;
       if (e.t > T) {
@@ -54,7 +54,7 @@ class EvalParam extends FakeParam {
         const v0 = seg(cur, t0);
         return t0 >= e.t ? e.v : v0 + (e.v - v0) * ((T - t0) / (e.t - t0));
       }
-      cur = e.type === 'target' ? { from: seg(cur, e.t), to: e.v, t: e.t, c: e.c } : { from: e.v, to: e.v, t: e.t, c: 0 };
+      cur = e.type === 'target' ? { start: seg(cur, e.t), to: e.v, t: e.t, c: e.c } : { start: e.v, to: e.v, t: e.t, c: 0 };
     }
     return seg(cur, T);
   }
