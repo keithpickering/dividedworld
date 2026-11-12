@@ -17,6 +17,13 @@
  * claimed (never finished as a failure it was not, which would refund a play for our fault), and the run goes on. The claim counts each
  * take in `attempts`, so a job that keeps crashing is finished `unreachable` past its third, without a call, and the chain behind it moves.
  *
+ * **Re-rolls** (docs/plans/2026-11-12-old-voice-window-design.md, section 5). A tail well short of the length it asked for is rolled again. Each try
+ * is a `scrubbedComplete` of the same request, so each writes its own ledger rows and the short one is dropped, never continued. A try's length
+ * is the instance's counter on the text kept after the cut; it is short under `cardWriteShortShare` of `maxTokens`. The first try that is not
+ * short ends the loop, else after `cardWriteRerolls` more the longest stands, the earliest on a tie. A rejection or a transport failure on the
+ * first try finishes the job as an error; on a later one it ends the loop and the best so far is finished as the text. A database error or an
+ * unwritten ledger row stops the run on any try. No try starts after `REROLL_DEADLINE_MS`. No reader sees a try: the text is stored once.
+ *
  * **Time.** Jobs on different posts run up to `CONCURRENCY` at once, so a slow endpoint lengthens the wait and never stalls the board; a claim
  * takes no more jobs than that and hands back only the first waiting play of each post, so after a round the next is claimed, until a claim
  * is empty or the budget is spent.
@@ -38,6 +45,8 @@ export const MOST_ATTEMPTS = 3;
 export const CONCURRENCY = 4;
 /** No new round is claimed after this long; a claim lasts five minutes (a model call may take four) and the function's limit is longer. */
 export const BUDGET_MS = 90_000;
+/** No re-roll starts this long after the job's first call: a claim lasts five minutes, and a try (a scrub regeneration included) can take minutes itself. */
+export const REROLL_DEADLINE_MS = 120_000;
 /** A stored text is at most this many characters (card_texts). */
 const MOST_CHARS = 4_000;
 /** The characters a token is allowed, as models.complete counts them when no bound is given. */
@@ -108,11 +117,28 @@ export async function runWrites(db: Db, models: Models, instance: Instance, sett
         budget: settings.oldVoiceWindow - maxTokens,
         count,
       });
-      const out = await scrubbedComplete(models, {
-        duty: 'cardText', play: job.play, lines: 'many', maxTokens, maxChars: Math.min(MOST_CHARS, maxTokens * CHARS_A_TOKEN),
+      const request = {
+        duty: 'cardText' as const, play: job.play, lines: 'many' as const, maxTokens, maxChars: Math.min(MOST_CHARS, maxTokens * CHARS_A_TOKEN),
         temperature: 0.9, topP: 0.95, prompt, stop: stopAt,
-      }, instance.system.scrubWords);
-      text = out.value;
+      };
+      const shortUnder = Math.ceil(settings.cardWriteShortShare * maxTokens);
+      const firstCall = now();
+      let best: { text: string; length: number } | null = null;
+      for (let attempt = 0; attempt <= settings.cardWriteRerolls; attempt++) {
+        if (attempt > 0 && now() - firstCall >= REROLL_DEADLINE_MS) break;
+        let got: string;
+        try {
+          got = (await scrubbedComplete(models, request, instance.system.scrubWords)).value;
+        } catch (e) {
+          // Past the first try the best so far stands; a database or ledger failure is never softened.
+          if (best !== null && (e instanceof AnswerRejected || e instanceof TransportFailure)) break;
+          throw e;
+        }
+        const length = count(got);
+        if (best === null || length > best.length) best = { text: got, length };
+        if (length >= shortUnder) break;
+      }
+      text = best!.text;
     } catch (e) {
       if (e instanceof AnswerRejected) return finish(job, null, e.predicate);
       if (e instanceof TransportFailure) return finish(job, null, 'unreachable');
