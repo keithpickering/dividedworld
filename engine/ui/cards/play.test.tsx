@@ -857,11 +857,14 @@ describe('a card that is played on the post (CardUi.Compose)', () => {
   }
   const fx: CardUi[] = cards.map((c) => (c.key === 'whoops' ? { ...c, Effect: ({ children }) => <div data-testid="whoops-fx">{children}</div> } : c));
   const tagger: CardUi = { key: 'tagger', art: { color: '#ffb000', ink: '#140f03', canvas: '', mark: '', credit: 'Test' }, Compose: Draw, describe: () => 'Tags a post.' };
-  const withTagger: Instance = { ...instance, cards: [...instance.cards, taggerRules] };
+  /* A second compose card that also reaches a character, so a reach ghost stands in a postbit beside the post's own ghost. */
+  const sprayRules: CardRules = { ...taggerRules, key: 'spray', name: 'Spray', reaches: ['post', 'character'], canApply: (target, effects, _c, now) => landsOn({ key: 'spray', reaches: ['post', 'character'] }, target, effects, now) };
+  const spray: CardUi = { ...tagger, key: 'spray' };
+  const withTagger: Instance = { ...instance, cards: [...instance.cards, taggerRules, sprayRules] };
   async function onPost() {
     const w = world(withTagger);
-    w.fake.seed.cards(w.me, { whoops: 2, 'stick-around': 1, tagger: 2 });
-    renderIn(w.fake, <Frame><LoadedThread thread={w.thread} /></Frame>, { path: `/t/${w.thread}`, instance: withTagger, cards: [...fx, tagger], settings: { postMaxLength: 1000, cardEconomy: (await w.fake.settings()).cardEconomy } });
+    w.fake.seed.cards(w.me, { whoops: 2, 'stick-around': 1, tagger: 2, spray: 1 });
+    renderIn(w.fake, <Frame><LoadedThread thread={w.thread} /></Frame>, { path: `/t/${w.thread}`, instance: withTagger, cards: [...fx, tagger, spray], settings: { postMaxLength: 1000, cardEconomy: (await w.fake.settings()).cardEconomy } });
     await screen.findByRole('article', { name: /^Post 4 /u });
     await screen.findByRole('button', { name: /^Hand, \d postcards?/u });
     return w;
@@ -963,15 +966,18 @@ describe('a card that is played on the post (CardUi.Compose)', () => {
     expect(within(post(2)).queryByRole('button', { name: 'Play Tagger on post 2' })).toBeNull();
   });
 
-  test('a second compose replaces the first, after the same ask', async () => {
+  test('a second card replaces the first compose, after the same ask: the other posts offer nothing while one is open', async () => {
     const user = userEvent.setup();
     await onPost();
     await armTagger(user);
     await user.click(within(post(2)).getByRole('button', { name: 'Play Tagger on post 2' }));
     await user.click(await screen.findByRole('button', { name: 'Scribble' }));
-    await user.click(within(post(4)).getByRole('button', { name: 'Play Tagger on post 4' }));
+    expect(within(post(4)).queryByRole('button', { name: 'Play Tagger on post 4' })).toBeNull();
+    await user.click(handButton());
+    await user.click(within(drawer()).getAllByRole('button', { name: /^Spray, / })[0]!);
     await user.click(within(await screen.findByRole('dialog', { name: 'Leave?' })).getByRole('button', { name: 'Leave' }));
     expect(within(post(2)).queryByTestId('compose')).toBeNull();
+    await user.click(within(post(4)).getByRole('button', { name: 'Play Spray on post 4' }));
     expect(within(post(4)).getByTestId('compose')).toHaveAttribute('data-post', '4');
   });
 
@@ -1200,5 +1206,92 @@ describe('a card that is played on the post (CardUi.Compose)', () => {
     expect(within(post(3)).getAllByRole('button', { name: /Tagger/ })).toHaveLength(1);
     expect(within(post(3)).getByRole('button', { name: 'Play Tagger on post 3' })).toBeInTheDocument();
     expect(within(post(2)).getAllByRole('button', { name: /Tagger/ })).toHaveLength(1);
+  });
+
+  /* Playing: the post that is picked keeps its ghost, pressed, and no other post or character offers the card while it is open (the graffiti face-up design, section 3). */
+  const armSpray = async (user: ReturnType<typeof userEvent.setup>) => {
+    await user.click(handButton());
+    await user.click(within(drawer()).getAllByRole('button', { name: /^Spray, / })[0]!);
+  };
+  const reachGhost = () => screen.queryAllByRole('button', { name: /^Play Spray on / }).filter((b) => b.hasAttribute('data-kb-reach'));
+
+  test('opening a compose hides the ghost on another post and a reach ghost, and keeps its own, pressed', async () => {
+    const user = userEvent.setup();
+    await onPost();
+    await armSpray(user);
+    expect(within(post(4)).getByRole('button', { name: 'Play Spray on post 4' })).toBeInTheDocument();
+    expect(reachGhost().length).toBeGreaterThan(0);
+    await user.click(within(post(2)).getByRole('button', { name: 'Play Spray on post 2' }));
+    await screen.findByTestId('compose');
+    expect(within(post(2)).getByRole('button', { name: 'Play Spray on post 2' })).toHaveAttribute('aria-pressed', 'true');
+    expect(within(post(4)).queryByRole('button', { name: 'Play Spray on post 4' })).toBeNull();
+    expect(reachGhost()).toHaveLength(0);
+  });
+
+  test('Esc ends the compose, brings the other ghosts back, and the card is still armed', async () => {
+    const user = userEvent.setup();
+    await onPost();
+    await armSpray(user);
+    await user.click(within(post(2)).getByRole('button', { name: 'Play Spray on post 2' }));
+    await screen.findByTestId('compose');
+    await user.keyboard('{Escape}');
+    expect(screen.queryByTestId('compose')).toBeNull();
+    expect(within(post(4)).getByRole('button', { name: 'Play Spray on post 4' })).toBeInTheDocument();
+    expect(reachGhost().length).toBeGreaterThan(0);
+    expect(within(post(2)).getByRole('button', { name: 'Play Spray on post 2' })).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  test('landing the play clears the armed card', async () => {
+    const user = userEvent.setup();
+    await onPost();
+    await armSpray(user);
+    await user.click(within(post(2)).getByRole('button', { name: 'Play Spray on post 2' }));
+    await user.click(await screen.findByRole('button', { name: 'Tag it' }));
+    await waitFor(() => expect(screen.queryByTestId('compose')).toBeNull());
+    expect(within(post(4)).queryByRole('button', { name: 'Play Spray on post 4' })).toBeNull();
+    expect(screen.getByRole('status', { name: 'Playing a card' })).toHaveTextContent('Played Spray');
+  });
+
+  describe('opening a compose brings the post into view', () => {
+    const body = (seq: number) => post(seq).querySelector<HTMLElement>('.kb-act-main')!;
+    const topAt = (seq: number, top: number) => { body(seq).getBoundingClientRect = () => ({ top, bottom: top + 200, left: 0, right: 300, width: 300, height: 200, x: 0, y: top, toJSON: () => ({}) }); };
+    afterEach(() => { document.documentElement.removeAttribute('data-kb-motion'); });
+
+    test('a post whose top is off screen is scrolled to, smoothly', async () => {
+      const user = userEvent.setup();
+      await onPost();
+      const scroll = vi.fn();
+      body(2).scrollIntoView = scroll;
+      topAt(2, -400);
+      await armTagger(user);
+      await user.click(within(post(2)).getByRole('button', { name: 'Play Tagger on post 2' }));
+      await screen.findByTestId('compose');
+      expect(scroll).toHaveBeenCalledWith({ block: 'start', behavior: 'smooth' });
+    });
+
+    test('under reduced motion the scroll is instant', async () => {
+      document.documentElement.setAttribute('data-kb-motion', 'reduce');
+      const user = userEvent.setup();
+      await onPost();
+      const scroll = vi.fn();
+      body(2).scrollIntoView = scroll;
+      topAt(2, -400);
+      await armTagger(user);
+      await user.click(within(post(2)).getByRole('button', { name: 'Play Tagger on post 2' }));
+      await screen.findByTestId('compose');
+      expect(scroll).toHaveBeenCalledWith({ block: 'start', behavior: 'auto' });
+    });
+
+    test('a post whose top is in view is not scrolled', async () => {
+      const user = userEvent.setup();
+      await onPost();
+      const scroll = vi.fn();
+      body(2).scrollIntoView = scroll;
+      topAt(2, 120);
+      await armTagger(user);
+      await user.click(within(post(2)).getByRole('button', { name: 'Play Tagger on post 2' }));
+      await screen.findByTestId('compose');
+      expect(scroll).not.toHaveBeenCalled();
+    });
   });
 });

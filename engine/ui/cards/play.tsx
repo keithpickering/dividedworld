@@ -37,6 +37,7 @@ import { plainRefusal } from './faces.ts';
 import type { Plays } from './plays.ts';
 import type { PronounSet } from '../../rules/pronouns.ts';
 import type { BeyondPost, EffectsAbove } from '../../rules/cards.ts';
+import { motionReduced } from '../appearance.ts';
 import { Layers } from '../glass/layer.tsx';
 import { PREPARED_FAILED, usePrepared } from '../glass/prepared.ts';
 
@@ -88,6 +89,11 @@ export interface PlayControls {
   readonly opening: (card: string, target: PlayTarget) => boolean;
   /** The play being made on a post itself, or null; the post's effect slot mounts the card's `Compose` for it. */
   readonly compose: Composing | null;
+  /**
+   * The post a card is being played on, while a compose is open on one: derived from `compose`, so it is the signed-in account's alone and is gone in
+   * the commit a compose ends (its post leaving the page, an account switch). Ghosts and the hand read this, never their own copy of it.
+   */
+  readonly playing: { readonly card: string; readonly seq: number } | null;
   /** Open a compose on a post (replacing one already open, after its ask). */
   readonly openCompose: (card: string, target: PlayTarget) => void;
   /** Land the compose's play, as PlayForm does: the answer, or the refusal, which leaves the compose open. */
@@ -111,6 +117,21 @@ export interface Composing {
 /** Where focus goes when a compose is left: the post's ghost mark, or the post itself once that mark is gone. */
 const focusTarget = (seq: number | null): HTMLElement | null => (seq === null ? null : document.querySelector<HTMLElement>(`#post-${seq} .kb-ghost-mark`) ?? document.getElementById(`post-${seq}`));
 const focusPost = (seq: number | null): void => { setTimeout(() => focusTarget(seq)?.focus(), 0); };
+
+/**
+ * The post's body is brought to the top of the screen when its top is not on it, so the drawing has room under it. The sticky menu bar is accounted
+ * for the way the thread's own jumps account for it (Thread.tsx's scrollIntoView): `scroll-padding-top` on the root (glass/shell.css, from the bar's
+ * measured height) holds the scroll clear of it, so none is added here; the same value is what "on screen" starts below.
+ */
+function bringIntoView(seq: number | null): void {
+  if (seq === null) return;
+  const body = document.querySelector<HTMLElement>(`#post-${seq} .kb-act-main`);
+  if (!body || typeof body.scrollIntoView !== 'function') return;
+  const bar = parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop);
+  const top = body.getBoundingClientRect().top;
+  if (top >= (Number.isFinite(bar) ? bar : 0) && top < window.innerHeight) return;
+  body.scrollIntoView({ block: 'start', behavior: motionReduced() ? 'auto' : 'smooth' });
+}
 
 /** What a trigger reads for: the card and the target's own id. */
 const askOf = (card: string, target: PlayTarget): string => `${card}:${target.reach ? target.reach.target : target.post?.id ?? ''}`;
@@ -234,6 +255,7 @@ export function PlayProvider({ children }: { readonly children: ReactNode }) {
       endCompose(false);
       setComposeHeld({ card, target, for: accountNow.current });
       setSaid(`${nameOf(card)} is open on ${target.author}'s post #${target.post?.seq ?? ''}. Esc leaves it.`);
+      bringIntoView(target.post?.seq ?? null);
     };
     if (same) leave(open); else open();
   }, [setHandOpen, endCompose, leave, nameOf, setSaid]);
@@ -317,9 +339,13 @@ export function PlayProvider({ children }: { readonly children: ReactNode }) {
     return () => window.removeEventListener('beforeunload', onUnload);
   }, [holding]);
 
+  /* From `compose`, which is read against the signed-in account above: a compose that has ended is null here in the same commit. */
+  const playingSeq = compose?.target.post?.seq ?? null;
+  const playingCard = compose?.card ?? null;
+  const playing = useMemo(() => (playingCard !== null && playingSeq !== null ? { card: playingCard, seq: playingSeq } : null), [playingCard, playingSeq]);
   const controls = useMemo<PlayControls>(
-    () => ({ armed, handOpen, setHandOpen, arm, faceDown, choose, openForm, readyForm, opening, compose, openCompose, submitCompose, cancelCompose, sending: out, holdCompose, dropCompose }),
-    [armed, handOpen, setHandOpen, arm, faceDown, choose, openForm, readyForm, opening, compose, openCompose, submitCompose, cancelCompose, out, holdCompose, dropCompose],
+    () => ({ armed, handOpen, setHandOpen, arm, faceDown, choose, openForm, readyForm, opening, compose, playing, openCompose, submitCompose, cancelCompose, sending: out, holdCompose, dropCompose }),
+    [armed, handOpen, setHandOpen, arm, faceDown, choose, openForm, readyForm, opening, compose, playing, openCompose, submitCompose, cancelCompose, out, holdCompose, dropCompose],
   );
 
   return (
