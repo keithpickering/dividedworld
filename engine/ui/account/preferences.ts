@@ -22,6 +22,7 @@ import { LOST_ANSWER, type Answer, type Preferences, type PreferencesPatch } fro
 import { applyAppearance } from '../appearance.ts';
 import { announceToastChoice } from '../alerts/toast-choice.ts';
 import { setTiltPreference } from '../shine/tilt.ts';
+import { setSoundPreference } from '../audio/sound.ts';
 import { pagePreferences } from './pagePreferences.ts';
 
 /** A patch of exactly one setting: `change` saves one at a time, so it takes one. */
@@ -71,6 +72,10 @@ export function usePreferenceSaves(account: string | null, supplied?: Preference
   const switchClicks = useRef(0);
   /* The account the screen is for now, and null once it is gone: a save answered after either changed is that account's no longer. */
   const showing = useRef<string | null>(null);
+  /* The account this render is for, set as it renders (a cleanup that runs as the screen goes sees it before any effect): a choice made for an earlier account,
+     as a pending release of a volume is when the account changes, is dropped and never saved to the next. */
+  const rendered = useRef<string | null>(account);
+  rendered.current = account;
   useEffect(() => {
     showing.current = account;
     return () => { showing.current = null; };
@@ -90,7 +95,7 @@ export function usePreferenceSaves(account: string | null, supplied?: Preference
     if (!account) { pagePreferences.clear(); return undefined; }
     let live = true;
     /* What the account has: a read, or what the page already holds, or (only with nothing held) what the caller supplied. */
-    const take = (p: Preferences) => { current.current = p; confirmed.current = p; setRead({ account, prefs: p }); setTiltPreference(p.tilt); };
+    const take = (p: Preferences) => { current.current = p; confirmed.current = p; setRead({ account, prefs: p }); setTiltPreference(p.tilt); setSoundPreference(p); };
     if (supplied !== undefined) {
       const held = pagePreferences.get(account);
       const known = held ?? supplied;
@@ -118,8 +123,8 @@ export function usePreferenceSaves(account: string | null, supplied?: Preference
     const putBack = (now: Preferences, then: Preferences): Preferences => (now[key] === asked[key] ? { ...now, [key]: then[key] } : now);
     const mine = ++queued.current;
     const madeFor = account;
-    if (madeFor === null || current.current === null) return;
-    const show = (next: Preferences) => { commit(madeFor, next); applyAppearance(document, next, ui.themes, ui.glass); setTiltPreference(next.tilt); };
+    if (madeFor === null || current.current === null || rendered.current !== madeFor) return;
+    const show = (next: Preferences) => { commit(madeFor, next); applyAppearance(document, next, ui.themes, ui.glass); setTiltPreference(next.tilt); setSoundPreference(next); };
     show({ ...current.current, ...patch });
     setRefusal(null);
     setSaved(null);

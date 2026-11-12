@@ -51,3 +51,7 @@ test('Graffiti\'s wall stories are listed, at the Main board\'s width and the Ph
 test('the payout cards\' stories are listed, the Lens of each and the play form of each', () => {
   expect(boardStoryIds()).toEqual(expect.arrayContaining(['skim', 'ride', 'ride-back', 'scored-as', 'skim-form', 'ride-back-form', 'scored-as-form'].map((n) => `boards-01-payout-cards--${n}`)));
 });
+
+test('the caption bar\'s stories are listed, short, long and held on the Main and the Phone board', () => {
+  expect(boardStoryIds()).toEqual(expect.arrayContaining(['short', 'long', 'held'].flatMap((n) => [`boards-captions--${n}-main`, `boards-captions--${n}-phone`])));
+});
