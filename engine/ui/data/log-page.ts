@@ -134,7 +134,7 @@ export function cutLog(read: LogRead, limit: number = LOG_ROWS): Log {
     .sort((a, b) => micros(b.row.endsAt) - micros(a.row.endsAt))
     .map(({ row, lines, order }) => ({
       id: row.settlement, startsAt: row.startsAt, endsAt: row.endsAt, sharesKept: row.sharesKept,
-      /* By character, then reason, then card (none first), as the adapter's read orders them, so both backends hand the screens one order. */
+      /* By character, then reason, then card (none first): ordered here, whatever order the read handed its rows in, so both backends hand the screens one order. */
       lines: [...order].sort((a, b) => cmp(a.character, b.character) || cmp(a.reason, b.reason) || cmp(cardOf(a), cardOf(b))).map((l): LogLine => ({ character: l.character, reason: l.reason, amount: l.amount, ...(l.params ? { params: l.params } : {}), shares: [...lines.get(lineKey(l.character, l.reason, l.params?.card))!].sort(byShare) })),
     }));
   return {
