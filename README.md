@@ -42,6 +42,9 @@ faketime`). It touches no deployed database.
   a run passes it by at most one job.
 - Other flags: `--days N`, `--seed N`, `--profile playtest`, `--keep` (leave the cluster running, with the commands to
   reach it), and any scenario field as `--players 6` or, for a range, `--postsPerDay 1-3`.
+- `--strong <model>`: the strong tier's model for this run, one the Anthropic price table lists
+  (`supabase/functions/_shared/models/prices.ts`); left out, the instance's. The report and `log.json` name it.
+- `--light <model>`: the same for the light tier.
 - The report (`report.html`, with `log.json`) is written under `rehearsals/`, which git ignores; the command prints its
   path. `npm run test:rehearse` runs the tests that need Postgres and libfaketime.
 - A live run needs the Anthropic key stored on the environment as a credential, added through the secure form, never

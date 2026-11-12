@@ -3,8 +3,9 @@
 // as Acts (0104, 0105), patrols (0110), apologies (0129). A move's end is its `move_end` Act (0046), a visit's its `visit_end` (0105).
 // The calls Task 5 kept (prompt and answer) join to a meeting by the id on the request, and to a day by the simulated time they were made.
 import { DAY_MS } from "../../engine/rehearsal/generate.ts";
-import type { LogApology, LogCall, LogChatter, LogCost, LogDay, LogInfraction, LogMeeting, LogMove, LogOrder, LogPatrol, LogSkip, LogTrim, LogVisit, RehearsalLog } from "../../engine/rehearsal/report.ts";
+import type { LogApology, LogCall, LogChatter, LogCost, LogDay, LogInfraction, LogMeeting, LogMeetingPart, LogMove, LogOrder, LogPatrol, LogSkip, LogTrim, LogVisit, RehearsalLog } from "../../engine/rehearsal/report.ts";
 import type { ChatRequest, CompletionRequest } from "../../engine/system/model.ts";
+import { MEETING_PARTS } from "../../engine/system/meeting.ts";
 import type { KeptCall } from "./models.ts";
 import type { RunContext } from "./run.ts";
 
@@ -71,6 +72,39 @@ export function pairLedger(rows: readonly LedgerRow[], calls: readonly KeptCall[
   return { pairs, unmatched, notes };
 }
 
+const askOf = (name: string): string | undefined => MEETING_PARTS.find((p) => p.key === name)?.ask;
+
+/** The part of a meeting a call asked for: its request's last message ends with that part's ask (MEETING_PARTS). */
+const partCall = (c: KeptCall, ask: string): boolean => {
+  const last = (c.request as ChatRequest).messages?.at(-1)?.content;
+  return typeof last === "string" && last.endsWith(ask);
+};
+
+const partOf = (c: KeptCall | undefined): Pick<LogMeetingPart, "sent" | "answer" | "replayed"> => {
+  if (!c) return { sent: null, answer: null, replayed: null };
+  const request = c.request as ChatRequest;
+  return { sent: { system: request.system, messages: request.messages.map((x) => ({ role: x.role, content: x.content })) }, answer: c.value ?? (c.error ? { rejected: c.error } : null), replayed: c.replayed };
+};
+
+/**
+ * A meeting's parts, from its record (the authority: apply_meeting and fail_meeting write one per part, failed ones too). Each takes the kept call
+ * whose last message ends with that part's ask; a part nothing was kept for says so, with its own outcome and error. A record with no parts (an old
+ * row) gives one entry per kept call, its part and outcome "unknown" rather than guessed.
+ */
+export function meetingParts(record: unknown, calls: readonly KeptCall[]): LogMeetingPart[] {
+  const raw = (record as { parts?: unknown } | null)?.parts;
+  const recorded = Array.isArray(raw) ? (raw as { part?: unknown; outcome?: unknown; error?: unknown }[]) : [];
+  if (recorded.length === 0) return calls.map((c) => ({ part: "unknown", outcome: "unknown", error: c.error ? c.error.message : null, ...partOf(c) }));
+  const taken = new Set<KeptCall>();
+  return recorded.map((rec) => {
+    const part = typeof rec.part === "string" ? rec.part : "unknown";
+    const ask = askOf(part);
+    const call = ask === undefined ? undefined : calls.find((c) => !taken.has(c) && partCall(c, ask));
+    if (call) taken.add(call);
+    return { part, outcome: typeof rec.outcome === "string" ? rec.outcome : "unknown", error: rec.error != null ? String(rec.error) : null, ...partOf(call) };
+  });
+}
+
 export async function collect(ctx: RunContext): Promise<RehearsalLog> {
   const { conn, scenario, timeline, calls, jobs, dispatched, filler } = ctx;
   const day1 = timeline.day1;
@@ -118,21 +152,19 @@ export async function collect(ctx: RunContext): Promise<RehearsalLog> {
 
   // Meetings, with the Boss's memory before and after and the call that answered.
   const memories = await conn.sql(`select id, staff, meeting, ${ms("at")} as ms, body from staff_memory order by staff, id`);
-  const meetings = await conn.sql(`select id, ${ms("started_at")} as started, ${ms("finished_at")} as finished, outcome, error, bank_before::float8 as bank_before, bank_after::float8 as bank_after from meetings where ${range("started_at")} order by id`, params);
+  const meetings = await conn.sql(`select id, ${ms("started_at")} as started, ${ms("finished_at")} as finished, outcome, error, record, bank_before::float8 as bank_before, bank_after::float8 as bank_after from meetings where ${range("started_at")} order by id`, params);
   for (const m of meetings) {
     const id = Number(m.id);
     const mine = memories.filter((r) => Number(r.meeting) === id);
     const after = mine[0];
     const before = after ? memories.filter((r) => r.staff === after.staff && Number(r.id) < Number(after.id)).at(-1) : undefined;
-    const call = calls.filter((c) => c.duty === "meeting" && c.request.meeting === id).at(-1);
-    if (call) used.add(call);
-    const request = call?.request as ChatRequest | undefined;
+    const mine2 = calls.filter((c) => c.duty === "meeting" && c.request.meeting === id);
+    for (const c of mine2) used.add(c);
+    const parts = meetingParts(m.record, mine2);
     const row: LogMeeting = {
       id, startedAt: iso(m.started), finishedAt: iso(m.finished), outcome: String(m.outcome), error: m.error === null ? null : String(m.error),
       bankBefore: m.bank_before === null ? null : Number(m.bank_before), bankAfter: m.bank_after === null ? null : Number(m.bank_after),
-      sent: request ? { system: request.system, messages: request.messages.map((x) => ({ role: x.role, content: x.content })) } : null,
-      answer: call?.value ?? (call?.error ? { rejected: call.error } : null),
-      memoryBefore: before?.body ?? null, memoryAfter: after?.body ?? null, replayed: call ? call.replayed : null,
+      parts, memoryBefore: before?.body ?? null, memoryAfter: after?.body ?? null,
     };
     put(Number(m.started))?.meetings.push(row);
   }
@@ -228,8 +260,11 @@ export async function collect(ctx: RunContext): Promise<RehearsalLog> {
   let replayed = 0;
   let unmatched = 0;
   for (const r of ledger) if (unmatchedRows.has(r)) unmatched += r.cost; else if (replayedRows.has(r)) replayed += r.cost; else live += r.cost;
+  // The models the run's jobs read: the setting as the rehearsal's own database holds it, after any `--strong` or `--light`.
+  const held = (await conn.sql("select value from settings where key = 'modelTiers'"))[0]?.value as { strong?: unknown; light?: unknown } | undefined;
+  const tiers = { strong: String(held?.strong ?? ''), light: String(held?.light ?? '') };
   return {
-    scenario: scenario.key, seed: scenario.seed, mode: ctx.mode, daysRun: scenario.days, day1: iso(day1), systemOnAt: isoOrNull(ctx.systemOnAt),
+    scenario: scenario.key, seed: scenario.seed, mode: ctx.mode, tiers, daysRun: scenario.days, day1: iso(day1), systemOnAt: isoOrNull(ctx.systemOnAt),
     cost: { liveMicrodollars: live, replayedMicrodollars: replayed, unmatchedMicrodollars: unmatched, capDollars: scenario.costCapDollars }, notes,
     days: Object.values(days) as LogDay[],
   };

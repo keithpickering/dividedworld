@@ -7,6 +7,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { firstMessageOf, partOf, partAnswer } from './meeting-fake.ts';
 import { psqlDb, sql, scratchSeed } from './psql-db.ts';
 import { runMeeting } from '../../functions/meet/core.ts';
 import { instance as realInstance } from '../../functions/_shared/instance.ts';
@@ -49,9 +50,11 @@ test('the outgoing Boss names a successor, the season rolls over, and the new Bo
   const fake = (async (url: string, init?: RequestInit) => {
     const body = JSON.parse(String(init?.body));
     if (String(url).includes('anthropic')) {
-      const asked = String(body.messages?.[0]?.content ?? '');
+      const asked = firstMessageOf(body);
+      const part = partOf(body);
+      assert.ok(part, 'the meeting asks for one of its parts');
       if (asked.includes('# Moves you inherited')) sawInherited = asked;
-      return new Response(JSON.stringify({ model: tiers.strong, stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify(answer) }], usage: { input_tokens: 4000, output_tokens: 700, service_tier: 'standard' } }), { status: 200 });
+      return new Response(JSON.stringify({ model: tiers.strong, stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify(partAnswer(answer, part)) }], usage: { input_tokens: 4000, output_tokens: 700, service_tier: 'standard' } }), { status: 200 });
     }
     return new Response(JSON.stringify({ choices: [{ text: ' ur board is now about pirates!!!\nBoard: next' }], usage: { prompt_tokens: 300, completion_tokens: 12 } }), { status: 200 });
   }) as unknown as typeof fetch;

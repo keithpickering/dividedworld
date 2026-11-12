@@ -6,6 +6,7 @@ import { personaPrompt } from './prompt.ts';
 import { noteMost } from './memory.ts';
 import { PRONOUN_PRESETS } from '../rules/pronouns.ts';
 import { repair } from './validate.ts';
+import { schemaProblems } from './schema.ts';
 
 const persona = testSystem.roster[0]!;
 const she = PRONOUN_PRESETS.she;
@@ -292,4 +293,15 @@ test('options for a card without any, or not an object, are dropped with a trim 
   const b = ok({ words: 'Hi.', card: { key: 'inked', on: 'reply', config: { inked: 'teal' } } }, { offered: [INKED] });
   assert.deepEqual(b.answer.card, { key: 'inked', on: 'reply' });
   assert.deepEqual(b.trims.map((t) => t.predicate), ['isObject']);
+});
+
+test('every chatter schema is one the provider accepts: plain, a thread start with a title, and every card that has options on offer at once', () => {
+  const MORE: OfferedCard = { key: 'more', name: 'More', play: 'set', options: { prompt: 'Choose.', schema: { type: 'object', properties: { pick: { type: 'string', enum: ['a', 'b'] }, note: { type: 'string' } }, required: ['pick'], additionalProperties: false } } };
+  const cases: [string, Parameters<typeof chatterSchema>[0]][] = [
+    ['plain', { askedTitle: false, offered: [] }],
+    ['a thread start with a title', { askedTitle: true, offered: [] }],
+    ['a thread start with cards', { askedTitle: true, offered: [CAST, SET] }],
+    ['every card with options at once', { askedTitle: true, offered: [CAST, SET, PLAIN, INKED, MORE] }],
+  ];
+  for (const [name, c] of cases) assert.deepEqual(schemaProblems(chatterSchema(c)), [], name);
 });

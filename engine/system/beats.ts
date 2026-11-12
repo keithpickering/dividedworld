@@ -1,7 +1,7 @@
 /**
  * What the meeting does with a persona's arc (fangame split design, sections 1, 2, 3, 5 and 9; the plan, Task 6). Pure, and the engine's: nothing here names a community.
  *
- * **An arc is a secret, even from the Boss.** The database says which beats are unlocked and unplayed (`arc_for_meeting`, 0186); `shownBeats` joins them to the persona's own file by
+ * **An arc is a secret, even from the Boss.** The database says which beats are unlocked and unplayed (`arc_for_meeting`, 0229); `shownBeats` joins them to the persona's own file by
  * key, so a beat the database does not list never reaches this module with its brief, and `beatsText` is the only place a brief is written into a prompt. A locked beat's brief, key or
  * slot is in no prompt, and a held-back kind is in no list (`meetingSystemPrompt` filters it).
  *
@@ -21,7 +21,7 @@ import { moveKind, moveParamsProblems, ROLE, UUID, type MachineLimits } from './
 import type { PlannedMove } from './meeting.ts';
 import { repair, type Rule, type Trim } from './validate.ts';
 
-/** What `meeting_context().arc` says (0187, over arc_for_meeting, 0186): the beats unlocked and not yet played, in the persona's order, and the kinds held back now. */
+/** What `meeting_context().arc` says (0230, over arc_for_meeting, 0229): the beats unlocked and not yet played, in the persona's order, and the kinds held back now. */
 export interface ArcRead {
   readonly beats: readonly { readonly key: string; readonly mini: boolean; readonly due: boolean }[];
   readonly heldBack: readonly string[];
@@ -91,7 +91,7 @@ export function beatsText(beats: readonly ShownBeat[]): string[] {
     const head = `- ${b.beat.key}${b.due ? ' (must be played at this meeting)' : ''}: ${oneLine(b.beat.brief)}`;
     if (!b.beat.bundle) return `${head}\n  Name it in "beats" with {beat: "${b.beat.key}", why} when you have played it.`;
     const slots = slotsOf(b.beat.bundle);
-    return `${head}\n  Play it in "beats" with {beat: "${b.beat.key}", slots: {role: {slot: your words}}, why}, which plays "${oneLine(b.beat.bundle.name)}". ${slots.length ? `Its slots, each one yours to fill or leave: ${slots.join('; ')}.` : 'It has no slots to fill.'}`;
+    return `${head}\n  Play it in "beats" with {beat: "${b.beat.key}", slots: [{slot, value}], why}, which plays "${oneLine(b.beat.bundle.name)}". ${slots.length ? `Write each slot you fill as one entry of slots, {slot: "role.slot", value: your words, or a number's digits}, and leave out the ones you do not fill. Its slots: ${slots.join('; ')}.` : 'It has no slots to fill.'}`;
   });
   return [[`${BEAT_WORDS} ${BUNDLE_WORDS}`, ...lines].join('\n')];
 }
@@ -209,7 +209,14 @@ function slotValue(asked: unknown, fallback: unknown, kind: string, name: string
     trims.push({ path, predicate, before: 1, after: 0 });
     return undefined;
   };
-  if (typeof fallback === 'number') return typeof asked === 'number' && Number.isFinite(asked) ? asked : miss('isNumber');
+  if (typeof fallback === 'number') {
+    // A number is written as its digits where the schema asks for text: read as the number the slot wants, and recorded.
+    if (typeof asked === 'string' && /^-?\d+(\.\d+)?$/.test(asked.trim())) {
+      trims.push({ path, predicate: 'asNumber', before: asked.length, after: 1 });
+      return Number(asked.trim());
+    }
+    return typeof asked === 'number' && Number.isFinite(asked) ? asked : miss('isNumber');
+  }
   if (typeof asked !== 'string') return miss('isString');
   if (asked.trim() === '') return miss('nonEmpty');
   let value = asked;

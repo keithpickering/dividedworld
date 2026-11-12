@@ -7,7 +7,9 @@ import { placeholderWorld } from '../../../instances/divided-world/system/fixtur
 import type { Instance as WorldInstance } from '../../../engine/rules/types.ts';
 
 const dividedWorld: WorldInstance = placeholderWorld(realInstance);
-import { AnswerRejected, LedgerWriteFailed } from '../_shared/models/index.ts';
+import { AnswerRejected, LedgerWriteFailed, SchemaRefused } from '../_shared/models/index.ts';
+import { TransportFailure } from '../_shared/models/transport.ts';
+import { MEETING_PARTS, partRule, partSchema, type MeetingPartKey } from '../../../engine/system/meeting.ts';
 import type { ChatRequest, CompletionRequest, ModelResult, Models } from '../../../engine/system/model.ts';
 import type { Instance } from '../../../engine/rules/types.ts';
 import type { Memory } from '../../../engine/system/memory.ts';
@@ -82,11 +84,11 @@ interface World {
   groups?: { conferred: { key: string; name: string; tone: string }[]; characters: { id: string; capped: boolean; held: boolean }[] };
   /** What the apply says it returned from the Mods (default: nothing is said). */
   applyThrows?: boolean;
-  /** What meeting_context() says of the Boss's arc (0187): the beats unlocked and not played, and the kinds held back; absent: an older database. */
+  /** What meeting_context() says of the Boss's arc (0230): the beats unlocked and not played, and the kinds held back; absent: an older database. */
   arc?: { beats: { key: string; mini: boolean; due: boolean }[]; heldBack: string[] };
-  /** What meeting_context() hands a meeting in the farewell window (0190): the season's facts. Absent or null: the meeting was not handed any. */
+  /** What meeting_context() hands a meeting in the farewell window (0233): the season's facts. Absent or null: the meeting was not handed any. */
   handoffFacts?: unknown | null;
-  /** What meeting_context() hands a new Boss (0190): its predecessor's note and facts. Absent or null: none. */
+  /** What meeting_context() hands a new Boss (0233): its predecessor's note and facts. Absent or null: none. */
   predecessor?: unknown | null;
 }
 function fakeDb(w: World = {}) {
@@ -341,6 +343,16 @@ test('an answer the repair cannot save closes the meeting rejected', async () =>
   assert.equal(out.status, 'rejected');
   assert.equal(d.count('apply_meeting'), 0);
   assert.match(d.state.failed[0]!.error, /memory/);
+});
+
+test('a merged answer the repair rejects closes the meeting rejected with each part\'s outcome on the record', async () => {
+  const d = fakeDb();
+  const m = fakeModels({ ...answer(), memory: 'I forget' });
+  const out = await run(d.db, m.models, quiet, SLOT, clock, noFeeds);
+  assert.equal(out.status, 'rejected');
+  const record = d.state.failed[0]!.record;
+  assert.ok(Array.isArray(record.parts) && record.parts.length === MEETING_PARTS.length, JSON.stringify(record));
+  assert.ok(record.parts.every((p: any) => p.outcome === 'ok'), JSON.stringify(record.parts));
 });
 
 test('a database error is thrown, not swallowed, and so is an unrecorded model call', async () => {
@@ -693,7 +705,7 @@ test('a retried slot after the apply does nothing: no second call to the model, 
   const again = await run(d.db, m.models, quiet, SLOT, clock, noFeeds);
   assert.equal(again.status, 'already met');
   assert.equal(d.count('apply_meeting'), 1);
-  assert.equal(m.chats.length, 1);
+  assert.equal(m.chats.length, MEETING_PARTS.length, 'one call for each part of the one meeting, none for the retry');
 });
 
 test('an older database (no mods and no rules in the context) holds a meeting as before: no orders asked, none sent', async () => {
@@ -876,7 +888,8 @@ test('a kind held back is dropped from the answer and the drop is on the record;
 
 test('a failed or rejected meeting plays no due beat with defaults, and the beat is still due at the next meeting', async () => {
   const due = { beats: [{ key: 'split', mini: false, due: true }], heldBack: [] };
-  for (const reply of [new Error('the model is down'), new AnswerRejected('the answer failed isObject', 'isObject'), { not: 'an answer' }]) {
+  // (An answer of no fields is not a failed one: every part answered, and what it left out is played with its defaults, as the next test says.)
+  for (const reply of [new Error('the model is down'), new AnswerRejected('the answer failed isObject', 'isObject')]) {
     const d = fakeDb({ arc: due });
     const out = await run(d.db, fakeModels(reply).models, arcInstance, SLOT, clock, noFeeds);
     assert.match(out.status, /failed|rejected/, JSON.stringify(out));
@@ -959,4 +972,150 @@ test('a new Boss is handed its predecessor\'s facts and note as its own to weigh
   const nm = fakeModels(answer());
   await run(none.db, nm.models, quiet, SLOT, clock, noFeeds);
   assert.doesNotMatch(nm.chats[0]!.messages[0]!.content, /Your predecessor/);
+});
+
+// The meeting is a call for each part (provider-schemas design, section 4): moves, bundle, staff, then self, each shown the earlier answers. The bundle is a part of its own because the moves part is 39 of the provider's 40 properties.
+const partOf = (r: ChatRequest): MeetingPartKey => MEETING_PARTS.find((p) => p.fields.every((f) => f in ((r.schema as any).properties ?? {})))!.key;
+const fieldsOf = (k: MeetingPartKey) => MEETING_PARTS.find((p) => p.key === k)!.fields;
+/** A fake whose reply is the part's own fields of `whole`, or what `override` says for that part. */
+const perPart = (whole: Record<string, unknown>, override: Partial<Record<MeetingPartKey, unknown>> = {}) => (r: ChatRequest): unknown => {
+  const k = partOf(r);
+  if (k in override) return override[k];
+  return Object.fromEntries(fieldsOf(k).filter((f) => f in whole).map((f) => [f, whole[f]]));
+};
+
+test('a meeting is four chat calls in order, each with its part\'s schema, rule and token cap, the same cached prefix, and the earlier answers as prior turns', async () => {
+  const d = fakeDb(modWorld());
+  const whole = answer([rename(0)], { orders: [orderFor(MOD_A, [BOARD], 1)] });
+  const m = fakeModels(perPart(whole));
+  const out = await run(d.db, m.models, quiet, SLOT, clock, noFeeds);
+  assert.equal(out.status, 'ok', JSON.stringify(out));
+  assert.deepEqual(m.chats.map(partOf), ['moves', 'bundle', 'staff', 'self']);
+  assert.deepEqual(m.chats.map((c) => c.maxTokens), [6000, 4000, 3000, 4500]);
+  assert.deepEqual(m.chats.map((c) => c.cachePrefix), [true, true, true, true]);
+  m.chats.forEach((c, i) => {
+    const k = MEETING_PARTS[i]!.key;
+    assert.deepEqual(c.schema, partSchema(k));
+    assert.deepEqual(c.rules, partRule(k));
+    assert.equal(c.duty, 'meeting');
+    assert.equal(c.meeting, 7);
+  });
+  // The prefix is byte-for-byte the same in every call, and ends with the first part's ask.
+  for (const c of m.chats) {
+    assert.equal(c.system, m.chats[0]!.system);
+    assert.deepEqual(c.messages[0], m.chats[0]!.messages[0]);
+  }
+  assert.ok(m.chats[0]!.messages[0]!.content.endsWith(MEETING_PARTS[0].ask));
+  assert.equal(m.chats[0]!.messages.length, 1);
+  // Each call is shown every earlier answer, then the ask for its own part.
+  m.chats.forEach((c, i) => {
+    const earlier = m.chats.slice(0, i).flatMap((before, j) => [{ role: 'assistant', content: JSON.stringify(perPart(whole)(before)) }, { role: 'user', content: MEETING_PARTS[j + 1]!.ask }]);
+    assert.deepEqual(c.messages.slice(1), earlier, MEETING_PARTS[i]!.key);
+  });
+  const payload = d.state.applied[0]!.payload;
+  assert.equal(payload.moves.length, 1);
+  assert.equal(payload.orders.length, 1);
+  assert.ok(payload.memory && payload.profile);
+  assert.deepEqual(payload.record.parts, [{ part: 'moves', outcome: 'ok' }, { part: 'bundle', outcome: 'ok' }, { part: 'staff', outcome: 'ok' }, { part: 'self', outcome: 'ok' }]);
+});
+
+test('a moves part that is rejected leaves no moves, and the staff and self parts are still applied, shown that the first was not kept', async () => {
+  const d = fakeDb(modWorld());
+  const whole = answer([rename(0)], { orders: [orderFor(MOD_A, [BOARD], 1)] });
+  const m = fakeModels((r: ChatRequest) => {
+    if (partOf(r) === 'moves') return new AnswerRejected('the answer failed required at moves', 'required');
+    return perPart(whole)(r);
+  });
+  const out = await run(d.db, m.models, quiet, SLOT, clock, noFeeds);
+  assert.equal(out.status, 'ok', JSON.stringify(out));
+  assert.equal(m.chats.length, MEETING_PARTS.length, 'a later call runs even when an earlier one failed');
+  assert.deepEqual(m.chats[1]!.messages[1], { role: 'assistant', content: '(this part was not kept: the answer failed required at moves)' });
+  const payload = d.state.applied[0]!.payload;
+  assert.equal(payload.moves.length, 0);
+  assert.equal(payload.orders.length, 1);
+  assert.ok(payload.memory && payload.profile);
+  assert.deepEqual(payload.record.parts.map((p: any) => [p.part, p.outcome]), [['moves', 'rejected'], ['bundle', 'ok'], ['staff', 'ok'], ['self', 'ok']]);
+  assert.match(payload.record.parts[0].error, /required at moves/);
+});
+
+test('a refused schema is a failed part, not a rejected one, as the ledger writes it', async () => {
+  const d = fakeDb();
+  const m = fakeModels((r: ChatRequest) => (partOf(r) === 'staff' ? new SchemaRefused([{ path: 'orders', predicate: 'keyword(maxItems)' }]) : perPart(answer([rename(0)]))(r)));
+  assert.equal((await run(d.db, m.models, quiet, SLOT, clock, noFeeds)).status, 'ok');
+  assert.deepEqual(d.state.applied[0]!.payload.record.parts.map((p: any) => [p.part, p.outcome]), [['moves', 'ok'], ['bundle', 'ok'], ['staff', 'failed'], ['self', 'ok']]);
+});
+
+test('a self part that failed sends a payload without memory or profile', async () => {
+  const d = fakeDb();
+  const m = fakeModels((r: ChatRequest) => (partOf(r) === 'self' ? new Error('upstream 500') : perPart(answer([rename(0)]))(r)));
+  const out = await run(d.db, m.models, quiet, SLOT, clock, noFeeds);
+  assert.equal(out.status, 'ok', JSON.stringify(out));
+  const payload = d.state.applied[0]!.payload;
+  assert.equal('memory' in payload, false);
+  assert.equal('profile' in payload, false);
+  assert.equal(payload.moves.length, 1);
+  assert.deepEqual(payload.record.parts.map((p: any) => [p.part, p.outcome]), [['moves', 'ok'], ['bundle', 'ok'], ['staff', 'ok'], ['self', 'failed']]);
+});
+
+test('every part failed: the meeting closes the meeting through fail_meeting with the first part\'s outcome and error', async () => {
+  for (const [err, outcome] of [[new AnswerRejected('nope', 'required'), 'rejected'], [new Error('upstream 500'), 'failed']] as const) {
+    const d = fakeDb();
+    const m = fakeModels(err);
+    const out = await run(d.db, m.models, quiet, SLOT, clock, noFeeds);
+    assert.equal(m.chats.length, MEETING_PARTS.length);
+    assert.equal(out.status, outcome);
+    assert.equal(d.count('apply_meeting'), 0);
+    assert.deepEqual(d.state.failed.map((f) => f.outcome), [outcome]);
+    assert.match(d.state.failed[0]!.error, /nope|upstream 500/);
+    assert.equal(d.state.failed[0]!.record.parts.length, MEETING_PARTS.length);
+  }
+});
+
+test('an infrastructure error in the second part throws, and the meeting is closed failed', async () => {
+  const d = fakeDb();
+  const m = fakeModels((r: ChatRequest) => (partOf(r) === 'staff' ? new LedgerWriteFailed('the ledger is down') : perPart(answer([rename(0)]))(r)));
+  await assert.rejects(run(d.db, m.models, quiet, SLOT, clock, noFeeds), /ledger is down/);
+  assert.equal(m.chats.length, 3, 'the fourth call is not made');
+  assert.deepEqual(d.state.failed.map((f) => f.outcome), ['failed']);
+  assert.equal(d.count('apply_meeting'), 0);
+  assert.deepEqual(d.state.failed[0]!.record.parts, [{ part: 'moves', outcome: 'ok' }, { part: 'bundle', outcome: 'ok' }, { part: 'staff', outcome: 'failed', error: 'the ledger is down' }], 'the parts already run are kept on the closed row');
+});
+
+test('a DatabaseError in a middle part closes the meeting with the parts so far, the failed one carrying its error', async () => {
+  const d = fakeDb();
+  const m = fakeModels((r: ChatRequest) => (partOf(r) === 'staff' ? new DatabaseError('ledger insert: the connection dropped', '08006', 500) : perPart(answer([rename(0)]))(r)));
+  await assert.rejects(run(d.db, m.models, quiet, SLOT, clock, noFeeds), /connection dropped/);
+  assert.equal(m.chats.length, 3);
+  assert.deepEqual(d.state.failed[0]!.record.parts, [{ part: 'moves', outcome: 'ok' }, { part: 'bundle', outcome: 'ok' }, { part: 'staff', outcome: 'failed', error: 'ledger insert: the connection dropped' }]);
+});
+
+test('a model transport failure in a part is a failed part and the later parts still run', async () => {
+  const d = fakeDb();
+  const m = fakeModels((r: ChatRequest) => (partOf(r) === 'moves' ? new TransportFailure('provider answered 503') : perPart(answer([rename(0)]))(r)));
+  const out = await run(d.db, m.models, quiet, SLOT, clock, noFeeds);
+  assert.equal(out.status, 'ok', JSON.stringify(out));
+  assert.equal(m.chats.length, MEETING_PARTS.length);
+  assert.deepEqual(d.state.applied[0]!.payload.record.parts.map((p: any) => [p.part, p.outcome]), [['moves', 'failed'], ['bundle', 'ok'], ['staff', 'ok'], ['self', 'ok']]);
+});
+
+test('mixed outcomes with no part kept close the meeting with the first part\'s outcome', async () => {
+  const d = fakeDb();
+  const m = fakeModels((r: ChatRequest) => {
+    const p = partOf(r);
+    return p === 'moves' ? new Error('upstream 500') : p === 'staff' ? new AnswerRejected('nope', 'required') : new Error('upstream 502');
+  });
+  const out = await run(d.db, m.models, quiet, SLOT, clock, noFeeds);
+  assert.equal(out.status, 'failed');
+  assert.match(out.error, /upstream 500/);
+  assert.deepEqual(d.state.failed.map((f) => f.outcome), ['failed']);
+  assert.deepEqual(d.state.failed[0]!.record.parts.map((p: any) => p.outcome), ['failed', 'failed', 'rejected', 'failed']);
+});
+
+test('the error shown to the next call is clipped to 200 characters, the record keeps it whole', async () => {
+  const d = fakeDb();
+  const long = 'x'.repeat(400);
+  const m = fakeModels((r: ChatRequest) => (partOf(r) === 'moves' ? new Error(long) : perPart(answer([rename(0)]))(r)));
+  await run(d.db, m.models, quiet, SLOT, clock, noFeeds);
+  assert.equal(m.chats[1]!.messages[1]!.content, `(this part was not kept: ${'x'.repeat(200)})`);
+  assert.equal(d.state.applied[0]!.payload.record.parts[0].error, long);
 });

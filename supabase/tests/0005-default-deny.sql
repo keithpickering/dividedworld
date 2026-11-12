@@ -106,9 +106,9 @@ declare
                            'search_match_conds(text,tsquery,uuid,timestampwithtimezone,timestampwithtimezone,boolean)', 'search_thread_matches(uuid,tsquery,uuid,timestampwithtimezone,timestampwithtimezone,boolean)', 'search_post_cards(uuid)',
                            -- The pulls check on pack_kinds (0139), granted to PUBLIC like them, and the count of a hand, which the ledger's policy cuts to the caller's own cards (my_cards calls it).
                            'pack_pulls_problem(jsonb)', 'card_held(uuid,text)',
-                           -- A board's page reads the stubs of the threads moved away from it and, for a closed board, where its threads went (0179); the page is a signed-in read of public facts.
+                           -- A board's page reads the stubs of the threads moved away from it and, for a closed board, where its threads went (0222); the page is a signed-in read of public facts.
                            'board_stubs(uuid)', 'board_closed_to(uuid)',
-                           -- The title of a moved thread and the board it left, for a move's sentence (0180): public facts.
+                           -- The title of a moved thread and the board it left, for a move's sentence (0223): public facts.
                            'move_thread_names(jsonb)'];
   -- What a visitor (anon) may execute, on purpose; each is also in the list above.
   visitor_callable text[] := array['move_progress(uuid)', 'staff_career(text)',
@@ -148,7 +148,7 @@ begin
   end if;
   if bad <> '' then raise exception 'acts can be changed:%', bad; end if;
 
-  -- The dependencies of the moves (0182) are insert-only too, and no client's: the guards fire always, so not even a restore in replica mode can change one.
+  -- The dependencies of the moves (0225) are insert-only too, and no client's: the guards fire always, so not even a restore in replica mode can change one.
   for r in select t.tgname from pg_trigger t where t.tgrelid = 'public.move_dependencies'::regclass and not t.tgisinternal and t.tgenabled <> 'A'
   loop bad := bad || format(E'\n  trigger %s does not fire always', r.tgname); end loop;
   if (select count(*) from pg_trigger t where t.tgrelid = 'public.move_dependencies'::regclass and t.tgname in ('move_dependencies_insert', 'move_dependencies_no_update', 'move_dependencies_no_truncate')) is distinct from 3 then
@@ -156,7 +156,7 @@ begin
   end if;
   if bad <> '' then raise exception 'move_dependencies can be changed:%', bad; end if;
 
-  -- A beat's events (0185) are insert-only too, and no client's: four guards (insert, update, delete, truncate), each firing always.
+  -- A beat's events (0228) are insert-only too, and no client's: four guards (insert, update, delete, truncate), each firing always.
   for r in select t.tgname from pg_trigger t where t.tgrelid = 'public.arc_beat_events'::regclass and not t.tgisinternal and t.tgenabled <> 'A'
   loop bad := bad || format(E'\n  trigger %s does not fire always', r.tgname); end loop;
   if (select count(*) from pg_trigger t where t.tgrelid = 'public.arc_beat_events'::regclass and t.tgname in ('arc_beat_events_insert', 'arc_beat_events_no_update', 'arc_beat_events_no_delete', 'arc_beat_events_no_truncate')) is distinct from 4 then
@@ -164,7 +164,7 @@ begin
   end if;
   if bad <> '' then raise exception 'arc_beat_events can be changed:%', bad; end if;
 
-  -- A Boss's farewell and handoff (0190) are insert-only too, and no client's: it is out of character and never shown to players. Three guards (update, delete, truncate), each firing
+  -- A Boss's farewell and handoff (0233) are insert-only too, and no client's: it is out of character and never shown to players. Three guards (update, delete, truncate), each firing
   -- always, and no grant to an API role on the table or on the view that reads its latest row.
   for r in select t.tgname from pg_trigger t where t.tgrelid = 'public.handoffs'::regclass and not t.tgisinternal and t.tgenabled <> 'A'
   loop bad := bad || format(E'\n  trigger %s does not fire always', r.tgname); end loop;

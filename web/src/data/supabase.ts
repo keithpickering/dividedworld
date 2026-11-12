@@ -466,7 +466,7 @@ function toQueued(r: Row): QueuedMove {
   };
 }
 
-/** The facts of a season as admin_queue hands them (handoff_facts, 0190): each list read defensively, so a row the database could not make is an empty list and not a crash. */
+/** The facts of a season as admin_queue hands them (handoff_facts, 0233): each list read defensively, so a row the database could not make is an empty list and not a crash. */
 function toHandoffFacts(v: unknown): HandoffFacts {
   const r = params(v) as Row;
   const board = (x: Row) => ({ board: String(x['board'] ?? ''), name: String(x['name'] ?? '') });

@@ -1,4 +1,4 @@
--- createBoard, moveThread and mergeBoard land and end (supabase/migrations/0173_lasting_boards.sql; docs/plans/2026-11-06-fangame-split-plan.md, Task 2; design section 4).
+-- createBoard, moveThread and mergeBoard land and end (supabase/migrations/0216_lasting_boards.sql; docs/plans/2026-11-06-fangame-split-plan.md, Task 2; design section 4).
 --
 -- Each kind is queued as the meeting queues it, lands through system_tick as a move does, and ends when it is reversed or superseded. What they build stays: no expiry, no demand.
 -- A made board is a row that points at its Act; a moved thread is stored on its new board; a merged board closes and its threads join the other. Every case ends with

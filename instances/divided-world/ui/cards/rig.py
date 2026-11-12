@@ -16,7 +16,7 @@ import bpy, os, math
 
 W, H = 540, 840                      # the card canvas (specs/card-art.md)
 SCALE = float(os.environ.get('ART_SCALE', '2'))
-SAMPLES = int(os.environ.get('ART_SAMPLES', '256'))
+SAMPLES = int(os.environ.get('ART_SAMPLES', '200'))    # what the shipped pictures used, but for the two scenes that set their own
 
 def reset():
     bpy.ops.wm.read_factory_settings(use_empty=True)

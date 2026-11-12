@@ -150,6 +150,11 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     expect(instanceUi.cardBack?.mark).toMatch(SVG_URL);
   });
 
+  test('the card back has its picture from its folder, one for every card', () => {
+    expect(instanceUi.cardBack?.canvas, 'the back').toMatch(CANVAS_URL);
+    expect(Object.keys(instanceUi.cardBack ?? {}).sort()).toEqual(['canvas', 'mark']);
+  });
+
   /* A card's name is laid out at no more than 165cqw over its longest line (engine/ui/cards/postcard.css), and a name of more than 14
      characters with a space breaks onto two lines at the slot and the phone (engine/ui/cards/nameLines.ts), each line on a taller plate that
      holds both. So the type a name gets is the smallest of its width bound and, for two lines, its plate's height bound. */

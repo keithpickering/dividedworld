@@ -3,8 +3,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { systemSettings, testSystem } from '../rules/test-system.ts';
 import { DEMAND_KINDS } from './demands.ts';
-import { DEMAND_ID_ROLES, HANDOFF_MOST, MEETING_RULE, handoffFactsText, inFarewellWindow, inheritedText, meetingSystemPrompt, namedCharacters, predecessorText, referenceText, repairAnswer, ruleSchema, type HandoffFacts, type InheritedMove, type MachineSlotFacts, type RepairContext } from './meeting.ts';
+import { DEMAND_ID_ROLES, HANDOFF_MOST, MEETING_FIELDS, MEETING_PARTS, MEETING_RULE, handoffFactsText, inFarewellWindow, inheritedText, meetingSystemPrompt, namedCharacters, partRule, partSchema, predecessorText, referenceText, repairAnswer, ruleSchema, type HandoffFacts, type InheritedMove, type MachineSlotFacts, type RepairContext } from './meeting.ts';
 import { noteMost } from './memory.ts';
+import { schemaProblems } from './schema.ts';
+import { repair, type Rule } from './validate.ts';
 import { phaseAt } from './phases.ts';
 import { personaPrompt } from './prompt.ts';
 import { PRONOUN_PRESETS } from '../rules/pronouns.ts';
@@ -63,6 +65,12 @@ const kept = (demand: unknown) => {
   assert.ok(r.ok, JSON.stringify(r));
   return r;
 };
+
+/** A rule with its fields of any shape left out: the schema of a rule that has none, as the tests below read it. A field of any shape has no schema to send; the provider is asked for it in the form `partSchema` gives. */
+const withoutAny = (rule: Rule): Rule =>
+  rule.type === 'object'
+    ? { ...rule, fields: Object.fromEntries(Object.entries(rule.fields).filter(([, v]) => v.type !== 'any').map(([k, v]) => [k, withoutAny(v)])) }
+    : rule.type === 'list' ? { ...rule, of: withoutAny(rule.of) } : rule;
 
 test('a demand naming a real board, thread and public characters is kept', () => {
   assert.equal(kept({ kind: 'postsOnBoard', params: { board: BOARD, count: 5 } }).moves.length, 1);
@@ -164,7 +172,7 @@ test('noteMost is the 280 the database check holds', () => {
 });
 
 test('the rule\'s schema lists description among the rename\'s params, and the prompt says it is the Boss\'s own words', () => {
-  const schema = ruleSchema(MEETING_RULE) as any;
+  const schema = ruleSchema(withoutAny(MEETING_RULE)) as any;
   const params = schema.properties.moves.items.properties.params;
   assert.ok('description' in params.properties, JSON.stringify(Object.keys(params.properties)));
   assert.ok(!params.required.includes('description'), 'optional: a Boss that gives none gets the stock line');
@@ -204,10 +212,44 @@ test('a setRule on a listed board, or on every board, is kept; a numeric param s
   assert.equal(all.ok && all.moves[0]!.params['board'], null);
 });
 
+test('a setRule\'s param given as the number\'s digits in text is read as a number, and the trim is recorded', () => {
+  const r = repairAnswer(ruleAnswer({ board: BOARD, predicate: 'minLength', param: '20', band: 'minor' }), ctx());
+  assert.ok(r.ok && r.moves.length === 1, JSON.stringify(r));
+  assert.equal(r.ok && r.moves[0]!.params['param'], 20);
+  assert.ok(r.ok && r.trims.some((t) => t.path === 'moves[0].params.param' && t.predicate === 'asNumber'), JSON.stringify(r.ok && r.trims));
+});
+
+test('a setRule\'s param given as text is read as its predicate wants it, and the trim is recorded', () => {
+  const count = repairAnswer(ruleAnswer({ board: BOARD, predicate: 'minLength', param: '3', band: 'minor' }), ctx());
+  assert.ok(count.ok && count.moves.length === 1, JSON.stringify(count));
+  assert.equal(count.ok && count.moves[0]!.params['param'], 3);
+  assert.ok(count.ok && count.trims.some((t) => t.path === 'moves[0].params.param' && t.predicate === 'asNumber' && t.before === 1 && t.after === 3), JSON.stringify(count.trims));
+  const none = repairAnswer(ruleAnswer({ board: BOARD, predicate: 'noAllCaps', param: '', band: 'minor' }), ctx());
+  assert.ok(none.ok && none.moves.length === 1, JSON.stringify(none));
+  assert.equal(none.ok && none.moves[0]!.params['param'], null);
+  assert.ok(none.ok && none.trims.some((t) => t.path === 'moves[0].params.param' && t.predicate === 'asNone'), JSON.stringify(none.trims));
+  const left = repairAnswer(ruleAnswer({ board: BOARD, predicate: 'noAllCaps', band: 'minor' }), ctx());
+  assert.ok(left.ok && left.moves.length === 1 && !left.trims.some((t) => t.predicate === 'asNone'), JSON.stringify(left));
+  const word = repairAnswer(ruleAnswer({ board: BOARD, predicate: 'bannedWord', param: 'toast', band: 'minor' }), ctx());
+  assert.ok(word.ok && word.moves.length === 1 && word.moves[0]!.params['param'] === 'toast', JSON.stringify(word));
+});
+
+test('the meeting\'s schema has no empty schema anywhere, and an any rule has no schema to send', () => {
+  const empties: string[] = [];
+  const walk = (node: any, path: string): void => {
+    if (node === null || typeof node !== 'object') return;
+    if (!Array.isArray(node) && !('type' in node) && !('properties' in node) && !('items' in node) && !('enum' in node) && path.split('.').pop() !== 'properties') empties.push(path);
+    for (const [k, v] of Object.entries(node)) walk(v, `${path}.${k}`);
+  };
+  walk(ruleSchema(withoutAny(MEETING_RULE)), '$');
+  assert.deepEqual(empties, []);
+  assert.throws(() => ruleSchema({ type: 'object', fields: { xs: { type: 'list', of: { type: 'object', fields: { p: { type: 'any' } } } } } }), { message: 'ruleSchema: an "any" rule at xs[].p has no schema to send' });
+});
+
 test('a setRule on a board outside the meeting\'s list, or with a param its predicate refuses, is dropped and recorded', () => {
   const off = repairAnswer(ruleAnswer({ board: OTHER_BOARD, predicate: 'noDoublePost', band: 'minor' }), ctx());
   assert.ok(off.ok && off.moves.length === 0 && off.trims.some((t) => t.path === 'moves[0].params.board' && t.predicate === 'isBoard'), JSON.stringify(off));
-  const high = repairAnswer(ruleAnswer({ board: BOARD, predicate: 'minLength', param: 9000, band: 'minor' }), ctx());
+  const high = repairAnswer(ruleAnswer({ board: BOARD, predicate: 'minLength', param: '9000', band: 'minor' }), ctx());
   assert.ok(high.ok && high.moves.length === 0 && high.trims.some((t) => t.path === 'moves[0].params.param' && t.predicate === 'atMost(200)'), JSON.stringify(high));
 });
 
@@ -311,7 +353,7 @@ const inForce = [{ board: BOARD, predicate: 'bannedWord', param: 'toast', number
 
 test('a rule that conflicts with the rules in force is dropped and recorded, and spends nothing', () => {
   const clash = ruleMove({ board: BOARD, predicate: 'requiredWord', param: 'Toast', band: 'minor' });
-  const houseClash = ruleMove({ board: B2, predicate: 'maxLength', param: 50, band: 'minor' });
+  const houseClash = ruleMove({ board: B2, predicate: 'maxLength', param: '50', band: 'minor' });
   const fine = ruleMove({ board: BOARD, predicate: 'noAllCaps', band: 'minor' });
   const r = repairAnswer({ ...answer(null), moves: [clash, houseClash, fine] }, modCtx({ rules: inForce, bank: 1 }));
   assert.ok(r.ok);
@@ -388,7 +430,7 @@ test('the ids the model may use write each character as Name (label)', () => {
 });
 
 test('the rule\'s schema offers orders and patrols, both optional, and an order\'s memory is optional', () => {
-  const schema = ruleSchema(MEETING_RULE) as any;
+  const schema = ruleSchema(withoutAny(MEETING_RULE)) as any;
   assert.ok('orders' in schema.properties && 'patrols' in schema.properties);
   assert.ok(!schema.required.includes('orders') && !schema.required.includes('patrols'));
   const item = schema.properties.orders.items;
@@ -511,6 +553,16 @@ test('a percent or hours one past its bound is clamped to the bound and recorded
   dropped(plan([machineMove('flashSale', { slot: SLOT_HIDDEN, hours: 30.5 }, { demand: undefined })]), 'moves[0].params.hours', 'isWhole');
 });
 
+test('a 0 in a kind\'s own number field is not given: it is refused by name, never clamped to the least', () => {
+  const percent = plan([machineMove('repriceSlot', { slot: SLOT_A, percent: 0 })]);
+  assert.equal(percent.moves.length, 0, JSON.stringify(percent.trims));
+  dropped(percent, 'moves[0].params.percent', 'required');
+  assert.ok(!percent.trims.some((t) => t.before === 0 && t.after === 50), JSON.stringify(percent.trims));
+  const hours = plan([machineMove('flashSale', { slot: SLOT_HIDDEN, hours: 0 }, { demand: undefined })]);
+  assert.equal(hours.moves.length, 0, JSON.stringify(hours.trims));
+  dropped(hours, 'moves[0].params.hours', 'required');
+});
+
 test('a slot id in capitals is found, lowercased, and the change is recorded', () => {
   const r = plan([machineMove('pullSlot', { slot: SLOT_A.toUpperCase() })]);
   assert.equal(r.moves.length, 1, JSON.stringify(r.trims));
@@ -578,6 +630,29 @@ test('the reference text lists the machine\'s slots with their ids, and says the
   assert.doesNotMatch(none, /The machine/);
   const moved = referenceText({ boards: [], threads: [], characters: [], machine: [{ ...facts(SLOT_A), move: { kind: 'pullSlot', act: 'x' } }] });
   assert.match(moved, /pullSlot in force/);
+});
+
+test('a field two kinds share is dropped without a trim for the kind that has none, and kept for the kind that has it', () => {
+  const r = plan([
+    machineMove('repriceSlot', { slot: SLOT_C, percent: 60, board: BOARD }, { demand: undefined }),
+    move(PULL_DEMAND),
+  ]);
+  assert.equal(r.moves.length, 2, JSON.stringify(r.trims));
+  assert.ok(!('board' in r.moves[0]!.params), JSON.stringify(r.moves[0]));
+  assert.equal(r.moves[1]!.params['board'], BOARD);
+  assert.ok(!r.trims.some((t) => t.path.startsWith('moves[0].params.board')), JSON.stringify(r.trims));
+  const favor = repairAnswer(withMoves(machineMove('flashSale', { slot: SLOT_HIDDEN, hours: 24, board: BOARD }, { demand: undefined })), withMachine());
+  assert.ok(favor.ok && favor.moves.length === 1 && !('board' in favor.moves[0]!.params), JSON.stringify(favor));
+});
+
+test('the prompt no longer tells the Boss to leave out a demand or a rule\'s board, which its schema requires', () => {
+  const served = meetingSystemPrompt({ boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.it, system: testSystem, settings, phase: ctx().phase, bank: 2, mods: [], characterName: () => 'someone', successorAllowed: false, roster: [], career: { led: [], offices: [] }, notes: [] });
+  assert.ok(!/leave "demand" out/.test(served) && !/left out for every board/.test(served), served);
+  assert.match(served, /empty kind/);
+  assert.match(served, /empty text for every board/);
+  assert.match(served, /every field is written[^\n]*blank[^\n]*ignored/);
+  assert.ok(!/Your answer is your whole new memory/.test(served));
+  assert.match(served, /memory you answer in the self part/);
 });
 
 test('the prompt tells the Boss the machine\'s three moves, their bounds and which carry a demand', () => {
@@ -997,9 +1072,42 @@ test('a composed bundle\'s parts are queued in dependency order, and a part nami
 test('the answer\'s rule carries beats and a bundle, both optional, and the schema says so', () => {
   const fields = (MEETING_RULE as { fields: Record<string, { optional?: boolean }> }).fields;
   assert.ok(fields['beats']?.optional && fields['bundle']?.optional);
-  const schema = ruleSchema(MEETING_RULE) as { properties: Record<string, unknown>; required: string[] };
-  assert.ok('beats' in schema.properties && 'bundle' in schema.properties);
-  assert.ok(!schema.required.includes('beats') && !schema.required.includes('bundle'));
+  const asked = [partSchema('bundle'), partSchema('self')] as { properties: Record<string, unknown>; required: string[] }[];
+  assert.ok('bundle' in asked[0]!.properties && 'beats' in asked[1]!.properties);
+  assert.ok(!asked[0]!.required.includes('bundle') && !asked[1]!.required.includes('beats'));
+});
+
+test('the bundle and beats as the provider is asked for them (every field written, a role as text, slots as a list) are read as the answer the repair knows', () => {
+  const blankDemand = { kind: '', params: {} };
+  const asked = withAnswer(
+    {
+      bundle: {
+        name: 'One story',
+        parts: [
+          // Fields of other kinds are written blank (empty text, 0) and ignored; the role, the go-live time and the demand of no kind are none.
+          { role: 'a', kind: 'createBoard', params: { name: 'Pirate Puns Palace', premise: 'Puns.', description: 'Arr.', board: '', into: '', fallback: '', thread: '', percent: 0 }, demand: blankDemand, go_live_at: '', expires_in_hours: 0, why: 'Because.' },
+          { role: '', kind: 'moveThread', params: { thread: THREAD, board: 'role:a', name: '', premise: '', percent: 0 }, demand: blankDemand, go_live_at: '', expires_in_hours: 0, why: '' },
+        ],
+      },
+      beats: [{ beat: 'split', slots: [{ slot: 'fangames.name', value: 'Platformer Palace Pals' }, { slot: 'fangames.description', value: '' }, { slot: 'nobody', value: 'x' }], why: '' }],
+    },
+    { beats: shownSplit },
+  );
+  const own = asked.bundles.find((b) => b.beat === null)!;
+  assert.deepEqual([own.name, own.cost], ['One story', 2]);
+  assert.deepEqual(own.parts.map((x) => [x.role, x.kind]), [['a', 'createBoard'], [null, 'moveThread']]);
+  assert.deepEqual(own.parts[1]!.params['board'], { role: 'a' }, '"role:a" is the role a');
+  assert.ok(asked.trims.some((t) => t.path === 'bundle.parts[1].params.board' && t.predicate === 'asRole'), JSON.stringify(asked.trims));
+  const beat = asked.bundles.find((b) => b.beat === 'split')!;
+  assert.equal(beat.parts[1]!.params['name'], 'Platformer Palace Pals', 'a slot written as "role.slot" fills that role\'s slot');
+  assert.equal(beat.parts[1]!.params['description'], 'Fangames only. Please.', 'a blank slot is its default');
+  // A role is the Boss's to name only in a bundle part: the same text in a plain move is no board.
+  const plain = withAnswer({ moves: [{ kind: 'moveThread', params: { thread: THREAD, board: 'role:a', name: '', premise: '', percent: 0 }, demand: blankDemand, go_live_at: new Date(NOW).toISOString(), expires_in_hours: 0, why: 'w' }] });
+  assert.equal(plain.moves.length, 0);
+  // A value of the wrong type in a part's own field refuses that part by name and keeps the answer.
+  const wrong = withAnswer({ bundle: { name: 'x', parts: [{ role: '', kind: 'moveThread', params: { thread: 7, board: BOARD }, demand: blankDemand, go_live_at: '', expires_in_hours: 0, why: 'w' }] } });
+  assert.equal(wrong.bundles.length, 0);
+  assert.ok(wrong.trims.some((t) => t.path === 'bundle.parts[0].params.thread' && t.predicate === 'isString'), JSON.stringify(wrong.trims));
 });
 
 test('a role of another beat is a role: {role, beat} is a role reference, and nothing else is', async () => {
@@ -1034,7 +1142,6 @@ test('no sentence in the prompt names a move kind the Boss holds back: each kind
 
 /* ---------------------------------------------------------- a malformed bundle or beat never costs the answer ---- */
 test('a malformed bundle or beat is dropped or repaired and recorded; the answer, and its other moves, still stand', async () => {
-  const { meetingSchema } = await import('./meeting.ts');
   const keep = { kind: 'createBoard', params: { name: 'Pirate Puns Palace', premise: 'p', description: 'd' }, expires_in_hours: 0, why: 'w', go_live_at: new Date(NOW).toISOString() };
   const at = (r: { trims: readonly { path: string; predicate: string }[] }, path: string) => r.trims.find((t) => t.path === path)?.predicate;
   // The whole bundle is no object, the beats are no list.
@@ -1065,9 +1172,10 @@ test('a malformed bundle or beat is dropped or repaired and recorded; the answer
   assert.equal(at(c, 'beats[1].beat'), 'isString');
   assert.deepEqual(c.bundles.map((x) => x.beat), ['split']);
   // The model is still given the strict shape.
-  const schema = meetingSchema() as { properties: Record<string, any> };
-  assert.deepEqual(schema.properties['bundle'].required, ['name', 'parts']);
-  assert.ok(schema.properties['bundle'].properties.parts.items.required.includes('kind') && schema.properties['beats'].items.required.includes('beat'));
+  const askedBundle = partSchema('bundle') as { properties: Record<string, any> };
+  const askedSelf = partSchema('self') as { properties: Record<string, any> };
+  assert.deepEqual(askedBundle.properties['bundle'].required, ['name', 'parts']);
+  assert.ok(askedBundle.properties['bundle'].properties.parts.items.required.includes('kind') && askedSelf.properties['beats'].items.required.includes('beat'));
 
 });
 
@@ -1129,7 +1237,7 @@ test('the farewell window is the farewellWindowHours before the season\'s end', 
 test('the answer\'s rule carries a farewell and a handoff, both optional, and the schema says so', () => {
   const fields = (MEETING_RULE as { fields: Record<string, { optional?: boolean }> }).fields;
   assert.ok(fields['farewell']?.optional && fields['handoff']?.optional);
-  const schema = ruleSchema(MEETING_RULE) as { properties: Record<string, unknown>; required: string[] };
+  const schema = partSchema('self') as { properties: Record<string, unknown>; required: string[] };
   assert.ok('farewell' in schema.properties && 'handoff' in schema.properties);
   assert.ok(!schema.required.includes('farewell') && !schema.required.includes('handoff'));
 });
@@ -1158,4 +1266,231 @@ test('a farewell or handoff from a meeting that was not told to write one is dro
   assert.ok(r.trims.some((t) => t.path === 'handoff' && t.predicate === 'inFarewellWindow'), JSON.stringify(r.trims));
   const blank = withAnswer({ farewell: '   ' }, { farewell: { postMaxLength: 500 } });
   assert.equal(blank.farewell, null, 'a blank farewell is none, so the stock line stands');
+});
+
+/* ------------------------------------------------------------------ the three parts (provider schemas plan, Task 4) ---- */
+
+const tally = (schema: any): { properties: number; optional: number; unions: number } => {
+  const t = { properties: 0, optional: 0, unions: 0 };
+  const walk = (n: any): void => {
+    if (n === null || typeof n !== 'object') return;
+    if (n.properties) {
+      const keys = Object.keys(n.properties);
+      t.properties += keys.length;
+      t.optional += keys.filter((k) => !(n.required ?? []).includes(k)).length;
+      for (const k of keys) walk(n.properties[k]);
+    }
+    if (n.items) walk(n.items);
+    if (n.anyOf) { t.unions += 1; n.anyOf.forEach(walk); }
+  };
+  walk(schema);
+  return t;
+};
+
+test('every field of the answer is in exactly one part, and MEETING_RULE is built from the parts', () => {
+  assert.deepEqual(MEETING_PARTS.map((p) => p.key), ['moves', 'bundle', 'staff', 'self']);
+  assert.deepEqual(MEETING_PARTS.map((p) => [...p.fields]), [['moves', 'inherited', 'successor'], ['bundle'], ['orders', 'patrols'], ['memory', 'profile', 'beats', 'farewell', 'handoff']]);
+  const listed = MEETING_PARTS.flatMap((p) => [...p.fields]);
+  assert.equal(new Set(listed).size, listed.length, `a field is in two parts: ${listed.join(', ')}`);
+  assert.deepEqual([...listed].sort(), Object.keys(MEETING_FIELDS).sort(), 'a field is in no part');
+  assert.deepEqual(Object.keys((MEETING_RULE as { fields: object }).fields), listed);
+  for (const p of MEETING_PARTS) {
+    assert.deepEqual(Object.keys((partRule(p.key) as { fields: object }).fields), [...p.fields]);
+    assert.match(p.ask, /\S/);
+  }
+  assert.ok(MEETING_PARTS[0]!.ask.includes('Hold your meeting.'));
+});
+
+// The moves part is 39 of the provider's 40 properties: the fangame split's kinds added their params (into, fallback, a thread's board) to the loose object every move carries, so a field added to any kind's params now needs a part of its own.
+const DESIGN_PROPERTIES = { moves: 39, bundle: 36, staff: 23, self: 28 } as const;
+const OPTIONAL = { moves: 1, bundle: 1, staff: 7, self: 4 } as const;
+for (const key of ['moves', 'bundle', 'staff', 'self'] as const) {
+  const t = tally(partSchema(key));
+  test(`the ${key} part's schema is accepted by the provider's rules: ${t.properties} properties, ${t.optional} optional, ${t.unions} unions`, () => {
+    assert.deepEqual(schemaProblems(partSchema(key)), []);
+    assert.deepEqual(t, { properties: DESIGN_PROPERTIES[key], optional: OPTIONAL[key], unions: 0 });
+  });
+}
+
+test('the moves part asks for every field of a move, and its loose params and demand are all required', () => {
+  const schema = partSchema('moves') as any;
+  assert.deepEqual([...schema.required].sort(), ['inherited', 'moves'], 'an empty list says none, so inherited is required; successor has no blank that says none');
+  assert.ok(!schema.required.includes('successor'));
+  const item = schema.properties.moves.items;
+  assert.deepEqual([...item.required].sort(), ['demand', 'expires_in_hours', 'go_live_at', 'kind', 'params', 'why']);
+  assert.deepEqual([...item.properties.params.required].sort(), Object.keys(item.properties.params.properties).sort());
+  assert.deepEqual([...item.properties.demand.required].sort(), ['kind', 'params']);
+  assert.deepEqual([...item.properties.demand.properties.params.required].sort(), Object.keys(item.properties.demand.properties.params.properties).sort());
+  assert.ok(Object.keys(item.properties.params.properties).length > 4);
+});
+
+test('a schema merged from all three parts is too large for the provider, by propertiesTotal', () => {
+  const merged = { type: 'object', additionalProperties: false, properties: {} as Record<string, unknown>, required: [] as string[] };
+  for (const key of ['moves', 'bundle', 'staff', 'self'] as const) {
+    const s = partSchema(key) as any;
+    Object.assign(merged.properties, s.properties);
+    merged.required.push(...(s.required ?? []));
+  }
+  assert.ok(schemaProblems(merged).some((p) => p.predicate.startsWith('propertiesTotal')), JSON.stringify(schemaProblems(merged)));
+});
+
+const BLANK_PARAMS = { board: '', name: '', premise: '', description: '', predicate: '', param: '', band: '', character: '', group: '', checkAt: '', slot: '', percent: 0, hours: 0 };
+const BLANK_DEMAND = { kind: '', params: { board: '', count: 0, quadrant: '', character: '', thread: '', a: '', b: '', reactions: 0 } };
+const askedMove = (kind: string, params: Record<string, unknown>, demand: unknown = BLANK_DEMAND) => ({
+  kind, params: { ...BLANK_PARAMS, ...params }, demand, go_live_at: new Date(NOW + 30 * H).toISOString(), expires_in_hours: 72, why: 'Because.',
+});
+const movesOnly = (...moves: unknown[]) => ({ moves, inherited: [] });
+const plain = (raw: unknown, c: RepairContext = ctx()) => {
+  const r = repairAnswer(raw, c);
+  assert.ok(r.ok, JSON.stringify(r));
+  return r;
+};
+
+test('a rename with a 0 in percent and a blank predicate keeps exactly its four params, with no trim for the rest', () => {
+  const r = plain(movesOnly(askedMove('renameBoard', { board: BOARD, name: 'Pirate Puns Palace', premise: 'Everything about puns.', description: 'Ahoy.' }, { kind: 'postsOnBoard', params: { ...BLANK_DEMAND.params, board: BOARD, count: 4, thread: THREAD, a: ANN } })));
+  assert.equal(r.moves.length, 1, JSON.stringify(r.trims));
+  assert.deepEqual(r.moves[0]!.params, { board: BOARD, name: 'Pirate Puns Palace', premise: 'Everything about puns.', description: 'Ahoy.' });
+  assert.deepEqual(r.moves[0]!.demand, { kind: 'postsOnBoard', params: { board: BOARD, count: 4 } });
+  assert.deepEqual(r.trims.filter((t) => /\.(params|demand)/.test(t.path)), []);
+});
+
+test('a number or a blank in another kind\'s field is never read, never recorded, and never costs the answer', () => {
+  const r = plain(movesOnly(askedMove('renameBoard', { board: BOARD, name: 'Pirate Puns Palace', premise: 'Everything about puns.', predicate: 7, band: 9, slot: 3 }, { kind: 'postsOnBoard', params: { ...BLANK_DEMAND.params, board: BOARD, count: 4, quadrant: 5 } })));
+  assert.equal(r.moves.length, 1, JSON.stringify(r.trims));
+  assert.deepEqual(r.moves[0]!.params, { board: BOARD, name: 'Pirate Puns Palace', premise: 'Everything about puns.' });
+  assert.deepEqual(r.trims.filter((t) => /\.(params|demand)/.test(t.path)), []);
+});
+
+test('a house rule (blank board) is a rule on every board, and a blank param is none where the predicate takes none', () => {
+  const r = plain(movesOnly(askedMove('setRule', { board: '', predicate: 'noAllCaps', param: '', band: 'minor' }, { kind: 'postsOnBoard', params: { ...BLANK_DEMAND.params, board: BOARD, count: 4 } })));
+  assert.equal(r.moves.length, 1, JSON.stringify(r.trims));
+  assert.deepEqual(r.moves[0]!.params, { board: null, predicate: 'noAllCaps', param: null, band: 'minor' });
+});
+
+test('a conferral\'s blank board and blank checkAt are absent', () => {
+  const r = plain(movesOnly(askedMove('conferGroup', { character: ANN, group: 'trialMembers', board: '', checkAt: '' }, { kind: 'postsOnBoard', params: { ...BLANK_DEMAND.params, board: BOARD, count: 4 } })));
+  assert.equal(r.moves.length, 1, JSON.stringify(r.trims));
+  assert.deepEqual(r.moves[0]!.params, { character: ANN, group: 'trialMembers' });
+});
+
+test('a favor whose demand kind is blank has no demand, and no stray-demand trim is recorded', () => {
+  const SLOT = '51000000-0000-4000-8000-00000000000a';
+  const shelf: MachineSlotFacts[] = [{ id: SLOT, position: 1, card: 'whoops', pack: null, availability: 'onSale', price: 100, pullable: true, move: null }];
+  const r = plain(movesOnly(askedMove('repriceSlot', { slot: SLOT, percent: 80 })), { ...ctx(), machine: shelf });
+  assert.equal(r.moves.length, 1, JSON.stringify(r.trims));
+  assert.equal(r.moves[0]!.demand, null);
+  assert.ok(!r.trims.some((t) => t.predicate === 'noDemand'), JSON.stringify(r.trims));
+});
+
+test('a move that needs a demand and gives a blank demand kind is dropped, recorded at its demand', () => {
+  const r = plain(movesOnly(askedMove('renameBoard', { board: BOARD, name: 'Pirate Puns Palace', premise: 'Everything about puns.' })));
+  assert.equal(r.moves.length, 0);
+  assert.ok(r.trims.some((t) => t.path.startsWith('moves[0].demand')), JSON.stringify(r.trims));
+});
+
+test('a blank name on a rename, and a 0 count in a demand, are refused by name', () => {
+  const name = plain(movesOnly(askedMove('renameBoard', { board: BOARD, name: '', premise: 'Everything about puns.' }, { kind: 'postsOnBoard', params: { ...BLANK_DEMAND.params, board: BOARD, count: 4 } })));
+  assert.equal(name.moves.length, 0, JSON.stringify(name.trims));
+  assert.ok(name.trims.some((t) => t.path === 'moves[0].params.name'), JSON.stringify(name.trims));
+  const count = plain(movesOnly(askedMove('renameBoard', { board: BOARD, name: 'Pirate Puns Palace', premise: 'Everything about puns.' }, { kind: 'postsOnBoard', params: { ...BLANK_DEMAND.params, board: BOARD, count: 0 } })));
+  assert.equal(count.moves.length, 0, JSON.stringify(count.trims));
+  assert.ok(count.trims.some((t) => t.path.startsWith('moves[0].demand') && /atLeast/.test(t.predicate)), JSON.stringify(count.trims));
+});
+
+test('a number in a text field that is not an any field is not read as text: the move is refused, the answer stands', () => {
+  const r = repairAnswer(movesOnly(askedMove('renameBoard', { board: BOARD, name: 42, premise: 'Everything about puns.' }, { kind: 'postsOnBoard', params: { ...BLANK_DEMAND.params, board: BOARD, count: 4 } })), ctx());
+  assert.ok(r.ok, JSON.stringify(r));
+  assert.equal(r.moves.length, 0);
+  assert.ok(!r.trims.some((t) => t.predicate === 'asText'), JSON.stringify(r.trims));
+  assert.equal(r.trims.filter((t) => t.path === 'moves[0].params.name' && t.predicate === 'isString').length, 1, JSON.stringify(r.trims));
+});
+
+// One rule: a value in a move's own field whose type is not that field's drops that move, naming the path and the predicate; the answer stays, and the move never changes meaning.
+const okMove = { ...askedMove('renameBoard', { board: BOARD, name: 'Pirate Puns Palace', premise: 'Everything about puns.' }, { kind: 'postsOnBoard', params: { ...BLANK_DEMAND.params, board: BOARD, count: 4 } }) };
+const askedRule = (params: Record<string, unknown>) => ({ ...askedMove('setRule', params, { kind: '', params: BLANK_DEMAND.params }) });
+
+test('a non-text value in an own optional text field drops that move, naming the path; the other moves stay', () => {
+  const rule = askedRule({ board: 5, predicate: 'minLength', param: '20', band: 'minor' });
+  const r = plain(movesOnly(rule, okMove));
+  assert.equal(r.moves.length, 1, JSON.stringify(r.trims));
+  assert.equal(r.moves[0]!.kind, 'renameBoard');
+  assert.ok(r.trims.some((t) => t.path === 'moves[0].params.board' && t.predicate === 'isString'), JSON.stringify(r.trims));
+  const group = plain(movesOnly(askedMove('conferGroup', { character: ANN, group: 'trialMembers', checkAt: 5 }, { kind: 'postsOnBoard', params: { ...BLANK_DEMAND.params, board: BOARD, count: 4 } }), okMove));
+  assert.equal(group.moves.length, 1, JSON.stringify(group.trims));
+  assert.ok(group.trims.some((t) => t.path === 'moves[0].params.checkAt' && t.predicate === 'isString'), JSON.stringify(group.trims));
+});
+
+test('a number in an own enum field drops that move; the answer is kept', () => {
+  const r = plain(movesOnly(askedRule({ board: BOARD, predicate: 'minLength', param: '20', band: 9 }), okMove));
+  assert.equal(r.moves.length, 1, JSON.stringify(r.trims));
+  assert.ok(r.trims.some((t) => t.path === 'moves[0].params.band' && /^oneOf\(/.test(t.predicate)), JSON.stringify(r.trims));
+  const demand = plain(movesOnly(askedMove('renameBoard', { board: BOARD, name: 'Pirate Puns Palace', premise: 'Everything about puns.' }, { kind: 'quadrantOnBoard', params: { ...BLANK_DEMAND.params, board: BOARD, quadrant: 3, count: 4 } }), okMove));
+  assert.equal(demand.moves.length, 1, JSON.stringify(demand.trims));
+  assert.ok(demand.trims.some((t) => t.path === 'moves[0].demand.params.quadrant' && /^oneOf\(/.test(t.predicate)), JSON.stringify(demand.trims));
+});
+
+test('a text value in an own number field drops that move, naming isNumber', () => {
+  const r = plain(movesOnly(askedMove('renameBoard', { board: BOARD, name: 'Pirate Puns Palace', premise: 'Everything about puns.' }, { kind: 'postsOnBoard', params: { ...BLANK_DEMAND.params, board: BOARD, count: 'four' } }), okMove));
+  assert.equal(r.moves.length, 1, JSON.stringify(r.trims));
+  assert.ok(r.trims.some((t) => t.path === 'moves[0].demand.params.count' && t.predicate === 'isNumber'), JSON.stringify(r.trims));
+});
+
+test('a setRule\'s param sent as a JSON number keeps the move, read as its text and then as the count, both recorded', () => {
+  const r = repairAnswer(ruleAnswer({ board: BOARD, predicate: 'minLength', param: 20, band: 'minor' }), ctx());
+  assert.ok(r.ok, JSON.stringify(r));
+  assert.equal(r.moves.length, 1, JSON.stringify(r.trims));
+  assert.equal(r.moves[0]!.params['param'], 20);
+  assert.ok(r.trims.some((t) => t.path === 'moves[0].params.param' && t.predicate === 'asText' && t.before === 20 && t.after === 2), JSON.stringify(r.trims));
+  assert.ok(r.trims.some((t) => t.path === 'moves[0].params.param' && t.predicate === 'asNumber'), JSON.stringify(r.trims));
+  const demand = repairAnswer(answer({ kind: 'postsOnBoard', params: { board: BOARD, count: 5, quadrant: 7 } }), ctx());
+  assert.ok(demand.ok && demand.moves.length === 1, JSON.stringify(demand));
+});
+
+test('an answer with a part missing is an answer with none of it', () => {
+  const none = plain({});
+  assert.deepEqual([none.moves, none.inherited, none.successor, none.orders, none.patrols, none.memory, none.profile], [[], [], null, [], [], undefined, undefined]);
+  const staff = plain({ orders: [], patrols: [] });
+  assert.deepEqual([staff.moves, staff.memory, staff.profile], [[], undefined, undefined]);
+  const moves = plain(movesOnly(move({ kind: 'postsOnBoard', params: { board: BOARD, count: 5 } })));
+  assert.equal(moves.moves.length, 1);
+  assert.equal(moves.memory, undefined);
+  assert.equal(moves.profile, undefined);
+  assert.deepEqual([moves.orders, moves.patrols], [[], []]);
+  const shown = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+  const handover = plain({ moves: [], inherited: [{ move_act: shown, decision: 'keep' }] });
+  assert.deepEqual(handover.inherited.map((x) => x.move_act), [shown]);
+  const self = plain({ memory: answer(null).memory, profile: answer(null).profile });
+  assert.ok(self.memory !== undefined && self.profile !== undefined);
+  assert.deepEqual([self.moves, self.inherited, self.successor], [[], [], null]);
+});
+
+test('a memory without a profile, or a profile without a memory, is whole: the missing one is undefined', () => {
+  const m = plain({ memory: answer(null).memory });
+  assert.ok(m.memory !== undefined && m.profile === undefined);
+  const p = plain({ profile: answer(null).profile });
+  assert.ok(p.memory === undefined && p.profile !== undefined);
+});
+
+test('a present but broken memory still rejects, naming the path', () => {
+  const r = repairAnswer({ memory: { hobby: 3 } }, ctx());
+  assert.ok(!r.ok && r.path.startsWith('memory'), JSON.stringify(r));
+});
+
+test('the system prompt says the meeting is answered in four turns, and names each part once, from the parts', () => {
+  const text = meetingSystemPrompt({ boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.she, system: testSystem, settings, phase: ctx().phase, bank: 2, mods: [], characterName: () => 'someone', successorAllowed: false, roster: [], notes: [], career: { led: [], offices: [] } });
+  assert.match(text, /The meeting is answered in four turns/);
+  // The beats, the farewell and the handoff are named only to a meeting that has any to answer (the next two tests).
+  for (const p of MEETING_PARTS) assert.equal(text.split(`the "${p.key}" part (${p.fields.filter((f) => !['beats', 'farewell', 'handoff'].includes(f)).join(', ')})`).length - 1, 1, p.key);
+  assert.equal(MEETING_PARTS.length, 4);
+  const told = meetingSystemPrompt({ boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.she, system: testSystem, settings, phase: ctx().phase, bank: 2, mods: [], characterName: () => 'someone', successorAllowed: false, roster: [], notes: [], career: { led: [], offices: [] }, farewell: { postMaxLength: 500 }, beats: shownSplit });
+  assert.ok(told.includes('the "self" part (memory, profile, beats, farewell, handoff)'), 'a meeting with beats and a farewell to write is told to answer them in the self part');
+  assert.ok(text.endsWith('Answer only in the structure you are asked for.'));
+});
+
+test('each part\'s own rule accepts its own schema\'s shape: a rule with every field optional, so a blank is read as absent', () => {
+  for (const p of MEETING_PARTS) {
+    const rule = partRule(p.key) as { fields: Record<string, { optional?: boolean }> };
+    for (const f of p.fields) assert.equal(rule.fields[f]!.optional, true, `${p.key}.${f}`);
+    assert.ok(repair({}, partRule(p.key)).ok, p.key);
+  }
 });

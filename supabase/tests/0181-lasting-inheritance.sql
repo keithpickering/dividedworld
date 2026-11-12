@@ -1,4 +1,4 @@
--- A lasting move is not handed on (supabase/migrations/0171_thread_places.sql; plan Task 1). The inheritance review is of moves that expire: a Boss that
+-- A lasting move is not handed on (supabase/migrations/0214_thread_places.sql; plan Task 1). The inheritance review is of moves that expire: a Boss that
 -- inherits sees the renames in force, and a lasting move (a board made, merged, or a thread moved) shapes a board all the same and is not in inheritance_due.
 
 insert into move_kinds (key, structural, shapes_board, lasting) values ('testLasting', true, true, true);

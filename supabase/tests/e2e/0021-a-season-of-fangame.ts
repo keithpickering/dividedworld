@@ -23,6 +23,8 @@ import { runMeeting } from '../../functions/meet/core.ts';
 import { instance as realInstance } from '../../functions/_shared/instance.ts';
 import { placeholderBosses } from '../../../instances/divided-world/system/fixtures/index.ts';
 import { models } from '../../functions/_shared/models/index.ts';
+import { systemOf, firstMessageOf, partOf, partAnswer } from './meeting-fake.ts';
+import { MEETING_PARTS } from '../../../engine/system/meeting.ts';
 import { ledgerWriter } from '../../functions/_shared/models/ledger.ts';
 import type { Instance } from '../../../engine/rules/types.ts';
 
@@ -81,8 +83,10 @@ test('a season of FanGaME: the Split, picking it apart, the consolidation, every
   const fake = (async (url: string, init?: RequestInit) => {
     const body = JSON.parse(String(init?.body));
     if (String(url).includes('anthropic')) {
-      seen.push({ system: String(body.system ?? ''), user: String(body.messages?.[0]?.content ?? '') });
-      return new Response(JSON.stringify({ model: tiers.strong, stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify(answer) }], usage: { input_tokens: 4000, output_tokens: 700, service_tier: 'standard' } }), { status: 200 });
+      // The meeting is answered a part at a time: each call is given the fields of the scripted answer that its part owns. The prompt is the same in every part, so it is recorded once, at the first.
+      const part = partOf(body);
+      if (!part || part === MEETING_PARTS[0].key) seen.push({ system: systemOf(body), user: firstMessageOf(body) });
+      return new Response(JSON.stringify({ model: tiers.strong, stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify(part ? partAnswer(answer, part) : answer) }], usage: { input_tokens: 4000, output_tokens: 700, service_tier: 'standard' } }), { status: 200 });
     }
     return new Response(JSON.stringify({ choices: [{ text: ' ok.' }], usage: { prompt_tokens: 300, completion_tokens: 12 } }), { status: 200 });
   }) as unknown as typeof fetch;

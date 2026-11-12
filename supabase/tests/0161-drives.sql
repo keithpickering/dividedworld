@@ -906,7 +906,7 @@ begin
 end $$;
 
 -- ---- the log reads a gift: each side's page names the gift's Act, the drive's opening play and the post, and holds only its own wallet event ----
--- log_page (0171) names the Acts a `gift_out` or `gift_in` points at (`ref`, the gift) and follows them to the drive's play and the post, so the line can say the amount, the overhead, what arrived and where. The giver's page
+-- log_page (0153) names the Acts a `gift_out` or `gift_in` points at (`ref`, the gift) and follows them to the drive's play and the post, so the line can say the amount, the overhead, what arrived and where. The giver's page
 -- holds the giver's event and none of the author's; the author's holds the author's and the giver's public character, never an account.
 do $$
 declare

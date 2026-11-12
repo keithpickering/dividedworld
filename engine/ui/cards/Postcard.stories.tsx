@@ -1,6 +1,6 @@
 /**
  * The postcard's frame at its four sizes (docs/plans/2026-11-05-card-template-design.md): the instance's cards drawn at each size,
- * and the card's back, default and the hit pull's gold, wearing the instance's mark where it gave one (`InstanceUi.cardBack`).
+ * and the card's back, the same for every card, wearing the instance's mark where it gave one (`InstanceUi.cardBack`).
  * Nothing here acts.
  */
 import type { Meta, StoryObj } from '@storybook/react-vite';
@@ -31,10 +31,8 @@ function Backs() {
   const { ui } = useKayfa();
   return (
     <div style={row}>
-      <p style={{ flexBasis: '100%', margin: 0 }}>Card backs at the four sizes: the default, then the hit pull's gold. A back names no card.</p>
-      {[false, true].flatMap((hit) => sizes.map((size) => (
-        <PostcardBack key={`${size}${hit}`} size={size} hit={hit} mark={ui.cardBack?.mark} role="img" aria-label={`A face-down postcard, ${size}${hit ? ', the hit pull' : ''}`} />
-      )))}
+      <p style={{ flexBasis: '100%', margin: 0 }}>The card back at the four sizes. A back names no card, and every card has the same one.</p>
+      {sizes.map((size) => <PostcardBack key={size} size={size} {...(ui.cardBack ?? {})} role="img" aria-label={`A face-down postcard, ${size}`} />)}
     </div>
   );
 }

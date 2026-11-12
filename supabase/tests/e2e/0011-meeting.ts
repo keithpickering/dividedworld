@@ -6,6 +6,8 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { systemOf, firstMessageOf, partOf, partAnswer } from './meeting-fake.ts';
+import { MEETING_PARTS } from '../../../engine/system/meeting.ts';
 import { psqlDb, sql, scratchSeed } from './psql-db.ts';
 import { runMeeting } from '../../functions/meet/core.ts';
 import { instance } from '../../functions/_shared/instance.ts';
@@ -42,12 +44,16 @@ test('a meeting with a fake model queues a rename, writes memory and profile ver
     }],
   };
   const requests: string[] = [];
+  const parts: string[] = [];
   const fake = (async (url: string, init?: RequestInit) => {
     requests.push(String(url));
     const body = JSON.parse(String(init?.body));
     if (String(url).includes('anthropic')) {
-      assert.match(body.system, /Phase: /);
-      return new Response(JSON.stringify({ model: tiers.strong, stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify(answer) }], usage: { input_tokens: 4000, output_tokens: 700, service_tier: 'standard' } }), { status: 200 });
+      assert.match(systemOf(body), /Phase: /);
+      const part = partOf(body);
+      assert.ok(part, 'the meeting asks for one of its parts');
+      parts.push(part);
+      return new Response(JSON.stringify({ model: tiers.strong, stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify(partAnswer(answer, part)) }], usage: { input_tokens: 4000, output_tokens: 700, service_tier: 'standard' } }), { status: 200 });
     }
     return new Response(JSON.stringify({ choices: [{ text: ' ur board is now about pirates!!!\nBoard: next' }], usage: { prompt_tokens: 300, completion_tokens: 12 } }), { status: 200 });
   }) as unknown as typeof fetch;
@@ -80,11 +86,12 @@ test('a meeting with a fake model queues a rename, writes memory and profile ver
   assert.ok(Math.abs(row.bank_before - 3) < 0.01 && Math.abs(row.bank_after - 2) < 0.01);
   assert.equal(row.consecutive_failures, 0);
 
-  // The ledger row of the one model call names the meeting that was opened before it; no completion is asked for.
+  // The ledger rows of the meeting's model calls, one for each part, name the meeting that was opened before it; no completion is asked for.
   const calls = JSON.parse(sql(`select coalesce(json_agg(json_build_object('duty', duty, 'staff', staff, 'outcome', outcome, 'model', model) order by id), '[]') from model_calls where meeting = ${first.meeting}`));
   assert.deepEqual(calls, [
-    { duty: 'meeting', staff: BOSS, outcome: 'ok', model: tiers.strong },
+    ...MEETING_PARTS.map(() => ({ duty: 'meeting', staff: BOSS, outcome: 'ok', model: tiers.strong })),
   ]);
+  assert.deepEqual(parts, MEETING_PARTS.map((p) => p.key), 'the parts were asked in order');
   assert.ok(!requests.some((u) => u.includes('completions.test')), 'a meeting never calls the completion endpoint');
 
   // The same slot again: nothing more is queued, written or called.
@@ -105,7 +112,7 @@ test('a meeting with a fake model queues a rename, writes memory and profile ver
   assert.equal(before('staff_memory') - memories!, 1);
   assert.ok(Math.abs(Number(sql(`select balance from move_bank where staff = '${BOSS}'`)) - bank) < 0.0001);
   assert.equal(sql(`select outcome || ':' || consecutive_failures from meetings where slot = '${later}'`), 'failed:1');
-  assert.equal(sql(`select count(*) from model_calls where meeting = (select id from meetings where slot = '${later}') and outcome = 'failed'`), '1', 'the failed call is in the ledger too');
+  assert.equal(sql(`select count(*) from model_calls where meeting = (select id from meetings where slot = '${later}') and outcome = 'failed'`), String(MEETING_PARTS.length), 'each part\'s failed call is in the ledger too: a part that fails does not stop the next');
 
   // With The System off, a slot is a row that says so.
   sql(`update settings set value = 'false' where key = 'systemEnabled'`);

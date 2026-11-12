@@ -51,6 +51,7 @@ import { useMachine } from '../cards/machine.ts';
 import type { CardArt } from '../cards/types.ts';
 import { signInHref } from '../account/next.ts';
 import { useKayfa } from '../context.tsx';
+import type { InstanceUi } from '../types.ts';
 import type { BoardName, Id, Slot, SlotMove } from '../data/api.ts';
 import { backHref, boardPlace } from '../glass/back.ts';
 import { GlassButton } from '../glass/Button.tsx';
@@ -226,13 +227,13 @@ function SlotArt({ it }: { readonly it: Item }) {
   return <PackArt name={it.name} count={it.pack!.pulls.length} {...(it.look?.art ? { art: it.look.art } : {})} />;
 }
 
-/** "In this pack": five small backs, the last one the hit's gold, and what opening does. */
-function InPack({ pack, count, line, mark }: { readonly pack: PackRules; readonly count: number; readonly line: string; readonly mark: string | undefined }) {
+/** "In this pack": five small backs, all the same, and what opening does. */
+function InPack({ pack, count, line, back }: { readonly pack: PackRules; readonly count: number; readonly line: string; readonly back: InstanceUi['cardBack'] }) {
   return (
     <section className="kb-vending-inpack" aria-label="In this pack">
       <p className="kb-vending-inpack-head" aria-hidden="true" data-kb-art />
       <div className="kb-vending-backs" aria-hidden="true" data-kb-key={pack.key}>
-        {Array.from({ length: count }, (_, i) => <PostcardBack key={i} size="slot" hit={i === count - 1} {...(mark ? { mark } : {})} />)}
+        {Array.from({ length: count }, (_, i) => <PostcardBack key={i} size="slot" {...(back ?? {})} />)}
       </div>
       <p className="kb-vending-inpack-line">{line}</p>
     </section>
@@ -579,7 +580,7 @@ export function Vending() {
         feel={feel} hand={() => handLinkEl.current} cards={cardFaces}
         onLanded={(id) => { change(account, (m) => ({ drop: m.drop && m.drop.flying.length > 1 ? { ...m.drop, flying: m.drop.flying.filter((f) => f.id !== id) } : null })); if (feel && handLinkEl.current) animate(handLinkEl.current, pulse(feel).animate as never); }}
         retry={() => void look()} slotRef={slotRef}
-        inPack={pack && picks ? <InPack pack={pack} count={pack.pulls.length} line={picks.line} mark={ui.cardBack?.mark} /> : null}
+        inPack={pack && picks ? <InPack pack={pack} count={pack.pulls.length} line={picks.line} back={ui.cardBack} /> : null}
       />
 
       {/* The column's words stand in one calm, as an aside's do (the smoke is taken away under them). */}

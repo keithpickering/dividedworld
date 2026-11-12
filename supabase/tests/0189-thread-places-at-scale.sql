@@ -1,4 +1,4 @@
--- A merge rebuilds its threads in one statement, and the counts follow per statement (supabase/migrations/0192_thread_places_at_scale.sql; final review of PR #450, finding F1).
+-- A merge rebuilds its threads in one statement, and the counts follow per statement (supabase/migrations/0235_thread_places_at_scale.sql; final review of PR #450, finding F1).
 --
 -- Landing a mergeBoard rebuilt every thread of the merged board one thread_place() call at a time, the board count and the search copy each following per row, all inside the tick's one
 -- transaction: 32 s for 10,000 threads, and a reply to any thread on that board waited the whole time on a row lock. This builds a board of 5,000 threads with a post each, lands a
