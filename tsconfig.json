@@ -20,5 +20,5 @@
     "supabase/tests/**/*.ts",
     "tools/rehearse/**/*.ts"
   ],
-  "exclude": ["engine/ui/**", "instances/*/ui/**", "instances/*/cards/**/paint.ts", "instances/*/cards/**/lines.ts", "instances/*/cards/**/drop.ts", "instances/*/cards/autocorrect/residue.ts", "instances/*/cards/autocorrect/residue.test.ts", "instances/*/cards/**/suds.ts", "instances/*/cards/**/suds.test.ts", "instances/*/cards/**/cursor.ts", "instances/*/cards/**/spray.ts"]
+  "exclude": ["engine/ui/**", "instances/*/ui/**", "instances/*/cards/**/paint.ts", "instances/*/cards/**/lines.ts", "instances/*/cards/**/drop.ts", "instances/*/cards/autocorrect/residue.ts", "instances/*/cards/autocorrect/residue.test.ts", "instances/*/cards/**/suds.ts", "instances/*/cards/**/suds.test.ts", "instances/*/cards/**/cursor.ts", "instances/*/cards/**/spray.ts", "instances/*/cards/**/build*.ts"]
 }
