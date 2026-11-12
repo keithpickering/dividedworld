@@ -1,64 +1,73 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 /**
- * The hand drawer's exit (engine/ui/frame/Hud.tsx; glass polish design, section 9): it leaves from the hand button, so the close is measured while the
- * drawer is still shown, and the transform-origin it plays from is the button's side of the drawer, not the default center.
+ * The hand's deal and gather on the wide layout (engine/ui/frame/Hud.tsx; hand-arc design, section 2, "It deals from the hand button"): opening deals the
+ * cards from the hand button's center to their slots, and closing gathers them back toward it, the first card dealt gathered last. The drawer stays shown
+ * until the last card is in, then hides. Under reduced motion the cards are in their slots on the first frame after the press.
  */
-test.use({ bypassCSP: true, reducedMotion: 'no-preference' });
+test.use({ bypassCSP: true, viewport: { width: 1440, height: 900 } });
 
-test('closing the hand drawer plays its exit from the hand button', async ({ page }) => {
+const BUTTON = /^Hand, \d+ postcards?/;
+
+async function openThread(page: Page, feel: 'smooth' | 'off') {
   await page.goto('/b/general');
   await page.getByRole('link', { name: 'Who keeps reacting with a thumbs up?', exact: true }).click();
-  await page.evaluate(() => { document.documentElement.setAttribute('data-kb-motion', 'full'); document.documentElement.setAttribute('data-kb-motion-feel', 'smooth'); });
-  const button = page.getByRole('button', { name: /^Hand, \d+ postcards?/ });
-  await button.click();
-  const hand = page.getByRole('region', { name: 'Your hand' });
-  await expect(hand).toBeFocused();
-  await page.waitForTimeout(800);
-  const geo = await page.evaluate(() => {
-    const a = document.querySelector<HTMLElement>('.kb-hand-drawer')!.getBoundingClientRect();
-    const b = Array.from(document.querySelectorAll('button')).find((e) => /^Hand, \d+ postcard/.test(e.getAttribute('aria-label') ?? e.textContent ?? ''))!.getBoundingClientRect();
-    return { drawer: a.toJSON(), button: b.toJSON() };
-  });
-  await page.evaluate(() => {
-    const el = document.querySelector<HTMLElement>('.kb-hand-drawer')!;
-    const seen: string[] = [];
-    (globalThis as unknown as { __o: string[] }).__o = seen;
-    const tick = () => { seen.push(el.style.transformOrigin); if (seen.length < 40) requestAnimationFrame(tick); };
-    new MutationObserver(() => {}).observe(el, { attributes: true });
+  if (feel === 'smooth') await page.evaluate(() => { document.documentElement.setAttribute('data-kb-motion', 'full'); document.documentElement.setAttribute('data-kb-motion-feel', 'smooth'); });
+}
+
+/** Samples the center of the first card, and of the hand button, on each frame for `frames` frames, from the press that follows. */
+async function sample(page: Page, press: () => Promise<void>, frames: number) {
+  await page.evaluate((n) => {
+    const out: { x: number; y: number; b: { x: number; y: number } }[] = [];
+    (globalThis as unknown as { __s: typeof out }).__s = out;
+    const tick = () => {
+      const li = document.querySelector('li.kb-hand-card')?.getBoundingClientRect();
+      const bt = Array.from(document.querySelectorAll('button')).find((e) => /^Hand, \d+ postcard/.test(e.getAttribute('aria-label') ?? ''))!.getBoundingClientRect();
+      if (li && li.width > 0) out.push({ x: li.left + li.width / 2, y: li.top + li.height / 2, b: { x: bt.left + bt.width / 2, y: bt.top + bt.height / 2 } });
+      if (out.length < n) requestAnimationFrame(tick);
+    };
     requestAnimationFrame(tick);
+  }, frames);
+  await press();
+  await page.waitForTimeout(1500);
+  return page.evaluate(() => (globalThis as unknown as { __s: { x: number; y: number; b: { x: number; y: number } }[] }).__s);
+}
+
+const dist = (p: { x: number; y: number; b: { x: number; y: number } }) => Math.hypot(p.x - p.b.x, p.y - p.b.y);
+
+test.describe('under Smooth', () => {
+  test.use({ reducedMotion: 'no-preference' });
+
+  test('opening deals the first card from the hand button to its slot, and closing gathers it back and hides the drawer', async ({ page }) => {
+    await openThread(page, 'smooth');
+    const button = page.getByRole('button', { name: BUTTON });
+    const hand = page.getByRole('dialog', { name: 'Your hand' });
+    const opening = await sample(page, () => button.click(), 90);
+    const first = opening[0]!, rest = opening.at(-1)!;
+    /* The card starts near the button (its scale is 0.6, so the center is where it begins) and ends far from it, in its slot. */
+    expect(dist(first)).toBeLessThan(80);
+    expect(dist(rest)).toBeGreaterThan(120);
+    const mid = opening.slice(1, -1).some((p) => dist(p) > dist(first) + 20 && dist(p) < dist(rest) - 20);
+    expect(mid).toBe(true);
+    await expect(hand).toBeVisible();
+    await page.waitForTimeout(300);
+    const closing = await sample(page, () => button.click(), 120);
+    const from = closing[0]!;
+    expect(dist(from)).toBeGreaterThan(120);
+    /* It moves back toward the button while the drawer is still shown. */
+    expect(closing.some((p) => dist(p) < dist(from) - 40)).toBe(true);
+    await expect(hand).toBeHidden();
   });
-  await button.click();
-  await page.waitForTimeout(600);
-  const origins = await page.evaluate(() => (globalThis as unknown as { __o: string[] }).__o.filter((o) => o !== ''));
-  expect(origins.length).toBeGreaterThan(0);
-  const [x, y] = origins[0]!.split(' ').map(parseFloat) as [number, number];
-  /* The origin is a point in the drawer's own frame: not its center, and on the hand button's side of it. */
-  expect(`${x}px ${y}px`).not.toBe(`${geo.drawer.width / 2}px ${geo.drawer.height / 2}px`);
-  const buttonX = geo.button.left + geo.button.width / 2 - geo.drawer.left;
-  const buttonY = geo.button.top + geo.button.height / 2 - geo.drawer.top;
-  expect(Math.abs(x - buttonX)).toBeLessThan(2);
-  expect(Math.abs(y - buttonY)).toBeLessThan(2);
-  await expect(hand).toBeHidden();
 });
 
-test('reopening the hand drawer during its exit leaves it shown and clean', async ({ page }) => {
-  await page.goto('/b/general');
-  await page.getByRole('link', { name: 'Who keeps reacting with a thumbs up?', exact: true }).click();
-  await page.evaluate(() => { document.documentElement.setAttribute('data-kb-motion', 'full'); document.documentElement.setAttribute('data-kb-motion-feel', 'smooth'); });
-  const button = page.getByRole('button', { name: /^Hand, \d+ postcards?/ });
-  await button.click();
-  const hand = page.getByRole('region', { name: 'Your hand' });
-  await expect(hand).toBeFocused();
-  await page.waitForTimeout(800);
-  await button.click();
-  await page.waitForTimeout(40);
-  await button.click();
-  await page.waitForTimeout(1200);
-  await expect(hand).toBeVisible();
-  const state = await page.evaluate(() => {
-    const el = document.querySelector<HTMLElement>('.kb-hand-drawer')!;
-    return { opacity: getComputedStyle(el).opacity, inert: el.hasAttribute('inert'), hidden: el.hasAttribute('hidden') };
+test.describe('under reduced motion', () => {
+  test.use({ reducedMotion: 'reduce' });
+
+  test('the cards are in their slots on the first frame after the press', async ({ page }) => {
+    await openThread(page, 'off');
+    const button = page.getByRole('button', { name: BUTTON });
+    const frames = await sample(page, () => button.click(), 3);
+    expect(frames.length).toBeGreaterThan(0);
+    for (const f of frames) expect(dist(f)).toBeGreaterThan(120);
   });
-  expect(state).toEqual({ opacity: '1', inert: false, hidden: false });
 });

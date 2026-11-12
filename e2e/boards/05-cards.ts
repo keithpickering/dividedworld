@@ -57,8 +57,8 @@ const manifest: BoardManifest = {
     build: { moment: '05-cards' },
     press: [
       { role: 'button', name: 'Hand, 3 postcards' },
-      /* The Main hand's card names its tagline too (cardLabel in engine/ui/cards/Postcard.tsx). */
-      { role: 'button', name: 'Whoops!, Salty, Move. Splat a post in ink., common postcard' },
+      /* The Main hand's card names its tagline too (cardLabel in engine/ui/cards/Postcard.tsx), and, as the hand arc draws one face per kind, its two copies: "2 in hand" (the hand-arc design, section 5). */
+      { role: 'button', name: 'Whoops!, Salty, Move. Splat a post in ink., common postcard, 2 in hand' },
       /* The last post of the page, #46, the longest of them. */
       { role: 'button', name: 'Play Whoops! on post 46' },
       { role: 'textbox', name: 'Your message', fill: 'you dropped your ink' },

@@ -368,6 +368,24 @@ export function deal(feel: ActiveFeel, index: number, delays: readonly number[],
   return { animate: { x: to.x, y: to.y, rotate: 0, scale: to.scale, transition: landing(feel, feel.enter, (delays[index] ?? 0) * 3) } };
 }
 
+/**
+ * The Main board's hand arc dealing out of the hand button and gathering back into it (the hand-arc design, section 2). `from` is the offset from the card's
+ * slot to the hand button's center, measured when the open starts. The card enters from `from` at rotate 0 and scale 0.6 and lands in its slot (x 0, y 0, its own
+ * `turn`, scale 1) over `enter` after `delays[index]`; it leaves by the same way back, to `from` at scale 0.6 and opacity 0, eased over `exit`, after
+ * `delays[count - 1 - index]`, so the cards gather in the reverse of the order they were dealt. `delays` is `stagger(feel, count)`, which holds the last card's
+ * start within `screen`. The card's turn is a CSS transform at rest, and an animated transform replaces it while it runs, so the entrance ends on the turn
+ * the stylesheet will draw (the caller removes the inline transform when it ends and nothing jumps), and the exit starts from it.
+ */
+export function fanDeal(feel: ActiveFeel, index: number, delays: readonly number[], from: { readonly x: number; readonly y: number }, turn = 0): MotionProps {
+  if (!feel) return {};
+  const last = delays.length - 1;
+  return {
+    initial: { x: from.x, y: from.y, rotate: 0, scale: 0.6 },
+    animate: { x: 0, y: 0, rotate: turn, scale: 1, transition: landing(feel, feel.enter, delays[index] ?? 0) },
+    exit: { x: [0, from.x], y: [0, from.y], rotate: [turn, 0], scale: [1, 0.6], opacity: [1, 0], transition: eased(feel, feel.exit, delays[last - index] ?? 0) },
+  };
+}
+
 /** The hit's beat: its back pulses once before it turns, scale 1, 1.05, 1, over `screen`, eased. */
 export function beat(feel: ActiveFeel): MotionProps {
   if (!feel) return {};
