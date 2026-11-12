@@ -132,16 +132,13 @@ test('the Booster in the slot is a picture with a light: after a pointer move it
   /* A pack is lit from near: with the pointer on the pack, the tight glint stands at the pointer (alpha above 128; its centroid's share of the bitmap's width is the pointer's share of the pack). */
   const glintAt = async (share: number) => {
     await page.mouse.move(box.x + box.width * share, box.y + box.height / 2, { steps: 6 });
-    await expect.poll(async () => (await lightOf(page)).glint, { timeout: 5000 }).toBeGreaterThan(0);
-    await page.waitForTimeout(700); // the light's ease (110 ms) and the redraw have settled
-    const at = (await lightOf(page)).glintX;
-    expect(Math.abs(at - share), `the glint at ${at.toFixed(3)} for a pointer ${share} across the pack`).toBeLessThan(GLINT_NEAR);
-    return at;
+    /* The glint stops moving when it stands where the pointer is: poll until it does, so a frame from before the move cannot pass for the settled one. */
+    await expect.poll(async () => Math.abs((await lightOf(page)).glintX - share), { message: `the glint's distance from a pointer ${share} across the pack`, timeout: 5000 }).toBeLessThan(GLINT_NEAR);
+    return (await lightOf(page)).glintX;
   };
   const at25 = await glintAt(0.25);
-  await glintAt(0.5);
-  const at75 = await glintAt(0.75);
-  expect(at75 - at25).toBeGreaterThan(GLINT_MOVED);
+  await glintAt(0.75);
+  await expect.poll(async () => (await lightOf(page)).glintX - at25, { message: 'the glint at 75% across the pack, right of where it was at 25%', timeout: 5000 }).toBeGreaterThan(GLINT_MOVED);
 });
 
 test.describe('with motion reduced', () => {

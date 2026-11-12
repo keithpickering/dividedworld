@@ -9,7 +9,7 @@
  * A pixel that is transparent (the relief's alpha 0) is written as four zeros; a pixel too dim to reach half a level of alpha
  * keeps its color and gets alpha 0.
  */
-import type { Light } from './band.ts';
+import { LIGHT_SCALE, type Light } from './band.ts';
 
 export type Relief = {
   readonly w: number;
@@ -25,8 +25,6 @@ export type Relief = {
 /** A decoded normal shorter than this (about three 8-bit steps from the zero vector) has no direction and faces the viewer. */
 const ZERO = 0.03;
 const LIGHT_Z = 0.9;
-/** How far past the pack's edge a light of 1 stands: `lightRelief` puts the light at `light * RELIEF_LIGHT_SCALE` over pixels that run -1..1. */
-export const RELIEF_LIGHT_SCALE = 1.3;
 
 /** The highlight's two lobes, a tight s^48 and a broad s^16, for s = the normal's dot with the half vector. */
 const specular = (s: number): number => {
@@ -84,8 +82,8 @@ export function lightRelief(relief: Relief, light: Light, out: Uint8ClampedArray
   out.fill(0, Math.max(top, bottom) * w * 4, w * h * 4);
   const aspect = h / w;
   const colStep = 2 / w;
-  const lx = light.x * RELIEF_LIGHT_SCALE + 1; // the light's x less a pixel's x of 2 * c / w - 1 is this less c * colStep
-  const ly = light.y * RELIEF_LIGHT_SCALE * aspect;
+  const lx = light.x * LIGHT_SCALE + 1; // the light's x less a pixel's x of 2 * c / w - 1 is this less c * colStep
+  const ly = light.y * LIGHT_SCALE * aspect;
   const rowStep = 2 / h * aspect;
   const zz = LIGHT_Z * LIGHT_Z;
   for (let r = top; r < bottom; r++) {

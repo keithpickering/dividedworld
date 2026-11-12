@@ -88,7 +88,7 @@ describe('lightAt for a near host', () => {
   const pack = { top: 350, height: 300, left: 400, width: 200 };
   const vp = { height: VH, width: W };
   /* A pointer at client (cx, cy) as the store holds it. */
-  const at = (cx: number, cy: number): LightInput => ({ ...base, px: (cx / W - 0.5) * 2, py: (cy / VH - 0.5) * 2, pointed: true });
+  const at = (cx: number, cy: number): LightInput => ({ ...base, px: (cx / W - 0.5) * 2, py: (cy / VH - 0.5) * 2, cx, cy, pointed: true });
 
   it('a host that is not near gets exactly the former light, for several inputs', () => {
     const inputs: LightInput[] = [base, { ...base, px: 0.5, py: -1, pointed: true }, { px: -0.3, py: 0.8, tx: 0.4, ty: -0.2, tilt: true, pointed: true }, { px: 5, py: -5, tx: 0, ty: 0, tilt: false }];
@@ -193,6 +193,23 @@ describe('lightAt for a near host', () => {
     expect(light.input().pointed).toBe(true);
     light.reset();
     expect(light.input().pointed).toBe(false);
+  });
+  it('after a pointer move and then a window resize, the near light still stands at the pointer\'s place on the box', () => {
+    window.matchMedia = ((q: string) => ({ matches: q.includes('hover: hover'), media: q, addEventListener: () => {}, removeEventListener: () => {} })) as unknown as typeof window.matchMedia;
+    Object.defineProperty(window, 'innerWidth', { value: 1000, configurable: true });
+    Object.defineProperty(window, 'innerHeight', { value: 1000, configurable: true });
+    light.reset();
+    light.attach({});
+    const e = new Event('pointermove');
+    Object.assign(e, { pointerType: 'mouse', clientX: 450, clientY: 600 });
+    window.dispatchEvent(e);
+    /* The window is resized with no pointer move: the pointer has not moved, so it is still at client (450, 600), a quarter of the box's half-width left of its center. */
+    Object.defineProperty(window, 'innerWidth', { value: 500, configurable: true });
+    Object.defineProperty(window, 'innerHeight', { value: 700, configurable: true });
+    const l = lightAt(light.input(), pack, { height: window.innerHeight, width: window.innerWidth }, 0, 0, true);
+    near(l.x, -0.5 * SCALE);
+    near(l.y, (100 / 150) * SCALE + 0.1);
+    light.reset();
   });
   it('a device with no fine pointer never places the pointer', () => {
     window.matchMedia = ((q: string) => ({ matches: false, media: q, addEventListener: () => {}, removeEventListener: () => {} })) as unknown as typeof window.matchMedia;
