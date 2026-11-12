@@ -83,3 +83,48 @@ test('on a phone, full motion: each tap or swipe on the pile turns exactly one c
   }
   await expect(page.locator('.kb-opening-tag')).toBeVisible();
 });
+
+/** The pixels of the slot's pack light, as a string a spec can compare, and how many of them are not transparent. */
+async function lightOf(page: Page) {
+  return page.locator('.kb-pack[data-kb-pictured] .kb-pack-light').first().evaluate((c: HTMLCanvasElement) => {
+    const ctx = c.getContext('2d')!;
+    const d = c.width > 0 && c.height > 0 ? ctx.getImageData(0, 0, c.width, c.height).data : new Uint8ClampedArray(0);
+    let lit = 0;
+    let sum = 0;
+    for (let i = 0; i < d.length; i += 4) { if (d[i + 3]! > 0) lit++; sum = (sum * 31 + d[i]! + d[i + 1]! * 3 + d[i + 2]! * 7 + d[i + 3]! * 11) % 2147483647; }
+    return { width: c.width, lit, sum };
+  });
+}
+
+async function theSlotsPack(page: Page) {
+  await page.setViewportSize({ width: 1440, height: 1080 });
+  await page.goto('/?fixture=boards&story=boards-booster-packs--machine');
+  const pack = page.locator('.kb-pack[data-kb-pictured]').first();
+  await expect(pack).toBeVisible();
+  await expect.poll(() => pack.locator('img.kb-pack-picture').evaluate((i: HTMLImageElement) => i.naturalWidth)).toBe(1080);
+  return pack;
+}
+
+test('the Booster in the slot is a picture with a light: after a pointer move its canvas holds lit pixels', async ({ page }) => {
+  const pack = await theSlotsPack(page);
+  const box = (await pack.boundingBox())!;
+  await page.mouse.move(box.x + box.width * 0.3, box.y + box.height * 0.3, { steps: 4 });
+  await page.mouse.move(box.x + box.width * 0.6, box.y + box.height * 0.6, { steps: 4 });
+  await expect.poll(async () => (await lightOf(page)).lit, { timeout: 5000 }).toBeGreaterThan(0);
+});
+
+test.describe('with motion reduced', () => {
+  test.use({ reducedMotion: 'reduce' });
+  test('the light does not follow the pointer: the canvas holds the same pixels before and after a move', async ({ page }) => {
+    const pack = await theSlotsPack(page);
+    const box = (await pack.boundingBox())!;
+    await page.mouse.move(box.x + box.width * 0.3, box.y + box.height * 0.3, { steps: 4 });
+    await page.waitForTimeout(600);
+    const before = await lightOf(page);
+    /* The still light is drawn (not an empty canvas that would equal itself): a reduced-motion pack is lit, only not by the pointer. */
+    expect(before.lit).toBeGreaterThan(0);
+    await page.mouse.move(box.x + box.width * 0.8, box.y + box.height * 0.8, { steps: 6 });
+    await page.waitForTimeout(600);
+    expect(await lightOf(page)).toEqual(before);
+  });
+});

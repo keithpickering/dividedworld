@@ -15,7 +15,10 @@ import { useEffect, useState } from 'react';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { Page } from '../glass/Page.tsx';
 import type { World } from '../story.tsx';
+import { PackArt } from './PackArt.tsx';
 import { Vending } from './Vending.tsx';
+import testPicture from './pack-test-art.webp?url';
+import testRelief from './pack-test-relief.webp?url';
 
 /** The world of the boards: the machine as the instance seeds it, a wallet of 5.62, a hand of two, and two of the Boss's moves in force. */
 const world: World = (fake, instance) => {
@@ -110,3 +113,29 @@ export const RevealAtEachFeel: Story = {
   name: 'Reveal, at each feel',
   render: () => <Feels />,
 };
+
+/** The engine's own test pictures (a 1080 by 1680 transparent-ground picture and its 540 by 840 relief, a plain rounded pack with a dome); they are not an instance's art. */
+const lookPictured = { color: '#ffd93d', ink: '#1a1403', picture: testPicture, relief: testRelief } as const;
+const lookDrawn = { color: '#ffd93d', ink: '#1a1403' } as const;
+
+function PicturedPacks() {
+  const sizes = [86, 180] as const;
+  const parts = ['whole', 'opened', 'top'] as const;
+  const row = { display: 'flex', gap: 24, alignItems: 'flex-end', marginBlock: 16 } as const;
+  return (
+    <Page surface="vending">
+      {sizes.map((width) => (
+        <div key={width} style={row}>
+          {parts.map((part) => <PackArt key={part} name="Booster" count={5} art={lookPictured} part={part} width={width} />)}
+          <PackArt name="Booster" count={5} art={lookDrawn} width={width} />
+        </div>
+      ))}
+    </Page>
+  );
+}
+
+/**
+ * A pack with a picture and a relief (specs/card-art.md, "A pack"), lit by the page's shine loop as the pointer moves: at 86px and at 180px, whole, opened
+ * and top, with the drawn pack that has no picture last in each row. The pictures are the engine's test fixtures. For the owner and the render's review; no board draws it.
+ */
+export const Pictured: Story = { name: 'Pictured', render: () => <PicturedPacks /> };
