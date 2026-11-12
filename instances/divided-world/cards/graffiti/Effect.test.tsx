@@ -95,7 +95,7 @@ const scrubbed = (root: HTMLElement) => Number(root.dataset.kbScrubbed);
 function drag(el: HTMLElement, points: readonly (readonly [number, number])[]) {
   const [first, ...rest] = points.map(([x, y]) => px(x, y));
   act(() => { fireEvent.pointerDown(el, { clientX: first![0], clientY: first![1], pointerId: 1, button: 0, pointerType: 'mouse' }); });
-  for (const [x, y] of rest) act(() => { fireEvent.pointerMove(el, { clientX: x, clientY: y, pointerId: 1, pointerType: 'mouse' }); });
+  for (const [x, y] of rest) act(() => { fireEvent.pointerMove(el, { clientX: x, clientY: y, pointerId: 1, pointerType: 'mouse', buttons: 1 }); });
   const [lx, ly] = rest[rest.length - 1] ?? first!;
   act(() => { fireEvent.pointerUp(el, { clientX: lx, clientY: ly, pointerId: 1, pointerType: 'mouse' }); });
 }
