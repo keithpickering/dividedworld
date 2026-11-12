@@ -746,6 +746,10 @@ grant select on my_veiled_posts to authenticated;
 --   An author veil is refused on a post by a staff character ("a post by the staff keeps its name": the staff are known to be staff, and a visit's record names its Mod), on a post any Mod Bot visit names (its
 --   record names the author), on a post a card at character reach was played from (its Act and its play_reach row name the author), and where the forum has no stand-in to show. Every other public Act that points at a
 --   post and names its author is downstream of a visit (an infraction, a ban, an appeal, a verdict, an interception are written only through one), so the visit's refusal holds them.
+--   A spring that names the post's author is the last: when a face-down card whose Who is "only these" springs on a quote, spring_traps writes a public spring Act whose `for` is the quoter's character and whose `by` is the
+--   quote, so the record already names the quote's author, and a veil cast on it afterwards would hide a name that is on the record ("a card that sprang on this post names its author"). One probe of acts_spring_by
+--   (0151: the spring Acts, found by `by`, a post a quote's few springs), filtered for a `for`, the same for every caster and read whatever the card is; a landed author veil's own spring omits `for` (spring_traps) and
+--   leaves nothing to refuse.
 --   TASK 5 adds a reaction card's refusals here (its configuration, an emoji the forum already has, a key the post already holds), after these.
 create function land_refusal(kind_of card_kinds, post uuid, config jsonb) returns text
 language plpgsql stable security definer set search_path = public, pg_temp as $$
@@ -753,6 +757,7 @@ declare
   by_staff boolean;
   visited boolean;
   played boolean;
+  named boolean;
   stood uuid;
 begin
   select c.staff is not null into by_staff from acts a join characters c on c.id = a.character where a.id = land_refusal.post;
@@ -760,11 +765,14 @@ begin
   -- A card at character reach is stored with target_act_id = the post it was played from, and its payload and its play_reach row name that post's author: a public Act that points at the post and names its
   -- author, made by any character (the author's own too, whose `character` the projection changes and whose payload it does not). One probe of acts_target, which holds a post's few targeting Acts.
   played := exists (select 1 from acts k where k.kind = 'card' and k.target_act_id = land_refusal.post and k.payload ->> 'reach' = 'character');
+  -- A spring Act that carries the quoter (`for`) and names this post as the quote it sprang on (`by`): one probe of acts_spring_by.
+  named := exists (select 1 from acts s where s.kind = 'spring' and s.payload ->> 'by' = land_refusal.post::text and s.payload ? 'for');
   stood := stand_in();
   if kind_of.veil = 'author' then
     if by_staff then return 'a post by the staff keeps its name'; end if;
     if visited then return 'a Mod Bot has been to this post, so its author is on the record'; end if;
     if played then return 'a card played from this post names its author, so the author is on the record'; end if;
+    if named then return 'a card that sprang on this post names its author, so the author is on the record'; end if;
     if stood is null then return 'this forum has no one to stand in for an author'; end if;
   end if;
   return null;
@@ -1066,6 +1074,7 @@ declare
   last_settled timestamptz;
   rode boolean := false;
   landing text;
+  shown uuid;
 begin
   select c.staff is not null into staff_caster from characters c where c.id = caster;
   if staff_caster is null then raise exception 'there is no such character' using errcode = 'P0002'; end if;
@@ -1178,8 +1187,11 @@ begin
       -- are laid one at a time, and whichever is second reads what the first left (a veiled post is not its character's, so the card is refused; a post a card was played from takes no veil). The character's row is held
       -- already, and a veil cast holds the post's row and takes no character's row in a mode that conflicts with this one, so the order closes no cycle.
       perform 1 from acts a where a.id = from_post and a.kind = 'post' for share;
-      select a.thread into in_thread from acts_public a where a.id = from_post and a.kind = 'post' and a.character = target;
-      if in_thread is null then raise exception 'a card on a character is played from one of its posts' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+      select a.thread, a.character into in_thread, shown from acts_public a where a.id = from_post and a.kind = 'post';
+      -- A post under a live author veil is shown under the stand-in to everyone, so a card on a character played from it is a card on the stand-in whoever the caster names, the post's author included: one refusal, in the
+      -- words and the code a third player meets naming the stand-in itself, and the same whoever owns the post. (A post that is not veiled is refused as it was, for a character that is not its own.)
+      if shown is not null and shown is not distinct from stand_in() then raise exception 'no card is played on a stand-in' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+      if in_thread is null or shown is distinct from target then raise exception 'a card on a character is played from one of its posts' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
       on_post := from_post;
       if kind_of.play = 'use' and target is distinct from caster then
         raise exception '% is used on your own character', kind_of.name using hint = 'kayfabb.refusal', errcode = '42501';
@@ -2652,3 +2664,8 @@ $$;
 -- Every helper above is for no API role: the views that read the veils own their rights and call none of them (a view's functions are run as its reader, so acts_public, thread_open and
 -- my_cards_ended write out what stand_in() and shown_author() say), and the definer functions that call them own theirs. land_refusal and land_rows are called by place_cast and the springs alone.
 revoke execute on function stand_in(), shown_author(uuid, uuid), author_veil_ends(uuid), author_veiled(uuid), post_veils_append_only() from public, anon, authenticated, service_role;
+
+-- The three helpers that build and run a search's text (0117 granted them to signed-in players, who never call them: the screens' reads go through search_matches and search_walk, definers that run them as their owner)
+-- now call stand_in() and shown_author(), which no API role may execute, so a direct call by a player could only fail. They are for no API role, as the helpers above are.
+revoke execute on function search_match_conds(text, tsquery, uuid, timestamptz, timestamptz, boolean), search_matches_sql(text, uuid, uuid, timestamptz, timestamptz, boolean, boolean, timestamptz, uuid, integer),
+  search_walk_sql(text, uuid, uuid, timestamptz, timestamptz, boolean, boolean, timestamptz, uuid, integer) from public, anon, authenticated, service_role;

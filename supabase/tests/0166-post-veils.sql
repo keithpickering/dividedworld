@@ -8,6 +8,7 @@
 -- 3b. The derived veil covers the author's Acts that are no content of their own (an edit, a set, a card), never a post or a spin of theirs: each Act is read once, and every read agrees on it.
 --  4. The refusals (a staff post, a post a Mod Bot has been to), a Mod Bot's visit and a report while it is up, and no card on the stand-in.
 --  5. A face-down veil lands on the post that quotes it, and veils that post's author; one that cannot land (a staff post, a visited post, a post a card was played from) stays set.
+--  5c. A post a spring names its author on (a public spring Act whose `for` is the quoter) takes no veil, from a cast or a spring.
 --  6. acts.character is no longer readable by a signed-in player, and the readers that needed it still answer.
 --  7. my_veiled_posts holds the author's own rows and nobody else's; thread_page carries them.
 --  8. Bounded reads: with a live veil in the table, reads by character, by thread and seq and by id keep their indexes, and so does a count's.
@@ -746,6 +747,62 @@ begin
   perform tests.become(adm); perform reverse_card(laid); perform tests.unbecome();
 end $$;
 
+-- ---- 5c. A post a spring names its author on takes no veil: the public spring Act carries the quoter in `for` ----
+-- When a face-down card whose Who is "only these" springs on a quote, spring_traps writes a public spring Act whose `for` is the quoter's character and whose `by` is the quote: a public Act that points at the quote and
+-- names its author. A veil cast on that quote afterwards would hide an author the record already names, so land_refusal refuses it ("the same for every caster", a cast and a spring alike: both read land_refusal), by one probe of
+-- acts_spring_by (0151), the index on the springs' `by`, filtered for a `for`. A spring that names no one (a Who of anyone, a landed veil's own) leaves the quote free to take one.
+select tests.unbecome();
+do $$
+declare
+  ann uuid := tests.account('vz-ann'); bob uuid := tests.account('vz-bob'); cy uuid := tests.account('vz-cy');
+  a uuid := tests.character(ann, 'Vz Ann'); b uuid := tests.character(bob, 'Vz Bob'); c uuid := tests.character(cy, 'Vz Cy');
+  t uuid := tests.thread('Vz spring');
+  stand uuid := pg_temp.stand();
+  held uuid := tests.post(a, t, 'A back lies here.'); held2 uuid := tests.post(a, t, 'Another back lies here.');
+  back uuid; back2 uuid; made jsonb; q uuid; q2 uuid; got text; words text := '42501 a card that sprang on this post names its author, so the author is on the record'; plan text;
+begin
+  perform pg_temp.cards();
+  perform pg_temp.hand(ann, 'vlmove', 'vlmove'); perform pg_temp.hand(bob, 'vlauthor', 'vlauthor'); perform pg_temp.hand(cy, 'vlauthor');
+  -- A plain Move whose Who is only Cy's character: it springs on Cy's quote, and the public spring Act names Cy in `for`.
+  perform tests.become_service();
+  back := (set_card(ann, 'vlmove', a, held, '{}', 0, null, null, null, array[c], false) ->> 'id')::uuid;
+  perform tests.unbecome();
+  perform tests.become(cy);
+  made := post(t, c, 'Quoting the back.', held);
+  perform tests.unbecome();
+  q := (made ->> 'id')::uuid;
+  if (select s.payload ->> 'for' from acts s where s.kind = 'spring' and (s.payload ->> 'set') = back::text and (s.payload ->> 'by') = q::text) is distinct from c::text then raise exception 'the spring did not name the quoter: %', made; end if;
+  -- A veil cast on that quote is refused, in the same words for the quoter's own player and for anyone else, and nothing is written; land_refusal says the same for a cast and a spring.
+  perform tests.become_service();
+  got := pg_temp.coded(format('select play_card(%L, %L, %L, %L, %L, 0, %L)', bob, 'vlauthor', b, q, '{}', ''));
+  if got is distinct from words then raise exception 'a veil on a quote a spring names: %', got; end if;
+  got := pg_temp.coded(format('select play_card(%L, %L, %L, %L, %L, 0, %L)', cy, 'vlauthor', c, q, '{}', ''));
+  if got is distinct from words then raise exception 'the quoter''s own veil on their quote a spring names: %', got; end if;
+  perform tests.unbecome();
+  if exists (select 1 from post_veils v where v.post = q) or exists (select 1 from acts k where k.kind = 'card' and k.target_act_id = q and k.payload ->> 'card' = 'vlauthor') then raise exception 'a refused veil wrote something'; end if;
+  if land_refusal((select k from card_kinds k where k.key = 'vlauthor'), q, '{}') is distinct from substr(words, 7) or land_refusal((select k from card_kinds k where k.key = 'vlmove'), q, '{}') is not null then
+    raise exception 'land_refusal for a post a spring names'; end if;
+  -- A spring that names no one leaves the quote free: the same Move with a Who of anyone springs with no `for`, and the veil lands on that quote.
+  perform tests.become_service();
+  back2 := (set_card(ann, 'vlmove', a, held2, '{}', 0) ->> 'id')::uuid;
+  perform tests.unbecome();
+  perform tests.become(cy);
+  made := post(t, c, 'Quoting the other back.', held2);
+  perform tests.unbecome();
+  q2 := (made ->> 'id')::uuid;
+  if not exists (select 1 from acts s where s.kind = 'spring' and (s.payload ->> 'by') = q2::text and not s.payload ? 'for') then raise exception 'the spring of a Who of anyone was not written without `for`'; end if;
+  perform tests.become_service();
+  got := pg_temp.coded(format('select play_card(%L, %L, %L, %L, %L, 0, %L)', bob, 'vlauthor', b, q2, '{}', ''));
+  perform tests.unbecome();
+  if got is not null then raise exception 'a veil on a quote whose spring names no one: %', got; end if;
+  if not exists (select 1 from post_veils v where v.post = q2) or (select x.character from acts_public x where x.id = q2) is distinct from stand then raise exception 'the veil on a quote whose spring names no one did not land'; end if;
+  -- One bounded indexed read: with sequential scans off the probe is served by acts_spring_by.
+  set local enable_seqscan = off;
+  plan := pg_temp.plan_of(format('select exists (select 1 from acts s where s.kind = ''spring'' and s.payload ->> ''by'' = %L and s.payload ? ''for'')', q::text));
+  reset enable_seqscan;
+  if plan not like '%acts_spring_by%' then raise exception 'the spring probe does not use acts_spring_by: %', plan; end if;
+end $$;
+
 -- ---- 6. acts.character is no longer readable; the readers that needed it answer from the projection ----
 select tests.unbecome();
 do $$
@@ -927,7 +984,7 @@ declare
   got text; words text := '42501 a card played from this post names its author, so the author is on the record'; veil uuid; plays integer;
 begin
   perform pg_temp.cards();
-  perform pg_temp.hand(bob, 'vlchar'); perform pg_temp.hand(ann, 'vlself'); perform pg_temp.hand(cy, 'vlauthor', 'vlauthor', 'vlauthor', 'vlchar');
+  perform pg_temp.hand(bob, 'vlchar'); perform pg_temp.hand(ann, 'vlself', 'vlchar'); perform pg_temp.hand(cy, 'vlauthor', 'vlauthor', 'vlauthor', 'vlchar');
   -- Bob plays a card on Ann's character from her post; Ann uses her own on her character from hers.
   perform tests.become_service();
   got := pg_temp.coded(format('select play_card(%L, %L, %L, %L, %L, 0, %L, %L, %L)', bob, 'vlchar', b, a, '{}', '', 'character', named));
@@ -962,7 +1019,13 @@ begin
   got := pg_temp.coded(format('select play_card(%L, %L, %L, %L, %L, 0, %L, %L, %L)', cy, 'vlchar', c, stand, '{}', '', 'character', clean));
   if got is distinct from '22023 no card is played on a stand-in' then raise exception 'a character card from a veiled post, on the stand-in: %', got; end if;
   got := pg_temp.coded(format('select play_card(%L, %L, %L, %L, %L, 0, %L, %L, %L)', cy, 'vlchar', c, a, '{}', '', 'character', clean));
-  if got is distinct from '22023 a card on a character is played from one of its posts' then raise exception 'a character card from a veiled post, on its author: %', got; end if;
+  if got is distinct from '22023 no card is played on a stand-in' then raise exception 'a character card from a veiled post, on its author: %', got; end if;
+  -- The post shows the stand-in to everyone, so whoever is named as its character meets the one refusal (the code and the words a third player meets): the author's own player, who names the author, and a player who names
+  -- any other character, and what is said does not depend on who owns the post. (The false "played from one of its posts" is for a post that is not veiled.)
+  got := pg_temp.coded(format('select play_card(%L, %L, %L, %L, %L, 0, %L, %L, %L)', ann, 'vlchar', a, a, '{}', '', 'character', clean));
+  if got is distinct from '22023 no card is played on a stand-in' then raise exception 'the author''s own character card from their veiled post: %', got; end if;
+  got := pg_temp.coded(format('select play_card(%L, %L, %L, %L, %L, 0, %L, %L, %L)', cy, 'vlchar', c, b, '{}', '', 'character', clean));
+  if got is distinct from '22023 no card is played on a stand-in' then raise exception 'a character card from a veiled post, on a third character: %', got; end if;
   perform tests.unbecome();
   if (select count(*) from acts k where k.kind = 'card' and k.target_act_id = clean) is distinct from plays then raise exception 'a refused card from a veiled post wrote something'; end if;
 end $$;

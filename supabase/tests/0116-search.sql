@@ -834,10 +834,9 @@ begin
                  and exists (select 1 from unnest(p.proconfig) c where c like 'search_path=%pg_temp')) then raise exception 'suggest_characters is not a stable definer with a pinned search_path'; end if;
   for fn in select unnest(array['search_posts(text,uuid,uuid,timestamptz,timestamptz,boolean,text,jsonb,integer)', 'search_threads(text,uuid,uuid,timestamptz,timestamptz,boolean,text,jsonb,integer)',
                                 'search_suggest(text,text[],uuid,boolean,integer)', 'suggest_characters(text,integer)', 'search_matches(text,uuid,uuid,timestamptz,timestamptz,boolean,boolean,timestamptz,uuid,integer)',
-                                'search_walk(text,uuid,uuid,timestamptz,timestamptz,boolean,boolean,timestamptz,uuid,integer,integer)', 'search_walk_sql(text,uuid,uuid,timestamptz,timestamptz,boolean,boolean,timestamptz,uuid,integer)',
+                                'search_walk(text,uuid,uuid,timestamptz,timestamptz,boolean,boolean,timestamptz,uuid,integer,integer)',
                                 'search_suggest_threads(text,uuid,boolean,integer)', 'search_cursor_ok(jsonb,boolean)', 'search_updates_thread()', 'search_cursor_cast(jsonb)',
-                                'search_match_conds(text,tsquery,uuid,timestamptz,timestamptz,boolean)', 'search_thread_matches(uuid,tsquery,uuid,timestamptz,timestamptz,boolean)', 'search_post_cards(uuid)',
-                                'search_matches_sql(text,uuid,uuid,timestamptz,timestamptz,boolean,boolean,timestamptz,uuid,integer)']) loop
+                                'search_thread_matches(uuid,tsquery,uuid,timestamptz,timestamptz,boolean)', 'search_post_cards(uuid)']) loop
     if not has_function_privilege('authenticated', fn::regprocedure, 'execute') or has_function_privilege('anon', fn::regprocedure, 'execute') then raise exception '% is not for signed-in players alone', fn; end if;
   end loop;
 end

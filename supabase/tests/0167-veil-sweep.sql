@@ -258,9 +258,7 @@ select 'function', n, m, w from (values
   ('search_cursor_cast', 'no author', 'a pure function of its argument'),
   ('search_cursor_ok', 'no author', 'a pure function of its arguments'),
   ('search_lang', 'no author', 'a setting'),
-  ('search_match_conds', 'swept', 'the author condition: a veiled post is found under the stand-in and not under its author (author_veiled)'),
   ('search_matches', 'swept', 'a definer; returns shown_author, so a veiled post is the stand-in''s'),
-  ('search_matches_sql', 'swept', 'the text gives shown_author(p.act, p.character) as the character'),
   ('search_post_cards', 'no author', 'the cards on a post: no character'),
   ('search_posts', 'swept', 'returns the projection''s character (shown_author), never post_search.character'),
   ('search_suggest', 'swept', 'suggests thread titles, boards and characters by name: no post''s author (its sweep can only show absence)'),
@@ -269,7 +267,6 @@ select 'function', n, m, w from (values
   ('search_threads', 'swept', 'returns the projection''s character (shown_author), never post_search.character'),
   ('search_updates_thread', 'no author', 'the Updates thread''s id'),
   ('search_walk', 'swept', 'a definer; its rows come from search_matches_sql''s text, so a veiled post is the stand-in''s'),
-  ('search_walk_sql', 'swept', 'its conditions are search_match_conds'', its rows search_matches_sql''s'),
   ('search_words', 'no author', 'a pure function of its arguments'),
   ('season_news', 'no author', 'season news: public'),
   ('season_page', 'no author', 'a season''s page: results per character, public'),
@@ -358,6 +355,12 @@ begin
   if got <> '' then raise exception 'the sweep''s list lacks what a signed-in player may read or run: %. List each as swept (and probe it below) or as no author with its reason.', got; end if;
   got := pg_temp.stale();
   if got <> '' then raise exception 'the sweep''s list holds what is no longer granted: %', got; end if;
+  -- The three helpers that build and run a search's text call stand_in() and shown_author(), which no API role may execute, so a call of theirs by a player could only fail; the two definers that run them own the right
+  -- to (0400 revokes it), and the list above holds none of them.
+  got := (select string_agg(p.oid::regprocedure::text, ', ' order by p.proname) from pg_proc p
+          where p.pronamespace = 'public'::regnamespace and p.proname in ('search_match_conds', 'search_matches_sql', 'search_walk_sql')
+            and (has_function_privilege('authenticated', p.oid, 'execute') or has_function_privilege('anon', p.oid, 'execute')));
+  if got is not null then raise exception 'a search helper is still granted to an API role: %', got; end if;
   -- Its poison: a granted view that carries a post's character, which the check must name.
   create view public.sweep_poison as select id, character from acts;
   grant select on public.sweep_poison to authenticated;
@@ -470,9 +473,6 @@ begin
     ('search_threads', 'id', 'select search_threads(''pie'', null, null, null, null, false, ''newest'', null, 20)::text', true, false),
     ('search_matches', 'id', 'select coalesce(jsonb_agg(to_jsonb(m)), ''[]'')::text from search_matches(''pie'', null, null, null, null, false, true, null, null, 20) m', true, false),
     ('search_walk', 'id', 'select coalesce(jsonb_agg(to_jsonb(w)), ''[]'')::text from search_walk(''pie'', null, null, null, null, false, true, null, null, 20, 100) w', true, false),
-    ('search_matches_sql', 'id', 'select search_matches_sql(''pie'', null, null, null, null, false, true, null, null, 20)', false, false),
-    ('search_walk_sql', 'id', 'select search_walk_sql(''pie'', null, null, null, null, false, true, null, null, 100)', false, false),
-    ('search_match_conds', 'id', 'select search_match_conds(''p'', websearch_to_tsquery(''english'', ''pie''), null::uuid, null::timestamptz, null::timestamptz, false)::text', false, false),
     ('search_thread_matches', 'id', 'select search_thread_matches(current_setting(''sweep.t'')::uuid, websearch_to_tsquery(''english'', ''pie''), current_setting(''sweep.a'')::uuid, null, null, false)::text', false, false),
     ('post_search', 'id', 'select coalesce(jsonb_agg(to_jsonb(x)), ''[]'')::text from (select act, thread, board, first, created_at, words from post_search) x', false, false),
     ('search_suggest', 'id', 'select search_suggest(''Sw sweep'', array[''threads''], null, true, 10)::text', false, false);
