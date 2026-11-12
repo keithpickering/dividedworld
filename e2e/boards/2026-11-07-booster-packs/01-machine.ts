@@ -175,7 +175,7 @@ export const phone: BoardManifest = {
         at('moves', 'link', 'MOVES', 'title', { y: 178 }, { buildName: 'Moves', originEdge: 'bottom' }),
         at('machine', 'link', 'THE MACHINE', 'title', { x: 91, y: 178 }, { buildName: 'The machine', originEdge: 'bottom' }),
         ...([['a1', 'A1', 'Booster', 'moves'], ['a2', 'A2', 'Whoops!', 'a1-code'], ['b1', 'B1', 'Stick Around', 'a2-code']] as const).flatMap(([k, code, card, from], i) => [
-          at(`${k}-code`, 'text', code, from, k === 'a1' ? { y: 16 } : k === 'b1' ? { y: 37 } : {}, { originEdge: 'bottom' }),
+          at(`${k}-code`, 'text', code, from, k === 'a1' ? { y: 16 + 42.3 } : k === 'b1' ? { y: 37 } : {}, { originEdge: 'bottom' }),
           at(`${k}-up`, 'button', 'Move up', `${k}-code`, { x: -18, y: 10 }, { buildName: `${card}: move up`, nth: i, buildNth: 0 }),
           at(`${k}-down`, 'button', 'Move down', `${k}-code`, { x: -9, y: 10 }, { buildName: `${card}: move down`, nth: i, buildNth: 0 }),
           at(`${k}-availability`, 'combobox', `${card}: availability`, `${k}-code`),
