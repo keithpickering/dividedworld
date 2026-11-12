@@ -15,7 +15,9 @@
  *
  * **The credit.** The plates are photographs used under a license that asks for their photographer's name, the license and a note that the
  * picture was changed (plates.ts, `credit`). It is a line under the banner, in the board's own type and outside the picture, so the appeal reads as
- * it did: "Photo: Lane Hartwell, CC BY-SA 3.0, edited", the name linked to the photograph's page and the license to its deed.
+ * it did: "Photo: Lane Hartwell, CC BY-SA 3.0, edited", the name linked to the photograph's page and the license to its deed. A banner alone
+ * draws its own; a carousel draws one for the banner on view, under its slides (Effect.tsx), so two never cross in a fade and a change of slide
+ * announces the appeal alone.
  */
 import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import type { CardPlay } from '../../../../engine/ui/cards/types.ts';
@@ -47,9 +49,21 @@ export interface BannerProps {
   readonly play: CardPlay;
   /** The caster's name as the screen knows it. */
   readonly caster: string;
+  /** False where something else credits the photograph (a carousel, for the banner on view). */
+  readonly credited?: boolean;
 }
 
-export function Banner({ play, caster }: BannerProps) {
+/** The credit of the photograph a play's banner is drawn on. */
+export function Credit({ play }: { readonly play: Pick<CardPlay, 'drawn'> }) {
+  const { credit } = plateOf(play);
+  return (
+    <p className="dw-jw-credit">
+      Photo: <a href={credit.source} rel="noopener noreferrer">{credit.author}</a>, <a href={credit.licenseUrl} rel="noopener noreferrer">{credit.license}</a>, edited
+    </p>
+  );
+}
+
+export function Banner({ play, caster, credited = true }: BannerProps) {
   const plate = plateOf(play);
   const wide = plate.width + (plate.panel?.width ?? 0);
   const figure = useRef<HTMLElement>(null);
@@ -98,9 +112,7 @@ export function Banner({ play, caster }: BannerProps) {
         </div>
       </div>
     </figure>
-    <p className="dw-jw-credit">
-      Photo: <a href={plate.credit.source} rel="noopener noreferrer">{plate.credit.author}</a>, <a href={plate.credit.licenseUrl} rel="noopener noreferrer">{plate.credit.license}</a>, edited
-    </p>
+    {credited ? <Credit play={play} /> : null}
     </>
   );
 }
