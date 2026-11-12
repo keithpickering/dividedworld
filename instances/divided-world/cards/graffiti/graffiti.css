@@ -104,20 +104,26 @@
 }
 
 /*
- * The dock. Under 720px wide it is fixed to the foot of the window with the safe-area inset, and the page keeps its foot clear of it
- * (`--kb-graffiti-dock-h`, set by the toolbar). Wider, it is drawn under the post, across the post's grid: the engine's `.kb-act`, so the
- * post body's box never changes with it. The doubled class beats the thread's rule for what it lifts over ink (position, width).
+ * The dock (the face-up design, section 2). At every width it is fixed to the foot of the window, just above the HUD, so that however long the
+ * post is the toolbar is in view the moment draw mode opens, and the page keeps its foot clear of it (`--kb-graffiti-dock-h`, set by the toolbar,
+ * so the post's last lines, the reactions row and the Lens are never under it). Under 720px it spans the window with the safe-area inset; from
+ * 720px up it is as wide as the thread's column and lines up with it (`--kb-graffiti-dock-left` and `-right`, which the toolbar measures from
+ * the posts' table), so it reads as belonging to the posts. The doubled class beats the thread's rule for what it lifts over ink (position, width).
  */
 .kb-graffiti-dock.kb-graffiti-dock {
-  position: relative;
-  grid-column: 1 / -1;
+  position: fixed;
+  /* Above the HUD, which is fixed to the same foot (z-index 30) and holds the window's safe-area inset itself: at bottom 0 the cap row, Cancel and Tag it lay behind it. */
+  inset: auto 0 var(--kb-hud-measured, 0px) 0;
   box-sizing: border-box;
   width: auto;
   max-width: none;
-  margin-top: 4px;
+  margin: 0;
   display: grid;
   gap: 9px;
-  padding: 10px 12px 12px;
+  padding: 10px 12px calc(12px + max(0px, env(safe-area-inset-bottom, 0px) - var(--kb-hud-measured, 0px)));
+  max-height: calc(70vh - var(--kb-hud-measured, 0px));
+  /* No higher than on the page (6): it clears the HUD by its offset, not by its z-index, and the phone's hand sheet (31), which can be reopened while a card is armed, lies over it. */
+  overflow-y: auto;
   background: var(--kb-glass-panel);
   border-top: 1px solid var(--kb-glass-pale);
   box-shadow: 0 -1px 12px color-mix(in srgb, var(--kb-glass-neon) 45%, transparent);
@@ -126,21 +132,15 @@
   z-index: 6;
 }
 
-@media (max-width: 719px) {
+@media (min-width: 720px) {
   .kb-graffiti-dock.kb-graffiti-dock {
-    position: fixed;
-    /* Above the HUD, which is fixed to the same foot (z-index 30) and holds the window's safe-area inset itself: at bottom 0 the cap row, Cancel and Tag it lay behind it. */
-    inset: auto 0 var(--kb-hud-measured, 0px) 0;
-    margin: 0;
-    padding-bottom: calc(12px + max(0px, env(safe-area-inset-bottom, 0px) - var(--kb-hud-measured, 0px)));
-    max-height: calc(70vh - var(--kb-hud-measured, 0px));
-    /* No higher than on the page (6): it clears the HUD by its offset, not by its z-index, and the phone's hand sheet (31), which can be reopened while a card is armed, lies over it. */
-    overflow-y: auto;
+    left: var(--kb-graffiti-dock-left, 0px);
+    right: var(--kb-graffiti-dock-right, 0px);
   }
+}
 
-  :root[data-kb-graffiti-dock] body {
-    padding-bottom: var(--kb-graffiti-dock-h, 0px);
-  }
+:root[data-kb-graffiti-dock] body {
+  padding-bottom: var(--kb-graffiti-dock-h, 0px);
 }
 
 .kb-graffiti-label {

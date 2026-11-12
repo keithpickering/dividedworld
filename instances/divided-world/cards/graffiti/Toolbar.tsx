@@ -138,17 +138,32 @@ export function Toolbar(p: ToolbarProps) {
     wasAsking.current = p.asking !== null;
   }, [p.asking]);
 
-  /* On a phone the dock is fixed to the foot of the window and would hide the last of the page: the page keeps its height clear (graffiti.css). */
+  /* The dock is fixed to the foot of the window at every width and would hide the last of the page: the page keeps its height clear (graffiti.css). Wide, it lines up with the
+     thread's column, which the page does not name in a variable, so the toolbar measures the column's edges (the posts' table, else the page's column) beside its own height. */
   useLayoutEffect(() => {
     const el = dock.current;
     if (!el) return undefined;
     const root = document.documentElement;
-    const size = () => root.style.setProperty('--kb-graffiti-dock-h', `${el.offsetHeight}px`);
+    const column = el.closest<HTMLElement>('.kb-acts') ?? el.closest<HTMLElement>('.kb-page');
+    const size = () => {
+      root.style.setProperty('--kb-graffiti-dock-h', `${el.offsetHeight}px`);
+      if (!column) return;
+      const at = column.getBoundingClientRect();
+      root.style.setProperty('--kb-graffiti-dock-left', `${Math.max(0, Math.round(at.left))}px`);
+      root.style.setProperty('--kb-graffiti-dock-right', `${Math.max(0, Math.round(root.clientWidth - at.right))}px`);
+    };
     root.setAttribute('data-kb-graffiti-dock', '');
     size();
     const watch = typeof ResizeObserver === 'function' ? new ResizeObserver(size) : null;
     watch?.observe(el);
-    return () => { watch?.disconnect(); root.removeAttribute('data-kb-graffiti-dock'); root.style.removeProperty('--kb-graffiti-dock-h'); };
+    if (column) watch?.observe(column);
+    window.addEventListener('resize', size);
+    return () => {
+      watch?.disconnect();
+      window.removeEventListener('resize', size);
+      root.removeAttribute('data-kb-graffiti-dock');
+      for (const v of ['--kb-graffiti-dock-h', '--kb-graffiti-dock-left', '--kb-graffiti-dock-right']) root.style.removeProperty(v);
+    };
   }, []);
 
   const ready = p.hasDraft && !p.meter.over && !p.busy;

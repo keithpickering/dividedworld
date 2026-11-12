@@ -265,4 +265,29 @@ describe('the Stencils tab', () => {
     fireEvent.keyDown(screen.getByRole('radio', { name: 'Middle left' }), { key: 'End' });
     expect(screen.getByRole('radio', { name: 'Bottom right' })).toBeChecked();
   });
+
+  test('focusOnMount focuses the first control without scrolling the page away from the post', () => {
+    const focus = vi.spyOn(HTMLElement.prototype, 'focus');
+    try {
+      render(<Toolbar {...propsOf({ focusOnMount: true })} />);
+      expect(focus).toHaveBeenCalledWith({ preventScroll: true });
+    } finally { focus.mockRestore(); }
+  });
+
+  test('the dock measures the thread column beside its own height, so a wide dock lines up with the posts and the page keeps its foot clear', () => {
+    const root = document.documentElement;
+    const rect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      const r = this.classList.contains('kb-acts') ? { left: 120, right: 920 } : { left: 0, right: 0 };
+      return { ...r, top: 0, bottom: 0, width: r.right - r.left, height: 0, x: r.left, y: 0, toJSON: () => ({}) } as DOMRect;
+    });
+    const width = vi.spyOn(root, 'clientWidth', 'get').mockReturnValue(1000);
+    try {
+      const { unmount } = render(<div className="kb-acts"><Toolbar {...propsOf()} /></div>);
+      expect(root.style.getPropertyValue('--kb-graffiti-dock-left')).toBe('120px');
+      expect(root.style.getPropertyValue('--kb-graffiti-dock-right')).toBe('80px');
+      expect(root.style.getPropertyValue('--kb-graffiti-dock-h')).not.toBe('');
+      unmount();
+      for (const v of ['--kb-graffiti-dock-left', '--kb-graffiti-dock-right', '--kb-graffiti-dock-h']) expect(root.style.getPropertyValue(v)).toBe('');
+    } finally { rect.mockRestore(); width.mockRestore(); }
+  });
 });
