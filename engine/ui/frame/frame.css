@@ -1220,6 +1220,63 @@ button.kb-hud-secret:focus-visible {
 }
 
 /*
+ * The hand is a modal on the Main board (Hud.tsx): while it is open (the HUD root carries data-kb-hand-open) the plate, the
+ * aura, Alerts and Menu, which are inert, fade to 40%; the hand button stays at full strength. The fade eases over the feel's
+ * exit (the HUD sets --kb-hand-fade-ms and --kb-hand-fade-ease), and under Off it is at once, as the lift above is.
+ */
+:where(:root:not([data-kb-layout='phone'])) .kb-hud[data-kb-hand-open] :is(.kb-hud-plate, .kb-hud-aura, .kb-hud-menu, .kb-hud-alerts) {
+  opacity: 0.4;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  :where(:root:not([data-kb-layout='phone'], [data-kb-motion='reduce'])) .kb-hud :is(.kb-hud-plate, .kb-hud-aura, .kb-hud-menu, .kb-hud-alerts) {
+    transition: opacity var(--kb-hand-fade-ms, 0ms) var(--kb-hand-fade-ease, ease);
+  }
+}
+
+:where(:root[data-kb-motion='full']:not([data-kb-layout='phone'])) .kb-hud :is(.kb-hud-plate, .kb-hud-aura, .kb-hud-menu, .kb-hud-alerts) {
+  transition: opacity var(--kb-hand-fade-ms, 0ms) var(--kb-hand-fade-ease, ease);
+}
+
+/*
+ * The backdrop catches a press outside the cards while the hand is open: the whole window, transparent, above the board and
+ * under the HUD (30) and the cards (31), so the hand button stays live. Hud.tsx closes the hand on its pointerdown.
+ */
+.kb-hand-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 29;
+  background: transparent;
+}
+
+/*
+ * The peek: while a card is armed and the hand is closed, the armed card's postcard stands over the hand button, upright,
+ * its top 90px above the HUD's seam, with the armed tag. It is the drawer's own box (same grid, height and zoom), so the
+ * card stands over the hand button at any width, and it takes no press.
+ */
+.kb-hand-peek {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 31;
+  box-sizing: border-box;
+  max-width: 1440px;
+  height: max(13.25rem, calc(var(--kb-hud-measured, 0px) / var(--kb-board-scale, 1)));
+  margin: 0 auto;
+  padding: 0 34px 0 36px;
+  zoom: var(--kb-board-scale, 1);
+  pointer-events: none;
+}
+
+.kb-hand-peek-card {
+  position: absolute;
+  left: min(calc(944px + 256px), calc(100% - 134px));
+  top: -90px;
+  pointer-events: none;
+}
+
+/*
  * The armed card's floating tag, "Armed · pick a post", up and to the left of its corner as the Main
  * board draws it: a skewed plate on the ground with the salty border and glow, its words upright.
  * It is for the eye; the card's name says the same, and the status in the Frame says it aloud.
