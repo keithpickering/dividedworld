@@ -55,6 +55,10 @@ const phone = { viewport: { value: 'glassPhone390', isRotated: false } };
 
 /** The line's place in the window, as the card's default reads it (laughTrack.line: 40% of the way down the space above the HUD). */
 async function toTheLine(canvasElement: HTMLElement): Promise<void> {
+  /* jsdom, where the stories are swept for accessibility (web/a11y.test.tsx), has no layout and no IntersectionObserver, so the watcher
+     registers nothing and no cue could fire; there the story shows the unfired screen, and the fired one is held in a browser by
+     e2e/a11y.spec.ts and e2e/laugh-track.spec.ts. */
+  if (typeof IntersectionObserver === 'undefined') return;
   const cue = await waitFor(() => {
     const found = canvasElement.querySelector('.dw-lt-cue');
     if (!found) throw new Error('the first cue is not drawn yet');
