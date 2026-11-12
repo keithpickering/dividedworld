@@ -5,7 +5,7 @@
  */
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { beat, deal, lift, toHand, turn, wipe, wipeMask, backdrop, crossing, crossingPinned, currentFeel, feelTokens, modal, overlay, screen, stagger, staggerItem, swap, useFeel, type ActiveFeel } from './motion.ts';
+import { beat, deal, lift, toHand, turn, wipe, wipeMask, backdrop, crossing, crossingPinned, currentFeel, fanDeal, feelTokens, modal, overlay, screen, stagger, staggerItem, swap, useFeel, type ActiveFeel } from './motion.ts';
 
 const rect = { x: 10, y: 20, width: 100, height: 40 };
 const within = { width: 1000, height: 700 };
@@ -333,6 +333,45 @@ describe('the machine\'s presets', () => {
       expect(starts[1]! * 1000).toBeCloseTo(delays[1]! * 3000);
       expect(deal(f, 4, delays).animate).toMatchObject({ x: 0, y: 0, rotate: 0, scale: 1 });
     }
+  });
+
+  describe('fanDeal', () => {
+    const from = { x: 310, y: 220 };
+    type Pose = Record<string, number | number[]> & { transition: { delay: number; duration: number } };
+    it('is empty under Off', () => { expect(fanDeal(null, 0, [], from)).toEqual({}); });
+    it('enters from the hand button at rotate 0 and scale 0.6 and lands at x 0, y 0, its own turn and scale 1, after its place in the stagger', () => {
+      for (const f of [smooth, snappy]) {
+        const delays = stagger(f, 5);
+        const p = fanDeal(f, 3, delays, from, 12);
+        expect(p.initial).toEqual({ x: 310, y: 220, rotate: 0, scale: 0.6 });
+        expect(p.animate).toMatchObject({ x: 0, y: 0, rotate: 12, scale: 1 });
+        expect((p.animate as Pose).transition.delay).toBeCloseTo(delays[3]!);
+      }
+    });
+    it('exits back to the hand button at scale 0.6 and opacity 0, starting from its pose, eased over the feel\'s exit', () => {
+      const e = fanDeal(smooth, 0, stagger(smooth, 5), from, 12).exit as Pose;
+      expect(e).toMatchObject({ x: [0, 310], y: [0, 220], scale: [1, 0.6], opacity: [1, 0], rotate: [12, 0] });
+      expect(e.transition.duration).toBe(smooth!.exit / 1000);
+    });
+    it('gathers in the reverse order: the exit of index 0 starts last', () => {
+      for (const f of [smooth, snappy]) {
+        const delays = stagger(f, 5);
+        const starts = [0, 1, 2, 3, 4].map((i) => (fanDeal(f, i, delays, from).exit as Pose).transition.delay);
+        expect(starts[0]).toBe(Math.max(...starts));
+        expect(starts[0]).toBeGreaterThan(starts[1]!);
+        expect(starts[4]).toBe(0);
+      }
+    });
+    it('holds the last of 60 cards\' delays within the feel\'s screen, entrance and exit alike', () => {
+      for (const f of [smooth, snappy]) {
+        const delays = stagger(f, 60);
+        for (let i = 0; i < 60; i++) {
+          const p = fanDeal(f, i, delays, from);
+          expect((p.animate as Pose).transition.delay * 1000).toBeLessThanOrEqual(f!.screen + 1e-6);
+          expect((p.exit as Pose).transition.delay * 1000).toBeLessThanOrEqual(f!.screen + 1e-6);
+        }
+      }
+    });
   });
 
   it('turn is rotateY from 0 to 180, landing: Snappy by its spring, Smooth by its ease over enter x 1.2', () => {

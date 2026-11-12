@@ -55,7 +55,7 @@ import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncEx
 import type { Character } from '../data/api.ts';
 import { useKayfa } from '../context.tsx';
 import { playIn, playOut, type Stop } from '../glass/play.ts';
-import { overlay as overlayPreset, useFeel } from '../glass/motion.ts';
+import { fanDeal, overlay as overlayPreset, stagger, useFeel } from '../glass/motion.ts';
 import { usePlayer } from '../player.tsx';
 import { registerHref, signInHref } from '../account/next.ts';
 import { isLeaving } from '../glass/Held.tsx';
@@ -346,6 +346,36 @@ export function Hud() {
       const b = el.getBoundingClientRect();
       return a && b.width > 0 ? { x: a.left + a.width / 2 - b.left, y: a.top + a.height / 2 - b.top } : undefined;
     };
+    if (wide) {
+      /* The Main board's cards deal from the hand button and gather back into it (motion.ts `fanDeal`), each on its own `li`; the drawer's box plays nothing. */
+      const cards = [...el.querySelectorAll<HTMLElement>('li.kb-hand-card')];
+      const delays = stagger(feel, cards.length);
+      const runs: Stop[] = [];
+      let left = cards.length;
+      if (handOpen) setDrawerLeaving(false);
+      else if (left === 0) { setDrawerLeaving(false); return; }
+      cards.forEach((li, i) => {
+        const b = li.getBoundingClientRect();
+        const from = a && b.width > 0 ? { x: a.left + a.width / 2 - (b.left + b.width / 2), y: a.top + a.height / 2 - (b.top + b.height / 2) } : { x: 0, y: 0 };
+        const turn = parseFloat(li.style.getPropertyValue('--kb-fan-turn')) || 0;
+        const p = fanDeal(feel, i, delays, from, turn);
+        /* The stylesheet eases the card's transform for its lift; a running play writes the transform itself, frame by frame, so the ease is off for the run. */
+        li.style.transition = 'none';
+        const rest = () => li.style.removeProperty('transition');
+        if (handOpen) {
+          /* The entrance has no end callback: the play removes the card's inline transform when it lands, and that is when the ease comes back. */
+          let wrote = false;
+          const watch = new MutationObserver(() => { if (li.style.transform !== '') wrote = true; else if (wrote) { watch.disconnect(); rest(); } });
+          watch.observe(li, { attributes: true, attributeFilter: ['style'] });
+          const stop = playIn(li, p);
+          runs.push(() => { stop(); watch.disconnect(); rest(); });
+          return;
+        }
+        runs.push(playOut(li, p, () => { rest(); if (--left === 0) setDrawerLeaving(false); }));
+      });
+      drawerRun.current = () => { for (const stop of runs) stop(); };
+      return;
+    }
     if (handOpen) { setDrawerLeaving(false); drawerRun.current = playIn(el, overlayPreset(feel, place())); return; }
     let over = false;
     const end = () => { if (!over) { over = true; setDrawerLeaving(false); } };
