@@ -10,7 +10,7 @@ import { useState } from 'react';
 import { describe, expect, test, vi } from 'vitest';
 import { CANS, type Can, type Cap } from '../graffiti.ts';
 import { STENCIL_KEYS, type StencilKey } from './stencils.ts';
-import { Toolbar, type ToolbarProps } from './Toolbar.tsx';
+import { dockHostOf, Toolbar, type ToolbarProps } from './Toolbar.tsx';
 
 const EMPTY = { wall: 3100, after: 3100, most: 4000, over: false };
 
@@ -289,5 +289,16 @@ describe('the Stencils tab', () => {
       unmount();
       for (const v of ['--kb-graffiti-dock-left', '--kb-graffiti-dock-right', '--kb-graffiti-dock-h']) expect(root.style.getPropertyValue(v)).toBe('');
     } finally { rect.mockRestore(); width.mockRestore(); }
+  });
+
+  test('the dock is hosted by the posts\' table, never inside a post, whose isolation would trap its z-index under the posts that follow', () => {
+    document.body.innerHTML = '<div class="kb-acts"><article class="kb-act" style="isolation: isolate"><div class="kb-act-main"><p id="words"></p></div></article></div><div id="loose"></div>';
+    const words = document.getElementById('words');
+    expect(dockHostOf(words)).toBe(document.querySelector('.kb-acts'));
+    /* Off the thread's table, the post itself; with neither, nothing. */
+    document.body.innerHTML = '<article class="kb-act"><p id="words"></p></article>';
+    expect(dockHostOf(document.getElementById('words'))).toBe(document.querySelector('.kb-act'));
+    expect(dockHostOf(document.body)).toBeNull();
+    expect(dockHostOf(null)).toBeNull();
   });
 });

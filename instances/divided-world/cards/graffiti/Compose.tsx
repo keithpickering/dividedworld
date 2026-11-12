@@ -32,7 +32,7 @@ import { HOLD_MS, swipeKind } from '../wiping.ts';
 import { addPoint, inputOf, lastCan, meterOf, paintAct, rememberCan, undo, wallCells, type Draft, type Pt, type Stroke } from './draft.ts';
 import { paintWall, wallDensity, type Box, type WallAct } from './spray.ts';
 import type { StencilKey } from './stencils.ts';
-import { Toolbar, type ToolbarTab } from './Toolbar.tsx';
+import { dockHostOf, Toolbar, type ToolbarTab } from './Toolbar.tsx';
 import './graffiti.css';
 
 /** The question put before a drawing is left, in the card's own words. */
@@ -341,9 +341,6 @@ export function DrawMode(p: DrawModeProps) {
   );
 }
 
-/** The engine's post, which the dock is drawn under so the post body's box never changes with it. */
-const postOf = (el: Element | null): HTMLElement | null => el?.closest<HTMLElement>('.kb-act') ?? null;
-
 /** The card's `CardUi.Compose`: the drawing beneath every layer of the post, and the toolbar under the post. */
 export function Compose({ box, under, submit, cancel, hold, children }: ComposeProps) {
   const { settings } = useKayfa();
@@ -361,7 +358,7 @@ export function Compose({ box, under, submit, cancel, hold, children }: ComposeP
     if (getComputedStyle(under).position === 'static') under.style.position = 'relative';
     return () => { under.style.position = was; };
   }, [under]);
-  useLayoutEffect(() => { setDockHost(postOf(under) ?? fallback); }, [under, fallback]);
+  useLayoutEffect(() => { setDockHost(dockHostOf(under) ?? fallback); }, [under, fallback]);
 
   /* The box is the post body's (`.kb-act-main`), the one the wall paints in and Whoops! measures, and not the words' element, which on a one-line post is a strip:
      strokes are shares of the same box before and after Tag it. The words' element sits inside it, so the drawing is offset by where the body begins. */

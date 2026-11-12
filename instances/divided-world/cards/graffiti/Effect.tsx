@@ -35,6 +35,7 @@ import { usePlayer } from '../../../../engine/ui/player.tsx';
 import type { CardView, EffectProps, KitControl } from '../../../../engine/ui/cards/types.ts';
 import { CANS, SPONGE, type Can } from '../graffiti.ts';
 import { DrawMode } from './Compose.tsx';
+import { dockHostOf } from './Toolbar.tsx';
 import { lastCan } from './draft.ts';
 import { cursor } from '../whoops/cursor.ts';
 import { ROW_PX, SWEEP_BRUSH_ROWS, bandsOf, sweepStep, type Sweep } from '../whoops/scrub.ts';
@@ -769,7 +770,7 @@ export function Effect({ plays, reader, surface, ink: registry, place, show, met
         {drawing && drawable && surface && plays[0] && hudCharacter && (
           <DrawMode
             box={box} wall={acts} covered={surface.covered} most={surface.most} asks
-            dockHost={frameRef.current?.closest<HTMLElement>('.kb-act') ?? rootRef.current}
+            dockHost={dockHostOf(frameRef.current) ?? rootRef.current}
             submit={async (input) => {
               const answer = await surface.draw(plays[0]!.id, hudCharacter.id, input);
               if (answer.ok && draftAct.current) { holding.current = { id: (answer.value as { id?: string } | null)?.id, acts: now.current.acts }; settleHold(); }

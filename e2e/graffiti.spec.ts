@@ -91,6 +91,8 @@ const inked = (page: Page) => page.evaluate((n) => {
 
 /** A stroke with the mouse across the drawing surface at `y` (a share of its height), from `x0` to `x1`. */
 async function stroke(page: Page, y: number, x0 = 0.1, x1 = 0.9): Promise<void> {
+  /* The dock is fixed over the foot of the window, so the surface is brought to the top, clear of it, as a player scrolls to draw. */
+  await surface(page).evaluate((el) => el.scrollIntoView({ block: 'start' }));
   const box = (await surface(page).boundingBox())!;
   await page.mouse.move(box.x + box.width * x0, box.y + box.height * y);
   await page.mouse.down();
@@ -330,4 +332,83 @@ test.describe('on a Pixel 7', () => {
     await expect(surface(page)).toHaveAttribute('data-kb-strokes', '0');
     await expect(dock(page).getByRole('button', { name: 'Tag it' })).toHaveAttribute('aria-disabled', 'true');
   });
+});
+
+/*
+ * Playing the card face up (docs/plans/2026-11-12-graffiti-face-up-design.md, sections 2 and 3): one ghost on one's own post, and pressing it opens draw mode with the
+ * toolbar's dock fixed in the window above the HUD however tall the post is. The hand's tag says which post is being played, the other ghosts hide, and Esc brings
+ * them back. The demo's posts are short, so the post under play is made taller than the window.
+ */
+/** The hand's peek tag, the copies on screen only (the hand's own and the HUD's keep one each, one of them hidden). */
+const peek = (page: Page, text: string) => page.getByText(text, { exact: true }).locator('visible=true');
+const ghosts = (page: Page) => page.getByRole('button', { name: /^Play Graffiti on post \d+$/ });
+
+/** Arms Graffiti from the hand's dialog on the thread, the way a player does. */
+async function arm(page: Page): Promise<void> {
+  /* The hand is a modal dialog on the wide layout and a region on the phone's (Hud.tsx), where it may already be open. */
+  const hand = page.getByRole('dialog', { name: 'Your hand' }).or(page.getByRole('region', { name: 'Your hand' }));
+  if (!(await hand.isVisible())) await page.getByRole('button', { name: /^Hand, \d+ postcards?$/ }).click();
+  await hand.getByRole('button', { name: /^Graffiti, / }).first().click();
+}
+
+async function playingFlow(page: Page): Promise<void> {
+  await world(page);
+  await openThread(page);
+  /* The page's CSP forbids a style tag, not a style set through the CSSOM. */
+  await page.evaluate((n) => { document.querySelector<HTMLElement>(`#post-${n} .kb-act-main`)!.style.minHeight = '1500px'; }, POST);
+  const viewport = page.viewportSize()!;
+  expect((await post(page).boundingBox())!.height, 'the post is taller than the window').toBeGreaterThan(viewport.height);
+  await arm(page);
+  const own = post(page).getByRole('button', { name: /^Play Graffiti on post \d+$/ });
+  await expect(own, 'one ghost on the player\'s own post').toHaveCount(1);
+  await expect(own).toHaveAccessibleName(`Play Graffiti on post ${POST}`);
+  /* The player's other masks wrote other posts, which carry their ghosts until the card is playing: more than one ghost on the page, one to a post. */
+  const everywhere = await ghosts(page).count();
+  expect(everywhere, 'another post of the player\'s has its ghost too').toBeGreaterThan(1);
+  await expect(peek(page, 'Armed · pick a post').first()).toBeVisible();
+  await own.click();
+  await expect(dock(page)).toBeVisible();
+  /* The dock is in the window and clears the HUD, wherever the post's own toolbar slot is on the page. */
+  const box = (await dock(page).boundingBox())!;
+  const hud = (await page.getByRole('region', { name: 'Game HUD' }).boundingBox())!;
+  expect(box.x, 'dock left in the window').toBeGreaterThanOrEqual(0);
+  expect(box.y, 'dock top in the window').toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width, 'dock right in the window').toBeLessThanOrEqual(viewport.width + 0.5);
+  expect(box.y + box.height, 'dock above the HUD').toBeLessThanOrEqual(hud.y + 1);
+  /* Over the posts that follow the one under play the dock still takes the pointer: with the next post scrolled to the top, it lies beneath the dock, and the point at the middle of each of its controls is the control's. */
+  await page.evaluate(() => document.querySelector('#post-3')!.scrollIntoView({ block: 'start' }));
+  const buried = await dock(page).evaluate((el) => [...el.querySelectorAll<HTMLElement>('button')].filter((b) => {
+    const r = b.getBoundingClientRect();
+    return r.height > 0 && !b.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2));
+  }).map((b) => b.getAttribute('aria-label') ?? b.textContent));
+  expect(buried, 'controls of the dock with another post painted over them').toEqual([]);
+  /* Wide, the hand's peek tag names the post; on the phone's layout the HUD's hand button says what is armed (Hud.tsx), without a post number. */
+  const wide = viewport.width >= 1024;
+  const hand = page.getByRole('region', { name: 'Game HUD' }).getByRole('button', { name: /^(Armed|Playing) · Graffiti/ });
+  if (wide) {
+    await expect(peek(page, `Playing · post #${POST}`).first()).toBeVisible();
+    await expect(peek(page, 'Armed · pick a post')).toHaveCount(0);
+  } else {
+    await expect(hand).toHaveAccessibleName('Playing · Graffiti, press to put it back');
+  }
+  /* The other posts' ghosts hide; the one on the post under play stays (it is the post the dock is for). */
+  await expect(ghosts(page), 'no other post shows a ghost while playing').toHaveCount(1);
+  await expect(own).toHaveCount(1);
+  await page.keyboard.press('Escape');
+  await expect(dock(page)).toBeHidden();
+  if (wide) await expect(peek(page, 'Armed · pick a post').first()).toBeVisible();
+  else await expect(hand).toHaveAccessibleName('Armed · Graffiti, press to put it back');
+  await expect(own).toHaveCount(1);
+  await expect(ghosts(page), 'the other posts\' ghosts are back').toHaveCount(everywhere);
+}
+
+test.describe('playing Graffiti, wide', () => {
+  test.use({ viewport: { width: 1280, height: 800 }, reducedMotion: 'reduce' });
+  test('one ghost, the dock in the window above the HUD, and Esc brings the ghost back', async ({ page }) => { await playingFlow(page); });
+});
+
+test.describe('playing Graffiti, on a phone', () => {
+  const { defaultBrowserType: _browser, ...pixel } = devices['Pixel 7'];
+  test.use({ ...pixel });
+  test('one ghost, the dock in the window above the HUD, and Esc brings the ghost back', async ({ page }) => { await playingFlow(page); });
 });

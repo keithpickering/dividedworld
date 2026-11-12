@@ -123,6 +123,12 @@ const STENCIL_CHOICES = STENCIL_KEYS.map((k): Choice<StencilKey> => ({ value: k,
 const SPOT_CHOICES = SPOT_NAMES.map((name, i): Choice<number> => ({ value: i, name, className: 'kb-graffiti-spot' }));
 const TABS: readonly { readonly key: ToolbarTab; readonly name: string }[] = [{ key: 'spray', name: 'Spray' }, { key: 'stencils', name: 'Stencils' }];
 
+/**
+ * Where the dock is mounted for the post a card is played on: the posts' table (`.kb-acts`), else the post. A post is isolated (thread.css), so a dock fixed inside it has its
+ * z-index trapped in that post and every post after it paints over the dock; in the table it lies over all of them. The dock's controls come after the posts in the tab order.
+ */
+export const dockHostOf = (el: Element | null): HTMLElement | null => el?.closest<HTMLElement>('.kb-acts') ?? el?.closest<HTMLElement>('.kb-act') ?? null;
+
 export function Toolbar(p: ToolbarProps) {
   const id = useId();
   const dock = useRef<HTMLDivElement>(null);
