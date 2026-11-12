@@ -1,7 +1,7 @@
 /**
  * Booster packs board 01, the machine (docs/research/2026-11-07-booster-packs/01-machine.html, 1440 by 1080), as the story `Boards/Booster packs`,
  * `Machine` (engine/ui/vending/Packs.board.stories.tsx) draws it with the Booster selected by a press, as a player does: the wallet and the hand, the
- * machine's slots in the admin's order (the Booster in A1, the card slot in A2 pulled by the Boss, E1 marked up, E2 sealed, the hidden Main Event and Graffiti
+ * machine's slots in the admin's order (the Booster in A1, the card slot in A2 pulled by the Boss, E1 marked up, E2 sealed, the hidden Main Event, Graffiti and Whodunnit?
  * drawing no slot), the selected pack's price, what is in it and Buy beside the slots, and the column to the right: the pack's odds, and the Boss's moves in
  * force in plain words. The plan is docs/plans/2026-11-04-booster-packs-plan.md, Task 5.
  *
@@ -23,6 +23,7 @@
  *    build's G2, two rows under the board's empty E2 in the same column, which it is compared to, so the build is held to the board's place plus (0, 253). The wrapped grid is 253px
  *    taller (seven rows of slots where the board draws five), which nothing else on the board stands under. Below the Fold then took the slot after Glitter Bomb (H1), so no slot above it moves; the grid is one row taller again (eight rows), which nothing stands under either.
  *    Mooch, Toll, 4D Chess and Jimmy Wails, then Hype-Up and Last Word (card notes Part 4), took the slots after Below the Fold, so no slot above them moves; the grid gains rows below the board's slots, which nothing stands under, and the hidden Main Event, Off Day and Sugar Coat draw no slot.
+ *    Overreaction and Blind Study (card notes Part 3) took the slots after Laugh Track's, so no slot above them moves and the grid gains rows below the board's slots, which nothing stands under; the hidden Whodunnit? draws no slot.
  *  - A slot's price is "orbs" and the board's "orb" (the glass's names say "1.00 orb" and "3.00 orbs", as board 07 holds them).
  *  - The wallet's name says "buying Booster", where the board draws "buying the Booster": a card's reads "buying Whoops!" and a pack is named as one.
  *  - The machine's sign is a marquee the instance picks at random, and the machine's drawing is the instance's art (`data-kb-art`): not compared.
