@@ -21,7 +21,7 @@ const root = path.resolve(import.meta.dirname, '../../..');
 const migrations = path.join(root, 'supabase/migrations');
 
 /** The tables that hold a row in the fixture, before the round trip and again after the import (an empty table would round-trip as well, and prove nothing). */
-const HELD = ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'season_results', 'apologies', 'card_texts', 'card_writes', 'card_write_refunds', 'scored_as', 'play_reach', 'ledger', 'move_dependencies', 'condition_kinds', 'persona_arcs', 'arc_beat_events', 'handoffs'];
+const HELD = ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'season_results', 'apologies', 'card_texts', 'card_writes', 'card_write_refunds', 'scored_as', 'play_reach', 'ledger', 'move_dependencies', 'condition_kinds', 'persona_arcs', 'arc_beat_events', 'handoffs', 'surfaces', 'surface_marks', 'surface_cuts', 'face_down_draws'];
 
 const psqlOn = (url: string, text: string) =>
   execFileSync('psql', ['-v', 'ON_ERROR_STOP=1', '-qtAX', url, '-f', '-'], { input: text, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
@@ -214,6 +214,20 @@ test('an instance exported and imported into a fresh database is the same instan
           jsonb_build_object('card', 'expscore', 'message', '', 'config', jsonb_build_object('class', 'heel'), 'layer', 1, 'reach', 'character', 'character', b,
             'starts', to_char(now() + interval '1 day', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'), 'ends', to_char(now() + interval '2 days', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'))) returning id into score_play;
         insert into play_reach (play, reach, character, ends_at) values (score_play, 'character', b, now() + interval '2 days');
+      end;
+      -- A surface (0317): a play of a surface card on a post, a draw by Bob's mask and a wash by the post's own character (each an Act, with its cells in the payload), so the row that is derived from them is carried;
+      -- and a surface card set face down with its draft, whose private row is carried too.
+      insert into card_kinds (key, name, alignment, rarity, play, reaches, stack, surface) values ('expwall', 'Exported Wall', 'pepperoni', 'rare', 'cast', '{post}', 1, true);
+      insert into card_ledger (account, card, kind, price) values (ann, 'expwall', 'bought', 0);
+      declare wall_post uuid; wall_play uuid; wall_set uuid;
+      begin
+        wall_post := tests.post(a, t, 'A wall, carried across.');
+        insert into acts (character, kind, thread, target_act_id, payload) values (a, 'card', t, wall_post, '{"card": "expwall", "message": "", "config": {}, "layer": 1}') returning id into wall_play;
+        perform open_surface(wall_play);
+        perform draw_on_surface(bob, b, wall_play, '{"strokes": [{"width": 0.01, "points": [[0.1, 0.1]]}]}', (repeat('1', 300) || repeat('0', 9700))::bit(10000), 4000);
+        perform wash_surface(ann, a, wall_play, '{"strokes": [{"width": 0.02, "points": [[0.1, 0.1]]}]}', (repeat('1', 100) || repeat('0', 9900))::bit(10000));
+        wall_set := tests.post(a, t, 'A wall, set face down.');
+        perform set_surface_card(ann, 'expwall', a, wall_set, '{}', 0, null, null, null, null, null, '{"strokes": [{"width": 0.01, "points": [[0.2, 0.2]]}]}', (repeat('0', 500) || repeat('1', 50) || repeat('0', 9450))::bit(10000), 4000, 48);
       end;
       -- The card notes, Part 4 (0316): a cast Earn on a character alone, with a group and a time up, played on Bob's character; and a No quote on a post, played after Bob
       -- quotes that post. The quote is written first, since a quote of a post under a live No quote is refused (acts_quote_guard); the import writes it as a replica.
@@ -455,6 +469,19 @@ test('an instance exported and imported into a fresh database is the same instan
     (select count(*) from scored_as s join acts k on k.id = s.play where k.payload ->> 'card' = 'expscore' and s.class_key = 'heel') || '|' ||
     (select count(*) from acts where kind = 'card' and payload ->> 'card' = 'expscore' and payload ->> 'starts' is not null) || '|' ||
     (select count(*) from acts where kind = 'spring' and payload ->> 'did' = 'rode' and payload ->> 'quadrant' = 'excitedPositive')`);
+  // A surface's row is derived from its Acts: rebuilt from them, it is the stored row (the first number is the fixture's own wall, the second the surfaces in the database that differ, the races' committed ones included).
+  const surfaceRows = (url: string) => psqlOn(url, `select count(*) filter (where k.payload ->> 'card' = 'expwall') || '|' || count(*) filter (where r.cover is distinct from s.cover or r.owners is distinct from s.owners or r.live is distinct from s.live)
+    from surfaces s join acts k on k.id = s.play cross join lateral rebuild_surface(s.play) r`);
+  assert.equal(surfaceRows(from), '1|0', 'the fixture holds a surface, and rebuilding it from its Acts gives the stored row');
+  // The log's narrow rows (surface_marks, surface_cuts) are what the Acts say too: recomputed from every surface's Acts they are the stored rows, in both directions (the first number counts the rows the fixture's wall holds; the second the differences).
+  const narrowRows = (url: string) => psqlOn(url, `select
+    (select count(*) from surface_marks m join surfaces s on s.play = m.play join acts k on k.id = s.play and k.payload ->> 'card' = 'expwall') || '|' ||
+    (select count(*) from surface_cuts c join surfaces s on s.play = c.play join acts k on k.id = s.play and k.payload ->> 'card' = 'expwall') || '|' ||
+    (select count(*) from (select * from surface_marks except select m.* from surfaces s cross join lateral surface_marks_of(s.play) m) x) || '|' ||
+    (select count(*) from (select m.* from surfaces s cross join lateral surface_marks_of(s.play) m except select * from surface_marks) x) || '|' ||
+    (select count(*) from (select * from surface_cuts except select c.* from surfaces s cross join lateral surface_cuts_of(s.play) c) x) || '|' ||
+    (select count(*) from (select c.* from surfaces s cross join lateral surface_cuts_of(s.play) c except select * from surface_cuts) x)`);
+  assert.equal(narrowRows(from), '2|1|0|0|0|0', 'the fixture\'s wall holds a mark for its draw and its wash and a cut for the one draw the wash took from, and the rows equal those the Acts give');
   assert.equal(payouts(from), '1|1|1|1', 'the fixture holds the skim ledger row, the scored-as row, the play\'s starts and the rode spring\'s quadrant');
   // The cast's own set, its spring and the card it caught, by their ids, so the round trip is shown to carry a trap's rows
   // whatever else this database holds (#136 F1).
@@ -674,6 +701,8 @@ test('an instance exported and imported into a fresh database is the same instan
     const setOf = (url: string) => psqlOn(url, `select p.pronouns::text from character_profiles p join characters c on c.id = p.character where c.name = 'Exported A'`).trim();
     assert.deepEqual(JSON.parse(setOf(fresh.toString())), JSON.parse(xe), 'a custom pronoun set survives the round trip');
     for (const t of HELD) { const rows = after.get(`public.${t}`); assert.ok(rows !== undefined && rows !== '[]', `${t} is in the imported instance (got ${rows === undefined ? 'no such table' : rows})`); }
+    assert.equal(surfaceRows(fresh.toString()), '1|0', 'an imported surface is the row its Acts rebuild');
+    assert.equal(narrowRows(fresh.toString()), '2|1|0|0|0|0', 'the imported marks and cuts are the rows the Acts give');
     assert.equal(payouts(fresh.toString()), payouts(from), 'the payout cards\' ledger row, scored_as row, starts and rode quadrant are in the imported instance');
     // The post that quotes the No quote's post (Task 8) is in the imported instance: the quote was written before the No quote was played, and the import writes it as a replica.
     const quoting = `select count(*) from acts q join acts n on n.kind = 'post' and n.payload ->> 'body' = 'Under No quote, and quoted before it.'

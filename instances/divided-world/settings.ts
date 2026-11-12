@@ -184,9 +184,9 @@ export const defaults: Settings = deepFreeze<Settings>({
    * The numbers a card gives the screens: a Whoops! layer is washed clean at 95%, the last specks not being worth chasing across a phone.
    * Autocorrect's tape: `pace` is how fast a strip peels, in pixels a second; `pickMs` how long a finger holds before it picks at the
    * tape; `give` how far a drag goes before a strip lets go, in pixels; `peekStayMs` how long a peeled corner stays curled; `peekSettle`
-   * how fast it settles back, in pixels a second.
+   * how fast it settles back, in pixels a second. Graffiti's wall holds ink over at most `graffiti.limit` percent of its cells.
    */
-  cardSettings: { 'whoops.clean': 95, 'autocorrect.pace': 90, 'autocorrect.pickMs': 450, 'autocorrect.give': 34, 'autocorrect.peekStayMs': 300, 'autocorrect.peekSettle': 300, 'youWereSaying.eraseCps': 6, 'youWereSaying.retypeMs': 2000, 'youWereSaying.typeCps': 40 },
+  cardSettings: { 'whoops.clean': 95, 'autocorrect.pace': 90, 'autocorrect.pickMs': 450, 'autocorrect.give': 34, 'autocorrect.peekStayMs': 300, 'autocorrect.peekSettle': 300, 'youWereSaying.eraseCps': 6, 'youWereSaying.retypeMs': 2000, 'youWereSaying.typeCps': 40, 'graffiti.limit': 40 },
   /** The classes' and cards' own numbers from the same table, each named for what reads it. */
   economy: {
     /** "Early" is among this many first players to react to a post. */

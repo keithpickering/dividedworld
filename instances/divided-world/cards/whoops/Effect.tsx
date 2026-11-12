@@ -50,6 +50,7 @@ import { motionReduced } from '../../../../engine/ui/appearance.ts';
 import { LOST_ANSWER, type Answer } from '../../../../engine/ui/data/api.ts';
 import { useKayfa } from '../../../../engine/ui/context.tsx';
 import type { CardPlay, CardView, EffectProps, KitControl } from '../../../../engine/ui/cards/types.ts';
+import { HOLD_MS, MAX_SAVE_RETRIES, RETRY_AFTER_MS, SLOP_PX, SUPPRESS_MS, overInk, swipeKind } from '../wiping.ts';
 import { cursor, type CursorMode } from './cursor.ts';
 import { readLines } from './lines.ts';
 import { MAX_CANVAS_PX, MAX_DPR, paint, paintSplat, type Geometry, type PaintLayer } from './paint.ts';
@@ -64,21 +65,15 @@ import { inkName } from './names.ts';
 
 /** A burst of strokes is saved once it has been quiet this long. */
 export const SAVE_AFTER_MS = 800;
-/** How long after a save that did not get through the next try waits, doubling on each failure. */
-export const RETRY_AFTER_MS = 2000;
-/** How many times in a row a save is sent again before it is left to the author's next stroke. */
-export const MAX_SAVE_RETRIES = 6;
+/* The pace of a retry, the touch rules and the test of what lies over ink are shared with Graffiti's wall (../wiping.ts). */
+export { MAX_SAVE_RETRIES, RETRY_AFTER_MS };
 /** The share of a layer washed that counts as clean where the instance's settings do not say (an instance seeded before the setting existed). */
 const DEFAULT_CLEAN = 95;
 /** How long a layer takes to fade once it is washed clean, unless motion is reduced. */
 const FADE_MS = 700;
 /** How often the model's published numbers and covered lines are recomputed while a sweep runs. */
 const REFRESH_MS = 150;
-/** A press held this long on ink grabs it (a finger), and one that moves this far (px) before then is a swipe, up or down the page's and sideways a wipe. */
-export const HOLD_MS = 180;
-/** How long after a touch ends the click that follows it is still swallowed. */
-const SUPPRESS_MS = 400;
-export const SLOP_PX = 8;
+export { HOLD_MS, SLOP_PX };
 /** The ink of a play whose config carries none we can draw (the server keeps one, so this is a safeguard). */
 const FALLBACK_INK = '#ff2bd6';
 
@@ -172,7 +167,7 @@ interface View {
   readonly fading: boolean;
 }
 
-export function Effect({ post, plays, states, reader, save, place, show, met, nameOf, still, children }: EffectProps) {
+export function Effect({ post, plays, states, reader, save, place, show, met, nameOf, still, ink: registry, children }: EffectProps) {
   const { settings } = useKayfa();
   const layers = useMemo<readonly Layer[]>(() => plays.map((play) => ({ play, color: inkOf(play), seed: seedOf(play) })), [plays]);
   /** The body's box on this screen, and the frame's offset in it (px): the ink canvas reaches out of the frame to the box's corner. */
@@ -612,6 +607,19 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
 
   /* ------------------------------------------------------------------ a stroke ---- */
 
+  /* The ink's places are claimed on the post's registry, so a card beneath this one (a wall) takes a press only where this card has none. A moment claims nothing. */
+  useEffect(() => {
+    if (still) return;
+    return registry.claim((x, y) => {
+      const el = now.current.surface ?? frameRef.current;
+      if (!el) return false;
+      const rect = el.getBoundingClientRect(), b = now.current.size.box;
+      if (b.w <= 0 || b.h <= 0) return false;
+      const px = (x - rect.left - el.clientLeft) / b.w, py = (y - rect.top - el.clientTop) / b.h;
+      return topLayer(liveInks(), px, py) >= 0;
+    });
+  }, [registry, still, liveInks]);
+
   /** Where a point of the screen lies in the body's box, in shares of it. */
   const shareAt = (clientX: number, clientY: number): Pt => {
     const el = now.current.surface ?? frameRef.current!;
@@ -619,13 +627,18 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
     const { box: b } = now.current.size;
     return [(clientX - rect.left - el.clientLeft) / b.w, (clientY - rect.top - el.clientTop) / b.h];
   };
-  /** Whether a press lands on something the engine lifts over the ink: it is that control's, and starts no stroke. */
-  const overInk = (target: EventTarget | null) => target instanceof Element && target.closest('[data-kb-over-ink]') !== null;
   const writing = () => now.current.reader.author && now.current.tool === 'ink';
   /** The layer a stroke starting at `p` takes: the top one with ink there, or, for the author's pen, the top live one. */
   const layerAt = (p: Pt): number => {
     const lives = liveInks();
-    return writing() ? lives.reduce((top, ink, i) => (ink ? i : top), -1) : topLayer(lives, p[0], p[1]);
+    if (writing()) return lives.reduce((top, ink, i) => (ink ? i : top), -1);
+    /* A wash starts only where this card's ink is the outermost on the post: a card laid over it (nothing is, today) would take the press first. */
+    const el = now.current.surface ?? frameRef.current;
+    if (el) {
+      const rect = el.getBoundingClientRect(), b = now.current.size.box;
+      if (!registry.topAt(rect.left + el.clientLeft + p[0] * b.w, rect.top + el.clientTop + p[1] * b.h)) return -1;
+    }
+    return topLayer(lives, p[0], p[1]);
   };
 
   const finish = useCallback(() => {
@@ -797,11 +810,11 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
     g.cy = tc.clientY;
     if (g.state === 'page') return;
     if (g.state === 'wait') {
-      const dx = tc.clientX - g.x0, dy = tc.clientY - g.y0;
-      if (Math.hypot(dx, dy) < SLOP_PX) return;
+      const kind = swipeKind(tc.clientX - g.x0, tc.clientY - g.y0);
+      if (kind === 'wait') return;
       settle(g);
       /* A swipe mostly up or down is the page's scroll, and washes nothing; a sideways one wipes. */
-      if (Math.abs(dy) > Math.abs(dx)) { g.state = 'page'; return; }
+      if (kind === 'page') { g.state = 'page'; return; }
       g.state = 'wipe';
       begin(shareAt(g.x0, g.y0), g.id, true);
     }

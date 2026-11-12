@@ -13,6 +13,7 @@ import type { Act } from '../../../engine/ui/data/api.ts';
 import { renderInWorld } from '../../../engine/ui/test-world.tsx';
 import { instance } from '../index.ts';
 import { instanceUi } from './index.ts';
+import { NO_INK } from '../../../engine/ui/cards/claims.ts';
 
 const POST = { id: 'p1', character: 'c1', kind: 'post', thread: 't1', targetActId: null, seq: 1, createdAt: '2026-11-03T12:00:00.000Z', payload: { body: 'hi' }, currentPayload: { body: 'hi' }, editedAt: null, shownEditedAt: null } as Act;
 
@@ -45,7 +46,7 @@ test.each(drawn.map((c) => [c.key, c] as const))('%s, drawn still, saves, releas
   const Effect = card.Effect!;
   const props: EffectProps = {
     post: POST, plays, states: {}, released: new Set(), written: new Map(), reader: { author: true, caster: true }, place: 'thread', reach: 'post', still: true,
-    show: () => {}, met, holdScreen, marks: null, save, release, nameOf: () => 'Spritey', give: async () => ({ ok: false, error: 'no' }), moreGifts: async () => {}, wallet: null, children: <p>hi</p>,
+    show: () => {}, met, holdScreen, ink: NO_INK, marks: null, save, release, nameOf: () => 'Spritey', give: async () => ({ ok: false, error: 'no' }), moreGifts: async () => {}, wallet: null, children: <p>hi</p>,
   };
   const { container } = renderInWorld(<Effect {...props} />, { settings: { cardSettings: { 'whoops.clean': 95 } } });
   act(() => { vi.advanceTimersByTime(100); });

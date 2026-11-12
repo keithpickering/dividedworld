@@ -221,6 +221,16 @@ test('a number a card reads for the screens is one the settings hold, within the
   assert.match(instanceProblems(held(94.5)).join('\n'), /whole number/);
 });
 
+test('a surface card is a cast card with a stack of 1, and its limit is a number it reads for the screens', () => {
+  const surface = { limitKey: 'splat.clean', mostLive: 48, validateDraw: () => ({ ok: true as const, value: { strokes: [], payload: {} } }), validateWash: () => ({ ok: true as const, value: { strokes: [], payload: {} } }) };
+  const card = (extra: object) => ({ ...good, cards: [{ key: 'wall', name: 'Wall', alignment: 'salty' as const, rarity: 'rare' as const, surface, screenReads: ['splat.clean'], playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }), ...extra }, ...packCards] }) as unknown as Instance;
+  assert.deepEqual(instanceProblems(card({ stack: 1 })), []);
+  assert.match(instanceProblems(card({ stack: 2 })).join('\n'), /card "wall" has a surface and a stack of 2; a surface card has a stack of 1/);
+  assert.deepEqual(instanceProblems(card({})), [], 'a stack left out is 1');
+  assert.match(instanceProblems(card({ stack: 1, play: 'use' })).join('\n'), /card "wall" has a surface, and only a cast card does/);
+  assert.match(instanceProblems(card({ stack: 1, screenReads: [] })).join('\n'), /card "wall" has a surface whose limit "splat\.clean" is not one of its screenReads/);
+});
+
 test('ranks start at 0 and rise, each named', () => {
   assert.match(instanceProblems({ ...good, ranks: [] }).join('\n'), /no rank/);
   assert.match(instanceProblems({ ...good, ranks: [{ name: 'Late', from: 50 }] }).join('\n'), /the first rank is from 0/);

@@ -23,6 +23,7 @@ import { mooch } from '../cards/mooch.ts';
 import { toll } from '../cards/toll.ts';
 import { fourDChess } from '../cards/4d-chess.ts';
 import { offDay } from '../cards/off-day.ts';
+import { LOG_DRAW, LOG_WASH, describeDraw } from '../cards/graffiti/words.ts';
 import { wordsProblems } from '../../../engine/ui/cards/lens-words.ts';
 import type { CardPlay } from '../../../engine/ui/cards/types.ts';
 import { ENGINE_DEFAULT_PRONOUNS, PRONOUN_PRESETS } from '../../../engine/rules/pronouns.ts';
@@ -764,6 +765,33 @@ describe('Mooch, Toll, 4D Chess and Off Day in plain words (card notes Part 6, T
     expect(said('card.ride', 'mooch')).toBe('A card: what its payout on a reaction earned');
     retuned(mooch, 'skim', { share: 0.25 }, () => expect(said('card.skim', 'mooch')).toContain('Mooch: a quarter of a vote for each vote'));
     retuned(toll, 'gimmick', { kind: 'ride', share: 1 }, () => expect(said('card.ride', 'toll')).toContain('Toll: a vote for each vote'));
+  });
+
+  test('Graffiti is composed on the post, lies beneath every splat, and says what it does in the glass\'s plain words', () => {
+    const g = ui('graffiti');
+    expect(g.Compose).toBeDefined();
+    expect(g.Effect).toBeDefined();
+    expect(g.beneath).toBe(true);
+    expect(g.art.tagline).toBe('Turn a post into a wall.');
+    expect(g.summary).toBe('Turn a post into a wall anyone can tag. The author can wash it off; anyone can tag it again.');
+    expect(g.status).toBe('A wall anyone can tag');
+    expect(wordsProblems('status', g.status as string)).toEqual([]);
+    expect(g.hint).toBe('Press Draw to tag this wall. Scrub it away on your screen any time.');
+    expect(g.hint).not.toMatch(/\d/u);
+    const said = g.describe(instance.settings);
+    expect(said).toContain('up to 40% of the post');
+    expect(said).toContain('The post\'s author can wash it off for everyone, and anyone can tag it again.');
+    expect(said).toContain('A reader can scrub the paint off on their own screen');
+    expect(said).not.toMatch(/colour|grey|tick /u);
+    expect(g.describe({ ...instance.settings, cardSettings: { ...instance.settings.cardSettings, 'graffiti.limit': 25 } })).toContain('up to 25% of the post');
+  });
+
+  test('Graffiti\'s words about a drawing read from the Act alone: its colors or its stencil, and the sponge for a wash', () => {
+    expect(describeDraw({ strokes: [{ can: 'pink', cap: 'fat', aspect: 1, points: [[0, 0]] }, { can: 'lime', cap: 'fat', aspect: 1, points: [[0, 0]] }] })).toBe('pink and lime');
+    expect(describeDraw({ stencil: 'crown', can: 'pink', spot: 1, strokes: [] })).toBe('a crown in pink');
+    expect(ui('graffiti').describeDraw).toBe(describeDraw);
+    expect(ui('graffiti').logDraw).toEqual(LOG_DRAW);
+    expect(ui('graffiti').logWash).toEqual(LOG_WASH);
   });
 
   test('every status passes the instance check, and the check is run against the real instance', () => {

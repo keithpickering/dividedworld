@@ -294,3 +294,33 @@ test('a gift names the character, the drive and a whole amount, and is the servi
   assert.match(refusal({ action: 'donate', character: id, drive: other, amount: 0 }) ?? '', /^amount:/);
   assert.match(refusal({ action: 'donate', character: id, drive: other, amount: 2.5 }) ?? '', /^amount:/);
 });
+
+// A surface card (docs/plans/2026-11-11-graffiti-plan.md, Task 3): a fixture, since the engine names no instance's card.
+const dab = { strokes: [{ width: 0.01, aspect: 1, points: [[0.5, 0.5]] }] };
+const wall = { ...splat, key: 'wall', name: 'Wall', surface: { limitKey: 'wall.limit', mostLive: 48, validateDraw: (i: unknown) => ({ ok: true as const, value: { strokes: [], payload: i as Record<string, unknown> } }), validateWash: (i: unknown) => ({ ok: true as const, value: { strokes: [], payload: i as Record<string, unknown> } }) } };
+const walled: Instance = { ...instance, cards: [splat, sparkle, wall] };
+
+test('a draw and a wash name the character, the play and the drawing, and are the service\'s call for the account, read against the card that holds the wall', () => {
+  assert.deepEqual(decide({ action: 'draw', character: id, play: other, input: dab }, walled),
+    { ok: true, rpc: 'draw_on_surface', args: { through: id, play: other, input: dab }, asService: true, needsSurface: true });
+  assert.deepEqual(decide({ action: 'wash', character: id, play: other, input: dab }, walled),
+    { ok: true, rpc: 'wash_surface', args: { through: id, play: other, input: dab }, asService: true, needsSurface: true });
+  for (const action of ['draw', 'wash']) {
+    assert.match(refusal2({ action, character: 'x', play: other, input: dab }, walled), /^character:/);
+    assert.match(refusal2({ action, character: id, play: 'x', input: dab }, walled), /^play:/);
+    assert.match(refusal2({ action, character: id, play: other }, walled), /^input:/);
+  }
+});
+
+test('a surface card is played and set with its first draw, and refused before SQL without one; a card with no surface carries none', () => {
+  const play = { action: 'playCard', card: 'wall', character: id, target: other };
+  assert.equal(refusal2(play, walled), 'first: draw your tag first');
+  assert.equal(refusal2({ action: 'setCard', card: 'wall', character: id, target: other }, walled), 'first: draw your tag first');
+  const cast = decide({ ...play, first: dab }, walled);
+  assert.ok(cast.ok && cast.rpc === 'play_card' && cast.needsTarget === true);
+  assert.deepEqual(cast.ok && cast.args.first, dab);
+  const set = decide({ action: 'setCard', card: 'wall', character: id, target: other, first: dab }, walled);
+  assert.deepEqual(set.ok && set.args.first, dab);
+  const plain = decide({ action: 'playCard', card: 'splat', character: id, target: other, first: dab }, walled);
+  assert.ok(plain.ok && !('first' in plain.args), 'a card with no surface is sent no drawing');
+});

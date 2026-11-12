@@ -296,7 +296,7 @@ grant execute on function arc_season_span(text, bigint), arc_board_posts(uuid, i
   beat_condition_holds(text, bigint, jsonb), arc_pass() to service_role;
 
 -- seed_instance (0291), also writing the conditions and each persona's arc. Everything else as 0291 wrote it,
--- which carries 0151's change to the card_kinds insert (a card's `skim` and `scoresAs`); this body carries it too and does not revert it. It carries 0153's change too (a card's `draws`, `drive` and `needs_message`), ported into this body so that it does not revert the drives.
+-- which carries 0151's change to the card_kinds insert (a card's `skim` and `scoresAs`); this body carries it too and does not revert it. It carries 0153's change too (a card's `draws`, `drive` and `needs_message`), ported into this body so that it does not revert the drives. It carries 0317's change as well (a card's `surface`, the column 0317_surfaces added), so that this body, replayed after 0317, does not revert the graffiti cards.
 create or replace function seed_instance(payload jsonb) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
@@ -358,19 +358,19 @@ begin
   if unknown is not null then raise exception '%', unknown using errcode = '22023'; end if;
   -- A card's stack, whether it is seeded and the economy numbers its rules read are the code's, as its name is; so
   -- are its rarity, its play, its trap (with its match), its gimmick, how long a Use of it is up, where it reaches, whether it pins, whether it writes, its skim, whether it scores as a class, what it draws, its drive and the words it refuses a blank message with.
-  insert into card_kinds (key, name, alignment, stack, seeded, reads, rarity, play, trap, gimmick, lasts, reaches, pins, writes, skim, scores_as, draws, drive, needs_message)
+  insert into card_kinds (key, name, alignment, stack, seeded, reads, rarity, play, trap, gimmick, lasts, reaches, pins, writes, skim, scores_as, draws, drive, needs_message, surface)
   select e ->> 'key', e ->> 'name', e ->> 'alignment', coalesce((e ->> 'stack')::integer, 1), coalesce((e ->> 'seeded')::boolean, false),
     coalesce(array(select jsonb_array_elements_text(e -> 'reads')), '{}'),
     e ->> 'rarity', coalesce(e ->> 'play', 'cast'), nullif(e -> 'trap', 'null'), nullif(e -> 'gimmick', 'null'), span_interval(e -> 'lasts'),
     case when e ? 'reaches' then array(select jsonb_array_elements_text(e -> 'reaches')) else '{post}' end, coalesce((e ->> 'pins')::boolean, false), coalesce((e ->> 'writes')::boolean, false),
     nullif(e -> 'skim', 'null'), coalesce((e ->> 'scoresAs')::boolean, false),
-    case when jsonb_typeof(e -> 'draws') = 'array' then array(select jsonb_array_elements_text(e -> 'draws')) end, nullif(e -> 'drive', 'null'), nullif(e ->> 'needsMessage', '')
+    case when jsonb_typeof(e -> 'draws') = 'array' then array(select jsonb_array_elements_text(e -> 'draws')) end, nullif(e -> 'drive', 'null'), nullif(e ->> 'needsMessage', ''), coalesce((e ->> 'surface')::boolean, false)
   from jsonb_array_elements(payload -> 'cards') e
   on conflict (key) do update set name = excluded.name, alignment = excluded.alignment,
     stack = excluded.stack, seeded = excluded.seeded, reads = excluded.reads,
     rarity = excluded.rarity, play = excluded.play, trap = excluded.trap, gimmick = excluded.gimmick, lasts = excluded.lasts,
     reaches = excluded.reaches, pins = excluded.pins, writes = excluded.writes, skim = excluded.skim, scores_as = excluded.scores_as,
-    draws = excluded.draws, drive = excluded.drive, needs_message = excluded.needs_message;
+    draws = excluded.draws, drive = excluded.drive, needs_message = excluded.needs_message, surface = excluded.surface;
   -- The packs the instance sells (replaced each seed: their pulls are its code), then the slots it names that the database does not hold yet,
   -- at the end of the grid in the instance's order. A slot already holding the item is never touched: its place, availability and price are an
   -- admin's (0139). A pack or card a slot names must exist, and a missing one is a foreign key's refusal.
