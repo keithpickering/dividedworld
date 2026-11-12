@@ -263,18 +263,20 @@ test('Whoops!\' ink under the hold keeps its canvas and a reader\'s scrubbing ac
   const canvas = page.locator('.kb-whoops-ink');
   await expect(canvas).toBeVisible();
   /*
-   * The share of the canvas that is inked, read in an animation frame: a canvas resized (the lift into the view's wider frame, the
+   * How much ink the canvas holds, as a share of the canvas: the sum of its alpha over the pixels. A wash takes some of the field each
+   * pass (the ink field design), so a scrubbed core is thinned and see-through before it is gone, and a count of pixels past an alpha
+   * cutoff would not move; the sum falls with every pass. Read in an animation frame: a canvas resized (the lift into the view's wider frame, the
    * release back) is cleared at once and painted again in the next frame, before the browser shows it, so a read between the two
    * would see no ink at all. Read in a frame, it comes after that paint.
    */
   const inked = () => canvas.evaluate((c: HTMLCanvasElement) => new Promise<number>((done) => requestAnimationFrame(() => {
     const d = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
     let n = 0;
-    for (let i = 3; i < d.length; i += 4) if (d[i]! > 40) n++;
+    for (let i = 3; i < d.length; i += 4) n += d[i]! / 255;
     done(n / (c.width * c.height));
   })));
   const size = () => canvas.evaluate((c: HTMLCanvasElement) => `${c.width}x${c.height}`);
-  /* The share of the canvas that is inked, not the pixels: the view's canvas is wider than the thread's. */
+  /* The share of the canvas's ink, not the pixels: the view's canvas is wider than the thread's. */
   await expect.poll(inked).toBeGreaterThan(0.01);
   const whole = await inked();
   const inThread = await size();
@@ -305,7 +307,10 @@ test('Whoops!\' ink under the hold keeps its canvas and a reader\'s scrubbing ac
   const y = Math.min(box.y + box.height / 2, 900);
   await page.mouse.move(box.x + box.width * 0.2, y);
   await page.mouse.down();
-  await page.mouse.move(box.x + box.width * 0.8, y, { steps: 30 });
+  /* A wash takes a part of the field each pass, so one sweep over thick ink only thins it: the reader goes back and forth over the same stripe until it is clearly lighter. */
+  for (let pass = 0; pass < 6; pass++) {
+    await page.mouse.move(box.x + box.width * (pass % 2 === 0 ? 0.8 : 0.2), y, { steps: 30 });
+  }
   await page.mouse.up();
   await expect.poll(inked).toBeLessThan(whole * 0.97);
   const scrubbed = await inked();
