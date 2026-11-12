@@ -59,3 +59,11 @@ test('the caption bar\'s stories are listed, short, long and held on the Main an
 test('Laugh Track\'s stories are listed, the thread on the Main and the Phone board, before and after a cue fires', () => {
   expect(boardStoryIds()).toEqual(expect.arrayContaining(['main', 'phone', 'on-the-line-main', 'on-the-line-phone'].map((n) => `boards-21-laugh-track--${n}`)));
 });
+
+test('the veil cards\' stories are listed: the posts for their author, a third reader and the caster, the stand-in\'s profile, Overreaction\'s play form and the worn-off line', () => {
+  expect(boardStoryIds()).toEqual(expect.arrayContaining([
+    ...['veiled-and-blind', 'veiled-and-blind-phone', 'reader', 'caster', 'stand-in-profile'].map((n) => `boards-01-veiled-and-blind-posts--${n}`),
+    'boards-01-reaction-card-form--form', 'boards-01-reaction-card-form--form-phone',
+    'boards-22-whodunnit--wore-off-light', 'boards-22-whodunnit--wore-off-dark',
+  ]));
+});

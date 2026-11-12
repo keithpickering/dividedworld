@@ -1,6 +1,6 @@
 /**
- * Whodunnit? as stories for the owner's word (card notes Part 3, Task 11): post #41 of the boards fixture at the Main board's moment, once the
- * card has worn off (a play of #42's author whose end was two days ago), on the light board and on the dark: the post under its true
+ * Whodunnit? as stories for the owner's word (card notes Part 3, Task 11): post #43 of the boards fixture at the Main board's moment (the one post of the
+ * page that carries no ink over its words, so the line under them can be read), once the card has worn off (a play of #42's author whose end was two days ago), on the light board and on the dark: the post under its true
  * name with the one small line under its words. The veil while it is up is not a story: it is the engine's, a row the play lands, and the
  * fake's seed writes none, so a seeded play would show the true name under a line saying it is hidden. Open them at 1440 by 1120.
  */
@@ -31,7 +31,7 @@ function WoreOff({ mode }: Args) {
     if (thread === null) return;
     let live = true;
     void (async () => {
-      const [[target], [caster]] = await Promise.all([api.acts(thread, 41, 41), api.acts(thread, 42, 42)]);
+      const [[target], [caster]] = await Promise.all([api.acts(thread, 43, 43), api.acts(thread, 42, 42)]);
       if (!target || !caster?.character) return;
       (api as Fake).seed.card(caster.character, target.id, 'whodunnit', { layer: 1, live: true, config: {}, message: 'Who wrote this?', ends: new Date(Date.now() - 2 * 86_400_000).toISOString() });
       if (live) setSeeded(thread);
