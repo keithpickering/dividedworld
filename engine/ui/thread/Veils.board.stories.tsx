@@ -2,7 +2,7 @@
  * A post under an author veil and a post under a totals veil (docs/plans/2026-11-11-card-notes-part-3-plan.md, Task 8), on the boards fixture's
  * thread at the Main board's moment: `VeiledAndBlind` has #41 under the first card the instance has that hides an author, which its postbit shows
  * as the stand-in, and #42 under the first that hides reaction totals, with the row's one plain line, and a reaction a card added to it. Open it at
- * 1440 by 1120, and its `Phone` twin at 390 by 844; light and dark are the board match's two themes, so both boards hold it.
+ * 1440 by 1120, and its `Phone` twin at 390 by 844: the Main board and the Phone board are the two boards, and each is matched in light and dark.
  *
  * The story names no instance: the cards are found by their rules (`veil`, `reaction`). An instance with none of them draws the posts plain.
  * The plays are made through the fake backend as a player's own (a caster's hand, signed in as her, then back), so what the page shows is what
