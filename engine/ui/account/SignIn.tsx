@@ -66,10 +66,12 @@ export function SignInScreen({ mode }: { readonly mode: 'sign-in' | 'register' }
   const codeField = useRef<HTMLInputElement>(null);
   /* The emailed link's token, held in memory only: the address loses its fragment as the screen stands (the query stays, `next` with it), so no history entry holds it. */
   const [link, setLink] = useState(() => tokenHashOf(location.hash));
-  useEffect(() => { if (link !== null) navigate(addressOf(location), { replace: true }); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (link !== null) navigate(addressOf(location), { replace: true }); }, []); // eslint-disable-line react-hooks/exhaustive-deps -- once, as the screen stands: the fragment is read at mount and later changes of the address must not run it again
+  /* A refusal of the link while a session already holds an account: the screen stays on the form with the sentence, and Stay signed in is the way on. */
+  const [held, setHeld] = useState(false);
 
   /* While a link is held the screen stays: the link's panel says who is signed in, and its Continue is what moves on. */
-  useEffect(() => { if (session?.account && link === null) navigate(next, { replace: true }); }, [session?.account, link, navigate, next]);
+  useEffect(() => { if (session?.account && link === null && !held) navigate(next, { replace: true }); }, [session?.account, link, held, navigate, next]);
   useEffect(() => { if (step === 'code') codeField.current?.focus(); }, [step]);
 
   const title = <PageHead title={registering ? 'Register' : 'Sign in'} />;
@@ -112,6 +114,7 @@ export function SignInScreen({ mode }: { readonly mode: 'sign-in' | 'register' }
       }
       /* An open account moves this screen on through the session; one that is not open shows the way on, with its reason. */
       if (!r.value.account) setWhy(r.value.why ?? null);
+      setHeld(false);
     } catch {
       setRefusal({ text: LOST_ANSWER, field: null });
     } finally {
@@ -124,6 +127,7 @@ export function SignInScreen({ mode }: { readonly mode: 'sign-in' | 'register' }
     return { 'aria-invalid': refusal?.field === field ? true : undefined, 'aria-describedby': ids || undefined };
   };
   const alert = refusal && <p role="alert" id={errId} className="kb-acct-refusal">{refusal.text}</p>;
+  const stay = held && <GlassButton onClick={() => navigate(next, { replace: true })}>Stay signed in</GlassButton>;
   /* The other ways in: the other screen with why, and a person for the player who cannot get a code. */
   const aside = (
     <CalmRegion as="aside" aria-label="Other ways in" className="kb-door-aside">
@@ -146,7 +150,7 @@ export function SignInScreen({ mode }: { readonly mode: 'sign-in' | 'register' }
         {title}
         <div className="kb-door">
           <CalmRegion className="kb-door-form">
-            <LinkPanel tokenHash={link} registering={registering} onAside={() => setLink(null)} onRefused={(text) => { setLink(null); setRefusal({ text, field: null }); }} />
+            <LinkPanel tokenHash={link} registering={registering} onAside={() => setLink(null)} onRefused={(text) => { setHeld(session.account !== null); setLink(null); setRefusal({ text, field: null }); }} />
           </CalmRegion>
           {aside}
         </div>
@@ -187,7 +191,7 @@ export function SignInScreen({ mode }: { readonly mode: 'sign-in' | 'register' }
               </>
             )}
             {alert}
-            <ButtonRow><GlassButton type="submit" kind="primary" busy={busy !== null}>Send a code</GlassButton></ButtonRow>
+            <ButtonRow><GlassButton type="submit" kind="primary" busy={busy !== null}>Send a code</GlassButton>{stay}</ButtonRow>
           </form>
         ) : (
           <form aria-label="Enter the code" aria-busy={busy !== null} onSubmit={(e) => void verify(e)} noValidate>
@@ -202,6 +206,7 @@ export function SignInScreen({ mode }: { readonly mode: 'sign-in' | 'register' }
               <GlassButton type="submit" kind="primary" busy={busy !== null}>Sign in</GlassButton>
               <GlassButton busy={busy !== null} onClick={() => void ask(undefined, true)}>Send a new code</GlassButton>
               <GlassButton onClick={() => { setStep('email'); setRefusal(null); }}>Use another address</GlassButton>
+              {stay}
             </ButtonRow>
             <p role="status" className="kb-acct-note">
               {asked > 0 ? <span key={asked}>Another code was asked for.</span> : ''}

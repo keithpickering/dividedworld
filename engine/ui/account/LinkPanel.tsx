@@ -27,6 +27,8 @@ export function LinkPanel({ tokenHash, registering, onAside, onRefused }: Props)
   const [wasSignedIn] = useState(() => session?.signedIn === true);
   const [phase, setPhase] = useState<Phase>('ready');
   const [address, setAddress] = useState<string | null>(null);
+  /* The address could not be read: the states then say their sentence without it. */
+  const [unread, setUnread] = useState(false);
   const [busy, setBusy] = useState(false);
   const [lost, setLost] = useState(false);
   const lead = useRef<HTMLParagraphElement>(null);
@@ -34,12 +36,13 @@ export function LinkPanel({ tokenHash, registering, onAside, onRefused }: Props)
   /* The address a session is signed in as is read from the backend, for the one who holds it. */
   useEffect(() => {
     let live = true;
-    if (wasSignedIn || phase === 'done') void api.signInAddress().then((a) => { if (live) setAddress(a); }, () => {});
+    if (wasSignedIn || phase === 'done') void api.signInAddress().then((a) => { if (live) setAddress(a); }, () => { if (live) setUnread(true); });
     return () => { live = false; };
   }, [api, wasSignedIn, phase]);
 
   /* Focus follows each state: the first sentence, once there are words in it. */
-  const stateKey = phase === 'done' ? (address === null ? 'pending' : 'done') : wasSignedIn ? (address === null ? 'pending' : 'already') : 'ready';
+  const waiting = address === null && !unread;
+  const stateKey = phase === 'done' ? (waiting ? 'pending' : 'done') : wasSignedIn ? (waiting ? 'pending' : 'already') : 'ready';
   useEffect(() => { if (stateKey !== 'pending') lead.current?.focus(); }, [stateKey]);
 
   const press = async () => {
@@ -51,6 +54,7 @@ export function LinkPanel({ tokenHash, registering, onAside, onRefused }: Props)
       if (!r.ok) { onRefused(r.error); return; }
       if (!r.value.account) { setWhy(r.value.why ?? null); onAside(); return; }
       setAddress(null);
+      setUnread(false);
       setPhase('done');
     } catch {
       setLost(true);
@@ -64,9 +68,9 @@ export function LinkPanel({ tokenHash, registering, onAside, onRefused }: Props)
   };
 
   const names = phase === 'done'
-    ? (address === null ? '' : `You are signed in as ${address}.`)
+    ? (address !== null ? `You are signed in as ${address}.` : unread ? 'You are signed in.' : '')
     : wasSignedIn
-      ? (address === null ? '' : `This browser is signed in as ${address}. Using the link signs that account out.`)
+      ? (address !== null ? `This browser is signed in as ${address}. Using the link signs that account out.` : unread ? 'This browser is already signed in. Using the link signs that account out.' : '')
       : registering ? 'This link finishes signing you up. It works once.' : 'This link signs you in. It works once.';
 
   return (

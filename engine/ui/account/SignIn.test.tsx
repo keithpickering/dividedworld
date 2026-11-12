@@ -459,6 +459,26 @@ describe('The emailed link', () => {
     expect(window.location.href).not.toContain(TEST_LINK);
   });
 
+  test('the fragment is stripped by replacing the entry, and no pushed address ever held the token', async () => {
+    const w = await linked();
+    const push = vi.spyOn(window.history, 'pushState');
+    const replace = vi.spyOn(window.history, 'replaceState');
+    open(w, 'sign-in', `/sign-in?next=%2Fstandings${FRAGMENT}`);
+    await screen.findByText('This link signs you in. It works once.');
+    await waitFor(() => expect(replace).toHaveBeenCalled());
+    expect(replace.mock.calls.some(([, , url]) => !String(url).includes(TEST_LINK))).toBe(true);
+    expect(push.mock.calls.filter(([, , url]) => String(url).includes(TEST_LINK))).toEqual([]);
+  });
+
+  test('when the address cannot be read, the signed-in states still say a sentence and take focus', async () => {
+    const w = await linked();
+    vi.spyOn(w.fake, 'signInAddress').mockRejectedValue(new Error('offline'));
+    open(w, 'sign-in', `/sign-in${FRAGMENT}`);
+    await userEvent.click(await screen.findByRole('button', { name: 'Sign in' }));
+    const done = await screen.findByText('You are signed in.');
+    await waitFor(() => expect(document.activeElement).toBe(done));
+  });
+
   test('moves focus to the panel\'s first sentence when it stands, and again when the state changes', async () => {
     open(await linked(), 'sign-in', `/sign-in${FRAGMENT}`);
     const lead = await screen.findByText('This link signs you in. It works once.');
@@ -550,6 +570,29 @@ describe('The emailed link', () => {
       await waitFor(() => expect(urls.length).toBeGreaterThan(0));
       expect(urls[0]).toBe('/standings');
       expect(verify).not.toHaveBeenCalled();
+    });
+
+    test('a hash the server refuses is seen: the sentence shows in the alert, nothing navigates, and Stay signed in then goes on', async () => {
+      const w = await other();
+      open(w, 'sign-in', '/sign-in?next=%2Fstandings#token_hash=aaaaaaaaaaaaaaaaaaaa');
+      await userEvent.click(await screen.findByRole('button', { name: 'Sign in with the link' }));
+      expect(await screen.findByRole('alert')).toHaveTextContent('that link does not work, or it has expired: ask for a new code');
+      expect(screen.getByLabelText('Email address')).toBeInTheDocument();
+      await new Promise((r) => setTimeout(r, 50));
+      expect(window.location.pathname).toBe('/sign-in');
+      expect(screen.getByRole('alert')).toBeInTheDocument();
+      const urls = went();
+      await userEvent.click(screen.getByRole('button', { name: 'Stay signed in' }));
+      await waitFor(() => expect(urls.length).toBeGreaterThan(0));
+      expect(urls[0]).toBe('/standings');
+    });
+
+    test('a signed-out refusal offers no Stay signed in', async () => {
+      const w = await linked();
+      open(w, 'sign-in', '/sign-in#token_hash=aaaaaaaaaaaaaaaaaaaa');
+      await userEvent.click(await screen.findByRole('button', { name: 'Sign in' }));
+      await screen.findByRole('alert');
+      expect(screen.queryByRole('button', { name: 'Stay signed in' })).toBeNull();
     });
 
     test('Sign in with the link replaces the session and names the new address', async () => {
