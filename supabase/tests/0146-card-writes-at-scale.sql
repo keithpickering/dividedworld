@@ -39,14 +39,16 @@ begin
   end if;
 end $$;
 
--- The instance this file measures has never seen a play. A database that earlier files of the suite have run on does not: it holds their committed
--- leftovers (issue #579), and the analyze below would count those cards and estimate `kind = 'card'` at a few dozen rows, which is the one estimate that
--- makes a planner choose a probe, so the stale measurement could not catch the view it exists for. So, inside this transaction only (the runner rolls it
--- back), the triggers (the append-only ones and the foreign keys too) are turned off and the Acts of kind card, set and spring the database already holds are deleted, and what hangs on them with them.
+-- The instance this file measures has never had a play made on it, and the statistics it is stale with are those of such an instance. A database the
+-- earlier files of the suite have run on is not one: it holds their committed leftovers (issue #579), and the analyze below would count their cards and
+-- the rows around them, so the planner would estimate `kind = 'card'` at a few dozen rows and choose a probe of the view that the stale measurement
+-- exists to catch scanning the plays' whole partial index. So, inside this transaction only (the runner rolls it back), the append-only triggers are
+-- turned off, then the foreign keys and the rest with session_replication_role, and every Act the database already holds is deleted, as 0116-search.sql
+-- does for its fixture. Rows that pointed at them are left dangling; nothing below reads them.
 alter table acts disable trigger user;
 set local session_replication_role = replica;
 delete from card_texts;
-delete from acts where kind in ('card', 'set', 'spring');
+delete from acts;
 set local session_replication_role = origin;
 alter table acts enable trigger user;
 

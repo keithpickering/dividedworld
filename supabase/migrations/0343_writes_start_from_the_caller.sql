@@ -15,6 +15,10 @@
 -- a planner that has seen no plays (statistics gathered before the instance held any) prices below a probe of acts_layers, and then scans every play in
 -- the instance for each of the caller's posts. With the wider list no other partial index matches, and a qual in the outer where is not pushed below
 -- `offset 0`, so the rows are the same: the plays on the caller's posts that are cards.
+-- What this leaves: the posts' lateral, `kind = 'post'`, also matches partial indexes not keyed by character (acts_posts_by_time, acts_thread_posts,
+-- acts_patrol_posts). A reviewer could make the planner scan one whole only by forging pg_class (statistics deleted and reltuples = 1 with the real
+-- relpages), a state an append-only acts does not reach by itself; no statistics state reachable by analyze, stale or fresh, or by an empty or
+-- never-analyzed table did.
 --
 -- The masks: unchanged. The rows are the caller's by the post's author, the one fact of ownership read, and the columns are the same; nothing here names
 -- the caster, the play's price or any wallet. create or replace keeps the view's grants (authenticated reads it; anon and public do not).
