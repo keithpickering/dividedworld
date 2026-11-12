@@ -741,7 +741,7 @@ language sql stable security definer set search_path = public, pg_temp as $$
            jsonb_build_object('top', (
              select coalesce(jsonb_agg(jsonb_build_object('character', t.character, 'name', t.name, 'place', t.place, 'standing', t.standing, 'shown', t.shown)
                                        order by t.place, t.name, t.character), '[]'::jsonb)
-             from (select r.* from season_results r where r.season = s.id order by r.place, r.name, r.character limit 3) t)) as detail
+             from (select r.* from season_results r where r.season = s.id and r.standing > 0 and r.place is not null order by r.standing desc, r.name, r.character limit 3) t)) as detail
     from seasons s
     where s.results_at is not null and s.results_at < (select b from lim) and s.results_at >= (select at from r_floor)
   ),
@@ -1368,7 +1368,7 @@ grant execute on function back_closed(uuid) to authenticated, service_role;
 
 create or replace function card_held(who uuid, card text) returns integer
 language sql stable set search_path = public, pg_temp as $$
-  select (count(*) filter (where l.kind in ('bought', 'pulled', 'caught', 'returned')) - count(*) filter (where l.kind = 'played')
+  select (count(*) filter (where l.kind in ('bought', 'pulled', 'caught', 'returned', 'found')) - count(*) filter (where l.kind = 'played')
           + (select count(*) from face_down f
              where f.account = card_held.who and f.card = card_held.card and f.ends_at <= now() and not back_closed(f.play)))::integer
   from card_ledger l where l.account = card_held.who and l.card = card_held.card
@@ -1534,7 +1534,7 @@ begin atomic
         'character', jsonb_build_object('id', c.id, 'name', c.name, 'joined', c.joined, 'staff', c.staff, 'office', c.office,
           'warn_points', c.warn_points, 'banned_until', c.banned_until, 'group', c."group"),
         'profile', (select jsonb_build_object('character', p.character, 'title', p.title, 'signature', p.signature, 'avatar_square', p.avatar_square,
-                      'avatar_portrait', p.avatar_portrait, 'square_frame', p.square_frame, 'portrait_frame', p.portrait_frame, 'pip_style', p.pip_style, 'pronouns', p.pronouns)
+                      'avatar_portrait', p.avatar_portrait, 'square_frame', p.square_frame, 'portrait_frame', p.portrait_frame, 'pip_style', p.pip_style, 'pronouns', p.pronouns) || profile_cosmetics(p.character)
                     from character_profiles p where p.character = c.id),
         'posts', coalesce((select n.posts from character_post_counts n where n.character = c.id), 0),
         'standing', coalesce((select st.standing from current_standings st where st.character = c.id), 0),
@@ -1569,6 +1569,8 @@ begin atomic
     'states', (select coalesce(jsonb_agg(jsonb_build_object('play', e.play, 'state', e.state, 'saved_at', e.saved_at)), '[]'::jsonb)
                from effect_state e where e.play in (select w.id from wanted_plays w)),
     'releases', (select coalesce(jsonb_agg(r.play), '[]'::jsonb) from effect_releases r where r.play in (select w.id from wanted_plays w)),
+    'surfaces', (select coalesce(jsonb_object_agg(sf.play::text, jsonb_build_object('covered', bit_count(sf.cover), 'live', to_jsonb(sf.live))), '{}'::jsonb)
+                 from surfaces sf where sf.play in (select o.id from on_posts o where o.kind = 'card')),
     'tallies', (select coalesce(jsonb_agg(jsonb_build_object('act', t.act, 'kind', t.kind, 'count', t.count)), '[]'::jsonb)
                 from reaction_tallies t where t.act in (select i.id from ids i)),
     'mine', (select coalesce(jsonb_agg(jsonb_build_object('act', m.act, 'kind', m.kind, 'character', m.character)), '[]'::jsonb)
@@ -1600,7 +1602,7 @@ begin atomic
   )
   select case when not exists (select 1 from c) then null else jsonb_build_object(
     'character', (select to_jsonb(c) from c),
-    'profile', (select to_jsonb(p) from (
+    'profile', (select to_jsonb(p) || profile_cosmetics(p.character) from (
       select character, title, signature, avatar_square, avatar_portrait, square_frame, portrait_frame, pip_style, pronouns
       from character_profiles where character = in_character) p),
     'counts', (select to_jsonb(n) from (select character, posts, spins, cards from character_post_counts where character = in_character) n),
@@ -1662,7 +1664,7 @@ begin atomic
     'kind', (select kind from k),
     'page', (select page from k),
     'character', (select to_jsonb(c) from c),
-    'profile', (select to_jsonb(p) from (
+    'profile', (select to_jsonb(p) || profile_cosmetics(p.character) from (
       select character, title, signature, avatar_square, avatar_portrait, square_frame, portrait_frame, pip_style, pronouns
       from character_profiles where character = in_character) p),
     -- RecordScreen reads the counters for all, post, spin and card only.
@@ -1702,7 +1704,7 @@ begin atomic
     'people', coalesce((
       select jsonb_agg(f.face order by f.name) from (
         select cp.name, to_jsonb(cp) || jsonb_build_object('profile', (
-          select to_jsonb(p) from (
+          select to_jsonb(p) || profile_cosmetics(p.character) from (
             select r.character, r.title, r.signature, r.avatar_square, r.avatar_portrait, r.square_frame, r.portrait_frame, r.pip_style, r.pronouns
             from character_profiles r where r.character = cp.id) p)) as face
         from (select c.id, c.name, c.joined, c.staff, c.office, c."group" from characters_public c
@@ -1743,6 +1745,14 @@ begin atomic
     select w.play, w.post, w.version, w.failed, w.opening, w.over, w.at
     from my_posts_written_on w where in_before is null or w.at <= in_before
     order by w.at desc, w.play, w.version limit 200
+  ), dr as materialized (
+    select r.act, r.kind, r.play, r.post, r.character, r.mine, r.at, r.cells
+    from my_draws r where in_before is null or r.at <= in_before
+    order by r.at desc, r.act, r.mine limit 200
+  ), wd as materialized (
+    select r.act, r.kind, r.play, r.post, r.character, r.mine, r.at, r.cells
+    from my_walls_drawn_on r where in_before is null or r.at <= in_before
+    order by r.at desc, r.act, r.mine limit 200
   ), sv as materialized (
     select p.play, p.post, p.saved_at
     from my_posts_played_on p where p.saved_at is not null and (in_before is null or p.saved_at <= in_before)
@@ -1784,8 +1794,12 @@ begin atomic
     select a.appeal, a.character, a.at, a.punishment, a.punishment_kind, a.post_seq, a.thread, a.verdict, a.ruled_at, a.points_delta, a.hearer_name, a.refund
     from my_appeals a where in_before is null or a.at <= in_before
     order by a.at desc, a.appeal limit 200
+  ), cs as materialized (
+    select c.kind, c.id, c.at, c.character, c.outcome, c.item, c.text, c.copies, c.trophy, c.name, c.by, c.by_name, c.season, c.place, c.line, c.to_name
+    from cosmetic_log_rows(in_before, 200) c
+    order by c.at desc, c.kind, c.id
   ), sh as materialized (
-    select s.settlement, s.character, s.reason, s.act, s.quadrant, s.amount
+    select s.settlement, s.character, s.reason, s.act, s.quadrant, s.amount, s.card
     from my_ledger_shares s where s.settlement in (select x.settlement from lg x)
   ), sa as materialized (
     select s.settlement, s.character, s.named_class, s.play, s.card, s.starts_at, s.ends_at
@@ -1800,6 +1814,8 @@ begin atomic
     union select x.act from cd x where x.act is not null
     union select x.play from po x union select x.post from po x where x.post is not null
     union select x.play from wr x union select x.post from wr x
+    union select x.play from dr x union select x.post from dr x
+    union select x.play from wd x union select x.post from wd x
     union select x.play from sv x union select x.post from sv x where x.post is not null
     union select x.post from se x where x.post is not null union select x.spring from se x where x.spring is not null
     union select x.post from sp x where x.post is not null
@@ -1831,6 +1847,8 @@ begin atomic
     where a.kind = 'card' and jsonb_typeof(a.payload -> 'targetName') is distinct from 'string' and a.payload ->> 'reach' in ('character', 'thread', 'board')
   ), pe(id) as (
     select a.character from ac a where a.character is not null and a.character not in (select m.id from mine m)
+    union select x.character from dr x where x.character not in (select m.id from mine m)
+    union select x.character from wd x where x.character not in (select m.id from mine m)
     union select r.target from reach r where r.kind = 'character' and r.target is not null and r.target not in (select m.id from mine m)
   ), th(id) as (
     select a.thread from ac a where a.id in (select t.act from tn t where exists (select 1 from mine m where m.id = t.character and date_trunc('milliseconds', m.class_since) = date_trunc('milliseconds', t.at)))
@@ -1844,6 +1862,8 @@ begin atomic
       'packs', coalesce((select jsonb_agg(to_jsonb(x) order by x.bought_at desc, x.id) from pk x), '[]'::jsonb),
       'playsOnMine', coalesce((select jsonb_agg(to_jsonb(x) order by x.at desc, x.play) from po x), '[]'::jsonb),
       'writes', coalesce((select jsonb_agg(to_jsonb(x) order by x.at desc, x.play, x.version) from wr x), '[]'::jsonb),
+      'draws', coalesce((select jsonb_agg(to_jsonb(x) order by x.at desc, x.act, x.mine) from dr x), '[]'::jsonb),
+      'wallsDrawn', coalesce((select jsonb_agg(to_jsonb(x) order by x.at desc, x.act, x.mine) from wd x), '[]'::jsonb),
       'saves', coalesce((select jsonb_agg(to_jsonb(x) order by x.saved_at desc, x.play) from sv x), '[]'::jsonb),
       'setEnds', coalesce((select jsonb_agg(to_jsonb(x) order by x.ended_at desc, x.play) from se x), '[]'::jsonb),
       'setPasses', coalesce((select jsonb_agg(to_jsonb(x) order by x.passed_at desc, x.play) from sp x), '[]'::jsonb),
@@ -1853,8 +1873,9 @@ begin atomic
       'bans', coalesce((select jsonb_agg(to_jsonb(x) order by x.at desc, x.ban) from bn x), '[]'::jsonb),
       'groupMoves', coalesce((select jsonb_agg(to_jsonb(x) order by x.at desc, x.move) from gm x), '[]'::jsonb),
       'reports', coalesce((select jsonb_agg(to_jsonb(x) order by x.at desc, x.report) from rp x), '[]'::jsonb),
-      'appeals', coalesce((select jsonb_agg(to_jsonb(x) order by x.at desc, x.appeal) from ap x), '[]'::jsonb)),
-    'shares', coalesce((select jsonb_agg(to_jsonb(x) order by x.settlement desc, x.character, x.reason, x.act, x.quadrant) from sh x), '[]'::jsonb),
+      'appeals', coalesce((select jsonb_agg(to_jsonb(x) order by x.at desc, x.appeal) from ap x), '[]'::jsonb),
+      'cosmetics', coalesce((select jsonb_agg(to_jsonb(x) order by x.at desc, x.kind, x.id) from cs x), '[]'::jsonb)),
+    'shares', coalesce((select jsonb_agg(to_jsonb(x) order by x.settlement desc, x.character, x.reason, x.card, x.act, x.quadrant) from sh x), '[]'::jsonb),
     'scoredAs', coalesce((select jsonb_agg(to_jsonb(x) order by x.ends_at desc, x.settlement, x.character) from sa x), '[]'::jsonb),
     'acts', coalesce((select jsonb_agg(to_jsonb(a) order by a.created_at, a.id::text collate "C") from ac a), '[]'::jsonb),
     'states', coalesce((select jsonb_agg(to_jsonb(e) order by e.play::text collate "C") from (
@@ -1862,7 +1883,7 @@ begin atomic
     'people', coalesce((
       select jsonb_agg(f.face order by f.name, f.id) from (
         select cp.name, cp.id, to_jsonb(cp) || jsonb_build_object('profile', (
-          select to_jsonb(p) from (
+          select to_jsonb(p) || profile_cosmetics(p.character) from (
             select r.character, r.title, r.signature, r.avatar_square, r.avatar_portrait, r.square_frame, r.portrait_frame, r.pip_style, r.pronouns
             from character_profiles r where r.character = cp.id) p)) as face
         from (select c.id, c.name, c.joined, c.staff, c.office, c."group" from characters_public c where c.id in (select p.id from pe p)) cp) f), '[]'::jsonb),
@@ -1910,7 +1931,7 @@ declare
   shape text;
   phase text;
   pkey text;
-  kinds text[] := array['quote', 'cardOnYours', 'trapStruck', 'trapSprang', 'hint', 'ruling', 'settlement', 'followed', 'update', 'seasonNews', 'cardEnded', 'framed'];
+  kinds text[] := array['quote', 'cardOnYours', 'trapStruck', 'trapSprang', 'hint', 'ruling', 'settlement', 'followed', 'update', 'seasonNews', 'cardEnded', 'framed', 'trophy', 'beltLost', 'beltBack'];
 begin
   why := case new.key
     when 'walletCap' then case when not setting_whole(v, 1) then 'a whole number of hundredths, at least 1' end
@@ -1981,6 +2002,7 @@ begin
     when 'conductSections' then case when not coalesce(jsonb_typeof(v) = 'array'
         and not exists (select 1 from jsonb_array_elements(v) e where jsonb_typeof(e) is distinct from 'string' or btrim(e #>> '{}', E' \t\n\r\f\v') = ''), false)
       then 'an array of section keys, each a non-blank string' end
+    when 'cosmetics' then setting_cosmetics(v)
     when 'modelTiers' then case when not coalesce(jsonb_typeof(v) = 'object'
         and jsonb_typeof(v -> 'strong') = 'string' and btrim(v ->> 'strong', E' \t\n\r\f\v') <> ''
         and jsonb_typeof(v -> 'light') = 'string' and btrim(v ->> 'light', E' \t\n\r\f\v') <> '', false)

@@ -63,7 +63,7 @@ function useNotice(act: Id): Loaded | 'failed' | 'none' | null {
     void (async () => {
       const [notice, boards] = await Promise.all([api.moveNotice(act), api.boardNames()]);
       if (!notice) { if (live) setLoaded('none'); return; }
-      const subjectId = notice.kind === 'conferGroup' && typeof notice.params['character'] === 'string' ? notice.params['character'] : null;
+      const subjectId = (notice.kind === 'conferGroup' || notice.kind === 'awardTrophy') && typeof notice.params['character'] === 'string' ? notice.params['character'] : null;
       const [boss, subject] = await Promise.all([
         notice.character ? api.characters([notice.character]).then((r) => r[0] ?? null) : null,
         subjectId ? api.characters([subjectId]).then((r) => r[0]?.name ?? null, () => null) : null,
@@ -130,14 +130,15 @@ export function MoveNotice({ act }: { readonly act: Id }) {
 
 /** The overlay: what was done and when, the demand in words, a progress bar, the expiry, and that an admin can reverse it. Plain. */
 function MoveDetail({ loaded, onClose, returnFocusTo }: { readonly loaded: Loaded; readonly onClose: () => void; readonly returnFocusTo: () => HTMLElement | null }) {
-  const { ui, settings } = useKayfa();
+  const { ui, settings, instance } = useKayfa();
   const { notice, boards, boss, subject } = loaded;
   const kind = moveKind(notice.kind);
   const role = officeRole(ui.copy, notice.office);
-  /* A group move names its character, group and board; the params hold ids and keys, and the instance's rows give the names. */
+  /* A move names its character, group, trophy and board; the params hold ids and keys, and the instance's rows give the names. */
   const names = {
     ...(subject !== null ? { character: subject } : {}),
     ...(settings.groups.find((g) => g.key === notice.params['group']) ? { group: settings.groups.find((g) => g.key === notice.params['group'])!.name } : {}),
+    ...(instance.trophies.kinds.find((t) => t.key === notice.params['trophy']) ? { trophy: instance.trophies.kinds.find((t) => t.key === notice.params['trophy'])!.name } : {}),
     ...(boards.find((b) => b.id === notice.params['board']) ? { board: boards.find((b) => b.id === notice.params['board'])!.name } : {}),
   };
   const demand = notice.demand;

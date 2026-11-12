@@ -14,7 +14,7 @@
  */
 import { decide } from '../../../engine/rules/actions.ts';
 import { hintFor, windowStart, type HintSettings, type QuadrantCounts } from '../../../engine/rules/hints.ts';
-import { casterMessage, decidePlay, decideSet, decideUse, effectsOnTarget, postTarget, type CardEffect, type SetConditions, type CardTarget, type EffectsAbove, type PostTarget, type Reach } from '../../../engine/rules/cards.ts';
+import { casterMessage, decideDraw, decidePlay, decideSet, decideUse, decideWash, effectsOnTarget, postTarget, type CardEffect, type SetConditions, type CardTarget, type EffectsAbove, type PostTarget, type Reach } from '../../../engine/rules/cards.ts';
 import type { Instance } from '../../../engine/rules/types.ts';
 import { DatabaseError, TransportError, barredAnswer, postgrest, sessionRefused, type Db } from '../_shared/rpc.ts';
 import type { Broadcast } from '../_shared/broadcast.ts';
@@ -69,6 +69,10 @@ const announcement = (a: Row): Broadcast[] => {
   return told ? [...thread(told.thread), ...act(told.act)] : [];
 };
 
+/** The wall's count after a draw or a wash: `{ play, covered }` on its thread, never the strokes or who drew. */
+const surfaceHeard = (play: unknown, answer: Row | undefined, thread: unknown): Broadcast[] =>
+  typeof play === 'string' && thread && answer && typeof answer.covered === 'number'
+    ? [{ topic: `thread:${thread}`, event: 'surface', payload: { play, covered: answer.covered } }] : [];
 /**
  * What each SQL function's answer sends live. Each is the public projection the function
  * returned, never more; a purchase, which is the player's alone, sends nothing, and so does a
@@ -80,7 +84,7 @@ const announcement = (a: Row): Broadcast[] => {
  * play and saved_at, never the state, which can be 256 KB and every reader fetches once, newest
  * saved_at wins.
  */
-const BROADCASTS: Record<string, (answer: Row) => Broadcast[]> = {
+const BROADCASTS: Record<string, (answer: Row, args: Row) => Broadcast[]> = {
   post: (a) => withSprung(a, act(without(a, 'sprung'))),
   edit_post: (a) => act(a),
   play_card: (a) => withSprung(a, [...act(without(a, 'sprung')), ...onReach(without(a, 'sprung'))]),
@@ -90,8 +94,17 @@ const BROADCASTS: Record<string, (answer: Row) => Broadcast[]> = {
     const end = without(without(a, 'play'), 'reach');
     return [...act(end), ...(a.reach === 'character' || a.reach === 'thread' || a.reach === 'board' ? [{ topic: 'reach', event: 'effect', payload: end }] : [])];
   },
+  // A surface card's play carries its first draw in the answer: the play is heard as a play, without the drawing in it, and the wall's count follows. Strokes are never sent (surfaces, below).
+  play_surface_card: (a, args) => {
+    const { draw, ...play } = a;
+    return [...BROADCASTS['play_card']!(play, args), ...surfaceHeard(a.id, draw as Row | undefined, a.thread)];
+  },
+  // A drawing or a wash is heard as the wall's count: the play and how many cells it covers now. Every reader who shows the wall fetches the strokes themselves (surface_acts), as a saved effect's state is fetched.
+  draw_on_surface: (a, args) => surfaceHeard(args.play, a, a.thread),
+  wash_surface: (a, args) => surfaceHeard(args.play, a, a.thread),
   // A card back: the set Act names no card, so neither does what is sent.
   set_card: (a) => act(a),
+  set_surface_card: (a) => act(a),
   // A take-back is an Act of the back's post's author, on that post, naming the set and no card.
   take_back: (a) => act(a),
   start_thread: (a) => [...thread(a.thread), ...act(a.act)],
@@ -117,14 +130,14 @@ const BROADCASTS: Record<string, (answer: Row) => Broadcast[]> = {
   reissue_invite: () => [],
   open_account: () => [],
 };
-const live = (rpc: string, answer: unknown): Broadcast[] =>
-  answer && typeof answer === 'object' ? (BROADCASTS[rpc]?.(answer as Row) ?? []) : [];
+const live = (rpc: string, answer: unknown, args: Row = {}): Broadcast[] =>
+  answer && typeof answer === 'object' ? (BROADCASTS[rpc]?.(answer as Row, args) ?? []) : [];
 
 /**
  * The calls that may be sent again after a failure that may have followed their commit
  * (supabase/functions/_shared/rpc.ts): the reads, and opening an account (one already open is no
  * change). Every other write is sent once; a saved effect's state among them, since a save
- * repeated after a newer one landed would bring the older strokes back.
+ * repeated after a newer one landed would bring the older strokes back; and a draw, a wash or a play with its first draw, each of which a second send would write again.
  */
 const REPEATABLE = new Set(['whoami', 'card_target', 'card_target_reach', 'card_of_play', 'open_account', 'instance_settings',
   // The hints' calls (0065): a read, and a write that finds its own earlier effect (a pattern already fired for an Act fires nothing).
@@ -163,7 +176,8 @@ export async function runAction(dbs: { player: Db; service: Db }, instance: Inst
     let args: Record<string, unknown> = { ...decision.args, who };
     // A play's prices are settings: read as the rows hold them now, not as the code was deployed. A purchase's is its slot's, which the
     // database holds and compares with the price the screen showed (machine_now, 0139_machine.sql); it is sent as it was shown.
-    const tuned = decision.needsTarget ? await withDatabaseSettings(instance, dbs.service) : instance;
+    const tuned = decision.needsTarget || decision.needsSurface ? await withDatabaseSettings(instance, dbs.service) : instance;
+    let rpc = decision.rpc;
     if (decision.needsTarget) {
       // The target as its rules see it (card_target_reach, 0055): a post, a character, a thread or a board, with its own effects and
       // the live ones above it, which a card's canApply sees too (effectsOnTarget).
@@ -177,25 +191,40 @@ export async function runAction(dbs: { player: Db; service: Db }, instance: Inst
       const target = reach === 'post' ? postTarget(post.act, post.kind, post.body, post.version) : { ...said, reach } as CardTarget;
       const effects = effectsOnTarget(target, own ?? [], above);
       const rules = instance.cards.find((c) => c.key === decision.args.card)!;
+      // A surface card's first draw is the card's own to read; what it refuses is said on the drawing (`first`), not on the configuration.
+      if (rules.surface !== undefined && decision.args.first !== undefined) {
+        const tag = decideDraw(rules, tuned.settings, decision.args.first);
+        if (!tag.ok) return refused('first', tag.why);
+      }
       if (decision.play === 'set') {
         // The card's own rules decide the configuration, the card a catching set card names and the phrase a Move waits for; none of them is read from the request but the configuration.
-        const { conditions, ...rest } = args as { conditions?: SetConditions };
-        const set = decideSet(rules, tuned.settings, target, effects, decision.args.config, tuned.cards, conditions);
+        const { conditions, first, ...rest } = args as { conditions?: SetConditions; first?: unknown };
+        // A surface card's first draw is read with the conditions (decideSet); the draft is its first draw, kept private beside the back (set_surface_card).
+        const set = decideSet(rules, tuned.settings, target, effects, decision.args.config, tuned.cards, first === undefined ? conditions : { ...conditions, first });
         if (!set.ok) return refused('config', set.why);
         // The ids a Who names go as `named`, since `who` is already the account on this call (set_card's first argument).
         args = { ...rest, config: set.value.config, price: set.value.price, catches: set.value.catches ?? null, phrase: set.value.phrase ?? null, passage: set.value.passage ?? null, named: set.value.who?.characters ?? null, who_except: set.value.who?.except ?? null };
+        if (set.value.draw) {
+          rpc = 'set_surface_card';
+          args = { ...args, draft: set.value.draw.payload, draft_cells: set.value.draw.cells, most: set.value.draw.most, most_live: rules.surface!.mostLive };
+        }
       } else {
         const said = casterMessage(decision.args.message);
         if (!said.ok) return refused('message', said.why);
         const nameOf = (key: string) => instance.cards.find((c) => c.key === key)?.name ?? key;
         const play = decision.play === 'use'
           ? decideUse(rules, tuned.settings, target, effects, decision.args.config, said.value)
-          : decidePlay(rules, tuned.settings, target, effects, decision.args.config, said.value, { nameOf });
+          : decidePlay(rules, tuned.settings, target, effects, decision.args.config, said.value, { nameOf, first: decision.args.first });
         // A card that needs a caster message refuses a blank one on the message field, as the screens show it there.
         if (!play.ok) return refused(play.why === rules.needsMessage ? 'message' : 'config', play.why);
         args = { ...args, config: play.value.config, message: play.value.message, price: play.value.price };
         // A card that writes buys its tokens at this decision, from the settings as the rows hold them now; the database writes them with the play and the worker and the log read them there.
         if (play.value.tokens !== undefined) args = { ...args, tokens: play.value.tokens };
+        // A surface card's first draw goes with the play, in one transaction (play_surface_card): its payload, its cells, the wall's limit from the settings rows and the card's most live draws.
+        if (play.value.draw) {
+          rpc = 'play_surface_card';
+          args = { ...args, first: play.value.draw.payload, first_cells: play.value.draw.cells, most: play.value.draw.most, most_live: rules.surface!.mostLive };
+        }
         // The version the play was decided against goes back with it; play_card refuses it once the post has another (0070).
         if (target.reach === 'post' && target.version) args = { ...args, reach: 'post', from_post: null, version: target.version };
       }
@@ -209,9 +238,25 @@ export async function runAction(dbs: { player: Db; service: Db }, instance: Inst
       if (!state.ok) return refused('state', state.why);
       args = { ...args, state: state.value };
     }
+    if (decision.needsSurface) {
+      // The card that holds the wall reads the drawing and counts its cells; a draw's limit is the settings rows' (`tuned`), never the code as deployed.
+      const key = await dbs.player.rpc<string | null>('card_of_play', { play: decision.args.play });
+      const rules = instance.cards.find((c) => c.key === key);
+      if (!rules?.surface) return refused('play', 'this card holds no wall');
+      const { input: _input, ...rest } = args;
+      if (decision.rpc === 'draw_on_surface') {
+        const drawn = decideDraw(rules, tuned.settings, decision.args.input);
+        if (!drawn.ok) return refused('input', drawn.why);
+        args = { ...rest, payload: drawn.value.payload, cells: drawn.value.cells, most: drawn.value.most };
+      } else {
+        const washed = decideWash(rules, tuned.settings, decision.args.input);
+        if (!washed.ok) return refused('input', washed.why);
+        args = { ...rest, payload: washed.value.payload, cells: washed.value.cells };
+      }
+    }
     writing = true;
-    const body = await dbs.service.rpc<unknown>(decision.rpc, args);
-    return { status: 200, body, broadcasts: live(decision.rpc, body) };
+    const body = await dbs.service.rpc<unknown>(rpc, args);
+    return { status: 200, body, broadcasts: live(rpc, body, decision.args) };
   } catch (e) {
     const barred = barredAnswer(e);
     if (barred) return barred;

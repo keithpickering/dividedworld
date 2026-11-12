@@ -61,7 +61,7 @@ begin
 
   -- The columns are exactly these: never the account, the share's id or the ledger row's.
   if (select array_agg(column_name::text order by ordinal_position) from information_schema.columns where table_schema = 'public' and table_name = 'my_ledger_shares')
-       is distinct from array['settlement', 'character', 'reason', 'act', 'quadrant', 'amount'] then
+       is distinct from array['settlement', 'character', 'reason', 'act', 'quadrant', 'amount', 'card'] then
     raise exception 'my_ledger_shares shows more or less than it should';
   end if;
 

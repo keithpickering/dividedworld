@@ -7,7 +7,7 @@
 -- The poisons, each driven red once before the check was trusted:
 --   * mail_for_decision replaced by a function that enqueues nothing must fail the author's-mail assertion for a nudge;
 --   * mail_due replaced by a version that returns no bar must fail the banned row's bar assertion;
---   * mail_due replaced by a version that reads the decision's own outcome, as 0237 first did, must fail the stale-row assertion (a suspension after a lift);
+--   * mail_due replaced by a version that reads the decision's own outcome, as 0319 first did, must fail the stale-row assertion (a suspension after a lift);
 --   * mail_due replaced by a version that ignores 'refused' or the backoff must fail the attempts assertions.
 
 create function tests.refusal(stmt text) returns text language plpgsql as $$

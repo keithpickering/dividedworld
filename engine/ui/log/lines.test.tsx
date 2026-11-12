@@ -11,7 +11,7 @@ import { around, mergeLogs } from './useLog.ts';
 import type { KayfaApi } from '../data/api.ts';
 import { ENGINE_DEFAULT_PRONOUNS, PRONOUN_PRESETS, type PronounSet } from '../../rules/pronouns.ts';
 
-const empty: Log = { infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], settlements: [], wallet: [], cards: [], packs: [], playsOnMine: [], writes: [], saves: [], setEnds: [], caught: [], ended: [], before: null };
+const empty: Log = { infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], settlements: [], wallet: [], cards: [], packs: [], playsOnMine: [], writes: [], saves: [], setEnds: [], caught: [], ended: [], cosmetics: [], before: null };
 const settled = (id: number, endsAt: string, lines: LogSettlement['lines']): LogSettlement => ({ id, startsAt: new Date(Date.parse(endsAt) - 86_400_000).toISOString(), endsAt, sharesKept: true, lines });
 const char = (id: string, name: string, cls: string, classSince = '2026-10-01T00:00:00.000Z', pronouns: PronounSet = ENGINE_DEFAULT_PRONOUNS): MyCharacter =>
   ({ id, name, pronouns, class: cls, classSince, classShownAt: null, classDueAt: null, turnOpensAt: null, debutedAt: '2026-10-01T00:00:00.000Z', debutLoudness: 'announced', retiredAt: null, pendingTurn: null, presenceHidden: false });
@@ -1068,6 +1068,90 @@ describe('a card\'s boost in a settlement', () => {
 });
 
 /**
+ * The cosmetics lines (the cosmetics plan, Task 12): a Random Event's find, an admin's gear, a trophy given, a belt lost and an award taken back. Each is the player's own
+ * character's, in plain and true words; no line says who reacted or any class, and a belt lost names the character that took it, which is public.
+ */
+describe('the cosmetics lines', () => {
+  const mine = [char('p', 'Pipewrench', 'face'), char('q', 'Quinn', 'heel')];
+  const w: Words = { ...words, instance: { ...testInstance, gear: [{ key: 'band', name: 'Headband', line: 'Holds a thought in place.', rarity: 'common' }, { key: 'tall', name: 'Tall Hat', line: 'Tall.', rarity: 'rare' }] } };
+  const base = { at: '2026-11-09T12:00:00.000Z', id: 'e1', character: 'p', trophy: null, name: null, item: null, outcome: null, text: null, copies: null, by: null, byName: null, season: null, place: null, line: null, toName: null } as const;
+  const rowsOf = (cosmetics: Log['cosmetics'], tab: string | null = null) => logRows(data({ log: { ...empty, cosmetics }, mine }), w, 600, tab).filter((r) => ['found', 'gearGranted', 'trophy', 'beltLost', 'beltBack'].includes(r.kind));
+  const said = (r: { details: readonly unknown[] }) => r.details.map((d) => (typeof d === 'string' ? d : (d as { text: string }).text)).join('');
+
+  test('a found piece of gear and a found card say what, and its rarity in words, for the character it happened to', () => {
+    const [gear, card] = rowsOf([{ ...base, kind: 'found', outcome: 'gear', item: 'band' }, { ...base, id: 'e2', at: '2026-11-09T11:00:00.000Z', kind: 'found', outcome: 'card', item: 'whoops' }]);
+    expect(gear).toMatchObject({ kind: 'found', aura: 0, wallet: null, characters: ['p'] });
+    expect(said(gear!)).toBe('Something happened to Pipewrench: you found a Headband (common gear).');
+    expect(said(card!)).toBe('Something happened to Pipewrench: you found a Whoops! (common card).');
+  });
+
+  test('a line event keeps the words it was rolled with', () => {
+    const [row] = rowsOf([{ ...base, kind: 'found', outcome: 'line', text: 'a pigeon watched you type' }]);
+    expect(said(row!)).toBe('Something happened to Pipewrench: a pigeon watched you type.');
+  });
+
+  test('an admin\'s gear is counted, and names the character it was given through where the grant did', () => {
+    const [through, bare] = rowsOf([{ ...base, kind: 'granted', id: 'g1', item: 'band', copies: 5 }, { ...base, kind: 'granted', id: 'g2', at: '2026-11-08T12:00:00.000Z', character: null, item: 'tall', copies: 1 }]);
+    expect(through).toMatchObject({ kind: 'gearGranted', aura: 0 });
+    expect(said(through!)).toBe('An admin gave you 5 Headbands, through Pipewrench.');
+    expect(said(bare!)).toBe('An admin gave you a Tall Hat.');
+    expect(bare!.characters).toEqual([]);
+  });
+
+  test('a trophy says who gave it, and why where the season or a demand did', () => {
+    const lines = rowsOf([
+      { ...base, kind: 'awarded', id: 'a1', trophy: 'bosss-pet', name: 'Boss\'s Pet', by: 'boss', byName: 'Sighbot' },
+      { ...base, kind: 'awarded', id: 'a2', at: '2026-11-09T11:00:00.000Z', trophy: 'champ', name: 'Season Champion', by: 'season', season: 1, place: 1 },
+      { ...base, kind: 'awarded', id: 'a3', at: '2026-11-09T10:00:00.000Z', trophy: 'met', name: 'Met the Demand', by: 'demand' },
+      { ...base, kind: 'awarded', id: 'a4', at: '2026-11-09T09:00:00.000Z', trophy: 'x', name: 'Odd Medal', by: 'admin' },
+    ]).map(said);
+    expect(lines).toEqual([
+      'Pipewrench was given Boss\'s Pet by Sighbot, the Boss.',
+      'Pipewrench was given Season Champion, for first place in Season 1.',
+      'Pipewrench was given Met the Demand, for posting toward it.',
+      'Pipewrench was given Odd Medal by an admin.',
+    ]);
+  });
+
+  test('a belt lost names who took it, and whose move it was', () => {
+    const [boss, admin] = rowsOf([
+      { ...base, kind: 'lost', id: 'l1', trophy: 'belt', name: 'The Belt', toName: 'Sock Puppet', by: 'boss', byName: 'Sighbot' },
+      { ...base, kind: 'lost', id: 'l2', at: '2026-11-09T11:00:00.000Z', trophy: 'belt', name: 'The Belt', toName: 'Sock Puppet', by: 'admin' },
+    ]);
+    expect(boss).toMatchObject({ kind: 'beltLost', characters: ['p'] });
+    expect(said(boss!)).toBe('Pipewrench lost the Belt to Sock Puppet, by Sighbot\'s move.');
+    expect(said(admin!)).toBe('Pipewrench lost the Belt to Sock Puppet, by an admin.');
+  });
+
+  test('a belt that comes back says an admin took it from the taker and the mask holds it again, beside the lost line that stays', () => {
+    const lines = rowsOf([
+      { ...base, kind: 'lost', id: 'l1', trophy: 'belt', name: 'The Belt', toName: 'Sock Puppet', by: 'admin' },
+      { ...base, kind: 'beltBack', id: 'l1', at: '2026-11-09T13:00:00.000Z', trophy: 'belt', name: 'The Belt', toName: 'Sock Puppet' },
+    ]);
+    expect(lines.map((r) => r.kind)).toEqual(['beltBack', 'beltLost']);
+    expect(lines.map(said)).toEqual(['An admin took back the Belt from Sock Puppet; Pipewrench holds it again.', 'Pipewrench lost the Belt to Sock Puppet, by an admin.']);
+  });
+
+  test('a reversed award says an admin took it back', () => {
+    const [row] = rowsOf([{ ...base, kind: 'reversed', id: 'a1', trophy: 'bosss-pet', name: 'Boss\'s Pet' }]);
+    expect(row).toMatchObject({ kind: 'trophy' });
+    expect(said(row!)).toBe('An admin took back Pipewrench\'s Boss\'s Pet.');
+  });
+
+  test('are in their character\'s tab and in All, and in no other character\'s', () => {
+    const log: Log['cosmetics'] = [{ ...base, kind: 'found', outcome: 'gear', item: 'band' }];
+    expect(rowsOf(log, 'p')).toHaveLength(1);
+    expect(rowsOf(log, null)).toHaveLength(1);
+    expect(rowsOf(log, 'q')).toHaveLength(0);
+  });
+
+  test('a card the Event found is no line of the card ledger\'s', () => {
+    const cards: Log['cards'] = [{ card: 'whoops', kind: 'found', act: null, price: 0, at: '2026-11-09T12:00:00.000Z' }];
+    expect(logRows(data({ log: { ...empty, cards }, mine }), w, 600, null).filter((r) => r.kind !== 'estimate')).toEqual([]);
+  });
+});
+
+/**
  * A drive's gifts, in the log (docs/plans/2026-11-03-jimmy-wails-design.md, section 10): the giver's wallet event `gift_out` and the post's author's `gift_in`, each read
  * with the gift's own Act (amount, overhead and arrives, all public), and a card's own sentence for the play that opened or joined its drive. The engine names no card.
  */
@@ -1267,5 +1351,109 @@ describe('the conduct lines: what an admin did to the player\'s posts (the condu
   test('names a thread it could not read as "a thread", never a blank', () => {
     const bare = logRows(data({ mine: [p], conduct: [row('hide')], acts: new Map(), titles: new Map() }), words, 100, null).filter((r) => r.kind === 'conduct');
     expect(bare[0]!.details).toEqual(['An admin hid your post in a thread (code of conduct). An admin may have emailed you the details.']);
+  });
+});
+
+/**
+ * A surface in the log (docs/plans/2026-11-11-graffiti-design.md, sections 3 and 11): what the drawer's own draws, the washes that cut them, the post's author's walls and washes are in plain words, from
+ * public Acts, in the words the card gives and the engine's own where it gives none. None names an owner or a class, and a third character's log holds none of them.
+ */
+describe('the log of a surface', () => {
+  const key = testInstance.cards[0]!.key;
+  const art = { color: '#000', ink: '#fff', canvas: '', mark: '', credit: 'Test' };
+  const wall = { key, art, describe: () => '', logDraw: { verb: 'tagged', noun: 'tag', nouns: 'tags', surface: 'the wall' }, logWash: { verb: 'washed' } };
+  const bare = { key, art, describe: () => '' };
+  const wallWords: Words = { ...words, ui: { ...words.ui, cards: [wall] } };
+  const bareWords: Words = { ...words, ui: { ...words.ui, cards: [bare] } };
+  const at = '2026-11-11T10:00:00.000Z';
+  const act = (id: string, kind: Act['kind'], character: string | null, over: Partial<Act> = {}): Act =>
+    ({ id, kind, character, thread: 'th', targetActId: null, seq: null, createdAt: at, payload: {}, currentPayload: {}, editedAt: null, shownEditedAt: null, ...over });
+  const text = (r: { details: readonly unknown[] }) => r.details.map((d) => (typeof d === 'string' ? d : (d as { text: string }).text)).join('');
+  /* Gloomba (g) wrote post #3 with the wall; Spritey (s) wrote post #4 with the wall; the player's own characters are Pipewrench (p) and Hooligan (h). */
+  const acts = new Map([
+    act('post3', 'post', 'p', { seq: 3 }), act('k3', 'card', 'p', { targetActId: 'post3', payload: { card: key } }),
+    act('post4', 'post', 's', { seq: 4 }), act('k4', 'card', 's', { targetActId: 'post4', payload: { card: key } }),
+  ].map((a) => [a.id, a]));
+  const names = new Map([['g', 'Gloomba'], ['s', 'Spritey']]);
+  const draw = (over: Partial<NonNullable<Log['draws']>[number]> = {}): NonNullable<Log['draws']>[number] => ({ act: 'd1', kind: 'draw', play: 'k4', post: 'post4', character: 'p', mine: 'p', at, cells: 600, ...over });
+  const rowsOf = (log: Partial<Log>, mine: MyCharacter[], tab: string | null = null, w: Words = wallWords) => logRows(data({ log: { ...empty, ...log }, mine, acts, names }), w, 600, tab);
+  const pipewrench = char('p', 'Pipewrench', 'heel');
+  const hooligan = char('h', 'Hooligan', 'face');
+
+  test('the drawer\'s own draw says whose post it was on and how much of the surface it covers', () => {
+    const [r] = rowsOf({ draws: [draw()] }, [pipewrench]);
+    expect(r).toMatchObject({ kind: 'drew', at, aura: 0, wallet: null, characters: ['p'], what: 'You tagged a post' });
+    expect(text(r!)).toBe('You tagged Spritey\'s post #4 (6% of the wall).');
+    expect(r!.details[1]).toEqual({ text: 'Spritey\'s post #4', href: '/t/th?page=1#post-4' });
+  });
+  test('the post\'s author is told who drew on their post and how much it covers', () => {
+    const [r] = rowsOf({ wallsDrawn: [draw({ act: 'd2', play: 'k3', post: 'post3', character: 'g', mine: 'p', cells: 600 })] }, [pipewrench]);
+    expect(r).toMatchObject({ kind: 'drew', characters: ['p'], what: 'Gloomba tagged your post' });
+    expect(text(r!)).toBe('Gloomba tagged your post #3 (6% of the wall).');
+  });
+  test('the author\'s own wash says how much it took off, in whole percents, and none where it took nothing', () => {
+    const [r] = rowsOf({ wallsDrawn: [draw({ act: 'w1', kind: 'wash', play: 'k3', post: 'post3', character: 'p', cells: 950 })] }, [pipewrench]);
+    expect(r).toMatchObject({ kind: 'washed', characters: ['p'], what: 'You washed your post' });
+    expect(text(r!)).toBe('You washed 9% of the wall off your post #3.');
+    const [none] = rowsOf({ wallsDrawn: [draw({ act: 'w2', kind: 'wash', play: 'k3', post: 'post3', character: 'p', cells: 0 })] }, [pipewrench]);
+    expect(text(none!)).toBe('You washed your post #3, and nothing came off.');
+  });
+  test('a drawer whose tag a wash cut is told who washed it, on their own post', () => {
+    const [r] = rowsOf({ draws: [draw({ act: 'w3', kind: 'cut', character: 's', mine: 'p', cells: 300 })] }, [pipewrench]);
+    expect(r).toMatchObject({ kind: 'washed', characters: ['p'], what: 'Spritey washed your tag' });
+    expect(text(r!)).toBe('Spritey washed your tag on their post #4.');
+  });
+  test('a share under a hundredth is said so, and never as 0%', () => {
+    expect(text(rowsOf({ draws: [draw({ cells: 30 })] }, [pipewrench])[0]!)).toBe('You tagged Spritey\'s post #4 (under 1% of the wall).');
+    expect(text(rowsOf({ draws: [draw({ cells: 100 })] }, [pipewrench])[0]!)).toBe('You tagged Spritey\'s post #4 (1% of the wall).');
+    expect(text(rowsOf({ draws: [draw({ cells: 10000 })] }, [pipewrench])[0]!)).toBe('You tagged Spritey\'s post #4 (100% of the wall).');
+  });
+  test('the engine\'s own words stand where the card gives none, and name no card\'s', () => {
+    const lines = rowsOf({
+      draws: [draw(), draw({ act: 'w3', kind: 'cut', character: 's', cells: 300 })],
+      wallsDrawn: [draw({ act: 'd2', play: 'k3', post: 'post3', character: 'g', cells: 600 }), draw({ act: 'w1', kind: 'wash', play: 'k3', post: 'post3', character: 'p', cells: 950 })],
+    }, [pipewrench], null, bareWords).map(text).sort();
+    expect(lines).toEqual([
+      'Gloomba drew on your post #3 (6% of the surface).', 'Spritey washed your drawing on their post #4.',
+      'You drew on Spritey\'s post #4 (6% of the surface).', 'You washed 9% of the surface off your post #3.',
+    ]);
+  });
+  test('each line is in its character\'s tab alone', () => {
+    const log = { draws: [draw()], wallsDrawn: [draw({ act: 'd2', play: 'k3', post: 'post3', character: 'g', mine: 'h', cells: 600 })] };
+    const mine = [pipewrench, hooligan];
+    expect(rowsOf(log, mine, 'p').map((r) => r.characters)).toEqual([['p']]);
+    expect(rowsOf(log, mine, 'h').map((r) => r.characters)).toEqual([['h']]);
+    expect(rowsOf(log, mine, null)).toHaveLength(2);
+  });
+  test('a log read by a third character shows none of the four lines', () => {
+    const log = {
+      draws: [draw(), draw({ act: 'w3', kind: 'cut', character: 's', cells: 300 })],
+      wallsDrawn: [draw({ act: 'd2', play: 'k3', post: 'post3', character: 'g', cells: 600 }), draw({ act: 'w1', kind: 'wash', play: 'k3', post: 'post3', character: 'p', cells: 950 })],
+    };
+    expect(rowsOf(log, [char('z', 'Zed', 'face')])).toEqual([]);
+    expect(rowsOf(log, [char('z', 'Zed', 'face')], 'z')).toEqual([]);
+  });
+  test('a line names no owner and no class, and a play or a post that could not be read is said in the engine\'s own words', () => {
+    const [r] = rowsOf({ draws: [draw()] }, [pipewrench]);
+    expect(text(r!)).not.toMatch(/Hooligan|heel|face|owner|player|Aura/u);
+    const [lost] = logRows(data({ log: { ...empty, draws: [draw()] }, mine: [pipewrench], acts: new Map(), names: new Map() }), wallWords, 600, null);
+    expect(text(lost!)).toBe('You drew on a post (6% of the surface).');
+  });
+  test('useLog reads the names of a drawer and a washer the page did not carry, so the lines name them', async () => {
+    const log = { ...empty, wallsDrawn: [draw({ act: 'd2', play: 'k3', post: 'post3', character: 'g', mine: 'p', cells: 600 })], draws: [draw({ act: 'w3', kind: 'cut', character: 'x', mine: 'p', cells: 300 })] };
+    const asked: string[][] = [];
+    const api = {
+      actsById: async () => [], effectStates: async () => ({}), thread: async () => null, board: async () => null,
+      characters: async (ids: readonly string[]) => { asked.push([...ids]); return ids.map((id) => ({ id, name: id === 'g' ? 'Gloomba' : 'Xavier' })); },
+    } as unknown as KayfaApi;
+    const read = await around(api, log, data({ log, mine: [pipewrench], acts, names: new Map() }));
+    expect(asked.flat().sort()).toEqual(['g', 's', 'x']);
+    expect(logRows(read, wallWords, 600, null).map(text).sort()).toEqual(['Gloomba tagged your post #3 (6% of the wall).', 'Xavier washed your tag on their post #4.']);
+  });
+  test('actsNamed names each row\'s play and post, never its own Act, whose strokes the page would carry', () => {
+    const ids = actsNamed({ ...empty, draws: [draw()], wallsDrawn: [draw({ act: 'w1', kind: 'wash', play: 'k3', post: 'post3' })] }, null, []);
+    expect(ids).toEqual(expect.arrayContaining(['k4', 'post4', 'k3', 'post3']));
+    expect(ids).not.toContain('d1');
+    expect(ids).not.toContain('w1');
   });
 });

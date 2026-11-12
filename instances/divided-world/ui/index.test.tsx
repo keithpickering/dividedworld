@@ -17,10 +17,12 @@ import { logRows } from '../../../engine/ui/log/lines.ts';
 import type { Act, Log } from '../../../engine/ui/data/api.ts';
 import { instanceUi, REASON_KEYS, wordsRead } from './index.ts';
 import { spanWords } from './cards.ts';
+import { gearUi } from './cosmetics.ts';
 import { mooch } from '../cards/mooch.ts';
 import { toll } from '../cards/toll.ts';
 import { fourDChess } from '../cards/4d-chess.ts';
 import { offDay } from '../cards/off-day.ts';
+import { LOG_DRAW, LOG_WASH, describeDraw } from '../cards/graffiti/words.ts';
 import { wordsProblems } from '../../../engine/ui/cards/lens-words.ts';
 import type { CardPlay } from '../../../engine/ui/cards/types.ts';
 import { ENGINE_DEFAULT_PRONOUNS, PRONOUN_PRESETS } from '../../../engine/rules/pronouns.ts';
@@ -63,6 +65,18 @@ describe('Divided World\'s onboarding words', () => {
   });
 });
 
+describe('Divided World\'s gear and trophy art', () => {
+  test('every gear has art and an aspect, and every trophy kind has a badge, and nothing else does', () => {
+    expect(Object.keys(instanceUi.gear).sort()).toEqual(instance.gear.map((g) => g.key).sort());
+    for (const g of instance.gear) {
+      expect(instanceUi.gear[g.key]?.art, `${g.key}'s art`).toEqual(expect.any(String));
+      expect(instanceUi.gear[g.key]!.aspect, `${g.key}'s aspect`).toBeGreaterThan(0);
+    }
+    expect(Object.keys(instanceUi.trophies).sort()).toEqual(instance.trophies.kinds.map((k) => k.key).sort());
+    for (const k of instance.trophies.kinds) expect(instanceUi.trophies[k.key]?.art, `${k.key}'s badge`).toEqual(expect.any(String));
+  });
+});
+
 describe('Divided World\'s Vending Machine words', () => {
   test('the shop is named plainly, and the sign has the design\'s twelve names, in order, each within the check', () => {
     expect(instanceUi.copy.shopName).toBe('Vending Machine');
@@ -97,7 +111,7 @@ describe('Divided World\'s cards in the guide, in the glass\'s words about setti
     for (const text of [t.describe, t.summary]) expect(text).not.toMatch(/pays you|what it cost|wallet|what the caster paid/u);
   });
   test('each Move says what setting it does, landing at its own reach and no other', () => {
-    const lands = { whoops: 'the quoting post', 'stick-around': 'the quoting post', autocorrect: 'the quoting post', 'feelin-fab': 'the quoting post', 'below-the-fold': 'the quoting post', 'glitter-bomb': "the quoting post's character", 'main-event': "the quoting post's thread" };
+    const lands = { whoops: 'the quoting post', 'stick-around': 'the quoting post', autocorrect: 'the quoting post', 'feelin-fab': 'the quoting post', 'below-the-fold': 'the quoting post', 'glitter-bomb': "the quoting post's character", 'hype-up': "the quoting post's character", 'main-event': "the quoting post's thread" };
     for (const [key, reach] of Object.entries(lands)) {
       expect(face(key).describe, key).toContain(`You can also set it face down on one of your own posts: it springs on the next quote of that post and lands on ${reach} at no further cost, using up the card.`);
     }
@@ -131,7 +145,9 @@ describe('Divided World\'s Gimmick cards in plain words', () => {
       const f = faces.find((x) => x.key === key)!;
       return `${f.describe} ${f.summary}`;
     };
-    for (const key of ['publicity-tour', 'heat-magnet']) expect(say(key), key).toMatch(/36 hours[\s\S]*earns from[\s\S]*10% higher/u);
+    for (const key of ['publicity-tour', 'heat-magnet', 'hype-up']) expect(say(key), key).toMatch(/36 hours[\s\S]*earns from[\s\S]*10% higher/u);
+    expect(say('sugar-coat')).toMatch(/a week[\s\S]*Salty or Pepperoni/u);
+    expect(say('last-word')).toMatch(/a week[\s\S]*refused before it is written/u);
     expect(say('class-clown')).toMatch(/36 hours[\s\S]*earns from[\s\S]*50% higher/u);
     expect(say('good-vibes')).toMatch(/3 days[\s\S]*costs 0\.25 more/u);
   });
@@ -352,7 +368,7 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     const play = act('k1', 'card', 'them', { targetActId: 'post1', payload: { card: 'you-were-saying', config: { steps: 3 }, tokens: 175 } });
     const log: Log = { infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], settlements: [], wallet: [], cards: [{ card: 'you-were-saying', kind: 'played', act: 'k1', price: 75, at }], packs: [], playsOnMine: [],
       writes: [{ play: 'k1', post: 'post1', version: 'post1', failed: false, opening: true, over: false, at }, { play: 'k1', post: 'post1', version: 'e1', failed: false, opening: false, over: false, at }, { play: 'k1', post: 'post1', version: 'e2', failed: true, opening: false, over: true, at }],
-      saves: [{ play: 'k1', post: 'post1', savedAt: at }], setEnds: [], caught: [], ended: [], before: null };
+      saves: [{ play: 'k1', post: 'post1', savedAt: at }], setEnds: [], caught: [], ended: [], cosmetics: [], before: null };
     const mine = [{ id: 'me', name: 'Pipewrench', pronouns: ENGINE_DEFAULT_PRONOUNS, class: 'heel', classSince: at, classShownAt: null, classDueAt: null, turnOpensAt: null, debutedAt: at, debutLoudness: 'announced' as const, retiredAt: null, pendingTurn: null, presenceHidden: false }, { ...{ id: 'them', name: 'Spritey' }, pronouns: ENGINE_DEFAULT_PRONOUNS, class: 'heel', classSince: at, classShownAt: null, classDueAt: null, turnOpensAt: null, debutedAt: at, debutLoudness: 'announced' as const, retiredAt: null, pendingTurn: null, presenceHidden: false }];
     const rows = logRows({
       log, mine, estimate: null, standings: {}, season: null, turns: [], nextSettlement: null, acts: new Map([post, play].map((a) => [a.id, a])),
@@ -372,7 +388,7 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     const post = act('post1', 'post', 'me', { seq: 1, payload: { body: 'Mario wins.' }, currentPayload: { body: 'Mario wins again.' }, editedAt: '2026-10-31T10:00:00.000Z' });
     const play = act('k1', 'card', 'them', { targetActId: 'post1', payload: { card: 'autocorrect', config: { phrase: 'Mario', replacement: 'Luigi' } } });
     const edit = act('e1', 'edit', 'me', { targetActId: 'post1', createdAt: '2026-10-31T10:00:00.000Z', payload: { body: 'Mario wins again.' } });
-    const log: Log = { infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], settlements: [], wallet: [], cards: [], packs: [], playsOnMine: [], writes: [], saves: [{ play: 'k1', post: 'post1', savedAt: at }], setEnds: [], caught: [], ended: [], before: null };
+    const log: Log = { infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], settlements: [], wallet: [], cards: [], packs: [], playsOnMine: [], writes: [], saves: [{ play: 'k1', post: 'post1', savedAt: at }], setEnds: [], caught: [], ended: [], cosmetics: [], before: null };
     const mine = [{ id: 'me', name: 'Pipewrench', pronouns: ENGINE_DEFAULT_PRONOUNS, class: 'heel', classSince: at, classShownAt: null, classDueAt: null, turnOpensAt: null, debutedAt: at, debutLoudness: 'announced' as const, retiredAt: null, pendingTurn: null, presenceHidden: false }];
     const rows = logRows({
       log, mine, estimate: null, standings: {}, season: null, turns: [], nextSettlement: null, acts: new Map([post, play, edit].map((a) => [a.id, a])),
@@ -501,7 +517,7 @@ describe('a Booster in the log (the booster packs plan, Task 7)', () => {
   const contents = ['whoops', 'glitter-bomb', 'feelin-fab', 'stick-around', 'card-collector'];
   const pulled = contents.map((card) => ({ card, kind: 'pulled' as const, act: null, pack: 'pk1', price: 0, at }));
   const lines = (over: Partial<Log>, wallet: Log['wallet']) => logRows({
-    log: { infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], settlements: [], wallet, cards: [], packs: [], playsOnMine: [], writes: [], saves: [], setEnds: [], caught: [], ended: [], before: null, ...over },
+    log: { infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], settlements: [], wallet, cards: [], packs: [], playsOnMine: [], writes: [], saves: [], setEnds: [], caught: [], ended: [], cosmetics: [], before: null, ...over },
     mine: [], estimate: null, standings: {}, season: null, turns: [], nextSettlement: null, acts: new Map(), names: new Map(), titles: new Map(), states: new Map(),
   }, { instance, ui: instanceUi, postsPerPage: 20, economy: {} }, 600, null);
   const said = (r: { details: readonly unknown[] }) => r.details.map((d) => (typeof d === 'string' ? d : (d as { text: string }).text)).join('');
@@ -534,6 +550,54 @@ describe('a Booster in the log (the booster packs plan, Task 7)', () => {
   });
 });
 
+describe('Sugar Coat, Hype-Up and Last Word in plain words (card notes Part 4, Task 7)', () => {
+  const ui = (key: string) => instanceUi.cards.find((c) => c.key === key)!;
+  test('each wears its flavor\'s color with its ink, says what it does in a tagline and a summary, and keeps its status to six words', () => {
+    for (const [key, color, ink, tagline] of [
+      ['sugar-coat', '#2ee6ff', '#03141a', 'Only Sweet cards land on your post.'], ['hype-up', '#2ee6ff', '#03141a', 'Give a character a push.'],
+      ['last-word', '#ff3d7f', '#14030a', 'Stop quotes of your post.'],
+    ] as const) {
+      expect([ui(key).art.color, ui(key).art.ink, ui(key).art.tagline], key).toEqual([color, ink, tagline]);
+      expect(ui(key).art.canvas, key).toMatch(/\.webp$/u);
+      expect(typeof ui(key).status === 'string' ? (ui(key).status as string).split(' ').length : 0, key).toBeLessThanOrEqual(6);
+    }
+    expect(ui('sugar-coat').summary).toBe('Used on your post. Turns away Salty and Pepperoni cards for a week.');
+    expect(ui('hype-up').summary).toBe('Cast on a character. For 36 hours, what it earns from positive reactions is 10% higher. A loss is never made worse.');
+    expect(ui('last-word').summary).toBe('Used on your post. Nobody can quote it for a week.');
+    const sugarWords = ui('sugar-coat').describe!({} as never);
+    expect(sugarWords).toContain('It does not stop a card from being set face down there.');
+    expect(sugarWords).not.toContain('It never stops a card set face down.');
+    expect(ui('hype-up').logPlay!({}, {})).toBe('What that character earns from positive reactions is 10% higher until it ends.');
+    expect(ui('last-word').logPlay!({}, {})).toBe('Nobody can quote that post until it ends.');
+  });
+});
+
+describe('the cosmetics art files', () => {
+  const dir = path.dirname(fileURLToPath(import.meta.url));
+  const files = (kind: 'gear' | 'trophies') => fs.readdirSync(path.join(dir, kind)).filter((f) => f.endsWith('.svg')).map((f) => [`${kind}/${f}`, fs.readFileSync(path.join(dir, kind, f), 'utf8')] as const);
+
+  test('each gear piece\'s aspect is its viewBox height over width', () => {
+    for (const [key, ui] of Object.entries(gearUi)) {
+      const svg = fs.readFileSync(path.join(dir, 'gear', `${key}.svg`), 'utf8');
+      const box = /viewBox="\s*[\d.-]+[\s,]+[\d.-]+[\s,]+([\d.]+)[\s,]+([\d.]+)\s*"/u.exec(svg);
+      expect(box, key).not.toBeNull();
+      expect(ui.aspect, key).toBeCloseTo(Number(box![2]) / Number(box![1]), 10);
+    }
+    expect(fs.readdirSync(path.join(dir, 'gear')).filter((f) => f.endsWith('.svg')).length).toBe(Object.keys(gearUi).length);
+  });
+
+  test('each art file is a bare SVG: no script, no link, no event attribute', () => {
+    const all = [...files('gear'), ...files('trophies')];
+    expect(all.length).toBeGreaterThan(0);
+    for (const [name, svg] of all) {
+      expect(svg.trimStart().startsWith('<svg'), name).toBe(true);
+      expect(/<script/iu.test(svg), `${name} has a script`).toBe(false);
+      expect(/href\s*=/iu.test(svg), `${name} has an href`).toBe(false);
+      expect(/\son[a-z]+\s*=/iu.test(svg), `${name} has an event attribute`).toBe(false);
+    }
+  });
+});
+
 describe('Mooch, Toll, 4D Chess and Off Day in plain words (card notes Part 6, Task 9)', () => {
   const ui = (key: string) => instanceUi.cards.find((c) => c.key === key)!;
   const play = (config: Record<string, unknown>, over: Partial<CardPlay> = {}): CardPlay => ({ id: 'k', card: 'x', layer: 1, caster: null, message: '', config, playedAt: '2026-11-12T00:00:00.000Z', post: 'p', ...over });
@@ -560,7 +624,7 @@ describe('Mooch, Toll, 4D Chess and Off Day in plain words (card notes Part 6, T
   });
 
   test('every status is within the Lens\'s word rules, for one play and for as many as the card stacks', () => {
-    for (const key of ['mooch', 'toll', '4d-chess', 'off-day']) {
+    for (const key of ['mooch', 'toll', '4d-chess', 'off-day', 'sugar-coat', 'hype-up', 'last-word']) {
       const status = ui(key).status!;
       const rules = instance.cards.find((c) => c.key === key)!;
       for (let n = 1; n <= (rules.stack ?? 1); n++) expect(wordsProblems('status', typeof status === 'string' ? status : status(Array.from({ length: n }, () => ({}) as CardPlay))), `${key} with ${n}`).toEqual([]);
@@ -638,6 +702,33 @@ describe('Mooch, Toll, 4D Chess and Off Day in plain words (card notes Part 6, T
     expect(said('card.ride', 'mooch')).toBe('A card: what its payout on a reaction earned');
     retuned(mooch, 'skim', { share: 0.25 }, () => expect(said('card.skim', 'mooch')).toContain('Mooch: a quarter of a vote for each vote'));
     retuned(toll, 'gimmick', { kind: 'ride', share: 1 }, () => expect(said('card.ride', 'toll')).toContain('Toll: a vote for each vote'));
+  });
+
+  test('Graffiti is composed on the post, lies beneath every splat, and says what it does in the glass\'s plain words', () => {
+    const g = ui('graffiti');
+    expect(g.Compose).toBeDefined();
+    expect(g.Effect).toBeDefined();
+    expect(g.beneath).toBe(true);
+    expect(g.art.tagline).toBe('Turn a post into a wall.');
+    expect(g.summary).toBe('Turn a post into a wall anyone can tag. The author can wash it off; anyone can tag it again.');
+    expect(g.status).toBe('A wall anyone can tag');
+    expect(wordsProblems('status', g.status as string)).toEqual([]);
+    expect(g.hint).toBe('Press Draw to tag this wall. Scrub it away on your screen any time.');
+    expect(g.hint).not.toMatch(/\d/u);
+    const said = g.describe(instance.settings);
+    expect(said).toContain('up to 40% of the post');
+    expect(said).toContain('The post\'s author can wash it off for everyone, and anyone can tag it again.');
+    expect(said).toContain('A reader can scrub the paint off on their own screen');
+    expect(said).not.toMatch(/colour|grey|tick /u);
+    expect(g.describe({ ...instance.settings, cardSettings: { ...instance.settings.cardSettings, 'graffiti.limit': 25 } })).toContain('up to 25% of the post');
+  });
+
+  test('Graffiti\'s words about a drawing read from the Act alone: its colors or its stencil, and the sponge for a wash', () => {
+    expect(describeDraw({ strokes: [{ can: 'pink', cap: 'fat', aspect: 1, points: [[0, 0]] }, { can: 'lime', cap: 'fat', aspect: 1, points: [[0, 0]] }] })).toBe('pink and lime');
+    expect(describeDraw({ stencil: 'crown', can: 'pink', spot: 1, strokes: [] })).toBe('a crown in pink');
+    expect(ui('graffiti').describeDraw).toBe(describeDraw);
+    expect(ui('graffiti').logDraw).toEqual(LOG_DRAW);
+    expect(ui('graffiti').logWash).toEqual(LOG_WASH);
   });
 
   test('every status passes the instance check, and the check is run against the real instance', () => {

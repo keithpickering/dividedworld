@@ -49,6 +49,7 @@ import {
   type ModFacts,
   type PlannedMove,
 } from '../../../engine/system/meeting.ts';
+import type { TrophyFacts } from '../../../engine/system/moves.ts';
 import type { RuleInForce } from '../../../engine/rules/predicates.ts';
 import type { Models } from '../../../engine/system/model.ts';
 import { phaseAt } from '../../../engine/system/phases.ts';
@@ -111,6 +112,18 @@ interface Context {
     readonly conferred: readonly { readonly key: string; readonly name: string; readonly tone: 'punishment' | 'favor' }[];
     readonly characters: readonly { readonly id: string; readonly capped: boolean; readonly held: boolean }[];
   };
+}
+
+/** The (trophy, character) pairs the answer's awardTrophy moves name, for the one read of what stands (`trophy_award_facts`). A pair that is not a string and a uuid is left for the repair to refuse. */
+function namedAwards(raw: unknown): { trophy: string; character: string }[] {
+  const moves = (raw as { moves?: unknown } | null)?.moves;
+  if (!Array.isArray(moves)) return [];
+  const out: { trophy: string; character: string }[] = [];
+  for (const m of moves as { kind?: unknown; params?: { trophy?: unknown; character?: unknown } }[]) {
+    const { trophy, character } = m?.params ?? {};
+    if (m?.kind === 'awardTrophy' && typeof trophy === 'string' && typeof character === 'string' && /^[0-9a-f-]{36}$/i.test(character)) out.push({ trophy, character: character.toLowerCase() });
+  }
+  return out.slice(0, 40);
 }
 
 /** How long one feed may take: outside material is a garnish, not a dependency. */
@@ -267,6 +280,10 @@ export async function runMeeting(
     const groupOf = new Map(
       (shown.length ? await db.rpc<{ id: string; group: string }[]>('character_groups', { ids: shown.map((c) => c.id) }) : []).map((g) => [g.id.toLowerCase(), g.group]),
     );
+    // The Boss's trophies (0208): the instance's list with each belt's holder now, public facts of a trophy case; no wardrobe and nobody's account.
+    const bossList = (await db.rpc<{ key: string; name: string; belt: boolean; holder: { id: string; name: string } | null }[]>('boss_trophies', {})).map((t) => ({
+      key: t.key, name: t.name, belt: t.belt, holder: t.holder ? t.holder.id.toLowerCase() : null, holderName: t.holder ? t.holder.name : null,
+    }));
     const message = [
       renderDigest(digest, memory, titles),
       ...(due.length ? ['', ...inheritedText(due, settings.inheritanceGraceDays)] : []),
@@ -277,6 +294,7 @@ export async function runMeeting(
         threads: digest.threads.map((t) => ({ id: t.thread, title: t.title })),
         characters: shown.map((c) => ({ id: c.id, name: c.name, pronouns: c.pronouns, group: groupOf.get(c.id.toLowerCase()) })),
         machine: context.machine,
+        trophies: { boss: bossList, barred: new Set(), given: new Set() },
       }),
       '',
       // The first part's ask closes the message, so the message is the same in all three calls and is the cached prefix.
@@ -335,6 +353,10 @@ export async function runMeeting(
     // The characters the answer names are checked against who is public now, not against today's digest.
     const named = namedCharacters(raw);
     const publicNow = new Set(named.length ? await db.rpc<string[]>('public_characters', { ids: named }) : []);
+    // What stands for the awards the answer names: the characters no award may name (staff, retired) and the non-belt trophies already given this season.
+    const awards = namedAwards(raw);
+    const standing = awards.length ? await db.rpc<{ barred: string[]; given: string[] }>('trophy_award_facts', { awards }) : { barred: [], given: [] };
+    const trophies: TrophyFacts = { boss: bossList, barred: new Set(standing.barred.map((x) => x.toLowerCase())), given: new Set(standing.given.map((x) => x.toLowerCase())) };
     const repaired = repairAnswer(raw, {
       settings,
       system: tuned.system,
@@ -358,6 +380,7 @@ export async function runMeeting(
       inheritable: context.inheritanceDue ? new Set(due.map((m) => m.act.toLowerCase())) : undefined,
       // Only the slots the model was shown (the reference list is bounded) can be named, as with the threads.
       machine: context.machine?.slice(0, REFERENCE_MOST.machine),
+      trophies: { ...trophies, boss: bossList.slice(0, REFERENCE_MOST.trophies) },
     });
     if (!repaired.ok) {
       const error = `the answer failed ${repaired.predicate} at ${repaired.path || 'the top'}`;

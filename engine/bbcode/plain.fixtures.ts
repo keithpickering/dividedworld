@@ -20,6 +20,8 @@ export interface PlainFixture {
   readonly excerptOf?: string;
   /** The excerpt's words, whitespace collapsed; set with `excerptOf`, and '' for a body none of whose quotes count. */
   readonly excerpt?: string;
+  /** Every real quote's Act in the body, lowercase, in the order they open, each once: `quotedActs(parse(body))`, and the database's list (Task 3 of the Part 4 plan holds it to the same). */
+  readonly quotes?: readonly string[];
 }
 
 /** Each run of whitespace (tab to carriage return, and space) becomes one space, and the ends are trimmed. */
@@ -1772,5 +1774,101 @@ export const PLAIN_FIXTURES: readonly PlainFixture[] = [
     "plain": "just words",
     "excerptOf": "0f8fad5b-d9cb-469f-a165-70867728950e",
     "excerpt": ""
+  },
+  {
+    "name": "quotes: one real quote",
+    "body": "hi [quote=0f8fad5b-d9cb-469f-a165-70867728950e]said[/quote] there",
+    "plain": "hi there",
+    "quotes": ["0f8fad5b-d9cb-469f-a165-70867728950e"]
+  },
+  {
+    "name": "quotes: two of different Acts",
+    "body": "[quote=0f8fad5b-d9cb-469f-a165-70867728950e]one[/quote] [quote=1a2b3c4d-1111-4222-8333-444455556666]two[/quote]",
+    "plain": "",
+    "quotes": ["0f8fad5b-d9cb-469f-a165-70867728950e", "1a2b3c4d-1111-4222-8333-444455556666"]
+  },
+  {
+    "name": "quotes: the same Act twice is listed once",
+    "body": "[quote=0f8fad5b-d9cb-469f-a165-70867728950e]one[/quote] [quote=0f8fad5b-d9cb-469f-a165-70867728950e]two[/quote]",
+    "plain": "",
+    "quotes": ["0f8fad5b-d9cb-469f-a165-70867728950e"]
+  },
+  {
+    "name": "quotes: a real quote inside a real quote of another Act lists both, outer first",
+    "body": "[quote=0f8fad5b-d9cb-469f-a165-70867728950e]a [quote=1a2b3c4d-1111-4222-8333-444455556666]b[/quote][/quote]",
+    "plain": "",
+    "quotes": ["0f8fad5b-d9cb-469f-a165-70867728950e", "1a2b3c4d-1111-4222-8333-444455556666"]
+  },
+  {
+    "name": "quotes: a real quote inside a counterfeit",
+    "body": "[quote=Superman]said [quote=0f8fad5b-d9cb-469f-a165-70867728950e]real[/quote][/quote]",
+    "plain": "said",
+    "quotes": ["0f8fad5b-d9cb-469f-a165-70867728950e"]
+  },
+  {
+    "name": "quotes: inside code, not listed",
+    "body": "[code][quote=0f8fad5b-d9cb-469f-a165-70867728950e]x[/quote][/code]",
+    "plain": "",
+    "quotes": []
+  },
+  {
+    "name": "quotes: inside noparse, not listed",
+    "body": "[noparse][quote=0f8fad5b-d9cb-469f-a165-70867728950e]x[/quote][/noparse]",
+    "plain": "[quote=0f8fad5b-d9cb-469f-a165-70867728950e]x[/quote]",
+    "quotes": []
+  },
+  {
+    "name": "quotes: inside a link",
+    "body": "[url=https://a.example]l[quote=0f8fad5b-d9cb-469f-a165-70867728950e]q[/quote][/url]",
+    "plain": "",
+    "quotes": ["0f8fad5b-d9cb-469f-a165-70867728950e"]
+  },
+  {
+    "name": "quotes: inside a list item",
+    "body": "[list][*]a[quote=0f8fad5b-d9cb-469f-a165-70867728950e]q[/quote][/list]",
+    "plain": "a",
+    "quotes": ["0f8fad5b-d9cb-469f-a165-70867728950e"]
+  },
+  {
+    "name": "quotes: inside a spoiler",
+    "body": "[spoiler][quote=0f8fad5b-d9cb-469f-a165-70867728950e]q[/quote][/spoiler]",
+    "plain": "",
+    "quotes": ["0f8fad5b-d9cb-469f-a165-70867728950e"]
+  },
+  {
+    "name": "quotes: a head with user= is the Act's",
+    "body": "[quote=0f8fad5b-d9cb-469f-a165-70867728950e user=1a2b3c4d-1111-4222-8333-444455556666]q[/quote]",
+    "plain": "",
+    "quotes": ["0f8fad5b-d9cb-469f-a165-70867728950e"]
+  },
+  {
+    "name": "quotes: a quoted head is the Act's",
+    "body": "[quote=\"1a2b3c4d-1111-4222-8333-444455556666\"]q[/quote]",
+    "plain": "",
+    "quotes": ["1a2b3c4d-1111-4222-8333-444455556666"]
+  },
+  {
+    "name": "quotes: an upper-case id is listed lowercase",
+    "body": "[quote=0F8FAD5B-D9CB-469F-A165-70867728950E]q[/quote]",
+    "plain": "",
+    "quotes": ["0f8fad5b-d9cb-469f-a165-70867728950e"]
+  },
+  {
+    "name": "quotes: an unclosed real quote",
+    "body": "x[quote=0f8fad5b-d9cb-469f-a165-70867728950e]left open",
+    "plain": "x",
+    "quotes": ["0f8fad5b-d9cb-469f-a165-70867728950e"]
+  },
+  {
+    "name": "quotes: a real quote past MAX_DEPTH",
+    "body": "[b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][b][quote=0f8fad5b-d9cb-469f-a165-70867728950e]q[/quote][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b][/b]",
+    "plain": "[b][b][b][b][b][b][b][b][quote=0f8fad5b-d9cb-469f-a165-70867728950e]q[/quote][/b][/b][/b][/b][/b][/b][/b][/b]",
+    "quotes": []
+  },
+  {
+    "name": "quotes: a body with none",
+    "body": "just words",
+    "plain": "just words",
+    "quotes": []
   }
 ];

@@ -23,7 +23,7 @@ insert into settings (key, value) values
   ('inviteLifetime', '{"unit": "day", "count": 7}'),
   ('editGrace', '{"unit": "minute", "count": 2}'),
   ('postMaxLength', '20000'),
-  -- The code of conduct (0236): its version, its sections' keys, and the most open reports an account holds.
+  -- The code of conduct (0318): its version, its sections' keys, and the most open reports an account holds.
   ('conductVersion', '1'),
   ('conductSections', '["mask", "hate", "outing"]'),
   ('conduct', '{"openReportsMost": 3, "adminAddress": null}'),

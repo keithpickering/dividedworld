@@ -305,7 +305,7 @@ declare
     'my_hidden_version(uuid)', 'mail_for_decision(bigint)',
     -- Runs from the service role to seed an instance from a document; its `'title'` is the document's, and its one read of `acts` is a move's kind.
     'seed_instance(jsonb)',
-    -- A trigger function that indexes an Act as it is written, which only the table's trigger runs; acts_search_hidden and conduct_decisions_search (0236) take a hidden version's
+    -- A trigger function that indexes an Act as it is written, which only the table's trigger runs; acts_search_hidden and conduct_decisions_search (0318) take a hidden version's
     -- words out of the index and keep them out.
     'acts_search()',
     -- Read a post's body through acts_public (card_target) or public_payload with version_hidden (claim_card_writes, which the check no longer sees in that form); the
@@ -314,6 +314,9 @@ declare
     -- The words of an apology, which is a spin; a decision names a post or an edit and refuses any other kind (conduct_decisions_well_formed), so an apology cannot be
     -- hidden. The service role hands them to the judge.
     'pending_apologies()',
+    -- A before-insert trigger (0316's No quote guard) that reads only the body of the Act being written, `new.payload`, which is its own writer's, and a post's seq and thread from
+    -- `acts`; the words of a post already written, which an edit's guard needs, it reads through acts_public. It returns the row or raises; nobody reads its words back.
+    'acts_quote_guard()',
     -- Views whose titles are an update Act's (an admin's own words, on the Updates page, which are never hidden).
     'thread_open', 'updates_read'
   ];

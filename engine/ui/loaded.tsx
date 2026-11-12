@@ -36,6 +36,8 @@ import { UpdatesScreen } from './updates/Updates.tsx';
 import { QueueScreen } from './admin/Queue.tsx';
 import { ReportsScreen } from './admin/Reports.tsx';
 import { MachineScreen } from './admin/Machine.tsx';
+import { TrophiesScreen } from './admin/Trophies.tsx';
+import { Wardrobe } from './wardrobe/Wardrobe.tsx';
 import { LogScreen } from './log/Log.tsx';
 import { SettlementScreen } from './log/Settlement.tsx';
 import type { GlassEnv } from './glass-docs.ts';
@@ -102,7 +104,7 @@ const direct = <P,>(Component: GlassScreen<P>['Component']): GlassScreen<P> => (
 const SCREENS: GlassScreens = {
   signIn: direct(SignInScreen), characters: direct(Characters), newCharacter: direct(NewCharacter), profileEdit: direct(ProfileEdit),
   settings: direct(SettingsScreen), season: direct(SeasonScreen), vending: direct(Vending), alerts: direct(AlertsScreen), updates: direct(UpdatesScreen),
-  guide: direct(GuideScreen), contact: direct(ContactScreen), conduct: direct(ConductScreen), welcome: direct(WelcomeScreen), queue: direct(QueueScreen), reports: direct(ReportsScreen), machine: direct(MachineScreen), log: direct(LogScreen),
+  guide: direct(GuideScreen), contact: direct(ContactScreen), conduct: direct(ConductScreen), welcome: direct(WelcomeScreen), queue: direct(QueueScreen), reports: direct(ReportsScreen), machine: direct(MachineScreen), trophies: direct(TrophiesScreen), wardrobe: direct(Wardrobe), log: direct(LogScreen),
   settlement: direct(SettlementScreen),
 };
 

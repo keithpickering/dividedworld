@@ -77,11 +77,15 @@ test('plays a card by keyboard: the HUD\'s Hand, a card armed, the glass tile on
   const handButton = page.getByRole('button', { name: /^Hand, \d+ postcards?$/ });
   await tabTo(page, handButton);
   await page.keyboard.press('Enter');
-  const hand = page.getByRole('region', { name: 'Your hand' });
-  await expect(hand).toBeFocused();
+  /* On the Main board the hand is a modal dialog (the hand-arc design, section 3), and focus goes to its first card. */
+  const hand = page.getByRole('dialog', { name: 'Your hand' });
+  await expect(hand.getByRole('button').first()).toBeFocused();
   const card = hand.getByRole('button', { name: /^Whoops!, Salty\b/ }).first();
   await tabTo(page, card);
   await page.keyboard.press('Enter');
+  /* Arming closes the arc and leaves focus on the hand button. */
+  await expect(hand).toBeHidden();
+  await expect(handButton).toBeFocused();
   /* Armed: each post it can land on offers the ghost mark, a real button the keyboard reaches. */
   const here = post.getByRole('button', { name: /^Play Whoops! on post \d+$/u });
   await expect(here).toBeVisible();

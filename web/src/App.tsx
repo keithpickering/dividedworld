@@ -65,6 +65,8 @@ const screens: GlassScreens = {
   queue: lazyScreen(() => import('../../engine/ui/admin/Queue.tsx').then((m) => ({ default: m.QueueScreen }))),
   reports: lazyScreen(() => import('../../engine/ui/admin/Reports.tsx').then((m) => ({ default: m.ReportsScreen }))),
   machine: lazyScreen(() => import('../../engine/ui/admin/Machine.tsx').then((m) => ({ default: m.MachineScreen }))),
+  trophies: lazyScreen(() => import('../../engine/ui/admin/Trophies.tsx').then((m) => ({ default: m.TrophiesScreen }))),
+  wardrobe: lazyScreen(() => import('../../engine/ui/wardrobe/Wardrobe.tsx').then((m) => ({ default: m.Wardrobe }))),
   log: lazyScreen(() => import('../../engine/ui/log/Log.tsx').then((m) => ({ default: m.LogScreen }))),
   settlement: lazyScreen(() => import('../../engine/ui/log/Settlement.tsx').then((m) => ({ default: m.SettlementScreen }))),
 };
@@ -137,6 +139,9 @@ const GLASS: Readonly<Record<string, GlassSurface>> = {
   '/admin/queue': 'settings',
   '/admin/reports': 'settings',
   '/admin/machine': 'settings',
+  '/admin/trophies': 'settings',
+  /* The dress-up page stands on the page smoke of Settings, for the same reason: no surface of its own. */
+  '/wardrobe': 'settings',
   '/log': 'log',
   '/log/settlement': 'settlement',
 };

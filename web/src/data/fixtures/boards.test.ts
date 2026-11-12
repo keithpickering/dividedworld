@@ -313,11 +313,11 @@ describe('the rankings', () => {
     return { fake, standings, reveals: await named(await fake.classReveals(ids)), turns: await named(await fake.turnsAnnounced(ids)) };
   }
 
-  it('at 13-rankings, ranks the season as the Oct 30 settlement left it, the crowd last', async () => {
+  it('at 13-rankings, ranks the season as the Oct 30 settlement left it, the crowd last and unplaced at 0 (#492)', async () => {
     const { standings } = await page('13-rankings');
     expect(standings.map((s) => [s.place, s.name, s.standing])).toEqual([
       [1, 'Spritey', 650], [2, 'Mrs. Hooligan', 420], [3, 'Pipewrench', 330], [4, 'Gloomba', 180], [5, 'Thwompson', 40],
-      [6, 'Ringside 1', 0], [6, 'Ringside 2', 0], [6, 'Ringside 3', 0], [6, 'Ringside 4', 0],
+      [null, 'Ringside 1', 0], [null, 'Ringside 2', 0], [null, 'Ringside 3', 0], [null, 'Ringside 4', 0],
     ]);
   });
 

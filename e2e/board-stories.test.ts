@@ -44,6 +44,10 @@ test('an instance with no ui folder adds none, and the real repository lists the
   expect(boardStoryIds()).toContain('boards-08-hold--live-long-post');
 });
 
+test('Graffiti\'s wall stories are listed, at the Main board\'s width and the Phone board\'s, over a splat and not', () => {
+  expect(boardStoryIds()).toEqual(expect.arrayContaining(['drawing', 'drawing-phone', 'under-a-splat', 'under-a-splat-phone'].map((n) => `boards-01-graffiti-wall--${n}`)));
+});
+
 test('the payout cards\' stories are listed, the Lens of each and the play form of each', () => {
   expect(boardStoryIds()).toEqual(expect.arrayContaining(['skim', 'ride', 'ride-back', 'scored-as', 'skim-form', 'ride-back-form', 'scored-as-form'].map((n) => `boards-01-payout-cards--${n}`)));
 });

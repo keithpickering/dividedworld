@@ -97,6 +97,22 @@ describe('the settlement\'s summary', () => {
     expect(screen.getByText('Your wallet holds at most 6.00, so 0.15 of this was not added.')).toBeInTheDocument();
   });
 
+  test('two lines of one reason and two cards render both, with no duplicate-key warning', async () => {
+    const { fake, me, pipe } = world();
+    fake.seed.settle({
+      at: at(30, 8, 17),
+      ledger: [
+        { character: pipe, reason: 'card.ride', amount: 7, params: { card: 'y' } },
+        { character: pipe, reason: 'card.ride', amount: 3, params: { card: 'x' } },
+      ],
+    });
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    await openSummary(fake, me, pipe);
+    const list = await screen.findByRole('list', { name: /^Why, in plain words/u });
+    expect(within(list).getAllByRole('listitem').filter((li) => li.querySelector('[data-kb-amount]')!.textContent === '+0.07' || li.querySelector('[data-kb-amount]')!.textContent === '+0.03')).toHaveLength(2);
+    expect(errors.mock.calls.map((c) => String(c[0])).filter((m) => /same key/u.test(m))).toEqual([]);
+  });
+
   test('shows the rank change and the Turn that took effect, as the log\'s lines do', async () => {
     const { fake, me, pipe } = world();
     await openSummary(fake, me, pipe);

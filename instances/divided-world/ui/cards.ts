@@ -8,8 +8,8 @@
  * The faces' colors are the Cards board's: Sweet is the cyan, Salty the pink, each with the dark
  * ink the board sets on it (docs/research/2026-10-29-two-worlds/05-cards.html).
  */
-import { lazy } from 'react';
-import type { CardUi } from '../../../engine/ui/cards/types.ts';
+import { Suspense, createElement, lazy } from 'react';
+import type { CardUi, ComposeProps } from '../../../engine/ui/cards/types.ts';
 import type { Settings } from '../../../engine/rules/types.ts';
 import type { GimmickEffect } from '../../../engine/rules/cards.ts';
 import stickAroundCanvas from './cards/stick-around/art.webp?url';
@@ -42,6 +42,9 @@ import hallPassArt from './cards/hall-pass/art.json';
 import belowTheFoldCanvas from './cards/below-the-fold/art.webp?url';
 import belowTheFoldMark from './cards/below-the-fold/mark.svg?url';
 import belowTheFoldArt from './cards/below-the-fold/art.json';
+import graffitiCanvas from './cards/graffiti/art.webp?url';
+import graffitiMark from './cards/graffiti/mark.svg?url';
+import graffitiArt from './cards/graffiti/art.json';
 import youWereSayingCanvas from './cards/you-were-saying/art.webp?url';
 import youWereSayingMark from './cards/you-were-saying/mark.svg?url';
 import youWereSayingArt from './cards/you-were-saying/art.json';
@@ -53,6 +56,8 @@ import { mainEvent } from '../cards/main-event.ts';
 import { forceField } from '../cards/force-field.ts';
 import { feelinFab } from '../cards/feelin-fab.ts';
 import { belowTheFold } from '../cards/below-the-fold.ts';
+import { graffiti } from '../cards/graffiti.ts';
+import { LOG_DRAW as GRAFFITI_LOG_DRAW, LOG_WASH as GRAFFITI_LOG_WASH, describeDraw as describeGraffitiDraw } from '../cards/graffiti/words.ts';
 import { ConfigForm as CardCollectorConfigForm } from '../cards/card-collector/ConfigForm.tsx';
 import { cardCollector } from '../cards/card-collector.ts';
 import { publicityTour } from '../cards/publicity-tour.ts';
@@ -94,6 +99,18 @@ import { mooch } from '../cards/mooch.ts';
 import { toll } from '../cards/toll.ts';
 import { fourDChess } from '../cards/4d-chess.ts';
 import { offDay } from '../cards/off-day.ts';
+import sugarCoatCanvas from './cards/sugar-coat/art.webp?url';
+import sugarCoatMark from './cards/sugar-coat/mark.svg?url';
+import sugarCoatArt from './cards/sugar-coat/art.json';
+import hypeUpCanvas from './cards/hype-up/art.webp?url';
+import hypeUpMark from './cards/hype-up/mark.svg?url';
+import hypeUpArt from './cards/hype-up/art.json';
+import lastWordCanvas from './cards/last-word/art.webp?url';
+import lastWordMark from './cards/last-word/mark.svg?url';
+import lastWordArt from './cards/last-word/art.json';
+import { sugarCoat } from '../cards/sugar-coat.ts';
+import { hypeUp } from '../cards/hype-up.ts';
+import { lastWord } from '../cards/last-word.ts';
 import { classes } from '../classes/index.ts';
 import { quadrantLabels } from './quadrant-labels.ts';
 import { shareWords } from '../../../engine/ui/copy-words.ts';
@@ -166,6 +183,10 @@ const GlitterBombEffect = lazy(() => import('./glitter-bomb/Effect.tsx').then((m
 const BelowTheFoldEffect = lazy(() => import('./below-the-fold/Effect.tsx').then((m) => ({ default: m.BelowTheFoldEffect })));
 const YouWereSayingEffect = lazy(() => import('../cards/you-were-saying/Effect.tsx').then((m) => ({ default: m.YouWereSayingEffect })));
 const JimmyWailsEffect = lazy(() => import('../cards/jimmy-wails/Effect.tsx').then((m) => ({ default: m.JimmyWailsEffect })));
+const GraffitiEffect = lazy(() => import('../cards/graffiti/Effect.tsx').then((m) => ({ default: m.Effect })));
+const GraffitiComposeLoaded = lazy(() => import('../cards/graffiti/Compose.tsx').then((m) => ({ default: m.Compose })));
+/* The engine mounts a `Compose` with no Suspense of its own, as it does an effect: until the drawing's code arrives the post's words stand in. */
+const GraffitiCompose = (props: ComposeProps) => createElement(Suspense, { fallback: props.children }, createElement(GraffitiComposeLoaded, props));
 const WhoopsEffect = lazy(() => import('../cards/whoops/Effect.tsx').then((m) => ({ default: m.Effect })));
 
 /** A list in words: "0.10, 0.25, 0.50 and 1.00". */
@@ -277,6 +298,23 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
    * The Gimmicks of the card types design (docs/plans/2026-11-11-card-types-design.md, section 8). Their art is placeholder, in each card's flavor's color.
    */
   {
+    key: 'sugar-coat',
+    art: { color: '#2ee6ff', ink: '#03141a', canvas: sugarCoatCanvas, mark: sugarCoatMark, credit: sugarCoatArt.credit, tagline: 'Only Sweet cards land on your post.' },
+    summary: `Used on your post. Turns away Salty and Pepperoni cards for ${spanWords(sugarCoat.lasts!)}.`,
+    status: 'Turning away Salty and Pepperoni cards',
+    describe: (settings: Settings) =>
+      `A Sweet card, ${sugarCoat.rarity}, used on one of your own posts. For ${spanWords(sugarCoat.lasts!)}, every Salty or Pepperoni card cast there is turned away before it lands, whatever its rarity, and its caster is told so; a Sweet card lands as usual. It does not stop a card from being set face down there. It costs nothing more to use.`,
+  },
+  {
+    key: 'last-word',
+    art: { color: '#ff3d7f', ink: '#14030a', canvas: lastWordCanvas, mark: lastWordMark, credit: lastWordArt.credit, tagline: 'Stop quotes of your post.' },
+    summary: `Used on your post. Nobody can quote it for ${spanWords(lastWord.lasts!)}.`,
+    status: 'Stopping quotes of this post',
+    describe: (settings: Settings) =>
+      `A Salty card, ${lastWord.rarity}, used on one of your own posts. For ${spanWords(lastWord.lasts!)}, a post that quotes it is refused before it is written, for everyone alike, you included; a reply without the quote always goes through. Quotes made before it was played stay as they are. It cannot share a post with a card set face down: take that card back first, and no card can be set face down there until it ends. It costs nothing more to use.`,
+    logPlay: () => 'Nobody can quote that post until it ends.',
+  },
+  {
     key: 'publicity-tour',
     art: { color: '#2ee6ff', ink: '#03141a', canvas: publicityTourCanvas, mark: publicityTourMark, credit: publicityTourArt.credit, tagline: 'Earn more from positive reactions.' },
     summary: `Used on your own character. For ${spanWords(publicityTour.lasts!)}, what it earns from positive reactions is ${earnBy(publicityTour)} higher. A loss is never made worse.`,
@@ -284,6 +322,15 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
     describe: (settings: Settings) =>
       `A Sweet card, ${publicityTour.rarity}, used on your own character, the one playing it. For ${spanWords(publicityTour.lasts!)}, whatever that character earns from a positive reaction (excited or calm) to its posts is ${earnBy(publicityTour)} higher, and then it stops by itself. It never makes a loss worse. It costs nothing more to use.`,
     logPlay: () => `What that character earns from positive reactions is ${earnBy(publicityTour)} higher until it ends.`,
+  },
+  {
+    key: 'hype-up',
+    art: { color: '#2ee6ff', ink: '#03141a', canvas: hypeUpCanvas, mark: hypeUpMark, credit: hypeUpArt.credit, tagline: 'Give a character a push.' },
+    summary: `Cast on a character. For ${spanWords(hypeUp.lasts!)}, what it earns from positive reactions is ${earnBy(hypeUp)} higher. A loss is never made worse.`,
+    status: 'Earns more from positive reactions',
+    describe: (settings: Settings) =>
+      `A Sweet card, ${hypeUp.rarity}, cast from any post by the character it lands on. For ${spanWords(hypeUp.lasts!)}, whatever that character earns from a positive reaction (excited or calm) to its posts is ${earnBy(hypeUp)} higher, and then it stops by itself. It never makes a loss worse, and it takes nothing from you. It does not add to that character's own Publicity Tour: while both are up, the larger of the two applies. A Mod Bot earns nothing, so it gains nothing from one. ${setMoveWords("the quoting post's character")} It costs nothing more to play.`,
+    logPlay: () => `What that character earns from positive reactions is ${earnBy(hypeUp)} higher until it ends.`,
   },
   {
     key: 'heat-magnet',
@@ -446,6 +493,27 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
     describe: (settings: Settings) =>
       `A Pepperoni card, ${toll.rarity}, used on one of your own posts. For ${spanWords(toll.lasts!)}, each vote on a Move another player casts on that post pays you ${tollShare()}, on top of everything its caster earns: the caster loses nothing. A Move cast by one of your own characters pays you nothing. It costs nothing more to use.`,
     logPlay: () => `Until it ends, each vote on a Move another player casts on that post pays you ${tollShare()}.`,
+  },
+  /*
+   * Graffiti (docs/plans/2026-11-11-graffiti-design.md): Pepperoni's color. A wall on a post, drawn under every splat (`beneath`). Its effect draws
+   * the spray, a reader's scrub and the author's wash (graffiti/Effect.tsx); it is played on the post itself (`Compose`, graffiti/Compose.tsx: the
+   * drawing, the toolbar and the stencils), and the Draw tile of its effect draws the same on a wall already there. Its words about a drawing
+   * (`describeDraw`, `logDraw`, `logWash`) are graffiti/words.ts.
+   */
+  {
+    key: 'graffiti',
+    Effect: GraffitiEffect,
+    Compose: GraffitiCompose,
+    describeDraw: describeGraffitiDraw,
+    logDraw: GRAFFITI_LOG_DRAW,
+    logWash: GRAFFITI_LOG_WASH,
+    beneath: true,
+    art: { color: '#d24a2c', ink: '#1a0602', canvas: graffitiCanvas, mark: graffitiMark, credit: graffitiArt.credit, tagline: 'Turn a post into a wall.' },
+    summary: 'Turn a post into a wall anyone can tag. The author can wash it off; anyone can tag it again.',
+    status: 'A wall anyone can tag',
+    hint: 'Press Draw to tag this wall. Scrub it away on your screen any time.',
+    describe: (settings: Settings) =>
+      `A Pepperoni card, ${graffiti.rarity}. It turns a post into a wall. Any character can tag it with spray cans, drawing freehand or placing a stencil, and the wall holds up to ${settings.cardSettings['graffiti.limit'] ?? 40}% of the post. A reader can scrub the paint off on their own screen, which lasts until they leave the page. The post's author can wash it off for everyone, and anyone can tag it again. A Whoops! splat on the same post always covers the wall. It costs nothing more to play.`,
   },
   {
     key: '4d-chess',

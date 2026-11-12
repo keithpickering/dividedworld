@@ -186,6 +186,8 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
           <MomentView play={cardPlay} place="origin" nameOf={nameOf} now={null}
             bodyOf={(version) => <BbCode text={text(version.currentPayload.body)} quoteHead={quoteHead} />} />
         );
+      case 'draw':
+      case 'wash': return null;
       case 'unmask': return <UnmaskLine act={act} name={name} />;
       case 'announce': return <AnnounceLine act={act} name={name} />;
       case 'tally':

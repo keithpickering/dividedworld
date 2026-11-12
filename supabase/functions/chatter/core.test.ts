@@ -45,6 +45,8 @@ interface World {
   noThread?: string[];
   /** The body card_target_reach reports for a post the run did not write. */
   targetBody?: string;
+  /** The open walls pool_thread reports on every thread (`{ play, card, about }`). */
+  walls?: { play: string; card: string; about: string }[];
 }
 type Spend = { day: string; staff: string; trigger: string; post_act: string; card_act: string | null; started_thread: boolean; record: any };
 
@@ -85,7 +87,7 @@ function fakeDb(w: World = {}) {
         case 'character_faces': return {} as T;
         case 'pool_thread': {
           const at = threads.indexOf(args.in_thread as string);
-          return { title: `Thread ${at}`, posts: [{ act: quotes[at] ?? 'none', name: 'Ann', pronouns: { subject: 'she', object: 'her', determiner: 'her', possessive: 'hers', reflexive: 'herself', plural: false }, body: 'Hello there.' }] } as T;
+          return { title: `Thread ${at}`, posts: [{ act: quotes[at] ?? 'none', name: 'Ann', pronouns: { subject: 'she', object: 'her', determiner: 'her', possessive: 'hers', reflexive: 'herself', plural: false }, body: 'Hello there.' }], ...(w.walls ? { walls: w.walls } : {}) } as T;
         }
         case 'pool_orphans': {
           // Every marked post of the week up to `through` that no spend names (the earliest for a persona and a day), with the card marked
@@ -119,6 +121,17 @@ function fakeDb(w: World = {}) {
           const a = { id: nextId('card'), staff: String(args.staff_key), kind: fn === 'staff_set_card' ? 'set' : 'card', thread: null, target: args.target as string, payload: fn === 'staff_set_card' ? {} : { card: args.card, ...(args.pool_day ? { pool: args.pool_day } : {}) } };
           state.acts.push(a);
           return { id: a.id } as T;
+        }
+        case 'staff_play_surface_card': {
+          if (w.cardRefusal) throw new DatabaseError(`${fn}: ${w.cardRefusal}`, '55000', 400, w.cardRefusal);
+          const a = { id: nextId('card'), staff: String(args.staff_key), kind: 'card', thread: null, target: args.target as string, payload: { card: args.card, ...(args.pool_day ? { pool: args.pool_day } : {}) } };
+          state.acts.push(a);
+          return { id: a.id, draw: { id: nextId('draw'), covered: 1, live: [] } } as T;
+        }
+        case 'staff_draw_on_surface': {
+          const a = { id: nextId('draw'), staff: String(args.staff_key), kind: 'draw', thread: null, target: args.play as string, payload: args.payload };
+          state.acts.push(a);
+          return { id: a.id, covered: 1, live: [a.id] } as T;
         }
         case 'card_target_reach': {
           // The post as the act function reads it: a quoted post says Hello there.; a post the run wrote says what it was given.
@@ -757,4 +770,91 @@ test('a Mod Bot\'s play of a card that writes hands staff_play_card the tokens t
   const plain = fakeDb({ pool: { threadsWeekly: 0 } });
   await run(plain, fakeModels((r) => ({ words: `A reply from ${r.staff}.`, card: { key: 'stick-around', on: 'reply' } })));
   assert.equal('tokens' in plain.of('staff_play_card')[0]!, false, 'a play of any other card carries none');
+});
+
+// Graffiti, a surface card: a Mod Bot names a stencil, a can and a spot (staffOptions); the card expands them into strokes (surface.validateDraw) and the play goes through staff_play_surface_card.
+const rare = { pool: { threadsWeekly: 0, cardRarityMost: 'rare' } };
+const graffitiAsks = (config?: unknown, extra: Record<string, unknown> = {}) => (r: ChatRequest) => ({ words: `A reply from ${r.staff}.`, card: { key: 'graffiti', on: 'reply', ...(config === undefined ? {} : { config: { graffiti: config } }), ...extra } });
+const horns = { stencil: 'horns', can: 'red', spot: 4 };
+
+test('a persona\'s Graffiti is offered with its options and played through staff_play_surface_card, with the stencil\'s strokes as its first draw and a configuration of {}', async () => {
+  const d = fakeDb(rare);
+  const m = fakeModels(graffitiAsks(horns));
+  const out = await run(d, m);
+  assert.ok(out.status === 'ok');
+  assert.match(m.chats.find((c) => (c.schema as any).properties.card)!.system, /card\.config\.graffiti/);
+  assert.equal(d.count('staff_play_card'), 0, 'the plain door is not used');
+  const play = d.of('staff_play_surface_card')[0]!;
+  assert.equal(play.card, 'graffiti');
+  assert.deepEqual(play.config, {});
+  assert.equal(play.message, '');
+  assert.equal(play.first.stencil, 'horns');
+  assert.ok(play.first.strokes.length > 0 && play.first.strokes.every((s: any) => s.can === 'red'), 'the stencil\'s strokes, in the persona\'s can');
+  assert.equal(play.first_cells.length, 10000);
+  assert.ok(play.first_cells.includes('1'), 'the strokes cover cells');
+  assert.equal(typeof play.most, 'number');
+  assert.equal(typeof play.most_live, 'number');
+  assert.deepEqual(d.state.spends.find((x) => x.staff === play.staff_key)!.record.cardConfig, horns, 'the pick is on the record');
+});
+
+test('a persona with no valid pick still draws a stencil, one of the card\'s staffConfigs chosen by the seed, and the same on a rerun', async () => {
+  const graffiti = dividedWorld.cards.find((c) => c.key === 'graffiti')!;
+  const firsts = async (config?: unknown) => {
+    const d = fakeDb(rare);
+    const out = await run(d, fakeModels(graffitiAsks(config)));
+    assert.ok(out.status === 'ok');
+    const play = d.of('staff_play_surface_card')[0]!;
+    assert.ok(play, 'a Graffiti was played');
+    assert.equal(typeof play.first.stencil, 'string', 'a stencil, never an empty wall');
+    assert.ok(play.first.strokes.length > 0);
+    assert.ok((graffiti.staffConfigs ?? []).some((c) => (c as { stencil: string }).stencil === play.first.stencil));
+    return { stencil: play.first.stencil as string, trims: out.picks.flatMap((p) => p.trims.map((t) => t.path)).filter((t) => t.startsWith('card.config')) };
+  };
+  const none = await firsts();
+  const junk = await firsts({ stencil: 'not a stencil', can: 'red', spot: 4 });
+  const typed = await firsts({ stencil: 5, can: [], spot: 'middle' });
+  assert.deepEqual(none.trims, [], 'no pick, nothing to trim');
+  assert.ok(junk.trims.includes('card.config.graffiti') && typed.trims.includes('card.config.graffiti'), 'a pick that fails is a trim');
+  assert.deepEqual(await firsts(), none, 'the same day draws the same stencil');
+});
+
+test('a wall pick that is offered draws on that wall through staff_draw_on_surface with the persona\'s stencil, and plays no card', async () => {
+  const W = '66666666-6666-4666-8666-666666666666';
+  const d = fakeDb({ ...rare, walls: [{ play: W, card: 'graffiti', about: 'Ann\'s post' }] });
+  const m = fakeModels(graffitiAsks(horns, { wall: W }));
+  const out = await run(d, m);
+  assert.ok(out.status === 'ok');
+  const offered = m.chats.find((c) => (c.schema as any).properties.card)!;
+  assert.deepEqual((offered.schema as any).properties.card.properties.wall.enum, [W]);
+  assert.equal(d.count('staff_play_surface_card'), 0);
+  const drew = d.of('staff_draw_on_surface')[0]!;
+  assert.equal(drew.play, W);
+  assert.equal(drew.payload.stencil, 'horns');
+  assert.equal(typeof drew.payload.pool, 'string', 'the draw carries its pool day, so a crash before the spend is adopted');
+  assert.equal(drew.cells.length, 10000);
+  assert.equal(typeof drew.most, 'number');
+  assert.ok(d.state.spends.some((x) => x.card_act !== null && x.staff === drew.staff_key), 'the draw spends the card slot');
+});
+
+test('a wall pick that is not offered is dropped, and the persona plays its Graffiti anew', async () => {
+  const W = '66666666-6666-4666-8666-666666666666';
+  const d = fakeDb({ ...rare, walls: [{ play: W, card: 'graffiti', about: 'Ann\'s post' }] });
+  const out = await run(d, fakeModels(graffitiAsks(horns, { wall: '77777777-7777-4777-8777-777777777777' })));
+  assert.ok(out.status === 'ok');
+  assert.equal(d.count('staff_draw_on_surface'), 0, 'no draw on a wall nobody offered');
+  assert.equal(d.count('staff_play_surface_card'), 1);
+  assert.ok(out.picks.some((p) => p.trims.some((t) => t.path === 'card.wall' && t.predicate === 'offered')));
+  // No wall on offer at all: the same pick is dropped the same way.
+  const bare = fakeDb(rare);
+  await run(bare, fakeModels(graffitiAsks(horns, { wall: W })));
+  assert.equal(bare.count('staff_draw_on_surface'), 0);
+});
+
+test('at most three walls are offered, and only those of the card offered', async () => {
+  const ids = [1, 2, 3, 4].map((n) => `66666666-6666-4666-8666-66666666666${n}`);
+  const d = fakeDb({ ...rare, walls: [...ids.map((play) => ({ play, card: 'graffiti', about: 'a post' })), { play: '88888888-8888-4888-8888-888888888888', card: 'whoops', about: 'not a wall of this card' }] });
+  const m = fakeModels(graffitiAsks(horns));
+  await run(d, m);
+  const offered = m.chats.find((c) => (c.schema as any).properties.card)!;
+  assert.deepEqual((offered.schema as any).properties.card.properties.wall.enum, ids.slice(0, 3));
 });

@@ -189,7 +189,7 @@ describe('arming a Set', () => {
     await open(w);
     const user = userEvent.setup();
     await user.click(await screen.findByRole('button', { name: /^Hand, \d postcards?/u }));
-    await user.click(within(screen.getByRole('region', { name: 'Your hand' })).getAllByRole('button', { name: /^Snare, Salty, Set/u })[0]!);
+    await user.click(within(screen.getByRole('dialog', { name: 'Your hand' })).getAllByRole('button', { name: /^Snare, Salty, Set/u })[0]!);
     await waitFor(() => expect(within(post(4)).queryByRole('button', { name: 'Set Snare face down on post 4' })).not.toBeNull());
     for (const seq of [1, 2, 3]) expect(within(post(seq)).queryByRole('button', { name: /face down on post/u })).toBeNull();
   });

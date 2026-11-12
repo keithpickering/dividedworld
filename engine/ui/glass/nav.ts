@@ -22,6 +22,10 @@ export interface GlassNav {
   readonly adminMachine: string;
   /** The reports screen, reached from the queue by the admin pages' strip. */
   readonly adminReports: string;
+  /** The trophies and gear admin page, reached from the queue by the admin pages' strip. */
+  readonly adminTrophies: string;
+  /** The dress-up page: the account's gear and one mask's outfit. No address names the mask. */
+  readonly wardrobe: string;
 }
 
 export const GLASS_NAV: GlassNav = {
@@ -36,4 +40,6 @@ export const GLASS_NAV: GlassNav = {
   admin: '/admin/queue',
   adminMachine: '/admin/machine',
   adminReports: '/admin/reports',
+  adminTrophies: '/admin/trophies',
+  wardrobe: '/wardrobe',
 };

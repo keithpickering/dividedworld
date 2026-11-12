@@ -22,7 +22,7 @@ const mine = (id: string, name: string, cls = 'heel'): MyCharacter => ({
   debutLoudness: 'silent', retiredAt: null, pendingTurn: null, presenceHidden: false,
 });
 const pub = (id: string, name: string): Character => ({
-  id, name, title: '', signature: '', avatarSquare: `data:image/webp;base64,${id}`, avatarPortrait: null, squareFrame: null, portraitFrame: null, pipStyle: 'default', pronouns: ENGINE_DEFAULT_PRONOUNS, joined: '2026-10-01', group: 'members',
+  id, name, title: '', signature: '', avatarSquare: `data:image/webp;base64,${id}`, avatarPortrait: null, squareFrame: null, portraitFrame: null, portraitTallness: null, outfit: [], trophies: [], pipStyle: 'default', pronouns: ENGINE_DEFAULT_PRONOUNS, joined: '2026-10-01', group: 'members',
 });
 
 /* The glass routes as the app names them (web/src/App.tsx): the router's moves into them keep the board's place. */
@@ -377,9 +377,9 @@ describe('the hand', () => {
     await userEvent.click(hand);
     expect(hand).toHaveAccessibleName('Hand, 3 postcards, open');
     expect(hand).toHaveAttribute('aria-expanded', 'true');
-    /* One card for each copy held, each a button by its name. */
-    const drawer = screen.getByRole('region', { name: 'Your hand' });
-    expect(within(drawer).getAllByRole('button', { name: 'Whoops!, Salty, Cast, common postcard' })).toHaveLength(2);
+    /* One card for each kind held, each a button by its name, with how many when more than one. */
+    const drawer = screen.getByRole('dialog', { name: 'Your hand' });
+    expect(within(drawer).getByRole('button', { name: 'Whoops!, Salty, Cast, common postcard, 2 in hand' })).toBeInTheDocument();
     expect(within(drawer).getByRole('button', { name: 'Stick Around, Sweet, Cast, common postcard' })).toBeInTheDocument();
   });
   test('Esc closes the drawer and returns focus to the hand, and does not open the menu', async () => {
@@ -471,13 +471,15 @@ describe('the hand', () => {
     expect(screen.getByRole('button', { name: 'Hand, 3 postcards' })).toHaveAttribute('aria-expanded', 'false');
     expect(screen.queryByRole('button', { name: /^Armed/u })).toBeNull();
   });
-  test('on the Main board the hand button keeps its words while a card is armed, and the status line says Esc (#80)', async () => {
+  test('on the Main board the hand button keeps its words while a card is armed, the hand is put away, and the status line says Esc (#80)', async () => {
     width(1440);
     setup();
     await userEvent.click(await screen.findByRole('button', { name: 'Hand, 3 postcards' }));
-    await userEvent.click(within(screen.getByRole('region', { name: 'Your hand' })).getByRole('button', { name: 'Stick Around, Sweet, Cast, common postcard' }));
+    await userEvent.click(within(screen.getByRole('dialog', { name: 'Your hand' })).getByRole('button', { name: 'Stick Around, Sweet, Cast, common postcard' }));
     expect(screen.getByRole('status', { name: 'Playing a card' })).toHaveTextContent('Stick Around is armed. Press Play Stick Around on a post, the dashed + mark beside its date, to play it there, or Esc to put it back.');
-    expect(screen.getByRole('button', { name: 'Hand, 3 postcards, open' })).toBeInTheDocument();
+    /* Arming put the hand away (the Main board's modal); the button keeps its words, and the armed card stands over it as the peek. */
+    expect(screen.getByRole('button', { name: 'Hand, 3 postcards' })).toHaveAttribute('aria-expanded', 'false');
+    expect(document.querySelector('.kb-hand-peek')).not.toBeNull();
     expect(screen.queryByRole('button', { name: /^Armed/u })).toBeNull();
   });
   test('Close the hand closes it', async () => {
