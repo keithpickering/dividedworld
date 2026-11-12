@@ -324,10 +324,14 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
   /** How many of `mine` the save on its way carries: they are in the state the server holds as soon as it is heard, which can be before the save's own answer. */
   const sentCount = useRef(new Map<string, number>());
   /**
-   * A save that got no answer may still have been stored: its state and how many of `mine` it carried, kept until a definite answer to a later save.
-   * A saved state heard equal to it holds those strokes already, so they are neither counted nor sent again (a wash takes some of the field a pass, so a stroke twice is not harmless).
+   * Every save that got no answer may have been stored: each one's state and how many of `mine` it carried, kept until a save is answered with success.
+   * A saved state heard equal to any of them holds that one's strokes already, so they are neither counted nor sent again (a wash takes some of the field a pass, so a stroke twice is not harmless).
+   * A refusal answers only the save it was given for, so it forgets nothing. Accepted: a stored uncertain save followed by another writer's change (the state heard matches no marker)
+   * counts those strokes twice until the next success.
    */
-  const unanswered = useRef(new Map<string, { readonly state: string; readonly count: number }>());
+  const unanswered = useRef(new Map<string, { readonly state: string; readonly count: number }[]>());
+  /** The strokes of `mine` that a saved state already holds because an unanswered save carried them, or 0. */
+  const heldBy = (id: string, saved: string): number => (unanswered.current.get(id) ?? []).find((m) => m.state === saved)?.count ?? 0;
   /**
    * The strokes made on this screen that the saved state does not hold yet. While a save is on its way its state may be heard before its
    * answer (another channel); the strokes it carried are then in the saved state and still in `mine`, and must not be counted from both.
@@ -335,8 +339,7 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
   const unsavedOf = (id: string, saved: string = canonical(now.current.states[id]?.state)): Stroke[] => {
     const all = mine.current.get(id) ?? [];
     if (sending.current.has(id) && saved === lastSent.current.get(id)) return all.slice(sentCount.current.get(id) ?? 0);
-    const maybe = unanswered.current.get(id);
-    return maybe && saved === maybe.state ? all.slice(maybe.count) : all;
+    return all.slice(heldBy(id, saved));
   };
   /** How many saves in a row have not got through, by play. */
   const failures = useRef(new Map<string, number>());
@@ -773,8 +776,7 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
       }
       const kept = [...(mine.current.get(id) ?? [])];
       /* A saved state that already holds what an unanswered save carried: those strokes are in it, and are not sent on top of it. */
-      const held = unanswered.current.get(id);
-      const fresh = held && canonical(now.current.states[id]?.state) === held.state ? kept.slice(held.count) : kept;
+      const fresh = kept.slice(heldBy(id, canonical(now.current.states[id]?.state)));
       const cleanNow = wantClean.current.has(id);
       const clean = cleanNow || savedFor(id).clean;
       const all = [...savedFor(id).strokes, ...fresh];
@@ -798,8 +800,7 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
       sending.current.delete(id);
       if (!answer.ok) {
         say(answer.error);
-        if (answer.uncertain) unanswered.current.set(id, { state: lastSent.current.get(id)!, count: sentCount.current.get(id) ?? 0 });
-        else unanswered.current.delete(id);
+        if (answer.uncertain) unanswered.current.set(id, [...(unanswered.current.get(id) ?? []), { state: lastSent.current.get(id)!, count: sentCount.current.get(id) ?? 0 }]);
         /* A refusal is the card's answer and would be the same again. A save that got no answer is sent again, a little later each time, and given up on after a few: the strokes stay, and the author's next one sends them. */
         const failed = (failures.current.get(id) ?? 0) + 1;
         failures.current.set(id, failed);

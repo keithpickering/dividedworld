@@ -2520,6 +2520,49 @@ describe('a save whose answer was lost', () => {
     expect((net.calls[1]!.state as { strokes: unknown[] }).strokes).toHaveLength(1);
   });
 
+  test('two lost answers with only the first stored: the first state heard still holds its stroke, counted once, and the retry has no duplicate', async () => {
+    authorClock();
+    const net = gated();
+    const [a, b] = rows();
+    const { frame, root, hear, replay } = mount({ author: true, save: net.save });
+    drag(frame, a!);
+    await settle(SAVE_AFTER_MS);
+    await act(async () => { net.calls[0]!.answer(lost); });
+    drag(frame, b!);
+    await settle(SAVE_AFTER_MS);
+    expect(net.calls, 'the second save carries both').toHaveLength(2);
+    await act(async () => { net.calls[1]!.answer(lost); });
+    /* Only the first was stored. */
+    await act(async () => { replay(); hear({ [net.calls[0]!.play]: { state: net.calls[0]!.state, savedAt: SAVED_AT } }); });
+    const once = inkOf(0, [washStroke(a!), washStroke(b!)]).washed;
+    expect(washed(root)[0], 'the stroke the first save stored is counted once').toBeCloseTo(once, 3);
+    await settle(RETRY_AFTER_MS * 4);
+    const last = net.calls[net.calls.length - 1]!;
+    expect(net.calls.length).toBeGreaterThan(2);
+    expect((last.state as { strokes: unknown[] }).strokes, 'the retry holds each stroke once').toHaveLength(2);
+  });
+
+  test('an uncertain save stored, then a later save refused: the refusal does not forget it, so nothing is counted or sent twice', async () => {
+    authorClock();
+    const net = gated();
+    const [a, b, c] = rows();
+    const { frame, root, hear, replay } = mount({ author: true, save: net.save });
+    drag(frame, a!);
+    await settle(SAVE_AFTER_MS);
+    await act(async () => { net.calls[0]!.answer(lost); });
+    drag(frame, b!);
+    await settle(SAVE_AFTER_MS);
+    expect(net.calls).toHaveLength(2);
+    await act(async () => { net.calls[1]!.answer({ ok: false, error: 'at most 200 strokes' }); });
+    await act(async () => { replay(); hear({ [net.calls[0]!.play]: { state: net.calls[0]!.state, savedAt: SAVED_AT } }); });
+    expect(washed(root)[0], 'counted once').toBeCloseTo(inkOf(0, [washStroke(a!), washStroke(b!)]).washed, 3);
+    drag(frame, c!);
+    await settle(SAVE_AFTER_MS);
+    const last = net.calls[net.calls.length - 1]!;
+    expect(net.calls).toHaveLength(3);
+    expect((last.state as { strokes: unknown[] }).strokes, 'a, b and c once each').toHaveLength(3);
+  });
+
   test('refused outright: every stroke is kept, and the next save carries them all', async () => {
     authorClock();
     const net = gated();
