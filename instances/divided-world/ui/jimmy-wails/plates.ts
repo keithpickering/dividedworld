@@ -1,9 +1,11 @@
 /**
  * Jimmy Wails's plates: the pictures a banner is drawn on (docs/plans/2026-11-03-jimmy-wails-design.md, section 5). The card draws one of
  * these keys at each play (`CardRules.draws`, instances/divided-world/cards/jimmy-wails.ts), and the banner paints the appeal's words in the
- * plate's `box`, so the words sit where the original appeal's text sat. The picture files are the research copies of the plates with the
- * text painted out (docs/research/minus-world/jimmy-wails-plates/, which stays as the record); a plate in the pool is the card's draw, so
- * adding or removing one is a change to the card's `draws` too, and plates.test.tsx holds the two together.
+ * plate's `box`, so the words sit where the original appeal's text sat. The first three picture files are the research copies of Minus World's
+ * plates with the text painted out (docs/research/minus-world/jimmy-wails-plates/, which stays as the record). The six after them are other
+ * photographs from the same appeals' shoots, cropped and faded by `plates/make.py` the way those banners were. A plate in the pool is the card's
+ * draw, so adding or removing one is a change to the card's `draws` too, and plates.test.tsx holds the two together. A plate is only ever added at
+ * the end: a play keeps the key it drew, and the first plate stands in for a key the pool no longer holds.
  *
  * Everything is in the plate's own pixels, so a banner scales by one factor and the words stay where they were set:
  * - `width` and `height` are the picture's size (read from the file by the test).
@@ -23,6 +25,12 @@
 import blueShirt from './plates/blue-shirt.png?url';
 import closeUp from './plates/close-up.png?url';
 import darkLogo from './plates/dark-logo.png?url';
+import blackShirt from './plates/black-shirt.png?url';
+import greyJacket from './plates/grey-jacket.png?url';
+import lookingAway from './plates/looking-away.png?url';
+import redWall from './plates/red-wall.png?url';
+import fullLength from './plates/full-length.png?url';
+import pinstripe from './plates/pinstripe.png?url';
 
 export interface Plate {
   readonly key: string;
@@ -40,6 +48,8 @@ export interface Plate {
 const BY_SA_3 = { license: 'CC BY-SA 3.0', licenseUrl: 'https://creativecommons.org/licenses/by-sa/3.0/' } as const;
 const HARTWELL = 'Lane Hartwell';
 const GOLDBERG = 'Nicolas Goldberg';
+const ARCHAIN = 'Manuel Archain';
+const shoot = (frame: number) => ({ author: HARTWELL, source: `https://commons.wikimedia.org/wiki/File:Jimmy_Wales_July_2010_${frame}.jpg`, ...BY_SA_3 });
 
 export const PLATES: readonly Plate[] = Object.freeze([
   // Jimbo in a blue shirt, fading to white on the right: the panel carries on that white, and the words go in it.
@@ -49,4 +59,16 @@ export const PLATES: readonly Plate[] = Object.freeze([
   // Jimbo on the right, beige and a blue logo mark across the picture, and only a 65-pixel near-black band at its left edge: a near-black panel
   // carries on to the right of him, and the white words go in it.
   { key: 'dark-logo', src: darkLogo, width: 769, height: 300, extend: 'right', panel: { width: 360, color: '#0c0c0e' }, box: { x: 789, y: 20, w: 320, h: 260 }, ink: '#fff', boxRange: { darkest: '#0c0c0e', lightest: '#0c0c0e' }, credit: { author: GOLDBERG, source: 'https://commons.wikimedia.org/wiki/File:Wikimania_2009_GOLDBERGN-9398.jpg', ...BY_SA_3 } },
+  // In a black shirt before a window, fading to near-black on the right: a near-black panel carries on, and the white words go in it.
+  { key: 'black-shirt', src: blackShirt, width: 450, height: 300, extend: 'right', panel: { width: 450, color: '#0c0c0e' }, box: { x: 470, y: 24, w: 410, h: 252 }, ink: '#fff', boxRange: { darkest: '#0c0c0e', lightest: '#0c0c0e' }, credit: shoot(2) },
+  // In a grey jacket, fading to white on the right, as the blue-shirt plate does.
+  { key: 'grey-jacket', src: greyJacket, width: 450, height: 300, extend: 'right', panel: { width: 450, color: '#fff' }, box: { x: 470, y: 24, w: 410, h: 252 }, ink: '#222', boxRange: { darkest: '#ffffff', lightest: '#ffffff' }, credit: shoot(3) },
+  // On the right, looking off to the left across a white ground the picture fades into: the words go in that ground, where he is looking.
+  { key: 'looking-away', src: lookingAway, width: 800, height: 300, extend: null, panel: null, box: { x: 30, y: 20, w: 330, h: 260 }, ink: '#222', boxRange: { darkest: '#fffefd', lightest: '#ffffff' }, credit: shoot(5) },
+  // Sitting at the right of a long red wall that fades to white on the left: the words go in the white, their right edge in the fade's first pink.
+  { key: 'red-wall', src: redWall, width: 915, height: 300, extend: null, panel: null, box: { x: 24, y: 20, w: 300, h: 260 }, ink: '#222', boxRange: { darkest: '#ebc9cc', lightest: '#ffffff' }, credit: shoot(6) },
+  // Standing small at the left of the red wall, which fades to near-black on the right: a near-black panel carries on, and the white words go in it.
+  { key: 'full-length', src: fullLength, width: 450, height: 300, extend: 'right', panel: { width: 400, color: '#0c0c0e' }, box: { x: 470, y: 24, w: 360, h: 252 }, ink: '#fff', boxRange: { darkest: '#0c0c0e', lightest: '#0c0c0e' }, credit: shoot(7) },
+  // The 2008 appeal's portrait, on the right of its own grey-brown backdrop, which the file carries on to the left: the white words go on the backdrop.
+  { key: 'pinstripe', src: pinstripe, width: 710, height: 300, extend: null, panel: null, box: { x: 30, y: 20, w: 320, h: 260 }, ink: '#fff', boxRange: { darkest: '#7b6c62', lightest: '#7b6c62' }, credit: { author: ARCHAIN, source: 'https://commons.wikimedia.org/wiki/File:Jimmy_Wales_Fundraiser_Appeal.JPG', ...BY_SA_3 } },
 ]);

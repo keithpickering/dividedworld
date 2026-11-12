@@ -694,7 +694,7 @@ test('Jimmy Wails is a Sweet uncommon Cast on a post, sold for 2.00, with a driv
   assert.deepEqual(j.reaches ?? ['post'], ['post']);
   assert.equal(priceOf('jimmy-wails'), 200, 'the machine slot, onSale');
   assert.equal(instance.machine.find((m) => 'card' in m.item && m.item.card === 'jimmy-wails')!.availability, 'onSale');
-  assert.deepEqual(j.draws, ['blue-shirt', 'close-up', 'dark-logo']);
+  assert.deepEqual(j.draws, ['blue-shirt', 'close-up', 'dark-logo', 'black-shirt', 'grey-jacket', 'looking-away', 'red-wall', 'full-length', 'pinstripe']);
   assert.deepEqual(j.drive, { lasts: { unit: 'day', count: 7 }, gifts: ['jimmyWails.gift1', 'jimmyWails.gift2', 'jimmyWails.gift3', 'jimmyWails.gift4'], overhead: 'jimmyWails.overhead' });
   assert.deepEqual(['jimmyWails.gift1', 'jimmyWails.gift2', 'jimmyWails.gift3', 'jimmyWails.gift4', 'jimmyWails.overhead'].map((k) => settings.economy[k]), [10, 25, 50, 100, 25]);
   assert.equal(giftSplit(10, settings.economy['jimmyWails.overhead']!).overhead, 3, 'a 0.10 gift keeps 0.03 of overhead');

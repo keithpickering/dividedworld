@@ -13,7 +13,7 @@
 import { landsOn, openDrive, refuse, ok, type CardRules } from '../../../engine/rules/cards.ts';
 
 /** The plate keys, which ui/jimmy-wails/plates.ts draws; a test holds the two lists together (the card module takes no `?url` import, since node loads it). */
-const PLATE_KEYS = ['blue-shirt', 'close-up', 'dark-logo'] as const;
+const PLATE_KEYS = ['blue-shirt', 'close-up', 'dark-logo', 'black-shirt', 'grey-jacket', 'looking-away', 'red-wall', 'full-length', 'pinstripe'] as const;
 
 const STACK = 3;
 
