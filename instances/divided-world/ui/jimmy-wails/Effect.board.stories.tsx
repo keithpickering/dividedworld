@@ -4,7 +4,7 @@
  * Storybook and the story route look; the card's screens are in cards/jimmy-wails/.)
  *
  * - `blue-short`, `blue-long`, `close-short`, `close-long`, `dark-short`, `dark-long`: one plate each, with a short appeal and with one of 200 characters.
- * - `black-short`, `grey-short`, `away-short`, `away-long`, `red-short`, `red-long`, `full-short`, `pinstripe-short`, `pinstripe-long`: the six later plates;
+ * - `black-short`, `gray-short`, `away-short`, `away-long`, `red-short`, `red-long`, `full-short`, `pinstripe-short`, `pinstripe-long`: the six later plates;
  *   the ones whose words sit on the picture's own ground have the 200-character appeal too.
  * - `three`: a drive of three appeals, one on each plate, at its first banner; press Next, or a dot, to see another. With `reduced` the rotation is
  *   off and the swap has no fade.
@@ -26,7 +26,7 @@ import { useLocation } from '../../../../engine/ui/router.tsx';
 import { LoadedThread } from '../../../../engine/ui/loaded.tsx';
 import { PLATES } from './plates.ts';
 
-type Case = 'black-short' | 'grey-short' | 'away-short' | 'away-long' | 'red-short' | 'red-long' | 'full-short' | 'pinstripe-short' | 'pinstripe-long' | 'blue-short' | 'blue-long' | 'close-short' | 'close-long' | 'dark-short' | 'dark-long' | 'three' | 'wall' | 'closed' | 'earlier' | 'origin' | 'short';
+type Case = 'black-short' | 'gray-short' | 'away-short' | 'away-long' | 'red-short' | 'red-long' | 'full-short' | 'pinstripe-short' | 'pinstripe-long' | 'blue-short' | 'blue-long' | 'close-short' | 'close-long' | 'dark-short' | 'dark-long' | 'three' | 'wall' | 'closed' | 'earlier' | 'origin' | 'short';
 
 interface Args {
   readonly shown: Case;
@@ -47,7 +47,7 @@ const SINGLE: Partial<Record<Case, { readonly plate: number; readonly long: bool
   'blue-short': { plate: 0, long: false }, 'blue-long': { plate: 0, long: true },
   'close-short': { plate: 1, long: false }, 'close-long': { plate: 1, long: true },
   'dark-short': { plate: 2, long: false }, 'dark-long': { plate: 2, long: true },
-  'black-short': { plate: 3, long: false }, 'grey-short': { plate: 4, long: false },
+  'black-short': { plate: 3, long: false }, 'gray-short': { plate: 4, long: false },
   'away-short': { plate: 5, long: false }, 'away-long': { plate: 5, long: true },
   'red-short': { plate: 6, long: false }, 'red-long': { plate: 6, long: true },
   'full-short': { plate: 7, long: false },
@@ -191,10 +191,10 @@ export const BlackShortLight: Story = { args: { shown: 'black-short', mode: 'lig
 export const BlackShortDark: Story = { args: { shown: 'black-short', mode: 'dark' } };
 export const BlackShortPhone: Story = { args: { shown: 'black-short', mode: 'light' }, ...phone };
 export const BlackShortPhoneDark: Story = { args: { shown: 'black-short', mode: 'dark' }, ...phone };
-export const GreyShortLight: Story = { args: { shown: 'grey-short', mode: 'light' } };
-export const GreyShortDark: Story = { args: { shown: 'grey-short', mode: 'dark' } };
-export const GreyShortPhone: Story = { args: { shown: 'grey-short', mode: 'light' }, ...phone };
-export const GreyShortPhoneDark: Story = { args: { shown: 'grey-short', mode: 'dark' }, ...phone };
+export const GrayShortLight: Story = { args: { shown: 'gray-short', mode: 'light' } };
+export const GrayShortDark: Story = { args: { shown: 'gray-short', mode: 'dark' } };
+export const GrayShortPhone: Story = { args: { shown: 'gray-short', mode: 'light' }, ...phone };
+export const GrayShortPhoneDark: Story = { args: { shown: 'gray-short', mode: 'dark' }, ...phone };
 export const AwayShortLight: Story = { args: { shown: 'away-short', mode: 'light' } };
 export const AwayShortDark: Story = { args: { shown: 'away-short', mode: 'dark' } };
 export const AwayShortPhone: Story = { args: { shown: 'away-short', mode: 'light' }, ...phone };

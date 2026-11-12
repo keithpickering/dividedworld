@@ -21,7 +21,7 @@ NIGHT = (12, 12, 14)
 # key: (source file, crop box in the source's pixels, ground color or None to sample it, where the ground goes, its width, the fade's width)
 PLATES = {
     'black-shirt': ('jimmy_wales_july_2010_2.jpg', (60, 40, 900, 600), NIGHT, 'right', 0, 150),
-    'grey-jacket': ('jimmy_wales_july_2010_3.jpg', (90, 60, 930, 620), WHITE, 'right', 0, 150),
+    'gray-jacket': ('jimmy_wales_july_2010_3.jpg', (90, 60, 930, 620), WHITE, 'right', 0, 150),
     'looking-away': ('jimmy_wales_july_2010_5.jpg', (150, 10, 900, 510), WHITE, 'left', 350, 170),
     'red-wall': ('jimmy_wales_july_2010_6.jpg', (0, 30, 960, 470), WHITE, 'left', 260, 210),
     'full-length': ('jimmy_wales_july_2010_7.jpg', (0, 0, 960, 640), NIGHT, 'right', 0, 130),

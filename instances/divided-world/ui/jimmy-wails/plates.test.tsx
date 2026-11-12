@@ -49,6 +49,18 @@ describe('Jimmy Wails plates', () => {
     }
   });
 
+  test('make.py measures the colors under the same boxes plates.ts sets the words in', () => {
+    const maker = readFileSync(join(dir, 'make.py'), 'utf8');
+    const boxes = [...maker.match(/^BOXES = \{(.*)\}$/m)![1]!.matchAll(/'([a-z-]+)': \((\d+), (\d+), (\d+), (\d+)\)/g)];
+    expect(boxes.length).toBeGreaterThan(0);
+    for (const [, key, x, y, w, h] of boxes) {
+      expect(PLATES.find((p) => p.key === key)?.box, key).toEqual({ x: Number(x), y: Number(y), w: Number(w), h: Number(h) });
+    }
+    /* Every plate the maker makes whose words sit on the picture's own file (no panel) is measured. */
+    const made = [...maker.matchAll(/^ {4}'([a-z-]+)': \('/gm)].map((m) => m[1]!);
+    expect(made.filter((key) => PLATES.find((p) => p.key === key)!.panel === null).sort()).toEqual(boxes.map((b) => b[1]!).sort());
+  });
+
   test('each plate credits its photograph: who took it, its page on Wikimedia Commons and the license it is used under', () => {
     for (const p of PLATES) {
       expect(p.credit.author.length, p.key).toBeGreaterThan(0);
