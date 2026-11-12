@@ -61,4 +61,5 @@ test('the gain is the most at the line, nothing at the reach and linear between'
   assert.equal(murmurGain(400, 192, 35), 0);
   assert.equal(murmurGain(Infinity, 192, 35), 0);
   assert.equal(murmurGain(0, 0, 35), 0);
+  assert.equal(murmurGain(0, 192, -10), 0);
 });
