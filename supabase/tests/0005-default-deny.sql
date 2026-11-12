@@ -91,8 +91,6 @@ declare
                            'open_appeal(uuid,uuid,text)',
                            -- The screens' reads (0111): the report's judge, and the two functions the log's views call, each a public fact about any id (a view's functions run as its reader).
                            'beat_mod_name(uuid)', 'punishment_words(uuid)', 'infraction_relief(uuid)',
-                           -- The surface log's (0195): the draws a wash cut, read from public Acts alone, which the log's two views call (a view's functions run as its reader).
-                           'wash_effect(uuid)',
                            -- Pure predicates a CHECK calls, granted to PUBLIC by 0080 so a direct writer is not refused (each reads no table).
                            'tip_keys_ok(text[])', 'update_payload_problem(jsonb)', 'reaches_hold(text[])', 'pronouns_hold(jsonb)',
                            -- The search index's words (0117): the folded text an index of names and titles is written with, the stemming language and the words of a text, each reading nothing but a

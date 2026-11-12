@@ -30,7 +30,7 @@
  * would not move. It reaches `LOG_ROWS` only where rows were written in bulk at one time (a backfill),
  * and even then it is that player's own rows at that instant, never more than their whole history.
  */
-import type { SurfaceLogRow, CardEnded, CardEvent, CaughtPlay, EffectSaved, FaceDownEnd, Log, LogAppeal, LogBan, LogGroupMove, LogInfraction, LogLine, LogReport, LogSettlement, LogShare, PackEvent, PlayOnMine, ScoredAs, WalletEvent, WrittenOnMine } from './api.ts';
+import type { CardEnded, CardEvent, CaughtPlay, EffectSaved, FaceDownEnd, Log, LogAppeal, LogBan, LogGroupMove, LogInfraction, LogLine, LogReport, LogSettlement, LogShare, PackEvent, PlayOnMine, ScoredAs, SurfaceLogRow, WalletEvent, WrittenOnMine } from './api.ts';
 
 /** The most rows a page reads from each source. */
 export const LOG_ROWS = 200;

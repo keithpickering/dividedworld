@@ -1355,7 +1355,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const mostLive = rules.surface!.mostLive;
       if (new Set([...next.owners].filter((o) => o !== 0)).size > mostLive) return refuse(`this wall holds ${mostLive} tags; paint over one or wait for a wash`);
     }
-    const rec = write({ id: written, character, kind, thread: p.thread, target: play, payload: { ...decided.value.payload, cells: decided.value.cells } });
+    /* A wash records what it uncovered and the draws it cut, read from the owners before it (surface_apply, 0195): the server's own keys, which a payload that arrives with them loses. */
+    const cut = new Map<Id, number>();
+    if (kind === 'wash') for (let i = 0; i < s.owners.length; i++) if (s.owners[i] !== 0 && hasCell(cells, i)) { const d = s.live[s.owners[i]! - 1]!; cut.set(d, (cut.get(d) ?? 0) + 1); }
+    const { cut: _cut, uncovered: _uncovered, ...sent } = decided.value.payload as Record<string, unknown>;
+    const rec = write({ id: written, character, kind, thread: p.thread, target: play, payload: { ...sent, cells: decided.value.cells, ...(kind === 'wash' ? { uncovered: [...cut.values()].reduce((n, c) => n + c, 0), cut: [...cut].map(([draw, n]) => ({ draw, took: n })) } : {}) } });
     s.cells.set(written, cells);
     s.cover = next.cover; s.owners = next.owners; s.live = next.live;
     const covered = count(next.cover);
@@ -1373,23 +1377,6 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     });
     const older = [...acts.values()].filter((a) => a.kind === 'draw' && a.target === play && !s.live.includes(a.id)).length;
     return { covered: count(s.cover), acts: shown, older };
-  }
-  /**
-   * wash_effect (0195): the draws a wash cut and the cells of each it took, read from the play's Acts alone. Walking back from the wash, a draw that inked a cell the wash covers (and no later Act has
-   * touched it) owned that cell when the wash landed; a wash that covered it earlier had already bared it, so it counts for no one.
-   */
-  function washEffect(wash: ActRec): { readonly draw: Id; readonly cells: number }[] {
-    let rest = fromBits(String(wash.payload.cells));
-    const out: { draw: Id; cells: number }[] = [];
-    const before = [...acts.values()].filter((a) => a.target === wash.target && (a.kind === 'draw' || a.kind === 'wash') && a.order < wash.order).sort((x, y) => y.order - x.order);
-    for (const a of before) {
-      if (count(rest) === 0) break;
-      const covers = fromBits(String(a.payload.cells));
-      const hit = rest.map((v, i) => v & covers[i]!);
-      if (a.kind === 'draw' && count(hit) > 0) out.push({ draw: a.id, cells: count(hit) });
-      rest = minus(rest, covers);
-    }
-    return out;
   }
   /**
    * `my_draws` and `my_walls_drawn_on` (0195) for an account, as the views read them: the account's characters' draws and the washes that cut them (not by the account's own washer), and the draws and washes on
@@ -1410,12 +1397,12 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         else if (owns(author)) walls.push(row(a, 'draw', play, author!, count(fromBits(String(a.payload.cells)))));
         continue;
       }
-      const cut = washEffect(a);
-      if (owns(author)) walls.push(row(a, 'wash', play, author!, cut.reduce((n, c) => n + c.cells, 0)));
+      if (owns(author)) walls.push(row(a, 'wash', play, author!, typeof a.payload.uncovered === 'number' ? a.payload.uncovered : 0));
       if (owns(a.character)) continue;
       /* One row for each of the account's characters whose draws it cut, with the cells of theirs it took. */
+      const cut = Array.isArray(a.payload.cut) ? a.payload.cut as { draw: Id; took: number }[] : [];
       const by = new Map<Id, number>();
-      for (const c of cut) { const drawer = acts.get(c.draw)?.character; if (drawer && owns(drawer)) by.set(drawer, (by.get(drawer) ?? 0) + c.cells); }
+      for (const c of cut) { const drawer = acts.get(c.draw)?.character; if (drawer && owns(drawer)) by.set(drawer, (by.get(drawer) ?? 0) + c.took); }
       for (const [drawer, cells] of by) draws.push(row(a, 'cut', play, drawer, cells));
     }
     return { draws, walls };

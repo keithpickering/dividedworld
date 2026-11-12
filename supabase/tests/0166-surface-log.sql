@@ -2,7 +2,7 @@
 -- washes that cut them (`my_draws`), and the draws and washes on the walls of the player's own posts (`my_walls_drawn_on`), each read by the reader's own characters alone, and `log_page` carrying both.
 -- The card is this file's own (`slwall`, with the surface flag); every name is prefixed sl.
 --
---  1. wash_effect: the draws a wash cut, with the cells each owned when it landed, read from the Acts alone (a later draw's paint-over, an earlier wash's bare cells)
+--  1. a wash records in its own payload what it uncovered and which draws it cut, with the cells of each, written under the lock; after a mixed run they equal a replay of the Acts (the oracle below)
 --  2. my_draws: the drawer's own draw, with its cells, and a cut row for each wash that cut it; none for a wash that cut nothing of theirs
 --  3. my_walls_drawn_on: the author's view: another character's draws on their post, and their own washes with the cells each uncovered; not their own masks' draws (my_draws has those)
 --  4. a third player's two views are empty, and so is a visitor's
@@ -91,24 +91,68 @@ end $$;
 
 create temp table sl as select * from pg_temp.world();
 
--- ---- 1. wash_effect ----
+-- The oracle: what a wash cut, by replaying the wall's Acts backward from it (a cell counts for the draw that last inked it, and a cell already bare counts for no one), as jsonb [{draw, cells}] in order of
+-- the first cell. The server writes the same figures into the wash's own payload under the lock, from the owners it already holds; this is the other way of reading them, from the Acts alone.
+create function pg_temp.oracle(in_wash uuid) returns jsonb language plpgsql as $$
+declare
+  w acts%rowtype; rest bit(10000); a record; hit bit(10000); got jsonb := '[]'::jsonb;
+begin
+  select * into w from acts x where x.id = in_wash;
+  rest := (w.payload ->> 'cells')::bit(10000);
+  for a in select x.id, x.kind, (x.payload ->> 'cells')::bit(10000) as covers from acts x
+           where x.target_act_id = w.target_act_id and x.kind in ('draw', 'wash') and (x.created_at, x.id) < (w.created_at, w.id) order by x.created_at desc, x.id desc loop
+    exit when bit_count(rest) = 0;
+    hit := rest & a.covers;
+    if a.kind = 'draw' and bit_count(hit) > 0 then got := got || jsonb_build_array(jsonb_build_object('draw', a.id, 'cells', bit_count(hit), 'first', position('1' in hit::text))); end if;
+    rest := rest & ~a.covers;
+  end loop;
+  return coalesce((select jsonb_agg(jsonb_build_object('draw', e ->> 'draw', 'took', (e -> 'cells')) order by (e ->> 'first')::integer) from jsonb_array_elements(got) e), '[]'::jsonb);
+end $$;
+
+-- ---- 1. A wash records what it uncovered and whom it cut, in its own payload, written under the lock ----
 do $$
 declare
   w record;
   got jsonb;
 begin
   select * into w from sl;
-  select coalesce(jsonb_agg(jsonb_build_object('draw', e.draw, 'cells', e.cells) order by e.cells desc), '[]'::jsonb) into got from wash_effect(w.w1) e;
-  if got is distinct from jsonb_build_array(jsonb_build_object('draw', w.d1, 'cells', 300), jsonb_build_object('draw', w.d2, 'cells', 150)) then
-    raise exception 'the first wash cut 300 of Bob''s cells and 150 of Cal''s: %', got;
+  select payload - 'cells' - 'strokes' into got from acts where id = w.w1;
+  if got is distinct from jsonb_build_object('uncovered', 450, 'cut', jsonb_build_array(jsonb_build_object('draw', w.d1, 'took', 300), jsonb_build_object('draw', w.d2, 'took', 150))) then
+    raise exception 'the first wash took 450 cells, 300 of Bob''s and 150 of Cal''s: %', got;
   end if;
-  if exists (select 1 from wash_effect(w.w2)) then raise exception 'a wash over cells already bare cuts nothing'; end if;
-  select coalesce(jsonb_agg(jsonb_build_object('draw', e.draw, 'cells', e.cells)), '[]'::jsonb) into got from wash_effect(w.w3) e;
-  if got is distinct from jsonb_build_array(jsonb_build_object('draw', w.d2, 'cells', 100)) then raise exception 'the third wash cut 100 of Cal''s cells: %', got; end if;
-  if exists (select 1 from wash_effect(w.d1)) then raise exception 'a draw is no wash: it cuts nothing'; end if;
-  if has_function_privilege('anon', 'wash_effect(uuid)', 'execute') or not has_function_privilege('authenticated', 'wash_effect(uuid)', 'execute') then
-    raise exception 'wash_effect is for the views'' signed-in reader: a visitor has no right to it';
-  end if;
+  select payload - 'cells' - 'strokes' into got from acts where id = w.w2;
+  if got is distinct from jsonb_build_object('uncovered', 0, 'cut', '[]'::jsonb) then raise exception 'a wash over bare cells took none: %', got; end if;
+  select payload - 'cells' - 'strokes' into got from acts where id = w.w3;
+  if got is distinct from jsonb_build_object('uncovered', 100, 'cut', jsonb_build_array(jsonb_build_object('draw', w.d2, 'took', 100))) then raise exception 'the third wash took 100 of Cal''s: %', got; end if;
+  if exists (select 1 from acts where id in (w.d1, w.d2, w.d3, w.d4) and (payload ? 'cut' or payload ? 'uncovered')) then raise exception 'a draw records neither'; end if;
+  if exists (select 1 from pg_proc where proname = 'wash_effect') then raise exception 'there is no per-row replay: the figures are stored'; end if;
+end $$;
+
+-- ---- 1b. The stored figures equal the replay of the Acts after a mixed run, and a draw cannot carry them in ----
+do $$
+declare
+  pl uuid; k integer; first integer; n integer; got text; bad integer := 0; made uuid;
+  m_ann uuid := tests.account('sl-mix-ann'); m_bob uuid := tests.account('sl-mix-bob'); m_cal uuid := tests.account('sl-mix-cal');
+  m_a uuid := tests.character(m_ann, 'Sl Mix Ann'); m_b uuid := tests.character(m_bob, 'Sl Mix Bob'); m_c uuid := tests.character(m_cal, 'Sl Mix Cal');
+begin
+  -- A wall of its own, so the rest of this file's rows are as the world left them.
+  select w2.play into pl from pg_temp.wall(m_a, tests.thread('Sl mix')) w2;
+  for k in 1..40 loop
+    first := (k * 37) % 900; n := 20 + (k * 53) % 300;
+    if k % 3 = 0 then made := pg_temp.wash(m_ann, m_a, pl, pg_temp.cells(first, n));
+    else made := pg_temp.draw(case when k % 2 = 0 then m_bob else m_cal end, case when k % 2 = 0 then m_b else m_c end, pl, pg_temp.cells(first, n));
+    end if;
+    if (select kind from acts where id = made) = 'wash' then
+      if (select payload -> 'cut' from acts where id = made) is distinct from pg_temp.oracle(made)
+         or (select (payload ->> 'uncovered')::integer from acts where id = made) is distinct from (select coalesce(sum((e ->> 'took')::integer), 0) from jsonb_array_elements(pg_temp.oracle(made)) e) then
+        bad := bad + 1;
+      end if;
+    end if;
+  end loop;
+  if bad <> 0 then raise exception 'the stored figures differ from the replay in % of the washes', bad; end if;
+  -- A draw that arrives carrying the keys keeps neither: they are the server's.
+  got := pg_temp.as_val(null, format('select draw_on_surface(%L, %L, %L, %L, %L, 4000)::text', m_bob, m_b, pl, '{"strokes": [{"width": 0.01, "points": [[0.1, 0.1]]}], "cut": [1], "uncovered": 999}'::jsonb, pg_temp.cells(9000, 5)::text));
+  if got like 'ERROR:%' or exists (select 1 from acts where id = (got::jsonb ->> 'id')::uuid and (payload ? 'cut' or payload ? 'uncovered')) then raise exception 'a draw keeps neither key: %', got; end if;
 end $$;
 
 -- ---- 2. my_draws: the drawer's own ----
@@ -164,7 +208,7 @@ declare
 begin
   select * into w from sl;
   if pg_temp.read(w.dan, 'my_draws') <> '[]'::jsonb or pg_temp.read(w.dan, 'my_walls_drawn_on') <> '[]'::jsonb then raise exception 'a third player reads none of it'; end if;
-  if (select count(*) from pg_class where relname in ('my_draws', 'my_walls_drawn_on')) <> 2 then raise exception 'both views exist'; end if;
+  if (select count(*) from pg_class where relname in ('my_draws', 'my_walls_drawn_on')) is distinct from 2 then raise exception 'both views exist'; end if;
   if has_table_privilege('anon', 'my_draws', 'select') or has_table_privilege('anon', 'my_walls_drawn_on', 'select')
      or not has_table_privilege('authenticated', 'my_draws', 'select') or not has_table_privilege('authenticated', 'my_walls_drawn_on', 'select') then
     raise exception 'the views are the signed-in player''s alone';
@@ -211,8 +255,8 @@ begin
   if cols is distinct from array['act', 'kind', 'play', 'post', 'character', 'mine', 'at', 'cells'] then raise exception 'my_draws holds public facts and the reader''s own character: %', cols; end if;
   select array_agg(a.attname order by a.attnum) into cols from pg_attribute a where a.attrelid = 'my_walls_drawn_on'::regclass and a.attnum > 0 and not a.attisdropped;
   if cols is distinct from array['act', 'kind', 'play', 'post', 'character', 'mine', 'at', 'cells'] then raise exception 'my_walls_drawn_on holds the same: %', cols; end if;
-  -- Ann's second mask and Ann's first are hers: a stranger's page never says either's player, and no row says a class.
-  if pg_temp.as_val(w.bob, 'select log_page(null)::text') ~* '(owner|class_key|"class")' and pg_temp.as_val(w.bob, 'select (log_page(null) -> ''sources'' -> ''draws'')::text') ~* '(owner|class)' then
+  -- No row of the draws source says an owner or a class (its columns are the ones named above).
+  if exists (select 1 from jsonb_array_elements(pg_temp.as_val(w.bob, 'select (log_page(null) -> ''sources'' -> ''draws'')::text')::jsonb) r, jsonb_object_keys(r) k where k ~* '(owner|class)') then
     raise exception 'a draw row says nothing of an owner or a class';
   end if;
 end $$;

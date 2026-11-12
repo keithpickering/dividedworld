@@ -11,7 +11,7 @@
 --   4. the functions     surface_step (the pure step every write and every rebuild takes), surface_apply (the lock, the limits, the Act), open_surface, draw_on_surface, wash_surface, staff_draw_on_surface,
 --                        play_surface_card, staff_play_surface_card, set_surface_card, surface_draft_fits, surface_acts, rebuild_surface; place_cast, lay_sprung, spring_traps and card_target are redefined, and the pool's three (pool_thread, pool_orphans, record_pool_spend: the walls on a page, and a wall draw as a persona's card for the day).
 --   5. the readers       thread_page returns `surfaces: {play: {covered, live}}` (ids and counts, never strokes or owners); card_target shows a surface's `covered`; surface_acts is the Lens's read.
---   6. the log            wash_effect, my_draws and my_walls_drawn_on (the player's own draws and the washes that cut them; the draws and washes on the walls of their own posts), and log_page reading both (section 6, last).
+--   6. the log            my_draws and my_walls_drawn_on (the player's own draws and the washes that cut them; the draws and washes on the walls of their own posts), and log_page reading both (section 6, last).
 --
 -- Cells. The grid is 100 x 100, row-major: bit i of a cover is the cell at row i / 100, column i % 100 (engine/rules/surface.ts: GRID, toBits). The server function computes a draw's cells from its strokes and passes
 -- them as a bit string; SQL does bit arithmetic only. A draw's and a wash's cells are kept in their payloads (`cells`, 10,000 characters of 0 and 1), which is what lets rebuild_surface and the live list work from the
@@ -55,7 +55,7 @@ alter table acts add constraint acts_seq_check check ((kind = 'edit') = (seq is 
 
 -- Strokes as an array, the payload less its cells to 64 KiB as Postgres writes it, and the cells: 10,000 characters of 0 and 1.
 alter table acts add constraint acts_surface_payload check (kind not in ('draw', 'wash') or (
-  jsonb_typeof(payload -> 'strokes') = 'array' and octet_length((payload - 'cells')::text) <= 65536
+  jsonb_typeof(payload -> 'strokes') = 'array' and octet_length((payload - 'cells' - 'uncovered' - 'cut')::text) <= 65536
   and jsonb_typeof(payload -> 'cells') = 'string' and char_length(payload ->> 'cells') = 10000 and (payload ->> 'cells') !~ '[^01]') is true);
 
 -- The derived row of a surface play: what the next write and the next read need.
@@ -328,6 +328,8 @@ declare
   flag text;
   before_cells integer;
   after_cells integer;
+  wash_cut jsonb;
+  wash_cells integer;
 begin
   select * into s from surfaces x where x.play = on_play for update;
   if not found then raise exception 'there is no wall on that post' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
@@ -352,8 +354,16 @@ begin
   select a.thread into in_thread from acts a where a.id = on_play;
   flag := coalesce(current_setting('kayfabb.surface_writer', true), '');
   perform set_config('kayfabb.surface_writer', 'on', true);
+  -- A wash records what it uncovered and which draws it cut, with the cells of each it took, read from the owners the lock holds: the figures the log says it in (my_draws, my_walls_drawn_on) without replaying the wall.
+  -- They are the server's: a payload that arrives carrying the keys loses them, and the drawer's 64 KiB bound leaves them out as it leaves out `cells`.
+  if in_kind = 'wash' then
+    select coalesce(jsonb_agg(jsonb_build_object('draw', x.draw, 'took', x.n) order by x.first), '[]'::jsonb), coalesce(sum(x.n), 0)::integer into wash_cut, wash_cells
+    from (select s.live[s.owners[g.i]] as draw, count(*) as n, min(g.i) as first
+          from generate_series(1, 10000) g(i) where get_bit(in_cells, g.i - 1) = 1 and s.owners[g.i] <> 0 group by 1) x;
+  end if;
   insert into acts (id, character, kind, thread, target_act_id, payload, created_at)
-  values (written, by_character, in_kind, in_thread, on_play, (in_payload - 'cells') || jsonb_build_object('cells', in_cells::text), at);
+  values (written, by_character, in_kind, in_thread, on_play, (in_payload - 'cells' - 'uncovered' - 'cut') || jsonb_build_object('cells', in_cells::text)
+    || case when in_kind = 'wash' then jsonb_build_object('uncovered', wash_cells, 'cut', wash_cut) else '{}'::jsonb end, at);
   perform set_config('kayfabb.surface_writer', flag, true);
   update surfaces set cover = st.cover, owners = st.owners, live = st.live, updated_at = at where play = on_play;
   return (act_projection(written) #- '{payload,cells}' #- '{current_payload,cells}') || jsonb_build_object('covered', bit_count(st.cover), 'live', to_jsonb(st.live));
@@ -1481,46 +1491,16 @@ end $$;
 --   my_walls_drawn_on the post's author's: a row for each draw another character made on a wall on a post one of the caller's characters wrote, and a row for each wash (`cells` the cells it uncovered, none for a wash
 --                     over bare cells). A draw by the caller's own other mask is not here: my_draws has it.
 --
--- Both name the Act, the play and post, the Act's character, the caller's own character the line is for (`mine`), when, and a count of cells; nothing of an owner, a class or a reaction. "Cut" is read from the Acts alone,
--- by wash_effect: the washes' and draws' payload cells, replayed backward from the wash, so a cell counts for the draw that last inked it and a cell already bare counts for no one. A third player's views are empty.
+-- Both name the Act, the play and post, the Act's character, the caller's own character the line is for (`mine`), when, and a count of cells; nothing of an owner, a class or a reaction. "Cut" is read from the wash's own payload, where
+-- surface_apply wrote it under the wall's lock from the owners it holds: `uncovered` (the cells the wash actually uncovered) and `cut` ([{draw, took}], the cells each draw owned that it took; `took` and not `cells`, which a payload keeps for its own bit string), so a cell counts for the draw
+-- that last inked it and a cell already bare counts for no one. Both are the server's (a payload that arrives with them loses them) and are left out of the drawer's 64 KiB. A third player's views are empty.
 --
 -- The percent a line says is this count over the grid's 10,000 cells: a draw's own cells at the time it landed (what its strokes covered, whether or not it painted over something) and a wash's cells uncovered. Both are
 -- facts of the Acts and never change, so a line is as true next year as the day it was written.
 --
--- At a busy instance's scale: both views start from the caller's own characters (a post's author through surfaces.post, a drawer through acts_character) and their draws are bounded by the wall's own Acts; a wash row
--- costs one walk of the wall's Acts backward from the wash, which ends as soon as the wash's cells are all accounted for. log_page takes at most 200 rows of each, newest first, as it does of every source.
+-- At a busy instance's scale: both views start from the caller's own characters (a post's author through surfaces.post, a drawer through acts_character) and read figures already in the Acts, so a row costs its own
+-- payload and never a replay of the wall; a wash costs one pass over 10,000 cells, under the lock it already holds. log_page takes at most 200 rows of each, newest first, as it does of every source.
 -- Ways out: reads only.
-
--- wash_effect(wash): the draws the wash cut and the cells of each it took, read from the wall's Acts alone. Walking back from the wash, a draw that inked a cell the wash covers and nothing since has taken or
--- covered, owned that cell when the wash landed; a wash that covered it earlier had already bared it, so it counts for no one.
--- It reads public Acts alone and says of a wash what the wall's Acts already say. A view's reader needs the right to call a function the view uses, so the signed-in role has it; a visitor has none.
-create function wash_effect(in_wash uuid) returns table (draw uuid, cells integer)
-language plpgsql stable security definer set search_path = public, pg_temp as $$
-declare
-  w acts%rowtype;
-  rest bit(10000);
-  a record;
-  hit bit(10000);
-begin
-  select * into w from acts x where x.id = in_wash and x.kind = 'wash';
-  if not found then return; end if;
-  rest := (w.payload ->> 'cells')::bit(10000);
-  for a in
-    select x.id, x.kind, (x.payload ->> 'cells')::bit(10000) as covers from acts x
-    where x.target_act_id = w.target_act_id and x.kind in ('draw', 'wash') and (x.created_at, x.id) < (w.created_at, w.id)
-    order by x.created_at desc, x.id desc
-  loop
-    exit when bit_count(rest) = 0;
-    hit := rest & a.covers;
-    if a.kind = 'draw' and bit_count(hit) > 0 then
-      draw := a.id; cells := bit_count(hit);
-      return next;
-    end if;
-    rest := rest & ~a.covers;
-  end loop;
-end $$;
-revoke execute on function wash_effect(uuid) from public, anon;
-grant execute on function wash_effect(uuid) to authenticated;
 
 create view my_draws as
   select d.id as act, 'draw'::text as kind, d.target_act_id as play, s.post, d.character, c.id as mine, d.created_at as at,
@@ -1530,14 +1510,14 @@ create view my_draws as
   join surfaces s on s.play = d.target_act_id
   where c.owner = auth.uid()
   union all
-  select w.id, 'cut'::text, w.target_act_id, s.post, w.character, d.character, w.created_at, sum(e.cells)::integer
+  select w.id, 'cut'::text, w.target_act_id, s.post, w.character, d.character, w.created_at, sum((e ->> 'took')::integer)::integer
   from characters c
   join acts d on d.character = c.id and d.kind = 'draw'
   join surfaces s on s.play = d.target_act_id
   join acts w on w.kind = 'wash' and w.target_act_id = d.target_act_id and (w.created_at, w.id) > (d.created_at, d.id)
-             and bit_count((w.payload ->> 'cells')::bit(10000) & (d.payload ->> 'cells')::bit(10000)) > 0
-  cross join lateral wash_effect(w.id) e
-  where c.owner = auth.uid() and e.draw = d.id
+             and w.payload -> 'cut' @> jsonb_build_array(jsonb_build_object('draw', d.id))
+  cross join lateral jsonb_array_elements(w.payload -> 'cut') e
+  where c.owner = auth.uid() and e ->> 'draw' = d.id::text
     and not exists (select 1 from characters x where x.id = w.character and x.owner = auth.uid())
   group by w.id, w.target_act_id, s.post, w.character, d.character, w.created_at;
 
@@ -1555,7 +1535,7 @@ create view my_walls_drawn_on as
     and not exists (select 1 from characters x where x.id = d.character and x.owner = auth.uid())
   union all
   select w.id, 'wash'::text, w.target_act_id, s.post, w.character, c.id, w.created_at,
-         coalesce((select sum(e.cells) from wash_effect(w.id) e), 0)::integer
+         coalesce((w.payload ->> 'uncovered')::integer, 0)
   from characters c
   join surfaces s on true
   join acts p on p.id = s.post and p.character = c.id
