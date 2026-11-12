@@ -272,9 +272,12 @@ export async function writeModelTiers(conn: Connection, tiers: { readonly strong
       throw new Error(`The database has no modelTiers setting holding a "${tier}" model, so naming only the other tier would leave "${tier}" missing. Name both --strong and --light.`);
     }
   }
-  // One statement, so a tier not named keeps the instance's model whatever else the row held.
+  // One statement, so a tier not named keeps the instance's model whatever else the row held. The row inserted is already the merge:
+  // the settings guard (settings_held) is a before-insert trigger, which Postgres runs on the proposed row before `on conflict` turns
+  // it into an update, so a proposed row holding one tier was refused even where the merge would have held both.
   await conn.sql(
-    "insert into settings (key, value) values ('modelTiers', $1::jsonb) on conflict (key) do update set value = settings.value || excluded.value",
+    "insert into settings (key, value) select 'modelTiers', coalesce((select value from settings where key = 'modelTiers'), '{}'::jsonb) || $1::jsonb " +
+      "on conflict (key) do update set value = excluded.value",
     [JSON.stringify(named)],
   );
 }
