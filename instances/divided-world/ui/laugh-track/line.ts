@@ -1,7 +1,9 @@
 /**
- * The reading line's arithmetic, over plain numbers, carried over from the bench (docs/research/2026-11-11-laugh-track-bench/01-bench.html):
- * where the line is in the window, how far a place is from it, and how loud a murmur is at that distance. Nothing here reads the page, so
- * the watcher (watch.ts) measures and this decides.
+ * The reading band's arithmetic, over plain numbers, carried over from the bench (docs/research/2026-11-11-laugh-track-bench/01-bench.html):
+ * where the line is in the window, the band around it, how far a place is from that band, and how loud a murmur is at that distance. The
+ * band replaced the line's rest (docs/plans/2026-11-12-laugh-track-band-design.md §1): a row resting on a line with no thickness fired about
+ * one place in fourteen on an ordinary read, so a place is read by being in the band. Nothing here reads the page, so the watcher (watch.ts)
+ * measures and this decides.
  */
 
 export interface Rect { readonly top: number; readonly bottom: number; readonly left: number; readonly right: number }
