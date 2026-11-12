@@ -8,7 +8,13 @@
 -- Why: 0149 wrote a flat join. The plays' index, acts_layers, has `coalesce(payload ->> 'reach', 'post')` in its predicate, an expression with no
 -- statistics, so the planner prices the whole index at a few rows and starts the join from it. At 10,000 plays that read every play in the instance for
 -- a caller whose five characters hold 100 posts, with fresh statistics and with stale ones alike. An estimate cannot be made to move the read off the
--- caller's rows; the written order can. The test at the end of 0146-card-writes.sql holds the read to the caller's own rows in both states.
+-- caller's rows; the written order can. 0146-card-writes-at-scale.sql holds the read to the caller's own rows in both states, with the statistics of an instance that has no plays yet.
+--
+-- The kind filter is written twice on purpose. Inside the plays' lateral it is acts_layers' own predicate (`kind in ('card', 'set', 'spring')`), and the
+-- outer where keeps only 'card'. A plain `kind = 'card'` inside the lateral would match the predicate of another partial index, acts_card_created, which
+-- a planner that has seen no plays (statistics gathered before the instance held any) prices below a probe of acts_layers, and then scans every play in
+-- the instance for each of the caller's posts. With the wider list no other partial index matches, and a qual in the outer where is not pushed below
+-- `offset 0`, so the rows are the same: the plays on the caller's posts that are cards.
 --
 -- The masks: unchanged. The rows are the caller's by the post's author, the one fact of ownership read, and the columns are the same; nothing here names
 -- the caster, the play's price or any wallet. create or replace keeps the view's grants (authenticated reads it; anon and public do not).
@@ -23,6 +29,6 @@ create or replace view my_posts_written_on as
          x.created_at as at
   from characters c
   cross join lateral (select p.id from acts p where p.character = c.id and p.kind = 'post' offset 0) p
-  cross join lateral (select k.id, k.target_act_id as post from acts k where k.target_act_id = p.id and k.kind = 'card' and coalesce(k.payload ->> 'reach', 'post') = 'post' offset 0) k
+  cross join lateral (select k.id, k.kind, k.target_act_id as post from acts k where k.target_act_id = p.id and k.kind in ('card', 'set', 'spring') and coalesce(k.payload ->> 'reach', 'post') = 'post' offset 0) k
   cross join lateral (select x.* from card_texts x where x.play = k.id offset 0) x
-  where c.owner = auth.uid();
+  where c.owner = auth.uid() and k.kind = 'card';
