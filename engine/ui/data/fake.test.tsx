@@ -2378,13 +2378,11 @@ describe('a card set face down, a ward and a trap, as the server holds them', ()
    plays above a page's posts read in one batch. */
 describe('a card beyond a post, and the effects above a page', () => {
   const sparkle = {
-    key: 'sparkle', name: 'Sparkle', alignment: 'pepperoni' as const, rarity: 'uncommon' as const, reaches: ['character' as const], lasts: { unit: 'day' as const, count: 3650 },
+    key: 'sparkle', name: 'Sparkle', alignment: 'pepperoni' as const, rarity: 'uncommon' as const, reaches: ['character' as const],
     playPrice: () => 0, validateConfig: (c: unknown) => ({ ok: true as const, value: c ?? {} }),
     canApply: (t: CardTarget, e: readonly CardEffect[], _config?: unknown, now?: Date) => landsOn({ key: 'sparkle', reaches: ['character'] }, t, e, now),
   };
-  /* Long reaches: a card's canApply reads the real clock for an effect's end, and the fake's starts on a fixed date. */
-  const longReach = { unit: 'day' as const, count: 3650 };
-  const shop: Instance = { ...instance, cards: [sparkle], machine: [{ item: { card: sparkle.key }, availability: 'onSale' as const, price: 100 }], settings: { ...settings, economy: {}, reachLasts: { ...settings.reachLasts, character: longReach } } };
+  const shop: Instance = { ...instance, cards: [sparkle], machine: [{ item: { card: sparkle.key }, availability: 'onSale' as const, price: 100 }], settings: { ...settings, economy: {} } };
   function world() {
     const fake = createFake({ instance: shop });
     const ana = fake.seed.account('ana');
@@ -2404,7 +2402,7 @@ describe('a card beyond a post, and the effects above a page', () => {
     expect(await fake.playCard('sparkle', anaFace, opener, {}, '')).toMatchObject({ ok: false, field: 'reach', error: 'this card lands on a character' });
     const played = must(await fake.playCard('sparkle', anaFace, boFace, {}, 'Shine.', 'character', opener));
     expect(played).toMatchObject({ kind: 'card', thread, targetActId: opener, payload: { card: 'sparkle', reach: 'character', character: boFace, message: 'Shine.' } });
-    expect(Date.parse(String(played.payload.ends)) - Date.parse(played.createdAt)).toBe(3650 * 86_400_000);
+    expect(Date.parse(String(played.payload.ends)) - Date.parse(played.createdAt)).toBe(7 * 86_400_000);
     expect(await fake.playCard('sparkle', anaFace, boFace, {}, '', 'character', opener)).toEqual(refused('this character already carries that card', 'config'));
   });
 
@@ -2453,7 +2451,7 @@ describe('a card beyond a post, and the effects above a page', () => {
     expect(above).toEqual([{ play: live.id, reach: 'character', target: boFace, endsAt: live.payload.ends, act: live }]);
     expect(await fake.effectsAbove([boOther], thread, board)).toEqual([]);
     /* An ended play is gone without a reread of anything but the time. */
-    fake.clock.advance(3650 * 86_400_000 + 1);
+    fake.clock.advance(7 * 86_400_000 + 1);
     expect(await fake.effectsAbove([boFace], thread, board)).toEqual([]);
   });
 });
@@ -2464,13 +2462,12 @@ describe('an admin ends a card play (reverse_card)', () => {
   const base = { playPrice: () => 0, validateConfig: (c: unknown) => ok(c ?? {}) };
   const blot = { ...base, key: 'blot', name: 'Blot', alignment: 'salty' as const, rarity: 'common' as const, canApply: () => ok(undefined) };
   const snare = { ...base, key: 'snare', name: 'Snare', alignment: 'salty' as const, rarity: 'uncommon' as const, play: 'set' as const, trap: { trigger: { on: 'cast' as const } }, catches: () => 'blot', canApply: () => ok(undefined) };
-  const shield = { ...base, key: 'shield', name: 'Shield', alignment: 'sweet' as const, rarity: 'uncommon' as const, play: 'use' as const, gimmick: { kind: 'ward' as const, upTo: 'uncommon' as const }, lasts: { unit: 'day' as const, count: 400 }, canApply: () => ok(undefined) };
+  const shield = { ...base, key: 'shield', name: 'Shield', alignment: 'sweet' as const, rarity: 'uncommon' as const, play: 'use' as const, gimmick: { kind: 'ward' as const, upTo: 'uncommon' as const }, lasts: { unit: 'day' as const, count: 2 }, canApply: () => ok(undefined) };
   const sparkle = {
-    ...base, key: 'sparkle', name: 'Sparkle', alignment: 'pepperoni' as const, rarity: 'uncommon' as const, reaches: ['character' as const, 'thread' as const], lasts: { unit: 'day' as const, count: 400 },
-    canApply: (t: CardTarget, e: readonly CardEffect[]) => landsOn({ key: 'sparkle', reaches: ['character', 'thread'] }, t, e),
+    ...base, key: 'sparkle', name: 'Sparkle', alignment: 'pepperoni' as const, rarity: 'uncommon' as const, reaches: ['character' as const, 'thread' as const],
+    canApply: (t: CardTarget, e: readonly CardEffect[], _c?: unknown, now?: Date) => landsOn({ key: 'sparkle', reaches: ['character', 'thread'] }, t, e, now),
   };
-  const world: Instance = { ...instance, cards: [blot, snare, shield, sparkle], machine: [{ item: { card: blot.key }, availability: 'onSale' as const, price: 100 }, { item: { card: snare.key }, availability: 'onSale' as const, price: 100 }, { item: { card: shield.key }, availability: 'onSale' as const, price: 100 }, { item: { card: sparkle.key }, availability: 'onSale' as const, price: 100 }], settings: { ...settings, economy: {}, reachLasts: { character: { unit: 'day', count: 400 }, thread: { unit: 'day', count: 400 }, board: { unit: 'day', count: 400 } } } };
-  /* The lasts are long: a card's rules read the real clock for a ward's end (decidePlay), and the fake's starts on a fixed date. */
+  const world: Instance = { ...instance, cards: [blot, snare, shield, sparkle], machine: [{ item: { card: blot.key }, availability: 'onSale' as const, price: 100 }, { item: { card: snare.key }, availability: 'onSale' as const, price: 100 }, { item: { card: shield.key }, availability: 'onSale' as const, price: 100 }, { item: { card: sparkle.key }, availability: 'onSale' as const, price: 100 }], settings: { ...settings, economy: {} } };
   function setup() {
     const fake = createFake({ instance: world });
     const ana = fake.seed.account('ana');
@@ -2503,7 +2500,7 @@ describe('an admin ends a card play (reverse_card)', () => {
     const used = must(await fake.useCard('shield', anaFace, opener, {}, ''));
     fake.signInAs(boss);
     expect(await fake.reverseCard(caught)).toEqual(refused('that card was caught by a trap, so it never landed'));
-    fake.clock.advance(400 * 86_400_000 + 1);
+    fake.clock.advance(2 * 86_400_000 + 1);
     expect(await fake.reverseCard(used.id)).toEqual(refused('that card has already worn off'));
   });
 
@@ -3786,7 +3783,7 @@ describe('a skim, a ride back and a scored-as play, as the server holds them', (
     canApply: (t: CardTarget, e: readonly CardEffect[], _c?: unknown, now?: Date) => landsOn({ key: 'dayoff', reaches: ['character'], stack: 2 }, t, e, now),
   };
   const cards = [skimmer, blot, other, rider, dayoff] as unknown as CardRules[];
-  const world: Instance = { ...instance, cards, machine: cards.map((c) => ({ item: { card: c.key }, availability: 'onSale' as const, price: 100 })), settings: { ...settings, economy: {}, reachLasts: { character: { unit: 'day', count: 400 }, thread: { unit: 'day', count: 400 }, board: { unit: 'day', count: 400 } } } };
+  const world: Instance = { ...instance, cards, machine: cards.map((c) => ({ item: { card: c.key }, availability: 'onSale' as const, price: 100 })), settings: { ...settings, economy: {} } };
   function setup() {
     const fake = createFake({ instance: world });
     const ana = fake.seed.account('ana');

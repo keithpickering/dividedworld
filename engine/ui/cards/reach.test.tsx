@@ -167,7 +167,7 @@ describe('what a post wears', () => {
     payload: { card, message: '', config: {}, ...payload }, currentPayload: {}, editedAt: null, shownEditedAt: null,
   });
   const words: Act = { id: 'p1', character: 'c1', kind: 'post', thread: 't1', targetActId: null, seq: 1, createdAt: at, payload: { body: 'hi' }, currentPayload: { body: 'hi' }, editedAt: null, shownEditedAt: null };
-  const kayfa = { api: buildWorld({}, instance), instance, ui: { cards, glass: {} }, settings: {} } as unknown as Kayfa;
+  const kayfa = { api: createFake({ instance, now: () => Date.now() }), instance, ui: { cards, glass: {} }, settings: {} } as unknown as Kayfa;
   const wrapped = (store: ReturnType<typeof createPlays>, board: string | null): ReactNode => (
     <KayfaProvider value={kayfa}><PlayerProvider api={kayfa.api}><PostEffects plays={store} post={words} board={board} place="thread" nameOf={() => 'x'}><span data-kb-words>hi</span></PostEffects></PlayerProvider></KayfaProvider>
   );

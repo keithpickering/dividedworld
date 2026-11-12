@@ -82,7 +82,7 @@ export const Postbit = memo(function Postbit({ person, layout, marks = null, lin
   /** The character's own marks (its live plays beyond a post), drawn under its name: the thread hands them in. */
   readonly marks?: ReactNode;
 }) {
-  const { instance, ui, settings } = useKayfa();
+  const { api, instance, ui, settings } = useKayfa();
   const { character: c } = person;
   /* The look of the group it is in; a key the settings do not list (an answer older than groups) draws no bar rather than a wrong one. */
   const group = settings.groups.find((g) => g.key === c.group);
@@ -94,7 +94,7 @@ export const Postbit = memo(function Postbit({ person, layout, marks = null, lin
   const className = (key: string | undefined) => (key === undefined ? undefined : instance.classes.find((k) => k.key === key)?.name ?? key);
   const joined = monthYear(c.joined);
   /* A ban holds while its time is in the future (characters_public.banned_until): the page read it, and the title line says so for as long as the page is open. */
-  const banned = c.bannedUntil !== undefined && Date.parse(c.bannedUntil) > Date.now();
+  const banned = c.bannedUntil !== undefined && Date.parse(c.bannedUntil) > api.now();
   /* The side layout shows the chosen trophies and any belt under the rank; the stacked band and a phone show a held belt only, beside the name. */
   const shelf = counts ? postbitTrophies(c.trophies, instance.settings.cosmetics.trophies.shownMost) : [];
   const belts = counts ? [] : heldBelts(c.trophies);

@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Card forms mock</title>
+<link rel="stylesheet" href="../../../engine/ui/glass/tokens.css">
+<link rel="stylesheet" href="../../../engine/ui/glass/base.css">
+<link rel="stylesheet" href="../../../engine/ui/glass/parts.css">
+<link rel="stylesheet" href="../../../engine/ui/cards/play.css">
+<style>
+@font-face { font-family: "Barlow Condensed"; font-weight: 500; src: url("../../../instances/divided-world/ui/fonts/BarlowCondensed-Medium.woff2"); }
+@font-face { font-family: "Barlow Condensed"; font-weight: 600; src: url("../../../instances/divided-world/ui/fonts/BarlowCondensed-SemiBold.woff2"); }
+@font-face { font-family: "Barlow Condensed"; font-weight: 700; src: url("../../../instances/divided-world/ui/fonts/BarlowCondensed-Bold.woff2"); }
+@font-face { font-family: "Barlow Condensed"; font-weight: 800; src: url("../../../instances/divided-world/ui/fonts/BarlowCondensed-ExtraBold.woff2"); }
+@font-face { font-family: "Anton"; src: url("../../../instances/divided-world/ui/fonts/Anton-Regular.woff2"); }
+:root {
+  --kb-glass-ground: #07050d;
+  --kb-glass-panel-soft: rgba(10, 6, 20, 0.72);
+  --kb-glass-panel: rgba(10, 6, 20, 0.82);
+  --kb-glass-panel-strong: rgba(10, 6, 20, 0.88);
+  --kb-glass-sheet: rgba(9, 5, 18, 0.92);
+  --kb-glass-field: #160d2a;
+  --kb-glass-field-2: #120b22;
+  --kb-glass-card: #0b0914;
+  --kb-glass-caption-ground: #000000;
+  --kb-glass-caption-ink: #ffffff;
+  --kb-glass-text: #f1ecff;
+  --kb-glass-text-2: #e4def7;
+  --kb-glass-text-hi: #ffffff;
+  --kb-glass-pale: #c9f8ff;
+  --kb-glass-violet: #a78bfa;
+  --kb-glass-neon-text: #9ef4ff;
+  --kb-glass-neon: #19e3ff;
+  --kb-glass-sweet: #2ee6ff;
+  --kb-glass-ready: #ffd93d;
+  --kb-glass-ready-text: #ffe27a;
+  --kb-glass-salty: #ff3d7f;
+  --kb-glass-salty-text: #ff9cc0;
+  --kb-glass-estimate: #ffc48a;
+  --kb-glass-loss: #ff8ab0;
+  --kb-glass-over: #ff8a96;
+  --kb-glass-hurt: #ff8fb1;
+  --kb-glass-ink-neon: #03141a;
+  --kb-glass-ink-salty: #14030a;
+  --kb-glass-ink-ready: #1a1403;
+  --kb-glass-font-display: "Anton", sans-serif;
+  --kb-glass-font-body: "Barlow Condensed", sans-serif;
+}
+body { margin: 0; padding: 32px; background: var(--kb-glass-ground); display: flex; gap: 48px; align-items: flex-start; font-family: var(--kb-glass-font-body); }
+.col { width: 420px; }
+.col > h2 { margin: 0 0 6px; font: 400 26px var(--kb-glass-font-display); letter-spacing: .5px; text-transform: uppercase; color: var(--kb-glass-text-2); }
+.sheet { box-sizing: border-box; padding: 28px; background: var(--kb-glass-sheet); border: 1px solid color-mix(in srgb, var(--kb-glass-neon) 40%, transparent); }
+.kb-visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.kb-play { margin-top: 0; }
+/* Today: the rules of instances/divided-world/ui/laugh-track/laugh-track.css, with the board font it names. */
+.old { display: grid; gap: .5rem; border: 0; margin: 0; padding: 0; font-family: Verdana, sans-serif; }
+.old legend { padding: 0; margin-bottom: .25rem; font: inherit; letter-spacing: 0; text-transform: none; font-weight: 600; }
+.old blockquote { border: 1px solid #888; margin: 0; padding: .3em 2%; white-space: pre-wrap; max-height: 12rem; overflow: auto; }
+.old .f { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; }
+.old .f input { flex: 1 1 10rem; min-width: 0; }
+/* Proposed: what the kit adds to the play form's own pieces. */
+.mk-form { margin: 0; padding: 0; border: 0; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
+.mk-cue { display: flex; flex-direction: column; padding-top: 12px; border-top: 1px solid color-mix(in srgb, var(--kb-glass-text-hi) 22%, transparent); }
+.mk-cue-head { display: flex; align-items: center; justify-content: space-between; min-height: 36px; }
+.mk-cue .kb-play-input { margin-top: 4px; }
+.mk-sounds { margin-top: 8px; }
+.mk-cue .kb-play-fine { margin-top: 6px; }
+.mk-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.mk-post { max-height: calc(5 * 1.4em + 20px); }
+</style></head><body>
+<div class="col"><h2>Today</h2><div class="sheet"><div class="kb-play"><fieldset class="old">
+  <legend>Your audience&apos;s cues</legend>
+  <blockquote>For over two decades, the fan game community has been one of the most creative and resilient corners of gaming culture, with no franchise inspiring quite as much passion as Nintendo’s flagship mascot, Mario. Long before official tools like Super Mario Maker allowed players to construct and share their own levels on home consoles, dedicated enthusiasts were reverse-engineering classic titles, building custom engines from scratch, and distributing their creations across early internet forums.</blockquote>
+  <div><div class="f"><label>Phrase</label><input type="text" value="fan game"><label>Sound</label><select><option>Boo</option></select><button type="button">Remove</button></div><p>Cues 2 places in this post</p><p>A face-down Laugh Track waits for this phrase</p></div><div><div class="f"><label>Phrase</label><input type="text" value="forums"><label>Sound</label><select><option>Laugh</option></select><button type="button">Remove</button></div><p>Cues 1 place in this post</p></div><div><div class="f"><label>Phrase</label><input type="text" value="Mario"><label>Sound</label><select><option>Cheer</option></select><button type="button">Remove</button></div><p>Cues 11 places in this post</p></div>
+  <button type="button" style="justify-self:start">Add a cue</button>
+  <p>14 places in all (at most 30)</p>
+</fieldset></div></div></div>
+<div class="col"><h2>Proposed</h2><div class="sheet"><div class="kb-play"><fieldset class="mk-form">
+  <div><legend class="kb-play-label">Your audience&apos;s cues</legend>
+  <p class="kb-play-fine">Select words in the post below with a pointer or by touch, or type them. A selection fills the first empty cue.</p>
+  <div class="kb-play-post-frame kb-glass-cut-panel"><div class="kb-play-post mk-post" tabindex="0">For over two decades, the fan game community has been one of the most creative and resilient corners of gaming culture, with no franchise inspiring quite as much passion as Nintendo’s flagship mascot, Mario. Long before official tools like Super Mario Maker allowed players to construct and share their own levels on home consoles, dedicated enthusiasts were reverse-engineering classic titles, building custom engines from scratch, and distributing their creations across early internet forums.</div></div></div>
+  
+  <div class="mk-cue">
+    <div class="mk-cue-head"><label class="kb-play-label" for="p1">Cue 1</label><button type="button" class="kb-glass-button kb-glass-skew" data-kb-kind="quiet" data-kb-size="s"><span class="kb-glass-upright">Remove</span></button></div>
+    <input id="p1" class="kb-play-input" type="text" value="fan game">
+    <div class="kb-play-choice-row mk-sounds" role="radiogroup" aria-label="Sound for cue 1">
+      <label class="kb-play-choice-opt"><input type="radio" class="kb-visually-hidden" name="s1" ><span>Laugh</span></label><label class="kb-play-choice-opt"><input type="radio" class="kb-visually-hidden" name="s1" ><span>Cheer</span></label><label class="kb-play-choice-opt"><input type="radio" class="kb-visually-hidden" name="s1" checked><span>Boo</span></label>
+    </div>
+    <p class="kb-play-fine">Cues 2 places in this post. A face-down Laugh Track waits for this phrase.</p>
+  </div>
+  
+  <div class="mk-cue">
+    <div class="mk-cue-head"><label class="kb-play-label" for="p2">Cue 2</label><button type="button" class="kb-glass-button kb-glass-skew" data-kb-kind="quiet" data-kb-size="s"><span class="kb-glass-upright">Remove</span></button></div>
+    <input id="p2" class="kb-play-input" type="text" value="forums">
+    <div class="kb-play-choice-row mk-sounds" role="radiogroup" aria-label="Sound for cue 2">
+      <label class="kb-play-choice-opt"><input type="radio" class="kb-visually-hidden" name="s2" checked><span>Laugh</span></label><label class="kb-play-choice-opt"><input type="radio" class="kb-visually-hidden" name="s2" ><span>Cheer</span></label><label class="kb-play-choice-opt"><input type="radio" class="kb-visually-hidden" name="s2" ><span>Boo</span></label>
+    </div>
+    <p class="kb-play-fine">Cues 1 place in this post</p>
+  </div>
+  
+  <div class="mk-cue">
+    <div class="mk-cue-head"><label class="kb-play-label" for="p3">Cue 3</label><button type="button" class="kb-glass-button kb-glass-skew" data-kb-kind="quiet" data-kb-size="s"><span class="kb-glass-upright">Remove</span></button></div>
+    <input id="p3" class="kb-play-input" type="text" value="Mario">
+    <div class="kb-play-choice-row mk-sounds" role="radiogroup" aria-label="Sound for cue 3">
+      <label class="kb-play-choice-opt"><input type="radio" class="kb-visually-hidden" name="s3" ><span>Laugh</span></label><label class="kb-play-choice-opt"><input type="radio" class="kb-visually-hidden" name="s3" checked><span>Cheer</span></label><label class="kb-play-choice-opt"><input type="radio" class="kb-visually-hidden" name="s3" ><span>Boo</span></label>
+    </div>
+    <p class="kb-play-fine">Cues 11 places in this post</p>
+  </div>
+  
+  <div class="mk-cue">
+    <div class="mk-cue-head"><label class="kb-play-label" for="p4">Cue 4</label><button type="button" class="kb-glass-button kb-glass-skew" data-kb-kind="quiet" data-kb-size="s"><span class="kb-glass-upright">Remove</span></button></div>
+    <input id="p4" class="kb-play-input" type="text" value="">
+    <div class="kb-play-choice-row mk-sounds" role="radiogroup" aria-label="Sound for cue 4">
+      <label class="kb-play-choice-opt"><input type="radio" class="kb-visually-hidden" name="s4" checked><span>Laugh</span></label><label class="kb-play-choice-opt"><input type="radio" class="kb-visually-hidden" name="s4" ><span>Cheer</span></label><label class="kb-play-choice-opt"><input type="radio" class="kb-visually-hidden" name="s4" ><span>Boo</span></label>
+    </div>
+    <p class="kb-play-fine">At least 4 letters or digits, matched as whole words in any case</p>
+  </div>
+  <div class="mk-foot"><button type="button" class="kb-glass-button kb-glass-skew" data-kb-kind="secondary" data-kb-size="s"><span class="kb-glass-upright">Add a cue</span></button><p class="kb-play-fine" role="status">14 places in all (at most 30)</p></div>
+</fieldset></div></div></div>
+</body></html>

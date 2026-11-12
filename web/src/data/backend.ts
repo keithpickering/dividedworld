@@ -16,6 +16,7 @@
  * is not production, `?latency=<ms>` delays every promise the fake answers (withLatency), and `?fail=<rpc>` fails the first call of
  * the named rpc (withFailure).
  */
+import { onPageClock } from './fixtures/page-clock.ts';
 import type { Character, KayfaApi } from '../../../engine/ui/data/api.ts';
 import { withStaffFace } from '../../../engine/ui/data/staff-faces.ts';
 import { instance } from '../../../instances/divided-world/index.ts';
@@ -103,7 +104,7 @@ export async function createBackend(): Promise<KayfaApi> {
     const fake = createBoardsFake(moment);
     globalThis.history.replaceState(null, '', seedBoards(fake, moment));
     recordAvatarUploads(fake);
-    return withFailure(withLatency(fake, timing), timing);
+    return onPageClock(withFailure(withLatency(fake, timing), timing));
   }
   const [{ createFake }, { seedDemo, recordAvatarUploads, exposeFake }] = await Promise.all([
     import('../../../engine/ui/data/fake.ts'),
@@ -115,5 +116,5 @@ export async function createBackend(): Promise<KayfaApi> {
     recordAvatarUploads(fake);
     exposeFake(fake, demo);
   }
-  return withFailure(withLatency(fake, timing), timing);
+  return onPageClock(withFailure(withLatency(fake, timing), timing));
 }

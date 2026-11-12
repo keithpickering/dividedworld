@@ -17,6 +17,7 @@ const NOW = '2026-11-02T10:00:00Z';
 function backend(options: { unread?: () => number; updates?: readonly Update[]; rows?: () => readonly Alert[]; moved?: (id: string) => { count: number; at: string } | null; toasts?: Preferences['toasts'] } = {}) {
   const heard: { account: AccountListener | null; reach: ReachListener | null; accountOff: number; reachOff: number } = { account: null, reach: null, accountOff: 0, reachOff: 0 };
   const api = {
+    now: () => Date.now(),
     alertsUnread: vi.fn(async () => options.unread?.() ?? 0),
     subscribeAccount: vi.fn((l: AccountListener) => { heard.account = l; return () => { heard.accountOff += 1; }; }),
     subscribeReach: vi.fn((l: ReachListener) => { heard.reach = l; return () => { heard.reachOff += 1; }; }),
