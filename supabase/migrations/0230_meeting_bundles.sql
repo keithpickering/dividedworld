@@ -10,6 +10,8 @@
 --   queued_moves_guard  (0225) also admits `{role, beat}` where a board goes: the board the earlier beat's bundle made (beat_role_board, 0228), which must have landed. The part depends on the move that
 --                       made it, as a later move into a made board does, so an admin's hold or reversal of the creation follows it.
 --   system_tick         (0228) lands a `{role, beat}` on the real board, resolved from the landed Acts at landing as a role of the part's own bundle is.
+--   system_tick         (0235) takes the global place key (lock_thread_places) before it checks and lands a lasting move, and a merge's board key (lock_board_closing) too, both held to the end of the tick,
+--                       so the writers of a place wait for each other (final review of PR #450, F7).
 --   meeting_season      the season a meeting was held in: where `{role, beat}` is read from at landing, whenever that is.
 --
 -- A beat's way out is Task 5's: a due beat is played at the next meeting with its defaults, an optional one lapses at the season's end. A bundle an admin holds or reverses is the admin queue's.
@@ -393,6 +395,10 @@ begin
         -- The three moves that build the board are checked against the boards and threads as they are now (0216), as a machine move is against the machine: state changes between
         -- the queue and the landing (a board closed, a thread gone, a merge that would now make a cycle). Refused for good, with the reason; it is no Act, so nothing needs reversing.
         if due.kind in ('createBoard', 'moveThread', 'mergeBoard') then
+          -- The writers of a place wait for each other (0235): the global key, before the checks and the rebuild read anything, and for a merge the key of the board it closes, which a start on that board
+          -- takes shared, so a thread started there is committed before the merge reads its threads, or waits and is refused. Both are held to the end of the tick.
+          perform lock_thread_places();
+          if due.kind = 'mergeBoard' then perform lock_board_closing(safe_uuid(lp ->> 'board')); end if;
           clash := lasting_move_problem(due.kind, lp);
           if clash is not null then
             update queued_moves set failed_at = now(), failure = left('that move cannot land: ' || clash, 500), refused_at = now() where id = due.id;

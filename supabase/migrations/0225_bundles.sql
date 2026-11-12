@@ -10,7 +10,7 @@
 --                   bundle, into a board a createBoard made). It is recorded when the move is queued, as the design says.
 --   move_dependencies   (act, on_act): written when a dependent move lands, one row for each move it builds on. Insert-only, its guards fire always; reverse_move reads it to follow a reversal.
 --   hold_move       holds the move and, in the same transaction and at the same instant, every move still waiting that builds on it, breadth first. Holding a part never holds what it builds on.
---   reverse_move    ends the move as reversed and, in the same transaction, every landed move that builds on it, breadth first, each as reversed by the admin with an end of its own, and holds every move
+--   reverse_move    (0235) takes the global place key before its first end. Ends the move as reversed and, in the same transaction, every landed move that builds on it, breadth first, each as reversed by the admin with an end of its own, and holds every move
 --                   still waiting that builds on one of them. An admin may hold or reverse any one part, and what builds on it follows.
 --   admin_queue     says each part's `bundle`, `role` and `bundleName` in every group a part can be in.
 --   moves_log       gains `bundle` and `role` at its end.
@@ -679,6 +679,8 @@ declare
   dep uuid;
 begin
   perform only_admins('reverses a move');
+  -- A reversal ends a chain of moves, any of which may be lasting: the global place key (0235) first, before the first per-move key of any of them, so the tick and a second reversal meet it in one order.
+  perform lock_thread_places();
   if not exists (select 1 from acts a where a.id = move_act and a.kind = 'move') then
     raise exception 'that is not a move' using hint = 'kayfabb.refusal', errcode = 'P0002';
   end if;

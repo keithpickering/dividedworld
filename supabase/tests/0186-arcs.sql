@@ -46,6 +46,7 @@ declare
     jsonb_build_object('key', 'r-held', 'mini', true, 'repeatable', false, 'unlock', jsonb_build_array(jsonb_build_object('kind', 'beatLanded', 'beat', 'never'))),
     jsonb_build_object('key', 'r-allheld', 'mini', true, 'repeatable', false, 'unlock', jsonb_build_array(jsonb_build_object('kind', 'beatLanded', 'beat', 'never'))),
     jsonb_build_object('key', 'r-refused', 'mini', true, 'repeatable', false, 'unlock', jsonb_build_array(jsonb_build_object('kind', 'beatLanded', 'beat', 'never'))),
+    jsonb_build_object('key', 'r-reversed', 'mini', true, 'repeatable', false, 'unlock', jsonb_build_array(jsonb_build_object('kind', 'beatLanded', 'beat', 'never'))),
     jsonb_build_object('key', 'r-failed', 'mini', true, 'repeatable', false, 'unlock', jsonb_build_array(jsonb_build_object('kind', 'beatLanded', 'beat', 'never'))),
     jsonb_build_object('key', 'r-waiting', 'mini', true, 'repeatable', false, 'unlock', jsonb_build_array(jsonb_build_object('kind', 'beatLanded', 'beat', 'never'))),
     jsonb_build_object('key', 'r-nobundle', 'mini', true, 'repeatable', false, 'unlock', jsonb_build_array(jsonb_build_object('kind', 'beatLanded', 'beat', 'never'))),
@@ -160,7 +161,7 @@ declare
   said text;
 begin
   perform pg_temp.expect((select count(*) from persona_arcs) = 3, 'persona_arcs is not one row a persona: ' || (select count(*) from persona_arcs));
-  perform pg_temp.expect((select jsonb_array_length(beats) from persona_arcs where staff = 'ar-boss') = 21, 'the Boss''s beats were not seeded');
+  perform pg_temp.expect((select jsonb_array_length(beats) from persona_arcs where staff = 'ar-boss') = 22, 'the Boss''s beats were not seeded');
   perform pg_temp.expect((select beats -> 0 ->> 'key' from persona_arcs where staff = 'ar-boss') = 'split', 'the beats are not in the persona''s order');
   perform pg_temp.expect((select holds_back from persona_arcs where staff = 'ar-boss') = '[{"kind": "createBoard", "until": "split"}]'::jsonb, 'the held-back kinds were not seeded');
   perform pg_temp.expect((select phase_days from persona_arcs where staff = 'ar-other') = '{"honeymoon": 3}'::jsonb, 'the phase days were not seeded');
@@ -651,6 +652,20 @@ begin
   perform system_tick();
   perform pg_temp.expect((select landed_act is not null from queued_moves where id = q2), 'the other part did not land');
   perform pg_temp.expect(pg_temp.holds('ar-boss', '{"kind": "beatLanded", "beat": "r-refused"}'), 'a beat with one part refused and the other landed has not landed');
+
+  -- A landed part reversed afterward still counts as landed: it did land, and the reversal is an Act beside it. One of two reversed, then both.
+  b := gen_random_uuid();
+  q1 := pg_temp.part(b, 'Reversed one', 'one', 'createBoard', pg_temp.mkboard('Reversed One A'));
+  q2 := pg_temp.part(b, 'Reversed one', 'two', 'createBoard', pg_temp.mkboard('Reversed One B'));
+  perform pg_temp.unlock('r-reversed');
+  insert into arc_beat_events (season, staff, beat, event, bundle) values (s, 'ar-boss', 'r-reversed', 'played', b);
+  perform system_tick();
+  perform pg_temp.expect((select count(*) from queued_moves where bundle = b and landed_act is not null) = 2, 'both parts should have landed');
+  perform pg_temp.expect(pg_temp.holds('ar-boss', '{"kind": "beatLanded", "beat": "r-reversed"}'), 'a beat whose parts landed has not landed');
+  perform end_move((select landed_act from queued_moves where id = q1), 'reversed', 'admin');
+  perform pg_temp.expect(pg_temp.holds('ar-boss', '{"kind": "beatLanded", "beat": "r-reversed"}'), 'a beat with one landed part later reversed was read as not landed');
+  perform end_move((select landed_act from queued_moves where id = q2), 'reversed', 'admin');
+  perform pg_temp.expect(pg_temp.holds('ar-boss', '{"kind": "beatLanded", "beat": "r-reversed"}'), 'a beat whose every landed part was later reversed was read as not landed');
 
   -- A failure the tick will retry is not a refusal: that part is still waiting.
   b := gen_random_uuid();

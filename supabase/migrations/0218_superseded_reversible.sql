@@ -4,6 +4,10 @@
 -- superseded end and at most one other end (the unique index is on the target and whether the end is a supersession), and end_move takes a second end only for a lasting move
 -- already ended as superseded, and only as reversed or overturned. It is a new move_end Act; nothing is updated.
 --
+-- Place writers wait for each other (0235; final review of PR #450, F7): end_move of a lasting kind takes the global place key (lock_thread_places) before its per-move lock, for the order the tick and
+-- reverse_move use, and a mergeBoard's or a createBoard's end takes the key of the board it closes or reopens (lock_board_closing) before it reads first_open_board and writes the end, so a reversal
+-- and a landing merge run one after the other and the reversal's rebuild reads what the merge committed.
+--
 -- Readers of a move's ends, checked: open_moves (acts_track_moves deletes by target on any end, so a second end deletes nothing; rebuild_open_moves reads "has any end"), thread_place and
 -- thread_places_computed (0217: reversed or overturned takes a move out of the reckoning, superseded does not), board_is_open and the closed-board reads (a createBoard is never
 -- superseded, so it has one end), moves_log (below: one row per move, with its latest end, so a move with two ends is one row that reads its final state), my_group_moves (conferGroup only,
@@ -24,9 +28,12 @@ declare
   written uuid;
   lasting boolean;
   first_before uuid;
+  shaped uuid;
 begin
   if why is null or why not in ('met', 'expired', 'reversed', 'superseded', 'spent', 'unmet', 'overturned') then raise exception 'a move ends as met, expired, reversed, superseded, spent, unmet or overturned, not %', coalesce(why, 'nothing') using errcode = '22023'; end if;
   if by is null or char_length(by) not between 1 and 40 then raise exception 'a move''s end says who ended it' using errcode = '22023'; end if;
+  -- A lasting move's end rewrites places: the global key first, before the per-move key (the tick holds the global key when it ends a superseded move, so this is the one order), and before anything is read.
+  if coalesce((select k.lasting from acts a join move_kinds k on k.key = a.payload ->> 'kind' where a.id = move_act and a.kind = 'move'), false) then perform lock_thread_places(); end if;
   perform pg_advisory_xact_lock(hashtext('kayfabb.end_move'), hashtext(move_act::text));
   select * into m from acts where id = move_act and kind = 'move';
   if not found then raise exception 'there is no such move' using errcode = 'P0002'; end if;
@@ -40,7 +47,12 @@ begin
     select e.id into existing from acts e where e.kind = 'move_end' and e.target_act_id = move_act limit 1;
   end if;
   if existing is not null then return jsonb_build_object('act', existing, 'ended', false); end if;
-  if lasting then first_before := first_open_board(); end if;
+  if lasting then
+    -- The board a merge or a creation takes out of play (or back): a start on it waits for this end, then is refused or lands on the board it should.
+    shaped := case m.payload ->> 'kind' when 'mergeBoard' then safe_uuid(m.payload #>> '{params,board}') when 'createBoard' then (select b.id from boards b where b.created_by_act = move_act) end;
+    if shaped is not null then perform lock_board_closing(shaped); end if;
+    first_before := first_open_board();
+  end if;
   -- A tick that read the old expiry before a ruling moved it is too late: the ruling is a fact of the lock's holder, read here under the lock.
   if why = 'expired' and exists (select 1 from acts a join acts r on r.kind = 'appeal_ruling' and r.target_act_id = a.id
                                  where a.kind = 'appeal' and a.target_act_id = move_act and (r.payload ->> 'until')::timestamptz > now()) then

@@ -16,6 +16,7 @@
 --   lasting_rebuild             rebuilds the threads a lasting move touched, after it landed or ended. If the instance's first open board changed (a merge of the first open board, or its
 --                               reversal), the implicit route "closed created board with no fallback -> first open board" moved too, and every thread is rebuilt; that is rare.
 --   end_move (0135)             ending a lasting move calls lasting_rebuild.
+--   (0235)                      lasting_rebuild takes the global place key (lock_thread_places) before it reads, as every writer of a place does, so what it rebuilds from is what the others committed.
 --   queued_moves_guard (0140)   a lasting move has no demand and no expiry (the meeting queues it with 0 hours, so the guard keeps none); the three kinds' refusals, in words.
 --   system_tick (0140)          lands the three kinds beside renameBoard: a createBoard inserts its board; a moveThread ends the earlier move of the same thread as `superseded`; each
 --                               then rebuilds the threads it touched. The handover's pass (2b) no longer ends a lasting move as unaddressed: a new Boss inherits the landscape (0214).
@@ -173,6 +174,7 @@ declare
   m acts%rowtype;
   touched uuid[];
 begin
+  perform lock_thread_places();
   select * into m from acts where id = in_move and kind = 'move';
   if not found then return 0; end if;
   -- The implicit route of a closed created board with no fallback is the first open board: when that moved, any such board's threads move, so all are rebuilt.
