@@ -224,11 +224,11 @@ test('an instance exported and imported into a fresh database is the same instan
       -- An original 0025 handed to the sweep: a row the export carries, naming a file it does not.
       insert into avatar_orphans (key) values ('exp-src.webp');
       insert into admins (account) values (ann);
-      -- Conduct (0159): an acceptance of the code, a report to admins on Ann's post and the decision that closes it, so each of the three tables has a row to carry across.
+      -- Conduct (0236): an acceptance of the code, a report to admins on Ann's post and the decision that closes it, so each of the three tables has a row to carry across.
       insert into conduct_acceptances (account, version) values (bob, 1);
       insert into conduct_reports (reporter, version_act, section, note) values (bob, p, 'mask', 'Carried across, too.');
       insert into conduct_decisions (report, version_act, admin, outcome, note) select r.id, p, ann, 'none', 'Read, and nothing to do.' from conduct_reports r;
-      -- Moderation mail (0160): one outbox row and its attempt, so both tables have a row to carry across.
+      -- Moderation mail (0237): one outbox row and its attempt, so both tables have a row to carry across.
       insert into mail_outbox (account, template, facts, decision) select bob, 'reportRead', '{}', d.id from conduct_decisions d limit 1;
       insert into mail_attempts (outbox, kind, provider_id, error) select o.id, 'sent', 'export-prov-1', null from mail_outbox o limit 1;
       -- An admin ends that card with reverse_card, as ann, the admin (0092); the play's id is the one planted above.

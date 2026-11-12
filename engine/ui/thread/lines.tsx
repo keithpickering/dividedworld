@@ -64,7 +64,7 @@ export const quoteHead = (q: QuoteOf): ReactNode => <QuoteHead of={q} />;
 export interface PostAbout { readonly seq: number | null; readonly name: string }
 
 /**
- * Whether a History row is a hidden version. A hidden version's words are null (`public_payload`, 0159); an edit's own `hidden` says so too. The original's own row cannot say it by
+ * Whether a History row is a hidden version. A hidden version's words are null (`public_payload`, 0236); an edit's own `hidden` says so too. The original's own row cannot say it by
  * `hidden`, which for a post is whether its *current* version is hidden, so it is read from its words.
  */
 const versionHidden = (v: Act): boolean => typeof v.payload.body !== 'string' || (v.kind === 'edit' && v.hidden === true);

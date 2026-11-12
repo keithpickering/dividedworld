@@ -5,7 +5,7 @@
  *
  * The author of a version that is hidden until they edit it also sees their own words under it, in a muted panel only they see ("Only you see this"), with Edit; a version an
  * admin hid outright shows its author the note alone, and an edit that waits for an admin after a second hide says so. The words come from `my_hidden_version`, which answers
- * only the post's own player (supabase/migrations/0161_conduct_admin.sql); a reader who does not play the post's mask never asks, so no one else's read depends on it.
+ * only the post's own player (supabase/migrations/0238_conduct_admin.sql); a reader who does not play the post's mask never asks, so no one else's read depends on it.
  */
 import { useEffect, useState, type ReactNode } from 'react';
 import { useKayfa } from '../context.tsx';

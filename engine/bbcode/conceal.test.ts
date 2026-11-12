@@ -5,7 +5,7 @@ import { parse } from './parse.ts';
 import type { BbNode } from './parse.ts';
 
 /*
- * conceal_quotes (supabase/migrations/0159_conduct.sql) empties the contents of every quote of a hidden post by reading a body the way parse.ts does. This runs the
+ * conceal_quotes (supabase/migrations/0236_conduct.sql) empties the contents of every quote of a hidden post by reading a body the way parse.ts does. This runs the
  * corpus that supabase/tests/0164-conduct-leaks.sql runs through that function through the parser: the body the SQL is expected to return must parse to exactly the
  * parser's own tree of the body with the children of each quote of the hidden post emptied. The two readings share one file, so neither can move alone.
  */

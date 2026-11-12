@@ -1,4 +1,4 @@
--- The moderation mail's outbox and a new account's acceptance of the code (supabase/migrations/0160_conduct_mail.sql; the conduct plan, Tasks 3 and 5):
+-- The moderation mail's outbox and a new account's acceptance of the code (supabase/migrations/0237_conduct_mail.sql; the conduct plan, Tasks 3 and 5):
 -- decide_report and decide enqueue the author's mail for each outcome and the reporter's reportRead (the same template and facts whatever was decided),
 -- a staff author is sent nothing, mail_due lists a row until a sent or refused attempt exists (a failed one backs off 2^n minutes for n failures, at most a day), the
 -- bar it carries is the account's current one, never the decision's own (a row for a suspension read after a lift clears the login), the two service doors refuse a
@@ -7,7 +7,7 @@
 -- The poisons, each driven red once before the check was trusted:
 --   * mail_for_decision replaced by a function that enqueues nothing must fail the author's-mail assertion for a nudge;
 --   * mail_due replaced by a version that returns no bar must fail the banned row's bar assertion;
---   * mail_due replaced by a version that reads the decision's own outcome, as 0160 first did, must fail the stale-row assertion (a suspension after a lift);
+--   * mail_due replaced by a version that reads the decision's own outcome, as 0237 first did, must fail the stale-row assertion (a suspension after a lift);
 --   * mail_due replaced by a version that ignores 'refused' or the backoff must fail the attempts assertions.
 
 create function tests.refusal(stmt text) returns text language plpgsql as $$

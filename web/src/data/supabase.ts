@@ -62,7 +62,7 @@ export interface SupabaseApiOptions {
 type Row = Record<string, any>;
 
 const REFUSAL_HINT = 'kayfabb.refusal';
-/** The hint a refusal for a barred account carries (0159_conduct.sql, refuse_if_barred). */
+/** The hint a refusal for a barred account carries (0236_conduct.sql, refuse_if_barred). */
 const BARRED_HINT = 'kayfabb.barred';
 const LOST = LOST_ANSWER;
 const NOT_DONE = 'that could not be done right now; try again';
@@ -1994,7 +1994,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     log(before) {
       return readLogPage(readLogViews, before ?? null);
     },
-    /* What admins did to the player's own posts (`my_conduct_log`, 0159): the caller's own rows, newest first; an unknown outcome is no row. */
+    /* What admins did to the player's own posts (`my_conduct_log`, 0236): the caller's own rows, newest first; an unknown outcome is no row. */
     async conductLog() {
       const d = (await read(() => client.rpc('my_conduct_log'))).data;
       return rowsOf(d).flatMap((r): ConductLogRow[] => {

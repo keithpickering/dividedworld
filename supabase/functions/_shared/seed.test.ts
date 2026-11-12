@@ -12,8 +12,8 @@ import type { Persona } from '../../../engine/rules/types.ts';
 test('the seed carries every setting, class, reaction, card and board of the instance, in the shape seed_instance() reads', () => {
   const seed = instanceSeed(instance, conduct);
   assert.deepEqual(Object.keys(seed.settings).sort(), [...Object.keys(instance.settings), 'copy', 'systemLines', 'systemMoveWords', 'conductVersion', 'conductSections'].sort());
-  assert.equal(seed.settings.conductVersion, conduct.version, 'the version an account must have accepted (0159)');
-  assert.deepEqual(seed.settings.conductSections, conduct.sections.map((c) => c.key), 'the sections a report may name, by key (0159)');
+  assert.equal(seed.settings.conductVersion, conduct.version, 'the version an account must have accepted (0236)');
+  assert.deepEqual(seed.settings.conductSections, conduct.sections.map((c) => c.key), 'the sections a report may name, by key (0236)');
   assert.deepEqual(seed.settings.conduct, instance.settings.conduct, 'the open-report limit and the admin address ride with the instance\'s settings');
   assert.deepEqual(seed.settings.systemLines, instance.system.stockLines, 'the tick (0048) fills these lines in SQL');
   assert.deepEqual(seed.settings.systemMoveWords, Object.fromEntries(MOVE_KINDS.map((m) => [m.key, m.plain])), '{move}, in plain words, by kind');

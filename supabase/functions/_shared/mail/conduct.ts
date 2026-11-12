@@ -9,7 +9,7 @@ import { renderHtml, renderText } from '../../../../engine/mail/render.ts';
 import { conduct, mailTheme } from '../instance.ts';
 
 /**
- * The outbox's facts as the template reads them (supabase/migrations/0160_conduct_mail.sql): the database writes `post`, `thread` and `conduct` as paths
+ * The outbox's facts as the template reads them (supabase/migrations/0237_conduct_mail.sql): the database writes `post`, `thread` and `conduct` as paths
  * on the site and `section` as the section's key, since it knows neither the site's address nor the instance's words; here the paths become addresses
  * and the key becomes the section's title from the instance's code of conduct (a key the code no longer holds stays as written).
  */

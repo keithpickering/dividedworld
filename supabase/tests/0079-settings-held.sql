@@ -916,7 +916,7 @@ begin
   exception when check_violation then null;
   end;
 
-  -- The two settings the seed writes beside `conduct` (0159) are outside SETTINGS and held all the same: engine/rules/settings-held.test.ts reads only
+  -- The two settings the seed writes beside `conduct` (0236) are outside SETTINGS and held all the same: engine/rules/settings-held.test.ts reads only
   -- the two lists above, so theirs are here.
   for r in select * from (values ('conductVersion', '1'), ('conductVersion', '3'), ('conductSections', '[]'), ('conductSections', '["mask", "hate"]')) g(key, value) loop
     insert into settings (key, value) values (r.key, r.value::jsonb) on conflict (key) do update set value = excluded.value;

@@ -134,7 +134,7 @@ export interface Seed {
   update(update: { title: string; body: string; changes?: readonly UpdateChange[]; at?: number }): Id;
   /** An account's decision recorded before the screen opens (the admin screen's past decisions), dated `at` (else now). */
   conductDecision(decision: { account: Id; outcome: string; until?: number; note?: string; at?: number; /** The version an admin's decision was about (a hide, an unhide, an approve): it is in the author's `conductLog`. */ version?: Id }): void;
-  /** An open report (`report_post`, 0159) on a post's version, dated `at` (else now), by `reporter` (an account) when the open-report limit is under test: the screen shows the version's words, the section and the note. */
+  /** An open report (`report_post`, 0236) on a post's version, dated `at` (else now), by `reporter` (an account) when the open-report limit is under test: the screen shows the version's words, the section and the note. */
   conductReport(report: { version: Id; section: string; note?: string; at?: number; reporter?: Id }): number;
   /** A post hidden until its author edited it and edited since, awaiting an admin's second look (`reviews_due`): `words` are the edit's. */
   conductReview(review: { post: Id; version?: Id; words: string; at?: number }): void;
@@ -628,7 +628,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
 
   /** The versions hidden from players (hide, hideUntilEdited, and an edit that waits for an admin), as acts_public's `hidden` and `public_payload` serve them. */
   const hiddenVersions = new Map<Id, 'hide' | 'hideUntilEdited' | 'waiting'>();
-  /** A body with the contents of each quote of a post with a hidden version emptied, as `conceal_quotes` does (0159); the opener and the closer stay. */
+  /** A body with the contents of each quote of a post with a hidden version emptied, as `conceal_quotes` does (0236); the opener and the closer stay. */
   const concealQuotes = (body: string): string => {
     let out = body;
     for (const v of hiddenVersions.keys()) {
@@ -961,7 +961,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const handovers: { readonly outgoing: string | null; readonly boss: string; readonly at: number; readonly how: string; readonly bossWas: string | null; readonly outgoingOffice: string | null }[] = [];
   /** The seasons whose to-do an admin dismissed (`handover_dismissals`). */
   const dismissedTodos = new Set<number>();
-  /* The conduct screen's world (0159-0161): open reports, decisions, the re-review list, mail that failed and mail waiting for an address. */
+  /* The conduct screen's world (0236-0238): open reports, decisions, the re-review list, mail that failed and mail waiting for an address. */
   interface ReportRec { readonly id: number; readonly version: Id; readonly section: string; readonly note: string | null; readonly at: number; readonly reporter?: Id }
   interface DecisionRec { readonly id: number; readonly report: number | null; readonly version: Id | null; readonly account: Id | null; readonly outcome: string; readonly until: number | null; readonly note: string; readonly at: number }
   /** The most reports to admins an account holds open (`Settings.conduct.openReportsMost`): the fake's own, three. */

@@ -377,12 +377,12 @@ export interface Act {
   /** Set only by an edit made after the grace period: what "Last edited" says. */
   readonly shownEditedAt: string | null;
   /**
-   * Whether the version this Act shows now (a post's current one, an edit's own) is hidden by an admin (`acts_public.hidden`, 0159): its words are
+   * Whether the version this Act shows now (a post's current one, an edit's own) is hidden by an admin (`acts_public.hidden`, 0236): its words are
    * then null in `payload` and `currentPayload`, and the screen draws the hidden note in their place. Absent reads as not hidden. A post's own row
    * says whether its *current* version is hidden; to read whether one version in its History is, the version's `payload.body` is null.
    */
   readonly hidden?: boolean;
-  /** Whether any version of this post is hidden (`acts_public.any_hidden`, 0159): the predicate that empties a quote of it, so what a quote's hidden note stands on. Absent reads as no. */
+  /** Whether any version of this post is hidden (`acts_public.any_hidden`, 0236): the predicate that empties a quote of it, so what a quote's hidden note stands on. Absent reads as no. */
   readonly anyHidden?: boolean;
   /**
    * Set only on a card play whose first generation failed, which is then refunded and over (`acts_public.untaken`, 0149): public, the
@@ -398,7 +398,7 @@ export interface Act {
 }
 
 /**
- * The author's own view of their hidden post (`my_hidden_version`, 0161): `hiddenUntilEdited` carries their own words, which only they can read, so they can edit them; `waiting`
+ * The author's own view of their hidden post (`my_hidden_version`, 0238): `hiddenUntilEdited` carries their own words, which only they can read, so they can edit them; `waiting`
  * is an edit that follows a second hide until edited, which an admin looks at before it shows again; it carries the edit's words too, so Edit can start from them. Null for anyone else and for a version that is not hidden
  * until edited.
  */
@@ -806,7 +806,7 @@ export interface MoveInForce {
 }
 
 /**
- * What an admin did to a post of the player's own, under the code of conduct (`my_conduct_log`, 0159): the decision, its outcome, the version (an Act) and the post it was about,
+ * What an admin did to a post of the player's own, under the code of conduct (`my_conduct_log`, 0236): the decision, its outcome, the version (an Act) and the post it was about,
  * its thread and when. Never the admin, never the note (that is in the mail), never who reported, and never another player's.
  */
 export interface ConductLogRow {
@@ -1961,7 +1961,7 @@ export interface UpdatesPage {
   readonly queue?: Awaited<ReturnType<KayfaApi['adminQueue']>>;
 }
 
-/** The outcomes an admin gives a report (`decide_report`, 0159): none and close end it with no word to the author, the others tell the author what happened. */
+/** The outcomes an admin gives a report (`decide_report`, 0236): none and close end it with no word to the author, the others tell the author what happened. */
 export const REPORT_OUTCOMES = ['none', 'nudge', 'hide', 'hideUntilEdited', 'suspend', 'ban', 'close'] as const;
 export type ReportOutcomeKey = (typeof REPORT_OUTCOMES)[number];
 /** What `decide` takes besides a report's outcomes: bring a version back, lift a bar, approve an edit. */
@@ -1979,7 +1979,7 @@ export interface PastDecision {
   readonly at: string;
   readonly note: string;
 }
-/** An open report (`admin_reports`, 0161): the reported version's words, the section and note the reporter gave, and the author's account (null for a staff post) with its past decisions. The reporter is not shown. */
+/** An open report (`admin_reports`, 0238): the reported version's words, the section and note the reporter gave, and the author's account (null for a staff post) with its past decisions. The reporter is not shown. */
 export interface AdminReport {
   readonly id: number;
   readonly versionAct: Id;

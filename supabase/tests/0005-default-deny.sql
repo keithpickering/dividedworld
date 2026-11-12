@@ -24,7 +24,7 @@ declare
                            'my_infractions', 'my_bans', 'my_reports', 'my_appeals', 'my_reports_left', 'my_group_moves',
                            -- The search index (0117): one row per post or spin, readable as the Acts are; the table is no client's to write.
                            'post_search',
-                           -- The admins' re-review list (0159): the versions brought back by an author's edit, read by admins alone (the view is empty for anyone else).
+                           -- The admins' re-review list (0236): the versions brought back by an author's edit, read by admins alone (the view is empty for anyone else).
                            'reviews_due'];
   callable text[] := array['react(uuid,uuid,text)', 'start_thread(text,uuid,text,text,uuid[])', 'post(uuid,uuid,text,uuid,uuid[])',
                            'edit_post(uuid,uuid,text)', 'spin(uuid,uuid,text,text,uuid[])', 'whoami()', 'card_target(uuid)', 'card_of_play(uuid)', 'turn(uuid,text,text)', 'withdraw_turn(uuid)', 'create_invite()', 'reissue_invite(bigint)', 'open_account(text,integer)', 'create_character(text,text,text,text,jsonb)', 'set_debut(uuid,text,text)',
@@ -107,9 +107,9 @@ declare
                            'search_matches_sql(text,uuid,uuid,timestampwithtimezone,timestampwithtimezone,boolean,boolean,timestampwithtimezone,uuid,integer)', 'search_walk_sql(text,uuid,uuid,timestampwithtimezone,timestampwithtimezone,boolean,boolean,timestampwithtimezone,uuid,integer)', 'search_cursor_ok(jsonb,boolean)', 'search_cursor_cast(jsonb)', 'search_updates_thread()',
                            'search_match_conds(text,tsquery,uuid,timestampwithtimezone,timestampwithtimezone,boolean)', 'search_thread_matches(uuid,tsquery,uuid,timestampwithtimezone,timestampwithtimezone,boolean)', 'search_post_cards(uuid)',
                            -- The pulls check on pack_kinds (0139), granted to PUBLIC like them, and the count of a hand, which the ledger's policy cuts to the caller's own cards (my_cards calls it).
-                           -- Whether a spring or a take-back of a back exists (0159), the one fact card_held, which runs as its caller, can no longer read from the Acts' payload.
+                           -- Whether a spring or a take-back of a back exists (0236), the one fact card_held, which runs as its caller, can no longer read from the Acts' payload.
                            'pack_pulls_problem(jsonb)', 'card_held(uuid,text)', 'back_closed(uuid)',
-                           -- Conduct (0159). The player's doors: the code accepted, a report to admins and the caller's own bar and log. The admin's: deciding and reading a version's words,
+                           -- Conduct (0236). The player's doors: the code accepted, a report to admins and the caller's own bar and log. The admin's: deciding and reading a version's words,
                            -- each refused to anyone who is not an admin. And the two functions acts_public calls as its reader: whether a version is hidden, a public fact
                            -- of its id as acts_public's `hidden` is, and what a payload shows.
                            'accept_conduct(integer)', 'conduct_accepted()', 'report_post(uuid,text,text)', 'my_bar()', 'my_conduct_log(integer)',

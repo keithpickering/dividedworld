@@ -27,7 +27,7 @@ function quizOf(w: Weakness): { quiz: { question: string; choices: string[]; ans
 
 /**
  * What the seed reads of the instance's code of conduct (`InstanceUi.conduct`): its version and each section's key, typed by shape so the seed never imports the
- * engine's UI. SQL reads them as the settings `conductVersion` and `conductSections` (0159): the version an account must have accepted, and the sections a
+ * engine's UI. SQL reads them as the settings `conductVersion` and `conductSections` (0236): the version an account must have accepted, and the sections a
  * report may name.
  */
 export interface ConductSeed {
@@ -44,7 +44,7 @@ export function instanceSeed(instance: Instance, conduct: ConductSeed) {
       ...instance.settings, copy: instance.copy,
       systemLines: instance.system.stockLines,
       systemMoveWords: Object.fromEntries(MOVE_KINDS.map((m) => [m.key, m.plain])),
-      // The code of conduct's version and section keys (0159), from the instance's UI content, so SQL names no section.
+      // The code of conduct's version and section keys (0236), from the instance's UI content, so SQL names no section.
       conductVersion: conduct.version,
       conductSections: conduct.sections.map((c) => c.key),
     } as Record<string, unknown>,
