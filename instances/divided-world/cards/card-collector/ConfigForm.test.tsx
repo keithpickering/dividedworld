@@ -18,7 +18,8 @@ import { cardCollector } from '../card-collector.ts';
 import { ConfigForm } from './ConfigForm.tsx';
 
 const POST = { id: 'p' } as Act;
-const castable = cards.filter(castOnPost).map((r) => faceOf(r, cardsUi.find((u) => u.key === r.key), instance.settings, { cast: 'Move', set: 'Gimmick', use: 'Ward' }));
+// The Moves the form may name: Card Collector is uncommon, and it names nothing rarer than itself (Whodunnit? is the instance's first rare Move on a post).
+const castable = cards.filter(castOnPost).filter((r) => r.rarity === 'common' || r.rarity === 'uncommon').map((r) => faceOf(r, cardsUi.find((u) => u.key === r.key), instance.settings, { cast: 'Move', set: 'Gimmick', use: 'Ward' }));
 
 /** Held in state as the play form holds it, so a choice shows. */
 function Held({ onChange, faces = castable }: { readonly onChange: (c: Record<string, unknown>) => void; readonly faces?: typeof castable }) {
