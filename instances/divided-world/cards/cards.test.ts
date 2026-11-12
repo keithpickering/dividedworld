@@ -307,6 +307,10 @@ test('Whodunnit? and Blind Study are Pepperoni Moves on a post for three days, t
   }
   const named = cards.find((c) => c.key === 'card-collector')!.staffOptions!.schema as { properties: { card: { enum: string[] } } };
   assert.ok(named.properties.card.enum.includes('blind-study') && !named.properties.card.enum.includes('whodunnit'), 'Card Collector may name the uncommon, not the rare');
+  assert.ok(named.properties.card.enum.includes('overreaction'), 'Card Collector may name the common');
+  // New slots end their run, so the Vending Machine's rows above them never move: the on-sale ones after Last Word, the hidden one last.
+  const slotCards = instance.machine.map((m) => ('card' in m.item ? m.item.card : 'pack'));
+  assert.deepEqual(slotCards.slice(slotCards.indexOf('last-word')), ['last-word', 'overreaction', 'blind-study', 'main-event', 'off-day', 'sugar-coat', 'whodunnit']);
 });
 
 test('Overreaction is a common Pepperoni Move on a post, three to a post, that adds a reaction of its own and does not end', async () => {
