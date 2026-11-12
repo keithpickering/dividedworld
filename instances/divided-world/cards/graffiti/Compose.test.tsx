@@ -250,7 +250,7 @@ describe('review fixes', () => {
     act(() => { fireEvent.pointerDown(surface, { clientX: 300, clientY: 100, pointerId: 1, button: 0, pointerType: 'mouse' }); });
     act(() => { fireEvent.pointerUp(surface, { clientX: 300, clientY: 100, pointerId: 1, pointerType: 'mouse' }); });
     await user.click(tag());
-    const first = submit.mock.calls[0]![1] as { strokes: { aspect: number; points: number[][] }[] };
+    const first = (submit.mock.calls[0] as unknown[])[1] as { strokes: { aspect: number; points: number[][] }[] };
     expect(first.strokes[0]!.aspect).toBe(3);
     expect(first.strokes[0]!.points).toEqual([[0.5, 0.5]]);
   });
