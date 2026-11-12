@@ -138,7 +138,7 @@ function Queue({ page, now }: { readonly page: QueuePageDoc; readonly now?: numb
   const [failed, setFailed] = useState(false);
   const [asked, setAsked] = useState<Asked | null>(null);
   const [ending, setEnding] = useState<StaffCardPlay | null>(null);
-  const clock = now ?? Date.now();
+  const clock = now ?? api.now();
   /* The boards (with the descriptions they have now) are the document's, read beside the queue; a save reads them again. */
   const [summaries, setSummaries] = useState<readonly BoardSummary[]>(page.boards);
   /* An admin who has stopped being one has no page to read again: the page as it stood is kept. */
