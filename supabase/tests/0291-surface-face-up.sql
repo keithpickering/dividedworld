@@ -1,5 +1,5 @@
--- A surface card is cast face up and never set face down (supabase/migrations/0340_surface_face_up.sql; docs/plans/2026-11-12-graffiti-face-up-plan.md, Task 2; design section 1).
--- face_down_never_writes refuses a back for a card with a surface, in the words of the engine's decideSet; set_surface_card is gone; a back already set before 0340 (its face_down row and its
+-- A surface card is cast face up and never set face down (supabase/migrations/0343_surface_face_up.sql; docs/plans/2026-11-12-graffiti-face-up-plan.md, Task 2; design section 1).
+-- face_down_never_writes refuses a back for a card with a surface, in the words of the engine's decideSet; set_surface_card is gone; a back already set before 0343 (its face_down row and its
 -- face_down_draws row) still springs through lay_sprung with its draft written in, and is still taken back with its draft deleted. The card is this file's own (`sfu`, with the surface flag).
 
 insert into card_kinds (key, name, alignment, rarity, play, trap, reaches, stack, surface)
@@ -36,8 +36,8 @@ begin
   end if;
 end $$;
 
--- ---- 3. a back set before 0340 still springs with its draft, and is still taken back with its draft ----
--- These rows stand for backs set before 0340: written directly, with the trigger disabled in this transaction.
+-- ---- 3. a back set before 0343 still springs with its draft, and is still taken back with its draft ----
+-- These rows stand for backs set before 0343: written directly, with the trigger disabled in this transaction.
 alter table face_down disable trigger face_down_never_writes;
 do $$
 declare

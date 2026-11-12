@@ -226,8 +226,8 @@ $$;
 create function pg_temp.board(slug text) returns uuid language sql as $$ select id from boards where boards.slug = board.slug $$;
 create function pg_temp.announcements() returns uuid language sql as $$ select (s.value #>> '{}')::uuid from settings s where s.key = 'systemAnnouncements' $$;
 
--- A back set before 0340 (supabase/migrations/0340_surface_face_up.sql): a surface card is cast face up now and face_down_never_writes refuses its back, so these fixtures write the rows set_surface_card
--- wrote then (the set Act, the back and its draft row) directly, with that trigger disabled in this transaction. They stand for backs set before 0340; what they test is that such a back still springs and is taken back.
+-- A back set before 0343 (supabase/migrations/0343_surface_face_up.sql): a surface card is cast face up now and face_down_never_writes refuses its back, so these fixtures write the rows set_surface_card
+-- wrote then (the set Act, the back and its draft row) directly, with that trigger disabled in this transaction. They stand for backs set before 0343; what they test is that such a back still springs and is taken back.
 alter table face_down disable trigger face_down_never_writes;
 create function pg_temp.old_back(ann uuid, setter uuid, in_post uuid, draft jsonb, cells bit(10000), most integer default 4000) returns text language plpgsql as $$
 declare in_thread uuid; written uuid;
@@ -737,7 +737,7 @@ begin
   got := pg_temp.as_val(null, format('select take_back(%L, %L, %L)::text', ann, a, set1));
   if got like 'ERROR:%' then raise exception 'the back is taken back: %', got; end if;
   if exists (select 1 from face_down_draws where play = set1) then raise exception 'a taken-back card takes its draft with it'; end if;
-  -- A back that ran out keeps its draft row: set_surface_card swept those and is dropped (0340), and the row goes when face_down_draws does (the design, section 1).
+  -- A back that ran out keeps its draft row: set_surface_card swept those and is dropped (0343), and the row goes when face_down_draws does (the design, section 1).
 end $$;
 
 -- ---- 18. pool_thread names the live walls on the page it reads: play, card key and a few plain words about whose post it is on; nothing of an owner ----

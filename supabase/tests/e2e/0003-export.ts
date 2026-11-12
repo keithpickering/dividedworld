@@ -227,8 +227,8 @@ test('an instance exported and imported into a fresh database is the same instan
         perform draw_on_surface(bob, b, wall_play, '{"strokes": [{"width": 0.01, "points": [[0.1, 0.1]]}]}', (repeat('1', 300) || repeat('0', 9700))::bit(10000), 4000);
         perform wash_surface(ann, a, wall_play, '{"strokes": [{"width": 0.02, "points": [[0.1, 0.1]]}]}', (repeat('1', 100) || repeat('0', 9900))::bit(10000));
         wall_set := tests.post(a, t, 'A wall, set face down.');
-        -- A surface card is cast face up now (0340) and face_down_never_writes refuses its back, so the rows set_surface_card wrote are written directly with that trigger off for the insert:
-        -- they stand for a back set before 0340, whose private draft an export still carries.
+        -- A surface card is cast face up now (0343) and face_down_never_writes refuses its back, so the rows set_surface_card wrote are written directly with that trigger off for the insert:
+        -- they stand for a back set before 0343, whose private draft an export still carries.
         declare wall_back uuid;
         begin
           insert into acts (character, kind, thread, target_act_id, payload) values (a, 'set', t, wall_set, '{}') returning id into wall_back;
