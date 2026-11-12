@@ -1541,7 +1541,8 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const d = isObject(r.data) ? r.data : {};
       return { gifts: toDriveGifts(d['gifts']), more: d['more'] === true };
     },
-    playCard: (card, character, target, config, message, reach, fromPost, first) => act({ action: 'playCard', card, character, target, config, message, ...beyond(reach, fromPost), ...(first === undefined ? {} : { first }) }, toAct),
+    /* A card that replies sends its reply as `body` and `framing`, as a post does; the function names them for the play. */
+    playCard: (card, character, target, config, message, reach, fromPost, first, reply) => act({ action: 'playCard', card, character, target, config, message, ...beyond(reach, fromPost), ...(first === undefined ? {} : { first }), ...(reply === undefined ? {} : { body: reply.body, ...framed(reply.framing) }) }, toAct),
     setCard: (card, character, target, config, when) => act({ action: 'setCard', card, character, target, config, ...(when ? { when } : {}) }, toAct),
     takeBack: (character, set) => act({ action: 'takeBack', character, set }, toAct),
     useCard: (card, character, target, config, message, reach, fromPost) => act({ action: 'useCard', card, character, target, config, message, ...beyond(reach, fromPost) }, toAct),
@@ -1784,9 +1785,13 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const acts = rowsOf(d['acts']).map(toAct);
       const plays = rowsOf(d['plays']).map(toAct);
       const above = rowsOf(d['above']).map(toPlayAbove);
+      /* The replies drawn under the page's posts, the numbers the page leaves empty, and the plays that kept their level past their end; a document without them reads as none. */
+      const under = rowsOf(d['under']).map((u) => ({ parent: u['parent'] as Id, play: u['play'] as Id, act: toAct(u['act']) }));
+      const cut = rowsOf(d['cut']).map((c) => ({ seq: num(c['seq']), parentSeq: num(c['parent_seq']) }));
+      const kept = rowsOf(d['kept']).map(toPlayAbove);
       const summary = toThread(d['summary'] as Row);
-      /* The ids the page's tallies were asked for: its Acts, then the plays on its posts and above them. */
-      const asked = [...acts.map((a) => a.id), ...plays.map((a) => a.id), ...above.map((x) => x.act.id)];
+      /* The ids the page's tallies were asked for: its Acts, then the plays on its posts and above them, the nested replies and the kept plays. */
+      const asked = [...acts.map((a) => a.id), ...plays.map((a) => a.id), ...above.map((x) => x.act.id), ...under.map((u) => u.act.id), ...kept.map((x) => x.act.id)];
       const reading: Record<Id, number> = typeof d['reading'] === 'number' ? { [thread]: d['reading'] } : {};
       return {
         thread: summary, page: num(d['page'], 1), acts,
@@ -1795,7 +1800,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
           reveals: rowsOf(p['reveals']).map(toClassReveal), turns: rowsOf(p['turns']).map(toTurn),
         })),
         visits: rowsOf(d['visits']).map(toVisit),
-        plays, above, faces: Object.fromEntries(rowsOf(d['faces']).map((f) => [f['play'], f['card']])), states: toStates(rowsOf(d['states'])),
+        plays, above, under, cut, kept, faces: Object.fromEntries(rowsOf(d['faces']).map((f) => [f['play'], f['card']])), states: toStates(rowsOf(d['states'])),
         surfaces: toSurfaces(d['surfaces']),
         releases: (Array.isArray(d['releases']) ? d['releases'] : []).filter((x): x is Id => typeof x === 'string'),
         tallies: toTallies(asked, rowsOf(d['tallies'])), mine: rowsOf(d['mine']).map(toMyReaction), spun: rowsOf(d['spun']).map(toThread), reading,
@@ -2292,8 +2297,9 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     },
 
     subscribeThread(thread, l) {
-      return join(`thread:${thread}`, ['act', 'tally', 'effect', 'surface', 'card_text'], (event, p) => {
+      return join(`thread:${thread}`, ['act', 'tally', 'effect', 'surface', 'card_text', 'under'], (event, p) => {
         if (event === 'act') l.onAct?.(toAct(p));
+        else if (event === 'under') l.onUnder?.(p['parent'], p['play'], toAct(p['act']));
         else if (event === 'surface') l.onSurface?.(p['play'], num(p['covered']));
         else if (event === 'tally') l.onTally?.(p['act'], (p['tally'] ?? {}) as Tally);
         else if (event === 'effect') l.onEffect?.(p['play'], p['saved_at']);

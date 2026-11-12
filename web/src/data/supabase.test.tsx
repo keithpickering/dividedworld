@@ -1297,6 +1297,18 @@ describe('buying and playing a card', () => {
     expect(await refused.api.playCard('whoops', B, A, {}, '')).toEqual({ ok: false, error: 'you hold no "whoops" card; the Vending Machine sells them' });
   });
 
+  it('plays a card that replies with its reply: the words as `body` and the characters framed as `framing`, and neither key where no reply is given', async () => {
+    const h = harness((r) => (r.url.pathname === '/functions/v1/act' ? json(ACT_ROW) : undefined));
+    expect(await h.api.playCard('line-cutter', B, A, {}, '', undefined, undefined, undefined, { body: 'Excuse me.', framing: [C] })).toEqual({ ok: true, value: ACT });
+    expect(await h.api.playCard('line-cutter', B, A, {}, '', undefined, undefined, undefined, { body: 'Excuse me.', framing: [] })).toEqual({ ok: true, value: ACT });
+    expect(await h.api.playCard('line-cutter', B, A, {}, '', undefined, undefined, undefined, { body: 'Excuse me.' })).toEqual({ ok: true, value: ACT });
+    expect(h.log.filter((r) => r.url.pathname === '/functions/v1/act').map((r) => r.body)).toEqual([
+      { action: 'playCard', card: 'line-cutter', character: B, target: A, config: {}, message: '', body: 'Excuse me.', framing: [C] },
+      { action: 'playCard', card: 'line-cutter', character: B, target: A, config: {}, message: '', body: 'Excuse me.' },
+      { action: 'playCard', card: 'line-cutter', character: B, target: A, config: {}, message: '', body: 'Excuse me.' },
+    ]);
+  });
+
   it('takes a face-down card back through the act function, naming the character and the set, and reads the take-back\'s Act', async () => {
     const h = harness((r) => (r.url.pathname === '/functions/v1/act' ? json(ACT_ROW) : undefined));
     expect(await h.api.takeBack(B, A)).toEqual({ ok: true, value: ACT });
@@ -1594,6 +1606,22 @@ describe('live', () => {
     expect(onEffect).toHaveBeenCalledWith(A, '2026-10-29T00:00:00Z');
     s.channels[0]?.handlers.get('card_text')?.({ payload: { play: A, version: B } });
     expect(onText).toHaveBeenCalledWith(A, B);
+  });
+
+  it('hears a reply a play drew under a post as `under`: the parent, the play and the reply as an Act, and never as an act', async () => {
+    const s = stub();
+    const onAct = vi.fn();
+    const onUnder = vi.fn();
+    s.api.subscribeThread(T, { onAct, onUnder });
+    await settle();
+    s.channels[0]?.handlers.get('under')?.({ payload: { parent: C, play: SET, act: ACT_ROW } });
+    expect(onUnder).toHaveBeenCalledWith(C, SET, ACT);
+    expect(onAct).not.toHaveBeenCalled();
+    /* A listener that names no `onUnder` hears nothing and fails nothing. */
+    const quiet = stub();
+    quiet.api.subscribeThread(T, { onAct });
+    await settle();
+    expect(() => quiet.channels[0]?.handlers.get('under')?.({ payload: { parent: C, play: SET, act: ACT_ROW } })).not.toThrow();
   });
 
   it('shares a channel between listeners on one topic and removes it with the last', async () => {
@@ -2711,6 +2739,8 @@ describe('a screen in one call', () => {
     expect(page?.mine).toEqual([{ act: A, kind: 'fire', character: B }]);
     expect(page?.spun[0]).toMatchObject({ id: C });
     expect(page).toMatchObject({ reading: { [T]: 2 }, board: BOARD, following: true, presence: PRESENCE, unread: 4 });
+    /* A document from before the three keys reads them as none. */
+    expect(page).toMatchObject({ under: [], cut: [], kept: [] });
     const second = once('thread_page', { ...answer, reading: null, board: null });
     await second.api.threadPage(T, { page: 2 }, 20, []);
     expect(only(second, 'thread_page')).toEqual({ in_thread: T, in_page: 2, in_seq: null, per_page: 20, effect_cards: [] });
@@ -2721,6 +2751,23 @@ describe('a screen in one call', () => {
     await third.api.threadPage(T, { page: 1 }, null, []);
     expect(only(third, 'thread_page')).toMatchObject({ per_page: null });
     expect(await once('thread_page', answer).api.threadPage('not-an-id', { page: 1 }, null, [])).toBeNull();
+  });
+
+  it('thread_page: maps `under`, `cut` and `kept`, and asks the tallies of the nested replies and the kept plays too', async () => {
+    const REPLY = '99999999-9999-4999-8999-999999999999';
+    const KEPT = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const answer = {
+      summary: THREAD_ROW, page: 1, acts: [ACT_ROW], plays: [], above: [], people: [], tallies: [{ act: REPLY, kind: 'fire', count: 2 }, { act: KEPT, kind: 'tea', count: 1 }],
+      under: [{ parent: A, play: SET, act: { ...ACT_ROW, id: REPLY, seq: 46, payload: { body: 'Excuse me.' }, current_payload: { body: 'Excuse me.' } } }],
+      cut: [{ seq: 46, parent_seq: 3 }],
+      kept: [{ ...ABOVE_ROW, play: KEPT, act: { ...ACT_ROW, id: KEPT, kind: 'card', seq: null } }],
+    };
+    const page = await once('thread_page', answer).api.threadPage(T, { page: 1 }, 20, []);
+    expect(page?.under).toEqual([{ parent: A, play: SET, act: { ...ACT, id: REPLY, seq: 46, payload: { body: 'Excuse me.' }, currentPayload: { body: 'Excuse me.' } } }]);
+    expect(page?.cut).toEqual([{ seq: 46, parentSeq: 3 }]);
+    expect(page?.kept).toHaveLength(1);
+    expect(page?.kept[0]).toMatchObject({ play: KEPT, target: T, act: { id: KEPT, kind: 'card' } });
+    expect(page?.tallies).toEqual({ [A]: {}, [REPLY]: { fire: 2 }, [KEPT]: { tea: 1 } });
   });
 
   it('profile_page: sends the character and maps the document; no such character is null', async () => {

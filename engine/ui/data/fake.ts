@@ -23,7 +23,7 @@ import type { Instance, Quadrant, Settings, Span } from '../../rules/types.ts';
 import { decide } from '../../rules/actions.ts';
 import { rollPack } from '../../rules/packs.ts';
 import { beltHolder, outfitProblems, PIECE_TURN_MOST, PIECE_WIDTH, type Piece } from '../../rules/cosmetics.ts';
-import { RARITIES, type Rarity } from '../../rules/cards.ts';
+import { fallsOn, RARITIES, type Rarity } from '../../rules/cards.ts';
 import { atOrBelow, giftSplit, spanMs, OLD_VOICE_OFF, withheld, playOf as kindOfPlay, postTarget, casterMessage, decidePlay, decideSet, decideUse, decideDraw, decideWash, effectsOnTarget, noQuoteWords, quoteStop, type BeyondPost, type CardEffect, type CardRules, type CardTarget, type EffectsAbove, type PostTarget, type Reach, type SetConditions } from '../../rules/cards.ts';
 import { sameName } from '../../rules/names.ts';
 import { GRID, count, fromBits, minus, union, type Cells } from '../../rules/surface.ts';
@@ -48,7 +48,7 @@ import type {
   SurfaceLogRow,
   AdminReport, AdminReview, ConductLogRow, DecideOutcome, FailedMail, PastDecision, ReportOutcome, ReportsPage,
   AdminQueue, BoardName, Demand, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesCursor, MovesLog, QueuedMove, StaffCardPlay, StaffProfile,
-  Act, Apology, Bar, AccountListener, Tail, ActKind, Alert, ContactLink, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResult, SeasonResultRow, TallyName, SeasonShown, Update, UpdateChange, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, CardEvent, PackEvent, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, DebutLoudness, EffectState, PlayMoment,
+  Act, Apology, Bar, AccountListener, PlayAbove, Tail, ActKind, Alert, ContactLink, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResult, SeasonResultRow, TallyName, SeasonShown, Update, UpdateChange, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, CardEvent, PackEvent, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, DebutLoudness, EffectState, PlayMoment,
   DebutTiming, Estimate, EstimateLine, FollowedThread, Frame, HeldCard, Id, KayfaApi, LogShare, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, PreferencesPatch, Refusal,
   Boot, BoardPage, BoardRef, BoardStub, IndexPage, Opened, AdminSlot, Slot, SlotMove, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, LogPage,
   SurfaceActs, SurfaceNow, SurfaceWritten, SurfaceAct,
@@ -79,7 +79,7 @@ export const START = Date.UTC(2026, 9, 29, 12);
 
 export interface LiveEvent {
   readonly topic: string;
-  readonly event: 'act' | 'tally' | 'thread' | 'effect' | 'surface' | 'card_text' | 'alert' | 'news' | 'settled';
+  readonly event: 'act' | 'tally' | 'thread' | 'effect' | 'surface' | 'card_text' | 'under' | 'alert' | 'news' | 'settled';
 }
 
 export interface Seed {
@@ -1490,6 +1490,13 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const untakenPlays = new Set<Id>();
   /** card_ended (0149): ended by an admin, or over because it did not take. Every reader of "in force" asks this. */
   const over = (play: Id): boolean => reversedPlays.has(play) || untakenPlays.has(play);
+  /** post_under (0410): the reply each play of a card that replies carried, by the play: the post it was played on and the reply, a post of the thread with a number of its own. Never edited; the end is the play's own. */
+  const underPlays = new Map<Id, { parent: Id; reply: Id }>();
+  /** A reply in force: the play that draws it under its parent, or undefined where the Act is no reply or its play is over. */
+  const drawnBy = (reply: Id): { play: Id; parent: Id } | undefined => {
+    for (const [play, u] of underPlays) if (u.reply === reply && !over(play)) return { play, parent: u.parent };
+    return undefined;
+  };
   /** What a refusal says of a play that is over because it did not take: the same plain words for every caller (0149), and no card named. */
   const DID_NOT_TAKE = 'That card didn\'t take, so there is nothing of it on this post.';
   /** The plays cut to a limit, as public Acts, and after them the `card_end` of each that has one (cardsOn, cardsOnMany): the ends ride in the same list. */
@@ -1833,17 +1840,21 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
    * The Edge Function's reading of a play, then `play_card` (0016_cards_screens.sql): the post is read and priced by its card's rules
    * (`decidePlay`), then the character, the card in hand and the layer are the database's, in that order.
    */
-  function playCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, message: string, reach: Reach = 'post', fromPost?: Id, first?: unknown): Answer<Act> {
-    const bad = request({ action: 'playCard', card, character, target, config, message, ...(reach !== 'post' ? { reach, post: fromPost } : {}), ...(first === undefined ? {} : { first }) });
+  function playCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, message: string, reach: Reach = 'post', fromPost?: Id, first?: unknown, reply?: { readonly body: string; readonly framing?: readonly Id[] }): Answer<Act> {
+    const bad = request({ action: 'playCard', card, character, target, config, message, ...(reach !== 'post' ? { reach, post: fromPost } : {}), ...(first === undefined ? {} : { first }), ...(reply === undefined ? {} : { body: reply.body, ...(reply.framing ? { framing: reply.framing } : {}) }) });
     if (bad) return bad;
     if (reach !== 'post') return playBeyond('cast', card, character, target, config, message, reach, fromPost);
     const on = acts.get(target);
     if (!on) return refuse('there is no such post', 'target');
     const rules = instance.cards.find((c) => c.key === card)!;
+    /* A card that replies carries its reply, with a letter or a digit in it, and any other card is given none (play_card, 0410); the words and their length are the act function's, above. */
+    const carries = rules.replies === true;
+    if (reply !== undefined && !carries) return refuse('only a card that carries a reply takes one', 'body');
+    if (carries && !/[\p{L}\p{N}]/u.test(reply?.body ?? '')) return refuse('write the reply this card carries', 'body');
     const text = (publicAct(on).currentPayload as { body?: unknown }).body;
     const effects = effectsOn(target);
     // Decided and written in one step, with no gap for an edit to land in, so the fake checks no version (play_card does, 0070).
-    const decided = decidePlay(rules, settings, postTarget(on.id, on.kind as PostTarget['kind'], text), effects, config, message, { now: new Date(now()), nameOf: (k) => instance.cards.find((c) => c.key === k)?.name ?? k, first });
+    const decided = decidePlay(rules, settings, postTarget(on.id, on.kind as PostTarget['kind'], text, undefined, drawnBy(on.id)?.parent), effects, config, message, { now: new Date(now()), nameOf: (k) => instance.cards.find((c) => c.key === k)?.name ?? k, first });
     if (!decided.ok) return refuse(decided.why, (message !== undefined && !casterMessage(message).ok) || decided.why === rules.needsMessage ? 'message' : 'config');
     /* The one transaction of play_surface_card: a first draw past the wall's limit refuses the whole play, so none of it is written. */
     if (decided.value.draw) {
@@ -1852,6 +1863,12 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     }
     const c = acting(character);
     if (isRefusal(c)) return c;
+    /* The reply is a post of the card's thread: not on The System's board, and not by a banned character (write_reply, not_banned). */
+    if (carries) {
+      if (boards.find((b) => b.id === threads.get(on.thread)!.board)!.isSystem) return refuse(SYSTEM_BOARD);
+      const banned = bannedUntilOf(character);
+      if (banned !== null) return refuse(`this character is banned until ${iso(banned)}; the ban ends by itself then`);
+    }
     const account = me()!;
     settleBacks(account);
     if ((account.cards[card] ?? 0) < 1) return refuse(`you hold no "${card}" card; the Vending Machine sells them`);
@@ -1873,6 +1890,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const at = stamp ?? now();
     /* The play's id is chosen first, so the spring can name it and be written before it, as play_card writes them (each takes its moment then). */
     const playId = uuid();
+    const replyId = carries ? uuid() : undefined;
     let spring: ActRec | null = null;
     if (catches) {
       spring = write({ character: acts.get(trap.set)!.character, kind: 'spring', thread: on.thread, target, payload: rides
@@ -1882,11 +1900,21 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     }
     /* A caught play joins no drive; a play a ride back let land is a play like any other (drive_plays leaves a caught play out, 0153). */
     const drive = catches && !rides ? undefined : driveOf(rules, target, playId);
-    const written = write({ id: playId, character, kind: 'card', thread: on.thread, target, payload: { card, message: decided.value.message, config: decided.value.config, ...(decided.value.tokens === undefined ? {} : { tokens: decided.value.tokens }), ...(catches && !rides ? { caught: trap!.set } : { layer }), ...(rides ? { rode: trap!.set } : {}), ...(rules.skim && rules.lasts ? { ends: iso(at + span(rules.lasts)) } : {}), ...(drive === undefined ? {} : { drive }) } });
+    const written = write({ id: playId, character, kind: 'card', thread: on.thread, target, payload: { card, message: decided.value.message, config: decided.value.config, ...(decided.value.tokens === undefined ? {} : { tokens: decided.value.tokens }), ...(catches && !rides ? { caught: trap!.set } : { layer }), ...(rides ? { rode: trap!.set } : {}), ...(replyId === undefined ? {} : { reply: replyId }), ...(rules.skim && rules.lasts ? { ends: iso(at + span(rules.lasts)) } : {}), ...(drive === undefined ? {} : { drive }) } });
+    /* A cast that landed (a ride lets it) writes its reply, a post of the thread with a number of its own, and remembers it under its parent; a caught one writes none, and the id its Act names is no post's. */
+    const replied = replyId !== undefined && reply !== undefined && !(catches && !rides)
+      ? write({ id: replyId, character, kind: 'post', thread: on.thread, payload: { body: reply.body } }) : null;
+    if (replied) underPlays.set(written.id, { parent: target, reply: replied.id });
     /* After the Act, so the wallet's record names what the Aura went on (play_card). */
     spend(account, decided.value.price, 'play', written.id);
     recordCard(account.id, written.at, { card, kind: 'played', act: written.id, price: decided.value.price });
     sendAct(written);
+    /* The reply is heard as `under`, after its card, and never as an act of its own: no screen draws it at the thread's tail first. */
+    if (replied) {
+      const shown = publicAct(replied);
+      send(`thread:${on.thread}`, 'under', () => { for (const l of [...(threadListeners.get(on.thread) ?? [])]) l.onUnder?.(target, written.id, shown); });
+      writeFramed(reply!.body, reply!.framing, replied);
+    }
     /* A surface card's play opens its wall with the caster's first draw (play_surface_card: play_card, then draw_on_surface as the caster); a caught play opens none. */
     if (decided.value.draw !== undefined && !(catches && !rides)) writeSurface('draw', written.id, character, first);
     if (spring) {
@@ -3219,7 +3247,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (!p || p.kind !== 'card') return refuse('that is not a card play');
       if (p.payload.caught !== undefined) return refuse('that card was caught by a trap, so it never landed');
       const ends = reachPlays.get(play)?.endsAt ?? (typeof p.payload.ends === 'string' ? Date.parse(p.payload.ends) : null);
-      if (ends !== null && ends <= now()) return refuse('that card has already worn off');
+      /* A play of a card that keeps can be ended after its time too: its level still counts on the posts it was up over, and an admin takes it off (reverse_card, 0410's page). */
+      if (ends !== null && ends <= now() && instance.cards.find((c) => c.key === p.payload.card)?.keeps !== true) return refuse('that card has already worn off');
       if (reversedPlays.has(play)) return refuse('an admin has already ended that card');
       if (untakenPlays.has(play)) return refuse(DID_NOT_TAKE);
       const end = write({ character: null, kind: 'card_end', thread: p.thread, target: play, payload: { why: 'reversed', by: 'admin' } });
@@ -3841,24 +3870,38 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const last = Math.max(1, Math.ceil(summary.lastSeq / perPage));
       const want = at.seq != null ? Math.max(1, Math.ceil(at.seq / perPage)) : at.page ?? 1;
       const page = Math.min(last, Math.max(1, want));
-      const acts = core.acts(thread, (page - 1) * perPage + 1, page * perPage);
-      const posts = acts.filter((a) => a.kind === 'post');
+      const range = core.acts(thread, (page - 1) * perPage + 1, page * perPage);
+      /* A reply a play in force draws under its parent is left out of its own number's page (page_acts), and the number is named in `cut`. */
+      const cut = range.flatMap((a) => { const u = drawnBy(a.id); return u === undefined ? [] : [{ seq: a.seq!, parentSeq: acts.get(u.parent)!.seq! }]; });
+      const shownActs = range.filter((a) => drawnBy(a.id) === undefined);
+      /* The replies drawn under the page's posts, one level deep and one for each post, so a nested reply's marks, plays and author arrive with the page. */
+      const onPage = new Set(shownActs.map((a) => a.id));
+      const under = [...underPlays].filter(([play, u]) => onPage.has(u.parent) && !over(play))
+        .sort(([a], [b]) => acts.get(a)!.at - acts.get(b)!.at || acts.get(a)!.order - acts.get(b)!.order)
+        .map(([play, u]) => ({ parent: u.parent, play, act: publicAct(acts.get(u.reply)!) }));
+      const posts = [...shownActs.filter((a) => a.kind === 'post'), ...under.map((u) => u.act)];
       const plays = posts.length ? core.cardsOnMany(posts.map((a) => a.id), posts.length * PLAYS_PER_POST) : [];
       const above = core.effectsAbove([...new Set(posts.flatMap((a) => (a.character === null ? [] : [a.character])))], thread, summary.board);
-      const played = [...plays, ...above.map((p) => p.act)];
+      /* The plays at thread reach that wore off by time (not an admin's end) and keep their level on a post written while they were up: the page's posts' dates, nested replies' too, oldest play first, at most 100. */
+      const kept: PlayAbove[] = [...reachPlays]
+        .filter(([play, r]) => r.reach === 'thread' && r.target === thread && r.endsAt <= now() && !over(play) && instance.cards.find((c) => c.key === acts.get(play)!.payload.card)?.keeps === true
+          && posts.some((p) => fallsOn({ at: iso(acts.get(play)!.at), ends: iso(r.endsAt) }, { at: p.createdAt }, true, new Date(now()))))
+        .sort(([a], [b]) => acts.get(a)!.at - acts.get(b)!.at || acts.get(a)!.order - acts.get(b)!.order).slice(0, 100)
+        .map(([play, r]) => ({ play, reach: r.reach, target: r.target, endsAt: iso(r.endsAt), act: publicAct(acts.get(play)!) }));
+      const played = [...plays, ...above.map((p) => p.act), ...kept.map((p) => p.act)];
       const wanted = played.filter((a) => typeof a.payload.card === 'string' && effectCards.includes(a.payload.card)).map((a) => a.id);
-      const ids = [...acts, ...played].map((a) => a.id);
-      const visits = visitsOn(acts.filter((a) => a.kind === 'post' || a.kind === 'spin').map((a) => a.id));
+      const ids = [...shownActs, ...under.map((u) => u.act), ...played].map((a) => a.id);
+      const visits = visitsOn(shownActs.filter((a) => a.kind === 'post' || a.kind === 'spin').concat(under.map((u) => u.act)).map((a) => a.id));
       /* A visit's Mod is named on the page (`who` in thread_page, 0108), though it has no post there. */
-      const who = [...new Set([...acts, ...played].flatMap((a) => (a.character === null ? [] : [a.character])).concat(visits.map((v) => v.mod)))].sort();
+      const who = [...new Set([...shownActs, ...under.map((u) => u.act), ...played].flatMap((a) => (a.character === null ? [] : [a.character])).concat(visits.map((v) => v.mod)))].sort();
       const [chars, stats, standings, reveals, turns] = [core.characters(who), core.characterStats(who), core.standingAmounts(who), core.classReveals(who), core.turnsAnnounced(who)];
       return {
-        thread: summary, page, acts,
+        thread: summary, page, acts: shownActs,
         people: chars.map((character): ThreadPerson => ({
           character, posts: stats[character.id]?.posts ?? 0, standing: standings[character.id] ?? 0,
           reveals: reveals.filter((r) => r.character === character.id), turns: turns.filter((t) => t.character === character.id),
         })),
-        plays, surfaces: surfacesOn(plays), above, faces: core.myFaceDown(played.filter((a) => a.kind === 'set').map((a) => a.id)), states: core.effectStates(wanted), releases: core.myReleases(wanted),
+        plays, surfaces: surfacesOn(plays), above, under, cut, kept, faces: core.myFaceDown(played.filter((a) => a.kind === 'set').map((a) => a.id)), states: core.effectStates(wanted), releases: core.myReleases(wanted),
         visits,
         tallies: core.tallies(ids), mine: core.myReactions(ids), spun: core.spunFromMany(ids, SPUN_FROM_MAX), reading: core.reading([thread]),
         board: core.board(summary.board), following: core.following(thread), presence: presenceAt({ kind: 'thread', thread }), unread: core.alertsUnread(),
