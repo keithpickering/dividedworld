@@ -296,7 +296,11 @@ describe('a wall under a splat', () => {
     const [x, y] = spot();
     /* The wall has a stripe where the splat is: put one through the spot's row too. */
     expect(spray.hitAt([draw('t', y)], BOX, x * BOX.w, y * BOX.h)).toBe(true);
-    drag(cell, [[x, y], [x + 0.05, y], [x + 0.1, y]]);
+    /* A wash takes some of the splat's ink each pass (docs/plans/2026-11-12-whoops-ink-field-design.md, section 2), so
+       its core opens only after several. Press until the first hole opens and no further: each of those presses starts
+       on the splat's ink, so none reaches the wall (a press that starts where the splat is washed away would). */
+    const washed = () => Number(whoops.dataset.kbWashed!.split(' ')[0]);
+    for (let pass = 0; pass < 14 && washed() === 0; pass++) drag(cell, [[x, y], [x + 0.05, y], [x + 0.1, y]]);
     expect(Number(whoops.dataset.kbWashed!.split(' ')[0])).toBeGreaterThan(0);
     expect(scrubbed(root)).toBe(0);
   });
