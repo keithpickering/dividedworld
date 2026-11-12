@@ -4,10 +4,11 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { LOST_ANSWER } from '../data/api.ts';
 import { TEST_CODE, TEST_LINK } from '../data/fake.ts';
 import { buildWorld, renderIn } from '../test-world.tsx';
+import { resetLink } from './link.ts';
 import { SignInScreen } from './SignIn.tsx';
 
 beforeEach(() => { localStorage.clear(); });
-afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+afterEach(() => { cleanup(); resetLink(); vi.restoreAllMocks(); });
 
 function world(mode: 'open' | 'invite' | 'closed' = 'invite') {
   const fake = buildWorld({ registrationMode: mode });
@@ -625,6 +626,28 @@ describe('The emailed link', () => {
   test.each(['#top', '#token_hash=', '#token_hash=short'])('a fragment of %s shows the ordinary form', async (fragment) => {
     open(await linked(), 'sign-in', `/sign-in${fragment}`);
     expect(await screen.findByLabelText('Email address')).toBeInTheDocument();
+    expect(screen.queryByText('This link signs you in. It works once.')).toBeNull();
+  });
+
+  /* No keeper is rendered here: the link lives in the screen's own state, so a screen that is gone holds nothing for the next. */
+  test('a screen with no keeper holds nothing: a later visit with no fragment shows the ordinary form', async () => {
+    const w = await linked();
+    open(w, 'sign-in', `/sign-in${FRAGMENT}`);
+    expect(await screen.findByText('This link signs you in. It works once.')).toBeInTheDocument();
+    cleanup();
+    open(w, 'sign-in', '/sign-in');
+    expect(await screen.findByLabelText('Email address')).toBeInTheDocument();
+    expect(screen.queryByText('This link signs you in. It works once.')).toBeNull();
+  });
+
+  test('the same after a press that signed in: the next visit is the ordinary form', async () => {
+    const w = await linked();
+    open(w, 'sign-in', `/sign-in${FRAGMENT}`);
+    await userEvent.click(await screen.findByRole('button', { name: 'Sign in' }));
+    expect(await screen.findByText('You are signed in as known@example.test.')).toBeInTheDocument();
+    cleanup();
+    open(w, 'sign-in', '/sign-in');
+    expect(screen.queryByText(/You are signed in as/u)).toBeNull();
     expect(screen.queryByText('This link signs you in. It works once.')).toBeNull();
   });
 });

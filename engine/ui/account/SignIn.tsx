@@ -67,7 +67,8 @@ export function SignInScreen({ mode }: { readonly mode: 'sign-in' | 'register' }
   /* The emailed link's token, held in memory only: the address loses its fragment as the screen stands (the query stays, `next` with it), so no history entry holds it. The module keeps it (and whether this page's press signed in) across the screen starting afresh under the account the press signed in (link.ts). */
   const [start] = useState(() => linkAtMount(location.hash, location.path));
   const [link, setLinkState] = useState<string | null>(start.tokenHash);
-  const setLink = (value: string | null) => { holdLink(value); setLinkState(value); };
+  const setLink = (value: string | null) => { holdLink(value, location.path); setLinkState(value); };
+  useEffect(() => { holdLink(link, location.path); }, []); // eslint-disable-line react-hooks/exhaustive-deps -- once: a first visit's link is held for the page once a keeper is keeping
   useEffect(() => { if (link !== null && location.hash !== '') navigate(addressOf(location), { replace: true }); }, []); // eslint-disable-line react-hooks/exhaustive-deps -- once, as the screen stands: the fragment is read at mount and later changes of the address must not run it again
   /* A refusal of the link while a session already holds an account: the screen stays on the form with the sentence, and Stay signed in is the way on. */
   const [held, setHeld] = useState(false);

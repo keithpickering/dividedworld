@@ -80,7 +80,7 @@ export function LinkPanel({ tokenHash, signedIn = false, registering, onAside, o
       : registering ? 'This link finishes signing you up. It works once.' : 'This link signs you in. It works once.';
 
   return (
-    <div className="kb-link-panel" aria-busy={busy}>
+    <div aria-busy={busy}>
       <p role="status" ref={lead} tabIndex={-1} className="kb-acct-lead">{names}</p>
       {lost && <p role="alert" className="kb-acct-refusal">{LOST_ANSWER}</p>}
       {phase === 'done' ? (
