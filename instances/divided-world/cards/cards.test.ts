@@ -712,7 +712,7 @@ test('Laugh Track keeps the seed the server adds and no other key', () => {
 test('placesOf is every occurrence of each cue in the text\'s order, with its cue\'s index', () => {
   const text = 'Mario met Luigi, then Mario hit Luigi again';
   const places = placesOf(text, [cue('Luigi'), cue('Mario', 'boo')]);
-  assert.deepEqual(places.map((p) => [text.slice(p.from, p.to), p.cue]), [['Mario', 1], ['Luigi', 0], ['Mario', 1], ['Luigi', 0]]);
+  assert.deepEqual(places.map((p) => [text.slice(p.start, p.end), p.cue]), [['Mario', 1], ['Luigi', 0], ['Mario', 1], ['Luigi', 0]]);
   assert.deepEqual(placesOf('nothing here', [cue('Luigi')]), []);
 });
 

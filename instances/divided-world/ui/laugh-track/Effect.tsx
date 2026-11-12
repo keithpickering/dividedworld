@@ -47,8 +47,8 @@ const Z = -1;
 /** One cued place on the post. */
 interface Spot {
   readonly key: string;
-  readonly from: number;
-  readonly to: number;
+  readonly start: number;
+  readonly end: number;
   readonly sound: Sound;
   /** The take this place plays: one of the sound's three. */
   readonly take: string;
@@ -64,7 +64,7 @@ function spotsOf(text: string, plays: readonly CardPlay[]): Spot[] {
     return placesOf(text, cues).map((place, i): Spot => {
       const sound = cues[place.cue]!.sound;
       const n = 1 + Math.floor(seeded(`${play.id}:${typeof seed === 'number' ? seed : 0}:${i}`)() * 3);
-      return { key: `${play.id}:${i}`, from: place.from, to: place.to, sound, take: `laugh-track.${sound}-${n}` };
+      return { key: `${play.id}:${i}`, start: place.start, end: place.end, sound, take: `laugh-track.${sound}-${n}` };
     });
   });
 }
@@ -86,7 +86,7 @@ const pieceOf = (spot: Spot, key: string, text: string, extra?: Record<string, u
 /** A play's moment: the places drawn unmarked, with nothing registered, played or bound. */
 function Moment({ post, plays, show, children }: EffectProps) {
   const spots = useSpots(post, plays);
-  const runs = useMemo<TextRun[]>(() => spots.map((s) => ({ start: s.from, end: s.to, key: `lt:${s.key}`, z: Z, mode: 'wrap', render: ({ text, key }) => pieceOf(s, key, text) })), [spots]);
+  const runs = useMemo<TextRun[]>(() => spots.map((s) => ({ start: s.start, end: s.end, key: `lt:${s.key}`, z: Z, mode: 'wrap', render: ({ text, key }) => pieceOf(s, key, text) })), [spots]);
   /* The cues the play holds, whatever the version of the post shown finds: a moment says what was played. */
   const held = plays.reduce((n, p) => { const { cues } = p.config as { cues?: unknown }; return n + (!p.caught && Array.isArray(cues) ? cues.filter(isCue).length : 0); }, 0);
   const view: CardView = { progress: null, state: `${held} ${held === 1 ? 'cue' : 'cues'}`, yours: false, controls: [], notes: {} };
@@ -160,7 +160,7 @@ function Live({ post, plays, show, met, children }: EffectProps) {
       }));
     }
   }, [fire]);
-  const spotsKey = spots.map((s) => `${s.key}@${s.from}-${s.to}`).join(',');
+  const spotsKey = spots.map((s) => `${s.key}@${s.start}-${s.end}`).join(',');
   useEffect(() => { sync(); }, [spotsKey, screen, fired, sync]);
   /* A card over this one (a tape peeled, a play ended) draws the words again without drawing this effect: its places are looked for again. */
   useEffect(() => {
@@ -201,7 +201,7 @@ function Live({ post, plays, show, met, children }: EffectProps) {
     const done = fired.has(spot.key);
     const press = (e: KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); replay(spot); } };
     return {
-      start: spot.from, end: spot.to, key: `lt:${spot.key}`, z: Z, mode: 'wrap',
+      start: spot.start, end: spot.end, key: `lt:${spot.key}`, z: Z, mode: 'wrap',
       render: ({ text, key }) => !done ? pieceOf(spot, key, text) : pieceOf(spot, key, text, {
         className: 'dw-lt-cue dw-lt-fired',
         onPointerEnter: (e: { pointerType: string }) => { if (e.pointerType === 'mouse') replay(spot); },

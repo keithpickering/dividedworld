@@ -29,27 +29,27 @@ const LINE_BREAK = /[\n\r\v\f\u0085\u2028\u2029]/u;
 const characters = (s: string) => [...s].length;
 
 /** A cued place: where a cue's phrase is in the text, with the cue's index. */
-export interface Place { readonly from: number; readonly to: number; readonly cue: number }
+export interface Place { readonly start: number; readonly end: number; readonly cue: number }
 
 /** Every occurrence of each cue in the text, in the order of the text, with its cue's index; none is dropped, overlaps included. */
 export function placesOf(text: string, cues: readonly Pick<Cue, 'phrase'>[]): Place[] {
-  const places = cues.flatMap((c, cue) => occurrences(text, c.phrase).map((o) => ({ from: o.from, to: o.to, cue })));
-  return places.sort((a, b) => a.from - b.from || a.to - b.to || a.cue - b.cue);
+  const places = cues.flatMap((c, cue) => occurrences(text, c.phrase).map((o) => ({ start: o.from, end: o.to, cue })));
+  return places.sort((a, b) => a.start - b.start || a.end - b.end || a.cue - b.cue);
 }
 
-/** Whether any span of `a` overlaps any span of `b`, both sorted by `from`: one pass over the two, each span against the furthest end of the other side so far. */
-function crosses(a: readonly { readonly from: number; readonly to: number }[], b: readonly { readonly from: number; readonly to: number }[]): boolean {
+/** Whether any span of `a` overlaps any span of `b`, both sorted by `start`: one pass over the two, each span against the furthest end of the other side so far. */
+function crosses(a: readonly { readonly start: number; readonly end: number }[], b: readonly { readonly start: number; readonly end: number }[]): boolean {
   let i = 0;
   let j = 0;
-  let aTo = -Infinity;
-  let bTo = -Infinity;
+  let aEnd = -Infinity;
+  let bEnd = -Infinity;
   while (i < a.length || j < b.length) {
-    if (j >= b.length || (i < a.length && a[i]!.from <= b[j]!.from)) {
-      if (bTo > a[i]!.from) return true;
-      aTo = Math.max(aTo, a[i++]!.to);
+    if (j >= b.length || (i < a.length && a[i]!.start <= b[j]!.start)) {
+      if (bEnd > a[i]!.start) return true;
+      aEnd = Math.max(aEnd, a[i++]!.end);
     } else {
-      if (aTo > b[j]!.from) return true;
-      bTo = Math.max(bTo, b[j++]!.to);
+      if (aEnd > b[j]!.start) return true;
+      bEnd = Math.max(bEnd, b[j++]!.end);
     }
   }
   return false;
@@ -106,7 +106,7 @@ function repairCues(config: unknown, target: PostTarget): { readonly config: unk
     examined++;
     const mine = occurrences(target.text, c.phrase);
     if (mine.length === 0) notInPost++;
-    else if (!clear.some((o) => sameWords(o.phrase, c.phrase)) && !crosses(mine, placesOf(target.text, clear))) clear.push(c);
+    else if (!clear.some((o) => sameWords(o.phrase, c.phrase)) && !crosses(mine.map((o) => ({ start: o.from, end: o.to })), placesOf(target.text, clear))) clear.push(c);
   }
   const unexamined = shaped.slice(examined);
   const path = 'card.config.laugh-track.cues';
@@ -158,8 +158,8 @@ export const laughTrack: CardRules<LaughTrackConfig> = {
     const places = placesOf(target.text, cues);
     let to = -Infinity;
     for (const p of places) {
-      if (p.from < to) return refuse('two cues cover the same words');
-      to = Math.max(to, p.to);
+      if (p.start < to) return refuse('two cues cover the same words');
+      to = Math.max(to, p.end);
     }
     if (places.length > PLACES.most) return refuse(`these cues cover ${places.length} places in this post; a play covers at most ${PLACES.most}`);
     return lands;
