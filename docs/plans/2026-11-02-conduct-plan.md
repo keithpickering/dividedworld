@@ -83,6 +83,18 @@ Resend: mail is tested against a fake sender.
     - A body containing `[quote=<id>]` for a hidden id has that quote's contents replaced with the empty string, and the
       quote keeps its act id so the renderer shows the note. This uses `conceal_quotes(body)`, which runs only on bodies
       that contain `[quote=`.
+    - **Amended 2026-11-12, the owner's decision in the build** (PR #428). Four review rounds found the SQL copy of the
+      parser drifting from `engine/bbcode/parse.ts`, each drift a leak or a read a crafted post could make unbearably
+      slow. The owner chose: conceal with the one real parser, as a layer.
+      - A pure engine function, `concealQuotes(body, hiddenIds)` in `engine/bbcode/`, empties exactly the quotes
+        `parse.ts` reads as quoting a hidden id, and keeps their act ids.
+      - Its result is stored as a layer beside the quoting post's version, append-only, never an edit of the post. The
+        layer is written by a job when a hide, unhide or approval changes what is hidden, for the posts that quote it,
+        and when a post or edit quoting a hidden version is written.
+      - `acts_public` serves the layer whose hidden set matches the current one. It does no parsing on a read.
+      - Until the matching layer exists, the quoting post's body is withheld behind a plain note that says it will
+        show again shortly, never with the hidden words. That state ends by itself when the job writes the layer.
+      - `conceal_quotes` and its SQL helpers go.
     - Admins read words through `admin_version(act)`.
   - **The log:** a hide of the player's own version and its end are lines in their log (`engine/ui/log/lines.ts`), read
     from `conduct_decisions` for the caller's own characters only.
