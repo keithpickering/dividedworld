@@ -316,7 +316,7 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     expect(laughTrack.rarity).toBe('uncommon');
     expect(laughTrack.alignment).toBe('pepperoni');
     expect(laughTrack.setPhrase!({ cues: [{ phrase: 'first one', sound: 'boo' }, { phrase: 'second', sound: 'cheer' }] })).toBe('first one');
-    expect(instance.machine.at(-3)).toEqual({ item: { card: 'laugh-track' }, availability: 'onSale', price: 150 });
+    expect(instance.machine.at(-4)).toEqual({ item: { card: 'laugh-track' }, availability: 'onSale', price: 150 });
   });
   test('Whoops! draws its effect and its ink form, and each play\'s tag takes its own ink', () => {
     const whoops = instanceUi.cards.find((c) => c.key === 'whoops')!;
