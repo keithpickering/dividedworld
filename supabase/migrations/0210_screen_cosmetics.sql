@@ -568,7 +568,7 @@ begin atomic
     'unread', my_alerts_unread());
 end;
 
--- boot (0145), its faces also carrying the cosmetics. Everything else as 0145 wrote it.
+-- boot (0200, whose body is 0145's with the sound preferences after effects), its faces also carrying the cosmetics. Everything else as 0200 wrote it.
 create or replace function boot() returns jsonb
 language sql stable security invoker set search_path = public, pg_temp
 begin atomic
@@ -576,7 +576,7 @@ begin atomic
     'settings', (select s.settings from screen_settings s limit 1),
     'account', (select to_jsonb(whoami())),
     'preferences', (select to_jsonb(p) from (
-      select a.theme, a.postbit, a.motion, a.smoke, a.contrast, a.text_size, a.tilt, a.effects, a.mode, a.cards_met, a.alerts_seen_at, a.settlement_seen, a.toasts, a.welcomed_at, a.tips, a.tips_seen
+      select a.theme, a.postbit, a.motion, a.smoke, a.contrast, a.text_size, a.tilt, a.effects, a.game_sound, a.game_volume, a.interface_sound, a.interface_volume, a.mode, a.cards_met, a.alerts_seen_at, a.settlement_seen, a.toasts, a.welcomed_at, a.tips, a.tips_seen
       from account_preferences a limit 1) p),
     'characters', coalesce((select jsonb_agg(to_jsonb(c) order by c.name) from my_characters c), '[]'::jsonb),
     'faces', coalesce((

@@ -14,7 +14,7 @@
 -- `beltLost` alert to the owner of the character that held the belt just before, when the belt passes to another character. An award by an admin or the season has no Act, so alerts.act may be
 -- null (the Alerts read already left-joins it). Neither alert names who gave or took: the log says. A staff character has no owner and is never given a trophy. The cost is one indexed read
 -- and one alert per award, and one more per belt passed, so a season's three places cost three. alerts_kind_check and account_preferences_toasts_check, set_preferences and settings_held list the kinds as
--- one list (engine/rules/alerts.test.ts holds them to it), each redefined whole from its latest definition: set_preferences from 0145, settings_held from 0205, log_page from 0210.
+-- one list (engine/rules/alerts.test.ts holds them to it), each redefined whole from its latest definition: set_preferences from 0200, settings_held from 0205, log_page from 0210.
 --
 -- Scale: a busy instance has many belt passes and many players. The belt branches (lost, beltBack) are driven only by belts the caller's own characters have ever held (a by-character read of the
 -- caller's awards), so another player's belt passes are never visited; their lateral previous-holder lookups run per pass of those belts alone, on trophy_awards_by_trophy. The granted branch reads
@@ -288,9 +288,13 @@ alter table account_preferences drop constraint account_preferences_toasts_check
 alter table account_preferences add constraint account_preferences_toasts_check
   check (toasts is null or toasts <@ array['quote', 'cardOnYours', 'trapStruck', 'trapSprang', 'hint', 'ruling', 'settlement', 'followed', 'update', 'seasonNews', 'cardEnded', 'framed', 'trophy', 'beltLost', 'beltBack']);
 
--- set_preferences (0145), with the new kinds among those a toast may name. Everything else as 0145 wrote it; its signature is 0145's.
-create or replace function set_preferences(theme text default null, postbit text default null, motion text default null,
-  smoke text default null, contrast text default null, text_size integer default null, tilt text default null, effects text default null, mode text default null,
+-- set_preferences (0200), with the new kinds among those a toast may name. Everything else as 0200 wrote it, and its shape too: dropped and made again with
+-- 0200's signature (a second signature would make every call ambiguous, and would reach every role through PUBLIC), with 0200's revoke and grant restated.
+drop function set_preferences(text, text, text, text, text, integer, text, text, text, integer, text, integer, text, text[], boolean);
+
+create function set_preferences(theme text default null, postbit text default null, motion text default null,
+  smoke text default null, contrast text default null, text_size integer default null, tilt text default null, effects text default null,
+  game_sound text default null, game_volume integer default null, interface_sound text default null, interface_volume integer default null, mode text default null,
   toasts text[] default null, toasts_default boolean default false) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
@@ -308,6 +312,10 @@ begin
   if text_size is not null and text_size not in (100, 125, 150, 200) then raise exception 'text size is 100, 125, 150 or 200 percent' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
   if tilt is not null and tilt not in ('off', 'on') then raise exception 'tilt is off or on' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
   if effects is not null and effects not in ('standard', 'bright') then raise exception 'effects are standard or bright' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+  if game_sound is not null and game_sound not in ('off', 'on') then raise exception 'game sounds are off or on' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+  if interface_sound is not null and interface_sound not in ('off', 'on') then raise exception 'interface sounds are off or on' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+  if game_volume is not null and (game_volume not between 0 and 100 or game_volume % 5 <> 0) then raise exception 'a volume is 0 to 100, in steps of 5' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+  if interface_volume is not null and (interface_volume not between 0 and 100 or interface_volume % 5 <> 0) then raise exception 'a volume is 0 to 100, in steps of 5' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
   if mode is not null and mode not in ('system', 'light', 'dark') then raise exception 'the mode follows the device, or is light or dark' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
   if toasts is not null and coalesce(toasts_default, false) then raise exception 'the toasts are chosen or put back to the defaults, not both' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
   if toasts is not null then
@@ -316,17 +324,23 @@ begin
     -- Repaired, not refused: the same kind named twice is the kind once, in the order it was first named.
     select coalesce(array_agg(k order by first), '{}') into once from (select k, min(n) as first from unnest(toasts) with ordinality t(k, n) group by k) d;
   end if;
-  insert into account_preferences as p (account, theme, postbit, motion, smoke, contrast, text_size, tilt, effects, mode, toasts)
+  insert into account_preferences as p (account, theme, postbit, motion, smoke, contrast, text_size, tilt, effects, game_sound, game_volume, interface_sound, interface_volume, mode, toasts)
   values (caller, coalesce(theme, 'default'), coalesce(postbit, 'side'), coalesce(motion, 'system'),
-    coalesce(smoke, 'full'), coalesce(contrast, 'standard'), coalesce(text_size, 100), coalesce(tilt, 'off'), coalesce(effects, 'standard'), coalesce(mode, 'system'), once)
+    coalesce(smoke, 'full'), coalesce(contrast, 'standard'), coalesce(text_size, 100), coalesce(tilt, 'off'), coalesce(effects, 'standard'),
+    coalesce(game_sound, 'off'), coalesce(game_volume, 80), coalesce(interface_sound, 'off'), coalesce(interface_volume, 80), coalesce(mode, 'system'), once)
   on conflict (account) do update set theme = coalesce(set_preferences.theme, p.theme), postbit = coalesce(set_preferences.postbit, p.postbit),
     motion = coalesce(set_preferences.motion, p.motion), smoke = coalesce(set_preferences.smoke, p.smoke),
     contrast = coalesce(set_preferences.contrast, p.contrast), text_size = coalesce(set_preferences.text_size, p.text_size),
-    tilt = coalesce(set_preferences.tilt, p.tilt), effects = coalesce(set_preferences.effects, p.effects), mode = coalesce(set_preferences.mode, p.mode),
+    tilt = coalesce(set_preferences.tilt, p.tilt), effects = coalesce(set_preferences.effects, p.effects),
+    game_sound = coalesce(set_preferences.game_sound, p.game_sound), game_volume = coalesce(set_preferences.game_volume, p.game_volume),
+    interface_sound = coalesce(set_preferences.interface_sound, p.interface_sound), interface_volume = coalesce(set_preferences.interface_volume, p.interface_volume), mode = coalesce(set_preferences.mode, p.mode),
     toasts = case when coalesce(set_preferences.toasts_default, false) then null when set_preferences.toasts is not null then once else p.toasts end
   returning * into kept;
   return preferences_answer(kept);
 end $$;
+
+revoke execute on function set_preferences(text, text, text, text, text, integer, text, text, text, integer, text, integer, text, text[], boolean) from public, anon;
+grant execute on function set_preferences(text, text, text, text, text, integer, text, text, text, integer, text, integer, text, text[], boolean) to authenticated;
 
 
 
