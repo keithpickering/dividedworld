@@ -193,7 +193,7 @@ test('an instance exported and imported into a fresh database is the same instan
             'starts', to_char(now() + interval '1 day', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'), 'ends', to_char(now() + interval '2 days', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'))) returning id into score_play;
         insert into play_reach (play, reach, character, ends_at) values (score_play, 'character', b, now() + interval '2 days');
       end;
-      -- The card notes, Part 4 (0240): a cast Earn on a character alone, with a group and a time up, played on Bob's character; and a No quote on a post, played after Bob
+      -- The card notes, Part 4 (0194): a cast Earn on a character alone, with a group and a time up, played on Bob's character; and a No quote on a post, played after Bob
       -- quotes that post. The quote is written first, since a quote of a post under a live No quote is refused (acts_quote_guard); the import writes it as a replica.
       insert into card_kinds (key, name, alignment, rarity, play, trap, reaches, lasts, gimmick) values
         ('expearn', 'Exported Earn', 'sweet', 'uncommon', 'cast', null, '{character}', interval '36 hours', '{"kind": "earn", "quadrants": ["excitedPositive", "calmPositive"], "by": 0.1, "group": "publicity"}'),
