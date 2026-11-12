@@ -6,16 +6,20 @@ import sys, os, math, random
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))   # rig.py is one folder up, shared by every card
 sys.dont_write_bytecode = True           # no __pycache__ beside the card folders: the art guard reads every folder there as a card's
 import bpy
-from mathutils import Vector
+from mathutils import Vector, Matrix, Euler, Quaternion
 import rig
 
 OUT = sys.argv[-1]
 rnd = random.Random(int(os.environ.get('WAILS_SEED', '3')))
+def setting(name, default): return tuple(float(v) for v in os.environ.get(name, default).split())
 sc = rig.reset()
-rig.backdrop(18, [(0.0, '#021418'), (0.5, '#0a5a6c'), (0.78, '#18b4d0'), (1.0, '#063848')])
+rig.backdrop(18, [(0.0, '#021418'), (0.5, '#0a5a6c'), (0.78, '#18b4d0'), (1.0, '#063848')]).scale.x = 70   # wide: a camera off to one side never sees its edge
 G = -1.55                                # the floor: the jar stands above the card's name plate
 rig.floor(G, rig.checker('floor', '#04222b', '#0c4a5a', 46, rough=0.1))
 J = Vector((-0.2, 0.6, G))               # the jar's foot
+EYE = J + Vector(setting('WAILS_EYE', '4.1 -8.9 3.4'))    # where the camera stands, from the jar's foot
+AIM = J + Vector(setting('WAILS_AIM', '0 0 1.0'))         # what it looks at
+ROLL = setting('WAILS_ROLL', '-9')[0]    # its tilt about its own line of sight, in degrees
 
 chrome = rig.plastic('chrome', (0.85, 0.95, 1.0), rough=0.06, metallic=1.0)
 ink = rig.plastic('ink', (0.01, 0.03, 0.04), rough=0.25)
@@ -73,10 +77,17 @@ tag = [rig.slab('tag', [(-0.8, 0.5), (0.55, 0.5), (0.85, 0.2), (0.85, -0.2), (0.
        rig.text('READ', 0.36, red, (-0.12, -0.035, -0.2), depth=0.01, bevel=0.003),
        rig.tube('eyelet', [(0.62 + math.cos(a) * 0.07, -0.03, math.sin(a) * 0.07) for a in (math.tau * j / 16 for j in range(17))], 0.02, chrome, res=3)]
 TAG = J + Vector((1.8, -1.6, 1.15))
-rig.group(tag, loc=TAG, rot=(-6, 0, -9), scale=0.95)
-knot = TAG + Vector((0.7, 0.05, 0.02))
+TURN = (-14, -17, -24)                   # mid-swing: its eyelet end up, its face turned out toward the camera
+rig.group(tag, loc=TAG, rot=TURN, scale=0.95)
+place = Matrix.LocRotScale(TAG, Euler([math.radians(a) for a in TURN], 'XYZ'), (0.95,) * 3)   # where the group put the tag
 string = rig.plastic('string', (0.9, 0.85, 0.7), rough=0.6)
-rig.tube('string', [knot + (J + Vector((0.95, -0.55, 3.06)) - knot) * t + Vector((0.25, 0, -0.3)) * math.sin(math.pi * t) for t in (j / 12 for j in range(13))], 0.022, string, res=3)
+loop = rig.tube('loop', [(math.cos(a) * 0.11, 0, math.sin(a) * 0.11) for a in (math.tau * j / 24 for j in range(25))], 0.02, string, res=3)
+loop.matrix_world = place @ Matrix.Translation((0.62, 0, 0.09)) @ Matrix.Rotation(math.radians(80), 4, 'Z') @ Matrix.Scale(1 / 0.95, 4)   # through the eyelet, edge on to the tag
+N = J + Vector((math.cos(-0.75) * 1.08, math.sin(-0.75) * 1.08, 3.06))   # where the string leaves the neck
+top = place @ Vector((0.67, 0, 0.16))    # the loop's top
+def bezier(p0, p1, p2, p3, n=40):
+    return [p0 * (1 - t) ** 3 + p1 * 3 * t * (1 - t) ** 2 + p2 * 3 * t * t * (1 - t) + p3 * t ** 3 for t in (j / n for j in range(n + 1))]
+rig.tube('string', bezier(N, N + Vector((1.1, -0.75, 0.0)), top + Vector((0.75, 0.1, 0.7)), top), 0.022, string, res=3)   # slack: out past the shoulder, round and down to the loop
 rig.tube('string', [J + Vector((math.cos(a) * 1.08, math.sin(a) * 1.08, 3.06)) for a in (math.tau * j / 48 for j in range(49))], 0.022, string, res=3)
 
 # ---- the gifts: coins dropping to the jar, the nearest with The System's overhead bitten out --------
@@ -113,5 +124,7 @@ rig.area('window', (3.5, -8, 3), 1.0, 900, look_at=LOOK, size_y=7.0)   # the tal
 rig.area('rim', (5, 6, 6), 4.0, 2000, rgb=(0.3, 0.9, 1.0), look_at=LOOK, glossy=False)
 rig.area('soft', (-8, -5, 0), 8.0, 500, rgb=(0.7, 0.95, 1.0), look_at=LOOK)
 rig.world((0.02, 0.09, 0.12), 0.7)
-rig.camera(60, elev=6, target=(0, 0, -0.5))
+cam = rig.camera(35)                     # wide and close, low at the jar's right shoulder, the horizon tipped
+cam.location = EYE
+cam.rotation_euler = ((AIM - EYE).to_track_quat('-Z', 'Y') @ Quaternion((0, 0, 1), math.radians(ROLL))).to_euler()
 rig.render(OUT)

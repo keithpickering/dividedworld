@@ -25,7 +25,10 @@
  *    against `ground` or against `field`, or `ink` is under 4.5:1 on `neon`;
  * 8. the masthead name's color (`text`, as engine/mail/render.ts writes it) is under 3:1 against the `page`
  *    recipe's full worst, read with tools/check-glass-contrast.mjs's `recipeWorsts` and `contrastRatio`, never
- *    a second model of the smoke.
+ *    a second model of the smoke;
+ * 9. a committed or rendered Auth template holds `{{ .ConfirmationURL }}`, or its button's href (the first link in
+ *    the email) is not exactly `{{ .RedirectTo }}#token_hash={{ .TokenHash }}`: Auth's redirect carries the
+ *    player's `next` in its query, and the hash stays in the fragment, which no server sees.
  *
  * `mailFaults` is exported and pure over what it is handed (shapes at its definition), so tools/test-mail.mjs
  * drives each fault red. `loadRoot` reads a repository root into those arguments; `--root` points it at a
@@ -44,6 +47,8 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'
 export const GMAIL_CLIP = 102400;
 const IMAGES = ['smoke.jpg', 'cut-panel.png', 'cut-button.png', 'coin.png'];
 const TEMPLATE_PATH = /^supabase\/templates\/[A-Za-z0-9_-][A-Za-z0-9._-]*\.html$/;
+/** The button's href in both Auth emails: Auth's own redirect for the request, then the token's hash in the fragment. */
+const AUTH_LINK = '{{ .RedirectTo }}#token_hash={{ .TokenHash }}';
 const TEXT_COLORS = ['text', 'text2', 'hi', 'neonText', 'violet'];
 
 /** A JPEG's `{ width, height }` from its first SOF marker, or null if it is not a JPEG or has none. */
@@ -155,6 +160,16 @@ export function mailFaults({ ui, mailDir, templates, rendered }) {
     if (html === undefined) out.push(`${t.path}: is not a template authTemplates() writes; delete it`);
     else if (t.text === null) out.push(`${t.path}: missing; run  node tools/check-mail.mjs --write  and commit it`);
     else if (t.text !== html) out.push(`${t.path}: differs from what authTemplates() writes; run  node tools/check-mail.mjs --write  and commit it`);
+  }
+
+  /* 9 */
+  for (const [where, list] of [['committed', templates.map((t) => ({ path: t.path, html: t.text }))], ['rendered', rendered]]) {
+    for (const t of list) {
+      if (typeof t.html !== 'string') continue;
+      const href = /<a\s[^>]*?href="([^"]*)"/.exec(t.html)?.[1];
+      if (t.html.includes('{{ .ConfirmationURL }}')) out.push(`${t.path}: the ${where} template holds {{ .ConfirmationURL }}; the link is ${AUTH_LINK}`);
+      else if (href !== AUTH_LINK) out.push(`${t.path}: the ${where} template's button's href is ${JSON.stringify(href ?? null)}, not ${AUTH_LINK}`);
+    }
   }
 
   const committed = new Set(templates.map((t) => t.path));
