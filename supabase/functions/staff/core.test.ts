@@ -484,7 +484,7 @@ test('through the real model layer: each call is a ledger row naming the filing 
     return reply(JSON.stringify({ words: 'Back from a bad connection.' }));
   }) as unknown as typeof globalThis.fetch;
   const models = realModels((n) => ({ ANTHROPIC_API_KEY: 'sk-test' } as Record<string, string>)[n], async (row) => { rows.push(row); }, {
-    tiers: { strong: 'claude-opus-5-5', light: 'claude-haiku-5-5' }, fetch, sleep: async () => {},
+    tiers: { strong: 'claude-opus-5-5', light: 'claude-haiku-5-5' }, oldVoice: { window: 1024, count: (t: string) => t.length }, fetch, sleep: async () => {},
   });
   const out = await runFilings(d.db, models, dividedWorld, SLOT, clock);
   assert.ok(out.status === 'ok');

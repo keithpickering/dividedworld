@@ -523,7 +523,7 @@ test('through the real model layer: a transport failure is retried once on the r
     return reply(JSON.stringify({ words: 'Back from a bad connection.', note: 'It took two tries.' }));
   }) as unknown as typeof globalThis.fetch;
   const models = realModels((n) => ({ ANTHROPIC_API_KEY: 'sk-test' } as Record<string, string>)[n], async (row) => { rows.push(row); }, {
-    tiers: { strong: 'claude-opus-5-5', light: 'claude-haiku-5-5' }, fetch, sleep: async () => {},
+    tiers: { strong: 'claude-opus-5-5', light: 'claude-haiku-5-5' }, oldVoice: { window: 1024, count: (t: string) => t.length }, fetch, sleep: async () => {},
   });
   const out = await runChatter(d.db, models, dividedWorld, SLOT);
   assert.ok(out.status === 'ok');

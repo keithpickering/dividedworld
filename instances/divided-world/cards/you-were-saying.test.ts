@@ -15,7 +15,7 @@ const rules = youWereSaying;
 const writes = rules.writes!;
 const target = (body: string): CardTarget => postTarget('p1', 'post', body);
 const frame = (over: Partial<Parameters<typeof writes.frame>[0]> = {}) =>
-  writes.frame({ post: { name: 'Mario', text: 'I was going to say' }, before: [], title: 'Best level', tails: [], settings, ...over });
+  writes.frame({ post: { name: 'Mario', text: 'I was going to say' }, before: [], title: 'Best level', tails: [], settings, budget: 1000, count: (t) => t.length, ...over });
 
 test('its length and its price follow its steps', () => {
   assert.equal(writes.tokens({ steps: 0 }, settings), 25);

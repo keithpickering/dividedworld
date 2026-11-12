@@ -23,6 +23,8 @@
  */
 import { parse } from '../../../engine/bbcode/parse.ts';
 import { visibleText } from '../../../engine/bbcode/visible.ts';
+import { writeTokensMost } from '../../../engine/rules/cards.ts';
+import { tokenCounter } from '../../../engine/system/tokens.ts';
 import type { Instance, Settings } from '../../../engine/rules/types.ts';
 import type { Models } from '../../../engine/system/model.ts';
 import { scrubbedComplete } from '../../../engine/system/scrub.ts';
@@ -94,13 +96,17 @@ export async function runWrites(db: Db, models: Models, instance: Instance, sett
       if (own.trim() === '') return finish(job, null, 'emptyPost');
       // The length the play bought, as the play recorded it: never worked out again from the settings of today.
       if (job.tokens === null || !Number.isSafeInteger(job.tokens) || job.tokens < 1) return finish(job, null, 'unreachable');
-      const maxTokens = job.tokens;
+      // At most what the window leaves room for (design section 4): a play bought before the window shrank is made shorter, never refused.
+      const maxTokens = Math.min(job.tokens, writeTokensMost(settings));
+      const count = tokenCounter(settings.oldVoiceTokenizer);
       const { prompt, stop: stopAt } = writes.frame({
         post: { name: job.author, text: own },
         before: job.before.map((b) => ({ name: b.name, text: visible(b.body) })),
         title: job.title,
         tails: job.earlier.map((e) => e.text),
         settings,
+        budget: settings.oldVoiceWindow - maxTokens,
+        count,
       });
       const out = await scrubbedComplete(models, {
         duty: 'cardText', play: job.play, lines: 'many', maxTokens, maxChars: Math.min(MOST_CHARS, maxTokens * CHARS_A_TOKEN),

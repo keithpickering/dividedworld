@@ -12,6 +12,7 @@ import { chooseInstance } from '../_shared/instance.ts';
 import { environment, fromTheService, json, notTheService } from '../_shared/serve.ts';
 import { ledgerWriter } from '../_shared/models/ledger.ts';
 import { withDatabaseSettings } from '../_shared/settings.ts';
+import { tokenCounter } from '../../../engine/system/tokens.ts';
 import type { JobDeps } from '../_shared/handler.ts';
 
 /** Jobs claimed in a round. */
@@ -23,7 +24,7 @@ export async function handle(request: Request, deps: JobDeps): Promise<Response>
   try {
     const db = deps.db(env, { safeToRepeat: (fn) => fn !== 'record_model_call' });
     const tuned = await withDatabaseSettings(chooseInstance(deps.env('KAYFABB_PROFILE')), db);
-    const counts = await runWrites(db, deps.models(deps.env, ledgerWriter(db), { tiers: tuned.settings.modelTiers, fetch: deps.fetch }), tuned, tuned.settings, MOST);
+    const counts = await runWrites(db, deps.models(deps.env, ledgerWriter(db), { tiers: tuned.settings.modelTiers, oldVoice: { window: tuned.settings.oldVoiceWindow, count: tokenCounter(tuned.settings.oldVoiceTokenizer) }, fetch: deps.fetch }), tuned, tuned.settings, MOST);
     return json(200, counts);
   } catch (e) {
     console.error('write failed', e instanceof Error ? e.message : 'unknown');

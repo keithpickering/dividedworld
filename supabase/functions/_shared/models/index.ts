@@ -19,9 +19,9 @@
  * here names a model id as a default, so the setting is the one place a tier's model is chosen.
  */
 import type { CallContext, ChatRequest, CompletionRequest, ModelResult, Models, Tier, Usage } from '../../../../engine/system/model.ts';
-import { AnswerRejected, SchemaRefused } from '../../../../engine/system/model.ts';
+import { AnswerRejected, PromptTooLong, SchemaRefused } from '../../../../engine/system/model.ts';
 import { schemaProblems } from '../../../../engine/system/schema.ts';
-export { AnswerRejected, SchemaRefused };
+export { AnswerRejected, PromptTooLong, SchemaRefused };
 import { cutCompletion, repair } from '../../../../engine/system/validate.ts';
 import type { Trim } from '../../../../engine/system/validate.ts';
 import { anthropicChat } from './anthropic.ts';
@@ -29,7 +29,7 @@ import { complete as completeOverHttp } from './completions.ts';
 import { PRICES, price } from './prices.ts';
 import type { PriceTable } from './prices.ts';
 import type { ModelCallRow, RecordModelCall } from './ledger.ts';
-import { NotJson, TransportFailure } from './transport.ts';
+import { NotJson, ProviderRefusal, TransportFailure } from './transport.ts';
 import type { Wire } from './transport.ts';
 
 export type Env = (name: string) => string | undefined;
@@ -44,6 +44,8 @@ export interface ModelOptions {
   readonly now?: () => number;
   /** Price tables by provider; the shipped ones when unset. */
   readonly prices?: Readonly<Record<string, PriceTable>>;
+  /** The old voice's context window in tokens and the tokenizer that counts a prompt against it (`oldVoiceWindow`, `oldVoiceTokenizer`). */
+  readonly oldVoice: { readonly window: number; readonly count: (text: string) => number };
 }
 
 /** At most this many retries after the first attempt. */
@@ -96,8 +98,8 @@ export function models(env: Env, record: RecordModelCall, options: ModelOptions)
     } catch (e) {
       threw = true;
       failure = e;
-      // A refused schema was never sent: nothing was asked or paid for, so its row is `failed`, with the predicate.
-      if (e instanceof SchemaRefused) { call.outcome = 'failed'; call.predicate = e.predicate; }
+      // A refused schema, or a prompt too long for the window, was never sent: nothing was asked or paid for, so its row is `failed`, with the predicate.
+      if (e instanceof SchemaRefused || e instanceof PromptTooLong) { call.outcome = 'failed'; call.predicate = e.predicate; }
       else if (e instanceof AnswerRejected) { call.outcome = 'rejected'; call.predicate = e.predicate; }
       throw e;
     } finally {
@@ -155,7 +157,18 @@ export function models(env: Env, record: RecordModelCall, options: ModelOptions)
       return ledgered(request, { provider: 'completions', model: 'self-hosted' }, async (call) => {
         const url = env('SYSTEM_COMPLETIONS_URL');
         if (!url) throw new Error('SYSTEM_COMPLETIONS_URL is not set');
-        const raw = await withRetries(call, () => completeOverHttp(request, url, env('SYSTEM_COMPLETIONS_KEY') || undefined, env('SYSTEM_COMPLETIONS_MODEL') ?? 'default', wire));
+        // Before anything is sent: a prompt that leaves the answer no room is a fact about the request.
+        const room = options.oldVoice.window - request.maxTokens;
+        const length = options.oldVoice.count(request.prompt);
+        if (length > room) throw new PromptTooLong(length, room);
+        let raw: Awaited<ReturnType<typeof completeOverHttp>>;
+        try {
+          raw = await withRetries(call, () => completeOverHttp(request, url, env('SYSTEM_COMPLETIONS_KEY') || undefined, env('SYSTEM_COMPLETIONS_MODEL') ?? 'default', wire));
+        } catch (e) {
+          // The server's own refusal (an overflow the count missed, a bad key) is a fact about the request: a rejection, ended at once. A 5xx and a 429 never get here.
+          if (e instanceof ProviderRefusal) throw new AnswerRejected(e.message, `refused:${e.status}`);
+          throw e;
+        }
         call.model = raw.model;
         call.usage = raw.usage;
         priced(call, 'completions');

@@ -91,7 +91,7 @@ test('a season of FanGaME: the Split, picking it apart, the consolidation, every
     return new Response(JSON.stringify({ choices: [{ text: ' ok.' }], usage: { prompt_tokens: 300, completion_tokens: 12 } }), { status: 200 });
   }) as unknown as typeof fetch;
   const env = (name: string) => ({ ANTHROPIC_API_KEY: 'test-key', SYSTEM_COMPLETIONS_URL: 'https://completions.test' } as Record<string, string>)[name];
-  const real = models(env, ledgerWriter(db), { tiers, fetch: fake });
+  const real = models(env, ledgerWriter(db), { tiers, oldVoice: { window: 1024, count: (t: string) => t.length }, fetch: fake });
   const memory = { hobby: { name: 'level design', since: 'today', from: 'a board' }, opinions: [], grudges: [], wheelhouse: [], realWorld: [], marks: [] };
   const profile = { interests: ['fangames'], favorites: [], mood: 'proud', signature: 'FanGaME v0.9.3 BETA' };
 

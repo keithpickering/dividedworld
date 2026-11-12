@@ -6,6 +6,7 @@ import { TransportFailure } from '../_shared/models/transport.ts';
 import { instance as base } from '../_shared/instance.ts';
 import { AnswerRejected, type CompletionRequest, type Models } from '../../../engine/system/model.ts';
 import type { CardRules } from '../../../engine/rules/cards.ts';
+import { writeTokensMost } from '../../../engine/rules/cards.ts';
 import type { Instance } from '../../../engine/rules/types.ts';
 
 const P1 = '11111111-1111-4111-8111-111111111111';
@@ -226,4 +227,28 @@ test('a post an edit has emptied finishes emptyPost, with no call', async () => 
   assert.equal(requests.length, 0);
   assert.equal(frames.length, 0);
   assert.deepEqual(finishes(calls), [{ play: P1, version: V, text: null, failed: 'emptyPost' }]);
+});
+
+test('a frame that ignores its budget ends the job at once, finished promptTooLong and not left claimed', async () => {
+  const { db, calls } = fakeDb([[job()]]);
+  const { models, requests } = fakeModels(() => new AnswerRejected('the prompt is too long', 'promptTooLong'));
+  const out = await run(db, models);
+  assert.equal(requests.length, 1);
+  assert.deepEqual(finishes(calls), [{ play: P1, version: V, text: null, failed: 'promptTooLong' }]);
+  assert.equal(out.failed, 1);
+  assert.equal(out.errored, 0);
+});
+
+test('a play that bought more than the window leaves room for is asked for the most that fits, and framed with the rest as its budget', async () => {
+  frames.length = 0;
+  const settings = { ...instance.settings, oldVoiceWindow: 656, oldVoicePromptFloor: 256 };
+  assert.equal(writeTokensMost(settings), 400);
+  const { db } = fakeDb([[job({ tokens: 768 })]]);
+  const { models, requests } = fakeModels(() => 'x');
+  await runWrites(db, models, instance, settings, 8);
+  assert.equal(requests[0]!.maxTokens, 400);
+  const frame = frames[0] as { budget: number; count: (t: string) => number };
+  assert.equal(frame.budget, 656 - 400);
+  assert.equal(typeof frame.count, 'function');
+  assert.equal(frame.count('hello'), 1);
 });

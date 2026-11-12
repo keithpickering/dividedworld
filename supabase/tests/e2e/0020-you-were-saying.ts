@@ -58,7 +58,7 @@ test('a cast is written, edited into a second tail, cleared by its author; a fai
     return new Response(JSON.stringify({ choices: [{ text: endpoint.says }], usage: { prompt_tokens: 40, completion_tokens: 8 } }), { status: 200, headers: { 'content-type': 'application/json' } });
   }) as typeof globalThis.fetch;
   const env = (name: string) => ({ SYSTEM_COMPLETIONS_URL: 'http://localhost:9' } as Record<string, string>)[name];
-  const completions = models(env, ledgerWriter(service), { tiers: { strong: 'claude-opus-5-5', light: 'claude-haiku-5-5' }, fetch: fake, sleep: async () => {} });
+  const completions = models(env, ledgerWriter(service), { tiers: { strong: 'claude-opus-5-5', light: 'claude-haiku-5-5' }, oldVoice: { window: 1024, count: (t: string) => t.length }, fetch: fake, sleep: async () => {} });
   const tuned = { ...instance.settings, oldVoice: true };
   const ledgerBefore = Number(sql(`select coalesce(max(id), 0) from model_calls`));
 

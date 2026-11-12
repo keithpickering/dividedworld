@@ -21,6 +21,7 @@ import { postgrest } from '../_shared/rpc.ts';
 import { environment, fromTheService, json, notTheService } from '../_shared/serve.ts';
 import { ledgerWriter } from '../_shared/models/ledger.ts';
 import { withDatabaseSettings } from '../_shared/settings.ts';
+import { tokenCounter } from '../../../engine/system/tokens.ts';
 import type { JobDeps } from '../_shared/handler.ts';
 
 /** The calls that write and are not idempotent: not sent again after an answer that may have been lost on the way back. */
@@ -40,8 +41,8 @@ export async function handle(request: Request, deps: JobDeps): Promise<Response>
         service: deps.db(env, { safeToRepeat: (fn) => !WRITES.has(fn) }),
       }),
       models: async (service) => {
-        const tiers = (await withDatabaseSettings(chooseInstance(deps.env('KAYFABB_PROFILE')), service)).settings.modelTiers;
-        return deps.models(deps.env, ledgerWriter(service), { tiers, fetch: deps.fetch });
+        const { settings } = await withDatabaseSettings(chooseInstance(deps.env('KAYFABB_PROFILE')), service);
+        return deps.models(deps.env, ledgerWriter(service), { tiers: settings.modelTiers, oldVoice: { window: settings.oldVoiceWindow, count: tokenCounter(settings.oldVoiceTokenizer) }, fetch: deps.fetch });
       },
     });
   }
@@ -55,8 +56,8 @@ export async function handle(request: Request, deps: JobDeps): Promise<Response>
     const db = deps.db(env, { safeToRepeat: (fn) => !WRITES.has(fn) });
     const instance = chooseInstance(deps.env('KAYFABB_PROFILE'));
     // The tiers are the instance's `modelTiers` setting as the database holds it now; the model adapter names no model of its own.
-    const tiers = (await withDatabaseSettings(instance, db)).settings.modelTiers;
-    const modelsNow = deps.models(deps.env, ledgerWriter(db), { tiers, fetch: deps.fetch });
+    const { settings } = await withDatabaseSettings(instance, db);
+    const modelsNow = deps.models(deps.env, ledgerWriter(db), { tiers: settings.modelTiers, oldVoice: { window: settings.oldVoiceWindow, count: tokenCounter(settings.oldVoiceTokenizer) }, fetch: deps.fetch });
     const outcome = await runFilings(db, modelsNow, instance, slot);
     // The patrols due, after the filings and on their own: a patrol's failure costs the filings nothing, and a filing run's failure is thrown before any patrol is claimed.
     const patrols = await runPatrolsAfterFilings(db, modelsNow, instance, Date.now, begun, slot);

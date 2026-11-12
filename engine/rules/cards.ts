@@ -188,6 +188,10 @@ export interface WriteFrameInput {
   readonly title: string;
   readonly tails: readonly string[];
   readonly settings: Settings;
+  /** The prompt's most tokens: the old voice's window less the tokens the answer may take. A frame drops its oldest material to fit it. */
+  readonly budget: number;
+  /** How many tokens a text is, by the instance's tokenizer. */
+  readonly count: (text: string) => number;
 }
 
 /**

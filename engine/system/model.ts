@@ -110,3 +110,18 @@ export class SchemaRefused extends AnswerRejected {
     this.problems = problems;
   }
 }
+
+/**
+ * A completion prompt that does not fit the old voice's window with the answer's room (`count(prompt) + maxTokens > window`), caught before
+ * anything is sent. An `AnswerRejected` so a caller that handles a call with no usable answer handles this one; the model layer writes its row
+ * as `failed`, as for a refused schema, because nothing was asked and nothing was paid for. Its predicate is `promptTooLong`.
+ */
+export class PromptTooLong extends AnswerRejected {
+  readonly prompt: number;
+  readonly room: number;
+  constructor(prompt: number, room: number) {
+    super(`the prompt is ${prompt} tokens and the window leaves room for ${room}`, 'promptTooLong');
+    this.prompt = prompt;
+    this.room = room;
+  }
+}

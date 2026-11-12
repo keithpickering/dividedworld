@@ -132,7 +132,7 @@ test('a meeting orders two Mods; visits are drawn, intercepted, reported and fil
     return new Response(JSON.stringify({ model: body.model, stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify(reply) }], usage: { input_tokens: 1500, output_tokens: 80, service_tier: 'standard' } }), { status: 200 });
   }) as unknown as typeof fetch;
   const env = (name: string) => ({ ANTHROPIC_API_KEY: 'test-key' } as Record<string, string>)[name];
-  const real = models(env, ledgerWriter(db), { tiers, fetch: fake });
+  const real = models(env, ledgerWriter(db), { tiers, oldVoice: { window: 1024, count: (t: string) => t.length }, fetch: fake });
 
   // ---- The first meeting: two rules (the Boss's own moves), an order and an allowance for each Mod, a patrol for the quiz Mod. ----
   const memory = { hobby: { name: 'rule books', since: 'today', from: 'a drawer' }, opinions: [], grudges: [], wheelhouse: ['order'], realWorld: [], marks: [] };

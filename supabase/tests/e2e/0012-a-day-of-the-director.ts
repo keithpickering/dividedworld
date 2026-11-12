@@ -88,7 +88,7 @@ test('a rename is queued, lands, is met by three characters and ends, and the ne
     return new Response(JSON.stringify({ choices: [{ text: ' a diner on a dock!\nBoard: next' }], usage: { prompt_tokens: 300, completion_tokens: 12 } }), { status: 200 });
   }) as unknown as typeof fetch;
   const env = (name: string) => ({ ANTHROPIC_API_KEY: 'test-key', SYSTEM_COMPLETIONS_URL: 'https://completions.test' } as Record<string, string>)[name];
-  const real = models(env, ledgerWriter(db), { tiers, fetch: fake });
+  const real = models(env, ledgerWriter(db), { tiers, oldVoice: { window: 1024, count: (t: string) => t.length }, fetch: fake });
 
   const firstSlot = new Date(Math.floor(Date.now() / 60_000) * 60_000 - 2 * 3_600_000 + 23_000).toISOString();
   const first = await runMeeting(db, real, quiet, firstSlot, Date.now, fake);
