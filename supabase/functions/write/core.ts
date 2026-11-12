@@ -45,7 +45,11 @@ export const MOST_ATTEMPTS = 3;
 export const CONCURRENCY = 4;
 /** No new round is claimed after this long; a claim lasts five minutes (a model call may take four) and the function's limit is longer. */
 export const BUDGET_MS = 90_000;
-/** No re-roll starts this long after the job's first call: a claim lasts five minutes, and a try (a scrub regeneration included) can take minutes itself. */
+/**
+ * No re-roll starts this long after the job's first call. It bounds only when a try may start: a try that has started can itself run for minutes
+ * (a call retries transport failures, and a scrub hit calls again), so a slow job can outlive its five-minute claim. It is then claimed again;
+ * `finish_card_write` keeps the first finish, so the caster is charged once and refunded at most once, and the second run's cost falls on the instance.
+ */
 export const REROLL_DEADLINE_MS = 120_000;
 /** A stored text is at most this many characters (card_texts). */
 const MOST_CHARS = 4_000;
@@ -121,7 +125,7 @@ export async function runWrites(db: Db, models: Models, instance: Instance, sett
         duty: 'cardText' as const, play: job.play, lines: 'many' as const, maxTokens, maxChars: Math.min(MOST_CHARS, maxTokens * CHARS_A_TOKEN),
         temperature: 0.9, topP: 0.95, prompt, stop: stopAt,
       };
-      const shortUnder = Math.ceil(settings.cardWriteShortShare * maxTokens);
+      const shortUnder = Math.ceil(Math.round(settings.cardWriteShortShare * maxTokens * 1e9) / 1e9); // rounded first: 0.07 * 100 is 7.000000000000001;
       const firstCall = now();
       let best: { text: string; length: number } | null = null;
       for (let attempt = 0; attempt <= settings.cardWriteRerolls; attempt++) {

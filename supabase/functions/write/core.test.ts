@@ -357,7 +357,7 @@ test('no try starts once the deadline has passed since the first call: one call,
   assert.deepEqual(finishes(calls), [{ play: P1, version: V, text: '?', failed: null }]);
 });
 
-test('a regeneration after an edit, and a staff play, re-roll the same way, at the length their play recorded', async () => {
+test('a regeneration after an edit, and a play whose tokens come from the play, re-roll the same way, at the length the play recorded', async () => {
   for (const over of [{ tokens: 300, earlier: [{ play: P2, text: 'old tail' }] }, { tokens: 300, attempts: 2 }]) {
     const { db, calls } = fakeDb([[job(over)]]);
     const { models, requests } = scripted(['?', x(200)]);
@@ -366,4 +366,22 @@ test('a regeneration after an edit, and a staff play, re-roll the same way, at t
     assert.equal(requests[1]!.maxTokens, 300);
     assert.deepEqual(finishes(calls), [{ play: P1, version: V, text: x(200), failed: null }]);
   }
+});
+
+test('a share of 0.07 of a 100-token play is 7 tokens, not 8: a 7-token answer is not short, one call', async () => {
+  const { db, calls } = fakeDb([[job({ tokens: 100 })]]);
+  const { models, requests } = scripted([x(7)]);
+  await runWrites(db, models, instance, { ...bytes, cardWriteShortShare: 0.07 }, 8);
+  assert.equal(requests.length, 1);
+  assert.deepEqual(finishes(calls), [{ play: P1, version: V, text: x(7), failed: null }]);
+});
+
+test('a try that would start just under the deadline still runs: a second call is made', async () => {
+  const { db, calls } = fakeDb([[job({ tokens: 200 })]]);
+  let t = 0;
+  const requests: CompletionRequest[] = [];
+  const models = { complete: async (r: CompletionRequest) => { requests.push(r); t = 119_999; return { value: requests.length === 1 ? '?' : x(150), usage: {}, provider: 'p', model: 'm', trims: [], retries: 0, costMicrodollars: 0 }; } } as unknown as Models;
+  await runWrites(db, models, instance, bytes, 8, undefined, { now: () => t, budgetMs: 10_000_000 });
+  assert.equal(requests.length, 2);
+  assert.deepEqual(finishes(calls), [{ play: P1, version: V, text: x(150), failed: null }]);
 });
