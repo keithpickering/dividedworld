@@ -215,6 +215,22 @@ test('an instance exported and imported into a fresh database is the same instan
             'starts', to_char(now() + interval '1 day', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'), 'ends', to_char(now() + interval '2 days', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'))) returning id into score_play;
         insert into play_reach (play, reach, character, ends_at) values (score_play, 'character', b, now() + interval '2 days');
       end;
+      -- The card notes, Part 4 (0316): a cast Earn on a character alone, with a group and a time up, played on Bob's character; and a No quote on a post, played after Bob
+      -- quotes that post. The quote is written first, since a quote of a post under a live No quote is refused (acts_quote_guard); the import writes it as a replica.
+      insert into card_kinds (key, name, alignment, rarity, play, trap, reaches, lasts, gimmick) values
+        ('expearn', 'Exported Earn', 'sweet', 'uncommon', 'cast', null, '{character}', interval '36 hours', '{"kind": "earn", "quadrants": ["excitedPositive", "calmPositive"], "by": 0.1, "group": "publicity"}'),
+        ('expnoquote', 'Exported No Quote', 'salty', 'uncommon', 'use', null, '{post}', interval '7 days', '{"kind": "noQuote"}');
+      insert into card_ledger (account, card, kind, price) values (ann, 'expearn', 'bought', 0), (ann, 'expnoquote', 'bought', 0);
+      declare quiet_post uuid; earn_post uuid;
+      begin
+        quiet_post := tests.post(a, t, 'Under No quote, and quoted before it.');
+        perform tests.become((select owner from characters where id = b));
+        perform post(t, b, '[quote=' || quiet_post || ']Under No quote, and quoted before it.[/quote] Bob, quoting under No quote.', quiet_post);
+        perform tests.unbecome();
+        perform play_card(ann, 'expnoquote', a, quiet_post, '{}', 0, '');
+        earn_post := tests.post(b, t, 'Bob, earned on.');
+        perform play_card(ann, 'expearn', a, b, '{}', 0, '', 'character', earn_post);
+      end;
       -- A pack bought from its slot (0139): the pack's kind, its slot, the packs row with the pulls as they stood, and a pulled row per card.
       insert into card_kinds (key, name, alignment, rarity) values ('exppull', 'Exported Pull', 'sweet', 'common');
       insert into pack_kinds (key, pulls, leaves) values ('exppack', '[{"weights": {"common": 1}}, {"weights": {"common": 1}}]', '{}');
@@ -640,6 +656,10 @@ test('an instance exported and imported into a fresh database is the same instan
     assert.deepEqual(JSON.parse(setOf(fresh.toString())), JSON.parse(xe), 'a custom pronoun set survives the round trip');
     for (const t of HELD) { const rows = after.get(`public.${t}`); assert.ok(rows !== undefined && rows !== '[]', `${t} is in the imported instance (got ${rows === undefined ? 'no such table' : rows})`); }
     assert.equal(payouts(fresh.toString()), payouts(from), 'the payout cards\' ledger row, scored_as row, starts and rode quadrant are in the imported instance');
+    // The post that quotes the No quote's post (Task 8) is in the imported instance: the quote was written before the No quote was played, and the import writes it as a replica.
+    const quoting = `select count(*) from acts q join acts n on n.kind = 'post' and n.payload ->> 'body' = 'Under No quote, and quoted before it.'
+      where q.kind = 'post' and q.payload ->> 'body' like '%Bob, quoting under No quote.%' and q.payload ->> 'body' like '%[quote=' || n.id::text || ']%'`;
+    assert.equal(psqlOn(fresh.toString(), quoting), '1', 'the post quoting the No quote is in the imported instance, quoting its post');
     // A share of the skim ledger row carries across, and its owner reads the card it was paid by through my_ledger_shares (0290).
     const skimShare = (url: string) => psqlOn(url, `begin; select set_config('request.jwt.claims', jsonb_build_object('sub', (select id from auth.users where email = 'exp-ann@test.invalid'), 'role', 'authenticated')::text, true); set local role authenticated; select string_agg(coalesce(to_jsonb(s) ->> 'card', '-') || ':' || s.amount, ',' order by s.amount) from my_ledger_shares s where s.reason = 'card.skim'; rollback;`).split('\n').pop();
     assert.equal(skimShare(from), 'expskim:7', 'the skim share reads its card in the fixture');

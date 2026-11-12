@@ -1,13 +1,13 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { act, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useLayoutEffect, useState } from 'react';
 import { afterEach, beforeEach, describe, expect, onTestFinished, test, vi } from 'vitest';
 import type { CardUi } from '../cards/types.ts';
 import type { Act, Id, ThreadListener } from '../data/api.ts';
 import type { Fake } from '../data/fake.ts';
-import { buildWorld, holdReads, renderIn } from '../test-world.tsx';
+import { buildWorld, holdReads, renderIn, testInstance } from '../test-world.tsx';
 import { pageOf, pageRange, threadHref } from './pages.ts';
 import { createTallies } from './tallies.ts';
 import { GAP_FILL_MS, GAP_RETRY_MAX_MS, READ_DEBOUNCE_MS, ThreadScreen } from './Thread.tsx';
@@ -100,8 +100,8 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 /* ---------------------------------------------------------------------------- the world ---- */
-function world(acts: number, settings: Parameters<typeof buildWorld>[0] = undefined) {
-  const fake = buildWorld(settings);
+function world(acts: number, settings: Parameters<typeof buildWorld>[0] = undefined, instance?: Parameters<typeof buildWorld>[1]) {
+  const fake = buildWorld(settings, instance);
   const me = fake.seed.account('me');
   const other = fake.seed.account('other');
   const pipe = fake.seed.character(me, 'Pipewrench', 'heel');
@@ -2114,6 +2114,85 @@ describe('a thread drawn from its document (the forum-load plan, Task 13)', () =
       expect(document.activeElement).toBe(focused);
       expect(announcer()).toHaveTextContent('');
     });
+  });
+});
+
+/* ------------------------------------------------------------------------ a post that cannot be quoted ---- */
+describe('a post under a no-quote card', () => {
+  const stops = {
+    ...testInstance,
+    cards: testInstance.cards.map((c, i) => (i === 0 ? { ...c, key: 'stopper', name: 'Stopper', play: 'use' as const, gimmick: { kind: 'noQuote' as const }, lasts: { unit: 'day' as const, count: 7 } } : c)),
+  };
+  /* Post 2 is Spritey's and carries the card; posts 1 and 3 are quotable. */
+  function stopped(over: { ends?: string; reversed?: boolean } = {}) {
+    const w = world(3, undefined, stops);
+    w.fake.seed.admin(w.me);
+    w.fake.clock.advance(60_000);
+    const played = w.fake.seed.card(w.spritey, w.ids[1]!, 'stopper', { ends: over.ends ?? new Date(Date.now() + 3_600_000).toISOString() });
+    return { w, played };
+  }
+  const quoteOf = (seq: number) => within(post(seq)).queryByRole('button', { name: 'Quote' });
+  const openStopped = (w: { fake: Fake; thread: Id }) => renderIn(w.fake, <LoadedThread thread={w.thread} />, { path: `/t/${w.thread}`, instance: stops });
+
+  test('has no Quote button while the play is live, and its neighbors do', async () => {
+    const { w } = stopped();
+    openStopped(w);
+    await screen.findByRole('article', { name: /^Post 3 /u });
+    await within(post(2)).findByRole('button', { name: /^Stopper, 1 play\b/u });
+    expect(quoteOf(2)).toBeNull();
+    expect(quoteOf(1)).not.toBeNull();
+    expect(quoteOf(3)).not.toBeNull();
+  });
+
+  test('a selection inside it shows no Quote, and one inside a neighbor does', async () => {
+    const { w } = stopped();
+    openStopped(w);
+    await within(await screen.findByRole('article', { name: /^Post 2 /u })).findByRole('button', { name: /^Stopper, 1 play\b/u });
+    const select = (seq: number) => {
+      const text = post(seq).querySelector('.kb-bb')!.firstChild!;
+      const range = document.createRange();
+      range.setStart(text, 0); range.setEnd(text, 4);
+      const selection = window.getSelection()!;
+      selection.removeAllRanges(); selection.addRange(range);
+      act(() => { document.dispatchEvent(new Event('selectionchange')); });
+    };
+    select(2);
+    await pause(30);
+    expect(screen.queryByRole('button', { name: 'Quote the selected text' })).toBeNull();
+    select(3);
+    expect(await screen.findByRole('button', { name: 'Quote the selected text' })).toBeInTheDocument();
+  });
+
+  test('the toolbar\'s Quote is absent when the last post shown is one, and there when it is not', async () => {
+    const { w } = stopped();
+    openStopped(w);
+    await within(await screen.findByRole('article', { name: /^Post 3 /u })).findByRole('button', { name: 'Quote' });
+    expect(screen.getByRole('button', { name: 'Quote the last post shown' })).toBeInTheDocument();
+    /* A post under the card is the last one shown. */
+    const t = world(2, undefined, stops);
+    t.fake.clock.advance(60_000);
+    t.fake.seed.card(t.spritey, t.ids[1]!, 'stopper', { ends: new Date(Date.now() + 3_600_000).toISOString() });
+    cleanup();
+    openStopped(t);
+    await within(await screen.findByRole('article', { name: /^Post 2 /u })).findByRole('button', { name: /^Stopper, 1 play\b/u });
+    expect(screen.queryByRole('button', { name: 'Quote the last post shown' })).toBeNull();
+  });
+
+  test('with the play ended, or reversed, the button is there', async () => {
+    const ended = stopped({ ends: new Date(Date.now() - 60_000).toISOString() });
+    openStopped(ended.w);
+    /* The mark stays on an ended play: it proves the plays were read before the button is asserted. */
+    await within(await screen.findByRole('article', { name: /^Post 2 /u })).findByRole('button', { name: /^Stopper, 1 play\b/u });
+    expect(quoteOf(2)).not.toBeNull();
+  });
+
+  test('a play reversed by an admin leaves the Quote button', async () => {
+    const { w, played } = stopped();
+    expect((await w.fake.reverseCard(played)).ok).toBe(true);
+    openStopped(w);
+    /* The mark stays on an ended play: it proves the plays were read before the button is asserted. */
+    await within(await screen.findByRole('article', { name: /^Post 2 /u })).findByRole('button', { name: /^Stopper, 1 play\b/u });
+    expect(quoteOf(2)).not.toBeNull();
   });
 });
 
