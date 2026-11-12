@@ -1,5 +1,5 @@
 /**
- * End to end: saving outfits is serialized per account (supabase/migrations/0162_gear.sql set_outfit; the cosmetics plan, Task 2's review focus).
+ * End to end: saving outfits is serialized per account (supabase/migrations/0205_gear.sql set_outfit; the cosmetics plan, Task 2's review focus).
  * Two connections to the scratch database, each holding a transaction open: one account with ONE copy of a gear and two masks. A saves the copy
  * onto mask 1 and holds its transaction; B's save of it onto mask 2 must wait (it neither sees A's uncommitted piece nor takes the copy), and once
  * A commits, B is refused, so a single copy is never worn twice. Then the same for a retirement: a save waiting on a mask's row lock, while an

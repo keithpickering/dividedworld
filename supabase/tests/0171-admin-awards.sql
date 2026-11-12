@@ -1,4 +1,4 @@
--- The trophies admin page's reads (supabase/migrations/0169_admin_awards.sql; the cosmetics plan, Task 11): an admin reads recent awards, newest first and paged, a reversed
+-- The trophies admin page's reads (supabase/migrations/0212_admin_awards.sql; the cosmetics plan, Task 11): an admin reads recent awards, newest first and paged, a reversed
 -- one listed as taken back, with every trophy kind; finds a character by name; and a player is refused both, in the database's own words.
 
 create function pg_temp.refusal(stmt text) returns text language plpgsql as $$

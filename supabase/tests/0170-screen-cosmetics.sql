@@ -1,4 +1,4 @@
--- Cosmetics on the screens (supabase/migrations/0167_screen_cosmetics.sql; the cosmetics plan, Tasks 6 and 8): the faces a screen function hands the web carry a character's
+-- Cosmetics on the screens (supabase/migrations/0210_screen_cosmetics.sql; the cosmetics plan, Tasks 6 and 8): the faces a screen function hands the web carry a character's
 -- portrait tallness, outfit (pieces in layer order) and shown trophies (shown awards, then held belts), as profile_projection does. A thread page's post carries its author's;
 -- a reversed award leaves the page at once; a mask with no portrait wears nothing; and the cosmetics are computed once per distinct author on the page, never per post.
 -- The other screens read the same helper (profile_cosmetics), checked here on the board page, the index, the profile and the boot.

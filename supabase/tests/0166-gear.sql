@@ -1,4 +1,4 @@
--- Gear and the outfit (supabase/migrations/0162_gear.sql; the cosmetics plan, Task 2). The gear is this file's own (tg...); the engine's words for an outfit's
+-- Gear and the outfit (supabase/migrations/0205_gear.sql; the cosmetics plan, Task 2). The gear is this file's own (tg...); the engine's words for an outfit's
 -- problems (engine/rules/cosmetics.ts outfitProblems) are held here by their SQL twins.
 
 create function pg_temp.refusal(stmt text) returns text language plpgsql as $$

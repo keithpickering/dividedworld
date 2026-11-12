@@ -100,9 +100,9 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into reaction_tallies (act, kind, count) values (p, 'fire', 1);
       insert into wallets (account, balance) values (ann, 0) on conflict (account) do nothing;
       insert into card_ledger (account, card, kind, price) values (ann, 'splat', 'bought', 100);
-      -- Gear (0162): a kind, a copy found and a copy granted, and a piece worn, each carried across as it was.
+      -- Gear (0205): a kind, a copy found and a copy granted, and a piece worn, each carried across as it was.
       insert into gear_kinds (key, rarity) values ('expgear', 'uncommon');
-      -- Random Events (0164): a gear event and a card event, each with its found row naming it, the account's last roll and the instance's event lines.
+      -- Random Events (0207): a gear event and a card event, each with its found row naming it, the account's last roll and the instance's event lines.
       insert into event_lines (key, outcome, text) values ('exp-line', 'line', 'Carried across.'), ('exp-gear-line', 'gear', 'Found a thing.');
       insert into random_events (id, account, character, outcome, item, line, line_text) values
         ('00000000-0000-4000-8000-0000000000e2', ann, a, 'gear', 'expgear', 'exp-gear-line', 'Found a thing.'), ('00000000-0000-4000-8000-0000000000e3', ann, a, 'card', 'splat', 'exp-line', 'Carried across.');
@@ -111,7 +111,7 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into card_ledger (account, card, kind, price, event) values (ann, 'splat', 'found', 0, '00000000-0000-4000-8000-0000000000e3');
       insert into gear_ledger (account, gear, kind) values (ann, 'expgear', 'granted');
       insert into gear_worn (character, layer, gear, x, y, w, turn) values (a, 2, 'expgear', 0.25, 0.75, 0.5, -30);
-      -- Trophies (0163): an instance's kind with a place, a belt, and a kind an admin made with its picture's key; an award each by an admin, the season and the Boss (naming the post as its move Act),
+      -- Trophies (0206): an instance's kind with a place, a belt, and a kind an admin made with its picture's key; an award each by an admin, the season and the Boss (naming the post as its move Act),
       -- the admin's taken back, and the Boss's shown on a postbit. Each is carried as it was, and the picture is a file the export fetches from the trophies bucket.
       insert into trophy_kinds (key, name, line, belt, season_place) values ('exptrophy', 'Exported Trophy', 'Carried across.', false, null), ('expbelt', 'Exported Belt', null, true, null);
       insert into trophy_kinds (key, name, made_by, art) values ('made-00000000-0000-4000-8000-0000000000e1', 'Exported Made', ann, 'exp-trophy.webp');
@@ -684,7 +684,7 @@ test('an instance exported and imported into a fresh database is the same instan
     assert.deepEqual(new Map(newStore.objects), new Map(Object.entries(files)));
     assert.ok(!(imported.stdout + imported.stderr).includes(STORAGE_KEY), 'the import printed the Storage key');
 
-    // Random Events (0164): the events, the last roll and the lines, with a found card and a found gear row naming their events.
+    // Random Events (0207): the events, the last roll and the lines, with a found card and a found gear row naming their events.
     for (const t of ['random_events', 'random_event_rolls', 'event_lines']) assert.notEqual(psqlOn(from, `select count(*) from public.${t}`), '0', `the exported instance holds ${t} rows`);
     const eventRows = (url: string) => psqlOn(url, `select coalesce(string_agg(x, ' | ' order by x), '') from (
       select to_jsonb(e)::text x from random_events e union all select to_jsonb(r)::text from random_event_rolls r union all select to_jsonb(l)::text from event_lines l

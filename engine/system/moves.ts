@@ -331,7 +331,7 @@ export const FLASH_SALE: MoveKind = {
  * The Boss gives a character a trophy from the instance's Boss list, or a belt (cosmetics design, section 4). A favor: it carries no demand, and the award is its whole effect,
  * so the move ends the moment it lands and the trophy stays (an admin can take it back). The limits are the list, the character (not staff, not retired), a trophy that is not a
  * belt given at most once a season to a character, and a belt never to its holder. The shape is checked here; the list and what stands are `limits.trophies`, read from the
- * database, and SQL holds the same limits at landing (supabase/migrations/0165_award_trophy_move.sql).
+ * database, and SQL holds the same limits at landing (supabase/migrations/0208_award_trophy_move.sql).
  */
 export const AWARD_TROPHY: MoveKind = {
   key: 'awardTrophy',

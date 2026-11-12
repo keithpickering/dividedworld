@@ -1784,7 +1784,7 @@ export interface Log {
 }
 
 /**
- * One line of the cosmetics log (`my_cosmetic_log`, 0170), the caller's own and never another account's. A `found` row is a Random Event of the character (`outcome`: the line it said, a piece of gear or a card, `item` the gear's or card's key,
+ * One line of the cosmetics log (`my_cosmetic_log`, 0213), the caller's own and never another account's. A `found` row is a Random Event of the character (`outcome`: the line it said, a piece of gear or a card, `item` the gear's or card's key,
  * `text` the line the Event was rolled with); a `granted` row is gear an admin gave (`item`, `copies`, `character` the mask it was given through, or null where the grant did not name one); an `awarded` row is a trophy given
  * (`by`, and the Boss's name in `byName`; a season's `season` and `place`; the award's own `line` where an admin wrote one); a `reversed` row is an award an admin took back; a `lost` row is a belt that passed from the character to
  * `toName`, a character's name, which is public (`by`, `byName` as an award's). A field a kind does not use is null.

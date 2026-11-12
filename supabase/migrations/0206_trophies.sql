@@ -183,7 +183,7 @@ language sql stable security definer set search_path = public, pg_temp as $$
 $$;
 revoke execute on function trophy_shelf(uuid) from public, anon, authenticated;
 
--- profile_projection (0162), also carrying `trophies`. Everything else as 0162 wrote it.
+-- profile_projection (0205), also carrying `trophies`. Everything else as 0205 wrote it.
 create or replace function profile_projection(of_character uuid) returns jsonb
 language sql stable security definer set search_path = public, pg_temp as $$
   select jsonb_build_object('character', p.character, 'title', p.title, 'signature', p.signature,
@@ -619,7 +619,7 @@ begin
     order by coalesce(st.amount, 0) desc, c.name, c.id;
   get diagnostics written = row_count;
   update seasons set results_at = now(), results_count = written where id = s.id;
-  -- The season's places (0163): each character at place 1 to 3 gets the trophy the instance gives for that place. Places are season_results' own, dense (#453), so a tie shares
+  -- The season's places (0206): each character at place 1 to 3 gets the trophy the instance gives for that place. Places are season_results' own, dense (#453), so a tie shares
   -- one and the next mask takes the next place, as the table shows it: 100, 90, 90, 80 give a Champion, two Runner-Up and a Third. An unplaced row (#492) joins no kind:
   -- 500, 0, 0 give one Champion and nothing else. Staff are not in season_results, and the table refuses them besides. In the results' transaction, but a failure here does not end it.
   -- In a block of its own: the season ends whatever happens here. A failure is a warning and a row (trophy_award_failures) for an admin, who can give the places by hand.
@@ -896,7 +896,7 @@ begin
         did_end := (end_move(inforce.move_act, 'met', 'demand') ->> 'ended')::boolean;
         if did_end then
           met := met + 1;
-          -- The met demand's trophy to each character that made it (0163), in a block of its own: the move is ended whatever happens here. A failure is a warning, a row
+          -- The met demand's trophy to each character that made it (0206), in a block of its own: the move is ended whatever happens here. A failure is a warning, a row
           -- (trophy_award_failures) and a count in the tick's answer, and an admin can give the trophy by hand.
           begin
             perform award_demand_trophies(inforce.move_act);
@@ -992,7 +992,7 @@ end $$;
 
 -- ------------------------------------------------------------------------------------------------------------- the seed ----
 
--- seed_instance (0162), also writing the instance's trophy kinds and where the catalog's lists point. Everything else as 0162 wrote it.
+-- seed_instance (0205), also writing the instance's trophy kinds and where the catalog's lists point. Everything else as 0205 wrote it.
 create or replace function seed_instance(payload jsonb) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
@@ -1080,7 +1080,7 @@ begin
     delete from gear_kinds k where not exists (select 1 from jsonb_array_elements(payload -> 'gear') e where e ->> 'key' = k.key)
       and not exists (select 1 from gear_ledger l where l.gear = k.key) and not exists (select 1 from gear_worn w where w.gear = k.key);
   end if;
-  -- The instance's trophy kinds (0163): added and brought up to date, the places, the Boss's kinds and the met demand's set as the catalog names them, and a kind the instance
+  -- The instance's trophy kinds (0206): added and brought up to date, the places, the Boss's kinds and the met demand's set as the catalog names them, and a kind the instance
   -- dropped removed unless an award names it. An admin-made kind is never touched, and an instance key that begins `made-` is refused (those are the admin page's).
   if payload ? 'trophies' then
     select string_agg(e ->> 'key', ', ') into unknown from jsonb_array_elements(payload -> 'trophies' -> 'kinds') e where e ->> 'key' like 'made-%';

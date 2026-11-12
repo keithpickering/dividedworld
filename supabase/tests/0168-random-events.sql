@@ -1,4 +1,4 @@
--- Random Events and the shared draw (supabase/migrations/0164_random_events.sql; the cosmetics plan, Task 4). The gear, cards and lines are this file's own (te-...).
+-- Random Events and the shared draw (supabase/migrations/0207_random_events.sql; the cosmetics plan, Task 4). The gear, cards and lines are this file's own (te-...).
 -- A roll is the service role's, for a character the caller plays; its window is read from the last roll, never the last event.
 
 create function pg_temp.refusal(stmt text) returns text language plpgsql as $$
@@ -13,7 +13,7 @@ exception when others then
   return msg;
 end $$;
 
--- The cosmetics setting with the given event rules (the other fields are 0170's).
+-- The cosmetics setting with the given event rules (the other fields are 0213's).
 create function pg_temp.events(window_minutes integer, day_most integer, outcomes jsonb) returns void language plpgsql as $$
 begin
   insert into settings (key, value) values ('cosmetics', jsonb_build_object('gear', jsonb_build_object('wornMost', 3, 'reach', 0.4), 'trophies', jsonb_build_object('shownMost', 3),
@@ -200,7 +200,7 @@ begin
 end $$;
 
 -- ---- The shared draw: buy_pack writes what roll_pack wrote before the draw was shared ----
--- (The expected list was recorded from 0149's roll_pack with this seed, before 0164 shared the draw, on PostgreSQL 16.15: random() under setseed is the server's own
+-- (The expected list was recorded from 0149's roll_pack with this seed, before 0207 shared the draw, on PostgreSQL 16.15: random() under setseed is the server's own
 -- generator, so a major version that changes it changes this list, and the list is then re-recorded from the old roll_pack on that version, not edited to fit. Every card but this file's is left out of the pool.)
 do $$
 declare

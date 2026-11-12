@@ -12,9 +12,9 @@ declare
                            'characters_public', 'acts_public', 'accounts', 'characters', 'class_history', 'reaction_tallies',
                            'seasons', 'season_results', 'seasons_finished', 'settlements', 'standings', 'ledger', 'wallets', 'wallet_events',
                            'card_ledger', 'my_cards', 'effect_state',
-                           -- Gear (0162): the kinds and what each mask wears are public, the ledger is cut to the caller's own rows by its policy, and the wardrobe and an admin's grant check the caller inside.
+                           -- Gear (0205): the kinds and what each mask wears are public, the ledger is cut to the caller's own rows by its policy, and the wardrobe and an admin's grant check the caller inside.
                            'gear_kinds', 'gear_ledger', 'gear_worn',
-                           -- Random Events (0164): a player reads their own account's events by policy; the roll clock and the lines are no one's to read.
+                           -- Random Events (0207): a player reads their own account's events by policy; the roll clock and the lines are no one's to read.
                            'random_events',
                            -- The machine (0139): its slots as players see them, a pack's pulls, and a buyer's own packs. The slots table itself is nobody's to read.
                            'machine_now', 'pack_kinds', 'packs', 'my_packs', 'my_invites', 'pending_turns', 'effect_releases',
@@ -26,7 +26,7 @@ declare
                            'alerts', 'thread_follows', 'my_followed_threads', 'thread_open',
                            -- The log's lines for the Mod Bots (0111): each the caller's own characters' rows.
                            'my_infractions', 'my_bans', 'my_reports', 'my_appeals', 'my_reports_left', 'my_group_moves',
-                           -- The log of the cosmetics (0170): the caller's own characters' rows, drawn by a function no API role may call.
+                           -- The log of the cosmetics (0213): the caller's own characters' rows, drawn by a function no API role may call.
                            'my_cosmetic_log',
                            -- The search index (0117): one row per post or spin, readable as the Acts are; the table is no client's to write.
                            'post_search'];
@@ -39,15 +39,15 @@ declare
                            'presence_box(text,uuid)',
                            -- A board's page and the index, each in one read (0095): invoker, stable, and readable by a signed-in player alone.
                            'board_page(text,integer,text[])', 'index_page()',
-                           -- The cosmetics every screen's face carries (0167): a public fact of its argument (a worn piece, a shown or held trophy), a definer because trophy_shelf is not the caller's to run.
+                           -- The cosmetics every screen's face carries (0210): a public fact of its argument (a worn piece, a shown or held trophy), a definer because trophy_shelf is not the caller's to run.
                            'profile_cosmetics(uuid)',
                            -- A character's two pages, each in one read (0096): invoker and stable, held to the web's read lists by the screen-function guard.
                            'profile_page(uuid)', 'record_page(uuid,text,integer)',
-                           -- A player's wardrobe and an admin's grant of gear (0162): each asks who is calling inside.
+                           -- A player's wardrobe and an admin's grant of gear (0205): each asks who is calling inside.
                            'my_wardrobe()', 'grant_gear(uuid,text,integer)',
-                           -- Trophies (0163): a character's standing awards and a belt's line of holders, each a public fact of its argument, and an admin's three (give, take back, make), which check the caller inside.
+                           -- Trophies (0206): a character's standing awards and a belt's line of holders, each a public fact of its argument, and an admin's three (give, take back, make), which check the caller inside.
                            'trophies_of(uuid,timestampwithtimezone,integer,uuid)', 'trophy_award_failures(timestampwithtimezone,integer,uuid,boolean)', 'give_failed_award(uuid,uuid)', 'belt_lineage(text,timestampwithtimezone,integer,uuid)', 'award_trophy(text,uuid,text)', 'reverse_award(uuid)', 'make_trophy(text,text,text,boolean)',
-                           -- The trophies admin page's two reads (0169), each asking who is calling inside.
+                           -- The trophies admin page's two reads (0212), each asking who is calling inside.
                            'admin_awards(timestampwithtimezone,integer,uuid)', 'admin_character_named(text)',
                            -- A finished season's results (0099): its list, a page of 50 and a character's place, invoker reads for a signed-in player.
                            'finished_seasons()', 'results_page(integer,integer)', 'result_place(integer,uuid)',
@@ -110,7 +110,7 @@ declare
                            'bbcode_plain_trim(text)', 'bbcode_plain_quote_head(text)', 'bbcode_plain_pct(text)', 'bbcode_plain_query_v(text)', 'bbcode_plain_ipv4_number(text)', 'bbcode_plain_punycode_ok(text)', 'bbcode_plain_host_ok(text)', 'bbcode_plain_video_ok(text)',
                            -- 0142: the phrase matcher a face-down Move's spring asks of a post's plain words, and the case fold it reads them through; each reads nothing but its arguments.
                            'phrase_in(text,text)', 'phrase_fold(text)', 'phrase_norm(text)', 'bbcode_walk(text,uuid)', 'bbcode_plain_quote_act(text)', 'phrase_word_class()',
-                           -- The cosmetics log's rows (0170): my_cosmetic_log runs it as the caller, and it reads only the caller's own characters' rows by auth.uid().
+                           -- The cosmetics log's rows (0213): my_cosmetic_log runs it as the caller, and it reads only the caller's own characters' rows by auth.uid().
                            'cosmetic_log_rows(timestampwithtimezone,integer)',
                            'search_lang()', 'search_words(text,text)', 'search_words(text,text,regconfig)',
                            -- The search reads (0117): three screens' reads, security invoker and stable, and the functions they call. The two definers say only a public fact of their arguments: the Updates thread's id,

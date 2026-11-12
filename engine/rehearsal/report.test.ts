@@ -7,12 +7,12 @@ const emptyDay = (day: number): LogDay => ({
 });
 const meeting = {
   id: 1, startedAt: '2026-12-01T00:00:00.000Z', finishedAt: '2026-12-01T00:01:00.000Z', outcome: 'ok', error: null, bankBefore: 2, bankAfter: 1,
-  sent: { system: 'You are the Boss.', messages: [{ role: 'user', content: 'DIGEST-TEXT' }] }, answer: { moves: [] },
-  memoryBefore: { hobby: 'before-hobby' }, memoryAfter: { hobby: 'after-hobby' }, replayed: false,
+  parts: [{ part: 'moves', outcome: 'ok', error: null, sent: { system: 'You are the Boss.', messages: [{ role: 'user', content: 'DIGEST-TEXT' }] }, answer: { moves: [] }, replayed: false }],
+  memoryBefore: { hobby: 'before-hobby' }, memoryAfter: { hobby: 'after-hobby' },
 };
 const move = { id: 5, staff: 'boss', kind: 'rename', why: 'because', demand: { kind: 'postsOnBoard' }, goLiveAt: '2026-12-02T00:00:00.000Z', expiresAt: null, held: false, landedAt: '2026-12-02T00:00:00.000Z', endedHow: 'met', failure: null };
 const clean = (): RehearsalLog => ({
-  scenario: 'tiny', seed: 7, mode: 'stub', daysRun: 1, day1: '2026-12-01T00:00:00.000Z', systemOnAt: '2026-12-01T00:00:00.000Z',
+  scenario: 'tiny', seed: 7, mode: 'stub', tiers: { strong: 'claude-opus-5-5', light: 'claude-haiku-5-5' }, daysRun: 1, day1: '2026-12-01T00:00:00.000Z', systemOnAt: '2026-12-01T00:00:00.000Z',
   cost: { liveMicrodollars: 1500000, replayedMicrodollars: 250000, unmatchedMicrodollars: 0, capDollars: 5 }, notes: [],
   days: [{ ...emptyDay(1), meetings: [meeting], moves: [move], costByJob: [{ job: 'meeting', calls: 1, liveMicrodollars: 1500000, replayedMicrodollars: 0, unmatchedMicrodollars: 0 }] }],
 });
@@ -110,7 +110,7 @@ test('a marker planted in every string field of the log never becomes a tag', ()
     notes: ['n'],
     days: [{
       ...emptyDay(1),
-      meetings: [{ ...meeting, error: 'e', sent: { system: 's', messages: [{ role: 'user', content: 'c' }] }, answer: { a: 'b', list: ['x'] }, memoryBefore: { h: 'x' }, memoryAfter: 'y' }],
+      meetings: [{ ...meeting, error: 'e', parts: [{ part: 'moves', outcome: 'rejected', error: 'pe', sent: { system: 's', messages: [{ role: 'user', content: 'c' }] }, answer: { a: 'b', list: ['x'] }, replayed: true }], memoryBefore: { h: 'x' }, memoryAfter: 'y' }],
       moves: [{ ...move, held: true, failure: 'f', expiresAt: 'x', demand: { kind: 'k' } }],
       orders: [{ meeting: 1, staff: 's', line: 'l', allowance: 1, boards: 2 }],
       visits: [{ at: 'a', staff: 's', line: 'l', outcome: 'o', call: c }],
@@ -127,4 +127,45 @@ test('a marker planted in every string field of the log never becomes a tag', ()
   const html = reportHtml(marked(full) as RehearsalLog);
   assert.ok(html.includes('&lt;b&gt;x&lt;/b&gt;&amp;&quot;&#39;'));
   assert.ok(!/<b>/i.test(html), 'a planted <b> tag is in the page');
+});
+
+test('the header names both tiers\' models', () => {
+  assert.match(reportHtml(clean()), /Models: strong claude-opus-5-5, light claude-haiku-5-5\./);
+});
+
+test('a tier the run could not read renders as unset, never as an empty name', () => {
+  const log = { ...clean(), tiers: { strong: '', light: 'claude-haiku-5-5' } } as RehearsalLog;
+  const html = reportHtml(log);
+  assert.match(html, /Models: strong unset, light claude-haiku-5-5\./);
+  assert.match(reportHtml({ ...log, tiers: { strong: 'claude-opus-5-5', light: '' } } as RehearsalLog), /Models: strong claude-opus-5-5, light unset\./);
+});
+
+test('a meeting shows each of its three parts with its outcome, and a failed part its error', () => {
+  const part = (name: string, outcome: string, error: string | null, answer: unknown) => ({ part: name, outcome, error, sent: { system: `SYS-${name}`, messages: [{ role: 'user', content: `ASK-${name}` }] }, answer, replayed: false });
+  const log = clean();
+  const m = { ...meeting, parts: [part('moves', 'ok', null, { moves: [] }), part('staff', 'failed', 'STAFF-BOOM', null), part('self', 'ok', null, { memory: 'SELF-ANSWER' })] };
+  const html = reportHtml({ ...log, days: [{ ...log.days[0]!, meetings: [m] }] });
+  for (const name of ['moves', 'staff', 'self']) assert.match(html, new RegExp(`Part ${name}: (ok|failed)`));
+  assert.match(html, /Part moves: ok/);
+  assert.match(html, /Part staff: failed[^<]*STAFF-BOOM/);
+  assert.match(html, /Part self: ok/);
+  assert.ok(html.includes('ASK-staff') && html.includes('SELF-ANSWER'));
+  assert.ok(!/Part moves: ok[^<]*Error/.test(html), 'an ok part shows no error');
+});
+
+test('a meeting with no kept call says so', () => {
+  const log = clean();
+  const html = reportHtml({ ...log, days: [{ ...log.days[0]!, meetings: [{ ...meeting, parts: [] }] }] });
+  assert.match(html, /No call was kept for this meeting/);
+});
+
+test('a part with no kept call says so plainly, and the meeting label counts only parts with calls', () => {
+  const withCall = { part: 'staff', outcome: 'ok', error: null, sent: { system: 's', messages: [{ role: 'user', content: 'c' }] }, answer: { a: 1 }, replayed: true };
+  const noCall = { part: 'moves', outcome: 'failed', error: 'MOVES-BOOM', sent: null, answer: null, replayed: null };
+  const log = clean();
+  const html = reportHtml({ ...log, days: [{ ...log.days[0]!, meetings: [{ ...meeting, parts: [noCall, withCall] }] }] });
+  assert.match(html, /Part moves: failed[^<]*MOVES-BOOM/);
+  assert.match(html, /No call was kept for this part\./);
+  assert.match(html, /Meeting 1: [^<]*\(replayed; no call was kept for 1 part\)/);
+  assert.ok(!/Part moves: failed \(replayed\)/.test(html));
 });

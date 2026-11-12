@@ -1016,7 +1016,7 @@ test('a gear key is used once, a trophy key is used once, and no gear is named a
   assert.match(said({ ...good, gear: [...good.gear, { key: 'a', name: 'A', line: 'x', rarity: 'common' }] }), /gear key "a" is also a card's key/);
 });
 
-test('a trophy kind is held to what the database holds: a key of lower-case words that never begins "made-", a name of 1 to 60 characters, words of at most 200 (0163)', () => {
+test('a trophy kind is held to what the database holds: a key of lower-case words that never begins "made-", a name of 1 to 60 characters, words of at most 200 (0206)', () => {
   const kinds = (k: Partial<Instance['trophies']['kinds'][number]> & { key: string }) => trophied({ kinds: [...good.trophies.kinds, { name: 'Ok', ...k }] });
   assert.match(said(kinds({ key: 'made-1' })), /trophy key "made-1" begins "made-", which is the admin page's/);
   assert.match(said(kinds({ key: 'Bad Key' })), /trophy key "Bad Key" is not lower-case words/);

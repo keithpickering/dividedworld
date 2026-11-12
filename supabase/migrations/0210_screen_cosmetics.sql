@@ -1,5 +1,5 @@
 -- Cosmetics on the screens: every face a screen function hands the web (a postbit's, a profile's, a card's) carries the character's portrait tallness, its outfit
--- (pieces in layer order, gear_worn) and its shown trophies (trophy_shelf), as profile_projection (0162, 0163) carries them. The shape lives here once:
+-- (pieces in layer order, gear_worn) and its shown trophies (trophy_shelf), as profile_projection (0205, 0206) carries them. The shape lives here once:
 -- profile_cosmetics, one lookup by character (character_profiles by its key, gear_worn by its key (character, layer), the shelf by its indexes), called once per
 -- character a screen names and never per post or per Act. A security definer, as profile_projection is: trophy_shelf is not the caller's to run, and the
 -- screens are security invoker. It reads only what is public by character (a worn piece, a shown or held trophy) once the character has debuted, so no private fact moves with it.

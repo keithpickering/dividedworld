@@ -1,4 +1,4 @@
--- The cosmetics log and alerts (supabase/migrations/0170_cosmetics_log.sql; the cosmetics plan, Task 12): a trophy alert goes to the owner of the character an award is for, and a beltLost alert to the
+-- The cosmetics log and alerts (supabase/migrations/0213_cosmetics_log.sql; the cosmetics plan, Task 12): a trophy alert goes to the owner of the character an award is for, and a beltLost alert to the
 -- owner of the character that held the belt before it passed to another; log_page carries a find, an admin's gear (counted, with the mask it went through), a trophy given, one taken back and a belt lost
 -- for the caller's own characters only, and another player's log shows none of them.
 

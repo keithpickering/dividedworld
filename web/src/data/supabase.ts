@@ -190,7 +190,7 @@ function toResult(t: Row): SeasonResultRow[] {
 /** One row of `season_news` (0063, 0099, 0100). Its public detail is read as the server wrote it; what is not in the shape is left out. A results item has no Act, thread or sequence number. */
 function toSeasonNews(r: Row): SeasonNewsItem {
   const detail = (r['detail'] ?? {}) as Row;
-  /* The podium is the placed rows alone (season_news, 0163); an unplaced row the server should not send is no step of it (#492). */
+  /* The podium is the placed rows alone (season_news, 0206); an unplaced row the server should not send is no step of it (#492). */
   const top = rowsOf(detail['top']).flatMap(toResult).flatMap((t) => (t.place === null ? [] : [{ ...t, place: t.place }]));
   return {
     kind: r['kind'], act: r['act'] ?? null, thread: r['thread'] ?? null, seq: r['seq'] === null || r['seq'] === undefined ? null : num(r['seq']), at: String(r['at']),
@@ -1050,7 +1050,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       rows(() => client.from('my_group_moves').select('move,character,at,thread,seq,group,board,board_name,expires_at,landed_until,check_at,demand,office,ended_why,ended_by,ended_at,ruling,ruled_at,ruled_until,ruled_office'), 'at', (q) => q, ['move']),
       rows(() => client.from('my_reports').select('report,character,at,post,post_seq,thread,verdict,verdict_at,mod_name,refund'), 'at', (q) => q, ['report']),
       rows(() => client.from('my_appeals').select('appeal,character,at,punishment,punishment_kind,post_seq,thread,verdict,ruled_at,points_delta,hearer_name,refund'), 'at', (q) => q, ['appeal']),
-      /* What happened to the player's characters beside Aura (0170): a find, an admin's gear, a trophy given or taken back, a belt lost; the caller's own rows alone. */
+      /* What happened to the player's characters beside Aura (0213): a find, an admin's gear, a trophy given or taken back, a belt lost; the caller's own rows alone. */
       rows(() => client.from('my_cosmetic_log').select('kind,id,at,character,outcome,item,text,copies,trophy,name,by,by_name,season,place,line,to_name'), 'at', (q) => q, ['kind', 'id']),
     ]);
     const ids = [...new Set(ledgerRows.map((r) => num(r['settlement'])))];

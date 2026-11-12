@@ -1,7 +1,7 @@
 -- The Boss's AWARD_TROPHY move (the cosmetics design, docs/plans/2026-11-04-cosmetics-design.md, section 4; the plan, Task 5).
 --
 -- The Boss gives a character one of the trophies on the instance's Boss list (trophy_kinds.boss_gives), or a belt. A favor: it carries no demand and no punishment, and the
--- award is its whole effect, so the move ends the moment it lands (`spent`) and the trophy stays. An admin takes the award back with reverse_award (0163), as any other.
+-- award is its whole effect, so the move ends the moment it lands (`spent`) and the trophy stays. An admin takes the award back with reverse_award (0206), as any other.
 --
 -- The limits, held here as the engine holds them in moveParamsProblems (engine/system/moves.ts): the trophy is on the Boss's list; the character is not staff, not retired and has
 -- debuted; a trophy that is not a belt is not given to a character that already has it standing this season; a belt is not given to its holder. The queue's guard (0140) checks a kind
@@ -88,8 +88,8 @@ $$;
 revoke execute on function trophy_award_facts(jsonb) from public, anon, authenticated;
 grant execute on function trophy_award_facts(jsonb) to service_role;
 
--- system_tick (0163), also landing the Boss's trophy: checked as it lands (above), the award written naming the move's Act, and the move ended `spent` in the same block.
--- Everything else as 0163 wrote it.
+-- system_tick (0206), also landing the Boss's trophy: checked as it lands (above), the award written naming the move's Act, and the move ended `spent` in the same block.
+-- Everything else as 0206 wrote it.
 create or replace function system_tick() returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
@@ -156,7 +156,7 @@ begin
             continue;
           end if;
         end if;
-        -- The Boss's trophy (0165) is checked against the instance as it is now: a character that has since become staff or retired, a trophy it was given meanwhile, a belt it
+        -- The Boss's trophy (0208) is checked against the instance as it is now: a character that has since become staff or retired, a trophy it was given meanwhile, a belt it
         -- already holds. Refused for good with the reason, as the machine's moves are, and never applied: it is no Act, so no award was written and nothing needs reversing.
         if due.kind = 'awardTrophy' then
           clash := trophy_move_problem(due.params, due.demand);
@@ -247,7 +247,7 @@ begin
         did_end := (end_move(inforce.move_act, 'met', 'demand') ->> 'ended')::boolean;
         if did_end then
           met := met + 1;
-          -- The met demand's trophy to each character that made it (0163), in a block of its own: the move is ended whatever happens here. A failure is a warning, a row
+          -- The met demand's trophy to each character that made it (0206), in a block of its own: the move is ended whatever happens here. A failure is a warning, a row
           -- (trophy_award_failures) and a count in the tick's answer, and an admin can give the trophy by hand.
           begin
             perform award_demand_trophies(inforce.move_act);

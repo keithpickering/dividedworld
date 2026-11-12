@@ -1,4 +1,4 @@
--- The Boss's AWARD_TROPHY move (supabase/migrations/0165_award_trophy_move.sql; the cosmetics plan, Task 5; engine/system/moves.ts holds the same limits for the meeting).
+-- The Boss's AWARD_TROPHY move (supabase/migrations/0208_award_trophy_move.sql; the cosmetics plan, Task 5; engine/system/moves.ts holds the same limits for the meeting).
 --
 -- 1. A landed move writes one `boss` award naming its Act, ends at once (`spent`), and the trophy shows on the character with the Boss named in plain words.
 -- 2. The limits at landing: a second award of a non-belt trophy to one character this season, a belt to its holder, a trophy off the Boss's list, a staff character, a retired

@@ -1,4 +1,4 @@
--- Trophies and belts (supabase/migrations/0163_trophies.sql; the cosmetics plan, Task 3). The kinds are this file's own (tt-...), seeded as an instance seeds its catalog;
+-- Trophies and belts (supabase/migrations/0206_trophies.sql; the cosmetics plan, Task 3). The kinds are this file's own (tt-...), seeded as an instance seeds its catalog;
 -- the engine's words for a trophy's givers are held here by their SQL twins.
 
 create function pg_temp.refusal(stmt text) returns text language plpgsql as $$

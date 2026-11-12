@@ -61,7 +61,7 @@ create table random_event_rolls (
 alter table random_event_rolls enable row level security;
 revoke all on random_event_rolls from public, anon, authenticated;
 
--- A found gear copy names the event that dropped it (0162 left the column bare).
+-- A found gear copy names the event that dropped it (0205 left the column bare).
 alter table gear_ledger add constraint gear_ledger_event_fkey foreign key (event) references random_events (id);
 
 -- A found card: its Event, no Act, price 0. card_ledger_check (0148) names the kinds that carry an Act; a found card carries an Event instead.
@@ -212,7 +212,7 @@ grant execute on function random_event(uuid, uuid) to service_role;
 
 -- ------------------------------------------------------------------------------------------------------ the seed ----
 
--- seed_instance (0163), also writing the instance's Random Event lines (event_lines, below): replaced as the seed gives them, so a line the instance dropped is gone, and a past event keeps its line's text on its own row. Everything else as 0163 wrote it.
+-- seed_instance (0206), also writing the instance's Random Event lines (event_lines, below): replaced as the seed gives them, so a line the instance dropped is gone, and a past event keeps its line's text on its own row. Everything else as 0206 wrote it.
 create or replace function seed_instance(payload jsonb) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
@@ -305,7 +305,7 @@ begin
     on conflict (key) do update set outcome = excluded.outcome, text = excluded.text;
     delete from event_lines l where not exists (select 1 from jsonb_array_elements(payload -> 'eventLines') e where e ->> 'key' = l.key);
   end if;
-  -- The instance's trophy kinds (0163): added and brought up to date, the places, the Boss's kinds and the met demand's set as the catalog names them, and a kind the instance
+  -- The instance's trophy kinds (0206): added and brought up to date, the places, the Boss's kinds and the met demand's set as the catalog names them, and a kind the instance
   -- dropped removed unless an award names it. An admin-made kind is never touched, and an instance key that begins `made-` is refused (those are the admin page's).
   if payload ? 'trophies' then
     select string_agg(e ->> 'key', ', ') into unknown from jsonb_array_elements(payload -> 'trophies' -> 'kinds') e where e ->> 'key' like 'made-%';

@@ -9,7 +9,7 @@
 -- none. A staff character is never found, since it is never given a trophy, and a character that has not debuted is, since an admin may know it by name. Only its id and
 -- name are answered, never who plays it. Both are the admin page's reads and nothing else's.
 --
--- The awards that could not be given (0163's trophy_award_failures) get a way to be finished. An award given by hand through give_failed_award is a row of
+-- The awards that could not be given (0206's trophy_award_failures) get a way to be finished. An award given by hand through give_failed_award is a row of
 -- trophy_failure_resolutions (append-only, one per failure and character, naming the award and the admin's account, which no client reads), so the failure's list says
 -- which characters have had theirs: a second give is refused. trophy_award_failures is replaced by a paged read, {failures, more}, each failure's characters with `given`
 -- and `open` (a character is still owed an award, or the characters cannot be read now). A resolution counts only while its award is not taken back: a reversed hand-given award is owed again and can be given again. The list puts the open failures first, and each group newest first. Its cursor is the last row's

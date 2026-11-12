@@ -408,7 +408,7 @@ function cosmeticsProblems(instance: Instance): string[] {
   if (typeof catalog !== 'object' || catalog === null || !Array.isArray(catalog.kinds)) out.push('the instance has no trophy catalog');
   else {
     for (const k of duplicates(catalog.kinds, (t) => t.key)) out.push(`trophy key "${k}" is used twice`);
-    // What trophy_kinds holds (supabase/migrations/0163_trophies.sql): a key of lower-case words, never the admin page's `made-` prefix, a short name, short words.
+    // What trophy_kinds holds (supabase/migrations/0206_trophies.sql): a key of lower-case words, never the admin page's `made-` prefix, a short name, short words.
     for (const t of catalog.kinds) {
       if (typeof t.key === 'string' && t.key.startsWith('made-')) out.push(`trophy key "${t.key}" begins "made-", which is the admin page's`);
       else if (typeof t.key !== 'string' || !/^[a-z][a-z0-9-]*$/.test(t.key)) out.push(`trophy key "${String(t.key)}" is not lower-case words (letters, digits and hyphens, beginning with a letter)`);

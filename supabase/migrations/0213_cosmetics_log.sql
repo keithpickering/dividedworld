@@ -14,7 +14,7 @@
 -- `beltLost` alert to the owner of the character that held the belt just before, when the belt passes to another character. An award by an admin or the season has no Act, so alerts.act may be
 -- null (the Alerts read already left-joins it). Neither alert names who gave or took: the log says. A staff character has no owner and is never given a trophy. The cost is one indexed read
 -- and one alert per award, and one more per belt passed, so a season's three places cost three. alerts_kind_check and account_preferences_toasts_check, set_preferences and settings_held list the kinds as
--- one list (engine/rules/alerts.test.ts holds them to it), each redefined whole from its latest definition: set_preferences from 0145, settings_held from 0162, log_page from 0167.
+-- one list (engine/rules/alerts.test.ts holds them to it), each redefined whole from its latest definition: set_preferences from 0145, settings_held from 0205, log_page from 0210.
 --
 -- Scale: a busy instance has many belt passes and many players. The belt branches (lost, beltBack) are driven only by belts the caller's own characters have ever held (a by-character read of the
 -- caller's awards), so another player's belt passes are never visited; their lateral previous-holder lookups run per pass of those belts alone, on trophy_awards_by_trophy. The granted branch reads
@@ -26,7 +26,7 @@
 alter table gear_ledger add column through uuid references characters (id);
 create index gear_ledger_granted_by_time on gear_ledger (account, at) where kind = 'granted';
 
--- grant_gear (0162), naming the character it was given through. Everything else as 0162 wrote it.
+-- grant_gear (0205), naming the character it was given through. Everything else as 0205 wrote it.
 create or replace function grant_gear(of_character uuid, gear_key text, copies integer) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
@@ -106,7 +106,7 @@ create view my_cosmetic_log as select * from cosmetic_log_rows(null, 1000);
 revoke all on my_cosmetic_log from anon, public;
 grant select on my_cosmetic_log to authenticated;
 
--- log_page (0167), also carrying the cosmetics log as its `cosmetics` source, a page long at or before the cursor like the others. Everything else as 0167 wrote it.
+-- log_page (0210), also carrying the cosmetics log as its `cosmetics` source, a page long at or before the cursor like the others. Everything else as 0210 wrote it.
 create or replace function log_page(in_before timestamptz) returns jsonb
 language sql stable security invoker set search_path = public, pg_temp
 begin atomic
@@ -330,7 +330,7 @@ end $$;
 
 
 
--- settings_held (0162), with the new kinds among those the toastDefaults setting may name. Everything else as 0162 wrote it.
+-- settings_held (0205), with the new kinds among those the toastDefaults setting may name. Everything else as 0205 wrote it.
 create or replace function settings_held() returns trigger
 language plpgsql set search_path = public, pg_temp as $$
 declare

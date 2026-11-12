@@ -484,7 +484,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const accounts = new Map<Id, AccountRec>();
   const byEmail = new Map<string, Id>();
   const characters = new Map<Id, CharRec>();
-  /** trophy_awards and trophy_reversals (0163): an award stands until `reversed`. */
+  /** trophy_awards and trophy_reversals (0206): an award stands until `reversed`. */
   const awards: { id: Id; trophy: string; character: Id; at: number; by: 'season' | 'boss' | 'demand' | 'admin'; line: string | null; season: number | null; move: Id | null; reversed: boolean; reversedAt?: number }[] = [];
   /** What `my_cosmetic_log` reads beside the awards: the finds of Random Events and the gear an admin gave, each of one account, newest last. */
   const cosmeticEvents: { account: Id; ms: number; row: LogCosmetic }[] = [];
@@ -980,7 +980,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return row ? [{ season, place: row.place, standing: row.standing, at: iso(r.at) }] : [];
   }).slice(0, 50);
   /**
-   * The final table's order (`season_results_by_standing`, 0163): standing, highest first, then name, then character. Places are dense by standing, so the
+   * The final table's order (`season_results_by_standing`, 0206): standing, highest first, then name, then character. Places are dense by standing, so the
    * placed come first by place and the unplaced (a standing of 0 or below, #492) follow them by standing.
    */
   const resultOrder = (rows: readonly SeasonResultRow[]): SeasonResultRow[] =>
@@ -989,7 +989,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   function newsItems(): SeasonNewsItem[] {
     const out: SeasonNewsItem[] = [];
     const base = { act: null, thread: null, seq: null, name: null, quote: null, count: null, top: [], debuts: [], turns: [] } as const;
-    /* The podium is the first three placed rows (season_news, 0163): an unplaced mask is on no podium (#492). */
+    /* The podium is the first three placed rows (season_news, 0206): an unplaced mask is on no podium (#492). */
     for (const [season, r] of results) {
       const top = resultOrder(r.rows).flatMap((x): SeasonResult[] => (x.place === null ? [] : [{ ...x, place: x.place }])).slice(0, 3);
       out.push({ ...base, kind: 'results', at: iso(r.at), season, count: r.rows.length, top });
@@ -2061,7 +2061,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     })));
   }
 
-  /** `set_outfit` (0162): the checks in the server's order and words, the whole outfit replacing the one before. */
+  /** `set_outfit` (0205): the checks in the server's order and words, the whole outfit replacing the one before. */
   function setOutfit(character: Id, pieces: readonly Piece[]): Answer<{ worn: number }> {
     const c = acting(character);
     if (isRefusal(c)) return c;
@@ -2082,7 +2082,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return ok({ worn: pieces.length });
   }
 
-  /** `trophies_of` (0163): a page of a character's standing awards, newest first. */
+  /** `trophies_of` (0206): a page of a character's standing awards, newest first. */
   function trophiesOf(character: Id, cursor?: TrophyCursor): TrophyPage {
     const PAGE = TROPHIES_PAGE;
     const before = cursor ? Date.parse(cursor.before) : null;
@@ -2094,7 +2094,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     };
   }
 
-  /** `belt_lineage` (0163, 0168): a page of reigns, newest first, from the cursor (the last reign's `began` and award). */
+  /** `belt_lineage` (0206, 0211): a page of reigns, newest first, from the cursor (the last reign's `began` and award). */
   function beltLineage(trophy: string, cursor?: BeltCursor): Answer<BeltPage> {
     const k = kindOf(trophy);
     if (!k) return refuse(`there is no trophy "${trophy}"`);
@@ -2109,7 +2109,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     });
   }
 
-  /** `show_trophies` (0163): the whole set replaces the one before. */
+  /** `show_trophies` (0206): the whole set replaces the one before. */
   function showTrophies(character: Id, chosen: readonly Id[]): Answer<{ shown: number }> {
     const c = acting(character);
     if (isRefusal(c)) return c;
@@ -2137,7 +2137,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return { key: keys[Math.floor(random() * keys.length)]!.key, rarity };
   }
 
-  /** `random_event` (0164): null inside the window, at the day's most, or on a draw of nothing; a found item is the account's at once. */
+  /** `random_event` (0207): null inside the window, at the day's most, or on a draw of nothing; a found item is the account's at once. */
   function randomEvent(character: Id): Answer<RandomEvent | null> {
     const c = acting(character);
     if (isRefusal(c)) return c;
@@ -2184,7 +2184,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return ok({ event, outcome, item, rarity, line: said?.text ?? null, ...(said ? { lineKey: said.key } : {}), character });
   }
 
-  /** The admin's hand over gear and trophies (0162, 0163): the words are `only_admins`'s and each function's own. */
+  /** The admin's hand over gear and trophies (0205, 0206): the words are `only_admins`'s and each function's own. */
   const adminOnly = (doing: string): Refusal | null => (me()?.admin ? null : refuse(`only an admin ${doing}`));
   /** award_trophy's checks and its row, once an admin is known to be the caller. */
   const awardByAdmin = (trophy: string, character: Id, line?: string): Answer<{ readonly award: Id }> => {
@@ -2286,7 +2286,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return found ?? (typeof inf.payload.rule_number === 'number' ? `Rule ${inf.payload.rule_number}` : 'the board\'s premise');
   }
   /**
-   * `my_cosmetic_log` (0170): the finds and gear grants of the account, and the awards, takings back and passed belts of its own characters, newest first. A belt passes from
+   * `my_cosmetic_log` (0213): the finds and gear grants of the account, and the awards, takings back and passed belts of its own characters, newest first. A belt passes from
    * the holder to the next award of its kind to another character, a line that stays when that award is taken back, and a belt taken back from the taker is a `beltBack` line for the holder before.
    */
   function cosmeticLogOf(account: Id | undefined, fits: (ms: number) => boolean, cap: <T>(rows: T[]) => T[]): LogCosmetic[] {
@@ -3753,7 +3753,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       c.square = `https://avatars.fake.test/${c.id}-${n}-square.webp`;
       if (upload.portrait !== null) { c.portrait = `https://avatars.fake.test/${c.id}-${n}-portrait.webp`; c.portraitFrame = upload.portraitFrame; }
       c.squareFrame = upload.squareFrame;
-      /* A new portrait takes its outfit off: the pieces were placed over the old picture (set_avatar, 0162). */
+      /* A new portrait takes its outfit off: the pieces were placed over the old picture (set_avatar, 0205). */
       if (upload.portrait !== null) c.outfit = [];
       return ok(publicCharacter(c));
     },

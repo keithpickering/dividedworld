@@ -1,10 +1,10 @@
 -- Where a trophy came from, and how each reign of a belt began (the cosmetics plan, Task 10).
 --
--- trophy_item (0163) also names the move an award came from, for a Boss's award and a met demand's: its Act, its thread and its number there, which is all the address of a
+-- trophy_item (0206) also names the move an award came from, for a Boss's award and a met demand's: its Act, its thread and its number there, which is all the address of a
 -- post needs, read from acts_public (a move is a public Act) and nothing else of the Act. A season's award keeps naming its season's number, an admin's names nothing. It
 -- also says whether the character's posts show the award (`shown`, from trophies_shown: public, since a post shows it).
 --
--- belt_lineage (0163) says how each reign began in the words trophy_item uses for who gave ("Name, the Boss", "an admin"; never which admin), and is paged as trophies_of is:
+-- belt_lineage (0206) says how each reign began in the words trophy_item uses for who gave ("Name, the Boss", "an admin"; never which admin), and is paged as trophies_of is:
 -- newest reign first, `most` of them (default 20, at least 1 and at most 100) after the cursor (`before`, `before_id`: the last reign's began and award), as {reigns, more}. A
 -- reign's end is the next standing award of the kind, one probe of trophy_awards_by_trophy for each reign on the page, so a belt passed many times costs a page, not its history.
 

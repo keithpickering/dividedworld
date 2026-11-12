@@ -31,7 +31,7 @@ import { personaPrompt } from './prompt.ts';
 import { careerText, type Career } from './career.ts';
 import { MEETING_DEMAND_KINDS, demandKind, demandProblems } from './demands.ts';
 import { MEMORY_RULE, noteMost, recentNotes, repairMemory, type Memory } from './memory.ts';
-import { PREDICATES, ruleConflict, type RuleInForce } from '../rules/predicates.ts';
+import { PREDICATES, readParam, ruleConflict, type RuleInForce } from '../rules/predicates.ts';
 import { ASKABLE_MOVE_KINDS, UUID, machineLimits, moveKind, moveParamsProblems, type MachineLimits, type TrophyFacts } from './moves.ts';
 import type { PhaseAt } from './phases.ts';
 import { repair, type Repaired, type Rule, type Trim } from './validate.ts';
@@ -55,9 +55,14 @@ export const ORDER_MOST = 200;
 
 /* --------------------------------------------------------------------------------- the rule ---- */
 
-/** The params any move kind or demand kind names, as one object of optional fields; a model fills only the ones its kind needs. */
-function looseFields(rules: readonly Rule[]): Record<string, Rule> {
+/**
+ * The params any move kind or demand kind names, as one object of fields; a model fills only the ones its kind needs. In the rule every
+ * field is optional, so a blank or a missing one is read as absent; in the schema sent to the provider every field is required (an
+ * optional field costs the provider's grammar minutes where a required one costs seconds), and an empty text or a 0 says "not given".
+ */
+function looseFields(rules: readonly Rule[], asked = false): Record<string, Rule> {
   const out: Record<string, Rule> = {};
+  const optional = asked ? {} : { optional: true as const };
   for (const rule of rules) {
     if (rule.type !== 'object') continue;
     for (const [name, sub] of Object.entries(rule.fields)) {
@@ -66,57 +71,56 @@ function looseFields(rules: readonly Rule[]): Record<string, Rule> {
       // A string keeps its own bound where that is longer than the loose 500 (a rename's description, 2000), so the loose
       // bound never cuts it short: the answer's own `repair` trims it at that bound and records the trim, once, and
       // `moveParamsProblems` then finds nothing to trim.
-      // A field of any shape (a rule's parameter, a count or a word) stays so: its kind's `check` holds it to the predicate's.
-      out[name] = sub.type === 'any' ? { type: 'any', optional: true } : sub.type === 'number' ? { type: 'number', optional: true } : { type: 'string', maxLength: Math.max(500, sub.type === 'string' ? (sub.maxLength ?? 0) : 0), optional: true };
+      // A field of any shape (a rule's parameter, a count or a word) is sent as text: a provider's schema has no "any", and `readParam` reads the text as its predicate wants it.
+      out[name] = sub.type === 'any' ? { type: 'string', ...optional } : sub.type === 'number' ? { type: 'number', ...optional } : { type: 'string', maxLength: Math.max(500, sub.type === 'string' ? (sub.maxLength ?? 0) : 0), ...optional };
     }
   }
   return out;
 }
 
-const paramsRule = (): Rule => ({ type: 'object', fields: looseFields(ASKABLE_MOVE_KINDS.map((k) => k.params)) });
-const demandRule = (): Rule => ({
+const paramsRule = (asked = false): Rule => ({ type: 'object', fields: looseFields(ASKABLE_MOVE_KINDS.map((k) => k.params), asked) });
+// A demand's kind is empty text for a favor, which carries none; the rule keeps `params` optional so a favor may leave it out.
+const demandRule = (asked = false): Rule => ({
   type: 'object',
-  fields: { kind: { type: 'string', maxLength: 60 }, params: { type: 'object', fields: looseFields(MEETING_DEMAND_KINDS.map((d) => d.params)) } },
+  fields: { kind: { type: 'string', maxLength: 60 }, params: { type: 'object', fields: looseFields(MEETING_DEMAND_KINDS.map((d) => d.params), asked), ...(asked ? {} : { optional: true as const }) } },
 });
 
+/** The most a move's reason may hold, as the rule says it. */
+const whyRule: Rule = { type: 'string', maxLength: WHY_MOST, minLength: 1 };
+
 /**
- * The rule the answer is repaired against, by the model adapter and again by the meeting. A list has no `max` here on purpose:
- * a list the model overshoots is cut by the meeting, and recorded, where it knows the bound (the bank, a setting), and a
- * rule's own cap would reject an answer more than two over its bound.
+ * Every field of the answer, as one record; `MEETING_PARTS` says which call asks for which. `asked` is the form sent to the provider: the moves'
+ * params and demand have every field required, and the fields a part cannot do without (moves, memory, profile) are required. The other form is the
+ * rule the answer is repaired against, in which every field is optional: a part that was not answered (or failed) is an answer that left it out.
  */
-export const MEETING_RULE: Rule = {
-  type: 'object',
-  fields: {
-    memory: MEMORY_RULE,
-    profile: {
-      type: 'object',
-      fields: {
-        interests: { type: 'list', of: { type: 'string', maxLength: PROFILE_MOST.interest, minLength: 1 } },
-        favorites: { type: 'list', of: { type: 'string', maxLength: 64 } },
-        mood: { type: 'string', maxLength: PROFILE_MOST.mood },
-        signature: { type: 'string', maxLength: PROFILE_MOST.signature },
-      },
-    },
-    moves: {
-      type: 'list',
-      of: {
-        type: 'object',
-        fields: {
-          kind: { type: 'string', maxLength: 60 },
-          params: paramsRule(),
-          // Optional: a favor (a markdown, a flash sale) carries none. A move that needs one and has none is dropped, naming the path.
-          demand: { ...demandRule(), optional: true },
-          go_live_at: { type: 'string', maxLength: 64 },
-          expires_in_hours: { type: 'number' },
-          why: { type: 'string', maxLength: WHY_MOST, minLength: 1 },
+function fieldRules(asked: boolean): Record<string, Rule> {
+  const opt = <R extends Rule>(rule: R, only: boolean): Rule => (only ? { ...rule, optional: true } : rule);
+  return {
+    moves: opt(
+      {
+        type: 'list',
+        of: {
+          type: 'object',
+          fields: {
+            kind: { type: 'string', maxLength: 60 },
+            params: paramsRule(asked),
+            // Optional in the rule: a favor (a markdown, a flash sale) carries none, and says so by an empty kind. A move that needs one and has none is dropped, naming the path.
+            demand: opt(demandRule(asked), !asked),
+            go_live_at: { type: 'string', maxLength: 64 },
+            expires_in_hours: { type: 'number' },
+            why: whyRule,
+          },
         },
       },
-    },
+      !asked,
+    ),
+    // Required in the schema asked (an empty list says none), optional in the rule so a missing one still repairs.
     inherited: {
       type: 'list',
-      optional: true,
+      ...(asked ? {} : { optional: true as const }),
       of: { type: 'object', fields: { move_act: { type: 'string', maxLength: 64 }, decision: { type: 'enum', values: ['keep', 'end'] } } },
     },
+    // Optional in both: a blank successor has no convention (its `why` must be non-empty), so no successor is said by leaving it out.
     successor: { type: 'object', optional: true, fields: { boss: { type: 'string', maxLength: 80 }, why: { type: 'string', maxLength: WHY_MOST, minLength: 1 } } },
     // One order for each Mod on staff (Mod Bots design, section 2). Optional: an answer that leaves a Mod out leaves its beat, order and memory as they were
     // (the database carries them), and an order with no memory leaves that Mod's memory as it was. Nothing here is a reason to reject a paid answer.
@@ -137,27 +141,76 @@ export const MEETING_RULE: Rule = {
     },
     // The patrols the Mods make today (Task 11 acts on them; the meeting keeps them).
     patrols: { type: 'list', optional: true, of: { type: 'object', fields: { mod: { type: 'string', maxLength: 80 }, at: { type: 'string', maxLength: 64 } } } },
-  },
-};
+    memory: opt(MEMORY_RULE, !asked),
+    profile: opt(
+      {
+        type: 'object',
+        fields: {
+          interests: { type: 'list', of: { type: 'string', maxLength: PROFILE_MOST.interest, minLength: 1 } },
+          favorites: { type: 'list', of: { type: 'string', maxLength: 64 } },
+          mood: { type: 'string', maxLength: PROFILE_MOST.mood },
+          signature: { type: 'string', maxLength: PROFILE_MOST.signature },
+        },
+      },
+      !asked,
+    ),
+  };
+}
+
+/**
+ * The meeting is three structured calls (provider schemas design, section 4), because the whole answer cannot compile as one schema: the moves
+ * and what follows from them, then the staff, then the Boss's own memory and profile. Each part names the fields it answers and the user message
+ * that asks for it; the first's ends the first message, and the others say which part is next and that the earlier answers stand. `MEETING_RULE`
+ * is built from this list, so a field in no part or in two is red in meeting.test.ts ("Two lists that must agree are one list").
+ */
+export const MEETING_PARTS = [
+  { key: 'moves', fields: ['moves', 'inherited', 'successor'], ask: 'Hold your meeting. This first turn is your moves: answer moves, inherited and successor.' },
+  { key: 'staff', fields: ['orders', 'patrols'], ask: 'Your moves stand as you answered them. This turn is your staff: answer orders and patrols.' },
+  { key: 'self', fields: ['memory', 'profile'], ask: 'Your moves and your staff stand as you answered them. This last turn is yourself: answer memory and profile.' },
+] as const satisfies readonly { readonly key: string; readonly fields: readonly string[]; readonly ask: string }[];
+
+export type MeetingPartKey = (typeof MEETING_PARTS)[number]['key'];
+
+/** Every field of the answer, in the form the answer is repaired against. */
+export const MEETING_FIELDS: Readonly<Record<string, Rule>> = fieldRules(false);
+
+const partFields = (key: MeetingPartKey, from: Record<string, Rule>): Record<string, Rule> =>
+  Object.fromEntries(MEETING_PARTS.find((p) => p.key === key)!.fields.map((f) => [f, from[f]!]));
+
+/** The rule one part's answer is repaired against: its fields, every one optional. */
+export const partRule = (key: MeetingPartKey): Rule => ({ type: 'object', fields: partFields(key, MEETING_FIELDS) });
+
+/**
+ * The rule the whole answer is repaired against, by the model adapter and again by the meeting: the three parts' fields, every one optional, so a part
+ * that was not answered is an answer that left it out. A list has no `max` here on purpose: a list the model overshoots is cut by the meeting, and
+ * recorded, where it knows the bound (the bank, a setting), and a rule's own cap would reject an answer more than two over its bound.
+ */
+export const MEETING_RULE: Rule = { type: 'object', fields: Object.fromEntries(MEETING_PARTS.flatMap((p) => p.fields).map((f) => [f, MEETING_FIELDS[f]!])) };
 
 /** A rule as the JSON schema a provider's structured output takes: types, properties and requireds, none of the bounds it cannot express. */
-export function ruleSchema(rule: Rule): Record<string, unknown> {
+export function ruleSchema(rule: Rule, path = ''): Record<string, unknown> {
   switch (rule.type) {
     case 'string': return { type: 'string' };
-    case 'any': return {};
+    case 'any': throw new Error(`ruleSchema: an "any" rule at ${path} has no schema to send`);
     case 'number': return { type: 'number' };
     case 'boolean': return { type: 'boolean' };
     case 'enum': return { type: 'string', enum: [...rule.values] };
-    case 'list': return { type: 'array', items: ruleSchema(rule.of) };
+    case 'list': return { type: 'array', items: ruleSchema(rule.of, `${path}[]`) };
     case 'object':
       return {
         type: 'object',
-        properties: Object.fromEntries(Object.entries(rule.fields).map(([k, v]) => [k, ruleSchema(v)])),
+        properties: Object.fromEntries(Object.entries(rule.fields).map(([k, v]) => [k, ruleSchema(v, path ? `${path}.${k}` : k)])),
         required: Object.entries(rule.fields).filter(([, v]) => !v.optional).map(([k]) => k),
         additionalProperties: false,
       };
   }
 }
+
+/**
+ * The JSON schema one call asks for (provider schemas design, section 4): every field the part cannot say "none" in by a blank is required, the moves'
+ * params and demand are one loose object each with every field required (empty text and 0 mean "not given"), and the staff and self parts keep their shapes.
+ */
+export const partSchema = (key: MeetingPartKey): Record<string, unknown> => ruleSchema({ type: 'object', fields: partFields(key, fieldRules(true)) });
 
 /* ------------------------------------------------------------------------------- the prompt ---- */
 
@@ -238,7 +291,7 @@ export function meetingSystemPrompt(f: PromptFacts): string {
   const whole = Math.floor(f.bank);
   const { settings: s, phase } = f;
   const kinds = ASKABLE_MOVE_KINDS.map(
-    (k) => `- ${k.key}: ${k.label.toLowerCase()}. Made by ${k.offices.map((o) => (o === 'boss' ? 'the Boss' : 'a Mod Bot')).join(' or ')}. params: ${fieldsOf(k.params)}.${k.key === 'setRule' ? ` A rule never refuses a post; breaking one draws a visit. board is a board's id, or left out for every board. param is ${PREDICATES.map((p) => `${p.key} (${p.param === 'none' ? 'none' : p.param === 'count' ? `a whole number ${p.bounds!.least} to ${p.bounds!.most}` : p.param === 'word' ? 'one word' : 'a BBCode tag'}): ${p.plain('N')}`).join('; ')}.` : ''}${k.structural ? ` It waits at least ${s.structuralHoldHours} hours in the admin queue before it lands, and an admin can hold it.` : ''}`,
+    (k) => `- ${k.key}: ${k.label.toLowerCase()}. Made by ${k.offices.map((o) => (o === 'boss' ? 'the Boss' : 'a Mod Bot')).join(' or ')}. params: ${fieldsOf(k.params)}.${k.key === 'setRule' ? ` A rule never refuses a post; breaking one draws a visit. board is a board's id, or empty text for every board. param is written as text: the number's digits, the word, the tag, or empty for none. It is ${PREDICATES.map((p) => `${p.key} (${p.param === 'none' ? 'none' : p.param === 'count' ? `a whole number ${p.bounds!.least} to ${p.bounds!.most}` : p.param === 'word' ? 'one word' : 'a BBCode tag'}): ${p.plain('N')}`).join('; ')}.` : ''}${k.structural ? ` It waits at least ${s.structuralHoldHours} hours in the admin queue before it lands, and an admin can hold it.` : ''}`,
   );
   const demands = MEETING_DEMAND_KINDS.map((d) => `- ${d.key}: params: ${fieldsOf(d.params)}.`);
   const m = machineLimits(s.economy);
@@ -258,6 +311,7 @@ export function meetingSystemPrompt(f: PromptFacts): string {
     [
       'The moves you may make (anything else is dropped):',
       ...kinds,
+      'In a move\'s params and demand, every field is written; a field the move\'s kind does not use is written blank (empty text, or 0) and is ignored.',
       `A move's go_live_at is a time (ISO 8601) from now to a day from now; a structural move is held at least ${s.structuralHoldHours} hours whatever you ask. Its expires_in_hours is from ${s.moveExpiryLeastHours} hours to ${Math.min(phase.numbers.moveExpiryMostDays, s.moveExpiryMostDays) * 24} hours. Its why is one line, at most ${WHY_MOST} characters, in your own words; the admins read it.`,
     ].join('\n'),
     [
@@ -265,7 +319,7 @@ export function meetingSystemPrompt(f: PromptFacts): string {
       `- pullSlot: params {slot}. Sells a slot out until the move ends. The slot is on sale, holds a single card, and that card can still come out of a pack on sale (packs are the floor: you never pull a pack). You may have at most ${m.pullMost} slots pulled at once.`,
       `- repriceSlot: params {slot, percent}. Sets an on-sale slot's price (a pack's too) to a percent of the price the admins set: ${m.repriceLeast} to ${m.repriceMost} percent, never 100.`,
       `- flashSale: params {slot, hours}. Puts a slot the admins hid on sale for hours (params.hours, ${m.flashHoursLeast} to ${m.flashHoursMost} hours; its expiry is that window), then it is hidden again. One flash sale at a time.`,
-      'A pullSlot and a repriceSlot above 100 percent punish, and carry a demand. A repriceSlot below 100 percent and a flashSale are favors: each carries no demand (leave "demand" out; one you give is dropped). An admin\'s sold out or hidden always wins over you. You read the machine\'s slots, prices and your moves in force, never who buys what.',
+      'A pullSlot and a repriceSlot above 100 percent punish, and carry a demand. A repriceSlot below 100 percent and a flashSale are favors: each carries no demand (give the demand an empty kind; one with a kind is dropped). An admin\'s sold out or hidden always wins over you. You read the machine\'s slots, prices and your moves in force, never who buys what.',
     ].join('\n'),
     [
       'Every other move carries a demand the characters can meet, and the move ends when it is met or when it expires. The demands you may set (anything else drops the move):',
@@ -274,12 +328,12 @@ export function meetingSystemPrompt(f: PromptFacts): string {
     ].join('\n'),
     [
       'Trophies. Your awardTrophy move gives one character one of the trophies listed under "Trophies you may give" below, by its key, to a character by id. A trophy stays with the character; an admin can take it back.',
-      'It is a favor: it carries no demand (leave "demand" out; one you give is dropped). A trophy that is not a belt goes to a character at most once a season. A belt has one holder at a time and passes from the holder to the one you name, never to its holder. Never to a staff character or a retired one. A move you make this way costs one from your bank like any other.',
+      'It is a favor: it carries no demand (give the demand an empty kind; one with a kind is dropped). A trophy that is not a belt goes to a character at most once a season. A belt has one holder at a time and passes from the holder to the one you name, never to its holder. Never to a staff character or a retired one. A move you make this way costs one from your bank like any other.',
     ].join('\n'),
     ...groupsText(f.groups?.conferred ?? []),
     `Board names. ${f.system.nameStyleBrief} A renameBoard name is at most ${s.boardNameMaxLength} characters; its premise is a sentence saying what the board is now for. A name that is not in the style is dropped, not corrected. A renameBoard description is your own words, in character: the board's subtitle under its new name, a sentence or two.`,
     [
-      'Your memory. Your answer is your whole new memory: what you leave out is forgotten. Order every list most important first.',
+      'Your memory. The memory you answer in the self part is your whole new memory: what you leave out of it is forgotten. Order every list most important first.',
       `You keep at most ${s.memoryOpinions} opinions, ${s.memoryGrudges} grudges, ${s.memoryWheelhouse} wheelhouse subjects and ${s.memoryRealWorld} real-world subjects; the rest are cut from the end. Opinions and grudges name characters by the ids you are given, scored -5 to 5. Leave alone these subjects, and add to them: ${f.system.realWorld.join('; ')}.`,
       `Your profile: up to ${PROFILE_MOST.interests} interests, up to ${PROFILE_MOST.favorites} favorite characters (their ids), a mood and a signature. It is public and in your voice.`,
     ].join('\n'),
@@ -287,7 +341,10 @@ export function meetingSystemPrompt(f: PromptFacts): string {
     ...(f.successorAllowed
       ? [`The season is in its last week. If you want, name your successor: successor {boss, why}, where boss is one of these keys and not your own: ${f.roster.map((r) => `${r.key} (${r.name}, ${pronounLabel(r.pronouns)})`).join('; ')}. An admin can hold or replace it.`]
       : ['Do not answer with a successor.']),
-    'Answer only in the structure you are asked for.',
+    [
+      `How you answer. The meeting is answered in three turns, and in each turn you answer one part and nothing else: ${MEETING_PARTS.map((p, i) => `${i === 0 ? 'first' : 'then'} the "${p.key}" part (${p.fields.join(', ')})`).join(', ')}. What you answered in an earlier turn stands.`,
+      'Answer only in the structure you are asked for.',
+    ].join(' '),
   ].join('\n\n');
 }
 
@@ -302,7 +359,7 @@ function groupsText(conferred: readonly ConferredGroup[]): string[] {
     [
       'Group moves. A conferGroup move puts one character in one of these groups, named by its key:',
       ...conferred.map((g) => `- ${g.key} (${g.name}): a ${g.tone}.`),
-      'A punishment may name one board (board, the id of a board of the players); then its demand is an accepted apology, which the code sets whatever you write, and the character cannot post on that board until an apology is accepted or the move runs out. A punishment may instead name no board, with a demand of your choice. A punishment carries no checkAt. A favor bars nothing and names no board: it names a checkAt (a time, ISO 8601, between its go-live and its expiry; left out, it is set to half the favor\'s length) and a demand the character should meet by then, such as posting a number of times on a board; a favor not met at its check is withdrawn, and one met is kept to its expiry. Each character is in at most one group move at a time. Characters who are capped (punished as often as staff may in the window) or held (already in a group move) cannot be chosen: a move that names one is dropped.',
+      'A punishment may name one board (board, the id of a board of the players); then its demand is an accepted apology, which the code sets whatever you write, and the character cannot post on that board until an apology is accepted or the move runs out. A punishment may instead name no board, with a demand of your choice. A punishment carries no checkAt. A favor bars nothing and names no board: it names a checkAt (a time, ISO 8601, between its go-live and its expiry; blank, it is set to half the favor\'s length) and a demand the character should meet by then, such as posting a number of times on a board; a favor not met at its check is withdrawn, and one met is kept to its expiry. Each character is in at most one group move at a time. Characters who are capped (punished as often as staff may in the window) or held (already in a group move) cannot be chosen: a move that names one is dropped.',
     ].join('\n'),
   ];
 }
@@ -547,8 +604,9 @@ export interface PlannedPatrol {
 }
 
 export interface RepairedAnswer {
-  readonly memory: Memory;
-  readonly profile: Profile;
+  /** Undefined where the answer gave no memory (the Boss keeps yesterday's) or no profile. */
+  readonly memory: Memory | undefined;
+  readonly profile: Profile | undefined;
   readonly moves: readonly PlannedMove[];
   readonly orders: readonly PlannedOrder[];
   readonly patrols: readonly PlannedPatrol[];
@@ -594,36 +652,97 @@ export function namedCharacters(raw: unknown): string[] {
   return [...ids].filter((id) => UUID.test(id)).map((id) => id.toLowerCase());
 }
 
+/**
+ * What the shape pass needs of the moves before it runs. A move's params and demand are the loose objects of every kind's fields, so a field of another
+ * kind is dropped here, whatever it holds (the schema asked for it, so there is nothing to record, and a number or a blank in it must never cost the
+ * answer); and a number in one of the kind's own `any` fields, which the schema sends as text (a rule's `param: 20`), is read as its text, recorded at its path
+ * (`asText`), for `readParam` to read as the count; a value of the wrong type in any other own field (text, a choice, a number) is left out and its move refused by name in the move repair (`isString`, `oneOf`, `isNumber`), so the move never changes meaning and the answer is not lost. Local to the meeting: the shape pass keeps its strictness for every other job.
+ */
+function readLooseFields(raw: unknown): { readonly value: unknown; readonly trims: readonly Trim[]; readonly refused: ReadonlyMap<number, { path: string; predicate: string }> } {
+  const a = record(raw);
+  if (!Array.isArray(a['moves'])) return { value: raw, trims: [], refused: new Map() };
+  const trims: Trim[] = [];
+  const refused = new Map<number, { path: string; predicate: string }>();
+  let refusals: { path: string; predicate: string }[] = [];
+  const ownOnly = (given: unknown, own: Rule | undefined, path: string): unknown => {
+    if (typeof given !== 'object' || given === null || Array.isArray(given)) return given;
+    const fields = own?.type === 'object' ? own.fields : {};
+    const out: Record<string, unknown> = {};
+    for (const [name, v] of Object.entries(given)) {
+      if (!(name in fields)) continue;
+      const rule = fields[name];
+      if (typeof v === 'number' && Number.isFinite(v) && rule?.type === 'any') {
+        out[name] = String(v);
+        trims.push({ path: `${path}.${name}`, predicate: 'asText', before: v, after: String(v).length });
+        continue;
+      }
+      // A value that is not the field's own type is never read as another one: the field is left out so the shape pass keeps the answer, and the move is refused
+      // by name in the move repair (`refused`), so it never changes meaning (a board rule that lost its board would become a house rule). Absent and null are absent.
+      const bad = v === undefined || v === null ? null
+        : rule?.type === 'string' || rule?.type === 'any' ? (typeof v === 'string' ? null : 'isString')
+        : rule?.type === 'enum' ? (typeof v === 'string' ? null : `oneOf(${rule.values.join(', ')})`)
+        : rule?.type === 'number' ? (typeof v === 'number' && Number.isFinite(v) ? null : 'isNumber')
+        : null;
+      if (bad) refusals.push({ path: `${path}.${name}`, predicate: bad });
+      else out[name] = v;
+    }
+    return out;
+  };
+  const moves = a['moves'].map((m, i) => {
+    if (typeof m !== 'object' || m === null || Array.isArray(m)) return m;
+    const one = m as Record<string, unknown>;
+    const kind = typeof one['kind'] === 'string' ? moveKind(one['kind']) : undefined;
+    refusals = [];
+    const out: Record<string, unknown> = { ...one, params: ownOnly(one['params'], kind?.params, `moves[${i}].params`) };
+    const demand = record(one['demand']);
+    if (typeof demand['kind'] === 'string' && 'params' in demand) {
+      out['demand'] = { ...demand, params: ownOnly(demand['params'], demandKind(demand['kind'])?.params, `moves[${i}].demand.params`) };
+    }
+    if (refusals[0]) refused.set(i, refusals[0]);
+    return out;
+  });
+  return { value: { ...a, moves }, trims, refused };
+}
+
 export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
-  const shaped = repair(raw, MEETING_RULE);
-  if (!shaped.ok) return shaped;
-  const trims: Trim[] = [...shaped.trims];
+  const read = readLooseFields(raw);
+  const shaped = repair(read.value, MEETING_RULE);
+  if (!shaped.ok) return { ...shaped, trims: [...read.trims, ...shaped.trims] };
+  const trims: Trim[] = [...read.trims, ...shaped.trims];
   const a = shaped.value as Record<string, unknown>;
   const drop = (path: string, predicate: string): void => void trims.push({ path, predicate, before: 1, after: 0 });
   const s = c.settings;
 
-  const memory = repairMemory(a['memory'], c.isPublic, s);
-  if (!memory.ok) return { ok: false, path: `memory.${memory.path}`, predicate: memory.predicate, trims: [...trims, ...memory.trims] };
-  // The memory was shaped (its strings trimmed) above; what repairMemory adds is the characters it dropped, the scores it clamped and the lists it cut.
-  trims.push(...memory.trims.map((t) => ({ ...t, path: t.path ? `memory.${t.path}` : 'memory' })));
+  // A part that was not answered is an answer that left its fields out: no memory is no new memory (the Boss keeps yesterday's), no profile likewise.
+  let memory: Memory | undefined;
+  if (a['memory'] !== undefined) {
+    const made = repairMemory(a['memory'], c.isPublic, s);
+    if (!made.ok) return { ok: false, path: `memory.${made.path}`, predicate: made.predicate, trims: [...trims, ...made.trims] };
+    // The memory was shaped (its strings trimmed) above; what repairMemory adds is the characters it dropped, the scores it clamped and the lists it cut.
+    trims.push(...made.trims.map((t) => ({ ...t, path: t.path ? `memory.${t.path}` : 'memory' })));
+    memory = made.memory;
+  }
 
   const cut = <T,>(path: string, list: readonly T[], most: number): T[] => {
     if (list.length <= most) return [...list];
     trims.push({ path, predicate: `atMost(${most})`, before: list.length, after: most });
     return list.slice(0, most);
   };
-  const p = record(a['profile']);
-  const favorites: string[] = [];
-  (p['favorites'] as string[]).forEach((f, i) => {
-    if (!UUID.test(f) || !c.isPublic(f)) drop(`profile.favorites[${i}]`, 'publicCharacter');
-    else if (!favorites.includes(f)) favorites.push(f);
-  });
-  const profile: Profile = {
-    interests: cut('profile.interests', p['interests'] as string[], PROFILE_MOST.interests),
-    favorites: cut('profile.favorites', favorites, PROFILE_MOST.favorites),
-    mood: p['mood'] as string,
-    signature: p['signature'] as string,
-  };
+  let profile: Profile | undefined;
+  if (a['profile'] !== undefined) {
+    const p = record(a['profile']);
+    const favorites: string[] = [];
+    (p['favorites'] as string[]).forEach((f, i) => {
+      if (!UUID.test(f) || !c.isPublic(f)) drop(`profile.favorites[${i}]`, 'publicCharacter');
+      else if (!favorites.includes(f)) favorites.push(f);
+    });
+    profile = {
+      interests: cut('profile.interests', p['interests'] as string[], PROFILE_MOST.interests),
+      favorites: cut('profile.favorites', favorites, PROFILE_MOST.favorites),
+      mood: p['mood'] as string,
+      signature: p['signature'] as string,
+    };
+  }
 
   // Moves: what is not allowed is dropped first, then the bank cuts from the end, so a dropped move costs the Boss nothing.
   const phaseLeast = s.moveExpiryLeastHours;
@@ -641,23 +760,32 @@ export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
   const givenNow = new Set(c.trophies?.given ?? []);
   const kept: PlannedMove[] = [];
   const grouped = new Set<string>();
-  (a['moves'] as Record<string, unknown>[]).forEach((m, i) => {
+  ((a['moves'] ?? []) as Record<string, unknown>[]).forEach((m, i) => {
     const path = `moves[${i}]`;
     const kind = moveKind(String(m['kind']));
     if (!kind || !kind.askable) return drop(`${path}.kind`, `oneOf(${ASKABLE_MOVE_KINDS.map((k) => k.key).join(', ')})`);
+    // A value in one of the kind's own fields of the wrong type (found before the shape pass): the move is refused by name, the answer stands.
+    const wrong = read.refused.get(i);
+    if (wrong) return drop(wrong.path, wrong.predicate);
     // A favor carries no demand: one given is set aside (recorded), the move is whole without it. Every other move needs one it can meet.
     const wantsDemand = kind.demand(record(m['params'])) === 'required';
-    const given0 = m['demand'];
+    // A favor says it has no demand by an empty kind; that is no demand, not a stray one.
+    const given0 = record(m['demand'])['kind'] === '' ? undefined : m['demand'];
     const strayDemand = !wantsDemand && given0 !== undefined && given0 !== null;
     // The kind's shape comes first: a group move's demand depends on its params. A description the Boss gave is bounded and trimmed there; a missing or blank one is
     // not the Boss's to lose a move over, so it is checked with a placeholder and left out, and the stock description stands in later.
     const offered = { ...record(m['params']) };
+    // A kind's own optional field left as empty text is absent (a rule's board, a conferral's board and check time). A rule's param is read from what was given
+    // below, before this: empty text on a predicate that takes none is the converted choice `readParam` records (`asNone`); a field left out records nothing.
+    for (const [name, rule] of Object.entries((kind.params as { fields: Record<string, Rule> }).fields)) if (rule.optional && offered[name] === '') delete offered[name];
     const blank = typeof offered['description'] !== 'string' || offered['description'].trim() === '';
     // A machine move's whole number one past its bound (201 of at most 200, 49 of at least 50, 49 hours of at most 48) is the ordinary overshoot: it is clamped to the
     // bound and recorded, never a lost answer. A fraction, a non-number and exactly 100 percent are not repairs, and stay for moveParamsProblems to refuse by name.
     const clamps: Trim[] = [];
     const bounded = (name: string, least: number, most: number): void => {
       const v = offered[name];
+      // The schema says 0 is "not given": a value the model never chose is not clamped into one, it is left out for moveParamsProblems to refuse by name.
+      if (v === 0) { delete offered[name]; return; }
       if (typeof v !== 'number' || !Number.isInteger(v) || (v >= least && v <= most)) return;
       const to = v < least ? least : most;
       clamps.push({ path: name, predicate: v < least ? `atLeast(${least})` : `atMost(${most})`, before: v, after: to });
@@ -665,6 +793,11 @@ export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
     };
     if (kind.key === 'repriceSlot') bounded('percent', limits.repriceLeast, limits.repriceMost);
     if (kind.key === 'flashSale') bounded('hours', limits.flashHoursLeast, limits.flashHoursMost);
+    // A rule's param is text on the wire: a count's digits are its number, and empty text is none (each recorded; a left-out param is none with no record; a word or a tag is left for moveParamsProblems).
+    if (kind.key === 'setRule' && typeof offered['predicate'] === 'string') {
+      const read = readParam(offered['predicate'], record(m['params'])['param']);
+      if (read.trim) { offered['param'] = read.value; clamps.push(read.trim); }
+    }
     const trophyLimits: MachineLimits = c.trophies
       ? { ...limits, trophies: { ...c.trophies, boss: c.trophies.boss.map((t) => ({ ...t, holder: heldNow.get(t.key) ?? null })), given: givenNow } }
       : limits;
@@ -883,5 +1016,5 @@ export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
     else successor = given;
   }
 
-  return { ok: true, memory: memory.memory, profile, moves, orders: orders.map((x) => x.order), patrols: cut('patrols', patrols, s.modBots.patrolsPerDay), inherited: cut('inherited', inherited, INHERITED_MOST), successor, trims };
+  return { ok: true, memory, profile, moves, orders: orders.map((x) => x.order), patrols: cut('patrols', patrols, s.modBots.patrolsPerDay), inherited: cut('inherited', inherited, INHERITED_MOST), successor, trims };
 }
