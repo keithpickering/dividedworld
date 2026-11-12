@@ -33,11 +33,11 @@ import type { CardPlay, CardView, EffectProps } from '../../../../engine/ui/card
 import { useKayfa } from '../../../../engine/ui/context.tsx';
 import { placesOf, type Cue, type Sound } from '../../cards/laugh-track.ts';
 import { seeded } from '../seeded.ts';
-import { forgetVoice, register, type Screen, type Unregister } from './watch.ts';
+import { DEFAULT_AIR_MS, DEFAULT_HOLD_MS, forgetVoice, register, type Screen, type Unregister } from './watch.ts';
 import './laugh-track.css';
 
 /** The numbers the screens read from the card's settings when the instance has not set them (laugh-track.ts `screenReads`). */
-const DEFAULTS = { line: 40, dwellMs: 400, reachRem: 12, murmurMost: 35, fadeMs: 250, band: 34, airMs: 1200, holdMs: 4000 } as const;
+export const DEFAULTS = { line: 40, dwellMs: 400, reachRem: 12, murmurMost: 35, fadeMs: 250, band: 34, airMs: DEFAULT_AIR_MS, holdMs: DEFAULT_HOLD_MS } as const;
 /** The loop that builds before each kind of hit, by sound. */
 const LOOPS: Readonly<Record<Sound, string>> = { laugh: 'laugh-track.titter', cheer: 'laugh-track.ooh', boo: 'laugh-track.grumble' };
 const VERBS: Readonly<Record<Sound, string>> = { laugh: 'laughs', cheer: 'cheers', boo: 'boos' };

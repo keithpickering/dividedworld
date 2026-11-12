@@ -770,3 +770,34 @@ test('pieces drawn again while a place is still adding dwell lose what it had ad
   play(1650, 1700);
   assert.equal(log.fires, 1, 'it earns again from nothing');
 });
+
+/* A fire that throws or rejects is "no take" for the queue, and its error is reported where a throw used to land, exactly once. */
+for (const how of ['throws', 'rejects'] as const) {
+  test(`a fire that ${how} is reported once, and the queue goes on`, async () => {
+    const g = globalThis as { reportError?: (e: unknown) => void };
+    const saved = g.reportError;
+    const reported: unknown[] = [];
+    g.reportError = (e) => { reported.push(e); };
+    try {
+      const boom = new Error('no take');
+      const log = made();
+      log.answer = () => {
+        if (log.fires > 1) return undefined;
+        if (how === 'throws') throw boom;
+        return Promise.reject(boom);
+      };
+      const a = inDocumentAt(el(IN()), 1); const b = inDocumentAt(el(IN()), 2);
+      place(log, 'cheer', a); place(log, 'boo', b);
+      play(1000, 1400);
+      await flush();
+      assert.equal(log.fires, 1);
+      assert.deepEqual(reported, [boom]);
+      play(1450, 2800);
+      await flush();
+      assert.equal(log.fires, 2, 'the next place still fires');
+      assert.deepEqual(reported, [boom], 'reported once');
+    } finally {
+      if (saved) g.reportError = saved; else delete g.reportError;
+    }
+  });
+}

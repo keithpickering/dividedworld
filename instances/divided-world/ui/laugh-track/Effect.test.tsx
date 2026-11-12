@@ -19,7 +19,8 @@ import { renderInWorld } from '../../../../engine/ui/test-world.tsx';
 import { AutocorrectEffect } from '../../cards/autocorrect/Effect.tsx';
 import { sounds } from '../sounds.ts';
 import { seeded } from '../seeded.ts';
-import { LaughTrackEffect } from './Effect.tsx';
+import { DEFAULTS, LaughTrackEffect } from './Effect.tsx';
+import { defaults as instanceDefaults } from '../../settings.ts';
 import type { PlaceSpec } from './watch.ts';
 
 const hub = vi.hoisted(() => ({
@@ -184,7 +185,7 @@ describe('Laugh Track: the places', () => {
 });
 
 describe('Laugh Track: the registration', () => {
-  test('fire returns the play\'s promise, and the screen carries band, airMs and holdMs, from the settings or the defaults', async () => {
+  test('fire returns the play\'s promise, and the screen carries band, airMs and holdMs, from the instance\'s settings', async () => {
     mount();
     const spec = hub.specs[0] as PlaceSpec;
     heard.play.mockResolvedValueOnce({ lengthMs: 900 } as never);
@@ -192,6 +193,16 @@ describe('Laugh Track: the registration', () => {
     act(() => { answer = spec.fire(); });
     expect(await answer).toEqual({ lengthMs: 900 });
     expect(spec.screen).toMatchObject({ band: 34, airMs: 1200, holdMs: 4000 });
+  });
+
+  test('with no card settings the screen falls back to the defaults: band 34, airMs 1200, holdMs 4000', () => {
+    mount({ cardSettings: {} });
+    expect((hub.specs[0] as PlaceSpec).screen).toMatchObject({ band: 34, airMs: 1200, holdMs: 4000 });
+  });
+
+  test('the instance\'s card settings for every laughTrack screen key equal the effect\'s fallback defaults', () => {
+    const held = instanceDefaults.cardSettings;
+    for (const [key, value] of Object.entries(DEFAULTS)) expect(held[`laughTrack.${key}`], key).toBe(value);
   });
 
   test('the screen carries band, airMs and holdMs from the card settings when they are set', () => {

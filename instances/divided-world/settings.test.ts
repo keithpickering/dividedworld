@@ -1,4 +1,3 @@
-import { laughTrack } from './cards/laugh-track.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { instanceProblems, settingsProblems } from '../../engine/rules/instance.ts';
@@ -8,6 +7,7 @@ import { reactions } from './reactions.ts';
 import { QUADRANTS } from '../../engine/rules/types.ts';
 import { hintPatterns } from '../../engine/rules/hints.ts';
 import { hintWords } from './ui/hint-words.ts';
+import { laughTrack } from './cards/laugh-track.ts';
 
 test('the defaults hold every setting the engine reads, in range', () => {
   assert.deepEqual(settingsProblems(defaults), []);
@@ -181,5 +181,5 @@ test('hints: the words claim no more than the threshold proves (a lead is "most"
 test('Laugh Track\'s band, airtime and hold are set, inside their bounds', () => {
   const held = defaults.cardSettings;
   assert.deepEqual([held['laughTrack.band'], held['laughTrack.airMs'], held['laughTrack.holdMs']], [34, 1200, 4000]);
-  for (const r of laughTrack.screenReads as readonly { key: string; min: number; max: number }[]) assert.ok(held[r.key]! >= r.min! && held[r.key]! <= r.max!, r.key);
+  for (const r of laughTrack.screenReads as readonly { key: string; min: number; max: number }[]) assert.ok(held[r.key]! >= r.min && held[r.key]! <= r.max, r.key);
 });

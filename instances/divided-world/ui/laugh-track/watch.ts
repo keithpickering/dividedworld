@@ -108,8 +108,15 @@ let lastFire: object | null = null;
 let holdOver = true;
 
 /** The card's defaults, for a setting that is missing, not a number or negative: such a value never stalls the queue or keeps a turn for ever. */
-const DEFAULT_AIR_MS = 1200, DEFAULT_HOLD_MS = 4000;
+export const DEFAULT_AIR_MS = 1200, DEFAULT_HOLD_MS = 4000;
 const settled = (v: unknown, fallback: number): number => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : fallback);
+
+/** A failing fire is "no take" to the queue, but it is still a failure: report it where an uncaught throw would land (`window.onerror`, the console)
+    and never rethrow it into the frame, which would stop the queue and every frame after it. */
+const reportFailure = (e: unknown): void => {
+  const report = (globalThis as { reportError?: (e: unknown) => void }).reportError;
+  if (typeof report === 'function') report.call(globalThis, e); else console.error(e);
+};
 
 /** What the watcher holds, for a test to look inside. */
 export const __inspect = () => ({ places: places.size, elements: byElement.size, near: near.size, earned: earnedPlaces.size, unfired, murmuring: murmuring !== null, listening: observer !== null });
@@ -268,7 +275,7 @@ function tick(now: number): void {
     lastFire = mine;
     /* A play that throws, or whose promise rejects, did not sound: the place stays fired and the airtime is all it holds. */
     let answer: ReturnType<PlaceSpec['fire']> = undefined;
-    try { answer = place.spec.fire(); } catch { /* no take */ }
+    try { answer = place.spec.fire(); } catch (e) { reportFailure(e); }
     /* A take that answers hands the murmur back over its tail, so long as the hold since the fire is not yet over (a frame has not run past
        it); one that answers null, nonsense, or after the hold, leaves the airtime as it was. With an airtime of 0 the hold is over only a frame
        after the fire's own, so the answer that comes in between is honored. */
@@ -279,7 +286,7 @@ function tick(now: number): void {
         if (lastFire !== mine || holdOver || typeof length !== 'number' || !Number.isFinite(length) || length < 0) return;
         quietUntil = firedAt + Math.max(length - fade, 0);
         wake();
-      }, () => {});
+      }, reportFailure);
     }
   }
   /* A fire fades the murmur over the fade, under the take; while the hold lasts no loop is made, and a live one is silent. */
