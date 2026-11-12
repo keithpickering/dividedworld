@@ -49,7 +49,17 @@ function phaseDaysOf(p: Persona): { honeymoon?: number; meltdown?: number } {
   return { ...(h !== undefined ? { honeymoon: h } : {}), ...(m !== undefined ? { meltdown: m } : {}) };
 }
 
-export function instanceSeed(instance: Instance) {
+/**
+ * What the seed reads of the instance's code of conduct (`InstanceUi.conduct`): its version and each section's key, typed by shape so the seed never imports the
+ * engine's UI. SQL reads them as the settings `conductVersion` and `conductSections` (0340): the version an account must have accepted, and the sections a
+ * report may name.
+ */
+export interface ConductSeed {
+  readonly version: number;
+  readonly sections: readonly { readonly key: string }[];
+}
+
+export function instanceSeed(instance: Instance, conduct: ConductSeed) {
   const dev = instance.developer ?? DEFAULT_DEVELOPER;
   return {
     // The System's words travel as one setting, read by the SQL that posts them (0007).
@@ -58,6 +68,9 @@ export function instanceSeed(instance: Instance) {
       ...instance.settings, copy: instance.copy,
       systemLines: instance.system.stockLines,
       systemMoveWords: Object.fromEntries(MOVE_KINDS.map((m) => [m.key, m.plain])),
+      // The code of conduct's version and section keys (0340), from the instance's UI content, so SQL names no section.
+      conductVersion: conduct.version,
+      conductSections: conduct.sections.map((c) => c.key),
     } as Record<string, unknown>,
     classes: instance.classes.map((c) => ({ key: c.key, name: c.name })),
     reactions: instance.reactions.map((r) => ({ key: r.key, emoji: r.emoji, quadrant: r.quadrant })),

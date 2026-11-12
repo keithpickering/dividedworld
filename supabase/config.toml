@@ -81,3 +81,6 @@ verify_jwt = false
 
 [functions.settle]
 verify_jwt = false
+
+[functions.mail]
+verify_jwt = false

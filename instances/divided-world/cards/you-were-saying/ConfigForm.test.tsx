@@ -102,4 +102,15 @@ describe("You Were Saying?'s play form", () => {
     }
     expect(said.size).toBe(8);
   });
+
+  test('the form is a ConfigRange, the words and price line and a ConfigHint, and draws no class of its own', () => {
+    const { slider } = form({ steps: 4 });
+    expect(slider).toHaveClass('kb-play-range');
+    expect(slider.closest('.kb-play-config-field')).not.toBeNull();
+    expect(document.querySelector('.dw-ywsf-length')).not.toBeNull();
+    const fine = screen.getByText(/on top of the price you paid at the machine/);
+    expect(fine).toHaveClass('kb-play-fine');
+    expect(fine).not.toHaveAttribute('role');
+    for (const gone of ['dw-ywsf-form', 'dw-ywsf-label', 'dw-ywsf-fine']) expect(document.querySelector(`.${gone}`)).toBeNull();
+  });
 });

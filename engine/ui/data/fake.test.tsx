@@ -743,9 +743,9 @@ describe('the account', () => {
     fake.onSession((s) => seen.push(s.signedIn));
     expect(await fake.verifyCode(fake.emailOf(ana), '654321')).toEqual(refused('that code does not match, or it has expired: ask for a new one', 'code'));
     expect(await fake.verifyCode(fake.emailOf(ana), 'abc')).toEqual(refused('is the digits from the email', 'code'));
-    expect(await fake.session()).toEqual({ signedIn: false, account: null });
+    expect(await fake.session()).toEqual({ signedIn: false, account: null, bar: null, conductAccepted: true });
     expect(await fake.verifyCode(fake.emailOf(ana), ` ${TEST_CODE} `)).toEqual({ ok: true, value: { account: true } });
-    expect(await fake.session()).toEqual({ signedIn: true, account: ana });
+    expect(await fake.session()).toEqual({ signedIn: true, account: ana, bar: null, conductAccepted: true });
     await fake.signOut();
     await flush();
     expect(seen).toEqual([true, false]);
@@ -757,9 +757,9 @@ describe('the account', () => {
     expect(await fake.verifyLink(TEST_LINK)).toEqual(gone);
     await fake.requestCode(fake.emailOf(ana), null, null);
     expect(await fake.verifyLink('not-the-test-link-at-all')).toEqual(gone);
-    expect(await fake.session()).toEqual({ signedIn: false, account: null });
+    expect(await fake.session()).toMatchObject({ signedIn: false, account: null });
     expect(await fake.verifyLink(TEST_LINK)).toEqual({ ok: true, value: { account: true } });
-    expect(await fake.session()).toEqual({ signedIn: true, account: ana });
+    expect(await fake.session()).toMatchObject({ signedIn: true, account: ana });
   });
   test('the test link opens an account from the invite the code was asked with, or signs in with none and says why', async () => {
     const { fake } = world();
@@ -770,7 +770,7 @@ describe('the account', () => {
     fake.signInAs(null);
     await fake.requestCode('other@example.test', null, null);
     expect(await fake.verifyLink(TEST_LINK)).toEqual({ ok: true, value: { account: false, why: 'that invite opens nothing; open the account with another invite' } });
-    expect(await fake.session()).toEqual({ signedIn: true, account: null });
+    expect(await fake.session()).toMatchObject({ signedIn: true, account: null });
   });
   test('an address with no account and no invite signs in with no account, and says why', async () => {
     const { fake } = world();
@@ -778,7 +778,7 @@ describe('the account', () => {
     await fake.requestCode('new@example.test', null, null);
     const answer = await fake.verifyCode('new@example.test', TEST_CODE);
     expect(answer).toEqual({ ok: true, value: { account: false, why: 'that invite opens nothing; open the account with another invite' } });
-    expect(await fake.session()).toEqual({ signedIn: true, account: null });
+    expect(await fake.session()).toEqual({ signedIn: true, account: null, bar: null, conductAccepted: true });
     expect(await fake.myCharacters()).toEqual([]);
   });
   test('an invite from a player opens an account, once', async () => {

@@ -66,6 +66,7 @@ const settings: Settings = {
   modBots: { allowanceMost: 3, ruleDaysMost: 7, visitHours: { least: 2, most: 12 }, patrolsPerDay: 6, patrolSample: 5, reportPrice: 25, reportsPerDay: 3, judgmentsPerDay: 60, filingLinesPerDay: 60, appealPrice: 50, tailHours: 24, cap: { punishments: 3, days: 7 }, filingCron: '*/5 * * * *', filingGraceMinutes: 10 },
   warnBar: { size: 10, bands: { minor: 2, moderate: 4, severe: 7 }, decay: { unit: 'day', count: 14 }, banDays: [1, 3, 7] },
   apology: { apologyEveryHours: 24, apologyJudgeBatch: 10, apologyRulingMaxWords: 80 },
+  conduct: { openReportsMost: 3, adminAddress: null },
   boardNameMaxLength: 60,
   moveExpiryMostDays: 42,
   demandCheckMinutes: 5,
@@ -652,6 +653,20 @@ test('the new settings are checked like the others', () => {
   assert.match(bad('apology', 'x'), /apology/);
   assert.match(bad('apology', null), /apology/);
   assert.deepEqual(settingsProblems({ ...settings, microEventDailyCalls: 0, rosterRecentExcluded: 0, inheritanceGraceDays: 0 }), [], 'zero is allowed where it means none');
+});
+
+test('the conduct settings: openReportsMost a whole number of at least 1, adminAddress null or an address, and nothing else in the object', () => {
+  const bad = (k: string, v: unknown) => settingsProblems({ ...settings, [k]: v } as unknown as Settings).join('\n');
+  const gs = settings.conduct;
+  for (const v of [0, -1, 1.5, '3', null]) assert.match(bad('conduct', { ...gs, openReportsMost: v }), new RegExp('conduct.*"openReportsMost" is not'), `openReportsMost = ${String(v)}`);
+  assert.deepEqual(settingsProblems({ ...settings, conduct: { ...gs, openReportsMost: 1 } }), [], 'openReportsMost may be 1');
+  for (const v of ['', 'admin', 3, undefined]) assert.match(bad('conduct', { ...gs, adminAddress: v }), /conduct.*"adminAddress" is not/, `adminAddress = ${String(v)}`);
+  assert.deepEqual(settingsProblems({ ...settings, conduct: { ...gs, adminAddress: 'admins@dw.gripe' } }), [], 'an address is allowed');
+  assert.deepEqual(settingsProblems({ ...settings, conduct: { ...gs, adminAddress: null } }), [], 'null means not set yet');
+  assert.match(bad('conduct', { ...gs, other: 1 }), /conduct.*"other" is not one of its fields/);
+  assert.match(bad('conduct', { openReportsMost: 3 }), /conduct.*"adminAddress" is not/);
+  assert.match(bad('conduct', 'x'), /conduct/);
+  assert.match(bad('conduct', null), /conduct/);
 });
 
 test('a bot voice that is neither chat nor oldVoice is a problem', () => {

@@ -459,7 +459,7 @@ begin
   -- quote: a post quoting it springs it, and lands its card on the quoting post.
   answer := post(t, b, 'As you said.', p_quote);
   if answer -> 'sprung' -> 'payload' ->> 'trigger' is distinct from 'quote' then raise exception 'a quote trap: %', answer; end if;
-  if not exists (select 1 from acts k where k.kind = 'card' and k.target_act_id = (answer ->> 'id')::uuid and k.payload ->> 'card' = 'quoter' and k.character = a
+  if not exists (select 1 from acts_public k where k.kind = 'card' and k.target_act_id = (answer ->> 'id')::uuid and k.payload ->> 'card' = 'quoter' and k.character = a
                    and k.payload ->> 'spring' = answer -> 'sprung' ->> 'id') then
     raise exception 'a Move landed its card on the quoting post';
   end if;
@@ -479,7 +479,7 @@ begin
   if reply ? 'sprung' then raise exception 'a reply sprang a back: %', reply; end if;
   reply := post(t2, b, 'A quote.', p_reply);
   if reply -> 'sprung' -> 'payload' ->> 'trigger' is distinct from 'quote' then raise exception 'a quote of the post with a Move: %', reply; end if;
-  if not exists (select 1 from acts k where k.kind = 'card' and k.target_act_id = (reply ->> 'id')::uuid and k.payload ->> 'card' = 'hook'
+  if not exists (select 1 from acts_public k where k.kind = 'card' and k.target_act_id = (reply ->> 'id')::uuid and k.payload ->> 'card' = 'hook'
                    and k.payload -> 'config' ->> 'color' = 'green' and (k.payload ->> 'layer')::integer = 1) then
     raise exception 'a Move landed in the setter''s ink on the quote';
   end if;

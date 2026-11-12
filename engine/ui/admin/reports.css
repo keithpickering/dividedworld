@@ -1,0 +1,83 @@
+/*
+ * The reports screen (Reports.tsx), plain and functional: it is seen by admins only. It stands on the queue's page and group heads and on
+ * Write an update's field and refusal looks (queue.css, write-update.css); this file adds only what a report's plate needs. Sizes are the
+ * glass's tokens, and every color is a glass token.
+ */
+.kb-reports-item {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0 0 1rem;
+  padding: 1rem 1.25rem;
+  border-left: 3px solid var(--kb-glass-ready);
+  background: var(--kb-glass-panel-strong);
+}
+
+.kb-reports-item h3 {
+  margin: 0;
+  font-size: var(--kb-glass-size-lead);
+  color: var(--kb-glass-text);
+}
+
+.kb-reports-item p,
+.kb-reports-item li,
+.kb-reports-item legend,
+.kb-reports-item label {
+  margin: 0;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-reports-words {
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  border-left: 3px solid var(--kb-glass-text-2);
+  font-size: var(--kb-glass-size-body);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--kb-glass-text);
+}
+
+.kb-reports-past {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+.kb-reports-form {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.kb-reports-outcomes {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.kb-reports-outcome {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.kb-reports-field {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.kb-reports-notice {
+  margin: 1.5rem 0 0;
+  padding: 1rem 1.25rem;
+  border-left: 3px solid var(--kb-glass-loss);
+  background: var(--kb-glass-panel-strong);
+  font-size: var(--kb-glass-size-body);
+  font-weight: 700;
+  color: var(--kb-glass-text);
+}

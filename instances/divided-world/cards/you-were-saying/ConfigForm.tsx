@@ -6,6 +6,8 @@
  * card with no length.
  */
 import { useEffect } from 'react';
+import { ConfigHint } from '../../../../engine/ui/cards/config/ConfigHint.tsx';
+import { ConfigRange } from '../../../../engine/ui/cards/config/ConfigRange.tsx';
 import { orbs, withCardEconomy } from '../../../../engine/ui/cards/faces.ts';
 import type { ConfigFormProps } from '../../../../engine/ui/cards/types.ts';
 import { useKayfaIfAny } from '../../../../engine/ui/context.tsx';
@@ -44,20 +46,18 @@ export function ConfigForm({ config, onChange, post, id }: ConfigFormProps) {
   const words = wordsOf(youWereSaying.writes!.tokens({ steps }, settings));
   const priceWords = price === 0 ? 'free to play' : `${orbs(price)} ${orbWord(price)} more`;
   return (
-    <div className="dw-ywsf-form">
-      <label htmlFor={`${id}-steps`} className="dw-ywsf-label">How much it writes</label>
-      <input
-        id={`${id}-steps`} type="range" min={0} max={most} step={1} value={steps}
-        aria-valuetext={`${words}, ${priceWords}`}
-        onChange={(e) => onChange({ steps: Number(e.target.value) })}
+    <div className="kb-play-config-group kb-play-config-group-tight">
+      <ConfigRange
+        id={`${id}-steps`} label="How much it writes" min={0} max={most} step={1} value={steps}
+        valueText={`${words}, ${priceWords}`} onChange={(value) => onChange({ steps: value })}
       />
       <p className="dw-ywsf-length" aria-hidden="true">
         <span className="dw-ywsf-words">{words}</span>
         <span className="dw-ywsf-price kb-num">{price === 0 ? 'Free' : orbs(price)}</span>
       </p>
-      <p className="dw-ywsf-fine">
+      <ConfigHint>
         {price === 0 ? 'Nothing more to play it: its price was paid at the machine.' : `${orbs(price)} on top of the price you paid at the machine.`}
-      </p>
+      </ConfigHint>
     </div>
   );
 }

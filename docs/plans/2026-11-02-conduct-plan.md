@@ -83,6 +83,18 @@ Resend: mail is tested against a fake sender.
     - A body containing `[quote=<id>]` for a hidden id has that quote's contents replaced with the empty string, and the
       quote keeps its act id so the renderer shows the note. This uses `conceal_quotes(body)`, which runs only on bodies
       that contain `[quote=`.
+    - **Amended 2026-11-12, the owner's decision in the build** (PR #428). Four review rounds found the SQL copy of the
+      parser drifting from `engine/bbcode/parse.ts`, each drift a leak or a read a crafted post could make unbearably
+      slow. The owner chose: conceal with the one real parser, as a layer.
+      - A pure engine function, `concealQuotes(body, hiddenIds)` in `engine/bbcode/`, empties exactly the quotes
+        `parse.ts` reads as quoting a hidden id, and keeps their act ids.
+      - Its result is stored as a layer beside the quoting post's version, append-only, never an edit of the post. The
+        layer is written by a job when a hide, unhide or approval changes what is hidden, for the posts that quote it,
+        and when a post or edit quoting a hidden version is written.
+      - `acts_public` serves the layer whose hidden set matches the current one. It does no parsing on a read.
+      - Until the matching layer exists, the quoting post's body is withheld behind a plain note that says it will
+        show again shortly, never with the hidden words. That state ends by itself when the job writes the layer.
+      - `conceal_quotes` and its SQL helpers go.
     - Admins read words through `admin_version(act)`.
   - **The log:** a hide of the player's own version and its end are lines in their log (`engine/ui/log/lines.ts`), read
     from `conduct_decisions` for the caller's own characters only.
@@ -180,6 +192,27 @@ Resend: mail is tested against a fake sender.
   - the hidden note on a post, in History and in a quote.
   The boards go in `docs/research/2026-11-02-conduct/`, and the confirmed brief is written into this task before the
   build goes on.
+- **The confirmed brief** (the owner, 2026-11-11, in the build session's `shape`; it chose each recommended option):
+  - **Entry.** A plain text link "Report to admins" at the very foot of the Lens (`engine/ui/cards/Lens.tsx`), set apart
+    under a hairline rule, never a tab, mark or chip, and the same plain link on each version row of the post's History
+    panel. Both open one dialog naming the version. A hidden version's row offers no link. The board's own Report (the
+    Lens's report tab, which a Mod Bot hears) is unchanged.
+  - **The dialog.** A centered modal in the account screens' plain look, a sheet on a phone: the title "Report to
+    admins"; the lead "This reaches a person, not the game. An admin reads every report, and the player is never told
+    who sent it."; the code's sections as a radio list of titles, each with a link to `/conduct#<key>`; "Anything an
+    admin should know (optional)", up to 1000 characters with a live count; Send to admins and Cancel.
+  - **Its states**, each in place with focus on its heading: sent ("Sent. An admin will read it, and we'll email you
+    when they have. Nothing changes on the board." and Close); the limit ("You have {n} reports waiting for an admin.
+    You can send another once one of them is read." shown instead of the form; only the filer's own count); an error,
+    said plainly.
+  - **The hidden note.** One calm glass strip in place of the body, in the account notice look (a dark field under the
+    1px pale-cyan seam rule): "Hidden by an admin: it broke the code of conduct." with the link "Read the code". The
+    postbit, author, place in the thread and the footer stay. The same one-line note stands in for the words in a
+    History row and inside a quote's frame, whose cite keeps its link. The author of a version hidden until edited also
+    sees a muted panel under it, "Only you see this", with their words and Edit; after a second hide until edited and
+    their edit, "You edited this post. An admin will look at your edit before it shows again."
+  - **Bounds.** No card, mark, neon, gold or pink, and nothing in the board's 2003 voice; WCAG 2.2 AA and the glass's
+    text sizes; nothing animates.
 - Then:
   - `engine/ui/conduct/Report.tsx` (the form, the confirmation, and the limit's plain refusal);
   - `engine/ui/conduct/Hidden.tsx` (the note);
