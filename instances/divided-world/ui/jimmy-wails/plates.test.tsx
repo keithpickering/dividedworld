@@ -48,4 +48,26 @@ describe('Jimmy Wails plates', () => {
       expect(['#fff', '#222'], p.key).toContain(p.ink);
     }
   });
+
+  test('each plate credits its photograph: who took it, its page on Wikimedia Commons and the license it is used under', () => {
+    for (const p of PLATES) {
+      expect(p.credit.author.length, p.key).toBeGreaterThan(0);
+      expect(p.credit.source, p.key).toMatch(/^https:\/\/commons\.wikimedia\.org\/wiki\/File:\S+$/);
+      expect(p.credit.license, p.key).toBe('CC BY-SA 3.0');
+      expect(p.credit.licenseUrl, p.key).toBe('https://creativecommons.org/licenses/by-sa/3.0/');
+    }
+  });
+
+  test('CREDITS.md, beside the files, names every plate with its photographer, its source and its license, and no plate the pool lacks', () => {
+    const credits = readFileSync(join(dir, 'CREDITS.md'), 'utf8');
+    for (const p of PLATES) {
+      const row = credits.split('\n').find((line) => line.includes(`\`${p.key}.png\``));
+      expect(row, p.key).toBeDefined();
+      expect(row, p.key).toContain(p.credit.author);
+      expect(row, p.key).toContain(p.credit.source);
+      expect(row, p.key).toContain(p.credit.licenseUrl);
+    }
+    const named = [...credits.matchAll(/`([a-z-]+)\.png`/g)].map((m) => m[1]);
+    expect(named.sort()).toEqual(PLATES.map((p) => p.key).sort());
+  });
 });

@@ -12,6 +12,10 @@
  * measured once the banner is laid out and again when its box resizes or the page's fonts arrive, never on a frame.
  *
  * The plate's own colors (its ink and its panel) are the picture's, the same on either board, as Autocorrect's tape keeps its own.
+ *
+ * **The credit.** The plates are photographs used under a license that asks for their photographer's name, the license and a note that the
+ * picture was changed (plates.ts, `credit`). It is a line under the banner, in the board's own type and outside the picture, so the appeal reads as
+ * it did: "Photo: Lane Hartwell, CC BY-SA 3.0, edited", the name linked to the photograph's page and the license to its deed.
  */
 import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import type { CardPlay } from '../../../../engine/ui/cards/types.ts';
@@ -79,6 +83,7 @@ export function Banner({ play, caster }: BannerProps) {
   }, [layout, play.message, caster]);
 
   return (
+    <>
     <figure ref={figure} className="dw-jw-banner" aria-label={`Appeal from ${caster}`} data-plate={plate.key} style={{ aspectRatio: `${wide} / ${plate.height}` }}>
       <div className="dw-jw-stage" style={{ width: wide, height: plate.height, transform: `scale(${scale})` }}>
         {plate.panel ? <div className="dw-jw-panel" style={{ left: plate.width, width: plate.panel.width, background: plate.panel.color }} /> : null}
@@ -93,5 +98,9 @@ export function Banner({ play, caster }: BannerProps) {
         </div>
       </div>
     </figure>
+    <p className="dw-jw-credit">
+      Photo: <a href={plate.credit.source} rel="noopener noreferrer">{plate.credit.author}</a>, <a href={plate.credit.licenseUrl} rel="noopener noreferrer">{plate.credit.license}</a>, edited
+    </p>
+    </>
   );
 }

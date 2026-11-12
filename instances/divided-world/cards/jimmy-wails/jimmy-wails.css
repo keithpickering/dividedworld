@@ -62,6 +62,12 @@
   font-size: max(11px, calc(var(--dw-jw-size) * 0.5));
   margin-block-start: 0.6em;
 }
+/* The photograph's credit (Banner.tsx): under the picture, on the board, small and quiet. Its links keep the board's link color and underline. */
+.dw-jw-credit {
+  margin: 0.25em 0 0;
+  font-size: var(--kb-size-small);
+  color: var(--kb-board-muted);
+}
 
 .dw-jw-carousel {
   display: block;
