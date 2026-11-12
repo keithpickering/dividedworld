@@ -2275,8 +2275,11 @@ export interface KayfaApi {
   /* Signing in: passwordless, through the account function only, in the same words for every address. */
   session(): Promise<Session>;
   onSession(listener: (s: Session) => void): () => void;
-  requestCode(email: string, invite: string | null): Promise<Answer<{ readonly message: string; readonly invite?: string }>>;
+  /** `next` is the path the player came from, which the emailed link carries back; the server drops one that is not a path on the site. */
+  requestCode(email: string, invite: string | null, next: string | null): Promise<Answer<{ readonly message: string; readonly invite?: string }>>;
   verifyCode(email: string, code: string): Promise<Answer<{ readonly account: boolean; readonly why?: string }>>;
+  /** The link in the same email as the code: `tokenHash` is the `token_hash` the link carries, and a good one signs in exactly as the code does (the same `account`, the same `why`); a link that does not work is refused with field `link`. */
+  verifyLink(tokenHash: string): Promise<Answer<{ readonly account: boolean; readonly why?: string }>>;
   openAccount(invite: string | null): Promise<Answer<{ readonly opened: boolean }>>;
   signOut(): Promise<void>;
   /** The address the session signed in with, the player's own, for Settings › Account; null signed out. */

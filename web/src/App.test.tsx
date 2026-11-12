@@ -2,7 +2,7 @@ import { act, cleanup, render, screen, waitFor, within } from '@testing-library/
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { ReadFailure } from '../../engine/ui/data/api.ts';
-import { createFake } from '../../engine/ui/data/fake.ts';
+import { createFake, TEST_LINK } from '../../engine/ui/data/fake.ts';
 import { instance } from '../../instances/divided-world/index.ts';
 import { instanceUi } from '../../instances/divided-world/ui/index.ts';
 import { App, ESTIMATE_WAIT_MS, NO_MENU } from './App.tsx';
@@ -511,7 +511,7 @@ describe('the welcome', () => {
     const invite = await fake.createInvite();
     if (!invite.ok) throw new Error('the host could not invite');
     fake.signInAs(null);
-    await fake.requestCode('new@example.test', null);
+    await fake.requestCode('new@example.test', null, null);
     await fake.verifyCode('new@example.test', '123456');
     window.history.pushState(null, '', '/');
     return { fake, code: invite.value.code };
@@ -908,5 +908,139 @@ describe('the crossing', () => {
     expect(screens[0]!.querySelector('h1')).not.toHaveTextContent(/Settings/u);
     expect(screen.getAllByRole('main')).toHaveLength(1);
     await waitFor(() => expect(document.querySelectorAll('.kb-glass-screen')).toHaveLength(1), { timeout: 3000 });
+  });
+});
+
+/*
+ * The emailed link, through the real shell. The press changes the session's account, which starts the routed screen afresh (Shell, above);
+ * the screen's link in hand must outlive that, so "You are signed in as ..." shows and nothing moves on until Continue.
+ */
+describe('The emailed link, through the app', () => {
+  const linked = async (next: string | null) => {
+    const fake = createFake({ instance, settings: fallbackSettings });
+    seedDemo(fake);
+    await fake.signOut();
+    fake.seed.account('known', { email: 'known@example.test' });
+    await fake.requestCode('known@example.test', null, next);
+    return fake;
+  };
+
+  test('the press shows the signed-in sentence and moves on only at Continue', async () => {
+    const fake = await linked('/settings');
+    window.history.pushState(null, '', `/sign-in?next=%2Fsettings#token_hash=${TEST_LINK}`);
+    render(<App api={fake} />);
+    await screen.findByText('This link signs you in. It works once.');
+    await waitFor(() => expect(window.location.hash).toBe(''));
+    await userEvent.click(screen.getByRole('button', { name: /^Sign in$/u }));
+    expect(await screen.findByText('You are signed in as known@example.test.')).toBeInTheDocument();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(window.location.pathname).toBe('/sign-in');
+    expect(screen.getByText('You are signed in as known@example.test.')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    await waitFor(() => expect(window.location.pathname).toBe('/settings'));
+    expect(window.location.href).not.toContain(TEST_LINK);
+  });
+
+  test('a link left in hand never revives a panel on a later visit', async () => {
+    const fake = await linked(null);
+    window.history.pushState(null, '', `/sign-in#token_hash=${TEST_LINK}`);
+    render(<App api={fake} />);
+    await screen.findByText('This link signs you in. It works once.');
+    /* Leave for the board, then come back by the HUD's Sign in: the address has no fragment, and the old token is not what the page shows. */
+    await userEvent.click(screen.getByRole('link', { name: 'Back to the board' }));
+    /* The glass that left is held for its exit (and would be the same screen again if the move were undone in that time); the visit is a later one once it is gone. */
+    await waitFor(() => expect(Array.from(document.querySelectorAll<HTMLElement>('[data-kb-world]')).map((e) => e.dataset.kbWorld)).toEqual(['board']), { timeout: 5000 });
+    await userEvent.click(await within(await screen.findByRole('region', { name: 'Game HUD' })).findByRole('link', { name: 'Sign in' }));
+    expect(await screen.findByLabelText('Email address')).toBeInTheDocument();
+    expect(screen.queryByText('This link signs you in. It works once.')).toBeNull();
+  });
+
+  test('a link opened by an in-app move from a board page keeps its signed-in sentence through the press', async () => {
+    const fake = await linked('/settings');
+    window.history.pushState(null, '', '/');
+    render(<App api={fake} />);
+    await screen.findByRole('region', { name: 'Game HUD' });
+    /* A move inside the app, from a board page to the link's address, crosses worlds: both hold the routed screen until the old one is released. */
+    act(() => { window.history.pushState(null, '', `/sign-in?next=%2Fsettings#token_hash=${TEST_LINK}`); window.dispatchEvent(new PopStateEvent('popstate')); });
+    await screen.findByText('This link signs you in. It works once.');
+    await waitFor(() => expect(Array.from(document.querySelectorAll<HTMLElement>('[data-kb-world]')).map((e) => e.dataset.kbWorld)).toEqual(['glass']), { timeout: 5000 });
+    await userEvent.click(screen.getByRole('button', { name: /^Sign in$/u }));
+    expect(await screen.findByText('You are signed in as known@example.test.')).toBeInTheDocument();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(window.location.pathname).toBe('/sign-in');
+    expect(screen.getByText('You are signed in as known@example.test.')).toBeInTheDocument();
+  });
+
+  test('an in-app move to the other screen sets the link aside: the ordinary form, no panel, nothing spent', async () => {
+    const fake = await linked(null);
+    const verify = vi.spyOn(fake, 'verifyLink');
+    window.history.pushState(null, '', `/sign-in#token_hash=${TEST_LINK}`);
+    render(<App api={fake} />);
+    await screen.findByText('This link signs you in. It works once.');
+    await userEvent.click(within(screen.getByRole('complementary', { name: 'Other ways in' })).getByRole('link', { name: 'Register' }));
+    await waitFor(() => expect(window.location.pathname).toBe('/register'));
+    expect(await screen.findByLabelText('Email address')).toBeInTheDocument();
+    /* The screen that is leaving is held for its exit: the page settles on the one world's form alone. */
+    await waitFor(() => expect(screen.queryByText(/This link/u)).toBeNull(), { timeout: 5000 });
+    expect(screen.queryByText('This link signs you in, and finishes signing you up if you are new. It works once.')).toBeNull();
+    expect(verify).not.toHaveBeenCalled();
+  });
+
+  test('Not you? Sign out shows the signed-out form and never the false "You are signed in."', async () => {
+    const fake = await linked(null);
+    window.history.pushState(null, '', `/sign-in#token_hash=${TEST_LINK}`);
+    render(<App api={fake} />);
+    /* The backend's answer for a session with no account is a refusal, as the real one's is (the fake's is an empty address). */
+    const real = fake.signInAddress.bind(fake);
+    vi.spyOn(fake, 'signInAddress').mockImplementation(async () => { const a = await real(); if (a === null) throw new Error('not signed in'); return a; });
+    /* The session's change reaches the app before the sign-out call answers, as a real backend's auth event can: the screen starts afresh while the call is still awaited. */
+    const realOut = fake.signOut.bind(fake);
+    vi.spyOn(fake, 'signOut').mockImplementation(async () => { await realOut(); await new Promise((r) => setTimeout(r, 100)); });
+    await screen.findByText('This link signs you in. It works once.');
+    await userEvent.click(screen.getByRole('button', { name: /^Sign in$/u }));
+    expect(await screen.findByText('You are signed in as known@example.test.')).toBeInTheDocument();
+    /* Even a sentence that only flashes is seen: every change of the page is checked for the fallback. */
+    let flashed = false;
+    const watch = new MutationObserver(() => { if (/You are signed in\.(?!\w)/u.test(document.body.textContent ?? '')) flashed = true; });
+    watch.observe(document.body, { subtree: true, childList: true, characterData: true });
+    await userEvent.click(screen.getByRole('button', { name: 'Not you? Sign out' }));
+    expect(await screen.findByLabelText('Email address')).toBeInTheDocument();
+    await new Promise((r) => setTimeout(r, 200));
+    watch.disconnect();
+    expect(flashed).toBe(false);
+    expect((await fake.session()).account).toBeNull();
+    expect(screen.queryByText(/You are signed in/u)).toBeNull();
+    expect(window.location.pathname).toBe('/sign-in');
+  });
+
+  test('a refused link shows the form with the refusal, and a screen started afresh brings no panel back', async () => {
+    const fake = await linked(null);
+    window.history.pushState(null, '', '/sign-in#token_hash=aaaaaaaaaaaaaaaaaaaa');
+    render(<App api={fake} />);
+    await userEvent.click(await screen.findByRole('button', { name: /^Sign in$/u }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('that link does not work, or it has expired: ask for a new code');
+    expect(screen.getByLabelText('Email address')).toBeInTheDocument();
+    expect(screen.queryByText('This link signs you in. It works once.')).toBeNull();
+  });
+
+  test('a link that opens no account shows the way on, and no panel returns', async () => {
+    const fake = createFake({ instance, settings: { ...fallbackSettings, registrationMode: 'closed' } });
+    seedDemo(fake);
+    await fake.signOut();
+    await fake.requestCode('new@example.test', null, null);
+    window.history.pushState(null, '', `/register#token_hash=${TEST_LINK}`);
+    render(<App api={fake} />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Sign in' }));
+    await waitFor(() => expect(screen.queryByText('This link signs you in, and finishes signing you up if you are new. It works once.')).toBeNull());
+    expect(screen.queryByLabelText('Email address')).toBeNull();
+    expect(screen.getByRole('heading', { name: /./u, level: 2 })).toBeInTheDocument();
+  });
+
+  test('a signed-in player who opens /sign-in with no link is moved on at once', async () => {
+    const fake = createFake({ instance, settings: fallbackSettings });
+    seedDemo(fake);
+    window.history.pushState(null, '', '/sign-in?next=%2Fsettings');
+    render(<App api={fake} />);
+    await waitFor(() => expect(window.location.pathname).toBe('/settings'));
   });
 });

@@ -12,6 +12,7 @@
  * outright; its failures may differ in time) is Auth's, measured on the owner's test project (#3).
  */
 import { runAccount } from './core.ts';
+import { mailTheme } from '../_shared/instance.ts';
 import { gotrue } from '../_shared/gotrue.ts';
 import { postgrest } from '../_shared/rpc.ts';
 import { CORS, boundedJson, environment } from '../_shared/serve.ts';
@@ -32,6 +33,7 @@ Deno.serve(async (request) => {
     service: postgrest({ url: env.url, key: env.secret }),
     player: (token) => postgrest({ url: env.url, key: env.publishable, bearer: token }),
     clock,
+    site: mailTheme.site,
   }, body);
   if (out.later) {
     const work = out.later().catch((e) => console.error('account work after the answer threw', e));
