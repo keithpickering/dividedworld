@@ -37,6 +37,8 @@ let clock = 0;
 const step = (t: number) => { clock = t; const run = frames; frames = []; for (const f of run) f(t); };
 /** Runs a frame at each time from `from` to `to`, `every` ms apart, whenever one was asked for. */
 const play = (from: number, to: number, every = 50) => { for (let t = from; t <= to; t += every) step(t); };
+/** Runs frames at `t` until none is asked for; a watcher that keeps asking is a failure on an assertion, not a hang. */
+const drain = (t: number, limit = 100) => { for (let n = 0; frames.length; n++) { if (n >= limit) assert.fail(`the watcher still asks for frames after ${limit}`); step(t); } };
 const flush = async () => { for (let i = 0; i < 5; i++) await Promise.resolve(); };
 const emit = (type: string, e: unknown = {}) => { for (const f of [...(listeners.get(type) ?? [])]) f(e); };
 const count = () => [...listeners.values()].reduce((n, s) => n + s.size, 0);
@@ -259,19 +261,21 @@ test('quiet with a take\'s length resolved 400ms later holds until 400 + (3000 -
   assert.ok(log.voices[0]!.gains.slice(before).every((g) => g === 0), 'held past the 1200ms, to the tail');
   step(4150);
   close(lastGain(log), 0.35, 'the tail begins: raised');
-  /* A second quiet: the first's late answer counts for nothing. */
-  const other = made(); const f = el(AT_LINE());
-  let late: (v: { lengthMs: number } | null) => void = () => {};
-  clock = 5000;
-  quiet(new Promise((r) => { late = r; }), 250);
-  place(other, 'cheer', f);
-  clock = 5000; quiet(new Promise((r) => { late = r; }), 250);
-  const first = late;
+  /* Later quiets: an earlier quiet's late answer counts for nothing, however long its take. */
+  let lateA: (v: { lengthMs: number } | null) => void = () => {};
+  let lateB: (v: { lengthMs: number } | null) => void = () => {};
+  clock = 5000; quiet(new Promise((r) => { lateA = r; }), 250);
+  clock = 5050; quiet(new Promise((r) => { lateB = r; }), 250);
   clock = 5100; quiet(undefined, 250);
   assert.equal(__inspect().quietUntil, 5100 + QUIET_MS);
-  clock = 5200; first({ lengthMs: 90000 });
+  const held = log.voices[0]!.gains.length;
+  clock = 5200; lateA({ lengthMs: 90000 }); lateB({ lengthMs: 90000 });
   await flush();
-  assert.equal(__inspect().quietUntil, 6300, 'the late answer of an earlier quiet changed nothing');
+  assert.equal(__inspect().quietUntil, 6300, 'the late answers of earlier quiets changed nothing');
+  play(5250, 6250);
+  assert.ok(log.voices[0]!.gains.slice(held).every((g) => g === 0), 'held at nothing for the last quiet');
+  step(6300);
+  close(lastGain(log), 0.35, 'raised when the last quiet alone ends, not held for the late answers');
 });
 
 test('quiet with { lengthMs: NaN }, null, a non-positive length or a rejection holds for 1200ms; a rejection is reported once', async () => {
@@ -465,7 +469,7 @@ test('a busy page: 1,200 places cost one observer and three listeners, no frame 
   for (let n = 0; n < 6; n++) FakeObserver.all[0]!.see(els[n]);
   step(1000);
   assert.equal(nearMeasured, 6, 'one frame measures the six near places and no other');
-  while (frames.length) step(1000);
+  drain(1000);
   nearMeasured = 0;
   step(2000); step(3000);
   assert.equal(frames.length, 0, 'a still page asks for no frame');
