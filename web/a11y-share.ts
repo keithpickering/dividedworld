@@ -12,15 +12,14 @@
 export type Part = { index: number; of: number };
 
 /**
- * What `A11Y_PART` says: "3/8" is part 3 of 8. Not set is no part, which is the whole sweep (the file run with no
- * project, or by a config with no parts). Anything else throws: a part misread as "nothing" would sweep no story and
- * stay green.
+ * What `A11Y_PART` says: "3/8" is part 3 of 8, and "1/1" is the whole sweep. Anything else throws, not set included:
+ * a part misread as "nothing" would sweep no story and stay green, and a part that never reached the worker, read as
+ * "every story", would have each run sweep them all, green and as many times the work as there are parts.
  */
-export function readPart(text: string | undefined): Part | null {
-  if (text === undefined || text === '') return null;
-  const m = /^([1-9]\d*)\/([1-9]\d*)$/u.exec(text);
+export function readPart(text: string | undefined): Part {
+  const m = /^([1-9]\d*)\/([1-9]\d*)$/u.exec(text ?? '');
   const part = m ? { index: Number(m[1]), of: Number(m[2]) } : null;
-  if (!part || part.index > part.of) throw new Error(`A11Y_PART is ${JSON.stringify(text)}; it must be "i/n" with 1 <= i <= n, e.g. "3/8"`);
+  if (!part || part.index > part.of) throw new Error(`A11Y_PART is ${JSON.stringify(text)}; it must be "i/n" with 1 <= i <= n, e.g. "3/8" (vitest.config.ts sets it for each part)`);
   return part;
 }
 
@@ -28,7 +27,6 @@ export function readPart(text: string | undefined): Part | null {
  * This part's share of `items`: every `of`-th one, starting at `index`. Dealt like cards and never cut into runs,
  * because the list is in story order and one board's stories are slow together.
  */
-export function share<T>(items: readonly T[], part: Part | null): T[] {
-  if (!part) return [...items];
+export function share<T>(items: readonly T[], part: Part): T[] {
   return items.filter((_, i) => i % part.of === part.index - 1);
 }

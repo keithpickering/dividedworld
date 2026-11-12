@@ -28,9 +28,9 @@ describe('share', () => {
     expect(share(all, { index: 8, of: 8 })).toEqual(['Story 007', 'Story 015']);
   });
 
-  test('no part given is the whole list', () => {
+  test('one part of one is the whole list', () => {
     const all = names(5);
-    expect(share(all, null)).toEqual(all);
+    expect(share(all, { index: 1, of: 1 })).toEqual(all);
   });
 });
 
@@ -39,9 +39,9 @@ describe('readPart', () => {
     expect(readPart('3/8')).toEqual({ index: 3, of: 8 });
   });
 
-  test('nothing set is no part: the file run by itself sweeps every story', () => {
-    expect(readPart(undefined)).toBeNull();
-    expect(readPart('')).toBeNull();
+  /* A part that did not reach the worker must not read as "every story": eight runs would each sweep them all, green and eight times the work. */
+  test.each([undefined, ''])('refuses %j: the sweep always runs as a part', (text) => {
+    expect(() => readPart(text)).toThrow(/A11Y_PART/u);
   });
 
   test.each(['0/8', '9/8', '3', '3/0', 'a/b', '3/8/1', ' 3/8', '-1/8', '1.5/8'])('refuses %j rather than sweep nothing', (text) => {

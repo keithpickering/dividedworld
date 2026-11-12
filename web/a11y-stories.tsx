@@ -1,6 +1,6 @@
 /**
- * Every Storybook story in its fake world, for the two tests that hold them: web/a11y.test.tsx (no axe violation, a
- * part of the stories a run) and web/a11y-screens.test.tsx (each screen has a story that shows it).
+ * Every Storybook story in its fake world, for the two tests that hold them: web/a11y.test.tsx (no axe violation, each
+ * run its part of the stories) and web/a11y-screens.test.tsx (each screen has a story that shows it).
  *
  * The composition root's: it imports the preview, which hands the stories an instance's look and words, so it lives in
  * web/ and not in engine/ui/ (the engine never knows an instance; the pure check, engine/ui/a11y.ts, and its poisoned

@@ -4,7 +4,7 @@
  *
  * A story is about a second of axe, and a test file runs on one worker, so vitest.config.ts runs this file once per
  * part, each on a worker of its own, with `A11Y_PART` saying which part ("3/8"); a run takes its share of the stories
- * (web/a11y-share.ts), and the parts between them take every story once. Run with no part, it sweeps them all.
+ * (web/a11y-share.ts), and the parts between them take every story once. It refuses to run with no part.
  */
 import { describe, expect, test } from 'vitest';
 import { axeViolations, describeViolations } from '../engine/ui/a11y.ts';

@@ -56,8 +56,9 @@ ends a hang.
 
 Model: inline
 
-- `web/a11y-share.ts`: `readPart(text)` reads `"i/n"` (not set is no part, the whole sweep; anything else throws,
-  because a part misread as nothing would sweep no story and stay green); `share(items, part)` deals every n-th item.
+- `web/a11y-share.ts`: `readPart(text)` reads `"i/n"` and throws on anything else, not set included (a
+  part misread as nothing would sweep no story and stay green; one read as everything would sweep all of them in
+  every run, which the quality review found); `share(items, part)` deals every n-th item.
 - `web/a11y-share.test.ts`, first: every item is in exactly one part, for several n and lengths; sizes within one;
   neighbors go to different parts; `readPart` refuses each malformed value.
 
