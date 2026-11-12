@@ -6,7 +6,7 @@
  *
  * Three fields. "They say…" is a phrase in the quoting post's own words, locked and filled with the card's own phrase for a card that has one.
  * "They quote…" is a passage of the post being set, typed or selected in a read-only view of the post's visible words (the same words the rules
- * match it against) in the form itself, with no modal. "Who" is Anyone, Only these or Anyone but these; the two lists are chosen with the board
+ * match it against; `PostWords`, the card settings' own piece) in the form itself, with no modal. "Who" is Anyone, Only these or Anyone but these; the two lists are chosen with the board
  * search's character box (`GlassCombobox` over `charactersSource`, which suggests debuted characters by id and name and nothing about who owns
  * one), each choice a removable chip, at most five.
  *
@@ -19,6 +19,7 @@ import type { Id } from '../data/api.ts';
 import { GlassButton } from '../glass/Button.tsx';
 import { GlassCombobox } from '../glass/GlassCombobox.tsx';
 import { charactersSource } from '../search/suggest.ts';
+import { PostWords } from './config/PostWords.tsx';
 import { shortQuote, whoWords } from './lens-words.ts';
 
 export type WhoMode = 'anyone' | 'only' | 'except';
@@ -113,28 +114,17 @@ export function SetConditions({ id, open, onToggle, draft, onChange, lockedSays,
   const [boxKey, setBoxKey] = useState(0);
   const next = useRef<Next>(null);
   const root = useRef<HTMLFieldSetElement>(null);
-  const view = useRef<HTMLDivElement>(null);
   const latest = useRef({ draft, onChange });
   latest.current = { draft, onChange };
 
-  /* A selection inside the post's view fills "They quote…", made by a pointer or a phone's handles (a focused, non-editable block takes no keyboard selection, so typing is the keyboard's way). One that runs past the block's edges is said so and taken from nowhere. */
-  useEffect(() => {
-    if (!open) return;
-    const read = () => {
-      const el = view.current;
-      const selection = document.getSelection();
-      if (!el || !selection || selection.rangeCount === 0 || selection.isCollapsed) return;
-      const range = selection.getRangeAt(0);
-      if (!el.contains(range.commonAncestorContainer)) { setSpill(range.intersectsNode(el)); return; }
-      setSpill(false);
-      const { text, cut } = passageOf(range.toString());
-      if (text === '') return;
-      setPicked(cut);
-      if (text !== latest.current.draft.passage) latest.current.onChange({ ...latest.current.draft, passage: text });
-    };
-    document.addEventListener('selectionchange', read);
-    return () => document.removeEventListener('selectionchange', read);
-  }, [open]);
+  /* A selection inside the post's words fills "They quote…": its first line, at most the rules' bound. */
+  const pick = (selected: string) => {
+    setSpill(false);
+    const { text, cut } = passageOf(selected);
+    if (text === '') return;
+    setPicked(cut);
+    if (text !== latest.current.draft.passage) latest.current.onChange({ ...latest.current.draft, passage: text });
+  };
 
   /* Focus moves on after a chip is added or removed, once the new list is drawn. */
   useEffect(() => {
@@ -220,10 +210,8 @@ export function SetConditions({ id, open, onToggle, draft, onChange, lockedSays,
               Select words below with a pointer or by touch, or type them. At most {SET_PHRASE_MOST} characters.{spill ? ' Your selection went past the post\'s words, so nothing was taken. Select inside them.' : ''}{picked === 'line' ? ' A passage is one line, so only the first line of your selection was kept.' : picked === 'length' ? ` A passage is at most ${SET_PHRASE_MOST} characters, so the rest of your selection was left out.` : ''}
             </p>
             <p id={why('passage')} className="kb-play-why" role="status">{problems.passage ?? ''}</p>
-            {/* Read-only, and in the tab order so its scroll can be reached; a selection in it (by pointer or touch; typing is always possible) fills the field above. */}
-            <div className="kb-play-post-frame kb-glass-cut-panel">
-              <div ref={view} className="kb-play-post" data-kb-post-words role="group" aria-label="The post's words" tabIndex={0}>{words}</div>
-            </div>
+            {/* Read-only, and in the tab order so its scroll can be reached; a selection in it (by pointer or touch; typing is always possible) fills the field above. One that runs past its edges is said so and taken from nowhere. */}
+            <PostWords words={words} within={root} onSpill={setSpill} onSelect={pick} />
           </div>
 
           <fieldset className="kb-play-choice kb-play-when-field">

@@ -18,15 +18,19 @@
  * a sideways swipe or a press held 180ms wipes, a tap washes a dab, and a second finger is the page's. Pointer events of type touch
  * are ignored, so a finger is never read twice.
  *
- * What is the model and what is drawn. A layer's ink is the seeded splat less the strokes washed on it
- * (scrub.ts `LayerInk`), which is geometry and costs no canvas, so which layer a stroke scrubs, how much
- * of a layer is washed and which lines of text lie under ink are answered without reading a pixel,
- * each screen's own. The author's pen strokes (written back in a layer's ink) are that layer's ink
- * like the splat: a reader's stroke scrubs them on their screen, a line under one is hidden from a screen reader,
- * and the layers above them cover them. The canvas (paint.ts) only draws that model, and only for a post near
- * the viewport: a page can hold many splatted posts and a canvas is megabytes. The grids the model keeps
- * are let go with it (a post that has left holds only the strokes made on this screen) and are built
- * again when it returns.
+ * What is the model and what is drawn. The model is the field (docs/plans/2026-11-12-whoops-ink-field-design.md): a layer's ink is
+ * the seeded splat's field with each stroke's operation applied in the order made (`LayerInk`, scrub.ts), one implementation in
+ * field.ts shared with the painter, so which layer a stroke scrubs, how much of a layer is washed and which lines of text lie
+ * under ink are answered without reading a pixel, each screen's own. A wash takes some of the field each pass (`WASH_TAKES`), so a
+ * thin arm clears in a pass and a core takes several; a pen adds to the field and melts into it, with a bulb at its end and
+ * drops from a quick lift. The author's pen strokes (written back in a layer's ink) are that layer's ink like the splat: a reader's
+ * stroke scrubs them on their screen, a line under one is hidden from a screen reader, and the layers above them cover them. A
+ * stroke's points are packed when saved (points.ts). The canvas only shows the model, and only for a post near the viewport: a page
+ * can hold many splatted posts and a canvas is megabytes. A layer's picture is its build (build.ts): made on the spot when the
+ * layer is light and in a worker when it is heavy, with a stand-in (paint.ts `paintStandIn`) drawn meanwhile, and a stroke made
+ * while a build is out is applied to it once it arrives. Live strokes then go into the layer's grid and only the rectangle they
+ * changed is shaded again. A layer washed clean lets its picture go once it has faded (at once under reduced motion). The grids are let go with the post (a post that has
+ * left holds only the strokes made on this screen) and are built again when it returns.
  *
  * Whose strokes. A stroke scrubs the top layer that still has ink where it starts. A reader's strokes
  * are kept in this component's memory only, so a reload brings the ink back. The post author's are
@@ -53,11 +57,15 @@ import type { CardPlay, CardView, EffectProps, KitControl } from '../../../../en
 import { HOLD_MS, MAX_SAVE_RETRIES, RETRY_AFTER_MS, SLOP_PX, SUPPRESS_MS, overInk, swipeKind } from '../wiping.ts';
 import { cursor, type CursorMode } from './cursor.ts';
 import { readLines } from './lines.ts';
-import { MAX_CANVAS_PX, MAX_DPR, paint, paintSplat, type Geometry, type PaintLayer } from './paint.ts';
+import { MAX_CANVAS_PX, MAX_DPR, holdStandIns, paint, paintSplat, paintStandIn, shadeField, type Geometry, type PaintLayer, type PixelsOut } from './paint.ts';
+import { DROPS_MOST, beginLine, strokesInto, unionRect, type Grid, type Line, type Rect } from './field.ts';
+import { gridOf, layerKey, type Built } from './build.ts';
+import { buildClient } from './buildClient.ts';
 import {
-  BRUSH_PX, LayerInk, PEN_PX, ROW_PX, SWEEP_BRUSH_ROWS, bandsOf, brushOf, coveredLines, fits, fitStroke, minStepOf, sweepStep, topLayer,
-  type Pt, type Stroke, type Sweep, type TextLine,
+  BRUSH_PX, LayerInk, type LiveLine, PEN_PX, ROW_PX, SWEEP_BRUSH_ROWS, bandsOf, brushOf, coveredLines, fits, fitStroke, minStepOf, sweepStep, topLayer,
+  type Drops, type Pt, type Stroke, type Sweep, type TextLine,
 } from './scrub.ts';
+import { decodePoints, packStroke } from './points.ts';
 import { luminance, makeSplat, type Box, type Splat } from './splat.ts';
 import * as suds from './suds.ts';
 import './whoops.css';
@@ -107,22 +115,30 @@ function seedOf(play: CardPlay): number {
   return h;
 }
 
-const isPoint = (p: unknown): p is Pt => Array.isArray(p) && p.length === 2 && typeof p[0] === 'number' && typeof p[1] === 'number';
-
 /**
- * A play's saved state, read defensively: the server checked it, but a state is data from outside. A stroke saved before strokes kept
- * their proportions (no `aspect`), or one with a point outside the box, is dropped, as a malformed one is.
+ * A play's saved state, read defensively: the server checked it, but a state is data from outside. Points are packed (points.ts). A stroke saved before strokes kept
+ * their proportions (no `aspect`), in the old array shape, or with a point that does not decode, is dropped, as a malformed one is.
  */
-function savedOf(saved: unknown): { strokes: Stroke[]; clean: boolean } {
+export function savedOf(saved: unknown): { strokes: Stroke[]; clean: boolean } {
   const state = typeof saved === 'object' && saved !== null ? (saved as Record<string, unknown>) : undefined;
   const raw = state?.strokes;
   const strokes: Stroke[] = [];
   if (Array.isArray(raw)) {
     for (const s of raw as Record<string, unknown>[]) {
       if (typeof s !== 'object' || s === null || typeof s.width !== 'number' || !(s.width > 0) || typeof s.aspect !== 'number' || !(s.aspect > 0) || !Number.isFinite(s.aspect)) continue;
-      if (!Array.isArray(s.points) || !s.points.every(isPoint) || !(s.points as Pt[]).every(([x, y]) => x >= 0 && x <= 1 && y >= 0 && y <= 1)) continue;
-      if (s.tool === 'wash') strokes.push({ tool: 'wash', width: s.width, aspect: s.aspect, points: s.points as Pt[] });
-      else if (s.tool === 'ink' && typeof s.color === 'string') strokes.push({ tool: 'ink', color: s.color, width: s.width, aspect: s.aspect, points: s.points as Pt[] });
+      const points = typeof s.points === 'string' ? decodePoints(s.points) : null;
+      if (!points) continue;
+      const before = strokes[strokes.length - 1];
+      const start = points[0]!;
+      /* A piece is joined to the one kept before it only where that one is the line it continues (a dropped stroke between them leaves it a line of its own). */
+      const joins = s.continues === true && before !== undefined && before.tool === s.tool && before.width === s.width && before.aspect === s.aspect
+        && (s.tool !== 'ink' || (before.tool === 'ink' && before.color === s.color))
+        && before.points[before.points.length - 1]![0] === start[0] && before.points[before.points.length - 1]![1] === start[1]
+        /* Only a line's last piece throws drops (the card refuses a piece that goes on after them), so a piece after drops starts a line of its own. */
+        && !(before.tool === 'ink' && before.drops !== undefined);
+      const more = joins ? { continues: true as const } : null;
+      if (s.tool === 'wash') strokes.push({ tool: 'wash', width: s.width, aspect: s.aspect, points, ...more });
+      else if (s.tool === 'ink' && typeof s.color === 'string') strokes.push({ tool: 'ink', color: s.color, width: s.width, aspect: s.aspect, points, ...more, ...(s.drops === 0 || s.drops === 1 || s.drops === 2 || s.drops === 3 ? { drops: s.drops } : null) });
     }
   }
   return { strokes, clean: state?.clean === true };
@@ -132,7 +148,82 @@ function savedOf(saved: unknown): { strokes: Stroke[]; clean: boolean } {
 const canonical = (state: unknown): string => JSON.stringify(savedOf(state));
 
 /** A stroke being made: its brush as the card keeps it (a share of the box's width, and the box's proportions), and its points in shares of the box. */
-interface Live { readonly layer: number; readonly tool: 'wash' | 'ink'; readonly width: number; readonly aspect: number; readonly color: string; readonly points: Pt[]; readonly pointer: number | null; readonly touch?: true }
+interface Live {
+  readonly layer: number; readonly tool: 'wash' | 'ink'; readonly width: number; readonly aspect: number; readonly color: string; readonly points: Pt[]; readonly pointer: number | null; readonly touch?: true;
+  /** Where the pointer was and when (px of the box, the event's time in ms), the last moments of it: the pen's speed at the lift. */
+  readonly trail: Sample[];
+  /** The layer model's open line for this stroke, ended when the stroke is; and the picture's grid's, when the grid is there. Both are made again on a new model or grid (`bindLines`). */
+  line?: LiveLine; gline?: Line; gpic?: Pic;
+}
+
+/** Where the pointer was, in px of the box, and when. */
+export interface Sample { readonly x: number; readonly y: number; readonly t: number }
+
+/** A pen lifted at this speed (px a second) throws a droplet for each time it goes into it, up to `DROPS_MOST`: a bench number the owner may tune (ink-field design, section 4). */
+export const DROPS_SPEED = 900;
+/** The pointer's speed is read over the last this many ms of the stroke. */
+const DROPS_WINDOW_MS = 50;
+
+/**
+ * The droplets a pen throws as it lifts at time `end`: `min(3, floor(speed / DROPS_SPEED))`, the speed being the path it went over the last
+ * 50ms (or its whole span when shorter) in px a second, from the events' own times. A tap, a single point, a pause before the lift,
+ * or no trail, throws none.
+ */
+export function dropsOf(trail: readonly Sample[], end: number): Drops {
+  const first = trail[0];
+  if (!first) return 0;
+  const from = Math.max(end - DROPS_WINDOW_MS, first.t);
+  const span = end - from;
+  if (!(span > 0)) return 0;
+  let path = 0;
+  for (let i = 1; i < trail.length; i++) {
+    const a = trail[i - 1]!, b = trail[i]!;
+    if (b.t <= from || b.t <= a.t) continue;
+    /* A move that began before the window counts only its part inside it. */
+    path += Math.hypot(b.x - a.x, b.y - a.y) * ((b.t - Math.max(a.t, from)) / (b.t - a.t));
+  }
+  return Math.min(DROPS_MOST, Math.floor((path * 1000) / span / DROPS_SPEED)) as Drops;
+}
+
+/**
+ * A layer's picture on this screen (ink-field design, section 5): its build, the grids a live stroke is drawn into beside it, and what
+ * the build did not hold. One is made for a layer when it is first drawn, kept while the post is near, and let go with it. Until the
+ * build arrives (`grid` is null) the layer is drawn by `paintStandIn`.
+ */
+interface Pic {
+  /** What it is for: the seed, ink, box and density. A picture for another is let go. */
+  readonly geo: string;
+  readonly color: string;
+  /** The key the build was asked for with, which a drop cancels. */
+  readonly key: string;
+  readonly box: Box;
+  readonly q: number;
+  /** The field and the washed marks, as a Float32 grid a live stroke goes into by the model's own operations; and the canvas holding the shaded picture. Null until the build arrives. */
+  grid: Grid | null;
+  canvas: HTMLCanvasElement | null;
+  /** Strokes finished since the build was asked for, as the model got them, which the build does not hold: applied to its grid once, when it arrives. */
+  readonly late: Stroke[];
+  /** The rectangle of grid points a stroke has changed since it was last shaded. */
+  dirty: Rect | null;
+}
+
+/**
+ * One buffer shaded rectangles are written into before they are put on a layer's canvas, shared by every layer on the page (a layer keeps
+ * its canvas and its grid, and no pixels of its own): sized to the grid being shaded, and let go when no picture holds a grid.
+ */
+let scratch: PixelsOut | null = null;
+let gridsHeld = 0;
+const scratchFor = (width: number, height: number): PixelsOut => {
+  if (!scratch || scratch.width !== width || scratch.height !== height) scratch = { width, height, data: new Uint8ClampedArray(width * height * 4) };
+  return scratch;
+};
+/** Pixels as an `ImageData` a canvas takes: wrapped where the browser can (no copy), copied where it cannot. */
+function imageOf(ctx: CanvasRenderingContext2D, px: PixelsOut): ImageData {
+  if (typeof ImageData === 'function') return new ImageData(px.data as Uint8ClampedArray<ArrayBuffer>, px.width, px.height);
+  const img = ctx.createImageData(px.width, px.height);
+  img.data.set(px.data);
+  return img;
+}
 
 /** What a finger is doing: waiting to be told apart, wiping, or the page's. */
 interface Gesture { readonly id: number; readonly x0: number; readonly y0: number; cx: number; cy: number; state: 'wait' | 'wipe' | 'page'; timer: ReturnType<typeof setTimeout> | null }
@@ -199,6 +290,8 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
   const [view, setView] = useState<View | null>(null);
   /** How many layers' ink grids are held: none for a post that has left the viewport. */
   const [held, setHeld] = useState(0);
+  /** How many layers' pictures (a build and its grid) are held: none for a post that has left the viewport, and none while a build is out. */
+  const [pictures, setPictures] = useState(0);
 
   /** In the thread the box is the post's whole body (the cell), the frame sits inside it, and the ink runs from the frame out to the body's borders, what the engine lifts drawn in front of it. */
   const bleed = place === 'thread';
@@ -209,6 +302,8 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
   /** This post's key with the suds module, and each layer's painted splat (by seed, color and box), kept while the post is near. */
   const sudsHost = useRef({});
   const painted = useRef(new Map<string, HTMLCanvasElement>());
+  /** Each layer's picture, by layer: its build and the grids beside it, asked for when first drawn and let go with the post. */
+  const pics = useRef<(Pic | null)[]>([]);
 
   /* What the handlers read: the latest of everything, so a handler made once is never stale. */
   const dpr = densityOf(size.box);
@@ -226,6 +321,26 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
   /** The plays with a save on its way, and the state last sent for each (compared as `canonical`, so the server's echo of it is told from news). */
   const sending = useRef(new Set<string>());
   const lastSent = useRef(new Map<string, string>());
+  /** How many of `mine` the save on its way carries: they are in the state the server holds as soon as it is heard, which can be before the save's own answer. */
+  const sentCount = useRef(new Map<string, number>());
+  /**
+   * Every save that got no answer may have been stored: each one's state and how many of `mine` it carried, kept until a save is answered with success.
+   * A saved state heard equal to any of them holds that one's strokes already, so they are neither counted nor sent again (a wash takes some of the field a pass, so a stroke twice is not harmless).
+   * A refusal answers only the save it was given for, so it forgets nothing. Accepted: a stored uncertain save followed by another writer's change (the state heard matches no marker)
+   * counts those strokes twice until the next success.
+   */
+  const unanswered = useRef(new Map<string, { readonly state: string; readonly count: number }[]>());
+  /** The strokes of `mine` that a saved state already holds because an unanswered save carried them, or 0. */
+  const heldBy = (id: string, saved: string): number => (unanswered.current.get(id) ?? []).find((m) => m.state === saved)?.count ?? 0;
+  /**
+   * The strokes made on this screen that the saved state does not hold yet. While a save is on its way its state may be heard before its
+   * answer (another channel); the strokes it carried are then in the saved state and still in `mine`, and must not be counted from both.
+   */
+  const unsavedOf = (id: string, saved: string = canonical(now.current.states[id]?.state)): Stroke[] => {
+    const all = mine.current.get(id) ?? [];
+    if (sending.current.has(id) && saved === lastSent.current.get(id)) return all.slice(sentCount.current.get(id) ?? 0);
+    return all.slice(heldBy(id, saved));
+  };
   /** How many saves in a row have not got through, by play. */
   const failures = useRef(new Map<string, number>());
   /** The state each play's last save from this screen was answered for, and when the server saved it. */
@@ -238,6 +353,8 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
   const cleanedAt = useRef(new Map<string, number>());
   const wasClean = useRef<readonly boolean[] | null>(null);
   const live = useRef<Live | null>(null);
+  /** The sweep's open stroke ("Hold to scrub"), and the line it washes with. */
+  const sweepStroke = useRef<Live | null>(null);
   const textLines = useRef<TextLine[]>([]);
   const paintQueued = useRef(0);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -340,6 +457,131 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
   }, [savedFor]);
   const liveInks = useCallback((): (LayerInk | null)[] => inks.current.map((ink, i) => (cleanOf(i) ? null : ink)), [cleanOf]);
 
+  /* ------------------------------------------------------------- the pictures ---- */
+
+  /*
+   * These are plain functions over refs (a stale one does what a fresh one does), so the callbacks that use them need not list them. A layer's
+   * picture is asked for when the layer is first drawn (`paintNow`), let go when the post leaves or the model is built again (`dropPics`),
+   * and answered by `arrive`. A live stroke goes to the layer's model and, once the grid is there, to the grid by the same operation.
+   */
+  const openStrokes = (): Live[] => [live.current, sweepStroke.current].filter((s): s is Live => s !== null);
+  const protoOf = (s: Live): Stroke => (s.tool === 'wash'
+    ? { tool: 'wash', width: s.width, aspect: s.aspect, points: [] }
+    : { tool: 'ink', color: s.color, width: s.width, aspect: s.aspect, points: [] });
+  const mark = (pic: Pic, rect: Rect) => {
+    if (rect.x1 > rect.x0 && rect.y1 > rect.y0) pic.dirty = pic.dirty ? unionRect(pic.dirty, rect) : rect;
+  };
+  /** The stroke's line on the layer's current model: begun again there, with every point so far (the model was built again since, or this is its first). */
+  const bindInk = (s: Live) => {
+    const ink = inks.current[s.layer];
+    if (!ink) { s.line = undefined; return; }
+    const line = ink.begin(protoOf(s));
+    for (const p of s.points) line.to(p);
+    s.line = line;
+  };
+  /** The stroke's line on the picture's grid, with every point so far. */
+  const bindGrid = (s: Live, pic: Pic) => {
+    if (!pic.grid) return;
+    const line = beginLine(pic.grid, pic.box, protoOf(s));
+    for (const p of s.points) mark(pic, line.to(p));
+    s.gline = line;
+    s.gpic = pic;
+  };
+  const bindLines = (s: Live) => {
+    bindInk(s);
+    s.gline = undefined;
+    s.gpic = undefined;
+    const pic = pics.current[s.layer];
+    if (pic?.grid) bindGrid(s, pic);
+  };
+  const lineTo = (s: Live, p: Pt) => {
+    s.line?.to(p);
+    if (s.gline && s.gpic) mark(s.gpic, s.gline.to(p));
+  };
+  const lineEnd = (s: Live, drops?: number) => {
+    s.line?.end(drops);
+    if (s.gline && s.gpic) mark(s.gpic, s.gline.end(drops));
+  };
+
+  const dropPic = (i: number) => {
+    const pic = pics.current[i];
+    if (!pic) return;
+    pics.current[i] = null;
+    buildClient().cancel(pic.key);
+    if (pic.grid && --gridsHeld === 0) scratch = null;
+    for (const s of openStrokes()) if (s.layer === i) { s.gline = undefined; s.gpic = undefined; }
+  };
+  const dropPics = () => {
+    for (let i = 0; i < pics.current.length; i++) dropPic(i);
+    pics.current = [];
+    setPictures(0);
+  };
+
+  /** The build has arrived for layer `i`: its grid and canvas are kept (the build itself is let go), and what it does not hold is applied to the grid. */
+  const arrive = (i: number, pic: Pic, result: Built) => {
+    if (pics.current[i] !== pic || pic.grid) return;
+    let grid: Grid;
+    try {
+      grid = gridOf(result, pic.box, pic.q);
+    } catch (err) {
+      console.error(err);
+      return;
+    }
+    const canvas = document.createElement('canvas');
+    canvas.width = result.image.width;
+    canvas.height = result.image.height;
+    const ctx = canvas.getContext('2d');
+    if (ctx) ctx.putImageData(imageOf(ctx, result.image), 0, 0);
+    pic.grid = grid;
+    pic.canvas = canvas;
+    gridsHeld++;
+    /* A stroke finished while the build was out is not in it: it goes in now, once. One still open goes on from where it is. */
+    for (const s of pic.late) mark(pic, strokesInto(grid, pic.box, [s]));
+    pic.late.length = 0;
+    for (const s of openStrokes()) if (s.layer === i) bindGrid(s, pic);
+    setPictures(pics.current.filter((p) => p?.grid).length);
+    schedulePaint();
+  };
+
+  /** Asks for layer `i`'s picture: built on the spot when it is light, in the worker when not (the stand-in shows meanwhile). */
+  const requestPic = (i: number, layer: Layer, b: Box, q: number): void => {
+    const id = layer.play.id;
+    const strokes = [...savedFor(id).strokes, ...unsavedOf(id)];
+    /* The build input holds the strokes as saved (simplified), while the model keeps this screen's own strokes at full resolution until its next rebuild: the two differ by under a quarter of a brush, the difference the design accepts (docs/plans/2026-11-12-whoops-ink-field-design.md). */
+    const key = layerKey(id, b, q, strokes);
+    const pic: Pic = { geo: `${layer.seed}|${layer.color}|${b.w}x${b.h}|${q}`, color: layer.color, key, box: b, q, grid: null, canvas: null, late: [], dirty: null };
+    pics.current[i] = pic;
+    try {
+      buildClient().requestBuild(key, { seed: layer.seed, color: layer.color, box: b, density: q, strokes }, (result) => arrive(i, pic, result));
+    } catch (err) {
+      /* The stand-in goes on drawing the layer. */
+      console.error(err);
+    }
+  };
+
+  /** Shades the rectangle a stroke has changed since it was last shaded, and puts that rectangle (and nothing else) on the layer's canvas. */
+  const flushPic = (pic: Pic) => {
+    const r = pic.dirty;
+    pic.dirty = null;
+    if (!r || !pic.grid || !pic.canvas) return;
+    const ctx = pic.canvas.getContext('2d');
+    if (!ctx) return;
+    const { cols, rows } = pic.grid;
+    const out = scratchFor(cols, rows);
+    shadeField(pic.grid, pic.grid.washed, pic.color, pic.q, r, out);
+    /* The shading reads one point past the rectangle for the gradient, so it writes one point past it too. */
+    const x0 = Math.max(0, r.x0 - 1), y0 = Math.max(0, r.y0 - 1), x1 = Math.min(cols, r.x1 + 1), y1 = Math.min(rows, r.y1 + 1);
+    if (x1 > x0 && y1 > y0) ctx.putImageData(imageOf(ctx, out), 0, 0, x0, y0, x1 - x0, y1 - y0);
+  };
+
+  /* Stand-in canvases are held while the post is near, and let go with it (paint.ts `holdStandIns`). */
+  useEffect(() => {
+    if (!near || !built) return;
+    return holdStandIns();
+  }, [near, built]);
+  /* A post that goes lets its builds go: none is waited for, and the grids are let go. */
+  useEffect(() => () => dropPics(), []);
+
   /** Recompute everything a render or a test reads of the model, and what is covered. */
   const refresh = useCallback(() => {
     const all = now.current.layers;
@@ -369,6 +611,7 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
       /* Only the grids and the painted splats go: the strokes made on this screen are in `mine`, the saved ones are in the states, and both come back with the grids. */
       inks.current = [];
       painted.current.clear();
+      dropPics();
       builtFrom.current = null;
       setHeld(0);
       return;
@@ -387,12 +630,12 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
     inks.current = splats.map((splat, i) => {
       const id = layers[i]!.play.id;
       const ink = new LayerInk(splat, savedOf(states[id]?.state).strokes, box);
-      for (const s of mine.current.get(id) ?? []) {
-        if (s.tool === 'wash') ink.wash(s.points, s.width, s.aspect);
-        else ink.pen(s.points, s.width, s.aspect);
-      }
+      ink.add(unsavedOf(id, fromStates.get(id)));
       return ink;
     });
+    /* The pictures were built from the model's last strokes: they are asked for again as the next frame draws them. A stroke open on the old model goes on on the new one. */
+    dropPics();
+    for (const s of openStrokes()) bindInk(s);
     setHeld(inks.current.length);
     const body = layoutRef.current;
     if (body) {
@@ -442,16 +685,38 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
         alpha = reduced || at === undefined ? 0 : Math.max(0, 1 - (performance.now() - at) / FADE_MS);
         if (alpha > 0) fading = true;
       }
-      const strokes = [...savedFor(id).strokes, ...(mine.current.get(id) ?? [])];
+      if (alpha <= 0) {
+        /* A layer that is clean and faded is gone for good: its picture, grid and canvas are let go now, not held until the post leaves. */
+        if (pics.current[i]) {
+          dropPic(i);
+          setPictures(pics.current.filter((p) => p?.grid).length);
+        }
+        return;
+      }
+      /* The layer's picture is its build, asked for here the first time the layer is drawn (a light one is back before the frame is), and kept while the post is near. */
+      const q = Math.min(1, density);
+      if (pics.current[i]?.geo !== `${layer.seed}|${layer.color}|${sz.box.w}x${sz.box.h}|${q}`) {
+        dropPic(i);
+        requestPic(i, layer, sz.box, q);
+      }
+      const pic = pics.current[i];
+      if (pic?.grid && pic.canvas) {
+        flushPic(pic);
+        layersOut.push({ picture: pic.canvas, alpha });
+        return;
+      }
+      /* No build yet: the stand-in, the cached splat with every stroke drawn flat on it, the one under way included. */
+      const strokes = [...savedFor(id).strokes, ...unsavedOf(id)];
       if (stroking && stroking.layer === i) {
         strokes.push(stroking.tool === 'wash'
           ? { tool: 'wash', width: stroking.width, aspect: stroking.aspect, points: stroking.points }
           : { tool: 'ink', color: stroking.color, width: stroking.width, aspect: stroking.aspect, points: stroking.points });
       }
-      if (alpha > 0) layersOut.push({ painted: paintedFor(i, inks.current[i]!, layer.color, layer.seed, sz.box, density), color: layer.color, strokes, alpha });
+      layersOut.push({ picture: paintStandIn({ painted: paintedFor(i, inks.current[i]!, layer.color, layer.seed, sz.box, density), color: layer.color, strokes }, geometry, canvas.width, canvas.height, i), alpha });
     });
     paint(canvas, geometry, layersOut);
     if (fading) schedulePaint();
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- the picture helpers are plain functions over refs
   }, [savedFor, paintedFor]);
 
   const schedulePaint = useCallback(() => {
@@ -510,19 +775,22 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
         continue;
       }
       const kept = [...(mine.current.get(id) ?? [])];
+      /* A saved state that already holds what an unanswered save carried: those strokes are in it, and are not sent on top of it. */
+      const fresh = kept.slice(heldBy(id, canonical(now.current.states[id]?.state)));
       const cleanNow = wantClean.current.has(id);
       const clean = cleanNow || savedFor(id).clean;
-      const all = [...savedFor(id).strokes, ...kept];
+      const all = [...savedFor(id).strokes, ...fresh];
       const room = fits(all);
       /* A layer with no room for more strokes can still be marked clean: the saved strokes go again with the mark, so a post the author washed clean is never left splatted for everyone. */
       if (!room && !cleanNow) {
         say('This layer has no room for more strokes to save. What you wash from here shows on your screen only, but washing it clean still clears it for everyone.');
         continue;
       }
-      const strokes = room ? all : [...savedFor(id).strokes];
+      const strokes = (room ? all : [...savedFor(id).strokes]).map(packStroke);
       const state = clean ? { strokes, clean: true } : { strokes };
       sending.current.add(id);
       lastSent.current.set(id, canonical(state));
+      sentCount.current.set(id, room ? kept.length : 0);
       let answer: Answer<unknown>;
       try {
         answer = await now.current.save(id, state);
@@ -532,6 +800,7 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
       sending.current.delete(id);
       if (!answer.ok) {
         say(answer.error);
+        if (answer.uncertain) unanswered.current.set(id, [...(unanswered.current.get(id) ?? []), { state: lastSent.current.get(id)!, count: sentCount.current.get(id) ?? 0 }]);
         /* A refusal is the card's answer and would be the same again. A save that got no answer is sent again, a little later each time, and given up on after a few: the strokes stay, and the author's next one sends them. */
         const failed = (failures.current.get(id) ?? 0) + 1;
         failures.current.set(id, failed);
@@ -539,6 +808,7 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
         continue;
       }
       failures.current.delete(id);
+      unanswered.current.delete(id);
       const savedAt = (answer.value as { readonly savedAt?: unknown } | null)?.savedAt;
       if (typeof savedAt === 'string') acked.current.set(id, { state, savedAt });
       say('');
@@ -593,16 +863,25 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
     return cleared;
   }, [cleanOf, queueSave]);
 
-  /** A finished stroke is kept: in memory for a reader, and also to be saved for the author. */
-  const keep = useCallback((s: Live) => {
+  /**
+   * A stroke ends: its lines on the model and the grid are lifted (a pen's `drops` with them), it is kept (in memory for a reader, and
+   * also to be saved for the author, simplified and cut by `fitStroke`, with its drops on the last piece), and, where the layer's
+   * picture is still being built, the stroke is queued on it as the model has it, to be applied once to the grid that arrives.
+   */
+  const conclude = useCallback((s: Live, lifted?: number) => {
+    const drops: Drops | undefined = s.tool === 'ink' ? (lifted === undefined ? 0 : dropsOf(s.trail, lifted)) : undefined;
+    lineEnd(s, drops);
     const id = now.current.layers[s.layer]?.play.id;
     if (!id || s.points.length === 0) return;
     const stroke: Stroke = s.tool === 'wash'
       ? { tool: 'wash', width: s.width, aspect: s.aspect, points: s.points }
-      : { tool: 'ink', color: s.color, width: s.width, aspect: s.aspect, points: s.points };
+      : { tool: 'ink', color: s.color, width: s.width, aspect: s.aspect, points: s.points, ...(drops !== undefined ? { drops } : null) };
+    const pic = pics.current[s.layer];
+    if (pic && !pic.grid && !s.gline) pic.late.push(stroke);
     const kept = fitStroke(stroke, minStepOf(now.current.size.box));
     mine.current.set(id, [...(mine.current.get(id) ?? []), ...kept]);
     if (now.current.reader.author) queueSave(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the line helpers are plain functions over refs
   }, [queueSave]);
 
   /* ------------------------------------------------------------------ a stroke ---- */
@@ -641,15 +920,16 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
     return topLayer(lives, p[0], p[1]);
   };
 
-  const finish = useCallback(() => {
+  /** The stroke under way ends; `lifted` is the time of the event that lifted the pen (its speed decides the drops), none for a stroke cut short. */
+  const finish = useCallback((lifted?: number) => {
     const s = live.current;
     live.current = null;
     if (!s) return;
-    keep(s);
+    conclude(s, lifted);
     checkClean();
     refresh();
     schedulePaint();
-  }, [checkClean, keep, refresh, schedulePaint]);
+  }, [checkClean, conclude, refresh, schedulePaint]);
 
   const suppress = useRef(false);
   const suppressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -667,37 +947,49 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
   /** What the drawn cursor shows, kept while a stroke is under way. */
   const shown = useRef<{ mode: CursorMode; ink?: string }>({ mode: null });
 
-  /** Begins a stroke at `p`, on the layer it takes: false when there is none. */
-  const begin = (p: Pt, pointer: number, touch: boolean): boolean => {
+  /**
+   * Begins a stroke at `p`, on the layer it takes: false when there is none, or when a stroke is already live. One hand makes one stroke:
+   * a mouse press while a stroke is live is refused (`onPointerDown`), and a finger is refused the same way, so the stroke under way ends
+   * with its own pointer (its pointerup, or the signs a pointerup was lost: capture lost, the window blurred or hidden, a mouse moving with no button down) and is saved whole. Finishing it for the finger would cut a pen line short on a palm resting on the screen.
+   */
+  const begin = (p: Pt, pointer: number, touch: boolean, t: number = performance.now()): boolean => {
+    if (live.current) return false;
     const layer = layerAt(p);
     if (layer < 0) return false;
     meet();
     const pen = writing();
     const brush = brushOf(pen ? PEN_PX : BRUSH_PX, now.current.size.box);
+    const { box: b } = now.current.size;
+    const trail = [{ x: p[0] * b.w, y: p[1] * b.h, t }];
     live.current = pen
-      ? { layer, tool: 'ink', ...brush, color: now.current.layers[layer]!.color, points: [p], pointer, ...(touch ? { touch: true as const } : null) }
-      : { layer, tool: 'wash', ...brush, color: '', points: [p], pointer, ...(touch ? { touch: true as const } : null) };
-    if (pen) inks.current[layer]!.pen([p], brush.width, brush.aspect);
-    else inks.current[layer]!.wash([p], brush.width, brush.aspect);
+      ? { layer, tool: 'ink', ...brush, color: now.current.layers[layer]!.color, points: [p], pointer, trail, ...(touch ? { touch: true as const } : null) }
+      : { layer, tool: 'wash', ...brush, color: '', points: [p], pointer, trail, ...(touch ? { touch: true as const } : null) };
+    bindLines(live.current);
     suppress.current = false;
     schedulePaint();
     return true;
   };
 
   /** Carries the stroke to `p`: the ink under the brush is washed (or written), and the suds go up. */
-  const extend = (s: Live, p: Pt) => {
+  const extend = (s: Live, p: Pt, t?: number) => {
     const last = s.points[s.points.length - 1]!;
     if (Math.hypot(p[0] - last[0], p[1] - last[1]) === 0) return;
     s.points.push(p);
+    if (s.tool === 'ink' && t !== undefined) {
+      const { box: b } = now.current.size;
+      s.trail.push({ x: p[0] * b.w, y: p[1] * b.h, t });
+      /* Only the last moments are read: what is older than the window, but for the point before it, goes. */
+      while (s.trail.length > 2 && s.trail[1]!.t < t - 2 * DROPS_WINDOW_MS) s.trail.shift();
+    }
     suppress.current = true;
     if (s.tool === 'wash') {
       const over = liveInks().some((ink) => ink?.has(p[0], p[1]));
-      inks.current[s.layer]?.wash([last, p], s.width, s.aspect);
+      lineTo(s, p);
       throwSuds(last, p, over);
       /* A layer that reaches the share clears under the hand; the stroke goes on, and is kept with the mark when it ends. */
       if (checkClean()) refresh();
     } else {
-      inks.current[s.layer]?.pen([last, p], s.width, s.aspect);
+      lineTo(s, p);
     }
     schedulePaint();
   };
@@ -737,7 +1029,7 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
     if (e.pointerType === 'touch' || !now.current.built || live.current || (e.pointerType === 'mouse' && e.button !== 0) || overInk(e.target)) return;
     const [x, y] = shareAt(e.clientX, e.clientY);
     /* No ink under the pointer, or no layer to write in: the page has it, for a link or a scroll. */
-    if (!begin([x, y], e.pointerId, false)) return;
+    if (!begin([x, y], e.pointerId, false, e.timeStamp)) return;
     e.preventDefault();
     (e.currentTarget as Element | null)?.setPointerCapture?.(e.pointerId);
     shown.current = { mode: writing() ? 'pen' : 'sponge', ink: writing() ? live.current!.color : undefined };
@@ -749,7 +1041,11 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
     if (e.pointerType === 'touch') return;
     ensure();
     const s = live.current;
-    if (s && !s.touch && (s.pointer === null || e.pointerId === s.pointer)) extend(s, shareAt(e.clientX, e.clientY));
+    /* A mouse moving with no button down has lost its pointerup (released outside the window, say): the stroke ends here and the move is a hover. */
+    if (s && !s.touch && e.pointerType === 'mouse' && e.buttons === 0 && (s.pointer === null || e.pointerId === s.pointer)) {
+      finish();
+      cursor.press(false);
+    } else if (s && !s.touch && (s.pointer === null || e.pointerId === s.pointer)) extend(s, shareAt(e.clientX, e.clientY), e.timeStamp);
     showCursor(e);
   };
 
@@ -757,12 +1053,23 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
     if (e.pointerType === 'touch') return;
     if (live.current && !live.current.touch && live.current.pointer !== null && e.pointerId !== live.current.pointer) return;
     const was = live.current;
-    finish();
+    /* The pen's speed at the lift is the lift's own time; a cancelled pointer throws nothing. */
+    finish(e.type === 'pointerup' ? e.timeStamp : undefined);
     if (was) {
       cursor.press(false);
       if (e.type === 'pointerup') showCursor(e);
       else if (now.current.surface) cursor.leave(now.current.surface);
     }
+  };
+
+  /** The stroke's pointer was taken from it (capture lost), or the window lost focus or went hidden: no pointerup may come, so a mouse or pen stroke ends here, kept as at any end. */
+  const onStrokeLost = (e?: PointerEvent) => {
+    const s = live.current;
+    if (!s || s.touch) return;
+    if (e && s.pointer !== null && e.pointerId !== s.pointer) return;
+    finish();
+    cursor.press(false);
+    if (now.current.surface) cursor.leave(now.current.surface);
   };
 
   const onPointerLeave = (e: PointerEvent) => {
@@ -821,7 +1128,7 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
     /* Wiping: the page's scroll is refused for the rest of the touch. */
     if (e.cancelable) e.preventDefault();
     const s = live.current;
-    if (s?.touch) extend(s, shareAt(tc.clientX, tc.clientY));
+    if (s?.touch) extend(s, shareAt(tc.clientX, tc.clientY), e.timeStamp);
   };
 
   const onTouchEnd = (e: TouchEvent) => {
@@ -829,12 +1136,12 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
     if (!g || !Array.from(e.changedTouches).some((c) => c.identifier === g.id)) return;
     settle(g);
     /* A tap on the ink washes one dab, as a click does. */
-    if (e.type === 'touchend' && g.state === 'wait') begin(shareAt(g.x0, g.y0), g.id, true);
+    if (e.type === 'touchend' && g.state === 'wait') begin(shareAt(g.x0, g.y0), g.id, true, e.timeStamp);
     /* A lifted finger is followed by a click; a cancelled touch is followed by none, so it clears whatever a wipe left. */
     if (e.type === 'touchcancel') clearSuppress();
     else if (g.state === 'wipe' || g.state === 'wait') armSuppress();
     gesture.current = null;
-    if (live.current?.touch) finish();
+    if (live.current?.touch) finish(e.type === 'touchend' ? e.timeStamp : undefined);
   };
 
   /*
@@ -845,8 +1152,8 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
    */
   const finishNow = useRef(finish);
   finishNow.current = finish;
-  const handlers = useRef({ onPointerDown, onPointerMove, onPointerEnd, onPointerLeave, onTouchStart, onTouchMove, onTouchEnd });
-  handlers.current = { onPointerDown, onPointerMove, onPointerEnd, onPointerLeave, onTouchStart, onTouchMove, onTouchEnd };
+  const handlers = useRef({ onPointerDown, onPointerMove, onPointerEnd, onStrokeLost, onPointerLeave, onTouchStart, onTouchMove, onTouchEnd });
+  handlers.current = { onPointerDown, onPointerMove, onPointerEnd, onStrokeLost, onPointerLeave, onTouchStart, onTouchMove, onTouchEnd };
   useEffect(() => {
     const f = frameRef.current;
     if (!f || still) return;
@@ -875,6 +1182,7 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
       const down = (e: PointerEvent) => { if (mine(el, e)) handlers.current.onPointerDown(e); };
       const move = (e: PointerEvent) => { if (mine(el, e)) handlers.current.onPointerMove(e); };
       const end = (e: PointerEvent) => { if (mine(el, e)) handlers.current.onPointerEnd(e); };
+      const lostCapture = (e: PointerEvent) => { if (mine(el, e)) handlers.current.onStrokeLost(e); };
       const leave = (e: PointerEvent) => { if (mine(el, e)) handlers.current.onPointerLeave(e); };
       const tstart = (e: TouchEvent) => { if (mine(el, e)) handlers.current.onTouchStart(e); };
       const tmove = (e: TouchEvent) => { if (mine(el, e)) handlers.current.onTouchMove(e); };
@@ -884,6 +1192,7 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
       el.addEventListener('pointermove', move);
       el.addEventListener('pointerup', end);
       el.addEventListener('pointercancel', end);
+      el.addEventListener('lostpointercapture', lostCapture);
       el.addEventListener('pointerleave', leave);
       el.addEventListener('touchstart', tstart, { passive: true });
       el.addEventListener('touchmove', tmove, { passive: false });
@@ -895,6 +1204,7 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
         el.removeEventListener('pointermove', move);
         el.removeEventListener('pointerup', end);
         el.removeEventListener('pointercancel', end);
+        el.removeEventListener('lostpointercapture', lostCapture);
         el.removeEventListener('pointerleave', leave);
         el.removeEventListener('touchstart', tstart);
         el.removeEventListener('touchmove', tmove);
@@ -905,7 +1215,14 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
         cursor.leave(el);
       };
     });
+    /* A window that loses focus or is hidden may never send the pointerup (an alt-tab or a dialog mid-stroke). */
+    const away = () => handlers.current.onStrokeLost();
+    const hidden = () => { if (document.hidden) away(); };
+    window.addEventListener('blur', away);
+    document.addEventListener('visibilitychange', hidden);
     return () => {
+      window.removeEventListener('blur', away);
+      document.removeEventListener('visibilitychange', hidden);
       for (const off of offs) off();
       if (gesture.current) { settle(gesture.current); gesture.current = null; }
       /* A stroke under way when the listeners go is the author's work: it is kept and saved as at any end. */
@@ -918,14 +1235,13 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
 
   const sweeping = useRef<{ raf: number; last: number; sweep: Sweep; row: number } | null>(null);
   const sweepFrom = useRef(0);
-  const sweepStroke = useRef<Live | null>(null);
   const sweepRefreshed = useRef(0);
 
   const closeSweepStroke = useCallback(() => {
     const s = sweepStroke.current;
     sweepStroke.current = null;
-    if (s) keep(s);
-  }, [keep]);
+    if (s) conclude(s);
+  }, [conclude]);
 
   const stopSweep = useCallback(() => {
     const run = sweeping.current;
@@ -978,11 +1294,12 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
         if (cur) {
           const last = cur.points[cur.points.length - 1]!;
           cur.points.push(p);
-          inks.current[layer]!.wash([last, p], brush.width, brush.aspect);
+          lineTo(cur, p);
           throwSuds(last, p, true);
         } else {
-          sweepStroke.current = { layer, tool: 'wash', ...brush, color: '', points: [p], pointer: null };
-          inks.current[layer]!.wash([p], brush.width, brush.aspect);
+          const open: Live = { layer, tool: 'wash', ...brush, color: '', points: [p], pointer: null, trail: [] };
+          bindLines(open);
+          sweepStroke.current = open;
           throwSuds(p, p, true);
         }
       }
@@ -1085,6 +1402,7 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
       data-kb-fading={view?.fading ? 'true' : undefined}
       data-kb-place={place}
       data-kb-held={held}
+      data-kb-pictures={pictures}
       data-kb-splat={splats?.map((sp) => `${sp.placement.cx},${sp.placement.cy}`).join(' ')}
     >
       <div ref={frameRef} className="kb-whoops-frame" style={bleed ? { overflow: 'visible' } : undefined}>

@@ -116,9 +116,11 @@ const GLASS = {
   smoke: { field: { layers: [{ seed: 1, scale: 3 }, { seed: 2, scale: 5 }] }, recipes: { page: { colors: [{ color: '#808080', opacity: 0.3 }, { color: '#606070', opacity: 0.2 }] } } },
 };
 const SVG = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><circle cx="32" cy="32" r="30"/></svg>');
+const LINK = '{{ .RedirectTo }}#token_hash={{ .TokenHash }}';
+const page = (href) => `<html><body>Your code is {{ .Token }} <a href="${href}">Press</a></body></html>`;
 const TEMPLATES = [
-  { path: 'supabase/templates/sign-in.html', html: '<html><body>Your code is {{ .Token }}</body></html>' },
-  { path: 'supabase/templates/sign-up.html', html: '<html><body>Confirm at {{ .ConfirmationURL }}</body></html>' },
+  { path: 'supabase/templates/sign-in.html', html: page(LINK) },
+  { path: 'supabase/templates/sign-up.html', html: page(LINK) },
 ];
 
 const ui = 'instances/demo/ui';
@@ -255,6 +257,26 @@ try {
     const args = (await loadRoot(repo('uncommitted'))).map((a) => ({ ...a, templates: a.templates.filter((t) => t.path !== TEMPLATES[1].path) }));
     const faults = args.flatMap((a) => mailFaults(a));
     check('a rendered template absent from the committed list is named', faults.some((x) => /sign-up\.html.*not among the committed/.test(x)), JSON.stringify(faults));
+  }
+
+  /* ---- (6a) the link ---- */
+  {
+    /* The poison is the sign-in template, committed and rendered alike, so only the link fault can name it. */
+    const linked = (name, href, want) =>
+      red(name, (f) => {
+        const t = { path: TEMPLATES[0].path, html: page(href) };
+        f['supabase/functions/_shared/mail/auth.ts'] = `export function authTemplates() { return ${JSON.stringify([t, TEMPLATES[1]])}; }\n`;
+        f[t.path] = t.html;
+      }, want);
+    const link = /sign-in\.html.*button's href.*\{\{ \.RedirectTo \}\}#token_hash=\{\{ \.TokenHash \}\}/;
+    await linked('a template whose button is {{ .ConfirmationURL }}', '{{ .ConfirmationURL }}', /sign-in\.html.*holds \{\{ \.ConfirmationURL \}\}/);
+    await linked('a template whose link has the hash in the query', '{{ .RedirectTo }}?token_hash={{ .TokenHash }}', link);
+    await linked('a template whose link is the site\'s page written out', 'https://dw.test/sign-in#token_hash={{ .TokenHash }}', link);
+    await red('a template that holds {{ .ConfirmationURL }} outside the button', (f) => {
+      const t = { path: TEMPLATES[0].path, html: page(LINK).replace('</body>', '{{ .ConfirmationURL }}</body>') };
+      f['supabase/functions/_shared/mail/auth.ts'] = `export function authTemplates() { return ${JSON.stringify([t, TEMPLATES[1]])}; }\n`;
+      f[t.path] = t.html;
+    }, /sign-in\.html.*\{\{ \.ConfirmationURL \}\}/);
   }
 
   /* ---- (6) Gmail's clip ---- */

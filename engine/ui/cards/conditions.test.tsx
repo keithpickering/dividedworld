@@ -273,6 +273,18 @@ describe('They quote…', () => {
     expect(field).toHaveValue('nice');
   });
 
+  test('a selection left standing in the post while focus is in the passage field does not refill it', async () => {
+    const user = userEvent.setup();
+    const w = world();
+    const dialog = await setBlot(user, w);
+    const group = await openGroup(user, dialog);
+    const field = within(group).getByRole('textbox', { name: 'They quote…' });
+    await user.type(field, 'nice');
+    field.focus();
+    select(dialog, 4, 13);
+    expect(field).toHaveValue('nice');
+  });
+
   test('a passage that is not in the post is refused beside the field, and Set waits', async () => {
     const user = userEvent.setup();
     const w = world();

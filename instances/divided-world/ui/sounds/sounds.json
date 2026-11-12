@@ -3,72 +3,108 @@
     "file": "boo-1.mp3",
     "source": "ElevenLabs Sound Effects",
     "license": "Content generated during a paid subscription can be used commercially, and indefinitely, subject to our [Service-Specific Terms](https://elevenlabs.io/service-specific-terms). Attribution requirement is subject to the agreement you have with ElevenLabs.",
-    "maker": "Divided World"
+    "maker": "Divided World",
+    "lufs": -19.8,
+    "peak": -9.2,
+    "sha256": "acc20a9799de7690cb1de26da0597000e6a4478b18d21ff80569b48226635740"
   },
   {
     "file": "boo-2.mp3",
     "source": "ElevenLabs Sound Effects",
     "license": "Content generated during a paid subscription can be used commercially, and indefinitely, subject to our [Service-Specific Terms](https://elevenlabs.io/service-specific-terms). Attribution requirement is subject to the agreement you have with ElevenLabs.",
-    "maker": "Divided World"
+    "maker": "Divided World",
+    "lufs": -18.4,
+    "peak": -6.8,
+    "sha256": "7313d9ed84bfe6ad84b8290043a1881175c6c0a4ab5856e1268bff340450ce35"
   },
   {
     "file": "boo-3.mp3",
     "source": "ElevenLabs Sound Effects",
     "license": "Content generated during a paid subscription can be used commercially, and indefinitely, subject to our [Service-Specific Terms](https://elevenlabs.io/service-specific-terms). Attribution requirement is subject to the agreement you have with ElevenLabs.",
-    "maker": "Divided World"
+    "maker": "Divided World",
+    "lufs": -12.5,
+    "peak": -1,
+    "sha256": "21765a5a2eb7d5ecb95fa099346a70bdb60a1d4629d0bb6df9a826b98fab74d5"
   },
   {
     "file": "cheer-1.mp3",
     "source": "ElevenLabs Sound Effects",
     "license": "Content generated during a paid subscription can be used commercially, and indefinitely, subject to our [Service-Specific Terms](https://elevenlabs.io/service-specific-terms). Attribution requirement is subject to the agreement you have with ElevenLabs.",
-    "maker": "Divided World"
+    "maker": "Divided World",
+    "lufs": -18.7,
+    "peak": -9.4,
+    "sha256": "97bf769dccdee2ebb2e9d31ae22b28eabf97269ee66779dc0d82c4ca0ba0fbcc"
   },
   {
     "file": "cheer-2.mp3",
     "source": "ElevenLabs Sound Effects",
     "license": "Content generated during a paid subscription can be used commercially, and indefinitely, subject to our [Service-Specific Terms](https://elevenlabs.io/service-specific-terms). Attribution requirement is subject to the agreement you have with ElevenLabs.",
-    "maker": "Divided World"
+    "maker": "Divided World",
+    "lufs": -12.7,
+    "peak": -1,
+    "sha256": "bd4d71ef409c57f84080c8fd52f8c6c41dbd0652a7301818b12cba406859d21b"
   },
   {
     "file": "cheer-3.mp3",
     "source": "ElevenLabs Sound Effects",
     "license": "Content generated during a paid subscription can be used commercially, and indefinitely, subject to our [Service-Specific Terms](https://elevenlabs.io/service-specific-terms). Attribution requirement is subject to the agreement you have with ElevenLabs.",
-    "maker": "Divided World"
+    "maker": "Divided World",
+    "lufs": -15.5,
+    "peak": -5.5,
+    "sha256": "b1bac383f48c696e4a5b8f58cefe5fde1896fa6d662b916c179eae0deded0bf3"
   },
   {
     "file": "grumble.mp3",
     "source": "ElevenLabs Sound Effects",
     "license": "Content generated during a paid subscription can be used commercially, and indefinitely, subject to our [Service-Specific Terms](https://elevenlabs.io/service-specific-terms). Attribution requirement is subject to the agreement you have with ElevenLabs.",
-    "maker": "Divided World"
+    "maker": "Divided World",
+    "lufs": -36.5,
+    "peak": -22.4,
+    "sha256": "6788260a64ca46bd180a8d6914b862fa10e2b3d1b22e566fbfe43f04523edc06"
   },
   {
     "file": "laugh-1.mp3",
     "source": "ElevenLabs Sound Effects",
     "license": "Content generated during a paid subscription can be used commercially, and indefinitely, subject to our [Service-Specific Terms](https://elevenlabs.io/service-specific-terms). Attribution requirement is subject to the agreement you have with ElevenLabs.",
-    "maker": "Divided World"
+    "maker": "Divided World",
+    "lufs": -17,
+    "peak": -6,
+    "sha256": "102f666127fdf281439aec6980008d79a30427f5b2f1f5809c7bdd3e69aec47f"
   },
   {
     "file": "laugh-2.mp3",
     "source": "ElevenLabs Sound Effects",
     "license": "Content generated during a paid subscription can be used commercially, and indefinitely, subject to our [Service-Specific Terms](https://elevenlabs.io/service-specific-terms). Attribution requirement is subject to the agreement you have with ElevenLabs.",
-    "maker": "Divided World"
+    "maker": "Divided World",
+    "lufs": -22.3,
+    "peak": -10.7,
+    "sha256": "f04b755a58c4f596f0246fe895f2ab11e135c29525c73ab139325f449bedad2d"
   },
   {
     "file": "laugh-3.mp3",
     "source": "ElevenLabs Sound Effects",
     "license": "Content generated during a paid subscription can be used commercially, and indefinitely, subject to our [Service-Specific Terms](https://elevenlabs.io/service-specific-terms). Attribution requirement is subject to the agreement you have with ElevenLabs.",
-    "maker": "Divided World"
+    "maker": "Divided World",
+    "lufs": -11.7,
+    "peak": -0.9,
+    "sha256": "d5ff067722e866c9c8810b3849ae6bd57ee0e0609f815e85b344df38874bbd9f"
   },
   {
     "file": "ooh.mp3",
     "source": "ElevenLabs Sound Effects",
     "license": "Content generated during a paid subscription can be used commercially, and indefinitely, subject to our [Service-Specific Terms](https://elevenlabs.io/service-specific-terms). Attribution requirement is subject to the agreement you have with ElevenLabs.",
-    "maker": "Divided World"
+    "maker": "Divided World",
+    "lufs": -36.6,
+    "peak": -24.5,
+    "sha256": "83c3627b6c97eb8753e1ff56a6fecec839064cef2aebed8b94f7470d40e7a0c3"
   },
   {
     "file": "titter.mp3",
     "source": "ElevenLabs Sound Effects",
     "license": "Content generated during a paid subscription can be used commercially, and indefinitely, subject to our [Service-Specific Terms](https://elevenlabs.io/service-specific-terms). Attribution requirement is subject to the agreement you have with ElevenLabs.",
-    "maker": "Divided World"
+    "maker": "Divided World",
+    "lufs": -38.5,
+    "peak": -24.2,
+    "sha256": "a17adcd7d8a88fee48f685924433d8a8baccd172e844756b288386f09763f187"
   }
 ]

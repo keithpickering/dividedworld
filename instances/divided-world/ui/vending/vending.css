@@ -186,7 +186,7 @@
 
 .kb-vending-drop .kb-postcard {
   transform: none;
-  box-shadow: 0 0 0 1.5px var(--kb-card-color), 0 0 26px color-mix(in srgb, var(--kb-card-color) 80%, transparent);
+  box-shadow: 0 0 0 var(--kb-pc-ring) var(--kb-pc-ring-color), 0 0 26px color-mix(in srgb, var(--kb-card-color) 80%, transparent);
 }
 
 :where(:root[data-kb-layout='phone']) .kb-vending-tray::after {

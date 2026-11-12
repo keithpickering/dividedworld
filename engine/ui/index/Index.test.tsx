@@ -173,3 +173,56 @@ describe('the index in the period table (board-look plan, Task 3)', () => {
     expect(unit.querySelector('.kb-mini')).not.toBeNull();
   });
 });
+
+describe('the index rows\' units and last post (list-rows plan, Task 1)', () => {
+  const lastCell = async (threads: number) => {
+    renderInWorld(<LoadedIndex />, {
+      seed: (f) => {
+        const spritey = f.seed.character(f.seed.account('other'), 'Spritey', 'face', { at: T0 });
+        for (let i = 0; i < threads; i++) f.seed.thread('general', spritey, i === threads - 1 ? 'The Title Of It' : `Earlier ${i}`, 'x', { at: T0 + i * 1000 });
+        f.signInAs(f.seed.account('me'));
+      },
+    });
+    const row = (await screen.findByRole('link', { name: 'General' })).closest('tr')!;
+    return row;
+  };
+
+  test('the thread count\'s unit is singular at one and plural otherwise', async () => {
+    const one = await lastCell(1);
+    expect(one.querySelector('.kb-board-threads')!.textContent).toBe('1 thread');
+    document.body.innerHTML = '';
+    const three = await lastCell(3);
+    expect(three.querySelector('.kb-board-threads')!.textContent).toBe('3 threads');
+  });
+
+  test('the last post reads "last: ", the title, then the unit: "· ", the name, ", " and the date', async () => {
+    const row = await lastCell(1);
+    const cell = row.querySelector('.kb-board-last')!;
+    const title = cell.querySelector('.kb-board-last-title')!;
+    /* The mini avatar's initial (aria-hidden) sits before the name. */
+    expect(cell.textContent!.startsWith(`last: ${title.textContent} · `)).toBe(true);
+    /* The "·" leads the by-unit, so it moves with the unit and no line ends on it. */
+    const by = cell.querySelector('.kb-board-last-by')!;
+    expect(by.firstElementChild!.className).toBe('kb-board-sep');
+    expect(by.firstElementChild!.textContent).toBe('· ');
+    expect(cell.querySelectorAll('.kb-board-sep')).toHaveLength(2);
+    expect(title.nextElementSibling!.tagName).toBe('BR');
+    /* The date's form (absolute or "N days ago") follows the clock, so only the name and the comma are pinned. */
+    expect(cell.textContent!).toMatch(/ · S?Spritey, \S/u);
+  });
+
+  test('the name and the time are one .kb-board-last-by, and the title\'s link is not inside it', async () => {
+    const row = await lastCell(1);
+    const by = row.querySelector('.kb-board-last-by')!;
+    expect(by.querySelector('.kb-who')).not.toBeNull();
+    expect(within(by as HTMLElement).getByRole('link', { name: /latest post in General/u })).toBeInTheDocument();
+    expect(by.querySelector('.kb-board-last-title')).toBeNull();
+    expect(by.contains(row.querySelector('.kb-board-last-title'))).toBe(false);
+  });
+
+  test('a board with no posts reads "last: None yet"', async () => {
+    renderInWorld(<LoadedIndex />, { seed: (f) => { f.signInAs(f.seed.account('me')); } });
+    const row = (await screen.findByRole('link', { name: 'General' })).closest('tr')!;
+    expect(row.querySelector('.kb-board-last')!.textContent).toBe('last: None yet');
+  });
+});

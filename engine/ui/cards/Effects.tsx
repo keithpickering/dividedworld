@@ -103,7 +103,7 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
    */
   const driving = useMemo(() => new Map(instance.cards.flatMap((c): [string, NonNullable<CardRules['drive']>][] => (c.drive ? [[c.key, c.drive]] : []))), [instance.cards]);
   /* The page's own clock is the drives' own closes (useAt), so a play's end is judged first at the time of this render, then at the redrawn time. */
-  const soon = drivesOfPlays(here.plays, driving, Date.now());
+  const soon = drivesOfPlays(here.plays, driving, api.now());
   const gifts = useDriveGifts(post.thread, soon.map((d) => d.id));
   const at = useAt(soon.map((d) => d.closes));
   const played = drivesOfPlays(here.plays, driving, at);
@@ -317,14 +317,15 @@ function drivesOf(played: readonly PlayedDrive[], card: string, gifts: ReadonlyM
  * is scheduled while none is ahead.
  */
 function useAt(ends: readonly number[]): number {
-  const [now, setNow] = useState(() => Date.now());
+  const { api } = useKayfa();
+  const [now, setNow] = useState(() => api.now());
   const ahead = ends.filter((e) => e > now);
   const next = ahead.length === 0 ? null : Math.min(...ahead);
   useEffect(() => {
     if (next === null) return;
-    const timer = setTimeout(() => setNow(Date.now()), Math.min(TIMER_MOST, Math.max(0, next - Date.now()) + 1));
+    const timer = setTimeout(() => setNow(api.now()), Math.min(TIMER_MOST, Math.max(0, next - api.now()) + 1));
     return () => clearTimeout(timer);
-  }, [next, now]);
+  }, [api, next, now]);
   return now;
 }
 
@@ -344,14 +345,15 @@ const beyondSave: EffectProps['save'] = async () => ({ ok: false, error: 'a card
  */
 const TIMER_MOST = 2 ** 31 - 1;
 export function useUntil(plays: readonly CardPlay[]): number {
-  const [now, setNow] = useState(() => Date.now());
+  const { api } = useKayfa();
+  const [now, setNow] = useState(() => api.now());
   const next = nextEnd(plays, now);
   useEffect(() => {
     if (next === null) return;
     /* A timer's delay is held under 2^31 ms; a later end is waited for in steps, each re-arming at the time it wakes to. */
-    const timer = setTimeout(() => setNow(Date.now()), Math.min(TIMER_MOST, Math.max(0, next - Date.now()) + 1));
+    const timer = setTimeout(() => setNow(api.now()), Math.min(TIMER_MOST, Math.max(0, next - api.now()) + 1));
     return () => clearTimeout(timer);
-  }, [next, now]);
+  }, [api, next, now]);
   return now;
 }
 

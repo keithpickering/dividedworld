@@ -11,6 +11,7 @@ import { instanceUiProblems } from '../../../engine/ui/tips/problems.ts';
 import { TIP_KEYS } from '../../../engine/ui/tips/keys.ts';
 import { instance } from '../index.ts';
 import { faceOf, facesOf } from '../../../engine/ui/cards/faces.ts';
+import { landingOn } from '../../../engine/ui/cards/land.ts';
 import { nameLines } from '../../../engine/ui/cards/nameLines.ts';
 import { SIZES } from '../../../engine/ui/cards/template.ts';
 import { logRows } from '../../../engine/ui/log/lines.ts';
@@ -417,7 +418,7 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     const rows = logRows({
       log, mine, estimate: null, standings: {}, season: null, turns: [], nextSettlement: null, acts: new Map([post, play].map((a) => [a.id, a])),
       names: new Map(), titles: new Map(), states: new Map([['k1', { cleared: 'post1' }]]),
-    }, { instance, ui: instanceUi, postsPerPage: 20, economy: instance.settings.economy }, 600, 'me');
+    }, { instance, ui: instanceUi, postsPerPage: 20, economy: instance.settings.economy, now: Date.parse('2026-10-29T12:00:00.000Z') }, 600, 'me');
     const said = (k: string) => rows.filter((r) => r.kind === k).map((r) => r.details.map((d) => (typeof d === 'string' ? d : (d as { text: string }).text)).join(''));
     expect(said('written').sort()).toEqual([
       'Your edit of post #1 made its You Were Saying? again.', 'You Were Saying? on your post #1 continued it.', 'You Were Saying? on post #1 didn\'t take.',
@@ -437,7 +438,7 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     const rows = logRows({
       log, mine, estimate: null, standings: {}, season: null, turns: [], nextSettlement: null, acts: new Map([post, play, edit].map((a) => [a.id, a])),
       names: new Map([['them', 'Spritey']]), titles: new Map(), states: new Map([['k1', { peeled: [0], clean: true }]]),
-    }, { instance, ui: instanceUi, postsPerPage: 20, economy: {} }, 600, null);
+    }, { instance, ui: instanceUi, postsPerPage: 20, economy: {}, now: Date.parse('2026-10-29T12:00:00.000Z') }, 600, null);
     const saved = rows.find((r) => r.kind === 'saved')!;
     const said = saved.details.map((d) => (typeof d === 'string' ? d : (d as { text: string }).text)).join('');
     expect(said).not.toMatch(/nothing now/u);
@@ -563,7 +564,7 @@ describe('a Booster in the log (the booster packs plan, Task 7)', () => {
   const lines = (over: Partial<Log>, wallet: Log['wallet']) => logRows({
     log: { infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], settlements: [], wallet, cards: [], packs: [], playsOnMine: [], writes: [], saves: [], setEnds: [], caught: [], ended: [], cosmetics: [], before: null, ...over },
     mine: [], estimate: null, standings: {}, season: null, turns: [], nextSettlement: null, acts: new Map(), names: new Map(), titles: new Map(), states: new Map(),
-  }, { instance, ui: instanceUi, postsPerPage: 20, economy: {} }, 600, null);
+  }, { instance, ui: instanceUi, postsPerPage: 20, economy: {}, now: Date.parse('2026-10-29T12:00:00.000Z') }, 600, null);
   const said = (r: { details: readonly unknown[] }) => r.details.map((d) => (typeof d === 'string' ? d : (d as { text: string }).text)).join('');
   const purchase = (price: number, balanceAfter: number): Log['wallet'][number] => ({ settlement: null, kind: 'purchase', change: -price, overflow: 0, floored: 0, balanceAfter, ref: null, at });
 
@@ -899,5 +900,39 @@ describe('Divided World\'s sounds', () => {
   test('the preview names a slot, the game bus\'s', () => {
     expect(instanceUi.sounds?.preview?.game).toBe('laugh-track.laugh-1');
     expect(slots.map((s) => s.key)).toContain(instanceUi.sounds?.preview?.game);
+  });
+});
+
+/* The engine's card draws its own ring (engine/ui/cards/postcard.css): a Use's is not painted, so a rule here that painted one would lay a solid ring under its dashes. */
+describe('Divided World\'s stylesheets and the card\'s ring', () => {
+  test('no rule paints a card\'s ring in a width or color of its own', () => {
+    expect(ringFaults(path.join(path.dirname(fileURLToPath(import.meta.url)), '..'))).toEqual([]);
+  });
+});
+
+/** Each rule under `root`, outside postcard.css, that paints a ring on a card (a shadow with no offset or blur) in a width or color of its own. */
+function ringFaults(root: string): string[] {
+  const faults: string[] = [];
+  for (const file of fs.readdirSync(root, { recursive: true, encoding: 'utf8' }).filter((f) => f.endsWith('.css') && path.basename(f) !== 'postcard.css' && !f.includes('node_modules'))) {
+    for (const m of fs.readFileSync(path.join(root, file), 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '').matchAll(/([^{}]+)\{([^{}]*)\}/gu)) {
+      if (!/\.kb-postcard(?![-\w])/u.test(m[1]!)) continue;
+      for (const shadow of /box-shadow:([^;]*)/u.exec(m[2]!)?.[1]?.split(/,(?![^(]*\))/u) ?? []) {
+        if (/^\s*0 0 0 \S/u.test(shadow) && !shadow.includes('inset') && shadow.trim() !== '0 0 0 var(--kb-pc-ring) var(--kb-pc-ring-color)') faults.push(`${file}: ${m[1]!.trim()} { ${shadow.trim()} }`);
+      }
+    }
+  }
+  return faults;
+}
+
+/* The screens ask where each card lands with no settings at all (engine/ui/cards/land.ts): a card whose rules read the economy while deciding a
+   play (You Were Saying?'s length) once threw on every post it was offered on. Each of the instance's cards is asked as the screens ask it. */
+describe('where each card lands, as the screens ask it', () => {
+  test('every card is asked on a post, face up and face down, without reading settings the screens do not hold', () => {
+    const target = { reach: 'post', act: 'p1', kind: 'post', length: 2, text: 'hi' } as const;
+    for (const rules of instance.cards) {
+      expect(() => landingOn(rules, target, [], { cards: instance.cards }), rules.key).not.toThrow();
+      expect(() => landingOn(rules, target, [], { cards: instance.cards, faceDown: true }), rules.key).not.toThrow();
+    }
+    expect(landingOn(instance.cards.find((c) => c.key === 'you-were-saying')!, target, [], { cards: instance.cards }).ok).toBe(true);
   });
 });

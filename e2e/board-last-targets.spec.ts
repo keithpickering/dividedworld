@@ -20,7 +20,7 @@ async function boxes(page: Page): Promise<{ who: Box; time: Box }[]> {
   await loadFaces(page);
   return page.evaluate(() => [...document.querySelectorAll('.kb-board-last')].flatMap((cell) => {
     const who = cell.querySelector('.kb-who > a');
-    const time = cell.querySelector(':scope > a');
+    const time = cell.querySelector('.kb-board-last-by > a');
     if (!who || !time) return [];
     const r = (e: Element) => { const b = e.getBoundingClientRect(); return { x: b.x, y: b.y, width: b.width, height: b.height }; };
     return [{ who: r(who), time: r(time) }];
@@ -43,7 +43,7 @@ test('poison: the padded time link with the negative margin is named as intersec
   await page.addInitScript(() => {
     document.addEventListener('DOMContentLoaded', () => {
       const style = document.createElement('style');
-      style.textContent = '.kb-board-last > a { display: inline-block !important; padding-block: 0.3rem !important; margin-block: -0.3rem !important; min-height: 0 !important }';
+      style.textContent = '.kb-board-last-by > a { display: inline-block !important; padding-block: 0.3rem !important; margin-block: -0.3rem !important; min-height: 0 !important }';
       document.head.append(style);
     });
   });

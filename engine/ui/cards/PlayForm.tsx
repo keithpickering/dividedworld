@@ -140,7 +140,7 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
   const wallet = player.wallet;
 
   /* Read on every render: a play landing on the post meanwhile (live) changes what it can take. */
-  const carried = livePlays(usePlays(target.plays, home).plays);
+  const carried = livePlays(usePlays(target.plays, home).plays, api.now());
   const context = { cards: instance.cards, ...(beyond?.above ? { above: beyond.above } : {}), ...(setting ? { faceDown: true as const } : {}) };
   const lands = !rules || !goal ? { ok: false as const, why: 'there is no such card' }
     : beyond ? landingOn(rules, goal, carried, context) : landing(rules, post!, carried, context);
@@ -152,11 +152,11 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
     if (!rules || setting || how !== 'cast') return [];
     const effect = (reach: 'thread' | 'board' | 'character') => (p: CardPlay): CardEffect => ({ card: p.card, act: p.id, reach, ...(p.ends ? { ends: p.ends } : {}) });
     const above = beyond ? beyond.above ?? {} : {
-      ...(postThread ? { thread: livePlays(onThread.plays).filter((p) => p.reach === 'thread').map(effect('thread')) } : {}),
-      ...(target.board ? { board: livePlays(onBoard.plays).filter((p) => p.reach === 'board').map(effect('board')) } : {}),
-      ...(post?.character ? { character: livePlays(onAuthor.plays).filter((p) => p.reach === 'character').map(effect('character')) } : {}),
+      ...(postThread ? { thread: livePlays(onThread.plays, api.now()).filter((p) => p.reach === 'thread').map(effect('thread')) } : {}),
+      ...(target.board ? { board: livePlays(onBoard.plays, api.now()).filter((p) => p.reach === 'board').map(effect('board')) } : {}),
+      ...(post?.character ? { character: livePlays(onAuthor.plays, api.now()).filter((p) => p.reach === 'character').map(effect('character')) } : {}),
     };
-    const now = Date.now();
+    const now = api.now();
     const where = { thread: 'in this thread', board: 'on this board', character: 'on this character' } as const;
     return (Object.entries(above) as [keyof typeof where, readonly CardEffect[]][]).flatMap(([reach, list]) => list.flatMap((e) => {
       const named = instance.cards.find((c) => c.key === e.card);
@@ -164,7 +164,7 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
       if (gimmick?.kind !== 'price' || !gimmick.flavors.includes(rules.alignment) || (e.ends !== undefined && Date.parse(e.ends) <= now)) return [];
       return [{ key: e.act, add: gimmick.add, words: `${named?.name ?? 'A card'} adds ${orbs(gimmick.add)} ${where[reach]}.` }];
     }));
-  }, [rules, setting, how, beyond, postThread, post?.character, target.board, onThread.plays, onBoard.plays, onAuthor.plays, instance.cards]);
+  }, [rules, setting, how, beyond, postThread, post?.character, target.board, onThread.plays, onBoard.plays, onAuthor.plays, instance.cards, api]);
   const ownPrice = useMemo(() => {
     /* A Set costs only the card. */
     if (!rules || setting) return 0;

@@ -15,7 +15,7 @@ export function spanWords(span: Span): string {
 export const dayAndTime = (iso: string) => new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
 /** "in 13 days": how far off a time is, in whole days, never under one. */
-export function inDays(iso: string, nowMs = Date.now()): string {
+export function inDays(iso: string, nowMs: number): string {
   const days = Math.max(1, Math.ceil((Date.parse(iso) - nowMs) / 86_400_000));
   return `in ${days} ${days === 1 ? 'day' : 'days'}`;
 }
@@ -25,7 +25,7 @@ export function inDays(iso: string, nowMs = Date.now()): string {
  * under one). Days and hours past a day ("in 1 d 3 h"), hours and minutes past an hour, minutes alone below it; a unit
  * that is nothing is left out ("in 7 h", "in 2 d"). A time due or past is null, and the footer names no time.
  */
-export function untilWords(iso: string, nowMs = Date.now()): string | null {
+export function untilWords(iso: string, nowMs: number): string | null {
   const left = Date.parse(iso) - nowMs;
   if (!(left > 0)) return null;
   const minutes = Math.max(1, Math.ceil(left / 60_000));

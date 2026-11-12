@@ -123,7 +123,7 @@ describe('the front door', () => {
       const fake = buildWorld();
       const names = new Set<string>();
       for (const [key, value] of Object.entries(fake)) {
-        if (typeof value === 'function') (fake as unknown as Record<string, unknown>)[key] = (...a: unknown[]) => { names.add(key); return (value as (...x: unknown[]) => unknown)(...a); };
+        if (typeof value === 'function' && key !== 'now') (fake as unknown as Record<string, unknown>)[key] = (...a: unknown[]) => { names.add(key); return (value as (...x: unknown[]) => unknown)(...a); };
       }
       const { unmount } = renderIn(fake, element, { cards: [test_card] });
       await act(async () => { await new Promise((r) => setTimeout(r, 50)); });

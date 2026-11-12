@@ -26,6 +26,17 @@ const world: World = (fake, instance) => {
   for (const mask of [hooligan, spritey]) void Promise.resolve().then(() => fake.here({ kind: 'index' }, mask)).catch(() => {});
 };
 
+/** An index whose latest thread has a long title and a long-named last poster (e2e/list-rows.spec.ts, docs/plans/2026-11-12-list-rows-design.md, section 2.1); compared with no manifest. */
+const longTitleWorld: World = (fake, instance) => {
+  const [first, second] = instance.classes;
+  const me = fake.seed.account('story-player', { seasoned: true });
+  const hooligan = fake.seed.character(me, 'Reginald Featherstonehaugh', (second ?? first)!.key, { at: OCT_6 - 5 * 86_400_000 });
+  const general = instance.boards.find((b) => !b.system)!.slug;
+  fake.seed.thread(general, hooligan, 'A thread whose title goes on and on, well past the width a last post leaves it, so that it has to wrap', 'Hi.', { at: OCT_6 });
+  fake.seed.settle({ at: OCT_6 - 86_400_000, wallet: { [me]: 240 } });
+  fake.signInAs(me);
+};
+
 function IndexBoardStory() {
   return <Frame><LoadedIndex /></Frame>;
 }
@@ -41,3 +52,6 @@ type Story = StoryObj<typeof IndexBoardStory>;
 
 /** The index on the Main board's layout, at 1440 wide. */
 export const Index: Story = {};
+
+/** The index with a long title and a long name in the last post (long, but narrower than the row: a name wider than the row breaks inside the byline, which no case holds); compared with no manifest. */
+export const LongTitle: Story = { parameters: { world: longTitleWorld } };

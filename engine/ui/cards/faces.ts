@@ -47,8 +47,12 @@ export interface CardFace {
   readonly unknown?: true;
 }
 
-/** The corner gem's shape for each rarity, so a rarity is told by its shape and its name, never by color alone. */
-const GEMS: Readonly<Record<Rarity, string>> = { common: '●', uncommon: '◆', rare: '★', legendary: '✦' };
+/**
+ * The corner gem's shape for each rarity, so a rarity is told by its shape and its name, never by color alone. The
+ * legendary star has eight points, because a four-pointed one read as the uncommon diamond at a gem's size; it is the
+ * one glyph here that is also an emoji, so it carries the text selector (U+FE0E) and no phone draws it in color.
+ */
+const GEMS: Readonly<Record<Rarity, string>> = { common: '●', uncommon: '◆', rare: '★', legendary: '✴\uFE0E' };
 export const gemOf = (rarity: Rarity): string => GEMS[rarity] ?? GEMS.common;
 /** A rarity's name, as a gem's title says it: "Uncommon". */
 export const rarityName = (rarity: Rarity): string => rarity.charAt(0).toUpperCase() + rarity.slice(1);

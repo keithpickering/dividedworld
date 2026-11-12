@@ -200,6 +200,15 @@ export const STORIES: readonly Screen[] = [
   SETTLEMENT,
   { name: 'My log before anything has settled, in its story', board: '2026-11-05-backfill/30-log-empty', path: '/?fixture=boards&story=boards-12-log--empty' },
   { name: 'My log with a settlement\'s posts open, in its story', board: '2026-11-05-backfill/31-log-open', path: '/?fixture=boards&story=boards-12-log--open' },
+  /* The emailed link's panel on the sign-in screen (engine/ui/account/SignIn.board.stories.tsx): no design board draws it, so it is held to the glass's own rules. */
+  { name: 'The link panel, ready, in its story', board: { none: 'the emailed link\'s panel has no design board; the glass text, layout and accessibility checks hold it' }, path: '/?fixture=boards&story=boards-00-sign-in--link-ready' },
+  { name: 'The link panel, with this browser already signed in, in its story', board: { none: 'the emailed link\'s panel has no design board; the glass text, layout and accessibility checks hold it' }, path: '/?fixture=boards&story=boards-00-sign-in--link-already-signed-in' },
+  {
+    name: 'The link panel, signed in, in its story',
+    board: { none: 'the emailed link\'s panel has no design board; the glass text, layout and accessibility checks hold it' },
+    path: '/?fixture=boards&story=boards-00-sign-in--link-signed-in',
+    then: async (page) => { await page.getByRole('button', { name: 'Sign in', exact: true }).click(); await expect(page.getByText(/^You are signed in as /u)).toBeVisible(); },
+  },
   /* The booster packs boards' story (engine/ui/vending/Packs.board.stories.tsx): the machine with the Booster picked. The reveal is not read here: it is a window-wide dark layer over the machine with no smoke under its words, and these read glass text on smoke; the board match and a11y read it. */
   { name: 'The machine with a Booster picked, in its story', board: '2026-11-07-booster-packs/01-machine', path: '/?fixture=boards&story=boards-booster-packs--machine', then: async (page) => { await page.getByRole('button', { name: /^Buy Booster, / }).click(); } },
   /* The Lens, on each tab with Who unfolded, for a reader and for the post's author: glass type over the 2003 post. */
