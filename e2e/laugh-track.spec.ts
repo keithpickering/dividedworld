@@ -31,31 +31,40 @@ const toTheLine = (page: Page) => page.evaluate(() => {
   window.scrollBy({ top: box.top + box.height / 2 - line, behavior: 'instant' });
 });
 
-/** The page flung from its top to its foot at about 900 px a second and back to the top: every cue crosses the line in well under the dwell.
-    Resolves with the number of steps at which a cue's box straddled the reading line, and the number at which the middle of one of a cue's boxes was in the reading
-    band (34% of the reading space, centered on the line), so a test can tell a fling that crossed cues from one that touched none. */
-const fling = (page: Page) => page.evaluate(() => new Promise<{ straddles: number; inBand: number }>((done) => {
-  const foot = document.documentElement.scrollHeight;
-  const hud = Number.parseFloat(document.documentElement.style.getPropertyValue('--kb-hud-measured')) || 0;
-  const space = window.innerHeight - hud;
+/** The band's stretch in the window, worked out as the plan's Task 3 case 1 works it: at 800 tall with a 189px HUD the reading space is 611, the line 244.4 and
+    the band 244.4 +/- 103.87 (34% of 611 is 207.74). Also the line itself (40% of the reading space). */
+const bandOf = (height: number, hud: number) => {
+  const space = height - hud;
   const line = (space * 40) / 100;
   const half = (space * 34) / 100 / 2;
-  let y = 0;
+  return { line, half, top: line - half, bottom: line + half };
+};
+
+const FLING_PX_PER_S = 3000;
+
+/** The page flung from its top to its foot at 3000 px a second (the position is worked out from the clock, so the speed does not depend on the frame rate;
+    the design's section 1 says faster than about 500 px a second) and back to the top: every cue crosses the line in well under the dwell.
+    Resolves with the number of steps at which a cue's box straddled the reading line, and the number at which the middle of one of a cue's boxes was in the reading
+    band (34% of the reading space, centered on the line), so a test can tell a fling that crossed cues from one that touched none. */
+const fling = (page: Page) => page.evaluate(({ band, speed }) => new Promise<{ straddles: number; inBand: number }>((done) => {
+  const foot = document.documentElement.scrollHeight;
+  const hud = Number.parseFloat(document.documentElement.style.getPropertyValue('--kb-hud-measured')) || 0;
+  const { line, half } = (0, eval)(`(${band})`)(window.innerHeight, hud) as { line: number; half: number };
+  const t0 = performance.now();
   let straddles = 0;
   let inBand = 0;
   const step = () => {
+    const y = Math.min(foot, ((performance.now() - t0) * speed) / 1000);
     window.scrollTo({ top: y, behavior: 'instant' });
     for (const cue of document.querySelectorAll('.dw-lt-cue')) {
       const boxes = Array.from(cue.getClientRects());
       if (boxes.some((r) => r.top <= line && line <= r.bottom)) straddles++;
       if (boxes.some((r) => Math.abs(r.top + r.height / 2 - line) <= half)) inBand++;
     }
-    y += 15;
     if (y < foot) requestAnimationFrame(step); else { window.scrollTo({ top: 0, behavior: 'instant' }); done({ straddles, inBand }); }
   };
   step();
-}));
-
+}), { band: bandOf.toString(), speed: FLING_PX_PER_S });
 const mp3s = (page: Page): string[] => {
   const seen: string[] = [];
   page.on('request', (r) => { if (/\.mp3(\?|$)/u.test(r.url())) seen.push(r.url()); });
@@ -267,15 +276,6 @@ const WHEEL_MS = 700;
 const AIR_MS = 1200;
 const QUEUE_WAIT_MS = READER_PLACES * AIR_MS + 2000;
 
-/** The band's stretch in the window, worked out as the plan's Task 3 case 1 works it: at 800 tall with a 189px HUD the reading space is 611, the line 244.4 and
-    the band 244.4 +/- 103.87 (34% of 611 is 207.74). */
-const bandOf = (height: number, hud: number) => {
-  const space = height - hud;
-  const line = (space * 40) / 100;
-  const half = (space * 34) / 100 / 2;
-  return { top: line - half, bottom: line + half };
-};
-
 async function openReader(page: Page, size: { width: number; height: number }) {
   await page.setViewportSize(size);
   await page.addInitScript(() => { try { sessionStorage.setItem('kb-demo-preferences', JSON.stringify({ gameSound: 'off' })); } catch { /* not kept */ } });
@@ -293,17 +293,20 @@ async function openReader(page: Page, size: { width: number; height: number }) {
   await page.evaluate((t) => { history.pushState(null, '', `/t/${t}`); window.dispatchEvent(new PopStateEvent('popstate')); }, thread);
   await expect(page.locator('.dw-lt-cue').first()).toBeAttached();
   await page.evaluate(() => document.fonts.ready);
-  /* Records each fire as it happens: the time, and the place's index among the page's cues (the order of the text). */
+  /* Records each fire by its place: the effect marks every piece of one place (each carries data-lt-place) in one commit, so the first time a place's piece
+     is seen fired is that place's fire, and two places firing together are two records with a gap of about 0 ms. The index is the place's first piece among
+     the page's cues (the order of the text). */
   await page.evaluate(() => {
-    const w = globalThis as unknown as { __ltFires: { t: number; at: number }[] };
+    const w = globalThis as unknown as { __ltFires: { t: number; at: number; place: string }[] };
     w.__ltFires = [];
-    const seen = new Set<Element>();
+    const seen = new Set<string>();
     new MutationObserver((records) => {
       for (const r of records) {
         const el = r.target as Element;
-        if (!el.classList.contains('dw-lt-fired') || seen.has(el)) continue;
-        seen.add(el);
-        w.__ltFires.push({ t: performance.now(), at: Array.from(document.querySelectorAll('.dw-lt-cue')).indexOf(el) });
+        const place = el.getAttribute('data-lt-place');
+        if (place === null || !el.classList.contains('dw-lt-fired') || seen.has(place)) continue;
+        seen.add(place);
+        w.__ltFires.push({ t: performance.now(), at: Array.from(document.querySelectorAll('.dw-lt-cue')).indexOf(el), place });
       }
     }).observe(document.body, { subtree: true, attributes: true, attributeFilter: ['class'] });
   });
@@ -323,21 +326,19 @@ async function readToTheFoot(page: Page, size: { width: number; height: number }
 
 /** The places the page's scroll could bring into the band, and how many of the page's places fired. A place is reachable when some scroll position puts the middle
     of one of its boxes in the band: its middle on the page is within [band top, scroll range + band bottom]. */
-const readerResult = (page: Page) => page.evaluate(() => {
+const readerResult = (page: Page) => page.evaluate((band) => {
   const hud = Number.parseFloat(document.documentElement.style.getPropertyValue('--kb-hud-measured')) || 0;
-  const space = window.innerHeight - hud;
-  const line = (space * 40) / 100;
-  const half = (space * 34) / 100 / 2;
+  const { top, bottom } = (0, eval)(`(${band})`)(window.innerHeight, hud) as { top: number; bottom: number };
   const range = document.documentElement.scrollHeight - window.innerHeight;
   const cues = Array.from(document.querySelectorAll('.dw-lt-cue'));
   const reachable = cues.filter((c) => Array.from(c.getClientRects()).some((r) => {
     const mid = r.top + window.scrollY + r.height / 2;
-    return mid >= line - half && mid <= range + line + half;
+    return mid >= top && mid <= range + bottom;
   }));
   const fired = cues.filter((c) => c.classList.contains('dw-lt-fired'));
-  const log = (globalThis as unknown as { __ltFires: { t: number; at: number }[] }).__ltFires;
+  const log = (globalThis as unknown as { __ltFires: { t: number; at: number; place: string }[] }).__ltFires;
   return { total: cues.length, reachable: reachable.length, reachableFired: reachable.filter((c) => c.classList.contains('dw-lt-fired')).length, fired: fired.length, log };
-});
+}, bandOf.toString());
 
 test.describe('a reader and the band', () => {
   test('the band is worked out as the plan works it', () => {
@@ -352,6 +353,8 @@ test.describe('a reader and the band', () => {
     expect(await page.locator('.dw-lt-cue').count(), 'the post is drawn with its 14 cued places').toBe(READER_PLACES);
     await readToTheFoot(page, MAIN);
     const r = await readerResult(page);
+    console.log(`desktop: ${r.fired} fired of ${r.reachable} reachable (${r.total} drawn)`);
+    test.info().annotations.push({ type: 'fired', description: `${r.fired} of ${r.reachable} reachable (${r.total} drawn)` });
     expect(r.reachableFired, `${r.reachableFired} of the ${r.reachable} places the scroll can bring into the band fired`).toBe(r.reachable);
     expect(r.fired, `${r.fired} of ${r.total} fired`).toBeGreaterThanOrEqual(12);
   });
@@ -360,23 +363,23 @@ test.describe('a reader and the band', () => {
     test.setTimeout(180_000);
     await openReader(page, MAIN);
     await readToTheFoot(page, MAIN);
-    const { log } = await readerResult(page);
-    /* The pieces of one place are marked in the same moment; one fire is what lies within 60ms of the one before. */
-    const fires: { t: number; at: number }[] = [];
-    for (const f of [...log].sort((a, b) => a.t - b.t)) {
-      const last = fires[fires.length - 1];
-      if (last && f.t - last.t < 60) last.at = Math.min(last.at, f.at); else fires.push({ ...f });
-    }
-    expect(fires.length, 'a reader to the foot makes several fires').toBeGreaterThan(1);
+    const r = await readerResult(page);
+    const fires = [...r.log].sort((a, b) => a.t - b.t);
+    const gaps = fires.slice(1).map((f, k) => Math.round(f.t - fires[k]!.t));
+    const smallest = gaps.length > 0 ? Math.min(...gaps) : Number.NaN;
+    console.log(`desktop queue: ${fires.length} places fired of ${r.reachable} reachable, smallest gap ${smallest} ms`);
+    test.info().annotations.push({ type: 'fired', description: `${fires.length} of ${r.reachable} reachable` }, { type: 'smallest gap', description: `${smallest} ms` });
+    expect(fires.length, `${fires.length} places fired of ${r.reachable} reachable`).toBeGreaterThanOrEqual(12);
     const order = fires.map((f) => f.at);
     expect(order, 'the fires are in the order of the text').toEqual([...order].sort((a, b) => a - b));
-    const gaps = fires.slice(1).map((f, i) => Math.round(f.t - fires[i]!.t));
-    expect(Math.min(...gaps), `the gaps between fires (ms): ${gaps.join(', ')}`).toBeGreaterThanOrEqual(1100);
+    expect(smallest, `the gaps between fires (ms): ${gaps.join(', ')}`).toBeGreaterThanOrEqual(1100);
   });
 
   test('a fling still fires nothing, though it crossed cues in the band', async ({ page }) => {
     await openReader(page, MAIN);
     const crossed = await fling(page);
+    console.log(`fling: ${crossed.inBand} steps saw a cue in the band, ${crossed.straddles} straddled the line`);
+    test.info().annotations.push({ type: 'fling', description: `${crossed.inBand} in the band, ${crossed.straddles} on the line` });
     expect(crossed.inBand, 'at least one step of the fling saw a cue in the band').toBeGreaterThan(0);
     /* A correctness wait, not a settle: longer than the 400 ms dwell, so a place that had been counted would have fired by now. */
     await page.waitForTimeout(1000);
@@ -388,6 +391,8 @@ test.describe('a reader and the band', () => {
     await openReader(page, PHONE);
     await readToTheFoot(page, PHONE);
     const r = await readerResult(page);
+    console.log(`phone: ${r.fired} fired of ${r.reachable} reachable (${r.total} drawn)`);
+    test.info().annotations.push({ type: 'fired', description: `${r.fired} of ${r.reachable} reachable (${r.total} drawn)` });
     expect(r.fired, `${r.fired} of ${r.total} fired`).toBeGreaterThanOrEqual(12);
   });
 });
