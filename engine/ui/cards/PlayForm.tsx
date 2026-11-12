@@ -31,11 +31,14 @@ import { useKayfa } from '../context.tsx';
 import type { Act, Id } from '../data/api.ts';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { Overlay } from '../glass/Overlay.tsx';
+import { Editor } from '../composer/Editor.tsx';
+import { framingArgs } from '../composer/text.ts';
 import { Orbs } from '../orbs/Orbs.tsx';
 import { usePlayer } from '../player.tsx';
 import { Link } from '../router.tsx';
 import { newer } from '../thread/feed.ts';
 import { faceOf, orbs, plainRefusal, withCardEconomy } from './faces.ts';
+import { caughtWords } from './marks.ts';
 import { endsWords, landing, landingOn, landsWords, lengthOf, springWords, targetOf } from './land.ts';
 import type { CardPlay } from './types.ts';
 import { effectCards, livePlays, PLAYS_PER_POST, readEffects, usePlays } from './plays.ts';
@@ -71,6 +74,10 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
   /* A Move on one's own post is played now or set face down; a set card is set, and the choice is not asked. */
   const [down, setDown] = useState(faceDown);
   const [message, setMessage] = useState('');
+  /* The reply a card that replies carries (`CardRules.replies`): kept through a refusal and a caught cast, which post nothing. */
+  const [reply, setReply] = useState('');
+  /* A cast the trap caught said so: the form stays, with the reply in it, since it was not posted. */
+  const [caught, setCaught] = useState(false);
   /**
    * What the counter last said aloud: only on crossing into its last stretch, or on reaching the limit (#89 P2-2). `n` counts what was
    * said, so the same words said again are a change a screen reader hears (a trailing no-break space on every other one).
@@ -130,6 +137,8 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
   const how = rules ? playOf(rules) : 'cast';
   /* The post is one of the player's own characters': a cast card on it may be set face down, but for one that is faceUpOnly (it writes, needs a message, draws or runs a drive), which is only cast face up (decideSet); a remembered Set face down never opens one as a set, since `setting` follows `choosing`; a set card is set there alone. */
   const ownPost = !beyond && post !== null && player.actingCharacters.some((c) => c.id === post.character);
+  /* A card that replies writes its reply with the play, face up (`faceUpOnly`): its form holds the editor and offers no face-down choice. */
+  const replying = rules?.replies === true;
   const choosing = how === 'cast' && ownPost && (rules === undefined || !faceUpOnly(rules));
   const setting = how === 'set' || (choosing && down);
   /* A Set is the post author's own: the character that wrote it sets it, which is the HUD's unless the post is another mask's. */
@@ -208,7 +217,10 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
   /* A Set waits for the card's own settings to be accepted, as a cast's price does (a set card that names a card has no card until the player names one). */
   const unsettled = setting && !rules.validateConfig(config).ok;
   const flawed = Object.keys(problems).length > 0;
-  const blocked = busy || !setter || (!setting && !wallet) || short || !lands.ok || unsettled || flawed;
+  /* The reply is a post: a letter or a digit in it, and no longer than a post may be. */
+  const replyMost = screen.postMaxLength;
+  const unwritten = replying && (!/[\p{L}\p{N}]/u.test(reply) || [...reply].length > replyMost);
+  const blocked = unwritten || busy || !setter || (!setting && !wallet) || short || !lands.ok || unsettled || flawed;
   const nameOf = (who: string) => draft.who.find((c) => c.id === who)?.name ?? 'someone';
   /* What the Set does, in the form's one sentence: the conditions read back where there are any (a locked phrase is the card's Says), the card's plain sentence where there are none. */
   const springs = when || lockedSays ? `Springs ${conditionWords({ ...when, ...(lockedSays ? { says: lockedSays } : {}) }, nameOf)}, and lands on ${landsWords(rules)}.` : springWords(rules);
@@ -237,6 +249,8 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
     if (act.kind === 'set') target.plays.setFaces(await api.myFaceDown([act.id]).catch(() => ({})));
     await player.refresh();
     if (accountNow.current !== account) return;
+    /* A cast a trap caught wrote no reply: the form stays to say so, with the words still in the editor, and Close is its way out. */
+    if (replying && typeof act.payload.caught === 'string') { setCaught(true); return; }
     onPlayed();
   };
   /* No answer came back: read what the play would have changed before offering it again. */
@@ -270,6 +284,7 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
     setBusy(true);
     setRefusal(null);
     setPlaced(null);
+    setCaught(false);
     try {
       let answer;
       try {
@@ -278,6 +293,7 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
             : await api.playCard(card, hud.id, beyond.target, config ?? {}, message, beyond.reach, post?.id)
           : setting ? await (when ? api.setCard(card, setter.id, post!.id, config ?? {}, when) : api.setCard(card, setter.id, post!.id, config ?? {}))
           : how === 'use' ? await api.useCard(card, hud.id, post!.id, config ?? {}, message)
+          : replying ? await api.playCard(card, hud.id, post!.id, config ?? {}, message, undefined, undefined, undefined, { body: reply, ...(framingArgs(reply).length > 0 ? { framing: framingArgs(reply)[0] } : {}) })
           : await api.playCard(card, hud.id, post!.id, config ?? {}, message);
       } catch { await look(null, before, (setting ? setter : hud).id); return; }
       if (accountNow.current !== account) return;
@@ -344,6 +360,17 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
           )}
           {setting && <p className="kb-play-sets" data-kb-ends>{endsWords(screen.setLasts)}</p>}
           {/* A Set's Act says nothing, so it carries no message and costs no more than the card: every card set face down is alike. */}
+          {replying && (
+            <div className="kb-play-reply">
+              <label htmlFor={`${id}-reply`} className="kb-play-label">Your reply</label>
+              <Editor
+                label="Your reply" id={`${id}-reply`} value={reply} max={replyMost} describedBy={`${id}-reply-note`} submitVerb="plays the card"
+                onChange={(next) => { setReply(next); setCaught(false); if (again) { setAgain(false); setRefusal(null); } }} onSubmit={() => void submit()}
+              />
+              <p className="kb-play-fine" id={`${id}-reply-note`}>Posted with the card, right under that post.</p>
+              <p className="kb-play-fine" role="status" aria-label="What came of the play">{caught ? `${caughtWords(null)} Your reply was not posted.` : ''}</p>
+            </div>
+          )}
           {!setting && <div className="kb-play-message">
             <label htmlFor={`${id}-message`} className="kb-play-label">Your message</label>
             <textarea id={`${id}-message`} className="kb-play-input" rows={3} value={message} aria-describedby={hint} onChange={(e) => change(e.target.value)} />

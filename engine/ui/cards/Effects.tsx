@@ -30,7 +30,7 @@ import { MomentView, useShownMoment } from './Moment.tsx';
 import { backoff, REPEAT_TRIES, useTails } from './tails.ts';
 import { driveStore, drivesOfPlays, giftOf, useDriveGifts, type Gifts, type PlayedDrive } from './drives.ts';
 import { currentVersion, resolveWritten, versionAt, versionsOf } from './written.ts';
-import { createPlays, inPlayOrder, livePlays, nextEnd, PLAYS_PER_POST, playOf, readSurface, shownPlays, usePlays, type Plays } from './plays.ts';
+import { createPlays, inPlayOrder, keepingKeys, livePlays, nextEnd, PLAYS_PER_POST, playOf, playsFallingOn, readSurface, shownPlays, usePlays, type Plays } from './plays.ts';
 import { createClaims, NO_INK } from './claims.ts';
 import { drawnInMoment, surfaceMost, type CardRules, type Reach } from '../../rules/cards.ts';
 import type { Span } from '../../rules/types.ts';
@@ -196,9 +196,13 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
   ].map((l) => ({ ...l, drawn: l.drawn.filter((p) => p.reach === l.reach) }));
   const now = useUntil(above.flatMap((l) => l.drawn));
 
-  /* A play a trap caught does nothing, and a card back draws no effect: neither wraps the post (the card mechanic's design, section 4). */
+  /*
+   * A play a trap caught does nothing, and a card back draws no effect: neither wraps the post (the card mechanic's design, section 4). The thread's plays are
+   * those that fall on this post (`playsFallingOn`): up now, or of a card that keeps and written while the post was up, so a week-long play still lights a post written inside it.
+   */
+  const keeping = useMemo(() => keepingKeys(instance.cards), [instance.cards]);
   const layers = [
-    ...above.map((l) => ({ reach: l.reach as Reach, acting: livePlays(l.drawn, now), of: l.of })),
+    ...above.map((l) => ({ reach: l.reach as Reach, acting: l.reach === 'thread' ? playsFallingOn(l.drawn, post, keeping, now) : livePlays(l.drawn, now), of: l.of })),
     { reach: 'post' as Reach, acting: here.plays.filter((p) => !p.caught && !p.reversed && !p.untaken && !p.faceDown && !p.reach), of: here },
   ];
   /*
@@ -220,9 +224,11 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
   if (layers.every((l) => l.acting.length === 0) && !momentAct) return <>{slot(words)}</>;
   const takes = (key: string) => ui.cards.find((c) => c.key === key)?.takeover === true;
   /* Each layer's cards in the order each was first played there, the first innermost; every takeover after all of them. */
-  const wraps = layers.flatMap((l) => [...new Set(l.acting.map((p) => p.card))].map((key) => ({ ...l, key })));
+  const wraps = layers.flatMap((l) => [...new Set(l.acting.map((p) => p.card))].map((key) => ({ ...l, key, mine: l.acting.filter((p) => p.card === key) })));
   const beneath = (key: string) => ui.cards.find((c) => c.key === key)?.beneath === true;
-  const ordered = [...wraps.filter((w) => !takes(w.key) && beneath(w.key)), ...wraps.filter((w) => !takes(w.key) && !beneath(w.key)), ...wraps.filter((w) => takes(w.key))];
+  /* A card drawn by another gives its plays to that card's wrap before the wraps are ordered, so the post draws one effect of the named card (`handedOn`). */
+  const handed = handedOn(wraps, here, ui.cards);
+  const ordered = [...handed.filter((w) => !takes(w.key) && beneath(w.key)), ...handed.filter((w) => !takes(w.key) && !beneath(w.key)), ...handed.filter((w) => takes(w.key))];
   let wrapped = words;
   if (momentAct && bodyOf) {
     wrapped = (
@@ -232,14 +238,13 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
       />
     );
   }
-  for (const [rank, { key, reach, acting, of }] of (momentAct ? ordered.filter((w) => takes(w.key)) : ordered).entries()) {
+  for (const [rank, { key, reach, mine, of }] of (momentAct ? ordered.filter((w) => takes(w.key)) : ordered).entries()) {
     const card = ui.cards.find((c) => c.key === key);
     if (!card?.Effect) continue;
-    const mine = acting.filter((p) => p.card === key);
     const Effect = card.Effect;
     wrapped = (
       <BoundEffect
-        key={`${reach}:${key}`} Effect={Effect} store={plays} reach={reach}
+        key={`${reach}:${key}`} Effect={Effect} store={plays} reach={reach} cardKey={key}
         post={post} plays={mine} states={of.states} released={of.released} place={place} marks={card.takeover ? marks : null}
         written={writtenOf(written, mine, writing)} {...(drawn !== null && reach === 'post' ? { version: drawn } : {})}
         save={reach === 'post' ? save : beyondSave} release={release} nameOf={nameOf}
@@ -253,6 +258,31 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
     );
   }
   return <>{slot(wrapped)}</>;
+}
+
+/** One card's effect on a post, as `PostEffects` draws it: the layer it is drawn for, the card, and the plays it is given (its own, then any another card lends it). */
+interface Wrap { readonly reach: Reach; readonly key: string; readonly mine: readonly CardPlay[]; readonly of: PostPlays }
+
+/**
+ * Takes each wrap of a card drawn by another (`CardUi.drawnBy`) out and appends its plays to the post layer's wrap of the card it names, after that card's own plays, each
+ * play still carrying its own `reach`. Where the post has no wrap of the named card, one is made with no plays of its own in the post layer's first place (where the first
+ * post-layer wrap stands, else last), so the post draws one effect of the card whatever lends it. The merged wrap is a post-layer wrap: `of` is the post's own store entry.
+ */
+export function handedOn(wraps: readonly Wrap[], post: PostPlays, cards: readonly CardUi[]): readonly Wrap[] {
+  const lender = (key: string) => cards.find((c) => c.key === key)?.drawnBy;
+  if (!wraps.some((w) => lender(w.key) !== undefined)) return wraps;
+  const out = wraps.filter((w) => lender(w.key) === undefined);
+  for (const w of wraps) {
+    const named = lender(w.key);
+    if (named === undefined) continue;
+    const at = out.findIndex((o) => o.reach === 'post' && o.key === named);
+    if (at >= 0) out[at] = { ...out[at]!, mine: [...out[at]!.mine, ...w.mine] };
+    else {
+      const first = out.findIndex((o) => o.reach === 'post');
+      out.splice(first < 0 ? out.length : first, 0, { reach: 'post', key: named, mine: w.mine, of: post });
+    }
+  }
+  return out;
 }
 
 /**
@@ -364,9 +394,8 @@ export function useUntil(plays: readonly CardPlay[]): number {
  * not by where the post is drawn: a post is drawn once on a page, in its thread or in the ORIGIN box of a thread spun
  * from it, never both, so the two places never share a key at once.
  */
-function BoundEffect({ Effect, store, marks, ...props }: Omit<EffectProps, 'show' | 'met' | 'holdScreen' | 'still'> & { readonly Effect: ComponentType<EffectProps>; readonly store: Plays }) {
+function BoundEffect({ Effect, store, marks, cardKey: card, ...props }: Omit<EffectProps, 'show' | 'met' | 'holdScreen' | 'still'> & { readonly Effect: ComponentType<EffectProps>; readonly store: Plays; /** The card whose effect this is: not always its first play's card, where plays are lent to it (`handedOn`). */ readonly cardKey: string }) {
   const post = props.post.id;
-  const card = props.plays[0]!.card;
   /* A view is a post's: an effect above the post, drawn on many posts at once, says none (its mark is its target's). */
   const own = props.reach === 'post';
   const show = useCallback((view: CardView | null) => { if (own) store.setView(post, card, view); }, [store, post, card, own]);

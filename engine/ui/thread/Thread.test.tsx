@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, onTestFinished, test, vi } fro
 import type { CardUi } from '../cards/types.ts';
 import type { Act, Id, ThreadListener } from '../data/api.ts';
 import type { Fake } from '../data/fake.ts';
-import { buildWorld, holdReads, renderIn, testInstance } from '../test-world.tsx';
+import { buildWorld, holdReads, renderIn, testCutter, testInstance } from '../test-world.tsx';
 import { landsOn, ok, refuse, type CardRules } from '../../rules/cards.ts';
 import type { Instance } from '../../rules/types.ts';
 import { pageOf, pageRange, threadHref } from './pages.ts';
@@ -2457,8 +2457,7 @@ describe('a reply cut in under its post', () => {
     if (!a.ok) throw new Error(`expected an answer, got a refusal: ${a.error}`);
     return a.value;
   };
-  const cutter: CardRules = { key: 'cutter', name: 'Cutter', alignment: 'pepperoni', rarity: 'rare', replies: true, playPrice: () => 0, validateConfig: (c) => ok(c ?? {}), canApply: (t, e, _c, now) => landsOn(cutter, t, e, now) };
-  const replying: Instance = { ...testInstance, cards: [...testInstance.cards, cutter], settings: { ...testInstance.settings, postMaxLength: 50 } };
+  const replying: Instance = { ...testInstance, cards: [...testInstance.cards, testCutter], settings: { ...testInstance.settings, postMaxLength: 50 } };
   /** The thread of `acts` posts, `Pipewrench`'s cutter played on post 3 with the words given (none: not played yet), and an admin for ending it. */
   async function cutWorld(acts = 45, played: string | null = 'Excuse me.', perPage?: number) {
     const w = world(acts, undefined, replying);

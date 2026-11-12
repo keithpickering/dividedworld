@@ -50,7 +50,7 @@ import { plainRefusal, withCardEconomy } from './faces.ts';
 import { Kit } from './Kit.tsx';
 import { olderWords, surfaceShare, surfaceWords } from './lens-words.ts';
 import { backWords, CAUGHT_STATE, caughtWords, endedWords, gimmickWords, kindsOf, OVER_STATE, playsPhrase, sumOf, UNTAKEN_STATE, untakenWords } from './marks.ts';
-import { backOver, defaultView, inPlayOrder, isBack, markedPlays, shownPlays, useCardView, usePlays, type Plays } from './plays.ts';
+import { backOver, defaultView, inPlayOrder, isBack, keepingKeys, markedPlays, shownPlays, useCardView, usePlays, type Plays } from './plays.ts';
 import type { CardPlay, CardView } from './types.ts';
 import { VisitPanel, readVisit } from './Visit.tsx';
 import { useCaughtFate, useSprungWords } from './sprung.ts';
@@ -219,7 +219,7 @@ export function useResolvedView(store: Plays, post: Id, kind: string, nameOf?: (
     const rules = instance.cards.find((c) => c.key === kind);
     /* A play beyond a post ends on its timer: the view's way out says when, the latest of the kind's (each is drawn until its own). */
     const latestEnd = ofKind.filter((p) => !p.caught && !p.reversed && !p.untaken && p.ends !== undefined).map((p) => p.ends!).sort((a, b) => Date.parse(b) - Date.parse(a))[0];
-    const base = defaultView({ name: rules?.name ?? kind }, ui.cards.find((c) => c.key === kind), economy, latestEnd, ofKind.filter((p) => !p.caught && !p.reversed && !p.untaken));
+    const base = defaultView({ name: rules?.name ?? kind, ...(rules?.keeps ? { keeps: true as const } : {}) }, ui.cards.find((c) => c.key === kind), economy, latestEnd, ofKind.filter((p) => !p.caught && !p.reversed && !p.untaken), api.now());
     const caught = Object.fromEntries(ofKind.filter((p) => p.caught).map((p) => {
       const trap = here.traps[p.id];
       return [p.id, caughtWords(trap ? cardName(trap) : null)];
@@ -673,7 +673,7 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
   const onInk = useOnInk();
   const host = useLensHost();
   const now = useUntil(here.billed);
-  const billed = markedPlays(shownPlays(here.billed, api.now()), now);
+  const billed = markedPlays(shownPlays(here.billed, api.now()), now, keepingKeys(instance.cards));
   const admin = useLensAdmin();
   const cardKinds = kindsOf(billed);
   /* A form is the panel's one tab while it is open; a visit's tab is ahead of the cards'. */
