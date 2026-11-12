@@ -286,7 +286,7 @@ export interface CardRules<Config = unknown> {
   /**
    * A persona's options repaired against the post before they are decided (CLAUDE.md, "A validator tighter than the schema"): a card whose
    * options a model can overshoot (a list longer than its most, an entry that is not in the post) trims what it can and names each trim.
-   * It never invents an option. A player's play is never repaired. Given the options unchecked and the post as the card's rules see it.
+   * It never invents an option. A player's play is never repaired. If it throws, the persona's options are decided as given (no repair) and the call's record names the throw. Given the options unchecked and the post as the card's rules see it.
    */
   repairStaff?(config: unknown, target: PostTarget): { readonly config: unknown; readonly trims: readonly { readonly path: string; readonly predicate: string; readonly before: number; readonly after: number }[] };
   /** For a card whose effect holds state (Whoops!'s strokes): checks a state to be saved. */

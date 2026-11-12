@@ -450,7 +450,13 @@ async function decideOptions(db: Db, tuned: Instance, rules: Instance['cards'][n
   const t = postTarget(post.act, post.kind, post.body, post.version);
   const effects = effectsOnTarget(t, own ?? [], above);
   // The card's own repair of what the persona chose, against the post as its rules see it, before the options are decided; a player's play never comes here.
-  const repaired = rules.repairStaff?.(config, t) ?? { config, trims: [] };
+  // A repair that throws is no repair: the options are decided as given, and the throw is named like a trim, so a card's bug never costs the answer.
+  let repaired: { readonly config: unknown; readonly trims: readonly Trim[] } = { config, trims: [] };
+  try {
+    repaired = rules.repairStaff?.(config, t) ?? repaired;
+  } catch (e) {
+    repaired = { config, trims: [{ path: `card.config.${rules.key}`, predicate: 'repairThrew', before: 1, after: 1 }] };
+  }
   const trims: readonly Trim[] = repaired.trims;
   const decided = on === 'own'
     ? decideSet(rules, tuned.settings, t, effects, repaired.config, tuned.cards)

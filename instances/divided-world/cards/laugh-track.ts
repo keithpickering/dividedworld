@@ -55,6 +55,15 @@ function crosses(a: readonly { readonly from: number; readonly to: number }[], b
   return false;
 }
 
+/** A phrase as a cue holds it (trimmed), or the reason it is out of bounds: the one list `validateConfig` refuses by and `repairCues` drops by. */
+function boundedPhrase(raw: string): { readonly ok: true; readonly phrase: string } | { readonly ok: false; readonly why: string } {
+  const phrase = raw.trim();
+  if (characters(phrase) > PHRASE.most) return { ok: false, why: `the phrase is at most ${PHRASE.most} characters` };
+  if ((phrase.match(WORDISH) ?? []).length < PHRASE.least) return { ok: false, why: `the phrase has at least ${PHRASE.least} letters or digits` };
+  if (LINE_BREAK.test(phrase)) return { ok: false, why: 'the phrase is one line' };
+  return { ok: true, phrase };
+}
+
 const cuesOf = (config: unknown): readonly Cue[] | null => {
   const cues = typeof config === 'object' && config !== null ? (config as { cues?: unknown }).cues : undefined;
   return Array.isArray(cues) && cues.every((c) => typeof c?.phrase === 'string') ? (cues as readonly Cue[]) : null;
@@ -78,14 +87,34 @@ function repairCues(config: unknown, target: PostTarget): { readonly config: unk
     if (next.length < kept.length) trims.push({ path: 'card.config.laugh-track.cues', predicate, before: kept.length, after: next.length });
     kept = next;
   };
-  drop('cueShape', kept.filter((c) => typeof c === 'object' && c !== null && typeof (c as Cue).phrase === 'string' && SOUNDS.includes((c as Cue).sound)));
-  drop('phraseNotInPost', (kept as Cue[]).filter((c) => occurrences(target.text, c.phrase).length > 0));
-  const clear: Cue[] = [];
-  for (const c of kept as Cue[]) {
-    const mine = occurrences(target.text, c.phrase);
-    if (!clear.some((o) => sameWords(o.phrase, c.phrase)) && !crosses(mine, placesOf(target.text, clear))) clear.push(c);
+  // A cue is kept as validation reads it: the trimmed phrase, within the phrase's bounds, and a known sound. Nothing below can then meet a phrase the matcher cannot take.
+  const shaped: Cue[] = [];
+  for (const c of kept) {
+    const { phrase: p, sound } = typeof c === 'object' && c !== null ? (c as { phrase?: unknown; sound?: unknown }) : {};
+    if (typeof p !== 'string' || !SOUNDS.includes(sound as Sound)) continue;
+    const bounded = boundedPhrase(p);
+    if (bounded.ok) shaped.push({ phrase: bounded.phrase, sound: sound as Sound });
   }
-  drop('overlapsEarlierCue', clear);
+  drop('cueShape', shaped);
+  // `phraseNotInPost` and `overlapsEarlierCue` run in that order on each cue, and stop once five clear cues are kept: the rest are left
+  // unexamined for `mostFiveCues` to drop, so the work is bounded by the cap and not by the list (and each trim counts the unexamined as left).
+  const clear: Cue[] = [];
+  let examined = 0;
+  let notInPost = 0;
+  for (const c of shaped) {
+    if (clear.length >= CUES.most) break;
+    examined++;
+    const mine = occurrences(target.text, c.phrase);
+    if (mine.length === 0) notInPost++;
+    else if (!clear.some((o) => sameWords(o.phrase, c.phrase)) && !crosses(mine, placesOf(target.text, clear))) clear.push(c);
+  }
+  const unexamined = shaped.slice(examined);
+  const path = 'card.config.laugh-track.cues';
+  const inPost = shaped.length - notInPost;
+  if (notInPost > 0) trims.push({ path, predicate: 'phraseNotInPost', before: shaped.length, after: inPost });
+  const overlapping = examined - notInPost - clear.length;
+  if (overlapping > 0) trims.push({ path, predicate: 'overlapsEarlierCue', before: inPost, after: inPost - overlapping });
+  kept = [...clear, ...unexamined];
   drop('mostFiveCues', kept.slice(0, CUES.most));
   let fewer = kept as Cue[];
   while (fewer.length > 1 && placesOf(target.text, fewer).length > PLACES.most) fewer = fewer.slice(0, -1);
@@ -152,10 +181,9 @@ export const laughTrack: CardRules<LaughTrackConfig> = {
     for (const c of raw) {
       const { phrase: p, sound } = typeof c === 'object' && c !== null ? (c as { phrase?: unknown; sound?: unknown }) : {};
       if (typeof p !== 'string' || !SOUNDS.includes(sound as Sound)) return refuse('a cue is a phrase and Laugh, Cheer or Boo');
-      const phrase = p.trim();
-      if (characters(phrase) > PHRASE.most) return refuse(`the phrase is at most ${PHRASE.most} characters`);
-      if ((phrase.match(WORDISH) ?? []).length < PHRASE.least) return refuse(`the phrase has at least ${PHRASE.least} letters or digits`);
-      if (LINE_BREAK.test(phrase)) return refuse('the phrase is one line');
+      const bounded = boundedPhrase(p);
+      if (!bounded.ok) return refuse(bounded.why);
+      const { phrase } = bounded;
       if (cues.some((o) => sameWords(o.phrase, phrase))) return refuse('two cues have the same phrase');
       cues.push({ phrase, sound: sound as Sound });
     }

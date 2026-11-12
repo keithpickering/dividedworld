@@ -710,6 +710,35 @@ test('Laugh Track cues none of which are in the post are refused in the card\'s 
   assert.equal(d.count('staff_play_card'), 0);
 });
 
+test('the card\'s repair trims are on the record even when the decision then refuses', async () => {
+  const trim = { path: 'card.config.laugh-track.cues', predicate: 'mostFiveCues', before: 9, after: 0 };
+  const repairing = { ...laughTrackRules, repairStaff: () => ({ config: { cues: [] }, trims: [trim] }) };
+  const tuned: Instance = { ...dividedWorld, cards: dividedWorld.cards.map((c) => (c.key === 'laugh-track' ? repairing : c)) };
+  const d = fakeDb({ pool: { threadsWeekly: 0, cardRarityMost: 'uncommon' }, targetBody: NATO });
+  const out = await run(d, fakeModels(asks({ key: 'laugh-track', config: { 'laugh-track': cues('alpha') } })), tuned);
+  assert.ok(out.status === 'ok');
+  const pick = out.picks.find((x) => x.cardOptionsFailed)!;
+  assert.ok(pick, 'the options were refused');
+  assert.deepEqual(pick.trims.filter((t) => t.predicate === 'mostFiveCues'), [trim], 'the repair\'s trim is named though the decision refused');
+  const spend = d.state.spends.find((x) => x.staff === pick.staff)!;
+  assert.ok(spend.record.trims.some((t: { predicate: string }) => t.predicate === 'mostFiveCues'), 'and it is on the call\'s record');
+});
+
+test('a repairStaff that throws is no repair: the options are decided as given, the fallback is built and the throw is named', async () => {
+  const throwing = { ...whoopsRules, repairStaff: () => { throw new SyntaxError('Invalid regular expression'); } };
+  const tuned: Instance = { ...dividedWorld, cards: dividedWorld.cards.map((c) => (c.key === 'whoops' ? throwing : c)) };
+  const bad = await run(fakeDb(oneReply), fakeModels(asks({ key: 'whoops', config: { whoops: { color: 5 } } })), tuned);
+  assert.ok(bad.status === 'ok');
+  const pick = bad.picks.find((x) => x.card)!;
+  assert.equal(pick.status, 'posted', 'the post stands');
+  assert.ok(pick.trims.some((t) => t.path === 'card.config.whoops' && t.predicate === 'repairThrew'), 'the throw is named');
+  assert.ok(pick.trims.some((t) => t.path === 'card.config.whoops' && t.after === 0 && t.predicate !== 'repairThrew'), 'the options failed as they would without the hook');
+  const d = fakeDb(oneReply);
+  const good = await run(d, fakeModels(asks({ key: 'whoops', config: { whoops: { color: '#12ab34' } } })), tuned);
+  assert.ok(good.status === 'ok');
+  assert.deepEqual(d.of('staff_play_card')[0]!.config, { color: '#12ab34' }, 'valid options are decided as given');
+});
+
 test('a Set with options reads its own new post as the target, after it is written, and sets with the decided config', async () => {
   // The only Divided World set card with options is Card Collector, whose option is the card it names; so the instance here carries a set card on a cast
   // with Whoops!'s options and a catch of its own: the persona's ink is checked by the card's own rules, and the named catch goes to SQL.

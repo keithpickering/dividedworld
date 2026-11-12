@@ -38,8 +38,8 @@ test('mostFiveCues keeps the first five', () => {
 });
 
 test('mostThirtyPlaces drops cues from the end while the places pass thirty, and never the last cue', () => {
-  const text = `${'zing '.repeat(PLACES.most)}${'zap '.repeat(3)}`;
-  const out = repair([cue('zing'), cue('zap')], text);
+  const text = `${'zing '.repeat(PLACES.most)}${'zaps '.repeat(3)}`;
+  const out = repair([cue('zing'), cue('zaps')], text);
   assert.deepEqual(out.config, { cues: [cue('zing')] });
   assert.deepEqual(out.trims, [{ path: PATH, predicate: 'mostThirtyPlaces', before: 2, after: 1 }]);
   const alone = repair([cue('zing')], 'zing '.repeat(PLACES.most + 1));
@@ -95,4 +95,52 @@ test('repairStaff does not throw and stays quick on a post with a very long run 
   assert.ok(performance.now() - started < 1500);
   assert.ok(Array.isArray((out.config as { cues: Cue[] }).cues));
   repair([cue('word')], 'word '.repeat(200000));
+});
+
+test('a phrase validation would refuse is dropped by the repair, so the valid cue after it is kept (too short, too long, a line break)', () => {
+  const text = 'Hello there wonderful world, nice try! a b';
+  const out = repair([cue('a b', 'boo'), cue('nice try')], text);
+  assert.deepEqual(out.config, { cues: [cue('nice try')] });
+  assert.deepEqual(out.trims, [{ path: PATH, predicate: 'cueShape', before: 2, after: 1 }]);
+  assert.equal(laughTrack.validateConfig(out.config).ok, true, 'what repair keeps, validation keeps');
+  const long = 'w'.repeat(101);
+  const longOut = repair([cue(long), cue('nice try')], `${long} nice try`);
+  assert.deepEqual(longOut.config, { cues: [cue('nice try')] });
+  const broken = repair([cue('nice\ntry'), cue('wonderful')], 'nice\ntry wonderful');
+  assert.deepEqual(broken.config, { cues: [cue('wonderful')] });
+  assert.equal(laughTrack.validateConfig(broken.config).ok, true);
+});
+
+test('the repaired cue carries the trimmed phrase, the one validation decides', () => {
+  const out = repair([cue('  nice try  ', 'cheer')], 'oh nice try there');
+  assert.deepEqual(out.config, { cues: [cue('nice try', 'cheer')] });
+  assert.deepEqual(out.trims, [], 'trimming whitespace is no trim of a cue');
+  assert.deepEqual((laughTrack.validateConfig(out.config) as unknown as { value: { cues: Cue[] } }).value.cues, [cue('nice try', 'cheer')]);
+});
+
+test('repairStaff never throws and never invents a cue on hostile input', () => {
+  const text = WORDS.join(' ');
+  for (const config of [null, undefined, 'cues', 7, [], { cues: null }, { cues: 'alpha' }, { cues: {} }]) {
+    assert.deepEqual(laughTrack.repairStaff!(config, target(text)), { config, trims: [] });
+  }
+  const hostile = laughTrack.repairStaff!({ cues: [null, 3, [cue('alpha')], undefined, { phrase: cue('alpha'), sound: 'laugh' }, cue('bravo')] }, target(text));
+  assert.deepEqual(hostile.config, { cues: [cue('bravo')] });
+  const huge = laughTrack.repairStaff!({ cues: [cue('a'.repeat(100000)), cue('alpha')] }, target(text));
+  assert.deepEqual(huge.config, { cues: [cue('alpha')] });
+  const onlyHuge = { cues: [cue('a'.repeat(100000))] };
+  assert.deepEqual(laughTrack.repairStaff!(onlyHuge, target(text)), { config: onlyHuge, trims: [] });
+});
+
+test('the overlap pass stops at five clear cues and the rest are counted as dropped by mostFiveCues', () => {
+  const words = Array.from({ length: 2000 }, (_, i) => `word${String(i).padStart(4, '0')}`);
+  const started = performance.now();
+  const out = repair(words.map((w) => cue(w)), words.join(' '));
+  assert.ok(performance.now() - started < 1500);
+  assert.equal((out.config as { cues: Cue[] }).cues.length, 5);
+  assert.deepEqual(out.trims, [{ path: PATH, predicate: 'mostFiveCues', before: 2000, after: 5 }]);
+  const mixed = repair([cue('alpha'), cue('alpha'), ...WORDS.slice(1, 7).map((w) => cue(w))]);
+  assert.deepEqual(mixed.trims, [
+    { path: PATH, predicate: 'overlapsEarlierCue', before: 8, after: 7 },
+    { path: PATH, predicate: 'mostFiveCues', before: 7, after: 5 },
+  ]);
 });
