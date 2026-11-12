@@ -263,6 +263,41 @@ test('with no post left the pool post frame clips its title to 40 characters, th
   assert.equal(smallest, 'Welcome to the Message Boards - Thread View\nThread:\n\nOld Timer:', 'a budget nothing meets returns the smallest prompt and never throws');
 });
 
+test('an over-budget frame for a new thread (no title) does not throw, and has nothing to drop or clip', () => {
+  const c = fitFrame(1, { thread: null });
+  assert.equal(c.prompt, 'Welcome to the Message Boards - Thread View\nThread: (new)\n\nOld Timer:');
+});
+
+test('with every post dropped and the whole title still fitting, the title is kept whole', () => {
+  const bare = fitFrame(1_000_000, { thread: { title: LONG_TITLE, posts: [] } }).prompt;
+  const c = fitFrame(bare.length, { thread: { title: LONG_TITLE, posts: fitPosts } });
+  assert.equal(c.prompt, bare, 'every post went, and the title was not touched');
+});
+
+test('a title bound below 40 is the clip that is used, and no clip is longer than the bound', () => {
+  const limits = { ...fitLimits, titleMaxLength: 20 };
+  const thread = { title: 'T'.repeat(80), posts: fitPosts };
+  const at = (title: string) => `Welcome to the Message Boards - Thread View\nThread:${title}\n\nOld Timer:`;
+  const whole = fitFrame(at(` ${'T'.repeat(20)}…`).length, { thread, limits }).prompt;
+  assert.equal(whole, at(` ${'T'.repeat(20)}…`), 'the bound\'s clip, not a 40-character one');
+  assert.equal(fitFrame(at(` ${'T'.repeat(20)}…`).length - 1, { thread, limits }).prompt, at(''), 'a hair under it, no title');
+});
+
+test('a long thread is fitted in about log2 of its posts in counts, and keeps the most posts that fit, newest kept', () => {
+  const posts = Array.from({ length: 200 }, (_, i) => ({ name: `P${String(i).padStart(3, '0')}`, pronouns: they, body: 'z'.repeat(60) }));
+  const limits = { threadPosts: 200, excerptChars: 100, postMaxLength: 200, titleMaxLength: 100 };
+  const lineLen = `P000: ${'z'.repeat(60)}\n`.length;
+  const bare = chatterCompletion({ name: 'Old Timer', thread: { title: 'Long', posts: [] }, limits, fit: ROOMY }).prompt.length;
+  let calls = 0;
+  const count = (t: string): number => { calls++; return t.length; };
+  const c = chatterCompletion({ name: 'Old Timer', thread: { title: 'Long', posts }, limits, fit: { budget: bare + 73 * lineLen - 1, count } });
+  assert.ok(calls <= 12, `${calls} counts`);
+  const kept = c.prompt.split('\n').filter((l) => /^P\d{3}:/.test(l));
+  assert.equal(kept.length, 72, 'the most posts that fit');
+  assert.equal(kept[0]!.slice(0, 4), 'P128');
+  assert.equal(kept[71]!.slice(0, 4), 'P199', 'the newest is kept');
+});
+
 test('a title clip does not split a surrogate pair', () => {
   const title = `${'a'.repeat(39)}😀${'b'.repeat(20)}`;
   const c = fitFrame(1_000_000, { thread: { title, posts: [] }, limits: { ...fitLimits, titleMaxLength: 100 } });

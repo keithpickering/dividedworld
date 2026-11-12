@@ -49,6 +49,8 @@ interface World {
   targetBody?: string;
   /** The open walls pool_thread reports on every thread (`{ play, card, about }`). */
   walls?: { play: string; card: string; about: string }[];
+  /** When set, pool_thread reports this many long posts (Poster0 oldest) instead of the one short one. */
+  longThread?: number;
 }
 type Spend = { day: string; staff: string; trigger: string; post_act: string; card_act: string | null; started_thread: boolean; record: any };
 
@@ -89,6 +91,7 @@ function fakeDb(w: World = {}) {
         case 'character_faces': return {} as T;
         case 'pool_thread': {
           const at = threads.indexOf(args.in_thread as string);
+          if (w.longThread) return { title: `Thread ${at}`, posts: Array.from({ length: w.longThread }, (_, i) => ({ act: quotes[at] ?? 'none', name: `Poster${i}`, pronouns: null, body: `post ${i} ${'the quick brown fox jumps over a lazy dog '.repeat(8)}` })) } as T;
           return { title: `Thread ${at}`, posts: [{ act: quotes[at] ?? 'none', name: 'Ann', pronouns: { subject: 'she', object: 'her', determiner: 'her', possessive: 'hers', reflexive: 'herself', plural: false }, body: 'Hello there.' }], ...(w.walls ? { walls: w.walls } : {}) } as T;
         }
         case 'pool_orphans': {
@@ -502,6 +505,20 @@ test('an old voice\'s pool post asks for the most the window leaves, and its fra
   const bare = await room({ oldVoiceWindow: 64, oldVoicePromptFloor: 8 });
   assert.equal(bare.req.maxTokens, 56);
   assert.ok(bare.req.prompt.endsWith(`${dividedWorld.system.roster.find((p) => p.key === SIGH)!.name}:`), 'the persona\'s own line is never removed');
+});
+
+test('an old voice\'s pool post drops the thread\'s oldest posts when the thread overflows the window less its answer', async () => {
+  const world = oldSigh({ oldVoiceWindow: 400, oldVoicePromptFloor: 256, digestExcerptChars: 300, pool: { ...dividedWorld.settings.pool, chatterThreadPosts: 8 } });
+  const d = fakeDb({ pool: { threadsWeekly: 0 }, named: [SIGH], longThread: 8 });
+  const m = fakeModels(() => ({ words: 'chat' }), 'a post');
+  await run(d, m, world);
+  const req = m.completions[0]!;
+  const count = tokenCounter(world.settings.oldVoiceTokenizer);
+  const budget = world.settings.oldVoiceWindow - req.maxTokens!;
+  assert.equal(req.maxTokens, 144);
+  assert.ok(count(req.prompt) <= budget, `${count(req.prompt)} tokens against a budget of ${budget}`);
+  assert.ok(!req.prompt.includes('Poster0:') && req.prompt.includes('Poster7:'), 'the oldest posts went and the newest stayed');
+  assert.ok(req.prompt.endsWith(`${dividedWorld.system.roster.find((p) => p.key === SIGH)!.name}:`));
 });
 
 test('an old voice\'s pool post that the window refuses (promptTooLong, or a server\'s own 4xx) is a rejected pick that writes nothing', async () => {

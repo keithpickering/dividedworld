@@ -333,6 +333,12 @@ export interface CardRules<Config = unknown> {
 export const WRITE_TOKENS_MOST = 2000;
 
 /**
+ * How long a thread's title is clipped to, in characters, when a frame for the old voice is over its budget and has dropped every earlier post it can
+ * (design section 3, docs/plans/2026-11-12-old-voice-window-design.md); past it the title is emptied. Every such frame clips to this one length, so none can drift.
+ */
+export const FIT_TITLE_CHARS = 40;
+
+/**
  * The most tokens a play of a card that writes may buy in this instance: the smaller of `WRITE_TOKENS_MOST` and the old voice's window less the least
  * prompt a play leaves room for (design section 4, docs/plans/2026-11-12-old-voice-window-design.md). It is computed wherever the most is read, so no
  * pair of settings can be wrong and a row that lowers the window never stops the instance.

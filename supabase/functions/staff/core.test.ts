@@ -43,7 +43,9 @@ interface World {
   modBots?: Record<string, unknown>;
   failOn?: Record<string, number | 'always'>;
   /** Visits the tick files while the model is thinking (the race). */
-  tickFiles?: string[];  /** What `mod_group_context` answers. */
+  tickFiles?: string[];
+  /** When set, pool_thread reports this many long posts (Poster0 oldest, the inspected post last) instead of the one short one. */
+  longThread?: number;  /** What `mod_group_context` answers. */
   groups?: { conferred: { key: string; name: string; tone: string }[]; characters: { id: string; capped: boolean; held: boolean }[] };
 }
 const mod = (allowance: number, over: Partial<Standing> = {}): Standing => ({ office: 'mod', allowance, order: 'Crack down on bumping in Games.', beat: [{ id: GAMES, name: 'Games' }], ...over });
@@ -89,6 +91,7 @@ function fakeDb(w: World = {}) {
         case 'character_faces': return {} as T;
         case 'pool_thread': {
           const v = visits.find((x) => x.thread === args.in_thread)!;
+          if (w.longThread) return { title: 'Best Mario game?', posts: Array.from({ length: w.longThread }, (_, i) => ({ act: i === w.longThread! - 1 ? v.post : `x${i}`, name: `Poster${i}`, body: `post ${i} ${'the quick brown fox jumps over a lazy dog '.repeat(8)}` })) } as T;
           return { title: 'Best Mario game?', posts: [{ act: v.post, name: 'Bob', body: 'Odyssey. Odyssey.' }] } as T;
         }
         case 'apply_mod_move': {
@@ -354,6 +357,20 @@ test('an old voice\'s filing asks for the most the window leaves, and its frame 
   assert.ok(tight.count(tight.req.prompt) <= tight.window - 100, 'the prompt fits the budget');
   const bare = await room({ oldVoiceWindow: 64, oldVoicePromptFloor: 8 });
   assert.match(bare.req.prompt, /\[Moderator action: [^\n]*\]\n[^\n]*:$/, 'the moderator-action line and the Mod\'s own line are never removed');
+});
+
+test('an old voice\'s filing drops the thread\'s oldest posts when the thread overflows the window less its line', async () => {
+  const world = { ...withVoice(MON, 'oldVoice'), settings: { ...dividedWorld.settings, oldVoiceWindow: 400, oldVoicePromptFloor: 300, digestExcerptChars: 300, pool: { ...dividedWorld.settings.pool, chatterThreadPosts: 8 } } };
+  const d = fakeDb({ visits: [due(V1, P1)], longThread: 8 });
+  const m = fakeModels(() => ({ move: move() }), 'A line.');
+  await run(d, m, world);
+  const req = m.completions[0]!;
+  const count = tokenCounter(world.settings.oldVoiceTokenizer);
+  const budget = world.settings.oldVoiceWindow - req.maxTokens!;
+  assert.equal(req.maxTokens, 100);
+  assert.ok(count(req.prompt) <= budget, `${count(req.prompt)} tokens against a budget of ${budget}`);
+  assert.ok(!req.prompt.includes('Poster0:') && req.prompt.includes('Poster7:'), 'the oldest posts went and the newest stayed');
+  assert.match(req.prompt, /\[Moderator action: [^\n]*\]\n[^\n]*:$/);
 });
 
 test('an old voice\'s filing that the window refuses (promptTooLong, or a server\'s own 4xx) is filed with its stock line', async () => {

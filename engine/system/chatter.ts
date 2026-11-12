@@ -24,6 +24,7 @@
  *
  * Portable by construction: no vendor client is imported, and the engine knows no instance.
  */
+import { FIT_TITLE_CHARS } from '../rules/cards.ts';
 import { selfPronounLine, taggedName, type PronounSet } from '../rules/pronouns.ts';
 import type { Persona, SystemContent } from '../rules/types.ts';
 import { personaPrompt } from './prompt.ts';
@@ -394,12 +395,9 @@ export interface PromptFit {
   readonly count: (text: string) => number;
 }
 
-/** The title's first clip when a prompt is over budget, before it is emptied (the same 40 characters You Were Saying? uses). */
-export const FIT_TITLE_CHARS = 40;
-
 /**
- * Fits a thread document to its budget, in the design's section 3 order: thread posts dropped one at a time, oldest first; then the title clipped to 40
- * characters; then the title emptied (`build` gets null). The caller's `build` owns every line that is never removed (the persona's own line, a filing's
+ * Fits a thread document to its budget, in the design's section 3 order: thread posts dropped, oldest first; then the title clipped to `FIT_TITLE_CHARS`;
+ * then the title emptied (`build` gets null). The caller's `build` owns every line that is never removed (the persona's own line, a filing's
  * moderator-action line), so none can be dropped here. A budget nothing meets returns the smallest prompt and never throws: `models.complete` refuses
  * it before it is sent (`promptTooLong`). Under budget the first prompt built, with every post and the title as `clip` gives it, is returned unchanged.
  * A title's clip never splits a surrogate pair (`clip` cuts through `capLength`).
@@ -415,9 +413,20 @@ export function fitThreadPrompt(i: {
   const full = i.title === null ? null : clip(i.title, i.titleMaxLength);
   const first = i.build(i.posts, full);
   if (fits(first)) return first;
-  for (let dropped = 1; dropped <= i.posts.length; dropped++) {
-    const text = i.build(i.posts.slice(dropped), full);
-    if (fits(text)) return text;
+  // How many posts go is found by bisection, so a thread of N posts costs about log2(N) counts and not N (a count reads the whole prompt, and a busy
+  // instance's thread read has no upper bound). A token count is not strictly monotone under a BPE, so the answer is a count that was seen to fit: the
+  // bisection never returns a prompt it did not count under the budget.
+  const all = i.build([], full);
+  if (fits(all)) {
+    let over = 0; // dropping this many was counted over budget
+    let fit = i.posts.length; // dropping this many was counted within it
+    let kept = all;
+    while (fit - over > 1) {
+      const mid = (over + fit) >> 1;
+      const text = i.build(i.posts.slice(mid), full);
+      if (fits(text)) { fit = mid; kept = text; } else over = mid;
+    }
+    return kept;
   }
   if (i.title === null) return i.build([], null);
   const short = clip(i.title, Math.min(FIT_TITLE_CHARS, i.titleMaxLength));
