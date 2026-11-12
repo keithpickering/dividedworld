@@ -33,7 +33,11 @@ export interface Mixer {
   /** Resolves whether the mixer is now unlocked: false when the browser refused, so the next gesture may try again. */
   unlock(): Promise<boolean>; suspend(): Promise<void>; resume(): Promise<void>;
   play(slot: SoundSlot, o?: { group?: string; fadeMs?: number }): Promise<{ lengthMs: number } | null>;
-  loop(slot: SoundSlot, o?: { group?: string; onStop?: (why: LoopStop) => void }): Promise<LoopHandle | null>;
+  /**
+   * A loop starts at gain 0, silent until its owner's `setGain` raises it. `cancelled` is asked once the sound is decoded: true resolves null
+   * with no source made and no group voice replaced, for an owner that gave up while the file loaded.
+   */
+  loop(slot: SoundSlot, o?: { group?: string; onStop?: (why: LoopStop) => void; cancelled?: () => boolean }): Promise<LoopHandle | null>;
 }
 export function createMixer(deps: MixerDeps): Mixer {
   /** The context once made; `ctx` is the same context once it has resumed, and only then may anything sound. */
@@ -87,7 +91,7 @@ export function createMixer(deps: MixerDeps): Mixer {
     source.stop(at);
   }
   /** Build a voice (source through its own gain into the bus) for a decoded buffer, started now. */
-  function start(c: AudioContextLike, slot: SoundSlot, buffer: { readonly duration: number }, looped: boolean, fadeInMs: number) {
+  function start(c: AudioContextLike, slot: SoundSlot, buffer: { readonly duration: number }, looped: boolean, fadeInMs: number, from = 1) {
     const bus = busNode(c, slot.bus);
     const source = c.createBufferSource();
     const voice = c.createGain();
@@ -96,7 +100,7 @@ export function createMixer(deps: MixerDeps): Mixer {
     if (fadeInMs > 0) {
       voice.gain.setValueAtTime(0, c.currentTime);
       voice.gain.linearRampToValueAtTime(1, c.currentTime + fadeInMs / 1000);
-    } else voice.gain.value = 1;
+    } else voice.gain.value = from;
     source.connect(voice);
     voice.connect(bus);
     source.onended = () => { source.disconnect(); voice.disconnect(); };
@@ -151,11 +155,11 @@ export function createMixer(deps: MixerDeps): Mixer {
     async loop(slot, o = {}) {
       try {
         const r = await ready(slot);
-        if (!r) return null;
+        if (!r || o.cancelled?.()) return null;
         const { c, buffer } = r;
         const prior = o.group === undefined ? undefined : groups.get(o.group);
         if (prior) prior.end(0);
-        const { source, voice } = start(c, slot, buffer, true, 0);
+        const { source, voice } = start(c, slot, buffer, true, 0, 0);
         let stopped = false;
         const end = (why: LoopStop, fadeMs: number): void => {
           if (stopped) return;

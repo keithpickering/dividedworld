@@ -7,6 +7,7 @@ import { BOSS_PREMISE, MOD_BOT_PREMISE, MEMBER_PREMISE, BOSS_ANSWER_RULES, MOD_B
 import { personaPrompt } from '../../../engine/system/prompt.ts';
 import { instanceProblems } from '../../../engine/rules/instance.ts';
 import { instance } from '../index.ts';
+import type { Beat } from '../../../engine/rules/types.ts';
 import { STAFF_TOKENS, STOCK_LINE_KEYS, STOCK_LINE_TOKENS } from '../../../engine/system/stock.ts';
 import { PRONOUN_FORMS, PRONOUN_PRESETS } from '../../../engine/rules/pronouns.ts';
 
@@ -221,4 +222,54 @@ test('no persona\'s startingHobby, persuadedBy or temperament refers to the pers
       assert.doesNotMatch(p[field], /\b(it|its|itself)\b/i, `${p.key}.${field}`);
     }
   }
+});
+
+test('FanGaME\'s arc has the four beats of the design, in order, with their unlocks, firmness and bundles', () => {
+  const arc = fangame.arc ?? [];
+  assert.deepEqual(arc.map((b) => b.key), ['split', 'picking-apart', 'consolidation', 'everything']);
+  const [split, picking, consolidation, everything] = arc as [Beat, Beat, Beat, Beat];
+  assert.deepEqual(split.unlock, [{ kind: 'phase', phase: 'reign' }]);
+  assert.deepEqual(split.due, { phase: 'reign', daysIntoPhase: 7 });
+  assert.equal(split.bundle?.name, 'The Split');
+  assert.deepEqual(split.bundle?.parts.map((p) => [p.role, p.kind]), [['minus', 'createBoard'], ['fangames', 'createBoard']]);
+  assert.deepEqual(picking.unlock, [{ kind: 'beatLanded', beat: 'split' }]);
+  assert.equal(picking.due, undefined);
+  assert.equal(picking.bundle, undefined);
+  assert.deepEqual(consolidation.unlock, [{ kind: 'phase', phase: 'meltdown' }, { kind: 'beatLanded', beat: 'split' }]);
+  assert.equal(consolidation.due, undefined);
+  assert.equal(consolidation.bundle, undefined);
+  assert.deepEqual(everything.unlock, [{ kind: 'phase', daysBeforeEnd: 7 }, { kind: 'beatLanded', beat: 'split' }]);
+  assert.deepEqual(everything.due, { daysBeforeEnd: 2 });
+  assert.equal(everything.bundle?.name, 'Everything is World -1');
+  assert.deepEqual(everything.bundle?.parts.map((p) => [p.role, p.kind]), [['final', 'mergeBoard']]);
+});
+
+test('FanGaME\'s one mini-arc is victory-lap, and it is not repeatable', () => {
+  assert.deepEqual((fangame.miniArcs ?? []).map((b) => b.key), ['victory-lap']);
+  assert.equal(fangame.miniArcs?.[0]?.repeatable ?? false, false);
+});
+
+test('FanGaME holds back createBoard, moveThread and mergeBoard until their beats', () => {
+  assert.deepEqual(fangame.holdsBack, [
+    { kind: 'createBoard', until: 'split' },
+    { kind: 'moveThread', until: 'picking-apart' },
+    { kind: 'mergeBoard', until: 'consolidation' },
+  ]);
+});
+
+test('no habit names dividing the board; the arc carries it', () => {
+  const prompt = personaPrompt(system, fangame, 'boss');
+  const habit = prompt.split('\n').find((l) => l.includes('Improvement Initiatives'));
+  assert.ok(habit, 'the Improvement Initiatives habit is in the prompt');
+  assert.ok(habit.endsWith('in your reign you enact them.'), habit);
+  assert.doesNotMatch(prompt, /dividing the board|everything else sent somewhere else/);
+});
+
+test('the Boss premise says most moves end and a few stay, and no longer says every move ends', () => {
+  assert.doesNotMatch(BOSS_PREMISE, /Every move you make ends/);
+  assert.ok(BOSS_PREMISE.includes('Most moves you make end: each has a demand the characters can meet and a time it expires, and you say what both are in plain words when you are asked to. A few build things that stay: a board you create, a thread you move, a board you merge into another. Those last until a later move changes them, and whoever is Boss after you inherits them.'));
+});
+
+test('the instance passes instanceProblems with the arc in', () => {
+  assert.deepEqual(instanceProblems(instance), []);
 });

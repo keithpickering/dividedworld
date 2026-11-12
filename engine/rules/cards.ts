@@ -301,6 +301,12 @@ export interface CardRules<Config = unknown> {
    */
   readonly staffOptions?: { readonly prompt: string; readonly schema: Record<string, unknown> };
   /**
+   * A persona's options repaired against the post before they are decided (CLAUDE.md, "A validator tighter than the schema"): a card whose
+   * options a model can overshoot (a list longer than its most, an entry that is not in the post) trims what it can and names each trim.
+   * It never invents an option. A player's play is never repaired. If it throws, the persona's options are decided as given (no repair) and the call's record names the throw. Given the options unchecked and the post as the card's rules see it.
+   */
+  repairStaff?(config: unknown, target: PostTarget): { readonly config: unknown; readonly trims: readonly { readonly path: string; readonly predicate: string; readonly before: number; readonly after: number }[] };
+  /**
    * A play whose layer any character may add to (a draw) and its own character may take ink off (a wash). `limitKey` is the `screenReads` key
    * holding the most the layer may cover, in whole percent of the grid's cells; `mostLive` the most live draws one play holds. The card's
    * validators keep a draw or a wash in its own shape and return the strokes the engine counts. A surface card is a cast card with a stack of 1.

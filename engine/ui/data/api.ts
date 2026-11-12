@@ -22,6 +22,7 @@ import type { Piece } from '../../rules/cosmetics.ts';
 import type { BeyondPost, Rarity, Reach, SetConditions } from '../../rules/cards.ts';
 import type { AlertKind } from '../../rules/alerts.ts';
 import type { Career } from '../../system/career.ts';
+import type { HandoffFacts } from '../../system/meeting.ts';
 import type { RecordKind } from '../profile/record.ts';
 
 export type Id = string;
@@ -962,6 +963,12 @@ export interface QueuedMove {
   readonly replacedAt: string | null;
   /** The words an admin has put in the place of the rename's description (`replace_queued_description`, 0101); null when none did. The Boss's own stay in `params`. */
   readonly adminDescription: string | null;
+  /** The queued moves it builds on that have not landed (admin_queue, 0331): it lands after them. Empty for a move that waits for none. */
+  readonly waitsFor: readonly { readonly id: number; readonly role: string | null; readonly kind: string; readonly name: string | null }[];
+  /** The bundle the move is a part of (admin_queue, 0329), the part's role in it and the bundle's name; all null for a move that is no part of a bundle. */
+  readonly bundle: Id | null;
+  readonly role: string | null;
+  readonly bundleName: string | null;
 }
 
 /** A landed move with no end yet (admin_queue). */
@@ -978,6 +985,10 @@ export interface MoveInForce {
   readonly landedAt: string;
   readonly expiresAt: string | null;
   readonly progress: DemandProgress;
+  /** The bundle the move is a part of (admin_queue, 0329), the part's role in it and the bundle's name; all null for a move that is no part of a bundle. */
+  readonly bundle: Id | null;
+  readonly role: string | null;
+  readonly bundleName: string | null;
 }
 
 /** A move that ended, or was held or refused and never landed, in the last 30 days (admin_queue). */
@@ -1000,6 +1011,10 @@ export interface MoveEnded {
   readonly card?: string | null;
   /** For a rule refused when it came to land (`how: 'refused'`): the server's reason, in its words. */
   readonly reason?: string | null;
+  /** The bundle the move is a part of (admin_queue, 0329), the part's role in it and the bundle's name; all null for a move that is no part of a bundle. */
+  readonly bundle: Id | null;
+  readonly role: string | null;
+  readonly bundleName: string | null;
 }
 
 /** A face-up play of a staff character, still in force (admin_queue's `staffCards`), for an admin to end. */
@@ -1035,6 +1050,13 @@ export interface HandoverTodo {
   /** How the new Boss was chosen: `nomination` or `rotation`. */
   readonly how: string;
   readonly landedAt: string;
+  /**
+   * The outgoing Boss's handoff note (0337): out of character, written at its last meeting, for the next Boss and for admins; players never see it. Null where none stands (the last meeting failed).
+   * It is the Boss's own words, shown as its note and never as the glass's.
+   */
+  readonly note: string | null;
+  /** What the code knows of the season that ended (`handoff_facts`): boards made, merged and closed, beats played, moves in force, the busiest and quietest boards. True whatever the note says. */
+  readonly facts: HandoffFacts;
 }
 
 /** What the admin screen shows. Each group holds at most `cap` rows; `more` says a group was cut. */
@@ -2024,9 +2046,43 @@ export interface IndexPage {
   readonly unread: number;
 }
 
+/** A board named where a closed board's threads went, or where a thread moved to: enough to link it. */
+export interface BoardRef {
+  readonly id: Id;
+  readonly slug: string;
+  readonly name: string;
+}
+
+/**
+ * A thread that was moved away from the board whose page lists it, within the instance's `movedStubDays` (board_page, 0326): a row that links to the thread
+ * and names the board it is on now. It is a fact of the move, public as the move is.
+ */
+export interface BoardStub {
+  readonly thread: Id;
+  readonly title: string;
+  readonly movedTo: BoardRef;
+  /** When the move landed. */
+  readonly movedAt: string;
+}
+
+/**
+ * A board that is closed (board_page, 0326): merged into another (`mergedInto`), or made by a move that was reversed (`fallback`, where its threads went). Exactly one is set.
+ * Its page lists no threads and no stubs.
+ */
+export interface BoardClosed {
+  readonly mergedInto: BoardRef | null;
+  readonly fallback: BoardRef | null;
+  /** The first open board its threads are in, following merges and fallbacks on (the board above may itself be closed since); null when none can be named. */
+  readonly goesTo: BoardRef | null;
+}
+
 /** A board's page (board_page, 0095). `page` is the page shown, clamped to the board's last. */
 export interface BoardPage {
   readonly board: Board;
+  /** Null for an open board. */
+  readonly closed: BoardClosed | null;
+  /** The threads moved away from this board within `movedStubDays`, newest move first: drawn below the board's own threads, taking none of the page's slots. */
+  readonly stubs: readonly BoardStub[];
   readonly total: number;
   readonly page: number;
   readonly threads: readonly ThreadSummary[];
@@ -2243,9 +2299,9 @@ export interface KayfaApi {
    */
   setAdminContact(links: readonly ContactLink[]): Promise<Answer<readonly ContactLink[]>>;
   /** Holds a move that is waiting: it never lands. An admin's alone, and it cannot be taken back. */
-  holdMove(id: number): Promise<Answer<{ readonly id: number; readonly heldAt: string }>>;
+  holdMove(id: number): Promise<Answer<{ readonly id: number; readonly heldAt: string; /** The queued moves held with it, which build on it. */ readonly heldAlso: readonly number[] }>>;
   /** Ends a move in force now as reversed by an admin; the old name returns at once. An admin's alone. */
-  reverseMove(act: Id): Promise<Answer<{ readonly act: Id; readonly endedBy: Id }>>;
+  reverseMove(act: Id): Promise<Answer<{ readonly act: Id; readonly endedBy: Id; /** The moves in force that built on it, ended with it. */ readonly alsoEnded: readonly Id[]; /** The queued moves held with it. */ readonly heldAlso: readonly number[] }>>;
   /**
    * Ends a card play as reversed by an admin (`reverse_card`, 0092): a `card_end` Act of no character is written beside the play, the
    * layer comes off and the card stops counting; the original play is never changed. An admin's alone; a caught play, one that has
@@ -2280,6 +2336,11 @@ export interface KayfaApi {
   board(slugOrId: string): Promise<Board | null>;
   /** Every board's name now and the name it had before any move: a handful of rows, for the words that name a board (the moderation log, the admin queue). */
   boardNames(): Promise<readonly BoardName[]>;
+  /**
+   * The words that name the threads a `moveThread` moves (move_thread_names, 0327): each thread's title now and the board it left (`left`), keyed by the move's Act when it has landed, else by
+   * the thread (a waiting move leaves the board the thread is on now). A thread that cannot be read is left out, and the sentence says "a thread".
+   */
+  moveThreadNames(items: readonly { readonly thread: Id; readonly act: Id | null }[]): Promise<Readonly<Record<Id, { readonly title: string; readonly left: Id | null }>>>;
   /**
    * A move in force, as its board shows it, or null when the Act is no move (or none the reader may see). The progress is
    * `move_progress`, a public read: it counts characters, posts and public tallies and never players.

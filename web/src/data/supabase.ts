@@ -40,13 +40,14 @@ import { ALERT_KINDS, type AlertKind } from '../../../engine/rules/alerts.ts';
 import type { Piece } from '../../../engine/rules/cosmetics.ts';
 import { RARITIES } from '../../../engine/rules/cards.ts';
 import type { Career } from '../../../engine/system/career.ts';
+import type { HandoffFacts } from '../../../engine/system/meeting.ts';
 import type {
   SurfaceAct, SurfaceNow, SurfaceWritten,
   AdminQueue, Apology, Bar, BoardName, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesLog, QueuedMove, StaffCardPlay, StaffProfile,
   Act, ActKind, AdminAward, AdminKind, Answer, AvatarUpload, BeltCursor, BeltPage, BeltReign, RandomEvent, ShownTrophy, TrophyAwardFailure, TrophyItem, WardrobeItem, Board, Bought, Donated, DriveGift, DriveGifts, BoardSummary, CardEnded, ScoredAs, CardEvent, PackEvent, SurfaceLogRow, WrittenOnMine, CaughtPlay, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd,
   Alert, ContactLink, EffectState, Tail, PostHit, SearchCursor, SearchPage, SearchQuery, Suggestions, ThreadHit, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, SeasonShown, TallyName, Update, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
   Tally, StandingPlace, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, TurnAsked, Wallet, WalletEvent,
-  Boot, BoardPage, IndexPage, Opened, AdminSlot, Slot, SlotMove, Presence, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, LogPage,
+  Boot, BoardPage, BoardRef, BoardStub, IndexPage, Opened, AdminSlot, Slot, SlotMove, Presence, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, LogPage,
   AppealResult, AppealVerdict, InterceptResult, MyBan, LogAppeal, LogBan, LogCosmetic, LogGroupMove, GroupMoveEndWhy, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitChallenge, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
 } from '../../../engine/ui/data/api.ts';
 
@@ -59,6 +60,8 @@ export interface SupabaseApiOptions {
   readonly fetch?: typeof fetch;
   /** For tests of the live channels: a client made elsewhere. */
   readonly client?: SupabaseClient;
+  /** Applied to every character the adapter reads, once, where it is made: the instance's pictures for its staff (engine/ui/data/staff-faces.ts). */
+  readonly face?: (character: Character) => Character;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -467,14 +470,39 @@ function toFrame(v: unknown): Frame | null {
   return [f['x'], f['y'], f['w'], f['h']].every((n) => typeof n === 'number' && Number.isFinite(n)) ? { x: f['x'], y: f['y'], w: f['w'], h: f['h'] } : null;
 }
 
+/** The numbers of an array the server sent; anything else is none. */
+const numberList = (v: unknown): number[] => (Array.isArray(v) ? v.filter((x): x is number => typeof x === 'number') : []);
 const orNull = (v: unknown): string | null => (typeof v === 'string' ? v : null);
 const params = (v: unknown): Readonly<Record<string, unknown>> => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
+
+/** The bundle a move is a part of, as admin_queue says it: all null where it is no part of one. */
+const bundleOf = (r: Row) => ({ bundle: orNull(r['bundle']), role: orNull(r['role']), bundleName: orNull(r['bundleName']) });
 
 function toQueued(r: Row): QueuedMove {
   return {
     id: num(r['id']), staff: String(r['staff'] ?? ''), boss: orNull(r['boss']), bossPronouns: pronounsOrDefault(r['bossPronouns']), kind: String(r['kind'] ?? ''), params: params(r['params']), demand: toDemand(r['demand']),
     why: String(r['why'] ?? ''), goLiveAt: String(r['goLiveAt'] ?? ''), expiresAt: orNull(r['expiresAt']), structural: r['structural'] === true, boardName: orNull(r['boardName']),
     failedAt: orNull(r['failedAt']), failure: orNull(r['failure']), replacedAt: orNull(r['replacedAt']), adminDescription: orNull(r['adminDescription']),
+    waitsFor: (Array.isArray(r['waitsFor']) ? r['waitsFor'] : []).filter((x): x is Row => !!x && typeof x === 'object').map((x) => ({ id: num(x['id']), role: orNull(x['role']), kind: String(x['kind'] ?? ''), name: orNull(x['name']) })),
+    ...bundleOf(r),
+  };
+}
+
+/** The facts of a season as admin_queue hands them (handoff_facts, 0337): each list read defensively, so a row the database could not make is an empty list and not a crash. */
+function toHandoffFacts(v: unknown): HandoffFacts {
+  const r = params(v) as Row;
+  const board = (x: Row) => ({ board: String(x['board'] ?? ''), name: String(x['name'] ?? '') });
+  const ranked = (x: Row) => ({ ...board(x), posts: num(x['posts']) });
+  return {
+    created: rowsOf(r['created']).map(board),
+    merged: rowsOf(r['merged']).map((x) => ({ ...board(x), into: String(x['into'] ?? ''), intoName: String(x['intoName'] ?? '') })),
+    closed: rowsOf(r['closed']).map(board),
+    beats: rowsOf(r['beats']).map((x) => ({ staff: String(x['staff'] ?? ''), beat: String(x['beat'] ?? ''), at: String(x['at'] ?? '') })),
+    moves: rowsOf(r['moves']).map((x) => ({
+      act: String(x['act'] ?? ''), kind: String(x['kind'] ?? ''), params: params(x['params']), landedAt: String(x['landedAt'] ?? ''), expiresAt: orNull(x['expiresAt']), by: String(x['by'] ?? ''), boardName: orNull(x['boardName']),
+    })),
+    busiest: rowsOf(r['busiest']).map(ranked),
+    quietest: rowsOf(r['quietest']).map(ranked),
   };
 }
 
@@ -482,6 +510,7 @@ function toTodo(r: Row): HandoverTodo {
   return {
     season: num(r['season']), boss: String(r['boss'] ?? ''), bossName: String(r['bossName'] ?? r['boss'] ?? ''), bossPronouns: pronounsOrDefault(r['bossPronouns']), bossWas: orNull(r['bossWas']), outgoing: orNull(r['outgoing']),
     outgoingName: orNull(r['outgoingName']), outgoingPronouns: pronounsOrDefault(r['outgoingPronouns']), outgoingOffice: orNull(r['outgoingOffice']), how: String(r['how'] ?? ''), landedAt: String(r['landedAt'] ?? ''),
+    note: orNull(r['note']), facts: toHandoffFacts(r['facts']),
   };
 }
 
@@ -489,6 +518,7 @@ function toInForce(r: Row): MoveInForce {
   return {
     act: r['act'], id: typeof r['id'] === 'number' ? r['id'] : null, staff: orNull(r['staff']), boss: orNull(r['boss']), bossPronouns: pronounsOrDefault(r['bossPronouns']), kind: String(r['kind'] ?? ''), params: params(r['params']),
     demand: toDemand(r['demand']), why: orNull(r['why']), landedAt: String(r['landedAt'] ?? ''), expiresAt: orNull(r['expiresAt']), progress: toProgress(r['progress']),
+    ...bundleOf(r),
   };
 }
 
@@ -498,6 +528,7 @@ function toEnded(r: Row): MoveEnded {
     how: how === 'met' || how === 'expired' || how === 'reversed' || how === 'superseded' || how === 'spent' || how === 'refused' ? how : 'held', by: orNull(r['by']), at: String(r['at'] ?? ''), act: orNull(r['act']),
     id: typeof r['id'] === 'number' ? r['id'] : null, staff: orNull(r['staff']), boss: orNull(r['boss']), bossPronouns: pronounsOrDefault(r['bossPronouns']), kind: String(r['kind'] ?? ''), params: params(r['params']),
     demand: toDemand(r['demand']), why: orNull(r['why']), landedAt: orNull(r['landedAt']), card: orNull(r['card']), reason: orNull(r['reason']),
+    ...bundleOf(r),
   };
 }
 
@@ -677,6 +708,7 @@ type Res = { data: unknown; error: { message: string; hint?: string | null } | n
 
 export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
   const { url, publishableKey, settingsFallback } = options;
+  const face = options.face ?? ((c: Character) => c);
   const doFetch: typeof fetch = options.fetch ?? ((...a) => globalThis.fetch(...a));
   // supabase-js sends its key as the bearer where there is no session; a publishable key goes in apikey alone (Supabase's
   // migration guide, docs/plans/2026-11-02-api-keys-design.md), so a bearer that is the key itself is taken off. A session's
@@ -864,7 +896,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
      at all (a character made before an instance was seeded, 0124) nothing is stored to overwrite: it/its is what a read shows, unmarked, and set_profile makes the row. */
   const toCharacter = (c: Row, p: Row | undefined): Character => {
     const set = p?.['pronouns'];
-    return {
+    return face({
       id: c['id'],
       name: c['name'],
       title: p?.['title'] ?? '',
@@ -884,7 +916,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       ...(typeof c['banned_until'] === 'string' && Date.parse(c['banned_until']) > Date.now() ? { bannedUntil: c['banned_until'] } : {}),
       ...(typeof c['staff'] === 'string' ? { staff: c['staff'], ...(toOffice(c['office']) ? { office: toOffice(c['office'])! } : {}) } : {}),
       group: typeof c['group'] === 'string' ? c['group'] : '',
-    };
+    });
   };
 
   /** A character a document carries with its profile nested (`profile` null where it has none). */
@@ -1164,6 +1196,12 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const was = new Map(own.map((b) => [b['id'] as string, String(b['name'])]));
       return now.map((b): BoardName => ({ id: b['id'], slug: b['slug'], name: b['name'], was: was.get(b['id']) ?? b['name'] }));
     },
+    async moveThreadNames(items) {
+      const wanted = items.filter((i) => idOk(i.thread)).slice(0, 50);
+      if (wanted.length === 0) return {};
+      const d = (await read(() => client.rpc('move_thread_names', { items: wanted.map((i) => ({ thread: i.thread, act: i.act })) }))).data;
+      return Object.fromEntries(rowsOf(d).map((r) => [r['key'] as Id, { title: str(r['title']) ?? '', left: typeof r['left'] === 'string' ? r['left'] : null }]));
+    },
     async moveNotice(id) {
       if (!idOk(id)) return null;
       const a = (await list(() => client.from('acts_public').select('*').eq('id', id).eq('kind', 'move').limit(1)))[0];
@@ -1273,7 +1311,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     },
     async holdMove(id) {
       const a = await rpcWrite(() => client.rpc('hold_move', { id }));
-      return a.ok ? { ok: true, value: { id: num(a.value['id']), heldAt: String(a.value['heldAt'] ?? '') } } : a;
+      return a.ok ? { ok: true, value: { id: num(a.value['id']), heldAt: String(a.value['heldAt'] ?? ''), heldAlso: numberList(a.value['heldAlso']) } } : a;
     },
     async replaceSuccessor(id, boss) {
       const a = await rpcWrite(() => client.rpc('replace_successor', { id, boss }));
@@ -1301,7 +1339,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     },
     async reverseMove(act) {
       const a = await rpcWrite(() => client.rpc('reverse_move', { move_act: act }));
-      return a.ok ? { ok: true, value: { act: a.value['act'], endedBy: a.value['endedBy'] } } : a;
+      return a.ok ? { ok: true, value: { act: a.value['act'], endedBy: a.value['endedBy'], alsoEnded: Array.isArray(a.value['alsoEnded']) ? a.value['alsoEnded'] : [], heldAlso: numberList(a.value['heldAlso']) } } : a;
     },
     /* An admin's end of a card goes through the act function, which owns the broadcasts (a layer comes off for everyone reading). */
     reverseCard: (play) => act({ action: 'reverseCard', play }, (r) => ({ act: r['id'], play: r['play'] })),
@@ -1669,8 +1707,14 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const marked = [...pins.map((p) => p.act.id), ...banner.map((p) => p.act.id)];
       const reading: Record<Id, number> = {};
       for (const r of rowsOf(d['reading'])) reading[r['thread']] = num(r['furthest_seq']);
+      const ref = (v: unknown): BoardRef | null => (isObject(v) && typeof v['id'] === 'string' ? { id: v['id'], slug: str(v['slug']) ?? '', name: str(v['name']) ?? '' } : null);
+      const stubs = rowsOf(d['stubs']).flatMap((s): BoardStub[] => {
+        const to = ref({ id: s['moved_to'], slug: s['moved_to_slug'], name: s['moved_to_name'] });
+        return to ? [{ thread: s['id'], title: str(s['title']) ?? '', movedTo: to, movedAt: str(s['moved_at']) ?? '' }] : [];
+      });
       return {
-        board: toBoard(d['board'] as Row), total: num(d['total']), page: num(d['page'], 1), threads, pins, banner,
+        board: toBoard(d['board'] as Row), closed: d['closed'] === true ? { mergedInto: ref(d['mergedInto']), fallback: ref(d['fallback']), goesTo: ref(d['goesTo']) } : null, stubs,
+        total: num(d['total']), page: num(d['page'], 1), threads, pins, banner,
         states: toStates(rowsOf(d['states'])), releases: rowsOf(d['releases']).map((r): Id => r['play']),
         tallies: toTallies(marked, rowsOf(d['tallies'])), mine: rowsOf(d['mine']).map(toMyReaction), reading,
         views: toViews([...pins.map((p) => p.thread.id), ...threads.map((t) => t.id)], rowsOf(d['views'])),

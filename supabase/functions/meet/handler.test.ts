@@ -13,7 +13,7 @@ test('meet: a good request runs the meeting on the database deps.db made, with m
       case 'begin_meeting': return { status: 'begun', meeting: 7 };
       case 'fail_meeting': return { status: 'closed' };
       case 'meeting_context': return { season: { startsAt: Date.now() - 1e9, endsAt: Date.now() + 1e10 }, boss: dividedWorld.system.firstBoss, lastSlot: null, boards: [], successors: [] };
-      case 'system_digest': return { since: SLOT, until: SLOT, threads: [], standings: [], moves: [], quotes: [], bossReactions: [], excerpts: [], characters: [] };
+      case 'system_digest': return { since: SLOT, until: SLOT, threads: [], boards: [], boardDays: 21, standings: [], moves: [], quotes: [], bossReactions: [], excerpts: [], characters: [] };
       case 'staff_memory_latest': return null;
       case 'staff_career': return { led: [], offices: [] };
       case 'staff_notes_recent': return [];

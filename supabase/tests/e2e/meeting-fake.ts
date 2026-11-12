@@ -1,6 +1,6 @@
 /**
  * What the e2e files' fake model needs to read a request the way the real adapter writes it (`system` and each message's content
- * as plain strings), and to answer the meeting's three calls (MEETING_PARTS in engine/system/meeting.ts). The meeting is
+ * as plain strings), and to answer the meeting's calls (MEETING_PARTS in engine/system/meeting.ts). The meeting is
  * answered one part at a time: `partOf` says which part a request asks for (the last message ends with that part's `ask`), and
  * `partAnswer` keeps of the whole answer only the fields that part owns, as the real model's structured output would.
  */

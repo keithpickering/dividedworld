@@ -416,6 +416,11 @@ export interface InstanceUi {
   readonly glass: GlassTheme;
   /** The instance's pictures for its personas, by the key its rules name (`DeveloperPersona.avatar`) as a URL; a persona with none is drawn as an initial. */
   readonly avatars?: Readonly<Record<string, string>>;
+  /**
+   * The instance's pictures for its staff personas, by the roster key (`Persona.key`): a square, and a portrait where it has one (engine/ui/data/staff-faces.ts
+   * gives them to the persona's character); a persona with none is drawn as an initial.
+   */
+  readonly staffAvatars?: Readonly<Record<string, { readonly square: string; readonly portrait?: string }>>;
   /** How each card draws and describes itself, one per card key the instance sells; a card with none is shown as its tag alone (engine/ui/cards/types.ts). */
   readonly cards: readonly CardUi[];
   /** How each pack the instance sells draws itself, by the rules' `PackRules.key`: its name and its face art, placed as a card's face art is (engine/ui/cards/types.ts, `CardArt`). */

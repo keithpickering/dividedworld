@@ -14,6 +14,7 @@ import { instance } from '../index.ts';
 import { publicityTour } from './publicity-tour.ts';
 import { atOrBelow, castOnPost, giftSplit, openDrive, staffOffers, staffConfigOf, decidePlay, decideSet, decideUse, postTarget, type CardRules } from '../../../engine/rules/cards.ts';
 import { PEELS, autocorrect } from './autocorrect.ts';
+import { CUES, PLACES, laughTrack, placesOf, type Cue } from './laugh-track.ts';
 import { decide } from '../../../engine/rules/actions.ts';
 import { instanceProblems, withOverrides } from '../../../engine/rules/instance.ts';
 import { defaults as settings } from '../settings.ts';
@@ -26,7 +27,7 @@ const priceOf = (key: string): number => instance.machine.find((m) => 'card' in 
 const post = (length: number): CardTarget => ({ reach: 'post', act: 'p1', kind: 'post', length, text: '' });
 
 test('the instance sells its cards at their prices', () => {
-  assert.deepEqual(cards.map((c) => [c.key, c.alignment, priceOf(c.key)]), [['stick-around', 'sweet', 100], ['whoops', 'salty', 100], ['card-collector', 'salty', 150], ['hall-pass', 'sweet', 150], ['force-field', 'sweet', 150], ['publicity-tour', 'sweet', 150], ['heat-magnet', 'salty', 150], ['class-clown', 'pepperoni', 150], ['good-vibes', 'sweet', 150], ['glitter-bomb', 'pepperoni', 150], ['main-event', 'sweet', 300], ['feelin-fab', 'sweet', 20], ['autocorrect', 'pepperoni', 100], ['you-were-saying', 'pepperoni', 100], ['below-the-fold', 'salty', 100], ['mooch', 'salty', 150], ['toll', 'pepperoni', 150], ['4d-chess', 'salty', 150], ['off-day', 'salty', 500], ['jimmy-wails', 'sweet', 200], ['sugar-coat', 'sweet', 300], ['hype-up', 'sweet', 150], ['last-word', 'salty', 150], ['graffiti', 'pepperoni', 300]]);
+  assert.deepEqual(cards.map((c) => [c.key, c.alignment, priceOf(c.key)]), [['stick-around', 'sweet', 100], ['whoops', 'salty', 100], ['card-collector', 'salty', 150], ['hall-pass', 'sweet', 150], ['force-field', 'sweet', 150], ['publicity-tour', 'sweet', 150], ['heat-magnet', 'salty', 150], ['class-clown', 'pepperoni', 150], ['good-vibes', 'sweet', 150], ['glitter-bomb', 'pepperoni', 150], ['main-event', 'sweet', 300], ['feelin-fab', 'sweet', 20], ['autocorrect', 'pepperoni', 100], ['you-were-saying', 'pepperoni', 100], ['below-the-fold', 'salty', 100], ['mooch', 'salty', 150], ['toll', 'pepperoni', 150], ['4d-chess', 'salty', 150], ['off-day', 'salty', 500], ['jimmy-wails', 'sweet', 200], ['sugar-coat', 'sweet', 300], ['hype-up', 'sweet', 150], ['last-word', 'salty', 150], ['laugh-track', 'pepperoni', 150], ['graffiti', 'pepperoni', 300]]);
   assert.deepEqual(instanceProblems(instance), []);
   assert.deepEqual(instance.cards, cards);
 });
@@ -444,11 +445,12 @@ const answers: Record<string, Record<string, unknown>> = {
   'card-collector': { card: 'whoops' },
   '4d-chess': { card: 'whoops', quadrant: 'calmPositive' },
   graffiti: { stencil: 'horns', can: 'red', spot: 4 },
+  'laugh-track': { cues: [{ phrase: 'the same old', sound: 'laugh' }, { phrase: 'something new', sound: 'boo' }] },
 };
 
 test('each card that lets the model set options gives an object schema its own validateConfig accepts for a sample answer', () => {
   const keys = cards.filter((c) => c.staffOptions).map((c) => c.key).sort();
-  assert.deepEqual(keys, ['4d-chess', 'autocorrect', 'card-collector', 'graffiti', 'stick-around', 'whoops']);
+  assert.deepEqual(keys, ['4d-chess', 'autocorrect', 'card-collector', 'graffiti', 'laugh-track', 'stick-around', 'whoops']);
   for (const card of cards) {
     if (!card.staffOptions) continue;
     const { prompt, schema } = card.staffOptions;
@@ -458,7 +460,7 @@ test('each card that lets the model set options gives an object schema its own v
     const props = schema.properties as Record<string, { type?: unknown }>;
     for (const [name, def] of Object.entries(props)) {
       for (const bound of ['maxLength', 'minLength', 'pattern', 'maxItems', 'minItems']) assert.equal(bound in def, false, `${card.key}.${name}: structured output cannot hold ${bound}`);
-      assert.ok(def.type === 'string' || 'enum' in def, `${card.key}.${name}: strings and enums only`);
+      assert.ok(def.type === 'string' || def.type === 'array' || 'enum' in def, `${card.key}.${name}: strings, enums and lists only`);
     }
     for (const name of (schema.required ?? []) as string[]) assert.ok(name in props, `${card.key}: required ${name} is a property`);
     const sample = answers[card.key];
@@ -523,16 +525,16 @@ test('the Booster\'s hit pull gives uncommon 74, rare 24 and legendary 2, over t
   assert.deepEqual(booster.pulls.at(-1)!.weights, { uncommon: 74, rare: 24, legendary: 2 });
   const hit = packOdds(booster, cards, instance.settings).at(-1)!;
   const chance = new Map(hit.flatMap((r) => r.cards.map((c) => [c.card, c.chance] as const)));
-  // The Gimmicks, Part 6, Jimmy Wails and Part 4 joined the Booster by their rarity, as a new card does, with nothing listed in packs.ts: fourteen uncommons share the 74 (You Were Saying? and Below the Fold are commons, and the hit pull takes none).
+  // The Gimmicks, Part 6, Jimmy Wails, Part 4 and Laugh Track joined the Booster by their rarity, as a new card does, with nothing listed in packs.ts: fifteen uncommons share the 74 (You Were Saying? and Below the Fold are commons, and the hit pull takes none).
   // Sugar Coat and Graffiti are the second and third rares, which share the 24 with Main Event.
-  assert.equal(cards.length, 24);
+  assert.equal(cards.length, 25);
   assert.ok(Math.abs(chance.get('main-event')! - 0.08) < 1e-9, `Main Event at ${chance.get('main-event')}`);
   assert.ok(Math.abs(chance.get('sugar-coat')! - 0.08) < 1e-9, `Sugar Coat at ${chance.get('sugar-coat')}`);
   assert.ok(Math.abs(chance.get('graffiti')! - 0.08) < 1e-9, `Graffiti at ${chance.get('graffiti')}`);
   assert.ok(Math.abs(chance.get('off-day')! - 0.02) < 1e-9, `Off Day at ${chance.get('off-day')}`);
   const uncommons = cards.filter((c) => c.rarity === 'uncommon');
-  assert.equal(uncommons.length, 14);
-  for (const c of uncommons) assert.ok(Math.abs(chance.get(c.key)! - 0.74 / 14) < 1e-9, `${c.key} at ${chance.get(c.key)}`);
+  assert.equal(uncommons.length, 15);
+  for (const c of uncommons) assert.ok(Math.abs(chance.get(c.key)! - 0.74 / 15) < 1e-9, `${c.key} at ${chance.get(c.key)}`);
   assert.equal(chance.size, uncommons.length + 4);
 });
 
@@ -735,6 +737,94 @@ test('Jimmy Wails: a blank message is refused, in the card\'s words', () => {
 test('Jimmy Wails cannot be set face down: it draws, runs a drive and needs a message, so it is cast now and face up (issue #446)', () => {
   const j = jimmy();
   assert.deepEqual(decideSet(j, settings, on('a post'), [], {}, cards), { ok: false, why: 'Jimmy Wails is cast face up and never set face down' });
+});
+
+/* ---- Laugh Track (docs/plans/2026-11-11-laugh-track-plan.md, Task 9) ---- */
+const cue = (phrase: string, sound: Cue['sound'] = 'laugh'): Cue => ({ phrase, sound });
+const ltConfig = (cues: unknown) => laughTrack.validateConfig({ cues });
+const ltWhy = (v: unknown) => (v as { why: string }).why;
+const ltLands = (body: string, cues: Cue[], effects: { card: string; act: string }[] = []) => laughTrack.canApply(on(body), effects, { cues } as never, new Date());
+
+test('Laugh Track is an uncommon Pepperoni Cast, seeded, that takes one director', () => {
+  assert.deepEqual([laughTrack.key, laughTrack.name, laughTrack.alignment, laughTrack.rarity, laughTrack.play ?? 'cast', laughTrack.stack ?? 1, laughTrack.seeded], ['laugh-track', 'Laugh Track', 'pepperoni', 'uncommon', 'cast', 1, true]);
+  assert.equal(castOnPost(laughTrack as CardRules), true);
+  assert.deepEqual([CUES.most, PLACES.most], [5, 30]);
+  assert.equal(laughTrack.staffConfigs, undefined, 'a fallback cannot know the post');
+});
+
+test('Laugh Track\'s configuration is one to five cues, each a bounded phrase and a sound', () => {
+  assert.deepEqual(ltConfig([{ phrase: '  Mario  ', sound: 'cheer' }]), { ok: true, value: { cues: [{ phrase: 'Mario', sound: 'cheer' }] } });
+  assert.equal(ltConfig(Array.from({ length: 5 }, (_, i) => cue(`word${'abcde'[i]}x`))).ok, true, 'five');
+  assert.equal(ltWhy(ltConfig([])), 'a play holds 1 to 5 cues');
+  assert.equal(ltWhy(ltConfig(Array.from({ length: 6 }, (_, i) => cue(`word${'abcdef'[i]}x`)))), 'a play holds 1 to 5 cues');
+  assert.equal(ltWhy(ltConfig('cats')), 'a play holds 1 to 5 cues');
+  assert.equal(ltWhy(laughTrack.validateConfig({})), 'a play holds 1 to 5 cues');
+  assert.equal(ltWhy(ltConfig([{ phrase: 'Mario', sound: 'gasp' }])), 'a cue is a phrase and Laugh, Cheer or Boo');
+  assert.equal(ltWhy(ltConfig([{ phrase: 'Mario' }])), 'a cue is a phrase and Laugh, Cheer or Boo');
+  assert.equal(ltWhy(ltConfig([{ phrase: 4, sound: 'boo' }])), 'a cue is a phrase and Laugh, Cheer or Boo');
+  assert.equal(ltWhy(ltConfig([null])), 'a cue is a phrase and Laugh, Cheer or Boo');
+  assert.match(ltWhy(ltConfig([cue('cat')])), /at least 4 letters or digits/);
+  assert.match(ltWhy(ltConfig([cue('x'.repeat(101))])), /at most 100 characters/);
+  assert.match(ltWhy(ltConfig([cue('two\nlines')])), /one line/);
+  assert.equal(ltWhy(ltConfig([cue('Mario Kart'), cue('mario  kart!', 'boo')])), 'two cues have the same phrase');
+});
+
+test('Laugh Track keeps the seed the server adds and no other key', () => {
+  assert.deepEqual(laughTrack.validateConfig({ cues: [cue('Mario')], seed: 12345, extra: 1 }), { ok: true, value: { cues: [cue('Mario')], seed: 12345 } });
+});
+
+test('placesOf is every occurrence of each cue in the text\'s order, with its cue\'s index', () => {
+  const text = 'Mario met Luigi, then Mario hit Luigi again';
+  const places = placesOf(text, [cue('Luigi'), cue('Mario', 'boo')]);
+  assert.deepEqual(places.map((p) => [text.slice(p.start, p.end), p.cue]), [['Mario', 1], ['Luigi', 0], ['Mario', 1], ['Luigi', 0]]);
+  assert.deepEqual(placesOf('nothing here', [cue('Luigi')]), []);
+});
+
+test('Laugh Track lands with one cue and with five', () => {
+  assert.equal(ltLands('Mario is here', [cue('Mario')]).ok, true);
+  const body = 'alpha beta gamma delta epsilon';
+  assert.equal(ltLands(body, ['alpha', 'beta', 'gamma', 'delta', 'epsilon'].map((p) => cue(p))).ok, true);
+  assert.equal(decidePlay(laughTrack as CardRules, settings, on('Mario is here'), [], { cues: [cue('Mario')] }, '').ok, true);
+});
+
+test('Laugh Track refuses what is not in the post, what overlaps, and what is too many places', () => {
+  assert.equal(ltWhy(ltLands('Mario is here', [cue('Mario'), cue('Luigi')])), '“Luigi” is not in this post\'s own words');
+  assert.equal(ltWhy(ltLands('Mario Kart is here', [cue('Mario Kart'), cue('Kart is')])), 'two cues cover the same words');
+  const many = Array(31).fill('word').join(' ');
+  assert.equal(ltWhy(ltLands(many, [cue('word')])), 'these cues cover 31 places in this post; a play covers at most 30');
+  assert.equal(ltLands(Array(30).fill('word').join(' '), [cue('word')]).ok, true, 'thirty is the most');
+});
+
+test('Laugh Track is refused where the post already has an audience, in its own words', () => {
+  const live = [{ card: 'laugh-track', act: 'k1' }];
+  assert.equal(ltWhy(ltLands('Mario is here', [cue('Mario')], live)), 'this post already has an audience');
+  assert.equal(ltWhy(laughTrack.canApply(on('Mario'), live, undefined as never, new Date())), 'this post already has an audience', 'with no cues yet too');
+  assert.equal(ltWhy(decidePlay(laughTrack as CardRules, settings, on('Mario'), live, { cues: [cue('Mario')] }, '')), 'this post already has an audience');
+  assert.equal(laughTrack.canApply(on('Mario'), [{ card: 'laugh-track', act: 'k1', ends: '2000-01-01T00:00:00Z' }], { cues: [cue('Mario')] } as never, new Date()).ok, true, 'an ended one holds no place');
+  assert.equal(laughTrack.canApply(on('Mario'), [{ card: 'whoops', act: 'k1' }], { cues: [cue('Mario')] } as never, new Date()).ok, true);
+});
+
+test('Laugh Track\'s price is 0.05 a place past five, at most 1.00, and a face asks the most', () => {
+  const price = (places: number) => laughTrack.playPrice(settings, on(Array(places).fill('word').join(' ')), { cues: [cue('word')] });
+  assert.equal(price(5), 0);
+  assert.equal(price(6), 5);
+  assert.equal(price(20), 75);
+  assert.equal(price(40), 100, 'capped');
+  assert.equal(laughTrack.playPrice(settings, on('word'), {} as never), 100, 'a face asks the most');
+  assert.equal(laughTrack.playPrice(settings, { reach: 'character', character: 'c' }, { cues: [cue('word')] }), 0);
+  const tuned = withOverrides(settings, { economy: { 'laughTrack.perPlace': 10, 'laughTrack.freePlaces': 1 } });
+  assert.equal(laughTrack.playPrice(tuned, on('word word word'), { cues: [cue('word')] }), 20, 'its numbers are the settings\'');
+});
+
+test('Laugh Track\'s set phrase is its first cue\'s, and it may be set face down', () => {
+  assert.equal(laughTrack.setPhrase?.({ cues: [cue('Mario'), cue('Luigi')] }), 'Mario');
+  assert.equal(decideSet(laughTrack as CardRules, settings, on('Mario is here'), [], { cues: [cue('Mario')] }, cards).ok, true);
+});
+
+test('Laugh Track asks a persona for cues, and its instance has no problems', () => {
+  assert.match(laughTrack.staffOptions!.prompt, /^Choose up to five cues: each a phrase copied exactly from the post you are replying to/);
+  assert.deepEqual((laughTrack.staffOptions!.schema as { properties: { cues: { items: { properties: { sound: { enum: string[] } } } } } }).properties.cues.items.properties.sound.enum, ['laugh', 'cheer', 'boo']);
+  assert.deepEqual(instanceProblems(instance), []);
 });
 
 /* Graffiti (docs/plans/2026-11-11-graffiti-plan.md, Task 7). */
