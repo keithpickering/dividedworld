@@ -1541,6 +1541,26 @@ describe('saving, one at a time', () => {
     expect(last.strokes.map((s) => decodePoints(s.points)![0]![1])).toEqual([a, b, c].map((r) => Math.round(r![0]![1] * 10_000) / 10_000));
   });
 
+  test('the saved state heard before the save is answered holds the stroke the save carried: the layer is built with it once, not twice', async () => {
+    authorClock();
+    const net = gated();
+    const [x, y] = inkSpot(inkOf(0));
+    const line: [number, number][] = [[x, y], [x + 0.03, y], [x + 0.05, y]];
+    const { frame, root, hear, replay } = mount({ author: true, save: net.save });
+    drag(frame, line);
+    const once = inkOf(0, [washStroke(line)]).washed;
+    const twice = inkOf(0, [washStroke(line), washStroke(line)]).washed;
+    expect(twice, 'the premise: a second wash over the same line takes more').toBeGreaterThan(once + 0.001);
+    expect(washed(root)[0]).toBeCloseTo(once, 3);
+    await settle(SAVE_AFTER_MS);
+    expect(net.calls).toHaveLength(1);
+    /* The server's state reaches this screen (another channel than the answer) before the answer does; the page may also have settled a little, so the layer is built again, not taken as the echo (the engine draws the post's plays again with the news). */
+    await act(async () => { replay(); hear({ [net.calls[0]!.play]: { state: net.calls[0]!.state, savedAt: SAVED_AT } }); });
+    expect(washed(root)[0], 'the stroke the save carried is in the saved state and is not added again from the ones kept').toBeCloseTo(once, 3);
+    await net.accept(0);
+    expect(washed(root)[0]).toBeCloseTo(once, 3);
+  });
+
   test('strokes made while a save is on its way are sent after it, not lost with the ones it carried', async () => {
     authorClock();
     const net = gated();
@@ -2098,6 +2118,29 @@ describe('the ink field: the picture a layer is drawn from', () => {
     const got = fk.of(done.src).surface;
     expect(maxDiff(got, referenceOf([line])), 'the stroke is in the build, as if it had been in it from the first').toBeLessThanOrEqual(4);
     expect(maxDiff(got, referenceOf([line, line])), 'and it is in once: twice would be a wider line').toBeGreaterThan(8);
+  });
+
+  test('a wash finished while the build was out is in the grid that arrived once: a wash takes more the second time', () => {
+    clock();
+    const fk = fakeCanvases();
+    const held = heldClient();
+    const { frame, root } = mount();
+    frames();
+    expect(lastPicture(fk, root).build, 'held back, the layer is drawn by the stand-in').toBe(false);
+    const [x, y] = inkSpot(inkOf(0));
+    const line: [number, number][] = [[x, y], [x + 0.03, y], [x + 0.05, y]];
+    drag(frame, line);
+    frames();
+    held.release();
+    frames();
+    const done = lastPicture(fk, root);
+    expect(done.build, 'released, the build').toBe(true);
+    const wash = washStroke(line);
+    const once = referenceOf([wash]), twice = referenceOf([wash, wash]);
+    expect(maxDiff(once, twice), 'the premise: a second wash over the same line shows').toBeGreaterThan(8);
+    const got = fk.of(done.src).surface;
+    expect(maxDiff(got, once), 'the wash is in the build, as if it had been in it from the first').toBeLessThanOrEqual(4);
+    expect(maxDiff(got, twice), 'and it is in once, not twice').toBeGreaterThan(8);
   });
 
   test('a stroke still open when the build arrives goes on to the grid that arrived, and is in it once', () => {

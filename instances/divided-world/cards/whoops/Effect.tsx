@@ -321,6 +321,16 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
   /** The plays with a save on its way, and the state last sent for each (compared as `canonical`, so the server's echo of it is told from news). */
   const sending = useRef(new Set<string>());
   const lastSent = useRef(new Map<string, string>());
+  /** How many of `mine` the save on its way carries: they are in the state the server holds as soon as it is heard, which can be before the save's own answer. */
+  const sentCount = useRef(new Map<string, number>());
+  /**
+   * The strokes made on this screen that the saved state does not hold yet. While a save is on its way its state may be heard before its
+   * answer (another channel); the strokes it carried are then in the saved state and still in `mine`, and must not be counted from both.
+   */
+  const unsavedOf = (id: string, saved: string = canonical(now.current.states[id]?.state)): Stroke[] => {
+    const all = mine.current.get(id) ?? [];
+    return sending.current.has(id) && saved === lastSent.current.get(id) ? all.slice(sentCount.current.get(id) ?? 0) : all;
+  };
   /** How many saves in a row have not got through, by play. */
   const failures = useRef(new Map<string, number>());
   /** The state each play's last save from this screen was answered for, and when the server saved it. */
@@ -526,7 +536,7 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
   /** Asks for layer `i`'s picture: built on the spot when it is light, in the worker when not (the stand-in shows meanwhile). */
   const requestPic = (i: number, layer: Layer, b: Box, q: number): void => {
     const id = layer.play.id;
-    const strokes = [...savedFor(id).strokes, ...(mine.current.get(id) ?? [])];
+    const strokes = [...savedFor(id).strokes, ...unsavedOf(id)];
     /* The build input holds the strokes as saved (simplified), while the model keeps this screen's own strokes at full resolution until its next rebuild: the two differ by under a quarter of a brush, the difference the design accepts (docs/plans/2026-11-12-whoops-ink-field-design.md). */
     const key = layerKey(id, b, q, strokes);
     const pic: Pic = { geo: `${layer.seed}|${layer.color}|${b.w}x${b.h}|${q}`, color: layer.color, key, box: b, q, grid: null, canvas: null, late: [], dirty: null };
@@ -610,7 +620,7 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
     inks.current = splats.map((splat, i) => {
       const id = layers[i]!.play.id;
       const ink = new LayerInk(splat, savedOf(states[id]?.state).strokes, box);
-      ink.add(mine.current.get(id) ?? []);
+      ink.add(unsavedOf(id, fromStates.get(id)));
       return ink;
     });
     /* The pictures were built from the model's last strokes: they are asked for again as the next frame draws them. A stroke open on the old model goes on on the new one. */
@@ -686,7 +696,7 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
         return;
       }
       /* No build yet: the stand-in, the cached splat with every stroke drawn flat on it, the one under way included. */
-      const strokes = [...savedFor(id).strokes, ...(mine.current.get(id) ?? [])];
+      const strokes = [...savedFor(id).strokes, ...unsavedOf(id)];
       if (stroking && stroking.layer === i) {
         strokes.push(stroking.tool === 'wash'
           ? { tool: 'wash', width: stroking.width, aspect: stroking.aspect, points: stroking.points }
@@ -768,6 +778,7 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
       const state = clean ? { strokes, clean: true } : { strokes };
       sending.current.add(id);
       lastSent.current.set(id, canonical(state));
+      sentCount.current.set(id, room ? kept.length : 0);
       let answer: Answer<unknown>;
       try {
         answer = await now.current.save(id, state);
