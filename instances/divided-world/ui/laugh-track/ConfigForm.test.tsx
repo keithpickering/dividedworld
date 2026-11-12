@@ -16,13 +16,21 @@ const form = (config: Record<string, unknown> | undefined, body = BODY) => {
   return { onChange, ...render(<RouterProvider><ConfigForm config={config} onChange={onChange} post={post(body)} id="play" /></RouterProvider>) };
 };
 const copy = () => screen.getByRole('group', { name: 'The post\'s words' });
-const select = (text: string, inside: Node = copy().firstChild ?? copy()) => {
+/* What the browser says to the page for a selection: the document's selection and a selectionchange. */
+const report = (text: string, inside: Node = copy().firstChild ?? copy()) => {
   vi.spyOn(document, 'getSelection').mockReturnValue({
     toString: () => text, isCollapsed: text === '', rangeCount: 1,
     getRangeAt: () => ({ commonAncestorContainer: inside, toString: () => text, intersectsNode: () => false }),
   } as unknown as Selection);
   fireEvent(document, new Event('selectionchange'));
 };
+/* A selection in a new gesture, as PostWords tells one apart: a press in the words starts it (a mouse press or a touch). */
+const select = (text: string, inside: Node = copy().firstChild ?? copy()) => {
+  fireEvent.pointerDown(copy());
+  report(text, inside);
+};
+/* The same gesture, grown or shrunk: a drag, a touch handle or Shift+arrow, with no new press in between. */
+const grow = (text: string) => report(text);
 const phrase = (n: number) => screen.getByLabelText(`Cue ${n}`) as HTMLInputElement;
 const sound = (n: number) => screen.getByRole('group', { name: `Sound for cue ${n}` });
 const soundOf = (n: number) => (within(sound(n)).getAllByRole('radio') as HTMLInputElement[]).find((r) => r.checked)?.value;
@@ -224,7 +232,7 @@ describe('Laugh Track\'s play form', () => {
     test('1. a drag reported as "Luigi" then "Luigi waved" fills one cue and adds none', () => {
       form({ cues: [{ phrase: '', sound: 'laugh' }] });
       select('Luigi');
-      select('Luigi waved');
+      grow('Luigi waved');
       expect(cuesOf(1)).toEqual(['Luigi waved']);
       expect(screen.getAllByLabelText(/^Cue \d$/)).toHaveLength(1);
     });
@@ -232,9 +240,47 @@ describe('Laugh Track\'s play form', () => {
     test('2. a drag that shrinks leaves one cue with the shorter phrase', () => {
       form({ cues: [{ phrase: '', sound: 'laugh' }] });
       select('Luigi waved');
-      select('Luigi');
+      grow('Luigi');
       expect(cuesOf(1)).toEqual(['Luigi']);
       expect(screen.getAllByLabelText(/^Cue \d$/)).toHaveLength(1);
+    });
+
+    test('2b. one gesture reported as "fan" then "fan game", and one that shrinks to a phrase sharing no words, each stay one cue', () => {
+      form({ cues: [{ phrase: '', sound: 'laugh' }] }, 'A fan game about forums and Mario.');
+      select('fan');
+      grow('fan game');
+      expect(cuesOf(1)).toEqual(['fan game']);
+      grow('forums');
+      expect(cuesOf(1)).toEqual(['forums']);
+    });
+
+    test('2c. a new gesture whose phrase contains or is contained in the last one\'s fills a new cue and keeps the first', () => {
+      form({ cues: [{ phrase: '', sound: 'laugh' }] });
+      select('Mario');
+      select('Luigi waved at Mario');
+      expect(cuesOf(2)).toEqual(['Mario', 'Luigi waved at Mario']);
+    });
+
+    test('2d. "Luigi waved" and then, separately, "Luigi" are two cues', () => {
+      form({ cues: [{ phrase: '', sound: 'laugh' }] });
+      select('Luigi waved');
+      select('Luigi');
+      expect(cuesOf(2)).toEqual(['Luigi waved', 'Luigi']);
+    });
+
+    test('2e. "and" then, separately, "Wandering lands" are two cues, though one text holds the other', () => {
+      form({ cues: [{ phrase: '', sound: 'laugh' }] }, 'Wandering lands and more.');
+      select('and');
+      select('Wandering lands');
+      expect(cuesOf(2)).toEqual(['and', 'Wandering lands']);
+    });
+
+    test('2f. the same gesture does not rewrite a cue the player has typed in since', () => {
+      form({ cues: [{ phrase: '', sound: 'laugh' }] });
+      select('Luigi');
+      fireEvent.change(phrase(1), { target: { value: 'Luigi!' } });
+      grow('Luigi waved');
+      expect(cuesOf(2)).toEqual(['Luigi!', 'Luigi waved']);
     });
 
     test('3. two distinct selections still fill two cues, the first kept', () => {
@@ -262,20 +308,56 @@ describe('Laugh Track\'s play form', () => {
       expect(cuesOf(2)).toEqual(['Luigi!', 'Luigi waved']);
     });
 
-    test('5. with five filled, growing the fifth\'s selection updates it quietly; a distinct sixth changes nothing and says so', () => {
+    test('5. with five filled, growing the fifth\'s selection updates it quietly; a new gesture changes nothing and says so', () => {
       const four = ['mario', 'again', 'waved', 'met'].map((p) => ({ phrase: p, sound: 'laugh' }));
       const { onChange } = form({ cues: [...four, { phrase: '', sound: 'laugh' }] });
       select('Luigi');
       expect(phrase(5)).toHaveValue('Luigi');
-      select('Luigi waved');
+      grow('Luigi waved');
       expect(phrase(5)).toHaveValue('Luigi waved');
       expect(total().textContent).not.toContain('All five');
       onChange.mockClear();
-      select('Mario');
+      select('met Luigi');
       expect(onChange).not.toHaveBeenCalled();
       expect(cuesOf(5)).toEqual(['mario', 'again', 'waved', 'met', 'Luigi waved']);
       expect(total()).toHaveTextContent('All five cues are filled.');
+      grow('Luigi waved at');
+      expect(cuesOf(5)).toEqual(['mario', 'again', 'waved', 'met', 'Luigi waved']);
     });
+
+    test('5b. with five full, the gesture that filled the fifth still rewrites the fifth; only another gesture is blocked', () => {
+      const four = ['mario', 'again', 'waved', 'met'].map((p) => ({ phrase: p, sound: 'laugh' }));
+      form({ cues: [...four, { phrase: '', sound: 'laugh' }] });
+      select('Luigi');
+      grow('Luigi waved');
+      grow('Luigi waved at');
+      expect(cuesOf(5)).toEqual(['mario', 'again', 'waved', 'met', 'Luigi waved at']);
+      expect(total().textContent).not.toContain('All five');
+      select('Luigi');
+      expect(cuesOf(5)).toEqual(['mario', 'again', 'waved', 'met', 'Luigi waved at']);
+      expect(total()).toHaveTextContent('All five cues are filled.');
+    });
+  });
+
+  test('B. a selection of a phrase an existing cue already holds, in any case, changes nothing', () => {
+    const { onChange } = form({ cues: [{ phrase: 'Mario', sound: 'laugh' }, { phrase: '', sound: 'boo' }] });
+    onChange.mockClear();
+    select('mario');
+    expect(onChange).not.toHaveBeenCalled();
+    expect([1, 2].map((n) => phrase(n).value)).toEqual(['Mario', '']);
+    select('Luigi');
+    expect([1, 2].map((n) => phrase(n).value)).toEqual(['Mario', 'Luigi']);
+  });
+
+  test('C. a second blocked selection in the full state is announced again: the live words are put in afresh', () => {
+    const five = ['mario', 'luigi', 'again', 'waved', 'met'].map((p) => ({ phrase: p, sound: 'laugh' }));
+    form({ cues: five });
+    select('Luigi waved');
+    const said = () => within(total() as HTMLElement).getByText(/All five cues are filled/);
+    const first = said();
+    select('waved at');
+    expect(said()).not.toBe(first);
+    expect(total()).toHaveTextContent('All five cues are filled. Clear one to pick another phrase.');
   });
 
   test('a selection of no whole word of the post fills nothing', () => {

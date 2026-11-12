@@ -22,7 +22,7 @@ export function ConfigForm({ config, onChange, post, id }: ConfigFormProps) {
   const places = useMemo(() => (phrase.trim() ? occurrences(text, phrase.trim()).length : 0), [text, phrase]);
   const countId = `${id}-count`;
   return (
-    <fieldset className="kb-play-choice" style={{ display: 'flex', flexDirection: 'column', gap: 16, border: 0, margin: 0, padding: 0 }}>
+    <fieldset className="kb-play-config-group">
       <legend className="kb-play-label">What to autocorrect</legend>
       <ConfigField
         id={`${id}-phrase`} label="Phrase to cover" value={phrase} maxLength={PHRASE.most} describedBy={countId}

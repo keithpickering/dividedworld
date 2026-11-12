@@ -56,3 +56,60 @@
   outline: 3px solid var(--kb-glass-ready-text);
   outline-offset: 2px;
 }
+
+/* A card's settings as one group: the reset a fieldset needs (no border, no padding, and a min-width of 0 so a fieldset cannot be wider than
+   its box), the form's rows in a column. The tight one is for a group with no legend whose few lines sit close, as a range and its words do. */
+.kb-play-config-group {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.kb-play-config-group-tight {
+  gap: 6px;
+}
+
+/* One cue of a list: a rule above it, built from the glass's text token, and its lines close together. */
+.kb-play-config-cue {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid color-mix(in srgb, var(--kb-glass-text-hi) 22%, transparent);
+}
+
+/* A button beside a live total: wraps, never clips. */
+.kb-play-config-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+/* A choice in a card's settings wraps at large text or a narrow phone instead of running past its box (the play form's own two-way choice has
+   room and keeps its single row). Each option holds a basis that is not text-sized, so two or three fit a row when they can and the rest wrap;
+   because a wrapped row would lose the segment's shared edge, every option keeps its own, overlapping its neighbor's by one pixel. */
+.kb-play-config-choice-row {
+  flex-wrap: wrap;
+  gap: 8px 0;
+  padding-inline-end: 1px;
+}
+
+.kb-play-config-choice-row .kb-play-choice-opt {
+  flex: 1 1 80px;
+  min-width: min-content;
+  margin-inline-end: -1px;
+}
+
+.kb-play-config-choice-row .kb-play-choice-opt + .kb-play-choice-opt span {
+  border-inline-start-width: 1px;
+}
+
+.kb-play-config-choice-row .kb-play-choice-opt:has(input:checked) {
+  position: relative;
+  z-index: 1;
+}

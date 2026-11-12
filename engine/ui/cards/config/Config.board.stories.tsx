@@ -30,7 +30,7 @@ function Pieces() {
   const short = phrase.trim() !== '' && phrase.trim().length < 4;
   return (
     <div className="kb-play" style={{ width: 420, boxSizing: 'border-box', padding: 16 }}>
-      <fieldset ref={form} className="kb-play-choice" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <fieldset ref={form} className="kb-play-config-group">
         <legend className="kb-visually-hidden">Your audience&apos;s cues</legend>
         <div>
           <p className="kb-play-label">The post</p>
@@ -72,11 +72,11 @@ export const Smoke: Story = {
   play: async ({ canvasElement }) => {
     const c = within(canvasElement);
     const post = canvasElement.querySelector('[data-kb-post-words]')!;
-    const range = document.createRange();
-    range.setStart(post.firstChild!, 9);
-    range.setEnd(post.firstChild!, 17);
+    const picked = document.createRange();
+    picked.setStart(post.firstChild!, 9);
+    picked.setEnd(post.firstChild!, 17);
     window.getSelection()!.removeAllRanges();
-    window.getSelection()!.addRange(range);
+    window.getSelection()!.addRange(picked);
     document.dispatchEvent(new Event('selectionchange'));
     await expect(await c.findByLabelText('Cue 1')).toHaveValue('fan game');
     await userEvent.clear(c.getByLabelText('Cue 1'));

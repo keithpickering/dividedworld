@@ -19,9 +19,9 @@ export interface ConfigChoiceProps<V extends string> {
 
 export function ConfigChoice<V extends string>({ name, label, hideLegend, options, value, onChoose }: ConfigChoiceProps<V>) {
   return (
-    <fieldset className="kb-play-choice">
+    <fieldset className="kb-play-choice kb-play-config-choice">
       <legend className={hideLegend ? 'kb-play-label kb-visually-hidden' : 'kb-play-label'}>{label}</legend>
-      <div className="kb-play-choice-row">
+      <div className="kb-play-choice-row kb-play-config-choice-row">
         {options.map((o) => (
           <label key={o.value} className="kb-play-choice-opt">
             <input type="radio" name={name} className="kb-visually-hidden" value={o.value} checked={value === o.value} onChange={() => onChoose(o.value)} />

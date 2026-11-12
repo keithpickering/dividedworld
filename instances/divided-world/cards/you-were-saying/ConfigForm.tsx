@@ -46,7 +46,7 @@ export function ConfigForm({ config, onChange, post, id }: ConfigFormProps) {
   const words = wordsOf(youWereSaying.writes!.tokens({ steps }, settings));
   const priceWords = price === 0 ? 'free to play' : `${orbs(price)} ${orbWord(price)} more`;
   return (
-    <div>
+    <div className="kb-play-config-group kb-play-config-group-tight">
       <ConfigRange
         id={`${id}-steps`} label="How much it writes" min={0} max={most} step={1} value={steps}
         valueText={`${words}, ${priceWords}`} onChange={(value) => onChange({ steps: value })}

@@ -195,7 +195,7 @@ describe('PostWords', () => {
     const onSpill = vi.fn();
     render(<PostWords words={words} onSelect={onSelect} onSpill={onSpill} />);
     select(2, 10);
-    expect(onSelect).toHaveBeenCalledWith('fan game');
+    expect(onSelect).toHaveBeenCalledWith('fan game', expect.any(Number));
     expect(onSpill).not.toHaveBeenCalledWith(true);
   });
 
@@ -272,7 +272,7 @@ describe('PostWords', () => {
     const { rerender } = render(<PostWords words={words} onSelect={first} />);
     rerender(<PostWords words={words} onSelect={second} />);
     select(2, 10);
-    expect(second).toHaveBeenCalledWith('fan game');
+    expect(second).toHaveBeenCalledWith('fan game', expect.any(Number));
     expect(first).not.toHaveBeenCalled();
   });
 
@@ -288,7 +288,7 @@ describe('PostWords', () => {
     window.getSelection()!.removeAllRanges();
     window.getSelection()!.addRange(range);
     act(() => { document.dispatchEvent(new Event('selectionchange')); });
-    expect(a).toHaveBeenCalledWith('Alpha');
+    expect(a).toHaveBeenCalledWith('Alpha', expect.any(Number));
     expect(b).not.toHaveBeenCalled();
     expect(spillB).not.toHaveBeenCalled();
   });
@@ -317,6 +317,96 @@ describe('PostWords', () => {
     render(<Host />);
     screen.getByRole('group', { name: "The post's words" }).focus();
     select(2, 10);
-    expect(onSelect).toHaveBeenCalledWith('fan game');
+    expect(onSelect).toHaveBeenCalledWith('fan game', expect.any(Number));
+  });
+
+  describe('gestures: the number each report carries', () => {
+    const view = () => screen.getByRole('group', { name: "The post's words" });
+    const reports = () => {
+      const seen: [string, number][] = [];
+      return { seen, onSelect: (t: string, g: number) => { seen.push([t, g]); } };
+    };
+
+    test('a selection that grows within one gesture reports the same number', () => {
+      const r = reports();
+      render(<PostWords words={words} onSelect={r.onSelect} />);
+      select(2, 5);
+      select(2, 10);
+      select(2, 7);
+      expect(r.seen.map(([, g]) => g)).toHaveLength(3);
+      expect(new Set(r.seen.map(([, g]) => g)).size).toBe(1);
+      expect(typeof r.seen[0]![1]).toBe('number');
+    });
+
+    test('a pointerdown in the words, then a selection, reports a new number', () => {
+      const r = reports();
+      render(<PostWords words={words} onSelect={r.onSelect} />);
+      select(2, 10);
+      fireEvent.pointerDown(view());
+      select(11, 16);
+      expect(r.seen[1]![1]).not.toBe(r.seen[0]![1]);
+    });
+
+    test('a Shift+pointerdown extends the standing selection and does not begin a new gesture', () => {
+      const r = reports();
+      render(<PostWords words={words} onSelect={r.onSelect} />);
+      select(2, 10);
+      fireEvent.pointerDown(view(), { shiftKey: true });
+      select(2, 16);
+      expect(r.seen[1]![1]).toBe(r.seen[0]![1]);
+    });
+
+    test('a pointerdown outside the words does not begin a new gesture', () => {
+      const r = reports();
+      render(<><p id="out">Outside</p><PostWords words={words} onSelect={r.onSelect} /></>);
+      select(2, 10);
+      fireEvent.pointerDown(document.getElementById('out')!);
+      select(2, 16);
+      expect(r.seen[1]![1]).toBe(r.seen[0]![1]);
+    });
+
+    test('a collapsed selection between two selections gives the second a new number, and still calls neither callback', () => {
+      const r = reports();
+      const onSpill = vi.fn();
+      render(<PostWords words={words} onSelect={r.onSelect} onSpill={onSpill} />);
+      select(2, 10);
+      select(4, 4);
+      select(11, 16);
+      expect(r.seen).toHaveLength(2);
+      expect(r.seen[1]![1]).not.toBe(r.seen[0]![1]);
+      expect(onSpill).not.toHaveBeenCalled();
+    });
+
+    test('a selection gone altogether also begins a new gesture', () => {
+      const r = reports();
+      render(<PostWords words={words} onSelect={r.onSelect} />);
+      select(2, 10);
+      window.getSelection()!.removeAllRanges();
+      act(() => { document.dispatchEvent(new Event('selectionchange')); });
+      select(11, 16);
+      expect(r.seen[1]![1]).not.toBe(r.seen[0]![1]);
+    });
+
+    test('two on one page count their own gestures: one\'s pointerdown does not move the other\'s', () => {
+      const a = reports();
+      const b = reports();
+      render(<><PostWords words="Alpha words here" onSelect={a.onSelect} /><PostWords words="Beta words there" onSelect={b.onSelect} /></>);
+      const [viewA, viewB] = screen.getAllByRole('group', { name: "The post's words" });
+      const choose = (el: Element, from: number, to: number) => {
+        const range = document.createRange();
+        range.setStart(el.firstChild!, from);
+        range.setEnd(el.firstChild!, to);
+        window.getSelection()!.removeAllRanges();
+        window.getSelection()!.addRange(range);
+        act(() => { document.dispatchEvent(new Event('selectionchange')); });
+      };
+      choose(viewA!, 0, 5);
+      choose(viewB!, 0, 4);
+      fireEvent.pointerDown(viewB!);
+      choose(viewA!, 0, 11);
+      choose(viewB!, 0, 10);
+      expect(a.seen.map(([, g]) => g)).toEqual([a.seen[0]![1], a.seen[0]![1]]);
+      expect(b.seen[1]![1]).not.toBe(b.seen[0]![1]);
+    });
   });
 });

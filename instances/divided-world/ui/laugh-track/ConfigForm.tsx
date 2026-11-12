@@ -9,10 +9,13 @@
  * words by the same matcher), else adds a cue while there are fewer than five, else changes nothing and the total's live region says all five
  * are filled, until a cue is cleared or removed. Typing a phrase stays a full path for a keyboard.
  *
- * One drag (a pointer, a touch handle, Shift+arrow) reports many selections, each growing or shrinking the last ("Luigi", then "Luigi waved"),
- * so a selection that contains or is contained in the one before, while its cue still holds exactly what that selection wrote, is the same
- * selection and rewrites that cue; otherwise a drag would spread partial phrases over several cues. Typing in, adding, removing or clearing
- * a cue ends it, and the next selection fills as above.
+ * One selection gesture (a pointer drag, a touch handle, Shift+arrow) reports many selections, each growing or shrinking the last ("Luigi", then
+ * "Luigi waved"). Only PostWords can see where a gesture begins, so it hands each report a gesture number (engine/ui/cards/config/PostWords.tsx),
+ * and a selection of the same gesture as the one that wrote a cue rewrites that cue while it still holds exactly what that selection wrote,
+ * whatever the new phrase is; any other selection fills as above, even one that contains or is contained in the last, because it is a cue the
+ * player chose. A selection of a phrase another cue already holds (in any case, as the matcher reads it) changes nothing. Typing in, adding,
+ * removing or clearing a cue ends the gesture's hold, and the next selection fills as above. A selection the full form refuses is said again
+ * each time, by putting the words into the live region afresh.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { occurrences } from '../../../../engine/bbcode/phrase.ts';
@@ -72,6 +75,8 @@ export function ConfigForm({ config, onChange, post, id }: ConfigFormProps) {
   const nextKey = () => serial.current++;
   const [rows, setRows] = useState<Row[]>(() => cuesOf(config).map((cue) => ({ key: nextKey(), cue })));
   const [full, setFull] = useState(false);
+  /* Each refusal gets its own number, so the live words are drawn as a new node and a reader hears a repeated refusal. */
+  const [refusals, setRefusals] = useState(0);
   const cues = useMemo(() => rows.map((r) => r.cue), [rows]);
   const refocus = useRef<number | null>(null);
   const form = useRef<HTMLFieldSetElement>(null);
@@ -82,8 +87,8 @@ export function ConfigForm({ config, onChange, post, id }: ConfigFormProps) {
 
   /* The rows as the last change left them, so two selections before a draw each see the other's work. */
   const current = useRef(rows);
-  /* The cue the last selection filled and the phrase it wrote there; typing in, adding, removing or clearing a cue forgets it. */
-  const lastFilled = useRef<{ key: number; phrase: string } | null>(null);
+  /* The cue the last selection filled, the phrase it wrote there and the gesture it came in; typing in, adding, removing or clearing a cue forgets it. */
+  const lastFilled = useRef<{ key: number; phrase: string; gesture: number } | null>(null);
   const set = (next: Row[]) => {
     current.current = next;
     setRows(next);
@@ -115,32 +120,38 @@ export function ConfigForm({ config, onChange, post, id }: ConfigFormProps) {
   };
 
   /* A selection fills the first cue with an empty phrase, else adds a cue, else (five filled) changes nothing and says so. */
-  const fill = (selected: string) => {
+  const fill = (selected: string, gesture: number) => {
     const phrase = wholeWords(selected, text);
     if (!phrase) return;
     const rs = current.current;
-    /* One drag reports many selections, each growing or shrinking the last: while that cue still holds what the last selection wrote, it is the same selection. */
+    /* The same gesture as the one that wrote a cue, while that cue still holds what it wrote, is the same selection grown or shrunk. */
     const last = lastFilled.current;
-    const same = last ? rs.findIndex((r) => r.key === last.key && r.cue.phrase === last.phrase) : -1;
-    if (last && same >= 0 && (phrase.includes(last.phrase) || last.phrase.includes(phrase))) {
+    const same = last && last.gesture === gesture ? rs.findIndex((r) => r.key === last.key && r.cue.phrase === last.phrase) : -1;
+    if (last && same >= 0) {
       if (phrase === last.phrase) return;
-      lastFilled.current = { key: last.key, phrase };
+      lastFilled.current = { key: last.key, phrase, gesture };
       edit(same, { phrase });
       return;
     }
+    /* A phrase another cue holds is already a cue: the matcher reads phrases in any case. */
+    const kept = (p: string) => p.trim().toLowerCase();
+    if (rs.some((r) => kept(r.cue.phrase) === kept(phrase))) return;
     const empty = rs.findIndex((r) => r.cue.phrase.trim() === '');
     if (empty >= 0) {
-      lastFilled.current = { key: rs[empty]!.key, phrase };
+      lastFilled.current = { key: rs[empty]!.key, phrase, gesture };
       edit(empty, { phrase });
     } else if (rs.length < CUES.most) {
       const key = nextKey();
       set([...rs, { key, cue: { ...BLANK, phrase } }]);
-      lastFilled.current = { key, phrase };
-    } else setFull(true);
+      lastFilled.current = { key, phrase, gesture };
+    } else {
+      setFull(true);
+      setRefusals((n) => n + 1);
+    }
   };
 
   return (
-    <fieldset ref={form} className="kb-play-choice" style={{ display: 'flex', flexDirection: 'column', gap: 16, border: 0, margin: 0, padding: 0 }}>
+    <fieldset ref={form} className="kb-play-config-group">
       <legend className="kb-play-label">Your audience&apos;s cues</legend>
       <div>
         <ConfigHint>Select words in the post below with a pointer or by touch, or type them. A selection fills the first empty cue.</ConfigHint>
@@ -154,7 +165,7 @@ export function ConfigForm({ config, onChange, post, id }: ConfigFormProps) {
           ? `${line === undefined ? '' : `${line}. `}A face-down Laugh Track waits for this phrase.`
           : line;
         return (
-          <div key={key} style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 12, borderTop: '1px solid color-mix(in srgb, var(--kb-glass-text-hi) 22%, transparent)' }}>
+          <div key={key} className="kb-play-config-cue">
             <ConfigField
               id={`${id}-phrase-${key}`}
               label={`Cue ${i + 1}`}
@@ -179,10 +190,10 @@ export function ConfigForm({ config, onChange, post, id }: ConfigFormProps) {
           </div>
         );
       })}
-      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12 }}>
+      <div className="kb-play-config-actions">
         {rows.length < CUES.most && <GlassButton kind="secondary" size="s" onClick={add}>Add a cue</GlassButton>}
         <ConfigHint live>
-          {places(all.length)} in all (at most {PLACES.most}){full ? '. All five cues are filled. Clear one to pick another phrase.' : ''}
+          {places(all.length)} in all (at most {PLACES.most}){full && <span key={refusals}>. All five cues are filled. Clear one to pick another phrase.</span>}
         </ConfigHint>
       </div>
     </fieldset>
