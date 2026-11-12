@@ -930,14 +930,14 @@ describe('a card that is played on the post (CardUi.Compose)', () => {
     await user.click(within(post(2)).getByRole('button', { name: 'Play Tagger on post 2' }));
     await user.click(await screen.findByRole('button', { name: 'Scribble' }));
     await user.keyboard('{Escape}');
-    const ask = await screen.findByRole('dialog');
+    const ask = await screen.findByRole('dialog', { name: 'Leave?' });
     expect(within(ask).getByText(ASK)).toBeInTheDocument();
     await user.click(within(ask).getByRole('button', { name: 'Stay' }));
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(screen.getByTestId('compose')).toBeInTheDocument();
     await waitFor(() => expect(document.querySelector('[aria-modal="true"]')).toBeNull());
     await user.keyboard('{Escape}');
-    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Leave' }));
+    await user.click(within(await screen.findByRole('dialog', { name: 'Leave?' })).getByRole('button', { name: 'Leave' }));
     expect(screen.queryByTestId('compose')).toBeNull();
   });
 
@@ -948,7 +948,7 @@ describe('a card that is played on the post (CardUi.Compose)', () => {
     await user.click(within(post(2)).getByRole('button', { name: 'Play Tagger on post 2' }));
     await user.click(await screen.findByRole('button', { name: 'Scribble' }));
     await user.click(screen.getByRole('button', { name: 'Cancel drawing' }));
-    expect(within(await screen.findByRole('dialog')).getByText(ASK)).toBeInTheDocument();
+    expect(within(await screen.findByRole('dialog', { name: 'Leave?' })).getByText(ASK)).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Stay' }));
     await user.click(screen.getByRole('button', { name: 'Wipe' }));
     await user.click(screen.getByRole('button', { name: 'Cancel drawing' }));
@@ -959,7 +959,7 @@ describe('a card that is played on the post (CardUi.Compose)', () => {
     await user.click(await screen.findByRole('button', { name: 'Scribble' }));
     await user.click(handButton());
     await user.click(within(drawer()).getAllByRole('button', { name: /^Tagger, / })[0]!);
-    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Leave' }));
+    await user.click(within(await screen.findByRole('dialog', { name: 'Leave?' })).getByRole('button', { name: 'Leave' }));
     expect(screen.queryByTestId('compose')).toBeNull();
     expect(within(post(2)).queryByRole('button', { name: 'Play Tagger on post 2' })).toBeNull();
   });
@@ -971,7 +971,7 @@ describe('a card that is played on the post (CardUi.Compose)', () => {
     await user.click(within(post(2)).getByRole('button', { name: 'Play Tagger on post 2' }));
     await user.click(await screen.findByRole('button', { name: 'Scribble' }));
     await user.click(within(post(4)).getByRole('button', { name: 'Play Tagger on post 4' }));
-    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Leave' }));
+    await user.click(within(await screen.findByRole('dialog', { name: 'Leave?' })).getByRole('button', { name: 'Leave' }));
     expect(within(post(2)).queryByTestId('compose')).toBeNull();
     expect(within(post(4)).getByTestId('compose')).toHaveAttribute('data-post', '4');
   });
@@ -1014,7 +1014,7 @@ describe('a card that is played on the post (CardUi.Compose)', () => {
     expect(within(post(2)).getByTestId('compose').contains(within(post(2)).getByTestId('whoops-fx'))).toBe(true);
     /* Nothing about the landing ended the ask: the drawing is still held. */
     await user.keyboard('{Escape}');
-    expect(within(await screen.findByRole('dialog')).getByText(ASK)).toBeInTheDocument();
+    expect(within(await screen.findByRole('dialog', { name: 'Leave?' })).getByText(ASK)).toBeInTheDocument();
   });
 
   test('box is the post body\'s, not the slot\'s, and the body holds the post\'s words', async () => {
@@ -1074,7 +1074,7 @@ describe('a card that is played on the post (CardUi.Compose)', () => {
     expect(await w.fake.playCard('tagger', w.hooligan, w.ids[1]!, {}, '')).toMatchObject({ ok: true });
     await waitFor(() => expect(within(post(2)).queryByRole('button', { name: 'Play Tagger on post 2' })).toBeNull());
     await user.keyboard('{Escape}');
-    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Leave' }));
+    await user.click(within(await screen.findByRole('dialog', { name: 'Leave?' })).getByRole('button', { name: 'Leave' }));
     await waitFor(() => expect(post(2)).toHaveFocus());
   });
 
@@ -1120,7 +1120,7 @@ describe('a card that is played on the post (CardUi.Compose)', () => {
     await user.click(ghost());
     await user.click(await screen.findByRole('button', { name: 'Scribble' }));
     await user.keyboard('{Escape}');
-    const ask = await screen.findByRole('dialog');
+    const ask = await screen.findByRole('dialog', { name: 'Leave?' });
     expect(ask).toHaveAccessibleDescription(ASK);
     expect(within(ask).getByRole('button', { name: 'Stay' })).toHaveFocus();
     await user.click(within(ask).getByRole('button', { name: 'Leave' }));
@@ -1130,7 +1130,7 @@ describe('a card that is played on the post (CardUi.Compose)', () => {
     await user.click(await screen.findByRole('button', { name: 'Scribble' }));
     await user.click(handButton());
     await user.click(within(drawer()).getAllByRole('button', { name: /^Tagger, / })[0]!);
-    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Leave' }));
+    await user.click(within(await screen.findByRole('dialog', { name: 'Leave?' })).getByRole('button', { name: 'Leave' }));
     await waitFor(() => expect(within(drawer()).getAllByRole('button', { name: /^Tagger, / })[0]).toHaveFocus());
     expect(within(post(2)).queryByRole('button', { name: 'Play Tagger on post 2' })).toBeNull();
   });
@@ -1161,7 +1161,7 @@ describe('a card that is played on the post (CardUi.Compose)', () => {
     const link = [...document.querySelectorAll<HTMLAnchorElement>('a[href]')].find((l) => new URL(l.href).origin === window.location.origin && new URL(l.href).pathname !== here && !l.closest('[aria-hidden="true"]'))!;
     const to = new URL(link.href).pathname;
     await user.click(link);
-    const ask = await screen.findByRole('dialog');
+    const ask = await screen.findByRole('dialog', { name: 'Leave?' });
     expect(within(ask).getByText(ASK)).toBeInTheDocument();
     expect(window.location.pathname).toBe(here);
     await user.click(within(ask).getByRole('button', { name: 'Stay' }));
@@ -1176,7 +1176,7 @@ describe('a card that is played on the post (CardUi.Compose)', () => {
     expect(window.location.pathname).toBe(here);
     await user.click(screen.getByRole('button', { name: 'Stay' }));
     await user.click(link);
-    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Leave' }));
+    await user.click(within(await screen.findByRole('dialog', { name: 'Leave?' })).getByRole('button', { name: 'Leave' }));
     await waitFor(() => expect(window.location.pathname).toBe(to));
     expect(screen.queryByTestId('compose')).toBeNull();
   });
