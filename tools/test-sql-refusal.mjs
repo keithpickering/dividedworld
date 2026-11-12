@@ -98,7 +98,7 @@ fs.appendFileSync(${JSON.stringify(starts)}, Date.now() + '\\n');
 const sql = fs.readFileSync(0, 'utf8');
 fs.appendFileSync(${JSON.stringify(calls)}, process.argv.slice(2).join(' ') + '\\n' + sql + '\\n\\x1e\\n');
 if (process.env.VACUUM_FAILS && sql.trim() === process.env.VACUUM_FAILS) { process.stderr.write('ERROR:  vacuum refused by the test'); process.exit(1); }
-if (sql.startsWith('begin;') && process.env.HANG &&!fs.existsSync(${JSON.stringify(hung)})) {
+if (sql.startsWith('begin;') && process.env.HANG && !fs.existsSync(${JSON.stringify(hung)})) {
   fs.writeFileSync(${JSON.stringify(hung)}, String(Date.now()));
   setTimeout(() => {}, 60_000);
 }
@@ -109,7 +109,8 @@ function boundedSuite(hang, timeoutMs = '1500', vacuumFails = '') {
   fs.rmSync(starts, { force: true });
   const env = { ...process.env, KAYFABB_PSQL_SHIM: hanger, DATABASE_URL: 'postgres://postgres:pg@localhost:5432/postgres', KAYFABB_SQL_FILE_TIMEOUT_MS: timeoutMs, HANG: hang ? '1' : '', VACUUM_FAILS: vacuumFails };
   /* The suite's own end-to-end files would try the scratch database this psql never made; a bound keeps a slip here from hanging the
-     build. It is wide, since the whole run under a busy build (a Node start for each psql, the end-to-end files) took 85s on Windows. */
+     build. It is wide, since the whole run under a busy build (a Node start for each psql, the end-to-end files) took 85s on Windows before each file's vacuum call,
+     which about doubles the psql starts. */
   const r = spawnSync(process.execPath, ['tools/test-sql.mjs'], { env, encoding: 'utf8', timeout: 600_000 });
   const records = fs.existsSync(calls) ? fs.readFileSync(calls, 'utf8').split('\x1e\n').filter((x) => x.trim()) : [];
   /* How long the hung psql lived: from its start to the start of the next psql, which the suite runs once the hung one is killed. */
