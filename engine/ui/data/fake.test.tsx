@@ -3714,7 +3714,7 @@ describe('the log\'s scored-as rows (card notes, Part 6, Task 6)', () => {
 
 /* ---------------------------------------------------------------------------------- a surface ---- */
 describe('a surface, as the server keeps it', () => {
-  const sql = readFileSync(resolve(process.cwd(), 'supabase/migrations/0195_surfaces.sql'), 'utf8');
+  const sql = readFileSync(resolve(process.cwd(), 'supabase/migrations/0241_surfaces.sql'), 'utf8');
   /** The sentence the SQL raises, found in its text: `format('...')` or the literal, with each `%` and `%s` in place. */
   const sayings = {
     limit: /format\('(this wall is [^']*)'/.exec(sql)![1]!,

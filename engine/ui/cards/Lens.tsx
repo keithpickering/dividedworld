@@ -575,7 +575,7 @@ function Who({ plays, nameOf, faceOf, inkOfPlay, card, unfolded, onToggle, ...ro
 }
 
 /**
- * A surface play's rows, below its Who: one for each live draw and wash, oldest first (`surface_acts`, 0195): who, when, what the card names of a draw (`CardUi.describeDraw`) and the share of the surface the
+ * A surface play's rows, below its Who: one for each live draw and wash, oldest first (`surface_acts`, 0241): who, when, what the card names of a draw (`CardUi.describeDraw`) and the share of the surface the
  * draw owns now, counted from the cells it owns; a wash says it washed. Under them one line for the draws no longer live, in the card's words (`CardUi.logDraw`). It is read when the tab opens and again each
  * time the page's live list for the play changes (a draw or a wash heard on the channel), so what shows is what the Acts say now. Who drew what is shown here and nowhere else (the design, section 8). A read that
  * fails shows nothing: the rows are the Lens's account of the layer, and the layer itself is on the post.

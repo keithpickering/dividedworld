@@ -1583,7 +1583,7 @@ describe('the log', () => {
       if (name === 'my_posts_written_on') {
         return rows([{ play: C, post: A, version: A, failed: false, opening: true, over: false, at: '2026-10-29T22:30:00+00:00' }, { play: C, post: A, version: SET, failed: true, opening: false, over: false, at: '2026-10-29T22:20:00+00:00' }]);
       }
-      /* A surface in the log (0195): the drawer's own draw and the wash that cut it, and the draws and washes on the player's own post. */
+      /* A surface in the log (0241): the drawer's own draw and the wash that cut it, and the draws and washes on the player's own post. */
       if (name === 'my_draws') {
         return rows([{ act: SET, kind: 'cut', play: C, post: A, character: B, mine: A, at: '2026-10-29T22:40:00+00:00', cells: 300 }, { act: A, kind: 'draw', play: C, post: A, character: A, mine: A, at: '2026-10-29T22:10:00+00:00', cells: 600 }]);
       }
@@ -1656,7 +1656,7 @@ describe('the log', () => {
     expect(saves?.url.searchParams.get('saved_at')).toBe('not.is.null');
     const [written] = h.to('my_posts_written_on');
     expect([written?.url.searchParams.get('order'), written?.url.searchParams.get('limit')]).toEqual(['at.desc,play.asc,version.asc', '200']);
-    /* The surface's two views (0195): newest first by when each landed, then in a fixed order, a page long. */
+    /* The surface's two views (0241): newest first by when each landed, then in a fixed order, a page long. */
     for (const name of ['my_draws', 'my_walls_drawn_on']) {
       const [req] = h.to(name);
       expect([name, req?.url.searchParams.get('order'), req?.url.searchParams.get('limit'), req?.url.searchParams.get('select')]).toEqual([name, 'at.desc,act.asc,mine.asc', '200', 'act,kind,play,post,character,mine,at,cells']);
@@ -2575,7 +2575,7 @@ describe('a screen in one call', () => {
       expect(page.log.saves).toEqual([{ play: C, post: A, savedAt: '2026-10-29T23:00:00+00:00' }]);
       /* The texts cards wrote on the player's posts (log_page, 0149), mapped as log() maps my_posts_written_on. */
       expect(page.log.writes).toEqual([{ play: C, post: A, version: A, failed: true, opening: true, over: true, at: '2026-10-29T22:30:00+00:00' }]);
-      /* The surface's two sources (log_page, 0195), mapped as log() maps my_draws and my_walls_drawn_on. */
+      /* The surface's two sources (log_page, 0241), mapped as log() maps my_draws and my_walls_drawn_on. */
       expect(page.log.draws).toEqual([{ act: SET, kind: 'cut', play: C, post: A, character: B, mine: A, at: '2026-10-29T22:40:00+00:00', cells: 300 }]);
       expect(page.log.wallsDrawn).toEqual([{ act: SPRING, kind: 'wash', play: C, post: A, character: B, mine: B, at: '2026-10-29T22:50:00+00:00', cells: 450 }]);
       /* The group moves (log_page, 0134), mapped as log() maps my_group_moves. */

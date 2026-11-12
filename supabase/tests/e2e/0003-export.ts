@@ -193,7 +193,7 @@ test('an instance exported and imported into a fresh database is the same instan
             'starts', to_char(now() + interval '1 day', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'), 'ends', to_char(now() + interval '2 days', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'))) returning id into score_play;
         insert into play_reach (play, reach, character, ends_at) values (score_play, 'character', b, now() + interval '2 days');
       end;
-      -- A surface (0195): a play of a surface card on a post, a draw by Bob's mask and a wash by the post's own character (each an Act, with its cells in the payload), so the row that is derived from them is carried;
+      -- A surface (0241): a play of a surface card on a post, a draw by Bob's mask and a wash by the post's own character (each an Act, with its cells in the payload), so the row that is derived from them is carried;
       -- and a surface card set face down with its draft, whose private row is carried too.
       insert into card_kinds (key, name, alignment, rarity, play, reaches, stack, surface) values ('expwall', 'Exported Wall', 'pepperoni', 'rare', 'cast', '{post}', 1, true);
       insert into card_ledger (account, card, kind, price) values (ann, 'expwall', 'bought', 0);

@@ -571,7 +571,7 @@ function toAdminQueue(v: unknown): AdminQueue {
 /** One of the roster rows `boss_roster_names` answers. */
 const toBosses = (v: unknown): { readonly staff: string; readonly name: string; readonly pronouns: PronounSet }[] => rowsOf(v).flatMap((x) => (typeof x['staff'] === 'string' ? [{ staff: x['staff'], name: String(x['name'] ?? x['staff']), pronouns: pronounsOrDefault(x['pronouns']) }] : []));
 
-/** A draw or a wash on a surface, as the log reads it (`my_draws`, `my_walls_drawn_on`, 0195): public facts and the reader's own character. */
+/** A draw or a wash on a surface, as the log reads it (`my_draws`, `my_walls_drawn_on`, 0241): public facts and the reader's own character. */
 const surfaceLogRow = (r: Row): SurfaceLogRow => ({ act: r['act'], kind: r['kind'], play: r['play'], post: r['post'], character: r['character'], mine: r['mine'], at: r['at'], cells: num(r['cells']) });
 
 /** The log's rows as `readLogPage` reads them, from the rows of the player's views (`log`) or of `log_page`'s sources: both name their columns the same. */
@@ -1026,7 +1026,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       rows(() => client.from('my_posts_played_on').select('play,post,at,reach,target_name,target_character'), 'at', (q) => q, ['play']),
       /* The texts and failures of cards that write on the posts the player's characters wrote (0149): the rows are the author's alone, and public facts. */
       rows(() => client.from('my_posts_written_on').select('play,post,version,failed,opening,over,at'), 'at', (q) => q.order('play', { ascending: true }).order('version', { ascending: true }), ['play', 'version']),
-      /* What was drawn and washed on a surface (0195): the player's own draws and the washes that cut them, and what was drawn on and washed off the walls of their own posts; each reads the caller's own characters. */
+      /* What was drawn and washed on a surface (0241): the player's own draws and the washes that cut them, and what was drawn on and washed off the walls of their own posts; each reads the caller's own characters. */
       rows(() => client.from('my_draws').select('act,kind,play,post,character,mine,at,cells'), 'at', (q) => q.order('act', { ascending: true }).order('mine', { ascending: true }), ['act', 'mine']),
       rows(() => client.from('my_walls_drawn_on').select('act,kind,play,post,character,mine,at,cells'), 'at', (q) => q.order('act', { ascending: true }).order('mine', { ascending: true }), ['act', 'mine']),
       rows(() => client.from('my_posts_played_on').select('play,post,saved_at').not('saved_at', 'is', null), 'saved_at', (q) => q, ['play']),

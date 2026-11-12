@@ -1,4 +1,4 @@
--- Surfaces (supabase/migrations/0195_surfaces.sql; docs/plans/2026-11-11-graffiti-plan.md, Task 2): a play whose layer any character may add to, kept as draws and washes (Acts) and a derived row
+-- Surfaces (supabase/migrations/0241_surfaces.sql; docs/plans/2026-11-11-graffiti-plan.md, Task 2): a play whose layer any character may add to, kept as draws and washes (Acts) and a derived row
 -- of the play's own (`surfaces`): the covered cells, the draw that last inked each, and the live list. The card is this file's own (`sfwall`, with the surface flag); every name is prefixed sf.
 --
 --  1. a play opens an empty surface, and a second wall card on the post is refused by the stack

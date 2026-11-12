@@ -1,4 +1,4 @@
--- What a player's log says of a surface (supabase/migrations/0195_surfaces.sql, the log's views; docs/plans/2026-11-11-graffiti-plan.md, Task 6; the design's sections 3 and 11): a drawer's own draws and the
+-- What a player's log says of a surface (supabase/migrations/0241_surfaces.sql, the log's views; docs/plans/2026-11-11-graffiti-plan.md, Task 6; the design's sections 3 and 11): a drawer's own draws and the
 -- washes that cut them (`my_draws`), and the draws and washes on the walls of the player's own posts (`my_walls_drawn_on`), each read by the reader's own characters alone, and `log_page` carrying both.
 -- The card is this file's own (`slwall`, with the surface flag); every name is prefixed sl.
 --

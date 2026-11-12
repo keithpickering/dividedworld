@@ -148,7 +148,7 @@ export interface PostPlays {
   readonly read: number;
   /** Which card each of the reader's own card backs on the post is, by set (`my_face_down`): on the setter's screen alone. */
   readonly faces: Readonly<Record<Id, string>>;
-  /** Each of the post's surface plays (0195): the cells it covers, its live Acts' ids, and the live Acts themselves (null until read, where a wall is near). */
+  /** Each of the post's surface plays (0241): the cells it covers, its live Acts' ids, and the live Acts themselves (null until read, where a wall is near). */
   readonly surfaces: Readonly<Record<Id, Surface>>;
 }
 /** A surface play as the store holds it. */
