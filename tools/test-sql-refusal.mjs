@@ -160,9 +160,9 @@ function boundedSuite(hang, timeoutMs = '1500', vacuumFails = '') {
   const first = fs.readdirSync('supabase/tests').filter((f) => ASSERTION_FILE.test(f)).sort()[0];
   const e2eFirst = fs.readdirSync('supabase/tests/e2e').filter((f) => /^\d{4}-[\w.-]+\.ts$/.test(f)).sort()[0];
   check('a failing vacuum fails the suite', bad.status === 1, `status ${bad.status}`);
-  check('it fails that file\'s step with the error', new RegExp(`FAIL  ${first?.replace('.', '\\.')}\\s+ERROR:  vacuum refused by the test`).test(bad.out), bad.out.split('\n').filter((l) => /FAIL/.test(l)).slice(0, 2).join(' | '));
+  check('it fails that file\'s step with the error', new RegExp(`FAIL  ${first?.replace('.', '\\.')}\\s+vacuum \\(analyze\\); failed, so the file was not run:\\s+ERROR:  vacuum refused by the test`).test(bad.out), bad.out.split('\n').filter((l) => /FAIL/.test(l)).slice(0, 2).join(' | '));
   check('and the file itself is not run', !bad.records.some(isFile));
-  check('the same for an end-to-end file', !e2eFirst || new RegExp(`FAIL  e2e/${e2eFirst.replace('.', '\\.')}\\s+ERROR:  vacuum refused by the test`).test(bad.out), bad.out.split('\n').filter((l) => /e2e/.test(l)).slice(0, 2).join(' | '));
+  check('the same for an end-to-end file', !e2eFirst || new RegExp(`FAIL  e2e/${e2eFirst.replace('.', '\\.')}\\s+vacuum \\(analyze\\); failed, so the file was not run:\\s+ERROR:  vacuum refused by the test`).test(bad.out), bad.out.split('\n').filter((l) => /e2e/.test(l)).slice(0, 2).join(' | '));
 }
 fs.rmSync(bounded, { recursive: true, force: true });
 
