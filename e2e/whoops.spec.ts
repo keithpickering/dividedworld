@@ -8,8 +8,9 @@ import { expect, test, type Page } from '@playwright/test';
  */
 test.use({ viewport: { width: 1440, height: 1120 }, reducedMotion: 'reduce' });
 
-/* The hold's length, read from the effect's own source (importing it would pull in React and its stylesheet): a wait below it is not a hold. */
-const HOLD_MS = Number(/export const HOLD_MS = (\d+)/.exec(readFileSync(new URL('../instances/divided-world/cards/whoops/Effect.tsx', import.meta.url), 'utf8'))?.[1]);
+/* The hold's length, read from the touch rules' own source (importing it would pull in React and its stylesheet), and refused if it is not found, so a wait never silently becomes none: a wait below it is not a hold. */
+const HOLD_MS = Number(/export const HOLD_MS = (\d+)/.exec(readFileSync(new URL('../instances/divided-world/cards/wiping.ts', import.meta.url), 'utf8'))?.[1]);
+if (!Number.isFinite(HOLD_MS)) throw new Error('HOLD_MS is not in instances/divided-world/cards/wiping.ts');
 
 const inked = (page: Page, selector = '#post-41 .kb-whoops-ink') => page.evaluate((sel) => {
   const c = document.querySelector<HTMLCanvasElement>(sel);

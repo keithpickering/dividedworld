@@ -64,6 +64,9 @@ function Body({ act, name, spoken, person, editing, onDone, marks, visit }: { re
           <Reactions act={act.id} author={act.character} authorName={spoken} tallies={tallies} mine={mine} />
         </>
       );
+    /* A draw or a wash is a surface's layer, drawn by its card's effect on the post it is on: it is nothing to draw as a post. */
+    case 'draw':
+    case 'wash': return null;
     case 'move_end': return <MoveEndLine act={act} />;
     case 'move_keep': return <MoveKeepLine name={name} pronouns={person?.character.pronouns ?? ENGINE_DEFAULT_PRONOUNS} />;
     case 'move':

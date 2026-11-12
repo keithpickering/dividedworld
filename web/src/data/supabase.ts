@@ -41,8 +41,9 @@ import type { Piece } from '../../../engine/rules/cosmetics.ts';
 import { RARITIES } from '../../../engine/rules/cards.ts';
 import type { Career } from '../../../engine/system/career.ts';
 import type {
+  SurfaceAct, SurfaceNow, SurfaceWritten,
   AdminQueue, Apology, Bar, BoardName, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesLog, QueuedMove, StaffCardPlay, StaffProfile,
-  Act, ActKind, AdminAward, AdminKind, Answer, AvatarUpload, BeltCursor, BeltPage, BeltReign, RandomEvent, ShownTrophy, TrophyAwardFailure, TrophyItem, WardrobeItem, Board, Bought, Donated, DriveGift, DriveGifts, BoardSummary, CardEnded, ScoredAs, CardEvent, PackEvent, WrittenOnMine, CaughtPlay, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd,
+  Act, ActKind, AdminAward, AdminKind, Answer, AvatarUpload, BeltCursor, BeltPage, BeltReign, RandomEvent, ShownTrophy, TrophyAwardFailure, TrophyItem, WardrobeItem, Board, Bought, Donated, DriveGift, DriveGifts, BoardSummary, CardEnded, ScoredAs, CardEvent, PackEvent, SurfaceLogRow, WrittenOnMine, CaughtPlay, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd,
   Alert, ContactLink, EffectState, Tail, PostHit, SearchCursor, SearchPage, SearchQuery, Suggestions, ThreadHit, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, SeasonShown, TallyName, Update, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
   Tally, StandingPlace, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, TurnAsked, Wallet, WalletEvent,
   Boot, BoardPage, IndexPage, Opened, AdminSlot, Slot, SlotMove, Presence, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, LogPage,
@@ -135,6 +136,20 @@ const beyond = (reach: string | undefined, fromPost: string | undefined): Record
 
 /** The characters a body puts words in the mouth of, as the act function reads them (engine/rules/actions.ts): nothing when there are none. */
 const framed = (framing: readonly string[] | undefined): Record<string, unknown> => (framing && framing.length > 0 ? { framing } : {});
+
+/** A draw or a wash as `surface_acts` carries it: the public Act, and a draw's `share`, the cells it owns now. */
+function toSurfaceAct(r: Row): SurfaceAct {
+  return { ...toAct(r), ...(typeof r['share'] === 'number' ? { share: r['share'] } : {}) };
+}
+/** What draw_on_surface and wash_surface answer: the Act's projection, the cells now covered and the live Acts' ids. */
+function toSurfaceWritten(r: Row): SurfaceWritten {
+  return { ...toSurfaceAct(r), covered: num(r['covered']), live: (Array.isArray(r['live']) ? r['live'] : []).filter((x): x is Id => typeof x === 'string') };
+}
+/** thread_page's `surfaces`: by surface play, its cells covered and its live Acts' ids. */
+function toSurfaces(v: unknown): Record<Id, SurfaceNow> {
+  if (!isObject(v)) return {};
+  return Object.fromEntries(Object.entries(v).filter(([, s]) => isObject(s)).map(([play, s]) => [play, { covered: num((s as Row)['covered']), live: ((s as Row)['live'] as unknown[] | undefined ?? []).filter((x): x is Id => typeof x === 'string') }]));
+}
 
 function toAct(r: Row): Act {
   return {
@@ -561,12 +576,14 @@ function toAdminQueue(v: unknown): AdminQueue {
 /** One of the roster rows `boss_roster_names` answers. */
 const toBosses = (v: unknown): { readonly staff: string; readonly name: string; readonly pronouns: PronounSet }[] => rowsOf(v).flatMap((x) => (typeof x['staff'] === 'string' ? [{ staff: x['staff'], name: String(x['name'] ?? x['staff']), pronouns: pronounsOrDefault(x['pronouns']) }] : []));
 
+/** A draw or a wash on a surface, as the log reads it (`my_draws`, `my_walls_drawn_on`, 0317): public facts and the reader's own character. */
+const surfaceLogRow = (r: Row): SurfaceLogRow => ({ act: r['act'], kind: r['kind'], play: r['play'], post: r['post'], character: r['character'], mine: r['mine'], at: r['at'], cells: num(r['cells']) });
 const COSMETIC_KINDS = ['found', 'granted', 'awarded', 'reversed', 'lost', 'beltBack'] as const;
 const COSMETIC_OUTCOMES = ['line', 'gear', 'card'] as const;
 const COSMETIC_BYS = ['season', 'boss', 'demand', 'admin'] as const;
 
 /** The log's rows as `readLogPage` reads them, from the rows of the player's views (`log`) or of `log_page`'s sources: both name their columns the same. */
-function toLogRead(src: Readonly<Record<'ledger' | 'wallet' | 'cards' | 'packs' | 'playsOnMine' | 'writes' | 'saves' | 'setEnds' | 'caught' | 'ended' | 'infractions' | 'bans' | 'groupMoves' | 'reports' | 'appeals' | 'cosmetics', Row[]>>, shareRows: Row[], backs: ReadonlyMap<string, Row> = new Map()): LogRead {
+function toLogRead(src: Readonly<Record<'ledger' | 'wallet' | 'cards' | 'packs' | 'playsOnMine' | 'writes' | 'draws' | 'wallsDrawn' | 'saves' | 'setEnds' | 'caught' | 'ended' | 'infractions' | 'bans' | 'groupMoves' | 'reports' | 'appeals' | 'cosmetics', Row[]>>, shareRows: Row[], backs: ReadonlyMap<string, Row> = new Map()): LogRead {
   const ledger = src['ledger'].map((r): LedgerRow => ({
     settlement: num(r['settlement']), startsAt: r['starts_at'], endsAt: r['ends_at'], sharesKept: r['shares_kept'] !== false,
     character: r['character'], reason: r['reason'], amount: num(r['amount']), ...((p) => (p ? { params: p } : {}))(numbers(r['params'])),
@@ -597,6 +614,8 @@ function toLogRead(src: Readonly<Record<'ledger' | 'wallet' | 'cards' | 'packs' 
     })),
     playsOnMine: src['playsOnMine'].map((r) => ({ play: r['play'], post: r['post'], at: r['at'], reach: r['reach'], targetName: r['target_name'] ?? null, targetCharacter: r['target_character'] ?? null })),
     writes: src['writes'].map((r): WrittenOnMine => ({ play: r['play'], post: r['post'], version: r['version'], failed: r['failed'] === true, opening: r['opening'] === true, over: r['over'] === true, at: r['at'] })),
+    draws: src['draws'].map(surfaceLogRow),
+    wallsDrawn: src['wallsDrawn'].map(surfaceLogRow),
     saves: src['saves'].map((r) => ({ play: r['play'], post: r['post'], savedAt: r['saved_at'] })),
     setEnds: src['setEnds'].map((r): FaceDownEnd => ({ play: r['play'], card: r['card'], post: r['post'], spring: r['spring'] ?? null, endedAt: r['ended_at'], endedBy: r['ended_by'] === 'taken back' || r['ended_by'] === 'sprung' || r['ended_by'] === 'time' ? r['ended_by'] : r['spring'] ? 'sprung' : 'time' })),
     caught: src['caught'].map((r): CaughtPlay => ({
@@ -1029,7 +1048,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       if (!('at' in range)) return list(() => page((range.before ? from().lte(column, range.before) : from()).order(column, { ascending: false })).limit(range.limit));
       return every((start, end) => whole.reduce((q: Q, c) => q.order(c, { ascending: true }), from().eq(column, range.at)).range(start, end));
     };
-    const [ledgerRows, walletRows, cardRows, packRows, playRows, writeRows, saveRows, endRows, caughtRows, endedRows, infractionRows, banRows, groupMoveRows, reportRows, appealRows, cosmeticRows] = await Promise.all([
+    const [ledgerRows, walletRows, cardRows, packRows, playRows, writeRows, drawRows, wallRows, saveRows, endRows, caughtRows, endedRows, infractionRows, banRows, groupMoveRows, reportRows, appealRows, cosmeticRows] = await Promise.all([
       rows(() => client.from('my_ledger').select('settlement,starts_at,ends_at,character,reason,amount,shares_kept,params'), 'ends_at',
         (q) => q.order('character', { ascending: true }).order('reason', { ascending: true }), ['settlement', 'character', 'reason']),
       rows(() => client.from('my_wallet_events').select('settlement,kind,change,overflow,floored,balance_after,ref,at'), 'at', (q) => q, ['settlement', 'kind', 'ref', 'change', 'overflow', 'floored', 'balance_after']),
@@ -1039,6 +1058,9 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       rows(() => client.from('my_posts_played_on').select('play,post,at,reach,target_name,target_character'), 'at', (q) => q, ['play']),
       /* The texts and failures of cards that write on the posts the player's characters wrote (0149): the rows are the author's alone, and public facts. */
       rows(() => client.from('my_posts_written_on').select('play,post,version,failed,opening,over,at'), 'at', (q) => q.order('play', { ascending: true }).order('version', { ascending: true }), ['play', 'version']),
+      /* What was drawn and washed on a surface (0317): the player's own draws and the washes that cut them, and what was drawn on and washed off the walls of their own posts; each reads the caller's own characters. */
+      rows(() => client.from('my_draws').select('act,kind,play,post,character,mine,at,cells'), 'at', (q) => q.order('act', { ascending: true }).order('mine', { ascending: true }), ['act', 'mine']),
+      rows(() => client.from('my_walls_drawn_on').select('act,kind,play,post,character,mine,at,cells'), 'at', (q) => q.order('act', { ascending: true }).order('mine', { ascending: true }), ['act', 'mine']),
       rows(() => client.from('my_posts_played_on').select('play,post,saved_at').not('saved_at', 'is', null), 'saved_at', (q) => q, ['play']),
       /* The player's own cards set face down, by when each sprang or ended (0054); one still live has no end yet. */
       rows(() => client.from('my_face_down').select('play,card,post,spring,ended_at,ended_by').not('ended_at', 'is', null), 'ended_at', (q) => q, ['play']),
@@ -1064,7 +1086,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     const shareRows = ids.length === 0 ? [] : await byChunks(ids, (part) => every((start, end) => client.from('my_ledger_shares').select('settlement,character,reason,card,act,quadrant,amount').in('settlement', part)
       .order('settlement', { ascending: false }).order('character', { ascending: true }).order('reason', { ascending: true }).order('card', { ascending: true }).order('act', { ascending: true }).order('quadrant', { ascending: true })
       .range(start, end)));
-    return toLogRead({ ledger: ledgerRows, wallet: walletRows, cards: cardRows, packs: packRows, playsOnMine: playRows, writes: writeRows, saves: saveRows, setEnds: endRows, caught: caughtRows, ended: endedRows, infractions: infractionRows, bans: banRows, groupMoves: groupMoveRows, reports: reportRows, appeals: appealRows, cosmetics: cosmeticRows }, shareRows, await readBacks(cardRows));
+    return toLogRead({ ledger: ledgerRows, wallet: walletRows, cards: cardRows, packs: packRows, playsOnMine: playRows, writes: writeRows, draws: drawRows, wallsDrawn: wallRows, saves: saveRows, setEnds: endRows, caught: caughtRows, ended: endedRows, infractions: infractionRows, bans: banRows, groupMoves: groupMoveRows, reports: reportRows, appeals: appealRows, cosmetics: cosmeticRows }, shareRows, await readBacks(cardRows));
   };
 
   const api: KayfaApi = {
@@ -1426,8 +1448,8 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const d = isObject(r.data) ? r.data : {};
       return { gifts: toDriveGifts(d['gifts']), more: d['more'] === true };
     },
-    playCard: (card, character, target, config, message, reach, fromPost) => act({ action: 'playCard', card, character, target, config, message, ...beyond(reach, fromPost) }, toAct),
-    setCard: (card, character, target, config, when) => act({ action: 'setCard', card, character, target, config, ...(when ? { when } : {}) }, toAct),
+    playCard: (card, character, target, config, message, reach, fromPost, first) => act({ action: 'playCard', card, character, target, config, message, ...beyond(reach, fromPost), ...(first === undefined ? {} : { first }) }, toAct),
+    setCard: (card, character, target, config, when, first) => act({ action: 'setCard', card, character, target, config, ...(when ? { when } : {}), ...(first === undefined ? {} : { first }) }, toAct),
     takeBack: (character, set) => act({ action: 'takeBack', character, set }, toAct),
     useCard: (card, character, target, config, message, reach, fromPost) => act({ action: 'useCard', card, character, target, config, message, ...beyond(reach, fromPost) }, toAct),
     async myFaceDown(sets) {
@@ -1436,6 +1458,16 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       return Object.fromEntries(rows.map((r) => [r['play'], r['card']]));
     },
     saveEffect: (play, character, state) => act({ action: 'saveEffect', character, play, state }, (r) => ({ play: r['play'], savedAt: r['saved_at'] })),
+    /* A draw and a wash are written by the act function's `draw` and `wash` (draw_on_surface, wash_surface, 0154); the answer is the Act with the cells covered and the live ids. */
+    draw: (play, character, input) => act({ action: 'draw', character, play, input }, toSurfaceWritten),
+    wash: (play, character, input) => act({ action: 'wash', character, play, input }, toSurfaceWritten),
+    async surfaceActs(play) {
+      if (!idOk(play)) return null;
+      const r = await read(() => client.rpc('surface_acts', { play }));
+      const d = r.data as Row | null;
+      if (!isObject(d)) return null;
+      return { covered: num(d['covered']), acts: rowsOf(d['acts']).map(toSurfaceAct), older: num(d['older']) };
+    },
     characters,
     async characterCounts(id): Promise<CharacterCounts> {
       // One row of counters kept by a trigger (0030), never a count of the character's Acts; none for a character that has done nothing.
@@ -1665,6 +1697,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
         })),
         visits: rowsOf(d['visits']).map(toVisit),
         plays, above, faces: Object.fromEntries(rowsOf(d['faces']).map((f) => [f['play'], f['card']])), states: toStates(rowsOf(d['states'])),
+        surfaces: toSurfaces(d['surfaces']),
         releases: (Array.isArray(d['releases']) ? d['releases'] : []).filter((x): x is Id => typeof x === 'string'),
         tallies: toTallies(asked, rowsOf(d['tallies'])), mine: rowsOf(d['mine']).map(toMyReaction), spun: rowsOf(d['spun']).map(toThread), reading,
         board: isObject(d['board']) ? toBoard(d['board']) : null, following: d['following'] === true,
@@ -1936,7 +1969,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       if (!isObject(d)) throw new ReadFailure('server');
       const sources: Row = isObject(d['sources']) ? d['sources'] : {};
       const first = toLogRead({
-        ledger: rowsOf(sources['ledger']), wallet: rowsOf(sources['wallet']), cards: rowsOf(sources['cards']), packs: rowsOf(sources['packs']), playsOnMine: rowsOf(sources['playsOnMine']), writes: rowsOf(sources['writes']), saves: rowsOf(sources['saves']),
+        ledger: rowsOf(sources['ledger']), wallet: rowsOf(sources['wallet']), cards: rowsOf(sources['cards']), packs: rowsOf(sources['packs']), playsOnMine: rowsOf(sources['playsOnMine']), writes: rowsOf(sources['writes']), draws: rowsOf(sources['draws']), wallsDrawn: rowsOf(sources['wallsDrawn']), saves: rowsOf(sources['saves']),
         setEnds: rowsOf(sources['setEnds']), caught: rowsOf(sources['caught']), ended: rowsOf(sources['ended']),
         infractions: rowsOf(sources['infractions']), bans: rowsOf(sources['bans']), groupMoves: rowsOf(sources['groupMoves']), reports: rowsOf(sources['reports']), appeals: rowsOf(sources['appeals']), cosmetics: rowsOf(sources['cosmetics']),
       }, rowsOf(d['shares']), await readBacks(rowsOf(sources['cards'])));
@@ -2097,8 +2130,9 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     },
 
     subscribeThread(thread, l) {
-      return join(`thread:${thread}`, ['act', 'tally', 'effect', 'card_text'], (event, p) => {
+      return join(`thread:${thread}`, ['act', 'tally', 'effect', 'surface', 'card_text'], (event, p) => {
         if (event === 'act') l.onAct?.(toAct(p));
+        else if (event === 'surface') l.onSurface?.(p['play'], num(p['covered']));
         else if (event === 'tally') l.onTally?.(p['act'], (p['tally'] ?? {}) as Tally);
         else if (event === 'effect') l.onEffect?.(p['play'], p['saved_at']);
         else if (event === 'card_text') l.onText?.(p['play'], p['version']);

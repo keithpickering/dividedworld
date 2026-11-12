@@ -12,6 +12,8 @@ declare
                            'characters_public', 'acts_public', 'accounts', 'characters', 'class_history', 'reaction_tallies',
                            'seasons', 'season_results', 'seasons_finished', 'settlements', 'standings', 'ledger', 'wallets', 'wallet_events',
                            'card_ledger', 'my_cards', 'effect_state',
+                           -- A surface's derived row (0317): the covered cells, the owners and the live list, all of them public facts of public Acts.
+                           'surfaces',
                            -- Gear (0205): the kinds and what each mask wears are public, the ledger is cut to the caller's own rows by its policy, and the wardrobe and an admin's grant check the caller inside.
                            'gear_kinds', 'gear_ledger', 'gear_worn',
                            -- Random Events (0207): a player reads their own account's events by policy; the roll clock and the lines are no one's to read.
@@ -21,7 +23,7 @@ declare
                            'reading', 'my_reactions', 'thread_view_counts',
                            'pip_styles', 'account_preferences', 'character_profiles',
                            'class_reveals', 'turns_announced',
-                           'my_characters', 'my_wallet', 'my_ledger', 'my_ledger_shares', 'my_scored_as', 'my_wallet_events', 'my_card_ledger', 'my_posts_played_on', 'my_posts_written_on', 'screen_settings', 'thread_list', 'character_post_counts', 'season_size', 'board_counts', 'current_standings', 'current_season',
+                           'my_characters', 'my_wallet', 'my_ledger', 'my_ledger_shares', 'my_scored_as', 'my_wallet_events', 'my_card_ledger', 'my_posts_played_on', 'my_posts_written_on', 'my_draws', 'my_walls_drawn_on', 'screen_settings', 'thread_list', 'character_post_counts', 'season_size', 'board_counts', 'current_standings', 'current_season',
                            'staff_now', 'staff_office_now', 'staff_profile_now', 'boards_now', 'moves_log', 'bars_now', 'face_down', 'my_face_down', 'my_caught', 'my_cards_ended', 'play_reach', 'play_moments', 'play_moment_layers',
                            'alerts', 'thread_follows', 'my_followed_threads', 'thread_open',
                            -- The log's lines for the Mod Bots (0111): each the caller's own characters' rows.
@@ -71,6 +73,8 @@ declare
                            -- The refusal a SQL-standard screen function raises through (0094).
                            'screen_refusal(text)',
                            -- Cards beyond a post (0055): a target's effects for the act function, and a page's plays above its posts and its board's pins.
+                           -- A surface's live Acts and each draw's share, for the Lens (0317): a security invoker read of public Acts and the row's counts.
+                           'surface_acts(uuid)',
                            'card_target_reach(text,uuid,uuid)', 'effects_above(uuid[],uuid,uuid)', 'pinned_threads(uuid)',
                            -- Updates (0062): an admin's post_update, and the page's read.
                            'post_update(text,text,jsonb)', 'updates(timestampwithtimezone,integer)',

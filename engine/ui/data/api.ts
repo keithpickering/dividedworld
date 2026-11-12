@@ -312,7 +312,27 @@ export type ActKind = 'post' | 'spin' | 'card' | 'edit' | 'tally' | 'reveal' | '
   /* The Mod Bots' Acts (supabase/migrations/0104 to 0109): meta acts like a card play, none a place in the thread (`seq` null). */
   | 'visit' | 'visit_join' | 'visit_end' | 'report' | 'report_verdict' | 'intercept' | 'infraction' | 'ban' | 'appeal' | 'appeal_ruling'
   /* A gift to a drive (0153): an Act of the drive's thread on its opening play, no place in the thread (`seq` null). */
-  | 'donation';
+  | 'donation'
+  /* A surface's layer (0317): a draw adds strokes to a play, a wash by the post's character takes ink off. Acts of the play's thread on the play, no place in the thread (`seq` null), and no post to draw. */
+  | 'draw' | 'wash';
+
+/**
+ * A draw or a wash on a surface, as every reader sees it (`surface_acts`, 0317): the Act, whose payload holds its `strokes` and its `cells`
+ * (a 10,000-character bit string). A draw read from the surface carries `share`, the cells of the layer it owns now (what a wash has not
+ * taken and no later draw has painted over); a wash, and an Act just written, carry none.
+ */
+export interface SurfaceAct extends Act { readonly share?: number }
+/** A draw or a wash just written (`draw_on_surface`, `wash_surface`): the Act and how the surface stands with it. */
+export interface SurfaceWritten extends SurfaceAct {
+  /** The cells the layer covers now. */
+  readonly covered: number;
+  /** The ids of the live draws and washes, oldest first. */
+  readonly live: readonly Id[];
+}
+/** What a surface holds that a page's read gives without its strokes (`thread_page`'s `surfaces`): the cells covered and the live Acts' ids. */
+export interface SurfaceNow { readonly covered: number; readonly live: readonly Id[] }
+/** A surface's live Acts (`surface_acts`), oldest first, with the cells covered and how many older draws are no longer live. */
+export interface SurfaceActs { readonly covered: number; readonly acts: readonly SurfaceAct[]; readonly older: number }
 
 /**
  * One gift on a drive's wall: who gave (a character, never a player), how much (hundredths) and when. What the drive kept and what arrived are not shown.
@@ -1559,6 +1579,23 @@ export interface WrittenOnMine {
   readonly at: string;
 }
 
+/**
+ * A draw or a wash on a surface as the player's log reads it (`my_draws` and `my_walls_drawn_on`, 0317): the Act, the surface play and the post it is on, the Act's character, the player's own
+ * character the line is for (`mine`), when, and the cells it counts, of the grid's 10,000. `kind` is 'draw' (a draw: the cells its strokes cover, public in its payload), 'wash' (the post's own wash: the cells it
+ * uncovered, none for a wash over bare cells) or 'cut' (a wash that took cells of the player's own draw: the cells of theirs it took, the washer the post's character). Public facts and the reader's own character
+ * alone: nothing of an owner, a class or a reaction.
+ */
+export interface SurfaceLogRow {
+  readonly act: Id;
+  readonly kind: 'draw' | 'wash' | 'cut';
+  readonly play: Id;
+  readonly post: Id;
+  readonly character: Id;
+  readonly mine: Id;
+  readonly at: string;
+  readonly cells: number;
+}
+
 /** When the effect of a play on one of the player's posts was last saved: the post's author's save, which may wash it clean. */
 export interface EffectSaved {
   readonly play: Id;
@@ -1776,6 +1813,10 @@ export interface Log {
   readonly playsOnMine: readonly PlayOnMine[];
   /** The texts and failures of cards that write on the player's posts, by when each was made (`my_posts_written_on`). */
   readonly writes: readonly WrittenOnMine[];
+  /** The draws the player's characters made on surfaces, and the washes that cut them, by when each landed (`my_draws`). Absent from a payload older than the surface; read it as none. */
+  readonly draws?: readonly SurfaceLogRow[];
+  /** The draws on, and the washes of, the surfaces on the player's own posts, by when each landed (`my_walls_drawn_on`). Absent from a payload older than the surface; read it as none. */
+  readonly wallsDrawn?: readonly SurfaceLogRow[];
   readonly saves: readonly EffectSaved[];
   /** The player's cards set face down that sprang or ended, by when. */
   readonly setEnds: readonly FaceDownEnd[];
@@ -1856,6 +1897,8 @@ export interface ThreadListener {
   /** A tally that only grows: keep each kind's largest. */
   readonly onTally?: (act: Id, tally: Tally) => void;
   readonly onEffect?: (play: Id, savedAt: string) => void;
+  /** A draw or a wash landed on a surface: the play and the cells it now covers (the `surface` event). Read the play's live Acts again if they are drawn. */
+  readonly onSurface?: (play: Id, covered: number) => void;
   /** A writing play made a tail (`card_text`): the play and the version of its post and nothing else. Read the post's tails again. */
   readonly onText?: (play: Id, version: Id) => void;
   /**
@@ -2023,6 +2066,8 @@ export interface ThreadPage {
   readonly people: readonly ThreadPerson[];
   /** The plays on the page's posts (`cardsOnMany`). */
   readonly plays: Awaited<ReturnType<KayfaApi['cardsOnMany']>>;
+  /** Each surface play among them: the cells it covers and its live Acts' ids, never a stroke (`surfaces` in thread_page, 0317). */
+  readonly surfaces: Readonly<Record<Id, SurfaceNow>>;
   readonly above: Awaited<ReturnType<KayfaApi['effectsAbove']>>;
   readonly faces: Awaited<ReturnType<KayfaApi['myFaceDown']>>;
   readonly states: Awaited<ReturnType<KayfaApi['effectStates']>>;
@@ -2554,9 +2599,10 @@ export interface KayfaApi {
    * Play a card the player holds on a post, as one of their characters: the card's own settings (`config`), the caster's message (plain
    * text, at most 200 characters, may be empty), the price its rules decide from the post as it stands. The card's Act comes back.
    * Beyond a post (`reach`), `target` is the character, the thread or the board, and a character play names the post whose postbit
-   * took it (`fromPost`); the Act comes back with its reach, its target and its end in its payload (0055_card_reach.sql).
+   * took it (`fromPost`); the Act comes back with its reach, its target and its end in its payload (0055_card_reach.sql). A surface card's play carries
+   * its first draw (`first`, the card's own shape): a play without one is refused ("draw your tag first"), the refusal on the field `first`.
    */
-  playCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, message: string, reach?: Reach, fromPost?: Id): Promise<Answer<Act>>;
+  playCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, message: string, reach?: Reach, fromPost?: Id, first?: unknown): Promise<Answer<Act>>;
   /**
    * Give `amount` (hundredths, one the drive offers) to a drive, as one of the player's characters: the gift's Act and the giver's balance after.
    * A closed drive, an amount not offered, a short wallet, a banned character and a thing that is no drive are refused in the database's words.
@@ -2569,9 +2615,9 @@ export interface KayfaApi {
   /**
    * Set a card the player holds face down on a post of the character's own (the card mechanic's design, section 3): its Act, a card
    * back, comes back naming no card. A trap that strikes carries the struck card's settings (`config`), which that card's rules check.
-   * A Move may be set with `when`, its conditions (quote-conditions design, section 1): sent only when one is set, and never for a set card.
+   * A Move may be set with `when`, its conditions (quote-conditions design, section 1): sent only when one is set, and never for a set card. A surface card is set with its first draw (`first`).
    */
-  setCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, when?: SetConditions): Promise<Answer<Act>>;
+  setCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, when?: SetConditions, first?: unknown): Promise<Answer<Act>>;
   /**
    * Take a card the player set face down back into the hand, before it springs and before its time ends (`take_back`): the setter's own back on a post
    * of the character's, free, and its Act (a take-back, naming the set) comes back. A back that is not the player's, or that has ended, is refused in the same words.
@@ -2585,6 +2631,15 @@ export interface KayfaApi {
   releaseEffect(play: Id): Promise<Answer<{ readonly play: Id; readonly releasedAt: string }>>;
   /** Save the state of a play's effect, as the character that wrote the post it landed on (no one else may); the card's rules bound what it holds. */
   saveEffect(play: Id, character: Id, state: Readonly<Record<string, unknown>>): Promise<Answer<{ readonly play: Id; readonly savedAt: string }>>;
+  /**
+   * Add a drawing to a surface play (a play of a card with `CardRules.surface`), as one of the player's characters: the card's rules check its shape
+   * and the database holds the limits (its refusal comes back in its words). The Act comes back with the cells covered and the live list.
+   */
+  draw(play: Id, character: Id, input: unknown): Promise<Answer<SurfaceWritten>>;
+  /** Take ink off a surface play, as the character that wrote the post (any other is refused); the same answer as a draw. */
+  wash(play: Id, character: Id, input: unknown): Promise<Answer<SurfaceWritten>>;
+  /** A surface play's live draws and washes, oldest first (`surface_acts`); null where the play has no surface. */
+  surfaceActs(play: Id): Promise<SurfaceActs | null>;
   react(act: Id, character: Id, kind: string): Promise<Answer<{ readonly act: Id; readonly tally: Tally }>>;
   turn(character: Id, to: string, loudness: 'silent' | 'announced', showFrom: boolean, showTo: boolean): Promise<Answer<TurnAsked>>;
   withdrawTurn(character: Id): Promise<Answer<{ readonly withdrawn: true }>>;

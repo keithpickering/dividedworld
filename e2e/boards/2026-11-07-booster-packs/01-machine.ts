@@ -1,7 +1,7 @@
 /**
  * Booster packs board 01, the machine (docs/research/2026-11-07-booster-packs/01-machine.html, 1440 by 1080), as the story `Boards/Booster packs`,
  * `Machine` (engine/ui/vending/Packs.board.stories.tsx) draws it with the Booster selected by a press, as a player does: the wallet and the hand, the
- * machine's slots in the admin's order (the Booster in A1, the card slot in A2 pulled by the Boss, E1 marked up, E2 sealed, the hidden Main Event
+ * machine's slots in the admin's order (the Booster in A1, the card slot in A2 pulled by the Boss, E1 marked up, E2 sealed, the hidden Main Event and Graffiti
  * drawing no slot), the selected pack's price, what is in it and Buy beside the slots, and the column to the right: the pack's odds, and the Boss's moves in
  * force in plain words. The plan is docs/plans/2026-11-04-booster-packs-plan.md, Task 5.
  *

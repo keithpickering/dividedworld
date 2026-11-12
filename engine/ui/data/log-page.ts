@@ -31,7 +31,7 @@
  * and even then it is that player's own rows at that instant, never more than their whole history.
  */
 import { lineKey } from '../../rules/settle.ts';
-import type { CardEnded, CardEvent, CaughtPlay, EffectSaved, FaceDownEnd, Log, LogAppeal, LogBan, LogCosmetic, LogGroupMove, LogInfraction, LogLine, LogReport, LogSettlement, LogShare, PackEvent, PlayOnMine, ScoredAs, WalletEvent, WrittenOnMine } from './api.ts';
+import type { CardEnded, CardEvent, CaughtPlay, EffectSaved, FaceDownEnd, Log, LogAppeal, LogBan, LogCosmetic, LogGroupMove, LogInfraction, LogLine, LogReport, LogSettlement, LogShare, PackEvent, PlayOnMine, ScoredAs, SurfaceLogRow, WalletEvent, WrittenOnMine } from './api.ts';
 
 /** The most rows a page reads from each source. */
 export const LOG_ROWS = 200;
@@ -66,6 +66,9 @@ export interface LogRead {
   readonly packs: readonly PackEvent[];
   readonly playsOnMine: readonly PlayOnMine[];
   readonly writes: readonly WrittenOnMine[];
+  /** The draws of the caller's characters and the washes that cut them (`my_draws`), and the draws and washes on their own posts' surfaces (`my_walls_drawn_on`); a backend or an older payload that has none leaves them out. */
+  readonly draws?: readonly SurfaceLogRow[];
+  readonly wallsDrawn?: readonly SurfaceLogRow[];
   readonly saves: readonly EffectSaved[];
   readonly setEnds: readonly FaceDownEnd[];
   readonly caught: readonly CaughtPlay[];
@@ -100,6 +103,8 @@ export function cutLog(read: LogRead, limit: number = LOG_ROWS): Log {
     ...reached(read.packs, () => read.packs[read.packs.length - 1]!.at),
     ...reached(read.playsOnMine, () => read.playsOnMine[read.playsOnMine.length - 1]!.at),
     ...reached(read.writes, () => read.writes[read.writes.length - 1]!.at),
+    ...reached(read.draws ?? [], () => read.draws![read.draws!.length - 1]!.at),
+    ...reached(read.wallsDrawn ?? [], () => read.wallsDrawn![read.wallsDrawn!.length - 1]!.at),
     ...reached(read.saves, () => read.saves[read.saves.length - 1]!.savedAt),
     ...reached(read.setEnds, () => read.setEnds[read.setEnds.length - 1]!.endedAt),
     ...reached(read.caught, () => read.caught[read.caught.length - 1]!.at),
@@ -146,6 +151,8 @@ export function cutLog(read: LogRead, limit: number = LOG_ROWS): Log {
     packs: read.packs.filter((e) => keep(e.at)),
     playsOnMine: read.playsOnMine.filter((e) => keep(e.at)),
     writes: read.writes.filter((e) => keep(e.at)),
+    ...(read.draws === undefined ? {} : { draws: read.draws.filter((e) => keep(e.at)) }),
+    ...(read.wallsDrawn === undefined ? {} : { wallsDrawn: read.wallsDrawn.filter((e) => keep(e.at)) }),
     saves: read.saves.filter((e) => keep(e.savedAt)),
     setEnds: read.setEnds.filter((e) => keep(e.endedAt)),
     caught: read.caught.filter((e) => keep(e.at)),

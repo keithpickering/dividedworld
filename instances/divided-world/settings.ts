@@ -172,11 +172,11 @@ export const defaults: Settings = deepFreeze<Settings>({
    * The numbers a card gives the screens: a Whoops! layer is washed clean at 95%, the last specks not being worth chasing across a phone.
    * Autocorrect's tape: `pace` is how fast a strip peels, in pixels a second; `pickMs` how long a finger holds before it picks at the
    * tape; `give` how far a drag goes before a strip lets go, in pixels; `peekStayMs` how long a peeled corner stays curled; `peekSettle`
-   * how fast it settles back, in pixels a second.
+   * how fast it settles back, in pixels a second. Graffiti's wall holds ink over at most `graffiti.limit` percent of its cells.
    * Laugh Track's audience: `line` is where a reader's line sits in the viewport (percent from the top), `dwellMs` how long a cued place must stay on it,
    * `reachRem` how far a cue reaches from the line, `murmurMost` how much of a hit a murmur is (percent) and `fadeMs` how long a sound fades.
    */
-  cardSettings: { 'whoops.clean': 95, 'autocorrect.pace': 90, 'autocorrect.pickMs': 450, 'autocorrect.give': 34, 'autocorrect.peekStayMs': 300, 'autocorrect.peekSettle': 300, 'laughTrack.line': 40, 'laughTrack.dwellMs': 400, 'laughTrack.reachRem': 12, 'laughTrack.murmurMost': 35, 'laughTrack.fadeMs': 250, 'youWereSaying.eraseCps': 6, 'youWereSaying.retypeMs': 2000, 'youWereSaying.typeCps': 40 },
+  cardSettings: { 'whoops.clean': 95, 'autocorrect.pace': 90, 'autocorrect.pickMs': 450, 'autocorrect.give': 34, 'autocorrect.peekStayMs': 300, 'autocorrect.peekSettle': 300, 'laughTrack.line': 40, 'laughTrack.dwellMs': 400, 'laughTrack.reachRem': 12, 'laughTrack.murmurMost': 35, 'laughTrack.fadeMs': 250, 'youWereSaying.eraseCps': 6, 'youWereSaying.retypeMs': 2000, 'youWereSaying.typeCps': 40, 'graffiti.limit': 40 },
   /** The classes' and cards' own numbers from the same table, each named for what reads it. */
   economy: {
     /** "Early" is among this many first players to react to a post. */

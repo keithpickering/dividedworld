@@ -11,12 +11,14 @@
  * is never a target and never read. Under reduced motion the sponge still shows, but it sheds no drips and does not squish.
  *
  * The Effect decides the mode on each pointer move and calls `over(host, event, mode, ink)`: the layer's ink color is the fourth
- * argument, read only for 'pen'. The sponge and its drips are the bench's (docs/research/2026-11-06-whoops-bench/01-bench.html);
+ * argument, read for 'pen' and for 'can'. The can is Graffiti's draw mode (graffiti/Compose.tsx): a drawn spray can (graffiti/can.svg.ts) tilted 20
+ * degrees in the color of the can held, its nozzle at the pointer, with a puff of spray of that color while pressed (none under reduced motion). The sponge and its drips are the bench's (docs/research/2026-11-06-whoops-bench/01-bench.html);
  * the pen is drawn in the sponge's style, with its tip at the pointer.
  */
 import { motionReduced } from '../../../../engine/ui/appearance.ts';
+import { CAN_NOZZLE, CAN_VIEWBOX, canMarkup } from '../graffiti/can.svg.ts';
 
-export type CursorMode = 'sponge' | 'pen' | null;
+export type CursorMode = 'sponge' | 'pen' | 'can' | null;
 /** The part of a pointer event the cursor reads, so a test needs no PointerEvent. */
 export type CursorPointer = Pick<PointerEvent, 'clientX' | 'clientY' | 'pointerType'>;
 
@@ -30,6 +32,13 @@ const LIFE = 0.9;
 /** The sponge's and the pen's offsets from the pointer to the SVG's own corner: the sponge's middle, the pen's tip. */
 const SPONGE_AT = { x: 30, y: 28 };
 const PEN_AT = { x: 6, y: 42 };
+/** The can is drawn at 28 by 70 px of its 24 by 60 box, tilted this many degrees about its nozzle, which is the pointer. */
+const CAN_PX = { w: 28, h: 70 };
+const CAN_TILT = 20;
+const CAN_AT = { x: CAN_NOZZLE.x * (CAN_PX.w / 24), y: CAN_NOZZLE.y * (CAN_PX.h / 60) };
+/** Puffs a second while pressed, how long one lives (seconds), and how far and how fast it drifts. */
+const PUFFS = 46;
+const PUFF_LIFE = 0.4;
 
 const SPONGE_SVG = `<svg viewBox="0 0 64 48" aria-hidden="true" data-kb-cursor="sponge" hidden>
   <defs>
@@ -62,10 +71,17 @@ const PEN_SVG = `<svg viewBox="0 0 48 48" aria-hidden="true" data-kb-cursor="pen
   </g>
 </svg>`;
 
+/** The drawn can of graffiti/can.svg.ts in the color the cursor is given (`--kb-can-color`), tilted about its nozzle, which is its hot spot. */
+const CAN_SVG = `<svg viewBox="${CAN_VIEWBOX}" aria-hidden="true" data-kb-cursor="can" data-kb-tip-x="${CAN_AT.x}" data-kb-tip-y="${CAN_AT.y}" hidden>
+  <g transform="rotate(${CAN_TILT} ${CAN_NOZZLE.x} ${CAN_NOZZLE.y})">${canMarkup('var(--kb-can-color, #000)')}</g>
+</svg>`;
+
 type Drop = { x: number; y: number; vx: number; vy: number; r: number; born: number };
+type Puff = { x: number; y: number; vx: number; vy: number; r: number; born: number };
 
 let spongeEl: SVGSVGElement | null = null;
 let penEl: SVGSVGElement | null = null;
+let canEl: SVGSVGElement | null = null;
 let canvas: HTMLCanvasElement | null = null;
 let drawing: CanvasRenderingContext2D | null = null;
 let sprite: HTMLCanvasElement | null = null;
@@ -80,6 +96,9 @@ let pressed = false;
 let x = 0, y = 0, speed = 0, lastMove = 0;
 let acc = 0, lastTick: number | null = null;
 let drops: Drop[] = [];
+let puffs: Puff[] = [];
+let puffColor = '#000';
+let puffAcc = 0;
 
 const canAct = (e: CursorPointer) => e.pointerType === 'mouse' && (window.matchMedia?.(FINE).matches ?? false);
 
@@ -124,6 +143,7 @@ function ensure(): void {
   idle = undefined;
   spongeEl ??= make(SPONGE_SVG);
   penEl ??= make(PEN_SVG);
+  canEl ??= make(CAN_SVG);
   if (!canvas) {
     canvas = document.createElement('canvas');
     canvas.setAttribute('aria-hidden', 'true');
@@ -139,12 +159,13 @@ function ensure(): void {
 }
 
 function dispose(): void {
-  spongeEl?.remove(); penEl?.remove(); canvas?.remove();
-  spongeEl = penEl = null; canvas = null; drawing = null; sprite = null;
+  spongeEl?.remove(); penEl?.remove(); canEl?.remove(); canvas?.remove();
+  spongeEl = penEl = canEl = null; canvas = null; drawing = null; sprite = null;
   removeEventListener('resize', sizeCanvas);
   cancelAnimationFrame(frame);
   frame = 0;
   drops = [];
+  puffs = [];
   lastTick = null;
 }
 
@@ -155,6 +176,7 @@ function release(): void {
   pressed = false;
   if (spongeEl) { spongeEl.toggleAttribute('hidden', true); spongeEl.classList.remove('kb-whoops-pressing'); }
   penEl?.toggleAttribute('hidden', true);
+  canEl?.toggleAttribute('hidden', true);
   if (!idle && canvas) idle = setTimeout(() => { idle = undefined; if (!host) dispose(); }, IDLE_MS);
 }
 
@@ -162,7 +184,7 @@ function release(): void {
 function loop(t: number): void {
   frame = 0;
   try { cursor.tick(t); } catch (err) { console.error(err); }
-  if (host || drops.length) frame = requestAnimationFrame(loop);
+  if (host || drops.length || puffs.length) frame = requestAnimationFrame(loop);
   else lastTick = null;
 }
 
@@ -178,15 +200,35 @@ function tick(now: number): void {
       drops.push({ x: x + (Math.random() - 0.5) * 36, y: y + 12 + Math.random() * 4, vx: (Math.random() - 0.5) * 10, vy: 20 + Math.random() * 40, r: 2 + Math.random() * 1.6, born: now });
     }
   }
+  if (mode === 'can' && pressed && !motionReduced()) {
+    puffAcc += dt * PUFFS;
+    while (puffAcc > 1) {
+      puffAcc -= 1;
+      const a = Math.random() * Math.PI * 2, v = 30 + Math.random() * 70;
+      puffs.push({ x: x + Math.cos(a) * 2, y: y + Math.sin(a) * 2, vx: Math.cos(a) * v, vy: Math.sin(a) * v, r: 1 + Math.random() * 1.8, born: now });
+    }
+  }
   speed *= Math.exp(-dt * 6);
   drops = drops.filter((d) => (now - d.born) / 1000 < LIFE);
   for (const d of drops) { d.vy += GRAVITY * dt; d.x += d.vx * dt; d.y += d.vy * dt; }
+  puffs = puffs.filter((q) => (now - q.born) / 1000 < PUFF_LIFE);
+  for (const q of puffs) { q.x += q.vx * dt; q.y += q.vy * dt; }
   if (!drawing || !canvas) return;
   sizeCanvas();
   drawing.setTransform(1, 0, 0, 1, 0, 0);
   drawing.clearRect(0, 0, canvas.width, canvas.height);
-  if (!sprite) return;
   drawing.setTransform(ratio, 0, 0, ratio, 0, 0);
+  if (puffs.length > 0) {
+    drawing.fillStyle = puffColor;
+    for (const q of puffs) {
+      drawing.globalAlpha = 0.55 * (1 - (now - q.born) / 1000 / PUFF_LIFE);
+      drawing.beginPath();
+      drawing.arc(q.x, q.y, q.r, 0, Math.PI * 2);
+      drawing.fill();
+    }
+    drawing.globalAlpha = 1;
+  }
+  if (!sprite) return;
   for (const d of drops) {
     const k = ((now - d.born) / 1000) / LIFE, stretch = 1 + Math.min(0.8, d.vy / GRAVITY);
     drawing.globalAlpha = 1 - Math.max(0, (k - 0.6) / 0.4);
@@ -209,17 +251,18 @@ function over(el: HTMLElement, e: CursorPointer, want: CursorMode, ink?: string)
   speed = Math.min(2000, speed * 0.7 + (d / dt) * 0.3);
   x = e.clientX; y = e.clientY; lastMove = now;
   mode = want;
-  const [show, hide, at] = want === 'pen' ? [penEl!, spongeEl!, PEN_AT] : [spongeEl!, penEl!, SPONGE_AT];
-  hide.toggleAttribute('hidden', true);
+  const [show, at] = want === 'pen' ? [penEl!, PEN_AT] : want === 'can' ? [canEl!, CAN_AT] : [spongeEl!, SPONGE_AT];
+  for (const el of [spongeEl!, penEl!, canEl!]) if (el !== show) el.toggleAttribute('hidden', true);
   show.toggleAttribute('hidden', false);
   if (want === 'pen' && ink) penEl!.style.setProperty('--kb-pen-ink', ink);
+  if (want === 'can' && ink) { canEl!.style.setProperty('--kb-can-color', ink); puffColor = ink; }
   show.style.transform = `translate(${x - at.x}px, ${y - at.y}px)`;
   if (!frame) frame = requestAnimationFrame(loop);
 }
 
 function press(down: boolean): void {
   pressed = down;
-  spongeEl?.classList.toggle('kb-whoops-pressing', down && !motionReduced());
+  spongeEl?.classList.toggle('kb-whoops-pressing', down && mode !== 'can' && !motionReduced());
 }
 
 /** The pointer left the host, or the host went: its own cursor comes back. Another host's hold is left alone. */
@@ -234,4 +277,6 @@ export const cursor = {
   tick,
   /** How many drops are falling now. */
   drips: () => drops.length,
+  /** How many puffs of spray are in the air now. */
+  puffs: () => puffs.length,
 };

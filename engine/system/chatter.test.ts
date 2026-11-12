@@ -295,6 +295,41 @@ test('options for a card without any, or not an object, are dropped with a trim 
   assert.deepEqual(b.trims.map((t) => t.predicate), ['isObject']);
 });
 
+/* A surface card's open walls (docs/plans/2026-11-11-graffiti-plan.md, Task 3): a persona may draw on one instead of playing the card anew. */
+const WALL = '66666666-6666-4666-8666-666666666666';
+const TAGGED: OfferedCard = { key: 'tag', name: 'Tag', play: 'cast', options: INKED.options, walls: [{ play: WALL, about: 'Ann\'s post' }] };
+
+test('a wall pick that names an offered wall is kept beside the card, and one that names none is dropped with a trim, the card standing', () => {
+  const kept = ok({ words: 'Hi.', card: { key: 'tag', on: 'reply', wall: WALL, config: { tag: { color: 'red' } } } }, { offered: [TAGGED] });
+  assert.deepEqual(kept.answer.card, { key: 'tag', on: 'reply', wall: WALL, config: { color: 'red' } });
+  assert.deepEqual(kept.trims, []);
+  for (const wall of ['77777777-7777-4777-8777-777777777777', 'the wall', 7, {}, ['x']]) {
+    const dropped = ok({ words: 'Hi.', card: { key: 'tag', on: 'reply', wall } }, { offered: [TAGGED] });
+    assert.deepEqual(dropped.answer.card, { key: 'tag', on: 'reply' }, JSON.stringify(wall));
+    assert.deepEqual(dropped.trims, [{ path: 'card.wall', predicate: 'offered', before: 1, after: 0 }], JSON.stringify(wall));
+  }
+  // A card with no wall offered takes no wall pick; a wall of another card's is not this card's.
+  const none = ok({ words: 'Hi.', card: { key: 'whoops', on: 'reply', wall: WALL } }, { offered: [CAST, TAGGED] });
+  assert.deepEqual(none.answer.card, { key: 'whoops', on: 'reply' });
+  assert.deepEqual(none.trims.map((t) => t.path), ['card.wall']);
+});
+
+test('the schema names the offered walls as an enum, and the rule passes the pick through; with no wall on offer there is no wall property', () => {
+  const some = chatterSchema({ askedTitle: false, offered: [CAST, TAGGED] }) as any;
+  assert.deepEqual(some.properties.card.properties.wall, { type: 'string', enum: [WALL] });
+  assert.deepEqual(some.properties.card.required, ['key', 'on']);
+  assert.equal((chatterSchema({ askedTitle: false, offered: [CAST] }) as any).properties.card.properties.wall, undefined);
+  const w = repair({ words: 'Hi.', card: { key: 'tag', on: 'reply', wall: WALL } }, CHATTER_RULE);
+  assert.ok(w.ok);
+  assert.equal((w.value as any).card.wall, WALL);
+});
+
+test('the prompt tells the persona which walls it may draw on instead, naming card.wall', () => {
+  const { system } = chatterPrompt({ ...base, offeredCards: [TAGGED] });
+  assert.match(system, new RegExp(`card\\.wall.*${WALL}|${WALL}.*card\\.wall`, 's'));
+  assert.match(system, /Ann's post/);
+});
+
 test('every chatter schema is one the provider accepts: plain, a thread start with a title, and every card that has options on offer at once', () => {
   const MORE: OfferedCard = { key: 'more', name: 'More', play: 'set', options: { prompt: 'Choose.', schema: { type: 'object', properties: { pick: { type: 'string', enum: ['a', 'b'] }, note: { type: 'string' } }, required: ['pick'], additionalProperties: false } } };
   const cases: [string, Parameters<typeof chatterSchema>[0]][] = [
@@ -302,6 +337,7 @@ test('every chatter schema is one the provider accepts: plain, a thread start wi
     ['a thread start with a title', { askedTitle: true, offered: [] }],
     ['a thread start with cards', { askedTitle: true, offered: [CAST, SET] }],
     ['every card with options at once', { askedTitle: true, offered: [CAST, SET, PLAIN, INKED, MORE] }],
+    ['a surface card with walls on offer', { askedTitle: false, offered: [CAST, TAGGED] }],
   ];
   for (const [name, c] of cases) assert.deepEqual(schemaProblems(chatterSchema(c)), [], name);
 });

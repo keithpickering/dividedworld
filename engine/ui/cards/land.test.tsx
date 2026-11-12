@@ -160,6 +160,21 @@ describe('a card whose canApply reads its configuration, as a screen offers it',
   });
 });
 
+/* A surface card's play needs its first draw (decidePlay refuses "draw your tag first"), which is the composer's, made on the post after the mark is pressed: the screen
+   asks only where the card lands, so the mark is offered, and a wall already on the post still says so. */
+describe('a surface card, as a screen offers it', () => {
+  const wall: CardRules = {
+    key: 'wall', name: 'Wall', alignment: 'salty', rarity: 'rare', playPrice: () => 0, validateConfig: (c) => ({ ok: true, value: c }),
+    surface: { limitKey: 'wall.limit', mostLive: 48, validateDraw: () => ({ ok: false, why: 'unused' }), validateWash: () => ({ ok: false, why: 'unused' }) },
+    canApply: (t, e, _c, now) => landsOn({ key: 'wall', surface: {} }, t, e, now),
+  };
+  test('it is offered on a post with no draw made yet, face up and face down, and not where a wall already is', () => {
+    expect(landing(wall, post('hi'), [], { cards: [wall] })).toEqual({ ok: true, value: undefined });
+    expect(landing(wall, post('hi'), [], { cards: [wall], faceDown: true }).ok).toBe(true);
+    expect(landing(wall, post('hi'), [play('wall', 1)], { cards: [wall] })).toEqual({ ok: false, why: 'This post is already a wall. Draw on it instead.' });
+  });
+});
+
 /* An admin's end (supabase/migrations/0092_card_end.sql): a play an admin ended is no effect the rules see, as a caught one is none. */
 describe('a play an admin ended, as the rules see the post', () => {
   const cards = [{ key: 'whoops', rarity: 'common' as const }];

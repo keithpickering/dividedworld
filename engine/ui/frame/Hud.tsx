@@ -404,6 +404,8 @@ export function Hud() {
       if (e.key !== 'Escape' || e.defaultPrevented || e.repeat || e.isComposing) return;
       /* A frame that is leaving (the crossing holds it, inert, under the glass) takes no key: input is the arriving page's from the first frame. */
       if (isLeaving(section.current)) return;
+      /* A compose open on a post has its own Esc (cards/play.tsx); one typed in its field is the field's. */
+      if (play.compose !== null) return;
       /* An armed card is put back first, and the hand, if it is open, stays; the next Esc is the hand's. */
       if (armed !== null) {
         e.preventDefault();

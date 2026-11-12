@@ -1,0 +1,414 @@
+/*
+ * Graffiti's wall on a post (Effect.tsx; design section 8): the frame the words sit in, the ink and suds canvases over them, and the Draw tile.
+ * The post stays the board's 2003 post: this sheet sets no size, margin or transform on its words. The ink is fitted to the post body's box,
+ * which the effect measures. The spray's colors are the card's art, written by the painter (spray.ts), not here.
+ */
+.kb-graffiti {
+  position: relative;
+}
+
+/* A vertical drag still scrolls the page; a sideways one scrubs (the effect keeps the same on the post body it takes touches on). */
+.kb-graffiti-frame {
+  position: relative;
+  overflow: hidden;
+  touch-action: pan-y pinch-zoom;
+}
+
+/*
+ * The canvases are placed and sized by the effect to the body's box, and mark themselves `data-kb-effect-ink`: the thread's sheet
+ * (thread/thread.css) puts them above the words and below what the engine lifts (`data-kb-over-ink`), so the reactions row and the Draw tile
+ * stay in front and usable.
+ */
+.kb-graffiti-ink,
+.kb-graffiti-suds {
+  position: absolute;
+  pointer-events: none;
+}
+
+/*
+ * The Draw tile: glass at the body's top right (the effect gives its left and top, the body's right edge and top, in px), a drawn can in the
+ * color the reader picked last and the word Draw. A tile of the kit's size and focus.
+ */
+/* The doubled class beats the thread's rule for what it lifts over ink (`.kb-act-main [data-kb-over-ink]`: position relative), which left the tile in the flow below the words. */
+.kb-graffiti-draw.kb-graffiti-draw {
+  position: absolute;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  box-sizing: border-box;
+  min-height: 44px;
+  /* The tile's right edge is its left (translateX(-100%)), so its left margin is negative to leave it 8px inside the body's corner. */
+  margin: 8px 0 0 -8px;
+  padding: 0.2rem 0.9rem;
+  transform: translateX(-100%) skewX(var(--kb-glass-skew));
+  border: 2px solid color-mix(in srgb, var(--kb-glass-text) 45%, transparent);
+  background: var(--kb-glass-field);
+  color: var(--kb-glass-text-2);
+  font-family: var(--kb-glass-font-body);
+  font-size: var(--kb-glass-size-label);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.kb-graffiti-draw > * {
+  transform: skewX(calc(var(--kb-glass-skew) * -1));
+}
+
+.kb-graffiti-draw:hover {
+  border-color: var(--kb-glass-text);
+  color: var(--kb-glass-text);
+}
+
+.kb-graffiti-draw:focus-visible {
+  outline: 2px solid var(--kb-glass-text-hi);
+  outline-offset: 3px;
+}
+
+.kb-graffiti-can {
+  width: 18px;
+  height: 25px;
+  flex: none;
+}
+
+@media (forced-colors: active) {
+  .kb-graffiti-draw {
+    forced-color-adjust: none;
+    border-color: ButtonText;
+    background: ButtonFace;
+    color: ButtonText;
+  }
+
+  .kb-graffiti-draw:focus-visible {
+    outline-color: Highlight;
+  }
+}
+
+/*
+ * Draw mode (Compose.tsx, Toolbar.tsx; design section 8, the owner's style D): the surface a tag is drawn on, and the toolbar's glass dock.
+ * Every color is a glass token; the cans' own colors are the card's art and are set by the drawn can, never here.
+ */
+
+/* The lifted surface over the post body (the host gives its box). A press on it is the drawing's: a vertical swipe still scrolls the page. */
+.kb-graffiti-surface {
+  z-index: 2;
+  touch-action: pan-y pinch-zoom;
+  cursor: crosshair;
+}
+
+/* An empty host a dock falls back to where the post has no grid to be drawn under. */
+.kb-graffiti-dockhost:empty {
+  display: none;
+}
+
+/*
+ * The dock. Under 720px wide it is fixed to the foot of the window with the safe-area inset, and the page keeps its foot clear of it
+ * (`--kb-graffiti-dock-h`, set by the toolbar). Wider, it is drawn under the post, across the post's grid: the engine's `.kb-act`, so the
+ * post body's box never changes with it. The doubled class beats the thread's rule for what it lifts over ink (position, width).
+ */
+.kb-graffiti-dock.kb-graffiti-dock {
+  position: relative;
+  grid-column: 1 / -1;
+  box-sizing: border-box;
+  width: auto;
+  max-width: none;
+  margin-top: 4px;
+  display: grid;
+  gap: 9px;
+  padding: 10px 12px 12px;
+  background: var(--kb-glass-panel);
+  border-top: 1px solid var(--kb-glass-pale);
+  box-shadow: 0 -1px 12px color-mix(in srgb, var(--kb-glass-neon) 45%, transparent);
+  color: var(--kb-glass-text);
+  font-family: var(--kb-glass-font-body);
+  z-index: 6;
+}
+
+@media (max-width: 719px) {
+  .kb-graffiti-dock.kb-graffiti-dock {
+    position: fixed;
+    /* Above the HUD, which is fixed to the same foot (z-index 30) and holds the window's safe-area inset itself: at bottom 0 the cap row, Cancel and Tag it lay behind it. */
+    inset: auto 0 var(--kb-hud-measured, 0px) 0;
+    margin: 0;
+    padding-bottom: calc(12px + max(0px, env(safe-area-inset-bottom, 0px) - var(--kb-hud-measured, 0px)));
+    max-height: calc(70vh - var(--kb-hud-measured, 0px));
+    /* No higher than on the page (6): it clears the HUD by its offset, not by its z-index, and the phone's hand sheet (31), which can be reopened while a card is armed, lies over it. */
+    overflow-y: auto;
+  }
+
+  :root[data-kb-graffiti-dock] body {
+    padding-bottom: var(--kb-graffiti-dock-h, 0px);
+  }
+}
+
+.kb-graffiti-label {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  color: var(--kb-glass-text-2);
+  font-size: var(--kb-glass-size-label);
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.kb-graffiti-meter {
+  position: relative;
+  height: 8px;
+  border: 1px solid color-mix(in srgb, var(--kb-glass-text) 30%, transparent);
+  background: var(--kb-glass-field);
+  transform: skewX(var(--kb-glass-skew));
+}
+
+.kb-graffiti-meter > i {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
+
+.kb-graffiti-meter-wall {
+  left: 0;
+  background: linear-gradient(90deg, var(--kb-glass-neon), var(--kb-glass-pale));
+  box-shadow: 0 0 8px var(--kb-glass-neon);
+}
+
+/* What this drawing adds: lit apart from the wall, and the glass's salty color where it would pass the limit. */
+.kb-graffiti-meter-add {
+  background: var(--kb-glass-text-hi);
+  opacity: 0.85;
+}
+
+.kb-graffiti-meter[data-over] .kb-graffiti-meter-add {
+  background: var(--kb-glass-salty);
+  opacity: 1;
+}
+
+.kb-graffiti-tabs,
+.kb-graffiti-row,
+.kb-graffiti-caps {
+  display: flex;
+  gap: 6px;
+  align-items: stretch;
+}
+
+.kb-graffiti-row > .kb-graffiti-go {
+  flex: 1;
+}
+
+.kb-graffiti-panel {
+  display: grid;
+  gap: 9px;
+}
+
+/* A button of the glass: skewed, with its words set back straight. 44px to press, as the kit's tiles are. */
+.kb-graffiti-btn {
+  display: inline-grid;
+  place-items: center;
+  box-sizing: border-box;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid color-mix(in srgb, var(--kb-glass-text) 35%, transparent);
+  background: var(--kb-glass-field);
+  color: var(--kb-glass-text);
+  font-family: inherit;
+  font-size: var(--kb-glass-size-label);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-transform: uppercase;
+  transform: skewX(var(--kb-glass-skew));
+  cursor: pointer;
+}
+
+.kb-graffiti-btn > span {
+  display: block;
+  transform: skewX(calc(var(--kb-glass-skew) * -1));
+}
+
+.kb-graffiti-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.kb-graffiti-btn:is([aria-checked="true"], [aria-selected="true"]) {
+  border-color: var(--kb-glass-neon);
+  box-shadow: 0 0 9px color-mix(in srgb, var(--kb-glass-neon) 55%, transparent);
+  color: var(--kb-glass-pale);
+}
+
+.kb-graffiti-go {
+  border-color: var(--kb-glass-ready);
+  background: var(--kb-glass-ready);
+  color: var(--kb-glass-ink-ready);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--kb-glass-ready) 50%, transparent);
+}
+
+.kb-graffiti-go[aria-disabled="true"] {
+  border-color: color-mix(in srgb, var(--kb-glass-text) 35%, transparent);
+  background: var(--kb-glass-field);
+  color: var(--kb-glass-text-2);
+  box-shadow: none;
+  cursor: default;
+}
+
+.kb-graffiti-reason,
+.kb-graffiti-notice,
+.kb-graffiti-refusal,
+.kb-graffiti-ask > p {
+  margin: 0;
+  color: var(--kb-glass-text-2);
+  font-size: var(--kb-glass-size-label);
+}
+
+.kb-graffiti-refusal {
+  color: var(--kb-glass-salty-text);
+}
+
+.kb-graffiti-ask {
+  display: grid;
+  gap: 6px;
+}
+
+/* The cans: drawn, the chosen one lifted and lit; each is a 44px target however narrow the dock. */
+.kb-graffiti-cans {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.kb-graffiti-pick {
+  display: grid;
+  place-items: end center;
+  box-sizing: border-box;
+  width: 44px;
+  height: 62px;
+  padding: 4px 0 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.kb-graffiti-pick svg {
+  width: 21px;
+  height: 52px;
+  transition: transform 120ms ease-out;
+}
+
+.kb-graffiti-pick[aria-checked="true"] svg {
+  transform: translateY(-9px);
+  filter: drop-shadow(0 0 5px var(--kb-glass-neon));
+}
+
+.kb-graffiti-stencils {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(44px, 1fr));
+  gap: 6px;
+}
+
+.kb-graffiti-stencil {
+  box-sizing: border-box;
+  height: 56px;
+  padding: 6px;
+  border: 1px solid color-mix(in srgb, var(--kb-glass-text) 35%, transparent);
+  background: var(--kb-glass-field);
+  color: var(--kb-glass-text);
+  cursor: pointer;
+}
+
+.kb-graffiti-stencil svg {
+  width: 100%;
+  height: 100%;
+}
+
+.kb-graffiti-stencil[aria-checked="true"] {
+  border-color: var(--kb-glass-neon);
+  box-shadow: 0 0 9px color-mix(in srgb, var(--kb-glass-neon) 55%, transparent);
+  color: var(--kb-glass-pale);
+}
+
+/* The 3 by 3 grid of spots over the body: a dot in each, the chosen one lit. */
+.kb-graffiti-spots {
+  display: grid;
+  grid-template-columns: repeat(3, 44px);
+  grid-auto-rows: 44px;
+  gap: 4px;
+  justify-content: center;
+}
+
+.kb-graffiti-spot {
+  position: relative;
+  border: 1px solid color-mix(in srgb, var(--kb-glass-text) 35%, transparent);
+  background: var(--kb-glass-field);
+  cursor: pointer;
+}
+
+.kb-graffiti-spot::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--kb-glass-text-2);
+}
+
+.kb-graffiti-spot[aria-checked="true"] {
+  border-color: var(--kb-glass-neon);
+  box-shadow: 0 0 9px color-mix(in srgb, var(--kb-glass-neon) 55%, transparent);
+}
+
+.kb-graffiti-spot[aria-checked="true"]::after {
+  width: 14px;
+  height: 14px;
+  background: var(--kb-glass-text-hi);
+}
+
+.kb-graffiti-dock :is(button, [role="radio"], [role="tab"]):focus-visible {
+  outline: 2px solid var(--kb-glass-text-hi);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kb-graffiti-pick svg {
+    transition: none;
+  }
+}
+
+:root[data-kb-motion="reduce"] .kb-graffiti-pick svg {
+  transition: none;
+}
+
+@media (forced-colors: active) {
+  .kb-graffiti-dock.kb-graffiti-dock {
+    forced-color-adjust: none;
+    background: Canvas;
+    border-color: CanvasText;
+    color: CanvasText;
+  }
+
+  .kb-graffiti-btn,
+  .kb-graffiti-stencil,
+  .kb-graffiti-spot {
+    forced-color-adjust: none;
+    border-color: ButtonText;
+    background: ButtonFace;
+    color: ButtonText;
+  }
+
+  .kb-graffiti-btn:is([aria-checked="true"], [aria-selected="true"]),
+  .kb-graffiti-stencil[aria-checked="true"],
+  .kb-graffiti-spot[aria-checked="true"] {
+    border-color: Highlight;
+    outline: 2px solid Highlight;
+  }
+
+  .kb-graffiti-dock :is(button, [role="radio"], [role="tab"]):focus-visible {
+    outline-color: Highlight;
+  }
+}

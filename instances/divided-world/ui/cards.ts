@@ -8,8 +8,8 @@
  * The faces' colors are the Cards board's: Sweet is the cyan, Salty the pink, each with the dark
  * ink the board sets on it (docs/research/2026-10-29-two-worlds/05-cards.html).
  */
-import { lazy } from 'react';
-import type { CardUi } from '../../../engine/ui/cards/types.ts';
+import { Suspense, createElement, lazy } from 'react';
+import type { CardUi, ComposeProps } from '../../../engine/ui/cards/types.ts';
 import type { Settings } from '../../../engine/rules/types.ts';
 import type { GimmickEffect } from '../../../engine/rules/cards.ts';
 import stickAroundCanvas from './cards/stick-around/art.webp?url';
@@ -42,6 +42,9 @@ import hallPassArt from './cards/hall-pass/art.json';
 import belowTheFoldCanvas from './cards/below-the-fold/art.webp?url';
 import belowTheFoldMark from './cards/below-the-fold/mark.svg?url';
 import belowTheFoldArt from './cards/below-the-fold/art.json';
+import graffitiCanvas from './cards/graffiti/art.webp?url';
+import graffitiMark from './cards/graffiti/mark.svg?url';
+import graffitiArt from './cards/graffiti/art.json';
 import youWereSayingCanvas from './cards/you-were-saying/art.webp?url';
 import youWereSayingMark from './cards/you-were-saying/mark.svg?url';
 import youWereSayingArt from './cards/you-were-saying/art.json';
@@ -58,6 +61,8 @@ import laughTrackCanvas from './cards/laugh-track/art.webp?url';
 import laughTrackMark from './cards/laugh-track/mark.svg?url';
 import laughTrackArt from './cards/laugh-track/art.json';
 import { ConfigForm as LaughTrackConfigForm } from './laugh-track/ConfigForm.tsx';
+import { graffiti } from '../cards/graffiti.ts';
+import { LOG_DRAW as GRAFFITI_LOG_DRAW, LOG_WASH as GRAFFITI_LOG_WASH, describeDraw as describeGraffitiDraw } from '../cards/graffiti/words.ts';
 import { ConfigForm as CardCollectorConfigForm } from '../cards/card-collector/ConfigForm.tsx';
 import { cardCollector } from '../cards/card-collector.ts';
 import { publicityTour } from '../cards/publicity-tour.ts';
@@ -184,6 +189,10 @@ const LaughTrackEffect = lazy(() => import('./laugh-track/Effect.tsx').then((m) 
 const BelowTheFoldEffect = lazy(() => import('./below-the-fold/Effect.tsx').then((m) => ({ default: m.BelowTheFoldEffect })));
 const YouWereSayingEffect = lazy(() => import('../cards/you-were-saying/Effect.tsx').then((m) => ({ default: m.YouWereSayingEffect })));
 const JimmyWailsEffect = lazy(() => import('../cards/jimmy-wails/Effect.tsx').then((m) => ({ default: m.JimmyWailsEffect })));
+const GraffitiEffect = lazy(() => import('../cards/graffiti/Effect.tsx').then((m) => ({ default: m.Effect })));
+const GraffitiComposeLoaded = lazy(() => import('../cards/graffiti/Compose.tsx').then((m) => ({ default: m.Compose })));
+/* The engine mounts a `Compose` with no Suspense of its own, as it does an effect: until the drawing's code arrives the post's words stand in. */
+const GraffitiCompose = (props: ComposeProps) => createElement(Suspense, { fallback: props.children }, createElement(GraffitiComposeLoaded, props));
 const WhoopsEffect = lazy(() => import('../cards/whoops/Effect.tsx').then((m) => ({ default: m.Effect })));
 
 /** A list in words: "0.10, 0.25, 0.50 and 1.00". */
@@ -507,6 +516,27 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
     describe: (settings: Settings) =>
       `A Pepperoni card, ${toll.rarity}, used on one of your own posts. For ${spanWords(toll.lasts!)}, each vote on a Move another player casts on that post pays you ${tollShare()}, on top of everything its caster earns: the caster loses nothing. A Move cast by one of your own characters pays you nothing. It costs nothing more to use.`,
     logPlay: () => `Until it ends, each vote on a Move another player casts on that post pays you ${tollShare()}.`,
+  },
+  /*
+   * Graffiti (docs/plans/2026-11-11-graffiti-design.md): Pepperoni's color. A wall on a post, drawn under every splat (`beneath`). Its effect draws
+   * the spray, a reader's scrub and the author's wash (graffiti/Effect.tsx); it is played on the post itself (`Compose`, graffiti/Compose.tsx: the
+   * drawing, the toolbar and the stencils), and the Draw tile of its effect draws the same on a wall already there. Its words about a drawing
+   * (`describeDraw`, `logDraw`, `logWash`) are graffiti/words.ts.
+   */
+  {
+    key: 'graffiti',
+    Effect: GraffitiEffect,
+    Compose: GraffitiCompose,
+    describeDraw: describeGraffitiDraw,
+    logDraw: GRAFFITI_LOG_DRAW,
+    logWash: GRAFFITI_LOG_WASH,
+    beneath: true,
+    art: { color: '#d24a2c', ink: '#1a0602', canvas: graffitiCanvas, mark: graffitiMark, credit: graffitiArt.credit, tagline: 'Turn a post into a wall.' },
+    summary: 'Turn a post into a wall anyone can tag. The author can wash it off; anyone can tag it again.',
+    status: 'A wall anyone can tag',
+    hint: 'Press Draw to tag this wall. Scrub it away on your screen any time.',
+    describe: (settings: Settings) =>
+      `A Pepperoni card, ${graffiti.rarity}. It turns a post into a wall. Any character can tag it with spray cans, drawing freehand or placing a stencil, and the wall holds up to ${settings.cardSettings['graffiti.limit'] ?? 40}% of the post. A reader can scrub the paint off on their own screen, which lasts until they leave the page. The post's author can wash it off for everyone, and anyone can tag it again. A Whoops! splat on the same post always covers the wall. It costs nothing more to play.`,
   },
   {
     key: '4d-chess',
