@@ -311,7 +311,7 @@ export function DrawMode(p: DrawModeProps) {
       touchend: (e: TouchEvent) => handlers.current.onTouchEnd(e),
       touchcancel: (e: TouchEvent) => handlers.current.onTouchEnd(e),
     };
-    for (const [type, fn] of Object.entries(on)) el.addEventListener(type, fn as EventListener, { passive: type !== 'touchmove' });
+    for (const [type, fn] of Object.entries(on)) el.addEventListener(type, fn as EventListener, { passive: type !== 'touchmove' && type !== 'pointerdown' });
     return () => {
       for (const [type, fn] of Object.entries(on)) el.removeEventListener(type, fn as EventListener);
       if (gesture.current) { settle(gesture.current); gesture.current = null; }

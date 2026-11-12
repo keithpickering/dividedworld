@@ -68,7 +68,8 @@ export function landingOn(rules: CardRules, target: CardTarget, plays: readonly 
    * settings at all.
    */
   const lenient: CardRules = {
-    ...rules, validateConfig: (c) => ({ ok: true, value: { ...(c as object), quadrant: QUADRANTS[0], class: 'any' } }), playPrice: () => 0,
+    /* A surface card's first draw is the composer's, made after the mark is pressed: the decision here is only where the card lands, so it is asked as a card with no surface (its own `canApply` still holds the wall it is). */
+    ...rules, surface: undefined, validateConfig: (c) => ({ ok: true, value: { ...(c as object), quadrant: QUADRANTS[0], class: 'any' } }), playPrice: () => 0,
     canApply: (t, e, _config, now) => rules.canApply(t, e, undefined, now), needsMessage: undefined,
   };
   const play = context.faceDown ? 'set' : playOfRules(rules);

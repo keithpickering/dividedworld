@@ -219,6 +219,22 @@ describe('a stencil', () => {
 });
 
 describe('review fixes', () => {
+  /* A passive listener's preventDefault is ignored and logs "Unable to preventDefault inside passive event listener" at each stroke (found in a real browser, e2e/graffiti.spec.ts). */
+  test('the surface\'s pointerdown, which calls preventDefault, and its touchmove are not passive listeners', () => {
+    const added: { readonly el: unknown; readonly type: string; readonly passive: unknown }[] = [];
+    const real = EventTarget.prototype.addEventListener;
+    const spy = vi.spyOn(EventTarget.prototype, 'addEventListener').mockImplementation(function (this: EventTarget, type: string, fn: EventListenerOrEventListenerObject | null, options?: boolean | AddEventListenerOptions) {
+      added.push({ el: this, type, passive: typeof options === 'object' ? options.passive : undefined });
+      return real.call(this, type, fn, options);
+    });
+    try {
+      const { surface } = mountCompose();
+      const mine = added.filter((a) => a.el === surface);
+      expect(mine.find((a) => a.type === 'pointerdown')?.passive).toBe(false);
+      expect(mine.find((a) => a.type === 'touchmove')?.passive).toBe(false);
+    } finally { spy.mockRestore(); }
+  });
+
   test('a press on the post while the Stencils tab is open starts no stroke and holds no work', async () => {
     const user = userEvent.setup();
     const { surface, props } = mountCompose();
