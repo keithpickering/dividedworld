@@ -9,12 +9,22 @@
  * above any value the shading can tell apart. `gridOf` turns a build back into a Float32 `Grid` for live strokes.
  */
 import { FIELD_MOST, denseGrid, radiusOf, kOf, splatInto, strokesInto, type Grid } from './field.ts';
-import { shadeField } from './paint.ts';
+import { MAX_CANVAS_PX, shadeField } from './paint.ts';
 import { makeSplat, type Box } from './splat.ts';
 import type { Stroke } from './scrub.ts';
 
-/** The point visits under which a layer is built on the main thread (about 10 to 20ms; the bench tunes it). */
-export const QUICK_WORK = 2_000_000;
+/**
+ * What a build costs is estimated in nanoseconds of work, from a bench in Node (2026-11-12, buildLayer on a 600x500 box,
+ * median of 7): the box costs about 250ns a cell (splat, shade and quantize; 253 at density 1, 240 at 2), a pen about 86
+ * to 300ns and a wash about 12 to 40ns a point visit (the dearer figure is the thin brush, where the capsule or disc
+ * is mostly its edge). The weights take the dearer figure, because a layer called light that is not blocks the page. A
+ * browser's main thread differs from Node by some factor, and the owner tunes these on a device.
+ */
+export const BOX_NS = 250;
+export const PEN_NS = 300;
+export const WASH_NS = 40;
+/** The estimated work under which a layer is built on the main thread: about 15ms on the bench machine (design: 10 to 20ms). */
+export const QUICK_WORK = 15_000_000;
 /** The field's fixed-point scale, and the largest stored value. */
 export const FIELD_SCALE = 4096;
 const STORED_MOST = 65535;
@@ -35,6 +45,7 @@ export interface Built {
 /** The layer's picture and the grids behind it. */
 export function buildLayer(input: BuildInput): Built {
   const { seed, color, box, density, strokes } = input;
+  if (Math.ceil(box.w * density) * Math.ceil(box.h * density) > MAX_CANVAS_PX) throw new Error(`a layer of too many pixels (more than ${MAX_CANVAS_PX})`);
   const grid = denseGrid(box, density);
   splatInto(grid, makeSplat(seed), box);
   strokesInto(grid, box, strokes);
@@ -56,20 +67,20 @@ export function gridOf(built: Pick<Built, 'field' | 'washed'>, box: Box, density
 }
 
 /**
- * What a build costs, in point visits: the box's points (the splat and the shading), plus, for each segment, the points
- * its reach covers: a pen's capsule of radius 2r once, a wash's discs of radius 2r every max(1, r / 3) px along it. A
+ * What a build costs, in nanoseconds of work (weights above): the box's cells (the splat and the shading), plus, for each
+ * segment, the points its reach covers: a pen's capsule of radius 2r once, a wash's discs of radius 2r every max(1, r / 3) px along it. A
  * lone point counts as a disc. Round space's area is stretched by k back to the box.
  */
 export function estimateWork(box: Box, density: number, strokes: readonly Stroke[]): number {
   const d2 = density * density;
-  let work = Math.ceil(box.w * density) * Math.ceil(box.h * density);
+  let work = Math.ceil(box.w * density) * Math.ceil(box.h * density) * BOX_NS;
   for (const s of strokes) {
     const k = kOf(s, box), r = radiusOf(s, box), R = 2 * r, disc = Math.PI * R * R * k * d2;
     const pts = s.points;
-    if (pts.length === 1) work += disc;
+    if (pts.length === 1) work += disc * (s.tool === 'ink' ? PEN_NS : WASH_NS);
     for (let i = 1; i < pts.length; i++) {
       const len = Math.hypot((pts[i]![0] - pts[i - 1]![0]) * box.w, ((pts[i]![1] - pts[i - 1]![1]) * box.h) / k);
-      work += s.tool === 'ink' ? (len * 2 * R + Math.PI * R * R) * k * d2 : (len / Math.max(1, r / 3) + 1) * disc;
+      work += s.tool === 'ink' ? (len * 2 * R + Math.PI * R * R) * k * d2 * PEN_NS : (len / Math.max(1, r / 3) + 1) * disc * WASH_NS;
     }
   }
   return Math.ceil(work);

@@ -59,9 +59,14 @@ export function createBuildClient(deps: BuildClientDeps = {}): BuildClient {
 
   const runFrame = (): void => {
     framing = false;
-    const asks = [...framed.values()];
-    framed.clear();
-    for (const a of asks) a.onDone(buildLayer(a.input));
+    /* One build a frame, so a page of them is not one long frame; a throwing onDone loses none of the rest. */
+    const first = framed.entries().next();
+    if (!first.done) {
+      const [key, a] = first.value;
+      framed.delete(key);
+      try { a.onDone(buildLayer(a.input)); } catch (err) { console.error(err); }
+    }
+    if (framed.size > 0 && !framing) { framing = true; nextFrame(runFrame); }
   };
   const onFrame = (key: string, ask: Ask): void => {
     framed.set(key, ask);
@@ -96,11 +101,18 @@ export function createBuildClient(deps: BuildClientDeps = {}): BuildClient {
     if (broken || !make) return null;
     let w: WorkerLike;
     try { w = make(); } catch (err) { broken = true; console.error(err); return null; }
-    w.addEventListener('error', (e) => fail(w, e.message || 'no message'));
+    /* An `error` is fatal only until the worker has answered once (as foilClient's is): after that it has loaded and run,
+       so the event is a late fault in one build, which the build's own `failed` answer or the page's next one covers. */
+    let heard = false;
+    w.addEventListener('error', (e) => {
+      if (heard) { console.error(`the build worker reported an error: ${e.message || 'no message'}`); return; }
+      fail(w, e.message || 'no message');
+    });
     w.addEventListener('messageerror', () => fail(w, 'a message could not be read'));
     w.addEventListener('message', (e) => {
       const m = e.data;
       if (worker !== w || !m) return;
+      heard = true;
       const key = [...out].find(([, o]) => o.id === m.id)?.[0];
       /* An answer for a key let go (cancelled), or one nobody is waiting on any more: ignored. */
       if (key === undefined) return;
@@ -109,7 +121,7 @@ export function createBuildClient(deps: BuildClientDeps = {}): BuildClient {
       const next = waiting.get(key);
       waiting.delete(key);
       if (next) send(key, next);
-      else if (m.kind === 'built') o.ask.onDone(m.built);
+      else if (m.kind === 'built' && m.built) o.ask.onDone(m.built);
       else onFrame(key, o.ask);
       idleSoon();
     });

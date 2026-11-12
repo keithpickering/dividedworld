@@ -18,12 +18,15 @@ export interface BuildScope {
 /** Answer builds on `scope`. A build that throws is answered `failed`, so the page is never left waiting. */
 export function serveBuilds(scope: BuildScope): void {
   scope.onmessage = (e) => {
-    const { id, input } = e.data;
+    const m = e?.data as Partial<ToBuild> | null | undefined;
+    const id = typeof m?.id === 'number' ? m.id : undefined;
     try {
-      const built = buildLayer(input);
+      if (!m || m.kind !== 'build' || id === undefined || !m.input) throw new Error('a malformed build message');
+      const built = buildLayer(m.input);
       scope.postMessage({ kind: 'built', id, built }, [built.field.buffer, built.washed.buffer, built.image.data.buffer]);
     } catch (err) {
-      scope.postMessage({ kind: 'failed', id, message: err instanceof Error ? err.message : String(err) });
+      /* A message with no id has nobody waiting on it: ignored. */
+      if (id !== undefined) scope.postMessage({ kind: 'failed', id, message: err instanceof Error ? err.message : String(err) });
     }
   };
 }

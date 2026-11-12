@@ -6,7 +6,8 @@
 import { test, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import { FIELD_MOST, denseGrid, splatInto, strokesInto } from './field.ts';
-import { QUICK_WORK, buildLayer, estimateWork, gridOf, layerKey, type BuildInput, type Built } from './build.ts';
+import { MAX_CANVAS_PX } from './paint.ts';
+import { BOX_NS, QUICK_WORK, buildLayer, estimateWork, gridOf, layerKey, type BuildInput, type Built } from './build.ts';
 import { IDLE_MS, createBuildClient } from './buildClient.ts';
 import { serveBuilds, type BuildScope, type FromBuild, type ToBuild } from './buildWorker.ts';
 import { makeSplat, type Box } from './splat.ts';
@@ -17,7 +18,7 @@ const pen = (points: [number, number][], extra: object = {}): Stroke => ({ tool:
 const wash = (points: [number, number][]): Stroke => ({ tool: 'wash', ...brushOf(16, BOX), points });
 const SMALL: BuildInput = { seed: 7, color: '#202020', box: BOX, density: 1, strokes: [pen([[0.2, 0.3], [0.7, 0.5]], { drops: 2 }), wash([[0.3, 0.4], [0.5, 0.45]])] };
 /** An input whose estimate is over QUICK_WORK without costing a test a second: a big box, density 1. */
-const BIG_BOX: Box = { w: 1700, h: 1300 };
+const BIG_BOX: Box = { w: 700, h: 500 };
 const BIG: BuildInput = { ...SMALL, box: BIG_BOX, strokes: [pen([[0.1, 0.1], [0.9, 0.9]])] };
 
 type Listener = (e: { data?: FromBuild; message?: string }) => void;
@@ -62,14 +63,34 @@ const same = (a: Built, b: Built) => {
   assert.deepEqual(a.image.data, b.image.data);
 };
 
-test('estimateWork: the box, plus each segment; the two inputs fall either side of QUICK_WORK', () => {
-  assert.equal(QUICK_WORK, 2_000_000);
-  assert.equal(estimateWork(BOX, 1, []), 120 * 80);
+test('estimateWork: nanoseconds of work, the box plus each segment; the two inputs fall either side of QUICK_WORK', () => {
+  assert.equal(QUICK_WORK, 15_000_000);
+  assert.equal(estimateWork(BOX, 1, []), 120 * 80 * BOX_NS);
   assert.ok(estimateWork(SMALL.box, 1, SMALL.strokes) < QUICK_WORK);
   assert.ok(estimateWork(BIG.box, 1, BIG.strokes) > QUICK_WORK);
   assert.ok(estimateWork(BOX, 2, SMALL.strokes) > 3 * estimateWork(BOX, 1, SMALL.strokes), 'density squares the points');
   const more = [...SMALL.strokes, wash([[0.1, 0.1], [0.9, 0.9]])];
   assert.ok(estimateWork(BOX, 1, more) > estimateWork(BOX, 1, SMALL.strokes), 'a stroke adds work');
+  assert.ok(estimateWork({ w: 390, h: 1000 }, 1.5, []) > QUICK_WORK, 'a long post at density 1.5 is heavy');
+});
+
+test('estimateWork is calibrated: a layer it calls light builds in under 3x the target, in Node', () => {
+  const light: BuildInput = { ...SMALL, box: { w: 240, h: 240 }, strokes: [] };
+  assert.ok(estimateWork(light.box, 1, light.strokes) < QUICK_WORK);
+  buildLayer(light);
+  const t = performance.now();
+  buildLayer(light);
+  const ms = performance.now() - t;
+  assert.ok(ms < 3 * QUICK_WORK / 1e6, `${ms}ms for a layer called light`);
+  const slow = { ...light, box: { w: 390, h: 1000 }, density: 1.5 };
+  assert.ok(estimateWork(slow.box, slow.density, slow.strokes) > QUICK_WORK);
+});
+
+test('buildLayer refuses a density that makes more than MAX_CANVAS_PX', () => {
+  const box = { w: 390, h: 2000 };
+  assert.throws(() => buildLayer({ ...SMALL, box, density: 3, strokes: [] }), /MAX_CANVAS_PX|too many/);
+  assert.ok(Math.ceil(390 * 2.5) * Math.ceil(2000 * 2.5) > MAX_CANVAS_PX);
+  assert.throws(() => buildLayer({ ...SMALL, box, density: 2.5, strokes: [] }), /too many/);
 });
 
 test('layerKey names the play, box, density, and the strokes\' count and last point', () => {
@@ -221,4 +242,60 @@ test('a worker that fails to load hands what it held to the main thread, next fr
   assert.ok(FakeWorker.made[0]!.terminated);
   while (frames.length) frames.shift()!();
   assert.deepEqual(got, ['k2']);
+});
+
+test('the next-frame fallback builds one ask per frame, and a throwing onDone loses none of the rest', () => {
+  reset();
+  const c = clientWith({ makeWorker: null });
+  const calls: string[] = [];
+  const errors = mock.method(console, 'error', () => {});
+  c.requestBuild('a', BIG, () => { calls.push('a'); throw new Error('boom'); });
+  c.requestBuild('b', BIG, () => calls.push('b'));
+  c.requestBuild('c', BIG, () => calls.push('c'));
+  assert.equal(frames.length, 1);
+  frames.shift()!();
+  assert.deepEqual(calls, ['a'], 'one ask in a frame');
+  assert.equal(frames.length, 1, 'the rest is scheduled');
+  frames.shift()!();
+  assert.deepEqual(calls, ['a', 'b']);
+  frames.shift()!();
+  assert.deepEqual(calls, ['a', 'b', 'c']);
+  assert.equal(frames.length, 0);
+  errors.mock.restore();
+});
+
+test('a malformed message never kills the worker; it is answered failed', () => {
+  const posted: FromBuild[] = [];
+  const scope: BuildScope = { onmessage: null, postMessage: (m) => { posted.push(m); } };
+  serveBuilds(scope);
+  assert.doesNotThrow(() => scope.onmessage!({ data: null as unknown as ToBuild }));
+  assert.doesNotThrow(() => scope.onmessage!({ data: { kind: 'build', id: 4 } as unknown as ToBuild }));
+  assert.deepEqual(posted.map((m) => m.kind), ['failed'], 'one with an id is answered; one with nothing to answer is ignored');
+  assert.equal(posted[0]!.id, 4);
+});
+
+test('a built reply with no built is treated as failed: the build runs on the main thread', () => {
+  reset();
+  const c = clientWith();
+  const got: Built[] = [];
+  c.requestBuild('k', BIG, (b) => got.push(b));
+  FakeWorker.made[0]!.emit('message', { data: { kind: 'built', id: 1 } as unknown as FromBuild });
+  assert.equal(got.length, 0);
+  frames.shift()!();
+  assert.equal(got.length, 1);
+});
+
+test('an error event after the worker has answered is not fatal; before it, it is', () => {
+  reset();
+  const c = clientWith();
+  const got: string[] = [];
+  const errors = mock.method(console, 'error', () => {});
+  c.requestBuild('k', BIG, () => got.push('k'));
+  const w = FakeWorker.made[0]!;
+  w.answer(0);
+  w.emit('error', { message: 'late' });
+  assert.equal(w.terminated, false, 'a worker that has answered is kept');
+  c.requestBuild('k2', BIG, () => got.push('k2'));
+  assert.equal(w.received.length, 2, 'and still used');
+  errors.mock.restore();
 });
