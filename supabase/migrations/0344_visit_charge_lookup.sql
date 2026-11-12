@@ -6,7 +6,7 @@
 create or replace function visit_charge_matches(post uuid, ch jsonb) returns setof integer
 language sql stable set search_path = public, pg_temp as $$
     select 1
-    from (select v.id, v.payload from public.acts v where v.kind = 'visit' and v.target_act_id = post offset 0) v
+    from (select v.id, v.payload from public.acts v where v.kind = 'visit' and v.target_act_id = post order by v.created_at desc, v.id desc offset 0) v
     cross join lateral (
       select c.value as charge from jsonb_array_elements(v.payload -> 'charges') c
       union all
