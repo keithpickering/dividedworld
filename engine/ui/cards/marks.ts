@@ -93,7 +93,7 @@ const list = (words: readonly string[]): string => (words.length <= 2 ? words.jo
  * costs more, an earn how much more a reaction earns (an earn's `by` is a share: 0.1 is 10%), a ride the share of a vote's price it pays its
  * author for a card another player casts there, and a no-quote only that the post cannot be quoted.
  */
-export function gimmickWords(effect: GimmickEffect, ends: string | undefined, now: Date = new Date(), nameOf: (key: string) => string = (key) => key): { readonly state: string; readonly ends?: string; readonly report?: string } {
+export function gimmickWords(effect: GimmickEffect, ends: string | undefined, now: Date, nameOf: (key: string) => string = (key) => key): { readonly state: string; readonly ends?: string; readonly report?: string } {
   if (ends !== undefined && Date.parse(ends) <= now.getTime()) return { state: 'Ended, changing nothing', ends: `Ended ${dayAndTime(ends)}` };
   const finish = (state: string, report?: string) => ({ state, ...(ends !== undefined ? { ends: endsWords(ends) } : {}), ...(report !== undefined ? { report } : {}) });
   if (effect.kind === 'price') return finish(`${list(effect.flavors.map(capital))} cards cost ${orbs(effect.add)} more here`);

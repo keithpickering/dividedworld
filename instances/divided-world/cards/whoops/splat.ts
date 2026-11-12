@@ -1,7 +1,9 @@
 /**
  * Whoops!'s pure half (the screens' design, section 11; refinements design, section 2): the splat a play's seed
  * draws, and the shading an ink's luminance gives it. No DOM: `Effect.tsx` and the painter draw what this returns,
- * and a mask asks `covers` which points the ink holds.
+ * and a mask asks `covers` which points the splat alone holds. The splat is only the field's start: the model is the
+ * field (field.ts, one implementation shared by the painter and `LayerInk`), onto which a pen adds and from which a wash
+ * takes some each pass, so what a layer holds now is `LayerInk`'s to say and not `covers`' (docs/plans/2026-11-12-whoops-ink-field-design.md).
  *
  * A play stores only a seed (the server's, a 31-bit integer) and an ink, so every reader rebuilds the same splat
  * from them: the generator is a seeded PRNG and nothing here reads a clock or Math.random.

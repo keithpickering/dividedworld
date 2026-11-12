@@ -49,7 +49,7 @@ interface Toast {
 }
 
 /** How long ago, in the toast's own short words. */
-export function ago(at: string, now: number = Date.now()): string {
+export function ago(at: string, now: number): string {
   const minutes = Math.floor(Math.max(0, now - Date.parse(at)) / 60_000);
   if (!Number.isFinite(minutes) || minutes < 1) return 'now';
   return minutes < 60 ? `${minutes} min` : minutes < 1440 ? `${Math.floor(minutes / 60)} h` : `${Math.floor(minutes / 1440)} d`;
@@ -217,6 +217,7 @@ interface CardProps {
 }
 
 function Card({ toast, feel, held, left, onDismiss, onGone }: CardProps) {
+  const { api } = useKayfa();
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
   const el = useRef<HTMLElement>(null);
@@ -255,7 +256,7 @@ function Card({ toast, feel, held, left, onDismiss, onGone }: CardProps) {
         {toast.way && <Link to={toast.way.to} state={toast.way.state} className="kb-toast-way" onClick={() => onDismiss(toast.id, null)}>{toast.way.text}</Link>}
       </p>
       <div className="kb-toast-side">
-        <time dateTime={toast.at} className="kb-num">{ago(toast.at)}</time>
+        <time dateTime={toast.at} className="kb-num">{ago(toast.at, api.now())}</time>
         <button type="button" className="kb-toast-x" aria-label="Dismiss" aria-describedby={lineId} onClick={() => onDismiss(toast.id, el.current)}>
           <svg aria-hidden="true" focusable="false" viewBox="0 0 16 16" width="16" height="16"><path d="M3 3l10 10M13 3L3 13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>
         </button>

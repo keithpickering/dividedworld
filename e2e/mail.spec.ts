@@ -5,7 +5,7 @@ import { authTemplates } from '../supabase/functions/_shared/mail/auth.ts';
 
 /**
  * The two Auth emails in a real browser (glass-mail plan, Task 6), as the committed templates read once Supabase has filled its
- * two placeholders with a code and a link. At 600 and at 320 wide, with the images loading and refused, each template
+ * placeholders with a code, a redirect and a token hash. At 600 and at 320 wide, with the images loading and refused, each template
  *   - never scrolls sideways,
  *   - holds its code as one run of six digits a player can select whole,
  *   - links its button to the link,
@@ -19,7 +19,9 @@ import { authTemplates } from '../supabase/functions/_shared/mail/auth.ts';
  * a background-image over the ground color, so the photograph is the truth where an image is on).
  */
 const CODE = '482915';
-const LINK = 'https://dw.gripe/auth/sample-link';
+const REDIRECT = 'https://dw.gripe/sign-in?next=%2Fboard%2Fgeneral';
+const HASH = 'sampletokenhash';
+const LINK = `${REDIRECT}#token_hash=${HASH}`;
 const MAIL = new URL('../instances/divided-world/ui/public/mail/', import.meta.url);
 
 const BUTTON: Record<string, string> = { 'sign-in': 'Sign in', 'sign-up': 'Finish signing up' };
@@ -34,7 +36,7 @@ async function serve(page: Page, images: boolean) {
   });
 }
 
-const filled = (html: string) => html.replaceAll('{{ .Token }}', CODE).replaceAll('{{ .ConfirmationURL }}', LINK);
+const filled = (html: string) => html.replaceAll('{{ .Token }}', CODE).replaceAll('{{ .RedirectTo }}', REDIRECT).replaceAll('{{ .TokenHash }}', HASH);
 
 type Template = ReturnType<typeof authTemplates>[number];
 const nameOf = (t: Template) => t.path.replace(/^.*\//, '').replace('.html', '');

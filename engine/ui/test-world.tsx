@@ -150,7 +150,7 @@ export interface WorldOptions {
  * `signInAs`, the seeds, the clock and the live subscriptions are not reads, nor is `randomEvent`: a board or thread page's one roll is a chance, not a read of the page.
  */
 export function holdReads(fake: Fake, allowed: readonly string[] = []): readonly string[] {
-  const skip = new Set(['signInAs', 'emailOf', 'clock', 'broadcast', 'seed', 'loseNextAnswer', 'onSession', 'randomEvent', ...allowed]);
+  const skip = new Set(['now', 'signInAs', 'emailOf', 'clock', 'broadcast', 'seed', 'loseNextAnswer', 'onSession', 'randomEvent', ...allowed]);
   const read: string[] = [];
   for (const [name, value] of Object.entries(fake)) {
     if (typeof value !== 'function' || skip.has(name) || name.startsWith('subscribe')) continue;
