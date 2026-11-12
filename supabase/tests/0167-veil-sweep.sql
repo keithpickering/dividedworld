@@ -1,7 +1,8 @@
 -- The author's veil, swept (supabase/migrations/0300_post_veils.sql; docs/plans/2026-11-11-card-notes-part-3-plan.md, Task 2, "veil-sweep"): the guard that the list of reads a veil changes is whole.
 --
 -- A fixture: author A's post P opens a thread, with an edit, a use card of A's on it, another character's quote of it, a spin from it, a follower, an alert about it to a third player R, a card R played on it that an
--- admin ended, and a card R played on A's character from a post of A's elsewhere. R reads everything below as a third player would.
+-- admin ended, and a card R played on A's character from a post of A's elsewhere, and another from a second post of A's (P4), which names A and points at P4: a veil on P4 is refused, and P, which nothing was played from, is veiled.
+-- R reads everything below as a third player would.
 --
 --  1. THE DETECTOR'S POISON. Before the cast, every probe below must find what it looks for (A's id or name, or the veiled Acts' ids, or the stand-in's emptiness). A probe that cannot go red on the unveiled
 --     fixture proves nothing, so the test fails on one that does not; a probe that carries no character at all says so (`fires` false) and can only show absence.
@@ -70,7 +71,7 @@ select 'relation', n, m, w from (values
   ('boards_now', 'no author', 'boards by their name now'),
   ('card_kinds', 'no author', 'the instance''s catalog'),
   ('card_ledger', 'no author', 'the caller''s own ledger (row security)'),
-  ('character_post_counts', 'no author', 'the counts of an author''s posts, which still count a veiled one (a clue the game allows: the author''s other posts, and when they posted); never tied to a post'),
+  ('character_post_counts', 'swept', 'a view over the stored counts (character_post_counts_base, granted to no one) that counts a veiled post, and the spins and cards its author made on it, for the stand-in and not for its author while the veil is live: A''s count equals what the profile can list, the stand-in''s includes P, and A''s is whole again at the end'),
   ('character_profiles', 'no author', 'a character''s public profile'),
   ('characters', 'no author', 'the caller''s own characters (row security)'),
   ('characters_public', 'no author', 'a debuted character''s public name and office; the stand-in is one of them'),
@@ -115,7 +116,7 @@ select 'relation', n, m, w from (values
   ('pip_styles', 'no author', 'the instance''s pip styles'),
   ('play_moment_layers', 'no author', 'the layers of a play''s moment: play ids and saved states'),
   ('play_moments', 'no author', 'the version of a post a play was made on: ids'),
-  ('play_reach', 'no author', 'a play beyond a post: its target character, thread or board, which is public; a card on a character is played from one of its posts that shows it (a veiled post is the stand-in''s, so it cannot be the origin)'),
+  ('play_reach', 'no author', 'a play beyond a post: its target character, thread or board, which is public; a card on a character is played from one of its posts, so its Act points at that post and names its author: land_refusal refuses a veil on such a post, and none is played from a veiled one (the stand-in is no target), both held below and in 0166-post-veils.sql'),
   ('post_search', 'pending', 'its `character` column is a post''s author; Task 3 grants every column but it and reads it through the projection'),
   ('reaction_kinds', 'no author', 'the instance''s reactions'),
   ('reaction_tallies', 'no author', 'counts of reactions to an Act: no character'),
@@ -354,7 +355,7 @@ declare
   general uuid := (select id from boards where slug = 'general');
   t uuid := tests.thread('Sw sweep thread'); t3 uuid := tests.thread('Sw elsewhere');
   stand uuid;
-  p uuid; p2 uuid; edit uuid; used uuid; quoted uuid; ray_card uuid; vplay uuid; spun jsonb; on_a uuid;
+  p uuid; p2 uuid; p4 uuid; edit uuid; used uuid; quoted uuid; ray_card uuid; vplay uuid; spun jsonb; on_a uuid; on_p4 uuid; counts0 jsonb;
   veiled uuid[];
   probe record; res text; leaks boolean; found text[] := '{}'; missed text[] := '{}'; phase text;
 begin
@@ -364,7 +365,7 @@ begin
   insert into character_profiles (character, title, signature) values (stand, 'Could be anyone.', '');
   insert into settings (key, value) values ('systemEnabled', 'true') on conflict (key) do update set value = 'true';
   perform pg_temp.hand(ann, 'swuse');
-  perform pg_temp.hand(bob, 'swauthor');
+  perform pg_temp.hand(bob, 'swauthor', 'swauthor');
   perform pg_temp.hand(ray, 'swplain', 'swchar');
 
   -- The fixture: A's post opens the thread, with an edit, a use card of A's, B's quote of it, a spin from it, a follower and an alert; A has another post elsewhere.
@@ -374,6 +375,7 @@ begin
   quoted := tests.act(b, 'post', t, jsonb_build_object('body', 'Quoting the sweep.'), p);
   p2 := tests.post(a, t3, 'A post of A''s elsewhere.');
   p2 := tests.post(a, t3, 'A post of A''s elsewhere.');
+  p4 := tests.post(a, t3, 'A post a card is played from.');
   perform tests.post(r, t3, 'Ray has the last word there.');
   perform tests.post(r, t, 'Ray replies in the thread.');
   perform tests.become_service();
@@ -383,6 +385,9 @@ begin
   -- A card of R's on A's character, played from A's post elsewhere an hour before (written as play_card writes it, so it is older than the cards below: a play's moment reads the plays above that were up before it).
   on_a := tests.act(r, 'card', t3, jsonb_build_object('card', 'swchar', 'message', '', 'config', '{}'::jsonb, 'reach', 'character', 'character', a, 'ends', now() + interval '1 day', 'targetName', 'Sw Ann'), p2, now() - interval '1 hour');
   insert into play_reach (play, reach, character, ends_at) values (on_a, 'character', a, now() + interval '1 day');
+  -- Another, played from P4: the Act points at P4 and names A in its payload and in its play_reach row, all public, so no veil lands on P4.
+  on_p4 := tests.act(r, 'card', t3, jsonb_build_object('card', 'swchar', 'message', '', 'config', '{}'::jsonb, 'reach', 'character', 'character', a, 'ends', now() + interval '1 day', 'targetName', 'Sw Ann'), p4, now() - interval '1 hour');
+  insert into play_reach (play, reach, character, ends_at) values (on_p4, 'character', a, now() + interval '1 day');
   perform tests.become(adm); perform reverse_card(ray_card); perform tests.unbecome();
   perform tests.become(bob); spun := spin(p, b, 'Sw spun thread', 'A spin from the sweep post.'); perform tests.unbecome();
   insert into thread_follows (account, thread, follow) values (ray, t, true);
@@ -418,6 +423,7 @@ begin
     ('post_tails', 'id', 'select coalesce(jsonb_agg(to_jsonb(x)), ''[]'')::text from post_tails(array[current_setting(''sweep.p'')::uuid]) x', false, false),
     ('boot', 'id', 'select boot()::text', false, false),
     ('presence_box', 'standname', 'select presence_box(''thread'', current_setting(''sweep.t'')::uuid)::text', false, false),
+    ('character_post_counts', 'counts', 'select jsonb_build_object(''counts'', (select n.posts from character_post_counts n where n.character = current_setting(''sweep.a'')::uuid), ''listed'', (select count(*) from acts_public x where x.character = current_setting(''sweep.a'')::uuid and x.kind = ''post''), ''profile'', profile_page(current_setting(''sweep.a'')::uuid) -> ''counts'' -> ''posts'', ''stand'', coalesce((select n.posts from character_post_counts n where n.character = current_setting(''sweep.stand'')::uuid), 0), ''stand_listed'', (select count(*) from acts_public x where x.character = current_setting(''sweep.stand'')::uuid and x.kind = ''post''))::text', false, false),
     ('search_posts', 'id', 'select search_posts(''pie'', null, null, null, null, false, ''newest'', null, 20)::text', true, true),
     ('search_threads', 'id', 'select search_threads(''pie'', null, null, null, null, false, ''newest'', null, 20)::text', true, true),
     ('search_suggest', 'id', 'select search_suggest(''Sw sweep'', array[''threads''], null, true, 10)::text', false, false);
@@ -434,6 +440,11 @@ begin
     end if;
     if kind = 'present' then return res not like '%' || current_setting('sweep.p') || '%'; end if;
     if kind = 'standname' then return res like '%Anonymous%'; end if;
+    -- A count that is not the number of posts the page can list proves a hidden post: the author's, as read, and as their profile returns it; and the stand-in's, which holds the veiled post.
+    if kind = 'counts' then
+      return (res::jsonb ->> 'counts')::integer is distinct from (res::jsonb ->> 'listed')::integer or (res::jsonb ->> 'profile')::integer is distinct from (res::jsonb ->> 'listed')::integer
+          or (res::jsonb ->> 'stand')::integer is distinct from (res::jsonb ->> 'stand_listed')::integer;
+    end if;
     if kind = 'nonempty' then return res not in ('[]', 'null'); end if;
     -- A veiled Act anywhere in the answer, as an object, with its true character.
     if kind = 'rows' then
@@ -477,6 +488,22 @@ begin
   end loop;
   if cardinality(found) > 0 then raise exception 'after the cast a third player still reads the author in: %', found; end if;
 
+  -- The counts probe's own poison: the stored count the view is made from still counts the veiled post, so a read of it that skipped the view would be caught by the same comparison.
+  select jsonb_build_object('counts', (select n.posts from character_post_counts_base n where n.character = a), 'listed', (select count(*) from acts_public x where x.character = a and x.kind = 'post'),
+                            'profile', (select n.posts from character_post_counts_base n where n.character = a), 'stand', 0, 'stand_listed', 0)
+    into counts0;
+  if not pg_temp.leaks('counts', counts0::text) then raise exception 'the counts probe cannot tell the stored count from what the page lists: %', counts0; end if;
+
+  -- A post a card was played from names its author through that card's Act, so no veil lands on it, whoever casts: the refusal is the visit's manner, and nothing is written. P, which no card was played from, took the veil above.
+  perform tests.become_service();
+  res := pg_temp.coded(format('select play_card(%L, %L, %L, %L, %L, 0, %L)', bob, 'swauthor', b, p4, '{}', ''));
+  perform tests.unbecome();
+  if res is distinct from '42501 a card played from this post names its author, so the author is on the record' then raise exception 'a veil on a post a card was played from: %', res; end if;
+  if exists (select 1 from post_veils v where v.post = p4) or exists (select 1 from acts_public x where x.id = p4 and x.character = stand) then raise exception 'a refused veil on the post a card was played from wrote something or hid its author'; end if;
+  if res is null or (select count(*) from acts_public x where x.target_act_id = p4 and x.kind = 'card' and (x.payload ->> 'character')::uuid = a) is distinct from 1 then
+    raise exception 'the card played from the post is not there to name its author';
+  end if;
+
   -- The author's own player reads the same: the projection is one for everybody (their own fact comes from my_veiled_posts alone).
   for probe in select * from probes where not pending and kind in ('id', 'present') and name not in ('profile_page(stand-in)', 'record_page(stand-in)', 'alerts_page', 'log_page', 'my_followed_threads', 'my_cards_ended') order by name loop
     res := pg_temp.read_as(ann, probe.stmt);
@@ -489,5 +516,12 @@ begin
                and not exists (select 1 from probes p where p.name = l.name or p.name like l.name || '(%' or p.name like l.name || ' %')) then
     raise exception 'a name the list marks swept has no probe: %', (select string_agg(l.name, ', ') from listed l where l.mark = 'swept' and l.name not in ('acts_public', 'thread_open', 'thread_list', 'my_cards_ended', 'my_followed_threads')
       and not exists (select 1 from probes p where p.name = l.name or p.name like l.name || '(%' or p.name like l.name || ' %'));
+  end if;
+
+  -- ---- The end: an admin's end of the veil gives the author's count back by itself, and the stand-in's goes, as every other read shows the author again ----
+  perform tests.become(adm); perform reverse_card(vplay); perform tests.unbecome();
+  res := pg_temp.read_as(ray, (select stmt from probes where name = 'character_post_counts'));
+  if pg_temp.leaks('counts', res) or (res::jsonb ->> 'stand')::integer is distinct from 0 or (res::jsonb ->> 'counts')::integer is distinct from (select n.posts from character_post_counts_base n where n.character = a) then
+    raise exception 'after the veil was ended the counts are not whole again: %', res;
   end if;
 end $$;

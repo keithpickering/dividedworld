@@ -111,7 +111,7 @@ begin
   perform tests.commit(format($sql$
     create function public.race_sleep() returns trigger language plpgsql as $f$ begin perform pg_sleep(0.6); return null; end $f$;
     revoke execute on function public.race_sleep() from public;
-    create trigger race_sleep after insert or update on character_post_counts for each row when (new.character = %1$L) execute function public.race_sleep();
+    create trigger race_sleep after insert or update on character_post_counts_base for each row when (new.character = %1$L) execute function public.race_sleep();
   $sql$, b));
   -- One player's quoting post and cast, both through Pair Poster, on a post a cast trap sits on.
   said := tests.race_as(bob, format('select post(%L, %L, %L, %L)', t, b, 'Quoting it.', p), null, format('select play_card(%L, %L, %L, %L, %L, 0, %L)', bob, 'sweetie', b, p, '{}', ''));
@@ -122,14 +122,14 @@ begin
   -- whose count row the setter's own post holds. The setter's post is in another thread (posts of one thread already wait on each
   -- other for their place in it) and quotes the post that carries a back in the reply's thread. The sleeping trigger now follows the setter.
   perform tests.commit(format($sql$
-    drop trigger race_sleep on character_post_counts;
-    create trigger race_sleep after insert or update on character_post_counts for each row when (new.character = %1$L) execute function public.race_sleep();
+    drop trigger race_sleep on character_post_counts_base;
+    create trigger race_sleep after insert or update on character_post_counts_base for each row when (new.character = %1$L) execute function public.race_sleep();
   $sql$, a));
   said := tests.race_as(ann, format('select post(%L, %L, %L, %L)', t3, a, 'A post by the setter, quoting from the other thread.', pc), bob, format('select post(%L, %L, %L, %L)', t2, b, 'A quote that springs the setter''s Move.', pa));
   if said[1] is not null or said[2] is not null then raise exception 'a post and a landing Move whose setter is the poster: %', said; end if;
   if (select count(*) from acts where kind = 'spring' and target_act_id = pa) is distinct from 1::bigint then raise exception 'the hook did not spring'; end if;
   perform tests.commit($sql$
-    drop trigger race_sleep on character_post_counts;
+    drop trigger race_sleep on character_post_counts_base;
     drop function public.race_sleep();
   $sql$);
   -- What the racers' writes queued for these players is not left for the files after this one (an alert is a row beside the Act).
@@ -164,11 +164,11 @@ begin
   perform tests.commit(format($sql$
     create function public.race_sleep() returns trigger language plpgsql as $f$ begin perform pg_sleep(1.2); return null; end $f$;
     revoke execute on function public.race_sleep() from public;
-    create trigger race_sleep after insert or update on character_post_counts for each row when (new.character = %1$L) execute function public.race_sleep();
+    create trigger race_sleep after insert or update on character_post_counts_base for each row when (new.character = %1$L) execute function public.race_sleep();
   $sql$, b));
   said := tests.race_as(bob, format('select post(%L, %L, %L, %L)', t, b, 'Quoting it.', p), null,
     format('do $d$ begin perform pg_sleep(0.4); perform set_card(%L, %L, %L, %L, %L, 0); end $d$', ann, 'latequote', a, p, '{}'));
-  perform tests.commit('drop trigger race_sleep on character_post_counts; drop function public.race_sleep();');
+  perform tests.commit('drop trigger race_sleep on character_post_counts_base; drop function public.race_sleep();');
   if said[1] is not null or said[2] is not null then raise exception 'a quoting post and a set that lands while it waits: %', said; end if;
   if (select count(*) from face_down where post = p) is distinct from 1::bigint then raise exception 'the set did not land'; end if;
   if (select count(*) from acts where kind = 'post' and target_act_id = p) is distinct from 1::bigint then raise exception 'the quoting post did not land'; end if;

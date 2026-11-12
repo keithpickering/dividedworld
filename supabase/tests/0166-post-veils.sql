@@ -6,11 +6,13 @@
 --  2. A cast lands a post_veils row, ends at its time, and a second is refused while it is up; one lands again once it has ended.
 --  3. acts_public shows the stand-in for the post and for its author's Acts on it, and the true character for everything else; the same after the time and after an admin's end, the true one again.
 --  4. The refusals (a staff post, a post a Mod Bot has been to), a Mod Bot's visit and a report while it is up, and no card on the stand-in.
---  5. A face-down veil lands on the post that quotes it, and veils that post's author; one that cannot land stays set.
+--  5. A face-down veil lands on the post that quotes it, and veils that post's author; one that cannot land (a staff post, a visited post, a post a card was played from) stays set.
 --  6. acts.character is no longer readable by a signed-in player, and the readers that needed it still answer.
 --  7. my_veiled_posts holds the author's own rows and nobody else's; thread_page carries them.
---  8. Bounded reads: with a live veil in the table, reads by character, by thread and seq and by id keep their indexes.
+--  8. Bounded reads: with a live veil in the table, reads by character, by thread and seq and by id keep their indexes, and so does a count's.
+--  9. A card played from a post (at character reach) names its author: no veil lands on that post, from a cast or a spring, and none is played from a veiled one.
 -- 10. The staff lists, the pool's signals and the digest leave the stand-in out of the staff.
+-- 11. The counts: character_post_counts counts a veiled post for the stand-in while the veil is up, for every reader, and the author's own count is whole again by itself.
 --  0. The seed makes the stand-in once, and office says so (first, since the sections after it make the stand-in themselves).
 
 create function pg_temp.coded(stmt text) returns text language plpgsql as $$
@@ -58,7 +60,8 @@ begin
     ('vlmove', 'Vl Plain', 'sweet', 'common', 'cast', '{post}', null, null, 1, null),
     ('vlonce', 'Vl Once', 'sweet', 'common', 'cast', '{post}', interval '2 days', null, 1, null),
     ('vluse', 'Vl Use', 'salty', 'uncommon', 'use', '{post}', interval '7 days', null, 1, '{"kind": "ward", "cards": ["vlnothing"]}'),
-    ('vlchar', 'Vl Char', 'salty', 'uncommon', 'cast', '{character}', interval '1 day', null, 1, null)
+    ('vlchar', 'Vl Char', 'salty', 'uncommon', 'cast', '{character}', interval '1 day', null, 1, null),
+    ('vlself', 'Vl Self', 'sweet', 'uncommon', 'use', '{character}', interval '1 day', null, 1, '{"kind": "ward", "cards": ["vlnothing"]}')
   on conflict (key) do nothing;
   insert into card_kinds (key, name, alignment, rarity, play, reaches, trap, stack) values
     ('vltrap', 'Vl Trap', 'salty', 'uncommon', 'set', '{post}', '{"trigger": {"on": "cast"}}', 1)
@@ -417,9 +420,10 @@ declare
   stand uuid := pg_temp.stand();
   held uuid := tests.post(a, t, 'A back lies here.'); held2 uuid := tests.post(a, t, 'Another back lies here.');
   back uuid; quote jsonb; q uuid; bot uuid; got text; landed uuid; made jsonb; botq uuid;
+  held3 uuid; visq uuid; fd face_down%rowtype; why text; held4 uuid; playq uuid;
 begin
   perform pg_temp.cards();
-  perform pg_temp.hand(ann, 'vlauthor', 'vlauthor');
+  perform pg_temp.hand(ann, 'vlauthor', 'vlauthor', 'vlauthor', 'vlauthor', 'vlchar');
   perform tests.become_service();
   back := (set_card(ann, 'vlauthor', a, held, '{}', 0) ->> 'id')::uuid;
   perform tests.unbecome();
@@ -452,6 +456,39 @@ begin
   if land_refusal((select k from card_kinds k where k.key = 'vlauthor'), botq, '{}') is distinct from 'a post by the staff keeps its name' then raise exception 'land_refusal for a staff post'; end if;
   if land_refusal((select k from card_kinds k where k.key = 'vlmove'), botq, '{}') is not null then raise exception 'land_refusal refuses a plain card on a staff post'; end if;
   if land_refusal((select k from card_kinds k where k.key = 'vlauthor'), held, '{}') is not null then raise exception 'land_refusal refuses a post that is clean'; end if;
+
+  -- A post a Mod Bot visit names does not take a veil either, on the spring path: the back is set on `held3`, the post that quotes it has been visited, and spring_facts says so (land_why) and the spring does not
+  -- land: nothing is written for it, and the back stays set.
+  held3 := tests.post(a, t, 'A third back lies here.');
+  visq := tests.post(b, t, 'A quote a Mod Bot has been to.');
+  perform set_config('kayfabb.staff_writer', 'on', true);
+  insert into acts (character, kind, thread, target_act_id, payload)
+    values (bot, 'visit', t, visq, jsonb_build_object('ends_at', now() + interval '3 hours', 'charges', jsonb_build_array(jsonb_build_object('rule_number', null, 'board', (select board from threads where id = t), 'band', 'minor', 'cause', 'patrol', 'about_act', visq::text, 'rule', 'the premise')), 'challenge', jsonb_build_object('kind', 'distraction'), 'line', 'Looking.'));
+  perform set_config('kayfabb.staff_writer', '', true);
+  perform tests.become_service();
+  back := (set_card(ann, 'vlauthor', a, held3, '{}', 0) ->> 'id')::uuid;
+  perform tests.unbecome();
+  select * into fd from face_down f where f.play = back;
+  why := (spring_facts(fd, 'quote', visq, null)).land_why;
+  made := spring_traps('quote', held3, visq, null, null, null);
+  if why is distinct from 'a Mod Bot has been to this post, so its author is on the record' then raise exception 'spring_facts land_why for a visited quote: %', why; end if;
+  if made is not null or exists (select 1 from acts s where s.kind = 'spring' and (s.payload ->> 'set') = back::text) then raise exception 'a spring landed a veil on a visited post: %', made; end if;
+  if exists (select 1 from post_veils v where v.post = visq) or exists (select 1 from acts k where k.kind = 'card' and k.target_act_id = visq) then raise exception 'a veil that could not land wrote something'; end if;
+  if not exists (select 1 from face_down f where f.play = back) or (select x.character from acts_public x where x.id = visq) is distinct from b then raise exception 'the back that could not land was spent, or the visited post was veiled'; end if;
+
+  -- Nor does a post a card was played from: Ann plays a card on Bob's character from the post that quotes her back, and the back does not land there.
+  held4 := tests.post(a, t, 'A fourth back lies here.');
+  playq := tests.post(b, t, 'A quote a card was played from.');
+  perform tests.become_service();
+  got := pg_temp.coded(format('select play_card(%L, %L, %L, %L, %L, 0, %L, %L, %L)', ann, 'vlchar', a, b, '{}', '', 'character', playq));
+  back := (set_card(ann, 'vlauthor', a, held4, '{}', 0) ->> 'id')::uuid;
+  perform tests.unbecome();
+  if got is not null then raise exception 'a card on a character from its post: %', got; end if;
+  select * into fd from face_down f where f.play = back;
+  why := (spring_facts(fd, 'quote', playq, null)).land_why;
+  made := spring_traps('quote', held4, playq, null, null, null);
+  if why is distinct from 'a card played from this post names its author, so the author is on the record' then raise exception 'spring_facts land_why for a quote a card was played from: %', why; end if;
+  if made is not null or exists (select 1 from post_veils v where v.post = playq) or exists (select 1 from acts s where s.kind = 'spring' and (s.payload ->> 'set') = back::text) then raise exception 'a spring landed a veil on a post a card was played from: %', made; end if;
 end $$;
 
 -- ---- 6. acts.character is no longer readable; the readers that needed it answer from the projection ----
@@ -596,7 +633,73 @@ begin
   -- The stand-in is found by an index, not by reading every character.
   plan := pg_temp.plan_of('select c.id from characters c where c.staff_kind = ''anonymous''');
   if plan ~ 'Seq Scan on characters\y' then raise exception 'finding the stand-in scans characters: %', plan; end if;
+  -- A character's count is read by the key of its stored row and adjusted from the live veils (a few rows, by their own index): it stays on that key with a veil in the table, and touches a handful of buffers.
+  plan := pg_temp.plan_of(format('select character, posts, spins, cards from character_post_counts where character = %L', a));
+  if plan !~ 'character_post_counts_pkey' or plan ~ 'Seq Scan on character_post_counts' then raise exception 'a count read does not stay on its key: %', plan; end if;
+  if plan !~ 'post_veils' then raise exception 'a count read does not adjust from the live veils: %', plan; end if;
   reset enable_seqscan;
+  touched := pg_temp.buffers_of(format('select character, posts, spins, cards from character_post_counts where character = %L', a));
+  raise notice 'a count read touches % buffers', touched;
+  if touched > 60 then raise exception 'a count read touches % buffers', touched; end if;
+  touched := pg_temp.buffers_of(format('select character, posts from character_post_counts where character in (%L, %L)', a, stand));
+  raise notice 'two counts read touch % buffers', touched;
+  if touched > 90 then raise exception 'two counts read touch % buffers', touched; end if;
+end $$;
+
+-- ---- 9. A card played from a post names its author: no veil on that post, and none played from a veiled post ----
+-- (After section 8, whose buffer counts hold the veils the sections before it left up in this file's one transaction.)
+-- A card at character reach is stored with target_act_id = the post it is played from, and its payload (`character`, `targetName`) and its play_reach row name the post's author: a public Act that points at the post and
+-- names its author, made by anyone (the author's own too: the projection changes its `character` and not its payload). So a veil is refused on such a post, in the words the visit's refusal uses, and the other way round
+-- while a veil is up: a card at character reach from the veiled post targets the stand-in, which no card is played on.
+select tests.unbecome();
+do $$
+declare
+  ann uuid := tests.account('vg-ann'); bob uuid := tests.account('vg-bob'); cy uuid := tests.account('vg-cy');
+  a uuid := tests.character(ann, 'Vg Ann'); b uuid := tests.character(bob, 'Vg Bob'); c uuid := tests.character(cy, 'Vg Cy');
+  t uuid := tests.thread('Vg named');
+  stand uuid := pg_temp.stand();
+  named uuid := tests.post(a, t, 'A card is played from here.'); own uuid := tests.post(a, t, 'My own card is played from here.'); clean uuid := tests.post(a, t, 'Nothing is played from here.');
+  got text; words text := '42501 a card played from this post names its author, so the author is on the record'; veil uuid; plays integer;
+begin
+  perform pg_temp.cards();
+  perform pg_temp.hand(bob, 'vlchar'); perform pg_temp.hand(ann, 'vlself'); perform pg_temp.hand(cy, 'vlauthor', 'vlauthor', 'vlauthor', 'vlchar');
+  -- Bob plays a card on Ann's character from her post; Ann uses her own on her character from hers.
+  perform tests.become_service();
+  got := pg_temp.coded(format('select play_card(%L, %L, %L, %L, %L, 0, %L, %L, %L)', bob, 'vlchar', b, a, '{}', '', 'character', named));
+  if got is not null then raise exception 'a card on a character from its post: %', got; end if;
+  got := pg_temp.coded(format('select play_card(%L, %L, %L, %L, %L, 0, %L, %L, %L)', ann, 'vlself', a, a, '{}', '', 'character', own));
+  if got is not null then raise exception 'a use card on its own character from its post: %', got; end if;
+  perform tests.unbecome();
+  if (select count(*) from acts k where k.kind = 'card' and k.target_act_id = named and k.payload ->> 'reach' = 'character' and k.payload ->> 'character' = a::text) is distinct from 1 then
+    raise exception 'the character card is not stored as a play from the post naming its character'; end if;
+
+  -- Neither post takes a veil, from any caster, and nothing is written for it; a post nothing was played from does, and the same words come from land_refusal.
+  perform tests.become_service();
+  got := pg_temp.coded(format('select play_card(%L, %L, %L, %L, %L, 0, %L)', cy, 'vlauthor', c, named, '{}', ''));
+  if got is distinct from words then raise exception 'a veil on a post a card was played from: %', got; end if;
+  got := pg_temp.coded(format('select play_card(%L, %L, %L, %L, %L, 0, %L)', cy, 'vlauthor', c, own, '{}', ''));
+  if got is distinct from words then raise exception 'a veil on a post its author used a card from: %', got; end if;
+  perform tests.unbecome();
+  if exists (select 1 from post_veils v where v.post in (named, own)) or exists (select 1 from acts k where k.kind = 'card' and k.target_act_id in (named, own) and k.payload ->> 'card' = 'vlauthor') then
+    raise exception 'a refused veil wrote something'; end if;
+  if land_refusal((select k from card_kinds k where k.key = 'vlauthor'), named, '{}') is distinct from substr(words, 7) or land_refusal((select k from card_kinds k where k.key = 'vlmove'), named, '{}') is not null then
+    raise exception 'land_refusal for a post a card was played from'; end if;
+  perform tests.become_service();
+  got := pg_temp.coded(format('select play_card(%L, %L, %L, %L, %L, 0, %L)', cy, 'vlauthor', c, clean, '{}', ''));
+  perform tests.unbecome();
+  if got is not null then raise exception 'a veil on a post no card was played from: %', got; end if;
+  veil := (select v.play from post_veils v where v.post = clean);
+  if veil is null then raise exception 'the clean post took no veil'; end if;
+
+  -- While it is up, a card at character reach from the veiled post names the stand-in or the author, and is refused either way, in words every caster meets; nothing is written.
+  plays := (select count(*) from acts k where k.kind = 'card' and k.target_act_id = clean);
+  perform tests.become_service();
+  got := pg_temp.coded(format('select play_card(%L, %L, %L, %L, %L, 0, %L, %L, %L)', cy, 'vlchar', c, stand, '{}', '', 'character', clean));
+  if got is distinct from '22023 no card is played on a stand-in' then raise exception 'a character card from a veiled post, on the stand-in: %', got; end if;
+  got := pg_temp.coded(format('select play_card(%L, %L, %L, %L, %L, 0, %L, %L, %L)', cy, 'vlchar', c, a, '{}', '', 'character', clean));
+  if got is distinct from '22023 a card on a character is played from one of its posts' then raise exception 'a character card from a veiled post, on its author: %', got; end if;
+  perform tests.unbecome();
+  if (select count(*) from acts k where k.kind = 'card' and k.target_act_id = clean) is distinct from plays then raise exception 'a refused card from a veiled post wrote something'; end if;
 end $$;
 
 -- ---- 10. The stand-in is no persona: the lists that are of staff leave it out, and the model reads it as the plain character it is shown as ----
@@ -639,4 +742,91 @@ begin
   select e into entry from jsonb_array_elements(dig -> 'characters') e where e ->> 'id' = stand::text;
   if entry is null or entry -> 'staff' is distinct from 'false'::jsonb then raise exception 'the digest reads the stand-in as staff, or not at all: %', entry; end if;
   if exists (select 1 from jsonb_array_elements(dig -> 'characters') e where e ->> 'id' = a::text) then raise exception 'the digest names the author'; end if;
+end $$;
+
+-- ---- 11. The counts: while a veil is up, a veiled post is counted for the stand-in and not for its author, in every read a player can make; it goes back by itself ----
+-- character_post_counts is publicly readable and returned by profile_page (`counts`), record_page and thread_page (`posts`): a count that still held a veiled post would prove, against a profile that lists one post fewer, that its
+-- author has a hidden post. The projection is one: the same for every reader, computed in the read from the live veils (no job runs when a veil ends, so nothing stored moves), and the unadjusted count is read by no API role.
+select tests.unbecome();
+do $$
+declare
+  ann uuid := tests.account('vq-ann'); cy uuid := tests.account('vq-cy'); ray uuid := tests.account('vq-ray'); adm uuid := tests.account('vq-admin');
+  a uuid := tests.character(ann, 'Vq Ann'); c uuid := tests.character(cy, 'Vq Cy'); r uuid := tests.character(ray, 'Vq Ray');
+  t uuid := tests.thread('Vq counts'); t2 uuid := tests.thread('Vq spun');
+  stand uuid := pg_temp.stand();
+  p1 uuid := tests.post(a, t, 'A post that stays.'); p2 uuid := tests.post(a, t, 'A post that is veiled.'); p3 uuid := tests.post(a, t, 'A post whose veil is over.');
+  veil uuid; spun uuid; used uuid; shown jsonb; rec jsonb; page jsonb; past uuid; got text; s0 jsonb;
+begin
+  perform pg_temp.cards();
+  insert into admins (account) values (adm);
+  perform pg_temp.hand(cy, 'vlauthor'); perform pg_temp.hand(ann, 'vluse');
+  -- The author has used a card of hers on the post and spun a thread from it, each of them an Act of hers on the post, which the veil shows under the stand-in.
+  perform tests.become_service();
+  used := (play_card(ann, 'vluse', a, p2, '{}', 0, '') ->> 'id')::uuid;
+  perform tests.unbecome();
+  spun := tests.act(a, 'spin', t2, jsonb_build_object('title', 'Spun', 'body', 'From the veiled post.'), p2);
+  -- A veil that is over (its row says so) holds nothing back.
+  past := tests.act(c, 'card', t, jsonb_build_object('card', 'vlauthor', 'message', '', 'config', '{}'::jsonb, 'layer', 1, 'ends', now() - interval '1 day'), p3, now() - interval '4 days');
+  insert into post_veils (play, post, veil, author, caster_account, ends_at) values (past, p3, 'author', a, cy, now() - interval '1 day');
+
+  -- (The stand-in already stands for the veils of this file's earlier sections, which are still up: its count is read as it is, and the change is what the assertions below hold.)
+  perform tests.become(ray);
+  shown := (select to_jsonb(n) from (select posts, spins, cards from character_post_counts where character = a) n);
+  s0 := (select to_jsonb(n) from (select coalesce(sum(posts), 0) as posts, coalesce(sum(spins), 0) as spins, coalesce(sum(cards), 0) as cards from character_post_counts where character = stand) n);
+  perform tests.unbecome();
+  if shown is distinct from '{"posts": 3, "spins": 1, "cards": 1}'::jsonb then raise exception 'the count before the veil: %', shown; end if;
+
+  perform tests.become_service();
+  veil := (play_card(cy, 'vlauthor', c, p2, '{}', 0, '') ->> 'id')::uuid;
+  perform tests.unbecome();
+
+  -- Every read of a count, as a third player: the author's loses the veiled post and the Acts of hers on it, the stand-in's holds them.
+  perform tests.become(ray);
+  shown := (select to_jsonb(n) from (select posts, spins, cards from character_post_counts where character = a) n);
+  if shown is distinct from '{"posts": 2, "spins": 0, "cards": 0}'::jsonb then raise exception 'the author''s count while the veil is up: %', shown; end if;
+  shown := (select to_jsonb(n) from (select posts, spins, cards from character_post_counts where character = stand) n);
+  if shown is distinct from jsonb_build_object('posts', (s0 ->> 'posts')::integer + 1, 'spins', (s0 ->> 'spins')::integer + 1, 'cards', (s0 ->> 'cards')::integer + 1) then raise exception 'the stand-in''s count while the veil is up: % (was %)', shown, s0; end if;
+  if (select count(*) from character_post_counts where character in (a, stand)) is distinct from 2 then raise exception 'a count is read twice or not at all'; end if;
+  -- The counts a page returns are the same, and each is the number of rows the page's own lists hold: the author's profile lists the posts it counts.
+  rec := record_page(a, 'post', 1);
+  if (rec -> 'counts' ->> 'posts')::integer is distinct from 2 or jsonb_array_length(rec -> 'acts') is distinct from 2 then raise exception 'the author''s record: % lists % posts', rec -> 'counts', jsonb_array_length(rec -> 'acts'); end if;
+  rec := record_page(stand, 'post', 1);
+  if (rec -> 'counts' ->> 'posts')::integer is distinct from (s0 ->> 'posts')::integer + 1 or jsonb_array_length(rec -> 'acts') is distinct from least((s0 ->> 'posts')::integer + 1, 20)
+     or not exists (select 1 from jsonb_array_elements(rec -> 'acts') x where x ->> 'id' = p2::text) then
+    raise exception 'the stand-in''s record: % lists % posts', rec -> 'counts', jsonb_array_length(rec -> 'acts');
+  end if;
+  if (profile_page(a) -> 'counts') is distinct from jsonb_build_object('character', a, 'posts', 2, 'spins', 0, 'cards', 0) then raise exception 'the author''s profile counts: %', profile_page(a) -> 'counts'; end if;
+  if (profile_page(stand) -> 'counts') is distinct from jsonb_build_object('character', stand, 'posts', (s0 ->> 'posts')::integer + 1, 'spins', (s0 ->> 'spins')::integer + 1, 'cards', (s0 ->> 'cards')::integer + 1) then raise exception 'the stand-in''s profile counts: %', profile_page(stand) -> 'counts'; end if;
+  page := thread_page(t, 1, null, null, null);
+  if (select (x ->> 'posts')::integer from jsonb_array_elements(page -> 'people') x where x -> 'character' ->> 'id' = a::text) is distinct from 2
+     or (select (x ->> 'posts')::integer from jsonb_array_elements(page -> 'people') x where x -> 'character' ->> 'id' = stand::text) is distinct from (s0 ->> 'posts')::integer + 1 then
+    raise exception 'the page''s people count the veiled post wrongly: %', page -> 'people';
+  end if;
+  perform tests.unbecome();
+
+  -- The author's own player reads the same, and the unadjusted count is read by no API role (the base table is not granted, and has no policy that lets a read through).
+  perform tests.become(ann);
+  if (select posts from character_post_counts where character = a) is distinct from 2 then raise exception 'the author reads her own count differently'; end if;
+  perform tests.unbecome();
+  got := pg_temp.as_(ray, 'select posts from character_post_counts_base');
+  if got is null or got = 'ok' then raise exception 'a signed-in player read the unadjusted counts: %', got; end if;
+  if has_table_privilege('authenticated', 'character_post_counts_base', 'select') or has_table_privilege('anon', 'character_post_counts_base', 'select') or has_table_privilege('anon', 'character_post_counts', 'select') then
+    raise exception 'an API role can read the unadjusted counts, or a visitor the counts';
+  end if;
+  -- The writers keep the stored count true: the next post of hers is counted once, under her own name.
+  perform tests.post(a, t, 'Another post.');
+  perform tests.become(ray);
+  if (select posts from character_post_counts where character = a) is distinct from 3 or (select posts from character_post_counts where character = stand) is distinct from (s0 ->> 'posts')::integer + 1 then raise exception 'a new post of the author''s is miscounted while the veil is up'; end if;
+  perform tests.unbecome();
+
+  -- An admin's end gives every count back at once, and nothing stored moved.
+  perform tests.become(adm);
+  perform reverse_card(veil);
+  perform tests.unbecome();
+  perform tests.become(ray);
+  shown := (select to_jsonb(n) from (select posts, spins, cards from character_post_counts where character = a) n);
+  if shown is distinct from '{"posts": 4, "spins": 1, "cards": 1}'::jsonb then raise exception 'the author''s count after the veil was ended: %', shown; end if;
+  if (select to_jsonb(n) from (select coalesce(sum(posts), 0) as posts, coalesce(sum(spins), 0) as spins, coalesce(sum(cards), 0) as cards from character_post_counts where character = stand) n) is distinct from s0 then raise exception 'the stand-in keeps a count after the veil was ended'; end if;
+  if (profile_page(a) -> 'counts' ->> 'posts')::integer is distinct from 4 then raise exception 'the author''s profile after the end: %', profile_page(a) -> 'counts'; end if;
+  perform tests.unbecome();
 end $$;

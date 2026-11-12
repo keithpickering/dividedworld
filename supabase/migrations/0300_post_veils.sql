@@ -16,6 +16,8 @@
 --     5. landing           land_refusal (what a card's landing refuses on a post, read for every back a quote meets, whatever the card) and land_rows (what a landed post play writes beside its Act), called by place_cast
 --                          for a cast and by lay_sprung for a Move landing on a quote. spring_facts reads land_refusal, spring_traps lands a Move only when it has nothing to say. TASK 5 EXTENDS THESE TWO in a later
 --                          migration (the reaction card's configuration and its row); the places are marked `Task 5` below.
+--     5b. the counts       character_post_counts is a view that counts a veiled post (and its author's spins and cards on it) for the stand-in and not for its author while the veil is live, for every reader; the stored
+--                          table is character_post_counts_base, written by the trigger as before and read by no API role. profile_page, record_page and my_characters_page are made again over the view.
 --     6. the reads         thread_open, my_cards_ended (now the caller's own rows, as my_reactions is), play_moment, card_target_reach, start_visit, open_report, thread_page (`veiled`),
 --                          my_veiled_posts (the author's own rows), my_group_moves (a security-invoker view that read `acts.character`, which the revoke broke), presence_listed, pool_named, pool_signals
 --                          and system_digest (the staff lists that would take the stand-in for a persona).
@@ -669,21 +671,27 @@ grant select on my_veiled_posts to authenticated;
 -- written, and spring_facts reads it for every back a quote meets so a Move that cannot land stays set. It does the same reads whatever the card is (the post's author's staff flag, the visits that name it, the
 -- stand-in) and only then asks what this card refuses, so a back that is a veil, a reaction card or any other Move costs the same reads in the same order.
 --   An author veil is refused on a post by a staff character ("a post by the staff keeps its name": the staff are known to be staff, and a visit's record names its Mod), on a post any Mod Bot visit names (its
---   record names the author), and where the forum has no stand-in to show.
+--   record names the author), on a post a card at character reach was played from (its Act and its play_reach row name the author), and where the forum has no stand-in to show. Every other public Act that points at a
+--   post and names its author is downstream of a visit (an infraction, a ban, an appeal, a verdict, an interception are written only through one), so the visit's refusal holds them.
 --   TASK 5 adds a reaction card's refusals here (its configuration, an emoji the forum already has, a key the post already holds), after these.
 create function land_refusal(kind_of card_kinds, post uuid, config jsonb) returns text
 language plpgsql stable security definer set search_path = public, pg_temp as $$
 declare
   by_staff boolean;
   visited boolean;
+  played boolean;
   stood uuid;
 begin
   select c.staff is not null into by_staff from acts a join characters c on c.id = a.character where a.id = land_refusal.post;
   visited := exists (select 1 from acts v where v.kind = 'visit' and v.target_act_id = land_refusal.post);
+  -- A card at character reach is stored with target_act_id = the post it was played from, and its payload and its play_reach row name that post's author: a public Act that points at the post and names its
+  -- author, made by any character (the author's own too, whose `character` the projection changes and whose payload it does not). One probe of acts_target, which holds a post's few targeting Acts.
+  played := exists (select 1 from acts k where k.kind = 'card' and k.target_act_id = land_refusal.post and k.payload ->> 'reach' = 'character');
   stood := stand_in();
   if kind_of.veil = 'author' then
     if by_staff then return 'a post by the staff keeps its name'; end if;
     if visited then return 'a Mod Bot has been to this post, so its author is on the record'; end if;
+    if played then return 'a card played from this post names its author, so the author is on the record'; end if;
     if stood is null then return 'this forum has no one to stand in for an author'; end if;
   end if;
   return null;
@@ -1186,6 +1194,229 @@ end $$;
 
 revoke execute on function place_cast(uuid, text, uuid, jsonb, text, text, uuid, uuid, integer, jsonb) from public, anon, authenticated, service_role;
 
+
+-- ===================================================================================== 5b. the counts ====
+-- character_post_counts (0030) is publicly readable, and profile_page and record_page return it as `counts` and thread_page as `posts`: it counted a veiled post for its author, so a profile that lists one post fewer than its
+-- count says proved the author has a hidden post. The count a player reads is now the projection, as acts_public is, for every reader alike: the stored table is renamed character_post_counts_base (the trigger and the lock still
+-- write and take it, as before, and no API role reads it), and character_post_counts is a view over it that, while an author veil is live, takes the post and the spins and cards its author made on it from the author and gives
+-- them to the stand-in. Nothing stored moves when a veil lands or ends (no job runs then): the live veils are read with the count, a few rows by post_veils_ends, and the author's count is whole again by itself when the veil's
+-- time passes or an admin ends its play. A count is the Acts acts_count_character counts (a post, a spin, a card), and the Acts the projection shows under the stand-in are the same ones: a post, and the spins and cards its
+-- author made with it as their target.
+alter table character_post_counts rename to character_post_counts_base;
+drop policy read_public on character_post_counts_base;
+revoke all on character_post_counts_base from public, anon, authenticated;
+
+-- What each live author veil takes: the veiled post, and the spins and cards its author made on it (one row per post, whatever number of veils it holds). The stand-in is found by its index, as acts_public finds it.
+create view character_veiled_counts as
+  select v.author, 1 as posts,
+         (select count(*) from acts k where k.kind = 'spin' and k.target_act_id = v.post and k.character = v.author)::integer as spins,
+         (select count(*) from acts k where k.kind = 'card' and k.target_act_id = v.post and k.character = v.author)::integer as cards
+  from (select distinct l.post, l.author from post_veils_live l where l.veil = 'author') v;
+-- And the change to each character's count: minus for the author, plus for the stand-in.
+create view character_count_moves as
+  select s.character, sum(s.posts)::integer as posts, sum(s.spins)::integer as spins, sum(s.cards)::integer as cards
+  from (
+    select v.author as character, -v.posts as posts, -v.spins as spins, -v.cards as cards from character_veiled_counts v
+    union all
+    select (select k.id from characters k where k.staff_kind = 'anonymous') as character, v.posts, v.spins, v.cards from character_veiled_counts v
+  ) s
+  group by s.character;
+-- The count a player reads: the stored row (found by its key) with the change added, and the stand-in's change where the stand-in has no stored row (it never acts). Readable as the character is, as 0031's policy said: only
+-- once it is in characters_public.
+create view character_post_counts as
+  select u.character, u.posts, u.spins, u.cards
+  from (
+    select b.character, b.posts + coalesce(m.posts, 0) as posts, b.spins + coalesce(m.spins, 0) as spins, b.cards + coalesce(m.cards, 0) as cards
+    from character_post_counts_base b
+    left join character_count_moves m on m.character = b.character
+    union all
+    select m.character, m.posts, m.spins, m.cards
+    from character_count_moves m
+    where m.character = (select k.id from characters k where k.staff_kind = 'anonymous')
+      and not exists (select 1 from character_post_counts_base b where b.character = m.character)
+  ) u
+  where exists (select 1 from characters_public p where p.id = u.character);
+revoke all on character_veiled_counts, character_count_moves, character_post_counts from public, anon, authenticated, service_role;
+grant select on character_post_counts to authenticated, service_role;
+
+-- The writers keep the stored count true, so they name the stored table: acts_count_character and backfill_character_post_counts (0030), and lock_for_quote (0148), which makes and locks the rows of a quote's setters and
+-- its poster. Each is as it was written, with the table's new name.
+create or replace function acts_count_character() returns trigger
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  p integer := case when new.kind = 'post' then 1 else 0 end;
+  s integer := case when new.kind = 'spin' then 1 else 0 end;
+  k integer := case when new.kind = 'card' then 1 else 0 end;
+begin
+  insert into character_post_counts_base as c (character, posts, spins, cards) values (new.character, p, s, k)
+  on conflict (character) do update set posts = c.posts + p, spins = c.spins + s, cards = c.cards + k;
+  return new;
+end $$;
+
+create or replace function backfill_character_post_counts() returns void
+language sql set search_path = public, pg_temp as $$
+  insert into character_post_counts_base (character, posts, spins, cards)
+  select a.character, count(*) filter (where a.kind = 'post'), count(*) filter (where a.kind = 'spin'), count(*) filter (where a.kind = 'card')
+  from acts a where a.kind in ('post', 'spin', 'card') and a.character is not null group by a.character
+  on conflict (character) do update set posts = excluded.posts, spins = excluded.spins, cards = excluded.cards
+$$;
+
+-- lock_for_quote (0148)
+create or replace function lock_for_quote(poster uuid, in_thread uuid, quoting uuid) returns uuid[]
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  locked uuid[];
+  setters uuid[];
+  on_board uuid;
+  seen uuid[];
+begin
+  -- The live backs seen now, which decide step 2b. A back that appears after this is found at step 3 without its 2b rows held, and does not spring on this write.
+  seen := array(select f.play from face_down f where f.post = quoting and f.ends_at > now()
+                and not exists (select 1 from acts s where s.kind = 'spring' and (s.payload ->> 'set') = f.play::text)
+                and not exists (select 1 from acts tb where tb.kind = 'take_back' and (tb.payload ->> 'set') = f.play::text));
+  if cardinality(seen) > 0 then
+    select t.board into on_board from threads t where t.id = in_thread;
+    perform 1 from characters c where c.id = poster for no key update;
+    perform 1 from boards b where b.id = on_board for no key update;
+  end if;
+  -- Step 3: the quoted post's live, unsprung back, in `play` order, in one statement.
+  select coalesce(array_agg(b.play), '{}'), coalesce(array_agg(b.setter), '{}') into locked, setters
+  from (select f.play, a.character as setter from face_down f join acts a on a.id = f.play
+        where f.post = quoting and f.ends_at > now()
+          and not exists (select 1 from acts s where s.kind = 'spring' and (s.payload ->> 'set') = f.play::text)
+          and not exists (select 1 from acts tb where tb.kind = 'take_back' and (tb.payload ->> 'set') = f.play::text)
+        order by f.play for update of f) b;
+  -- Step 4: the thread whose seq the insert takes.
+  perform 1 from threads where id = in_thread for no key update;
+  -- Step 5: the poster's count row and every setter's, by character, each made first where it is missing.
+  insert into character_post_counts_base (character)
+  select distinct c from unnest(setters || poster) c order by c on conflict do nothing;
+  perform 1 from character_post_counts_base where character = any (setters || poster) order by character for update;
+  -- Only a back seen before step 2b springs: one that appeared since stays set for the next quote.
+  return array(select u from unnest(locked) u where u = any (seen));
+end $$;
+revoke execute on function lock_for_quote(uuid, uuid, uuid) from public, anon, authenticated, service_role;
+
+-- profile_page, record_page (0156) and my_characters_page (0125), written again whole and unchanged: each reads the counts in a `begin atomic` body, which holds the relation it was made over, so the three are made again to
+-- hold the view that now has the name.
+create or replace function profile_page(in_character uuid) returns jsonb
+language sql stable security invoker set search_path = public, pg_temp
+begin atomic
+  with c as (
+    select id, name, joined, staff, office, warn_points, banned_until, "group" from characters_public where id = in_character
+  ), acts5 as (
+    -- PROFILE_ROWS (engine/ui/profile/record.ts): the newest few of its own Acts, with no count.
+    select a.* from acts_public a
+    where a.character = in_character and a.kind in ('post', 'spin', 'card')
+    order by a.created_at desc limit 5
+  ), rv as (
+    select r.act, r.character, r.class, r.at, r.via, r.thread from class_reveals r where r.character = in_character
+  ), tn as (
+    select t.act, t.character, t.at, t.was from turns_announced t where t.character = in_character
+  )
+  select case when not exists (select 1 from c) then null else jsonb_build_object(
+    'character', (select to_jsonb(c) from c),
+    'profile', (select to_jsonb(p) from (
+      select character, title, signature, avatar_square, avatar_portrait, square_frame, portrait_frame, pip_style, pronouns
+      from character_profiles where character = in_character) p),
+    'counts', (select to_jsonb(n) from (select character, posts, spins, cards from character_post_counts where character = in_character) n),
+    'standing', standing_place(in_character),
+    'settled_at', (select s.ends_at from settlements s order by s.ends_at desc limit 1),
+    'season', (select to_jsonb(s) from current_season s limit 1),
+    'reveals', coalesce((select jsonb_agg(to_jsonb(r) order by r.at, r.act::text collate "C") from rv r), '[]'::jsonb),
+    'turns', coalesce((select jsonb_agg(to_jsonb(t) order by t.at, t.act::text collate "C") from tn t), '[]'::jsonb),
+    'acts', coalesce((select jsonb_agg(to_jsonb(a) order by a.created_at desc) from acts5 a), '[]'::jsonb),
+    -- The card plays' target posts and the Turns' tallies, placed with one batched read (playLinks, turnLinks).
+    'targets', coalesce((select jsonb_agg(to_jsonb(x)) from acts_public x
+      where x.id in (select a.target_act_id from acts5 a where a.kind = 'card' and a.target_act_id is not null union select t.act from tn t)), '[]'::jsonb),
+    'seasons', coalesce((select jsonb_agg(to_jsonb(a) order by a.at desc, a.season desc) from (
+      select f.number as season, r.place, r.standing, f.results_at as at
+      from season_results r join seasons_finished f on f.id = r.season
+      where r.character = in_character
+      order by f.results_at desc, f.number desc limit 50) a), '[]'::jsonb),
+    'unread', my_alerts_unread()
+  ) end;
+end;
+
+create or replace function record_page(in_character uuid, in_kind text, in_page integer) returns jsonb
+language sql stable security invoker set search_path = public, pg_temp
+begin atomic
+  with c as (
+    select id, name, joined, staff, office, warn_points, banned_until, "group" from characters_public where id = in_character
+  ), k as (
+    select case when in_kind in ('all', 'post', 'spin', 'card', 'class', 'seasons') then in_kind else 'all' end as kind,
+           least(greatest(coalesce(in_page, 1), 1), 10000) as page
+  ), rv as (
+    select r.act, r.character, r.class, r.at, r.via, r.thread from class_reveals r, k
+    where r.character = in_character and k.kind in ('all', 'class')
+  ), tn as (
+    select t.act, t.character, t.at, t.was from turns_announced t, k
+    where t.character = in_character and k.kind in ('all', 'class')
+  ), seasons_read as (
+    select f.number as season, r.place, r.standing, f.results_at as at
+    from season_results r join seasons_finished f on f.id = r.season, k
+    where k.kind in ('all', 'seasons') and r.character = in_character
+    order by f.results_at desc, f.number desc limit 50
+  ), w as (
+    -- The window of the character's own Acts: for `all`, from `max(0, offset - extras)` for `offset + 20 - from` rows
+    -- (the extras are merged in by the client, `mergeWindow`); for one kind, the page itself; for class and seasons, none.
+    select case k.kind when 'all' then array['post', 'spin', 'card'] when 'post' then array['post'] when 'spin' then array['spin']
+                       when 'card' then array['card'] else array[]::text[] end as kinds,
+           case when k.kind = 'all' then greatest(0, (k.page - 1) * 20 - ((select count(*) from rv) + (select count(*) from tn) + (select count(*) from seasons_read)))
+                else (k.page - 1) * 20 end as from_row,
+           case when k.kind = 'all' then (k.page - 1) * 20 + 20 else 20 end as base
+    from k
+  ), acts_read as (
+    -- The kinds as an init plan, so the planner keeps the ordered scan of the character's Acts with the limit pushed down.
+    select a.* from acts_public a
+    where a.character = in_character and a.kind = any (((select kinds from w)::text[]))
+    order by a.created_at desc
+    offset (select from_row from w)
+    limit (select case when k.kind = 'all' then w.base - w.from_row else 20 end from w, k)
+  )
+  select case when not exists (select 1 from c) then null else jsonb_build_object(
+    'kind', (select kind from k),
+    'page', (select page from k),
+    'character', (select to_jsonb(c) from c),
+    'profile', (select to_jsonb(p) from (
+      select character, title, signature, avatar_square, avatar_portrait, square_frame, portrait_frame, pip_style, pronouns
+      from character_profiles where character = in_character) p),
+    -- RecordScreen reads the counters for all, post, spin and card only.
+    'counts', (select to_jsonb(n) from (select character, posts, spins, cards from character_post_counts where character = in_character and (select kind from k) in ('all', 'post', 'spin', 'card')) n),
+    'reveals', coalesce((select jsonb_agg(to_jsonb(r) order by r.at, r.act::text collate "C") from rv r), '[]'::jsonb),
+    'turns', coalesce((select jsonb_agg(to_jsonb(t) order by t.at, t.act::text collate "C") from tn t), '[]'::jsonb),
+    'seasons', coalesce((select jsonb_agg(to_jsonb(a) order by a.at desc, a.season desc) from seasons_read a), '[]'::jsonb),
+    'acts', coalesce((select jsonb_agg(to_jsonb(a) order by a.created_at desc) from acts_read a), '[]'::jsonb),
+    'targets', coalesce((select jsonb_agg(to_jsonb(x)) from acts_public x
+      where x.id in (select a.target_act_id from acts_read a where a.kind = 'card' and a.target_act_id is not null union select t.act from tn t)), '[]'::jsonb),
+    'unread', my_alerts_unread()
+  ) end;
+end;
+
+create or replace function my_characters_page() returns jsonb
+language sql stable security invoker set search_path = public, pg_temp
+begin atomic
+  select jsonb_build_object(
+    'characters', coalesce((
+      select jsonb_agg(
+        to_jsonb(c) || jsonb_build_object(
+          'face', (
+            select to_jsonb(cp) || jsonb_build_object('profile', (
+              select to_jsonb(p) from (
+                select r.character, r.title, r.signature, r.avatar_square, r.avatar_portrait, r.square_frame, r.portrait_frame, r.pip_style, r.pronouns
+                from character_profiles r where r.character = cp.id) p))
+            from characters_public cp where cp.id = c.id),
+          'counts', (select to_jsonb(n) from (select k.character, k.posts, k.spins, k.cards from character_post_counts k where k.character = c.id) n),
+          'standing', (select s.standing from current_standings s where s.character = c.id),
+          'reveals', coalesce((select jsonb_agg(to_jsonb(r) order by r.at, r.act::text collate "C") from (
+            select v.act, v.character, v.class, v.at, v.via, v.thread from class_reveals v where v.character = c.id) r), '[]'::jsonb),
+          'turns', coalesce((select jsonb_agg(to_jsonb(t) order by t.at, t.act::text collate "C") from (
+            select u.act, u.character, u.at, u.was from turns_announced u where u.character = c.id) t), '[]'::jsonb))
+        order by c.name)
+      from my_characters c), '[]'::jsonb),
+    'nextSettlementAt', next_settlement_at()
+  );
+end;
 
 -- ===================================================================================== 6. the reads ====
 -- Each is copied from its latest definition, named above it, changing only what is named there.
