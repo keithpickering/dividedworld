@@ -38,7 +38,7 @@
  * it is open the plate, the aura, Alerts and Menu are inert and fade to 40% (frame.css; the HUD root
  * carries data-kb-hand-open), and the hand button stays live as the way to close it. Opening puts
  * focus on the armed card, else the first. A press anywhere else lands on the backdrop, a
- * transparent div between the board and the cards: it closes the hand on the press, and the click
+ * transparent div between the board and the cards, or on the HUD's own faded parts, which are inert and sit above it: either closes the hand on the press, and the click
  * that ends the press is swallowed, since by then the backdrop is gone and the click would land on
  * whatever lay beneath it, a link or a post's button the player only meant to dismiss the hand from.
  * Arming a card closes the hand, as on the phone, and leaves the armed card's postcard standing over
@@ -456,7 +456,7 @@ export function Hud() {
           </div>
         </div>
       )}
-      <section ref={section} className={HUD_CLASS} aria-label="Game HUD" style={{ ...tabVars, '--kb-hand-fade-ms': feel ? `${feel.exit}ms` : '0ms', '--kb-hand-fade-ease': feel?.ease ?? 'ease' } as CSSProperties} {...(modal ? { 'data-kb-hand-open': '' } : {})}>
+      <section ref={section} className={HUD_CLASS} aria-label="Game HUD" style={{ ...tabVars, '--kb-hand-fade-ms': feel ? `${feel.exit}ms` : '0ms', '--kb-hand-fade-ease': feel?.ease ?? 'ease' } as CSSProperties} {...(modal ? { 'data-kb-hand-open': '', onPointerDown: (e: ReactPointerEvent) => { if (!handButton.current?.contains(e.target as Node)) dismiss(e); } } : {})}>
         <div className="kb-glass kb-hud-glass" style={hudCalm}>
           <Smoke surface="hud" holder="kb-hud-ground kb-glass-hud-tab">
             <svg className="kb-hud-seam" aria-hidden="true" focusable="false" preserveAspectRatio="none">

@@ -104,6 +104,29 @@ describe('the hand on the Main board is a modal', () => {
     expect(under).toHaveBeenCalledTimes(1);
   });
 
+  test('a press on the HUD itself (its plate, or its bare ground) closes the hand like the backdrop, but a press on the hand button is the button\'s', async () => {
+    const under = vi.fn();
+    setup(<button type="button" onClick={under}>beneath</button>);
+    const hand = await handButton();
+    await userEvent.click(hand);
+    const plate = document.querySelector('.kb-hud-plate')!;
+    expect(fireEvent.pointerDown(plate)).toBe(false);
+    expect(hand).toHaveAttribute('aria-expanded', 'false');
+    expect(hand).toHaveFocus();
+    fireEvent.click(plate);
+    expect(under).not.toHaveBeenCalled();
+    await userEvent.click(hand);
+    expect(hand).toHaveAttribute('aria-expanded', 'true');
+    expect(fireEvent.pointerDown(document.querySelector('.kb-hud')!)).toBe(false);
+    expect(hand).toHaveAttribute('aria-expanded', 'false');
+    /* The press's own click is swallowed once, then the hand button's press is not a dismissal: its click opens the hand. */
+    fireEvent.click(screen.getByRole('button', { name: 'beneath' }));
+    await userEvent.click(hand);
+    expect(hand).toHaveAttribute('aria-expanded', 'true');
+    fireEvent.pointerDown(hand);
+    expect(hand).toHaveAttribute('aria-expanded', 'true');
+  });
+
   test('pressing a card arms it and closes the hand, and the armed card shows as a peek over the hand button', async () => {
     setup();
     const hand = await handButton();
