@@ -14,7 +14,7 @@
  * so it costs no canvas. Each screen's model is its own; for the same strokes the shares are close, not equal.
  */
 import { STROKES } from '../whoops.ts';
-import { beginLine, cellGrid, kOf, linesOf, pointGrid, radiusOf, splatInto, type Grid, type Rect } from './field.ts';
+import { addBall, beginLine, cellGrid, endsOf, kOf, linesOf, pointGrid, radiusOf, splatInto, type Ball, type Grid, type Rect } from './field.ts';
 import { THRESHOLD, type Box, type Splat } from './splat.ts';
 
 /** The wash's brush and the author's pen, in px: a hand-sized brush on the board's 15px type, the pen about half of it. */
@@ -151,6 +151,11 @@ interface LineRec {
   drops?: number;
   /** The buckets this line is already filed under. */
   readonly filed: Set<number>;
+  /** The line's brush's down-to-across ratio and its reach (2r, round space, px), for the replay's skipping of far pen segments. */
+  readonly k: number;
+  readonly reach: number;
+  /** A closed pen line's bulb and drops, worked out once at `end`. */
+  balls?: readonly Ball[];
 }
 
 /** A line being drawn on a layer: `to` adds the point the pen moved to, `end` lifts it (a pen's ends, a dab's top-up). */
@@ -188,8 +193,15 @@ export class LayerInk {
   private readonly lines: LineRec[] = [];
   /** The lines (by index, in order) whose reach overlaps each bucket of the plane. */
   private readonly buckets = new Map<number, number[]>();
-  /** The splat's field, by point, as asked. */
-  private readonly memo = new Map<number, Map<number, number>>();
+  /** The splat's field at a point as asked, and the last answer for the point with the version of its bucket it was made at. */
+  private readonly memo = new Map<number, Map<number, { splat: number; ver: number; value: number }>>();
+  /** Each bucket's version: a fresh number whenever a segment within reach of it is filed or a line that reaches it is ended. */
+  private readonly versions = new Map<number, number>();
+  private tick = 0;
+  /** One point's grid, reused by every replay. */
+  private readonly scratch = pointGrid(0, 0);
+  /** Work done, for a cost test: replays of a point's lines, and a pen line's ends worked out. */
+  readonly stats = { replays: 0, ends: 0 };
   private memoed = 0;
   /** The buckets' size in shares across and down, and how many lie across and down the box. */
   private readonly bw: number;
@@ -235,9 +247,9 @@ export class LayerInk {
     if (stroke.continues && this.current && this.current.tool === stroke.tool) return this.current.handle;
     const line = beginLine(this.cells, this.box, stroke);
     const idx = this.lines.length;
-    const rec: LineRec = { first: stroke, points: [], open: true, filed: new Set() };
-    this.lines.push(rec);
     const k = kOf(stroke, this.box), r = radiusOf(stroke, this.box);
+    const rec: LineRec = { first: stroke, points: [], open: true, filed: new Set(), k, reach: 2 * r };
+    this.lines.push(rec);
     const handle: LiveLine = {
       to: (p) => {
         if (!rec.open) return;
@@ -253,7 +265,11 @@ export class LayerInk {
         if (this.current?.handle === handle) this.current = null;
         /* A pen's bulb and drops lie further out than its path does. */
         const end = rec.points[rec.points.length - 1];
-        if (stroke.tool === 'ink' && end) this.file(rec, idx, end, end, 13 * r, k);
+        if (stroke.tool === 'ink' && end) {
+          rec.balls = endsOf([{ ...stroke, points: rec.points, drops }], this.box);
+          this.stats.ends++;
+          this.file(rec, idx, end, end, 13 * r, k);
+        } else if (end) this.file(rec, idx, end, end, 2 * r, k); /* a wash's top-up lies within its brush of the last point */
         this.absorb(line.end(drops));
       },
     };
@@ -275,11 +291,18 @@ export class LayerInk {
     for (let j = Math.max(j0, -1); j <= Math.min(j1, this.bny); j++) {
       for (let i = Math.max(i0, -1); i <= Math.min(i1, this.bnx); i++) {
         const key = this.bucketKey(i, j);
+        this.versions.set(key, ++this.tick);
         if (rec.filed.has(key)) continue;
         rec.filed.add(key);
         const list = this.buckets.get(key);
-        if (list) list.push(idx);
-        else this.buckets.set(key, [idx]);
+        if (!list) this.buckets.set(key, [idx]);
+        else if (list[list.length - 1]! < idx) list.push(idx);
+        else {
+          /* Two lines can be open at once (the live stroke and the sweep), so one can be filed after a later one: keep line order. */
+          let lo = 0, hi = list.length;
+          while (lo < hi) { const m = (lo + hi) >> 1; if (list[m]! < idx) lo = m + 1; else hi = m; }
+          list.splice(lo, 0, idx);
+        }
       }
     }
   }
@@ -296,20 +319,66 @@ export class LayerInk {
     }
   }
 
-  /** The field's value at a point (shares of the box): the splat's, then the lines that reach it, replayed whole and in order. */
+  /**
+   * The field's value at a point (shares of the box): the splat's, then the lines that reach it, replayed whole and in
+   * order. With no line near it that is the splat's value as it stands; otherwise the answer is kept with its bucket's
+   * version, so an unchanged bucket is a hit and a segment filed within reach of the point is what makes it replay.
+   */
   valueAt(x: number, y: number): number {
-    const grid = pointGrid(x * this.box.w, y * this.box.h);
-    grid.values[0] = this.splatValue(x, y);
-    const near = this.buckets.get(this.bucketKey(Math.floor(x / this.bw), Math.floor(y / this.bh)));
-    if (near) {
-      for (const idx of [...near].sort((p, q) => p - q)) {
-        const rec = this.lines[idx]!;
-        const line = beginLine(grid, this.box, rec.first);
+    const key = this.bucketKey(Math.floor(x / this.bw), Math.floor(y / this.bh));
+    const near = this.buckets.get(key);
+    const base = this.splatValue(x, y);
+    if (!near || near.length === 0) return base.splat;
+    const ver = this.versions.get(key) ?? 0;
+    if (base.ver === ver) return base.value;
+    this.stats.replays++;
+    base.value = this.replay(x, y, base.splat, near);
+    base.ver = ver;
+    return base.value;
+  }
+
+  /** The splat's value at the point, then each of `near` (line indexes, in order) replayed whole, on the layer's one scratch grid. */
+  private replay(x: number, y: number, splat: number, near: readonly number[]): number {
+    const g = this.scratch as { ox: number; oy: number } & Grid;
+    g.ox = x * this.box.w;
+    g.oy = y * this.box.h;
+    g.values[0] = splat;
+    g.washed[0] = 0;
+    g.penOpen = false;
+    g.scope?.fill(0);
+    for (const idx of near) {
+      const rec = this.lines[idx]!;
+      if (rec.first.tool === 'wash') {
+        /* A wash's discs carry from one segment to the next, so every piece of it is replayed. */
+        const line = beginLine(g, this.box, rec.first);
         for (const p of rec.points) line.to(p);
         if (!rec.open) line.end(rec.drops);
-      }
+      } else this.replayPen(g, rec, g.ox, g.oy / rec.k);
     }
-    return grid.values[0]!;
+    return g.values[0]!;
+  }
+
+  /**
+   * A pen line at one point. Its segments are independent (the point keeps the most any one gives it: field.ts's
+   * "most, not the sum"), so the point's value is raised by the largest (1 - d^2/R^2)^3 over the segments, and a
+   * segment whose box lies more than a brush's reach (R) from the point is skipped. A closed line's bulb and drops
+   * are the balls kept at `end`.
+   */
+  private replayPen(g: Grid, rec: LineRec, px: number, py: number): void {
+    const { box } = this, R = rec.reach, R2 = R * R, pts = rec.points;
+    let most = 0;
+    const seg = (a: Pt, b: Pt) => {
+      const ax = a[0] * box.w, ay = (a[1] * box.h) / rec.k, bx = b[0] * box.w, by = (b[1] * box.h) / rec.k;
+      if (px < Math.min(ax, bx) - R || px > Math.max(ax, bx) + R || py < Math.min(ay, by) - R || py > Math.max(ay, by) + R) return;
+      const d2 = segment2(px, py, ax, ay, bx, by);
+      if (d2 >= R2) return;
+      const q = 1 - d2 / R2, kv = q * q * q;
+      if (kv > most) most = kv;
+    };
+    if (pts.length === 1) seg(pts[0]!, pts[0]!);
+    else for (let i = 1; i < pts.length; i++) seg(pts[i - 1]!, pts[i]!);
+    g.values[0] = g.values[0]! + most;
+    if (!rec.open && rec.balls) for (const ball of rec.balls) addBall(g, rec.k, ball);
   }
 
   /** Whether a point (shares of the box) has ink on this layer now. */
@@ -318,16 +387,16 @@ export class LayerInk {
   }
 
   /**
-   * The splat's own field at a point. It never changes, and the lines under ink are asked about the same points again at
-   * each refresh of a sweep, so an answer is kept (by the point, exactly). The memory is bounded: it never holds more than
-   * `MEMO_MOST` points, and starts over when it would.
+   * The splat's own field at a point, with the entry the point's last answer is kept in. The splat's never changes, and the lines under ink are
+   * asked about the same points again at each refresh of a sweep, so an answer is kept (by the point, exactly). The memory is
+   * bounded: it never holds more than `MEMO_MOST` points, and starts over when it would.
    */
-  private splatValue(x: number, y: number): number {
-    let held = this.memo.get(x)?.get(y);
-    if (held !== undefined) return held;
+  private splatValue(x: number, y: number): { splat: number; ver: number; value: number } {
+    const held = this.memo.get(x)?.get(y);
+    if (held) return held;
     const g = pointGrid(x * this.box.w, y * this.box.h);
     splatInto(g, this.splat, this.box);
-    held = g.values[0]!;
+    const entry = { splat: g.values[0]!, ver: -1, value: 0 };
     if (this.memoed >= MEMO_MOST) {
       this.memo.clear();
       this.memoed = 0;
@@ -337,9 +406,9 @@ export class LayerInk {
       column = new Map();
       this.memo.set(x, column);
     }
-    column.set(y, held);
+    column.set(y, entry);
     this.memoed++;
-    return held;
+    return entry;
   }
 
   /** The share of the layer's ink washed away, 0 to 1 (a layer with no ink is already clean). */

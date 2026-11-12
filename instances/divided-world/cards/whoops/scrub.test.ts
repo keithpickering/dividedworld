@@ -554,3 +554,88 @@ test('a long stroke is pieces that each start where the last ended, and only the
   const wash = fitStroke({ tool: 'wash', ...b, points: zig }, step);
   assert.ok(wash.every((s) => !('drops' in s)), 'a wash has no drops');
 });
+
+/* ------------------------------------------------------- has() replays only what changed ---- */
+
+/** How many replays of a point's lines `ink` has run (the layer counts them for this test). */
+const replaysOf = (ink: LayerInk): number => {
+  const n = (ink as unknown as { stats?: { replays: number } }).stats?.replays;
+  assert.ok(Number.isFinite(n), 'the layer counts its replays (stats.replays)');
+  return n!;
+};
+
+test('has over unchanged buckets replays nothing the second time, and a to() near a point invalidates just it', () => {
+  const box: Box = { w: 390, h: 20_000 };
+  const ink = new LayerInk(splatOf(3), [], box);
+  const wash = ink.begin(washIn(box, []));
+  for (let i = 0; i < 600; i++) wash.to([0.5 + 0.3 * Math.sin(i / 30), 0.01 + (i / 600) * 0.3]);
+  const pen = ink.begin(penIn(box, []));
+  for (let i = 0; i < 300; i++) pen.to([0.3 + 0.2 * Math.cos(i / 20), 0.02 + (i / 300) * 0.25]);
+  pen.end(2);
+  const pts: Pt[] = Array.from({ length: 14 * 51 }, (_, n) => [(n % 51) / 50, 0.01 + Math.floor(n / 51) * 0.02]);
+  const first = pts.map(([x, y]) => ink.valueAt(x, y));
+  const after1 = replaysOf(ink);
+  assert.ok(after1 > 0, `the first pass replays lines (${after1})`);
+  const second = pts.map(([x, y]) => ink.valueAt(x, y));
+  assert.deepEqual(second, first);
+  assert.equal(replaysOf(ink), after1, 'the second pass over unchanged buckets replays nothing');
+  /* A point the live line moves next to changes, and only the points in reach of that move replay. */
+  const cx = Math.floor(0.5 * box.w / CELL_PX), cy = Math.floor(0.2 * box.h / CELL_PX);
+  const mark = centerShare(box, cx, cy);
+  const before = ink.valueAt(...mark);
+  const settled = replaysOf(ink);
+  assert.equal(ink.valueAt(...mark), before);
+  assert.equal(replaysOf(ink), settled, 'an unchanged point is a hit');
+  const live = ink.begin(penIn(box, []));
+  live.to(mark); live.to([mark[0] + 0.01, mark[1]]);
+  const changed = ink.valueAt(...mark);
+  assert.ok(changed > before + 0.1, `the pen raised it (${before} to ${changed})`);
+  near(changed, ink.cells.values[cy * ink.cells.cols + cx]!, 1e-4, 'the new value is the cell\'s');
+  const mid = replaysOf(ink);
+  pts.forEach(([x, y]) => ink.valueAt(x, y));
+  assert.ok(replaysOf(ink) - mid < 60, `only points near the move replay (${replaysOf(ink) - mid} of ${pts.length})`);
+  live.end(0);
+  near(ink.valueAt(...mark), ink.cells.values[cy * ink.cells.cols + cx]!, 1e-4, 'and once lifted');
+});
+
+test('a point with no line near it is the splat\'s value, with no replay', () => {
+  const box: Box = { w: 390, h: 20_000 };
+  const splat = splatOf(3), ink = new LayerInk(splat, [washIn(box, [[0.2, 0.9], [0.3, 0.9]])], box);
+  const before = replaysOf(ink);
+  for (let k = 0; k < 100; k++) ink.valueAt(k / 100, 0.1);
+  assert.equal(replaysOf(ink), before, 'far from every line');
+});
+
+test('a closed pen line\'s end balls are worked out once, not on every query', () => {
+  const box: Box = { w: 390, h: 20_000 };
+  const ink = new LayerInk(splatOf(3), [], box);
+  const pen = ink.begin(penIn(box, []));
+  for (let i = 0; i < 200; i++) pen.to([0.3 + 0.2 * Math.cos(i / 20), 0.02 + (i / 200) * 0.1]);
+  pen.end(3);
+  const ends = (ink as unknown as { stats?: { ends: number } }).stats?.ends;
+  assert.ok(Number.isFinite(ends), 'the layer counts the ends it works out (stats.ends)');
+  for (let k = 0; k < 50; k++) ink.valueAt(0.3 + k * 0.001, 0.12 + k * 0.0001);
+  assert.equal((ink as unknown as { stats: { ends: number } }).stats?.ends, ends, 'queries do not recompute the ends');
+  assert.equal(ends, 1, 'the ends were worked out once, at end()');
+});
+
+test('the LiveLine handle: end twice and to after end are no-ops, and a second open pen throws and adds no line', () => {
+  const box = DESK, ink = new LayerInk(splatOf(2), [], box);
+  const a = ink.begin(penIn(box, []));
+  a.to([0.3, 0.5]); a.to([0.5, 0.5]);
+  const lines = () => (ink as unknown as { lines: unknown[] }).lines.length;
+  assert.equal(lines(), 1);
+  assert.throws(() => ink.begin(penIn(box, [])), /already open/);
+  assert.equal(lines(), 1, 'a refused begin leaves the line list as it was');
+  a.end(2);
+  const v = ink.valueAt(0.55, 0.5), washed = ink.washed, cells = Array.from(ink.cells.values);
+  a.end(0);
+  a.to([0.9, 0.9]);
+  assert.equal(ink.valueAt(0.55, 0.5), v, 'a second end changes nothing');
+  assert.equal(ink.valueAt(0.9, 0.9) < THRESHOLD, true, 'a point after end adds nothing');
+  assert.equal(ink.washed, washed);
+  assert.deepEqual(Array.from(ink.cells.values), cells);
+  const b = ink.begin(penIn(box, []));
+  b.to([0.1, 0.1]); b.end();
+  assert.equal(lines(), 2, 'the pen can begin again once lifted');
+});
