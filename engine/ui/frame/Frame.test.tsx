@@ -34,6 +34,7 @@ const alerts: { unread: number; account: AccountListener | null; subscribed: num
 
 function setup(signedIn = true, characters: readonly MyCharacter[] | 'fails' = [mine('a', 'Pipewrench'), mine('b', 'Mrs. Hooligan', 'face')], page = <p>page</p>, registrationMode: 'invite' | 'open' | 'closed' = 'invite', balance = 240, face: (id: string) => Character = (id) => pub(id, id)) {
   const api = {
+    now: () => Date.now(),
     session: async () => ({ signedIn, account: signedIn ? 'acc' : null }),
     onSession: () => () => {},
     myCharacters: async () => { if (characters === 'fails') throw new Error('down'); return characters; },

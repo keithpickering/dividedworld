@@ -493,7 +493,7 @@ const WRITES: ReadonlySet<string> = new Set(Object.keys({
   trophyAwardFailures: true, giveFailedAward: true, adminAwards: true, adminCharacterNamed: true,
 } satisfies Record<WriteName, true>));
 /** The methods that are not a promise of something: everything else is made one. */
-const NOT_PROMISED = new Set(['onSession', 'subscribeThread', 'subscribeBoard', 'subscribeAccount', 'subscribeReach']);
+const NOT_PROMISED = new Set(['now', 'onSession', 'subscribeThread', 'subscribeBoard', 'subscribeAccount', 'subscribeReach']);
 type Sync<T> = { [K in keyof T]: T[K] extends (...a: infer A) => Promise<infer R> ? (...a: A) => R : T[K] };
 
 /**
@@ -865,7 +865,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const takesEffectAt = () => (nextSettlement === null ? null : iso(nextSettlement));
 
   /** The points of a character's infractions that have not dropped off (the seeds write no ban, so none resets the bar). */
-  const warnOf = (id: Id): number => [...acts.values()].reduce((n, a) => (a.kind === 'infraction' && a.payload.character === id && Date.parse(a.payload.expires_at as string) > Date.now() ? n + (a.payload.points as number) : n), 0);
+  const warnOf = (id: Id): number => [...acts.values()].reduce((n, a) => (a.kind === 'infraction' && a.payload.character === id && Date.parse(a.payload.expires_at as string) > now() ? n + (a.payload.points as number) : n), 0);
   /** When a character's latest running ban ends, or null (banned_until, 0109): a ban's end, an appeal's ruling on it read in its place. */
   const bannedUntilOf = (id: Id): number | null => {
     let latest: number | null = null;
@@ -2878,6 +2878,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   }
 
   const core: Sync<KayfaApi> = {
+    now: () => now(),
     session: () => sessionNow(),
     onSession(listener) { sessionListeners.add(listener); return () => { sessionListeners.delete(listener); }; },
     requestCode(email, invite) {

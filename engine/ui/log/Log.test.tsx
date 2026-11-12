@@ -218,8 +218,9 @@ describe('My log', () => {
   });
 
   /** A player with Pipewrench and Mrs. Hooligan debuted and nothing settled, the next settlement 7 h 42 min off (the empty log's board). */
-  function nothingYet(next: number | null = Date.now() + (7 * 60 + 42) * 60_000) {
+  function nothingYet(from: number | null = (7 * 60 + 42) * 60_000) {
     const fake = buildWorld();
+    const next = from === null ? null : fake.clock.now() + from;
     const me = fake.seed.account('me');
     const pipe = fake.seed.character(me, 'Pipewrench', 'heel', { pronouns: PRONOUN_PRESETS.she });
     const hoo = fake.seed.character(me, 'Mrs. Hooligan', 'face', { pronouns: PRONOUN_PRESETS.they });
@@ -291,7 +292,7 @@ describe('My log', () => {
   });
 
   test('a settlement that is due names no time either, and one settled leaves no empty row', async () => {
-    const due = nothingYet(Date.now() - 60_000);
+    const due = nothingYet(-60_000);
     await open(due.fake, due.me, due.pipe);
     await screen.findByRole('table');
     expect(cells(bodyRows()[0]!)[2]).toBe('Nothing has settled for Pipewrench yet. A line comes here when a settlement scores her.');
@@ -924,9 +925,9 @@ describe('My log: the way out of a ban', () => {
   function banned() {
     const w = world();
     const clerk = w.fake.seed.staff('clerk', 'The Clerk', 'mod');
-    const visit = w.fake.seed.visit(clerk, w.p2, { at: Date.now() - 4 * 3_600_000, endsInMs: 3_600_000 });
+    const visit = w.fake.seed.visit(clerk, w.p2, { at: w.fake.clock.now() - 4 * 3_600_000, endsInMs: 3_600_000 });
     const inf = w.fake.seed.infraction(visit, { points: 10, band: 'severe' });
-    const ban = w.fake.seed.ban(w.pipe, Date.now() + 86_400_000, { infraction: inf, days: 1 });
+    const ban = w.fake.seed.ban(w.pipe, w.fake.clock.now() + 86_400_000, { infraction: inf, days: 1 });
     return { ...w, ban };
   }
 

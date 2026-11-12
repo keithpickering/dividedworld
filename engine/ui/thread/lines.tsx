@@ -23,10 +23,12 @@ import { Byline, Mini } from '../mini.tsx';
 import { pageOf, threadHref } from './pages.ts';
 
 /** "Oct 29, 2026, 9:14 PM"; on a phone (`dropYear`) a date in the current year, by `nowMs`, is "Oct 29, 9:14 PM". */
-export const when = (iso: string, dropYear = false, nowMs = Date.now()) => {
+export function when(iso: string): string;
+export function when(iso: string, dropYear: boolean, nowMs: number): string;
+export function when(iso: string, dropYear = false, nowMs = 0): string {
   const d = new Date(iso);
   return d.toLocaleString('en-US', { ...(dropYear && sameYear(d, nowMs) ? {} : { year: 'numeric' as const }), month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-};
+}
 
 export const text = (v: unknown): string => (typeof v === 'string' ? v : '');
 
@@ -81,7 +83,7 @@ function useTailsOf(post: Id, wanted: boolean, known: Plays | null): { readonly 
     if (!wanted) return;
     let live = true;
     const writing = new Set(instance.cards.filter((c) => c.writes !== undefined).map((c) => c.key));
-    const writers = (all: readonly CardPlay[]) => livePlays(all).filter((p) => writing.has(p.card) && !p.caught && !p.reach && !p.faceDown);
+    const writers = (all: readonly CardPlay[]) => livePlays(all, api.now()).filter((p) => writing.has(p.card) && !p.caught && !p.reach && !p.faceDown);
     const fail = () => { /* the versions are shown without their tails */ };
     const tailed = (plays: readonly CardPlay[]) => {
       if (plays.length === 0) return;

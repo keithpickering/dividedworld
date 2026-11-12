@@ -224,10 +224,10 @@ export function MarkStrip({ post, plays, tallies, onOpen, open = null, ghost, re
     return () => watch.disconnect();
   }, []);
   /* A card back whose time has passed with nothing springing it is gone, as the server drops it. */
-  const { instance } = useKayfa();
+  const { api, instance } = useKayfa();
   /* A play beyond a post goes at its end, by itself: no reread (its way out). */
   const now = useUntil(here.billed);
-  const billed = useMemo(() => markedPlays(shownPlays(here.billed), now), [here.billed, now]);
+  const billed = useMemo(() => markedPlays(shownPlays(here.billed, api.now()), now), [here.billed, now, api]);
   const byKind = useKindPlays(billed);
   /* `onOpen` may be a new function every render of the post; the marks are given one that is not. */
   const latest = useRef(onOpen);

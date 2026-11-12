@@ -2386,6 +2386,12 @@ export interface LogPage {
 }
 
 export interface KayfaApi {
+  /**
+   * The time, in milliseconds, that the times this backend hands out are read against: every screen that sets a time from the data (an Act's date, a
+   * play's end, a ban's or an expiry's) beside "now" reads it here and never the page's own clock (`Date.now()`), so no test's result depends on the
+   * date it runs on (issue #244, tools/check-one-clock.mjs). The real backend answers the real clock; the fake answers its own, which a test sets.
+   */
+  now(): number;
   /* Signing in: passwordless, through the account function only, in the same words for every address. */
   session(): Promise<Session>;
   onSession(listener: (s: Session) => void): () => void;

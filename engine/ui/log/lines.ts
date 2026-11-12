@@ -106,6 +106,8 @@ export interface Words {
   readonly postsPerPage: number;
   /** The economy as the server holds it now (`economyNow`): the numbers a line with none of its own is said with. */
   readonly economy: Readonly<Record<string, number>>;
+  /** The time "now" is read against: the backend's (`api.now()`), so a line that says a time has passed compares it with the clock its times come from. */
+  readonly now: number;
 }
 
 const MINUS = '\u2212';
@@ -624,7 +626,7 @@ const mergeText = (segs: readonly Segment[]): Segment[] => segs.reduce<Segment[]
  * A post is named by its number in its thread, linked, and "your" where the row is the player's own.
  */
 function modRows(data: LogData, words: Words): LogRow[] {
-  const now = Date.now();
+  const now = words.now;
   const nameOf = (id: Id) => data.mine.find((c) => c.id === id)?.name ?? 'one of your characters';
   const pronounsOf = (id: Id) => pronounsIn(data, id);
   const post = (thread: Id, seq: number | null, own: boolean): Segment => (seq === null ? (own ? 'your post' : 'a post') : { text: `${own ? 'your ' : ''}post #${seq}`, href: threadHref(thread, pageOf(seq, words.postsPerPage), seq) });
@@ -857,7 +859,7 @@ function cardRows(data: LogData, words: Words): LogRow[] {
     /* A Use with a time up says when it ended, once that time has passed, whichever use card it was (the design's section 10: "a timed end"). */
     const ends = typeof play?.payload.ends === 'string' ? play.payload.ends : null;
     /* A scored-as card's end is its window's: the settlement's row (or the row of its own, `scoredAsRows`) says it, so no second row says it ended. */
-    if (ends && Date.parse(ends) <= Date.now() && !instance.cards.find((c) => c.key === e.card)?.scoresAs) {
+    if (ends && Date.parse(ends) <= words.now && !instance.cards.find((c) => c.key === e.card)?.scoresAs) {
       rows.push({
         key: `gimmickEnded:${e.act}`, kind: 'gimmickEnded', at: ends, what: `${cardName(e.card)}${place ? ` on ${place}` : ''} ended`,
         details: [`${cardName(e.card)} on `, link ?? 'your post', ' ended.'],
@@ -1168,7 +1170,7 @@ function estimateRows(data: LogData, words: Words, tab: Id | null): LogRow[] {
  * read from the plays the log holds (the player's own characters', named by `my_*` rows): " Scored as a Heel this window by Off Day.", or nothing.
  */
 function scoredNow(character: Id, data: LogData, words: Words): string {
-  const now = Date.now();
+  const now = words.now;
   const ended = new Set(data.log.ended.map((e) => e.play));
   for (const a of data.acts.values()) {
     if (a.kind !== 'card' || a.payload.reach !== 'character' || a.payload.character !== character || ended.has(a.id)) continue;

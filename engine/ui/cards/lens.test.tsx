@@ -233,7 +233,7 @@ describe('what the Lens says and offers', () => {
     const second = fake.seed.post(thread, spritey, 'post 2');
     fake.signInAs(me);
     fake.clock.advance(60_000);
-    fake.seed.card(spritey, second, 'k2', { ends: new Date(Date.now() + 3_600_000).toISOString() });
+    fake.seed.card(spritey, second, 'k2', { ends: new Date(fake.clock.now() + 3_600_000).toISOString() });
     renderIn(fake, <LoadedThread thread={thread} />, { path: `/t/${thread}`, instance: warded, cards });
     await userEvent.click(await markOf(2, 'Card 2'));
     const report = lens().querySelector('.kb-lens-report');
@@ -255,7 +255,7 @@ describe('what the Lens says and offers', () => {
     const second = fake.seed.post(thread, spritey, 'post 2');
     fake.signInAs(me);
     fake.clock.advance(60_000);
-    const ends = new Date(Date.now() + 3_600_000).toISOString();
+    const ends = new Date(fake.clock.now() + 3_600_000).toISOString();
     fake.seed.card(spritey, second, 'k2', { ends });
     renderIn(fake, <LoadedThread thread={thread} />, { path: `/t/${thread}`, instance: stops, cards });
     await userEvent.click(await markOf(2, 'Card 2'));
@@ -278,7 +278,7 @@ describe('what the Lens says and offers', () => {
     const second = fake.seed.post(thread, spritey, 'post 2');
     fake.signInAs(me);
     fake.clock.advance(60_000);
-    fake.seed.card(spritey, second, 'k3', { ends: new Date(Date.now() + 3_600_000).toISOString() });
+    fake.seed.card(spritey, second, 'k3', { ends: new Date(fake.clock.now() + 3_600_000).toISOString() });
     renderIn(fake, <LoadedThread thread={thread} />, { path: `/t/${thread}`, instance: earns, cards });
     await userEvent.click(await markOf(2, 'Card 3'));
     expect(within(lens()).getByRole('tabpanel')).toHaveTextContent('Earns 10% more from some reactions');
@@ -1099,7 +1099,7 @@ describe('End this card', () => {
     const w = world();
     w.fake.seed.admin(w.me);
     w.fake.clock.advance(60_000);
-    w.fake.seed.set(w.spritey, w.second, 'k2', { at: Date.now() });
+    w.fake.seed.set(w.spritey, w.second, 'k2', { at: w.fake.clock.now() });
     open(w);
     await userEvent.click(await within(await article(2)).findByRole('button', { name: /^A card set face down/u }));
     await unfold();
@@ -1130,7 +1130,7 @@ describe('End this card', () => {
     const w = world();
     w.fake.seed.admin(w.me);
     w.fake.clock.advance(60_000);
-    w.fake.seed.card(w.spritey, w.second, 'k2', { ends: new Date(Date.now() - 3_600_000).toISOString() });
+    w.fake.seed.card(w.spritey, w.second, 'k2', { ends: new Date(w.fake.clock.now() - 3_600_000).toISOString() });
     open(w);
     await openKind(2, 'Card 2');
     expect(endButton()).toBeNull();
@@ -1141,8 +1141,8 @@ describe('End this card', () => {
     const w = world();
     w.fake.seed.admin(w.me);
     w.fake.clock.advance(60_000);
-    w.fake.seed.card(w.spritey, w.second, 'k2', { ends: new Date(Date.now() - 3_600_000).toISOString() });
-    w.fake.seed.card(w.spritey, w.second, 'k2', { ends: new Date(Date.now() + 3_600_000).toISOString() });
+    w.fake.seed.card(w.spritey, w.second, 'k2', { ends: new Date(w.fake.clock.now() - 3_600_000).toISOString() });
+    w.fake.seed.card(w.spritey, w.second, 'k2', { ends: new Date(w.fake.clock.now() + 3_600_000).toISOString() });
     open(w);
     await openKind(2, 'Card 2');
     expect(within(lens()).getAllByRole('button', { name: 'End this card' })).toHaveLength(1);
@@ -1235,7 +1235,7 @@ describe('a visit\'s tab', () => {
     const w = world();
     const clerk = w.fake.seed.staff('clerk', 'The Clerk', 'mod', { pronouns: PRONOUN_PRESETS.they });
     const post = o.mine ? w.fake.seed.post(w.thread, w.pipe, 'post 4') : w.second;
-    const visit = w.fake.seed.visit(clerk, post, { at: Date.now(), endsInMs: o.endsInMs ?? 161 * 60_000, line: 'Routine inspection.', ...(o.challenge ? { challenge: o.challenge } : {}) });
+    const visit = w.fake.seed.visit(clerk, post, { at: w.fake.clock.now(), endsInMs: o.endsInMs ?? 161 * 60_000, line: 'Routine inspection.', ...(o.challenge ? { challenge: o.challenge } : {}) });
     return { ...w, clerk, post, visit, seq: o.mine ? 4 : 2 };
   }
   const openVisit = (w: ReturnType<typeof visited>) =>
@@ -1529,7 +1529,7 @@ describe('a visit\'s tab', () => {
       openVisit(w);
       const mark = await visitMark(w.seq);
       /* The page was read with the bar at 2; another visit filed before the Lens opened, so the bar stands at 6. */
-      const other = w.fake.seed.visit(w.clerk, w.third, { at: Date.now() });
+      const other = w.fake.seed.visit(w.clerk, w.third, { at: w.fake.clock.now() });
       w.fake.seed.visitEnd(other, { outcome: 'filed', line: 'Filed.' });
       w.fake.seed.infraction(other, { points: 4, band: 'moderate' });
       await userEvent.click(mark);
@@ -1542,7 +1542,7 @@ describe('a visit\'s tab', () => {
       width(false);
       const w = visited({ challenge: QUIZ });
       w.fake.seed.visitEnd(w.visit, { outcome: 'filed', line: 'Filed.' });
-      w.fake.seed.infraction(w.visit, { points: 2, at: Date.now() - 30 * 24 * HOUR, expiresAt: Date.now() - 16 * 24 * HOUR });
+      w.fake.seed.infraction(w.visit, { points: 2, at: w.fake.clock.now() - 30 * 24 * HOUR, expiresAt: w.fake.clock.now() - 16 * 24 * HOUR });
       openVisit(w);
       const l = await press(w);
       await within(l).findByText(/they dropped off on/u);
@@ -1622,7 +1622,7 @@ describe('a visit\'s tab', () => {
       width(false);
       const w = visited({ challenge: QUIZ, mine: true });
       w.fake.seed.visitEnd(w.visit, { outcome: 'filed', line: 'Filed.' });
-      w.fake.seed.infraction(w.visit, { points: 2, at: Date.now() - 30 * 24 * HOUR, expiresAt: Date.now() - 16 * 24 * HOUR });
+      w.fake.seed.infraction(w.visit, { points: 2, at: w.fake.clock.now() - 30 * 24 * HOUR, expiresAt: w.fake.clock.now() - 16 * 24 * HOUR });
       openVisit(w);
       const l = await press(w);
       await within(l).findByText(/they dropped off on/u);
@@ -1674,9 +1674,9 @@ describe('a visit\'s tab', () => {
       width(false);
       const w = visited({ challenge: QUIZ });
       /* Dated by the real clock, as the visit is: the rows are in the order the Acts happened. */
-      const report = w.fake.seed.report(w.gloomba, w.second, 'Third time this week.', { at: Date.now() - 2 * 60_000 });
-      w.fake.seed.verdict(report, w.clerk, 'visit', { line: 'Noted. Inspecting.', visit: w.visit, at: Date.now() - 60_000 });
-      w.fake.seed.visitEnd(w.visit, { outcome: 'filed', line: 'Stamped, initialed, and filed under D.', at: Date.now() + 60_000 });
+      const report = w.fake.seed.report(w.gloomba, w.second, 'Third time this week.', { at: w.fake.clock.now() - 2 * 60_000 });
+      w.fake.seed.verdict(report, w.clerk, 'visit', { line: 'Noted. Inspecting.', visit: w.visit, at: w.fake.clock.now() - 60_000 });
+      w.fake.seed.visitEnd(w.visit, { outcome: 'filed', line: 'Stamped, initialed, and filed under D.', at: w.fake.clock.now() + 60_000 });
       w.fake.seed.infraction(w.visit, { points: 2 });
       openVisit(w);
       const l = await press(w);
@@ -2004,7 +2004,7 @@ describe('taking a back back', () => {
     const w = world();
     const post = w.fake.seed.post(w.thread, w.pipe, 'my own post');
     w.fake.clock.advance(60_000);
-    w.fake.seed.set(w.pipe, post, 'k2', { at: Date.now() });
+    w.fake.seed.set(w.pipe, post, 'k2', { at: w.fake.clock.now() });
     return w;
   };
 
@@ -2012,7 +2012,7 @@ describe('taking a back back', () => {
     width(false);
     const w = mine();
     w.fake.clock.advance(60_000);
-    w.fake.seed.set(w.spritey, w.second, 'k3', { at: Date.now() });
+    w.fake.seed.set(w.spritey, w.second, 'k3', { at: w.fake.clock.now() });
     open(w);
     await openBack(4);
     expect(takeButton()).not.toBeNull();
@@ -2027,7 +2027,7 @@ describe('taking a back back', () => {
     const w = world();
     const post = w.fake.seed.post(w.thread, w.pipe, 'my own post');
     /* The screen's setLasts is seven days: ten days on, a back worked out from it would be over. */
-    w.fake.seed.set(w.pipe, post, 'k2', { at: Date.now() - 10 * 86_400_000, endsAt: Date.now() + 20 * 86_400_000 });
+    w.fake.seed.set(w.pipe, post, 'k2', { at: w.fake.clock.now() - 10 * 86_400_000, endsAt: w.fake.clock.now() + 20 * 86_400_000 });
     const [set] = await w.fake.cardsOn(post, 10);
     open(w);
     await openBack(4);
@@ -2039,7 +2039,7 @@ describe('taking a back back', () => {
     width(false);
     const w = world();
     const post = w.fake.seed.post(w.thread, w.pipe, 'my own post');
-    w.fake.seed.set(w.pipe, post, 'k2', { at: Date.now() - 86_400_000, endsAt: Date.now() - 3_600_000 });
+    w.fake.seed.set(w.pipe, post, 'k2', { at: w.fake.clock.now() - 86_400_000, endsAt: w.fake.clock.now() - 3_600_000 });
     open(w);
     await article(4);
     expect(within(await article(4)).queryByRole('button', { name: /^A card set face down/u })).toBeNull();

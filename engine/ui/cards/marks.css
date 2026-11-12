@@ -147,7 +147,10 @@
   opacity: 0.45;
 }
 
-/* The ORIGIN box's head carries the strip the same way: a cell of the head with the strip's width, and the head's words wrap in the room left. */
+/*
+ * The ORIGIN box's band carries the strip the same way (spin/spin.css): a cell of the head with the strip's width, and the head's
+ * words wrap in the room left.
+ */
 .kb-origin-head {
   display: flex;
   align-items: center;

@@ -20,6 +20,8 @@ const words: Words = {
   ui: { reasonWords: (r) => ({ 'heel.drewHeat': 'Drew heat: x', 'face.cheered': 'Cheered: y' } as Record<string, string>)[r] ?? r, quadrantLabels: { excitedNegative: 'Heat', excitedPositive: 'Hype', boredNegative: 'Groan', calmPositive: 'Calm' }, cards: [], copy: { siteName: '', siteTagline: '', roleWord: 'The Boss', staffWord: 'The staff', gameWord: 'the game', staffBoardTag: 'Staff post here; you react and spin', shopName: 'Shop', reducedMotionCard: '' }, packs: {} },
   postsPerPage: 20,
   economy: {},
+  /* The time the log's "has ended" is read at: a fixed one, in the week the fixtures are dated (a test's result never depends on the date it runs). */
+  now: Date.parse('2026-11-30T00:00:00.000Z'),
 };
 const data = (over: Partial<LogData>): LogData => ({
   log: empty, mine: [], estimate: null, standings: {}, season: null, turns: [], nextSettlement: null, acts: new Map(), names: new Map(), titles: new Map(), states: new Map(), ...over,
@@ -1297,7 +1299,7 @@ describe('the payout cards\' lines', () => {
   });
 
   test('the live estimate says a character is scored as the named class this window, by which card, and not outside it', () => {
-    const now = Date.now();
+    const now = w.now;
     const open = act('k2', 'card', 'p', { targetActId: 'post3', payload: { card: 'offday', reach: 'character', character: 'p', config: { class: 'heel' }, starts: new Date(now - 3_600_000).toISOString(), ends: new Date(now + 3_600_000).toISOString() } });
     const soon = act('k3', 'card', 'p', { targetActId: 'post3', payload: { card: 'offday', reach: 'character', character: 'p', config: { class: 'heel' }, starts: new Date(now + 3_600_000).toISOString(), ends: new Date(now + 7_200_000).toISOString() } });
     const estimate = { entries: [], asOf: new Date(now).toISOString(), freshAfter: null, lines: [{ character: 'p', reason: 'heel.drewHeat', amount: 5 }] };

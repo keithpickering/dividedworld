@@ -197,7 +197,7 @@ function Actions({ act, about, canEdit, editing, onEdit, editButton, spinOrigin,
 
 export const ActArticle = memo(function ActArticle({ act, person, layout, slid }: Props) {
   const { thread, perPage, observer, plays, tallies, mine, nameOf: casterName, faceOf, pronounsOf, summary, know, visits } = useThread();
-  const { ui } = useKayfa();
+  const { api, ui } = useKayfa();
   const ref = useRef<HTMLElement>(null);
   const narrow = useNarrow();
   const seq = act.seq!;
@@ -278,7 +278,7 @@ export const ActArticle = memo(function ActArticle({ act, person, layout, slid }
         ? <Postbit person={person} layout={layout} marks={characterMarks} />
         : <div className="kb-postbit-system"><span className="kb-postbit-name">{name}</span></div>)}
       <header className="kb-act-meta" data-kb-cell="line">
-        <time dateTime={act.createdAt} title={when(act.createdAt)}>{when(act.createdAt, narrow)}</time>
+        <time dateTime={act.createdAt} title={when(act.createdAt)}>{when(act.createdAt, narrow, api.now())}</time>
         {marks}
         <Link className="kb-act-number" to={threadHref(thread, pageOf(seq, perPage), seq)} aria-label={`Permalink to post #${seq}`}>#{seq}</Link>
       </header>

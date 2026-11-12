@@ -186,7 +186,7 @@ export function useLensFor(store: LensStore, owner: string): LensOpen | null {
  * away and until when; a caught play's note says what caught it.
  */
 export function useResolvedView(store: Plays, post: Id, kind: string, nameOf?: (character: Id | null) => string): CardView {
-  const { instance, settings, ui } = useKayfa();
+  const { api, instance, settings, ui } = useKayfa();
   const given = useCardView(store, post, kind);
   /*
    * What this kind's words read of the post, as one string: its plays (who, when, caught by what, ending when, starting when, revealed as what, configured how) and
@@ -238,11 +238,11 @@ export function useResolvedView(store: Plays, post: Id, kind: string, nameOf?: (
     }
     if (rules?.gimmick && live.length > 0) {
       const latest = [...live].sort((a, b) => Date.parse(b.ends ?? '') - Date.parse(a.ends ?? ''))[0]!;
-      const gimmick = gimmickWords(rules.gimmick, latest.ends, new Date(), cardName);
+      const gimmick = gimmickWords(rules.gimmick, latest.ends, new Date(api.now()), cardName);
       return { ...base, state: gimmick.state, ...(gimmick.ends ? { ends: gimmick.ends } : {}), ...(gimmick.report ? { report: gimmick.report } : {}), notes: caught };
     }
     return Object.keys(caught).length > 0 ? { ...base, notes: caught } : base;
-  }, [instance.cards, ui.cards, kind, economy, here, nameOf]);
+  }, [api, instance.cards, ui.cards, kind, economy, here, nameOf]);
   /* Every play of the kind over (ended by an admin, or it did not take): its effect draws nothing, so whatever view it last gave is stale. */
   const allEnded = here.plays.length > 0 && here.plays.every((p) => p.reversed || p.untaken);
   if (!given || allEnded) return fallback;
@@ -402,6 +402,7 @@ export function EndCardDialog({ play, card, caster, onClose, onEnded, returnFocu
 
 /** An admin's "End this card" in the Lens: the button, and the shared confirm. */
 function EndCard({ play, card, caster, store }: { readonly play: Id; readonly card: string; readonly caster: string; readonly store: Plays }) {
+  const { api } = useKayfa();
   const opener = useRef<HTMLButtonElement>(null);
   const [asking, setAsking] = useState(false);
   const close = () => setAsking(false);
@@ -413,7 +414,7 @@ function EndCard({ play, card, caster, store }: { readonly play: Id; readonly ca
         <EndCardDialog
           play={play} card={card} caster={caster} onClose={close}
           onEnded={(endId) => {
-            const end: Act = { id: endId, character: null, kind: 'card_end', thread: '', targetActId: play, seq: null, createdAt: new Date().toISOString(), payload: { why: 'reversed', by: 'admin' }, currentPayload: {}, editedAt: null, shownEditedAt: null };
+            const end: Act = { id: endId, character: null, kind: 'card_end', thread: '', targetActId: play, seq: null, createdAt: new Date(api.now()).toISOString(), payload: { why: 'reversed', by: 'admin' }, currentPayload: {}, editedAt: null, shownEditedAt: null };
             store.add([end]);
             setAsking(false);
           }}
@@ -672,7 +673,7 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
   const onInk = useOnInk();
   const host = useLensHost();
   const now = useUntil(here.billed);
-  const billed = markedPlays(shownPlays(here.billed), now);
+  const billed = markedPlays(shownPlays(here.billed, api.now()), now);
   const admin = useLensAdmin();
   const cardKinds = kindsOf(billed);
   /* A form is the panel's one tab while it is open; a visit's tab is ahead of the cards'. */

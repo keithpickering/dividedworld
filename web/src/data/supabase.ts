@@ -1162,6 +1162,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
   };
 
   const api: KayfaApi = {
+    now: () => Date.now(),
     session: currentSession,
     onSession(listener) {
       sessionListeners.add(listener);
