@@ -152,3 +152,48 @@ begin
     raise exception 'claim_card_writes sends a model the words of a hidden version: %', got;
   end if;
 end $$;
+
+-- ---- A card that writes on a post that quotes a hidden one, before the conceal job has written its layer (public_payload is null then) ----
+-- The model is handed the post's own words with every quote cut out, never anyone's quoted words; the posts shown before it are read the same; a hidden version yields nothing.
+do $$
+declare
+  admin_a uuid := tests.account('admin-q');
+  author uuid := tests.account('author-q');
+  ch_author uuid := tests.character(author, 'Quin');
+  caster uuid := tests.character(tests.account('caster-q'), 'Qas');
+  th uuid := tests.thread('Quoting');
+  base timestamptz := '2031-01-01T00:00:00Z';
+  secret uuid; earlier uuid; qpost uuid;
+  got jsonb;
+begin
+  insert into admins (account) values (admin_a);
+  insert into settings (key, value) values ('oldVoice', 'true') on conflict (key) do update set value = excluded.value;
+  insert into settings (key, value) values ('cardWriteSettleSeconds', '0') on conflict (key) do update set value = excluded.value;
+  insert into card_kinds (key, name, alignment, rarity, play, stack, writes) values ('mr-scribe-q', 'Scribe Q', 'salty', 'uncommon', 'cast', 3, true) on conflict do nothing;
+  secret := tests.post(ch_author, th, 'The hidden secret words.', base);
+  perform tests.become(admin_a);
+  perform decide(null, secret, 'hide', null, 'quoted');
+  perform tests.unbecome();
+  earlier := tests.post(ch_author, th, format('Earlier own words [quote=%s]hidden secret words[/quote] done', secret), base + interval '1 minute');
+  qpost := tests.post(ch_author, th, format('Own words of the quoting post [quote=%s]The hidden secret words.[/quote] and the end', secret), base + interval '2 minutes');
+  perform tests.act(caster, 'card', th, jsonb_build_object('card', 'mr-scribe-q', 'message', '', 'config', '{}'::jsonb, 'layer', 1), qpost, base + interval '3 minutes');
+  if (select concealing from acts_public where id = qpost) is not true then raise exception 'the quoting post is not concealing before its layer, so the test below proves nothing'; end if;
+  perform tests.become_service();
+  got := claim_card_writes(5, qpost);
+  perform tests.unbecome();
+  if jsonb_array_length(got) is distinct from 1 or got -> 0 ->> 'body' is distinct from 'Own words of the quoting post  and the end' or got -> 0 ->> 'body' ilike '%secret%' then
+    raise exception 'claim_card_writes does not hand the model a quoting post''s own words with the quote cut out: %', got;
+  end if;
+  if got -> 0 #>> '{before,0,body}' is distinct from '' or got -> 0 #>> '{before,1,body}' is distinct from 'Earlier own words  done' or got::text ilike '%secret%' then
+    raise exception 'claim_card_writes hands the model a hidden neighbor''s words, a quoting neighbor empty, or a word of a hidden post: %', got;
+  end if;
+  -- a hidden version of the quoting post yields nothing
+  update card_writes set claimed_until = null where post = qpost;
+  perform tests.become(admin_a);
+  perform decide(null, qpost, 'hide', null, 'writes');
+  perform tests.unbecome();
+  perform tests.become_service();
+  got := claim_card_writes(5, qpost);
+  perform tests.unbecome();
+  if jsonb_array_length(got) is distinct from 1 or got -> 0 ->> 'body' is distinct from '' then raise exception 'claim_card_writes sends the words of a hidden quoting post: %', got; end if;
+end $$;

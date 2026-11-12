@@ -1584,8 +1584,15 @@ language sql stable set search_path = public, pg_temp as $$
   from card_ledger l where l.account = card_held.who and l.card = card_held.card
 $$;
 
--- claim_card_writes (0149), reading the words of the version a card writes on through the layer a player reads, so a hidden version is a hidden body to the model it is sent to
--- and not its original words. Everything else as 0149 wrote it.
+-- claim_card_writes (0149), reading the words of the version a card writes on, and of the posts shown before it, as rule_breaks and spring_facts read a post: a hidden version gives the
+-- model nothing, and any other gives the post's own words with every quote cut out (bbcode_walk's `unquoted`), never anyone's quoted words, hidden or not. It does not read public_payload or
+-- current_payload: those are null while a post that quotes a hidden one waits for its layer, which would hand the model an empty body for a post that merely quotes. Everything else as 0149 wrote it.
+create function own_words(raw text) returns text
+language sql stable security definer set search_path = public, pg_temp as $$
+  select coalesce(case when raw ilike '%[quote%' then (select w.unquoted from bbcode_walk(raw, null) w) else raw end, '')
+$$;
+revoke execute on function own_words(text) from public, anon, authenticated;
+
 create or replace function claim_card_writes(most integer, only_post uuid default null) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
@@ -1609,10 +1616,11 @@ begin
   select coalesce(jsonb_agg(jsonb_build_object(
       'play', t.play, 'version', t.version, 'post', t.post, 'thread', pa.thread, 'attempts', t.attempts,
       'card', pl.payload ->> 'card', 'config', coalesce(pl.payload -> 'config', '{}'::jsonb), 'tokens', (pl.payload ->> 'tokens')::integer,
-      'author', ch.name, 'body', coalesce(public_payload(v.payload, version_hidden(v.id, pa.id), v.id) ->> 'body', ''), 'title', th.title,
+      'author', ch.name, 'body', own_words(case when version_hidden(v.id, pa.id) then null else v.payload ->> 'body' end), 'title', th.title,
       'before', (select coalesce(jsonb_agg(jsonb_build_object('name', x.name, 'body', x.body) order by x.seq), '[]'::jsonb)
-                 from (select n.seq, cn.name, coalesce(n.current_payload ->> 'body', '') as body
-                       from acts_public n join characters_public cn on cn.id = n.character
+                 from (select n.seq, cn.name,
+                              own_words(case when n.hidden then null else coalesce((select e.payload ->> 'body' from acts e where e.kind = 'edit' and e.target_act_id = n.id order by e.created_at desc, e.id desc limit 1), na.payload ->> 'body') end) as body
+                       from acts_public n join acts na on na.id = n.id join characters_public cn on cn.id = n.character
                        where n.thread = pa.thread and n.kind = 'post' and n.seq < pa.seq
                        order by n.seq desc limit greatest(nearby, 0)) x),
       'earlier', (select coalesce(jsonb_agg(jsonb_build_object('play', q.id, 'text', q.text) order by q.created_at, q.id), '[]'::jsonb)
