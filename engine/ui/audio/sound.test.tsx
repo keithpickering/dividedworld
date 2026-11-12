@@ -38,6 +38,13 @@ const on = (bus: 'game' | 'interface', volume = 100) => setSoundPreference({
   gameSound: bus === 'game' ? 'on' : 'off', gameVolume: bus === 'game' ? volume : 100,
   interfaceSound: bus === 'interface' ? 'on' : 'off', interfaceVolume: bus === 'interface' ? volume : 100,
 });
+type Loop = ReturnType<ReturnType<typeof useSound>['loop']>;
+/** Start a loop and let its sound load: the handle comes back at once, the mixer's answer a moment later. */
+const loopLoaded = async (play: ReturnType<typeof useSound>, key: string, opts: { group?: string; id: string }): Promise<Loop> => {
+  let h!: Loop;
+  await act(async () => { h = play.loop(key, opts); for (let i = 0; i < 8; i++) await Promise.resolve(); });
+  return h;
+};
 const gesture = (type = 'pointerdown') => act(async () => { document.dispatchEvent(new Event(type, { bubbles: true })); await Promise.resolve(); await Promise.resolve(); });
 
 beforeEach(() => {
@@ -141,15 +148,13 @@ describe('the page sound', () => {
     const { result } = renderHook(() => useSound(), { wrapper: wrap });
     on('game');
     await gesture();
-    let handle: Awaited<ReturnType<ReturnType<typeof useSound>['loop']>> = null;
-    await act(async () => { handle = await result.current.loop('build', { id: 'meter' }); });
-    expect(handle).not.toBeNull();
-    act(() => handle!.setGain(HELD_FROM + 0.1));
+    const handle = await loopLoaded(result.current, 'build', { id: 'meter' });
+    act(() => handle.setGain(HELD_FROM + 0.1));
     expect(captions.current()).toMatchObject({ text: 'build caption', held: true });
-    act(() => handle!.setGain(HELD_FROM - 0.05));
+    act(() => handle.setGain(HELD_FROM - 0.05));
     expect(captions.current()).toBeNull();
-    act(() => handle!.setGain(0.9));
-    act(() => handle!.stop(0));
+    act(() => handle.setGain(0.9));
+    act(() => handle.stop(0));
     expect(captions.current()).toBeNull();
   });
 
@@ -162,15 +167,14 @@ describe('the page sound', () => {
     const { result } = renderHook(() => useSound(), { wrapper: wrap });
     on('game');
     await gesture();
-    let handle: Awaited<ReturnType<ReturnType<typeof useSound>['loop']>> = null;
-    await act(async () => { handle = await result.current.loop('build', { id: 'meter' }); });
-    act(() => handle!.setGain(0.9));
+    const handle = await loopLoaded(result.current, 'build', { id: 'meter' });
+    act(() => handle.setGain(0.9));
     expect(captions.current()?.held).toBe(true);
     act(() => setSoundPreference({ gameSound: 'off', gameVolume: 100, interfaceSound: 'off', interfaceVolume: 100 }));
     expect(captions.current()).toBeNull();
-    act(() => handle!.setGain(0.9));
+    act(() => handle.setGain(0.9));
     expect(captions.current()).toMatchObject({ text: 'build caption', held: true });
-    act(() => handle!.setGain(0));
+    act(() => handle.setGain(0));
     expect(captions.current()).toBeNull();
   });
 
@@ -178,13 +182,12 @@ describe('the page sound', () => {
     const { result } = renderHook(() => useSound(), { wrapper: withSlots([interfaceLoop]) });
     on('interface');
     await gesture();
-    let handle: Awaited<ReturnType<ReturnType<typeof useSound>['loop']>> = null;
-    await act(async () => { handle = await result.current.loop('hum', { id: 'hum' }); });
-    act(() => handle!.setGain(0.9));
+    const handle = await loopLoaded(result.current, 'hum', { id: 'hum' });
+    act(() => handle.setGain(0.9));
     expect(captions.current()?.held).toBe(true);
     act(() => setSoundPreference({ gameSound: 'off', gameVolume: 100, interfaceSound: 'off', interfaceVolume: 100 }));
     expect(captions.current()).toBeNull();
-    act(() => handle!.setGain(0.9));
+    act(() => handle.setGain(0.9));
     expect(captions.current()).toBeNull();
   });
 
@@ -192,15 +195,77 @@ describe('the page sound', () => {
     const { result } = renderHook(() => useSound(), { wrapper: wrap });
     on('game');
     await gesture();
-    let first: Awaited<ReturnType<ReturnType<typeof useSound>['loop']>> = null;
-    await act(async () => { first = await result.current.loop('build', { id: 'a', group: 'g' }); });
-    await act(async () => { await result.current.loop('build', { id: 'b', group: 'g' }); });
-    act(() => first!.setGain(0.9));
+    const first = await loopLoaded(result.current, 'build', { id: 'a', group: 'g' });
+    await loopLoaded(result.current, 'build', { id: 'b', group: 'g' });
+    act(() => first.setGain(0.9));
     expect(captions.current()).toBeNull();
-    let own: Awaited<ReturnType<ReturnType<typeof useSound>['loop']>> = null;
-    await act(async () => { own = await result.current.loop('build', { id: 'c' }); });
-    act(() => own!.stop(0));
-    act(() => own!.setGain(0.9));
+    const own = await loopLoaded(result.current, 'build', { id: 'c' });
+    act(() => own.stop(0));
+    act(() => own.setGain(0.9));
+    expect(captions.current()).toBeNull();
+  });
+
+  test('a loop starts silent: its voice is at gain 0 until a setGain raises it', async () => {
+    const { result } = renderHook(() => useSound(), { wrapper: wrap });
+    on('game');
+    await gesture();
+    const handle = await loopLoaded(result.current, 'build', { id: 'meter' });
+    expect(gains[1]!.gain.value).toBe(0);
+    act(() => handle.setGain(0.6));
+    expect(gains[1]!.gain.setTargetAtTime).toHaveBeenLastCalledWith(0.6, 0, 0.05);
+  });
+
+  test('the handle is there at once: gains set before the sound loads apply when it does, the latest winning', async () => {
+    const { result } = renderHook(() => useSound(), { wrapper: wrap });
+    on('game');
+    await gesture();
+    let handle!: Loop;
+    await act(async () => {
+      handle = result.current.loop('build', { id: 'meter' });
+      handle.setGain(0.9);
+      handle.setGain(0.4);
+      expect(captions.current()).toMatchObject({ text: 'build caption', held: true });
+      for (let i = 0; i < 8; i++) await Promise.resolve();
+    });
+    expect(sources).toHaveLength(1);
+    expect(gains[1]!.gain.setTargetAtTime).toHaveBeenLastCalledWith(0.4, 0, 0.05);
+    expect(gains[1]!.gain.setTargetAtTime).toHaveBeenCalledTimes(1);
+  });
+
+  test('a stop before the sound loads leaves no source and no held caption', async () => {
+    const { result } = renderHook(() => useSound(), { wrapper: wrap });
+    on('game');
+    await gesture();
+    await act(async () => {
+      const handle = result.current.loop('build', { id: 'meter' });
+      handle.setGain(0.9);
+      expect(captions.current()?.held).toBe(true);
+      handle.stop(0);
+      expect(captions.current()).toBeNull();
+      for (let i = 0; i < 8; i++) await Promise.resolve();
+      handle.setGain(0.9);
+    });
+    expect(sources).toHaveLength(0);
+    expect(captions.current()).toBeNull();
+  });
+
+  test('a loop skipped for a bus that is off still holds and releases its game caption by gain', async () => {
+    const { result } = renderHook(() => useSound(), { wrapper: wrap });
+    const handle = await loopLoaded(result.current, 'build', { id: 'meter' });
+    act(() => handle.setGain(0.9));
+    expect(captions.current()).toMatchObject({ text: 'build caption', held: true });
+    act(() => handle.setGain(0));
+    expect(captions.current()).toBeNull();
+    act(() => handle.setGain(0.9));
+    act(() => handle.stop(0));
+    expect(captions.current()).toBeNull();
+    expect(fetchBytes).not.toHaveBeenCalled();
+  });
+
+  test('a skipped interface loop holds no caption', async () => {
+    const { result } = renderHook(() => useSound(), { wrapper: withSlots([interfaceLoop]) });
+    const handle = await loopLoaded(result.current, 'hum', { id: 'hum' });
+    act(() => handle.setGain(0.9));
     expect(captions.current()).toBeNull();
   });
 
