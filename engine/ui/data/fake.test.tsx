@@ -12,7 +12,7 @@ import type { CardUi } from '../cards/types.ts';
 import { failureKind, NOT_SENT, ReadFailure } from './api.ts';
 import type { Act, Refusal, Slot, Tally } from './api.ts';
 import { TIP_KEYS } from '../tips/keys.ts';
-import { createFake, FAKE_BACKEND_MARKER, START, TEST_CODE } from './fake.ts';
+import { createFake, FAKE_BACKEND_MARKER, START, TEST_CODE, TEST_LINK } from './fake.ts';
 import { cutLog, LOG_ROWS, micros } from './log-page.ts';
 import { actsFollowed, actsNamed } from '../log/lines.ts';
 import { systemSettings, testSystem, testGroups } from '../../rules/test-system.ts';
@@ -734,6 +734,28 @@ describe('the account', () => {
     await fake.signOut();
     await flush();
     expect(seen).toEqual([true, false]);
+  });
+  test('the test link signs in the address of the last code asked for; any other hash, or none asked for, is refused', async () => {
+    const { fake, ana } = world();
+    fake.signInAs(null);
+    const gone = refused('that link does not work, or it has expired: ask for a new code', 'link');
+    expect(await fake.verifyLink(TEST_LINK)).toEqual(gone);
+    await fake.requestCode(fake.emailOf(ana), null);
+    expect(await fake.verifyLink('not-the-test-link-at-all')).toEqual(gone);
+    expect(await fake.session()).toEqual({ signedIn: false, account: null });
+    expect(await fake.verifyLink(TEST_LINK)).toEqual({ ok: true, value: { account: true } });
+    expect(await fake.session()).toEqual({ signedIn: true, account: ana });
+  });
+  test('the test link opens an account from the invite the code was asked with, or signs in with none and says why', async () => {
+    const { fake } = world();
+    const { code } = must(await fake.createInvite());
+    fake.signInAs(null);
+    await fake.requestCode('new@example.test', code);
+    expect(await fake.verifyLink(TEST_LINK)).toEqual({ ok: true, value: { account: true } });
+    fake.signInAs(null);
+    await fake.requestCode('other@example.test', null);
+    expect(await fake.verifyLink(TEST_LINK)).toEqual({ ok: true, value: { account: false, why: 'that invite opens nothing; open the account with another invite' } });
+    expect(await fake.session()).toEqual({ signedIn: true, account: null });
   });
   test('an address with no account and no invite signs in with no account, and says why', async () => {
     const { fake } = world();
