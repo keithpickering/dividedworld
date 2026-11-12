@@ -207,7 +207,8 @@ describe('the index rows\' units and last post (list-rows plan, Task 1)', () => 
     expect(by.firstElementChild!.textContent).toBe('· ');
     expect(cell.querySelectorAll('.kb-board-sep')).toHaveLength(2);
     expect(title.nextElementSibling!.tagName).toBe('BR');
-    expect(cell.textContent!).toMatch(/ · S?Spritey, Oct/u);
+    /* The date's form (absolute or "N days ago") follows the clock, so only the name and the comma are pinned. */
+    expect(cell.textContent!).toMatch(/ · S?Spritey, \S/u);
   });
 
   test('the name and the time are one .kb-board-last-by, and the title\'s link is not inside it', async () => {
