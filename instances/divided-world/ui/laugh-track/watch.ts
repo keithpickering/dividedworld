@@ -1,31 +1,54 @@
 /**
- * The page's one watcher for Laugh Track (docs/plans/2026-11-11-laugh-track-design.md, sections 6 and 8; plan Task 13). Every cued place
- * on the page, of every post, registers here, and the page holds ONE `IntersectionObserver` (which places are near the viewport), ONE
- * passive scroll listener, ONE pointermove listener (a mouse only) and ONE resize listener, however many posts and places there are. Forty posts of thirty
- * places cost exactly that, and a still page costs no frame.
+ * The page's one watcher for Laugh Track (docs/plans/2026-11-11-laugh-track-design.md, sections 6 and 8, changed by
+ * docs/plans/2026-11-12-laugh-track-band-design.md, sections 1 to 3). Every cued place on the page, of every post, registers here, and the
+ * page holds ONE `IntersectionObserver` (which places are near the viewport), ONE passive scroll listener, ONE pointermove listener (a mouse
+ * only) and ONE resize listener, however many posts and places there are. Forty posts of thirty places cost exactly that, and a still page
+ * costs no frame.
  *
- * Frames (`requestAnimationFrame`) run only while the page scrolls, a mouse moves, or a place rests on the line waiting out its dwell, and
- * never on an interval. A frame measures only the places the observer says are near, reads the line from `--kb-hud-measured` (the HUD's
- * measured height, frame/Hud.tsx), fires a place that has rested on the line for its dwell, and sets the murmurs.
+ * Frames (`requestAnimationFrame`) are one loop for the page, never on an interval. They run while the page scrolls or a mouse moves, and
+ * while something is waiting on time: a place adding up its dwell in the band, a place earned and waiting its turn, or the murmur held
+ * while an unfired place is near. A page with none of those asks for no frame, and the first frame after it adds no dwell. A frame measures
+ * only the places the observer says are near, reads the band from the line and `--kb-hud-measured` (the HUD's measured height,
+ * frame/Hud.tsx), adds the frame's time (at most 100ms, so a tab that slept earns nothing) to each place in the band, and fires the queue.
+ *
+ * A place earns its cue once the middle of any of its boxes has been in the band for the dwell, added up across pauses; leaving the reach
+ * (the observer no longer sees it) loses what it had added. Earned places fire one at a time in the page's order (an earlier post before a
+ * later one, and within a post the order of its first pieces, read with `compareDocumentPosition` only when one is about to fire), the next
+ * `airMs` after the one before. An earned place that leaves the band, or the reach, keeps its turn for `holdMs` from leaving, and after that
+ * is unearned, as if never read; one that is unregistered, or whose pieces were drawn again, leaves the queue at once, so nothing fires
+ * after its registration is gone and nothing waits on it.
  *
  * The page has one audience: ONE build-up loop for the page, as the engine's mixer holds one voice in the group `audience-build` (a loop made
- * there ends the group's prior one). The nearest unfired place on the page, of any kind and on whichever post, decides which murmur it is,
- * at that place's gain. The watcher owns that one loop: a place says how to make its kind's loop (`voice`), the first frame that wants one
- * makes it (so a page nobody scrolls to a cue fetches nothing), a nearer place of another kind stops it with the fade and then makes the
- * new kind's, and a fire stops it with the fade (the take crosses over it) and makes none in that frame. It is stopped when no unfired place
- * is left, and with the last place, so no held caption outlives the last post (#496). `reachRem` and the screen numbers are read from the
- * first place to register: every place of an instance reads the same card settings.
+ * there ends the group's prior one). The nearest unfired, unearned place on the page, of any kind and on whichever post, decides which murmur
+ * it is, at that place's gain. The watcher owns that one loop: a place says how to make its kind's loop (`voice`), the first frame that wants
+ * one makes it (so a page nobody scrolls to a cue fetches nothing), a nearer place of another kind stops it with the fade and then makes the
+ * new kind's, and a fire stops it with the fade (the take crosses over it). After a fire the murmur is held at nothing, and no loop is made,
+ * until the take's tail begins (the take's length from `fire()`'s answer less the fade), or for the airtime when the play did not sound or
+ * answers late. It is stopped when no unfired place is left, and with the last place, so no held caption outlives the last post (#496).
+ * `reachRem` and the screen numbers are read from the first place to register: every place of an instance reads the same card settings.
  *
  * Nothing here reads who owns, wrote or cast anything, and nothing leaves the screen. Each listener is added when the first place
  * registers and removed with the last, and the module touches no global before then, so a test can fake the page.
  */
-import { distance, murmurGain, readingLine, type Point, type Rect } from './line.ts';
+import { bandOf, distance, inBand, murmurGain, type Point, type Rect } from './line.ts';
 
 /** A loop the page's audience murmurs with (the engine's `LoopHandle`). */
 export interface Voice { setGain(g: number): void; stop(fadeMs: number): void }
 
 /** The card's screen settings (`screenReads` in cards/laugh-track.ts), as the effect reads them. */
-export interface Screen { readonly line: number; readonly dwellMs: number; readonly reachRem: number; readonly murmurMost: number; readonly fadeMs: number }
+export interface Screen {
+  readonly line: number;
+  /** The band's height, in percent of the reading space. */
+  readonly band: number;
+  readonly dwellMs: number;
+  readonly reachRem: number;
+  readonly murmurMost: number;
+  readonly fadeMs: number;
+  /** The wait between one earned place's fire and the next's, and the murmur's hold when a play did not sound. */
+  readonly airMs: number;
+  /** How long an earned place that left the band keeps its turn. */
+  readonly holdMs: number;
+}
 
 export interface PlaceSpec {
   /** The place's pieces on the page, read when it registers and again when it is `refresh`ed or measured. */
@@ -35,8 +58,11 @@ export interface PlaceSpec {
   readonly screen: Screen;
   /** Makes the page's loop of `kind`: called when the nearest place's kind needs one and none lives. */
   voice(kind: string): Voice;
-  /** The place has rested on the line for the dwell. Called once. */
-  fire(): void;
+  /**
+   * The place's turn has come. Called once. It may answer, when the take is known, with the take's length; null or nothing means no take
+   * sounded.
+   */
+  fire(): void | Promise<{ lengthMs: number } | null>;
 }
 
 /** What a registration hands back. */
@@ -49,8 +75,12 @@ interface Place {
   /** The pieces being observed. */
   watched: Set<Element>;
   fired: boolean;
-  /** When it first rested on the line this stretch, or null. */
-  since: number | null;
+  /** How long it has been in the band, added up a frame at a time; kept across pauses, lost when it leaves the reach. */
+  dwelt: number;
+  /** It has dwelt the dwell and waits its turn to fire. */
+  earned: boolean;
+  /** When an earned place was first out of the band (or the reach) this stretch, or null while it is in. */
+  leftAt: number | null;
 }
 
 const places = new Set<Place>();
@@ -64,9 +94,21 @@ let rem = 16;
 let screen: Screen | null = null;
 /** How many registered places have not fired: kept, so no frame and no unregister scans every place to ask. */
 let unfired = 0;
+/** The earned places, in a set of their own so one the observer drops from `near` keeps its turn. Sorted into page order only when one fires. */
+const earnedPlaces = new Set<Place>();
+/** The time of the frame before this one while frames are running, else null: the first frame after a still page adds no dwell. */
+let last: number | null = null;
+/** No place fires before this: the airtime after the last fire. */
+let nextAt = 0;
+/** No loop is made, and a live one is silent, before this. */
+let quietUntil = 0;
+/** The last fire's own mark, so only its answer moves the hold. */
+let lastFire: object | null = null;
+/** The hold has run out since the last fire: a take that answers after that no longer holds the murmur. */
+let holdOver = true;
 
 /** What the watcher holds, for a test to look inside. */
-export const __inspect = () => ({ places: places.size, elements: byElement.size, near: near.size, unfired, murmuring: murmuring !== null, listening: observer !== null });
+export const __inspect = () => ({ places: places.size, elements: byElement.size, near: near.size, earned: earnedPlaces.size, unfired, murmuring: murmuring !== null, listening: observer !== null });
 
 /** Lets the page's loop go with the fade; nothing is left to leak. */
 function hush(fadeMs?: number): void {
@@ -104,7 +146,8 @@ function makeObserver(first: Screen): IntersectionObserver {
       const place = byElement.get(e.target);
       if (!place) continue;
       if (e.isIntersecting) place.seen.add(e.target); else place.seen.delete(e.target);
-      if (place.seen.size > 0 && !place.fired) near.add(place); else near.delete(place);
+      if (place.seen.size > 0 && !place.fired) near.add(place);
+      else { near.delete(place); if (!place.earned) place.dwelt = 0; }
     }
     wake();
   }, { rootMargin: `${first.reachRem * rem}px 0px` });
@@ -131,6 +174,8 @@ function stop(): void {
   near.clear();
   byElement.clear();
   unfired = 0;
+  earnedPlaces.clear();
+  nextAt = 0; quietUntil = 0; last = null; lastFire = null; holdOver = true;
 }
 
 function wake(): void {
@@ -159,47 +204,93 @@ function murmur(best: { gain: number; place: Place } | null): void {
   if (murmuring.gain !== gain) { murmuring.voice.setGain(gain); murmuring.gain = gain; }
 }
 
+/** `Node.DOCUMENT_POSITION_PRECEDING` and `_FOLLOWING`, spelled out so nothing here reads a global before the page has one. */
+const PRECEDING = 2, FOLLOWING = 4;
+/** Page order: the order of the places' first pieces in the document. Places it cannot tell apart keep the order they earned in. */
+function inPageOrder(a: Place, b: Place): number {
+  const x = Array.from(a.spec.els())[0];
+  const y = Array.from(b.spec.els())[0];
+  if (!x || !y || x === y || typeof x.compareDocumentPosition !== 'function') return 0;
+  const where = x.compareDocumentPosition(y);
+  return where & FOLLOWING ? -1 : where & PRECEDING ? 1 : 0;
+}
+
+/** An earned place leaves the queue: unearned, with nothing added. */
+function unearn(place: Place): void {
+  place.earned = false; place.dwelt = 0; place.leftAt = null;
+  earnedPlaces.delete(place);
+}
+
 function tick(now: number): void {
   frame = null;
   if (!screen) return;
-  const lineY = readingLine(window.innerHeight, hudHeight(), screen.line);
+  const band = bandOf(window.innerHeight, hudHeight(), screen.line, screen.band);
+  const dt = last === null ? 0 : Math.min(Math.max(now - last, 0), 100);
   const measured = new Map<Place, Rect[]>();
-  const due: Place[] = [];
-  let waiting = false;
+  let adding = false;
   for (const place of near) {
     const rects = boxes(place);
     measured.set(place, rects);
-    if (rects.some((r) => r.top <= lineY && r.bottom >= lineY)) {
-      place.since ??= now;
-      if (now - place.since >= place.spec.screen.dwellMs) due.push(place); else waiting = true;
-    } else place.since = null;
+    const inside = inBand(rects, band);
+    if (place.earned) place.leftAt = inside ? null : place.leftAt ?? now;
+    else if (inside) {
+      place.dwelt += dt;
+      if (place.dwelt >= place.spec.screen.dwellMs) { place.earned = true; place.leftAt = null; earnedPlaces.add(place); } else adding = true;
+    }
+  }
+  /* An earned place the observer dropped is out of the band too, and each place out of it keeps its turn for `holdMs` only. */
+  for (const place of [...earnedPlaces]) {
+    if (!near.has(place)) place.leftAt ??= now;
+    if (place.leftAt !== null && now - place.leftAt > place.spec.screen.holdMs) unearn(place);
   }
   let fadeMs: number | null = null;
-  for (const place of due) {
-    place.fired = true;
+  if (earnedPlaces.size > 0 && now >= nextAt) {
+    const place = [...earnedPlaces].sort(inPageOrder)[0]!;
+    const { airMs } = place.spec.screen;
+    earnedPlaces.delete(place);
+    place.fired = true; place.earned = false; place.leftAt = null;
     unfired--;
-    place.since = null;
     near.delete(place);
     measured.delete(place);
     for (const e of place.watched) { observer?.unobserve(e); byElement.delete(e); }
     place.watched = new Set();
     place.seen.clear();
-    fadeMs = place.spec.screen.fadeMs;
-    place.spec.fire();
+    const fade = place.spec.screen.fadeMs;
+    fadeMs = fade;
+    nextAt = now + airMs;
+    quietUntil = now + airMs;
+    holdOver = false;
+    const mine = {};
+    lastFire = mine;
+    const answer = place.spec.fire();
+    /* A take that answers hands the murmur back over its tail; one that answers null, or late, leaves the airtime as it was. */
+    if (answer && typeof answer.then === 'function') {
+      const firedAt = now;
+      answer.then((take) => {
+        if (lastFire !== mine || holdOver || !take) return;
+        quietUntil = firedAt + Math.max(take.lengthMs - fade, 0);
+        wake();
+      }, () => {});
+    }
   }
-  /* A fire fades the murmur over the fade, under the take, and makes no loop in its frame; the next frame with a place near makes a fresh one. */
-  if (fadeMs !== null) { hush(fadeMs); if (unfired === 0) return; }
+  /* A fire fades the murmur over the fade, under the take; while the hold lasts no loop is made, and a live one is silent. */
+  if (fadeMs !== null) hush(fadeMs);
+  if (now >= quietUntil) holdOver = true;
+  if (unfired === 0) hush();
+  else if (fadeMs !== null || now < quietUntil) { if (murmuring && murmuring.gain !== 0) { murmuring.voice.setGain(0); murmuring.gain = 0; } }
   else {
     let best: { gain: number; place: Place } | null = null;
     for (const [place, rects] of measured) {
+      if (place.earned) continue;
       const s = place.spec.screen;
-      const gain = murmurGain(distance(rects, lineY, pointer ?? undefined), s.reachRem * rem, s.murmurMost);
+      const gain = murmurGain(distance(rects, band, pointer ?? undefined), s.reachRem * rem, s.murmurMost);
       if (!best || gain > best.gain) best = { gain, place };
     }
     murmur(best);
   }
-  /* The next frame is asked for by the next scroll or move, or by a place still waiting out its dwell: a settled page asks for none. */
-  if (waiting) wake();
+  /* The next frame is asked for by the next scroll or move, or by a place adding dwell, an earned place waiting its turn, or the held murmur
+     with a place near to come back to: a settled page asks for none, and its next frame adds no dwell. */
+  if (adding || earnedPlaces.size > 0 || (now < quietUntil && near.size > 0)) { last = now; wake(); } else last = null;
 }
 
 function observe(place: Place): void {
@@ -207,8 +298,10 @@ function observe(place: Place): void {
   const now = new Set(Array.from(place.spec.els()));
   for (const e of place.watched) if (!now.has(e)) { observer?.unobserve(e); byElement.delete(e); place.seen.delete(e); }
   for (const e of now) if (!place.watched.has(e)) { byElement.set(e, place); observer?.observe(e); }
+  /* An earned place whose pieces were drawn again is not the words that were read: it leaves the queue, and earns its cue again. */
+  if (place.earned && (now.size === 0 || Array.from(place.watched).some((e) => !now.has(e)))) unearn(place);
   place.watched = now;
-  if (place.seen.size === 0) near.delete(place);
+  if (place.seen.size === 0) { near.delete(place); if (!place.earned) place.dwelt = 0; }
 }
 
 /** Registers a place; the function it returns unregisters it (its post is gone or its words changed). */
@@ -216,13 +309,14 @@ export function register(spec: PlaceSpec): Unregister {
   /* A page with no observer (a test's, or a browser too old to have one) has no way to know which places are near: it hears nothing, and reads fine. */
   if (typeof IntersectionObserver !== 'function') return Object.assign(() => {}, { refresh: () => {} });
   if (places.size === 0) start(spec.screen);
-  const place: Place = { spec, seen: new Set(), watched: new Set(), fired: false, since: null };
+  const place: Place = { spec, seen: new Set(), watched: new Set(), fired: false, dwelt: 0, earned: false, leftAt: null };
   places.add(place);
   unfired++;
   observe(place);
   const off = (() => {
     if (!places.delete(place)) return;
     if (!place.fired) unfired--;
+    earnedPlaces.delete(place);
     for (const e of place.watched) { observer?.unobserve(e); byElement.delete(e); }
     near.delete(place);
     if (places.size === 0) { hush(); stop(); return; }
