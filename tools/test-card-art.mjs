@@ -253,6 +253,72 @@ try {
   backRed('an art.svg in a back holding <script', (f) => { f['art.webp'] = null; f['art.svg'] = ART('<script/>'); }, /card-back.*art\.svg.*<script/i);
   backRed('a back with no art.json', (f) => { f['art.json'] = null; }, /card-back.*art\.json.*missing/);
   backRed('a back with an art.json with an empty credit', (f) => { f['art.json'] = JSON.stringify({ credit: '', license: 'x' }); }, /card-back.*art\.json.*credit/);
+
+  /* ---- a pack folder (docs/plans/2026-11-12-booster-pack-render-design.md section 5) ---- */
+  // A WebP header of a given size and no image data, read by the guard as a VP8X file: `flags` is the VP8X flag byte
+  // (2 is the animation flag), and `pad` extra bytes follow so a file can be made as large as a case needs.
+  const webpAt = (w, h, flags = 0, pad = 0) => {
+    const b = Buffer.alloc(30 + pad);
+    b.write('RIFF', 0, 'latin1');
+    b.writeUInt32LE(b.length - 8, 4);
+    b.write('WEBPVP8X', 8, 'latin1');
+    b.writeUInt32LE(10, 16);
+    b[20] = flags;
+    b.writeUIntLE(w - 1, 24, 3);
+    b.writeUIntLE(h - 1, 27, 3);
+    return b;
+  };
+  // A repository with the clean card folder and, beside the cards, `instances/demo/ui/packs/demo-pack/` holding the
+  // files of today's Booster (art.svg, mark.svg, art.json) after `poison(files)` is applied.
+  /** @param {(files: Record<string, string | Buffer | null>) => void} [poison] */
+  const packRepo = (poison = () => {}) => {
+    /** @type {Record<string, string | Buffer | null>} */
+    const files = { 'art.svg': ART(), 'mark.svg': MARK, 'art.json': JSON_OK };
+    poison(files);
+    const dir = repo();
+    const pack = path.join(dir, 'instances/demo/ui/packs/demo-pack');
+    fs.mkdirSync(pack, { recursive: true });
+    for (const [f, body] of Object.entries(files)) if (body !== null) fs.writeFileSync(path.join(pack, f), body);
+    return dir;
+  };
+  const packGreen = (name, poison) => {
+    const dir = packRepo(poison);
+    const faults = cardArtFaults(dir);
+    check(name, faults.length === 0, JSON.stringify(faults));
+    const c = run(dir);
+    check('  and the command exits 0', c.status === 0, `${c.status} ${c.stderr}`);
+  };
+  const packRed = (name, poison, want) => {
+    const dir = packRepo(poison);
+    const faults = cardArtFaults(dir);
+    check(name, faults.some((f) => want.test(f)), JSON.stringify(faults));
+    const c = run(dir);
+    check('  and the command exits 1 naming it', c.status === 1 && want.test(c.stderr), `${c.status} ${c.stderr}`);
+  };
+  const rendered = (f) => { f['art.svg'] = null; f['art.webp'] = WEBP_LOSSY; };
+
+  packGreen('a pack with art.svg, mark.svg and art.json (today\'s Booster)', () => {});
+  packGreen('a pack with art.webp, mark.svg and art.json', rendered);
+  packGreen('a pack with art.webp, relief.webp of 540 by 840, mark.svg and art.json', (f) => { rendered(f); f['relief.webp'] = WEBP_SMALL; });
+  packGreen('a relief.webp built by the header writer at 540 by 840', (f) => { rendered(f); f['relief.webp'] = webpAt(540, 840); });
+  {
+    const dir = packRepo();
+    const c = run(dir);
+    check('the passing line counts the card folder and the pack folder', c.status === 0 && /1 card folder\(s\).*1 pack folder\(s\)/.test(c.stdout), c.stdout);
+  }
+
+  packRed('a pack folder with no art.*', (f) => { f['art.svg'] = null; }, /packs.*missing a canvas; a pack's art folder holds art\.svg or art\.webp, mark\.svg and art\.json, and may hold relief\.webp beside art\.webp/);
+  packRed('a pack with art.svg and art.webp', (f) => { f['art.webp'] = WEBP_LOSSY; }, /packs.*holds art\.svg and art\.webp/);
+  packRed('a pack with no mark.svg', (f) => { f['mark.svg'] = null; }, /packs.*mark\.svg.*missing; a pack's art folder holds/);
+  packRed('a pack with no art.json', (f) => { f['art.json'] = null; }, /packs.*art\.json.*missing; a pack's art folder holds/);
+  packRed('a relief.webp of 1080 by 1680', (f) => { rendered(f); f['relief.webp'] = WEBP_LOSSY; }, /relief\.webp.*is 1080 by 1680; a raster canvas is exactly 540 by 840/);
+  packRed('a relief.webp that is a PNG', (f) => { rendered(f); f['relief.webp'] = PNG; }, /relief\.webp.*is not a WebP image$/m);
+  packRed('an animated relief.webp', (f) => { rendered(f); f['relief.webp'] = webpAt(540, 840, 2); }, /relief\.webp.*is animated/);
+  packRed('a relief.webp padded past 200 KB', (f) => { rendered(f); f['relief.webp'] = webpAt(540, 840, 0, 201 * 1024); }, /relief\.webp.*200 KB/);
+  packRed('a relief.webp beside an art.svg and no art.webp', (f) => { f['relief.webp'] = WEBP_SMALL; }, /relief\.webp is the relief of a rendered pack; this folder has no art\.webp/);
+  packRed('a pack art.svg holding <script', (f) => { f['art.svg'] = ART('<script/>'); }, /packs.*art\.svg.*<script/i);
+  // A card's own messages keep their words, and a card folder is still not a pack: relief.webp there is not read.
+  green('a relief.webp in a card folder is not read', (f) => { f['relief.webp'] = PNG; });
 } finally {
   fs.rmSync(root, { recursive: true, force: true });
 }
