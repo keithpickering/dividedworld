@@ -19,7 +19,7 @@ export interface ConfigChoiceProps<V extends string> {
 
 export function ConfigChoice<V extends string>({ name, label, hideLegend, options, value, onChoose }: ConfigChoiceProps<V>) {
   return (
-    <fieldset className="kb-play-choice kb-play-config-choice">
+    <fieldset className="kb-play-choice">
       <legend className={hideLegend ? 'kb-play-label kb-visually-hidden' : 'kb-play-label'}>{label}</legend>
       <div className="kb-play-choice-row kb-play-config-choice-row">
         {options.map((o) => (
