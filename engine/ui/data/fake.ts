@@ -1324,7 +1324,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
           .sort(byLanding).map((a) => ({ act: publicAct(a), state: null })),
       ],
       above: [...reachPlays].filter(([p, r]) => r.endsAt > play.at && !endedBy(p) && acts.get(p)!.at < play.at
-          && (r.reach === 'character' ? r.target === post.character : r.reach === 'thread' ? r.target === post.thread : r.target === board))
+          && (r.reach === 'character' ? r.target === shownAuthor(post, false) : r.reach === 'thread' ? r.target === post.thread : r.target === board))
         .sort(([a], [b]) => byLanding(acts.get(a)!, acts.get(b)!))
         .map(([p, r]) => ({ play: p, reach: r.reach, target: r.target, endsAt: iso(r.endsAt), act: publicAct(acts.get(p)!) })),
       recorded: m !== undefined,
@@ -2933,11 +2933,12 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
             /* A play beyond a post without its play_reach row is in no one's view (the view joins it); a board is only ever the caster's. */
             if (reach !== 'post' && !reachPlays.has(play.id)) return [];
             if (!cast && reach === 'board') return [];
-            const targetAuthor = reach === 'post' ? acts.get(play.target ?? '')?.character : undefined;
+            const targetPost = reach === 'post' ? acts.get(play.target ?? '') : undefined;
+            const targetAuthor = targetPost ? shownAuthor(targetPost, false) : undefined;
             return [{ ms: e.at, order: e.order, e: {
               cardEnd: e.id, play: play.id, card: String(play.payload.card), at: iso(e.at), side: cast ? 'cast' as const : 'onMine' as const, reach,
               targetName: reach === 'board' ? boards.find((b) => b.id === play.payload.board)?.name ?? null : targetName(play),
-              postAuthorName: targetAuthor == null ? null : characters.get(targetAuthor)?.name ?? null,
+              postAuthorName: targetAuthor == null ? null : charOf(targetAuthor)?.name ?? null,
               casterName: characters.get(play.character ?? '')?.name ?? null,
               character: (cast ? play.character : targetCharacter(play)) as Id,
             } }];
@@ -3038,7 +3039,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const counts: { posts: number; spins: number; cards: number } = { posts: 0, spins: 0, cards: 0 };
       if (!c || c.debutedAt === null) return counts;
       for (const a of acts.values()) {
-        if (shownAuthor(a, false) !== id) continue;
+        if (shownAuthor(a) !== id) continue;
         if (a.kind === 'post') counts.posts++;
         else if (a.kind === 'spin') counts.spins++;
         else if (a.kind === 'card') counts.cards++;

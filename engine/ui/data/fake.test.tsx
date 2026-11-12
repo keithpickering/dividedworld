@@ -3924,6 +3924,36 @@ describe('post veils, blind totals and a post-local reaction (card notes, Part 3
     expect(await w.fake.thread(w.thread)).toMatchObject({ firstCharacter: stand, lastCharacter: w.cyFace });
   });
 
+  test('the log\'s ended row for a card an admin ended on a veiled post names the stand-in as the post\'s author while the veil is live', async () => {
+    const w = veilWorld();
+    const stand = await veil(w);
+    const play = must(await w.fake.playCard('overreaction', w.anaFace, w.post, skull, ''));
+    w.fake.signInAs(w.fake.seed.account('boss', { admin: true }));
+    must(await w.fake.reverseCard(play.id));
+    w.fake.signInAs(w.ana);
+    expect((await w.fake.log()).ended).toMatchObject([{ play: play.id, postAuthorName: 'Nobody' }]);
+    expect(stand).not.toBe(w.boFace);
+  });
+
+  test('a veiled post\'s moment lists no play on the real author\'s character', async () => {
+    const w = veilWorld();
+    must(await w.fake.playCard('glow', w.anaFace, w.boFace, {}, '', 'character', w.post));
+    w.fake.clock.advance(MINUTE);
+    const play = must(await w.fake.playCard('whodunnit', w.anaFace, w.post, {}, ''));
+    expect((await w.fake.playMoment(play.id))!.above).toEqual([]);
+  });
+
+  test('a character\'s card count leaves out its own use card on its own veiled post, as its list does', async () => {
+    const w = veilWorld();
+    const mine = w.fake.seed.post(w.thread, w.anaFace, 'Ana\'s post');
+    must(await w.fake.playCard('overreaction', w.anaFace, mine, skull, ''));
+    w.fake.seed.cards(w.cy, { whodunnit: 1 });
+    w.fake.signInAs(w.cy);
+    must(await w.fake.playCard('whodunnit', w.cyFace, mine, {}, ''));
+    const listed = (await w.fake.characterActs(w.anaFace, ['card'], { offset: 0, limit: 50 })).length;
+    expect((await w.fake.characterCounts(w.anaFace)).cards).toBe(listed);
+  });
+
   test('a veil is refused on a post by the staff and on a post a Mod Bot has been to, in the same words, and a character card on the stand-in is refused', async () => {
     const w = veilWorld();
     const mod = w.fake.seed.staff('s-mod', 'Mod Staff', 'mod');
