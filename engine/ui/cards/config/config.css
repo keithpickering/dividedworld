@@ -1,0 +1,42 @@
+/*
+ * What a card's settings add to the play form's own look (play.css), and nothing the form already draws: the label's line, which holds a label
+ * and a quiet action at its far end, and the range. The form's classes (kb-play-label, kb-play-input, kb-play-fine, kb-play-why, kb-play-choice)
+ * are drawn by play.css; every color here is a glass token.
+ */
+
+.kb-play-config-field {
+  display: flex;
+  flex-direction: column;
+}
+
+/* The label and its action on one row, tall enough for a small button to sit beside the label without moving it. */
+.kb-play-config-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 36px;
+}
+
+.kb-play-config-field .kb-play-input {
+  margin-top: 4px;
+}
+
+.kb-play-config-field > .kb-play-fine {
+  margin-top: 6px;
+}
+
+/* A native range: the browser keeps its keys and its focus, the glass its accent and a target a thumb can hit. */
+.kb-play-range {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 24px;
+  margin: 8px 0 0;
+  accent-color: var(--kb-glass-neon);
+  cursor: pointer;
+}
+
+.kb-play-range:focus-visible {
+  outline: 3px solid var(--kb-glass-ready-text);
+  outline-offset: 2px;
+}
