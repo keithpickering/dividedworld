@@ -377,14 +377,55 @@ export function chatterPrompt(i: ChatterInput): { readonly system: string; reado
  * the old voice writes one line, with no title, card or note. A name and a post are collapsed to one line first, so a newline in a
  * player's words cannot end the frame early or add a row of its own.
  */
-export function chatterCompletion(i: { readonly name: string; readonly thread: ChatterInput['thread']; readonly limits: ChatterLimits }): { readonly prompt: string; readonly stop: readonly string[] } {
+export function chatterCompletion(i: { readonly name: string; readonly thread: ChatterInput['thread']; readonly limits: ChatterLimits; readonly fit: PromptFit }): { readonly prompt: string; readonly stop: readonly string[] } {
   const lines = threadLines(i.thread, i.limits, false);
-  const title = i.thread ? `Thread: ${clip(i.thread.title, i.limits.titleMaxLength)}` : 'Thread: (new)';
   const posts = lines.slice(1);
-  return {
-    prompt: ['Welcome to the Message Boards - Thread View', title, '', ...posts, `${clip(i.name, 60)}:`].join('\n'),
-    stop: ['\n'],
-  };
+  const name = `${clip(i.name, 60)}:`;
+  const prompt = fitThreadPrompt({
+    posts, title: i.thread ? i.thread.title : null, titleMaxLength: i.limits.titleMaxLength, fit: i.fit,
+    build: (kept, title) => ['Welcome to the Message Boards - Thread View', i.thread ? (title === null ? 'Thread:' : `Thread: ${title}`) : 'Thread: (new)', '', ...kept, name].join('\n'),
+  });
+  return { prompt, stop: ['\n'] };
+}
+
+/** What a frame is fitted to (design section 3): the prompt's most tokens, and how many tokens a text is by the instance's tokenizer. */
+export interface PromptFit {
+  readonly budget: number;
+  readonly count: (text: string) => number;
+}
+
+/** The title's first clip when a prompt is over budget, before it is emptied (the same 40 characters You Were Saying? uses). */
+export const FIT_TITLE_CHARS = 40;
+
+/**
+ * Fits a thread document to its budget, in the design's section 3 order: thread posts dropped one at a time, oldest first; then the title clipped to 40
+ * characters; then the title emptied (`build` gets null). The caller's `build` owns every line that is never removed (the persona's own line, a filing's
+ * moderator-action line), so none can be dropped here. A budget nothing meets returns the smallest prompt and never throws: `models.complete` refuses
+ * it before it is sent (`promptTooLong`). Under budget the first prompt built, with every post and the title as `clip` gives it, is returned unchanged.
+ * A title's clip never splits a surrogate pair (`clip` cuts through `capLength`).
+ */
+export function fitThreadPrompt(i: {
+  readonly posts: readonly string[];
+  readonly title: string | null;
+  readonly titleMaxLength: number;
+  readonly fit: PromptFit;
+  readonly build: (posts: readonly string[], title: string | null) => string;
+}): string {
+  const fits = (text: string): boolean => i.fit.count(text) <= i.fit.budget;
+  const full = i.title === null ? null : clip(i.title, i.titleMaxLength);
+  const first = i.build(i.posts, full);
+  if (fits(first)) return first;
+  for (let dropped = 1; dropped <= i.posts.length; dropped++) {
+    const text = i.build(i.posts.slice(dropped), full);
+    if (fits(text)) return text;
+  }
+  if (i.title === null) return i.build([], null);
+  const short = clip(i.title, Math.min(FIT_TITLE_CHARS, i.titleMaxLength));
+  if (short !== full) {
+    const text = i.build([], short);
+    if (fits(text)) return text;
+  }
+  return i.build([], null);
 }
 
 /**

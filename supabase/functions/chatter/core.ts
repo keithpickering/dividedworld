@@ -46,7 +46,7 @@
  * fail, the trim names the predicate and plain code's seeded configuration is played instead; where code can build none, the card is dropped
  * (`cardRefused`) and the post stands. The database then holds every rule it holds for a player's play.
  */
-import { withheld, atOrBelow, decideDraw, decidePlay, decideSet, effectsOnTarget, playOf, postTarget, staffConfigOf, staffDrawOf, staffOffers, type DecidedDraw, type CardEffect, type CardTarget, type EffectsAbove } from '../../../engine/rules/cards.ts';
+import { writeTokensMost, withheld, atOrBelow, decideDraw, decidePlay, decideSet, effectsOnTarget, playOf, postTarget, staffConfigOf, staffDrawOf, staffOffers, type DecidedDraw, type CardEffect, type CardTarget, type EffectsAbove } from '../../../engine/rules/cards.ts';
 import { ENGINE_DEFAULT_PRONOUNS, pronounsOr, taggedName, type PronounSet } from '../../../engine/rules/pronouns.ts';
 import type { Instance, Persona } from '../../../engine/rules/types.ts';
 import type { Career } from '../../../engine/system/career.ts';
@@ -64,6 +64,7 @@ import { DUTY_SPECS } from '../../../engine/system/duties.ts';
 import type { Memory } from '../../../engine/system/memory.ts';
 import type { Models } from '../../../engine/system/model.ts';
 import { scrubbedComplete } from '../../../engine/system/scrub.ts';
+import { tokenCounter } from '../../../engine/system/tokens.ts';
 import {
   allowance,
   candidates,
@@ -83,6 +84,9 @@ import { withDatabaseSettings } from '../_shared/settings.ts';
 import { AnswerRejected, LedgerWriteFailed } from '../_shared/models/index.ts';
 
 const DAY = 86_400_000;
+
+/** The most tokens an old voice's pool post may take, before the window's own bound (`writeTokensMost`). */
+const OLD_VOICE_POST_TOKENS = 400;
 
 /**
  * How long a run's claim on its day holds. It is longer than the run can last: the schedule gives the function 150 seconds
@@ -324,9 +328,11 @@ async function onePick(r: PickRun): Promise<PickRecord> {
     let raw: unknown;
     try {
       if (persona.voice === 'oldVoice') {
-        const frame = chatterCompletion({ name: persona.name, thread, limits });
+        // The window's room for the answer, then the prompt fitted to what is left (design section 3); a prompt that still does not fit is refused by `models.complete` as a rejection.
+        const maxTokens = Math.min(OLD_VOICE_POST_TOKENS, writeTokensMost(settings));
+        const frame = chatterCompletion({ name: persona.name, thread, limits, fit: { budget: settings.oldVoiceWindow - maxTokens, count: tokenCounter(settings.oldVoiceTokenizer) } });
         const out = await scrubbedComplete(models, {
-          duty: 'chatter', staff: p.staff, prompt: frame.prompt, temperature: 0.9, topP: 0.95, stop: frame.stop, maxTokens: 400, maxChars: settings.postMaxLength,
+          duty: 'chatter', staff: p.staff, prompt: frame.prompt, temperature: 0.9, topP: 0.95, stop: frame.stop, maxTokens, maxChars: settings.postMaxLength,
         }, tuned.system.scrubWords);
         raw = { words: out.value };
       } else {

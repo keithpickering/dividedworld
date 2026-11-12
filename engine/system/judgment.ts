@@ -35,7 +35,7 @@ import { selfPronounLine, taggedName, type PronounSet } from '../rules/pronouns.
 import type { Persona, SystemContent } from '../rules/types.ts';
 import { personaPrompt } from './prompt.ts';
 import { careerText, type Career } from './career.ts';
-import { cutAtSentence, memoryLines } from './chatter.ts';
+import { cutAtSentence, fitThreadPrompt, memoryLines, type PromptFit } from './chatter.ts';
 import { groupMoveBar, WHY_MOST, type ConferredGroup } from './meeting.ts';
 import { noteMost, type Memory } from './memory.ts';
 import { BANDS, MOVE_KINDS, moveKind, moveParamsProblems } from './moves.ts';
@@ -453,18 +453,17 @@ export function filingPrompt(i: FilingInput): { readonly system: string; readonl
  * the Mod's own line begins, and stops at the end of the line. A name and a post are collapsed to one line first, so a newline in a player's words cannot
  * end the frame early or add a line of its own.
  */
-export function filingCompletion(i: { readonly name: string; readonly board: string; readonly thread: FilingInput['thread']; readonly post: FilingInput['post']; readonly charges: FilingInput['charges']; readonly limits: FilingInput['limits'] }): { readonly prompt: string; readonly stop: readonly string[] } {
-  const shown = threadLines(i.thread ?? { title: '(new)', posts: [i.post] }, i.limits, false);
-  return {
-    prompt: [
-      'Welcome to the Message Boards - Thread View',
-      `Board: ${clip(i.board, 80)}`,
-      ...shown,
-      `[Moderator action: ${i.charges.map((c) => clip(c.rule, 200)).join('; ')}]`,
-      `${clip(i.name, 60)}:`,
-    ].join('\n'),
-    stop: ['\n'],
-  };
+export function filingCompletion(i: { readonly name: string; readonly board: string; readonly thread: FilingInput['thread']; readonly post: FilingInput['post']; readonly charges: FilingInput['charges']; readonly limits: FilingInput['limits']; readonly fit: PromptFit }): { readonly prompt: string; readonly stop: readonly string[] } {
+  const thread = i.thread ?? { title: '(new)', posts: [i.post] };
+  const posts = threadLines(thread, i.limits, false).slice(1);
+  const action = `[Moderator action: ${i.charges.map((c) => clip(c.rule, 200)).join('; ')}]`;
+  const name = `${clip(i.name, 60)}:`;
+  // The moderator-action line and the Mod's own line are `build`'s, so fitting the thread never removes them (design section 3).
+  const prompt = fitThreadPrompt({
+    posts, title: thread.title, titleMaxLength: i.limits.titleMaxLength, fit: i.fit,
+    build: (kept, title) => ['Welcome to the Message Boards - Thread View', `Board: ${clip(i.board, 80)}`, title === null ? 'Thread:' : `Thread: "${title}"`, ...kept, action, name].join('\n'),
+  });
+  return { prompt, stop: ['\n'] };
 }
 
 /* ------------------------------------------------------------------------------------------------------ reports ---- */

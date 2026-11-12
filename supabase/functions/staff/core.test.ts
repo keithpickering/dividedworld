@@ -7,7 +7,8 @@ import { placeholderWorld } from '../../../instances/divided-world/system/fixtur
 import type { Instance as WorldInstance } from '../../../engine/rules/types.ts';
 
 const dividedWorld: WorldInstance = placeholderWorld(realInstance);
-import { AnswerRejected, LedgerWriteFailed, models as realModels } from '../_shared/models/index.ts';
+import { AnswerRejected, LedgerWriteFailed, PromptTooLong, models as realModels } from '../_shared/models/index.ts';
+import { tokenCounter } from '../../../engine/system/tokens.ts';
 import type { ModelCallRow } from '../_shared/models/ledger.ts';
 import type { ChatRequest, CompletionRequest, ModelResult, Models } from '../../../engine/system/model.ts';
 import type { Instance } from '../../../engine/rules/types.ts';
@@ -337,6 +338,34 @@ test('an old-voice persona\'s line is a raw completion, and its move a chat call
   await run(dead, m3, old);
   assert.equal(m3.chats.length, 0);
   assert.deepEqual(dead.of('file_visit'), [{ visit_act: V1 }]);
+});
+
+test('an old voice\'s filing asks for the most the window leaves, and its frame fits what the window leaves for the prompt', async () => {
+  const room = async (settings: Partial<Instance['settings']>) => {
+    const d = fakeDb({ visits: [due(V1, P1)] });
+    const m = fakeModels(() => ({ move: move() }), 'A line.');
+    const world = { ...withVoice(MON, 'oldVoice'), settings: { ...dividedWorld.settings, ...settings } };
+    await run(d, m, world);
+    return { req: m.completions[0]!, count: tokenCounter(world.settings.oldVoiceTokenizer), window: world.settings.oldVoiceWindow };
+  };
+  assert.equal((await room({})).req.maxTokens, 160);
+  const tight = await room({ oldVoiceWindow: 400, oldVoicePromptFloor: 300 });
+  assert.equal(tight.req.maxTokens, 100, 'a window of 400 with a floor of 300 leaves 100');
+  assert.ok(tight.count(tight.req.prompt) <= tight.window - 100, 'the prompt fits the budget');
+  const bare = await room({ oldVoiceWindow: 64, oldVoicePromptFloor: 8 });
+  assert.match(bare.req.prompt, /\[Moderator action: [^\n]*\]\n[^\n]*:$/, 'the moderator-action line and the Mod\'s own line are never removed');
+});
+
+test('an old voice\'s filing that the window refuses (promptTooLong, or a server\'s own 4xx) is filed with its stock line', async () => {
+  for (const refusal of [new PromptTooLong(900, 600), new AnswerRejected('the server refused', 'refused:400')]) {
+    const d = fakeDb({ visits: [due(V1, P1)] });
+    const m = fakeModels(() => ({ move: move() }), refusal);
+    const out = await run(d, m, withVoice(MON, 'oldVoice'));
+    assert.ok(out.status === 'ok');
+    assert.equal(m.completions.length, 1);
+    assert.equal(m.chats.length, 0, 'no move without a line');
+    assert.deepEqual(d.of('file_visit'), [{ visit_act: V1 }], 'the stock line');
+  }
 });
 
 test('the day\'s budget counts every call: an old voice with a move is two', async () => {

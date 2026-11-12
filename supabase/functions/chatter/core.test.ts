@@ -4,7 +4,8 @@ import { runChatter } from './core.ts';
 import { DatabaseError, type Db } from '../_shared/rpc.ts';
 import { instance as realInstance } from '../_shared/instance.ts';
 import { placeholderWorld } from '../../../instances/divided-world/system/fixtures/index.ts';
-import { AnswerRejected, LedgerWriteFailed, models as realModels } from '../_shared/models/index.ts';
+import { AnswerRejected, LedgerWriteFailed, PromptTooLong, models as realModels } from '../_shared/models/index.ts';
+import { tokenCounter } from '../../../engine/system/tokens.ts';
 import type { ModelCallRow } from '../_shared/models/ledger.ts';
 import type { ChatRequest, CompletionRequest, ModelResult, Models } from '../../../engine/system/model.ts';
 import type { Instance } from '../../../engine/rules/types.ts';
@@ -478,6 +479,41 @@ test('a persona on the old voice writes its words in raw completion and gives no
   assert.equal(m.completions[0]!.staff, SIGH);
   assert.equal(d.of('write_staff_act')[0]!.payload.body, 'ur post is soooo cool!!!');
   assert.equal(d.count('write_staff_note') + d.count('staff_play_card') + d.count('staff_set_card'), 0);
+});
+
+const oldSigh = (settings: Partial<Instance['settings']> = {}): Instance => ({
+  ...dividedWorld, settings: { ...dividedWorld.settings, ...settings },
+  system: { ...dividedWorld.system, roster: dividedWorld.system.roster.map((p) => (p.key === SIGH ? { ...p, voice: 'oldVoice' as const } : p)) },
+});
+
+test('an old voice\'s pool post asks for the most the window leaves, and its frame fits what the window leaves for the prompt', async () => {
+  const room = async (settings: Partial<Instance['settings']>) => {
+    const d = fakeDb({ pool: { threadsWeekly: 0 }, named: [SIGH] });
+    const m = fakeModels(() => ({ words: 'chat' }), 'a post');
+    const world = oldSigh(settings);
+    await run(d, m, world);
+    return { req: m.completions[0]!, count: tokenCounter(world.settings.oldVoiceTokenizer), window: world.settings.oldVoiceWindow };
+  };
+  const roomy = await room({});
+  assert.equal(roomy.req.maxTokens, 400, 'Divided World\'s window leaves 768, so the 400 stands');
+  const tight = await room({ oldVoiceWindow: 400, oldVoicePromptFloor: 256 });
+  assert.equal(tight.req.maxTokens, 144, 'a window of 400 with a floor of 256 leaves 144');
+  assert.ok(tight.count(tight.req.prompt) <= tight.window - 144, 'the prompt fits the budget');
+  const bare = await room({ oldVoiceWindow: 64, oldVoicePromptFloor: 8 });
+  assert.equal(bare.req.maxTokens, 56);
+  assert.ok(bare.req.prompt.endsWith(`${dividedWorld.system.roster.find((p) => p.key === SIGH)!.name}:`), 'the persona\'s own line is never removed');
+});
+
+test('an old voice\'s pool post that the window refuses (promptTooLong, or a server\'s own 4xx) is a rejected pick that writes nothing', async () => {
+  for (const refusal of [new PromptTooLong(900, 600), new AnswerRejected('the server refused', 'refused:400')]) {
+    const d = fakeDb({ pool: { threadsWeekly: 0 }, named: [SIGH] });
+    const m = fakeModels(() => ({ words: 'chat' }), refusal);
+    const out = await run(d, m, oldSigh());
+    assert.ok(out.status === 'ok');
+    assert.equal(m.completions.length, 1, 'asked once and not again');
+    assert.equal(out.picks[0]!.status, 'rejected');
+    assert.equal(d.count('write_staff_act'), 0);
+  }
 });
 
 test('an old-voice answer that hits the scrubber twice files a rejected pick and writes nothing; one hit is retried', async () => {
