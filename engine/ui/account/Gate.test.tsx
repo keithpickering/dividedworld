@@ -158,11 +158,12 @@ describe('Where sign-in returns to', () => {
 });
 
 /** A signed-in account with a bar or an unaccepted code, through the gate. */
-function barredWorld(bar: { until: number | null } | null, o: { unaccepted?: boolean } = {}) {
+function barredWorld(bar: { until: number | null; fromNow?: number } | null, o: { unaccepted?: boolean } = {}) {
   const fake = buildWorld();
   const me = fake.seed.account('me');
   fake.seed.character(me, 'Pipewrench', 'face');
-  if (bar) fake.seed.bar(me, bar.until);
+  /* `fromNow` is read on the fake's own clock, the one the screen compares with (`api.now()`), never the page's. */
+  if (bar) fake.seed.bar(me, bar.fromNow === undefined ? bar.until : fake.clock.now() + bar.fromNow);
   if (o.unaccepted) fake.seed.unaccepted(me);
   fake.signInAs(me);
   return fake;
@@ -171,7 +172,7 @@ const DAY = 86_400_000;
 
 describe('A barred account (the conduct plan, Task 4)', () => {
   test('sees only the Barred screen and Sign out: the page is not drawn, the words say the date and where to appeal', async () => {
-    const fake = barredWorld({ until: Date.now() + 5 * DAY });
+    const fake = barredWorld({ until: null, fromNow: 5 * DAY });
     renderIn(fake, <AccountGate><p>The page</p></AccountGate>, { path: '/settings' });
     expect(await screen.findByRole('heading', { name: 'This account is suspended' })).toBeInTheDocument();
     expect(screen.getByText(/This account is suspended until .*\d{4} at \d{2}:\d{2} UTC\. An admin may have emailed you the details\. To appeal, reply to that email, or reach a person through Contact\./u)).toBeInTheDocument();
@@ -203,7 +204,7 @@ describe('A barred account (the conduct plan, Task 4)', () => {
   });
 
   test('a suspension whose date has passed shows the board: a stale bar is not trusted', async () => {
-    const fake = barredWorld({ until: Date.now() - DAY });
+    const fake = barredWorld({ until: null, fromNow: -DAY });
     renderIn(fake, <AccountGate><p>The page</p></AccountGate>, { path: '/' });
     expect(await screen.findByText('The page')).toBeInTheDocument();
     expect(screen.queryByText(/suspended/u)).toBeNull();

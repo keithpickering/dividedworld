@@ -21,8 +21,8 @@ const dateOf = (iso: string) => {
   return `${day} at ${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')} UTC`;
 };
 
-/** Whether a bar still holds: a ban always, a suspension until its date. The server ends a suspension by itself, so a stale bar is never trusted. */
-export const barHolds = <B extends { readonly until: string | null }>(bar: B | null, now: number = Date.now()): bar is B =>
+/** Whether a bar still holds: a ban always, a suspension until its date on the caller's clock (`api.now()`). The server ends a suspension by itself, so a stale bar is never trusted. */
+export const barHolds = <B extends { readonly until: string | null }>(bar: B | null, now: number): bar is B =>
   bar !== null && (bar.until === null || Date.parse(bar.until) > now);
 
 export function Barred({ until, signedIn = true, onLeave }: { readonly until: string | null | undefined; readonly signedIn?: boolean; readonly onLeave?: () => void }) {
