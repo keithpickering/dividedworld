@@ -20,7 +20,9 @@ import { LOST_ANSWER } from '../data/api.ts';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { PageHead } from '../glass/PageHead.tsx';
 import { ReachAPerson } from '../contact/Contact.tsx';
-import { useLocation, useNavigate } from '../router.tsx';
+import { addressOf, useLocation, useNavigate } from '../router.tsx';
+import { LinkPanel } from './LinkPanel.tsx';
+import { tokenHashOf } from './link.ts';
 import { safeNext } from './next.ts';
 import { OpenAccount } from './OpenAccount.tsx';
 import { setWhy, useSession } from './session.ts';
@@ -36,7 +38,8 @@ const NO_ANSWER = 'No answer came back; ask again in a moment.';
 export function SignInScreen({ mode }: { readonly mode: 'sign-in' | 'register' }) {
   const { api, settings } = useKayfa();
   const session = useSession();
-  const { query } = useLocation();
+  const location = useLocation();
+  const { query } = location;
   const navigate = useNavigate();
   const registering = mode === 'register';
   const asksInvite = registering && settings.registrationMode === 'invite';
@@ -61,13 +64,17 @@ export function SignInScreen({ mode }: { readonly mode: 'sign-in' | 'register' }
   const [sent, setSent] = useState<Sent | null>(null);
   const [asked, setAsked] = useState(0);
   const codeField = useRef<HTMLInputElement>(null);
+  /* The emailed link's token, held in memory only: the address loses its fragment as the screen stands (the query stays, `next` with it), so no history entry holds it. */
+  const [link, setLink] = useState(() => tokenHashOf(location.hash));
+  useEffect(() => { if (link !== null) navigate(addressOf(location), { replace: true }); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { if (session?.account) navigate(next, { replace: true }); }, [session?.account, navigate, next]);
+  /* While a link is held the screen stays: the link's panel says who is signed in, and its Continue is what moves on. */
+  useEffect(() => { if (session?.account && link === null) navigate(next, { replace: true }); }, [session?.account, link, navigate, next]);
   useEffect(() => { if (step === 'code') codeField.current?.focus(); }, [step]);
 
   const title = <PageHead title={registering ? 'Register' : 'Sign in'} />;
   if (session === null) return <div className="kb-acct" aria-busy="true" />;
-  if (session.signedIn && !session.account) return <div className="kb-acct">{title}<CalmRegion className="kb-acct-panel"><OpenAccount /></CalmRegion></div>;
+  if (link === null && session.signedIn && !session.account) return <div className="kb-acct">{title}<CalmRegion className="kb-acct-panel"><OpenAccount /></CalmRegion></div>;
 
   const ask = async (e?: FormEvent, again = false) => {
     e?.preventDefault();
@@ -133,6 +140,19 @@ export function SignInScreen({ mode }: { readonly mode: 'sign-in' | 'register' }
     </CalmRegion>
   );
 
+  if (link !== null) {
+    return (
+      <div className="kb-acct kb-sign-in">
+        {title}
+        <div className="kb-door">
+          <CalmRegion className="kb-door-form">
+            <LinkPanel tokenHash={link} registering={registering} onAside={() => setLink(null)} onRefused={(text) => { setLink(null); setRefusal({ text, field: null }); }} />
+          </CalmRegion>
+          {aside}
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="kb-acct kb-sign-in">
       {title}
