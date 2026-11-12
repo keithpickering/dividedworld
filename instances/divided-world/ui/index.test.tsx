@@ -11,6 +11,7 @@ import { instanceUiProblems } from '../../../engine/ui/tips/problems.ts';
 import { TIP_KEYS } from '../../../engine/ui/tips/keys.ts';
 import { instance } from '../index.ts';
 import { faceOf, facesOf } from '../../../engine/ui/cards/faces.ts';
+import { landingOn } from '../../../engine/ui/cards/land.ts';
 import { nameLines } from '../../../engine/ui/cards/nameLines.ts';
 import { SIZES } from '../../../engine/ui/cards/template.ts';
 import { logRows } from '../../../engine/ui/log/lines.ts';
@@ -921,3 +922,16 @@ function ringFaults(root: string): string[] {
   }
   return faults;
 }
+
+/* The screens ask where each card lands with no settings at all (engine/ui/cards/land.ts): a card whose rules read the economy while deciding a
+   play (You Were Saying?'s length) once threw on every post it was offered on. Each of the instance's cards is asked as the screens ask it. */
+describe('where each card lands, as the screens ask it', () => {
+  test('every card is asked on a post, face up and face down, without reading settings the screens do not hold', () => {
+    const target = { reach: 'post', act: 'p1', kind: 'post', length: 2, text: 'hi' } as const;
+    for (const rules of instance.cards) {
+      expect(() => landingOn(rules, target, [], { cards: instance.cards }), rules.key).not.toThrow();
+      expect(() => landingOn(rules, target, [], { cards: instance.cards, faceDown: true }), rules.key).not.toThrow();
+    }
+    expect(landingOn(instance.cards.find((c) => c.key === 'you-were-saying')!, target, [], { cards: instance.cards }).ok).toBe(true);
+  });
+});

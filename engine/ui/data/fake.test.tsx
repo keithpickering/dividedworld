@@ -15,7 +15,7 @@ import type { CardUi } from '../cards/types.ts';
 import { failureKind, NOT_SENT, ReadFailure } from './api.ts';
 import type { Act, Refusal, Slot, Tally } from './api.ts';
 import { TIP_KEYS } from '../tips/keys.ts';
-import { createFake, FAKE_BACKEND_MARKER, START, TEST_CODE } from './fake.ts';
+import { createFake, FAKE_BACKEND_MARKER, START, TEST_CODE, TEST_LINK } from './fake.ts';
 import { cutLog, LOG_ROWS, micros } from './log-page.ts';
 import { actsFollowed, actsNamed } from '../log/lines.ts';
 import { systemSettings, testCosmeticsContent, testSystem, testGroups } from '../../rules/test-system.ts';
@@ -713,17 +713,26 @@ describe('the account', () => {
   test('a code request says the same words for an address with an account and one without', async () => {
     const { fake, ana } = world();
     fake.signInAs(null);
-    const known = await fake.requestCode(fake.emailOf(ana), null);
-    const unknown = await fake.requestCode('nobody@example.test', null);
+    const known = await fake.requestCode(fake.emailOf(ana), null, null);
+    const unknown = await fake.requestCode('nobody@example.test', null, null);
     expect(known).toEqual(unknown);
     expect(known).toMatchObject({ ok: true, value: { message: expect.stringContaining('If this address can sign in here') } });
-    expect(await fake.requestCode('not an address', null)).toEqual(refused('is not an email address', 'email'));
+    expect(await fake.requestCode('not an address', null, null)).toEqual(refused('is not an email address', 'email'));
+  });
+  test('the fake keeps the last next a code was asked with, and says the same whatever it was', async () => {
+    const { fake, ana } = world();
+    fake.signInAs(null);
+    expect(fake.lastNext()).toBeNull();
+    const kept = await fake.requestCode(fake.emailOf(ana), null, '/board/general?page=2');
+    expect(fake.lastNext()).toBe('/board/general?page=2');
+    expect(await fake.requestCode('nobody@example.test', null, null)).toEqual(kept);
+    expect(fake.lastNext()).toBeNull();
   });
   test('an invite that opens nothing is said so for every address alike', async () => {
     const { fake, ana } = world();
     fake.signInAs(null);
-    const known = await fake.requestCode(fake.emailOf(ana), 'wrong');
-    const unknown = await fake.requestCode('nobody@example.test', 'wrong');
+    const known = await fake.requestCode(fake.emailOf(ana), 'wrong', null);
+    const unknown = await fake.requestCode('nobody@example.test', 'wrong', null);
     expect(known).toEqual(unknown);
     expect(must(known).invite).toBe('that invite opens nothing, so no new login is made with it');
   });
@@ -741,10 +750,32 @@ describe('the account', () => {
     await flush();
     expect(seen).toEqual([true, false]);
   });
+  test('the test link signs in the address of the last code asked for; any other hash, or none asked for, is refused', async () => {
+    const { fake, ana } = world();
+    fake.signInAs(null);
+    const gone = refused('that link does not work, or it has expired: ask for a new code', 'link');
+    expect(await fake.verifyLink(TEST_LINK)).toEqual(gone);
+    await fake.requestCode(fake.emailOf(ana), null, null);
+    expect(await fake.verifyLink('not-the-test-link-at-all')).toEqual(gone);
+    expect(await fake.session()).toEqual({ signedIn: false, account: null });
+    expect(await fake.verifyLink(TEST_LINK)).toEqual({ ok: true, value: { account: true } });
+    expect(await fake.session()).toEqual({ signedIn: true, account: ana });
+  });
+  test('the test link opens an account from the invite the code was asked with, or signs in with none and says why', async () => {
+    const { fake } = world();
+    const { code } = must(await fake.createInvite());
+    fake.signInAs(null);
+    await fake.requestCode('new@example.test', code, null);
+    expect(await fake.verifyLink(TEST_LINK)).toEqual({ ok: true, value: { account: true } });
+    fake.signInAs(null);
+    await fake.requestCode('other@example.test', null, null);
+    expect(await fake.verifyLink(TEST_LINK)).toEqual({ ok: true, value: { account: false, why: 'that invite opens nothing; open the account with another invite' } });
+    expect(await fake.session()).toEqual({ signedIn: true, account: null });
+  });
   test('an address with no account and no invite signs in with no account, and says why', async () => {
     const { fake } = world();
     fake.signInAs(null);
-    await fake.requestCode('new@example.test', null);
+    await fake.requestCode('new@example.test', null, null);
     const answer = await fake.verifyCode('new@example.test', TEST_CODE);
     expect(answer).toEqual({ ok: true, value: { account: false, why: 'that invite opens nothing; open the account with another invite' } });
     expect(await fake.session()).toEqual({ signedIn: true, account: null });
@@ -754,16 +785,16 @@ describe('the account', () => {
     const { fake } = world();
     const { code } = must(await fake.createInvite());
     fake.signInAs(null);
-    await fake.requestCode('new@example.test', code);
+    await fake.requestCode('new@example.test', code, null);
     expect(await fake.verifyCode('new@example.test', TEST_CODE)).toEqual({ ok: true, value: { account: true } });
     fake.signInAs(null);
-    await fake.requestCode('other@example.test', code);
+    await fake.requestCode('other@example.test', code, null);
     expect(await fake.verifyCode('other@example.test', TEST_CODE)).toMatchObject({ ok: true, value: { account: false } });
     expect(await fake.openAccount(code)).toEqual(refused('that invite opens nothing'));
   });
   test('closed registration says so', async () => {
     const fake = createFake({ instance, settings: { registrationMode: 'closed' } });
-    expect(must(await fake.requestCode('new@example.test', 'x')).invite).toBe('registration is closed, so no new login is made');
+    expect(must(await fake.requestCode('new@example.test', 'x', null)).invite).toBe('registration is closed, so no new login is made');
     expect(await fake.verifyCode('new@example.test', TEST_CODE)).toEqual({
       ok: true, value: { account: false, why: 'registration is closed; when an admin opens it again, your next sign-in opens your account' },
     });
