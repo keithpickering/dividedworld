@@ -568,3 +568,17 @@ test('a ride trap names its quadrant in its configuration: a card that drops it 
   // A catching trap has no outcome and needs no quadrant.
   assert.equal(decideSet(snare, settings, post, [], { card: 'inky' }, [inky]).ok, true);
 });
+
+test('a card\'s repairStaff is the persona\'s alone: a player\'s play with the same options is decided as given, never repaired', () => {
+  const trimmed = { path: 'card.config.fixer.list', predicate: 'mostTwo', before: 3, after: 2 };
+  const fixer: CardRules = {
+    ...cast('fixer', 'common'),
+    validateConfig: (c) => ((c as { list?: unknown[] }).list?.length ?? 0) <= 2 ? ok(c) : refuse('a play holds at most two'),
+    repairStaff: (c, target) => ({ config: { list: (c as { list: unknown[] }).list.slice(0, 2), seen: target.text }, trims: [trimmed] }),
+  };
+  const target = { reach: 'post', act: 'p', kind: 'post', length: 3, text: 'abc' } as const satisfies CardTarget;
+  const repaired = fixer.repairStaff!({ list: [1, 2, 3] }, target);
+  assert.deepEqual(repaired, { config: { list: [1, 2], seen: 'abc' }, trims: [trimmed] });
+  assert.equal(decidePlay(fixer, settings, target, [], { list: [1, 2, 3] }, '').ok, false, 'decidePlay never calls it');
+  assert.equal(decidePlay(fixer, settings, target, [], repaired.config, '').ok, true);
+});

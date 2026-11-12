@@ -10,9 +10,10 @@
  * - **It lands** only where every cue's phrase is in the post's own words, no two cued places overlap and at most `PLACES.most` places are
  *   cued, on a post with no audience yet: it stacks one deep.
  * - **Its price** is the base price at the machine, plus `perPlace` for each cued place past `freePlaces`, never more than `mostAdded`.
+ * - **A persona's cues are repaired, a player's never** (`repairStaff`): what a model overshoots is trimmed and each trim named, so long as one cue remains.
  * - **No saved state:** nothing about it is the author's to save. The seed is the server's, and picks each place's take.
  */
-import { economyOf, isLive, landsOn, ok, refuse, type CardRules } from '../../../engine/rules/cards.ts';
+import { economyOf, isLive, landsOn, ok, refuse, type CardRules, type PostTarget } from '../../../engine/rules/cards.ts';
 import { occurrences, sameWords } from '../../../engine/bbcode/phrase.ts';
 import { PHRASE } from './autocorrect.ts';
 
@@ -40,6 +41,40 @@ const cuesOf = (config: unknown): readonly Cue[] | null => {
   const cues = typeof config === 'object' && config !== null ? (config as { cues?: unknown }).cues : undefined;
   return Array.isArray(cues) && cues.every((c) => typeof c?.phrase === 'string') ? (cues as readonly Cue[]) : null;
 };
+
+type RepairTrim = { readonly path: string; readonly predicate: string; readonly before: number; readonly after: number };
+
+/**
+ * A persona's cues repaired against the post, in order (design, section 5): `cueShape` drops a cue that is not a phrase and a known sound,
+ * `phraseNotInPost` one whose phrase is not in the post, `overlapsEarlierCue` one that repeats an earlier kept cue's words or covers
+ * words an earlier kept cue covers, `mostFiveCues` keeps the first five and `mostThirtyPlaces` drops cues from the end while the places
+ * pass thirty. Each predicate that drops anything is one trim, with the cue counts before and after. It never invents a cue; with none left
+ * (or no list of cues at all) the options are returned unchanged, so the decision refuses in the card's own words.
+ */
+function repairCues(config: unknown, target: PostTarget): { readonly config: unknown; readonly trims: readonly RepairTrim[] } {
+  const raw = typeof config === 'object' && config !== null ? (config as { cues?: unknown }).cues : undefined;
+  if (!Array.isArray(raw)) return { config, trims: [] };
+  const trims: RepairTrim[] = [];
+  let kept: unknown[] = raw;
+  const drop = (predicate: string, next: unknown[]) => {
+    if (next.length < kept.length) trims.push({ path: 'card.config.laugh-track.cues', predicate, before: kept.length, after: next.length });
+    kept = next;
+  };
+  drop('cueShape', kept.filter((c) => typeof c === 'object' && c !== null && typeof (c as Cue).phrase === 'string' && SOUNDS.includes((c as Cue).sound)));
+  drop('phraseNotInPost', (kept as Cue[]).filter((c) => occurrences(target.text, c.phrase).length > 0));
+  const clear: Cue[] = [];
+  for (const c of kept as Cue[]) {
+    const mine = occurrences(target.text, c.phrase);
+    const theirs = clear.flatMap((o) => occurrences(target.text, o.phrase));
+    if (!clear.some((o) => sameWords(o.phrase, c.phrase)) && !mine.some((a) => theirs.some((b) => a.from < b.to && b.from < a.to))) clear.push(c);
+  }
+  drop('overlapsEarlierCue', clear);
+  drop('mostFiveCues', kept.slice(0, CUES.most));
+  let fewer = kept as Cue[];
+  while (fewer.length > 1 && placesOf(target.text, fewer).length > PLACES.most) fewer = fewer.slice(0, -1);
+  drop('mostThirtyPlaces', fewer);
+  return kept.length === 0 ? { config, trims: [] } : { config: { ...(config as object), cues: kept }, trims };
+}
 
 export const laughTrack: CardRules<LaughTrackConfig> = {
   key: 'laugh-track',
@@ -88,6 +123,7 @@ export const laughTrack: CardRules<LaughTrackConfig> = {
       additionalProperties: false,
     },
   },
+  repairStaff: repairCues,
   validateConfig: (config) => {
     const { cues: raw, seed } = typeof config === 'object' && config !== null ? (config as { cues?: unknown; seed?: unknown }) : {};
     if (!Array.isArray(raw) || raw.length < 1 || raw.length > CUES.most) return refuse(`a play holds 1 to ${CUES.most} cues`);
