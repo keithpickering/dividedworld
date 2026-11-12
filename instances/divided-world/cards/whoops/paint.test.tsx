@@ -5,7 +5,7 @@
  */
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import { covers, fieldAt, fieldGrid, makeSplat, THRESHOLD, type Box } from './splat.ts';
-import { MAX_CANVAS_PX, STAND_IN_WASH, THIN_FLOOR, THIN_SPAN, paint, paintSplat, paintStandIn, shadeField, type PaintLayer, type StandIn } from './paint.ts';
+import { MAX_CANVAS_PX, STAND_IN_WASH, THIN_FLOOR, THIN_SPAN, holdStandIns, paint, paintSplat, paintStandIn, shadeField, type PaintLayer, type StandIn } from './paint.ts';
 import { denseGrid, makeGrid, splatInto, type Grid, type Rect } from './field.ts';
 import fixtureJson from './paint.fixture.json';
 import { type Stroke } from './scrub.ts';
@@ -97,13 +97,13 @@ describe('paintStandIn', () => {
     const [a, b, c, d, e, f] = set.args as number[];
     expect([b, c]).toEqual([0, 0]);
     expect(d! / a!).toBeCloseTo(0.5 * 200 / 400, 10);
-    expect([e, f]).toEqual([10, 6]);
+    expect([e, f], 'no offset: paint places the picture').toEqual([0, 0]);
     const width = calls[i]!.style.lineWidth as number;
     expect(width * a! / 2).toBeCloseTo(20 * 2, 10);
     expect(width * d! / 2).toBeCloseTo(5 * 2, 10);
     const moved = calls.slice(0, i).filter((x) => x.op === 'moveTo')[0]!.args as number[];
-    expect(moved[0]! * a! + e!).toBeCloseTo(0.5 * 400 * 2 + 10, 10);
-    expect(moved[1]! * d! + f!).toBeCloseTo(0.5 * 200 * 2 + 6, 10);
+    expect(moved[0]! * a! + e!).toBeCloseTo(0.5 * 400 * 2, 10);
+    expect(moved[1]! * d! + f!).toBeCloseTo(0.5 * 200 * 2, 10);
   });
 
   test('draws the cached splat scaled to the box first, after a clear, and leaves no shadow or alpha set', () => {
@@ -113,7 +113,7 @@ describe('paintStandIn', () => {
     const ops = calls.map((c) => c.op);
     expect(ops.indexOf('clearRect')).toBeLessThan(ops.indexOf('drawImage'));
     expect(ops.indexOf('drawImage')).toBeLessThan(ops.indexOf('stroke'));
-    expect(calls.find((c) => c.op === 'drawImage')!.args.slice(1)).toEqual([10, 6, 800, 400]);
+    expect(calls.find((c) => c.op === 'drawImage')!.args.slice(1)).toEqual([0, 0, 800, 400]);
     const last = calls.at(-1)!;
     expect(last.style.shadowBlur).toBe(0);
     expect(last.style.globalAlpha).toBe(1);
@@ -126,6 +126,36 @@ describe('paintStandIn', () => {
       expect([cv.width, cv.height]).toEqual([w, h]);
       expect(w * h).toBeLessThanOrEqual(MAX_CANVAS_PX);
     }
+  });
+
+  test('a stand-in picture is the box and nothing else: the box lands in the canvas once, at the geometry\'s offset, by paint', () => {
+    const calls = recording();
+    const g = { dpr: 2, box: BOX, top: 3, left: 5 };
+    const picture = paintStandIn(standIn([wash]), g, 800, 400, 0);
+    /* Drawn into its own canvas the splat and the stroke are at the box's origin: no offset yet. */
+    const drawn = calls.find((c) => c.op === 'drawImage')!;
+    expect(drawn.args.slice(1)).toEqual([0, 0, 800, 400]);
+    const set = calls.filter((c) => c.op === 'setTransform').at(-2)!.args as number[];
+    expect([set[4], set[5]], 'the stroke is under the box\'s origin').toEqual([0, 0]);
+    /* paint places it, and is where the offset is applied (the same for a build's picture). */
+    calls.length = 0;
+    paint(canvasOf(900, 500), g, [{ picture, alpha: 1 }]);
+    expect(calls.find((c) => c.op === 'drawImage')!.args.slice(1)).toEqual([10, 6, 800, 400]);
+  });
+
+  test('the slots are let go when no post holds a layer, and kept while one does', () => {
+    recording();
+    const a = holdStandIns(), b = holdStandIns();
+    const cv = paintStandIn(standIn(), { dpr: 1, box: BOX, top: 0, left: 0 }, 400, 200, 0);
+    expect([cv.width, cv.height]).toEqual([400, 200]);
+    a();
+    expect([cv.width, cv.height], 'one holder is left').toEqual([400, 200]);
+    a();
+    expect([cv.width, cv.height], 'letting go twice is one release').toEqual([400, 200]);
+    b();
+    expect([cv.width, cv.height], 'the last holder let go: the canvas is nothing').toEqual([0, 0]);
+    const again = paintStandIn(standIn(), { dpr: 1, box: BOX, top: 0, left: 0 }, 400, 200, 0);
+    expect([again.width, again.height], 'and a later stand-in makes one again').toEqual([400, 200]);
   });
 
   test.each([[0, 200], [Number.NaN, 200]])('a box of %s by %s draws nothing', (w, h) => {

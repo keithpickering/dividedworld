@@ -135,8 +135,28 @@ export function paintSplat(splat: Splat, color: string, box: Box, density: numbe
 /** A wash's strength in the stand-in, which has no field: each pass takes this share of the ink under it (the field's washes take some each pass too). */
 export const STAND_IN_WASH = 0.5;
 
-/** One canvas per layer slot, shared by every post, each sized to the canvas being painted (never past the largest ink canvas). */
+/**
+ * One canvas per layer slot, shared by every post, each sized to the canvas being painted (never past the largest ink canvas).
+ * A slot's picture is used at once (`paint` draws it in the same frame), so no post depends on one staying: they are let go,
+ * sized to nothing, when no post holds a layer (`holdStandIns`), and made again by the next stand-in.
+ */
 const slots: HTMLCanvasElement[] = [];
+let holders = 0;
+/**
+ * A post that holds layers says so (and lets go with the function it gets, once). When the last holder lets go the slot canvases
+ * are released: a page whose posts have all gone far from the viewport keeps no megabytes of stand-in canvas.
+ */
+export function holdStandIns(): () => void {
+  holders++;
+  let held = true;
+  return () => {
+    if (!held) return;
+    held = false;
+    if (--holders > 0) return;
+    for (const c of slots) { c.width = 0; c.height = 0; }
+    slots.length = 0;
+  };
+}
 function slotOf(slot: number, width: number, height: number): CanvasRenderingContext2D | null {
   const c = (slots[slot] ??= document.createElement('canvas'));
   if (c.width !== width) c.width = width;
@@ -185,7 +205,7 @@ export interface StandIn {
  * A layer's picture before its build has arrived (and, until the Effect is rewired, always): the cached splat, then
  * each stroke in order, a pen flat in the layer's ink and a wash taking `STAND_IN_WASH` of it away with a 2.5 px blur.
  * The picture is a canvas of `width` by `height` pixels held for `slot` (one per layer index, shared by every post),
- * so it is valid until the next call with that slot. A browser with no 2D context returns a blank one.
+ * so it is valid until the next call with that slot. It is the box alone at the origin, with no offset, like a build's picture. A browser with no 2D context returns a blank one.
  */
 export function paintStandIn(layer: StandIn, geo: Geometry, width: number, height: number, slot: number): HTMLCanvasElement {
   const work = slotOf(slot, width, height);
@@ -198,12 +218,13 @@ export function paintStandIn(layer: StandIn, geo: Geometry, width: number, heigh
   work.shadowBlur = 0;
   work.clearRect(0, 0, width, height);
   if (!(box.w > 0 && box.h > 0 && Number.isFinite(box.w) && Number.isFinite(box.h))) return work.canvas;
-  work.drawImage(layer.painted, geo.left * dpr, geo.top * dpr, box.w * dpr, box.h * dpr);
+  /* The picture is the box and nothing else, as a build's is: `paint` puts it at the geometry's offset, so it is not offset here too. */
+  work.drawImage(layer.painted, 0, 0, box.w * dpr, box.h * dpr);
   work.lineCap = work.lineJoin = 'round';
   for (const s of layer.strokes) {
     /* The brush is `width * w` across and `width * aspect * h` down: squash the space by the ratio so the line is round in it. */
     const k = (s.aspect * box.h) / box.w;
-    work.setTransform(dpr, 0, 0, dpr * k, geo.left * dpr, geo.top * dpr);
+    work.setTransform(dpr, 0, 0, dpr * k, 0, 0);
     work.lineWidth = s.width * box.w;
     if (s.tool === 'wash') {
       work.globalCompositeOperation = 'destination-out';
