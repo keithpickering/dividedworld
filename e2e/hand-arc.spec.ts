@@ -57,8 +57,12 @@ test('a press on the board outside the cards closes the hand and does not follow
   const before = page.url();
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
   await expect(page.getByRole('dialog', { name: 'Your hand' })).toBeHidden();
+  /* A navigation that did not happen has no event to wait for, so the check gives one a moment to start. */
   await page.waitForTimeout(300);
   expect(page.url()).toBe(before);
+  /* The link under the press is live: pressed with the hand closed, it goes where it says. */
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  await expect(page).not.toHaveURL(before);
 });
 
 test('hovering a card makes it the topmost element at its own center', async ({ page }) => {
