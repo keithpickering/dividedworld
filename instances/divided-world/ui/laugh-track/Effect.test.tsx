@@ -61,7 +61,7 @@ const postOf = (body: string) => ({ id: 'post-1', character: 'author', kind: 'po
 const CUES = [{ phrase: 'Luigi', sound: 'boo' }, { phrase: 'great', sound: 'cheer' }, { phrase: 'Mario is', sound: 'laugh' }];
 const playOf = (cues: unknown = CUES, seed = 7, id = 'lt1'): CardPlay => ({ id, card: 'laugh-track', layer: 1, caster: 'c1', message: '', config: { cues, seed }, playedAt: '2026-11-11T10:01:00.000Z', post: 'post-1' }) as CardPlay;
 
-interface Options { readonly body?: string; readonly plays?: CardPlay[]; readonly still?: boolean; readonly wrap?: 'none' | 'autocorrect-inside' | 'autocorrect-outside'; readonly posts?: number; readonly place?: 'thread' | 'origin'; readonly sounds?: boolean }
+interface Options { readonly body?: string; readonly plays?: CardPlay[]; readonly still?: boolean; readonly wrap?: 'none' | 'autocorrect-inside' | 'autocorrect-outside'; readonly posts?: number; readonly place?: 'thread' | 'origin'; readonly sounds?: boolean; readonly cardSettings?: Record<string, number> }
 
 const base = (o: Options, views: (CardView | null)[], met: () => void, body: string) => ({
   post: postOf(body), plays: o.plays ?? [playOf()], states: {}, released: new Set<string>(), written: new Map(), reader: { author: false, caster: false },
@@ -92,7 +92,7 @@ function mount(o: Options = {}) {
       </>
     );
   }
-  const world = renderInWorld(<Host />, o.sounds ? { sounds } : {});
+  const world = renderInWorld(<Host />, { ...(o.sounds ? { sounds } : {}), ...(o.cardSettings ? { settings: { cardSettings: o.cardSettings } } : {}) });
   return { ...world, views, met, edit: (b: string) => act(() => setBody(b)) };
 }
 const pieces = () => [...document.querySelectorAll<HTMLElement>('.dw-lt-cue')];
@@ -192,6 +192,11 @@ describe('Laugh Track: the registration', () => {
     act(() => { answer = spec.fire(); });
     expect(await answer).toEqual({ lengthMs: 900 });
     expect(spec.screen).toMatchObject({ band: 34, airMs: 1200, holdMs: 4000 });
+  });
+
+  test('the screen carries band, airMs and holdMs from the card settings when they are set', () => {
+    mount({ cardSettings: { 'laughTrack.band': 50, 'laughTrack.airMs': 800, 'laughTrack.holdMs': 2500 } });
+    expect((hub.specs[0] as PlaceSpec).screen).toMatchObject({ band: 50, airMs: 800, holdMs: 2500 });
   });
 });
 
