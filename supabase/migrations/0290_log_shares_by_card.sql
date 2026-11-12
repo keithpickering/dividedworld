@@ -4,8 +4,8 @@
 -- its entry by character, reason and card, and ledger_shares holds the entry's id, so the ledger is right; the read was not: my_ledger_shares (0034) named a share's line by
 -- settlement, character and reason alone, so two card lines of one reason each showed both cards' shares. Two changes:
 -- 1. my_ledger_shares gains a last column `card`: the entry's params ->> 'card', null for an entry that names none. A view may gain a last column in place, so its grants stand.
--- 2. log_page (0157) carries `card` in its `shares` and orders them settlement desc, character, reason, card, act, quadrant: without the card two cards' shares of one Act and
---    quadrant tie, and a paged read over a tie may repeat or skip a row. The function is as 0157 wrote it, whole, with only those two changes.
+-- 2. log_page (0213) carries `card` in its `shares` and orders them settlement desc, character, reason, card, act, quadrant: without the card two cards' shares of one Act and
+--    quadrant tie, and a paged read over a tie may repeat or skip a row. The function is as 0213 wrote it, whole, with only those two changes.
 -- Existing rows: nothing is backfilled and no row changes. A share has always pointed at its ledger row (ledger_shares.ledger), and the card is read from that row's params, so
 -- every share already written reads its right card from the moment the view changes; a share of an entry with no card reads null, as the line it belongs to always did.
 -- Masks: the column is read from the caller's own ledger rows (where my_ledger already shows them params); it says nothing of who reacted or who owns another character.
@@ -18,7 +18,7 @@ create or replace view my_ledger_shares as
   where l.account = auth.uid();
 
 -- ---- log_page ----
--- log_page (0157), whole, with the two changes. `create or replace` keeps the function's grants, which are stated again beside it as 0157 did.
+-- log_page (0213), whole, with the two changes. `create or replace` keeps the function's grants, which are stated again beside it as 0157 did.
 create or replace function log_page(in_before timestamptz) returns jsonb
 language sql stable security invoker set search_path = public, pg_temp
 begin atomic
@@ -90,6 +90,10 @@ begin atomic
     select a.appeal, a.character, a.at, a.punishment, a.punishment_kind, a.post_seq, a.thread, a.verdict, a.ruled_at, a.points_delta, a.hearer_name, a.refund
     from my_appeals a where in_before is null or a.at <= in_before
     order by a.at desc, a.appeal limit 200
+  ), cs as materialized (
+    select c.kind, c.id, c.at, c.character, c.outcome, c.item, c.text, c.copies, c.trophy, c.name, c.by, c.by_name, c.season, c.place, c.line, c.to_name
+    from cosmetic_log_rows(in_before, 200) c
+    order by c.at desc, c.kind, c.id
   ), sh as materialized (
     select s.settlement, s.character, s.reason, s.act, s.quadrant, s.amount, s.card
     from my_ledger_shares s where s.settlement in (select x.settlement from lg x)
@@ -159,7 +163,8 @@ begin atomic
       'bans', coalesce((select jsonb_agg(to_jsonb(x) order by x.at desc, x.ban) from bn x), '[]'::jsonb),
       'groupMoves', coalesce((select jsonb_agg(to_jsonb(x) order by x.at desc, x.move) from gm x), '[]'::jsonb),
       'reports', coalesce((select jsonb_agg(to_jsonb(x) order by x.at desc, x.report) from rp x), '[]'::jsonb),
-      'appeals', coalesce((select jsonb_agg(to_jsonb(x) order by x.at desc, x.appeal) from ap x), '[]'::jsonb)),
+      'appeals', coalesce((select jsonb_agg(to_jsonb(x) order by x.at desc, x.appeal) from ap x), '[]'::jsonb),
+      'cosmetics', coalesce((select jsonb_agg(to_jsonb(x) order by x.at desc, x.kind, x.id) from cs x), '[]'::jsonb)),
     'shares', coalesce((select jsonb_agg(to_jsonb(x) order by x.settlement desc, x.character, x.reason, x.card, x.act, x.quadrant) from sh x), '[]'::jsonb),
     'scoredAs', coalesce((select jsonb_agg(to_jsonb(x) order by x.ends_at desc, x.settlement, x.character) from sa x), '[]'::jsonb),
     'acts', coalesce((select jsonb_agg(to_jsonb(a) order by a.created_at, a.id::text collate "C") from ac a), '[]'::jsonb),
@@ -168,7 +173,7 @@ begin atomic
     'people', coalesce((
       select jsonb_agg(f.face order by f.name, f.id) from (
         select cp.name, cp.id, to_jsonb(cp) || jsonb_build_object('profile', (
-          select to_jsonb(p) from (
+          select to_jsonb(p) || profile_cosmetics(p.character) from (
             select r.character, r.title, r.signature, r.avatar_square, r.avatar_portrait, r.square_frame, r.portrait_frame, r.pip_style, r.pronouns
             from character_profiles r where r.character = cp.id) p)) as face
         from (select c.id, c.name, c.joined, c.staff, c.office, c."group" from characters_public c where c.id in (select p.id from pe p)) cp) f), '[]'::jsonb),

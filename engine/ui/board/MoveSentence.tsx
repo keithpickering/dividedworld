@@ -21,12 +21,13 @@ export function MoveSentence({ kind, params, boards, tense, was, bosses, unnamed
   /** The character a group move names, where the caller knows it (the params hold only its id); absent, the sentence says "a member". */
   readonly character?: string;
 }) {
-  const { settings } = useKayfa();
+  const { settings, instance } = useKayfa();
   const named = boards.find((b) => b.id === params['board']);
   const boss = kind === 'nameSuccessor' ? bosses?.find((b) => b.staff === params['boss'])?.name ?? unnamed : undefined;
   /* A group move names its group by the instance's name for it (the params hold the key) and its board by the board's name now. */
   const group = settings.groups.find((g) => g.key === params['group'])?.name;
-  const names = { ...(character !== undefined ? { character } : {}), ...(group !== undefined ? { group } : {}), ...(named ? { board: named.name } : {}) };
+  const trophy = instance.trophies.kinds.find((t) => t.key === params['trophy'])?.name;
+  const names = { ...(character !== undefined ? { character } : {}), ...(group !== undefined ? { group } : {}), ...(trophy !== undefined ? { trophy } : {}), ...(named ? { board: named.name } : {}) };
   const parts = moveParts(kind, params, was ?? boss ?? named?.was ?? null, tense, names);
   return (
     <>

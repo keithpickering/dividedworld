@@ -420,6 +420,10 @@ export interface InstanceUi {
   readonly cards: readonly CardUi[];
   /** How each pack the instance sells draws itself, by the rules' `PackRules.key`: its name and its face art, placed as a card's face art is (engine/ui/cards/types.ts, `CardArt`). */
   readonly packs: Readonly<Record<string, { readonly name: string; readonly art: CardArt }>>;
+  /** Each piece of gear's art, by the rules' `GearRules.key`: a URL the bundler resolved, and the art's height over its width. */
+  readonly gear: Readonly<Record<string, { readonly art: string; readonly aspect: number }>>;
+  /** Each trophy kind's badge art, by the rules' `TrophyRules.key`, as a URL the bundler resolved. */
+  readonly trophies: Readonly<Record<string, { readonly art: string }>>;
   /**
    * The instance's look for a card's back (`PostcardBack`), each a URL the bundler resolved. `mark` is drawn at the center of the
    * back's crossed bands; without it the back is the bands alone. `canvas` is a picture for the back, a canvas as a card's is

@@ -7,7 +7,7 @@ import { ENGINE_DEFAULT_PRONOUNS } from '../../rules/pronouns.ts';
 
 const character = (over: Partial<Character> = {}): Character => ({
   id: 'c1', name: 'Hall Monitor', title: 'Hall monitor', signature: '', avatarSquare: null, avatarPortrait: null,
-  squareFrame: null, portraitFrame: null, pipStyle: 'default', pronouns: ENGINE_DEFAULT_PRONOUNS, joined: '2026-10-01', group: 'staff', ...over,
+  squareFrame: null, portraitFrame: null, portraitTallness: null, outfit: [], trophies: [], pipStyle: 'default', pronouns: ENGINE_DEFAULT_PRONOUNS, joined: '2026-10-01', group: 'staff', ...over,
 });
 const show = (c: Character) => renderInWorld(<StaffBadge character={c} />);
 

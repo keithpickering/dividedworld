@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { applyCap, entryKey, estimateForOwner, lineKey, settle, shareEntries, type LedgerEntry } from './settle.ts';
 import type { ClassInput, ClassRules, Earning, Instance, InputAct, InputReaction, SettlementInput } from './types.ts';
-import { systemSettings, testSystem, testGroups } from './test-system.ts';
+import { systemSettings, testCosmeticsContent, testSystem, testGroups } from './test-system.ts';
 
 /* Two fake classes. "fan" earns a vote per whole excited-positive vote and loses one per bored-negative
    vote, each naming the reaction's time; "quiet" earns a flat 7 per post and records every input it is given. */
@@ -41,7 +41,7 @@ const instance: Instance = {
   },
   ranks: [{ name: 'Rookie', from: 0 }], groups: testGroups, pipStyles: [{ key: 'default', name: 'Default', full: '●', empty: '○' }], boards: [{ slug: 'general', name: 'General', description: '' }],
   copy: { announcementsThreadTitle: 'S{season} Promos' },
-  packs: [], machine: [],
+  packs: [], machine: [], ...testCosmeticsContent,
 };
 
 const H = 3_600_000;

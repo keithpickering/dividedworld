@@ -156,6 +156,61 @@
   padding: 0.5em 6%;
 }
 
+/*
+ * A post's layers. Two designs give a post's cells layers, and this one stack keeps both: gear may reach past the postbit's portrait (the
+ * cosmetics design, section 2: "the z-index of surrounding text always wins"), and glitter lands on a cell, over its ground and under its
+ * content (docs/plans/2026-11-11-shake-design.md, section 4). e2e/post-layers.spec.ts holds all three rules below in a browser.
+ *
+ * The post is a stacking context of its own, and the postbit's cell sits under the rest of it, at -1: every other cell's ground and words
+ * paint over any gear that reaches out of it, and nothing lifts a cell to get there. A cell lifted to a level is a stacking context, and
+ * what hangs out of it is trapped inside: the marks strip (`.kb-marks`, z-index 3, marks.css) hangs from the line above over the words'
+ * first line and the first-time callout (z-index 4) hangs under it over the words, so the line above takes no level of its own and both
+ * keep theirs in the post's stack, over the words. Rather than clip the reach, which would cut a cap the owner meant to stand out, the
+ * postbit goes under; the post is isolated so that -1 is under its cells and never under the post's own grid or the page.
+ *
+ * The words are at 1: a moment's ring and its glow (cards/moment.css) sit in the words' layer, drawn unclipped, so a glow that spills
+ * past the words paints over the actions and the panels, landed or not, and its tag hung on the date bar covers the date. The marks, at
+ * 3 and 4 in the post's stack, are above the words still.
+ */
+.kb-act {
+  isolation: isolate;
+}
+
+.kb-act > .kb-postbit {
+  z-index: -1;
+}
+
+.kb-act-main {
+  z-index: 1;
+}
+
+/*
+ * Glitter that has landed on a post (docs/plans/2026-11-11-shake-design.md section 4): the engine puts canvas tiles inside a cell and
+ * marks the cell `data-kb-landed`. The cell is positioned so the tiles (absolute, in the cell's px) lie in it, and isolated so the
+ * tiles' z-index -1 puts them over the cell's own ground and under its content, never behind the next post. Positioning a cell changes
+ * no level: the postbit keeps its -1 (it is isolated already, postbit.css, so its tiles lie under its gear and its words) and the words
+ * their 1, and the actions and the panels, at auto, stay under the words.
+ *
+ * Isolating a cell makes it a stacking context, and what hangs out of a cell is then painted inside that context. Only the meta
+ * cell has anything that hangs over a neighbor: the marks strip and the callout, above. Isolated at z-index auto the meta cell
+ * would paint under the words at 1, and the words would cover the marks. So a landed meta cell takes a level of its own, 2, above
+ * the words, and the marks and callout keep their order inside it. The other cells have nothing that hangs: the postbit's overflow
+ * is gear, which belongs under the other cells, the foot's buttons have no popovers, and the body is isolated already. The tiles
+ * stay at -1 inside each cell, so none of this changes where glitter lies.
+ */
+.kb-act > [data-kb-landed] {
+  position: relative;
+  isolation: isolate;
+}
+
+.kb-act > .kb-act-meta[data-kb-landed] {
+  z-index: 2;
+}
+
+.kb-act > [data-kb-landed] > canvas[data-kb-landing] {
+  z-index: -1;
+}
+
 .kb-act-main {
   grid-area: main;
   padding: 0.5em 1%;
