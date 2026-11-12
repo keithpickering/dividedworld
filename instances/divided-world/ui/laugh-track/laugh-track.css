@@ -45,6 +45,14 @@
 .dw-lt-form-total {
   margin: 0;
 }
+.dw-lt-form-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
 .dw-lt-form-add {
   justify-self: start;
 }
