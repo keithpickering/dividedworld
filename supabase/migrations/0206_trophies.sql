@@ -483,7 +483,9 @@ begin atomic
 end;
 
 -- season_news (0100), its results item's `top` the season's first three placed rows: a podium of the masks that placed, so a season where one mask stood
--- above zero shows one. Read from season_results_by_standing, where the placed rows come first. Everything else as 0100 wrote it.
+-- above zero shows one. Read from season_results_by_standing, where the placed rows come first. Placed rows are those standing above zero, and the read
+-- says so (`standing > 0`) so the index holds it as its condition and stops at the third: `place is not null` alone is a filter on the heap, and a season
+-- with fewer than three placed rows would read every unplaced row of it (the delta review's D1). Everything else as 0100 wrote it.
 create or replace function season_news(before timestamptz default null, most integer default 20) returns setof season_news_row
 language sql stable security definer set search_path = public, pg_temp as $$
   with
@@ -499,7 +501,7 @@ language sql stable security definer set search_path = public, pg_temp as $$
            jsonb_build_object('top', (
              select coalesce(jsonb_agg(jsonb_build_object('character', t.character, 'name', t.name, 'place', t.place, 'standing', t.standing, 'shown', t.shown)
                                        order by t.place, t.name, t.character), '[]'::jsonb)
-             from (select r.* from season_results r where r.season = s.id and r.place is not null order by r.standing desc, r.name, r.character limit 3) t)) as detail
+             from (select r.* from season_results r where r.season = s.id and r.standing > 0 and r.place is not null order by r.standing desc, r.name, r.character limit 3) t)) as detail
     from seasons s
     where s.results_at is not null and s.results_at < (select b from lim) and s.results_at >= (select at from r_floor)
   ),

@@ -450,6 +450,32 @@ begin
   perform tests.unbecome();
 end $$;
 
+-- ---- The podium costs three rows, however many masks are unplaced (#492, the delta review's D1) ----
+-- season_news's results item reads a season's first three placed rows from season_results_by_standing. Placed rows are exactly those standing above
+-- zero, so the read names `standing > 0`, which the index can hold as its condition and stop at the third. `place is not null` alone is a filter on the
+-- heap: a season with fewer than three placed rows (at a busy instance, one where most masks did nothing) reads every row of the season to find none.
+-- The read is taken from season_news's own definition, so this is the plan of the code as written: a season of 20,000 unplaced rows and one placed,
+-- as the review measured it, and the plan holds `standing` in its index condition and removes no row by a filter.
+do $$
+declare ln record; plan text := ''; podium text; season bigint;
+begin
+  podium := substring(pg_get_functiondef('season_news(timestamptz,integer)'::regprocedure) from '\((select r\.\* from season_results r where r\.season = s\.id [^()]* limit 3)\)');
+  if podium is null then raise exception 'season_news reads its podium as this check expects: %', pg_get_functiondef('season_news(timestamptz,integer)'::regprocedure); end if;
+  insert into seasons (number, starts_at, ends_at) values (9000, '1990-01-01', '1990-01-02') returning id into season;
+  -- Rows of masks that need not exist: the plan reads season_results alone, and a restore writes the table this way.
+  perform set_config('session_replication_role', 'replica', true);
+  insert into season_results (season, character, name, place, standing)
+  select season, gen_random_uuid(), 'Podium ' || g, case when g = 1 then 1 end, case when g = 1 then 500 else 0 end from generate_series(1, 20000) g;
+  perform set_config('session_replication_role', 'origin', true);
+  analyze season_results;
+  for ln in execute 'explain (analyze, costs off, timing off, summary off) ' || replace(podium, 's.id', season::text) loop
+    plan := plan || E'\n' || ln."QUERY PLAN";
+  end loop;
+  if plan !~ 'Index Cond: [^\n]*standing' or plan ~ 'Rows Removed by Filter: [0-9]{3,}' then
+    raise exception 'the podium reads its three rows from an index condition on standing, not every unplaced row:%', plan;
+  end if;
+end $$;
+
 -- ---- A met demand credits the characters whose Acts made it; reading who reacted gets a reactor nothing ----
 create function pg_temp.landed(on_board uuid, demand jsonb) returns uuid language plpgsql as $$
 begin
