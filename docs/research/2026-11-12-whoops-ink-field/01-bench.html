@@ -1,0 +1,649 @@
+<!--
+  Record, written 2026-11-12. The Whoops! ink field bench: the design session's interactive prototype for
+  docs/plans/2026-11-12-whoops-ink-field-design.md. Its defaults are the owner's choices; its other settings are the
+  alternatives the design weighed. A standalone page: open it in a browser. It is a reference for how the effect looks
+  and plays, not code to copy.
+-->
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Whoops! Ink Field Bench</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Layout: the 2003 board's own post with a bench of controls above it, as the first Whoops! bench. One deliberate light look: the board is black on white. */
+:root {
+  --paper: #ffffff;
+  --ink: #000000;
+  --rule: #000000;
+  --muted: #555555;
+  --shade: #f1f1ef;
+  --flag: #c8102e;
+  --font: Verdana, Geneva, sans-serif;
+  --mono: "Courier New", Courier, monospace;
+  --size-body: 15px;
+  --size-small: 13.75px;
+  --size-fine: 12.5px;
+  --size-title: 22.5px;
+  color-scheme: light;
+}
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font: var(--size-body)/1.45 var(--font);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 20px 56px;
+}
+h1 { font-size: var(--size-title); margin: 0; text-wrap: balance; }
+p { margin: 0 0 .8em; }
+:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.wrap { max-width: 900px; }
+.head { display: grid; gap: .4em; margin-bottom: 16px; }
+.head p { color: var(--muted); margin: 0; max-width: 70ch; font-size: var(--size-small); }
+
+.bench {
+  border: 1px solid var(--rule);
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  margin-bottom: 18px;
+}
+.bench fieldset {
+  border: 0; border-right: 1px solid var(--rule); border-bottom: 1px solid var(--rule);
+  margin: 0 -1px -1px 0; padding: 10px 12px 12px; min-width: 0;
+  display: grid; gap: 6px; align-content: start; font-size: var(--size-fine);
+}
+.bench fieldset:disabled { color: var(--muted); }
+.bench legend {
+  float: left; width: 100%; padding: 0; margin-bottom: 4px; font-weight: bold;
+  font-size: var(--size-fine); letter-spacing: .06em; text-transform: uppercase;
+}
+.bench label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.bench .hint { color: var(--muted); }
+.seg { display: flex; flex-wrap: wrap; border: 1px solid var(--rule); width: fit-content; }
+.seg label { padding: 3px 10px; gap: 0; }
+.seg label + label { border-left: 1px solid var(--rule); }
+.seg input { position: absolute; opacity: 0; pointer-events: none; }
+.seg label:has(input:checked) { background: var(--ink); color: var(--paper); }
+.seg label:has(input:focus-visible) { outline: 2px solid var(--ink); outline-offset: 2px; }
+.swatches { display: flex; flex-wrap: wrap; gap: 6px; }
+.swatches input {
+  appearance: none; margin: 0; width: 24px; height: 24px; border-radius: 50%;
+  background: var(--sw); border: 1px solid var(--rule); cursor: pointer;
+}
+.swatches input:checked { box-shadow: 0 0 0 2px var(--paper), 0 0 0 4px var(--ink); }
+.buttons { display: flex; flex-wrap: wrap; gap: 6px; }
+button.b {
+  font: inherit; font-size: var(--size-fine); padding: 3px 10px; background: var(--paper);
+  color: var(--ink); border: 1px solid var(--rule); cursor: pointer; touch-action: manipulation;
+}
+button.b:hover { background: var(--shade); }
+button.b[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+
+.act {
+  display: grid;
+  grid-template-columns: minmax(7em, 16%) minmax(0, 1fr);
+  grid-template-areas: "bit meta" "bit main";
+  border: 1px solid var(--rule);
+}
+.bit {
+  grid-area: bit; padding: .5em 8%; border-right: 1px solid var(--rule);
+  display: flex; flex-direction: column; gap: .3em; font-size: var(--size-fine); min-width: 0;
+}
+.bit b { font-size: var(--size-small); overflow-wrap: anywhere; }
+.meta {
+  grid-area: meta; border-bottom: 1px solid var(--rule); padding: .25em .6em;
+  font-size: var(--size-fine); display: flex; justify-content: space-between; gap: 1em;
+}
+.meta .mode { font-weight: bold; letter-spacing: .06em; text-transform: uppercase; }
+.main { grid-area: main; position: relative; min-width: 0; }
+.body { padding: .6em .8em; min-height: 420px; }
+.body p { margin: 0 0 .9em; }
+#ink { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; cursor: crosshair; }
+@media (max-width: 560px) {
+  .act { grid-template-columns: minmax(0, 1fr); grid-template-areas: "bit" "meta" "main"; }
+  .bit { border-right: 0; border-bottom: 1px solid var(--rule); flex-direction: row; flex-wrap: wrap; gap: .2em 1em; }
+}
+
+.readout {
+  font: var(--size-fine)/1.5 var(--mono); color: var(--muted); margin: 8px 0 20px;
+  font-variant-numeric: tabular-nums; overflow-wrap: anywhere;
+}
+.look { max-width: 70ch; font-size: var(--size-small); }
+.look h2 { font-size: var(--size-body); margin: 0 0 .4em; }
+.look ul { margin: 0; padding-left: 1.2em; display: grid; gap: .35em; }
+</style>
+</head><body>
+
+<div class="wrap">
+  <header class="head">
+    <h1>Whoops! Ink Field Bench</h1>
+    <p>The author's pen as part of the splat. <b>Today</b> draws pen strokes as a flat line over the painted splat and cuts washes out of it. <b>In the field</b> adds each pen stroke to the splat's ball field and lowers the field under each wash, in the order they were made, and shades the result once, so pen ink gets the splat's meniscus, glint and gloss and melts into it where they touch. Both views draw the same strokes.</p>
+  </header>
+
+  <form class="bench" id="bench" onsubmit="return false">
+    <fieldset>
+      <legend>View</legend>
+      <div class="seg" role="radiogroup" aria-label="View">
+        <label><input type="radio" name="view" id="view-today" value="today">Today</label>
+        <label><input type="radio" name="view" id="view-field" value="field" checked>In the field</label>
+      </div>
+      <div class="buttons"><button type="button" class="b" id="compare">Hold to compare</button></div>
+      <span class="hint">Or hold C.</span>
+    </fieldset>
+    <fieldset>
+      <legend>Tool</legend>
+      <div class="seg" role="radiogroup" aria-label="Tool">
+        <label><input type="radio" name="tool" id="tool-pen" value="pen" checked>Write in ink</label>
+        <label><input type="radio" name="tool" id="tool-wash" value="wash">Wash</label>
+      </div>
+      <label>Pen <select id="pen-px">
+        <option value="9">9 px (today's)</option>
+        <option value="16" selected>16 px (chosen)</option>
+        <option value="28">28 px</option>
+      </select></label>
+      <div class="buttons">
+        <button type="button" class="b" id="undo">Undo</button>
+        <button type="button" class="b" id="clear">Clear strokes</button>
+        <button type="button" class="b" id="example">Example</button>
+      </div>
+    </fieldset>
+    <fieldset>
+      <legend>Ink</legend>
+      <div class="swatches" id="swatches"></div>
+      <div class="buttons"><button type="button" class="b" id="reseed">New splat</button></div>
+    </fieldset>
+    <fieldset id="field-opts">
+      <legend>In the field</legend>
+      <label>Joins <select id="join">
+        <option value="1.5">Tight</option>
+        <option value="2" selected>As the splat's beads</option>
+        <option value="3">Loose</option>
+      </select></label>
+      <label>Pen on ink <select id="over">
+        <option value="melt" selected>Melts in</option>
+        <option value="raised">Raised ridge</option>
+      </select></label>
+      <label>Wash takes <select id="wash-mode">
+        <option value="cap" selected>All of it in one pass</option>
+        <option value="subtract">Some of it each pass</option>
+      </select></label>
+      <label>Wash edge <select id="wash-edge">
+        <option value="wet" selected>Wet rim</option>
+        <option value="dry">Dry cut</option>
+      </select></label>
+      <label>Pen ends <select id="ends">
+        <option value="none">Plain</option>
+        <option value="bulb">Bulb</option>
+        <option value="drops" selected>Bulb and flicked drops</option>
+      </select></label>
+      <label>Field pixels <select id="density">
+        <option value="1" selected>1 per CSS px (today's splat)</option>
+        <option value="2">2 per CSS px</option>
+      </select></label>
+    </fieldset>
+  </form>
+
+  <article class="act" aria-label="A post with a Whoops! splat on it">
+    <aside class="bit"><b>Pipe Dream</b><span>Member</span><span>Posts: 412</span></aside>
+    <div class="meta"><span>Re: the level editor thread is cursed</span><span class="mode" id="mode-label">In the field</span></div>
+    <div class="main" id="main">
+      <div class="body" id="body">
+        <p>Okay so I finally got the level editor build running on my laptop, and I have questions. Why does the warp pipe in world 3 send you to a room that does not exist? Why is there a second, smaller warp pipe inside it?</p>
+        <p>I asked in the other thread and someone told me it was "an intentional design choice." Sure. And the coins that only appear when you stand still for a whole minute are a feature too, I guess.</p>
+        <p>Anyway, the sprite rips are great and I am stealing the ice tiles for my own hack. Credit given, obviously. If whoever made them is reading this: please tell me how you got the shine on the edges to look wet.</p>
+        <p>Also, who keeps splatting this thread? I can barely read my own post.</p>
+      </div>
+      <canvas id="ink" aria-label="Ink over the post. Drag to write or wash."></canvas>
+    </div>
+  </article>
+
+  <div class="readout" id="readout" aria-live="off">…</div>
+
+  <section class="look">
+    <h2>What to look for</h2>
+    <ul>
+      <li>Where a pen line leaves the splat, the field version swells into it like one of the splat's own arms. Today's line stops flat at the edge.</li>
+      <li>A pen line written inside a washed hole picks up the same bright rim and darker far side as the splat's edge.</li>
+      <li>Over ink of its own color, a pen line either stands as a raised ridge that catches the light ("Raised ridge") or vanishes into the ink, as the same ink would ("Melts in"). Today it shows as a flat line.</li>
+      <li>Two pen lines that cross pool a little at the crossing. "Joins" sets how far that pooling reaches.</li>
+      <li>"Wash takes": with "All of it in one pass" a wash clears everything under the brush, as today. With "Some of it each pass" each pass takes a fixed amount of ink, so the splat's thin arms clear at once and its thick middle needs scrubbing back and forth; thinned ink turns see-through as it goes.</li>
+      <li>"Wet rim" gives a wash's edge the meniscus too. "Dry cut" keeps today's flat cut for washes and shades only the pen.</li>
+      <li>"Bulb" ends every pen line in a drop. "Flicked drops" throws one to three droplets past the end when the last stretch of the line was fast. Both are worked out from the saved points alone, so every reader sees the same ones.</li>
+      <li>Pale inks (gold, white) get the darker rim the splat already uses, so pen ink stays visible on the white page.</li>
+    </ul>
+  </section>
+</div>
+
+<script>
+'use strict';
+/* ---------------------------------------------------------------- the splat (splat.ts, copied) ---- */
+const T = 0.42, DESIGN = { w: 1.25, h: 1 };
+function mulberry32(seed) {
+  let a = seed | 0;
+  return () => { a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+function makeSplat(seed) {
+  const r = mulberry32(seed), balls = [];
+  const cx = DESIGN.w / 2 + (r() - 0.5) * 0.14, cy = DESIGN.h / 2 + (r() - 0.5) * 0.1;
+  const harm = [2, 3, 4, 5, 7].map((k) => ({ k, a: (0.05 + r() * 0.11) / Math.sqrt(k / 2), p: r() * Math.PI * 2 }));
+  const swell = (th) => { let m = 1; for (const h of harm) m += h.a * Math.sin(h.k * th + h.p); return Math.max(0.65, Math.min(1.3, m)); };
+  const R0 = 0.27;
+  balls.push({ x: cx, y: cy, r: 0.22 });
+  for (let i = 0; i < 6; i++) { const th = r() * Math.PI * 2, d = r() * 0.14; balls.push({ x: cx + Math.cos(th) * d * 1.25, y: cy + Math.sin(th) * d, r: 0.14 + r() * 0.05 }); }
+  const ring = 15;
+  for (let i = 0; i < ring; i++) { const th = ((i + (r() - 0.5) * 0.5) / ring) * Math.PI * 2, m = swell(th); balls.push({ x: cx + Math.cos(th) * R0 * m * 1.3, y: cy + Math.sin(th) * R0 * m, r: 0.1 + r() * 0.06 }); }
+  const arms = 9 + Math.floor(r() * 7);
+  for (let a = 0; a < arms; a++) {
+    const th = r() * Math.PI * 2, m = swell(th);
+    const sx = cx + Math.cos(th) * R0 * m * 1.3 * 0.95, sy = cy + Math.sin(th) * R0 * m * 0.95;
+    const len = 0.14 + r() * 0.32, w = 0.03 + r() * 0.035, bend = (r() - 0.5) * 0.7, beads = 10;
+    for (let k = 1; k <= beads; k++) { const f = k / beads, ang = th + bend * f * f, d = len * f; balls.push({ x: sx + Math.cos(ang) * d, y: sy + Math.sin(ang) * d, r: w * (1 - 0.62 * f) }); }
+    const ang = th + bend;
+    balls.push({ x: sx + Math.cos(ang) * len, y: sy + Math.sin(ang) * len, r: w * 0.72 });
+    const drops = 1 + Math.floor(r() * 3);
+    for (let j = 0; j < drops; j++) { const d = len + 0.05 + r() * 0.14, aj = ang + (r() - 0.5) * 0.35; balls.push({ x: sx + Math.cos(aj) * d, y: sy + Math.sin(aj) * d, r: w * (0.28 + r() * 0.42) }); }
+  }
+  const flecks = 5 + Math.floor(r() * 7);
+  for (let i = 0; i < flecks; i++) { const th = r() * Math.PI * 2, d = 0.55 + r() * 0.25; balls.push({ x: cx + Math.cos(th) * d * 1.3, y: cy + Math.sin(th) * d, r: 0.008 + r() * 0.02 }); }
+  return { balls };
+}
+const unitPx = (box) => Math.sqrt((box.w * box.h) / DESIGN.w);
+function fieldGrid(splat, box, q) {
+  const gw = Math.ceil(box.w * q), gh = Math.ceil(box.h * q), out = new Float32Array(gw * gh), unit = unitPx(box);
+  for (const b of splat.balls) {
+    const R = 2 * b.r * unit * q, bx = (b.x / DESIGN.w) * box.w * q, by = b.y * box.h * q;
+    const x0 = Math.max(0, Math.floor(bx - R)), x1 = Math.min(gw - 1, Math.ceil(bx + R));
+    const y0 = Math.max(0, Math.floor(by - R)), y1 = Math.min(gh - 1, Math.ceil(by + R)), R2 = R * R;
+    for (let y = y0; y <= y1; y++) { const dy = y + 0.5 - by, row = y * gw; for (let x = x0; x <= x1; x++) { const dx = x + 0.5 - bx, d2 = dx * dx + dy * dy; if (d2 < R2) { const k = 1 - d2 / R2; out[row + x] += k * k * k; } } }
+  }
+  return out;
+}
+const NAMED = { black: '#000000', red: '#ff0000', navy: '#000080', purple: '#800080', green: '#008000', gold: '#ffd700', white: '#ffffff', crimson: '#dc143c' };
+function rgbOf(ink) { let hex = NAMED[ink] ?? ink; if (/^#[0-9a-f]{3}$/i.test(hex)) hex = '#' + [1, 2, 3].map((i) => hex[i].repeat(2)).join(''); return [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)); }
+function luminance(ink) { const [r, g, b] = rgbOf(ink).map((c) => c / 255).map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)); return 0.2126 * r + 0.7152 * g + 0.0722 * b; }
+
+/* --------------------------------------------------- the shader (paint.ts paintSplat, ported to a rectangle) ---- */
+/*
+ * The same wet-ink shading, run over a rectangle of a grid so a stroke re-shades only what it touched. The gloss and the
+ * underside are laid in the same loop (paintSplat lays them after with source-atop, which gives the same pixels).
+ * `dry` marks where a wash's cap was the last word: with "Dry cut" those pixels are shaded flat, with no meniscus or rim.
+ */
+let LX = -0.45, LY = -0.65, LZ = 0.62; { const n = Math.hypot(LX, LY, LZ); LX /= n; LY /= n; LZ /= n; }
+let HX = LX, HY = LY, HZ = LZ + 1; { const n = Math.hypot(HX, HY, HZ); HX /= n; HY /= n; HZ /= n; }
+let worn = false;
+function shadeRect(f, dry, useDry, gw, gh, img, color, q, x0, y0, x1, y1, ridge) {
+  const px = img.data, [ir, ig, ib] = rgbOf(color), L = luminance(color);
+  const men = 3.5 * q, rimW = 1.6 * q, specK = 0.55 + 0.45 * (1 - L);
+  const gcx = gw * 0.32, gcy = gh * 0.28, grad = Math.max(gw, gh) * 0.7, gA = 0.2 * (1 - L) + 0.04, uA = 0.06 + 0.12 * L, uTop = gh * 0.35, uSpan = gh * 0.65;
+  x0 = Math.max(0, x0); y0 = Math.max(0, y0); x1 = Math.min(gw, x1); y1 = Math.min(gh, y1);
+  for (let y = y0; y < y1; y++) {
+    const up = y > 0 ? -gw : 0, dn = y < gh - 1 ? gw : 0;
+    const ua = y > uTop ? uA * (y - uTop) / uSpan : 0;
+    for (let x = x0; x < x1; x++) {
+      const i = y * gw + x, v = f[i], o = i * 4;
+      if (v < T * 0.4) { px[o + 3] = 0; continue; }
+      const gx = (f[i + (x < gw - 1 ? 1 : 0)] - f[i - (x > 0 ? 1 : 0)]) * 0.5, gy = (f[i + dn] - f[i + up]) * 0.5;
+      const gm = Math.hypot(gx, gy) + 1e-6, sd = (v - T) / gm;
+      const a = Math.min(1, Math.max(0, sd + 0.5));
+      if (a <= 0) { px[o + 3] = 0; continue; }
+      const flat = useDry && dry[i] === 1;
+      const slope = flat ? 0 : 1.5 * Math.exp(-Math.max(0, sd) / men);
+      let nx = (-gx / gm) * slope, ny = (-gy / gm) * slope, nz = 1;
+      if (ridge) { const kr = 5 * q; nx -= (ridge[i + (x < gw - 1 ? 1 : 0)] - ridge[i - (x > 0 ? 1 : 0)]) * 0.5 * kr; ny -= (ridge[i + dn] - ridge[i + up]) * 0.5 * kr; }
+      const nn = Math.hypot(nx, ny, nz); nx /= nn; ny /= nn; nz /= nn;
+      const diff = nx * LX + ny * LY + nz * LZ, shade = 0.86 + 0.6 * (diff - LZ);
+      const spec = Math.max(0, nx * HX + ny * HY + nz * HZ) ** 60 * specK;
+      const rim = flat ? 0 : L * 0.5 * Math.exp(-Math.max(0, sd) / rimW);
+      const k = Math.max(0, shade * (1 - rim));
+      const gd = Math.hypot(x - gcx, y - gcy) / grad, ga = gd < 1 ? gA * (1 - gd) : 0;
+      let r = Math.min(255, ir * k + 255 * spec), g = Math.min(255, ig * k + 255 * spec), b = Math.min(255, ib * k + 255 * spec);
+      r = (r * (1 - ga) + 255 * ga) * (1 - ua); g = (g * (1 - ga) + 255 * ga) * (1 - ua); b = (b * (1 - ga) + 255 * ga) * (1 - ua);
+      const thin = worn && dry[i] === 1 ? Math.min(1, 0.35 + 0.65 * (v - T) / 1.2) : 1;
+      px[o] = r; px[o + 1] = g; px[o + 2] = b; px[o + 3] = a * thin * 255;
+    }
+  }
+  return [x0, y0, x1, y1];
+}
+
+/* ---------------------------------------------------------------- the strokes as field operations ---- */
+/*
+ * A pen stroke adds a field around its path: amp * (1 - d^2/R^2)^3, d the distance to the path, R = join * r, with amp
+ * chosen so a lone stroke's edge lies at its radius r (the threshold), as a lone ball's does. Within one stroke the
+ * segments take the most, not the sum, so a line does not bulge at its own points; across strokes and the splat the
+ * fields add, which is what rounds every join.
+ * A wash caps the field: under it the field may be at most T * exp((d - r) / soft), so its edge lies exactly at the
+ * brush's radius whatever ink was there, and the field ramps back up outside it, which the shader reads as a meniscus.
+ * The ramp passes FMAX within about 12 px of the edge, so a wash touches only the pixels that near its path.
+ */
+const WASH_SOFT_PX = 4, FMAX = 12, WASH_TAKES = 1.5;
+const field = { gw: 0, gh: 0, q: 1, f: null, dry: null, smax: null, ridge: null, img: null, canvas: null, ctx: null, base: null };
+function penSegment(st, a, b) {
+  const { gw, gh, q, f, dry, smax, ridge } = field;
+  const r = st.width / 2 * box.w * q, join = opts.join, R = join * r, R2 = R * R, amp = T / (1 - 1 / (join * join)) ** 3;
+  const ax = a[0] * box.w * q, ay = a[1] * box.h * q, bx = b[0] * box.w * q, by = b[1] * box.h * q;
+  const x0 = Math.max(0, Math.floor(Math.min(ax, bx) - R)), x1 = Math.min(gw - 1, Math.ceil(Math.max(ax, bx) + R));
+  const y0 = Math.max(0, Math.floor(Math.min(ay, by) - R)), y1 = Math.min(gh - 1, Math.ceil(Math.max(ay, by) + R));
+  const sx = bx - ax, sy = by - ay, L2 = sx * sx + sy * sy, inv = L2 > 0 ? 1 / L2 : 0;
+  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+    const px = x + 0.5 - ax, py = y + 0.5 - ay;
+    let t = (px * sx + py * sy) * inv; t = t < 0 ? 0 : t > 1 ? 1 : t;
+    const ex = px - t * sx, ey = py - t * sy, d2 = ex * ex + ey * ey; if (d2 >= R2) continue;
+    const k = 1 - d2 / R2, kv = amp * k * k * k, i = y * gw + x;
+    if (kv > smax[i]) { f[i] += kv - smax[i]; ridge[i] += kv - smax[i]; smax[i] = kv; if (kv > 0.05) dry[i] = 0; }
+  }
+  grow(st, x0, y0, x1 + 1, y1 + 1);
+  return [x0, y0, x1 + 1, y1 + 1];
+}
+/*
+ * "Some of it each pass": the brush takes ink by how far it travels, as a sponge does. Along the path it presses a
+ * disc every third of its radius, each taking a share of WASH_TAKES that falls off as a ball's field does, so one
+ * straight pass takes WASH_TAKES under its center however densely the points were kept, and every pass back over a
+ * spot takes as much again. A thin arm (field about 0.7) clears in one pass; the core (about 2.3, up to 8) takes two
+ * to six. Ink a wash has thinned is drawn thinner, so a reader sees a pass did something before a hole opens.
+ */
+const PASS_INTEGRAL = 32 / 35; /* the falloff (1 - s^2/R^2)^3 summed across a line through its center, in units of R */
+function washStamp(cx, cy, R, w) {
+  const { gw, gh, f, dry, ridge } = field, R2 = R * R;
+  const x0 = Math.max(0, Math.floor(cx - R)), x1 = Math.min(gw - 1, Math.ceil(cx + R));
+  const y0 = Math.max(0, Math.floor(cy - R)), y1 = Math.min(gh - 1, Math.ceil(cy + R));
+  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+    const dx = x + 0.5 - cx, dy = y + 0.5 - cy, d2 = dx * dx + dy * dy; if (d2 >= R2) continue;
+    const i = y * gw + x; if (f[i] <= 0) continue;
+    const k = 1 - d2 / R2, take = w * k * k * k;
+    f[i] = Math.max(0, f[i] - take); ridge[i] = Math.max(0, ridge[i] - take); dry[i] = 1;
+  }
+}
+function washTake(st, a, b) {
+  const q = field.q, r = st.width / 2 * box.w * q, R = 2 * r, h = Math.max(1, r / 3), w = WASH_TAKES * h / (PASS_INTEGRAL * R);
+  const ax = a[0] * box.w * q, ay = a[1] * box.h * q, bx = b[0] * box.w * q, by = b[1] * box.h * q, len = Math.hypot(bx - ax, by - ay);
+  if (len === 0) { washStamp(ax, ay, R, w); st.carry = 0; }
+  else {
+    let at = h - (st.carry ?? 0);
+    for (; at <= len; at += h) washStamp(ax + (bx - ax) * at / len, ay + (by - ay) * at / len, R, w);
+    st.carry = len - (at - h);
+  }
+  return [Math.floor(Math.min(ax, bx) - R), Math.floor(Math.min(ay, by) - R), Math.ceil(Math.max(ax, bx) + R) + 1, Math.ceil(Math.max(ay, by) + R) + 1];
+}
+/* A tap is a dab: the one disc pressed when it began is topped up to a whole pass. */
+function washDab(st) {
+  const q = field.q, r = st.width / 2 * box.w * q, R = 2 * r, h = Math.max(1, r / 3), w = WASH_TAKES * h / (PASS_INTEGRAL * R);
+  const [x, y] = [st.points[0][0] * box.w * q, st.points[0][1] * box.h * q];
+  washStamp(x, y, R, WASH_TAKES - w);
+  return [Math.floor(x - R), Math.floor(y - R), Math.ceil(x + R) + 1, Math.ceil(y + R) + 1];
+}
+function washSegment(st, a, b) {
+  if (opts.washMode === 'subtract') return washTake(st, a, b);
+  const { gw, gh, q, f, dry, ridge } = field;
+  const r = st.width / 2 * box.w * q, soft = WASH_SOFT_PX * q, reach = r + soft * Math.log(FMAX / T);
+  const ax = a[0] * box.w * q, ay = a[1] * box.h * q, bx = b[0] * box.w * q, by = b[1] * box.h * q;
+  const x0 = Math.max(0, Math.floor(Math.min(ax, bx) - reach)), x1 = Math.min(gw - 1, Math.ceil(Math.max(ax, bx) + reach));
+  const y0 = Math.max(0, Math.floor(Math.min(ay, by) - reach)), y1 = Math.min(gh - 1, Math.ceil(Math.max(ay, by) + reach));
+  const sx = bx - ax, sy = by - ay, L2 = sx * sx + sy * sy, inv = L2 > 0 ? 1 / L2 : 0, reach2 = reach * reach, floor = T * Math.exp(-r / soft);
+  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+    const i = y * gw + x; if (f[i] <= floor) continue; /* the cap is never lower than this, so nothing would change */
+    const px = x + 0.5 - ax, py = y + 0.5 - ay;
+    let t = (px * sx + py * sy) * inv; t = t < 0 ? 0 : t > 1 ? 1 : t;
+    const ex = px - t * sx, ey = py - t * sy, d2 = ex * ex + ey * ey; if (d2 >= reach2) continue;
+    const d = Math.sqrt(d2);
+    const cap = T * Math.exp((d - r) / soft);
+    if (f[i] > cap) { f[i] = cap; dry[i] = 1; if (d < r + WASH_SOFT_PX * q) ridge[i] = 0; }
+  }
+  return [x0, y0, x1 + 1, y1 + 1];
+}
+function grow(st, x0, y0, x1, y1) {
+  const t = st.touched;
+  if (!t) st.touched = [x0, y0, x1, y1]; else { t[0] = Math.min(t[0], x0); t[1] = Math.min(t[1], y0); t[2] = Math.max(t[2], x1); t[3] = Math.max(t[3], y1); }
+}
+/* A stroke is over: its own most-per-segment grid is cleared where it wrote, and a pen's end gets its bulb and drops. */
+function strokeEnd(st) {
+  const out = [];
+  const { gw, smax } = field, t = st.touched;
+  if (t) for (let y = t[1]; y < t[3]; y++) smax.fill(0, y * gw + t[0], y * gw + t[2]);
+  st.touched = null;
+  if (st.tool === 'pen') for (const ball of endsOf(st)) out.push(addBall(ball));
+  else if (opts.washMode === 'subtract' && st.points.length === 1) out.push(washDab(st));
+  delete st.carry;
+  return out;
+}
+/* Worked out from the saved points alone: the same stroke gives the same bulb and drops on every screen and every visit. */
+function endsOf(st) {
+  if (opts.ends === 'none' || st.points.length < 2) return [];
+  const p = st.points, n = p.length, rPx = st.width / 2 * box.w;
+  const toPx = ([x, y]) => [x * box.w, y * box.h];
+  const end = toPx(p[n - 1]);
+  let len = 0;
+  for (let i = 1; i < n; i++) { const a = toPx(p[i - 1]), b = toPx(p[i]); len += Math.hypot(b[0] - a[0], b[1] - a[1]); }
+  if (len < rPx * 4) return [];
+  const balls = [{ x: end[0], y: end[1], r: rPx * 1.35 }];
+  if (opts.ends !== 'drops') return balls;
+  /* The last stretch of the line: points are kept at least 5 px apart, so a long last step means the pen was moving fast. */
+  const back = toPx(p[Math.max(0, n - 3)]), dx = end[0] - back[0], dy = end[1] - back[1], last = Math.hypot(dx, dy) / Math.min(2, n - 1);
+  const drops = Math.min(3, Math.floor(last / 18));
+  let h = 2166136261; for (const [x, y] of p) { h = Math.imul(h ^ Math.round(x * 1e4), 16777619); h = Math.imul(h ^ Math.round(y * 1e4), 16777619); }
+  const rnd = mulberry32(h), ang = Math.atan2(dy, dx);
+  for (let j = 0; j < drops; j++) {
+    const d = rPx * (2.6 + j * 2.2 + rnd() * 2), aj = ang + (rnd() - 0.5) * 0.5;
+    balls.push({ x: end[0] + Math.cos(aj) * d, y: end[1] + Math.sin(aj) * d, r: rPx * (0.35 + rnd() * 0.35) });
+  }
+  return balls;
+}
+function addBall(ball) {
+  const { gw, gh, q, f, dry, ridge } = field;
+  const R = 2 * ball.r * q, bx = ball.x * q, by = ball.y * q, R2 = R * R;
+  const x0 = Math.max(0, Math.floor(bx - R)), x1 = Math.min(gw - 1, Math.ceil(bx + R));
+  const y0 = Math.max(0, Math.floor(by - R)), y1 = Math.min(gh - 1, Math.ceil(by + R));
+  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+    const dx = x + 0.5 - bx, dy = y + 0.5 - by, d2 = dx * dx + dy * dy;
+    if (d2 < R2) { const k = 1 - d2 / R2, kv = k * k * k, i = y * gw + x; f[i] += kv; ridge[i] += kv; if (kv > 0.05) dry[i] = 0; }
+  }
+  return [x0, y0, x1 + 1, y1 + 1];
+}
+function applySegment(st, a, b) { return st.tool === 'pen' ? penSegment(st, a, b) : washSegment(st, a, b); }
+
+/* ---------------------------------------------------------------- state ---- */
+const opts = { washMode: 'cap', over: 'melt', view: 'field', tool: 'pen', penPx: 16, join: 2, washEdge: 'wet', ends: 'drops', density: 1 };
+const INKS = ['black', 'crimson', 'navy', 'purple', 'green', 'gold', 'white'];
+let color = 'crimson', seed = 41077, splat = makeSplat(seed), box = { w: 0, h: 0 }, dpr = 1;
+let strokes = [], live = null, comparing = false;
+const timing = { rebuild: 0, segment: 0, segPx: 0 };
+
+const main = document.getElementById('main'), canvas = document.getElementById('ink'), ctx = canvas.getContext('2d');
+const scratch = document.createElement('canvas'), sctx = scratch.getContext('2d');
+let todayBase = null;
+
+function shown() { return comparing ? (opts.view === 'field' ? 'today' : 'field') : opts.view; }
+
+function rebuild() {
+  const t0 = performance.now();
+  const q = opts.density;
+  field.q = q; field.gw = Math.ceil(box.w * q); field.gh = Math.ceil(box.h * q);
+  const n = field.gw * field.gh;
+  field.base = fieldGrid(splat, box, q);
+  field.f = field.base.slice();
+  field.dry = new Uint8Array(n);
+  field.smax = new Float32Array(n);
+  field.ridge = new Float32Array(n);
+  field.canvas = document.createElement('canvas'); field.canvas.width = field.gw; field.canvas.height = field.gh;
+  field.ctx = field.canvas.getContext('2d');
+  field.img = field.ctx.createImageData(field.gw, field.gh);
+  for (const st of strokes) {
+    const p = st.points;
+    applySegment(st, p[0], p[0]);
+    for (let i = 1; i < p.length; i++) applySegment(st, p[i - 1], p[i]);
+    strokeEnd(st);
+  }
+  shadeRect(field.f, field.dry, opts.washEdge === 'dry', field.gw, field.gh, field.img, color, q, 0, 0, field.gw, field.gh, ridgeOn());
+  field.ctx.putImageData(field.img, 0, 0);
+  /* Today's splat: the same shader over the splat alone, as paintSplat caches it. */
+  todayBase = document.createElement('canvas'); todayBase.width = field.gw; todayBase.height = field.gh;
+  const tctx = todayBase.getContext('2d'), timg = tctx.createImageData(field.gw, field.gh);
+  shadeRect(field.base, new Uint8Array(n), false, field.gw, field.gh, timg, color, q, 0, 0, field.gw, field.gh);
+  tctx.putImageData(timg, 0, 0);
+  timing.rebuild = performance.now() - t0;
+  draw();
+}
+const ridgeOn = () => (opts.over === 'raised' ? field.ridge : null);
+function reshadeAll() {
+  shadeRect(field.f, field.dry, opts.washEdge === 'dry', field.gw, field.gh, field.img, color, field.q, 0, 0, field.gw, field.gh, ridgeOn());
+  field.ctx.putImageData(field.img, 0, 0);
+  draw();
+}
+function reshade(rects) {
+  const t0 = performance.now();
+  let px = 0;
+  for (const [x0, y0, x1, y1] of rects) {
+    const r = shadeRect(field.f, field.dry, opts.washEdge === 'dry', field.gw, field.gh, field.img, color, field.q, x0 - 2, y0 - 2, x1 + 2, y1 + 2, ridgeOn());
+    const w = r[2] - r[0], h = r[3] - r[1];
+    if (w > 0 && h > 0) { field.ctx.putImageData(field.img, 0, 0, r[0], r[1], w, h); px += w * h; }
+  }
+  timing.segment = performance.now() - t0; timing.segPx = px;
+}
+
+let drawQueued = 0;
+function draw() { if (!drawQueued) drawQueued = requestAnimationFrame(drawNow); }
+function drawNow() {
+  drawQueued = 0;
+  const W = canvas.width, H = canvas.height;
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, W, H);
+  if (!todayBase) return;
+  const dw = (field.gw / field.q) * dpr, dh = (field.gh / field.q) * dpr;
+  ctx.imageSmoothingEnabled = true;
+  if (shown() === 'field') {
+    ctx.drawImage(field.canvas, 0, 0, dw, dh);
+  } else {
+    /* paint.ts's composite: the cached splat, then each stroke in order, washes cutting and pens drawing flat. */
+    if (scratch.width !== W) scratch.width = W; if (scratch.height !== H) scratch.height = H;
+    sctx.setTransform(1, 0, 0, 1, 0, 0); sctx.globalCompositeOperation = 'source-over'; sctx.shadowBlur = 0; sctx.shadowColor = 'transparent';
+    sctx.clearRect(0, 0, W, H);
+    sctx.drawImage(todayBase, 0, 0, dw, dh);
+    sctx.lineCap = sctx.lineJoin = 'round';
+    sctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    for (const s of strokes) {
+      sctx.lineWidth = s.width * box.w;
+      if (s.tool === 'wash') { sctx.globalCompositeOperation = 'destination-out'; sctx.shadowColor = '#000'; sctx.shadowBlur = 2.5; }
+      else { sctx.globalCompositeOperation = 'source-over'; sctx.shadowColor = 'transparent'; sctx.shadowBlur = 0; sctx.strokeStyle = color; }
+      sctx.beginPath();
+      s.points.forEach(([x, y], i) => (i ? sctx.lineTo(x * box.w, y * box.h) : sctx.moveTo(x * box.w, y * box.h)));
+      if (s.points.length === 1) sctx.lineTo(s.points[0][0] * box.w + 0.0001, s.points[0][1] * box.h);
+      sctx.stroke();
+    }
+    sctx.shadowBlur = 0; sctx.shadowColor = 'transparent'; sctx.globalCompositeOperation = 'source-over';
+    ctx.drawImage(scratch, 0, 0);
+  }
+  document.getElementById('mode-label').textContent = shown() === 'field' ? 'In the field' : 'Today';
+  const pts = strokes.reduce((n, s) => n + s.points.length, 0);
+  document.getElementById('readout').textContent =
+    `field ${field.gw}×${field.gh} (${(field.gw * field.gh / 1000).toFixed(0)}k px) · rebuild ${timing.rebuild.toFixed(1)} ms · ` +
+    `last pen/wash step ${timing.segment.toFixed(2)} ms over ${(timing.segPx / 1000).toFixed(1)}k px · ${strokes.length} strokes, ${pts} points`;
+}
+
+/* ---------------------------------------------------------------- sizing ---- */
+function size() {
+  const r = main.getBoundingClientRect();
+  const w = Math.round(r.width), h = Math.round(r.height);
+  dpr = Math.min(2, window.devicePixelRatio || 1);
+  if (w === box.w && h === box.h && canvas.width === Math.ceil(w * dpr)) return;
+  box = { w, h };
+  canvas.width = Math.ceil(w * dpr); canvas.height = Math.ceil(h * dpr);
+  rebuild();
+}
+new ResizeObserver(() => size()).observe(main);
+
+/* ---------------------------------------------------------------- input ---- */
+const MIN_STEP_PX = 5;
+function shareOf(e) { const r = canvas.getBoundingClientRect(); return [Math.min(1, Math.max(0, (e.clientX - r.left) / box.w)), Math.min(1, Math.max(0, (e.clientY - r.top) / box.h))]; }
+canvas.addEventListener('pointerdown', (e) => {
+  if (e.button !== 0 || live) return;
+  canvas.setPointerCapture(e.pointerId);
+  const p = shareOf(e);
+  live = { tool: opts.tool, width: (opts.tool === 'pen' ? opts.penPx : 30) / box.w, points: [p], pointer: e.pointerId, touched: null };
+  strokes.push(live);
+  reshade([applySegment(live, p, p)]);
+  draw();
+  e.preventDefault();
+});
+canvas.addEventListener('pointermove', (e) => {
+  if (!live || e.pointerId !== live.pointer) return;
+  const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
+  const rects = [];
+  for (const ev of evs.length ? evs : [e]) {
+    const p = shareOf(ev), last = live.points[live.points.length - 1];
+    if (Math.hypot((p[0] - last[0]) * box.w, (p[1] - last[1]) * box.h) < MIN_STEP_PX) continue;
+    live.points.push(p);
+    rects.push(applySegment(live, last, p));
+  }
+  if (rects.length) { reshade(rects); draw(); }
+});
+function finish(e) {
+  if (!live || e.pointerId !== live.pointer) return;
+  const st = live; live = null;
+  { const rects = strokeEnd(st); if (rects.length) reshade(rects); }
+  delete st.pointer; delete st.touched;
+  draw();
+}
+canvas.addEventListener('pointerup', finish);
+canvas.addEventListener('pointercancel', finish);
+
+/* ---------------------------------------------------------------- controls ---- */
+const sw = document.getElementById('swatches');
+for (const c of INKS) {
+  const id = `ink-${c}`;
+  sw.insertAdjacentHTML('beforeend', `<input type="radio" name="ink" id="${id}" value="${c}" aria-label="${c}" title="${c}" style="--sw:${NAMED[c]}"${c === color ? ' checked' : ''}>`);
+}
+document.getElementById('bench').addEventListener('change', (e) => {
+  const t = e.target;
+  if (t.name === 'view') { opts.view = t.value; draw(); }
+  else if (t.name === 'tool') opts.tool = t.value;
+  else if (t.name === 'ink') { color = t.value; rebuild(); }
+  else if (t.id === 'pen-px') opts.penPx = +t.value;
+  else if (t.id === 'join') { opts.join = +t.value; rebuild(); }
+  else if (t.id === 'wash-edge') { opts.washEdge = t.value; reshadeAll(); }
+  else if (t.id === 'wash-mode') { opts.washMode = t.value; worn = t.value === 'subtract'; rebuild(); }
+  else if (t.id === 'over') { opts.over = t.value; reshadeAll(); }
+  else if (t.id === 'ends') { opts.ends = t.value; rebuild(); }
+  else if (t.id === 'density') { opts.density = +t.value; rebuild(); }
+});
+document.getElementById('undo').onclick = () => { if (!live && strokes.length) { strokes.pop(); rebuild(); } };
+document.getElementById('clear').onclick = () => { if (!live) { strokes = []; rebuild(); } };
+document.getElementById('example').onclick = () => { if (!live) { strokes = example(); rebuild(); } };
+document.getElementById('reseed').onclick = () => { seed = (seed * 48271 + 11) % 2147483647; splat = makeSplat(seed); rebuild(); };
+const cmp = document.getElementById('compare');
+const hold = (on) => { if (comparing !== on) { comparing = on; cmp.setAttribute('aria-pressed', String(on)); draw(); } };
+cmp.addEventListener('pointerdown', (e) => { cmp.setPointerCapture(e.pointerId); hold(true); });
+cmp.addEventListener('pointerup', () => hold(false));
+cmp.addEventListener('pointercancel', () => hold(false));
+cmp.addEventListener('keydown', (e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); hold(true); } });
+cmp.addEventListener('keyup', () => hold(false));
+window.addEventListener('keydown', (e) => { if ((e.key === 'c' || e.key === 'C') && !e.repeat && !(e.target instanceof HTMLSelectElement)) hold(true); });
+window.addEventListener('keyup', (e) => { if (e.key === 'c' || e.key === 'C') hold(false); });
+window.addEventListener('blur', () => hold(false));
+
+/* ---------------------------------------------------------------- the example: two washes, three pen lines ---- */
+function example() {
+  const W = () => box.w, H = () => box.h, out = [];
+  const line = (tool, px, f, n) => {
+    const pts = []; for (let i = 0; i <= n; i++) { const [x, y] = f(i / n); pts.push([x, y]); }
+    out.push({ tool, width: px / W(), points: pts });
+  };
+  const steps = (frac) => Math.max(8, Math.round(frac * W() / 6));
+  line('wash', 30, (t) => [0.14 + t * 0.52, 0.40 + Math.sin(t * 9) * 0.025], steps(0.52));
+  line('wash', 30, (t) => [0.20 + t * 0.44, 0.52 + Math.sin(t * 7 + 1) * 0.02], steps(0.44));
+  /* A loop written across the washed bands and back onto the splat. */
+  line('pen', 16, (t) => { const a = t * Math.PI * 3.2; return [0.30 + t * 0.22 + Math.cos(a) * 0.05, 0.46 + Math.sin(a) * 0.09]; }, steps(0.7));
+  /* A wave from inside the splat out into the clear margin, ending in a flick. */
+  const wave = []; for (let i = 0; i <= 34; i++) { const t = i / 34; wave.push([0.62 + t * 0.26, 0.36 - t * 0.14 + Math.sin(t * 11) * 0.035]); }
+  wave.push([0.92, 0.17], [0.96, 0.135]);
+  out.push({ tool: 'pen', width: 16 / W(), points: wave });
+  /* A scribble in the clean top-left that runs into the splat's edge. */
+  line('pen', 16, (t) => [0.03 + t * 0.30, 0.10 + t * 0.30 + Math.sin(t * 16) * 0.045], steps(0.45));
+  /* A line drawn out of the lower edge into the clean bottom-left, ending fast. */
+  const tail = []; for (let i = 0; i <= 22; i++) { const t = i / 22; tail.push([0.36 - t * 0.24, 0.74 + t * 0.12 + Math.sin(t * 8) * 0.02]); }
+  tail.push([0.08, 0.89], [0.035, 0.915]);
+  out.push({ tool: 'pen', width: 16 / W(), points: tail });
+  return out;
+}
+
+size();
+strokes = example();
+rebuild();
+</script>
+</body></html>
