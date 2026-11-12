@@ -369,7 +369,7 @@ describe('a back that sprang, and a new back set on the same post', () => {
   });
   test('a back whose time has passed with nothing springing it is no longer shown', () => {
     const backs = [{ ...playOf(base('s1', 'set', {}))!, playedAt: '2020-01-01T00:00:00.000Z', endsAt: '2020-01-08T00:00:00.000Z' }, { ...playOf(base('s2', 'set', {}))!, playedAt: new Date().toISOString(), endsAt: '2999-01-01T00:00:00.000Z' }];
-    expect(shownPlays(backs).map((p) => p.id)).toEqual(['s2']);
+    expect(shownPlays(backs, Date.now()).map((p) => p.id)).toEqual(['s2']);
   });
   test('a back is over at the end the server stored, whatever the setting says', () => {
     const day = 86_400_000;
@@ -377,7 +377,7 @@ describe('a back that sprang, and a new back set on the same post', () => {
       { ...playOf(base('s1', 'set', {}))!, playedAt: new Date(Date.now() - 10 * day).toISOString(), endsAt: new Date(Date.now() + 20 * day).toISOString() },
       { ...playOf(base('s2', 'set', {}))!, playedAt: new Date(Date.now() - 1 * day).toISOString(), endsAt: new Date(Date.now() - day / 2).toISOString() },
     ];
-    expect(shownPlays(backs).map((p) => p.id)).toEqual(['s1']);
+    expect(shownPlays(backs, Date.now()).map((p) => p.id)).toEqual(['s1']);
   });
   test('a set Act carries its end onto its play, and a card Act has none', () => {
     expect(playOf({ ...base('s1', 'set', {}), endsAt: '2026-11-20T00:00:00.000Z' })!.endsAt).toBe('2026-11-20T00:00:00.000Z');
@@ -387,7 +387,7 @@ describe('a back that sprang, and a new back set on the same post', () => {
   test('a back its setter took back leaves the post: it is not shown', () => {
     const now = new Date().toISOString();
     const backs = [{ ...playOf(base('s1', 'set', {}))!, playedAt: now, takenBack: { at: now } }, { ...playOf(base('s2', 'set', {}))!, playedAt: now }];
-    expect(shownPlays(backs).map((p) => p.id)).toEqual(['s2']);
+    expect(shownPlays(backs, Date.now()).map((p) => p.id)).toEqual(['s2']);
   });
 });
 
@@ -408,7 +408,7 @@ describe('a play an admin ended', () => {
     const got = plays.get('p1');
     expect(got.billed.map((p) => [p.id, p.reversed])).toEqual([['k2', undefined], ['k1', true]]);
     expect(heard).toHaveBeenCalledTimes(1);
-    expect(livePlays(got.plays).map((p) => p.id)).toEqual(['k2']);
+    expect(livePlays(got.plays, Date.now()).map((p) => p.id)).toEqual(['k2']);
   });
 
   test('a card_end that arrives before its play is held, and the play arrives reversed', () => {
@@ -417,7 +417,7 @@ describe('a play an admin ended', () => {
     expect(plays.get('p1').plays).toEqual([]);
     plays.add([act('k1', 'card', { card: 'whoops' })]);
     expect(plays.get('p1').plays.map((p) => p.reversed)).toEqual([true]);
-    expect(livePlays(plays.get('p1').plays)).toEqual([]);
+    expect(livePlays(plays.get('p1').plays, Date.now())).toEqual([]);
   });
 
   test('the same end again changes nothing, and an end is no play of its own', () => {
@@ -433,8 +433,8 @@ describe('a play an admin ended', () => {
     const post = playOf(act('k1', 'card', { card: 'whoops' }))!;
     const beyond = playOf(act('k2', 'card', { card: 'sparkly', reach: 'thread', thread: 'th', ends: '2099-01-01T00:00:00.000Z' }, 'p1'))!;
     const ended = [{ ...post, reversed: true as const }, { ...beyond, reversed: true as const }];
-    expect(livePlays(ended)).toEqual([]);
-    expect(markedPlays(ended).map((p) => p.id)).toEqual(['k1']);
+    expect(livePlays(ended, Date.now())).toEqual([]);
+    expect(markedPlays(ended, Date.now()).map((p) => p.id)).toEqual(['k1']);
   });
 });
 
@@ -451,7 +451,7 @@ describe('a play ended by being absent from a page read again', () => {
     plays.subscribe('p1', heard);
     expect(plays.setEnded(['k1'])).toBe(true);
     expect(plays.get('p1').billed.map((p) => [p.id, p.reversed])).toEqual([['k1', true], ['k2', undefined]]);
-    expect(livePlays(plays.get('p1').plays).map((p) => p.id)).toEqual(['k2']);
+    expect(livePlays(plays.get('p1').plays, Date.now()).map((p) => p.id)).toEqual(['k2']);
     expect(heard).toHaveBeenCalledTimes(1);
   });
 
@@ -490,8 +490,8 @@ describe('a play that did not take', () => {
     plays.add([act('k1'), act('k2', { untaken: true }), act('k3')]);
     const got = plays.get('p1');
     expect(got.plays.map((p) => p.id)).toEqual(['k1', 'k2', 'k3']);
-    expect(livePlays(got.plays).map((p) => p.id)).toEqual(['k1', 'k3']);
-    expect(markedPlays(got.plays).map((p) => p.id)).toEqual(['k1', 'k2', 'k3']);
+    expect(livePlays(got.plays, Date.now()).map((p) => p.id)).toEqual(['k1', 'k3']);
+    expect(markedPlays(got.plays, Date.now()).map((p) => p.id)).toEqual(['k1', 'k2', 'k3']);
   });
 });
 

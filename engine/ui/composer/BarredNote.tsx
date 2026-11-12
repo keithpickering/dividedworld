@@ -34,17 +34,18 @@ const MOST_MS = 2 ** 31 - 1;
  * saying so before a reply is written for nothing, and the way out beside it.
  */
 export function useBar(character: Pick<MyCharacter, 'bars'> | null, board: Id | null): Bar | null {
+  const { api } = useKayfa();
   const [ticks, tick] = useState(0);
-  const bar = (character?.bars ?? []).filter((b) => b.board === board && (b.expiresAt === null || Date.parse(b.expiresAt) > Date.now()))
+  const bar = (character?.bars ?? []).filter((b) => b.board === board && (b.expiresAt === null || Date.parse(b.expiresAt) > api.now()))
     .sort((a, b) => Date.parse(b.expiresAt ?? '9999') - Date.parse(a.expiresAt ?? '9999'))[0] ?? null;
   const until = bar?.expiresAt ?? null;
   useEffect(() => {
     if (until === null) return;
-    const left = Date.parse(until) - Date.now();
+    const left = Date.parse(until) - api.now();
     if (left <= 0) return;
     const timer = setTimeout(() => tick((n) => n + 1), Math.min(left, MOST_MS));
     return () => clearTimeout(timer);
-  }, [until, ticks]);
+  }, [api, until, ticks]);
   return bar;
 }
 
@@ -82,11 +83,11 @@ export function BarredNote({ character, bar }: { readonly character: { readonly 
   const waitEnds = detail !== null && detail !== 'failed' ? nextWrittenAt(detail.apologies) : null;
   useEffect(() => {
     if (waitEnds === null) return;
-    const left = waitEnds - Date.now();
+    const left = waitEnds - api.now();
     if (left <= 0) return;
     const timer = setTimeout(() => tick((n) => n + 1), Math.min(left, MOST_MS));
     return () => clearTimeout(timer);
-  }, [waitEnds]);
+  }, [api, waitEnds]);
 
   if (detail === null) return <div className="kb-composer kb-barred kb-box" aria-busy="true" />;
   const group = settings.groups.find((g) => g.key === bar.group)?.name ?? bar.group;
@@ -107,7 +108,7 @@ export function BarredNote({ character, bar }: { readonly character: { readonly 
   const accepted = apologies.some((a) => a.state === 'accepted');
   /* The newest apology came back unjudged: it says so, and the next may be written at once. */
   const returned = !waiting && !accepted && apologies[0]?.state === 'returned';
-  const next = waitEnds !== null && waitEnds > Date.now() ? waitEnds : null;
+  const next = waitEnds !== null && waitEnds > api.now() ? waitEnds : null;
   const punishment = instance.groups.conferred.find((g) => g.key === bar.group)?.tone === 'punishment';
   const appealed = detail.appealed;
   const seq = move?.seq ?? null;
