@@ -154,14 +154,14 @@ export function ConfigForm({ config, onChange, post, id }: ConfigFormProps) {
           ? `${line === undefined ? '' : `${line}. `}A face-down Laugh Track waits for this phrase.`
           : line;
         return (
-          <div key={key} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div key={key} style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 12, borderTop: '1px solid color-mix(in srgb, var(--kb-glass-text-hi) 22%, transparent)' }}>
             <ConfigField
               id={`${id}-phrase-${key}`}
               label={`Cue ${i + 1}`}
               value={cue.phrase}
               maxLength={PHRASE.most}
               onChange={(phrase) => { lastFilled.current = null; edit(i, { phrase }); }}
-              hint={hint}
+              describedBy={hint ? `${id}-phrase-${key}-line` : undefined}
               why={bound}
               action={rows.length > 1 ? (
                 <GlassButton kind="quiet" size="s" aria-label={`Remove cue ${i + 1}`} onClick={() => remove(i)}>Remove</GlassButton>
@@ -175,6 +175,7 @@ export function ConfigForm({ config, onChange, post, id }: ConfigFormProps) {
               value={cue.sound}
               onChoose={(sound) => edit(i, { sound })}
             />
+            {hint && <ConfigHint id={`${id}-phrase-${key}-line`}>{hint}</ConfigHint>}
           </div>
         );
       })}

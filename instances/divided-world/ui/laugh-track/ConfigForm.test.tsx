@@ -42,6 +42,19 @@ describe('Laugh Track\'s play form', () => {
     expect(phrase(1)).toHaveAccessibleDescription(/A face-down Laugh Track waits for this phrase\.\s*$/);
   });
 
+  test('each cue is drawn as its head line, the phrase, the sound choice and then its hint, and the phrase is still described by the hint', () => {
+    form({ cues: [{ phrase: 'mario', sound: 'laugh' }, { phrase: 'luigi', sound: 'boo' }] });
+    const after = (a: Node, b: Node) => expect(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const hints = [/Cues 3 places in this post\. A face-down Laugh Track waits for this phrase\./, /Cues 2 places in this post/];
+    hints.forEach((re, i) => {
+      const hint = screen.getByText(re);
+      after(phrase(i + 1), sound(i + 1));
+      after(sound(i + 1), hint);
+      expect(phrase(i + 1)).toHaveAccessibleDescription(re);
+    });
+    expect(phrase(1)).toHaveAccessibleDescription(/A face-down Laugh Track waits for this phrase\./);
+  });
+
   test('cues add up to five and then the button goes; each but a lone one can be removed', () => {
     const { onChange } = form({ cues: [{ phrase: 'mario', sound: 'laugh' }] });
     for (let i = 2; i <= 5; i++) {
@@ -60,9 +73,9 @@ describe('Laugh Track\'s play form', () => {
 
   test('each cue counts its own places, or says it is not in the post\'s words, and the total is against the cap', () => {
     form({ cues: [{ phrase: 'mario', sound: 'laugh' }, { phrase: 'luigi', sound: 'cheer' }, { phrase: 'wario', sound: 'boo' }] });
-    expect(phrase(2)).toHaveAccessibleDescription(/^Cues 2 places in this post\s*$/);
-    expect(phrase(3)).toHaveAccessibleDescription(/^Not in this post's own words\s*$/);
-    expect(phrase(1)).toHaveAccessibleDescription(/^Cues 3 places in this post\. A face-down Laugh Track waits for this phrase\.\s*$/);
+    expect(phrase(2)).toHaveAccessibleDescription(/^\s*Cues 2 places in this post\s*$/);
+    expect(phrase(3)).toHaveAccessibleDescription(/^\s*Not in this post's own words\s*$/);
+    expect(phrase(1)).toHaveAccessibleDescription(/^\s*Cues 3 places in this post\. A face-down Laugh Track waits for this phrase\.\s*$/);
     expect(screen.getByText('5 places in all (at most 30)')).toBeInTheDocument();
   });
 
@@ -153,12 +166,12 @@ describe('Laugh Track\'s play form', () => {
   test('one polite live region for the total; the cues\' lines are plain text described by their input', () => {
     form({ cues: [{ phrase: 'mario', sound: 'laugh' }, { phrase: 'luigi', sound: 'boo' }] });
     expect(total().textContent).toBe('5 places in all (at most 30)');
-    expect(phrase(2)).toHaveAccessibleDescription(/^Cues 2 places in this post\s*$/);
+    expect(phrase(2)).toHaveAccessibleDescription(/^\s*Cues 2 places in this post\s*$/);
   });
 
   test('a phrase outside the rules\' bounds shows the bound in the rules\' words, and an empty one only a hint', () => {
     form({ cues: [{ phrase: '', sound: 'laugh' }, { phrase: 'and', sound: 'laugh' }, { phrase: `${'mario '.repeat(20)}`, sound: 'laugh' }] });
-    expect(phrase(1)).toHaveAccessibleDescription(/^At least 4 letters or digits, matched as whole words in any case/);
+    expect(phrase(1)).toHaveAccessibleDescription(/^\s*At least 4 letters or digits, matched as whole words in any case/);
     expect(phrase(2)).toHaveAccessibleDescription('The phrase has at least 4 letters or digits');
     expect(phrase(3)).toHaveAccessibleDescription('The phrase is at most 100 characters');
     expect(phrase(2)).toHaveAttribute('aria-invalid', 'true');
