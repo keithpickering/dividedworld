@@ -181,10 +181,10 @@ test('the most strokes Whoops! saves fit the database\'s bound, as Postgres writ
   // a seven-character color, continues, drops 3, the widest width, a three-figure aspect, and every point's difference the largest.
   const each = STROKES.totalPoints / STROKES.most;
   assert.ok(Number.isInteger(each) && each <= STROKES.points);
-  // Alternating corners: each difference is 10,000 or -10,000, the most digits an i16 puts in base64url.
+  // Alternating corners: each difference is 10,000 or -10,000 (each point packs to four bytes whatever its difference).
   const corners = (from: 0 | 1) => pack(Array.from({ length: each }, (_, i): Pt => ((i + from) % 2 === 0 ? [0, 0] : [1, 1])));
   const [there, back] = [corners(0), corners(1)]; // a piece ends on the corner the next one starts on
-  const pieces = Array.from({ length: STROKES.most }, (_, i) => ({ tool: 'ink', color: '#abcdef', width: 0.9999, aspect: 0.123, points: i % 2 === 0 ? there : back, ...(i > 0 ? { continues: true } : null), drops: 3 }));
+  const pieces = Array.from({ length: STROKES.most }, (_, i) => ({ tool: 'ink', color: '#abcdef', width: 0.9999, aspect: 0.00123, points: i % 2 === 0 ? there : back, ...(i > 0 ? { continues: true } : null), drops: 3 }));
   const saved = whoops.validateState!({ strokes: pieces, clean: false });
   assert.equal(saved.ok, true, saved.ok ? '' : saved.why);
   const plain = JSON.stringify(saved.ok && saved.value);
