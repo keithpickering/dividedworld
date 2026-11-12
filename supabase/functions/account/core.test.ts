@@ -8,6 +8,7 @@ const KNOWN = 'known@test.invalid';
 const UNKNOWN = 'nobody@test.invalid';
 const INVITE = 'good-invite-code';
 const CODE = '123456';
+const SITE = 'https://dw.test';
 const LINK = 'pkce_0123456789abcdef-GOOD_hash';
 const LINK_NO_MATCH = { field: 'link', error: 'that link does not work, or it has expired: ask for a new code' };
 
@@ -33,7 +34,7 @@ function world(options: { mode?: 'open' | 'invite' | 'closed' } = {}) {
   const player = (token: string): Db => ({ rpc: async <T>(fn: string, args: Record<string, unknown>) => { calls.push(`player(${token}):${fn}:${JSON.stringify(args)}`); return { account: 'u1', opened: true } as T; } });
   const answer = async (request: unknown) => {
     const start = now;
-    const out = await runAccount({ auth, service, player, clock }, request);
+    const out = await runAccount({ auth, service, player, clock, site: SITE }, request);
     return { ...out, took: now - start };
   };
   return { answer, calls, clock };
@@ -66,18 +67,18 @@ test('a code asked for with an invite that opens may make a login; one asked for
   await (await w.answer({ action: 'requestCode', email: UNKNOWN, invite: INVITE })).later?.();
   await (await w.answer({ action: 'requestCode', email: UNKNOWN })).later?.();
   assert.deepEqual(w.calls.filter((c) => c.startsWith('requestCode')), [
-    `requestCode:${UNKNOWN}:${JSON.stringify({ create: true, invite: INVITE })}`,
-    `requestCode:${UNKNOWN}:${JSON.stringify({ create: false, invite: null })}`,
+    `requestCode:${UNKNOWN}:${JSON.stringify({ create: true, invite: INVITE, redirect: `${SITE}/register` })}`,
+    `requestCode:${UNKNOWN}:${JSON.stringify({ create: false, invite: null, redirect: `${SITE}/sign-in` })}`,
   ]);
   // Where registration is open, anyone may make a login; where it is closed, nobody new.
   const open = world({ mode: 'open' });
   await (await open.answer({ action: 'requestCode', email: UNKNOWN })).later?.();
-  assert.deepEqual(open.calls.filter((c) => c.startsWith('requestCode')), [`requestCode:${UNKNOWN}:${JSON.stringify({ create: true, invite: null })}`]);
+  assert.deepEqual(open.calls.filter((c) => c.startsWith('requestCode')), [`requestCode:${UNKNOWN}:${JSON.stringify({ create: true, invite: null, redirect: `${SITE}/register` })}`]);
   const closed = world({ mode: 'closed' });
   const out = await closed.answer({ action: 'requestCode', email: KNOWN });
   assert.equal(out.status, 202, 'a login made before registration closed still signs in');
   await out.later?.();
-  assert.deepEqual(closed.calls.filter((c) => c.startsWith('requestCode')), [`requestCode:${KNOWN}:${JSON.stringify({ create: false, invite: null })}`]);
+  assert.deepEqual(closed.calls.filter((c) => c.startsWith('requestCode')), [`requestCode:${KNOWN}:${JSON.stringify({ create: false, invite: null, redirect: `${SITE}/sign-in` })}`]);
 });
 
 test('an invite that opens nothing still sends a returning player their code, and says so the same for every address', async () => {
@@ -87,13 +88,13 @@ test('an invite that opens nothing still sends a returning player their code, an
     assert.equal(bad.status, 202);
     assert.equal((bad.body as { invite: string }).invite, 'that invite opens nothing, so no new login is made with it');
     await bad.later?.();
-    assert.deepEqual(w.calls.filter((c) => c.startsWith('requestCode')), [`requestCode:${email}:${JSON.stringify({ create: false, invite: null })}`]);
+    assert.deepEqual(w.calls.filter((c) => c.startsWith('requestCode')), [`requestCode:${email}:${JSON.stringify({ create: false, invite: null, redirect: `${SITE}/sign-in` })}`]);
     const shut = world({ mode: 'closed' });
     const closed = await shut.answer({ action: 'requestCode', email, invite: INVITE });
     assert.equal(closed.status, 202);
     assert.equal((closed.body as { invite: string }).invite, 'registration is closed, so no new login is made');
     await closed.later?.();
-    assert.deepEqual(shut.calls.filter((c) => c.startsWith('requestCode')), [`requestCode:${email}:${JSON.stringify({ create: false, invite: null })}`]);
+    assert.deepEqual(shut.calls.filter((c) => c.startsWith('requestCode')), [`requestCode:${email}:${JSON.stringify({ create: false, invite: null, redirect: `${SITE}/sign-in` })}`]);
   }
   // An invite longer than any code, or not text at all, opens nothing, and is said so.
   for (const invite of ['x'.repeat(65), 42]) {
@@ -151,6 +152,7 @@ test('a login whose invite was spent signs in with no account, and is told the w
     service: { rpc: async () => { throw new Error('unused'); } },
     player: () => ({ rpc: async () => { throw spent; } }),
     clock: w.clock,
+    site: SITE,
   }, { action: 'verifyCode', email: KNOWN, code: CODE });
   assert.equal(out.status, 200);
   const body = out.body as { account: boolean; why: string };
@@ -163,11 +165,11 @@ test('a login with no invite in its metadata opens its account with none; a data
   const calls: string[] = [];
   const plain = { access_token: 't', refresh_token: 'r', expires_in: 1, user: { id: 'u' } };
   const base: Auth = { ...noAuth, verifyCode: async () => ({ session: plain }) };
-  const out = await runAccount({ auth: base, service: { rpc: async () => null as never }, player: () => ({ rpc: async <T>(fn: string, args: Record<string, unknown>) => { calls.push(`${fn}:${JSON.stringify(args)}`); return { opened: true } as T; } }), clock: w.clock },
+  const out = await runAccount({ auth: base, service: { rpc: async () => null as never }, player: () => ({ rpc: async <T>(fn: string, args: Record<string, unknown>) => { calls.push(`${fn}:${JSON.stringify(args)}`); return { opened: true } as T; } }), clock: w.clock, site: SITE },
     { action: 'verifyCode', email: KNOWN, code: CODE });
   assert.equal(out.status, 200);
   assert.deepEqual(calls, ['open_account:{"code":null}']);
-  const broken = await runAccount({ auth: base, service: { rpc: async () => null as never }, player: () => ({ rpc: async () => { throw new DatabaseError('open_account: boom', '42P01', 500); } }), clock: w.clock },
+  const broken = await runAccount({ auth: base, service: { rpc: async () => null as never }, player: () => ({ rpc: async () => { throw new DatabaseError('open_account: boom', '42P01', 500); } }), clock: w.clock, site: SITE },
     { action: 'verifyCode', email: KNOWN, code: CODE });
   assert.deepEqual([broken.status, broken.body], [503, { error: 'signing in is not working right now; try again' }]);
 });
@@ -180,6 +182,7 @@ test('a login signing in while registration is closed is told its way out is an 
     service: { rpc: async () => { throw new Error('unused'); } },
     player: () => ({ rpc: async () => { throw closed; } }),
     clock: w.clock,
+    site: SITE,
   }, { action: 'verifyCode', email: KNOWN, code: CODE });
   const body = out.body as { account: boolean; why: string };
   assert.equal(body.account, false);
@@ -208,7 +211,7 @@ test('work that runs past the floor is rounded up to the next whole floor, so it
   let now = 0;
   const clock = { now: () => now, sleep: async (ms: number) => { now += ms; } };
   const slow: Auth = { ...noAuth, verifyCode: async () => { now += ANSWER_FLOOR_MS + 7; return { refused: 'code' }; } };
-  const out = await runAccount({ auth: slow, service: { rpc: async () => null as never }, player: () => ({ rpc: async () => null as never }), clock }, { action: 'verifyCode', email: KNOWN, code: CODE });
+  const out = await runAccount({ auth: slow, service: { rpc: async () => null as never }, player: () => ({ rpc: async () => null as never }), clock, site: SITE }, { action: 'verifyCode', email: KNOWN, code: CODE });
   assert.equal(out.status, 400);
   assert.equal(now, 2 * ANSWER_FLOOR_MS);
 });
@@ -217,7 +220,7 @@ test('Auth failing to answer a code is a plain retry-later, in the same time', a
   let now = 0;
   const clock = { now: () => now, sleep: async (ms: number) => { now += ms; } };
   const down: Auth = { ...noAuth, verifyCode: async () => { throw new Error('upstream 503'); } };
-  const out = await runAccount({ auth: down, service: { rpc: async () => null as never }, player: () => ({ rpc: async () => null as never }), clock }, { action: 'verifyCode', email: KNOWN, code: CODE });
+  const out = await runAccount({ auth: down, service: { rpc: async () => null as never }, player: () => ({ rpc: async () => null as never }), clock, site: SITE }, { action: 'verifyCode', email: KNOWN, code: CODE });
   assert.deepEqual([out.status, out.body, now], [503, { error: 'signing in is not working right now; try again' }, ANSWER_FLOOR_MS]);
 });
 
@@ -234,7 +237,7 @@ test('a link\'s hash Auth accepts signs in, opens the login\'s account with the 
 test('a link for a login whose invite was spent signs in with no account, and says what a code says for it', async () => {
   const w = world();
   const spent = new DatabaseError('open_account: that invite opens nothing', 'P0001', 400, 'that invite opens nothing', REFUSAL_HINT);
-  const base = { service: { rpc: async () => { throw new Error('unused'); } } as Db, player: () => ({ rpc: async () => { throw spent; } }) as Db, clock: w.clock };
+  const base = { service: { rpc: async () => { throw new Error('unused'); } } as Db, player: () => ({ rpc: async () => { throw spent; } }) as Db, clock: w.clock, site: SITE };
   const bare = { access_token: 't', refresh_token: 'r', expires_in: 1, user: { id: 'u', user_metadata: {} } };
   const viaLink = await runAccount({ ...base, auth: { ...noAuth, verifyLink: async () => ({ session: bare }) } }, { action: 'verifyLink', tokenHash: LINK });
   const viaCode = await runAccount({ ...base, auth: { ...noAuth, verifyCode: async () => ({ session: bare }) } }, { action: 'verifyCode', email: KNOWN, code: CODE });
@@ -268,6 +271,38 @@ test('Auth failing to answer a link is a plain retry-later, in the same time', a
   let now = 0;
   const clock = { now: () => now, sleep: async (ms: number) => { now += ms; } };
   const down: Auth = { ...noAuth, verifyLink: async () => { throw new Error('upstream 503'); } };
-  const out = await runAccount({ auth: down, service: { rpc: async () => null as never }, player: () => ({ rpc: async () => null as never }), clock }, { action: 'verifyLink', tokenHash: LINK });
+  const out = await runAccount({ auth: down, service: { rpc: async () => null as never }, player: () => ({ rpc: async () => null as never }), clock, site: SITE }, { action: 'verifyLink', tokenHash: LINK });
   assert.deepEqual([out.status, out.body, now], [503, { error: 'signing in is not working right now; try again' }, ANSWER_FLOOR_MS]);
+});
+
+test('the link\'s page follows the invite and carries a next on this site, encoded once; a next that fails the rule is dropped without a word', async () => {
+  const asked = async (request: Record<string, unknown>) => {
+    const w = world();
+    const out = await w.answer({ action: 'requestCode', email: UNKNOWN, ...request });
+    await out.later?.();
+    const call = w.calls.find((c) => c.startsWith('requestCode'))!;
+    return { out, redirect: (JSON.parse(call.slice(call.indexOf('{'))) as { redirect: string }).redirect };
+  };
+  assert.equal((await asked({ next: '/board/general?page=2' })).redirect, `${SITE}/sign-in?next=%2Fboard%2Fgeneral%3Fpage%3D2`);
+  assert.equal((await asked({ next: '/board/general?page=2', invite: INVITE })).redirect, `${SITE}/register?next=%2Fboard%2Fgeneral%3Fpage%3D2`);
+  const none = await asked({});
+  for (const next of ['/', '//evil.example', 'https://evil.example/', '/\\evil.example', '/' + 'a'.repeat(512), 7, null, {}]) {
+    const dropped = await asked({ next });
+    assert.equal(dropped.redirect, `${SITE}/sign-in`, JSON.stringify(next).slice(0, 40));
+    assert.deepEqual([dropped.out.status, dropped.out.body, dropped.out.took], [none.out.status, none.out.body, none.out.took]);
+  }
+  const kept = await asked({ next: '/standings' });
+  assert.deepEqual([kept.out.status, kept.out.body, kept.out.took], [none.out.status, none.out.body, none.out.took], 'a kept next answers as none does');
+});
+
+test('next is never logged', async () => {
+  const seen: unknown[][] = [];
+  const real = console.error;
+  console.error = (...a: unknown[]) => { seen.push(a); };
+  try {
+    const w = world();
+    await (await w.answer({ action: 'requestCode', email: UNKNOWN, next: '/secret-thread' })).later?.();
+    await (await w.answer({ action: 'requestCode', email: UNKNOWN, next: '//evil.example/secret-thread' })).later?.();
+  } finally { console.error = real; }
+  assert.ok(!JSON.stringify(seen).includes('secret-thread'));
 });

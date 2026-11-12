@@ -511,7 +511,7 @@ describe('the welcome', () => {
     const invite = await fake.createInvite();
     if (!invite.ok) throw new Error('the host could not invite');
     fake.signInAs(null);
-    await fake.requestCode('new@example.test', null);
+    await fake.requestCode('new@example.test', null, null);
     await fake.verifyCode('new@example.test', '123456');
     window.history.pushState(null, '', '/');
     return { fake, code: invite.value.code };

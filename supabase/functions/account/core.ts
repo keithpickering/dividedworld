@@ -23,9 +23,16 @@
  * act function's openAccount action (engine/rules/actions.ts). The email's link does not go to Auth: it opens the
  * instance's own page with the token's hash in the fragment, and that page calls verifyLink, which checks the hash
  * with Auth and then opens the account exactly as a code does, with the same answers held to the same floor.
+ *
+ * The page the link opens, and the `next` it carries back to the thread the player came from, are built
+ * from the caller's `next` and the invite alone, never the address: `next` is kept only where the one rule
+ * for it (engine/rules/next.ts) passes it for the instance's own site, and one that fails, or is the index,
+ * is dropped without a word, so the answer, its status and its floor are the same for every address and
+ * every `next`. It is never logged.
  */
 import { DatabaseError, type Db } from '../_shared/rpc.ts';
 import { REFUSAL_HINT } from '../act/core.ts';
+import { sameSitePath } from '../../../engine/rules/next.ts';
 
 /** Long enough to cover a code's check and its round trips, so the floor is what shows. */
 export const ANSWER_FLOOR_MS = 1_000;
@@ -40,7 +47,7 @@ export interface Session {
 /** The little of Supabase Auth this needs (supabase/functions/_shared/gotrue.ts). */
 export interface Auth {
   /** Emails a code and a link; `create` lets it make a login for an address with none, carrying the invite. */
-  requestCode(email: string, options: { create: boolean; invite: string | null }): Promise<void>;
+  requestCode(email: string, options: { create: boolean; invite: string | null; redirect: string }): Promise<void>;
   verifyCode(email: string, code: string): Promise<{ session: Session } | { refused: 'code' }>;
   /** The same token as the code, by the hash the email's link carries. */
   verifyLink(tokenHash: string): Promise<{ session: Session } | { refused: 'link' }>;
@@ -98,7 +105,15 @@ async function opened(deps: { player: (token: string) => Db }, session: Session)
   }
 }
 
-async function answer(deps: { auth: Auth; service: Db; player: (token: string) => Db }, request: unknown): Promise<AccountAnswer> {
+/** The page the email's link opens: sign-in, or register where a login may be made, with `next` kept where it is a path on the site. */
+function redirect(site: string, create: boolean, next: unknown): string {
+  const url = new URL(create ? '/register' : '/sign-in', site);
+  const kept = sameSitePath(next, url.origin);
+  if (kept !== null && kept !== '/') url.searchParams.set('next', kept);
+  return url.toString();
+}
+
+async function answer(deps: { auth: Auth; service: Db; player: (token: string) => Db; site: string }, request: unknown): Promise<AccountAnswer> {
   if (typeof request !== 'object' || request === null) return refused('action', 'a request is an object naming its action');
   const r = request as Fields;
   switch (r.action) {
@@ -115,7 +130,7 @@ async function answer(deps: { auth: Auth; service: Db; player: (token: string) =
       const create = opens === 'opens';
       const invite = create ? asked : null;
       const note = !given || create ? {} : { invite: opens === 'closed' ? 'registration is closed, so no new login is made' : 'that invite opens nothing, so no new login is made with it' };
-      return { status: 202, body: { message: SENT_CODE, ...note }, later: () => deps.auth.requestCode(address, { create, invite }) };
+      return { status: 202, body: { message: SENT_CODE, ...note }, later: () => deps.auth.requestCode(address, { create, invite, redirect: redirect(deps.site, create, r.next) }) };
     }
     case 'verifyCode': {
       const address = email(r);
@@ -138,7 +153,7 @@ async function answer(deps: { auth: Auth; service: Db; player: (token: string) =
   }
 }
 
-export async function runAccount(deps: { auth: Auth; service: Db; player: (token: string) => Db; clock: Clock }, request: unknown): Promise<AccountAnswer> {
+export async function runAccount(deps: { auth: Auth; service: Db; player: (token: string) => Db; clock: Clock; site: string }, request: unknown): Promise<AccountAnswer> {
   const start = deps.clock.now();
   let out: AccountAnswer;
   try {

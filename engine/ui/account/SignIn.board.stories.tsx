@@ -42,10 +42,10 @@ const LINK = `#token_hash=${TEST_LINK}`;
 /** A player whose address was the last asked for a code, so the story's link signs them in. */
 const asked: World = (fake) => {
   fake.seed.account('story-link', { email: 'player@example.test' });
-  void fake.requestCode('player@example.test', null);
+  void fake.requestCode('player@example.test', null, null);
 };
 /** A signed-in player, and the link of another address's code. */
-const signedInAsked: World = (fake, instance) => { playerWorld(fake, instance); void fake.requestCode('player@example.test', null); };
+const signedInAsked: World = (fake, instance) => { playerWorld(fake, instance); void fake.requestCode('player@example.test', null, null); };
 /** The link opened where no one is signed in: one sentence, "Sign in", and "Use a code instead". */
 export const LinkReady: Story = { name: 'Link, ready', args: { mode: 'sign-in' }, parameters: { world: asked, path: `/sign-in${LINK}` } };
 /** The link opened in a browser that is signed in already: it names that address and asks. */

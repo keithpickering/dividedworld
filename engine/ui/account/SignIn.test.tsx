@@ -143,7 +143,7 @@ describe('Sign in', () => {
     expect(status).not.toHaveTextContent('Another code was asked for.');
     await userEvent.click(screen.getByRole('button', { name: 'Send a new code' }));
     await waitFor(() => expect(spy).toHaveBeenCalledTimes(2));
-    expect(spy).toHaveBeenLastCalledWith('known@example.test', null);
+    expect(spy).toHaveBeenLastCalledWith('known@example.test', null, null);
     await waitFor(() => expect(status).toHaveTextContent('Another code was asked for.'));
     expect(screen.getByRole('status')).toBe(status);
   });
@@ -175,7 +175,7 @@ describe('Sign in', () => {
     const w = world();
     let release!: () => void;
     const real = w.fake.requestCode.bind(w.fake);
-    const spy = vi.spyOn(w.fake, 'requestCode').mockImplementation((email, invite) => new Promise((resolve) => { release = () => resolve(real(email, invite)); }));
+    const spy = vi.spyOn(w.fake, 'requestCode').mockImplementation((email, invite, next) => new Promise((resolve) => { release = () => resolve(real(email, invite, next)); }));
     open(w, 'sign-in');
     await ask('known@example.test');
     const send = screen.getByRole('button', { name: 'Send a code' });
@@ -294,6 +294,17 @@ describe('Sign in', () => {
     expect(went[0]).toBe('/standings');
   });
 
+  test('asking for a code passes the page the player came from, and nothing where there is none or it is not this site\'s', async () => {
+    for (const [search, sent] of [['?next=%2Fboard%2Fgeneral%3Fpage%3D2', '/board/general?page=2'], ['', null], ['?next=%2F', null], ['?next=%2F%2Fevil.example', null]] as const) {
+      const w = world();
+      open(w, 'sign-in', `/sign-in${search}`);
+      await ask('known@example.test');
+      await screen.findByLabelText('Code from the email');
+      expect(w.fake.lastNext(), search).toBe(sent);
+      cleanup();
+    }
+  });
+
   test('after the code it returns only to a path on this site', async () => {
     const w = world();
     open(w, 'sign-in', '/sign-in?next=%2F%2Fevil.example%2Fx');
@@ -406,7 +417,7 @@ describe('Register', () => {
     const w = world();
     const made = await (async () => { w.fake.signInAs(w.known); const r = await w.fake.createInvite(); w.fake.signInAs(null); return r; })();
     if (!made.ok) throw new Error('seed');
-    await w.fake.requestCode('linked@example.test', null);
+    await w.fake.requestCode('linked@example.test', null, null);
     await w.fake.verifyCode('linked@example.test', TEST_CODE);
     expect((await w.fake.session()).account).toBeNull();
     open(w, 'sign-in');
@@ -420,7 +431,7 @@ describe('The emailed link', () => {
   /* The address the last code was asked for is the one the fake's link signs in, as the email's would. */
   const linked = async (address = 'known@example.test') => {
     const w = world();
-    await w.fake.requestCode(address, null);
+    await w.fake.requestCode(address, null, null);
     return w;
   };
   const went = () => {
@@ -468,6 +479,17 @@ describe('The emailed link', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Continue' }));
     await waitFor(() => expect(urls.length).toBeGreaterThan(0));
     expect(urls[0]).toBe('/standings');
+  });
+
+  test('Continue goes to the index where the link\'s next is another site\'s', async () => {
+    const w = await linked();
+    open(w, 'sign-in', `/sign-in?next=%2F%2Fevil.example%2Fx${FRAGMENT}`);
+    await userEvent.click(await screen.findByRole('button', { name: 'Sign in' }));
+    await screen.findByText('You are signed in as known@example.test.');
+    const urls = went();
+    await userEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    await waitFor(() => expect(urls.length).toBeGreaterThan(0));
+    expect(urls).toEqual(['/']);
   });
 
   test('Not you? Sign out signs out and shows the form', async () => {

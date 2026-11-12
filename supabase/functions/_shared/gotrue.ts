@@ -9,24 +9,26 @@
  * among them, is logged by its status alone and dropped. A code check runs before the answer and
  * is retried once on a transport failure too; a wrong or expired code is the one refusal told
  * apart, and anything else is thrown, for the account function's plain retry-later. The email's
- * link is checked the same way, by its token hash, and the hash is never logged.
+ * link is checked the same way, by its token hash, and the hash is never logged. A code request names
+ * the page the link opens as Auth's `redirect_to`, which carries the caller's `next`; its log lines name
+ * the endpoint alone, so neither reaches a log.
  */
 import type { Auth, Session } from '../account/core.ts';
 
 export function gotrue(options: { url: string; key: string; fetch?: typeof globalThis.fetch; sleep?: (ms: number) => Promise<void> }): Auth {
   const send = options.fetch ?? globalThis.fetch;
   const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
-  const call = (path: string, body: unknown) => send(`${options.url}/auth/v1/${path}`, {
+  const call = (path: string, body: unknown, query = '') => send(`${options.url}/auth/v1/${path}${query}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', apikey: options.key },
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(10_000),
   });
-  const afterward = async (path: string, body: unknown) => {
+  const afterward = async (path: string, body: unknown, query = '') => {
     for (let attempt = 1; attempt <= 2; attempt++) {
       if (attempt > 1) await sleep(500);
       try {
-        const response = await call(path, body);
+        const response = await call(path, body, query);
         await response.body?.cancel();
         if (response.ok) return;
         if (response.status < 500) { console.error(`auth ${path} refused`, response.status); return; }
@@ -56,7 +58,7 @@ export function gotrue(options: { url: string; key: string; fetch?: typeof globa
     throw new Error(`auth ${refusal} check answered ${response.status} ${String(answer.error_code ?? answer.error ?? '')}`);
   }
   return {
-    requestCode: (email, o) => afterward('otp', { email, create_user: o.create, data: { invite: o.invite } }),
+    requestCode: (email, o) => afterward('otp', { email, create_user: o.create, data: { invite: o.invite } }, `?redirect_to=${encodeURIComponent(o.redirect)}`),
     verifyCode: (email, code) => check({ type: 'email', email, token: code }, 'code'),
     verifyLink: (tokenHash) => check({ type: 'email', token_hash: tokenHash }, 'link'),
   };

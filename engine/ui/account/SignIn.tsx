@@ -83,7 +83,7 @@ export function SignInScreen({ mode }: { readonly mode: 'sign-in' | 'register' }
     setBusy('sending');
     setRefusal(null);
     try {
-      const r = await api.requestCode(email.trim(), registering && invite.trim() !== '' ? invite.trim() : null);
+      const r = await api.requestCode(email.trim(), registering && invite.trim() !== '' ? invite.trim() : null, next === '/' ? null : next);
       if (!r.ok) { setRefusal({ text: `${r.field === 'email' ? 'The address ' : ''}${r.error}`, field: r.field === 'email' || r.field === 'invite' ? r.field : null }); return; }
       setSent(r.value);
       setCode('');

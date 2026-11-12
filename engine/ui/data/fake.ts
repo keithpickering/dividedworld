@@ -312,6 +312,8 @@ interface SeedAct {
 export interface Fake extends KayfaApi {
   signInAs(account: Id | null): void;
   emailOf(account: Id): string;
+  /** The `next` the last code was asked with, null where none was. */
+  lastNext(): string | null;
   readonly clock: { now(): number; advance(ms: number): void };
   readonly broadcast: {
     /** Every event the server would have sent, held or not. */
@@ -467,6 +469,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const pendingInvite = new Map<string, string | null>();
   /** The address the last code was asked for, which `TEST_LINK` signs in. */
   let lastAsked: string | null = null;
+  let lastNextAsked: string | null = null;
   const views = new Map<Id, number>();
   /** Presence (0041): one row per character, written only by that character's own polls. */
   const presence = new Map<Id, { kind: PresencePlace['kind']; place: Id | null; board: Id | null; placeSince: number; onlineSince: number; seenAt: number }>();
@@ -2277,11 +2280,12 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const core: Sync<KayfaApi> = {
     session: () => sessionNow(),
     onSession(listener) { sessionListeners.add(listener); return () => { sessionListeners.delete(listener); }; },
-    requestCode(email, invite) {
+    requestCode(email, invite, next) {
       const address = email.trim().toLowerCase();
       if (address.length < 3 || address.length > 254 || !/^[^\s@]+@[^\s@]+$/.test(address)) return refuse('is not an email address', 'email');
       pendingInvite.set(address, invite);
       lastAsked = address;
+      lastNextAsked = next;
       // Said of the invite alone, never of the address: an answer that differs would say whether it has an account.
       const valid = invite !== null && invites.some((i) => i.code === invite && i.usedBy === null && now() < i.issuedAt + span(settings.inviteLifetime));
       if (invite === null || settings.registrationMode === 'open' || valid) return ok({ message: CODE_MESSAGE });
@@ -4082,6 +4086,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       setSession({ email: a.email, account });
     },
     emailOf: (account: Id) => accounts.get(account)!.email,
+    lastNext: () => lastNextAsked,
     clock: { now, advance: (ms: number) => { offset += ms; } },
     broadcast: {
       log,

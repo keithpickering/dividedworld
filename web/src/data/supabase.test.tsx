@@ -747,7 +747,7 @@ describe('a visitor\'s calls', () => {
     });
     await h.api.settings();
     await h.api.boards();
-    await h.api.requestCode('a@b.c', null).catch(() => undefined);
+    await h.api.requestCode('a@b.c', null, null).catch(() => undefined);
     expect(h.log.length).toBeGreaterThanOrEqual(3);
     expect(h.log.some((r) => r.url.pathname === '/functions/v1/account')).toBe(true);
     for (const r of h.log) {
@@ -1125,10 +1125,10 @@ describe('signing in goes through the account function', () => {
       if (r.url.pathname === '/rest/v1/rpc/whoami') return json(A);
       return undefined;
     });
-    expect(await h.api.requestCode(' a@b.c ', 'inv')).toEqual({ ok: true, value: { message: 'If this address can sign in...', invite: 'that invite opens nothing, so no new login is made with it' } });
+    expect(await h.api.requestCode(' a@b.c ', 'inv', '/board/general?page=2')).toEqual({ ok: true, value: { message: 'If this address can sign in...', invite: 'that invite opens nothing, so no new login is made with it' } });
     expect(await h.api.verifyCode('a@b.c', '123456')).toEqual({ ok: true, value: { account: true } });
     expect(h.log.filter((r) => r.url.pathname === '/functions/v1/account').map((r) => r.body)).toEqual([
-      { action: 'requestCode', email: ' a@b.c ', invite: 'inv' },
+      { action: 'requestCode', email: ' a@b.c ', invite: 'inv', next: '/board/general?page=2' },
       { action: 'verifyCode', email: 'a@b.c', code: '123456' },
     ]);
     expect(await h.api.session()).toEqual({ signedIn: true, account: A });
