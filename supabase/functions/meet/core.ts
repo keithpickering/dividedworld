@@ -20,7 +20,7 @@
  * **The window.** The digest runs from where the previous meeting's window ended (its slot) to this slot, so no play falls
  * between two meetings: the previous meeting's finish time would skip what happened between its slot and its close.
  *
- * **Cost does not grow with the instance.** One strong-tier call per part of the meeting (moves, bundle, staff, self; one cached prefix), a digest bounded by the settings' ceilings
+ * **Cost does not grow with the instance.** One strong-tier call per part of the meeting (moves, bundle, staff, self), a digest bounded by the settings' ceilings
  * (engine/system/digest.ts), a memory bounded by its caps, and one fetch per configured feed with a short timeout. Nothing here reads a row per player, character or Act.
  *
  * Nothing private reaches the model: the digest is built by a role that reads public relations only, and the characters the
@@ -324,7 +324,7 @@ export async function runMeeting(
         trophies: { boss: bossList, barred: new Set(), given: new Set() },
       }, heldBack),
       '',
-      // The first part's ask closes the message, so the message is the same in every call and is the cached prefix.
+      // The first part's ask closes the message, so the message is the same in every call.
       MEETING_PARTS[0].ask,
     ].join('\n');
 
@@ -345,7 +345,6 @@ export async function runMeeting(
           schema: partSchema(p.key),
           rules: partRule(p.key),
           maxTokens: PART_TOKENS[p.key],
-          cachePrefix: true,
         });
         // The value is the part's own fields, repaired against its rule by the model layer: that is what is kept and what the next call is shown.
         const value = answered.value !== null && typeof answered.value === 'object' ? (answered.value as Record<string, unknown>) : {};
