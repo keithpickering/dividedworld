@@ -1,6 +1,6 @@
 /**
- * Publicity Tour (Sweet, uncommon, Gimmick on a character): for 36 hours, every positive reaction (excited or calm) the character's
- * posts earn counts 0.1 more, then it ends by itself (the card types design). It never deepens a loss. Its numbers are shared with Hype-Up (publicity.ts), one group, so the two do not add.
+ * Publicity Tour (Sweet, uncommon, Gimmick on a character): for 3 days, every positive reaction (excited or calm) the character's
+ * posts earn counts 0.2 more, then it ends by itself (the card types design). It never deepens a loss. Its numbers are shared with Hype-Up (publicity.ts), one group, so the two do not add.
  */
 import { landsOn, ok, type CardRules } from '../../../engine/rules/cards.ts';
 import { PUBLICITY, PUBLICITY_LASTS } from './publicity.ts';
