@@ -122,7 +122,6 @@ test('Divided World holds the five old voice window settings', () => {
   assert.equal(defaults.oldVoicePromptFloor, 256);
   assert.equal(defaults.cardWriteShortShare, 0.5);
   assert.equal(defaults.cardWriteRerolls, 3);
-  assert.deepEqual(instanceProblems(instance), []);
 });
 
 test('Divided World\'s whole instance has no problems', () => {

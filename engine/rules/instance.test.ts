@@ -1352,3 +1352,13 @@ test('a prompt floor not below the window is refused, naming both settings', () 
   assert.match(said(1024, 2000), /"oldVoicePromptFloor".*"oldVoiceWindow"/);
   assert.deepEqual(settingsProblems({ ...settings, oldVoiceWindow: 1024, oldVoicePromptFloor: 1023 }), []);
 });
+
+test('the floor-below-window sentence stays silent when one side is itself invalid', () => {
+  const said = (window: unknown, floor: unknown) => settingsProblems({ ...settings, oldVoiceWindow: window, oldVoicePromptFloor: floor } as unknown as Settings);
+  const relation = (out: string[]) => out.filter((p) => /must be below/.test(p));
+  for (const [w, f] of [[1024, 0], [63, 100], ['1024', 2000], [1024, '2000'], [Number.NaN, 100], [1024, Number.NaN]] as const) {
+    const out = said(w, f);
+    assert.deepEqual(relation(out), [], `${String(w)} / ${String(f)}`);
+    assert.equal(out.length, 1, `${String(w)} / ${String(f)} holds only the individual sentence`);
+  }
+});
