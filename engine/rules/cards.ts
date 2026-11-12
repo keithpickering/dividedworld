@@ -328,6 +328,15 @@ export interface CardRules<Config = unknown> {
  */
 export const WRITE_TOKENS_MOST = 2000;
 
+/**
+ * The most tokens a play of a card that writes may buy in this instance: the smaller of `WRITE_TOKENS_MOST` and the old voice's window less the least
+ * prompt a play leaves room for (design section 4, docs/plans/2026-11-12-old-voice-window-design.md). It is computed wherever the most is read, so no
+ * pair of settings can be wrong and a row that lowers the window never stops the instance.
+ */
+export function writeTokensMost(settings: Settings): number {
+  return Math.min(WRITE_TOKENS_MOST, settings.oldVoiceWindow - settings.oldVoicePromptFloor);
+}
+
 /** The largest whole number Postgres's integer holds, which a price is read as there (0006_cards.sql). */
 export const INT4_MAX = 2_147_483_647;
 

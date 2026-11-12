@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { RARITIES, quadrantFree, faceUpOnly, openDrive, giftSplit, wardTurnsAway, SET_PHRASE_MOST, atOrBelow, drawnInMoment, refusalTime, spanMs, decidePlay, decideSet, decideDraw, decideWash, decideUse, effectsOnTarget, landsOn, noQuoteWords, quoteStop, ok, staffConfigOf, staffDrawOf, staffOffers, refuse, type CardEffect, type CardRules, type CardTarget } from './cards.ts';
+import { RARITIES, quadrantFree, faceUpOnly, openDrive, giftSplit, wardTurnsAway, SET_PHRASE_MOST, atOrBelow, drawnInMoment, refusalTime, spanMs, decidePlay, decideSet, decideDraw, decideWash, decideUse, effectsOnTarget, landsOn, noQuoteWords, quoteStop, ok, staffConfigOf, staffDrawOf, staffOffers, refuse, writeTokensMost, WRITE_TOKENS_MOST, type CardEffect, type CardRules, type CardTarget } from './cards.ts';
 import type { Settings } from './types.ts';
 
 // The engine's own test cards: no instance's names (the engine/instance boundary).
@@ -695,4 +695,11 @@ test('a card is not set face down on a post with a live no-quote, and is once it
   assert.deepEqual(decideSet(watcher, settings, post, [stop], {}, [hush]), { ok: false, why }, 'a Reversal that springs on a visit too');
   assert.equal(decideSet(snare, settings, post, [{ ...stop, ends: gone }], { card: 'inky' }, [inky, hush]).ok, true);
   assert.match((decideSet(watcher, settings, post, [stop], {}, []) as { why: string }).why, /this post's hush stops quotes until/, 'the key where the card is not found');
+});
+
+test('the most a play may buy is the smaller of the card bound and the window less the floor (design section 4)', () => {
+  const held = (oldVoiceWindow: number, oldVoicePromptFloor: number) => ({ oldVoiceWindow, oldVoicePromptFloor }) as Settings;
+  assert.equal(writeTokensMost(held(1024, 256)), 768);
+  assert.equal(writeTokensMost(held(100_000, 256)), WRITE_TOKENS_MOST);
+  assert.equal(writeTokensMost(held(400, 256)), 144);
 });
