@@ -1,4 +1,4 @@
--- A thread's stored board (supabase/migrations/0214_thread_places.sql; docs/plans/2026-11-06-fangame-split-design.md, section 4; plan Task 1).
+-- A thread's stored board (supabase/migrations/0291_thread_places.sql; docs/plans/2026-11-06-fangame-split-design.md, section 4; plan Task 1).
 -- threads.board is where a thread is now, derived: threads.origin_board is where it was started and never changes, and thread_place computes the board from the
 -- origin and the lasting moves in force. rebuild_thread_places writes the computed board where the stored one differs; thread_places_drift lists the threads where
 -- they differ. All three are for service_role and the tick alone.
@@ -85,7 +85,7 @@ declare
 begin
   if exists (select 1 from thread_places_drift()) then raise exception 'drift on a fresh fixture: %', (select count(*) from thread_places_drift()); end if;
   -- The poison: a thread's board changed by hand, with no move behind it.
-  set local session_replication_role = replica;  -- threads.board is written only by rebuild_thread_places (0235), but for a session in replica mode
+  set local session_replication_role = replica;  -- threads.board is written only by rebuild_thread_places (0312), but for a session in replica mode
   update threads set board = pg_temp.board('elsewhere') where id = t;
   set local session_replication_role = origin;
   select * into row from thread_places_drift();

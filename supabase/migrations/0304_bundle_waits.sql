@@ -1,6 +1,6 @@
--- admin_queue (0225), also saying what a waiting part waits for: `waitsFor`, the queued moves it builds on that have not landed ({id, role, kind, name}; empty for a move that waits for none).
+-- admin_queue (0302), also saying what a waiting part waits for: `waitsFor`, the queued moves it builds on that have not landed ({id, role, kind, name}; empty for a move that waits for none).
 -- A part is due with the rest of its bundle, but lands only after the parts it names, so without this it would sit in the queue as due, with a countdown of nothing and no reason. A dependency that is held or
--- refused is not listed: the part is held or refused with it. Everything else as 0225 wrote it.
+-- refused is not listed: the part is held or refused with it. Everything else as 0302 wrote it.
 create or replace function admin_queue() returns jsonb
 language plpgsql stable security definer set search_path = public, pg_temp as $$
 declare

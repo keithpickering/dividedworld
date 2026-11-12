@@ -1,6 +1,6 @@
--- Arcs, after review (supabase/migrations/0228_arcs.sql; docs/plans/2026-11-06-fangame-split-plan.md, Task 5): the lapses at a season's close, the reads the meeting makes, and three small fixes.
+-- Arcs, after review (supabase/migrations/0305_arcs.sql; docs/plans/2026-11-06-fangame-split-plan.md, Task 5): the lapses at a season's close, the reads the meeting makes, and three small fixes.
 --
---   arc_pass            (0228) also reads the most recently closed season, for its Boss, and lapses what was still unlocked there. Why in the pass and not in reveal_season: the close is a long
+--   arc_pass            (0305) also reads the most recently closed season, for its Boss, and lapses what was still unlocked there. Why in the pass and not in reveal_season: the close is a long
 --                       function that runs once, and a lapse written there is lost if the pass does not run at that instant (The System off, a failure); the pass runs every minute and finds the
 --                       state as it is, so it catches up, and reveal_season (0099) stays as it is. Only the most recent closed season is read: a season that closed before it has had its pass, and
 --                       the read is one persona's events in one season, the same cost whatever the history. In a closed season every beat still unlocked lapses, due beats too: a due beat is played
@@ -12,9 +12,9 @@
 --   held_back_kinds     the kinds a persona holds back in a season: those whose `until` beat has no event yet (the beat has not unlocked), in the persona's order.
 --   arc_for_meeting     what the meeting reads (Task 6 calls this with the Boss and the open season): {"beats": [{"key", "mini", "due"}], "heldBack": [kind]}, the beats unlocked and not yet played
 --                       in the persona's order, `due` meaning the beat has a due point and it has passed (the meeting says "must be played at this meeting"), and the kinds held back.
---   arc_season_span     (0228) guards a persona's phase day that is null, no number or a fraction, and cuts one to the engine's caps as phaseAt does (1 to 42 days, PHASE_CAPS): a day that is no number
+--   arc_season_span     (0305) guards a persona's phase day that is null, no number or a fraction, and cuts one to the engine's caps as phaseAt does (1 to 42 days, PHASE_CAPS): a day that is no number
 --                       is the instance's. seed.ts makes the same cut before it seeds, so the two agree.
---   beat_condition_holds (0228) reads `beatLanded` at the beat's latest play only, and, by the owner's answer to design question #459 (2026-11-12), counts a beat as landed when it has been played,
+--   beat_condition_holds (0305) reads `beatLanded` at the beat's latest play only, and, by the owner's answer to design question #459 (2026-11-12), counts a beat as landed when it has been played,
 --                       every part of its bundle not held or refused has landed, and at least one part has. A part still waiting keeps the beat unlanded; a landed part later reversed counts as landed.
 --
 -- A PHASE HAS BEGUN. The `phase` condition is true once the phase has begun, and stays true: the honeymoon has begun from the season's first instant, the reign once the honeymoon is over, the
@@ -28,7 +28,7 @@
 
 -- ------------------------------------------------------------------------------ the span ----
 
--- arc_season_span (0228) with a persona's phase day guarded: a number is made whole and held to 1 to 42 days (PHASE_CAPS, as phaseAt holds it); anything else is the instance's.
+-- arc_season_span (0305) with a persona's phase day guarded: a number is made whole and held to 1 to 42 days (PHASE_CAPS, as phaseAt holds it); anything else is the instance's.
 create or replace function arc_season_span(in_staff text, in_season bigint)
 returns table (starts_at timestamptz, ends_at timestamptz, honeymoon_ends timestamptz, meltdown_starts timestamptz)
 language plpgsql stable security definer set search_path = public, pg_temp as $$
@@ -52,7 +52,7 @@ end $$;
 
 -- ------------------------------------------------------------------------------ beatLanded ----
 
--- beat_condition_holds (0228), `beatLanded` read at the beat's latest play and by the owner's rule (#459). Everything else as 0228 wrote it.
+-- beat_condition_holds (0305), `beatLanded` read at the beat's latest play and by the owner's rule (#459). Everything else as 0305 wrote it.
 create or replace function beat_condition_holds(in_staff text, in_season bigint, cond jsonb) returns boolean
 language plpgsql stable security definer set search_path = public, pg_temp as $$
 declare
@@ -241,7 +241,7 @@ begin
   return jsonb_build_object('unlocked', unlocked, 'lapsed', lapsed);
 end $$;
 
--- arc_pass (0228): the season's Boss in the open season, then the Boss of the most recently closed season, for what it left unlocked. Returns what was written.
+-- arc_pass (0305): the season's Boss in the open season, then the Boss of the most recently closed season, for what it left unlocked. Returns what was written.
 create or replace function arc_pass() returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare

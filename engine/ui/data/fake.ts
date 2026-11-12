@@ -121,7 +121,7 @@ export interface Seed {
    * dated `at` (else now). Season news then holds the Boss's arrival and departure, quoting the first post each wrote in the announcements thread dated
    * at exactly `at` (`staffPost`), as the server finds it; a later remark is not its words. A change of Boss is also a to-do in the admin queue
    * (`how` rotation unless said, `bossWas` the new Boss's office before, `outgoingOffice` member unless said), until an update is seeded or posted
-   * after `at` or an admin dismisses it. The to-do carries the outgoing Boss's handoff `note` (null: none) and the season's `facts` (empty lists unless said), as admin_queue does (0233). The season is the next number: the first season is the seed's, and each handover opens the one after.
+   * after `at` or an admin dismisses it. The to-do carries the outgoing Boss's handoff `note` (null: none) and the season's `facts` (empty lists unless said), as admin_queue does (0310). The season is the next number: the first season is the seed's, and each handover opens the one after.
    */
   handover(handover: { outgoing?: string | null; boss: string; at?: number; how?: 'nomination' | 'rotation'; bossWas?: string | null; outgoingOffice?: string | null; note?: string | null; facts?: Partial<HandoffFacts> }): void;
   /**
@@ -311,7 +311,7 @@ export interface SeedLine {
 }
 
 /** A rename a seed lands or queues: the board by slug, its new name, subject and description, and the demand it carries. */
-/** A part of a bundle (0225): the bundle's id and name, and the part's role in it. */
+/** A part of a bundle (0302): the bundle's id and name, and the part's role in it. */
 export interface SeedBundle {
   readonly id: string;
   readonly name: string;
@@ -563,9 +563,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     }
     return found;
   };
-  /** Where a landed `moveThread` took a thread from (thread_departures, 0222). */
+  /** Where a landed `moveThread` took a thread from (thread_departures, 0299). */
   const departures: { thread: Id; origin: Id; to: Id; at: number }[] = [];
-  /** A closed board: merged into another, or closed with where its threads went (boards_now.closed and merged_into, 0216). */
+  /** A closed board: merged into another, or closed with where its threads went (boards_now.closed and merged_into, 0293). */
   const closedBoards = new Map<Id, { mergedInto: Id | null; fallback: Id | null }>();
   const isClosed = (b: Board): boolean => closedBoards.has(b.id);
   /** The first open board a closed board's threads are in, following merges and fallbacks on. */
@@ -3495,7 +3495,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     boardPage(slug, page, effectCards): BoardPage | null {
       const board = core.board(slug);
       if (!board) return null;
-      /* A closed board lists no thread and no stub, and says where its threads went (board_page, 0222). */
+      /* A closed board lists no thread and no stub, and says where its threads went (board_page, 0299). */
       const gone = closedBoards.get(board.id);
       if (gone) {
         const ref = (id: Id | null): BoardRef | null => { const b = boards.find((x) => x.id === id); return b ? { id: b.id, slug: b.slug, name: boardNow(b).name } : null; };

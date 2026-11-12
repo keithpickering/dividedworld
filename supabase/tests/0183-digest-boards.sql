@@ -1,4 +1,4 @@
--- The digest's board lines (supabase/migrations/0221_digest_boards.sql; docs/plans/2026-11-06-fangame-split-plan.md, Task 7; design section 4, "Noticing").
+-- The digest's board lines (supabase/migrations/0298_digest_boards.sql; docs/plans/2026-11-06-fangame-split-plan.md, Task 7; design section 4, "Noticing").
 --
 -- system_digest returns `boards`: each open, non-system board's {id, name, premise, posts}, posts counted over `digestBoardDays` before the window's end, on the board
 -- each thread is on now. At most `digestBoards` of them; with more boards than that, the busiest half and the quietest half. The lines read posts per board and nothing

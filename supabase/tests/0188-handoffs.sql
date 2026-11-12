@@ -1,4 +1,4 @@
--- The farewell and the handoff (supabase/migrations/0233_handoffs.sql; docs/plans/2026-11-06-fangame-split-plan.md, Task 8; design section 6).
+-- The farewell and the handoff (supabase/migrations/0310_handoffs.sql; docs/plans/2026-11-06-fangame-split-plan.md, Task 8; design section 6).
 --
 -- The season's end and the handover are one transaction, and no model runs inside it, so the Boss's last words are written at its last meeting: a farewell, in character, and a handoff
 -- note, out of character. apply_meeting stores them in `handoffs` (insert-only; the latest row of a season stands) when the meeting is within farewellWindowHours of the season's end, and

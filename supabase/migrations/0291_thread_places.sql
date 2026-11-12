@@ -25,7 +25,7 @@
 -- end_move (0135) is not changed here: which threads a lasting move's end rebuilds depends on the kinds, so the task that adds them does it.
 --
 -- Cost on a busy instance: a board's page is still one indexed read of threads.board. open_moves is NOT small once lasting moves never expire, and this migration's
--- thread_place scans it per thread; 0215 makes the rebuild and the drift set-based and thread_place indexed, and supersedes this reading of what is in force (any move_end
+-- thread_place scans it per thread; 0292 makes the rebuild and the drift set-based and thread_place indexed, and supersedes this reading of what is in force (any move_end
 -- ends a lasting move, not only a reversal). A move's landing rebuilds only the threads it touches.
 -- Masks. A thread's board is public, and nothing here is computed from who owns a character, a class or a reaction.
 -- Ways out. No state is added for a player: a thread that is moved can be moved back by an admin, and every lasting move ends by reversal.

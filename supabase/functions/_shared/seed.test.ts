@@ -160,7 +160,7 @@ test('the seed carries the developer persona: the instance\'s, or the engine\'s 
   assert.ok(!('developer' in instanceSeed(instance).system), 'nothing under `system`, which is all the Director reads, names the developer');
 });
 
-test('the seed carries the conditions and each persona\'s arc as SQL checks it: keys, conditions, due points, held-back kinds and phase days, never a brief or a template (0228)', () => {
+test('the seed carries the conditions and each persona\'s arc as SQL checks it: keys, conditions, due points, held-back kinds and phase days, never a brief or a template (0305)', () => {
   const first = instance.system.roster[0]!;
   const arced: Persona = {
     ...first,
@@ -183,7 +183,7 @@ test('the seed carries the conditions and each persona\'s arc as SQL checks it: 
   assert.equal(seed.system.staff[0]!.beats.length, first.beats.length, 'the patrol beats are as they were');
 });
 
-test('a persona\'s phase days are seeded as phaseAt reads them: whole, from 1 to the engine\'s cap (0229)', () => {
+test('a persona\'s phase days are seeded as phaseAt reads them: whole, from 1 to the engine\'s cap (0306)', () => {
   const first = instance.system.roster[0]!;
   const days = (h: number, m: number) => instanceSeed({ ...instance, system: { ...instance.system, roster: [{ ...first, phases: { honeymoon: { days: h }, meltdown: { days: m } } }, ...instance.system.roster.slice(1)] } }).system.staff[0]!.phaseDays;
   assert.deepEqual(days(2.5, 500), { honeymoon: 2, meltdown: PHASE_CAPS.meltdown.days });

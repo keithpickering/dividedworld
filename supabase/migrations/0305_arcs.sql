@@ -16,12 +16,12 @@
 --   arc_season_span     the season's start and end and where its phases begin, with a persona's own phase lengths (the same arithmetic as engine/system/phases.ts, phaseAt).
 --   arc_board_posts     a board's posts over the last N days, on the board each thread is on now.
 --   arc_board           a board named in a condition: a uuid that is a board, or {role, beat}, the board that beat's part of that role made.
---   beat_role_board     the board the part of a role in an earlier beat's bundle made, read from the landed Acts (role_board 0225 on the bundle the beat was played with). Task 6 queues a bundle that
+--   beat_role_board     the board the part of a role in an earlier beat's bundle made, read from the landed Acts (role_board 0302 on the bundle the beat was played with). Task 6 queues a bundle that
 --                       names a role from an earlier beat, {role, beat}, and resolves it here.
 --   beat_condition_holds(staff, season, condition) the one place a condition is read.
 --   arc_pass            the pass the tick makes: reads the season's Boss alone, one persona with at most 24 beats, and writes `unlocked` and `lapsed`.
---   system_tick         (0225) also makes that pass, after landing.
---   seed_instance       (0214) also writes condition_kinds and persona_arcs. settings_held (0222) also holds bundleMostParts and bundleAuthoredMostParts (a whole number from 1 to 16).
+--   system_tick         (0302) also makes that pass, after landing.
+--   seed_instance       (0291) also writes condition_kinds and persona_arcs. settings_held (0299) also holds bundleMostParts and bundleAuthoredMostParts (a whole number from 1 to 16).
 --
 -- THE MASKS. A condition reads posts per board, moves, demands and beat events, and nothing else: no one's player, no class, no one who reacted. supabase/tests/0186-arcs.sql greps each of
 -- these definitions for the words that would say otherwise, and drives the grep red on a function planted with one.
@@ -38,7 +38,7 @@
 
 -- ----------------------------------------------------------------------------------- tables ----
 --
--- Ported onto main (merge of #449 Cosmetics, migrations 0205-0213): seed_instance: rebuilt on 0207's body, as in 0214; settings_held: on 0213's body, as in 0221; system_tick: on 0208's body, as in 0216.
+-- Ported onto main (merge of #449 Cosmetics, migrations 0205-0213): seed_instance: rebuilt on 0207's body, as in 0291; settings_held: on 0213's body, as in 0298; system_tick: on 0208's body, as in 0293.
 
 create table condition_kinds (
   key text primary key check (key ~ '^[a-zA-Z][a-zA-Z0-9]{0,39}$'),
@@ -138,7 +138,7 @@ begin
   return (select count(*) from threads t join acts p on p.thread = t.id and p.kind = 'post' and p.character is not null and p.created_at >= since where t.board = in_board and t.last_at >= since);
 end $$;
 
--- The board the part of a role in an earlier beat's bundle made: the latest bundle the beat was played with, its role resolved as a part of a bundle is (role_board, 0225). Null before it landed.
+-- The board the part of a role in an earlier beat's bundle made: the latest bundle the beat was played with, its role resolved as a part of a bundle is (role_board, 0302). Null before it landed.
 create function beat_role_board(in_season bigint, in_staff text, in_beat text, in_role text) returns uuid
 language sql stable security definer set search_path = public, pg_temp as $$
   select role_board(e.bundle, in_role) from arc_beat_events e
@@ -295,7 +295,7 @@ revoke execute on function arc_season_span(text, bigint), arc_board_posts(uuid, 
 grant execute on function arc_season_span(text, bigint), arc_board_posts(uuid, integer), beat_role_board(bigint, text, text, text), arc_board(bigint, text, jsonb),
   beat_condition_holds(text, bigint, jsonb), arc_pass() to service_role;
 
--- seed_instance (0214), also writing the conditions and each persona's arc. Everything else as 0214 wrote it,
+-- seed_instance (0291), also writing the conditions and each persona's arc. Everything else as 0291 wrote it,
 -- which carries 0151's change to the card_kinds insert (a card's `skim` and `scoresAs`); this body carries it too and does not revert it. It carries 0153's change too (a card's `draws`, `drive` and `needs_message`), ported into this body so that it does not revert the drives.
 create or replace function seed_instance(payload jsonb) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
@@ -520,11 +520,11 @@ begin
   on conflict (key) do update set param_kind = excluded.param_kind, least = excluded.least, most = excluded.most, tags = excluded.tags, plain = excluded.plain;
   insert into demand_kinds (key) select e ->> 'key' from jsonb_array_elements(coalesce(payload -> 'system' -> 'demands', '[]')) e
   on conflict (key) do nothing;
-  -- The conditions that unlock a beat (0228), as the engine lists them (engine/system/conditions.ts). A reseed upserts; a condition is never removed, since a persona's arc may name it.
+  -- The conditions that unlock a beat (0305), as the engine lists them (engine/system/conditions.ts). A reseed upserts; a condition is never removed, since a persona's arc may name it.
   insert into condition_kinds (key, plain)
   select e ->> 'key', e ->> 'plain' from jsonb_array_elements(coalesce(payload -> 'system' -> 'conditions', '[]')) e
   on conflict (key) do update set plain = excluded.plain;
-  -- A persona's arc (0228): one row each, rewritten by a reseed. An arc naming a condition the catalog lacks is refused, naming it: the check that no beat waits on a condition nothing reads.
+  -- A persona's arc (0305): one row each, rewritten by a reseed. An arc naming a condition the catalog lacks is refused, naming it: the check that no beat waits on a condition nothing reads.
   unknown := (select string_agg(distinct c ->> 'kind', ', ')
               from jsonb_array_elements(coalesce(payload -> 'system' -> 'staff', '[]')) p, jsonb_array_elements(coalesce(p -> 'arc', '[]')) b, jsonb_array_elements(coalesce(b -> 'unlock', '[]')) c
               where not exists (select 1 from condition_kinds k where k.key = c ->> 'kind'));
@@ -597,7 +597,7 @@ begin
     'reactions', (select count(*) from reaction_kinds), 'groups', (select count(*) from group_kinds), 'cards', (select count(*) from card_kinds), 'boards', (select count(*) from boards));
 end $$;
 
--- settings_held (0222), also holding bundleMostParts and bundleAuthoredMostParts (a whole number of parts from 1 to 16). Everything else as 0222 wrote it.
+-- settings_held (0299), also holding bundleMostParts and bundleAuthoredMostParts (a whole number of parts from 1 to 16). Everything else as 0299 wrote it.
 create or replace function settings_held() returns trigger
 language plpgsql set search_path = public, pg_temp as $$
 declare
@@ -703,7 +703,7 @@ begin
   return new;
 end $$;
 
--- system_tick (0225), also making the arc pass after landing. Everything else as 0225 wrote it.
+-- system_tick (0302), also making the arc pass after landing. Everything else as 0302 wrote it.
 create or replace function system_tick() returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
@@ -760,7 +760,7 @@ begin
       -- the tick, so the checks below read what the admin committed.
       if due.kind in ('pullSlot', 'repriceSlot', 'flashSale') then perform pg_advisory_xact_lock(hashtext('kayfabb.machine')); end if;
       begin
-        -- A part of a bundle (0225) lands after the parts it builds on, and not before: one of them still waiting, and this one waits; one refused, and it is refused with it (nothing
+        -- A part of a bundle (0302) lands after the parts it builds on, and not before: one of them still waiting, and this one waits; one refused, and it is refused with it (nothing
         -- will ever make the board it names); one held (an admin's hold follows its dependents at once, so this only meets a row queued after the hold), and it is held with it. Then each
         -- role in its params is the board the part it names made, in the Act, so the Act says which board it moved to and the log can name it.
         lp := due.params;
@@ -802,7 +802,7 @@ begin
             continue;
           end if;
         end if;
-        -- The three moves that build the board are checked against the boards and threads as they are now (0216), as a machine move is against the machine: state changes between
+        -- The three moves that build the board are checked against the boards and threads as they are now (0293), as a machine move is against the machine: state changes between
         -- the queue and the landing (a board closed, a thread gone, a merge that would now make a cycle). Refused for good, with the reason; it is no Act, so nothing needs reversing.
         if due.kind in ('createBoard', 'moveThread', 'mergeBoard') then
           clash := lasting_move_problem(due.kind, lp);
@@ -863,7 +863,7 @@ begin
     end loop;
   end if;
 
-  -- 1b. Arcs (0228): after landing, so a bundle that landed in this tick has unlocked what waited on it in the same one. Only while The System is on (a beat unlocks for a meeting). The pass reads the
+  -- 1b. Arcs (0305): after landing, so a bundle that landed in this tick has unlocked what waited on it in the same one. Only while The System is on (a beat unlocks for a meeting). The pass reads the
   -- season's Boss alone and costs the same however many Acts there are; a failure of it is counted and warned about and never stops the rest of the tick.
   if enabled then
     begin

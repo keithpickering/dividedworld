@@ -1,6 +1,6 @@
 -- createBoard, moveThread and mergeBoard land and end (docs/plans/2026-11-06-fangame-split-design.md, section 4; docs/plans/2026-11-06-fangame-split-plan.md, Task 2).
 --
--- The three lasting moves (0214) are made real: each is queued as every move is, lands through the tick as every move does, and ends by being reversed or superseded.
+-- The three lasting moves (0291) are made real: each is queued as every move is, lands through the tick as every move does, and ends by being reversed or superseded.
 --
 --   boards.created_by_act       is set only when the board is inserted (a trigger refuses any later change, enabled always, as origin_board's is), names a createBoard Act, and is
 --                               unique: one Act makes one board. A created board's premise is read from that Act's params (append-only; boards has no premise column), in boards_now.
@@ -16,10 +16,10 @@
 --   lasting_rebuild             rebuilds the threads a lasting move touched, after it landed or ended. If the instance's first open board changed (a merge of the first open board, or its
 --                               reversal), the implicit route "closed created board with no fallback -> first open board" moved too, and every thread is rebuilt; that is rare.
 --   end_move (0135)             ending a lasting move calls lasting_rebuild.
---   (0235)                      lasting_rebuild takes the global place key (lock_thread_places) before it reads, as every writer of a place does, so what it rebuilds from is what the others committed.
+--   (0312)                      lasting_rebuild takes the global place key (lock_thread_places) before it reads, as every writer of a place does, so what it rebuilds from is what the others committed.
 --   queued_moves_guard (0140)   a lasting move has no demand and no expiry (the meeting queues it with 0 hours, so the guard keeps none); the three kinds' refusals, in words.
 --   system_tick (0140)          lands the three kinds beside renameBoard: a createBoard inserts its board; a moveThread ends the earlier move of the same thread as `superseded`; each
---                               then rebuilds the threads it touched. The handover's pass (2b) no longer ends a lasting move as unaddressed: a new Boss inherits the landscape (0214).
+--                               then rebuilds the threads it touched. The handover's pass (2b) no longer ends a lasting move as unaddressed: a new Boss inherits the landscape (0291).
 --   threads_recount_board       board_thread_counts follows a thread whose board changes (it counted only inserts): one off the old board's count, one on the new one's, a shard taken
 --                               with `for update skip locked` as the insert's is. The system board's count stays 0 (its threads are taken off at insert), so it is never adjusted.
 --
@@ -27,7 +27,7 @@
 -- (this migration); thread_list is a view over threads. No other trigger or table keys on a thread's board.
 --
 -- Not changed: acts_well_formed (0148) checks no move's params, so it already admits these kinds' (the queue's guard is what holds them, and the readers of a place read a
--- malformed Act as no move at all, 0215).
+-- malformed Act as no move at all, 0292).
 --
 -- Cost on a busy instance: a landing or an end costs the threads it touches (one indexed read of threads by origin and by board per board in the route, an index probe of moves
 -- per thread), never the history. A thread whose board changes is not free: threads_recount_board fires per thread, and threads_search_board (0117) rewrites post_search.board for
@@ -325,7 +325,7 @@ begin
       problem := machine_move_problem(new.kind, new.params, new.demand, new.go_live_at, new.expires_at, false);
       if problem is not null then raise exception 'a machine move is refused: %', problem using errcode = '23514'; end if;
     end if;
-    -- A lasting move (0216) has no expiry and carries no demand: the meeting queues it with an expiry of its own length (0 hours), which is nothing, so the guard keeps none.
+    -- A lasting move (0293) has no expiry and carries no demand: the meeting queues it with an expiry of its own length (0 hours), which is nothing, so the guard keeps none.
     if (select k.lasting from move_kinds k where k.key = new.kind) then
       if new.demand is not null then raise exception 'a % has no demand; what it builds stays', new.kind using errcode = '23514'; end if;
       new.expires_at := null;
@@ -471,7 +471,7 @@ end $$;
 
 -- ----------------------------------------------------------------------------------------------- the tick ----
 
--- system_tick (0140), also landing the three lasting board moves, and no longer ending one at the handover's review (a lasting move is not handed on, 0214). Everything else as
+-- system_tick (0140), also landing the three lasting board moves, and no longer ending one at the handover's review (a lasting move is not handed on, 0291). Everything else as
 -- 0140 wrote it.
 create or replace function system_tick() returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
@@ -541,7 +541,7 @@ begin
             continue;
           end if;
         end if;
-        -- The three moves that build the board are checked against the boards and threads as they are now (0216), as a machine move is against the machine: state changes between
+        -- The three moves that build the board are checked against the boards and threads as they are now (0293), as a machine move is against the machine: state changes between
         -- the queue and the landing (a board closed, a thread gone, a merge that would now make a cycle). Refused for good, with the reason; it is no Act, so nothing needs reversing.
         if due.kind in ('createBoard', 'moveThread', 'mergeBoard') then
           clash := lasting_move_problem(due.kind, due.params);

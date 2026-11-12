@@ -1,12 +1,12 @@
 -- A merge rebuilds its threads in one statement, moves the search copy before it locks them, and a reply pays nothing for any of it; and the writers of a place wait for each other (final review of PR #450, findings F1, F4, F7 and F9, delta review F6 and F11 to F15; "Weigh a design at the scale of a busy instance").
 --
 -- Landing a mergeBoard or a createBoard rebuilt every thread the move touched with rebuild_thread_places(touched), which called thread_place(id) once per thread, and each changed thread fired
--- two row triggers (0216's threads_recount_board, 0117's threads_search_board) inside the tick's one transaction. On a board of 10,000 threads that was 32 s to land, 16 s to reverse, and a reply to any of
+-- two row triggers (0293's threads_recount_board, 0117's threads_search_board) inside the tick's one transaction. On a board of 10,000 threads that was 32 s to land, 16 s to reverse, and a reply to any of
 -- the threads (acts_take_seq updates its thread's row) waited 30 s on the lock the tick held. thread_places_computed() reads all 10,000 threads in 7 ms. A first fix moved the upkeep into statement-level triggers
 -- on threads, which still ran after threads.board was updated, so the moved threads' rows stayed locked while post_search.board was rewritten (11,111 threads of 555,550 posts: 19.6 s, a reply waited 17.8 s),
 -- and which fired on every `update threads`, a reply's included, at about 0.3 ms a post, since a transition-table trigger cannot be limited to a column. So there is no trigger upkeep at all:
 --
--- rebuild_thread_places is the only writer of threads.board (0214, 0215, and here; the one other writer of the column is the import, in replica role, which carries the counts and the search copy as exported),
+-- rebuild_thread_places is the only writer of threads.board (0291, 0292, and here; the one other writer of the column is the import, in replica role, which carries the counts and the search copy as exported),
 -- so it keeps them itself, in one call and in this order:
 --   1. the moves, once: (thread, old board, new board) where they differ. A long list of threads, or all, is one statement that joins thread_places_computed(); a short list (a moveThread's one thread) still asks
 --      thread_place per thread, since computing every thread's place to write one is the larger cost on a busy instance; REBUILD_SET_BASED_FROM is where the two meet. Both read the same rules, and tests
@@ -39,7 +39,7 @@
 -- from a post on The System's board opened on players_board(), the oldest board there is, open or not. So the guard is a trigger, threads_on_open_board, `before insert` on threads, for each row: it takes
 -- lock_board_start in one statement and then asks not_closed in the next (a fresh snapshot), and refuses a closed board that is not The System's in the same words start_thread uses. The paths, from the migrations'
 -- latest definitions (every `insert into threads`, grepped):
---   start_thread (0222)               checks first (its words are the ones a player sees), and the trigger is behind it;
+--   start_thread (0299)               checks first (its words are the ones a player sees), and the trigger is behind it;
 --   spin_written (0130)               the trigger only; players_board() (here) is now the first OPEN board, so a spin from The System's post never aims at a closed one;
 --   write_staff_thread (0089)         the trigger only; pool_context (here) no longer lists a closed board, so chatter is not aimed at one;
 --   The System's own threads          the announcements thread (system_tick's and every later definition of post_update, season and reveal writers) and the updates, turns, reveal and results threads are

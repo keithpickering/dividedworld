@@ -1,6 +1,6 @@
 -- Review fixes for the board stubs and closed boards (docs/plans/2026-11-06-fangame-split-plan.md, Task 3).
 --
--- 1. board_page (0222) listed stubs on the last page only; page one is where readers land, so a moved thread vanished from a busy board. They are now page one's, below its threads,
+-- 1. board_page (0299) listed stubs on the last page only; page one is where readers land, so a moved thread vanished from a busy board. They are now page one's, below its threads,
 --    capped at 50 and taking none of its slots or its count.
 -- 2. A closed board's target may itself be closed (a merge's `into` merged again, a fallback closed since), so "start your thread there" would refuse again. board_closed_to keeps the
 --    direct target (`mergedInto` or `fallback`, so the words stay true) and adds `goesTo`: the first open board, found by following merged_into and the fallback chain (at most 50
@@ -10,7 +10,7 @@
 --
 -- Cost: the chain is a handful of boards_now probes, only for a closed board's page or a refused start. Masks: boards and moves are public.
 --
--- Ported onto main (merge of #449 Cosmetics, migrations 0205-0213): board_page: rebuilt on 0210's body (main's profile_cosmetics on every face kept), as in 0222.
+-- Ported onto main (merge of #449 Cosmetics, migrations 0205-0213): board_page: rebuilt on 0210's body (main's profile_cosmetics on every face kept), as in 0299.
 
 create function board_fallback(in_board uuid) returns uuid
 language sql stable security definer set search_path = public, pg_temp as $$
@@ -69,7 +69,7 @@ end $$;
 revoke execute on function not_closed(uuid) from public, anon, authenticated;
 grant execute on function not_closed(uuid) to service_role;
 
--- board_page (0222), with stubs on page one and `goesTo`. Everything else as 0222 wrote it.
+-- board_page (0299), with stubs on page one and `goesTo`. Everything else as 0299 wrote it.
 create or replace function board_page(in_slug text, in_page integer, effect_cards text[]) returns jsonb
 language sql stable security invoker set search_path = public, pg_temp
 begin atomic

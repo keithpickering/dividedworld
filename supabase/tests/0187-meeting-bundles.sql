@@ -1,4 +1,4 @@
--- The meeting queues beats and bundles (supabase/migrations/0230_meeting_bundles.sql; docs/plans/2026-11-06-fangame-split-plan.md, Task 6; design sections 2, 3, 5 and 9).
+-- The meeting queues beats and bundles (supabase/migrations/0307_meeting_bundles.sql; docs/plans/2026-11-06-fangame-split-plan.md, Task 6; design sections 2, 3, 5 and 9).
 --
 -- meeting_context hands the meeting the Boss's arc (`arc`: the beats unlocked and not played, with whether each is due, and the kinds still held back). apply_meeting queues what the
 -- answer's `bundles` hold, each all or nothing: an authored bundle (a beat's, named by its `beat`) at no cost to the bank, a composed one at one move a part, every part under one bundle id

@@ -1,4 +1,4 @@
--- Bundles: parts, roles and dependency (supabase/migrations/0225_bundles.sql; docs/plans/2026-11-06-fangame-split-plan.md, Task 4; design section 5).
+-- Bundles: parts, roles and dependency (supabase/migrations/0302_bundles.sql; docs/plans/2026-11-06-fangame-split-plan.md, Task 4; design section 5).
 --
 -- A bundle is queued moves sharing one `bundle` id, each part an ordinary move with its own Act. A part names another part's result by its role ({"role": "minus"} where a board
 -- goes), resolved when it lands; it waits for the part it names. An admin may hold or reverse any one part, and what builds on it follows: holding a part holds the waiting parts

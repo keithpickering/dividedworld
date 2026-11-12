@@ -1,4 +1,4 @@
--- A merge moves the search copy before it locks the threads, and a reply pays nothing for it (supabase/migrations/0235_thread_places_at_scale.sql; delta review of PR #450, finding F4).
+-- A merge moves the search copy before it locks the threads, and a reply pays nothing for it (supabase/migrations/0312_thread_places_at_scale.sql; delta review of PR #450, finding F4).
 --
 -- Landing a merge of many threads rewrote post_search.board for every post of every moved thread from a trigger on threads, after threads.board was updated, so the moved threads' rows stayed locked
 -- for the whole rewrite: 19.6 s for 11,111 threads of 555,550 posts, and a reply to a moved thread (acts_take_seq updates its thread's row) waited 17.8 s on the row lock. rebuild_thread_places now moves
@@ -143,7 +143,7 @@ begin
   end;
 end $$;
 
--- ---- 4. The upkeep is not per row: the statement triggers of 0235 are gone, and a rebuild adjusts the counts and the search copy itself ----
+-- ---- 4. The upkeep is not per row: the statement triggers of 0312 are gone, and a rebuild adjusts the counts and the search copy itself ----
 do $$
 begin
   perform pg_temp.expect(not exists (select 1 from pg_proc where proname in ('threads_recount_board', 'threads_search_board')), 'a per-update trigger function of the board count or the search copy still exists');

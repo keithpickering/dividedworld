@@ -19,13 +19,13 @@
 --   predecessor_handoff   what a new Boss is handed: the facts for the season that ended, and the outgoing Boss's note (null where the last meeting failed: the facts alone).
 --
 -- Ways out: nothing here holds a player. A farewell that cannot be posted falls back to the stock line, and a handover that cannot post either still lands (best effort, as the stock line always was).
--- Cost at a busy instance: the facts count a season's posts per board once (the range of acts_posts_by_time, 0221, one primary-key read per post for its thread) and the lists are cut to five; they are read
+-- Cost at a busy instance: the facts count a season's posts per board once (the range of acts_posts_by_time, 0298, one primary-key read per post for its thread) and the lists are cut to five; they are read
 -- once for a meeting in the farewell window and once for the new Boss's meetings in its grace, and once for each handover to-do an admin has not cleared, never for each player or Act read.
 -- Port from main (#486, supabase/migrations/0193_meeting_parts.sql, which now runs before this one): apply_meeting writes the Boss's staff_memory row only when the payload's `memory` is an object, and its
 -- staff_profiles row only when `profile` is, so a part of the meeting that failed leaves the Boss's memory or profile as it was (both tables are append-only, so "as it was" is the last row). Everything else in
 -- apply_meeting is as this file writes it.
 --
--- Ported onto main (merge of #449 Cosmetics, migrations 0205-0213): settings_held: rebuilt on 0213's body, as in 0221.
+-- Ported onto main (merge of #449 Cosmetics, migrations 0205-0213): settings_held: rebuilt on 0213's body, as in 0298.
 
 create table handoffs (
   id bigint generated always as identity primary key,
@@ -182,7 +182,7 @@ grant execute on function in_farewell_window(), handoff_facts(bigint), predecess
 
 -- ---------------------------------------------------------------------------------------- the functions it changes ----
 
--- settings_held (0228), also holding farewellWindowHours (a whole number of hours from 1 to 720). Everything else as 0228 wrote it.
+-- settings_held (0305), also holding farewellWindowHours (a whole number of hours from 1 to 720). Everything else as 0305 wrote it.
 create or replace function settings_held() returns trigger
 language plpgsql set search_path = public, pg_temp as $$
 declare
@@ -347,7 +347,7 @@ begin
     exception when others then
       note := coalesce(note || '; ', '') || 'the offices were not moved: ' || sqlerrm;
     end;
-    -- The Boss's own farewell, written at its last meeting (0233, above), in place of the stock line; the stock line stands where none was written or it could not be posted.
+    -- The Boss's own farewell, written at its last meeting (0310, above), in place of the stock line; the stock line stands where none was written or it could not be posted.
     if not say_farewell(outgoing, new_season) then
       perform say_in_announcements(outgoing, 'bossFarewell');
     end if;
@@ -357,7 +357,7 @@ begin
   return jsonb_build_object('boss', chosen, 'how', how, 'note', note);
 end $$;
 
--- meeting_context (0230), also handing over the farewell's facts and the predecessor's handoff. Everything else as 0230 wrote it.
+-- meeting_context (0307), also handing over the farewell's facts and the predecessor's handoff. Everything else as 0307 wrote it.
 create or replace function meeting_context() returns jsonb
 language sql stable security definer set search_path = public, pg_temp as $$
   select jsonb_build_object(
@@ -365,9 +365,9 @@ language sql stable security definer set search_path = public, pg_temp as $$
         'endsAt', (extract(epoch from coalesce(s.ends_at, s.starts_at + span_interval(setting('seasonLength')))) * 1000)::bigint)
       from seasons s where s.ends_at is null order by s.starts_at desc limit 1),
     'boss', current_boss(),
-    -- The Boss's arc (0230): the beats unlocked and not yet played, each with whether it is due, and the kinds still held back. Never a locked beat, a brief or a template.
+    -- The Boss's arc (0307): the beats unlocked and not yet played, each with whether it is due, and the kinds still held back. Never a locked beat, a brief or a template.
     'arc', arc_for_meeting(current_boss(), (select x.id from seasons x where x.ends_at is null)),
-    -- The farewell and the handoff (0233, above): a meeting within farewellWindowHours of the season's end is shown what the code knows of the season (`handoffFacts`), to write its handoff from;
+    -- The farewell and the handoff (0310, above): a meeting within farewellWindowHours of the season's end is shown what the code knows of the season (`handoffFacts`), to write its handoff from;
     -- the new Boss is handed its predecessor's facts and note (`predecessor`) for inheritanceGraceDays after the handover. Both are null otherwise.
     'handoffFacts', case when in_farewell_window() then handoff_facts((select x.id from seasons x where x.ends_at is null)) end,
     'predecessor', predecessor_handoff(),
@@ -399,7 +399,7 @@ language sql stable security definer set search_path = public, pg_temp as $$
       from (select x.* from machine_slots x order by x.position limit 60) s), '[]'))
 $$;
 
--- apply_meeting (0231), also keeping the farewell and the handoff. Everything else as 0231 wrote it.
+-- apply_meeting (0308), also keeping the farewell and the handoff. Everything else as 0308 wrote it.
 create or replace function apply_meeting(meeting bigint, payload jsonb) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
@@ -497,7 +497,7 @@ begin
     idx := idx + 1;
     select * into kind_row from move_kinds k where k.key = mv ->> 'kind';
     if not found then raise exception 'there is no move kind "%"', mv ->> 'kind' using errcode = '23514'; end if;
-    -- A kind the Boss does not use yet (its persona holds it back until a beat unlocks, 0229) is skipped and recorded, and costs nothing: the engine drops it too, and the database holds the line.
+    -- A kind the Boss does not use yet (its persona holds it back until a beat unlocks, 0306) is skipped and recorded, and costs nothing: the engine drops it too, and the database holds the line.
     if kind_row.key = any (held) then
       held_skipped := held_skipped || jsonb_build_array(jsonb_build_object('index', idx - 1, 'kind', kind_row.key));
       continue;
@@ -726,7 +726,7 @@ begin
     end if;
   end loop;
 
-  -- The farewell and the handoff (0233, above), kept only from a meeting within farewellWindowHours of the season's end: the engine's repair already dropped them from any other, and the database holds
+  -- The farewell and the handoff (0310, above), kept only from a meeting within farewellWindowHours of the season's end: the engine's repair already dropped them from any other, and the database holds
   -- the same line. Each is trimmed to its bound (the farewell to postMaxLength, the note to 2000) and the trim is recorded, never a lost answer. A blank one is none; a meeting that gives neither
   -- writes no row, so an earlier meeting's words are not displaced by silence. A new row is the latest of its season, and the ones before it stay.
   if hf_farewell is not null or hf_note is not null then
@@ -799,7 +799,7 @@ begin
       'rulesSkipped', rules_skipped,
       'machineSkipped', machine_skipped,
       'lastingSkipped', lasting_skipped,
-      -- What was actually played (0231): the engine's `beatsDefaulted` and its `playedWithDefaults` trims say what it meant to play, and are kept only for the beats this transaction played.
+      -- What was actually played (0308): the engine's `beatsDefaulted` and its `playedWithDefaults` trims say what it meant to play, and are kept only for the beats this transaction played.
       'beatsPlayed', to_jsonb(beats_played),
       'beatsDefaulted', coalesce((select jsonb_agg(d.k) from jsonb_array_elements_text(case when jsonb_typeof(payload #> '{record,beatsDefaulted}') = 'array' then payload #> '{record,beatsDefaulted}' else '[]'::jsonb end) d(k) where d.k = any (beats_played)), '[]'::jsonb),
       'trims', coalesce((select jsonb_agg(x.t order by x.n) from jsonb_array_elements(case when jsonb_typeof(payload #> '{record,trims}') = 'array' then payload #> '{record,trims}' else '[]'::jsonb end) with ordinality x(t, n)
@@ -813,7 +813,7 @@ begin
     'returned', returned, 'handed', handed);
 end $$;
 
--- admin_queue (0227), the handover's to-do also carrying the note and the facts. Everything else as 0227 wrote it.
+-- admin_queue (0304), the handover's to-do also carrying the note and the facts. Everything else as 0304 wrote it.
 create or replace function admin_queue() returns jsonb
 language plpgsql stable security definer set search_path = public, pg_temp as $$
 declare
@@ -939,7 +939,7 @@ begin
            'bossWas', (select o.office from staff_offices o where o.staff = t.boss and o.at <= t.landed_at order by o.id desc limit 1),
            'outgoing', t.outgoing, 'outgoingName', oc.name, 'outgoingPronouns', (select p.pronouns from character_profiles p where p.character = oc.id), 'outgoingOffice', (select n.office from staff_office_now n where n.staff = t.outgoing),
            'how', h.how, 'landedAt', t.landed_at,
-           -- The outgoing Boss's handoff (0233, above): its note, out of character and an admin's to read, and the facts the code computed for the season it ended.
+           -- The outgoing Boss's handoff (0310, above): its note, out of character and an admin's to read, and the facts the code computed for the season it ended.
            'note', (select nullif(x.note, '') from handoffs_latest x where x.season = ps.id),
            'facts', handoff_facts(ps.id)) order by t.landed_at desc, t.number desc), '[]'::jsonb) into todos
   from season_boss_changes t

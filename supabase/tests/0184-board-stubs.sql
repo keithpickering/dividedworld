@@ -1,4 +1,4 @@
--- Board stubs, a closed board's page, and starting a thread on one (supabase/migrations/0222_board_stubs.sql; docs/plans/2026-11-06-fangame-split-plan.md, Task 3).
+-- Board stubs, a closed board's page, and starting a thread on one (supabase/migrations/0299_board_stubs.sql; docs/plans/2026-11-06-fangame-split-plan.md, Task 3).
 --
 -- A thread moved away from a board is listed on it for movedStubDays as a stub row, below the board's own threads, with the board it is on now. A closed board answers
 -- {closed, mergedInto | fallback} and no threads; the index lists no closed board; and a thread started on a closed board is refused in words that name the board its threads went to.

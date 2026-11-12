@@ -943,9 +943,9 @@ export interface QueuedMove {
   readonly replacedAt: string | null;
   /** The words an admin has put in the place of the rename's description (`replace_queued_description`, 0101); null when none did. The Boss's own stay in `params`. */
   readonly adminDescription: string | null;
-  /** The queued moves it builds on that have not landed (admin_queue, 0227): it lands after them. Empty for a move that waits for none. */
+  /** The queued moves it builds on that have not landed (admin_queue, 0304): it lands after them. Empty for a move that waits for none. */
   readonly waitsFor: readonly { readonly id: number; readonly role: string | null; readonly kind: string; readonly name: string | null }[];
-  /** The bundle the move is a part of (admin_queue, 0225), the part's role in it and the bundle's name; all null for a move that is no part of a bundle. */
+  /** The bundle the move is a part of (admin_queue, 0302), the part's role in it and the bundle's name; all null for a move that is no part of a bundle. */
   readonly bundle: Id | null;
   readonly role: string | null;
   readonly bundleName: string | null;
@@ -965,7 +965,7 @@ export interface MoveInForce {
   readonly landedAt: string;
   readonly expiresAt: string | null;
   readonly progress: DemandProgress;
-  /** The bundle the move is a part of (admin_queue, 0225), the part's role in it and the bundle's name; all null for a move that is no part of a bundle. */
+  /** The bundle the move is a part of (admin_queue, 0302), the part's role in it and the bundle's name; all null for a move that is no part of a bundle. */
   readonly bundle: Id | null;
   readonly role: string | null;
   readonly bundleName: string | null;
@@ -991,7 +991,7 @@ export interface MoveEnded {
   readonly card?: string | null;
   /** For a rule refused when it came to land (`how: 'refused'`): the server's reason, in its words. */
   readonly reason?: string | null;
-  /** The bundle the move is a part of (admin_queue, 0225), the part's role in it and the bundle's name; all null for a move that is no part of a bundle. */
+  /** The bundle the move is a part of (admin_queue, 0302), the part's role in it and the bundle's name; all null for a move that is no part of a bundle. */
   readonly bundle: Id | null;
   readonly role: string | null;
   readonly bundleName: string | null;
@@ -1031,7 +1031,7 @@ export interface HandoverTodo {
   readonly how: string;
   readonly landedAt: string;
   /**
-   * The outgoing Boss's handoff note (0233): out of character, written at its last meeting, for the next Boss and for admins; players never see it. Null where none stands (the last meeting failed).
+   * The outgoing Boss's handoff note (0310): out of character, written at its last meeting, for the next Boss and for admins; players never see it. Null where none stands (the last meeting failed).
    * It is the Boss's own words, shown as its note and never as the glass's.
    */
   readonly note: string | null;
@@ -2011,7 +2011,7 @@ export interface BoardRef {
 }
 
 /**
- * A thread that was moved away from the board whose page lists it, within the instance's `movedStubDays` (board_page, 0222): a row that links to the thread
+ * A thread that was moved away from the board whose page lists it, within the instance's `movedStubDays` (board_page, 0299): a row that links to the thread
  * and names the board it is on now. It is a fact of the move, public as the move is.
  */
 export interface BoardStub {
@@ -2023,7 +2023,7 @@ export interface BoardStub {
 }
 
 /**
- * A board that is closed (board_page, 0222): merged into another (`mergedInto`), or made by a move that was reversed (`fallback`, where its threads went). Exactly one is set.
+ * A board that is closed (board_page, 0299): merged into another (`mergedInto`), or made by a move that was reversed (`fallback`, where its threads went). Exactly one is set.
  * Its page lists no threads and no stubs.
  */
 export interface BoardClosed {
@@ -2292,7 +2292,7 @@ export interface KayfaApi {
   /** Every board's name now and the name it had before any move: a handful of rows, for the words that name a board (the moderation log, the admin queue). */
   boardNames(): Promise<readonly BoardName[]>;
   /**
-   * The words that name the threads a `moveThread` moves (move_thread_names, 0223): each thread's title now and the board it left (`left`), keyed by the move's Act when it has landed, else by
+   * The words that name the threads a `moveThread` moves (move_thread_names, 0300): each thread's title now and the board it left (`left`), keyed by the move's Act when it has landed, else by
    * the thread (a waiting move leaves the board the thread is on now). A thread that cannot be read is left out, and the sentence says "a thread".
    */
   moveThreadNames(items: readonly { readonly thread: Id; readonly act: Id | null }[]): Promise<Readonly<Record<Id, { readonly title: string; readonly left: Id | null }>>>;

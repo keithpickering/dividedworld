@@ -1,4 +1,4 @@
--- Arcs: beats, conditions, beat state (supabase/migrations/0228_arcs.sql; docs/plans/2026-11-06-fangame-split-plan.md, Task 5; design sections 2, 3 and 7).
+-- Arcs: beats, conditions, beat state (supabase/migrations/0305_arcs.sql; docs/plans/2026-11-06-fangame-split-plan.md, Task 5; design sections 2, 3 and 7).
 --
 -- A persona's arc is a list of beats; each has an unlock (conditions the code checks, each read from public facts only), and the tick writes `unlocked` once every condition holds,
 -- and `lapsed` for an optional beat the season ends on. `played` is written by the meeting (Task 6); here it is written by hand, as the meeting will. The names: `arc_beat_events` and

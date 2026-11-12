@@ -1,4 +1,4 @@
--- Place writers wait for each other, and every thread insert meets one guard (supabase/migrations/0235_thread_places_at_scale.sql, with 0216, 0218, 0222, 0225, 0230 and 0234; final review of PR #450, findings F7 and F9;
+-- Place writers wait for each other, and every thread insert meets one guard (supabase/migrations/0312_thread_places_at_scale.sql, with 0293, 0295, 0299, 0302, 0307 and 0311; final review of PR #450, findings F7 and F9;
 -- delta review F11 to F15).
 --
 -- rebuild_thread_places computes places from the Acts its own snapshot can see, and the writers that change a place did not wait for each other: start_thread, the tick's landing of a lasting move, and

@@ -1,14 +1,114 @@
--- A later meeting's silence displaces nothing (docs/plans/2026-11-06-fangame-split-plan.md, Task 8, review).
+-- Review fixes for the lasting board moves (plan Task 2).
 --
--- apply_meeting (0233) wrote a row with a null farewell when a later in-window meeting gave only a note, and that row stood as the season's latest, so a real farewell gave way to the stock
--- line. The new row now carries the latest row's farewell where this meeting gave none, and its note where it gave none. Done here and not in a trigger: an import inserts rows in replica mode,
--- and must not have them changed. Everything else as 0233 wrote it.
+-- 1. apply_meeting (0140) ran no check on the three lasting kinds, so a mergeBoard into a board already merged away, a cycle, a moveThread onto a closed board or a closed fallback raised in
+--    the queue's guard and lost every other move in the answer. It now runs lasting_move_problem for them (and refuses a demand, which a lasting move cannot carry), skips the move and records
+--    it as `lastingSkipped` ({index, why}) on the meeting's record, as a machine move is. meeting_context (0140) leaves a closed board out of its board list (chosen over marking it closed:
+--    the model is never offered a board it could not rename, merge into or move a thread onto, and the engine's "is a board the meeting was given" drops then follow without a change to it).
+-- 2. A superseded moveThread restored by the reversal of its superseder is in force again (0294 puts its board back in the thread's place), so open_moves, and with it the admin queue's list of
+--    moves in force, shows it and an admin can find it to reverse it. move_thread_effective(thread) is the latest moveThread of the thread not ended reversed or overturned: the move the
+--    thread's place reads. acts_track_moves (0046) keeps open_moves to it: a move_end of a moveThread takes that move out and puts the effective one in if it has no end but a
+--    supersession; a moveThread landing takes out the restored ones it supersedes (the tick ends the ones with no end). rebuild_open_moves (0046) derives the same rows from the Acts.
+--    Derived from the ends, append-only.
+-- 3. boards_now (0293) called board_merge_into, and a function in a view is checked against the role that reads the view (only the view's tables are the owner's), so anon, authenticated and the
+--    digest role were refused (permission denied for function board_merge_into) whenever a board was read. It now reads the merge inline, as the view's own tables, so no role needs execute on a
+--    helper and the helpers stay the service role's. 0182 reads boards_now as each role and the board index as a signed-in player; 0050, 0051 and 0057 read the digest.
 -- Port from main (#486, supabase/migrations/0193_meeting_parts.sql, which now runs before this one): apply_meeting writes the Boss's staff_memory row only when the payload's `memory` is an object, and its
 -- staff_profiles row only when `profile` is, so a part of the meeting that failed leaves the Boss's memory or profile as it was (both tables are append-only, so "as it was" is the last row). Everything else in
 -- apply_meeting is as this file writes it.
--- One lock order (0235; delta review F13): apply_meeting takes the global place key (lock_thread_places) before its first write whenever its answer names a lasting move (a move, or a part of a bundle, of a
--- lasting kind) or an inheritance decision (an `end` ends a lasting move as superseded), where it used to write a move_keep Act, into the thread an admin's reversal writes its end into, before the end_move
--- that takes the key. The two now meet the key first.
+
+create function move_thread_effective(in_thread uuid) returns uuid
+language sql stable security definer set search_path = public, pg_temp as $$
+  select a.id from acts a
+  where a.kind = 'move' and a.payload ->> 'kind' = 'moveThread' and lower(a.payload #>> '{params,thread}') = in_thread::text
+    and not exists (select 1 from acts e where e.kind = 'move_end' and e.target_act_id = a.id and e.payload ->> 'why' in ('reversed', 'overturned'))
+  order by a.created_at desc, a.seq desc nulls last, a.id desc limit 1
+$$;
+revoke execute on function move_thread_effective(uuid) from public, anon, authenticated;
+grant execute on function move_thread_effective(uuid) to service_role;
+
+-- acts_track_moves (0046), also keeping a restored moveThread in force. Everything else as 0046 wrote it.
+create or replace function acts_track_moves() returns trigger
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  target_kind text;
+  th uuid;
+  eff uuid;
+begin
+  if new.kind = 'move' then
+    insert into open_moves (move_act, landed_at) values (new.id, new.created_at);
+    if new.payload ->> 'kind' = 'moveThread' then
+      delete from open_moves o using acts a
+      where o.move_act = a.id and a.id <> new.id and a.payload ->> 'kind' = 'moveThread' and lower(a.payload #>> '{params,thread}') = lower(new.payload #>> '{params,thread}')
+        and exists (select 1 from acts e where e.kind = 'move_end' and e.target_act_id = a.id and e.payload ->> 'why' = 'superseded');
+    end if;
+  else
+    delete from open_moves where move_act = new.target_act_id;
+    select a.payload ->> 'kind', safe_uuid(a.payload #>> '{params,thread}') into target_kind, th from acts a where a.id = new.target_act_id;
+    if target_kind = 'moveThread' and th is not null then
+      eff := move_thread_effective(th);
+      if eff is not null and not exists (select 1 from acts e where e.kind = 'move_end' and e.target_act_id = eff and e.payload ->> 'why' <> 'superseded') then
+        insert into open_moves (move_act, landed_at) select a.id, a.created_at from acts a where a.id = eff on conflict (move_act) do nothing;
+      end if;
+    end if;
+  end if;
+  return null;
+end $$;
+
+-- rebuild_open_moves (0046), the same rows from the Acts: a move with no end, and a moveThread ended only as superseded that is its thread's effective move.
+create or replace function rebuild_open_moves() returns integer
+language sql security definer set search_path = public, pg_temp as $$
+  with live as (
+    select a.id, a.created_at from acts a
+    where a.kind = 'move' and (
+      not exists (select 1 from acts e where e.kind = 'move_end' and e.target_act_id = a.id)
+      or (a.payload ->> 'kind' = 'moveThread'
+          and not exists (select 1 from acts e where e.kind = 'move_end' and e.target_act_id = a.id and e.payload ->> 'why' <> 'superseded')
+          and a.id = move_thread_effective(safe_uuid(a.payload #>> '{params,thread}'))))
+  ), gone as (
+    delete from open_moves o where not exists (select 1 from live l where l.id = o.move_act) returning 1
+  ), added as (
+    insert into open_moves (move_act, landed_at) select l.id, l.created_at from live l on conflict (move_act) do nothing returning 1
+  )
+  select ((select count(*) from gone) + (select count(*) from added))::integer
+$$;
+
+-- meeting_context (0140), leaving a closed board out of its board list. Everything else as 0140 wrote it.
+create or replace function meeting_context() returns jsonb
+language sql stable security definer set search_path = public, pg_temp as $$
+  select jsonb_build_object(
+    'season', (select jsonb_build_object('startsAt', (extract(epoch from s.starts_at) * 1000)::bigint,
+        'endsAt', (extract(epoch from coalesce(s.ends_at, s.starts_at + span_interval(setting('seasonLength')))) * 1000)::bigint)
+      from seasons s where s.ends_at is null order by s.starts_at desc limit 1),
+    'boss', current_boss(),
+    'lastSlot', (select m.slot from meetings m where m.outcome in ('ok', 'failed', 'rejected') order by m.slot desc limit 1),
+    'boards', coalesce((select jsonb_agg(jsonb_build_object('id', b.id, 'name', b.name) order by b.name, b.id)
+      from (select n.id, n.name from boards_now n where not n.is_system and not n.closed order by n.name, n.id limit 50) b), '[]'),
+    'successors', to_jsonb(array(select r from unnest(boss_roster()) with ordinality x(r, ord) where r is distinct from current_boss() order by x.ord)),
+    'inheritanceDue', coalesce((select jsonb_agg(jsonb_build_object('act', d.act, 'kind', d.payload ->> 'kind', 'params', d.payload -> 'params',
+        'landedAt', d.landed_at, 'expiresAt', d.payload -> 'expires_at', 'by', d.author, 'boardName', d.board_name) order by d.landed_at, d.act)
+      from inheritance_due(current_boss(), 20) d), '[]'),
+    -- The Mods on staff: what the Boss's meeting needs to order each (its latest order, the allowance it has not spent, and so what returns to the bank).
+    'mods', coalesce((select jsonb_agg(jsonb_build_object('key', n.staff, 'since', n.since, 'allowance', order_unspent(n.staff), 'granted', o.allowance,
+        'boards', coalesce(to_jsonb(o.boards), '[]'::jsonb), 'order', o.order_line) order by n.staff)
+      from staff_now n left join lateral (select x.allowance, x.boards, x.order_line from staff_orders x where x.staff = n.staff order by x.id desc limit 1) o on true), '[]'),
+    -- The rules in force, so the meeting drops a rule that would leave no compliant post before the queue would refuse it.
+    'rules', coalesce((select jsonb_agg(jsonb_build_object('board', r.board, 'predicate', r.predicate, 'param', r.param, 'number', r.number) order by r.board nulls last, r.number)
+      from rules_now r), '[]'),
+    -- The groups (member groups design, section 5): the catalog a move may confer, and the characters the meeting may not choose. A character is held while a group move is
+    -- in force on it or queued and not held (the guard's one-at-a-time rule), and capped while staff_punishments is at the cap; each is listed with the group it is in now.
+    -- Only those two kinds are listed, which a busy instance keeps to a handful; every other character is in its earned group and free to be chosen.
+    'groups', jsonb_build_object(
+      'conferred', coalesce((select jsonb_agg(jsonb_build_object('key', g.key, 'name', g.name, 'tone', g.tone) order by g.tone desc, g.key) from group_kinds g where g.source = 'conferred'), '[]'),
+      'characters', group_move_bars()),
+    -- The machine, so the Boss can name a slot: the admins' own word on each (hidden ones too, for a flash sale), whether a pull of it could land, and the Boss's move
+    -- in force on it. Slots and moves only: no purchase, no buyer, nothing computed from who owns what.
+    'machine', coalesce((select jsonb_agg(jsonb_build_object('id', s.id, 'position', s.position, 'card', s.card, 'pack', s.pack, 'availability', s.availability, 'price', s.price,
+        'pullable', s.card is not null and s.availability = 'onSale' and card_in_open_pack(s.card),
+        'move', (select jsonb_build_object('kind', m.kind, 'act', m.move_act) from machine_moves_open m where m.slot = s.id order by m.landed_at desc, m.move_act desc limit 1)) order by s.position)
+      from (select x.* from machine_slots x order by x.position limit 60) s), '[]'))
+$$;
+
+-- apply_meeting (0140), skipping and recording a lasting move the queue would refuse. Everything else as 0140 wrote it.
 create or replace function apply_meeting(meeting bigint, payload jsonb) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
@@ -65,27 +165,6 @@ declare
   pat_most integer;
   pat_n integer := 0;
   pat_skipped integer := 0;
-  -- The season the meeting was held in, which is not the open one when the season turned between the meeting and this apply: the beat's events and the kinds it holds back are that season's.
-  season_id bigint := coalesce(meeting_season(apply_meeting.meeting), (select x.id from seasons x where x.ends_at is null));
-  held text[] := held_back_kinds(boss, coalesce(meeting_season(apply_meeting.meeting), (select x.id from seasons x where x.ends_at is null)));
-  beats_played text[] := '{}';
-  held_skipped jsonb := '[]';
-  bundles_skipped jsonb := '[]';
-  bnd jsonb;
-  bpart jsonb;
-  bidx integer := 0;
-  bundle_id uuid;
-  authored boolean;
-  parts_n integer;
-  charged integer;
-  queued_n integer := 0;
-  authored_most integer := coalesce((select (s.value #>> '{}')::integer from settings s where s.key = 'bundleAuthoredMostParts'), 8);
-  composed_most integer := coalesce((select (s.value #>> '{}')::integer from settings s where s.key = 'bundleMostParts'), 4);
-  hf_farewell text := nullif(btrim(coalesce(payload ->> 'farewell', ''), E' \t\n\r\f\v'), '');
-  hf_note text := nullif(btrim(coalesce(payload ->> 'handoff', ''), E' \t\n\r\f\v'), '');
-  hf_post_most integer := (select (s.value #>> '{}')::integer from settings s where s.key = 'postMaxLength');
-  hf_trims jsonb := '[]';
-  hf_skipped jsonb := '[]';
 begin
   perform pg_advisory_xact_lock(hashtextextended('kayfabb.meeting.' || apply_meeting.meeting, 0));
   if not exists (select 1 from meetings x where x.id = apply_meeting.meeting) then
@@ -100,27 +179,12 @@ begin
   if hold is null then raise exception 'a meeting needs structuralHoldHours, which this instance does not set' using errcode = '22023'; end if;
   bal := bank_now(boss, (payload ->> 'weekly_moves')::numeric, (payload ->> 'bank_cap')::numeric);
   if bal is null then raise exception 'a meeting names the phase''s weekly_moves and bank_cap' using errcode = '22023'; end if;
-  -- The one lock order, before the first write: a lasting move queued, or a lasting move ended by an inheritance decision, writes places, and the Acts this answer writes (a move_keep, a move_end) are rows an
-  -- admin's reversal waits for after it holds the key.
-  if exists (select 1 from jsonb_array_elements(case when jsonb_typeof(payload -> 'inherited') = 'array' then payload -> 'inherited' else '[]'::jsonb end) i where jsonb_typeof(i.value) = 'object')
-     or exists (select 1 from jsonb_array_elements(case when jsonb_typeof(payload -> 'moves') = 'array' then payload -> 'moves' else '[]'::jsonb end) m
-                join move_kinds k on k.key = m.value ->> 'kind' where k.lasting)
-     or exists (select 1 from jsonb_array_elements(case when jsonb_typeof(payload -> 'bundles') = 'array' then payload -> 'bundles' else '[]'::jsonb end) b,
-                     jsonb_array_elements(case when jsonb_typeof(b.value -> 'parts') = 'array' then b.value -> 'parts' else '[]'::jsonb end) p
-                join move_kinds k on k.key = p.value ->> 'kind' where k.lasting) then
-    perform lock_thread_places();
-  end if;
 
   -- The moves: a kind outside the catalog raises; a rule the queue would refuse is skipped and recorded, and costs nothing.
   for mv in select value from jsonb_array_elements(coalesce(payload -> 'moves', '[]')) loop
     idx := idx + 1;
     select * into kind_row from move_kinds k where k.key = mv ->> 'kind';
     if not found then raise exception 'there is no move kind "%"', mv ->> 'kind' using errcode = '23514'; end if;
-    -- A kind the Boss does not use yet (its persona holds it back until a beat unlocks, 0229) is skipped and recorded, and costs nothing: the engine drops it too, and the database holds the line.
-    if kind_row.key = any (held) then
-      held_skipped := held_skipped || jsonb_build_array(jsonb_build_object('index', idx - 1, 'kind', kind_row.key));
-      continue;
-    end if;
     if kind_row.key = 'setRule' then
       problem := rule_params_problem(mv -> 'params');
       if problem is null then
@@ -215,56 +279,6 @@ begin
   -- The Boss's own moves are its own: they must be paid, else this raises, as it always has. The allowances are what is left. A Mod that queued between the
   -- meeting's read and this apply spent some of what the answer counted on; the answer is not failed for it: the allowances are trimmed from the last
   -- order backward to the bank, and the trims are recorded.
-  -- The bundles (fangame split design, sections 2, 5 and 9), each all or nothing: its parts are queued under one bundle id and one name, in the order sent (a role names an earlier part), and a
-  -- beat's bundle writes `played` with it. An authored bundle (it names a beat of this Boss's that is unlocked and unplayed) costs the bank nothing; a bundle of the Boss's own costs one move a part
-  -- and holds at most bundleMostParts, none of a kind held back. A beat with no bundle has no parts and is played by being named. A bundle the queue would refuse (the guard raises), a beat
-  -- that is not unlocked and a bank that cannot pay are each skipped and recorded, with the reason: one bad bundle never fails the whole answer. The guard still holds every part.
-  for bnd in select value from jsonb_array_elements(case when jsonb_typeof(payload -> 'bundles') = 'array' then payload -> 'bundles' else '[]'::jsonb end) loop
-    bidx := bidx + 1;
-    begin
-      if jsonb_typeof(bnd) is distinct from 'object' or jsonb_typeof(bnd -> 'parts') is distinct from 'array' then
-        raise exception 'a bundle is {name, beat, parts}' using errcode = '22023';
-      end if;
-      authored := jsonb_typeof(bnd -> 'beat') = 'string';
-      parts_n := jsonb_array_length(bnd -> 'parts');
-      if authored then
-        if not exists (select 1 from persona_arcs a, jsonb_array_elements(a.beats) b where a.staff = boss and b.value ->> 'key' = bnd ->> 'beat') then
-          raise exception 'the beat "%" is not this Boss''s', bnd ->> 'beat' using errcode = '22023';
-        end if;
-        if arc_latest_states(boss, season_id) ->> (bnd ->> 'beat') is distinct from 'unlocked' then
-          raise exception 'the beat "%" is not unlocked, or has been played', bnd ->> 'beat' using errcode = '22023';
-        end if;
-        if parts_n > authored_most then raise exception 'an authored bundle holds at most % parts', authored_most using errcode = '22023'; end if;
-        charged := 0;
-      else
-        if parts_n < 1 then raise exception 'a bundle of the Boss''s own has at least one part' using errcode = '22023'; end if;
-        if parts_n > composed_most then raise exception 'a bundle of the Boss''s own holds at most % parts', composed_most using errcode = '22023'; end if;
-        if spent + parts_n > floor(bal2) then raise exception 'the bank cannot pay for % parts', parts_n using errcode = '23514'; end if;
-        charged := parts_n;
-      end if;
-      if parts_n > 0 and btrim(coalesce(bnd ->> 'name', '')) = '' then raise exception 'a bundle has a name' using errcode = '22023'; end if;
-      bundle_id := case when parts_n > 0 then gen_random_uuid() end;
-      for bpart in select value from jsonb_array_elements(bnd -> 'parts') loop
-        select * into kind_row from move_kinds k where k.key = bpart ->> 'kind';
-        if not found then raise exception 'there is no move kind "%"', bpart ->> 'kind' using errcode = '23514'; end if;
-        if not authored and kind_row.key = any (held) then raise exception 'the kind % is held back', kind_row.key using errcode = '23514'; end if;
-        live := greatest((bpart ->> 'go_live_at')::timestamptz, now());
-        if kind_row.structural then live := greatest(live, now() + hold); end if;
-        insert into queued_moves (meeting, staff, kind, params, demand, why, go_live_at, expires_at, structural, bundle, bundle_name, role)
-        values (apply_meeting.meeting, boss, kind_row.key, bpart -> 'params', bpart -> 'demand', bpart ->> 'why', live,
-          live + coalesce((bpart ->> 'expires_in_hours')::numeric, 0) * interval '1 hour', kind_row.structural, bundle_id, left(bnd ->> 'name', 120), nullif(bpart ->> 'role', ''));
-      end loop;
-      if authored then
-        insert into arc_beat_events (season, staff, beat, event, bundle) values (season_id, boss, bnd ->> 'beat', 'played', bundle_id);
-        beats_played := beats_played || (bnd ->> 'beat');
-      end if;
-      spent := spent + charged;
-      queued_n := queued_n + parts_n;
-    exception when others then
-      bundles_skipped := bundles_skipped || jsonb_build_array(jsonb_build_object('index', bidx - 1, 'name', bnd ->> 'name', 'why', left(sqlerrm, 300)));
-    end;
-  end loop;
-
   if spent > floor(bal2) then
     raise exception 'the moves cost % and the bank holds %', spent, bal2 using errcode = '23514';
   end if;
@@ -345,28 +359,6 @@ begin
     end if;
   end loop;
 
-  -- The farewell and the handoff (0233), kept only from a meeting within farewellWindowHours of the season's end: the engine's repair already dropped them from any other, and the database holds
-  -- the same line. Each is trimmed to its bound (the farewell to postMaxLength, the note to 2000) and the trim is recorded, never a lost answer. A blank one is none; a meeting that gives neither
-  -- writes no row, so an earlier meeting's words are not displaced by silence. A new row is the latest of its season, and the ones before it stay.
-  if hf_farewell is not null or hf_note is not null then
-    if not in_farewell_window() then
-      hf_skipped := jsonb_build_array(jsonb_build_object('why', 'inFarewellWindow'));
-    else
-      if hf_farewell is not null and hf_post_most is not null and char_length(hf_farewell) > hf_post_most then
-        hf_trims := hf_trims || jsonb_build_array(jsonb_build_object('path', 'farewell', 'predicate', 'maxLength(' || hf_post_most || ')', 'before', char_length(hf_farewell), 'after', hf_post_most));
-        hf_farewell := left(hf_farewell, hf_post_most);
-      end if;
-      if hf_note is not null and char_length(hf_note) > 2000 then
-        hf_trims := hf_trims || jsonb_build_array(jsonb_build_object('path', 'handoff', 'predicate', 'maxLength(2000)', 'before', char_length(hf_note), 'after', 2000));
-        hf_note := left(hf_note, 2000);
-      end if;
-      -- What this meeting leaves out stands as the latest row had it: a later meeting that writes only a note does not take the farewell back, nor one that writes only a farewell the note.
-      insert into handoffs (season, staff, meeting, farewell, note)
-      select season_id, boss, apply_meeting.meeting, coalesce(hf_farewell, x.farewell), coalesce(hf_note, x.note, '')
-      from (select 1) one left join handoffs_latest x on x.season = season_id;
-    end if;
-  end if;
-
   -- An answer that left a persona with an order out
   -- carries it forward: its beat (less what another order claimed, and nothing once it is off staff) and its line, with an allowance of 0, because
   -- what it had was returned above. After this meeting every persona with an order has its latest from it.
@@ -421,16 +413,42 @@ begin
       'rulesSkipped', rules_skipped,
       'machineSkipped', machine_skipped,
       'lastingSkipped', lasting_skipped,
-      -- What was actually played (0231): the engine's `beatsDefaulted` and its `playedWithDefaults` trims say what it meant to play, and are kept only for the beats this transaction played.
-      'beatsPlayed', to_jsonb(beats_played),
-      'beatsDefaulted', coalesce((select jsonb_agg(d.k) from jsonb_array_elements_text(case when jsonb_typeof(payload #> '{record,beatsDefaulted}') = 'array' then payload #> '{record,beatsDefaulted}' else '[]'::jsonb end) d(k) where d.k = any (beats_played)), '[]'::jsonb),
-      'trims', coalesce((select jsonb_agg(x.t order by x.n) from jsonb_array_elements(case when jsonb_typeof(payload #> '{record,trims}') = 'array' then payload #> '{record,trims}' else '[]'::jsonb end) with ordinality x(t, n)
-                         where not (x.t ->> 'predicate' = 'playedWithDefaults' and not ((regexp_replace(coalesce(x.t ->> 'path', ''), '^beats\.', '')) = any (beats_played)))), '[]'::jsonb),
-      'heldBackSkipped', held_skipped,
-      'bundlesSkipped', bundles_skipped,
-      'handoffTrims', hf_trims,
-      'handoffSkipped', hf_skipped,
       'patrolsWritten', jsonb_build_object('written', pat_n, 'skipped', pat_skipped)));
-  return jsonb_build_object('status', 'applied', 'meeting', apply_meeting.meeting, 'queued', jsonb_array_length(kept_moves) + queued_n, 'beats_played', to_jsonb(beats_played), 'bank_before', bal, 'bank_after', bal2 - spent - handed,
+  return jsonb_build_object('status', 'applied', 'meeting', apply_meeting.meeting, 'queued', spent, 'bank_before', bal, 'bank_after', bal2 - spent - handed,
     'returned', returned, 'handed', handed);
 end $$;
+
+-- boards_now (0293), the merge read inline, so no reader needs execute on a helper function. Columns and rows as 0293 wrote them.
+create or replace view boards_now as
+  with live as materialized (
+    select a.id as move_act, a.created_at, a.payload #>> '{params,board}' as board, a.payload #>> '{params,name}' as name,
+           a.payload #>> '{params,premise}' as premise, a.payload #>> '{params,description}' as description
+    from open_moves o
+    cross join lateral (select x.id, x.created_at, x.payload from acts x where x.id = o.move_act offset 0) a
+    where a.payload ->> 'kind' = 'renameBoard'
+  )
+  select b.id, b.slug, coalesce(m.name, b.name) as name,
+         coalesce(m.premise, (select c.payload #>> '{params,premise}' from acts c where c.id = b.created_by_act), b.description) as premise,
+         coalesce(d.description, m.description, b.description) as description, b.is_system, b.created_at, m.move_act,
+         (g.merged_into is not null
+          or (b.created_by_act is not null and exists (select 1 from acts e where e.kind = 'move_end' and e.target_act_id = b.created_by_act))) as closed,
+         g.merged_into
+  from boards b
+  left join lateral (
+    select l.move_act, l.name, l.premise, l.description from live l
+    where lower(l.board) = b.id::text
+    order by l.created_at desc, l.move_act desc
+    limit 1
+  ) m on true
+  left join lateral (
+    select x.payload ->> 'description' as description from acts x
+    where x.kind = 'describe' and x.payload ->> 'board' = b.id::text and x.payload ->> 'move_act' is not distinct from m.move_act::text
+    order by x.created_at desc, x.id desc
+    limit 1
+  ) d on true
+  left join lateral (
+    select d.id as merged_into from acts a join boards d on d.id::text = lower(a.payload #>> '{params,into}')
+    where a.kind = 'move' and a.payload ->> 'kind' = 'mergeBoard' and lower(a.payload #>> '{params,board}') = b.id::text
+      and exists (select 1 from open_moves o where o.move_act = a.id)
+    order by a.created_at desc, a.id desc limit 1
+  ) g on true;

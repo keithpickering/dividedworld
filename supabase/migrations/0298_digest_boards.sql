@@ -1,6 +1,6 @@
 -- The digest's board lines (docs/plans/2026-11-06-fangame-split-plan.md, Task 7; design section 4, "Noticing").
 --
--- A Boss that can make and merge boards (0216) should see a forum with five posts in it. system_digest (0127) gains `boards`: each open board that is not The System's as
+-- A Boss that can make and merge boards (0293) should see a forum with five posts in it. system_digest (0127) gains `boards`: each open board that is not The System's as
 -- {id, name, premise, posts}, its posts counted over `digestBoardDays` days before the window's end on the board each thread is on now, and at most `digestBoards` lines,
 -- the busiest half and the quietest half when there are more, busiest first; and `boardDays`, the days the counts cover, so the prompt can say so. Every field is a board's own
 -- public fact or a count of public posts: nothing here is computed from who owns a character, a class or a reaction.
