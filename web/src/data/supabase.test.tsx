@@ -706,20 +706,23 @@ describe('reads and their rows', () => {
       return rows([{ theme: 'system', postbit: 'side', motion: 'system', smoke: 'full', contrast: 'standard', text_size: 100, tilt: 'on', effects: 'bright' }]);
     });
     expect(((await h.api.preferences())).tilt).toBe('on');
-    expect(h.to('account_preferences')[0]?.url.searchParams.get('select')).toContain('text_size,tilt,effects,cards_met');
+    expect(h.to('account_preferences')[0]?.url.searchParams.get('select')).toContain('text_size,tilt,effects,game_sound,game_volume,interface_sound,interface_volume,cards_met');
     expect(await h.api.setPreferences({ tilt: 'on' })).toMatchObject({ ok: true, value: { tilt: 'on' } });
     expect(h.to('rpc/set_preferences')[0]?.body).toMatchObject({ tilt: 'on' });
     expect(((await h.api.preferences())).effects).toBe('bright');
     expect(await h.api.setPreferences({ effects: 'bright' })).toMatchObject({ ok: true, value: { effects: 'bright' } });
     expect(h.to('rpc/set_preferences')[1]?.body).toMatchObject({ effects: 'bright' });
     const bare = harness(() => rows([{ theme: 'default' }]));
+    expect(await bare.api.preferences()).toMatchObject({ gameSound: 'off', gameVolume: 80, interfaceSound: 'off', interfaceVolume: 80 });
+    expect(await h.api.setPreferences({ gameSound: 'on', interfaceVolume: 35 })).toMatchObject({ ok: true });
+    expect(h.to('rpc/set_preferences')[2]?.body).toMatchObject({ game_sound: 'on', game_volume: null, interface_sound: null, interface_volume: 35 });
     expect(((await bare.api.preferences())).tilt).toBe('off');
     expect(((await bare.api.preferences())).effects).toBe('standard');
   });
 
   it('answers preferences with the defaults when no row exists', async () => {
     const h = harness(() => rows([]));
-    expect(await h.api.preferences()).toEqual({ theme: 'default', mode: 'system', postbit: 'side', motion: 'system', smoke: 'full', contrast: 'standard', textSize: 100, tilt: 'off', effects: 'standard', cardsMet: [], alertsSeenAt: null, settlementSeen: null, toasts: null, welcomedAt: null, tips: 'on', tipsSeen: [] });
+    expect(await h.api.preferences()).toEqual({ theme: 'default', mode: 'system', postbit: 'side', motion: 'system', smoke: 'full', contrast: 'standard', textSize: 100, tilt: 'off', effects: 'standard', gameSound: 'off', gameVolume: 80, interfaceSound: 'off', interfaceVolume: 80, cardsMet: [], alertsSeenAt: null, settlementSeen: null, toasts: null, welcomedAt: null, tips: 'on', tipsSeen: [] });
   });
 
   it('reads the glass\'s three preferences from their columns and sends them to set_preferences by its parameter names', async () => {
@@ -727,10 +730,10 @@ describe('reads and their rows', () => {
       if (r.url.pathname.endsWith('/rpc/set_preferences')) return json({ theme: 'dark', postbit: 'side', motion: 'system', smoke: 'off', contrast: 'high', text_size: 200, cards_met: ['whoops'] });
       return rows([{ theme: 'dark', postbit: 'side', motion: 'system', smoke: 'low', contrast: 'high', text_size: 150 }]);
     });
-    expect(await h.api.preferences()).toEqual({ theme: 'dark', mode: 'system', postbit: 'side', motion: 'system', smoke: 'low', contrast: 'high', textSize: 150, tilt: 'off', effects: 'standard', cardsMet: [], alertsSeenAt: null, settlementSeen: null, toasts: null, welcomedAt: null, tips: 'on', tipsSeen: [] });
-    expect(h.to('account_preferences')[0]?.url.searchParams.get('select')).toBe('theme,mode,postbit,motion,smoke,contrast,text_size,tilt,effects,cards_met,alerts_seen_at,settlement_seen,toasts,welcomed_at,tips,tips_seen');
-    expect(await h.api.setPreferences({ smoke: 'off', contrast: 'high', textSize: 200 })).toEqual({ ok: true, value: { theme: 'dark', mode: 'system', postbit: 'side', motion: 'system', smoke: 'off', contrast: 'high', textSize: 200, tilt: 'off', effects: 'standard', cardsMet: ['whoops'], alertsSeenAt: null, settlementSeen: null, toasts: null, welcomedAt: null, tips: 'on', tipsSeen: [] } });
-    expect(h.to('rpc/set_preferences')[0]?.body).toEqual({ theme: null, mode: null, postbit: null, motion: null, smoke: 'off', contrast: 'high', text_size: 200, tilt: null, effects: null, toasts: null, toasts_default: false });
+    expect(await h.api.preferences()).toEqual({ theme: 'dark', mode: 'system', postbit: 'side', motion: 'system', smoke: 'low', contrast: 'high', textSize: 150, tilt: 'off', effects: 'standard', gameSound: 'off', gameVolume: 80, interfaceSound: 'off', interfaceVolume: 80, cardsMet: [], alertsSeenAt: null, settlementSeen: null, toasts: null, welcomedAt: null, tips: 'on', tipsSeen: [] });
+    expect(h.to('account_preferences')[0]?.url.searchParams.get('select')).toBe('theme,mode,postbit,motion,smoke,contrast,text_size,tilt,effects,game_sound,game_volume,interface_sound,interface_volume,cards_met,alerts_seen_at,settlement_seen,toasts,welcomed_at,tips,tips_seen');
+    expect(await h.api.setPreferences({ smoke: 'off', contrast: 'high', textSize: 200 })).toEqual({ ok: true, value: { theme: 'dark', mode: 'system', postbit: 'side', motion: 'system', smoke: 'off', contrast: 'high', textSize: 200, tilt: 'off', effects: 'standard', gameSound: 'off', gameVolume: 80, interfaceSound: 'off', interfaceVolume: 80, cardsMet: ['whoops'], alertsSeenAt: null, settlementSeen: null, toasts: null, welcomedAt: null, tips: 'on', tipsSeen: [] } });
+    expect(h.to('rpc/set_preferences')[0]?.body).toEqual({ theme: null, mode: null, postbit: null, motion: null, smoke: 'off', contrast: 'high', text_size: 200, tilt: null, effects: null, game_sound: null, game_volume: null, interface_sound: null, interface_volume: null, toasts: null, toasts_default: false });
   });
 
   it('reads the kinds that toast (null where never chosen, an empty list where chosen so), drops a kind it does not know, and sends a choice or a reset by set_preferences\' parameter names', async () => {
@@ -807,7 +810,7 @@ describe('reads and their rows', () => {
   it('maps the marks an answer carries (set_preferences, meet_card) into the preferences', async () => {
     const marks = { alerts_seen_at: '2026-10-29T08:17:00+00:00', settlement_seen: '2026-10-30T08:17:00+00:00' };
     const h = harness((r) => json({ theme: 'dark', postbit: 'side', motion: 'system', smoke: 'low', contrast: 'high', text_size: 150, cards_met: ['whoops'], ...marks }));
-    const want = { ok: true, value: { theme: 'dark', mode: 'system', postbit: 'side', motion: 'system', smoke: 'low', contrast: 'high', textSize: 150, tilt: 'off', effects: 'standard', cardsMet: ['whoops'], alertsSeenAt: marks.alerts_seen_at, settlementSeen: marks.settlement_seen, toasts: null, welcomedAt: null, tips: 'on', tipsSeen: [] } };
+    const want = { ok: true, value: { theme: 'dark', mode: 'system', postbit: 'side', motion: 'system', smoke: 'low', contrast: 'high', textSize: 150, tilt: 'off', effects: 'standard', gameSound: 'off', gameVolume: 80, interfaceSound: 'off', interfaceVolume: 80, cardsMet: ['whoops'], alertsSeenAt: marks.alerts_seen_at, settlementSeen: marks.settlement_seen, toasts: null, welcomedAt: null, tips: 'on', tipsSeen: [] } };
     expect(await h.api.setPreferences({ smoke: 'low' })).toEqual(want);
     expect(await h.api.meetCard('whoops')).toEqual(want);
   });

@@ -40,7 +40,7 @@ import { isSignedOutDoc, type ScreenDoc } from '../screen-docs.ts';
 import { settingsSection, type AccountDoc } from '../glass-docs.ts';
 import { useBoot } from '../boot.tsx';
 import { GlassLink } from '../glass/Link.tsx';
-import { Choice, EffectsRow, MotionRow, TextSizeRow, TiltRow, type Option } from './appearanceRows.tsx';
+import { Choice, EffectsRow, MotionRow, SoundRow, TextSizeRow, TiltRow, type Option } from './appearanceRows.tsx';
 import { ModeRow, ThemeRow } from './ThemePicker.tsx';
 import { Invites } from './Invites.tsx';
 import { usePreferenceSaves, type TipsChange } from './preferences.ts';
@@ -84,10 +84,11 @@ const NOTIFICATIONS: readonly { readonly kind: AlertKind; readonly title: string
   { kind: 'seasonNews', title: 'Season news', sentence: 'The season has news: results, debuts and Turns, a new Boss.' },
 ];
 
-type Section = 'account' | 'accessibility' | 'board' | 'notifications';
+type Section = 'account' | 'accessibility' | 'sound' | 'board' | 'notifications';
 const SECTIONS: readonly { readonly key: Section; readonly label: string }[] = [
   { key: 'account', label: 'Account' },
   { key: 'accessibility', label: 'Accessibility' },
+  { key: 'sound', label: 'Sound' },
   { key: 'board', label: 'The board' },
   { key: 'notifications', label: 'Notifications' },
 ];
@@ -259,6 +260,20 @@ export function SettingsScreen({ doc }: { readonly doc?: ScreenDoc<AccountDoc> }
           <Row label="Defaults" sentence={prefs.toasts === null ? 'You have not chosen, so the defaults hold.' : 'You have chosen your own. This puts every switch back to this board\'s defaults.'}>
             <ButtonRow><GlassButton aria-disabled={prefs.toasts === null} onClick={() => { if (prefs.toasts !== null) change({ toasts: null }); }}>Reset to defaults</GlassButton></ButtonRow>
           </Row>
+          {said}
+          <p className="kb-acct-foot">Changes save as you make them.</p>
+        </CalmRegion>
+      </Frame>
+    );
+  }
+
+  if (section === 'sound') {
+    return (
+      <Frame section={section}>
+        <CalmRegion as="section" className="kb-settings-section" aria-labelledby="kb-settings-sound">
+          <h2 id="kb-settings-sound" className="kb-acct-section-title kb-glass-display">Sound</h2>
+          <SoundRow bus="game" value={prefs.gameSound} volume={prefs.gameVolume} onChange={(v) => change({ gameSound: v })} onVolume={(v) => change({ gameVolume: v })} />
+          <SoundRow bus="interface" value={prefs.interfaceSound} volume={prefs.interfaceVolume} onChange={(v) => change({ interfaceSound: v })} onVolume={(v) => change({ interfaceVolume: v })} />
           {said}
           <p className="kb-acct-foot">Changes save as you make them.</p>
         </CalmRegion>

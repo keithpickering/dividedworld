@@ -5,6 +5,7 @@
  */
 import type { PreferencesPatch } from '../../engine/ui/data/api.ts';
 import type { Fake } from '../../engine/ui/data/fake.ts';
+import { captions } from '../../engine/ui/audio/captions.ts';
 
 export interface Demo {
   readonly me: string;
@@ -65,11 +66,12 @@ export function recordAvatarUploads(fake: Fake): void {
 /**
  * For the end-to-end flows only: the fake and its demo world on `globalThis.__kbFake` and
  * `globalThis.__kbDemo`, so a test can play the part of another player, or of the reader in another
- * tab, while the page is open (a post that comes while the reader is in the glass, e2e/focus.spec.ts).
+ * tab, while the page is open (a post that comes while the reader is in the glass, e2e/focus.spec.ts), and the page's caption store
+ * on `globalThis.__kbCaptions`, so a test can show a caption on the real bar (e2e/captions.spec.ts).
  * Only the e2e build calls it; a development build and every Supabase build leave both unset.
  */
 export function exposeFake(fake: Fake, demo: Demo): void {
-  Object.assign(globalThis, { __kbFake: fake, __kbDemo: demo });
+  Object.assign(globalThis, { __kbFake: fake, __kbDemo: demo, __kbCaptions: captions });
 }
 
 /**

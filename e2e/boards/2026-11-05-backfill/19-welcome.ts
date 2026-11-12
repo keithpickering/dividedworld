@@ -2,7 +2,7 @@
  * Board 19, Welcome (docs/research/2026-11-05-backfill/19-welcome.html, 1440 by 1720): a signed-in player with no character, as the story
  * `Boards/01 Welcome` (engine/ui/welcome/Welcome.board.stories.tsx) draws it. Compared: the menu bar, the page title, the column that says what
  * happens next, the letter's post (the persona's name, its headline as the instance writes it, Anton, on one line: the case the letter is written
- * in, not capitals), Before you start with its three settings, and the two calls to action. The phone drawing of this page is board 22's.
+ * in, not capitals), Before you start with its settings, and the two calls to action. The phone drawing of this page is board 22's.
  *
  * Departures, by the glass's own scale and frame (the glass polish, design section 7: every board size token at 1.25 times where it names one),
  * each held at what the first run measured so a shift that is wrong fails:
@@ -19,6 +19,10 @@
  *    taller than the radios' row by the 79px every row under it stands lower (`TILES`).
  *  - Before you start has a fourth row the board does not draw, Brighter effects after Text size (docs/plans/2026-11-08-brighter-effects-design.md:
  *    the owner wanted a new player to meet the choice here), so the two calls to action under it stand lower again by that row's height (`EFFECTS`).
+ *  - Before you start has two more rows the board does not draw, a Sound row for the game's sounds and one for the interface's, after Brighter effects
+ *    (docs/plans/2026-11-11-laugh-track-design.md: the owner chose to offer the sound settings in the welcome step, as Brighter effects is, a new
+ *    player's first meeting with the choice; Settings gains a Sound section too). Each is the skewed Off/On radios with its sentence, about 162px
+ *    tall with the volume slider hidden (it shows only while On, and the default is Off), so the two calls to action stand lower again by 324.5px (`SOUND`).
  */
 import type { BoardManifest } from '../../board-match.ts';
 
@@ -28,6 +32,8 @@ const PROSE = { y: 28 } as const;
 const TILES = { y: 107.2 } as const;
 /** Under the Brighter effects row: the TILES shift and that row's own height (178px, as the first run measured). */
 const EFFECTS = { y: 285.2 } as const;
+/** Under the two Sound rows: the EFFECTS shift and the two rows' heights (324.5px together, as the first run measured; each is one row of two radios and its sentence, 162px). */
+const SOUND = { y: 609.7 } as const;
 
 const manifest: BoardManifest = {
   board: '2026-11-05-backfill/19-welcome',
@@ -50,8 +56,8 @@ const manifest: BoardManifest = {
     { id: 'motion-note', role: 'text', name: 'Off stops every animation. A card\'s effect still happens: Stick Around still snaps you back, only instantly. Smooth and Snappy are two speeds of the same animations.', box: 'position', buildShift: TILES, origin: 'headline', originEdge: 'bottom' },
     { id: 'size', role: 'heading', name: 'TEXT SIZE', box: 'position', buildShift: TILES, origin: 'headline', originEdge: 'bottom' },
     { id: 'size-note', role: 'text', name: 'Applies to the board and the glass together. Past 150% the glass folds into one column, and nothing is cut off.', box: 'position', buildShift: TILES, origin: 'headline', originEdge: 'bottom' },
-    { id: 'make', role: 'link', name: 'MAKE YOUR FIRST CHARACTER', box: 'height', buildShift: { ...EFFECTS, height: -6 }, origin: 'headline', originEdge: 'bottom' },
-    { id: 'read', role: 'link', name: 'READ THE STRATEGY GUIDE FIRST', box: 'height', buildShift: { ...EFFECTS, height: -6 }, origin: 'headline', originEdge: 'bottom' },
+    { id: 'make', role: 'link', name: 'MAKE YOUR FIRST CHARACTER', box: 'height', buildShift: { ...SOUND, height: -6 }, origin: 'headline', originEdge: 'bottom' },
+    { id: 'read', role: 'link', name: 'READ THE STRATEGY GUIDE FIRST', box: 'height', buildShift: { ...SOUND, height: -6 }, origin: 'headline', originEdge: 'bottom' },
   ],
 };
 

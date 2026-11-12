@@ -157,6 +157,15 @@ describe('the web plan\'s five poisons', () => {
     ]);
   });
 
+  test('under high contrast, white body text on a bright opaque panel is not excused as the caption\'s ink', () => {
+    /* #ffffff is both the caption bar's ink and the key's body text; where it has a text role it is held to the text ceiling, and a bright opaque panel does not excuse it. */
+    const white: TextFact = { ...body, color: [255, 255, 255, 1], smoke: 0, brightest: 0.6, calm: null, panels: [{ box: { x: 90, y: 190, width: 420, height: 45 }, opacity: 1 }] };
+    expect(judged(white, 'rankings', { palette: high, high: true })).toEqual([
+      '"Every character this season" in p.kb-rankings-lead (surface rankings): under high contrast its brightest pixel, luminance 0.6000, is not under the 7:1 ceiling 0.1 for its color, rgb(255, 255, 255)',
+    ]);
+    expect(judged({ ...white, brightest: 0.02 }, 'rankings', { palette: high, high: true })).toEqual([]);
+  });
+
   test('under high contrast an ink is read on its fill, not against a ceiling over a ground', () => {
     const ink: TextFact = { ...body, color: [0, 0, 0, 1], smoke: 0, brightest: 0.62, calm: null };
     expect(judged({ ...ink, panels: [{ box: { x: 90, y: 190, width: 420, height: 45 }, opacity: 1 }] }, 'rankings', { palette: high, high: true })).toEqual([]);
