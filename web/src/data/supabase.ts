@@ -1490,7 +1490,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       return { gifts: toDriveGifts(d['gifts']), more: d['more'] === true };
     },
     playCard: (card, character, target, config, message, reach, fromPost, first) => act({ action: 'playCard', card, character, target, config, message, ...beyond(reach, fromPost), ...(first === undefined ? {} : { first }) }, toAct),
-    setCard: (card, character, target, config, when, first) => act({ action: 'setCard', card, character, target, config, ...(when ? { when } : {}), ...(first === undefined ? {} : { first }) }, toAct),
+    setCard: (card, character, target, config, when) => act({ action: 'setCard', card, character, target, config, ...(when ? { when } : {}) }, toAct),
     takeBack: (character, set) => act({ action: 'takeBack', character, set }, toAct),
     useCard: (card, character, target, config, message, reach, fromPost) => act({ action: 'useCard', card, character, target, config, message, ...beyond(reach, fromPost) }, toAct),
     async myFaceDown(sets) {

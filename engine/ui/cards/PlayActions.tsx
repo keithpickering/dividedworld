@@ -62,14 +62,15 @@ export function GhostMark({ act }: { readonly act: Act }) {
   const down = sets && (play.faceDown || !casts);
   const cardUi = ui.cards.find((c) => c.key === rules.key);
   const face = faceOf(rules, cardUi, withCardEconomy(instance.settings, settings.cardEconomy), ui.copy.cardKinds);
-  /* A card played on the post itself opens no form: its Compose mounts in the post's slot. On one's own post it offers the cast and the set as two marks, since the form's choice is not asked. */
+  /* A card played on the post itself opens no form: its Compose mounts in the post's slot. It is cast face up and never set, so it has one mark. */
   if (cardUi?.Compose) {
-    const mark = (mode: 'cast' | 'set') => (
+    if (!casts) return null;
+    return (
       <button
-        key={mode} type="button" className="kb-mark kb-meta-tile kb-ghost-mark" aria-label={ghostName(rules.name, mode === 'set' ? 'set' : how, act.seq!)} data-kb-card={rules.key} data-kb-alignment={rules.alignment} data-kb-compose={mode}
-        aria-pressed={play.compose?.card === rules.key && play.compose.target.post?.id === act.id && play.compose.mode === mode}
+        type="button" className="kb-mark kb-meta-tile kb-ghost-mark" aria-label={ghostName(rules.name, how, act.seq)} data-kb-card={rules.key} data-kb-alignment={rules.alignment}
+        aria-pressed={play.compose?.card === rules.key && play.compose.target.post?.id === act.id}
         style={{ '--kb-mark-color': face.art.color } as CSSProperties}
-        onClick={() => play.openCompose(rules.key, target, mode)}
+        onClick={() => play.openCompose(rules.key, target)}
       >
         <span className="kb-meta-tile-in" aria-hidden="true">
           {face.art.mark && <img className="kb-mark-icon kb-ghost-icon" src={face.art.mark} alt="" draggable={false} />}
@@ -77,7 +78,6 @@ export function GhostMark({ act }: { readonly act: Act }) {
         </span>
       </button>
     );
-    return <>{how === 'cast' && casts && mark('cast')}{(how === 'set' ? casts : sets) && mark('set')}</>;
   }
   return (
     <button

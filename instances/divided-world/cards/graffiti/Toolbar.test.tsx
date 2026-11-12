@@ -16,7 +16,7 @@ const EMPTY = { wall: 3100, after: 3100, most: 4000, over: false };
 
 function propsOf(over: Partial<ToolbarProps> = {}): ToolbarProps {
   return {
-    mode: 'cast', can: 'cyan', onCan: vi.fn(), cap: 'stock', onCap: vi.fn(), tab: 'spray', onTab: vi.fn(), stencil: null, onStencil: vi.fn(), spot: 4, onSpot: vi.fn(),
+    can: 'cyan', onCan: vi.fn(), cap: 'stock', onCap: vi.fn(), tab: 'spray', onTab: vi.fn(), stencil: null, onStencil: vi.fn(), spot: 4, onSpot: vi.fn(),
     meter: EMPTY, hasDraft: false, canUndo: false, onUndo: vi.fn(), onCancel: vi.fn(), onSubmit: vi.fn(), busy: false, refusal: null, notice: null,
     asking: null, onLeave: vi.fn(), onStay: vi.fn(), ...over,
   };
@@ -178,12 +178,6 @@ describe('Tag it', () => {
     expect(screen.queryByText('Draw something first')).toBeNull();
     await user.click(go);
     expect(onSubmit).toHaveBeenCalledTimes(1);
-  });
-
-  test('is Set it when the card is set face down', () => {
-    render(<Toolbar {...propsOf({ mode: 'set' })} />);
-    expect(screen.getByRole('button', { name: 'Set it' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Tag it' })).toBeNull();
   });
 
   test('on the Stencils tab with nothing chosen it asks for a stencil', () => {

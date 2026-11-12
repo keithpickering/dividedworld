@@ -838,12 +838,12 @@ describe('a card that is played on the post (CardUi.Compose)', () => {
   let answered: Answer<unknown> | null = null;
   let seen: ComposeProps | null = null;
   function Draw(props: ComposeProps) {
-    const { post, mode, submit, cancel, hold, children } = props;
+    const { post, submit, cancel, hold, children } = props;
     const [answer, setAnswer] = useState<Answer<unknown> | null>(null);
     const [strokes, setStrokes] = useState(0);
     seen = props;
     return (
-      <div data-testid="compose" data-mode={mode} data-post={post.seq}>
+      <div data-testid="compose" data-post={post.seq}>
         {children}
         <input aria-label="Tag name" />
         <button type="button" onClick={() => { setStrokes((n) => n + 1); hold(ASK); }}>Scribble</button>
@@ -878,7 +878,6 @@ describe('a card that is played on the post (CardUi.Compose)', () => {
     await armTagger(user);
     await user.click(within(post(2)).getByRole('button', { name: 'Play Tagger on post 2' }));
     const compose = await within(post(2)).findByTestId('compose');
-    expect(compose).toHaveAttribute('data-mode', 'cast');
     expect(within(compose).getByText('x'.repeat(812))).toBeInTheDocument();
     expect(seen!.post.id).toBe(w.ids[1]);
     expect(screen.queryByRole('dialog')).toBeNull();
@@ -1194,17 +1193,12 @@ describe('a card that is played on the post (CardUi.Compose)', () => {
     await waitFor(() => expect(window.location.pathname).toBe(new URL(link.href).pathname));
   });
 
-  test('Set on one\'s own post mounts it as a set, and submit goes through setCard with the first draw', async () => {
+  test('an armed Compose card shows exactly one ghost on one\'s own post, named for the cast', async () => {
     const user = userEvent.setup();
-    const w = await onPost();
-    const set = vi.spyOn(w.fake, 'setCard');
+    await onPost();
     await armTagger(user);
-    expect(within(post(2)).queryByRole('button', { name: 'Set Tagger face down on post 2' })).toBeNull();
-    await user.click(within(post(3)).getByRole('button', { name: 'Set Tagger face down on post 3' }));
-    expect(await within(post(3)).findByTestId('compose')).toHaveAttribute('data-mode', 'set');
-    expect(screen.queryByRole('dialog')).toBeNull();
-    await user.click(screen.getByRole('button', { name: 'Tag it' }));
-    await waitFor(() => expect(set).toHaveBeenCalledWith('tagger', w.hooligan, w.ids[2], { color: '#ff2bd6' }, undefined, { strokes: 1 }));
-    await waitFor(() => expect(screen.queryByTestId('compose')).toBeNull());
+    expect(within(post(3)).getAllByRole('button', { name: /Tagger/ })).toHaveLength(1);
+    expect(within(post(3)).getByRole('button', { name: 'Play Tagger on post 3' })).toBeInTheDocument();
+    expect(within(post(2)).getAllByRole('button', { name: /Tagger/ })).toHaveLength(1);
   });
 });

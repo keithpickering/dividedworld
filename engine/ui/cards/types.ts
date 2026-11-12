@@ -309,8 +309,6 @@ export interface CardArt {
  */
 export interface ComposeProps {
   readonly post: Act;
-  /** Cast now, or set face down on the player's own post. */
-  readonly mode: 'cast' | 'set';
   /** The box of the post's words (`under`) as the slot measures it, in client px, with no layer's chrome in it; null before it is measured. A card whose drawing must match its effect's box (shares of the post body, which can be far taller than a one-line post's words) measures the post body itself (`under.closest('.kb-act-main')`) and takes this only as a fallback. */
   readonly box: { readonly w: number; readonly h: number } | null;
   /**

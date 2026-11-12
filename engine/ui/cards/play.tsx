@@ -89,7 +89,7 @@ export interface PlayControls {
   /** The play being made on a post itself, or null; the post's effect slot mounts the card's `Compose` for it. */
   readonly compose: Composing | null;
   /** Open a compose on a post (replacing one already open, after its ask). */
-  readonly openCompose: (card: string, target: PlayTarget, mode: 'cast' | 'set') => void;
+  readonly openCompose: (card: string, target: PlayTarget) => void;
   /** Land the compose's play, as PlayForm does: the answer, or the refusal, which leaves the compose open. */
   readonly submitCompose: (config: unknown, first: unknown) => Promise<Answer<unknown>>;
   /** A way out of the compose, asking first when the card holds work. */
@@ -105,7 +105,6 @@ export interface PlayControls {
 /** The one play being made on a post itself (`CardUi.Compose`). */
 export interface Composing {
   readonly card: string;
-  readonly mode: 'cast' | 'set';
   readonly target: PlayTarget;
 }
 
@@ -227,13 +226,13 @@ export function PlayProvider({ children }: { readonly children: ReactNode }) {
   /* A read that failed is said to a screen reader in the status the form's states use, until the next press. */
   useEffect(() => { if (readFailed) setSaid(PREPARED_FAILED); }, [readFailed, setSaid]);
 
-  const openCompose = useCallback((card: string, target: PlayTarget, mode: 'cast' | 'set') => {
+  const openCompose = useCallback((card: string, target: PlayTarget) => {
     const same = composeNow.current;
-    if (same && same.card === card && same.target.post?.id === target.post?.id && same.mode === mode) return;
+    if (same && same.card === card && same.target.post?.id === target.post?.id) return;
     setHandOpen(false);
     const open = () => {
       endCompose(false);
-      setComposeHeld({ card, target, mode, for: accountNow.current });
+      setComposeHeld({ card, target, for: accountNow.current });
       setSaid(`${nameOf(card)} is open on ${target.author}'s post #${target.post?.seq ?? ''}. Esc leaves it.`);
     };
     if (same) leave(open); else open();
@@ -242,7 +241,7 @@ export function PlayProvider({ children }: { readonly children: ReactNode }) {
   const holdCompose = useCallback((ask: string | null) => { askNow.current = ask; setAskHeld(ask); }, []);
   const dropCompose = useCallback((gone: Composing) => {
     const now = composeNow.current;
-    if (now && now.card === gone.card && now.mode === gone.mode && now.target.post?.id === gone.target.post?.id) endCompose(false);
+    if (now && now.card === gone.card && now.target.post?.id === gone.target.post?.id) endCompose(false);
   }, [endCompose]);
   const submitCompose = useCallback((config: unknown, first: unknown): Promise<Answer<unknown>> => {
     /* One play at a time: a press while one is out is the same press. */
@@ -251,14 +250,14 @@ export function PlayProvider({ children }: { readonly children: ReactNode }) {
     const p = playerNow.current;
     if (!c || !c.target.post) return Promise.resolve({ ok: false, error: 'there is nothing open to play' });
     const post = c.target.post;
-    const who = c.mode === 'set' ? p.actingCharacters.find((a) => a.id === post.character) ?? p.hudCharacter : p.hudCharacter;
+    const who = p.hudCharacter;
     if (!who) return Promise.resolve({ ok: false, error: 'choose a character to play as' });
     const owner = accountNow.current;
     const what = (config ?? {}) as Readonly<Record<string, unknown>>;
     const run = (async (): Promise<Answer<unknown>> => {
       let answer: Answer<Act>;
       try {
-        answer = c.mode === 'set' ? await api.setCard(c.card, who.id, post.id, what, undefined, first) : await api.playCard(c.card, who.id, post.id, what, '', undefined, undefined, first);
+        answer = await api.playCard(c.card, who.id, post.id, what, '', undefined, undefined, first);
       } catch {
         return { ok: false, error: 'no answer came back, so the play may or may not have gone through', uncertain: true };
       }
@@ -268,13 +267,12 @@ export function PlayProvider({ children }: { readonly children: ReactNode }) {
       try {
         await c.target.know([act.character]);
         c.target.plays.add([act]);
-        if (act.kind === 'set') c.target.plays.setFaces(await api.myFaceDown([act.id]).catch(() => ({})));
         await playerNow.current.refresh();
       } catch { /* the play has landed; the page catches up from its channel */ }
       if (accountNow.current !== owner) return answer;
       endCompose(true);
       setArmed(null);
-      setSaid(`${c.mode === 'set' ? 'Set' : 'Played'} ${nameOf(c.card)} ${c.mode === 'set' ? 'face down ' : ''}on ${c.target.author}'s post #${post.seq ?? ''}.`);
+      setSaid(`Played ${nameOf(c.card)} on ${c.target.author}'s post #${post.seq ?? ''}.`);
       return answer;
     })();
     sending.current = run;

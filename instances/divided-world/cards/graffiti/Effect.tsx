@@ -768,7 +768,7 @@ export function Effect({ plays, reader, surface, ink: registry, place, show, met
         )}
         {drawing && drawable && surface && plays[0] && hudCharacter && (
           <DrawMode
-            mode="cast" box={box} wall={acts} covered={surface.covered} most={surface.most} asks
+            box={box} wall={acts} covered={surface.covered} most={surface.most} asks
             dockHost={frameRef.current?.closest<HTMLElement>('.kb-act') ?? rootRef.current}
             submit={async (input) => {
               const answer = await surface.draw(plays[0]!.id, hudCharacter.id, input);

@@ -2,7 +2,7 @@
  * Graffiti's toolbar (docs/plans/2026-11-11-graffiti-design.md, sections 8, 9 and 11; plan Task 10): the glass's dock with its cyan seam, in
  * the owner's style D of the mockup (docs/research/2026-11-11-graffiti/01-tool-styles.html) with the design's changes. From the top: the meter
  * (the can's name, and the wall with this drawing, as a figure and over a thin skewed bar), two tabs, **Spray** (fourteen drawn cans, three
- * caps, Undo) and **Stencils** (six stencils, the cans, and nine spots), then Cancel and Tag it (Set it, face down), with the reason Tag it
+ * caps, Undo) and **Stencils** (six stencils, the cans, and nine spots), then Cancel and Tag it, with the reason Tag it
  * waits under it in plain words.
  *
  * It keeps nothing: DrawMode (Compose.tsx) holds the drawing and the choices and gives them here, so this is the view and every control
@@ -21,8 +21,6 @@ import { CAN_NAMES, CAP_NAMES, SPOT_NAMES, STENCIL_NAMES } from './words.ts';
 export type ToolbarTab = 'spray' | 'stencils';
 
 export interface ToolbarProps {
-  /** Cast now (Tag it), or set face down on the player's own post (Set it). */
-  readonly mode: 'cast' | 'set';
   readonly can: Can;
   readonly onCan: (can: Can) => void;
   readonly cap: Cap;
@@ -153,7 +151,6 @@ export function Toolbar(p: ToolbarProps) {
     return () => { watch?.disconnect(); root.removeAttribute('data-kb-graffiti-dock'); root.style.removeProperty('--kb-graffiti-dock-h'); };
   }, []);
 
-  const set = p.mode === 'set';
   const ready = p.hasDraft && !p.meter.over && !p.busy;
   const reason = p.busy ? null : !p.hasDraft ? (p.tab === 'stencils' ? 'Choose a stencil first' : 'Draw something first') : p.meter.over ? overWords(p.meter) : null;
   const reasonId = `${id}-reason`;
@@ -225,7 +222,7 @@ export function Toolbar(p: ToolbarProps) {
               type="button" className="kb-graffiti-btn kb-graffiti-go" aria-disabled={!ready} aria-busy={p.busy || undefined} aria-describedby={reason !== null ? reasonId : undefined}
               onClick={() => { if (ready) p.onSubmit(); }}
             >
-              <span>{set ? 'Set it' : 'Tag it'}</span>
+              <span>Tag it</span>
             </button>
           </div>
           {reason !== null && <p id={reasonId} className="kb-graffiti-reason">{reason}</p>}
