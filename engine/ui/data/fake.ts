@@ -719,12 +719,14 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const veilLive = (play: Id, v: { readonly endsAt: number }): boolean => v.endsAt > now() && !over(play);
   const liveVeils = (post: Id, kind: 'author' | 'totals') => [...veils].filter(([play, v]) => v.post === post && v.veil === kind && veilLive(play, v)).map(([, v]) => v);
   /**
-   * The character an Act is shown under (acts_public, 0400): the stand-in while an author veil is live on the post, on every Act its own author made on it too (`deep`); `shown_author`
-   * (the thread list, the search) reads the post itself alone.
+   * The character an Act is shown under (acts_public, 0400): the stand-in while an author veil is live on the post, and on what its own author did to it that is no content of its own (`deep`: an edit, a set,
+   * a card, a take-back, a spring), never on the author's own post or spin that targets it (a quote of it, a spin from it: a veil cast on one of those hides that one); `shown_author` (the thread list, the
+   * search) reads the post itself alone.
    */
   function shownAuthor(a: ActRec, deep = true): Id | null {
     if (a.character === null || veils.size === 0) return a.character;
-    const veiled = liveVeils(a.id, 'author').length > 0 || (deep && a.target !== null && liveVeils(a.target, 'author').some((v) => v.author === a.character));
+    const veiled = liveVeils(a.id, 'author').length > 0
+      || (deep && a.kind !== 'post' && a.kind !== 'spin' && a.target !== null && liveVeils(a.target, 'author').some((v) => v.author === a.character));
     /* A draw or a wash on a wall (0317): its target is the card's play and the play's the post, so the wash, which is the post's own character's alone, names the author too (acts_public's fifth select). */
     const wall = deep && (a.kind === 'draw' || a.kind === 'wash') && a.target !== null ? acts.get(a.target) : undefined;
     const walled = wall !== undefined && wall.kind === 'card' && wall.target !== null && liveVeils(wall.target, 'author').some((v) => v.author === a.character);
@@ -881,9 +883,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       group: groupOf(c),
     });
   }
-  /** The group a character is in: the highest rung it holds (a conferred group is the moves' business, not this fake's). */
+  /** The group a character is in: the highest rung it holds (a conferred group is the moves' business, not this fake's), from the posts as the projection shows them, as the count a player reads is (group_now, 0400). */
   function groupOf(c: CharRec): string {
-    const posts = [...acts.values()].filter((a) => a.kind === 'post' && a.character === c.id).length;
+    const posts = [...acts.values()].filter((a) => a.kind === 'post' && shownAuthor(a) === c.id).length;
     return earnedGroup(instance.groups.ladder, { posts, seasons: 0, staff: c.staff !== undefined && c.staff !== null });
   }
 

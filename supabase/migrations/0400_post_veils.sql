@@ -1,7 +1,8 @@
 -- The author's veil (docs/plans/2026-11-11-card-notes-part-3-plan.md, Task 2; design docs/plans/2026-11-11-card-notes-design.md, section 2, "Whodunnit?").
 --
 -- A cast card whose kind has `veil = 'author'` withholds the post's author from every read while it is up, and shows the one stand-in character in its place, for every reader alike: the author included. What is veiled is
--- the post and every Act its own author made on it (its edits, a set, a take-back, a use card, its spring, a spin from it); the author's replies elsewhere are not, since who wrote what, and when, is the game's own clue.
+-- the post and what its own author did to it that is no content of its own (its edits, a set, a take-back, a use card, its spring); the author's replies are not (a quote of it, a spin from it, a reply elsewhere), since who wrote what, and
+-- when, is the game's own clue: a post or a spin is veiled only by a veil cast on it directly.
 -- One mechanism: `post_veils`, a row per veil play, written with the play and never edited, and `acts_public`, which answers the stand-in for the veiled rows. The sections:
 --
 --     1. the catalog       card_kinds.veil and card_kinds.adds_reaction (Task 5 reads the second), the two checks that pair them with a cast card on a post, and card_kinds_problem in the engine's words.
@@ -16,8 +17,9 @@
 --     5. landing           land_refusal (what a card's landing refuses on a post, read for every back a quote meets, whatever the card) and land_rows (what a landed post play writes beside its Act), called by place_cast
 --                          for a cast and by lay_sprung for a Move landing on a quote. spring_facts reads land_refusal, spring_traps lands a Move only when it has nothing to say. TASK 5 EXTENDS THESE TWO in a later
 --                          migration (the reaction card's configuration and its row); the places are marked `Task 5` below.
---     5b. the counts       character_post_counts is a view that counts a veiled post (and its author's spins and cards on it) for the stand-in and not for its author while the veil is live, for every reader; the stored
---                          table is character_post_counts_base, written by the trigger as before and read by no API role. group_now (the groups' posts rung, The System's own scoring) reads the stored table; profile_page, record_page and my_characters_page are made again over the view.
+--     5b. the counts       character_post_counts is a view that counts a veiled post (and its author's cards on it, nothing else of kind post or spin) for the stand-in and not for its author while the veil is live, for every reader; the stored
+--                          table is character_post_counts_base, written by the trigger as before and read by no API role. group_now (the groups' posts rung, display only) reads the same figure (character_counts_shown), so a group and a count agree;
+--                          profile_page, record_page and my_characters_page are made again over the view.
 --     6. the reads         thread_open, my_cards_ended (now the caller's own rows, as my_reactions is), play_moment, card_target_reach, start_visit, open_report, thread_page (`veiled`),
 --                          my_veiled_posts (the author's own rows), my_group_moves (a security-invoker view that read `acts.character`, which the revoke broke), presence_listed, pool_named, pool_signals,
 --                          my_draws (0317; the washer of a drawing on a veiled post, who is its author, shown as the stand-in) and system_digest (the staff lists that would take the stand-in for a persona).
@@ -74,7 +76,9 @@ language sql stable set search_path = public, pg_temp as $$
     select e ->> 'key' as key, e ->> 'rarity' as rarity, coalesce(e ->> 'play', 'cast') as play, nullif(e -> 'trap', 'null') as trap,
       e #>> '{trap,trigger,on}' as trigger_on, e -> 'gimmick' as gimmick, e,
       case when jsonb_typeof(e -> 'reaches') = 'array' then exists (select 1 from jsonb_array_elements_text(e -> 'reaches') r where r <> 'post') else false end as beyond,
-      coalesce(e -> 'reaches' = '["character"]'::jsonb, false) as character_alone
+      coalesce(e -> 'reaches' = '["character"]'::jsonb, false) as character_alone,
+      -- A card has a veil when the key is there and is not a JSON null: seed_instance reads a null through nullif as no veil, and this agrees.
+      coalesce(e -> 'veil', 'null'::jsonb) <> 'null'::jsonb as has_veil
     from jsonb_array_elements(coalesce(cards, '[]')) e
   ), eco as (
     -- The economy and the wallet's cap as the settings hold them now: a drive's gifts and overhead are economy numbers, read when the seed is checked and again at each gift.
@@ -154,15 +158,15 @@ language sql stable set search_path = public, pg_temp as $$
       case when jsonb_typeof(c.e -> 'skim') = 'object' and coalesce((c.e ->> 'writes')::boolean, false) then format('card "%s" has a skim and writes; a card with a skim does not write', c.key) end,
       -- Part 3 of the card notes (instance.ts: veilProblems), each in the engine's words. A veil or a reaction is a cast card on a post alone; a veil is author or totals and ends at its time (lasts); a
       -- reaction neither writes nor is seeded; a card has one of the two. `addsReaction` is the flag the seed sends (the engine's `reaction`), a boolean.
-      case when c.e ? 'veil' and c.play <> 'cast' then format('card "%s" has a veil, and only a cast card does', c.key) end,
-      case when c.e ? 'veil' and c.e -> 'reaches' is not null and c.e -> 'reaches' is distinct from '["post"]'::jsonb then format('card "%s" has a veil, and a card with a veil reaches a post alone', c.key) end,
+      case when c.has_veil and c.play <> 'cast' then format('card "%s" has a veil, and only a cast card does', c.key) end,
+      case when c.has_veil and c.e -> 'reaches' is not null and c.e -> 'reaches' is distinct from '["post"]'::jsonb then format('card "%s" has a veil, and a card with a veil reaches a post alone', c.key) end,
       case when c.e -> 'addsReaction' = 'true'::jsonb and c.play <> 'cast' then format('card "%s" has a reaction, and only a cast card does', c.key) end,
       case when c.e -> 'addsReaction' = 'true'::jsonb and c.e -> 'reaches' is not null and c.e -> 'reaches' is distinct from '["post"]'::jsonb then format('card "%s" has a reaction, and a card with a reaction reaches a post alone', c.key) end,
-      case when c.e ? 'veil' and coalesce(c.e ->> 'veil' not in ('author', 'totals'), true) then format('card "%s" has a veil of %s; a veil is author or totals', c.key, c.e -> 'veil') end,
-      case when c.e ? 'veil' and not c.e ? 'lasts' then format('card "%s" has a veil with no time up (lasts); a veil ends at its time', c.key) end,
+      case when c.has_veil and coalesce(c.e ->> 'veil' not in ('author', 'totals'), true) then format('card "%s" has a veil of %s; a veil is author or totals', c.key, c.e -> 'veil') end,
+      case when c.has_veil and not c.e ? 'lasts' then format('card "%s" has a veil with no time up (lasts); a veil ends at its time', c.key) end,
       case when c.e -> 'addsReaction' = 'true'::jsonb and coalesce((c.e ->> 'writes')::boolean, false) then format('card "%s" has a reaction and writes; a card with a reaction does not write', c.key) end,
       case when c.e -> 'addsReaction' = 'true'::jsonb and coalesce((c.e ->> 'seeded')::boolean, false) then format('card "%s" has a reaction and is seeded; a card with a reaction is not', c.key) end,
-      case when c.e ? 'veil' and c.e -> 'addsReaction' = 'true'::jsonb then format('card "%s" has both a veil and a reaction; a card has one of the two', c.key) end,
+      case when c.has_veil and c.e -> 'addsReaction' = 'true'::jsonb then format('card "%s" has both a veil and a reaction; a card has one of the two', c.key) end,
       -- Scores as: true or left out, on a cast card that reaches a character alone.
       case when c.e ? 'scoresAs' and c.e -> 'scoresAs' is distinct from 'true'::jsonb then format('card "%s" has scoresAs %s; scoresAs is true or left out', c.key, c.e -> 'scoresAs') end,
       case when c.e -> 'scoresAs' = 'true'::jsonb and c.play <> 'cast' then format('card "%s" scores as a class, and only a cast card does', c.key) end,
@@ -611,9 +615,14 @@ $$;
 -- ===================================================================================== 4. acts_public ====
 -- acts_base is acts_public as 0156_back_ends wrote it, the true character: no API role reads it. acts_public is then five selects over `acts`, its columns, names and order as they were (so a function whose
 -- `begin atomic` body holds it is not written again for it):
---   1. every row that is not veiled: a live author veil is not on the row itself and not on the Act it targets with the veil's own author behind it (the post and every Act its author made on it).
+--   1. every row that is not veiled: no live author veil is on the row itself, and the row is not one of the Acts the veil derives (below).
 --   2. 3. 4. the veiled rows, each with the stand-in as `character`: the post itself (by its key), and the Acts its author made on it (a target in the live veils' posts, and that post's author behind it), any but an edit and
 --      an edit apart so that each has the index of its own (acts_target, acts_edits).
+-- WHAT A VEIL ON A POST COVERS. The post itself, and what its author did to it that is no content of its own: an edit, a set, a take-back, a use card, its spring (the derived Acts, which every read of an Act agrees on). It never
+-- covers an Act of kind `post` or `spin` that targets the post (the author's own quote of it, a spin from it): those are posts and threads of their own, listed as such by thread_open's first and last poster, indexed by
+-- post_search and counted by character_post_counts as posts and spins, and each of those reads probes the veil on the Act itself alone. They are the author's own replies elsewhere in kind (who quoted what is the game's
+-- clue, and anyone may quote the post, so a quote proves nothing), and are veiled by a veil cast on them directly and by nothing else. So an Act is in exactly one of the selects, whatever veils a post and its quotes hold: the
+-- post's own (a veil on `a.id`, which only a post can carry) and the derived (`kind` not a post or a spin) never meet, and the checks are `exists`, so two veils on one post do not repeat it.
 --   5. the veiled rows of a wall (0317): a draw or a wash on a surface play that is on a veiled post, by the post's own author. A wash is the post's own character's alone, so it names the author wherever it is read (surface_acts, a
 --      broadcast, my_draws' cut rows); a draw is any character's, and the author's own is hidden with the rest of what the author made on the post. The play is the Act the draw targets, and its target the post: found through the
 --      cards on the live veils' posts (an index read of acts_target), so a read pays for it only while an author veil is up.
@@ -656,7 +665,8 @@ create or replace view acts_public as
            case when a.kind = 'card' then exists (select 1 from card_write_refunds r where r.play = a.id) end as untaken,
            case when a.kind = 'set' then (select f.ends_at from face_down f where f.play = a.id) end as ends_at,
            true as g,
-           not exists (select 1 from post_veils_live v where v.veil = 'author' and v.post = a.id) and not exists (select 1 from post_veils_live v where v.veil = 'author' and v.post = a.target_act_id and v.author = a.character)
+           not exists (select 1 from post_veils_live v where v.veil = 'author' and v.post = a.id)
+             and not (a.kind not in ('post', 'spin') and exists (select 1 from post_veils_live v where v.veil = 'author' and v.post = a.target_act_id and v.author = a.character))
              and not (a.kind in ('draw', 'wash') and a.target_act_id = any (array(select c.id from acts c where c.kind = 'card' and c.target_act_id = any (array(select v.post from post_veils_live v where v.veil = 'author'))))
                       and exists (select 1 from acts c join post_veils_live v on v.veil = 'author' and v.post = c.target_act_id and v.author = a.character where c.id = a.target_act_id)) as ok
     from acts a
@@ -680,7 +690,7 @@ create or replace view acts_public as
            case when a.kind = 'card' then exists (select 1 from card_write_refunds r where r.play = a.id) end as untaken,
            case when a.kind = 'set' then (select f.ends_at from face_down f where f.play = a.id) end as ends_at,
            exists (select 1 from post_veils_live v where v.veil = 'author') as g,
-           a.kind <> 'edit' and a.target_act_id = any (array(select v.post from post_veils_live v where v.veil = 'author')) and exists (select 1 from post_veils_live v where v.veil = 'author' and v.post = a.target_act_id and v.author = a.character) as ok
+           a.kind not in ('post', 'spin', 'edit') and a.target_act_id = any (array(select v.post from post_veils_live v where v.veil = 'author')) and exists (select 1 from post_veils_live v where v.veil = 'author' and v.post = a.target_act_id and v.author = a.character) as ok
     from acts a
     union all
     select a.id, (select k.id from characters k where k.staff_kind = 'anonymous') as "character", a.kind, a.thread, a.target_act_id, a.seq, a.created_at, a.payload,
@@ -775,10 +785,11 @@ begin
 end $$;
 revoke execute on function land_refusal(card_kinds, uuid, jsonb), land_rows(uuid, card_kinds, uuid, jsonb, uuid) from public, anon, authenticated, service_role;
 
--- spring_facts says what the landing refuses (`land_why`), beside everything it already says.
+-- spring_facts says what the landing refuses (`land_why`) and what the card withholds (`kind_veil`, read with the card's own row, so no read is added), beside everything it already says.
 alter type spring_facts add attribute land_why text;
+alter type spring_facts add attribute kind_veil text;
 
--- spring_facts (0151_card_payouts), reading what the landing would refuse (`land_why`, from land_refusal) for every back whatever it holds. Everything else as 0151 wrote it.
+-- spring_facts (0151_card_payouts), reading what the landing would refuse (`land_why`, from land_refusal) for every back whatever it holds, and the card's `kind_veil` from the row it already reads. Everything else as 0151 wrote it.
 
 create or replace function spring_facts(fd face_down, trigger text, by_act uuid, incoming_card text) returns spring_facts
 language plpgsql security definer set search_path = public, pg_temp as $$
@@ -805,7 +816,7 @@ begin
   -- 2. The back's card kind.
   select * into k from card_kinds x where x.key = fd.card;
   f.kind_play := k.play; f.kind_trap := k.trap; f.kind_stack := k.stack; f.kind_seeded := k.seeded;
-  f.kind_skim := k.skim is not null; f.kind_scores := k.scores_as;
+  f.kind_skim := k.skim is not null; f.kind_scores := k.scores_as; f.kind_veil := k.veil;
   f.reach := coalesce(k.reaches[1], 'post');
   -- 3. The Act that met the back: its kind, character, thread, board and words, and the thread's first post and the announcements thread a board card would be written in. For a cast
   -- or a visit by_act is not a post, or not yet written, and these find what they find.
@@ -865,7 +876,7 @@ begin
 end $$;
 
 -- spring_traps (0317_surfaces): a Move on a post lands only when land_refusal has nothing to say of the post it would land on, as it lands only when its stack has room and no ward turns it away.
--- Everything else, the lock order included, as 0317 wrote it.
+-- A landed author veil writes no `for` (it would name the author of the post the veil hides). Everything else, the lock order included, as 0317 wrote it.
 
 create or replace function spring_traps(trigger text, post uuid, by_act uuid, incoming_card text default null, held uuid[] default null, actor uuid default null) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
@@ -922,7 +933,9 @@ begin
     'drawn', case when back_trigger = 'quote' then surface_draft_fits(fd.play) end,
     'quadrant', case when did = 'rode' then fd.config ->> 'quadrant' end,
     'when', held_when,
-    'for', case when trigger = 'quote' and fd.who is not null and not fd.who_except then f.by_character::text end))) returning id into sprung;
+    -- `for` is the quoter where the Who was Only these: a clue the setter chose, public as the quote's author. A landed author veil hides that author, so its spring never names the quoter (the screens read the quote's
+    -- own character, which is the stand-in while the veil is up, and `for` only where the quote could not be read).
+    'for', case when trigger = 'quote' and fd.who is not null and not fd.who_except and f.kind_veil is distinct from 'author' then f.by_character::text end))) returning id into sprung;
   if f.setter_staff then perform set_config('kayfabb.staff_writer', flag, true); end if;
   perform write_alert(f.setter_character, 'trapSprang', null, sprung, coalesce(actor, auth.uid()));
   if back_trigger = 'quote' then
@@ -1161,6 +1174,10 @@ begin
       select c.name into target_name from characters c where c.id = target;
       -- The stand-in is shown in place of an author, so a card on it would be a card on whoever it stands for.
       if target is not distinct from stand_in() then raise exception 'no card is played on a stand-in' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+      -- The post it is played from is held `for share` before it is read: a veil cast on that post (which takes the row `for no key update`) checks for a card played from it after taking it, so the card and the veil
+      -- are laid one at a time, and whichever is second reads what the first left (a veiled post is not its character's, so the card is refused; a post a card was played from takes no veil). The character's row is held
+      -- already, and a veil cast holds the post's row and takes no character's row in a mode that conflicts with this one, so the order closes no cycle.
+      perform 1 from acts a where a.id = from_post and a.kind = 'post' for share;
       select a.thread into in_thread from acts_public a where a.id = from_post and a.kind = 'post' and a.character = target;
       if in_thread is null then raise exception 'a card on a character is played from one of its posts' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
       on_post := from_post;
@@ -1273,45 +1290,50 @@ revoke execute on function place_cast(uuid, text, uuid, jsonb, text, text, uuid,
 -- ===================================================================================== 5b. the counts ====
 -- character_post_counts (0030) is publicly readable, and profile_page and record_page return it as `counts` and thread_page as `posts`: it counted a veiled post for its author, so a profile that lists one post fewer than its
 -- count says proved the author has a hidden post. The count a player reads is now the projection, as acts_public is, for every reader alike: the stored table is renamed character_post_counts_base (the trigger and the lock still
--- write and take it, as before, and no API role reads it), and character_post_counts is a view over it that, while an author veil is live, takes the post and the spins and cards its author made on it from the author and gives
--- them to the stand-in. Nothing stored moves when a veil lands or ends (no job runs then): the live veils are read with the count, a few rows by post_veils_ends, and the author's count is whole again by itself when the veil's
--- time passes or an admin ends its play. A count is the Acts acts_count_character counts (a post, a spin, a card), and the Acts the projection shows under the stand-in are the same ones: a post, and the spins and cards its
--- author made with it as their target.
+-- write and take it, as before, and no API role reads it), and the count is a view over it that, while an author veil is live, takes the post, and the cards its author made on it, from the author and gives them to the stand-in.
+-- Nothing stored moves when a veil lands or ends (no job runs then): the live veils are read with the count, a few rows by post_veils_ends, and the author's count is whole again by itself when the veil's time passes or an
+-- admin ends its play.
+-- WHAT IS MOVED IS EXACTLY WHAT acts_public SHOWS UNDER THE STAND-IN, because a profile lists what its count says, and a count that moved a row the list still shows (or the other way round) proves the author has a hidden
+-- post. The count is of the Acts acts_count_character counts (a post, a spin, a card), and the projection shows under the stand-in the post itself (a post) and the cards its author made on it (a card): never a post or a
+-- spin of the author's own that targets it (a quote of it, a spin from it), which acts_public leaves with the author and which moves with a veil cast on it directly (as a post of its own).
 alter table character_post_counts rename to character_post_counts_base;
 drop policy read_public on character_post_counts_base;
 revoke all on character_post_counts_base from public, anon, authenticated;
 
--- What each live author veil takes: the veiled post, and the spins and cards its author made on it (one row per post, whatever number of veils it holds). The stand-in is found by its index, as acts_public finds it.
+-- What each live author veil takes: the veiled post, and the cards its author made on it (one row per post, whatever number of veils it holds). The stand-in is found by its index, as acts_public finds it.
 create view character_veiled_counts as
   select v.author, 1 as posts,
-         (select count(*) from acts k where k.kind = 'spin' and k.target_act_id = v.post and k.character = v.author)::integer as spins,
          (select count(*) from acts k where k.kind = 'card' and k.target_act_id = v.post and k.character = v.author)::integer as cards
   from (select distinct l.post, l.author from post_veils_live l where l.veil = 'author') v;
 -- And the change to each character's count: minus for the author, plus for the stand-in.
 create view character_count_moves as
-  select s.character, sum(s.posts)::integer as posts, sum(s.spins)::integer as spins, sum(s.cards)::integer as cards
+  select s.character, sum(s.posts)::integer as posts, sum(s.cards)::integer as cards
   from (
-    select v.author as character, -v.posts as posts, -v.spins as spins, -v.cards as cards from character_veiled_counts v
+    select v.author as character, -v.posts as posts, -v.cards as cards from character_veiled_counts v
     union all
-    select (select k.id from characters k where k.staff_kind = 'anonymous') as character, v.posts, v.spins, v.cards from character_veiled_counts v
+    select (select k.id from characters k where k.staff_kind = 'anonymous') as character, v.posts, v.cards from character_veiled_counts v
   ) s
   group by s.character;
--- The count a player reads: the stored row (found by its key) with the change added, and the stand-in's change where the stand-in has no stored row (it never acts). Readable as the character is, as 0031's policy said: only
--- once it is in characters_public.
-create view character_post_counts as
+-- The count as the projection shows it: the stored row (found by its key) with the change added, and the stand-in's change where the stand-in has no stored row (it never acts). Read by character_post_counts, which is what a
+-- player reads, and by group_now, which is what the group a player reads is made from, so a group and a count are one figure at every moment.
+create view character_counts_shown as
   select u.character, u.posts, u.spins, u.cards
   from (
-    select b.character, b.posts + coalesce(m.posts, 0) as posts, b.spins + coalesce(m.spins, 0) as spins, b.cards + coalesce(m.cards, 0) as cards
+    select b.character, b.posts + coalesce(m.posts, 0) as posts, b.spins as spins, b.cards + coalesce(m.cards, 0) as cards
     from character_post_counts_base b
     left join character_count_moves m on m.character = b.character
     union all
-    select m.character, m.posts, m.spins, m.cards
+    select m.character, m.posts, 0, m.cards
     from character_count_moves m
     where m.character = (select k.id from characters k where k.staff_kind = 'anonymous')
       and not exists (select 1 from character_post_counts_base b where b.character = m.character)
-  ) u
+  ) u;
+-- What a player reads: readable as the character is, as 0031's policy said: only once it is in characters_public. (group_now reads the view above, which has no such condition: characters_public calls group_now.)
+create view character_post_counts as
+  select u.character, u.posts, u.spins, u.cards
+  from character_counts_shown u
   where exists (select 1 from characters_public p where p.id = u.character);
-revoke all on character_veiled_counts, character_count_moves, character_post_counts from public, anon, authenticated, service_role;
+revoke all on character_veiled_counts, character_count_moves, character_counts_shown, character_post_counts from public, anon, authenticated, service_role;
 grant select on character_post_counts to authenticated, service_role;
 
 -- The writers keep the stored count true, so they name the stored table: acts_count_character and backfill_character_post_counts (0030), and lock_for_quote (0148), which makes and locks the rows of a quote's setters and
@@ -1372,8 +1394,11 @@ begin
 end $$;
 revoke execute on function lock_for_quote(uuid, uuid, uuid) from public, anon, authenticated, service_role;
 
--- group_now (0138_group_reads), reading the stored counts: a character's group is The System's own scoring, so a veil, which hides a post from every player's read of a count for three days, never moves
--- anyone's group (a character at a rung's threshold keeps the rung while one of its posts is veiled). The posts rung is the one place the groups read a count. Everything else as 0138 wrote it.
+-- group_now (0138_group_reads), reading the count as the projection shows it (character_counts_shown, the figure character_post_counts is made of), so the group every read shows (characters_public."group", the thread page's
+-- people, the presence box) and the count a player reads agree at every moment: a character whose count sits exactly on a rung's threshold drops a rung while one of its posts is veiled and returns at the veil's end, the
+-- same clue the profile's list already gives (a group that held while the count above it dropped would be a mismatch anyone could read, computed from the post's veil). A group is display only: it is read, never written (nothing
+-- stored moves with it; no Act, alert or ledger row is written for it; it pays or costs nothing and gates nothing), so following the count changes what is shown and nothing else. The posts rung is the one place the groups
+-- read a count. Everything else as 0138 wrote it.
 
 create or replace function group_now(in_character uuid) returns text
 language plpgsql stable security definer set search_path = public, pg_temp as $$
@@ -1394,7 +1419,7 @@ begin
   for r in select k.key, k.condition, k.at_least from group_kinds k where k.source = 'ladder' order by k.rung desc loop
     holds := case r.condition
       when 'default' then true
-      when 'posts' then coalesce((select n.posts from character_post_counts_base n where n.character = in_character), 0) >= r.at_least
+      when 'posts' then coalesce((select n.posts from character_counts_shown n where n.character = in_character), 0) >= r.at_least
       when 'seasons' then (select count(*) from season_results x where x.character = in_character) >= r.at_least
       when 'staff' then exists (
         select 1 from characters c left join staff_office_now o on o.staff = c.staff
@@ -1733,6 +1758,10 @@ revoke execute on function card_target_reach(text, uuid, uuid) from public, anon
 grant execute on function card_target_reach(text, uuid, uuid) to authenticated, service_role;
 
 -- start_visit (0131_meeting_groups), returning null for a post whose author is hidden, as it does for a staff post, so no rule, patrol, tail, report or backfire opens a visit there. Everything else as 0131 wrote it.
+-- The post's row is taken `for share` before that check (and before the advisory lock and the open row below it: the post's row comes first, as place_cast takes it first), so a visit opening and a veil cast on the post are laid
+-- one at a time: place_cast takes the same row `for no key update`, which conflicts with a share lock, and checks the visits after it, as this checks the veils. Whichever is second waits for the first's commit and then reads
+-- what it left (a veiled post: null; a visited post: the cast's refusal), so a post never holds both. Nothing that holds the visit's locks asks for a post's row afterwards, and a caster waiting here holds nothing a visit
+-- wants (place_cast at post reach takes the post's row, then the back's face-down row, and no visit lock), so the order cannot close a cycle.
 
 create or replace function start_visit(post_act uuid, staff text, charge jsonb) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
@@ -1751,7 +1780,7 @@ declare
   patrol bigint;
 begin
   select a.id, a.thread, t.board, a.character as author, c.staff is not null as by_staff into p
-  from acts a join threads t on t.id = a.thread join characters c on c.id = a.character where a.id = post_act and a.kind in ('post', 'spin');
+  from acts a join threads t on t.id = a.thread join characters c on c.id = a.character where a.id = post_act and a.kind in ('post', 'spin') for share of a;
   if not found then raise exception 'there is no such post to visit' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
   if p.by_staff then return null; end if;
   -- No Mod Bot visits a post while its author is hidden: a visit names the author in its record and its filing, which is a read carrying the author. The same as a staff post: null, nothing written.

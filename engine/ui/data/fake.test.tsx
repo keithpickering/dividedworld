@@ -4415,6 +4415,50 @@ describe('post veils, blind totals and a post-local reaction (card notes, Part 3
     expect(shown!.counts.posts).toBe(1);
   });
 
+  test('the author\'s own quote of a veiled post and a spin from it stay theirs in every read, with the counts agreeing with the lists; a veil on the quote itself hides it', async () => {
+    const w = veilWorld();
+    const quote = w.fake.seed.post(w.thread, w.boFace, 'Quoting my own post', { quote: w.post });
+    w.fake.signInAs(w.bo);
+    const spun = must(await w.fake.spin(w.post, w.boFace, 'Spun', 'From my own post'));
+    w.fake.signInAs(w.ana);
+    const stand = await veil(w);
+    /* Only the post is veiled (and what its author did to it that is no post or spin of its own): the quote and the spin are Bo's, in the page, by id and in Bo's list. */
+    expect((await w.fake.act(w.post))!.character).toBe(stand);
+    expect((await w.fake.act(quote))!.character).toBe(w.boFace);
+    expect((await w.fake.act(spun.act.id))!.character).toBe(w.boFace);
+    expect((await pageActs(w, w.cy)).acts.find((a) => a.id === quote)!.character).toBe(w.boFace);
+    const mine = await w.fake.profilePage(w.boFace);
+    expect(mine!.acts.map((a) => a.id).sort()).toEqual([quote, spun.act.id].sort());
+    expect(mine!.counts).toEqual({ posts: 1, spins: 1, cards: 0 });
+    /* A veil cast on the quote itself hides it, once, and the counts move with the list. */
+    w.fake.signInAs(w.ana);
+    must(await w.fake.playCard('whodunnit', w.anaFace, quote, {}, ''));
+    expect((await w.fake.act(quote))!.character).toBe(stand);
+    expect((await w.fake.history(quote)).map((a) => a.character)).toEqual([stand]);
+    const hidden = await w.fake.profilePage(w.boFace);
+    expect(hidden!.acts.map((a) => a.id)).toEqual([spun.act.id]);
+    expect(hidden!.counts).toEqual({ posts: 0, spins: 1, cards: 0 });
+  });
+
+  test('a character at a rung\'s threshold shows the rung below while one of its posts is veiled, as its count does, and both return at the end', async () => {
+    const ladder = [
+      { key: 'low', name: 'Low', color: '#101010', when: { kind: 'default' as const } },
+      { key: 'high', name: 'High', color: '#202020', when: { kind: 'posts' as const, atLeast: 2 } },
+      { key: 'staff', name: 'Staff', color: '#303030', when: { kind: 'staff' as const } },
+    ];
+    const w = veilWorld({ ...veils, groups: { ladder, conferred: [] } });
+    w.fake.seed.post(w.thread, w.boFace, 'A second post of Bo\'s');
+    const group = async () => (await w.fake.characters([w.boFace]))[0]!.group;
+    expect(await group()).toBe('high');
+    expect((await w.fake.characterCounts(w.boFace)).posts).toBe(2);
+    await veil(w);
+    expect((await w.fake.characterCounts(w.boFace)).posts).toBe(1);
+    expect(await group()).toBe('low');
+    w.fake.clock.advance(3 * DAY + MINUTE);
+    expect((await w.fake.characterCounts(w.boFace)).posts).toBe(2);
+    expect(await group()).toBe('high');
+  });
+
   test('a search by the author does not find a veiled post, a search by the stand-in does, and a hit names the stand-in', async () => {
     const w = veilWorld();
     const query = (author: string | null) => ({ q: 'First', author, board: null, fromAt: null, toAt: null, titlesOnly: false, sort: null, perPage: null });

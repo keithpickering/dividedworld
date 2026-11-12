@@ -76,7 +76,7 @@ select 'relation', n, m, w from (values
   ('my_draws', 'swept', 'the caller''s own drawings and the washes that cut them: the washer of a drawing on a veiled post is its author, so the row shows the stand-in for it (shown_author)'),
   ('my_walls_drawn_on', 'no author', 'the walls on the caller''s own posts, read by their author: the post''s character is the caller''s own, and the rows name who drew or washed, public Acts'),
   ('surfaces', 'no author', 'a wall''s cover, the ids of its live Acts and its limit: no character'),
-  ('character_post_counts', 'swept', 'a view over the stored counts (character_post_counts_base, granted to no one) that counts a veiled post, and the spins and cards its author made on it, for the stand-in and not for its author while the veil is live: A''s count equals what the profile can list, the stand-in''s includes P, and A''s is whole again at the end'),
+  ('character_post_counts', 'swept', 'a view over the stored counts (character_post_counts_base, granted to no one) that counts a veiled post, and the cards its author made on it (never a post or a spin of the author''s own that targets it, which acts_public leaves with them), for the stand-in and not for its author while the veil is live: A''s count equals what the profile can list, the stand-in''s includes P, and A''s is whole again at the end'),
   ('character_profiles', 'no author', 'a character''s public profile'),
   ('characters', 'no author', 'the caller''s own characters (row security)'),
   ('characters_public', 'no author', 'a debuted character''s public name and office; the stand-in is one of them'),
@@ -198,7 +198,7 @@ select 'function', n, m, w from (values
   ('fold_text', 'no author', 'a pure function of its argument'),
   ('follow_thread', 'no author', 'a write: the caller''s own follow'),
   ('following_thread', 'no author', 'whether the caller follows a thread'),
-  ('group_now', 'no author', 'a character''s group: a public fact of the character'),
+  ('group_now', 'no author', 'a character''s group: a public fact of the character, made from the same projected count as character_post_counts (character_counts_shown), so it follows the count a player reads and never the true one'),
   ('here', 'no author', 'the presence poll: answers presence_box (swept) after writing the caller''s own presence'),
   ('hold_move', 'no author', 'an admin''s write'),
   ('index_page', 'swept', 'the index: each board''s latest thread (no poster is read today; its sweep can only show absence)'),
@@ -383,7 +383,7 @@ declare
   general uuid := (select id from boards where slug = 'general');
   t uuid := tests.thread('Sw sweep thread'); t3 uuid := tests.thread('Sw elsewhere');
   stand uuid;
-  p uuid; p2 uuid; p4 uuid; wall uuid; wash uuid; edit uuid; used uuid; quoted uuid; ray_card uuid; vplay uuid; spun jsonb; on_a uuid; on_p4 uuid; counts0 jsonb;
+  p uuid; p2 uuid; p4 uuid; qa uuid; wall uuid; wash uuid; edit uuid; used uuid; quoted uuid; ray_card uuid; vplay uuid; spun jsonb; on_a uuid; on_p4 uuid; counts0 jsonb;
   veiled uuid[];
   probe record; res text; leaks boolean; found text[] := '{}'; missed text[] := '{}'; phase text;
 begin
@@ -404,6 +404,8 @@ begin
   p2 := tests.post(a, t3, 'A post of A''s elsewhere.');
   p2 := tests.post(a, t3, 'A post of A''s elsewhere.');
   p4 := tests.post(a, t3, 'A post a card is played from.');
+  -- A's own quote of P, in the other thread: a post of its own, so a veil on P does not take it (who quoted what is the game's clue, and anyone may quote P); it is A's in every read, and counted as A's.
+  qa := tests.act(a, 'post', t3, jsonb_build_object('body', 'A quote of her own post.'), p);
   perform tests.post(r, t3, 'Ray has the last word there.');
   perform tests.post(r, t, 'Ray replies in the thread.');
   perform tests.become_service();
@@ -432,7 +434,7 @@ begin
   perform set_config('sweep.a', a::text, true); perform set_config('sweep.stand', stand::text, true); perform set_config('sweep.t', t::text, true);
   perform set_config('sweep.p', p::text, true); perform set_config('sweep.used', used::text, true); perform set_config('sweep.general', general::text, true);
 
-  -- The probes, as R reads them. kind: `id` leaks if A's id or name is in the answer; `absent` if any veiled Act's id is; `present` if the stand-in's answer lacks P; `standname` if the stand-in is named.
+  -- The probes, as R reads them. kind: `id` leaks if A's id or name is in the answer; `absent` if any veiled Act's id is; `absent_row` if one is a row of the answer (an object with that id); `present` if the stand-in's answer lacks P; `standname` if the stand-in is named.
   -- fires: whether the detector can go red on the unveiled fixture. pending: still leaks after the cast, and is another task's to close.
   create temp table probes (name text primary key, kind text not null, stmt text not null, fires boolean not null default true, pending boolean not null default false);
   insert into probes (name, kind, stmt, fires, pending) values
@@ -445,9 +447,9 @@ begin
     ('thread_list', 'id', 'select coalesce(jsonb_agg(to_jsonb(l)), ''[]'')::text from thread_list l where l.board = current_setting(''sweep.general'')::uuid', true, false),
     ('board_page', 'id', 'select board_page(''general'', 1, null)::text', true, false),
     ('index_page', 'id', 'select index_page()::text', false, false),
-    ('profile_page(A)', 'absent', 'select profile_page(current_setting(''sweep.a'')::uuid)::text', true, false),
+    ('profile_page(A)', 'absent_row', 'select profile_page(current_setting(''sweep.a'')::uuid)::text', true, false),
     ('profile_page(stand-in)', 'present', 'select profile_page(current_setting(''sweep.stand'')::uuid)::text', true, false),
-    ('record_page(A)', 'absent', 'select record_page(current_setting(''sweep.a'')::uuid, ''all'', 1)::text', true, false),
+    ('record_page(A)', 'absent_row', 'select record_page(current_setting(''sweep.a'')::uuid, ''all'', 1)::text', true, false),
     ('record_page(stand-in)', 'present', 'select record_page(current_setting(''sweep.stand'')::uuid, ''all'', 1)::text', true, false),
     ('alerts_page', 'rows', 'select alerts_page(null)::text', true, false),
     ('log_page', 'rows', 'select log_page(null)::text', true, false),
@@ -483,6 +485,10 @@ begin
     if kind = 'absent' then
       foreach v in array vs loop if res like '%' || v::text || '%' then return true; end if; end loop;
       return false;
+    end if;
+    -- A veiled Act as a row of the answer (an object with its id), though not an Act that merely points at it: the author's own quote of P is the author's, and its `target_act_id` is P's.
+    if kind = 'absent_row' then
+      return exists (select 1 from jsonb_path_query(res::jsonb, 'strict $.**') o where jsonb_typeof(o) = 'object' and o ->> 'id' = any (select unnest(vs)::text));
     end if;
     if kind = 'present' then return res not like '%' || current_setting('sweep.p') || '%'; end if;
     if kind = 'standname' then return res like '%Anonymous%'; end if;
@@ -550,10 +556,16 @@ begin
     raise exception 'the card played from the post is not there to name its author';
   end if;
 
+  -- The author's own quote of P is no content the derived veil covers: it stays A's in the projection and in the counts, which the counts probe above holds against the list of A's posts (a quote hidden by one read and
+  -- counted by another would make them differ).
+  if (select x.character from acts_public x where x.id = qa) is distinct from a or qa = any (veiled) then raise exception 'the author''s own quote of the veiled post is veiled with it'; end if;
+
   -- The author's own player reads the same: the projection is one for everybody (their own fact comes from my_veiled_posts alone).
   for probe in select * from probes where not pending and kind in ('id', 'present') and name not in ('profile_page(stand-in)', 'record_page(stand-in)', 'alerts_page', 'log_page', 'my_followed_threads', 'my_cards_ended') order by name loop
     res := pg_temp.read_as(ann, probe.stmt);
-    if probe.kind = 'id' and (res like '%Sw Ann%' and probe.name not in ('thread_page', 'boot')) then raise exception 'the author reads their own name in % after the cast: %', probe.name, left(res, 300); end if;
+    -- The author's name may appear only where the page lists the caller's own masks: boot's `characters` and `faces` (every character the account owns, veiled post or not). Nowhere else, thread_page included: its `veiled`
+    -- rows carry the author's own character by id, from my_veiled_posts, and no name.
+    if probe.kind = 'id' and (case when probe.name = 'boot' then (res::jsonb - 'characters' - 'faces')::text else res end) like '%Sw Ann%' then raise exception 'the author reads their own name in % after the cast: %', probe.name, left(res, 300); end if;
     if probe.kind = 'present' and pg_temp.leaks('present', res) then raise exception 'the author does not read the stand-in''s answer in %', probe.name; end if;
   end loop;
 
