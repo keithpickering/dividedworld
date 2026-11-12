@@ -4,6 +4,9 @@
  * is a status line that is always drawn (empty, it stays in the accessibility tree, only out of sight, in config.css), so a reader hears it when it appears, and it marks the input invalid; it is also in words, so color is
  * never the only sign. The hint and the refusal both describe the input.
  *
+ * `describedBy` names, by id (or space-separated ids), a line outside the field that the field should be read with, such as a live count under
+ * the form; it is appended to the ids the input already names.
+ *
  * The id is the input's; the hint is `${id}-hint` and the refusal `${id}-why`. Enter in the field is the form's, not this piece's: a card's form
  * decides what Enter does (setting a card spends orbs, so a form that must not submit on Enter says so on its own).
  */
@@ -22,12 +25,14 @@ export interface ConfigFieldProps {
   /** Drawn on the label's line, at its far end. */
   readonly action?: ReactNode;
   readonly maxLength?: number;
+  /** An id (or space-separated ids) of an element outside the field that also describes the input. */
+  readonly describedBy?: string;
   readonly onFocus?: FocusEventHandler<HTMLInputElement>;
   readonly onKeyDown?: KeyboardEventHandler<HTMLInputElement>;
   readonly ref?: Ref<HTMLInputElement>;
 }
 
-export function ConfigField({ id, label, value, onChange, hint, why, action, maxLength, onFocus, onKeyDown, ref }: ConfigFieldProps) {
+export function ConfigField({ id, label, value, onChange, hint, why, action, maxLength, describedBy, onFocus, onKeyDown, ref }: ConfigFieldProps) {
   const hintId = `${id}-hint`;
   const whyId = `${id}-why`;
   const hasHint = hint !== undefined && hint !== null && hint !== false && hint !== '';
@@ -50,7 +55,7 @@ export function ConfigField({ id, label, value, onChange, hint, why, action, max
         onChange={(e: ChangeEvent<HTMLInputElement>) => onChange(e.target.value)}
         onFocus={onFocus}
         onKeyDown={onKeyDown}
-        aria-describedby={`${hasHint ? `${hintId} ` : ''}${whyId}`}
+        aria-describedby={`${hasHint ? `${hintId} ` : ''}${whyId}${describedBy ? ` ${describedBy}` : ''}`}
         aria-invalid={refused ? true : undefined}
       />
       {hasHint && <p id={hintId} className="kb-play-fine">{hint}</p>}

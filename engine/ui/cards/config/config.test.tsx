@@ -29,6 +29,12 @@ describe('ConfigField', () => {
     expect(input).not.toHaveAttribute('aria-invalid');
   });
 
+  test('describedBy names a line outside the field that also describes the input, beside its own hint and refusal', () => {
+    render(<ConfigField id="f" label="Phrase" value="" onChange={() => {}} hint="At least four letters." describedBy="x y" />);
+    const ids = screen.getByLabelText('Phrase').getAttribute('aria-describedby')?.split(' ');
+    expect(ids).toEqual(expect.arrayContaining(['f-hint', 'f-why', 'x', 'y']));
+  });
+
   test('a refusal is a status line that marks the input invalid and describes it', () => {
     render(<ConfigField id="f" label="Phrase" value="x" onChange={() => {}} why="That phrase is too short." />);
     const why = screen.getByText('That phrase is too short.');

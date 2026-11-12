@@ -20,20 +20,22 @@ export function ConfigForm({ config, onChange, post, id }: ConfigFormProps) {
   const body = typeof post.currentPayload?.body === 'string' ? post.currentPayload.body : '';
   const text = useMemo(() => visibleText(parse(body)), [body]);
   const places = useMemo(() => (phrase.trim() ? occurrences(text, phrase.trim()).length : 0), [text, phrase]);
+  const countId = `${id}-count`;
   return (
-    <div role="group" aria-label="What to autocorrect">
+    <fieldset className="kb-play-choice" style={{ display: 'flex', flexDirection: 'column', gap: 16, border: 0, margin: 0, padding: 0 }}>
+      <legend className="kb-play-label">What to autocorrect</legend>
       <ConfigField
-        id={`${id}-phrase`} label="Phrase to cover" value={phrase} maxLength={PHRASE.most}
+        id={`${id}-phrase`} label="Phrase to cover" value={phrase} maxLength={PHRASE.most} describedBy={countId}
         onChange={(value) => onChange({ phrase: value, replacement })}
       />
       <ConfigField
         id={`${id}-replacement`} label="Cover it with" value={replacement} maxLength={REPLACEMENT.most}
         onChange={(value) => onChange({ phrase, replacement: value })}
       />
-      <ConfigHint live>
+      <ConfigHint live id={countId}>
         {!phrase.trim() ? `At least ${PHRASE.least} letters or digits, matched as whole words in any case.`
           : places ? `Covers ${places} ${places === 1 ? 'place' : 'places'} in this post` : 'Not in this post\'s own words'}
       </ConfigHint>
-    </div>
+    </fieldset>
   );
 }

@@ -35,6 +35,17 @@ describe('Autocorrect\'s play form', () => {
     expect(screen.getByText('Not in this post\'s own words')).toHaveAttribute('role', 'status');
   });
 
+  test('the phrase input is read with the count line, and the form is a fieldset with a visible legend', () => {
+    form({ phrase: 'mario', replacement: 'x' });
+    expect(screen.getByLabelText('Phrase to cover')).toHaveAccessibleDescription(/Covers 2 places in this post/);
+    const group = screen.getByRole('group', { name: 'What to autocorrect' });
+    expect(group.tagName).toBe('FIELDSET');
+    const legend = group.querySelector('legend');
+    expect(legend).toHaveTextContent('What to autocorrect');
+    expect(group).toHaveAccessibleName('What to autocorrect');
+    expect(group.getAttribute('aria-label')).toBeNull();
+  });
+
   test('the form is two ConfigFields and a live ConfigHint, and draws no class of its own', () => {
     const { container } = form({ phrase: 'mario', replacement: 'x' });
     expect(container.querySelectorAll('.kb-play-config-field')).toHaveLength(2);
