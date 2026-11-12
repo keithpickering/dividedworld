@@ -24,7 +24,7 @@
  * one makes it (so a page nobody scrolls to a cue fetches nothing), a nearer place of another kind stops it with the fade and then makes the
  * new kind's, and a fire stops it with the fade (the take crosses over it). After a fire the murmur is held at nothing, and no loop is made,
  * until the take's tail begins (the take's length from `fire()`'s answer less the fade), or for the airtime when the play did not sound or
- * answers late. It is stopped when no unfired place is left, and with the last place, so no held caption outlives the last post (#496).
+ * answers late (an answer counts until a frame has run past the airtime, so one that comes at once still counts when the airtime is 0). A fire that throws or rejects is no take. An `airMs`, `holdMs` or `lengthMs` that is not a finite number, or is negative, reads as its default (1200, 4000) or, for a length, as no answer. It is stopped when no unfired place is left, and with the last place, so no held caption outlives the last post (#496).
  * `reachRem` and the screen numbers are read from the first place to register: every place of an instance reads the same card settings.
  *
  * Nothing here reads who owns, wrote or cast anything, and nothing leaves the screen. Each listener is added when the first place
@@ -104,8 +104,12 @@ let nextAt = 0;
 let quietUntil = 0;
 /** The last fire's own mark, so only its answer moves the hold. */
 let lastFire: object | null = null;
-/** The hold has run out since the last fire: a take that answers after that no longer holds the murmur. */
+/** The hold has run out since the last fire (a frame after the fire's own ran past it): a take that answers after that no longer holds the murmur. */
 let holdOver = true;
+
+/** The card's defaults, for a setting that is missing, not a number or negative: such a value never stalls the queue or keeps a turn for ever. */
+const DEFAULT_AIR_MS = 1200, DEFAULT_HOLD_MS = 4000;
+const settled = (v: unknown, fallback: number): number => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : fallback);
 
 /** What the watcher holds, for a test to look inside. */
 export const __inspect = () => ({ places: places.size, elements: byElement.size, near: near.size, earned: earnedPlaces.size, unfired, murmuring: murmuring !== null, listening: observer !== null });
@@ -241,12 +245,12 @@ function tick(now: number): void {
   /* An earned place the observer dropped is out of the band too, and each place out of it keeps its turn for `holdMs` only. */
   for (const place of [...earnedPlaces]) {
     if (!near.has(place)) place.leftAt ??= now;
-    if (place.leftAt !== null && now - place.leftAt > place.spec.screen.holdMs) unearn(place);
+    if (place.leftAt !== null && now - place.leftAt > settled(place.spec.screen.holdMs, DEFAULT_HOLD_MS)) unearn(place);
   }
   let fadeMs: number | null = null;
   if (earnedPlaces.size > 0 && now >= nextAt) {
     const place = [...earnedPlaces].sort(inPageOrder)[0]!;
-    const { airMs } = place.spec.screen;
+    const airMs = settled(place.spec.screen.airMs, DEFAULT_AIR_MS);
     earnedPlaces.delete(place);
     place.fired = true; place.earned = false; place.leftAt = null;
     unfired--;
@@ -262,20 +266,25 @@ function tick(now: number): void {
     holdOver = false;
     const mine = {};
     lastFire = mine;
-    const answer = place.spec.fire();
-    /* A take that answers hands the murmur back over its tail; one that answers null, or late, leaves the airtime as it was. */
+    /* A play that throws, or whose promise rejects, did not sound: the place stays fired and the airtime is all it holds. */
+    let answer: ReturnType<PlaceSpec['fire']> = undefined;
+    try { answer = place.spec.fire(); } catch { /* no take */ }
+    /* A take that answers hands the murmur back over its tail, so long as the hold since the fire is not yet over (a frame has not run past
+       it); one that answers null, nonsense, or after the hold, leaves the airtime as it was. With an airtime of 0 the hold is over only a frame
+       after the fire's own, so the answer that comes in between is honored. */
     if (answer && typeof answer.then === 'function') {
       const firedAt = now;
       answer.then((take) => {
-        if (lastFire !== mine || holdOver || !take) return;
-        quietUntil = firedAt + Math.max(take.lengthMs - fade, 0);
+        const length = take?.lengthMs;
+        if (lastFire !== mine || holdOver || typeof length !== 'number' || !Number.isFinite(length) || length < 0) return;
+        quietUntil = firedAt + Math.max(length - fade, 0);
         wake();
       }, () => {});
     }
   }
   /* A fire fades the murmur over the fade, under the take; while the hold lasts no loop is made, and a live one is silent. */
   if (fadeMs !== null) hush(fadeMs);
-  if (now >= quietUntil) holdOver = true;
+  if (fadeMs === null && now >= quietUntil) holdOver = true;
   if (unfired === 0) hush();
   else if (fadeMs !== null || now < quietUntil) { if (murmuring && murmuring.gain !== 0) { murmuring.voice.setGain(0); murmuring.gain = 0; } }
   else {

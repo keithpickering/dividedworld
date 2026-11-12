@@ -581,3 +581,192 @@ test('a resize reads the root font size again, rebuilds the observer\'s reach if
   assert.equal(frames.length, 1);
   assert.equal(count(), 3, 'still one listener of each');
 });
+
+test('airMs 0: a take that answers right after its fire still holds the murmur until its own tail', async () => {
+  const log = made(); const zero = { ...SCREEN, airMs: 0 };
+  log.answer = () => Promise.resolve({ lengthMs: 4000 });
+  place(log, 'cheer', el(IN()), {}, 'e', zero); place(log, 'boo', el(OUT()), {}, 'f', zero);
+  play(1000, 1400);
+  await flush();
+  assert.equal(log.fires, 1);
+  play(1450, 5100);
+  assert.equal(log.voices.length, 1, 'no loop is made until 3750ms after the fire (4000 less the 250 fade)');
+  step(5150);
+  assert.equal(log.voices.length, 2);
+  assert.ok(log.voices[1]!.gains.at(-1)! > 0);
+});
+
+test('a late answer that arrives before any tick has run past the airtime still holds the murmur', async () => {
+  const log = made();
+  let answer: (v: { lengthMs: number } | null) => void = () => {};
+  log.answer = () => new Promise((resolve) => { answer = resolve; });
+  place(log, 'cheer', el(IN())); place(log, 'boo', el(OUT()));
+  play(1000, 2550);
+  assert.equal(log.voices.length, 1);
+  answer({ lengthMs: 4000 });
+  await flush();
+  play(2600, 5100);
+  assert.equal(log.voices.length, 1, 'held to 1400 + 3750');
+  step(5150);
+  assert.equal(log.voices.length, 2);
+});
+
+test('a screen whose airMs is missing or NaN still fires a queue of two, spaced by the default 1200ms', () => {
+  for (const airMs of [undefined, Number.NaN, -5]) {
+    const log = made(); const bad = { ...SCREEN, airMs: airMs as unknown as number };
+    const a = inDocumentAt(el(IN()), 1); const b = inDocumentAt(el(rect(330, 350)), 2);
+    const offs = [place(log, 'boo', a, {}, 'a', bad), place(log, 'boo', b, {}, 'b', bad)];
+    play(1000, 1400);
+    assert.deepEqual(log.order, ['a']);
+    play(1450, 2550);
+    assert.deepEqual(log.order, ['a'], 'the default airtime is not skipped');
+    step(2600);
+    assert.deepEqual(log.order, ['a', 'b'], `airMs ${airMs}`);
+    for (const off of offs) off();
+    frames = [];
+  }
+});
+
+test('a screen whose holdMs is NaN uses the default 4000ms: a waiting place that left lapses', () => {
+  const log = made(); const bad = { ...SCREEN, airMs: 9000, holdMs: Number.NaN };
+  const first = inDocumentAt(el(IN()), 1); const waits = inDocumentAt(el(rect(330, 350)), 2);
+  place(log, 'boo', first, {}, 'first', bad); place(log, 'boo', waits, {}, 'waits', bad);
+  play(1000, 1400);
+  waits.rects = [OUT()]; emit('scroll'); step(1450);
+  step(5450);
+  assert.equal(__inspect().earned, 1, 'exactly the default hold keeps the turn');
+  step(5451);
+  assert.equal(__inspect().earned, 0, '1ms past loses it');
+});
+
+test('an answer whose lengthMs is NaN or negative holds the murmur for the airtime, as no answer does', async () => {
+  for (const lengthMs of [Number.NaN, -1, undefined as unknown as number]) {
+    const log = made(); log.answer = () => Promise.resolve({ lengthMs });
+    const offs = [place(log, 'cheer', el(IN())), place(log, 'boo', el(OUT()))];
+    play(1000, 1400);
+    await flush();
+    play(1450, 2550);
+    assert.equal(log.voices.length, 1);
+    step(2600);
+    assert.equal(log.voices.length, 2, `lengthMs ${lengthMs}`);
+    for (const off of offs) off();
+    frames = [];
+    await flush();
+  }
+});
+
+test('a fire that throws leaves the place fired, the queue going, frames asked for and the murmur held for the airtime', () => {
+  const log = made();
+  log.answer = () => { if (log.fires === 1) throw new Error('boom'); };
+  const a = inDocumentAt(el(IN()), 1); const b = inDocumentAt(el(rect(330, 350)), 2); const c = el(OUT());
+  place(log, 'boo', a, {}, 'a'); place(log, 'boo', b, {}, 'b'); place(log, 'boo', c, {}, 'c');
+  step(1000);
+  assert.equal(log.voices.length, 1);
+  play(1050, 1400);
+  assert.deepEqual(log.order, ['a']);
+  assert.equal(__inspect().unfired, 2);
+  assert.equal(frames.length, 1, 'frames are still asked for');
+  play(1450, 2550);
+  assert.deepEqual(log.order, ['a']);
+  assert.equal(log.voices.length, 1, 'held for the airtime');
+  step(2600);
+  assert.deepEqual(log.order, ['a', 'b'], 'the queue goes on');
+});
+
+test('a fire whose promise rejects leaves the place fired, the queue going, the murmur held for the airtime, and no unhandled rejection', async () => {
+  const unhandled: unknown[] = [];
+  const onUnhandled = (e: unknown) => { unhandled.push(e); };
+  process.on('unhandledRejection', onUnhandled);
+  try {
+    const log = made();
+    log.answer = () => (log.fires === 1 ? Promise.reject(new Error('no take')) : undefined);
+    const a = inDocumentAt(el(IN()), 1); const b = inDocumentAt(el(rect(330, 350)), 2); const c = el(OUT());
+    place(log, 'boo', a, {}, 'a'); place(log, 'boo', b, {}, 'b'); place(log, 'boo', c, {}, 'c');
+    step(1000);
+    play(1050, 1400);
+    await flush();
+    await new Promise((r) => setImmediate(r));
+    assert.deepEqual(log.order, ['a']);
+    play(1450, 2550);
+    assert.equal(log.voices.length, 1, 'held for the airtime');
+    step(2600);
+    assert.deepEqual(log.order, ['a', 'b']);
+    assert.deepEqual(unhandled, []);
+  } finally { process.off('unhandledRejection', onUnhandled); }
+});
+
+test('holdMs exactly keeps the turn; 1ms past loses it', () => {
+  const log = made();
+  const first = inDocumentAt(el(IN()), 1); const waits = inDocumentAt(el(rect(330, 350)), 2);
+  place(log, 'boo', first, {}, 'first', LONG_AIR); place(log, 'boo', waits, {}, 'waits', LONG_AIR);
+  play(1000, 1400);
+  waits.rects = [OUT()]; emit('scroll'); step(1450);
+  step(2450);
+  assert.equal(__inspect().earned, 1, 'left at 1450, holdMs 1000: at 2450 it keeps its turn');
+  step(2451);
+  assert.equal(__inspect().earned, 0, 'at 2451 it is lost');
+});
+
+test('holdMs 0: an earned place that leaves the band keeps its turn for that frame only', () => {
+  const log = made(); const zero = { ...SCREEN, airMs: 3000, holdMs: 0 };
+  const first = inDocumentAt(el(IN()), 1); const waits = inDocumentAt(el(rect(330, 350)), 2);
+  place(log, 'boo', first, {}, 'first', zero); place(log, 'boo', waits, {}, 'waits', zero);
+  play(1000, 1400);
+  assert.equal(__inspect().earned, 1);
+  waits.rects = [OUT()]; emit('scroll'); step(1450);
+  assert.equal(__inspect().earned, 1, 'the frame it left still holds');
+  step(1451);
+  assert.equal(__inspect().earned, 0, 'the next does not');
+});
+
+test('the last place going mid-hold, then a new registration: the old fire\'s stale answer holds nothing, and the new page starts clean', async () => {
+  const log = made();
+  let answer: (v: { lengthMs: number } | null) => void = () => {};
+  log.answer = () => new Promise((resolve) => { answer = resolve; });
+  const off = place(log, 'cheer', el(IN()), {}, 'old');
+  play(1000, 1400);
+  assert.equal(log.fires, 1);
+  off();
+  assert.equal(__inspect().listening, false);
+  const fresh = made();
+  place(fresh, 'boo', el(OUT()), {}, 'murmur');
+  step(2000);
+  assert.equal(fresh.voices.length, 1, 'no airtime of the old page holds the new one');
+  answer({ lengthMs: 9000 });
+  await flush();
+  emit('scroll'); step(2050);
+  assert.ok(fresh.voices[0]!.gains.at(-1)! > 0, 'the stale answer does not silence it');
+  assert.equal(fresh.voices[0]!.dead, false);
+  const quick = made();
+  place(quick, 'boo', el(IN()), {}, 'quick');
+  play(2100, 2550);
+  assert.equal(quick.fires, 1, 'and nothing waits the old airtime before the new page fires');
+});
+
+test('a place that fired and was unregistered while its answer is pending: the take\'s hold still applies', async () => {
+  const log = made();
+  let answer: (v: { lengthMs: number } | null) => void = () => {};
+  log.answer = () => new Promise((resolve) => { answer = resolve; });
+  const offA = place(log, 'cheer', el(IN()), {}, 'a'); place(log, 'boo', el(OUT()), {}, 'b');
+  play(1000, 1400);
+  offA();
+  answer({ lengthMs: 2000 });
+  await flush();
+  play(1450, 3100);
+  assert.equal(log.voices.length, 1, 'held until 1400 + 1750');
+  step(3150);
+  assert.equal(log.voices.length, 2);
+});
+
+test('pieces drawn again while a place is still adding dwell lose what it had added', () => {
+  const log = made(); let drawn = el(IN());
+  const off = place(log, 'boo', drawn, { els: () => [drawn as unknown as Element] });
+  play(1000, 1250);
+  drawn = el(IN());
+  off.refresh();
+  FakeObserver.all[0]!.see(drawn);
+  play(1300, 1600);
+  assert.equal(log.fires, 0, 'the 250ms before the redraw is gone');
+  play(1650, 1700);
+  assert.equal(log.fires, 1, 'it earns again from nothing');
+});
