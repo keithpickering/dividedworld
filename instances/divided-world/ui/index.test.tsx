@@ -542,6 +542,9 @@ describe('Sugar Coat, Hype-Up and Last Word in plain words (card notes Part 4, T
     expect(ui('sugar-coat').summary).toBe('Used on your post. Turns away Salty and Pepperoni cards for a week.');
     expect(ui('hype-up').summary).toBe('Cast on a character. For 36 hours, what it earns from positive reactions is 10% higher. A loss is never made worse.');
     expect(ui('last-word').summary).toBe('Used on your post. Nobody can quote it for a week.');
+    const sugarWords = ui('sugar-coat').describe!({} as never);
+    expect(sugarWords).toContain('It does not stop a card from being set face down there.');
+    expect(sugarWords).not.toContain('It never stops a card set face down.');
     expect(ui('hype-up').logPlay!({}, {})).toBe('What that character earns from positive reactions is 10% higher until it ends.');
     expect(ui('last-word').logPlay!({}, {})).toBe('Nobody can quote that post until it ends.');
   });

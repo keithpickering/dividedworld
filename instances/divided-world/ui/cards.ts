@@ -294,7 +294,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
     summary: `Used on your post. Turns away Salty and Pepperoni cards for ${spanWords(sugarCoat.lasts!)}.`,
     status: 'Turning away Salty and Pepperoni cards',
     describe: (settings: Settings) =>
-      `A Sweet card, ${sugarCoat.rarity}, used on one of your own posts. For ${spanWords(sugarCoat.lasts!)}, every Salty or Pepperoni card cast there is turned away before it lands, whatever its rarity, and its caster is told so; a Sweet card lands as usual. It never stops a card set face down. It costs nothing more to use.`,
+      `A Sweet card, ${sugarCoat.rarity}, used on one of your own posts. For ${spanWords(sugarCoat.lasts!)}, every Salty or Pepperoni card cast there is turned away before it lands, whatever its rarity, and its caster is told so; a Sweet card lands as usual. It does not stop a card from being set face down there. It costs nothing more to use.`,
   },
   {
     key: 'last-word',
