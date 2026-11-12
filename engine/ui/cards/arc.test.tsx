@@ -83,6 +83,12 @@ describe('the slots of an arc', () => {
     for (let r = 0; r < rowsOf(s); r += 1) expect(Math.min(...gaps(s, r))).toBeGreaterThanOrEqual(ARC_FLOOR);
   });
 
+  test('a back row with more group changes than the front row is held to the floor too', () => {
+    // 51 kinds in two rows would split 26 and 25; the 25 carry three group changes, so their step falls under the floor.
+    const s = arcSlots(groupsOf(48, 1, 1, 1));
+    for (let r = 0; r < rowsOf(s); r += 1) expect(Math.min(...gaps(s, r))).toBeGreaterThanOrEqual(ARC_FLOOR);
+  });
+
   test('200 kinds take four rows, the front row standing lowest', () => {
     const s = arcSlots(groupsOf(70, 65, 65));
     expect(rowsOf(s)).toBe(4);

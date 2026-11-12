@@ -104,8 +104,9 @@ export function arcSlots(groups: readonly number[]): readonly ArcSlot[] {
   if (n === 3) return BOARD;
   if (n === 0) return [];
   let rows = 1;
-  while (rows < MAX_ROWS && stepOf(split(groups, rows)[0]!) < ARC_FLOOR) rows += 1;
-  // The front row has the most cards, so it has the narrowest step; if it holds, they all do.
+  // Every row is held to the floor, not only the front one: a back row with a card fewer can carry more group changes,
+  // and so more units and a narrower step.
+  while (rows < MAX_ROWS && split(groups, rows).some((row) => stepOf(row) < ARC_FLOOR)) rows += 1;
   return split(groups, rows).flatMap((cards, row) => {
     const step = stepOf(cards);
     // Distance of each card from the row's last, in steps, counting the gap where the group changes.
