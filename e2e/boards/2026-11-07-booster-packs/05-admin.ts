@@ -62,7 +62,7 @@ const manifest: BoardManifest = {
     at('code-none', 'cell', '–', { buildShift: { y: 715 }, origin: 'head-slot', originEdge: 'bottom' }),
     at('hidden-note', 'text', 'Only in packs. The Boss may flash-sale it.', { buildShift: { y: 715 }, origin: 'head-slot', originEdge: 'bottom' }),
     at('save', 'button', 'SAVE CHANGES', { buildName: 'Save changes', buildShift: { y: 880 }, origin: 'head-slot', originEdge: 'bottom' }),
-    at('save-note', 'text', 'Players see a saved price at once. A Boss move in force reads the new price.', { buildName: 'A price is between 0.01 and 1,000,000.00. Players see a saved price at once.', origin: 'head-slot', originEdge: 'bottom', buildShift: { x: -12, y: 825 } }),
+    at('save-note', 'text', 'Players see a saved price at once. A Boss move in force reads the new price.', { buildName: 'A price is between 0.01 and 1,000,000.00. Players see a saved price at once.', origin: 'head-slot', originEdge: 'bottom', buildShift: { x: -12, y: 880 } }),
   ],
 };
 export default manifest;
