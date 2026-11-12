@@ -140,7 +140,15 @@ describe('shadeField', () => {
   const pixels = (grid: Grid) => ({ width: grid.cols, height: grid.rows, data: new Uint8ClampedArray(grid.cols * grid.rows * 4) });
   const whole = (grid: Grid): Rect => ({ x0: 0, y0: 0, x1: grid.cols, y1: grid.rows });
 
-  test('the splat alone looks as the old paintSplat did, within 1 per channel, at a few hundred pixels a color', () => {
+  /*
+   * The fixture is the old paintSplat's real output from Chromium's getImageData (see its "about"). A canvas stores
+   * premultiplied 8-bit, so a low-alpha edge pixel comes back with its color rounded by up to ~23 per channel; no
+   * straight-alpha comparison can hold within 1 there. What a player sees is the pixel over the post's paper, so both
+   * are composited over white and over black and compared within 2 per channel, with alpha within 1.
+   */
+  const over = (rgb: number, a: number, paper: number) => rgb * (a / 255) + paper * (1 - a / 255);
+
+  test('the splat alone looks as the old paintSplat did in Chromium: over paper within 2 per channel, alpha within 1, at a few hundred pixels a color', () => {
     const grid = denseGrid(fixture.box, 1);
     splatInto(grid, makeSplat(7), fixture.box);
     for (const { color, px } of fixture.layers) {
@@ -149,10 +157,14 @@ describe('shadeField', () => {
       expect(px.length).toBeGreaterThan(300);
       for (const [x, y, r, g, b, a] of px as [number, number, number, number, number, number][]) {
         const o = (y * grid.cols + x) * 4;
-        const got = [out.data[o]!, out.data[o + 1]!, out.data[o + 2]!, out.data[o + 3]!];
-        const want = [r, g, b, a];
-        /* A pixel with no ink has no color to compare. */
-        got.forEach((v, c) => c < 3 && a === 0 || expect(Math.abs(v - want[c]!), `${color} pixel ${x},${y} channel ${c}: ${v} vs ${want[c]}`).toBeLessThanOrEqual(1));
+        const ga = out.data[o + 3]!;
+        expect(Math.abs(ga - a), `${color} pixel ${x},${y} alpha: ${ga} vs ${a}`).toBeLessThanOrEqual(1);
+        [r, g, b].forEach((want, c) => {
+          for (const paper of [0, 255]) {
+            const d = Math.abs(over(out.data[o + c]!, ga, paper) - over(want, a, paper));
+            expect(d, `${color} pixel ${x},${y} channel ${c} over ${paper}: ${out.data[o + c]} a${ga} vs ${want} a${a}`).toBeLessThanOrEqual(2);
+          }
+        });
       }
     }
   });
