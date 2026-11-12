@@ -781,7 +781,7 @@ describe('pinned threads and the banner', () => {
     await screen.findByRole('link', { name: 'Thread 002' });
     const user = userEvent.setup();
     await user.click(await screen.findByRole('button', { name: /^Hand, \d postcards?/u }));
-    await user.click(within(screen.getByRole('region', { name: 'Your hand' })).getAllByRole('button', { name: /^Rumble, /u })[0]!);
+    await user.click(within(screen.getByRole('dialog', { name: 'Your hand' })).getAllByRole('button', { name: /^Rumble, /u })[0]!);
     const banner = document.querySelector('.kb-board-banner') as HTMLElement;
     await user.click(await within(banner).findByRole('button', { name: 'Play Rumble on General' }));
     const dialog = await screen.findByRole('dialog', { name: /Rumble/u });

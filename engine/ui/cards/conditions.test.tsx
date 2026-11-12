@@ -94,7 +94,7 @@ async function open(w: ReturnType<typeof world>) {
 const post = (seq: number) => document.getElementById(`post-${seq}`)!;
 async function armAndOpen(user: ReturnType<typeof userEvent.setup>, card: string, markName: string, seq: number) {
   await user.click(screen.getByRole('button', { name: /^Hand, \d+ postcards?/u }));
-  await user.click(within(screen.getByRole('region', { name: 'Your hand' })).getAllByRole('button', { name: new RegExp(`^${card},`, 'u') })[0]!);
+  await user.click(within(screen.getByRole('dialog', { name: 'Your hand' })).getAllByRole('button', { name: new RegExp(`^${card},`, 'u') })[0]!);
   await user.click(await within(post(seq)).findByRole('button', { name: markName }));
   return screen.findByRole('dialog');
 }

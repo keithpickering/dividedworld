@@ -408,7 +408,7 @@ export interface InputAct {
   readonly reach?: BeyondPost;
   /** The Act that sprang a `spring`: the cast it caught, the visit that tripped it, or the post whose quote landed a face-down Move. A Reversal's spring (a set card's) is scored against it, not its trapped post; a face-down Move's spring keeps its own post, as older rows with no `by` do. */
   readonly by?: string;
-  /** When a use card's play ends (its `payload.ends`): an earn gimmick boosts in [at, ends), and a play with no `ends` is malformed and boosts nothing; so for a ride gimmick and a skim play. An admin-ended play is not in the input. */
+  /** When a play of a card that carries a gimmick ends (its `payload.ends`): an earn gimmick boosts in [at, ends), and a play with no `ends` is malformed and boosts nothing; so for a ride gimmick and a skim play. An admin-ended play is not in the input. */
   readonly ends?: number;
   /** The character a character-reach play is on. */
   readonly on?: string;

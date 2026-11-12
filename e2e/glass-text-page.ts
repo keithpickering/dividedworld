@@ -9,7 +9,11 @@
  * marks each with its `data-kb-surface`) that does not hold the text itself. That ancestor is the surface's element: a page's
  * `.kb-glass-page`, an overlay's dialog, the HUD. Text with no smoke under it is the board's, and
  * is not read. Under an open overlay only the overlay's text is read: the page behind it is dimmed
- * and inert (Overlay.tsx), the menu bar with it, and is not what the player is reading.
+ * and inert (Overlay.tsx), the menu bar with it, and is not what the player is reading. The same holds
+ * for the Main board's open hand, a modal (Hud.tsx: the HUD root carries data-kb-hand-open, the hand
+ * drawer is aria-modal): the HUD's other parts (the plate, the aura, Alerts, Menu) are inert and fade
+ * to 40% under it, and their text is passed over; the hand's own text, and any text in the HUD that is
+ * not inert, is still read. Outside an open overlay or modal hand, a page's own inert text is read.
  *
  * Not read: the board's own post a preview shows (BOARD below); text that is not drawn (hidden,
  * fully transparent by an opacity, or clipped to under 2px either way, as a visually hidden label
@@ -329,6 +333,8 @@ export async function gather(panel?: string): Promise<Gathered[]> {
   const overlay = panelEl ?? overlays.at(-1) ?? null;
   const view: Box = { x: 0, y: 0, width: innerWidth, height: innerHeight };
   const hudEl = document.querySelector('[aria-label="Game HUD"]');
+  /* An open modal hand: the HUD's inert parts are the page behind it, dimmed (frame.css), and are passed over. */
+  const handModal = !!hudEl && (hudEl.hasAttribute('data-kb-hand-open') || document.querySelector('.kb-hand-drawer[aria-modal="true"]:not([hidden])') !== null);
   const hud = hudEl && getComputedStyle(hudEl).position === 'fixed' ? Object.assign(hudEl.getBoundingClientRect(), { contains: (n: Node) => hudEl.contains(n) }) : null;
   /* Each region's rect in its smoke, found once for the page as it stands (Calm.tsx gives the rect a pointer back to its region). */
   const rects = new Map<Element, Element>();
@@ -340,6 +346,7 @@ export async function gather(panel?: string): Promise<Gathered[]> {
     const el = n.parentElement;
     if (!el || isSkipped(el)) continue;
     if (overlay && !overlay.contains(el)) continue;
+    if (handModal) { const dim = el.closest('[inert]'); if (dim && hudEl!.contains(dim) && dim !== hudEl) continue; }
     const s = getComputedStyle(el);
     if (s.visibility !== 'visible') continue;
     const opacity = opacityOf(el);

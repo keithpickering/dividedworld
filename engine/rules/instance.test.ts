@@ -737,6 +737,28 @@ test('a trap is a set card\'s, and a gimmick and a time up are a use card\'s', (
   assert.match(instanceProblems(withCards({ play: 'deal' })).join('\n'), /card "splat" is played "deal"; a card is cast, used, set or kept/);
 });
 
+test('a cast card on a character may carry an earn, and nothing else a gimmick', () => {
+  const earn = { kind: 'earn', quadrants: ['calmPositive'], by: 0.1 };
+  const hours = { unit: 'hour', count: 36 };
+  const cast = (over: Record<string, unknown>) => instanceProblems(withCards({ rarity: 'uncommon', lasts: hours, ...over })).join('\n');
+  assert.equal(cast({ reaches: ['character'], gimmick: earn }), '', 'a cast earn on a character passes');
+  assert.equal(cast({ reaches: ['character'], gimmick: { ...earn, group: 'warm' } }), '');
+  assert.match(cast({ gimmick: earn }), /card "splat" has a gimmick, and only a use card has one, or a cast card on a character an earn/, 'a cast earn on a post');
+  assert.match(cast({ reaches: ['character'], gimmick: { kind: 'ward', flavors: ['salty'] } }), /only a use card has one, or a cast card on a character an earn/, 'a cast ward');
+  assert.match(cast({ rarity: 'rare', reaches: ['character', 'post'], gimmick: earn }), /only a use card has one, or a cast card on a character an earn/, 'a cast earn on a character and a post');
+  assert.match(cast({ reaches: ['character'], gimmick: { ...earn, group: '' } }), /card "splat" has an earn with the group ""; a group is a word/);
+  assert.match(cast({ reaches: ['character'], gimmick: { ...earn, group: 3 } }), /card "splat" has an earn with the group 3; a group is a word/);
+});
+
+test('a card that stops quotes reaches a post alone', () => {
+  const week = { unit: 'day', count: 7 };
+  const stop = (over: Record<string, unknown>) => instanceProblems(withCards({ play: 'use', lasts: week, gimmick: { kind: 'noQuote' }, ...over })).join('\n');
+  assert.equal(stop({}), '', 'no reaches is a post');
+  assert.equal(stop({ reaches: ['post'] }), '');
+  assert.match(stop({ reaches: ['character'] }), /card "splat" stops quotes, and a card that stops quotes reaches a post alone/);
+  assert.match(stop({ rarity: 'rare', reaches: ['post', 'thread'] }), /card "splat" stops quotes, and a card that stops quotes reaches a post alone/);
+});
+
 test('a gimmick is a ward, an earn or a price, each with its numbers', () => {
   const lasts = { unit: 'day', count: 7 };
   const use = (gimmick: unknown) => instanceProblems(withCards({ play: 'use', lasts, gimmick })).join('\n');
@@ -745,7 +767,7 @@ test('a gimmick is a ward, an earn or a price, each with its numbers', () => {
   assert.match(use({ kind: 'ward' }), /card "splat" has a ward that names no rarity, flavor or card/);
   assert.match(use({ kind: 'ward', upTo: 'mythic' }), /card "splat" has a ward up to "mythic"/);
   assert.match(use({ kind: 'ward', flavors: ['bitter'] }), /card "splat" has a ward of the flavors \["bitter"\]/);
-  assert.match(use({ kind: 'sneeze' }), /card "splat" has a gimmick of kind "sneeze"; a gimmick is ward, earn, price or ride/);
+  assert.match(use({ kind: 'sneeze' }), /card "splat" has a gimmick of kind "sneeze"; a gimmick is ward, earn, price, ride or noQuote/);
   assert.equal(use({ kind: 'earn', quadrants: ['excitedPositive'], by: 0.5 }), '');
   assert.equal(use({ kind: 'earn', reactions: ['fire'], by: 1 }), '');
   assert.match(use({ kind: 'earn', quadrants: ['excitedPositive'], by: 0 }), /card "splat" has an earn of 0; by is above 0 and at most 1/);
