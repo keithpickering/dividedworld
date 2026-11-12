@@ -91,9 +91,44 @@ function simplify(pts: readonly Pt[], tol: number): number[] {
 }
 
 /**
+ * Where a path turns back on itself by more than `tol` (in px): the indices of its turns, in order. A turn is the point
+ * farthest from the last turn (or the start) before the path has come back toward it by more than `tol`. Simplifying
+ * measures a point's distance to the segment of the points kept around it, and a scrub there and back along one line lies
+ * wholly on the segment from its first point to its farthest, so without its turns a scrub of six passes would be kept as
+ * one; a wash takes some of the field each pass (field.ts `WASH_TAKES`), so the passes are what it washes.
+ */
+function turnsOf(pts: readonly Pt[], tol: number): number[] {
+  const turns: number[] = [];
+  let from = 0, far = 0, farD = 0;
+  for (let i = 1; i < pts.length; i++) {
+    const d = Math.hypot(pts[i]![0] - pts[from]![0], pts[i]![1] - pts[from]![1]);
+    if (d >= farD) { far = i; farD = d; continue; }
+    if (farD - d <= tol) continue;
+    turns.push(far);
+    from = far;
+    far = i;
+    farD = Math.hypot(pts[i]![0] - pts[from]![0], pts[i]![1] - pts[from]![1]);
+  }
+  return turns;
+}
+
+/** `simplify` over each run between the path's turns (`turnsOf`), so every turn is kept with the first and last points. */
+function simplifyKeepingTurns(pts: readonly Pt[], tol: number): number[] {
+  const ends = [0, ...turnsOf(pts, tol), pts.length - 1];
+  const kept: number[] = [0];
+  for (let k = 1; k < ends.length; k++) {
+    const lo = ends[k - 1]!, hi = ends[k]!;
+    if (hi <= lo) continue;
+    for (const i of simplify(pts.slice(lo, hi + 1), tol).slice(1)) kept.push(lo + i);
+  }
+  return pts.length === 0 ? [] : kept;
+}
+
+/**
  * A stroke as the card keeps it: points held to the box (0 to 1 both ways) to a ten-thousandth, `width` to a
  * ten-thousandth (never 0), `aspect` to three significant figures; the points simplified (Ramer-Douglas-Peucker in the
- * drawer's px, within a quarter of the brush's radius, keeping the first and last), then thinned of the ones that add
+ * drawer's px, within a quarter of the brush's radius, keeping the first and last and every place the path turns back
+ * by more than that, `turnsOf`), then thinned of the ones that add
  * nothing (`minStep`, the shares across and down a point must be from the last one kept: see `minStepOf`), and cut
  * into strokes of at most `STROKES.points` points (each starting on the point the last ended on, so a long drag
  * is one unbroken line). Each piece after the first `continues`; only the last keeps `drops`.
@@ -105,7 +140,7 @@ export function fitStroke(stroke: Stroke, minStep: Pt): Stroke[] {
   const all = stroke.points.map(([x, y]) => held(x, y));
   /* The tolerance is a share of the width, so any positive drawer width gives the same answer: 1,000 px here. */
   const W = 1000;
-  const simple = simplify(all.map(([x, y]): Pt => [x * W, (y * W) / aspect]), (width * W) / 8).map((i) => all[i]!);
+  const simple = simplifyKeepingTurns(all.map(([x, y]): Pt => [x * W, (y * W) / aspect]), (width * W) / 8).map((i) => all[i]!);
   const kept: Pt[] = [];
   for (const p of simple) {
     const last = kept[kept.length - 1];

@@ -506,6 +506,17 @@ test('a layer on a very tall box keeps its splat memory to the stated bound', ()
   assert.ok(most <= 20_000 && held() <= 20_000, `memo holds ${Math.max(most, held())}`);
 });
 
+test('a stroke that doubles back keeps its turns: a scrub there and back along one line is every pass, not one', () => {
+  const step = minStepOf(DESK);
+  const b = brushOf(BRUSH_PX, DESK);
+  const leg = (from: number, to: number): Pt[] => Array.from({ length: 20 }, (_, i): Pt => [Math.round((from + ((to - from) * (i + 1)) / 20) * 1e4) / 1e4, 0.5]);
+  const scrub: Stroke = { tool: 'wash', ...b, points: [[0.3, 0.5], ...leg(0.3, 0.6), ...leg(0.6, 0.3), ...leg(0.3, 0.6)] };
+  assert.deepEqual(fitStroke(scrub, step)[0]!.points, [[0.3, 0.5], [0.6, 0.5], [0.3, 0.5], [0.6, 0.5]], 'three passes keep both turns');
+  /* A turn back by no more than the tolerance is a wobble, not a pass, and is simplified away like any. */
+  const wobble: Stroke = { tool: 'wash', ...b, points: [[0.3, 0.5], [0.45, 0.5], [0.4495, 0.5], [0.6, 0.5]] };
+  assert.deepEqual(fitStroke(wobble, step)[0]!.points, [[0.3, 0.5], [0.6, 0.5]]);
+});
+
 test('a stroke is simplified to within a quarter of the brush\'s radius, keeping its ends', () => {
   const step = minStepOf(DESK);
   const b = brushOf(BRUSH_PX, DESK);

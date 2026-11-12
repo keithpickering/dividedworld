@@ -1561,6 +1561,25 @@ describe('saving, one at a time', () => {
     expect(washed(root)[0]).toBeCloseTo(once, 3);
   });
 
+  test('a scrub back and forth in one drag is saved pass for pass: the saved state washes the layer as far as the author\'s own screen did', async () => {
+    authorClock();
+    const { frame, root, save } = mount({ author: true });
+    const [x, y] = coreSpot(inkOf(0));
+    /* Three times there and back along one row, with points between the turns, as a hand scrubbing a stubborn core does. */
+    const leg = (from: number, to: number): [number, number][] => Array.from({ length: 7 }, (_, k): [number, number] => [from + ((to - from) * (k + 1)) / 7, y]);
+    const path: [number, number][] = [[x, y]];
+    for (let trip = 0; trip < 3; trip++) path.push(...leg(x, x + 0.12), ...leg(x + 0.12, x));
+    drag(frame, path);
+    const onScreen = washed(root)[0]!;
+    const onePass = inkOf(0, [washStroke([[x, y], [x + 0.12, y]])]).washed;
+    expect(onScreen, 'the premise: six passes wash cells that one does not').toBeGreaterThan(onePass + 0.002);
+    await settle(SAVE_AFTER_MS);
+    expect(save).toHaveBeenCalledTimes(1);
+    const sent = savedOf(save.mock.calls[0]![1]).strokes;
+    /* The saved points are simplified within a quarter of the brush, so the share they wash is the screen's to within a tenth of it. */
+    expect(Math.abs(inkOf(0, sent).washed - onScreen), 'every pass is in what was saved, not one pass for the six').toBeLessThan(onScreen * 0.1);
+  });
+
   test('strokes made while a save is on its way are sent after it, not lost with the ones it carried', async () => {
     authorClock();
     const net = gated();

@@ -11,6 +11,9 @@ test.use({ viewport: { width: 1440, height: 1120 }, reducedMotion: 'reduce' });
 /* The hold's length, read from the touch rules' own source (importing it would pull in React and its stylesheet), and refused if it is not found, so a wait never silently becomes none: a wait below it is not a hold. */
 const HOLD_MS = Number(/export const HOLD_MS = (\d+)/.exec(readFileSync(new URL('../instances/divided-world/cards/wiping.ts', import.meta.url), 'utf8'))?.[1]);
 if (!Number.isFinite(HOLD_MS)) throw new Error('HOLD_MS is not in instances/divided-world/cards/wiping.ts');
+/* The author's save waits this long after a stroke, read from the effect's own source for the same reason. */
+const SAVE_AFTER_MS = Number(/export const SAVE_AFTER_MS = (\d+)/.exec(readFileSync(new URL('../instances/divided-world/cards/whoops/Effect.tsx', import.meta.url), 'utf8'))?.[1]);
+if (!Number.isFinite(SAVE_AFTER_MS)) throw new Error('SAVE_AFTER_MS is not in instances/divided-world/cards/whoops/Effect.tsx');
 
 /*
  * How much ink the canvas holds: the sum of its alpha, in whole pixels' worth. A wash takes some of the field each pass (the ink field
@@ -65,9 +68,20 @@ test('the splat on #41 is drawn, scrubbed by a drag, and back after a reload', a
   const y = box.y + box.height / 2;
   await page.mouse.move(box.x + box.width * 0.47, y);
   await page.mouse.down();
-  await page.mouse.move(box.x + box.width * 0.6, y, { steps: 20 });
+  /*
+   * A wash takes some of the field each pass, so one pass over the splat's thick middle leaves every pixel as opaque as it was: the
+   * author goes back and forth over the same stripe in one drag, as a hand scrubs a stubborn core.
+   */
+  for (let pass = 0; pass < 6; pass++) await page.mouse.move(box.x + box.width * (pass % 2 === 0 ? 0.6 : 0.47), y, { steps: 20 });
   await page.mouse.up();
   await expect.poll(() => inked(page)).toBeLessThan(before);
+  const scrubbed = await inked(page);
+  /*
+   * The page's player is #41's author, so the drag is saved once the debounce runs out, and the saved state comes back to the post and its
+   * picture is built from it: the scrub stays, every pass of it, and is not put back to the one pass a simplified path would keep.
+   */
+  await page.waitForTimeout(SAVE_AFTER_MS * 3);
+  expect(await inked(page)).toBeLessThan(before - (before - scrubbed) / 2);
   /* The demo world starts over on a load (the address is rewritten once it is in), so a reload is a fresh visit to the moment. */
   await page.goto('/?fixture=boards&moment=01-main');
   await expect.poll(() => inked(page)).toBeGreaterThan(before * 0.95);
