@@ -96,7 +96,7 @@ const UI = path.join(here, '..');
  * every folder that holds a sheet is one or the other, so a new folder is a failure until it is
  * named here.
  */
-const GLASS_FOLDERS = ['glass', 'admin', 'frame', 'orbs', 'account', 'characters', 'profile-edit', 'rankings', 'log', 'reactions', 'cards', 'vending', 'updates', 'season', 'alerts', 'tips', 'guide', 'welcome', 'contact', 'conduct'];
+const GLASS_FOLDERS = ['glass', 'admin', 'frame', 'orbs', 'account', 'characters', 'profile-edit', 'rankings', 'log', 'reactions', 'cards', 'vending', 'updates', 'season', 'alerts', 'audio', 'tips', 'guide', 'welcome', 'contact', 'conduct'];
 const BOARD_FOLDERS = ['bbcode', 'board', 'composer', 'front-door', 'index', 'postbit', 'presence', 'profile', 'reveal', 'search', 'spin', 'thread'];
 const sheetsIn = (folder: string) => fs.readdirSync(path.join(UI, folder)).filter((f) => f.endsWith('.css')).map((f) => path.join(UI, folder, f));
 const SHEETS = GLASS_FOLDERS.flatMap(sheetsIn);

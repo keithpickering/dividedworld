@@ -11,6 +11,7 @@ import type { ConductMailOverride } from '../mail/conduct.ts';
 import type { Quadrant, Span } from '../rules/types.ts';
 import type { CardArt, CardUi } from './cards/types.ts';
 import type { Alert } from './data/api.ts';
+import type { SoundsUi } from './audio/types.ts';
 import type { TipKey } from './tips/keys.ts';
 
 /**
@@ -394,6 +395,8 @@ export interface ConductUi {
 export interface InstanceUi {
   /** The themes a player may pick; the first is the house theme, used when the account says "system". */
   readonly themes: readonly ThemeOption[];
+  /** The sounds the instance supplies, each with its bus and caption (docs/plans/2026-11-11-laugh-track-plan.md); none means a silent instance. */
+  readonly sounds?: SoundsUi;
   /** The four quadrants' labels on the reaction picker. */
   readonly quadrantLabels: Readonly<Record<Quadrant, string>>;
   /**

@@ -18,7 +18,7 @@
  */
 import { useEffect, useId, useMemo, useRef } from 'react';
 import { DEFAULT_DEVELOPER } from '../../rules/instance.ts';
-import { EffectsRow, MotionRow, TextSizeRow } from '../account/appearanceRows.tsx';
+import { EffectsRow, MotionRow, SoundRow, TextSizeRow } from '../account/appearanceRows.tsx';
 import { ThemeRow } from '../account/ThemePicker.tsx';
 import { usePreferenceSaves } from '../account/preferences.ts';
 import { useBoot } from '../boot.tsx';
@@ -100,6 +100,8 @@ export function Welcome() {
                 <MotionRow level={4} value={prefs.motion} onChange={(v) => change({ motion: v })} />
                 <TextSizeRow level={4} value={prefs.textSize} onChange={(v) => change({ textSize: v })} />
                 <EffectsRow level={4} value={prefs.effects} onChange={(v) => change({ effects: v })} />
+                <SoundRow level={4} bus="game" value={prefs.gameSound} volume={prefs.gameVolume} onChange={(v) => change({ gameSound: v })} onVolume={(v) => change({ gameVolume: v })} />
+                <SoundRow level={4} bus="interface" value={prefs.interfaceSound} volume={prefs.interfaceVolume} onChange={(v) => change({ interfaceSound: v })} onVolume={(v) => change({ interfaceVolume: v })} />
                 {refusal && <p role="alert" className="kb-acct-refusal">{refusal}</p>}
                 <p role="status" className="kb-acct-note">{saved && !refusal ? 'Saved to your account.' : ''}</p>
               </>

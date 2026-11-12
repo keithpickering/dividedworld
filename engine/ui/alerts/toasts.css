@@ -10,7 +10,7 @@
 .kb-toasts {
   position: fixed;
   right: 34px;
-  bottom: calc(var(--kb-hud-measured, 0px) + 16px);
+  bottom: calc(var(--kb-hud-measured, 0px) + var(--kb-captions-measured, 0px) + 16px);
   z-index: 29;
   box-sizing: border-box;
   width: min(470px, calc(100vw - 32px));

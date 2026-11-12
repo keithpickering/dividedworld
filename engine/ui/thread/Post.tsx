@@ -18,6 +18,7 @@ import { useReachShown } from '../cards/PlayActions.tsx';
 import { EditPost } from '../composer/EditPost.tsx';
 import type { Act, Id, MyHiddenVersion, Visit } from '../data/api.ts';
 import { useNarrow } from '../media.ts';
+import { landPost } from '../shine/landing.ts';
 import { usePlayer } from '../player.tsx';
 import { Postbit, Signature, type PostbitLayout, type PostbitPerson } from '../postbit/Postbit.tsx';
 import { Link } from '../router.tsx';
@@ -183,6 +184,11 @@ export const ActArticle = memo(function ActArticle({ act, person, layout, slid }
     observer.observe(el);
     return () => observer.unobserve(el);
   }, [observer]);
+  /* Glitter lands on this post's cells (docs/plans/2026-11-11-shake-design.md section 4); the way out lets go of them. Strict-mode safe: each run's way out undoes that run. */
+  useEffect(() => {
+    const el = ref.current;
+    return el ? landPost(el) : undefined;
+  }, []);
   const name = nameOf(act, person, ui.copy.staffWord);
   /* The name as it reads inside a sentence: the staff's word is set for a name slot ("The staff"), so it is lowered here ("Post 3 by the staff"). */
   const spoken = act.character === null ? lowerFirst(name) : name;

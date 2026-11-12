@@ -1003,3 +1003,40 @@
 :where(:root[data-kb-layout='phone']) .kb-acct-seg-stack .kb-acct-seg-face {
   display: flex;
 }
+
+/* A sound row's volume: its label, the range and its value beside it, under the row's sentence. */
+.kb-acct-volume {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 16px;
+  max-width: 680px;
+  margin: 16px 0 0;
+}
+
+.kb-acct-volume-label {
+  font-size: var(--kb-glass-size-body);
+  font-weight: 700;
+  color: var(--kb-glass-text);
+}
+
+.kb-acct-volume-range {
+  flex: 1 1 200px;
+  min-width: 160px;
+  min-height: 44px;
+  margin: 0;
+  accent-color: var(--kb-glass-neon);
+  cursor: pointer;
+}
+
+.kb-acct-volume-range:focus-visible {
+  outline: 3px solid var(--kb-glass-text-hi);
+  outline-offset: 3px;
+}
+
+.kb-acct-volume-value {
+  min-width: 4ch;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 800;
+  color: var(--kb-glass-text);
+}
