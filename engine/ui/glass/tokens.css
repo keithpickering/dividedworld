@@ -17,6 +17,9 @@
   --kb-glass-field: #111;
   --kb-glass-field-2: #0a0a0a;
   --kb-glass-card: #050505;
+  /* The caption bar's own black and white (engine/ui/audio/captions.css): the words stand white on black in every instance. */
+  --kb-glass-caption-ground: #000;
+  --kb-glass-caption-ink: #fff;
 
   /* Text. */
   --kb-glass-text: #eee;

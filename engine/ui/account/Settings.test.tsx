@@ -12,6 +12,9 @@ import { SIGNED_OUT_DOC } from '../screen-docs.ts';
 import { SettingsScreen } from './Settings.tsx';
 import { onToastChoice } from '../alerts/toast-choice.ts';
 import { LoadedSettings } from '../loaded.tsx';
+import { fakeSound } from '../audio/test-sound.ts';
+import { resetSound } from '../audio/sound.ts';
+import type { SoundsUi } from '../audio/types.ts';
 
 const MARKS = ['data-kb-mode', 'data-kb-motion', 'data-kb-motion-feel', 'data-kb-smoke-level', 'data-kb-contrast', 'data-kb-text-size', 'data-kb-effects', 'data-kb-glass-key'];
 beforeEach(() => { localStorage.clear(); for (const m of MARKS) document.documentElement.removeAttribute(m); });
@@ -75,11 +78,11 @@ describe('Settings, as board 11 draws it', () => {
     expect(screen.queryByRole('navigation', { name: 'Settings sections' })).toBeNull();
   });
 
-  test('its sections are a navigation of Account, Accessibility, The board and Notifications, and the page opens on Accessibility', async () => {
+  test('its sections are a navigation of Account, Accessibility, Sound, The board and Notifications, and the page opens on Accessibility', async () => {
     open(world().fake);
     expect(await screen.findByRole('heading', { level: 1, name: 'Settings' })).toBeInTheDocument();
     const nav = screen.getByRole('navigation', { name: 'Settings sections' });
-    expect(within(nav).getAllByRole('link').map((l) => l.textContent)).toEqual(['Account', 'Accessibility', 'The board', 'Notifications']);
+    expect(within(nav).getAllByRole('link').map((l) => l.textContent)).toEqual(['Account', 'Accessibility', 'Sound', 'The board', 'Notifications']);
     expect(within(nav).getByRole('link', { name: 'Accessibility' })).toHaveAttribute('aria-current', 'page');
     expect(within(nav).getByRole('link', { name: 'Account' })).toHaveAttribute('href', '/settings?section=account');
     expect(await screen.findByRole('heading', { level: 2, name: 'Accessibility' })).toBeInTheDocument();
@@ -875,5 +878,224 @@ describe('a change of section swaps the body only', () => {
     expect(within(entering!).getByRole('radiogroup', { name: 'Smoke' })).toBeInTheDocument();
     expect(within(entering!).queryByRole('list', { name: 'Your invites' })).toBeNull();
     await waitFor(() => expect(document.querySelector('[data-kb-exiting]')).toBeNull(), { timeout: 3000 });
+  });
+});
+
+describe('Settings › Sound', () => {
+  const BOTH: SoundsUi = {
+    slots: [{ key: 'boo', src: '/boo.mp3', bus: 'game', caption: 'The audience boos' }, { key: 'click', src: '/click.mp3', bus: 'interface', caption: 'A click' }],
+    preview: { game: 'boo', interface: 'click' },
+  };
+  const GAME_ONLY: SoundsUi = { slots: [BOTH.slots[0]!], preview: { game: 'boo' } };
+  const NO_PREVIEW: SoundsUi = { slots: BOTH.slots };
+  const sound = (sounds?: SoundsUi) => {
+    const w = world();
+    renderIn(w.fake, <LoadedSettings />, { path: '/settings?section=sound', ...(sounds ? { sounds } : {}) });
+    return w;
+  };
+  afterEach(() => { resetSound(); });
+
+  test('is a section after Accessibility, headed Sound, with a row for game sounds and one for interface sounds, each Off and On and off to start', async () => {
+    fakeSound();
+    sound(BOTH);
+    expect(await screen.findByRole('heading', { level: 2, name: 'Sound' })).toBeInTheDocument();
+    expect(within(screen.getByRole('navigation', { name: 'Settings sections' })).getByRole('link', { name: 'Sound' })).toHaveAttribute('aria-current', 'page');
+    for (const g of ['Game sounds', 'Interface sounds']) {
+      expect(within(group(g)).getAllByRole('radio').map((r) => r.closest('label')?.textContent)).toEqual(['Off', 'On']);
+      expect(radio(g, 'Off')).toBeChecked();
+    }
+    expect(screen.getByText('Sounds that cards and other game effects make on the board. Every one is also shown as a caption at the bottom of the screen.')).toBeInTheDocument();
+    expect(screen.getByText('Sounds the board itself makes, apart from the game.')).toBeInTheDocument();
+    expect(screen.queryByText(/This forum has none yet/u)).toBeNull();
+    expect(screen.queryByRole('slider')).toBeNull();
+  });
+
+  test('while the instance holds no interface sound, the interface row says so; with one it does not', async () => {
+    fakeSound();
+    sound(GAME_ONLY);
+    await screen.findByRole('radiogroup', { name: 'Interface sounds' });
+    expect(screen.getByText('Sounds the board itself makes, apart from the game. This forum has none yet.')).toBeInTheDocument();
+    expect(screen.getAllByText(/This forum has none yet/u)).toHaveLength(1);
+  });
+
+  test('an instance with no sounds at all says it of the interface row too', async () => {
+    fakeSound();
+    sound();
+    await screen.findByRole('radiogroup', { name: 'Interface sounds' });
+    expect(screen.getByText(/This forum has none yet\./u)).toBeInTheDocument();
+  });
+
+  test.each([['Game sounds', { gameSound: 'on' }], ['Interface sounds', { interfaceSound: 'on' }]] as const)('choosing On for %s saves it, and it is still on after a fresh load', async (name, saved) => {
+    fakeSound();
+    const w = world();
+    const render = () => renderIn(w.fake, <LoadedSettings />, { path: '/settings?section=sound', sounds: BOTH });
+    render();
+    await screen.findByRole('radiogroup', { name });
+    await userEvent.click(radio(name, 'On'));
+    await waitFor(async () => expect(await w.fake.preferences()).toMatchObject(saved));
+    cleanup();
+    render();
+    await screen.findByRole('radiogroup', { name });
+    expect(radio(name, 'On')).toBeChecked();
+    await userEvent.click(radio(name, 'Off'));
+    await waitFor(async () => expect(await w.fake.preferences()).toMatchObject({ gameSound: 'off', interfaceSound: 'off' }));
+  });
+
+  test('a volume shows only while its sound is on, labeled, 0 to 100 in steps of 5, with its value said beside it', async () => {
+    fakeSound();
+    sound(BOTH);
+    await screen.findByRole('radiogroup', { name: 'Game sounds' });
+    expect(screen.queryByRole('slider', { name: 'Game volume' })).toBeNull();
+    await userEvent.click(radio('Game sounds', 'On'));
+    const slider = await screen.findByRole('slider', { name: 'Game volume' });
+    expect(slider).toHaveAttribute('min', '0');
+    expect(slider).toHaveAttribute('max', '100');
+    expect(slider).toHaveAttribute('step', '5');
+    expect(slider).toHaveValue('80');
+    expect(within(group('Game sounds')).getByText('80%')).toBeInTheDocument();
+    expect(screen.queryByRole('slider', { name: 'Interface volume' })).toBeNull();
+    await userEvent.click(radio('Interface sounds', 'On'));
+    expect(await screen.findByRole('slider', { name: 'Interface volume' })).toBeInTheDocument();
+    await userEvent.click(radio('Game sounds', 'Off'));
+    await waitFor(() => expect(screen.queryByRole('slider', { name: 'Game volume' })).toBeNull());
+    expect(screen.getByRole('slider', { name: 'Interface volume' })).toBeInTheDocument();
+  });
+
+  test('dragging a volume (input) moves the number and saves nothing; releasing it (change) saves it', async () => {
+    fakeSound();
+    const w = sound(BOTH);
+    await screen.findByRole('radiogroup', { name: 'Game sounds' });
+    await userEvent.click(radio('Game sounds', 'On'));
+    const slider = await screen.findByRole('slider', { name: 'Game volume' });
+    const save = vi.spyOn(w.fake, 'setPreferences');
+    fireEvent.input(slider, { target: { value: '55' } });
+    expect(within(group('Game sounds')).getByText('55%')).toBeInTheDocument();
+    expect(save).not.toHaveBeenCalled();
+    expect((await w.fake.preferences()).gameVolume).toBe(80);
+    fireEvent.change(slider, { target: { value: '55' } });
+    await waitFor(async () => expect((await w.fake.preferences()).gameVolume).toBe(55));
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({ gameVolume: 55 }));
+  });
+
+  test('the interface volume saves on release too', async () => {
+    fakeSound();
+    const w = sound(BOTH);
+    await screen.findByRole('radiogroup', { name: 'Interface sounds' });
+    await userEvent.click(radio('Interface sounds', 'On'));
+    fireEvent.change(await screen.findByRole('slider', { name: 'Interface volume' }), { target: { value: '35' } });
+    await waitFor(async () => expect(await w.fake.preferences()).toMatchObject({ interfaceVolume: 35, gameVolume: 80 }));
+  });
+
+  test('releasing a volume plays the bus\'s preview where the instance names one', async () => {
+    const { fetched } = fakeSound();
+    sound(BOTH);
+    await screen.findByRole('radiogroup', { name: 'Game sounds' });
+    await userEvent.click(radio('Game sounds', 'On'));
+    const slider = await screen.findByRole('slider', { name: 'Game volume' });
+    fireEvent.input(slider, { target: { value: '30' } });
+    await act(async () => { await Promise.resolve(); });
+    expect(fetched).not.toHaveBeenCalled();
+    fireEvent.change(slider, { target: { value: '30' } });
+    await waitFor(() => expect(fetched).toHaveBeenCalledWith('/boo.mp3'));
+    await userEvent.click(radio('Interface sounds', 'On'));
+    fireEvent.change(await screen.findByRole('slider', { name: 'Interface volume' }), { target: { value: '60' } });
+    await waitFor(() => expect(fetched).toHaveBeenCalledWith('/click.mp3'));
+  });
+
+  test('where no preview is named, releasing a volume plays nothing', async () => {
+    const { fetched } = fakeSound();
+    const w = sound(NO_PREVIEW);
+    await screen.findByRole('radiogroup', { name: 'Game sounds' });
+    await userEvent.click(radio('Game sounds', 'On'));
+    fireEvent.change(await screen.findByRole('slider', { name: 'Game volume' }), { target: { value: '30' } });
+    await waitFor(async () => expect((await w.fake.preferences()).gameVolume).toBe(30));
+    await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
+    expect(fetched).not.toHaveBeenCalled();
+  });
+
+  describe('a volume that steps, drifts or is refused', () => {
+    const stepped = async (sounds: SoundsUi = BOTH) => {
+      const sources = fakeSound().sources;
+      const w = sound(sounds);
+      await screen.findByRole('radiogroup', { name: 'Game sounds' });
+      await userEvent.click(radio('Game sounds', 'On'));
+      const slider = await screen.findByRole('slider', { name: 'Game volume' });
+      await waitFor(async () => expect((await w.fake.preferences()).gameSound).toBe('on'));
+      return { w, slider, sources };
+    };
+
+    test('three quick releases are one save of the last value, and their previews replace one another', async () => {
+      const { w, slider, sources } = await stepped();
+      const save = vi.spyOn(w.fake, 'setPreferences');
+      vi.useFakeTimers();
+      try {
+        for (const v of ['85', '90', '95']) { fireEvent.change(slider, { target: { value: v } }); await act(async () => { await vi.advanceTimersByTimeAsync(50); }); }
+        expect(save).not.toHaveBeenCalled();
+        await act(async () => { await vi.advanceTimersByTimeAsync(300); });
+      } finally { vi.useRealTimers(); }
+      expect(save).toHaveBeenCalledTimes(1);
+      expect(save).toHaveBeenCalledWith(expect.objectContaining({ gameVolume: 95 }));
+      expect(sources).toHaveLength(3);
+      expect(sources[0]!.stop).toHaveBeenCalledWith(0.08);
+      expect(sources[1]!.stop).toHaveBeenCalledWith(0.08);
+      expect(sources[2]!.stop).not.toHaveBeenCalled();
+    });
+
+    test('leaving the slider saves what is waiting at once, and so does turning the sound Off', async () => {
+      const { w, slider } = await stepped();
+      fireEvent.change(slider, { target: { value: '40' } });
+      fireEvent.blur(slider);
+      await waitFor(async () => expect((await w.fake.preferences()).gameVolume).toBe(40));
+      fireEvent.change(slider, { target: { value: '25' } });
+      await userEvent.click(radio('Game sounds', 'Off'));
+      await waitFor(async () => expect(await w.fake.preferences()).toMatchObject({ gameVolume: 25, gameSound: 'off' }));
+    });
+
+    test('a drag that ends without a release puts the number back to the saved volume on blur', async () => {
+      const { slider } = await stepped();
+      fireEvent.input(slider, { target: { value: '15' } });
+      expect(within(group('Game sounds')).getByText('15%')).toBeInTheDocument();
+      fireEvent.blur(slider);
+      await waitFor(() => expect(within(group('Game sounds')).getByText('80%')).toBeInTheDocument());
+      expect(slider).toHaveValue('80');
+    });
+
+    test('a refused save puts the slider back to the saved volume', async () => {
+      const { w, slider } = await stepped();
+      w.fake.setPreferences = async () => ({ ok: false, error: 'the volume is 0 to 100' });
+      fireEvent.change(slider, { target: { value: '10' } });
+      fireEvent.blur(slider);
+      await waitFor(() => expect(slider).toHaveValue('80'));
+      expect(within(group('Game sounds')).getByText('80%')).toBeInTheDocument();
+    });
+
+    test('a release waiting to be saved is dropped when the account changes, and never saved to the next account', async () => {
+      const { w, slider } = await stepped();
+      const other = w.fake.seed.account('other');
+      const saved: unknown[] = [];
+      const real = w.fake.setPreferences.bind(w.fake);
+      w.fake.setPreferences = (patch) => { saved.push(patch); return real(patch); };
+      vi.useFakeTimers();
+      try {
+        fireEvent.change(slider, { target: { value: '10' } });
+        w.fake.signInAs(other);
+        await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+        await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+      } finally { vi.useRealTimers(); }
+      expect(saved).toEqual([]);
+      expect((await w.fake.preferences()).gameVolume).toBe(80);
+    });
+
+    test('turning Off removes the range, and a change on it afterward saves nothing', async () => {
+      const { w, slider } = await stepped();
+      await userEvent.click(radio('Game sounds', 'Off'));
+      await waitFor(() => expect(screen.queryByRole('slider', { name: 'Game volume' })).toBeNull());
+      const save = vi.spyOn(w.fake, 'setPreferences');
+      fireEvent.change(slider, { target: { value: '5' } });
+      await act(async () => { await new Promise((r) => setTimeout(r, 350)); });
+      expect(save).not.toHaveBeenCalled();
+      expect((await w.fake.preferences()).gameVolume).toBe(80);
+    });
   });
 });

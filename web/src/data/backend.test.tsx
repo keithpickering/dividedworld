@@ -102,8 +102,8 @@ describe('createBackend and the demo', () => {
 
   /* The end-to-end flows play another player's part on the fake (e2e/focus.spec.ts); no other build leaves it reachable. */
   it('leaves the fake and its demo world on globalThis in the end-to-end build only', async () => {
-    const reachable = () => '__kbFake' in globalThis || '__kbDemo' in globalThis;
-    const clear = () => { delete (globalThis as { __kbFake?: unknown }).__kbFake; delete (globalThis as { __kbDemo?: unknown }).__kbDemo; };
+    const reachable = () => '__kbFake' in globalThis || '__kbDemo' in globalThis || '__kbCaptions' in globalThis;
+    const clear = () => { delete (globalThis as { __kbFake?: unknown }).__kbFake; delete (globalThis as { __kbDemo?: unknown }).__kbDemo; delete (globalThis as { __kbCaptions?: unknown }).__kbCaptions; };
     clear();
     vi.stubEnv('PROD', false);
     vi.stubEnv('MODE', 'development');
@@ -116,6 +116,7 @@ describe('createBackend and the demo', () => {
     const api = await createBackend();
     expect((globalThis as { __kbFake?: unknown }).__kbFake).toBe(api);
     expect((globalThis as { __kbDemo?: { longThread?: string } }).__kbDemo?.longThread).toEqual(expect.any(String));
+    expect((globalThis as { __kbCaptions?: { say?: unknown } }).__kbCaptions?.say).toEqual(expect.any(Function));
     clear();
   });
 });
