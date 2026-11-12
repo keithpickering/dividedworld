@@ -519,6 +519,7 @@ test('a Move that writes, needs a message, draws or runs a drive is cast face up
   const driver: CardRules = { ...cast('driver', 'common'), drive: { lasts: { unit: 'day', count: 7 }, gifts: ['g'], overhead: 'o' } };
   for (const card of [writer, needy, dealer, driver]) assert.equal(faceUpOnly(card), true, `${card.key} is face up only`);
   assert.equal(faceUpOnly(plain), false);
+  assert.equal(faceUpOnly(cutter), true, 'a card that replies is face up only, so the play form offers it no Set face down switch');
   for (const card of [needy, dealer, driver]) assert.deepEqual(decideSet(card, settings, post, [], {}, [card]), { ok: false, why: `${card.name} is cast face up and never set face down` });
   assert.deepEqual(decideSet(writer, settings, post, [], {}, [writer]), { ok: false, why: `${writer.name} writes, so it is cast face up and never set face down` });
   assert.equal(decideSet(plain, settings, post, [], {}, [plain]).ok, true);

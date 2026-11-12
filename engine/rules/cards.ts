@@ -502,14 +502,14 @@ export interface SetConditions {
 const hasWord = (s: string): boolean => /[\p{L}\p{N}]/u.test(s);
 
 /**
- * Whether a card can only be cast now and face up, never set face down (the owner's answer to issue #446): it writes, needs a message, draws or runs a
+ * Whether a card can only be cast now and face up, never set face down (the owner's answer to issue #446): it writes, replies, needs a message, draws or runs a
  * drive. Each of those is done at the cast, on the post the caster chose (the tail is bought, the message is said, the draw is made, the drive opens), and a
  * back that sprang later on a quote would land with none of it. A surface card is one too (docs/plans/2026-11-12-graffiti-face-up-design.md, section 1):
  * its first tag is drawn on the post the caster chose, and a back would carry it blind to a quoting post's box nobody drew for. decideSet refuses such a card, the play form leaves out its Set face down switch, and the
  * server holds the same on face_down (supabase/migrations/0153_drives.sql, face_down_never_writes).
  */
-export const faceUpOnly = (rules: Pick<CardRules, 'writes' | 'needsMessage' | 'draws' | 'drive' | 'surface'>): boolean =>
-  rules.writes !== undefined || rules.needsMessage !== undefined || rules.draws !== undefined || rules.drive !== undefined || rules.surface !== undefined;
+export const faceUpOnly = (rules: Pick<CardRules, 'writes' | 'needsMessage' | 'draws' | 'drive' | 'surface' | 'replies'>): boolean =>
+  rules.writes !== undefined || rules.needsMessage !== undefined || rules.draws !== undefined || rules.drive !== undefined || rules.surface !== undefined || rules.replies !== undefined;
 
 export function decideSet(rules: CardRules, settings: Settings, target: CardTarget, effects: readonly CardEffect[], config: unknown, cards: readonly CardRules[], conditions: SetConditions = {}, now: Date = new Date()): Verdict<{ price: Hundredths; config: unknown; catches?: string; phrase?: string; passage?: string; who?: { except: boolean; characters: readonly string[] } }> {
   const play = playOf(rules);
@@ -517,10 +517,10 @@ export function decideSet(rules: CardRules, settings: Settings, target: CardTarg
   if (withheld(rules, settings)) return refuse(OLD_VOICE_OFF);
   // A card that writes is cast face up and never set face down: its tail is bought at the cast, on the post the caster chose.
   if (rules.writes !== undefined) return refuse(`${rules.name} writes, so it is cast face up and never set face down`);
+  // So is a card that replies: its reply is written with the play, under the post the caster chose.
+  if (rules.replies !== undefined) return refuse(`${rules.name} carries a reply, so it is cast face up and never set face down`);
   // So is one that needs a message, draws, runs a drive or is drawn on (a surface card): faceUpOnly says which, and one sentence covers them.
   if (faceUpOnly(rules)) return refuse(`${rules.name} is cast face up and never set face down`);
-  // A card that replies carries a post written with the play, so it is cast face up as well.
-  if (rules.replies === true) return refuse(`${rules.name} carries a reply, so it is cast face up and never set face down`);
   if (target.reach !== 'post' || target.kind !== 'post') return refuse('a card is set face down on a post');
   if (effects.some((e) => e.faceDown && isLive(e, now))) return refuse('this post already holds a card face down');
   const stop = quoteStop(effects, now);
