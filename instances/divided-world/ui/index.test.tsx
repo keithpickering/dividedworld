@@ -22,6 +22,9 @@ import { webpSize } from '../../../engine/ui/profile-edit/webp.ts';
 import { gearUi } from './cosmetics.ts';
 import { mooch } from '../cards/mooch.ts';
 import { toll } from '../cards/toll.ts';
+import { lineCutter } from '../cards/line-cutter.ts';
+import { feelinGlam } from '../cards/feelin-glam.ts';
+import { feelinFab } from '../cards/feelin-fab.ts';
 import { fourDChess } from '../cards/4d-chess.ts';
 import { offDay } from '../cards/off-day.ts';
 import { CUES, laughTrack } from '../cards/laugh-track.ts';
@@ -114,11 +117,46 @@ describe('Divided World\'s cards in the guide, in the glass\'s words about setti
     for (const text of [t.describe, t.summary]) expect(text).not.toMatch(/pays you|what it cost|wallet|what the caster paid/u);
   });
   test('each Move says what setting it does, landing at its own reach and no other', () => {
-    const lands = { whoops: 'the quoting post', 'stick-around': 'the quoting post', autocorrect: 'the quoting post', 'feelin-fab': 'the quoting post', 'below-the-fold': 'the quoting post', 'laugh-track': 'the quoting post', 'glitter-bomb': "the quoting post's character", 'hype-up': "the quoting post's character", 'main-event': "the quoting post's thread" };
+    const lands = { whoops: 'the quoting post', 'stick-around': 'the quoting post', autocorrect: 'the quoting post', 'feelin-fab': 'the quoting post', 'below-the-fold': 'the quoting post', 'laugh-track': 'the quoting post', 'glitter-bomb': "the quoting post's character", 'hype-up': "the quoting post's character", 'main-event': "the quoting post's thread", 'feelin-glam': "the quoting post's thread" };
     for (const [key, reach] of Object.entries(lands)) {
       expect(face(key).describe, key).toContain(`You can also set it face down on one of your own posts: it springs on the next quote of that post and lands on ${reach} at no further cost, using up the card.`);
     }
     expect(face('autocorrect').describe).toMatch(/set one lands only when the quote's own words hold its phrase/u);
+  });
+  test('Line Cutter holds no face-down sentence, and every word of its face is the plan\'s, true to its rules', () => {
+    const t = face('line-cutter');
+    const ui = instanceUi.cards.find((c) => c.key === 'line-cutter')!;
+    expect(ui.Effect).toBeUndefined();
+    expect(ui.art.tagline).toBe('Reply right under a post.');
+    expect([ui.art.color, ui.art.ink]).toEqual(['#d24a2c', '#1a0602']);
+    expect(t.summary).toBe('Posts your reply right under a post, where it stays however long the thread grows.');
+    expect(ui.status).toBe('A reply cut in under it');
+    expect(ui.hint).toBe('A Line Cutter: the reply under this post was written later and cut in line.');
+    expect(ui.logPlay?.({}, instance.settings)).toBe('It put a reply right under the post.');
+    expect(t.describe).not.toMatch(/face down on one of your own posts/u);
+    expect(t.describe).toMatch(/^A Pepperoni card, rare\. /u);
+    expect(lineCutter.rarity).toBe('rare');
+    expect(lineCutter.replies).toBe(true);
+    expect(lineCutter.lasts).toBeUndefined();
+    expect(t.describe).toContain('It is only ever cast face up.');
+    expect(t.describe).toContain('One fits under a post, and a reply that cut in takes none under it.');
+  });
+  test("Feelin' Glam's words say its rarity, its span and Feelin' Fab's three, from the rules, and it draws through Feelin' Fab", () => {
+    const t = face('feelin-glam');
+    const ui = instanceUi.cards.find((c) => c.key === 'feelin-glam')!;
+    expect(ui.drawnBy).toBe('feelin-fab');
+    expect(ui.Effect).toBeUndefined();
+    expect(ui.art.tagline).toBe('Give a whole thread a rainbow.');
+    expect([ui.art.color, ui.art.ink]).toEqual(['#2ee6ff', '#03141a']);
+    expect(feelinGlam.rarity).toBe('rare');
+    expect(feelinGlam.lasts).toEqual({ unit: 'day', count: 7 });
+    expect(feelinGlam.keeps).toBe(true);
+    expect(feelinFab.stack).toBe(3);
+    expect(t.summary).toBe("Cast on a thread. Every post there gets one more level of Feelin' Fab's rainbow for a week, and posts written in that time keep it.");
+    expect(t.describe).toMatch(/^A Sweet card, rare, cast on a thread from its title\. For a week, every post in the thread is drawn with one more level of Feelin' Fab's rainbow, up to Feelin' Fab's three: /u);
+    expect(t.describe).toContain("It takes none of a post's three Feelin' Fab places. A post written in the thread during that time keeps its extra level for good; every other post loses it when the time is up. One fits on a thread at a time.");
+    expect(ui.hint).toBe("A Feelin' Glam: every post in this thread glows one level more.");
+    expect(typeof ui.status === 'function' && [ui.status([{} as never]), ui.status([])]).toEqual(['One more rainbow level here', 'Kept by posts from its week']);
   });
   test('the guide names the three kinds and says every card back looks the same, with no payout from a trap', () => {
     expect(guideMd).toMatch(/- \*\*Move, Reversal, Gimmick\.\*\*/u);
