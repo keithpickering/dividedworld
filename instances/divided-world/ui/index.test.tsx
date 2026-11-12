@@ -269,18 +269,38 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     expect(ui.logPlay!({}, {} as never)).toBe('It gave the post a studio audience.');
     const e = instance.settings.economy;
     const surcharge = ui.surcharge as (s: typeof instance.settings) => string;
-    expect(surcharge(instance.settings)).toBe(`Many places, +${e['laughTrack.perPlace']! / 100} per place past ${e['laughTrack.freePlaces']}`);
+    expect(surcharge(instance.settings)).toBe('Many places, +0.05 per place past 5');
+    // Autocorrect's form: the amount is an orb amount (hundredths to two places), each value read with a fallback of 0.
+    expect(surcharge({ ...instance.settings, economy: { ...instance.settings.economy, 'laughTrack.perPlace': 10 } })).toBe('Many places, +0.10 per place past 5');
+    expect(surcharge({ ...instance.settings, economy: { ...instance.settings.economy, 'laughTrack.freePlaces': undefined as never } })).toBe('Many places, +0.05 per place past 0');
     const said = ui.describe(instance.settings);
     expect(said).toBe(`A Pepperoni card, ${laughTrack.rarity}. You choose up to five phrases in a post and give each a sound: the audience laughs, cheers or boos. Wherever a phrase appears in the post's own words, the audience reacts as a reader reaches it, and builds up as they get close. Every reaction is also shown as a caption, so it works with sound off. One audience fits on a post. You can also set it face down on one of your own posts: it springs on the next quote of that post and lands on the quoting post at no further cost, using up the card. Set face down, it waits for a quote that says its first phrase. It costs more to play the more places its phrases cover.`);
-    // True to the rules: five cues, three sounds, one audience, a first phrase to spring on, a price that grows with places.
+    // True to the rules, each claim in the words tied to the rule that makes it so.
+    const post = (text: string) => ({ reach: 'post', act: 'p1', kind: 'post', length: text.length, text } as never);
+    const cueOf = (phrase: string, sound: string) => ({ phrase, sound });
     expect(CUES.most).toBe(5);
+    expect(said).toContain('up to five phrases');
+    const words = ['abcd', 'efgh', 'ijkl', 'mnop', 'qrst', 'uvwx'];
+    expect(laughTrack.validateConfig!({ cues: words.slice(0, CUES.most).map((w) => cueOf(w, 'laugh')) }).ok).toBe(true);
+    expect(laughTrack.validateConfig!({ cues: words.slice(0, CUES.most + 1).map((w) => cueOf(w, 'laugh')) }).ok).toBe(false);
+    expect(said).toContain('laughs, cheers or boos');
+    for (const sound of ['laugh', 'cheer', 'boo']) expect(laughTrack.validateConfig!({ cues: [cueOf('abcd', sound)] }).ok, sound).toBe(true);
+    expect(laughTrack.validateConfig!({ cues: [cueOf('abcd', 'groan')] }).ok).toBe(false);
+    expect(said).toContain('One audience fits on a post.');
+    const config = { cues: [{ phrase: 'abcd', sound: 'laugh' as const }] };
+    const audience = { card: 'laugh-track', act: 'a1' };
+    expect(laughTrack.canApply(post('abcd'), [], config, new Date()).ok).toBe(true);
+    expect(laughTrack.canApply(post('abcd'), [audience], config, new Date())).toEqual({ ok: false, why: 'this post already has an audience' });
+    expect(said).toContain('It costs more to play the more places its phrases cover.');
+    const free = e['laughTrack.freePlaces']!;
+    const priceAt = (places: number) => laughTrack.playPrice!(instance.settings, post('abcd '.repeat(places)), config);
+    expect(priceAt(free)).toBe(0);
+    expect(priceAt(free + 1)).toBe(e['laughTrack.perPlace']);
+    expect(priceAt(free + 2)).toBeGreaterThan(priceAt(free + 1));
+    expect(priceAt(30)).toBe(e['laughTrack.mostAdded']);
     expect(laughTrack.rarity).toBe('uncommon');
     expect(laughTrack.alignment).toBe('pepperoni');
     expect(laughTrack.setPhrase!({ cues: [{ phrase: 'first one', sound: 'boo' }, { phrase: 'second', sound: 'cheer' }] })).toBe('first one');
-    const post = (text: string) => ({ reach: 'post', text } as never);
-    const cue = { cues: [{ phrase: 'abcd', sound: 'laugh' as const }] };
-    expect(laughTrack.playPrice!(instance.settings, post('abcd '.repeat(e['laughTrack.freePlaces']!)), cue)).toBe(0);
-    expect(laughTrack.playPrice!(instance.settings, post('abcd '.repeat(e['laughTrack.freePlaces']! + 1)), cue)).toBe(e['laughTrack.perPlace']);
     expect(instance.machine.at(-3)).toEqual({ item: { card: 'laugh-track' }, availability: 'onSale', price: 150 });
   });
   test('Whoops! draws its effect and its ink form, and each play\'s tag takes its own ink', () => {

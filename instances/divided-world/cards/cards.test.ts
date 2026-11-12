@@ -505,7 +505,7 @@ test('Autocorrect\'s phrase is its set phrase', () => {
   assert.equal(by('card-collector').setPhrase, undefined);
 });
 
-test('the Booster\'s hit pull gives uncommon 74, rare 24 and legendary 2, over the twenty cards', async () => {
+test('the Booster\'s hit pull gives uncommon 74, rare 24 and legendary 2, over the twenty-one cards', async () => {
   const { packOdds } = await import('../../../engine/rules/packs.ts');
   const booster = instance.packs.find((p) => p.key === 'booster')!;
   assert.deepEqual(booster.pulls.at(-1)!.weights, { uncommon: 74, rare: 24, legendary: 2 });

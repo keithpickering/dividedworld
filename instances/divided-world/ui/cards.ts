@@ -269,7 +269,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
     hint: 'A Laugh Track: the audience reacts when you reach certain words. Turn on Game sounds in Settings to hear it.',
     Effect: LaughTrackEffect,
     ConfigForm: LaughTrackConfigForm,
-    surcharge: (s: Settings) => `Many places, +${(s.economy['laughTrack.perPlace'] ?? 0) / 100} per place past ${s.economy['laughTrack.freePlaces']}`,
+    surcharge: (s: Settings) => `Many places, +${orbs(s.economy['laughTrack.perPlace'] ?? 0)} per place past ${s.economy['laughTrack.freePlaces'] ?? 0}`,
     describe: () =>
       `A Pepperoni card, ${laughTrack.rarity}. You choose up to five phrases in a post and give each a sound: the audience laughs, cheers or boos. Wherever a phrase appears in the post's own words, the audience reacts as a reader reaches it, and builds up as they get close. Every reaction is also shown as a caption, so it works with sound off. One audience fits on a post. ${setMoveWords('the quoting post')} Set face down, it waits for a quote that says its first phrase. It costs more to play the more places its phrases cover.`,
     logPlay: () => 'It gave the post a studio audience.',
