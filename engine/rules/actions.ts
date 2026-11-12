@@ -128,7 +128,10 @@ const played = (r: Fields, instance: Instance, play: 'cast' | 'use'): Fields => 
   const key = card(r, instance);
   const through = id(r, 'character');
   const target = id(r, 'target');
-  return { card: key, through, target, config: r.config ?? {}, message: r.message ?? '', ...reached(r, instance, key, play), ...firstDraw(r, instance, key) };
+  // A card that replies carries a post of the caster's, read as the post action reads one; a Use and any other card carry none.
+  const replies = play === 'cast' && instance.cards.find((c) => c.key === key)?.replies === true;
+  const reply = replies ? { reply: text(r, 'body', instance.settings.postMaxLength), ...framing(r) } : {};
+  return { card: key, through, target, config: r.config ?? {}, message: r.message ?? '', ...reached(r, instance, key, play), ...firstDraw(r, instance, key), ...reply };
 };
 
 /**

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { RARITIES, quadrantFree, faceUpOnly, openDrive, giftSplit, wardTurnsAway, SET_PHRASE_MOST, atOrBelow, drawnInMoment, refusalTime, spanMs, decidePlay, decideSet, decideDraw, decideWash, decideUse, effectsOnTarget, landsOn, noQuoteWords, quoteStop, ok, staffConfigOf, staffDrawOf, staffOffers, refuse, type CardEffect, type CardRules, type CardTarget } from './cards.ts';
+import { RARITIES, quadrantFree, faceUpOnly, openDrive, giftSplit, wardTurnsAway, SET_PHRASE_MOST, atOrBelow, drawnInMoment, refusalTime, spanMs, decidePlay, decideSet, decideDraw, decideWash, decideUse, effectsOnTarget, landsOn, noQuoteWords, quoteStop, ok, staffConfigOf, staffDrawOf, staffOffers, fallsOn, castOnPost, postTarget, refuse, type CardEffect, type CardRules, type CardTarget } from './cards.ts';
 import type { Settings } from './types.ts';
 
 // The engine's own test cards: no instance's names (the engine/instance boundary).
@@ -18,6 +18,7 @@ const ground: CardRules = { ...cast('ground', 'common'), reaches: ['thread'], la
 const watcher: CardRules = { ...base, key: 'watcher', name: 'Test Watcher', rarity: 'common', play: 'set', trap: { trigger: { on: 'visit' } }, canApply: () => ok(undefined) };
 
 const writer: CardRules = { ...cast('writer', 'rare'), writes: { tokens: () => 40, frame: ({ post }) => ({ prompt: post.text, stop: ['\n\n'] }) } };
+const cutter: CardRules = { ...cast('cutter', 'rare'), replies: true };
 const settings = {} as Settings;
 const post = { reach: 'post', act: 'p', kind: 'post', length: 10, text: '' } as const satisfies CardTarget;
 const soon = new Date(Date.now() + 86_400_000).toISOString();
@@ -697,4 +698,42 @@ test('a card is not set face down on a post with a live no-quote, and is once it
   assert.deepEqual(decideSet(watcher, settings, post, [stop], {}, [hush]), { ok: false, why }, 'a Reversal that springs on a visit too');
   assert.equal(decideSet(snare, settings, post, [{ ...stop, ends: gone }], { card: 'inky' }, [inky, hush]).ok, true);
   assert.match((decideSet(watcher, settings, post, [stop], {}, []) as { why: string }).why, /this post's hush stops quotes until/, 'the key where the card is not found');
+});
+
+test('a card that carries a reply lands on a plain post, and not on a reply drawn under one', () => {
+  assert.equal(decidePlay(cutter, settings, post, [], {}, '').ok, true);
+  const under = postTarget('r', 'post', 'a reply', undefined, 'p');
+  assert.equal(under.under, 'p');
+  const refused = decidePlay(cutter, settings, under, [], {}, '');
+  assert.equal(refused.ok, false);
+  assert.equal(refused.ok ? '' : refused.why, 'a reply drawn under a post takes no reply under it');
+  assert.equal(decidePlay(plain, settings, under, [], {}, '').ok, true, 'a card without the flag is not stopped by it');
+  assert.equal(postTarget('r', 'post', 'x').under, undefined);
+});
+
+test('a card that carries a reply is cast face up and never set face down, and no staff persona is offered it', () => {
+  const set = decideSet(cutter, settings, post, [], {}, [cutter]);
+  assert.equal(set.ok, false);
+  assert.equal(set.ok ? '' : set.why, 'Test cutter carries a reply, so it is cast face up and never set face down');
+  assert.equal(staffOffers(cutter), false);
+  assert.equal(staffOffers(plain), true);
+  assert.equal(castOnPost(cutter), true);
+});
+
+test('fallsOn: a live play falls on any post, a kept one on the posts written while it was up', () => {
+  const play = { at: '2026-11-01T00:00:00.000Z', ends: '2026-11-08T00:00:00.000Z' };
+  const at = (iso: string) => ({ at: iso });
+  const during = new Date('2026-11-05T00:00:00.000Z');
+  const after = new Date('2026-11-09T00:00:00.000Z');
+  assert.equal(fallsOn(play, at('2026-10-01T00:00:00.000Z'), false, during), true, 'a live play falls on a post of any date');
+  assert.equal(fallsOn(play, at('2026-12-01T00:00:00.000Z'), false, during), true);
+  assert.equal(fallsOn({ at: play.at }, at('2026-10-01T00:00:00.000Z'), false, after), true, 'a play with no end falls on all');
+  assert.equal(fallsOn(play, at('2026-11-01T00:00:00.000Z'), true, after), true, 'a kept play holds at its first instant');
+  assert.equal(fallsOn(play, at('2026-11-04T00:00:00.000Z'), true, after), true);
+  assert.equal(fallsOn(play, at('2026-11-08T00:00:00.000Z'), true, after), false, 'and not at its end instant');
+  assert.equal(fallsOn(play, at('2026-10-31T23:59:59.999Z'), true, after), false, 'nor before it');
+  assert.equal(fallsOn(play, at('2026-11-09T00:00:00.000Z'), true, after), false, 'nor after it');
+  assert.equal(fallsOn(play, at('2026-11-04T00:00:00.000Z'), false, after), false, 'an ended play that does not keep falls on none');
+  assert.equal(fallsOn(play, at('not a time'), true, after), false, 'a date that is no time reads as not kept');
+  assert.equal(fallsOn({ at: 'nope', ends: play.ends }, at('2026-11-04T00:00:00.000Z'), true, after), false);
 });
