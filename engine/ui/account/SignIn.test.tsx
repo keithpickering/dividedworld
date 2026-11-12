@@ -525,6 +525,24 @@ describe('The emailed link', () => {
     expect(screen.queryByText(/You are signed in as/u)).toBeNull();
   });
 
+  test('a sign-out that fails says so, keeps the panel and moves nobody on; a second press signs out', async () => {
+    const w = await linked();
+    open(w, 'sign-in', `/sign-in?next=%2Fstandings${FRAGMENT}`);
+    await userEvent.click(await screen.findByRole('button', { name: 'Sign in' }));
+    await screen.findByText('You are signed in as known@example.test.');
+    const urls = went();
+    const failing = vi.spyOn(w.fake, 'signOut').mockRejectedValueOnce(new Error('no answer'));
+    await userEvent.click(screen.getByRole('button', { name: 'Not you? Sign out' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Signing out did not work. You are still signed in as known@example.test.');
+    expect(screen.getByRole('button', { name: 'Continue' })).toBeInTheDocument();
+    expect(urls).toEqual([]);
+    expect((await w.fake.session()).signedIn).toBe(true);
+    failing.mockRestore();
+    await userEvent.click(screen.getByRole('button', { name: 'Not you? Sign out' }));
+    expect(await screen.findByLabelText('Email address')).toBeInTheDocument();
+    expect((await w.fake.session()).signedIn).toBe(false);
+  });
+
   test('a link the server refuses shows the form with its sentence in the alert', async () => {
     const w = await linked();
     open(w, 'sign-in', '/sign-in#token_hash=aaaaaaaaaaaaaaaaaaaa');

@@ -10,6 +10,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useKayfa } from '../context.tsx';
 import { LOST_ANSWER } from '../data/api.ts';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
+import { useLocation } from '../router.tsx';
 import { useLinkHand } from './LinkHand.tsx';
 import { setWhy, useSession } from './session.ts';
 
@@ -36,6 +37,9 @@ export function LinkPanel({ tokenHash, signedIn = false, registering, onAside, o
   const [unread, setUnread] = useState(false);
   const [busy, setBusy] = useState(false);
   const [lost, setLost] = useState(false);
+  /* A sign-out that did not work: said in the alert, with the address the browser is still signed in as. */
+  const [stillIn, setStillIn] = useState(false);
+  const { path } = useLocation();
   const lead = useRef<HTMLParagraphElement>(null);
 
   /* The address a session is signed in as is read from the backend, for the one who holds it. */
@@ -73,7 +77,16 @@ export function LinkPanel({ tokenHash, signedIn = false, registering, onAside, o
   const signOut = async () => {
     /* The hand is cleared first: signing out changes the account, the screen may start afresh before this call answers, and it must not start in the signed-in phase of a link whose session is gone. The screen's own link is set aside after, so its move on to `next` does not run while the account is still there. */
     hand?.hold(null, '');
-    try { await api.signOut(); } catch { /* The form is where the player goes either way; the session says whether they are out. */ }
+    setStillIn(false);
+    try {
+      await api.signOut();
+    } catch {
+      /* Nobody is moved on believing they are out: the panel stays, says so, and the press can be made again. The hand holds the link as it did. */
+      hand?.hold(tokenHash, path);
+      hand?.setPressed(true);
+      setStillIn(true);
+      return;
+    }
     onAside();
   };
 
@@ -87,6 +100,7 @@ export function LinkPanel({ tokenHash, signedIn = false, registering, onAside, o
     <div aria-busy={busy}>
       <p role="status" ref={lead} tabIndex={-1} className="kb-acct-lead">{names}</p>
       {lost && <p role="alert" className="kb-acct-refusal">{LOST_ANSWER}</p>}
+      {stillIn && <p role="alert" className="kb-acct-refusal">{address !== null ? `Signing out did not work. You are still signed in as ${address}.` : 'Signing out did not work. You are still signed in.'}</p>}
       {phase === 'done' ? (
         <ButtonRow>
           <GlassButton kind="primary" onClick={onAside}>Continue</GlassButton>
