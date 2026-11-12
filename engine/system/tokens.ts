@@ -22,8 +22,12 @@
 import type { Settings } from '../rules/types.ts';
 import bpe from './tokenizers/gpt2/bpe.json' with { type: 'json' };
 
-/** GPT-2's published pre-tokenizing pattern (encoder.py), with `\p{L}` and `\p{N}` for its classes. */
-const PRETOKENIZE = /'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+/gu;
+/** GPT-2's published pre-tokenizing pattern (encoder.py), with `\p{L}`, `\p{N}` and `\p{White_Space}` for its
+    classes: the reference's `\s` is Unicode White_Space, which JavaScript's `\s` is not (U+FEFF, U+0085). */
+const PRETOKENIZE = /'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\p{White_Space}\p{L}\p{N}]+|\p{White_Space}+(?!\P{White_Space})|\p{White_Space}+/gu;
+
+/** The longest piece (in characters) the cache keeps. */
+const CACHE_PIECE_MOST = 64;
 
 /** The most pieces kept in the cache; when full it is emptied, which a few thousand words refill. */
 const CACHE_MOST = 20_000;
@@ -48,35 +52,107 @@ bpe.merges.forEach((pair, rank) => ranks.set(pair, rank));
 const encoder = new TextEncoder();
 const cache = new Map<string, number>();
 
+/** A candidate merge of two neighbors, ordered by rank, then by the left symbol's place in the piece. */
+interface Candidate {
+  readonly key: number;
+  readonly left: number;
+  readonly right: number;
+  readonly leftVersion: number;
+  readonly rightVersion: number;
+}
+
+/** A binary min-heap on `key`. */
+class Heap {
+  private readonly items: Candidate[] = [];
+  get size(): number {
+    return this.items.length;
+  }
+  push(c: Candidate): void {
+    const h = this.items;
+    let i = h.push(c) - 1;
+    while (i > 0) {
+      const up = (i - 1) >> 1;
+      if (h[up]!.key <= c.key) break;
+      h[i] = h[up]!;
+      i = up;
+    }
+    h[i] = c;
+  }
+  pop(): Candidate {
+    const h = this.items;
+    const top = h[0]!;
+    const last = h.pop()!;
+    if (h.length > 0) {
+      let i = 0;
+      for (;;) {
+        let child = 2 * i + 1;
+        if (child >= h.length) break;
+        if (child + 1 < h.length && h[child + 1]!.key < h[child]!.key) child++;
+        if (h[child]!.key >= last.key) break;
+        h[i] = h[child]!;
+        i = child;
+      }
+      h[i] = last;
+    }
+    return top;
+  }
+}
+
+const PLACE = 2 ** 21; // more than any piece's symbol count a post can reach, so the key never mixes rank and place
+
+/**
+ * How many symbols a piece merges down to. The lowest-ranked adjacent pair is merged first, the leftmost
+ * of equals, which is the reference's order (and, for repeated characters, merges overlapping pairs left
+ * to right). Symbols sit in a doubly linked list and the candidate pairs in a heap that is invalidated
+ * lazily, so one long piece with no spaces costs O(n log n), never O(n^2).
+ */
+function mergeCount(symbols: string[]): number {
+  const n = symbols.length;
+  const next = new Int32Array(n);
+  const prev = new Int32Array(n);
+  const alive = new Uint8Array(n).fill(1);
+  const version = new Int32Array(n);
+  const heap = new Heap();
+  for (let i = 0; i < n; i++) {
+    next[i] = i + 1 < n ? i + 1 : -1;
+    prev[i] = i - 1;
+  }
+  const offer = (l: number, r: number): void => {
+    if (l < 0 || r < 0) return;
+    const rank = ranks.get(symbols[l]! + ' ' + symbols[r]!);
+    if (rank !== undefined) heap.push({ key: rank * PLACE + l, left: l, right: r, leftVersion: version[l]!, rightVersion: version[r]! });
+  };
+  for (let i = 0; i + 1 < n; i++) offer(i, i + 1);
+  let count = n;
+  while (heap.size > 0) {
+    const c = heap.pop();
+    const { left: l, right: r } = c;
+    if (!alive[l] || !alive[r] || next[l] !== r || version[l] !== c.leftVersion || version[r] !== c.rightVersion) continue;
+    symbols[l] = symbols[l]! + symbols[r]!;
+    alive[r] = 0;
+    const after = next[r]!;
+    next[l] = after;
+    if (after >= 0) prev[after] = l;
+    version[l]!++;
+    count--;
+    offer(prev[l]!, l);
+    offer(l, after);
+  }
+  return count;
+}
+
 /** How many tokens one pre-tokenized piece merges down to. */
 function pieceTokens(piece: string): number {
   const hit = cache.get(piece);
   if (hit !== undefined) return hit;
-  let parts: string[] = Array.from(encoder.encode(piece), (b) => BYTE_CHAR[b]!);
-  while (parts.length > 1) {
-    let best = Infinity;
-    let at = -1;
-    for (let i = 0; i < parts.length - 1; i++) {
-      const rank = ranks.get(parts[i]! + ' ' + parts[i + 1]!);
-      if (rank !== undefined && rank < best) {
-        best = rank;
-        at = i;
-      }
-    }
-    if (at < 0) break;
-    const [a, b] = [parts[at]!, parts[at + 1]!];
-    const merged: string[] = [];
-    for (let i = 0; i < parts.length; i++) {
-      if (parts[i] === a && parts[i + 1] === b) {
-        merged.push(a + b);
-        i++;
-      } else merged.push(parts[i]!);
-    }
-    parts = merged;
+  const n = mergeCount(Array.from(encoder.encode(piece), (b) => BYTE_CHAR[b]!));
+  // A long piece is not kept: the entry bound alone would not bound the cache's memory, since a key can be
+  // as long as a post, and a piece that long is almost never seen twice.
+  if (piece.length <= CACHE_PIECE_MOST) {
+    if (cache.size >= CACHE_MOST) cache.clear();
+    cache.set(piece, n);
   }
-  if (cache.size >= CACHE_MOST) cache.clear();
-  cache.set(piece, parts.length);
-  return parts.length;
+  return n;
 }
 
 function gpt2Count(text: string): number {

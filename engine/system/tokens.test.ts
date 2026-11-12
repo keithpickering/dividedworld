@@ -28,6 +28,11 @@ const GOLDEN: ReadonlyArray<readonly [name: string, text: string, tokens: number
   ['a newline run', 'one\n\n\n\ntwo\r\n\r\nthree\n', 11],
   ['leading and trailing space', '  padded text  ', 5],
   ['punctuation and symbols', '!!! ??? ... --- ### $$$ @user #tag', 11],
+  ['a zero-width no-break space (not White_Space)', 'a\ufeffb', 5],
+  ['a next-line control (White_Space)', 'a\u0085b', 4],
+  ['a mix of both around a newline run', "\ufeff'm\r\n\u180e x", 11],
+  ['two next-line controls between spaces', 'x \u0085\u0085 y', 6],
+  ['a run of one letter', 'a'.repeat(30), 8],
   ['a 2,000-character post', 'The System decides; a post is never lost. '.repeat(50).slice(0, 2000), 476],
 ];
 
@@ -41,7 +46,7 @@ test('gpt2 matches the reference tokenizer on a table of golden counts', () => {
   const count = tokenCounter('gpt2');
   assert.ok(GOLDEN.length >= 12);
   for (const [name, text, tokens] of GOLDEN) assert.equal(count(text), tokens, name);
-  assert.equal(GOLDEN[GOLDEN.length - 1]![1].length, 2000);
+  assert.equal(GOLDEN.find(([name]) => name === 'a 2,000-character post')![1].length, 2000);
 });
 
 test('bytes is the UTF-8 length, a lone surrogate counting as the replacement character', () => {
@@ -82,6 +87,42 @@ test('gpt2 never counts more than bytes, over 500 seeded random strings', () => 
     for (let j = 0; j < n; j++) text += PARTS[Math.floor(rand() * PARTS.length)]!;
     assert.ok(gpt2(text) <= bytes(text), `string ${i}: ${gpt2(text)} > ${bytes(text)}`);
   }
+});
+
+function randomLetters(n: number, seed: number): string {
+  const rand = seeded(seed);
+  let text = '';
+  for (let i = 0; i < n; i++) text += String.fromCharCode(97 + Math.floor(rand() * 26));
+  return text;
+}
+
+test('one long piece with no spaces is counted exactly (20,000 letters, from the reference)', () => {
+  // The reference count came from the same script as the table above, over randomLetters(20_000, 99).
+  assert.equal(tokenCounter('gpt2')(randomLetters(20_000, 99)), 11885);
+});
+
+test('one 100,000-character piece with no spaces is counted in under a second', () => {
+  const gpt2 = tokenCounter('gpt2');
+  const text = randomLetters(100_000, 5);
+  const t0 = performance.now();
+  const n = gpt2(text);
+  const ms = performance.now() - t0;
+  console.log(`100,000 letters, one piece: ${n} tokens in ${ms.toFixed(0)} ms`);
+  assert.ok(n > 0);
+  assert.ok(ms < 1000, `${ms} ms`);
+});
+
+test('the cache returns the same count again, and counts stay right after it fills and empties', () => {
+  const gpt2 = tokenCounter('gpt2');
+  const first = gpt2('The quick brown fox jumps over the lazy dog.');
+  assert.equal(gpt2('The quick brown fox jumps over the lazy dog.'), first);
+  assert.equal(first, 10);
+  // More distinct pieces than the cache holds, so it is emptied at least once on the way.
+  let text = '';
+  for (let i = 0; i < 25_000; i++) text += ` w${i}x`;
+  assert.ok(gpt2(text) > 25_000);
+  assert.equal(gpt2('The quick brown fox jumps over the lazy dog.'), 10);
+  assert.equal(gpt2(text), gpt2(text));
 });
 
 test('a text of 100,000 characters is counted in under a second', () => {
