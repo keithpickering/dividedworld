@@ -77,6 +77,14 @@ const foreignKeys = (names) => `do $$ declare k record; orphaned boolean; begin
   end loop;
 end $$;\n`;
 
+/** Every reaction and tally names a kind the instance has or a card added to that post (0402's reaction_kind_known, which a replica's write skips). */
+const reactionKinds = ['reactions', 'reaction_tallies'].map((t) => `do $$ begin
+  if exists (select 1 from public.${t} r where not exists (select 1 from public.reaction_kinds k where k.key = r.kind)
+      and not (r.kind like 'x-%' and exists (select 1 from public.post_reaction_kinds p where p.post = r.act and p.key = r.kind))) then
+    raise exception 'public.${t} (kind) names a reaction kind that is neither one of the instance''s nor one a card added to its post';
+  end if;
+end $$;\n`).join('');
+
 async function load(db, dir, manifest) {
   const child = psqlStream(db);
   let stderr = '';
@@ -108,6 +116,9 @@ async function load(db, dir, manifest) {
     await write(`insert into ${t.name} (${columns}) overriding system value select ${t.columns.map(([c]) => `r.${c}`).join(', ')} from import_rows, jsonb_populate_record(null::${t.name}, import_rows.j) r;\n`);
   }
   await write(foreignKeys(manifest.tables.map((t) => t.name)));
+  // The kind of a reaction and of a tally has no foreign key (0402: a post-local kind is not in reaction_kinds), so the sweep above cannot see it, and the trigger that holds it (reaction_kind_known) does not run on a
+  // replica's write. The rule is checked here as that trigger states it: one of the instance's kinds, or one a card added to that Act.
+  await write(reactionKinds);
   // A restore fires no trigger, so each character's name keys are the ones carried: each is
   // computed again from its name and this database's folds, and one that differs is refused.
   await write(`do $$ declare n bigint; begin
