@@ -19,7 +19,8 @@ import { renderInWorld } from '../../../../engine/ui/test-world.tsx';
 import { AutocorrectEffect } from '../../cards/autocorrect/Effect.tsx';
 import { sounds } from '../sounds.ts';
 import { seeded } from '../seeded.ts';
-import { LaughTrackEffect } from './Effect.tsx';
+import { DEFAULTS, LaughTrackEffect } from './Effect.tsx';
+import { defaults as instanceDefaults } from '../../settings.ts';
 import type { PlaceSpec } from './watch.ts';
 
 const hub = vi.hoisted(() => ({
@@ -61,7 +62,7 @@ const postOf = (body: string) => ({ id: 'post-1', character: 'author', kind: 'po
 const CUES = [{ phrase: 'Luigi', sound: 'boo' }, { phrase: 'great', sound: 'cheer' }, { phrase: 'Mario is', sound: 'laugh' }];
 const playOf = (cues: unknown = CUES, seed = 7, id = 'lt1'): CardPlay => ({ id, card: 'laugh-track', layer: 1, caster: 'c1', message: '', config: { cues, seed }, playedAt: '2026-11-11T10:01:00.000Z', post: 'post-1' }) as CardPlay;
 
-interface Options { readonly body?: string; readonly plays?: CardPlay[]; readonly still?: boolean; readonly wrap?: 'none' | 'autocorrect-inside' | 'autocorrect-outside'; readonly posts?: number; readonly place?: 'thread' | 'origin'; readonly sounds?: boolean }
+interface Options { readonly body?: string; readonly plays?: CardPlay[]; readonly still?: boolean; readonly wrap?: 'none' | 'autocorrect-inside' | 'autocorrect-outside'; readonly posts?: number; readonly place?: 'thread' | 'origin'; readonly sounds?: boolean; readonly cardSettings?: Record<string, number> }
 
 const base = (o: Options, views: (CardView | null)[], met: () => void, body: string) => ({
   post: postOf(body), plays: o.plays ?? [playOf()], states: {}, released: new Set<string>(), written: new Map(), reader: { author: false, caster: false },
@@ -92,7 +93,7 @@ function mount(o: Options = {}) {
       </>
     );
   }
-  const world = renderInWorld(<Host />, o.sounds ? { sounds } : {});
+  const world = renderInWorld(<Host />, { ...(o.sounds ? { sounds } : {}), ...(o.cardSettings ? { settings: { cardSettings: o.cardSettings } } : {}) });
   return { ...world, views, met, edit: (b: string) => act(() => setBody(b)) };
 }
 const pieces = () => [...document.querySelectorAll<HTMLElement>('.dw-lt-cue')];
@@ -149,7 +150,7 @@ describe('Laugh Track: the places', () => {
     const m = mount();
     fire(0);
     expect(heard.play).toHaveBeenCalledTimes(1);
-    expect(heard.play).toHaveBeenCalledWith(take('boo', 0), { group: 'audience', fadeMs: 250 });
+    expect(heard.play).toHaveBeenCalledWith(take('boo', 0), { group: 'audience', fadeMs: 250, tailMs: 250 });
     const [first, second] = pieces();
     expect(first).toHaveClass('dw-lt-fired');
     expect(first).toHaveAttribute('tabindex', '0');
@@ -162,7 +163,7 @@ describe('Laugh Track: the places', () => {
     expect(m.met).toHaveBeenCalledTimes(1);
     fire(1);
     expect(m.met).toHaveBeenCalledTimes(1);
-    expect(heard.play).toHaveBeenLastCalledWith(take('cheer', 1), { group: 'audience', fadeMs: 250 });
+    expect(heard.play).toHaveBeenLastCalledWith(take('cheer', 1), { group: 'audience', fadeMs: 250, tailMs: 250 });
     expect(pieces()[1]).toHaveAttribute('aria-label', `${pieces()[1]!.textContent}. Replay: the audience cheers`);
   });
 
@@ -183,6 +184,33 @@ describe('Laugh Track: the places', () => {
   });
 });
 
+describe('Laugh Track: the registration', () => {
+  test('fire returns the play\'s promise, and the screen carries band, airMs and holdMs, from the instance\'s settings', async () => {
+    mount();
+    const spec = hub.specs[0] as PlaceSpec;
+    heard.play.mockResolvedValueOnce({ lengthMs: 900 } as never);
+    let answer: unknown;
+    act(() => { answer = spec.fire(); });
+    expect(await answer).toEqual({ lengthMs: 900 });
+    expect(spec.screen).toMatchObject({ band: 34, airMs: 1200, holdMs: 18000 });
+  });
+
+  test('with no card settings the screen falls back to the defaults: band 34, airMs 1200, holdMs 18000', () => {
+    mount({ cardSettings: {} });
+    expect((hub.specs[0] as PlaceSpec).screen).toMatchObject({ band: 34, airMs: 1200, holdMs: 18000 });
+  });
+
+  test('the instance\'s card settings for every laughTrack screen key equal the effect\'s fallback defaults', () => {
+    const held = instanceDefaults.cardSettings;
+    for (const [key, value] of Object.entries(DEFAULTS)) expect(held[`laughTrack.${key}`], key).toBe(value);
+  });
+
+  test('the screen carries band, airMs and holdMs from the card settings when they are set', () => {
+    mount({ cardSettings: { 'laughTrack.band': 50, 'laughTrack.airMs': 800, 'laughTrack.holdMs': 2500 } });
+    expect((hub.specs[0] as PlaceSpec).screen).toMatchObject({ band: 50, airMs: 800, holdMs: 2500 });
+  });
+});
+
 describe('Laugh Track: a replay', () => {
   test('hover with a mouse, focus, a press, Enter and Space each play the take again, and nothing does before the place fires', () => {
     vi.useFakeTimers({ toFake: ['Date'] });
@@ -192,7 +220,7 @@ describe('Laugh Track: a replay', () => {
     expect(heard.play).not.toHaveBeenCalled();
     fire(0);
     const key = take('boo', 0);
-    const again = (act1: () => void) => { vi.setSystemTime(Date.now() + 1000); heard.play.mockClear(); act(act1); expect(heard.play).toHaveBeenCalledTimes(1); expect(heard.play).toHaveBeenCalledWith(key, { group: 'audience' }); };
+    const again = (act1: () => void) => { vi.setSystemTime(Date.now() + 1000); heard.play.mockClear(); act(act1); expect(heard.play).toHaveBeenCalledTimes(1); expect(heard.play).toHaveBeenCalledWith(key, { group: 'audience', fadeMs: 250, tailMs: 250 }); };
     heard.play.mockClear();
     again(() => { fireEvent.pointerEnter(p!, { pointerType: 'mouse' }); });
     again(() => { p!.focus(); });
@@ -371,12 +399,17 @@ describe('Laugh Track: on a real page', () => {
     const m = mount({ posts: 2, body: 'Luigi wins.', plays: [playOf([{ phrase: 'Luigi', sound: 'boo' }])] });
     expect(FakeObserver.all).toHaveLength(1);
     see();
-    await step(1000);
+    /* A frame adds at most 100ms, so the dwell is earned over frames a hundred ms apart; the second post's place waits out the airtime. */
+    let t = 0;
+    const frames = async (ms: number) => { for (const end = t + ms; t < end; ) { t += 100; await step(t); } };
+    await frames(300);
     expect(heard.loop).toHaveBeenCalledTimes(1);
     expect(heard.loop).toHaveBeenCalledWith('laugh-track.grumble', { group: 'audience-build', id: 'laugh-track:boo' });
     expect(heard.handle.setGain).toHaveBeenLastCalledWith(0.35);
     expect(heard.play).not.toHaveBeenCalled();
-    await step(1450);
+    await frames(300);
+    expect(heard.play).toHaveBeenCalledTimes(1);
+    await frames(1500);
     expect(heard.play).toHaveBeenCalledTimes(2);
     expect(pieces().every((p) => p.classList.contains('dw-lt-fired'))).toBe(true);
     expect(m.met).toHaveBeenCalled();

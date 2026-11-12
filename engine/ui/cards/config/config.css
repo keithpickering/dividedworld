@@ -1,0 +1,115 @@
+/*
+ * What a card's settings add to the play form's own look (play.css), and nothing the form already draws: the label's line, which holds a label
+ * and a quiet action at its far end, and the range. The form's classes (kb-play-label, kb-play-input, kb-play-fine, kb-play-why, kb-play-choice)
+ * are drawn by play.css; every color here is a glass token.
+ */
+
+.kb-play-config-field {
+  display: flex;
+  flex-direction: column;
+}
+
+/* The label and its action on one row, tall enough for a small button to sit beside the label without moving it. */
+.kb-play-config-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  min-height: 36px;
+}
+
+/* An empty refusal line stays in the accessibility tree (play.css's display: none would take it out), so the live region is heard when words
+   arrive in it; it is only out of sight, with the engine's own visually-hidden clipping (base.css). */
+.kb-play .kb-play-config-field .kb-play-why:empty {
+  display: block;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.kb-play-config-field .kb-play-input {
+  margin-top: 4px;
+}
+
+.kb-play-config-field > .kb-play-fine {
+  margin-top: 6px;
+}
+
+/* A native range: the browser keeps its keys and its focus, the glass its accent and a target a thumb can hit. */
+.kb-play-range {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 24px;
+  margin: 8px 0 0;
+  accent-color: var(--kb-glass-neon);
+  cursor: pointer;
+}
+
+.kb-play-range:focus-visible {
+  outline: 3px solid var(--kb-glass-ready-text);
+  outline-offset: 2px;
+}
+
+/* A card's settings as one group: the reset a fieldset needs (no border, no padding, and a min-width of 0 so a fieldset cannot be wider than
+   its box), the form's rows in a column. The tight one is for a group with no legend whose few lines sit close, as a range and its words do. */
+.kb-play-config-group {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.kb-play-config-group-tight {
+  gap: 6px;
+}
+
+/* One cue of a list: a rule above it, built from the glass's text token, and its lines close together. */
+.kb-play-config-cue {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid color-mix(in srgb, var(--kb-glass-text-hi) 22%, transparent);
+}
+
+/* A button beside a live total: wraps, never clips. */
+.kb-play-config-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+/* A choice in a card's settings wraps at large text or a narrow phone instead of running past its box (the play form's own two-way choice has
+   room and keeps its single row). Each option holds a basis that is not text-sized, so two or three fit a row when they can and the rest wrap;
+   because a wrapped row would lose the segment's shared edge, every option keeps its own, overlapping its neighbor's by one pixel. */
+.kb-play-config-choice-row {
+  flex-wrap: wrap;
+  gap: 8px 0;
+  padding-inline-end: 1px;
+}
+
+.kb-play-config-choice-row .kb-play-choice-opt {
+  flex: 1 1 80px;
+  min-width: min-content;
+  margin-inline-end: -1px;
+}
+
+.kb-play-config-choice-row .kb-play-choice-opt + .kb-play-choice-opt span {
+  border-inline-start-width: 1px;
+}
+
+.kb-play-config-choice-row .kb-play-choice-opt:has(input:checked) {
+  position: relative;
+  z-index: 1;
+}

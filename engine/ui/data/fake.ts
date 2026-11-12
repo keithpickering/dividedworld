@@ -267,7 +267,7 @@ export interface Seed {
   report(character: Id, post: Id, reason: string, options?: { at?: number }): Id;
   /** A Mod's verdict on a report (`close_report`): the visit it sent, where it sent one. */
   verdict(report: Id, mod: Id, verdict: 'visit' | 'dismissed' | 'backfire', options?: { line?: string; visit?: Id; at?: number }): Id;
-  /** The infraction a visit's filing wrote (`infract`) against its post's author, dropping off at `expiresAt` (default two weeks on). */
+  /** The infraction a visit's filing wrote (`infract`) against its post's author, dropping off at `expiresAt` (default two weeks on, from `at`, which defaults to the visit's own date). */
   infraction(visit: Id, options?: { points?: number; band?: VisitBand; ruleNumber?: number | null; expiresAt?: number; at?: number }): Id;
   /** A character's appeal of an infraction or of a group move on it (`open_appeal`), and the staff member's ruling on it (`until`: the end a ruling sets, as on a ban). */
   appeal(character: Id, infraction: Id, plea: string, options?: { at?: number }): Id;
@@ -4785,7 +4785,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const v = acts.get(visit);
       const post = v?.target ? acts.get(v.target) : undefined;
       if (!v || v.kind !== 'visit' || !post) throw new Error(`no such visit ${visit}`);
-      const at = o?.at ?? now();
+      /* Filed by its visit, so dated by the visit's own clock: a visit seeded on any clock keeps its infraction's two weeks on that same clock. */
+      const at = o?.at ?? v.at;
       return write({
         character: null, kind: 'infraction', thread: v.thread, at,
         payload: { character: post.character, band: o?.band ?? 'minor', points: o?.points ?? 2, rule_number: o?.ruleNumber === undefined ? 2 : o.ruleNumber, about_act: post.id, visit_act: visit, staff: (v.character ? characters.get(v.character)?.staff?.key : undefined) ?? 'seed', expires_at: iso(o?.expiresAt ?? at + 14 * 86_400_000) },
