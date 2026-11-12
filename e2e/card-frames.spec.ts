@@ -116,3 +116,95 @@ test.describe('under forced colors', () => {
     expect(line.to, 'the line ends before the canvas').toBeLessThan(line.canvas);
   });
 });
+
+/**
+ * Two states that restyle a card's shadow, read on the machine's own cards with the state put on them (the stylesheets are the
+ * page's; only the attribute and the wrapper are the test's): armed, and a pack's hit pull. Each keeps the type's frame as it is
+ * drawn. Motion is reduced for the whole file, so the armed card is read at rest.
+ */
+interface Drawn {
+  /** The card's own ring: its width, its color, and whether it is painted at all. */
+  readonly ring: number | null;
+  readonly ringColor: string;
+  readonly ringPainted: boolean;
+  /** Whether the card's shadow has a part with blur: its glow. */
+  readonly glow: boolean;
+  readonly beforeStyle: string;
+  readonly beforeBorderColor: string;
+  readonly beforeShadowColor: string;
+}
+
+/** What one card draws, read from computed style in the page. */
+function drawn(card: Element): Drawn {
+  const parts = (shadow: string) => shadow === 'none' ? [] : shadow.split(/,(?![^(]*\))/u).map((part) => {
+    const m = /^\s*(rgba?\([^)]*\)|color\([^)]*\)|[a-z]+)\s+(-?[\d.]+)px\s+(-?[\d.]+)px\s+(-?[\d.]+)px\s+(-?[\d.]+)px\s*$/u.exec(part);
+    return m ? { color: m[1]!, x: Number(m[2]), y: Number(m[3]), blur: Number(m[4]), spread: Number(m[5]) } : null;
+  }).filter((p) => p !== null);
+  const clear = (color: string) => /rgba\([^)]*,\s*0\)$/u.test(color) || color === 'transparent';
+  const own = parts(getComputedStyle(card).boxShadow);
+  const before = getComputedStyle(card, '::before');
+  const ring = own.find((p) => p.x === 0 && p.y === 0 && p.blur === 0) ?? null;
+  return {
+    ring: ring ? ring.spread : null,
+    ringColor: ring ? ring.color : '',
+    ringPainted: ring !== null && ring.spread > 0 && !clear(ring.color),
+    glow: own.some((p) => p.blur > 0 && !clear(p.color)),
+    beforeStyle: before.content === 'none' ? 'none' : before.borderTopStyle,
+    beforeBorderColor: before.borderTopColor,
+    beforeShadowColor: parts(before.boxShadow)[0]?.color ?? '',
+  };
+}
+
+test('an armed card keeps its type\'s frame: the outline\'s width, and a Use still dashed with no solid ring under it', async ({ page }) => {
+  await page.goto('/?fixture=boards&moment=07-vending');
+  await expect(page.locator('.kb-postcard[data-kb-play]').first()).toBeVisible({ timeout: 10_000 });
+  const read = async (play: string, armed: boolean) => page.locator(`.kb-postcard[data-kb-play='${play}']`).first().evaluate((card, [fn, on]) => {
+    if (on) card.setAttribute('data-armed', ''); else card.removeAttribute('data-armed');
+    return (new Function(`return ${fn}`)() as (c: Element) => Drawn)(card);
+  }, [drawn.toString(), armed] as const);
+
+  const cast = await read('cast', false);
+  const armedCast = await read('cast', true);
+  expect(armedCast.ring, 'an armed Cast\'s ring is the outline\'s width').toBe(cast.ring);
+  expect(armedCast.ringPainted).toBe(true);
+
+  const use = await read('use', false);
+  expect(use.glow, 'a Use keeps its glow').toBe(true);
+  const armedUse = await read('use', true);
+  expect(armedUse.beforeStyle, 'an armed Use is still dashed').toBe('dashed');
+  expect(armedUse.ringPainted, 'with no solid ring under its dashes').toBe(false);
+  expect(armedUse.glow, 'and the armed glow').toBe(true);
+});
+
+test('a hit pull turns the ring gold and nothing else of the frame: a Set\'s second line keeps the card\'s color, a Use\'s dashes are its ring', async ({ page }) => {
+  await page.goto('/?fixture=boards&moment=07-vending');
+  await expect(page.locator('.kb-postcard[data-kb-play]').first()).toBeVisible({ timeout: 10_000 });
+  const read = async (play: string) => page.locator(`.kb-postcard[data-kb-play='${play}']`).first().evaluate((card, fn) => {
+    /* The reveal's spot around a sheet-size copy of the card, inside the glass so its tokens resolve; removed once read. */
+    const spot = document.createElement('div');
+    spot.className = 'kb-opening-spot';
+    spot.setAttribute('data-kb-hit', '');
+    const copy = card.cloneNode(true) as HTMLElement;
+    copy.setAttribute('data-size', 'sheet');
+    const probe = document.createElement('span');
+    probe.style.color = 'var(--kb-glass-ready)';
+    spot.append(copy, probe);
+    card.parentElement!.append(spot);
+    const cardProbe = document.createElement('span');
+    cardProbe.style.color = 'var(--kb-card-color)';
+    copy.append(cardProbe);
+    const out = { ...(new Function(`return ${fn}`)() as (c: Element) => Drawn)(copy), gold: getComputedStyle(probe).color, own: getComputedStyle(cardProbe).color };
+    spot.remove();
+    return out;
+  }, drawn.toString());
+
+  const set = await read('set');
+  expect(set.gold, 'the gold and the card\'s color differ, so the test can tell them apart').not.toBe(set.own);
+  expect(set.ring, 'the sheet\'s ring is 2px').toBe(2);
+  expect(set.ringColor, 'a Set\'s ring is gold').toBe(set.gold);
+  expect(set.beforeShadowColor, 'a Set\'s second line keeps the card\'s color').toBe(set.own);
+
+  const use = await read('use');
+  expect(use.ringPainted, 'a Use has no solid ring under its dashes').toBe(false);
+  expect(use.beforeBorderColor, 'a Use\'s dashes, its ring, are gold').toBe(use.gold);
+});

@@ -47,8 +47,15 @@ Weighed and turned down:
   ring of their own (the machine's drop tray, a pack's hit pull), which sat under a Use's dashes before this change and
   would have gone on doing so. They now paint `0 0 0 var(--kb-pc-ring) var(--kb-pc-ring-color)`, and a test in each layer
   holds every stylesheet to that.
-- **A hit pull turns the whole frame gold.** The frame's color is one variable, `--kb-pc-line`, read by the ring, a
-  Set's second line and a Use's dashes; the hit sets it, where it used to recolor the ring alone.
+- **A hit pull turns the ring gold, and nothing else of the frame** (the owner: "let's do ring only"). The ring's color
+  is one variable, `--kb-pc-line`, read by the solid ring and by a Use's dashes, which are its ring; the hit sets it. A
+  Set's second line is not the ring and keeps the card's color. A Use's dashes go gold over the same time as the ring.
+- **An armed card keeps its type's frame** (the owner left it to "whichever you feel is more consistent/predictable for
+  the player"). Armed is a state a card is in and the frame is what the card is, so the state is drawn over the frame
+  and never in place of it: the armed ring is the outline's width (it was 2px at every size, which moved the outline
+  at the three smaller sizes) and is drawn the type's way, so an armed Use is still dashed, with no solid ring under
+  its dashes. The glow brightens as before. The pulse lights the ring to white: a solid ring in its shadow, a Use's
+  dashes in their border; reduced motion stops both.
 
 ## Rules it touches
 
@@ -61,8 +68,7 @@ Weighed and turned down:
 
 ## Open
 
-- An armed Use shows the armed state's solid ring with its dashes over it, as before this change. Whether an armed Use
-  should keep reading as dashed is a question for the armed state, not for the outline.
+Nothing.
 
 ## Plan
 
@@ -96,8 +102,24 @@ Files: `engine/ui/vending/opening.css`, `instances/divided-world/ui/vending/vend
 1. Tests first: in each layer, every stylesheet but `postcard.css` is read, and a rule on `.kb-postcard` whose
    `box-shadow` has a ring (no offset, no blur, not inset) must paint it as
    `0 0 0 var(--kb-pc-ring) var(--kb-pc-ring-color)`. Red on the two rules above.
-2. `--kb-pc-line` on `.kb-postcard`, read by `--kb-pc-ring-color`, the Set's second line and the Use's dashes; the
-   two rules read the ring, and the hit sets `--kb-pc-line`.
+2. `--kb-pc-line` on `.kb-postcard`, read by `--kb-pc-ring-color` and the Use's dashes; the two rules read the ring,
+   and the hit sets `--kb-pc-line`.
+
+### Task 3: the armed state and the hit pull, as the owner answered
+
+Model: inline
+
+Files: `engine/ui/cards/postcard.css`, `engine/ui/vending/opening.css`, `engine/ui/cards/postcard.test.tsx`,
+`e2e/card-frames.spec.ts`.
+
+1. Tests first, in the browser, on the machine's own cards with the state put on them: an armed Cast's ring is the
+   outline's width; an armed Use is dashed with no solid ring painted and keeps a glow; under a hit, a Set's ring is
+   gold and its second line the card's color, and a Use's dashes are gold with no solid ring. Red on the armed ring's
+   2px and on the Set's second line going gold.
+2. The armed rule paints `0 0 0 var(--kb-pc-ring) var(--kb-pc-ring-color)`; its pulse reads `--kb-pc-ring-pulse`
+   (white; transparent on a Use), and a Use's `::before` has a pulse of its own on `border-color`. Both stop under
+   reduced motion. The Set's second line reads `--kb-card-color` again; a sheet's `::before` in the reveal's spot
+   transitions `border-color` with the ring's timing.
 
 ## Review focus
 

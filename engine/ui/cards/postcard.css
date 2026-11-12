@@ -18,10 +18,13 @@
   /* The card's outline: a ring this wide outside its box, in every type and on the back. A type changes how the ring is drawn and
      what is inside it, never where it ends (docs/plans/2026-11-12-card-frame-outline.md). */
   --kb-pc-ring: 1.5px;
-  /* The frame's color, for every line of it: a rule that recolors the frame (the pack's hit pull) sets this, and one that restyles the
-     card's shadow paints the ring as `0 0 0 var(--kb-pc-ring) var(--kb-pc-ring-color)`, so a Use's stays unpainted under its dashes. */
+  /* The ring's color, whichever way the type draws its ring (solid, or a Use's dashes): a rule that recolors the ring (the pack's hit
+     pull) sets this, and one that restyles the card's shadow paints the ring as `0 0 0 var(--kb-pc-ring) var(--kb-pc-ring-color)`, so
+     a Use's stays unpainted under its dashes. A Set's second line is not the ring and keeps the card's color. */
   --kb-pc-line: var(--kb-card-color);
   --kb-pc-ring-color: var(--kb-pc-line);
+  /* What the armed pulse brightens the solid ring to; a Use has no solid ring, and its dashes pulse instead. */
+  --kb-pc-ring-pulse: var(--kb-glass-text-hi);
   position: relative;
   display: block;
   box-sizing: border-box;
@@ -74,12 +77,13 @@ button.kb-postcard {
   --kb-pc-second: calc(var(--kb-pc-gap) + var(--kb-pc-ring));
   inset: var(--kb-pc-second);
   border-radius: calc(var(--kb-pc-radius) - var(--kb-pc-second));
-  box-shadow: 0 0 0 var(--kb-pc-ring) var(--kb-pc-line);
+  box-shadow: 0 0 0 var(--kb-pc-ring) var(--kb-card-color);
 }
 
 /* The glow, and at the larger sizes the card's shadow, stay as every card's: only the ring's own paint is dropped. */
 .kb-postcard[data-kb-play='use'] {
   --kb-pc-ring-color: transparent;
+  --kb-pc-ring-pulse: transparent;
 }
 
 .kb-postcard[data-kb-play='use']::before {
@@ -409,21 +413,33 @@ button.kb-postcard {
   object-fit: contain;
 }
 
-/* ---- armed ---- */
+/* ---- armed ----
+ * A state over the type's frame, never in place of it: the ring keeps the outline's width and the type's own drawing, so an armed Use
+ * is still dashed. The glow brightens, and the pulse lights the ring to white: a solid ring in its shadow, a Use's dashes in their border. */
 .kb-postcard[data-armed] {
-  box-shadow: 0 0 0 2px var(--kb-card-color), 0 0 26px color-mix(in srgb, var(--kb-card-color) 75%, transparent), 0 22px 34px color-mix(in srgb, var(--kb-glass-ground) 90%, transparent);
+  box-shadow: 0 0 0 var(--kb-pc-ring) var(--kb-pc-ring-color), 0 0 26px color-mix(in srgb, var(--kb-card-color) 75%, transparent), 0 22px 34px color-mix(in srgb, var(--kb-glass-ground) 90%, transparent);
   animation: kb-postcard-armed 1.8s ease-in-out infinite;
 }
 
+.kb-postcard[data-kb-play='use'][data-armed]::before {
+  animation: kb-postcard-armed-dashes 1.8s ease-in-out infinite;
+}
+
 @keyframes kb-postcard-armed {
-  50% { box-shadow: 0 0 0 2px var(--kb-glass-text-hi), 0 0 44px var(--kb-card-color), 0 22px 34px color-mix(in srgb, var(--kb-glass-ground) 90%, transparent); }
+  50% { box-shadow: 0 0 0 var(--kb-pc-ring) var(--kb-pc-ring-pulse), 0 0 44px var(--kb-card-color), 0 22px 34px color-mix(in srgb, var(--kb-glass-ground) 90%, transparent); }
+}
+
+@keyframes kb-postcard-armed-dashes {
+  50% { border-color: var(--kb-glass-text-hi); }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  :root:not([data-kb-motion='full']) .kb-postcard[data-armed] { animation: none; }
+  :root:not([data-kb-motion='full']) .kb-postcard[data-armed],
+  :root:not([data-kb-motion='full']) .kb-postcard[data-armed]::before { animation: none; }
 }
 
-:root[data-kb-motion='reduce'] .kb-postcard[data-armed] { animation: none; }
+:root[data-kb-motion='reduce'] .kb-postcard[data-armed],
+:root[data-kb-motion='reduce'] .kb-postcard[data-armed]::before { animation: none; }
 
 /* Forced colors drop the ring and its glow, which are shadows: the armed card is ringed in the system's Highlight instead. */
 @media (forced-colors: active) {
