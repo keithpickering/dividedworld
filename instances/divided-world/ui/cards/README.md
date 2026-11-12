@@ -61,13 +61,31 @@ while changing a scene, `ART_SCALE=1 ART_SAMPLES=40` makes a half-size draft in 
 name, such as `draft.png`, since the guard refuses an `art.webp` of any other size, and do not commit it. Each scene's
 other settings (a seed, a camera) are environment variables read at its top. Whoops! is the one scene that needs
 `scipy`. Heat Magnet's fire is a fluid simulation, which fails inside the Python module, so that one scene needs the
-full Blender build.
+full Blender build. Blender also writes a 24 MB file, `waveletNoiseTile.bin`, into the folder it is run from when it
+simulates that fire; the repository ignores it, and it can be deleted.
+
+Each scene's defaults are the settings its shipped picture was rendered at (the samples, Whoops!'s mesh, Heat Magnet's
+simulation), so a scene run as above makes its picture again as it shipped.
 
 **The art file is what ships; the scene is how to make it again.** Nothing in the build renders a scene or compares it
 with its picture, because a render needs Blender and minutes of CPU, and two renders of one scene are not the same
 bytes. So a change to a scene is finished only when the picture is rendered again and both are committed together.
 
 The scenes began as one day's exploration, recorded with its drafts in `docs/research/2026-11-11-card-renders/`.
+
+## The card back
+
+Every card has the same back, and it is the instance's: `instances/divided-world/ui/card-back/` holds `art.webp` and
+`art.json`. The picture is a canvas like a card's, held to the same rules, and the back has no mark of its own. Here it
+comes from a scene, the coin as a raised medallion in smoke lit in the back's colors. From that folder:
+
+```
+python scene.py art.webp
+```
+
+A pack's hit pull has the same back as every other card.
+
+The small tile of a face-down card on a post is not this picture: it keeps the stylesheet's smoke, in the same colors.
 
 ## The mark and the manifest
 
@@ -85,8 +103,10 @@ The scenes began as one day's exploration, recorded with its drafts in `docs/res
 Then **open a pull request** with the three files in the card's folder. Each card in the game already has a folder, so
 new art for it replaces its picture. The owner approves art in review.
 
-The repository has no license yet. The art here is the project's own, and the owner will give its license when the
-repository has one.
+The cards' own pictures, their marks, the card back, the Booster pack's art and the scenes they came from are under
+CC0 1.0 Universal (https://creativecommons.org/publicdomain/zero/1.0/): anyone may use them for any purpose, with or
+without credit. Each `art.json` says so. That is the art's license alone; the repository's code has none yet. Art you
+offer may name other terms in its own `art.json`.
 
 ## What the guard refuses
 
@@ -107,4 +127,5 @@ well. Some editors write a `<!DOCTYPE>` line at the top of an export; delete it.
 
 It reads only those files. Anything else in a card's folder, such as a `scene.py`, is yours.
 
-This README and `rig.py` are files, not card folders, so the guard does not read them.
+This README and `rig.py` are files, not card folders, so the guard does not read them. It also passes over a folder
+whose name could not be a card's key, such as a `__pycache__`.
