@@ -61,7 +61,7 @@ export interface Span { readonly top: number; readonly bottom: number }
 const MOVED = 0.004;
 /** Eased light closer than this to its target is settled. */
 const SETTLED = 0.0005;
-const MAX_DENSITY = 2;
+export const MAX_DENSITY = 2;
 /** Shimmer redraws every second frame, about 30 a second. */
 const IDLE_EVERY = 2;
 /** Golden-angle step, so unseeded posts do not drift in lockstep. */
