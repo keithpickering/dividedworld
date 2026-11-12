@@ -17,7 +17,7 @@
  * sits at a line's start; such a body gets one leading space, the least surprising defense, which touches the start of a text and never
  * its end.
  */
-import type { WriteFrameInput } from '../../../../engine/rules/cards.ts';
+import { FIT_TITLE_CHARS, type WriteFrameInput } from '../../../../engine/rules/cards.ts';
 
 export const HEADER = 'Welcome to the Message Boards - Thread View';
 
@@ -49,9 +49,6 @@ const lastChars = (s: string, most: number): string => {
 };
 /** A body on its own line must not begin with the text of a stop, or it would be a line the frame did not write. */
 const safeStart = (s: string): string => (s.startsWith(RULE) || s.startsWith(POSTED_BY) || s.startsWith(QUOTE) || s.startsWith(HEADER) ? ` ${s}` : s);
-
-/** The title's first clip when the prompt is over budget (design section 3); past it the title goes. */
-const TITLE_FIT = 40;
 
 /**
  * The prompt and its stops, fitted to `input.budget` tokens by `input.count` (docs/plans/2026-11-12-old-voice-window-design.md, section 3).
@@ -108,7 +105,7 @@ export function youWereSayingFrame(input: WriteFrameInput): { readonly prompt: s
     if (fits(prompt)) return done(prompt);
   }
   const titleClips: (string | null)[] = [];
-  if ([...title].length > TITLE_FIT) titleClips.push(clip(title, TITLE_FIT));
+  if ([...title].length > FIT_TITLE_CHARS) titleClips.push(clip(title, FIT_TITLE_CHARS));
   if (title !== '') titleClips.push(null);
   let shown: string | null = title;
   for (const t of titleClips) {

@@ -240,7 +240,7 @@ test('fitting: with no earlier posts left, the title is clipped, then emptied, b
   const base = { before: [], title, post: { name: 'Mario', text: post } };
   const full = fit(1_000_000, base).prompt;
   const clipped = fit(bytes(full) - 1, base).prompt;
-  assert.ok(clipped.includes('Thread: a very long thread title that goes on …') || /Thread: .{1,41}\n/.test(clipped));
+  assert.equal(clipped.split('\n')[1], 'Thread: a very long thread title that goes on an…', 'the title is its first 40 characters and an ellipsis');
   assert.ok(clipped.length < full.length && clipped.endsWith(post));
   const emptied = fit(bytes(clipped) - 1, base).prompt;
   assert.ok(emptied.split('\n')[1] === 'Thread:', 'nothing after the colon');
@@ -312,4 +312,15 @@ test('fitting: it clips with a bisection, a dozen counts a clip, not a thousand'
 test('mostSteps follows the window less the floor', () => {
   assert.equal(mostSteps(settings), 7);
   assert.equal(mostSteps({ ...settings, oldVoiceWindow: 400, oldVoicePromptFloor: 256 }), 4);
+});
+
+test('with a narrowed window, the price and the tokens are those of the last step that fits', () => {
+  const narrow = { ...settings, oldVoiceWindow: 400, oldVoicePromptFloor: 256 };
+  assert.equal(mostSteps(narrow), 4);
+  const past = { steps: 7 };
+  assert.equal(writes.tokens(past, narrow), writes.tokens({ steps: 4 }, narrow));
+  assert.equal(writes.tokens(past, narrow), 125);
+  assert.equal(rules.playPrice(narrow, target('hello'), past), rules.playPrice(narrow, target('hello'), { steps: 4 }));
+  assert.equal(rules.playPrice(narrow, target('hello'), past), 100);
+  assert.equal(rules.playPrice(narrow, target('hello'), undefined as never), 100, 'a face asks the most that fits');
 });

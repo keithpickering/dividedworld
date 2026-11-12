@@ -37,8 +37,8 @@ export function ConfigForm({ config, onChange, post, id }: ConfigFormProps) {
   const settings = kayfa
     ? {
         ...withCardEconomy(kayfa.instance.settings, live?.cardEconomy),
-        ...(typeof live?.oldVoiceWindow === 'number' ? { oldVoiceWindow: live.oldVoiceWindow } : {}),
-        ...(typeof live?.oldVoicePromptFloor === 'number' ? { oldVoicePromptFloor: live.oldVoicePromptFloor } : {}),
+        ...(Number.isFinite(live?.oldVoiceWindow) ? { oldVoiceWindow: live!.oldVoiceWindow } : {}),
+        ...(Number.isFinite(live?.oldVoicePromptFloor) ? { oldVoicePromptFloor: live!.oldVoicePromptFloor } : {}),
       }
     : defaults;
   // validateConfig holds no settings and bounds steps by the instance's defaults (a known engine gap), so a live override that raises the
