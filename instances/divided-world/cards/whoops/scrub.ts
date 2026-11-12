@@ -34,8 +34,8 @@ export const MIN_STEP_PX = 5;
 
 export type Pt = readonly [number, number];
 export type Stroke =
-  | { readonly tool: 'wash'; readonly width: number; readonly aspect: number; readonly points: readonly Pt[] }
-  | { readonly tool: 'ink'; readonly color: string; readonly width: number; readonly aspect: number; readonly points: readonly Pt[] };
+  | { readonly tool: 'wash'; readonly width: number; readonly aspect: number; readonly points: readonly Pt[]; readonly continues?: true }
+  | { readonly tool: 'ink'; readonly color: string; readonly width: number; readonly aspect: number; readonly points: readonly Pt[]; readonly continues?: true; /** 0 to 3 (the card refuses others); typed `number` while field.ts's `FieldStroke` also says `drops?: number`. */ readonly drops?: number };
 
 /** A brush `px` across on a drawer's `box`, as a stroke keeps it. */
 export function brushOf(px: number, box: Box): { readonly width: number; readonly aspect: number } {
@@ -53,35 +53,68 @@ const tenThousandth = (n: number) => Math.round(n * 10_000) / 10_000;
 const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
 
 /**
+ * Ramer-Douglas-Peucker over `pts` (in px): the indices of the points kept, the first and last always among them; a
+ * point within `tol` of the line through the kept ones around it is dropped. Iterative, since a 500-point drag can be a
+ * deep chain.
+ */
+function simplify(pts: readonly Pt[], tol: number): number[] {
+  const n = pts.length;
+  if (n <= 2) return pts.map((_, i) => i);
+  const keep = new Uint8Array(n);
+  keep[0] = keep[n - 1] = 1;
+  const todo: [number, number][] = [[0, n - 1]];
+  while (todo.length) {
+    const [lo, hi] = todo.pop()!;
+    let far = -1, farD = tol;
+    for (let i = lo + 1; i < hi; i++) {
+      const d = Math.sqrt(segment2(pts[i]![0], pts[i]![1], pts[lo]![0], pts[lo]![1], pts[hi]![0], pts[hi]![1]));
+      if (d > farD) { far = i; farD = d; }
+    }
+    if (far < 0) continue;
+    keep[far] = 1;
+    todo.push([lo, far], [far, hi]);
+  }
+  return pts.flatMap((_, i) => (keep[i] === 1 ? [i] : []));
+}
+
+/**
  * A stroke as the card keeps it: points held to the box (0 to 1 both ways) to a ten-thousandth, `width` to a
- * ten-thousandth (never 0), `aspect` to three significant figures, the points thinned of the ones that add
+ * ten-thousandth (never 0), `aspect` to three significant figures; the points simplified (Ramer-Douglas-Peucker in the
+ * drawer's px, within a quarter of the brush's radius, keeping the first and last), then thinned of the ones that add
  * nothing (`minStep`, the shares across and down a point must be from the last one kept: see `minStepOf`), and cut
  * into strokes of at most `STROKES.points` points (each starting on the point the last ended on, so a long drag
- * is one unbroken line).
+ * is one unbroken line). Each piece after the first `continues`; only the last keeps `drops`.
  */
 export function fitStroke(stroke: Stroke, minStep: Pt): Stroke[] {
   const held = (x: number, y: number): Pt => [tenThousandth(clamp(x, 0, 1)), tenThousandth(clamp(y, 0, STROKES.deepest))];
+  const width = tenThousandth(clamp(stroke.width, 0.0001, STROKES.widest));
+  const aspect = Number(clamp(stroke.aspect, 0.001, 1000).toPrecision(3));
+  const all = stroke.points.map(([x, y]) => held(x, y));
+  /* The tolerance is a share of the width, so any positive drawer width gives the same answer: 1,000 px here. */
+  const W = 1000;
+  const simple = simplify(all.map(([x, y]): Pt => [x * W, (y * W) / aspect]), (width * W) / 8).map((i) => all[i]!);
   const kept: Pt[] = [];
-  for (const [x, y] of stroke.points) {
-    const p = held(x, y);
+  for (const p of simple) {
     const last = kept[kept.length - 1];
     if (last && Math.hypot((p[0] - last[0]) / minStep[0], (p[1] - last[1]) / minStep[1]) < 1) continue;
     kept.push(p);
   }
   /* The stroke ends where the pen did: a last point too close to the last one kept takes its place (a lone point stays a dab). */
-  const lastIn = stroke.points[stroke.points.length - 1];
-  if (lastIn) {
-    const end = held(lastIn[0], lastIn[1]);
+  const end = simple[simple.length - 1];
+  if (end) {
     if (kept.length === 0) kept.push(end);
     else if (kept.length > 1) kept[kept.length - 1] = end;
   }
-  const width = tenThousandth(clamp(stroke.width, 0.0001, STROKES.widest));
-  const aspect = Number(clamp(stroke.aspect, 0.001, 1000).toPrecision(3));
+  const drops = stroke.tool === 'ink' ? stroke.drops : undefined;
   const out: Stroke[] = [];
-  for (let at = 0; at < kept.length || at === 0; at += STROKES.points - 1) {
-    const points = kept.slice(at, at + STROKES.points);
-    out.push(stroke.tool === 'ink' ? { tool: 'ink', color: stroke.color, width, aspect, points } : { tool: 'wash', width, aspect, points });
-    if (at + STROKES.points >= kept.length) break;
+  for (let from = 0; from < kept.length || from === 0; from += STROKES.points - 1) {
+    const points = kept.slice(from, from + STROKES.points);
+    const last = from + STROKES.points >= kept.length;
+    const more = from > 0 || stroke.continues ? { continues: true as const } : null;
+    out.push(stroke.tool === 'ink'
+      ? { tool: 'ink', color: stroke.color, width, aspect, points, ...more, ...(last && drops !== undefined ? { drops } : null) }
+      : { tool: 'wash', width, aspect, points, ...more });
+    if (last) break;
   }
   return out;
 }

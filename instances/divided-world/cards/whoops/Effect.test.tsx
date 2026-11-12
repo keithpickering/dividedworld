@@ -19,6 +19,7 @@ import { Effect, MAX_SAVE_RETRIES, RETRY_AFTER_MS, SAVE_AFTER_MS, percentWashed 
 import { viewProblems } from '../../../../engine/ui/cards/lens-words.ts';
 import { cursor } from './cursor.ts';
 import { paint, type PaintLayer } from './paint.ts';
+import { decodePoints, packStroke } from './points.ts';
 import { BRUSH_PX, LayerInk, PEN_PX, ROW_PX, brushOf, coveredLines, type Pt, type Stroke } from './scrub.ts';
 import { DESIGN, makeSplat, type Box } from './splat.ts';
 import * as suds from './suds.ts';
@@ -362,18 +363,18 @@ describe('scrubbing', () => {
     const [x, y] = inkSpot(inkOf(0));
     drag(wide.frame, [[x, y], [x + 0.05, y], [x + 0.1, y]]);
     act(() => { vi.advanceTimersByTime(2000); });
-    const saved = wide.save.mock.calls[0]![1] as { strokes: { width: number; aspect: number; points: [number, number][] }[] };
+    const saved = wide.save.mock.calls[0]![1] as { strokes: { width: number; aspect: number; points: string }[] };
     expect(saved.strokes).toHaveLength(1);
     /* The brush is 30px on its drawer's screen: a share of the width, with the box's proportions beside it. */
     expect(saved.strokes[0]!.width).toBeCloseTo(30 / 988, 4);
     expect(saved.strokes[0]!.aspect).toBeCloseTo(988 / 330, 2);
-    expect(saved.strokes[0]!.points[0]).toEqual([Math.round(x * 1e4) / 1e4, Math.round(y * 1e4) / 1e4]);
+    expect(decodePoints(saved.strokes[0]!.points)![0]).toEqual([Math.round(x * 1e4) / 1e4, Math.round(y * 1e4) / 1e4]);
     wide.unmount();
     boxWidth = PHONE_FRAME;
     boxHeight = 1100;
     const tall = mount({ states: { 'play-1': { state: saved, savedAt: '2026-10-29T22:00:00.000Z' } } });
     /* The same points on the phone's box, as ellipses: across 30/988 of 390px, down that and the aspect of 1100px. */
-    const model = inkOf(0, saved.strokes.map((s) => ({ tool: 'wash', ...s }) as Stroke));
+    const model = inkOf(0, saved.strokes.map((s) => ({ tool: 'wash', ...s, points: decodePoints(s.points)! }) as Stroke));
     expect(model.washed).toBeGreaterThan(0);
     expect(washed(tall.root)[0]).toBeCloseTo(model.washed, 3);
     /* A dab on the phone is that screen's own round 30px brush. */
@@ -427,8 +428,8 @@ describe('scrubbing', () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     /* The card's whole bound in strokes, each a dab in the post's top corner, clear of the splat. */
     const full: Stroke[] = Array.from({ length: STROKES.most }, () => ({ tool: 'wash', ...brush(), points: [[0.01, 0.01], [0.02, 0.01]] }));
-    expect(whoops.validateState!({ strokes: full }).ok).toBe(true);
-    const first = mount({ author: true, clean: 40, states: { 'play-1': { state: { strokes: full }, savedAt: '2026-10-29T22:00:00.000Z' } } });
+    expect(whoops.validateState!({ strokes: full.map(packStroke) }).ok).toBe(true);
+    const first = mount({ author: true, clean: 40, states: { 'play-1': { state: { strokes: full.map(packStroke) }, savedAt: '2026-10-29T22:00:00.000Z' } } });
     const ink = inkOf(0, full);
     /* Short of the share, a stroke with no room is not saved, and the author is told so. */
     const [x, y] = inkSpot(ink);
@@ -556,7 +557,7 @@ describe('the view the effect publishes (marks-and-the-lens design, sections 3 a
   test('the save\'s report is in the view and in the status region once, and no line of it is drawn on a plate', () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     const full: Stroke[] = Array.from({ length: STROKES.most }, () => ({ tool: 'wash', ...brush(), points: [[0.01, 0.01], [0.02, 0.01]] }));
-    const { shown, frame, root } = mount({ author: true, clean: 40, states: { 'play-1': { state: { strokes: full }, savedAt: '2026-10-29T22:00:00.000Z' } } });
+    const { shown, frame, root } = mount({ author: true, clean: 40, states: { 'play-1': { state: { strokes: full.map(packStroke) }, savedAt: '2026-10-29T22:00:00.000Z' } } });
     expect(last(shown).report).toBeUndefined();
     const [x, y] = inkSpot(inkOf(0, full));
     drag(frame, [[x, y], [x + 0.06, y]]);
@@ -784,7 +785,7 @@ describe('the author\'s pen strokes belong to their layer', () => {
   })();
   const lineY = (line: number) => ((line + 0.5) * LINE_PX) / (TEXT_LINES * LINE_PX);
   const penAt = (line: number): Stroke => ({ tool: 'ink', color: COLORS[0]!, ...pen(), points: [[0, lineY(line)], [0.5, lineY(line)], [1, lineY(line)]] });
-  const saved = (id: string, strokes: Stroke[]): Record<string, EffectState> => ({ [id]: { state: { strokes }, savedAt: '2026-10-29T22:00:00.000Z' } });
+  const saved = (id: string, strokes: Stroke[]): Record<string, EffectState> => ({ [id]: { state: { strokes: strokes.map(packStroke) }, savedAt: '2026-10-29T22:00:00.000Z' } });
   const name = nameOfLine;
 
   test('a line under a pen stroke is hidden from a screen reader as from the eye, and one clear of it is read', () => {
@@ -1405,9 +1406,9 @@ describe('saving, one at a time', () => {
     await settle(SAVE_AFTER_MS * 4);
     expect(net.flight.most).toBe(1);
     expect(net.calls, 'and nothing is left to save').toHaveLength(2);
-    const last = net.calls.at(-1)!.state as { strokes: Stroke[] };
+    const last = net.calls.at(-1)!.state as { strokes: { points: string }[] };
     expect(last.strokes).toHaveLength(3);
-    expect(last.strokes.map((s) => s.points[0]![1])).toEqual([a, b, c].map((r) => Math.round(r![0]![1] * 10_000) / 10_000));
+    expect(last.strokes.map((s) => decodePoints(s.points)![0]![1])).toEqual([a, b, c].map((r) => Math.round(r![0]![1] * 10_000) / 10_000));
   });
 
   test('strokes made while a save is on its way are sent after it, not lost with the ones it carried', async () => {
@@ -1672,7 +1673,7 @@ describe('what a post costs a page', () => {
     const before = built.grids;
     await net.accept(0);
     expect(built.grids, 'the echo of what was just sent').toBe(before);
-    hear({ 'play-1': { state: { strokes: [{ tool: 'wash', ...brush(), points: [[0.5, 0.5]] }] }, savedAt: SAVED_AT } });
+    hear({ 'play-1': { state: { strokes: [packStroke({ tool: 'wash', ...brush(), points: [[0.5, 0.5]] })] }, savedAt: SAVED_AT } });
     expect(built.grids, 'a state from somewhere else').toBe(before + 1);
   });
 });
@@ -1682,7 +1683,7 @@ describe('what the effect says to a screen reader', () => {
   test('the report is written into a region that was on the page, empty, before it spoke', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     const full: Stroke[] = Array.from({ length: STROKES.most }, () => ({ tool: 'wash', ...brush(), points: [[0.01, 0.01], [0.02, 0.01]] }));
-    const { frame, root } = mount({ author: true, clean: 40, states: { 'play-1': { state: { strokes: full }, savedAt: '2026-10-29T22:00:00.000Z' } } });
+    const { frame, root } = mount({ author: true, clean: 40, states: { 'play-1': { state: { strokes: full.map(packStroke) }, savedAt: '2026-10-29T22:00:00.000Z' } } });
     const region = root.querySelector<HTMLElement>('[data-kb-report]');
     expect(region).not.toBeNull();
     expect(region).toHaveAttribute('role', 'status');
@@ -1717,7 +1718,7 @@ describe('what the effect says to a screen reader', () => {
  */
 describe('in a moment, still', () => {
   /** A saved state washing a layer about `share` of the way, as the author's strokes would. */
-  function savedWash(layer: number, share: number): { state: { strokes: Stroke[] }; washed: number } {
+  function savedWash(layer: number, share: number): { state: { strokes: ReturnType<typeof packStroke>[] }; washed: number } {
     const ink = inkOf(layer);
     const strokes: Stroke[] = [];
     for (let y = 0; y <= 1 && ink.washed < share; y += (BRUSH_PX * 0.7) / boxNow().h) {
@@ -1726,7 +1727,7 @@ describe('in a moment, still', () => {
       ink.wash(row, brush().width, brush().aspect);
       strokes.push(washStroke(row));
     }
-    return { state: { strokes }, washed: ink.washed };
+    return { state: { strokes: strokes.map(packStroke) }, washed: ink.washed };
   }
   const at = '2026-10-29T22:00:00.000Z';
   const lastView = (shown: readonly (CardView | null)[]) => shown.filter((v): v is CardView => v !== null).at(-1)!;

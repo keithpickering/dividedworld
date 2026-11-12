@@ -5,10 +5,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { stickAround } from './stick-around.ts';
 import { STROKES, whoops } from './whoops.ts';
+import { encodePoints } from './whoops/points.ts';
+import type { Pt } from './whoops/scrub.ts';
 import { CANS, CAPS, graffiti } from './graffiti.ts';
 import { STENCILS } from './graffiti/stencils.ts';
 import { GRID, cellsOf, count, type Cells } from '../../../engine/rules/surface.ts';
-import { NAMED_COLORS } from '../../../engine/bbcode/parse.ts';
 import { cards } from './index.ts';
 import { instance } from '../index.ts';
 import { publicityTour } from './publicity-tour.ts';
@@ -112,9 +113,11 @@ test('a play is decided by the card\'s own rules: its price, whether it lands, i
   assert.match(String((decidePlay(whoops, settings, post(1200), [1, 2, 3].map((i) => ({ card: 'whoops', act: `k${i}` })), { color: 'red' }, '') as { why: string }).why), /already/);
 });
 
+const pack = (points: Pt[]) => encodePoints(points);
+
 test('Whoops! strokes wash or ink, in shares of the post body\'s box: across 0 to 1, down 0 to 1', () => {
-  const ink = { tool: 'ink', color: '#000000', width: 0.04, aspect: 3, points: [[0.1, 0.2], [0.3, 0.4]] };
-  const wash = { tool: 'wash', width: 0.3, aspect: 2.99, points: [[0.5, 0.5]] };
+  const ink = { tool: 'ink', color: '#000000', width: 0.04, aspect: 3, points: pack([[0.1, 0.2], [0.3, 0.4]]) };
+  const wash = { tool: 'wash', width: 0.3, aspect: 2.99, points: pack([[0.5, 0.5]]) };
   assert.equal(whoops.validateState!({ strokes: [ink, wash] }).ok, true);
   assert.equal(whoops.validateState!({ strokes: [] }).ok, true, 'nothing saved yet');
   assert.deepEqual(whoops.validateState!({ strokes: [wash], clean: true }), { ok: true, value: { strokes: [wash], clean: true } }, 'washed clean, said by the author\'s save');
@@ -126,19 +129,7 @@ test('Whoops! strokes wash or ink, in shares of the post body\'s box: across 0 t
     assert.equal(r.ok, false, label);
     assert.match(String(!r.ok && r.why), why, label);
   };
-  assert.equal(whoops.validateState!({ strokes: [{ ...ink, points: [[1, 1]] }] }).ok, true, 'down to 1');
-  const axis = (point: number[], named: 'across' | 'down', other: 'across' | 'down', label: string) => {
-    const r = whoops.validateState!({ strokes: [{ ...ink, points: [point] }] });
-    assert.equal(r.ok, false, label);
-    const why = String(!r.ok && r.why);
-    assert.match(why, new RegExp(`a point is ${named} from`), label);
-    assert.doesNotMatch(why, new RegExp(other), `${label}: names only the axis that failed`);
-  };
-  axis([0.5, 1.2], 'down', 'across', 'a down of 1.2');
-  axis([1.2, 0.5], 'across', 'down', 'an across of 1.2');
-  axis([1.01, 0.5], 'across', 'down', 'an across of 1.01');
-  axis([-0.01, 0.5], 'across', 'down', 'a negative across');
-  axis([0.5, -0.01], 'down', 'across', 'a negative down');
+  assert.equal(whoops.validateState!({ strokes: [{ ...ink, points: pack([[1, 1]]) }] }).ok, true, 'down to 1');
   refused({ ...ink, aspect: undefined }, /aspect/, 'a missing aspect');
   refused({ ...ink, aspect: 0 }, /aspect/, 'an aspect of 0');
   refused({ ...ink, aspect: 5000 }, /aspect/, 'an aspect of 5000');
@@ -149,33 +140,69 @@ test('Whoops! strokes wash or ink, in shares of the post body\'s box: across 0 t
   refused({ ...ink, color: undefined }, /color/, 'ink carries a color');
   refused({ ...wash, color: 'red' }, /no color/, 'a wash carries none');
   refused({ ...ink, color: 'url(x)' }, /color/, 'not a color');
-  refused({ ...ink, points: Array(501).fill([0.5, 0.5]) }, /points/, 'too many points');
-  refused({ ...ink, points: [[0.1, Number.NaN]] }, /point/, 'a point that is not a number');
   assert.equal(whoops.validateState!({ strokes: Array(201).fill(ink) }).ok, false, 'too many strokes');
   assert.equal(whoops.validateState!({ strokes: 'all of them' }).ok, false);
 });
 
-test('the most strokes Whoops! saves fit the database\'s bound, as Postgres writes them', () => {
-  // The true worst case: the most strokes, each with an equal share of the total points, and every key of every stroke at its longest:
-  // the longest named color, four-decimal points and width, a three-figure aspect with the most digits.
-  const longest = [...NAMED_COLORS].reduce((a, b) => (b.length > a.length ? b : a));
-  const point = [0.12345678, 0.98765432];
-  const each = STROKES.totalPoints / STROKES.most;
-  assert.ok(Number.isInteger(each) && each <= STROKES.points);
-  const strokes = Array.from({ length: STROKES.most }, () => ({ tool: 'ink', color: longest, width: 0.99994321, aspect: 0.00123456, points: Array(each).fill(point) }));
-  const saved = whoops.validateState!({ strokes, clean: false });
-  assert.equal(saved.ok, true);
-  // jsonb's text puts a space after every comma and colon.
-  const asPostgres = JSON.stringify(saved.ok && saved.value).replace(/([,:])/g, '$1 ');
-  assert.ok(Buffer.byteLength(asPostgres) <= 262_144, `${Buffer.byteLength(asPostgres)} bytes`);
-  assert.equal(whoops.validateState!({ strokes: [...strokes, { tool: 'wash', width: 1, aspect: 1, points: [[0, 0]] }] }).ok, false, 'one point past the total');
+test('Whoops! refuses a stroke whose points are not packed as the card writes them, and the old shape', () => {
+  const ink = { tool: 'ink', color: '#000000', width: 0.04, aspect: 3, points: pack([[0.1, 0.2], [0.3, 0.4]]) };
+  const wash = { tool: 'wash', width: 0.3, aspect: 3, points: pack([[0.3, 0.4], [0.5, 0.5]]) };
+  const refused = (strokes: object[], why: RegExp, label: string) => {
+    const r = whoops.validateState!({ strokes });
+    assert.equal(r.ok, false, label);
+    assert.match(String(!r.ok && r.why), why, label);
+  };
+  const packed = /points are packed as the card writes them/;
+  refused([{ ...ink, points: [[0.1, 0.2]] }], packed, 'an old-shape stroke');
+  refused([{ ...ink, points: 'not+base64url' }], packed, 'a string that does not decode');
+  refused([{ ...ink, points: 7 }], packed, 'points that are not a string');
+  refused([{ ...ink, points: '' }], packed, 'no points');
+  refused([{ ...ink, points: pack(Array.from({ length: 501 }, (): Pt => [0.5, 0.5])) }], /at most 500 points in a stroke/, 'too many points in one stroke');
+  refused(Array.from({ length: 81 }, () => ({ ...ink, points: pack(Array.from({ length: 500 }, (): Pt => [0.5, 0.5])) })), /at most 40000 points in all/, 'too many points in all');
+  assert.equal(whoops.validateState!({ strokes: Array.from({ length: 80 }, () => ({ ...ink, points: pack(Array.from({ length: 500 }, (): Pt => [0.5, 0.5])) })) }).ok, true, 'exactly 40,000');
+  // continues: true or absent, and only on a stroke that starts where the last ended.
+  const cont = { ...wash, tool: 'ink', color: '#000000', width: 0.04, aspect: 3, points: pack([[0.3, 0.4], [0.6, 0.6]]) };
+  assert.equal(whoops.validateState!({ strokes: [ink, { ...cont, continues: true }] }).ok, true, 'a piece that starts where the last ended');
+  const started = /a continued stroke starts where the last ended/;
+  refused([ink, { ...cont, continues: false }], /continues/, 'continues is true or absent');
+  refused([{ ...ink, continues: true }], started, 'continues on the first stroke');
+  refused([ink, { ...cont, points: pack([[0.31, 0.4], [0.6, 0.6]]), continues: true }], started, 'a first point that is not the last one');
+  refused([ink, { ...cont, width: 0.05, continues: true }], started, 'a different width');
+  refused([ink, { ...cont, aspect: 2, continues: true }], started, 'a different aspect');
+  refused([wash, { ...cont, continues: true }], started, 'a different tool');
+  // drops: a whole number 0 to 3, on an ink stroke.
+  for (const d of [0, 1, 2, 3]) assert.equal(whoops.validateState!({ strokes: [{ ...ink, drops: d }] }).ok, true, `drops ${d}`);
+  for (const d of [4, -1, 1.5, '1', null]) refused([{ ...ink, drops: d }], /drops are a whole number from 0 to 3/, `drops ${JSON.stringify(d)}`);
+  refused([{ ...wash, drops: 1 }], /drops are a whole number from 0 to 3/, 'drops on a wash');
 });
 
-test('a stroke\'s points and width are kept to a ten-thousandth, its aspect to three significant figures', () => {
-  const saved = whoops.validateState!({ strokes: [{ tool: 'ink', color: 'red', width: 0.123456, aspect: 2.34567, points: [[0.123456, 0.987654]] }] });
-  assert.deepEqual(saved.ok && saved.value, { strokes: [{ tool: 'ink', color: 'red', width: 0.1235, aspect: 2.35, points: [[0.1235, 0.9877]] }] });
-  const small = whoops.validateState!({ strokes: [{ tool: 'wash', width: 0.5, aspect: 0.0123456, points: [[0, 0]] }] });
-  assert.deepEqual(small.ok && small.value, { strokes: [{ tool: 'wash', width: 0.5, aspect: 0.0123, points: [[0, 0]] }] });
+test('the most strokes Whoops! saves fit the database\'s bound, as Postgres writes them', () => {
+  // The true worst case: the most strokes, each with an equal share of the total points, every key of every stroke at its longest:
+  // a seven-character color, continues, drops 3, the widest width, a three-figure aspect, and every point's difference the largest.
+  const each = STROKES.totalPoints / STROKES.most;
+  assert.ok(Number.isInteger(each) && each <= STROKES.points);
+  // Alternating corners: each difference is 10,000 or -10,000, the most digits an i16 puts in base64url.
+  const corners = (from: 0 | 1) => pack(Array.from({ length: each }, (_, i): Pt => ((i + from) % 2 === 0 ? [0, 0] : [1, 1])));
+  const [there, back] = [corners(0), corners(1)]; // a piece ends on the corner the next one starts on
+  const pieces = Array.from({ length: STROKES.most }, (_, i) => ({ tool: 'ink', color: '#abcdef', width: 0.9999, aspect: 0.123, points: i % 2 === 0 ? there : back, ...(i > 0 ? { continues: true } : null), drops: 3 }));
+  const saved = whoops.validateState!({ strokes: pieces, clean: false });
+  assert.equal(saved.ok, true, saved.ok ? '' : saved.why);
+  const plain = JSON.stringify(saved.ok && saved.value);
+  // jsonb's text puts a space after every comma and colon.
+  const asPostgres = JSON.stringify(saved.ok && saved.value).replace(/([,:])/g, '$1 ');
+  console.log(`largest save: ${Buffer.byteLength(plain)} bytes as JSON.stringify, ${Buffer.byteLength(asPostgres)} as Postgres writes it`);
+  assert.ok(Buffer.byteLength(plain) <= 262_144 * 0.95, `${Buffer.byteLength(plain)} bytes`);
+  assert.ok(Buffer.byteLength(asPostgres) <= 262_144 * 0.95, `${Buffer.byteLength(asPostgres)} bytes`);
+  assert.equal(whoops.validateState!({ strokes: [...pieces, { tool: 'wash', width: 1, aspect: 1, points: pack([[0, 0]]) }] }).ok, false, 'one stroke past the most');
+});
+
+test('a stroke\'s width is kept to a ten-thousandth, its aspect to three significant figures, its points packed back', () => {
+  const saved = whoops.validateState!({ strokes: [{ tool: 'ink', color: 'red', width: 0.123456, aspect: 2.34567, points: pack([[0.123456, 0.987654]]) }] });
+  assert.deepEqual(saved.ok && saved.value, { strokes: [{ tool: 'ink', color: 'red', width: 0.1235, aspect: 2.35, points: pack([[0.1235, 0.9877]]) }] });
+  const small = whoops.validateState!({ strokes: [{ tool: 'wash', width: 0.5, aspect: 0.0123456, points: pack([[0, 0]]) }] });
+  assert.deepEqual(small.ok && small.value, { strokes: [{ tool: 'wash', width: 0.5, aspect: 0.0123, points: pack([[0, 0]]) }] });
+  const pieces = whoops.validateState!({ strokes: [{ tool: 'ink', color: 'red', width: 0.1, aspect: 2, points: pack([[0.1, 0.1], [0.2, 0.2]]), drops: 2 }, { tool: 'ink', color: 'red', width: 0.1, aspect: 2, points: pack([[0.2, 0.2], [0.3, 0.3]]), continues: true }] });
+  assert.deepEqual(pieces.ok && (pieces.value as { strokes: { continues?: true; drops?: number }[] }).strokes.map((s) => [s.continues, s.drops]), [[undefined, 2], [true, undefined]], 'continues and drops are kept');
 });
 
 test('Stick Around holds no state to save', () => {

@@ -9,7 +9,8 @@
  *
  * A stroke is kept in shares of the post body's box, with the proportions of the box it was made in,
  * never in widths of a fixed layout: across from 0 to 1 and down from 0 to 1, to a ten-thousandth,
- * so a point lands at the same share of the body on every screen. A stroke's `width` is the brush's
+ * so a point lands at the same share of the body on every screen. A stroke's points are saved packed, 4 bytes a point
+ * (whoops/points.ts), and a stroke is simplified before it is saved (`fitStroke`). A stroke's `width` is the brush's
  * diameter as a share of the box's width, and its `aspect` is the drawer's box width over its
  * height (three significant figures), so a round brush on the drawer's screen is the same ellipse
  * in shares on every other (the refinements design, section 3). A stroke washes (no color) or inks
@@ -18,14 +19,18 @@
  * there can be fits the database's bound on it (effect_state, supabase/migrations/0006_cards.sql),
  * which cards.test.ts measures as Postgres writes it.
  */
+import { decodePoints, encodePoints } from './whoops/points.ts';
 import { color, economyOf, landsOn, ok, refuse, type CardRules } from '../../../engine/rules/cards.ts';
 
-export const STROKES = { most: 200, points: 500, totalPoints: 12_000, widest: 1, deepest: 1 } as const;
+export const STROKES = { most: 200, points: 500, totalPoints: 40_000, widest: 1, deepest: 1 } as const;
 const tenThousandth = (n: number) => Math.round(n * 10_000) / 10_000;
 const threeFigures = (n: number) => Number(n.toPrecision(3));
 const ASPECT = { least: 0.001, most: 1000 } as const;
 
-type Stroke = { tool: 'wash'; width: number; aspect: number; points: [number, number][] } | { tool: 'ink'; color: string; width: number; aspect: number; points: [number, number][] };
+/** A stroke as the card saves it: its points packed (whoops/points.ts), `continues` on a piece of a line after the first, `drops` on a pen's last piece. */
+export type SavedStroke =
+  | { tool: 'wash'; width: number; aspect: number; points: string; continues?: true }
+  | { tool: 'ink'; color: string; width: number; aspect: number; points: string; continues?: true; drops?: 0 | 1 | 2 | 3 };
 
 export const whoops: CardRules<{ color: string }> = {
   key: 'whoops',
@@ -58,7 +63,7 @@ export const whoops: CardRules<{ color: string }> = {
     if (!Array.isArray(strokes)) return refuse('strokes are a list');
     if (clean !== undefined && typeof clean !== 'boolean') return refuse('clean is true or false');
     if (strokes.length > STROKES.most) return refuse(`at most ${STROKES.most} strokes`);
-    const out: Stroke[] = [];
+    const out: SavedStroke[] = [];
     let total = 0;
     for (const s of strokes) {
       if (typeof s !== 'object' || s === null) return refuse('a stroke is a path');
@@ -69,18 +74,24 @@ export const whoops: CardRules<{ color: string }> = {
       if (tool === 'wash' && c !== undefined) return refuse('a wash stroke has no color');
       if (typeof width !== 'number' || !(tenThousandth(width) > 0 && width <= STROKES.widest)) return refuse(`a stroke is wide from over 0 to ${STROKES.widest} of the box's width`);
       if (typeof aspect !== 'number' || !(aspect >= ASPECT.least && aspect <= ASPECT.most)) return refuse(`a stroke's aspect is the drawer's box width over its height, from ${ASPECT.least} to ${ASPECT.most}`);
-      if (!Array.isArray(points) || points.length < 1 || points.length > STROKES.points) return refuse(`a stroke has 1 to ${STROKES.points} points`);
-      total += points.length;
+      const { continues, drops } = s as { continues?: unknown; drops?: unknown };
+      const decoded = typeof points === 'string' ? decodePoints(points) : null;
+      if (!decoded) return refuse('a stroke\'s points are packed as the card writes them');
+      if (decoded.length > STROKES.points) return refuse(`at most ${STROKES.points} points in a stroke`);
+      total += decoded.length;
       if (total > STROKES.totalPoints) return refuse(`at most ${STROKES.totalPoints} points in all`);
-      for (const p of points) {
-        if (!Array.isArray(p) || p.length !== 2 || !p.every((n) => typeof n === 'number' && Number.isFinite(n))) return refuse('a point is two numbers, across then down');
-        if (!(p[0] >= 0 && p[0] <= 1)) return refuse('a point is across from 0 to 1, in shares of the box');
-        if (!(p[1] >= 0 && p[1] <= STROKES.deepest)) return refuse(`a point is down from 0 to ${STROKES.deepest}, in shares of the box`);
-      }
-      const kept = (points as [number, number][]).map(([x, y]): [number, number] => [tenThousandth(x), tenThousandth(y)]);
       const w = tenThousandth(width);
       const a = threeFigures(aspect);
-      out.push(tool === 'ink' ? { tool, color: ink!, width: w, aspect: a, points: kept } : { tool, width: w, aspect: a, points: kept });
+      if (continues !== undefined && continues !== true) return refuse('continues is true when a stroke continues the one before');
+      if (continues) {
+        const before = out[out.length - 1];
+        const end = before && decodePoints(before.points)!.at(-1)!;
+        if (!before || before.tool !== tool || before.width !== w || before.aspect !== a || end![0] !== decoded[0]![0] || end![1] !== decoded[0]![1]) return refuse('a continued stroke starts where the last ended');
+      }
+      if (drops !== undefined && (tool !== 'ink' || typeof drops !== 'number' || !Number.isInteger(drops) || drops < 0 || drops > 3)) return refuse('a stroke\'s drops are a whole number from 0 to 3, and only a pen\'s');
+      const kept = encodePoints(decoded);
+      const more = { ...(continues ? { continues: true as const } : null) };
+      out.push(tool === 'ink' ? { tool, color: ink!, width: w, aspect: a, points: kept, ...more, ...(drops !== undefined ? { drops: drops as 0 | 1 | 2 | 3 } : null) } : { tool, width: w, aspect: a, points: kept, ...more });
     }
     return ok(clean === undefined ? { strokes: out } : { strokes: out, clean });
   },

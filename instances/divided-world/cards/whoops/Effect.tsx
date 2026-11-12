@@ -58,6 +58,7 @@ import {
   BRUSH_PX, LayerInk, PEN_PX, ROW_PX, SWEEP_BRUSH_ROWS, bandsOf, brushOf, coveredLines, fits, fitStroke, minStepOf, sweepStep, topLayer,
   type Pt, type Stroke, type Sweep, type TextLine,
 } from './scrub.ts';
+import { decodePoints, packStroke } from './points.ts';
 import { luminance, makeSplat, type Box, type Splat } from './splat.ts';
 import * as suds from './suds.ts';
 import './whoops.css';
@@ -107,11 +108,9 @@ function seedOf(play: CardPlay): number {
   return h;
 }
 
-const isPoint = (p: unknown): p is Pt => Array.isArray(p) && p.length === 2 && typeof p[0] === 'number' && typeof p[1] === 'number';
-
 /**
- * A play's saved state, read defensively: the server checked it, but a state is data from outside. A stroke saved before strokes kept
- * their proportions (no `aspect`), or one with a point outside the box, is dropped, as a malformed one is.
+ * A play's saved state, read defensively: the server checked it, but a state is data from outside. Points are packed (points.ts). A stroke saved before strokes kept
+ * their proportions (no `aspect`), in the old array shape, or with a point that does not decode, is dropped, as a malformed one is.
  */
 function savedOf(saved: unknown): { strokes: Stroke[]; clean: boolean } {
   const state = typeof saved === 'object' && saved !== null ? (saved as Record<string, unknown>) : undefined;
@@ -120,9 +119,11 @@ function savedOf(saved: unknown): { strokes: Stroke[]; clean: boolean } {
   if (Array.isArray(raw)) {
     for (const s of raw as Record<string, unknown>[]) {
       if (typeof s !== 'object' || s === null || typeof s.width !== 'number' || !(s.width > 0) || typeof s.aspect !== 'number' || !(s.aspect > 0) || !Number.isFinite(s.aspect)) continue;
-      if (!Array.isArray(s.points) || !s.points.every(isPoint) || !(s.points as Pt[]).every(([x, y]) => x >= 0 && x <= 1 && y >= 0 && y <= 1)) continue;
-      if (s.tool === 'wash') strokes.push({ tool: 'wash', width: s.width, aspect: s.aspect, points: s.points as Pt[] });
-      else if (s.tool === 'ink' && typeof s.color === 'string') strokes.push({ tool: 'ink', color: s.color, width: s.width, aspect: s.aspect, points: s.points as Pt[] });
+      const points = typeof s.points === 'string' ? decodePoints(s.points) : null;
+      if (!points) continue;
+      const more = s.continues === true ? { continues: true as const } : null;
+      if (s.tool === 'wash') strokes.push({ tool: 'wash', width: s.width, aspect: s.aspect, points, ...more });
+      else if (s.tool === 'ink' && typeof s.color === 'string') strokes.push({ tool: 'ink', color: s.color, width: s.width, aspect: s.aspect, points, ...more, ...(s.drops === 0 || s.drops === 1 || s.drops === 2 || s.drops === 3 ? { drops: s.drops } : null) });
     }
   }
   return { strokes, clean: state?.clean === true };
@@ -519,7 +520,7 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
         say('This layer has no room for more strokes to save. What you wash from here shows on your screen only, but washing it clean still clears it for everyone.');
         continue;
       }
-      const strokes = room ? all : [...savedFor(id).strokes];
+      const strokes = (room ? all : [...savedFor(id).strokes]).map(packStroke);
       const state = clean ? { strokes, clean: true } : { strokes };
       sending.current.add(id);
       lastSent.current.set(id, canonical(state));

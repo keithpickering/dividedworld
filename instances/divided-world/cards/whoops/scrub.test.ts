@@ -9,6 +9,7 @@ import {
   BRUSH_PX, CELL_PX, LayerInk, MIN_STEP_PX, PEN_PX, ROW_PX, SWEEP_BRUSH_ROWS, SWEEP_SPEED,
   bandsOf, brushOf, coveredLines, fits, fitStroke, minStepOf, sweepStep, topLayer, type Pt, type Stroke, type Sweep,
 } from './scrub.ts';
+import { encodePoints } from './points.ts';
 import { covers, makeSplat, type Box } from './splat.ts';
 import { whoops, STROKES } from '../whoops.ts';
 
@@ -116,7 +117,7 @@ test('a stroke scrubs the top layer that still has ink where it starts', () => {
 
 test('a stroke is kept to what the card\'s rules take, however long the drag', () => {
   const step = minStepOf(DESK);
-  const long: Stroke = { tool: 'wash', ...brushOf(BRUSH_PX, DESK), points: Array.from({ length: 1700 }, (_, i): Pt => [(i % 100) / 100, Math.floor(i / 100) / 17]) };
+  const long: Stroke = { tool: 'wash', ...brushOf(BRUSH_PX, DESK), points: Array.from({ length: 1700 }, (_, i): Pt => [i / 1700, i % 2 === 0 ? 0.2 : 0.8]) };
   const kept = fitStroke(long, step);
   assert.ok(kept.length >= 2, 'a long drag is several strokes');
   assert.ok(kept.every((s) => s.points.length <= STROKES.points));
@@ -127,7 +128,7 @@ test('a stroke is kept to what the card\'s rules take, however long the drag', (
   assert.equal(only!.width, STROKES.widest);
   assert.equal(only!.aspect, 2.35, 'the aspect is kept to three significant figures');
   assert.equal(fitStroke({ ...wild, aspect: 0.0123456 }, step)[0]!.aspect, 0.0123);
-  const validated = whoops.validateState!({ strokes: [...kept, only] });
+  const validated = whoops.validateState!({ strokes: [...kept, only!].map((s) => ({ ...s, points: encodePoints(s.points) })) });
   assert.equal(validated.ok, true, validated.ok ? '' : validated.why);
 });
 
@@ -147,7 +148,7 @@ test('a layer\'s strokes fit while they are within the card\'s counts, and not p
   const stroke = (n: number): Stroke => ({ tool: 'wash', width: 0.03, aspect: 3, points: Array.from({ length: n }, (_, i): Pt => [i / n, 0.5]) });
   assert.equal(fits(Array.from({ length: STROKES.most }, () => stroke(10))), true);
   assert.equal(fits(Array.from({ length: STROKES.most + 1 }, () => stroke(1))), false);
-  assert.equal(fits(Array.from({ length: 25 }, () => stroke(STROKES.points))), false, 'more points in all than the card keeps');
+  assert.equal(fits(Array.from({ length: 81 }, () => stroke(STROKES.points))), false, 'more points in all than the card keeps');
 });
 
 test('the sweep goes line by line at 0.55 of the box a second, a line at a time and never all at once', () => {
@@ -338,4 +339,53 @@ test('a layer on a very tall box keeps its splat memory to the stated bound', ()
   let most = 0;
   for (let k = 0; k < 30_000; k++) { ink.has(Math.random(), Math.random()); if (k % 500 === 0) most = Math.max(most, held()); }
   assert.ok(most <= 20_000 && held() <= 20_000, `memo holds ${Math.max(most, held())}`);
+});
+
+test('a stroke is simplified to within a quarter of the brush\'s radius, keeping its ends', () => {
+  const step = minStepOf(DESK);
+  const b = brushOf(BRUSH_PX, DESK);
+  const line: Stroke = { tool: 'wash', ...b, points: Array.from({ length: 200 }, (_, i): Pt => [0.1 + i * 0.004, 0.5]) };
+  assert.deepEqual(fitStroke(line, step)[0]!.points, [[0.1, 0.5], [0.896, 0.5]], '200 points along a straight line become 2');
+  const radius = 0.3 * DESK.h;
+  const circle: Pt[] = Array.from({ length: 400 }, (_, i) => {
+    const t = (i / 399) * Math.PI * 2;
+    return [Math.round((0.5 + (radius * Math.cos(t)) / DESK.w) * 1e4) / 1e4, Math.round((0.5 + (radius * Math.sin(t)) / DESK.h) * 1e4) / 1e4];
+  });
+  const [kept] = fitStroke({ tool: 'ink', color: 'red', ...b, points: circle }, [1e-9, 1e-9]);
+  assert.ok(kept!.points.length < 400 && kept!.points.length > 8, `a circle keeps ${kept!.points.length} points`);
+  assert.deepEqual(kept!.points[0], circle[0], 'the first point is kept');
+  assert.deepEqual(kept!.points[kept!.points.length - 1], circle[399], 'the last point is kept');
+  const tol = (b.width * DESK.w) / 8;
+  const px = ([x, y]: Pt): Pt => [x * DESK.w, y * DESK.h];
+  const near = (p: Pt) => {
+    let best = Infinity;
+    for (let i = 1; i < kept!.points.length; i++) {
+      const [ax, ay] = px(kept!.points[i - 1]!), [bx, by] = px(kept!.points[i]!), [qx, qy] = px(p);
+      const dx = bx - ax, dy = by - ay, len2 = dx * dx + dy * dy;
+      const t = len2 === 0 ? 0 : Math.min(1, Math.max(0, ((qx - ax) * dx + (qy - ay) * dy) / len2));
+      best = Math.min(best, Math.hypot(ax + t * dx - qx, ay + t * dy - qy));
+    }
+    return best;
+  };
+  for (const p of circle) assert.ok(near(p) <= tol + 0.05, `a point is ${near(p).toFixed(2)}px from the kept line, over ${tol}`);
+  const dab: Stroke = { tool: 'wash', ...b, points: [[0.5, 0.5]] };
+  assert.deepEqual(fitStroke(dab, step)[0]!.points, [[0.5, 0.5]], 'a dab stays a dab');
+});
+
+test('a long stroke is pieces that each start where the last ended, and only the last keeps its drops', () => {
+  const step: Pt = [1e-9, 1e-9];
+  const b = brushOf(4, DESK);
+  const zig: Pt[] = Array.from({ length: 1200 }, (_, i) => [(i % 2) * 0.9 + 0.05, 0.05 + (i / 1200) * 0.9]);
+  const pieces = fitStroke({ tool: 'ink', color: 'red', ...b, points: zig, continues: true, drops: 2 }, step);
+  assert.ok(pieces.length >= 3, `${pieces.length} pieces`);
+  assert.ok(pieces.every((s) => s.points.length <= STROKES.points));
+  for (let i = 1; i < pieces.length; i++) assert.deepEqual(pieces[i]!.points[0], pieces[i - 1]!.points[pieces[i - 1]!.points.length - 1], `piece ${i} starts where the last ended`);
+  assert.deepEqual(pieces.map((s) => (s as { continues?: true }).continues), [true, ...pieces.slice(1).map(() => true)], 'every piece after the first continues (the first keeps what it was given)');
+  assert.deepEqual(pieces.map((s) => (s as { drops?: number }).drops), [...pieces.slice(1).map(() => undefined), 2].map((d, i) => (i === pieces.length - 1 ? 2 : undefined)), 'drops on the last alone');
+  const fresh = fitStroke({ tool: 'ink', color: 'red', ...b, points: zig, drops: 3 }, step);
+  assert.equal((fresh[0] as { continues?: true }).continues, undefined, 'the first piece of a new line does not continue');
+  assert.ok(fresh.slice(1).every((s) => (s as { continues?: true }).continues === true));
+  assert.deepEqual(fresh.map((s) => (s as { drops?: number }).drops), fresh.map((_, i) => (i === fresh.length - 1 ? 3 : undefined)));
+  const wash = fitStroke({ tool: 'wash', ...b, points: zig }, step);
+  assert.ok(wash.every((s) => !('drops' in s)), 'a wash has no drops');
 });
