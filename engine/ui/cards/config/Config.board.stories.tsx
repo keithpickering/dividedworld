@@ -1,7 +1,7 @@
 /**
  * The play form's pieces for a card's settings (docs/plans/2026-11-12-laugh-track-band-plan.md, Task 7), the five of them together on the play
  * form's own surface at 420 pixels, for the owner's word: the post's words to select from, a cue's labeled field with its Remove, hint and
- * refusal, the segmented choice, the range, and a live hint. `Pieces` is the form as a card draws it; `Smoke` selects words, types, chooses
+ * refusal, the segmented choice, the range, and a live hint. `Pieces` is the form as a card draws it; `Smoke` selects words in the post (the field fills), types, chooses
  * and moves the range, so a regression in any piece shows in the story and not only in a test.
  *
  * The story names no card and no instance: the words and the labels are made up for it.
@@ -67,10 +67,19 @@ type Story = StoryObj<typeof Pieces>;
 /** The five pieces at 420 pixels. */
 export const Form: Story = {};
 
-/** Typing, choosing and moving the range, each in its own control. */
+/** Selecting words in the post, typing, choosing and moving the range, each in its own control. */
 export const Smoke: Story = {
   play: async ({ canvasElement }) => {
     const c = within(canvasElement);
+    const post = canvasElement.querySelector('[data-kb-post-words]')!;
+    const range = document.createRange();
+    range.setStart(post.firstChild!, 9);
+    range.setEnd(post.firstChild!, 17);
+    window.getSelection()!.removeAllRanges();
+    window.getSelection()!.addRange(range);
+    document.dispatchEvent(new Event('selectionchange'));
+    await expect(await c.findByLabelText('Cue 1')).toHaveValue('fan game');
+    await userEvent.clear(c.getByLabelText('Cue 1'));
     await userEvent.type(await c.findByLabelText('Cue 1'), 'ab');
     await expect(await c.findByText('That phrase is too short.')).toBeInTheDocument();
     await userEvent.click(c.getByText('Boo'));

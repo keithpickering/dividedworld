@@ -1,7 +1,7 @@
 /**
  * A labeled text field for a card's settings (docs/plans/2026-11-12-laugh-track-band-design.md, section 5), in the play form's own look: the
  * label's line (with an optional action beside it, such as a cue's Remove), the input (`kb-play-input`), its hint, and its refusal. The refusal
- * is a status line that is always drawn, so a reader hears it when it appears, and it marks the input invalid; it is also in words, so color is
+ * is a status line that is always drawn (empty, it stays in the accessibility tree, only out of sight, in config.css), so a reader hears it when it appears, and it marks the input invalid; it is also in words, so color is
  * never the only sign. The hint and the refusal both describe the input.
  *
  * The id is the input's; the hint is `${id}-hint` and the refusal `${id}-why`. Enter in the field is the form's, not this piece's: a card's form
@@ -30,6 +30,7 @@ export interface ConfigFieldProps {
 export function ConfigField({ id, label, value, onChange, hint, why, action, maxLength, onFocus, onKeyDown, ref }: ConfigFieldProps) {
   const hintId = `${id}-hint`;
   const whyId = `${id}-why`;
+  const hasHint = hint !== undefined && hint !== null && hint !== false && hint !== '';
   const refused = why !== undefined && why !== '';
   return (
     <div className="kb-play-config-field">
@@ -49,10 +50,10 @@ export function ConfigField({ id, label, value, onChange, hint, why, action, max
         onChange={(e: ChangeEvent<HTMLInputElement>) => onChange(e.target.value)}
         onFocus={onFocus}
         onKeyDown={onKeyDown}
-        aria-describedby={`${hint !== undefined ? `${hintId} ` : ''}${whyId}`}
+        aria-describedby={`${hasHint ? `${hintId} ` : ''}${whyId}`}
         aria-invalid={refused ? true : undefined}
       />
-      {hint !== undefined && <p id={hintId} className="kb-play-fine">{hint}</p>}
+      {hasHint && <p id={hintId} className="kb-play-fine">{hint}</p>}
       <p id={whyId} className="kb-play-why" role="status">{refused ? why : ''}</p>
     </div>
   );

@@ -39,6 +39,25 @@ describe('ConfigField', () => {
     expect(input.getAttribute('aria-describedby')?.split(' ')).toContain(why.id);
   });
 
+  test('no refusal: the status line is still drawn, empty, and the stylesheet keeps it in the tree', () => {
+    render(<ConfigField id="f" label="Phrase" value="" onChange={() => {}} />);
+    const why = screen.getByRole('status');
+    expect(why).toBeEmptyDOMElement();
+    expect(screen.getByLabelText('Phrase').getAttribute('aria-describedby')?.split(' ')).toContain(why.id);
+    const css = readFileSync('engine/ui/cards/config/config.css', 'utf8');
+    const rule = /(?:^|[}/])\s*\.kb-play \.kb-play-config-field \.kb-play-why:empty\s*\{([^}]*)\}/u.exec(css)?.[1] ?? '';
+    expect(rule).not.toBe('');
+    expect(rule).not.toMatch(/display:\s*none/u);
+    expect(rule).toMatch(/clip-path:\s*inset\(50%\)/u);
+  });
+
+  test.each([[false], [null], ['']])('a hint of %j draws no hint and names none', (hint) => {
+    const { container } = render(<ConfigField id="f" label="Phrase" value="" onChange={() => {}} hint={hint as never} />);
+    expect(container.querySelector('#f-hint')).toBeNull();
+    expect(container.querySelectorAll('p')).toHaveLength(1);
+    expect(screen.getByLabelText('Phrase').getAttribute('aria-describedby')).toBe('f-why');
+  });
+
   test('an action is drawn on the label\'s line', () => {
     render(<ConfigField id="f" label="Cue 1" value="" onChange={() => {}} action={<button type="button">Remove</button>} />);
     const label = screen.getByText('Cue 1');
@@ -116,8 +135,14 @@ describe('ConfigRange', () => {
   test('at least 24px tall, in its stylesheet', () => {
     const css = readFileSync('engine/ui/cards/config/config.css', 'utf8');
     const rule = /\.kb-play-range\s*\{([^}]*)\}/u.exec(css)?.[1] ?? '';
-    const height = Number(/(?:min-)?height:\s*(\d+)px/u.exec(rule)?.[1] ?? 0);
+    const height = Number(/(?:^|[\s;{])(?:min-)?height:\s*(\d+)px/u.exec(rule)?.[1] ?? 0);
     expect(height).toBeGreaterThanOrEqual(24);
+  });
+
+  test('the height guard does not count max-height or line-height', () => {
+    const read = (rule: string) => Number(/(?:^|[\s;{])(?:min-)?height:\s*(\d+)px/u.exec(rule)?.[1] ?? 0);
+    expect(read('max-height: 24px; line-height: 30px;')).toBe(0);
+    expect(read('width: 100%; min-height: 24px;')).toBe(24);
   });
 });
 
@@ -217,6 +242,64 @@ describe('PostWords', () => {
     select(2, 10);
     expect(onSelect).not.toHaveBeenCalled();
     expect(onSpill).not.toHaveBeenCalled();
+  });
+
+  test('after unmount, a selection change calls nothing', () => {
+    const onSelect = vi.fn();
+    const onSpill = vi.fn();
+    const { unmount } = render(<PostWords words={words} onSelect={onSelect} onSpill={onSpill} />);
+    const text = screen.getByRole('group', { name: "The post's words" }).firstChild!;
+    unmount();
+    const range = document.createRange();
+    range.setStart(text, 2);
+    range.setEnd(text, 10);
+    window.getSelection()!.removeAllRanges();
+    window.getSelection()!.addRange(range);
+    act(() => { document.dispatchEvent(new Event('selectionchange')); });
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(onSpill).not.toHaveBeenCalled();
+  });
+
+  test('after a rerender with a new onSelect, the new one is called and the old one is not', () => {
+    const first = vi.fn();
+    const second = vi.fn();
+    const { rerender } = render(<PostWords words={words} onSelect={first} />);
+    rerender(<PostWords words={words} onSelect={second} />);
+    select(2, 10);
+    expect(second).toHaveBeenCalledWith('fan game');
+    expect(first).not.toHaveBeenCalled();
+  });
+
+  test('two on one page: a selection wholly inside one reaches only that one', () => {
+    const a = vi.fn();
+    const b = vi.fn();
+    const spillB = vi.fn();
+    render(<><div aria-label="A words"><PostWords words="Alpha words here" onSelect={a} /></div><PostWords words="Beta words there" onSelect={b} onSpill={spillB} /></>);
+    const [viewA] = screen.getAllByRole('group', { name: "The post's words" });
+    const range = document.createRange();
+    range.setStart(viewA!.firstChild!, 0);
+    range.setEnd(viewA!.firstChild!, 5);
+    window.getSelection()!.removeAllRanges();
+    window.getSelection()!.addRange(range);
+    act(() => { document.dispatchEvent(new Event('selectionchange')); });
+    expect(a).toHaveBeenCalledWith('Alpha');
+    expect(b).not.toHaveBeenCalled();
+    expect(spillB).not.toHaveBeenCalled();
+  });
+
+  test('a selection that starts inside the words and ends outside spills', () => {
+    const onSelect = vi.fn();
+    const onSpill = vi.fn();
+    render(<><PostWords words={words} onSelect={onSelect} onSpill={onSpill} /><p id="after">After words</p></>);
+    const text = screen.getByRole('group', { name: "The post's words" }).firstChild!;
+    const range = document.createRange();
+    range.setStart(text, 4);
+    range.setEnd(document.getElementById('after')!.firstChild!, 5);
+    window.getSelection()!.removeAllRanges();
+    window.getSelection()!.addRange(range);
+    act(() => { document.dispatchEvent(new Event('selectionchange')); });
+    expect(onSpill).toHaveBeenCalledWith(true);
+    expect(onSelect).not.toHaveBeenCalled();
   });
 
   test('with focus on the words themselves, a selection is taken', () => {
