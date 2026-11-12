@@ -53,7 +53,7 @@ export default meta;
 type Story = StoryObj<typeof Thread>;
 const phone = { viewport: { value: 'glassPhone390', isRotated: false } };
 
-/** The line's place in the window, as the card's default reads it (laughTrack.line: 40% of the way down the space above the HUD). */
+/** The line's place in the window, as the card's default reads it (laughTrack.line: 40% of the way down the space above the HUD). The line's middle is inside the reading band (laughTrack.band, 34% of that space, centered on the line), so a cue scrolled to it is read. */
 async function toTheLine(canvasElement: HTMLElement): Promise<void> {
   /* jsdom, where the stories are swept for accessibility (web/a11y.test.tsx), has no layout and no IntersectionObserver, so the watcher
      registers nothing and no cue could fire; there the story shows the unfired screen, and the fired one is held in a browser by

@@ -2,7 +2,7 @@
  * Whoops!'s layers on one post, as stories for the owner (docs/plans/2026-10-31-plays-on-a-post-plan.md, Task 6;
  * the design's section 5): post #41 of the boards fixture, with the fixture's one layer (Mrs. Hooligan's magenta), two
  * (Spritey's yellow on top) or three (Gloomba's cyan between), each untouched, its top layer partly washed, or its
- * bottom layer washed clean. Each story opens the Lens from #41's Whoops! mark: its state line names the top layer,
+ * bottom layer washed clean; two with the top layer written on and scrubbed through (the ink field's look). Each story opens the Lens from #41's Whoops! mark: its state line names the top layer,
  * its caster and its ink in words, with its own share washed, its Who row has a line for each layer, and its meter is the
  * mark's edge. No board draws these.
  * Open each at 1440 by 1120, and its `Phone` twin at 390 by 844.
@@ -16,7 +16,8 @@ import { useKayfa } from '../../../../engine/ui/context.tsx';
 import type { Fake } from '../../../../engine/ui/data/fake.ts';
 import { Frame } from '../../../../engine/ui/frame/Frame.tsx';
 import { useLocation } from '../../../../engine/ui/router.tsx';
-import { BRUSH_PX, brushOf } from '../../cards/whoops/scrub.ts';
+import { packStroke } from '../../cards/whoops/points.ts';
+import { BRUSH_PX, PEN_PX, brushOf, type Pt, type Stroke } from '../../cards/whoops/scrub.ts';
 import { LoadedThread } from '../../../../engine/ui/loaded.tsx';
 
 const MINUTE = 60_000;
@@ -24,14 +25,34 @@ const YELLOW = '#ffd93d';
 const CYAN = '#19e3ff';
 
 type Layers = 1 | 2 | 3;
-type Washed = 'none' | 'partly' | 'bottom-clean';
+type Washed = 'none' | 'partly' | 'bottom-clean' | 'written';
 
 /* Strokes across the top band of a 988x330 body, in shares with its aspect, a brush apart: enough to wash part of a splat, never all of it. */
-const WHERE = brushOf(BRUSH_PX, { w: 988, h: 330 });
+const BOX = { w: 988, h: 330 };
+const WHERE = brushOf(BRUSH_PX, BOX);
+const PEN = brushOf(PEN_PX, BOX);
+const along = (n: number, at: (t: number) => Pt): Pt[] => Array.from({ length: n }, (_, i) => at(i / (n - 1)));
 const PARTLY = Array.from({ length: 14 }, (_, i) => {
   const y = 0.05 + i * (WHERE.width * WHERE.aspect) * 0.7;
-  return { tool: 'wash' as const, ...WHERE, points: [[0, y], [1, y]] as [number, number][] };
+  return packStroke({ tool: 'wash', ...WHERE, points: [[0, y], [1, y]] });
 });
+
+/*
+ * The ink field's look (docs/plans/2026-11-12-whoops-ink-field-design.md): the author's pen lines on the top layer, each ending in
+ * the bulb its end gets (the second throws two drops), and holes scrubbed through the splat's body, a few passes deep each, so the core
+ * is thinned where a pass has left some and open where several have. Points are the decoded shape; they are packed as the card saves them.
+ */
+const written = (color: string): Stroke[] => {
+  const holes = (y: number, x0: number, x1: number, passes: number): Stroke[] => Array.from({ length: passes }, (_, i) => ({
+    tool: 'wash' as const, ...WHERE, points: i % 2 === 0 ? [[x0, y], [x1, y]] as Pt[] : [[x1, y], [x0, y]] as Pt[],
+  }));
+  return [
+    { tool: 'ink', color, ...PEN, drops: 0, points: along(40, (t) => [0.08 + t * 0.5, 0.82 + 0.05 * Math.sin(t * 9)]) },
+    { tool: 'ink', color, ...PEN, drops: 2, points: along(30, (t) => [0.9 - t * 0.35, 0.18 + 0.08 * Math.cos(t * 7)]) },
+    ...holes(0.5, 0.4, 0.62, 2),
+    ...holes(0.58, 0.45, 0.58, 4),
+  ];
+};
 
 /** Hand #41 its layers and their washes, then say it is ready to be read. */
 function useSeeded(thread: string | null, layers: Layers, washed: Washed): boolean {
@@ -58,7 +79,9 @@ function useSeeded(thread: string | null, layers: Layers, washed: Washed): boole
         fake.clock.advance(MINUTE);
         top = fake.seed.card(spritey, target.id, 'whoops', { layer: layers, config: { color: YELLOW, seed: 303 }, message: 'two can play' });
       }
-      const saved = washed === 'partly' ? await api.saveEffect(top, spritey, { strokes: PARTLY })
+      if (washed === 'written' && layers === 1) throw new Error('the written layer is a top layer with a color of its own: use two or three layers');
+      const saved = washed === 'written' ? await api.saveEffect(top, spritey, { strokes: written(YELLOW).map(packStroke) })
+        : washed === 'partly' ? await api.saveEffect(top, spritey, { strokes: PARTLY })
         : washed === 'bottom-clean' ? await api.saveEffect(bottom.id, spritey, { strokes: [], clean: true }) : null;
       if (saved && !saved.ok) throw new Error(`the wash was refused: ${saved.error}`);
       if (live) setReady(true);
@@ -113,6 +136,9 @@ export const ThreeLayers: Story = { args: { layers: 3, washed: 'none' } };
 export const ThreeLayersPartlyWashed: Story = { args: { layers: 3, washed: 'partly' } };
 /** The bottom layer washed clean: its segment is faded, and the count stays three, as each panel counts them ("Layer 1 of 3"). */
 export const ThreeLayersOneClean: Story = { args: { layers: 3, washed: 'bottom-clean' } };
+/** The top layer with the author's pen lines (each ending in a bulb, one with drops) and holes scrubbed through its body, some a few passes deep: the ink field's look. */
+export const TwoLayersWritten: Story = { args: { layers: 2, washed: 'written' } };
+export const TwoLayersWrittenPhone: Story = { args: { layers: 2, washed: 'written' }, ...phone };
 export const OneLayerPhone: Story = { args: { layers: 1, washed: 'none' }, ...phone };
 export const TwoLayersPhone: Story = { args: { layers: 2, washed: 'none' }, ...phone };
 export const ThreeLayersPhone: Story = { args: { layers: 3, washed: 'none' }, ...phone };

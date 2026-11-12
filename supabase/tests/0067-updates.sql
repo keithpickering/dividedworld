@@ -220,12 +220,12 @@ begin
 
   -- Repaired: space around words, a blank row, a missing label, a null list, and keys that are no part of a change.
   act_id := (post_update('Repairs', 'Body.', '[{"label": "  Spaced  ", "text": "  words.  "}, {"label": "", "text": "  "}, {"text": "no label"}, {"label": "Extra", "text": "kept", "color": "red"}]') ->> 'act')::uuid;
-  select payload -> 'changes' into got from acts where id = act_id;
+  select payload -> 'changes' into got from acts_public where id = act_id;
   if got is distinct from '[{"label": "Spaced", "text": "words."}, {"label": "", "text": "no label"}, {"label": "Extra", "text": "kept"}]'::jsonb then raise exception 'the changes are trimmed, a blank row dropped, a missing label empty and other keys dropped: %', got; end if;
   act_id := (post_update('No list', 'Body.', null) ->> 'act')::uuid;
-  if (select payload -> 'changes' from acts where id = act_id) is distinct from '[]'::jsonb then raise exception 'no changes is an empty list'; end if;
+  if (select payload -> 'changes' from acts_public where id = act_id) is distinct from '[]'::jsonb then raise exception 'no changes is an empty list'; end if;
   act_id := (post_update('Empty list', 'Body.') ->> 'act')::uuid;
-  if (select payload -> 'changes' from acts where id = act_id) is distinct from '[]'::jsonb then raise exception 'changes may be left out'; end if;
+  if (select payload -> 'changes' from acts_public where id = act_id) is distinct from '[]'::jsonb then raise exception 'changes may be left out'; end if;
 
   -- Refused: each names what failed.
   said := pg_temp.refusal($q$select post_update('T', 'B.', '{"label": "x"}')$q$);

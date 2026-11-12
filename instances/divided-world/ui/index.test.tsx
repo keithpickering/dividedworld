@@ -11,6 +11,7 @@ import { instanceUiProblems } from '../../../engine/ui/tips/problems.ts';
 import { TIP_KEYS } from '../../../engine/ui/tips/keys.ts';
 import { instance } from '../index.ts';
 import { faceOf, facesOf } from '../../../engine/ui/cards/faces.ts';
+import { landingOn } from '../../../engine/ui/cards/land.ts';
 import { nameLines } from '../../../engine/ui/cards/nameLines.ts';
 import { SIZES } from '../../../engine/ui/cards/template.ts';
 import { logRows } from '../../../engine/ui/log/lines.ts';
@@ -34,6 +35,14 @@ describe('Divided World\'s developer persona', () => {
     expect(instance.developer).toEqual({ name: 'Gabe', tagline: 'Made this. Sorry.', avatar: 'gabe', pronouns: PRONOUN_PRESETS.he });
     expect(typeof instanceUi.avatars?.[instance.developer!.avatar!], 'the persona\'s avatar key names a picture').toBe('string');
     expect(instanceUi.avatars!.gabe, 'Gabe\'s face is the sprite\'s PNG').toMatch(/^(data:image\/png|.*gabe.*\.png)/u);
+  });
+});
+
+describe('Divided World\'s code of conduct', () => {
+  test('is version 1 with the design\'s seven sections, and passes the engine\'s check', () => {
+    expect(instanceUi.conduct.version).toBe(1);
+    expect(instanceUi.conduct.sections.map((s) => s.key)).toEqual(['person', 'hate', 'harassment', 'stop', 'onBoard', 'reportAbuse', 'outing']);
+    expect(instanceUiProblems(instanceUi, instance).filter((p) => /conduct/u.test(p))).toEqual([]);
   });
 });
 
@@ -898,5 +907,39 @@ describe('Divided World\'s sounds', () => {
   test('the preview names a slot, the game bus\'s', () => {
     expect(instanceUi.sounds?.preview?.game).toBe('laugh-track.laugh-1');
     expect(slots.map((s) => s.key)).toContain(instanceUi.sounds?.preview?.game);
+  });
+});
+
+/* The engine's card draws its own ring (engine/ui/cards/postcard.css): a Use's is not painted, so a rule here that painted one would lay a solid ring under its dashes. */
+describe('Divided World\'s stylesheets and the card\'s ring', () => {
+  test('no rule paints a card\'s ring in a width or color of its own', () => {
+    expect(ringFaults(path.join(path.dirname(fileURLToPath(import.meta.url)), '..'))).toEqual([]);
+  });
+});
+
+/** Each rule under `root`, outside postcard.css, that paints a ring on a card (a shadow with no offset or blur) in a width or color of its own. */
+function ringFaults(root: string): string[] {
+  const faults: string[] = [];
+  for (const file of fs.readdirSync(root, { recursive: true, encoding: 'utf8' }).filter((f) => f.endsWith('.css') && path.basename(f) !== 'postcard.css' && !f.includes('node_modules'))) {
+    for (const m of fs.readFileSync(path.join(root, file), 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '').matchAll(/([^{}]+)\{([^{}]*)\}/gu)) {
+      if (!/\.kb-postcard(?![-\w])/u.test(m[1]!)) continue;
+      for (const shadow of /box-shadow:([^;]*)/u.exec(m[2]!)?.[1]?.split(/,(?![^(]*\))/u) ?? []) {
+        if (/^\s*0 0 0 \S/u.test(shadow) && !shadow.includes('inset') && shadow.trim() !== '0 0 0 var(--kb-pc-ring) var(--kb-pc-ring-color)') faults.push(`${file}: ${m[1]!.trim()} { ${shadow.trim()} }`);
+      }
+    }
+  }
+  return faults;
+}
+
+/* The screens ask where each card lands with no settings at all (engine/ui/cards/land.ts): a card whose rules read the economy while deciding a
+   play (You Were Saying?'s length) once threw on every post it was offered on. Each of the instance's cards is asked as the screens ask it. */
+describe('where each card lands, as the screens ask it', () => {
+  test('every card is asked on a post, face up and face down, without reading settings the screens do not hold', () => {
+    const target = { reach: 'post', act: 'p1', kind: 'post', length: 2, text: 'hi' } as const;
+    for (const rules of instance.cards) {
+      expect(() => landingOn(rules, target, [], { cards: instance.cards }), rules.key).not.toThrow();
+      expect(() => landingOn(rules, target, [], { cards: instance.cards, faceDown: true }), rules.key).not.toThrow();
+    }
+    expect(landingOn(instance.cards.find((c) => c.key === 'you-were-saying')!, target, [], { cards: instance.cards }).ok).toBe(true);
   });
 });

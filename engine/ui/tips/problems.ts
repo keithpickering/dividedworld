@@ -1,7 +1,7 @@
 /**
  * What an instance's UI must fill exactly, checked beside `instanceProblems` (engine/rules/instance.ts), which checks its
  * rules: `onboarding.tips` has every tip key the engine knows and none it does not, each with a title and a line, and the
- * welcome letter is text; `copy.marquees`, when given, is a non-empty list of names of 1 to 20 characters; `copy.badges`, when given, is a non-empty list of pairs of two words of 12 characters between them; the front door names only cast
+ * welcome letter is text; the code of conduct has a positive whole version and sections with unique keys, each with a title and text; `copy.marquees`, when given, is a non-empty list of names of 1 to 20 characters; `copy.badges`, when given, is a non-empty list of pairs of two words of 12 characters between them; the front door names only cast
  * members, reactions and ranks the instance has, and cards with a `CardUi`. Pure, so the self-test can plant each defect; the build runs it
  * against the real instance (instances/divided-world/ui/index.test.tsx).
  */
@@ -11,6 +11,7 @@ import type { CardPlay, CardUi } from '../cards/types.ts';
 import { QUADRANTS, type Quadrant } from '../../rules/types.ts';
 import { ACTION_TIPS, TIP_KEYS } from './keys.ts';
 import { wordsProblems } from '../cards/lens-words.ts';
+import { CONDUCT_TEMPLATES, TEMPLATES } from '../../mail/conduct.ts';
 
 /** The longest a marquee name may be: the sign's width at 390px. */
 export const MARQUEE_MAX = 20;
@@ -19,7 +20,7 @@ export const BADGE_MAX = 12;
 /** The most badges the footer shows: a row of them wraps (engine/ui/frame/frame.css), but a footer of a dozen is a wall. */
 export const BADGES_MAX = 6;
 
-export function instanceUiProblems(ui: Pick<InstanceUi, 'onboarding' | 'copy' | 'frontDoor' | 'cards' | 'classLooks'> & Partial<Pick<InstanceUi, 'themes'>>, instance: Pick<Instance, 'reactions' | 'ranks' | 'classes' | 'cards' | 'settings'>): string[] {
+export function instanceUiProblems(ui: Pick<InstanceUi, 'onboarding' | 'copy' | 'frontDoor' | 'cards' | 'classLooks' | 'conduct'> & Partial<Pick<InstanceUi, 'themes'>>, instance: Pick<Instance, 'reactions' | 'ranks' | 'classes' | 'cards' | 'settings'>): string[] {
   const out: string[] = [];
   /* A theme's `modes` and its preview's keys are one list (tools/theme-preview.mjs reads the keys from the theme's file). */
   for (const t of ui.themes ?? []) {
@@ -63,8 +64,9 @@ export function instanceUiProblems(ui: Pick<InstanceUi, 'onboarding' | 'copy' | 
       });
     }
   }
+  out.push(...conductProblems(ui.conduct));
   const on = ui.onboarding;
-  if (typeof on !== 'object' || on === null) return ['the instance UI has no onboarding'];
+  if (typeof on !== 'object' || on === null) return [...out, 'the instance UI has no onboarding'];
   const tips: Record<string, { title?: unknown; line?: unknown; action?: unknown } | undefined> = on.tips ?? {};
   for (const key of TIP_KEYS) {
     const tip = tips[key];
@@ -83,6 +85,51 @@ export function instanceUiProblems(ui: Pick<InstanceUi, 'onboarding' | 'copy' | 
   for (const card of ui.cards ?? []) {
     if (card.status === undefined) out.push(`the card "${card.key}" has no status, so its Lens heading would be a sentence`);
     else for (const words of statusWords(card.status, instance.cards?.find((c) => c.key === card.key)?.stack ?? 1)) out.push(...wordsProblems('status', words).map((p) => `the card "${card.key}": ${p}`));
+  }
+  return out;
+}
+
+/** The conduct mail override: known templates only, each with words that fill only that template's slots. */
+function conductMailProblems(mail: unknown): string[] {
+  if (typeof mail !== 'object' || mail === null || Array.isArray(mail)) return ['the conduct mail is not an object of templates'];
+  const out: string[] = [];
+  for (const [key, words] of Object.entries(mail)) {
+    if (!(CONDUCT_TEMPLATES as readonly string[]).includes(key)) { out.push(`the conduct mail has a template "${key}", which is not one of the engine's (${CONDUCT_TEMPLATES.join(', ')})`); continue; }
+    if (typeof words !== 'object' || words === null) { out.push(`the conduct mail "${key}" is not an object of words`); continue; }
+    const w = words as Record<string, unknown>;
+    for (const field of Object.keys(w)) if (!['subject', 'preheader', 'heading', 'paragraphs', 'note'].includes(field)) out.push(`the conduct mail "${key}" has a field "${field}", which is not subject, preheader, heading, paragraphs or note`);
+    const texts: string[] = [];
+    for (const field of ['subject', 'preheader', 'heading', 'note']) {
+      if (w[field] === undefined) continue;
+      if (typeof w[field] !== 'string') out.push(`the conduct mail "${key}" ${field} is not text`); else texts.push(w[field] as string);
+    }
+    if (w.paragraphs !== undefined) {
+      if (!Array.isArray(w.paragraphs) || w.paragraphs.some((p) => typeof p !== 'string')) out.push(`the conduct mail "${key}" paragraphs are not a list of text`); else texts.push(...(w.paragraphs as string[]));
+    }
+    const slots = TEMPLATES[key as keyof typeof TEMPLATES].slots;
+    for (const text of texts) for (const m of text.matchAll(/\{(\w+)\}/g)) if (!slots.includes(m[1] ?? '')) out.push(`the conduct mail "${key}" uses the slot {${m[1]}}, which that template does not have`);
+  }
+  return out;
+}
+
+/** The code of conduct: a positive whole version, sections with unique keys, and a title and words in each. */
+function conductProblems(conduct: unknown): string[] {
+  if (typeof conduct !== 'object' || conduct === null) return ['the instance UI has no conduct'];
+  const { version, sections, mail } = conduct as { version?: unknown; sections?: unknown; mail?: unknown };
+  const out: string[] = [];
+  if (mail !== undefined) out.push(...conductMailProblems(mail));
+  if (typeof version !== 'number' || !Number.isInteger(version) || version < 1) out.push('the conduct version is not a positive whole number');
+  if (!Array.isArray(sections) || sections.length === 0) return [...out, 'the conduct has no sections'];
+  const seen = new Set<string>();
+  for (const sec of sections as readonly ({ key?: unknown; title?: unknown; text?: unknown } | null)[]) {
+    if (typeof sec !== 'object' || sec === null) { out.push('a conduct section is not a section'); continue; }
+    const key = typeof sec.key === 'string' ? sec.key : '';
+    if (key.trim() === '') out.push('a conduct section has no key');
+    else if (!/^[A-Za-z][\w-]*$/u.test(key)) out.push(`the conduct section key "${key}" is not an id: a letter, then letters, digits, hyphens or underscores`);
+    else if (seen.has(key)) out.push(`the conduct has two sections with the key "${key}"`);
+    seen.add(key);
+    if (typeof sec.title !== 'string' || sec.title.trim() === '') out.push(`the conduct section "${key}" has no title`);
+    if (typeof sec.text !== 'string' || sec.text.trim() === '') out.push(`the conduct section "${key}" has no text`);
   }
   return out;
 }

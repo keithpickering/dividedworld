@@ -241,8 +241,15 @@
   transition: box-shadow var(--kb-opening-screen, 0ms) var(--kb-opening-ease, linear);
 }
 
+/* A Use's ring is its dashes, which go gold with the same timing. */
+.kb-opening-spot .kb-postcard[data-size='sheet']::before {
+  transition: border-color var(--kb-opening-screen, 0ms) var(--kb-opening-ease, linear);
+}
+
 .kb-opening-spot[data-kb-hit] .kb-postcard[data-size='sheet'] {
-  box-shadow: 0 0 0 2px var(--kb-glass-ready), 0 0 46px color-mix(in srgb, var(--kb-glass-ready) 75%, transparent), 0 30px 50px color-mix(in srgb, var(--kb-glass-ground) 90%, transparent);
+  /* The ring goes gold, whichever way the card's type draws it (a Use's dashes are its ring); a Set's second line keeps the card's color. */
+  --kb-pc-line: var(--kb-glass-ready);
+  box-shadow: 0 0 0 var(--kb-pc-ring) var(--kb-pc-ring-color), 0 0 46px color-mix(in srgb, var(--kb-glass-ready) 75%, transparent), 0 30px 50px color-mix(in srgb, var(--kb-glass-ground) 90%, transparent);
 }
 
 /* ---- the row ---- */

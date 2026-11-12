@@ -1,0 +1,63 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Whoops! read-through bench</title>
+<!--
+  Record, written 2026-11-12. A bench for the Whoops! follow-ups design (docs/plans/2026-11-12-whoops-followups-design.md,
+  section 5): post text under each of the six inks, at the opacities washed ink thins through (100% down to the 35% floor),
+  on the light and the dark board. Each cell says the WCAG contrast of the words seen through the ink against the ink
+  over the page. The owner picks the contrast at which a line counts as readable; cells at or past it are outlined.
+  Flat ink only: the gloss and rim of the real shading are left out.
+-->
+<style>
+  body { margin: 16px; font: 13px Verdana, sans-serif; background: #ddd; color: #000; }
+  h1 { font: bold 16px "Courier New", monospace; }
+  label { margin-right: 16px; }
+  .board { padding: 12px; margin: 12px 0; overflow-x: auto; }
+  .board.light { background: #fff; color: #000; }
+  .board.dark { background: #000; color: #fff; }
+  table { border-collapse: collapse; }
+  th { font: bold 11px "Courier New", monospace; padding: 2px 6px; text-align: left; white-space: nowrap; }
+  td { padding: 3px; }
+  .cell { position: relative; width: 150px; height: 44px; font: 15px/22px Verdana, sans-serif; overflow: hidden; outline: 3px solid transparent; outline-offset: -3px; }
+  .cell .ink { position: absolute; inset: 0; }
+  .cell.read { outline-color: currentColor; }
+  .ratio { font: 11px "Courier New", monospace; }
+</style>
+<h1>Whoops! read-through: when can the eye read a line under thinned ink?</h1>
+<p>
+  <label>Readable at contrast <input id="c" type="range" min="1.1" max="4.5" step="0.1" value="2"> <b id="cv"></b>:1</label>
+  Outlined cells are at or past it: there a line would stop counting as covered.
+</p>
+<div id="out"></div>
+<script>
+  const INKS = [['Magenta', '#ff2bd6'], ['Cyan', '#19e3ff'], ['Yellow', '#ffd93d'], ['Green', '#2ef0a0'], ['Orange', '#ff9a3d'], ['Violet', '#b46cff'], ['Black', '#000000'], ['Navy', '#000080'], ['White', '#ffffff']];
+  const OPACITIES = [1, 0.9, 0.8, 0.7, 0.6, 0.5, 0.42, 0.35];
+  const rgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+  const lum = (c) => { const [r, g, b] = c.map((v) => v / 255).map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+  const over = (ink, a, under) => ink.map((v, i) => v * a + under[i] * (1 - a));
+  const contrast = (x, y) => { const [hi, lo] = [lum(x), lum(y)].sort((p, q) => q - p); return (hi + 0.05) / (lo + 0.05); };
+  function draw() {
+    const need = Number(document.getElementById('c').value);
+    document.getElementById('cv').textContent = need.toFixed(1);
+    const out = document.getElementById('out');
+    out.innerHTML = '';
+    for (const [mode, page, text] of [['light', '#ffffff', '#000000'], ['dark', '#000000', '#ffffff']]) {
+      const board = document.createElement('div');
+      board.className = `board ${mode}`;
+      let html = `<table><tr><th>${mode} board</th>${OPACITIES.map((a) => `<th>${Math.round(a * 100)}%</th>`).join('')}</tr>`;
+      for (const [name, color] of INKS) {
+        html += `<tr><th>${name}</th>`;
+        for (const a of OPACITIES) {
+          const ratio = contrast(over(rgb(color), a, rgb(text)), over(rgb(color), a, rgb(page)));
+          html += `<td><div class="cell${ratio >= need ? ' read' : ''}">The quick brown fox jumps over it<div class="ink" style="background:${color};opacity:${a}"></div></div><div class="ratio">${ratio.toFixed(2)}:1</div></td>`;
+        }
+        html += '</tr>';
+      }
+      board.innerHTML = `${html}</table>`;
+      out.append(board);
+    }
+  }
+  document.getElementById('c').addEventListener('input', draw);
+  draw();
+</script>

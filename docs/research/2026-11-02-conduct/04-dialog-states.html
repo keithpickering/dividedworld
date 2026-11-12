@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The report dialog's states</title>
+<!-- Board 4 of the conduct design session: sent, the limit (n = 3) and an error, each in place of the form or above it, with focus on the dialog's heading. Written by mock.mjs; a reference for the look, not code to copy. -->
+<link rel="stylesheet" href="../../../engine/ui/base.css">
+<link rel="stylesheet" href="../../../instances/divided-world/ui/theme.css">
+<link rel="stylesheet" href="../../../engine/ui/glass/tokens.css">
+<link rel="stylesheet" href="glass-tokens.css">
+<link rel="stylesheet" href="../../../engine/ui/glass/base.css">
+<link rel="stylesheet" href="../../../engine/ui/glass/calm.css">
+<link rel="stylesheet" href="../../../engine/ui/glass/parts.css">
+<link rel="stylesheet" href="../../../engine/ui/glass/shell.css">
+<link rel="stylesheet" href="../../../engine/ui/thread/thread.css">
+<link rel="stylesheet" href="../../../engine/ui/postbit/postbit.css">
+<link rel="stylesheet" href="../../../engine/ui/bbcode/bbcode.css">
+<link rel="stylesheet" href="../../../engine/ui/cards/lens.css">
+<link rel="stylesheet" href="../../../engine/ui/cards/visit.css">
+<link rel="stylesheet" href="../../../engine/ui/cards/forms.css">
+<link rel="stylesheet" href="../../../engine/ui/account/account.css">
+<link rel="stylesheet" href="board.css">
+</head>
+<body>
+<div class="kb-glass states"><figure><figcaption class="state-cap">Sent</figcaption><div class="kb-glass-dialog kb-glass-cut-dialog kb-report" role="dialog" aria-modal="true" aria-labelledby="s-t" aria-describedby="s-lead">
+<div class="kb-glass-dialog-bar"><div class="kb-glass-dialog-titles"><p class="kb-glass-dialog-kicker">Post #2 by Gravy Knight, current version</p><h2 id="s-t" class="kb-glass-dialog-head kb-glass-display" tabindex="-1">Report to admins</h2></div><button type="button" class="kb-glass-dialog-close"><span class="kb-visually-hidden">Close</span></button></div>
+<div class="kb-glass-dialog-body kb-report-body">
+<p id="s-lead" class="kb-report-said">Sent. An admin will read it, and we'll email you when they have. Nothing changes on the board.</p><div class="kb-glass-form-foot"><div class="kb-button-row" data-kb-align="end"><button type="button" class="kb-glass-button kb-glass-skew" data-kb-kind="secondary" data-kb-size="m"><span class="kb-glass-upright"><span class="kb-glass-label">Close</span></span></button></div></div>
+</div>
+</div></figure><figure><figcaption class="state-cap">Limit, n = 3</figcaption><div class="kb-glass-dialog kb-glass-cut-dialog kb-report" role="dialog" aria-modal="true" aria-labelledby="l-t" aria-describedby="l-lead">
+<div class="kb-glass-dialog-bar"><div class="kb-glass-dialog-titles"><p class="kb-glass-dialog-kicker">Post #2 by Gravy Knight, current version</p><h2 id="l-t" class="kb-glass-dialog-head kb-glass-display" tabindex="-1">Report to admins</h2></div><button type="button" class="kb-glass-dialog-close"><span class="kb-visually-hidden">Close</span></button></div>
+<div class="kb-glass-dialog-body kb-report-body">
+<p id="l-lead" class="kb-report-said">You have 3 reports waiting for an admin. You can send another once one of them is read.</p><div class="kb-glass-form-foot"><div class="kb-button-row" data-kb-align="end"><button type="button" class="kb-glass-button kb-glass-skew" data-kb-kind="secondary" data-kb-size="m"><span class="kb-glass-upright"><span class="kb-glass-label">Close</span></span></button></div></div>
+</div>
+</div></figure><figure><figcaption class="state-cap">Error</figcaption><div class="kb-glass-dialog kb-glass-cut-dialog kb-report" role="dialog" aria-modal="true" aria-labelledby="e-t" aria-describedby="e-lead">
+<div class="kb-glass-dialog-bar"><div class="kb-glass-dialog-titles"><p class="kb-glass-dialog-kicker">Post #2 by Gravy Knight, current version</p><h2 id="e-t" class="kb-glass-dialog-head kb-glass-display" tabindex="-1">Report to admins</h2></div><button type="button" class="kb-glass-dialog-close"><span class="kb-visually-hidden">Close</span></button></div>
+<div class="kb-glass-dialog-body kb-report-body">
+<p id="e-lead" class="kb-acct-text">This reaches a person, not the game. An admin reads every report, and the player is never told who sent it.</p>
+<p role="alert" class="kb-report-said">That did not send. Check your connection and press Send to admins again; what you typed is still here.</p>
+<form onsubmit="return false">
+<fieldset class="kb-report-sections"><legend class="kb-visually-hidden">Which part of the code of conduct</legend>
+<div class="kb-report-section"><label><input type="radio" name="section" value="person" checked><span>The mask is fair game; the person isn't.</span></label><a href="conduct.html#person" aria-label="Read: The mask is fair game; the person isn't.">Read</a></div>
+<div class="kb-report-section"><label><input type="radio" name="section" value="hate"><span>No hate.</span></label><a href="conduct.html#hate" aria-label="Read: No hate.">Read</a></div>
+<div class="kb-report-section"><label><input type="radio" name="section" value="harassment"><span>No sexual harassment.</span></label><a href="conduct.html#harassment" aria-label="Read: No sexual harassment.">Read</a></div>
+<div class="kb-report-section"><label><input type="radio" name="section" value="stop"><span>Stop when asked.</span></label><a href="conduct.html#stop" aria-label="Read: Stop when asked.">Read</a></div>
+<div class="kb-report-section"><label><input type="radio" name="section" value="onBoard"><span>Keep it on the board.</span></label><a href="conduct.html#onBoard" aria-label="Read: Keep it on the board.">Read</a></div>
+<div class="kb-report-section"><label><input type="radio" name="section" value="reportAbuse"><span>Don't report play as abuse to win.</span></label><a href="conduct.html#reportAbuse" aria-label="Read: Don't report play as abuse to win.">Read</a></div>
+<div class="kb-report-section"><label><input type="radio" name="section" value="outing"><span>Don't out a mask with outside knowledge.</span></label><a href="conduct.html#outing" aria-label="Read: Don't out a mask with outside knowledge.">Read</a></div>
+</fieldset>
+<div style="margin-top:24px"><label class="kb-report-label" for="e-note">Anything an admin should know (optional)</label>
+<textarea id="e-note" class="kb-mod-textarea" rows="4" aria-describedby="e-count">The last line goes after their real job, not their character. The rest is just roasting and I would leave it.</textarea>
+<p id="e-count" class="kb-glass-field-count"><span class="kb-glass-field-hint"></span> <span class="kb-glass-field-tally">109 of 1000</span></p></div>
+<div class="kb-glass-form-foot"><div class="kb-button-row" data-kb-align="end"><button type="button" class="kb-glass-button kb-glass-skew" data-kb-kind="quiet" data-kb-size="m"><span class="kb-glass-upright"><span class="kb-glass-label">Cancel</span></span></button><button type="button" class="kb-glass-button kb-glass-skew" data-kb-kind="secondary" data-kb-size="m"><span class="kb-glass-upright"><span class="kb-glass-label">Send to admins</span></span></button></div></div>
+</form>
+</div>
+</div></figure></div>
+<script>
+/* What the app's JS decides from the window's width: the Phone board's glass layout below 1152px (engine/ui/glass/board.ts), the stacked postbit at 40em. */
+(function () {
+  var w = window.innerWidth, r = document.documentElement;
+  if (w < 1152) r.setAttribute('data-kb-layout', 'phone');
+  if (w <= 640) document.querySelectorAll('[data-kb-postbit]').forEach(function (e) { e.setAttribute('data-kb-postbit', 'stacked'); });
+  if (w <= 640) document.querySelectorAll('.kb-acts-head').forEach(function (e) { e.remove(); });
+})();
+</script>
+</body>
+</html>
