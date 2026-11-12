@@ -8,8 +8,10 @@
  */
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useRef, useState } from 'react';
-import { expect, userEvent, within } from 'storybook/test';
+import { expect, fireEvent, userEvent, within } from 'storybook/test';
 import { GlassButton } from '../../glass/Button.tsx';
+import { Smoke as Clouds } from '../../glass/Smoke.tsx';
+import { playerWorld } from '../../story.tsx';
 import '../play.css';
 import { ConfigChoice } from './ConfigChoice.tsx';
 import { ConfigField } from './ConfigField.tsx';
@@ -29,7 +31,8 @@ function Pieces() {
   const [spilled, setSpilled] = useState(false);
   const short = phrase.trim() !== '' && phrase.trim().length < 4;
   return (
-    <div className="kb-play" style={{ width: 420, boxSizing: 'border-box', padding: 16 }}>
+    <div className="kb-glass kb-play" style={{ width: 420, boxSizing: 'border-box', padding: 16, position: 'relative' }}>
+      <Clouds surface="play" />
       <fieldset ref={form} className="kb-play-config-group">
         <legend className="kb-visually-hidden">Your audience&apos;s cues</legend>
         <div>
@@ -58,7 +61,7 @@ function Pieces() {
 const meta: Meta<typeof Pieces> = {
   title: 'Boards/02 Card settings pieces',
   component: Pieces,
-  parameters: { layout: 'centered' },
+  parameters: { world: playerWorld, layout: 'centered' },
 };
 export default meta;
 
@@ -82,11 +85,12 @@ export const Smoke: Story = {
     await userEvent.clear(c.getByLabelText('Cue 1'));
     await userEvent.type(await c.findByLabelText('Cue 1'), 'ab');
     await expect(await c.findByText('That phrase is too short.')).toBeInTheDocument();
-    await userEvent.click(c.getByText('Boo'));
+    /* The radio itself: a click on its label is re-sent to it by user-event, with a view jsdom refuses, which the unit sweep runs this play in. */
+    await userEvent.click(c.getByRole('radio', { name: 'Boo' }));
     await expect(c.getByRole('radio', { name: 'Boo' })).toBeChecked();
     const range = c.getByLabelText('How many');
-    range.focus();
-    await userEvent.keyboard('{ArrowRight}');
+    /* The change a key's step fires: a browser steps a range on an arrow key, jsdom (which runs this play in the unit sweep) does not. */
+    fireEvent.change(range, { target: { value: '5' } });
     await expect(range).toHaveAttribute('aria-valuetext', '5 posts, 50 orbs');
   },
 };
