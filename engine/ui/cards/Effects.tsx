@@ -1,22 +1,22 @@
 /**
- * What a card play shows on its post: the card's effect around the post's words, and the hooks a card's effect speaks
- * to the marks through.
+ * What a card play shows on its post: the card's effect around the post's words, and the hooks a card's effect speaks to the
+ * marks through.
  *
- * A play's presence in a thread is its card's mark (Marks.tsx, in the post's date row): a card play takes no number and
- * is never a line of its own, and the post it lands on keeps its number and everyone's reactions. A card the instance
- * gives no `CardUi` is shown as its mark alone. An effect says what its card's state is on this post with `show`
- * (`CardView`), and the mark and the Lens draw from it; the post's own body holds the effect and nothing a player
- * presses.
+ * A play's presence in a thread is its card's mark (Marks.tsx, in the post's date row): a card play takes no number and is never
+ * a line of its own, and the post it lands on keeps its number and everyone's reactions. A card the instance gives no `CardUi` is
+ * shown as its mark alone. An effect says what its card's state is on this post with `show` (`CardView`), and the mark and the
+ * Lens draw from it; the post's own body holds the effect and nothing a player presses.
  *
  * An effect (`CardUi.Effect`) wraps the post's words wherever they are drawn (the thread, and the ORIGIN box of a thread spun
- * from the post). The order they nest in is `nestOrder`'s, the one place it is stated, from the innermost out: the cards that write
- * (`CardRules.writes`, on the post's own reach) wrap the words first, so a tail they draw is the words' next sibling under every other
- * card, whatever the play order; then the cards with `CardUi.beneath` (the layer other cards' ink lies on); then every other card, so the
- * latest played is outermost; then the takeovers (Stick Around, which lifts the post out of its thread), so every other card's effect is
- * inside a takeover's `children`. Each group keeps play order, and a card that writes and takes over is a takeover. The thread's and the
- * board's plays wrap as their own layers do. The moment (`MomentEffects`) and a History version (`VersionEffects`) nest by the same
- * function. Only a takeover is given the post's `marks` (the strip the post's date row draws, handed in by the post) and draws them on the post
- * it lifts. A post with no plays, or whose plays' cards draw no effect, is drawn untouched.
+ * from the post). The order they nest in is `nestOrder`'s, the one place it is stated, from the innermost out: the cards that
+ * write (`CardRules.writes`, on the post's own reach) wrap the words first, so a tail they draw is the words' next sibling under
+ * every other card, whatever the play order; then the cards with `CardUi.beneath` (the layer other cards' ink lies on); then
+ * every other card, so the latest played is outermost; then the takeovers (Stick Around, which lifts the post out of its thread),
+ * so every other card's effect is inside a takeover's `children`. Each group keeps play order, and a card that writes and takes
+ * over is a takeover. The thread's and the board's plays wrap as their own layers do. The moment (`MomentEffects`) and a History
+ * version (`VersionEffects`) nest by the same function. Only a takeover is given the post's `marks` (the strip the post's date
+ * row draws, handed in by the post) and draws them on the post it lifts. A post with no plays, or whose plays' cards draw no
+ * effect, is drawn untouched.
  */
 import { createPortal } from 'react-dom';
 import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentType, type ReactNode } from 'react';
@@ -221,10 +221,9 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
   /* The post's words sit in `bodyEl`, a div the slot owns (so it is one element however the layers wrap it), innermost inside every layer but a card that writes's. */
   const plain = (inner: ReactNode) => (composing && Compose && bodyEl ? <WordsIn el={bodyEl}>{inner}</WordsIn> : inner);
   if (layers.every((l) => l.acting.length === 0) && !momentAct) return <>{slot(plain(children))}</>;
-  const takes = (key: string) => ui.cards.find((c) => c.key === key)?.takeover === true;
   /* Each layer's cards in the order each was first played there; `nestOrder` says the order they nest in. */
   const wraps = layers.flatMap((l) => [...new Set(l.acting.map((p) => p.card))].map((key) => ({ ...l, key })));
-  const { writing: within, rest } = nestOrder(wraps, ui.cards, writing);
+  const { writing: within, rest, takeovers } = nestOrder(wraps, ui.cards, writing);
   const wrapIn = (node: ReactNode, list: readonly (typeof wraps)[number][], from: number): ReactNode => {
     let wrapped = node;
     for (const [i, { key, reach, acting, of }] of list.entries()) {
@@ -257,10 +256,10 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
         back={() => lens.showMoment(null)}
       />
     );
-    return <>{slot(wrapIn(shown, rest.filter((w) => takes(w.key)), 0))}</>;
+    return <>{slot(wrapIn(shown, takeovers, 0))}</>;
   }
   /* The effects of the cards that write wrap the words first, so a tail is their next sibling under every other card; a compose's body holds both. */
-  const wrapped = wrapIn(plain(wrapIn(children, within, 0)), rest, within.length);
+  const wrapped = wrapIn(wrapIn(plain(wrapIn(children, within, 0)), rest, within.length), takeovers, within.length + rest.length);
   return <>{slot(wrapped)}</>;
 }
 
@@ -313,19 +312,21 @@ function afterSurface(plays: Plays, api: KayfaApi, play: Id, covered: number, li
  * The order cards nest around a post's words, the one place it is stated (PostEffects, MomentEffects and VersionEffects all take it). Given the
  * cards to wrap in play order (one entry for each card of a layer, `reach` naming the layer where it is not the post's own), it returns the
  * cards that write on the post's own reach as `writing`, which wrap the words first so their tail is the words' next sibling under every other
- * card, and `rest` outward from them: the `beneath` cards, then the others, then the takeovers, each group in the order given. A takeover is
- * a takeover whatever else it is. It reads the cards' rules and UI alone, never who played a card or who owns a character.
+ * card, then `rest` outward from them (the `beneath` cards, then the others), then `takeovers` outermost, each group in the order given. A
+ * takeover is a takeover whatever else it is, so `rest` never holds one. It reads the cards' rules and UI alone, never who played a card or
+ * who owns a character.
  */
 export function nestOrder<T extends { readonly key: string; readonly reach?: Reach }>(
   cards: readonly T[], ui: readonly CardUi[], writing: ReadonlySet<string>,
-): { readonly writing: readonly T[]; readonly rest: readonly T[] } {
+): { readonly writing: readonly T[]; readonly rest: readonly T[]; readonly takeovers: readonly T[] } {
   const take = (key: string) => ui.find((c) => c.key === key)?.takeover === true;
   const under = (key: string) => ui.find((c) => c.key === key)?.beneath === true;
   const inside = (c: T) => !take(c.key) && writing.has(c.key) && (c.reach === undefined || c.reach === 'post');
   const others = cards.filter((c) => !inside(c));
   return {
     writing: cards.filter(inside),
-    rest: [...others.filter((c) => !take(c.key) && under(c.key)), ...others.filter((c) => !take(c.key) && !under(c.key)), ...others.filter((c) => take(c.key))],
+    rest: [...others.filter((c) => !take(c.key) && under(c.key)), ...others.filter((c) => !take(c.key) && !under(c.key))],
+    takeovers: others.filter((c) => take(c.key)),
   };
 }
 
@@ -544,7 +545,7 @@ export function MomentEffects({ moment, place, nameOf, onWords, children }: {
   const written = useMemo(() => resolveWritten(tailRows, [], at, 'version'), [tailRows, at]);
   const order = nestOrder([...new Set(here.plays.map((p) => p.card))].map((key) => ({ key })), ui.cards, writing);
   let wrapped = children;
-  for (const { key } of [...order.writing, ...order.rest]) {
+  for (const { key } of [...order.writing, ...order.rest, ...order.takeovers]) {
     const Effect = ui.cards.find((c) => c.key === key)!.Effect!;
     wrapped = (
       <StillEffect key={key} Effect={Effect} card={key} onWords={onWords}
@@ -589,7 +590,7 @@ export function VersionEffects({ post, version, plays, written, nameOf = () => '
   const has = plays.filter((p) => written.has(p.id));
   const order = nestOrder([...new Set(has.map((p) => p.card))].filter((k) => ui.cards.find((c) => c.key === k)?.Effect).map((key) => ({ key })), ui.cards, writing);
   let wrapped = children;
-  for (const { key } of [...order.writing, ...order.rest]) {
+  for (const { key } of [...order.writing, ...order.rest, ...order.takeovers]) {
     const Effect = ui.cards.find((c) => c.key === key)!.Effect!;
     wrapped = (
       <StillEffect key={key} Effect={Effect} card={key} onWords={nothing}
