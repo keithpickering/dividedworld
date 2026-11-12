@@ -982,7 +982,7 @@ describe('The emailed link, through the app', () => {
     expect(await screen.findByLabelText('Email address')).toBeInTheDocument();
     /* The screen that is leaving is held for its exit: the page settles on the one world's form alone. */
     await waitFor(() => expect(screen.queryByText(/This link/u)).toBeNull(), { timeout: 5000 });
-    expect(screen.queryByRole('button', { name: 'Finish signing up' })).toBeNull();
+    expect(screen.queryByText('This link signs you in, and finishes signing you up if you are new. It works once.')).toBeNull();
     expect(verify).not.toHaveBeenCalled();
   });
 
@@ -1030,8 +1030,8 @@ describe('The emailed link, through the app', () => {
     await fake.requestCode('new@example.test', null, null);
     window.history.pushState(null, '', `/register#token_hash=${TEST_LINK}`);
     render(<App api={fake} />);
-    await userEvent.click(await screen.findByRole('button', { name: 'Finish signing up' }));
-    await waitFor(() => expect(screen.queryByText('This link finishes signing you up. It works once.')).toBeNull());
+    await userEvent.click(await screen.findByRole('button', { name: 'Sign in' }));
+    await waitFor(() => expect(screen.queryByText('This link signs you in, and finishes signing you up if you are new. It works once.')).toBeNull());
     expect(screen.queryByLabelText('Email address')).toBeNull();
     expect(screen.getByRole('heading', { name: /./u, level: 2 })).toBeInTheDocument();
   });

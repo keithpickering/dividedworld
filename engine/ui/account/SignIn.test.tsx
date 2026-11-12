@@ -634,12 +634,13 @@ describe('The emailed link', () => {
     expect(screen.queryByText(/You are signed in as/u)).toBeNull();
   });
 
-  test('on Register it finishes signing up', async () => {
+  test('on Register its words are true for a new player and a returning one', async () => {
     const w = await linked();
     open(w, 'register', `/register${FRAGMENT}`);
-    expect(await screen.findByText('This link finishes signing you up. It works once.')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Sign in' })).toBeNull();
-    await userEvent.click(screen.getByRole('button', { name: 'Finish signing up' }));
+    expect(await screen.findByText('This link signs you in, and finishes signing you up if you are new. It works once.')).toBeInTheDocument();
+    /* The words are true for a returning player whose invite sent the link here, so they claim no sign-up. */
+    expect(screen.queryByRole('button', { name: 'Finish signing up' })).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Sign in' }));
     expect(await screen.findByText('You are signed in as known@example.test.')).toBeInTheDocument();
   });
 
@@ -731,11 +732,11 @@ describe('The emailed link', () => {
       const w = world('closed');
       await w.fake.requestCode('new@example.test', null, null);
       renderIn(w.fake, <LinkHandProvider><Remountable mode="register" /></LinkHandProvider>, { path: `/register${FRAGMENT}`, settings: { registrationMode: 'closed' } });
-      await userEvent.click(await screen.findByRole('button', { name: 'Finish signing up' }));
-      await waitFor(() => expect(screen.queryByText('This link finishes signing you up. It works once.')).toBeNull());
+      await userEvent.click(await screen.findByRole('button', { name: 'Sign in' }));
+      await waitFor(() => expect(screen.queryByText('This link signs you in, and finishes signing you up if you are new. It works once.')).toBeNull());
       await userEvent.click(screen.getByRole('button', { name: 'Start afresh' }));
-      await waitFor(() => expect(screen.queryByText('This link finishes signing you up. It works once.')).toBeNull());
-      expect(screen.queryByRole('button', { name: 'Finish signing up' })).toBeNull();
+      await waitFor(() => expect(screen.queryByText('This link signs you in, and finishes signing you up if you are new. It works once.')).toBeNull());
+      expect(screen.queryByText('This link signs you in, and finishes signing you up if you are new. It works once.')).toBeNull();
       expect(screen.queryByLabelText('Email address')).toBeNull();
     });
 

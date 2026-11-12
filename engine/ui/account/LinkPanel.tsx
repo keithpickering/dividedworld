@@ -94,7 +94,7 @@ export function LinkPanel({ tokenHash, signedIn = false, registering, onAside, o
     ? (address !== null ? `You are signed in as ${address}.` : unread ? 'You are signed in.' : '')
     : wasSignedIn
       ? (address !== null ? `This browser is signed in as ${address}. Using the link signs that account out.` : unread ? 'This browser is already signed in. Using the link signs that account out.' : '')
-      : registering ? 'This link finishes signing you up. It works once.' : 'This link signs you in. It works once.';
+      : registering ? 'This link signs you in, and finishes signing you up if you are new. It works once.' : 'This link signs you in. It works once.';
 
   return (
     <div aria-busy={busy}>
@@ -113,7 +113,7 @@ export function LinkPanel({ tokenHash, signedIn = false, registering, onAside, o
         </ButtonRow>
       ) : (
         <ButtonRow>
-          <GlassButton kind="primary" busy={busy} onClick={() => void press()}>{lost ? 'Try again' : registering ? 'Finish signing up' : 'Sign in'}</GlassButton>
+          <GlassButton kind="primary" busy={busy} onClick={() => void press()}>{lost ? 'Try again' : 'Sign in'}</GlassButton>
           <GlassButton onClick={onAside}>Use a code instead</GlassButton>
         </ButtonRow>
       )}

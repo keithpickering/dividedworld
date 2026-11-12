@@ -234,6 +234,14 @@ address.
   must be the instance's own site (scheme, host and port), since Auth takes a redirect only on its Site URL or its
   allow list and otherwise puts the Site URL in the link.
 
+**The panel's words on `/register`** (the owner's answer, 2026-11-12, to the build's first design question). The page
+follows the invite, so a returning player who asks with an invite that opens is sent to `/register` by an email that
+signs them in. Task 3's words there ("This link finishes signing you up", "Finish signing up") would claim a sign-up
+that is not happening, so they are replaced by words true either way, the same whatever the address: the lead is "This
+link signs you in, and finishes signing you up if you are new. It works once." and the button is "Sign in". The second
+question, not running the redirect against a real Auth, was accepted the same day: the owner exercises it when the
+templates are pasted.
+
 **The masks.** `next` and the page come from the caller and the invite, never from the address: `requestCode`'s answer,
 its status and its floor are the same for every address, with or without `next`, kept or dropped. Auth is still asked
 only after the answer.
