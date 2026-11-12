@@ -158,21 +158,6 @@
 .dw-ac-room {
   white-space: break-spaces;
 }
-/* The play form's two fields, stacked, in the glass's own type. */
-.dw-ac-form {
-  display: grid;
-  gap: 0.35rem;
-  border: 0;
-  margin: 0;
-  padding: 0;
-}
-.dw-ac-form-legend {
-  padding: 0;
-  margin-bottom: 0.25rem;
-}
-.dw-ac-form-places {
-  margin: 0.25rem 0 0;
-}
 /* The marker is clipped to its piece, so ink never lands on the post's words; the roll, corner and flap sit outside it. */
 .dw-ac-clip {
   position: absolute;
