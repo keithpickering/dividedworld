@@ -51,7 +51,7 @@ export interface SchemaRules {
 
 export const ANTHROPIC_SCHEMA_RULES: SchemaRules = {
   provider: 'anthropic',
-  verifiedOn: '2026-11-11',
+  verifiedOn: '2026-11-12',
   source:
     'platform.claude.com/docs/en/build-with-claude/structured-outputs (read 2026-11-11); probes, provider schemas design, section 0',
   keywords: ['type', 'properties', 'required', 'additionalProperties', 'items', 'enum', 'const', 'anyOf', 'description', 'minItems'],
@@ -67,7 +67,8 @@ export const ANTHROPIC_SCHEMA_RULES: SchemaRules = {
   // Published: 16 union-typed parameters in the whole schema.
   unionsTotal: 16,
   // A proxy for the unpublished grammar-size limit: set under the 46 properties the probes accepted and the 49
-  // they refused (memory, orders, profile, inherited, successor accepted; adding patrols refused).
+  // they refused (memory, orders, profile, inherited, successor accepted; adding patrols refused). Re-sent on
+  // 2026-11-12 on Sonnet 5.5 (provider schemas plan, Task 9): 46 accepted in 7 s, 49 refused at once, unchanged.
   propertiesTotal: 40,
 };
 
