@@ -65,11 +65,13 @@ export function landingOn(rules: CardRules, target: CardTarget, plays: readonly 
    * Only where the card lands is asked here: its settings and its message are the form's, so the card's own refusal of none is set aside. A
    * card that names a quadrant or a class when it is played (a skim card, a ride back, a scored-as card) is checked by the rules to have its
    * configuration name one, so the settings held here do name one, a placeholder no rule reads, and the card's own landing is asked with no
-   * settings at all.
+   * settings at all. So nothing the lenient card is asked may read the settings: its price is none, and a card that writes buys a placeholder
+   * length (what it buys is the form's, from the live economy), while it still writes, so the old voice is asked about it as the rules ask.
    */
   const lenient: CardRules = {
     /* A surface card's first draw is the composer's, made after the mark is pressed: the decision here is only where the card lands, so it is asked as a card with no surface (its own `canApply` still holds the wall it is). */
     ...rules, surface: undefined, validateConfig: (c) => ({ ok: true, value: { ...(c as object), quadrant: QUADRANTS[0], class: 'any' } }), playPrice: () => 0,
+    ...(rules.writes ? { writes: { ...rules.writes, tokens: () => 1 } } : {}),
     canApply: (t, e, _config, now) => rules.canApply(t, e, undefined, now), needsMessage: undefined,
   };
   const play = context.faceDown ? 'set' : playOfRules(rules);
