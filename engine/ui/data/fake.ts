@@ -3288,6 +3288,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (p.mode !== undefined && p.mode !== 'system' && p.mode !== 'light' && p.mode !== 'dark') return refuse('the mode follows the device, or is light or dark');
       if (p.tilt !== undefined && p.tilt !== 'off' && p.tilt !== 'on') return refuse('tilt is off or on');
       if (p.effects !== undefined && p.effects !== 'standard' && p.effects !== 'bright') return refuse('effects are standard or bright');
+      if (p.gameSound !== undefined && p.gameSound !== 'off' && p.gameSound !== 'on') return refuse('game sounds are off or on');
+      if (p.interfaceSound !== undefined && p.interfaceSound !== 'off' && p.interfaceSound !== 'on') return refuse('interface sounds are off or on');
+      for (const v of [p.gameVolume, p.interfaceVolume]) if (v !== undefined && !(Number.isInteger(v) && v >= 0 && v <= 100 && v % 5 === 0)) return refuse('a volume is 0 to 100, in steps of 5');
       /* As set_preferences (0064) keeps the toasts: the kinds of alert there are, each once in the order first named, null for the defaults. */
       let toasts = account.prefs.toasts;
       if (p.toasts === null) toasts = null;
