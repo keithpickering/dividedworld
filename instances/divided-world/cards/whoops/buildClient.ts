@@ -101,11 +101,13 @@ export function createBuildClient(deps: BuildClientDeps = {}): BuildClient {
     if (broken || !make) return null;
     let w: WorkerLike;
     try { w = make(); } catch (err) { broken = true; console.error(err); return null; }
-    /* An `error` is fatal only until the worker has answered once (as foilClient's is): after that it has loaded and run,
-       so the event is a late fault in one build, which the build's own `failed` answer or the page's next one covers. */
+    /* An `error` is fatal until the worker has answered once (as foilClient's is). After that it has loaded and run, so
+       a late error with nothing out is only logged; but a late error while a build is out may mean the worker died
+       mid-build and will never answer, so it is fatal then too, and the builds that were out are made on the main
+       thread (nothing runs twice: an answered build has already left `out`). */
     let heard = false;
     w.addEventListener('error', (e) => {
-      if (heard) { console.error(`the build worker reported an error: ${e.message || 'no message'}`); return; }
+      if (heard && out.size === 0) { console.error(`the build worker reported an error: ${e.message || 'no message'}`); return; }
       fail(w, e.message || 'no message');
     });
     w.addEventListener('messageerror', () => fail(w, 'a message could not be read'));

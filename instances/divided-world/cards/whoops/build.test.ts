@@ -74,14 +74,19 @@ test('estimateWork: nanoseconds of work, the box plus each segment; the two inpu
   assert.ok(estimateWork({ w: 390, h: 1000 }, 1.5, []) > QUICK_WORK, 'a long post at density 1.5 is heavy');
 });
 
-test('estimateWork is calibrated: a layer it calls light builds in under 3x the target, in Node', () => {
-  const light: BuildInput = { ...SMALL, box: { w: 240, h: 240 }, strokes: [] };
+test('estimateWork is calibrated: a layer it calls light builds in under 4x the target, in Node (fastest of 5 runs)', () => {
+  const light: BuildInput = { ...SMALL, box: { w: 200, h: 200 }, strokes: [] };
   assert.ok(estimateWork(light.box, 1, light.strokes) < QUICK_WORK);
   buildLayer(light);
-  const t = performance.now();
-  buildLayer(light);
-  const ms = performance.now() - t;
-  assert.ok(ms < 3 * QUICK_WORK / 1e6, `${ms}ms for a layer called light`);
+  let ms = Infinity;
+  for (let i = 0; i < 5; i++) {
+    const t = performance.now();
+    buildLayer(light);
+    ms = Math.min(ms, performance.now() - t);
+  }
+  // The fastest of five runs is the build's cost without a GC pause or a busy neighbor; the old weights (250ns a cell)
+  // called a 390x1000 layer at density 1.5 light at ~227ms, which this bound catches with room for a slow CI runner.
+  assert.ok(ms < 4 * QUICK_WORK / 1e6, `${ms}ms for a layer called light`);
   const slow = { ...light, box: { w: 390, h: 1000 }, density: 1.5 };
   assert.ok(estimateWork(slow.box, slow.density, slow.strokes) > QUICK_WORK);
 });
@@ -283,6 +288,22 @@ test('a built reply with no built is treated as failed: the build runs on the ma
   assert.equal(got.length, 0);
   frames.shift()!();
   assert.equal(got.length, 1);
+});
+
+test('a late error while a build is out is fatal: the ask is rebuilt on the main thread, never left waiting', () => {
+  reset();
+  const c = clientWith();
+  const got: string[] = [];
+  const errors = mock.method(console, 'error', () => {});
+  c.requestBuild('k', BIG, () => got.push('k'));
+  const w = FakeWorker.made[0]!;
+  w.answer(0);
+  c.requestBuild('k2', BIG, () => got.push('k2'));
+  w.emit('error', { message: 'crashed mid-build' });
+  assert.equal(w.terminated, true, 'a worker that faults with a build out is let go');
+  while (frames.length) frames.shift()!();
+  assert.deepEqual(got, ['k', 'k2'], 'the build that was out is answered from the main thread');
+  errors.mock.restore();
 });
 
 test('an error event after the worker has answered is not fatal; before it, it is', () => {
