@@ -48,7 +48,7 @@ begin
   end if;
   if existing is not null then return jsonb_build_object('act', existing, 'ended', false); end if;
   if lasting then
-    -- The board a merge or a creation takes out of play (or back): a start on it waits for this end, then is refused or lands on the board it should.
+    -- The board a merge or a creation takes out of play (or back): a start on it is refused at once while this end is open (0235), and after it lands on the board it should or is refused with the new home named.
     shaped := case m.payload ->> 'kind' when 'mergeBoard' then safe_uuid(m.payload #>> '{params,board}') when 'createBoard' then (select b.id from boards b where b.created_by_act = move_act) end;
     if shaped is not null then perform lock_board_closing(shaped); end if;
     first_before := first_open_board();

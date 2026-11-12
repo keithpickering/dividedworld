@@ -19,7 +19,8 @@
 --   board_page (0125)            gains `closed`, `mergedInto`, `fallback` and `stubs`; a closed board's page lists nothing (no threads, pins, banner or presence) and keeps the board and the count of unread.
 --   index_page (0143)            leaves out a closed board.
 --   start_thread (0130)          refuses a closed board after the board is found, beside not_the_systems; before it asks, it takes the board's shared place key (lock_board_start, 0235) in a statement of its
---                                own, so a merge or a reversed createBoard that is closing the board and has not committed is waited for, and the check that follows sees it (final review of PR #450, F7).
+--                                own, so a merge or a reversed createBoard that has committed is seen by the check that follows (final review of PR #450, F7), and one that is still open refuses the start at once, in
+--                                plain words, where it waited for the move before (delta review F14). Every insert into threads, this one's included, also meets the guard of 0235 (threads_on_open_board).
 --   settings_held (0221)         copied whole; movedStubDays is a whole number from 1 to 365.
 --
 -- Cost on a busy instance. Write: one row a moveThread, which is a Boss's decision (a few a meeting), and nothing for any other Act. Read: a board's page reads thread_departures by

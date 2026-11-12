@@ -1323,6 +1323,13 @@ test('the reference text lists the Boss\'s trophies by key and name, and each be
   assert.doesNotMatch(referenceText({ boards: [], threads: [], characters: [] }), /Trophies/);
 });
 
+test('the reference list of trophies goes with the award move: held back, neither the list nor a trophy\'s name is shown', () => {
+  const ids = { boards: [], threads: [], characters: [], trophies: TROPHIES };
+  assert.doesNotMatch(referenceText(ids, ['awardTrophy']), /Trophies you may give|- pet: Pet|- belt: Belt/);
+  assert.match(referenceText(ids, ['createBoard']), /## Trophies you may give/, 'another kind held back leaves the list');
+  assert.match(referenceText(ids, []), /## Trophies you may give/);
+});
+
 test('the prompt tells the Boss the award move and that it carries no demand', () => {
   const served = meetingSystemPrompt({ boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.it, system: testSystem, settings, phase: ctx().phase, bank: 2, mods: [], characterName: () => 'someone', successorAllowed: false, roster: [], career: { led: [], offices: [] }, notes: [] });
   assert.match(served, /awardTrophy: .*params: .*trophy.*character/);

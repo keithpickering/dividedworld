@@ -1,4 +1,4 @@
--- A merge rebuilds its threads in one statement, moves the search copy before it locks them, and a reply pays nothing for any of it; and the writers of a place wait for each other (final review of PR #450, findings F1, F4, F7 and F9, delta review F6; "Weigh a design at the scale of a busy instance").
+-- A merge rebuilds its threads in one statement, moves the search copy before it locks them, and a reply pays nothing for any of it; and the writers of a place wait for each other (final review of PR #450, findings F1, F4, F7 and F9, delta review F6 and F11 to F15; "Weigh a design at the scale of a busy instance").
 --
 -- Landing a mergeBoard or a createBoard rebuilt every thread the move touched with rebuild_thread_places(touched), which called thread_place(id) once per thread, and each changed thread fired
 -- two row triggers (0216's threads_recount_board, 0117's threads_search_board) inside the tick's one transaction. On a board of 10,000 threads that was 32 s to land, 16 s to reverse, and a reply to any of
@@ -24,20 +24,37 @@
 -- passed, the merge not being visible, and the merge's rebuild never saw the thread); an admin's reversal of a moveThread that committed while the tick landed a merge of the thread's origin put the thread
 -- back on the closed board. Both left a thread on a board no page lists, with no way back. Transaction-level advisory locks, each held to commit (under READ COMMITTED, each statement after the lock sees
 -- what the other transaction committed), now serialize them:
---   lock_thread_places()      ONE global exclusive key, "thread places". The tick takes it before it reads anything for a lasting move's landing (its checks, first_open_board and the rebuild), end_move before
---                             its per-move lock and before it reads, for a lasting kind, reverse_move before its first end, lasting_rebuild and rebuild_thread_places themselves (so a caller that forgot is still
---                             serialized, and two overlapping rebuilds, which deadlocked on post_search rows, now run one after the other). It is re-entrant: a second take in one transaction costs nothing.
+--   lock_thread_places()      ONE global exclusive key, "thread places". The tick takes it ONCE, before its landing loop, whenever a lasting move is due or a lasting move is in force (so any end it may make is covered);
+--                             end_move before its per-move lock and before it reads, for a lasting kind, reverse_move before its first end, apply_meeting before its first write whenever its answer may queue or end a
+--                             lasting move, lasting_rebuild and rebuild_thread_places themselves (so a caller that forgot is still serialized, and two overlapping rebuilds, which deadlocked on post_search rows, now
+--                             run one after the other). It is re-entrant: a second take in one transaction costs nothing.
 --   lock_board_closing(board) a key per board, exclusive, that a move taking the board out of play holds: a landing mergeBoard, and the end of a mergeBoard or a createBoard (a reversed createBoard closes the
 --                             board it made). It takes the global key first, so the order is one everywhere: the global key, then board keys.
---   lock_board_start(board)   the same key, shared. start_thread takes it in a statement of its own before it asks not_closed, so the check's snapshot is made after the lock is won: a start waits only while a
---                             closing move on its own board is open, and then it sees the move and is refused in words that name where the threads went. Starts on a board nobody is closing never wait, and
---                             starts on one board never wait on each other (shared).
--- No deadlock. The one order is the global key, then board keys (a writer that closes several boards in one transaction, a reversal's chain, takes them under the global key one after another, where no other
--- writer can be: the only contender for a board key is a start, so there is no second order to sort by). The board keys are taken only under the global key, so two writers never meet on one; the only contender for a board key is a start, which holds a
--- single shared key and takes no other lock of this kind, and what a start writes is its own new rows (a thread, its first post, the counts on a shard `skip locked`), so a writer waiting for its key waits only
--- for that start to commit, and a start waiting for a writer's key holds nothing the writer waits on. A system board is never closed (lasting_move_problem), and start_thread refuses it before the key; no
--- other path inserts a thread onto a board a move can close (the other inserts are the system board's announcements, reveals and updates). Cost: a start with no closing move in flight takes one uncontended
--- shared advisory lock (about 0.01 ms); a start on a board being merged waits for the tick to commit (see the timings in the PR); a start on any other board never does.
+--   lock_board_start(board)   the same key, shared, and TRIED, never waited for (delta review F14): a start that finds a closing move open on its board is refused at once, in plain words ("this board is being
+--                             merged or closed right now; try again in a minute"), where it used to wait out the whole tick, which at scale is past a request's timeout. It is taken in a statement of its own before
+--                             the closed check reads, so the check's snapshot is made after the key is won: a closing move that has committed is seen, and the start is refused in words that name where the
+--                             threads went. Starts on a board nobody is closing never wait and are never refused, and starts on one board never meet each other (shared).
+--
+-- EVERY insert into threads meets the guard (delta review F11). start_thread had the key and the check; a spin (spin_written) and a persona's thread (write_staff_thread, from chatter) had neither, and a spin
+-- from a post on The System's board opened on players_board(), the oldest board there is, open or not. So the guard is a trigger, threads_on_open_board, `before insert` on threads, for each row: it takes
+-- lock_board_start in one statement and then asks not_closed in the next (a fresh snapshot), and refuses a closed board that is not The System's in the same words start_thread uses. The paths, from the migrations'
+-- latest definitions (every `insert into threads`, grepped):
+--   start_thread (0222)               checks first (its words are the ones a player sees), and the trigger is behind it;
+--   spin_written (0130)               the trigger only; players_board() (here) is now the first OPEN board, so a spin from The System's post never aims at a closed one;
+--   write_staff_thread (0089)         the trigger only; pool_context (here) no longer lists a closed board, so chatter is not aimed at one;
+--   The System's own threads          the announcements thread (system_tick's and every later definition of post_update, season and reveal writers) and the updates, turns, reveal and results threads are
+--                                     on The System's board, which no move can close (lasting_move_problem), and the trigger returns at once for it;
+--   an import or a restore            in the replica role, where a trigger that is not `enable always` does not fire: it carries threads as they were exported (supabase/tests/e2e/0003-export.ts).
+-- A thread that moves does not insert; threads.board changes only through rebuild_thread_places (below).
+--
+-- One lock order, and no deadlock (delta review F13). The global key comes first, whatever else a transaction does. Before, the tick took it only at its first lasting landing, after earlier landings had written
+-- Acts into The System's announcements thread (a row it holds to the end), while end_move and reverse_move take the key and then write the move's end into that same thread: the tick waited for the admin's
+-- key, the admin for the tick's row. Now the tick takes the key before its landing loop whenever any lasting move is due or in force, an admin's reversal waits at the key holding nothing, and apply_meeting,
+-- which wrote a move_keep Act before it ended a lasting move as superseded, takes the key before its first write whenever its answer names a lasting move or an inheritance decision. The board keys are taken only
+-- under the global key, so two writers never meet on one; the only contender for a board key is a start (or any other thread insert), which holds a single shared key, takes no other lock of this kind and
+-- never waits for one (it tries), and what it writes is its own new rows (a thread, its first post, the counts on a shard `skip locked`). A system board is never closed (lasting_move_problem).
+-- Cost: an insert into threads on a board nobody is closing takes one uncontended shared advisory lock (about 0.01 ms) and one read of the board; on a board being merged it is refused at once; a tick with a
+-- lasting move in force takes the one global key at its start and holds it to its end, which is the tick's own length (admin reversals wait that long and nothing else does).
 --
 -- threads_board_by_rebuild is the guard that nothing else changes the column and skips the upkeep: a row trigger `before update of board`, so a statement that leaves board out of its SET list (every reply)
 -- never meets it. It refuses unless rebuild_thread_places has set the transaction-local flag kayfabb.rebuilding_places, which it clears afterward, or the session is in replica role (an import or a restore, whose
@@ -60,11 +77,49 @@ begin
   perform pg_advisory_xact_lock(hashtext('kayfabb.board_places'), hashtext(in_board::text));
 end $$;
 create function lock_board_start(in_board uuid) returns void
-language sql security definer set search_path = public, pg_temp as $$
-  select pg_advisory_xact_lock_shared(hashtext('kayfabb.board_places'), hashtext(in_board::text))
-$$;
+language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  -- Tried, not waited for: a closing move holds the key to the end of the tick, which at scale is past a request's timeout. The words are plain and out of character, as the closed board's are.
+  if not pg_try_advisory_xact_lock_shared(hashtext('kayfabb.board_places'), hashtext(in_board::text)) then
+    raise exception 'this board is being merged or closed right now; try again in a minute' using hint = 'kayfabb.refusal', errcode = '55000';
+  end if;
+end $$;
 revoke execute on function lock_thread_places(), lock_board_closing(uuid), lock_board_start(uuid) from public, anon, authenticated;
 grant execute on function lock_thread_places(), lock_board_closing(uuid), lock_board_start(uuid) to service_role;
+
+-- The guard every insert into threads meets (see the header). The key is taken in one statement and the closed check read in the next, so its snapshot is made after the key is won. The System's board is never
+-- closed and takes neither. An import runs in the replica role, where this trigger does not fire (it is not `enable always`): the threads arrive as exported.
+create function threads_on_open_board() returns trigger
+language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  if exists (select 1 from boards b where b.id = new.board and b.is_system) then return new; end if;
+  perform lock_board_start(new.board);
+  perform not_closed(new.board);
+  return new;
+end $$;
+create trigger threads_on_open_board before insert on threads for each row execute function threads_on_open_board();
+revoke execute on function threads_on_open_board() from public, anon, authenticated;
+
+-- players_board (0013), the first OPEN board for players, where a thread spun from The System's Act opens: the oldest board may be merged away, and no page lists a thread on a closed one.
+create or replace function players_board() returns uuid
+language sql stable security definer set search_path = public, pg_temp as $$
+  select first_open_board()
+$$;
+
+-- pool_context (0089), leaving out a closed board: chatter aims a persona's thread at a board it lists. Everything else as 0089 wrote it.
+create or replace function pool_context() returns jsonb
+language sql stable security definer set search_path = public, pg_temp as $$
+  select jsonb_build_object(
+    'season', (select jsonb_build_object('startsAt', (extract(epoch from s.starts_at) * 1000)::bigint,
+        'endsAt', (extract(epoch from coalesce(s.ends_at, s.starts_at + span_interval(setting('seasonLength')))) * 1000)::bigint)
+      from seasons s where s.ends_at is null order by s.starts_at desc limit 1),
+    'boss', current_boss(),
+    'predecessor', (select h.outgoing from season_handovers h
+                    where h.boss = current_boss() and h.outgoing is distinct from h.boss order by h.landed_at desc, h.season desc limit 1),
+    'offices', coalesce((select jsonb_object_agg(o.staff, o.office) from staff_office_now o join characters c on c.staff = o.staff where c.staff_kind = 'persona'), '{}'::jsonb),
+    'characters', coalesce((select jsonb_object_agg(c.staff, c.id) from characters c where c.staff is not null and c.staff_kind = 'persona'), '{}'::jsonb),
+    'boards', coalesce((select jsonb_object_agg(b.id, b.slug) from boards b where not b.is_system and board_is_open(b.id)), '{}'::jsonb))
+$$;
 
 create or replace function rebuild_thread_places(which uuid[] default null) returns integer
 language plpgsql security definer set search_path = public, pg_temp as $$

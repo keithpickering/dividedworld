@@ -6,6 +6,9 @@
 -- Port from main (#486, supabase/migrations/0193_meeting_parts.sql, which now runs before this one): apply_meeting writes the Boss's staff_memory row only when the payload's `memory` is an object, and its
 -- staff_profiles row only when `profile` is, so a part of the meeting that failed leaves the Boss's memory or profile as it was (both tables are append-only, so "as it was" is the last row). Everything else in
 -- apply_meeting is as this file writes it.
+-- One lock order (0235; delta review F13): apply_meeting takes the global place key (lock_thread_places) before its first write whenever its answer names a lasting move (a move, or a part of a bundle, of a
+-- lasting kind) or an inheritance decision (an `end` ends a lasting move as superseded), where it used to write a move_keep Act, into the thread an admin's reversal writes its end into, before the end_move
+-- that takes the key. The two now meet the key first.
 create or replace function apply_meeting(meeting bigint, payload jsonb) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
@@ -97,6 +100,16 @@ begin
   if hold is null then raise exception 'a meeting needs structuralHoldHours, which this instance does not set' using errcode = '22023'; end if;
   bal := bank_now(boss, (payload ->> 'weekly_moves')::numeric, (payload ->> 'bank_cap')::numeric);
   if bal is null then raise exception 'a meeting names the phase''s weekly_moves and bank_cap' using errcode = '22023'; end if;
+  -- The one lock order, before the first write: a lasting move queued, or a lasting move ended by an inheritance decision, writes places, and the Acts this answer writes (a move_keep, a move_end) are rows an
+  -- admin's reversal waits for after it holds the key.
+  if exists (select 1 from jsonb_array_elements(case when jsonb_typeof(payload -> 'inherited') = 'array' then payload -> 'inherited' else '[]'::jsonb end) i where jsonb_typeof(i.value) = 'object')
+     or exists (select 1 from jsonb_array_elements(case when jsonb_typeof(payload -> 'moves') = 'array' then payload -> 'moves' else '[]'::jsonb end) m
+                join move_kinds k on k.key = m.value ->> 'kind' where k.lasting)
+     or exists (select 1 from jsonb_array_elements(case when jsonb_typeof(payload -> 'bundles') = 'array' then payload -> 'bundles' else '[]'::jsonb end) b,
+                     jsonb_array_elements(case when jsonb_typeof(b.value -> 'parts') = 'array' then b.value -> 'parts' else '[]'::jsonb end) p
+                join move_kinds k on k.key = p.value ->> 'kind' where k.lasting) then
+    perform lock_thread_places();
+  end if;
 
   -- The moves: a kind outside the catalog raises; a rule the queue would refuse is skipped and recorded, and costs nothing.
   for mv in select value from jsonb_array_elements(coalesce(payload -> 'moves', '[]')) loop

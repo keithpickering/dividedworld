@@ -585,8 +585,11 @@ const AVAILABILITY_WORDS = { onSale: 'on sale', soldOut: 'sold out', hidden: 'hi
 
 const oneLine = (s: string, n: number): string => s.replace(/\s+/g, ' ').trim().slice(0, n);
 
-/** The ids the model may name, beside the digest (which shows names only). */
-export function referenceText(ids: ReferenceIds): string {
+/**
+ * The ids the model may name, beside the digest (which shows names only). `heldBack` is the kinds the Boss does not use yet (`meeting_context().arc.heldBack`): the list of trophies is a reference for the
+ * awardTrophy move, so a held-back awardTrophy leaves it out, as the prompt leaves out every sentence that names the kind.
+ */
+export function referenceText(ids: ReferenceIds, heldBack: readonly string[] = []): string {
   const part = (title: string, rows: readonly string[], none: string): string[] => ['', `## ${title}`, ...(rows.length ? rows : [none])];
   return [
     '# Ids you may use',
@@ -603,7 +606,7 @@ export function referenceText(ids: ReferenceIds): string {
           ),
         ]
       : []),
-    ...(ids.trophies && ids.trophies.boss.length
+    ...(ids.trophies && ids.trophies.boss.length && !heldBack.includes('awardTrophy')
       ? [
           '',
           '## Trophies you may give',

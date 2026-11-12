@@ -322,7 +322,7 @@ export async function runMeeting(
         characters: shown.map((c) => ({ id: c.id, name: c.name, pronouns: c.pronouns, group: groupOf.get(c.id.toLowerCase()) })),
         machine: context.machine,
         trophies: { boss: bossList, barred: new Set(), given: new Set() },
-      }),
+      }, heldBack),
       '',
       // The first part's ask closes the message, so the message is the same in every call and is the cached prefix.
       MEETING_PARTS[0].ask,
