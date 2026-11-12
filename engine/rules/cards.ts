@@ -243,7 +243,8 @@ export interface CardRules<Config = unknown> {
   readonly reaches?: readonly Reach[];
   /**
    * How long a Use card is up once played, and how long a play beyond a post lasts, at most its reach's `reachLasts`;
-   * with none, a Use stays. A play on a post that is not a Use does not end.
+   * with none, a Use stays. A cast on a post with a `lasts` ends at its time too, and landsOn then leaves it out of the stack; a cast on a
+   * post with none does not end.
    */
   readonly lasts?: Span;
   /** A thread play of it pins the thread to the top of its board's list until it ends (Main Event's kind); only a card that reaches a thread pins. */
@@ -273,6 +274,17 @@ export interface CardRules<Config = unknown> {
    * no message. The database holds it again (card_kinds.needs_message, place_cast).
    */
   readonly needsMessage?: string;
+  /**
+   * A cast card on a post alone that, while it is up (so it has a `lasts`), withholds the post's author (`'author'`: every read shows the instance's
+   * anonymous poster instead) or its reaction totals (`'totals'`) from every read. SQL knows only the flag (`card_kinds.veil`).
+   */
+  readonly veil?: 'author' | 'totals';
+  /**
+   * A cast card on a post alone whose checked configuration is a post-local reaction, `{ emoji, quadrant }` (`localReaction`, engine/rules/emoji.ts):
+   * its play adds that reaction to the post's picker alone. SQL knows only the flag (`card_kinds.adds_reaction`) and reads the two keys. It does not
+   * write and is not seeded.
+   */
+  readonly reaction?: true;
   /** Whether each play is drawn from a seed the server chooses (a splat different every time), stored on its Act. */
   readonly seeded?: boolean;
   /** What casting it on this target costs from the wallet, on top of the base price already paid. A set or a sprung card pays none of it. */

@@ -532,6 +532,14 @@ const leech: CardRules<{ quadrant: never }> = {
   validateConfig: takeQuadrant as CardRules<{ quadrant: never }>['validateConfig'],
 };
 
+test('a cast on a post with a time up is refused a second copy while live, and lands again after its end', () => {
+  const veil: CardRules = { ...cast('veil', 'rare'), veil: 'author', lasts: { unit: 'day', count: 3 } };
+  const live: CardEffect = { card: 'veil', act: 'a', ends: soon };
+  const ended: CardEffect = { card: 'veil', act: 'a', ends: gone };
+  assert.deepEqual(decidePlay(veil, settings, post, [live], undefined, ''), { ok: false, why: 'this post already carries that card' });
+  assert.equal(decidePlay(veil, settings, post, [ended], undefined, '').ok, true);
+});
+
 test('a skim card whose validator drops the quadrant is a fault in the card, thrown and never a refusal', () => {
   const dropped: CardRules = { ...leech as CardRules, validateConfig: () => ok({}) };
   assert.throws(() => decidePlay(dropped, settings, post, [], { quadrant: 'excitedPositive' }, ''), /card leech/);

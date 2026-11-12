@@ -391,6 +391,8 @@ export interface InputReaction {
   readonly at: number;
   readonly player: string;
   readonly character: string;
+  /** The quadrant a post-local reaction (a card added it to one post, key `x-…`) scores in; sent only for one, since an instance's own kinds name theirs. */
+  readonly quadrant?: Quadrant;
 }
 
 /** A character, its player (private), and the classes it has held, oldest first. */
@@ -788,6 +790,17 @@ export interface DeveloperPersona {
   readonly pronouns?: PronounSet;
 }
 
+/**
+ * The character that stands in for an author a veil withholds (card notes, Part 3): what every read shows in place of the real one while the veil is up.
+ * The same shape as the developer persona, since the seed makes it a staff character the same way; an instance with none stands on the engine's plain default.
+ */
+export interface AnonymousPoster {
+  readonly name: string;
+  readonly tagline: string;
+  readonly avatar?: string;
+  readonly pronouns?: PronounSet;
+}
+
 export interface Instance {
   readonly key: string;
   readonly name: string;
@@ -804,6 +817,8 @@ export interface Instance {
   readonly groups: GroupsContent;
   /** The developer persona; left out, the engine's default ("The developers", no tagline, no avatar). */
   readonly developer?: DeveloperPersona;
+  /** The anonymous poster a veil shows for a withheld author; left out, the engine's default ("Anonymous", no tagline, no avatar). */
+  readonly anonymous?: AnonymousPoster;
   /** The packs the Vending Machine sells, each a list of pulls over the cards' rarities (engine/rules/packs.ts). */
   readonly packs: readonly PackRules[];
   /** The machine's slots in grid order: the cards and packs it sells, each at a price (hundredths of an orb) and an availability. */
