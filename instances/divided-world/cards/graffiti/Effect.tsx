@@ -19,14 +19,14 @@
  * saves are, even after the post is left (the retries outlive the effect, for at most about two minutes). "Hold to scrub" is the reader's keyboard path at Whoops!'s pace and stays on this screen for everyone; the author's "Wash" is the
  * same sweep, saved for everyone.
  *
- * Screen readers. A line of text under paint is hidden from them as from the eye (the body is `inert` while any line is covered) and the lines
- * clear of it are read from a hidden copy.
+ * The words under the paint. The body is never made `inert` and no copy of it is read out: the wall's canvas takes no pointer, so links, buttons and text
+ * under it stay reachable by keyboard, pointer and screen reader (the owner's ruling). A press on an interactive element goes to it and starts no scrub.
  *
  * Draw mode (Compose.tsx's `DrawMode`, the same drawing the card's `Compose` makes on a post with no wall yet). The tile sets `drawing` (published
  * as `data-kb-drawing` on the root); while it is set no press scrubs, `DrawMode` lays its lifted surface over the body (a press there is the
  * surface's: `data-kb-over-ink` keeps this wall and Whoops! from starting a stroke under it) and draws its toolbar under the post. The drawing
  * is handed back (`onDraft`) and painted into this wall's own canvas after the wall's Acts, which lies beneath any splat, so under a splat it shows
- * only where the splat is scrubbed; it is no ink of the wall's (`hitAt`, the covered lines) until it is tagged and arrives as an Act.
+ * only where the splat is scrubbed; it is no ink of the wall's (`hitAt`) until it is tagged and arrives as an Act.
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { motionReduced } from '../../../../engine/ui/appearance.ts';
@@ -37,8 +37,7 @@ import { CANS, SPONGE, type Can } from '../graffiti.ts';
 import { DrawMode } from './Compose.tsx';
 import { lastCan } from './draft.ts';
 import { cursor } from '../whoops/cursor.ts';
-import { readLines } from '../whoops/lines.ts';
-import { ROW_PX, SWEEP_BRUSH_ROWS, bandsOf, sweepStep, type Sweep, type TextLine } from '../whoops/scrub.ts';
+import { ROW_PX, SWEEP_BRUSH_ROWS, bandsOf, sweepStep, type Sweep } from '../whoops/scrub.ts';
 import * as suds from '../whoops/suds.ts';
 import { HOLD_MS, MAX_SAVE_RETRIES, RETRY_AFTER_MS, SUPPRESS_MS, overInk, swipeKind } from '../wiping.ts';
 import { hitAt, paintWall, wallDensity, type Box, type WallAct } from './spray.ts';
@@ -47,14 +46,11 @@ import './graffiti.css';
 export { MAX_SAVE_RETRIES, RETRY_AFTER_MS };
 /** A burst of washes is sent once it has been quiet this long. */
 export const WASH_AFTER_MS = 1500;
-/** How often the covered lines are recomputed while a sweep runs. */
-const REFRESH_MS = 150;
 /** A wash holds at most this many strokes of at most this many points, 3,000 points in all (`graffiti.ts` `BOUNDS`, the server's check). */
 const BATCH = { strokes: 120, points: 300, total: 3000 } as const;
 /** Points closer than this to the one before are dropped, px. */
 const MIN_STEP_PX = 5;
 /** Where along a line, and how many places, the line is tested for paint; and the probes of a band, in rows of height from its middle. */
-const LINE_SAMPLES = 24;
 const SPAN_SAMPLES = 64;
 
 const HOLD_HELP = 'Hold Space or Enter on this button to scrub the wall away line by line, at the pace of a hand, on your screen only. Let go to stop. It never clears the wall all at once.';
@@ -73,6 +69,13 @@ interface Local {
 }
 interface Gesture { readonly id: number; readonly x0: number; readonly y0: number; cx: number; cy: number; state: 'wait' | 'wipe' | 'page'; timer: ReturnType<typeof setTimeout> | null }
 interface Live { readonly local: Local; readonly pointer: number | null; readonly touch?: true; readonly save: boolean }
+
+/** What takes a press for itself: a link, a button, a field or anything made to be pressed. A press there goes to it and starts no scrub. */
+const INTERACTIVE = 'a[href], button, input, select, textarea, summary, [contenteditable]:not([contenteditable="false"]), [role="button"], [role="link"], [role="checkbox"], [role="menuitem"], [role="switch"], [role="tab"]';
+const interactive = (target: unknown): boolean => {
+  const el = target as { readonly closest?: (selector: string) => unknown } | null;
+  return typeof el?.closest === 'function' && el.closest(INTERACTIVE) !== null;
+};
 
 const tenThousandth = (n: number) => Math.round(n * 10_000) / 10_000;
 const clamp = (n: number) => Math.min(1, Math.max(0, n));
@@ -137,8 +140,6 @@ export function Effect({ plays, reader, surface, ink: registry, place, show, met
   const [scrubbed, setScrubbed] = useState(0);
   const [drawing, setDrawing] = useState(false);
   const [report, setReport] = useState('');
-  const [covered, setCovered] = useState<readonly boolean[]>([]);
-  const [lines, setLines] = useState<readonly TextLine[]>([]);
   const [can, setCan] = useState<Can>(() => lastCan(account));
   useEffect(() => { if (!drawing) setCan(lastCan(account)); }, [drawing, account]);
 
@@ -265,7 +266,6 @@ export function Effect({ plays, reader, surface, ink: registry, place, show, met
     paintQueued.current = requestAnimationFrame(paintNow);
   }, [paintNow]);
   useEffect(() => () => { if (paintQueued.current) cancelAnimationFrame(paintQueued.current); }, []);
-  const refreshSoon = useRef<() => void>(() => {});
   /** A tagged drawing stays painted from Tag it until the wall's Acts hold the new draw (by id) or change some other way, so the wall does not flicker through the round trip. */
   /* A landed tag's draft, painted until the wall's own read carries the new draw (or the read changes otherwise); a missed broadcast leaves it painted,
      which is still the tag as it landed, until the next read. */
@@ -275,7 +275,6 @@ export function Effect({ plays, reader, surface, ink: registry, place, show, met
     if (act !== null) holding.current = null;
     draftAct.current = act;
     schedulePaint();
-    refreshSoon.current();
   }, [schedulePaint]);
   const settleHold = useCallback(() => {
     const h = holding.current;
@@ -285,7 +284,6 @@ export function Effect({ plays, reader, surface, ink: registry, place, show, met
     holding.current = null;
     draftAct.current = null;
     paintNow();
-    refreshSoon.current();
   }, [paintNow]);
   useLayoutEffect(() => { settleHold(); }, [acts, settleHold]);
 
@@ -318,39 +316,6 @@ export function Effect({ plays, reader, surface, ink: registry, place, show, met
     const { box: bx } = now.current.size;
     suds.wash(sudsHost.current, { x: a[0] * bx.w, y: a[1] * bx.h }, { x: b[0] * bx.w, y: b[1] * bx.h }, true);
   };
-
-  /* ------------------------------------------------------------ what is covered ---- */
-
-  /** Whether any paint lies on the line `y` (a share) at some of its length: the line is then under paint, to the eye and to a screen reader. */
-  const lineCovered = (l: TextLine, box: Box, w: readonly WallAct[]): boolean => {
-    const y = ((l.top + l.bottom) / 2) * box.h;
-    for (let i = 0; i < LINE_SAMPLES; i++) if (hitAt(w, box, ((i + 0.5) / LINE_SAMPLES) * box.w, y)) return true;
-    return false;
-  };
-  const textLines = useRef<TextLine[]>([]);
-  /** What the lines were read from: the words and the box. They are read again only when it changes. */
-  const linesKey = useRef('');
-  const refresh = useCallback(() => {
-    const { size: sz, near: isNear } = now.current;
-    if (!isNear || sz.box.w <= 0 || sz.box.h <= 0) return;
-    const body = layoutRef.current;
-    const key = `${body?.textContent ?? ''}|${sz.box.w}|${sz.box.h}|${sz.top}`;
-    if (body && key !== linesKey.current) {
-      linesKey.current = key;
-      const read = readLines(body, sz.box);
-      const off = sz.top / sz.box.h;
-      textLines.current = read.length > 0 ? read.map((l) => ({ ...l, top: l.top + off, bottom: l.bottom + off })) : [{ top: 0, bottom: 1, text: body.textContent ?? '' }];
-      setLines(textLines.current);
-    }
-    const w = draftAct.current ? [...wall(), draftAct.current] : wall();
-    const next = textLines.current.map((l) => lineCovered(l, sz.box, w));
-    setCovered((was) => (was.length === next.length && was.every((c, i) => c === next[i]) ? was : next));
-  }, [wall]);
-  /* The lines are tested when the wall, a scrub, the box or the draft changes (a parent that renders again with the same words costs nothing). */
-  useEffect(() => { refresh(); }, [refresh, acts, box.w, box.h, size.top, near, scrubbed]);
-  const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  refreshSoon.current = () => { if (!refreshTimer.current) refreshTimer.current = setTimeout(() => { refreshTimer.current = null; refresh(); }, REFRESH_MS); };
-  useEffect(() => () => { if (refreshTimer.current) clearTimeout(refreshTimer.current); }, []);
 
   /* ------------------------------------------------------------------- the wash ---- */
 
@@ -441,9 +406,8 @@ export function Effect({ plays, reader, surface, ink: registry, place, show, met
     live.current = null;
     if (!s) return;
     keep(s);
-    refresh();
     schedulePaint();
-  }, [keep, refresh, schedulePaint]);
+  }, [keep, schedulePaint]);
 
   const suppress = useRef(false);
   const suppressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -503,7 +467,7 @@ export function Effect({ plays, reader, surface, ink: registry, place, show, met
 
   const onPointerDown = (e: PointerEvent) => {
     ensure();
-    if (e.pointerType === 'touch' || !fixed || live.current || (e.pointerType === 'mouse' && e.button !== 0) || overInk(e.target)) return;
+    if (e.pointerType === 'touch' || !fixed || live.current || (e.pointerType === 'mouse' && e.button !== 0) || overInk(e.target) || interactive(e.target)) return;
     /* No ink under the pointer: the page has it, for a link or a scroll. */
     if (!begin(e.clientX, e.clientY, e.pointerId, false)) return;
     e.preventDefault();
@@ -549,7 +513,7 @@ export function Effect({ plays, reader, surface, ink: registry, place, show, met
       return;
     }
     const tc = e.changedTouches[0];
-    if (!tc || !fixed || overInk(e.target)) return;
+    if (!tc || !fixed || overInk(e.target) || interactive(e.target)) return;
     suppress.current = false;
     if (!startsAt(tc.clientX, tc.clientY)) return;
     const g: Gesture = { id: tc.identifier, x0: tc.clientX, y0: tc.clientY, cx: tc.clientX, cy: tc.clientY, state: 'wait', timer: null };
@@ -674,7 +638,6 @@ export function Effect({ plays, reader, surface, ink: registry, place, show, met
   const sweeping = useRef<{ raf: number; last: number; sweep: Sweep } | null>(null);
   const sweepFrom = useRef(0);
   const sweepStroke = useRef<Live | null>(null);
-  const sweepRefreshed = useRef(0);
 
   const closeSweepStroke = useCallback(() => {
     const s = sweepStroke.current;
@@ -688,9 +651,8 @@ export function Effect({ plays, reader, surface, ink: registry, place, show, met
     sweepFrom.current = run.sweep.row;
     sweeping.current = null;
     closeSweepStroke();
-    refresh();
     schedulePaint();
-  }, [closeSweepStroke, refresh, schedulePaint]);
+  }, [closeSweepStroke, schedulePaint]);
 
   /** Sweeps the wall line by line at the pace of a hand: on this screen alone, or (the author's Wash) saved for everyone too. */
   const startSweep = useCallback((save: boolean) => {
@@ -737,16 +699,12 @@ export function Effect({ plays, reader, surface, ink: registry, place, show, met
         throwSuds(p, p);
       }
       run.sweep = step.sweep;
-      if (t - sweepRefreshed.current > REFRESH_MS) {
-        sweepRefreshed.current = t;
-        refresh();
-      }
       schedulePaint();
       run.raf = requestAnimationFrame(tick);
     };
     run.raf = requestAnimationFrame(tick);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [closeSweepStroke, refresh, schedulePaint, stopSweep, wall]);
+  }, [closeSweepStroke, schedulePaint, stopSweep, wall]);
   const startScrub = useCallback(() => startSweep(false), [startSweep]);
   const startWash = useCallback(() => startSweep(true), [startSweep]);
 
@@ -780,8 +738,6 @@ export function Effect({ plays, reader, surface, ink: registry, place, show, met
   viewNow.current = cardView;
   useEffect(() => { show(viewNow.current); }, [viewKey, controls, show]);
 
-  const hidden = !still && covered.some(Boolean);
-  const read = hidden ? lines.filter((_, i) => !covered[i]) : null;
 
   const onBox = { left: -size.left, top: -size.top, width: box.w, height: box.h };
   /* The Draw tile sits at the body's top right, lifted over the ink. */
@@ -789,7 +745,7 @@ export function Effect({ plays, reader, surface, ink: registry, place, show, met
   return (
     <div ref={rootRef} className="kb-graffiti" data-kb-graffiti data-kb-place={place} data-kb-scrubbed={scrubbed} data-kb-drawing={drawing ? 'true' : undefined}>
       <div ref={frameRef} className="kb-graffiti-frame" style={bleed ? { overflow: 'visible' } : undefined}>
-        <div ref={layoutRef} data-kb-graffiti-layout="" inert={hidden}>
+        <div ref={layoutRef} data-kb-graffiti-layout="">
           {children}
         </div>
         {near && fixed && (
@@ -823,11 +779,7 @@ export function Effect({ plays, reader, surface, ink: registry, place, show, met
           />
         )}
       </div>
-      {read && read.length > 0 && (
-        <div className="kb-visually-hidden" data-kb-readout>
-          {read.map((line, i) => <span key={i}>{line.text} </span>)}
-        </div>
-      )}
+
       <p className="kb-visually-hidden" role="status" data-kb-report>{report}</p>
     </div>
   );

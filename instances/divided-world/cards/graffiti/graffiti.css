@@ -29,7 +29,8 @@
  * The Draw tile: glass at the body's top right (the effect gives its left and top, the body's right edge and top, in px), a drawn can in the
  * color the reader picked last and the word Draw. A tile of the kit's size and focus.
  */
-.kb-graffiti-draw {
+/* The doubled class beats the thread's rule for what it lifts over ink (`.kb-act-main [data-kb-over-ink]`: position relative), which left the tile in the flow below the words. */
+.kb-graffiti-draw.kb-graffiti-draw {
   position: absolute;
   z-index: 2;
   display: inline-flex;
@@ -37,7 +38,8 @@
   gap: 0.5rem;
   box-sizing: border-box;
   min-height: 44px;
-  margin: 8px;
+  /* The tile's right edge is its left (translateX(-100%)), so its left margin is negative to leave it 8px inside the body's corner. */
+  margin: 8px 0 0 -8px;
   padding: 0.2rem 0.9rem;
   transform: translateX(-100%) skewX(var(--kb-glass-skew));
   border: 2px solid color-mix(in srgb, var(--kb-glass-text) 45%, transparent);
@@ -127,10 +129,12 @@
 @media (max-width: 719px) {
   .kb-graffiti-dock.kb-graffiti-dock {
     position: fixed;
-    inset: auto 0 0 0;
+    /* Above the HUD, which is fixed to the same foot (z-index 30) and holds the window's safe-area inset itself: at bottom 0 the cap row, Cancel and Tag it lay behind it. */
+    inset: auto 0 var(--kb-hud-measured, 0px) 0;
     margin: 0;
-    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
-    max-height: 70vh;
+    padding-bottom: calc(12px + max(0px, env(safe-area-inset-bottom, 0px) - var(--kb-hud-measured, 0px)));
+    max-height: calc(70vh - var(--kb-hud-measured, 0px));
+    z-index: 31;
     overflow-y: auto;
   }
 

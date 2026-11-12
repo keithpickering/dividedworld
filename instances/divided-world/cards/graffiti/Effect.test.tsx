@@ -4,6 +4,7 @@
  * own pixels are spray.test.tsx's), and what the component keeps (how many strokes this screen has scrubbed, whether draw mode is open) is read
  * from the attributes it publishes. The hit test is the real one.
  */
+import { readFileSync } from 'node:fs';
 import { act, fireEvent, screen } from '@testing-library/react';
 import { useMemo, useState, type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
@@ -79,10 +80,10 @@ function propsOf(o: { readonly surface?: EffectProps['surface']; readonly author
   };
 }
 
-function mount(o: { readonly acts?: readonly SurfaceAct[] | null; readonly author?: boolean; readonly surface?: NonNullable<EffectProps['surface']> } = {}) {
+function mount(o: { readonly children?: ReactNode; readonly acts?: readonly SurfaceAct[] | null; readonly author?: boolean; readonly surface?: NonNullable<EffectProps['surface']> } = {}) {
   const surface = o.surface ?? surfaceOf(o.acts === undefined ? MIDDLE : o.acts);
   const shown: CardView[] = [];
-  const props = { ...propsOf({ surface, author: o.author ?? false }), show: (v: CardView | null) => { if (v) shown.push(v); } };
+  const props = { ...propsOf({ surface, author: o.author ?? false, ...(o.children ? { children: o.children } : {}) }), show: (v: CardView | null) => { if (v) shown.push(v); } };
   const world = renderInWorld(<div className="kb-act-main"><Effect {...props} /></div>);
   const root = world.container.querySelector('.kb-graffiti') as HTMLElement;
   return { ...world, surface, shown, root, frame: world.container.querySelector('.kb-graffiti-frame') as HTMLElement, cell: world.container.querySelector('.kb-act-main') as HTMLElement };
@@ -542,12 +543,6 @@ describe('a hold, and the order of a scrub', () => {
     expect(lastPaint()[1]).toBe(first);
   });
 
-  test('a parent that renders again with the same words does not test the lines again', () => {
-    const { bump } = hosted();
-    const before = vi.mocked(spray.hitAt).mock.calls.length;
-    bump();
-    expect(vi.mocked(spray.hitAt).mock.calls.length).toBe(before);
-  });
 });
 
 describe('draw mode and the wall it is drawn on', () => {
@@ -601,5 +596,37 @@ describe('draw mode and the wall it is drawn on', () => {
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Tag it' })); });
     setActs([...MIDDLE, draw('other', 0.8)]);
     expect(lastPaint()).toHaveLength(2);
+  });
+});
+
+describe('the words under the paint', () => {
+  const words = <p data-testid="plain"><a href="#under" data-testid="link">a link</a> and plain words under the paint.</p>;
+
+  test('the body is never made inert, and no second copy of the words is read out', () => {
+    const { root } = mount({ children: words });
+    expect(root.querySelector('[data-kb-graffiti-layout]')!.hasAttribute('inert')).toBe(false);
+    expect(root.querySelector('[data-kb-readout]')).toBeNull();
+  });
+
+  test('a link under the ink is focusable and a press on it goes to it and starts no scrub', () => {
+    const { root } = mount({ children: words });
+    const link = screen.getByTestId('link');
+    link.focus();
+    expect(link).toHaveFocus();
+    const [x, y] = px(0.5, 0.5);
+    act(() => { fireEvent.pointerDown(link, { clientX: x, clientY: y, pointerId: 1, button: 0, pointerType: 'mouse' }); });
+    act(() => { fireEvent.pointerUp(link, { clientX: x, clientY: y, pointerId: 1, pointerType: 'mouse' }); });
+    expect(scrubbed(root)).toBe(0);
+  });
+
+  test('a press on plain text under the ink still scrubs it', () => {
+    const { root } = mount({ children: words });
+    drag(screen.getByTestId('plain'), [[0.3, 0.5], [0.4, 0.5], [0.5, 0.5]]);
+    expect(scrubbed(root)).toBe(1);
+  });
+
+  test('the ink canvases do not take the pointer', () => {
+    const css = readFileSync('instances/divided-world/cards/graffiti/graffiti.css', 'utf8');
+    expect(/\.kb-graffiti-ink,\s*\.kb-graffiti-suds\s*\{[^}]*pointer-events:\s*none/u.test(css)).toBe(true);
   });
 });
