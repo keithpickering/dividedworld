@@ -297,7 +297,8 @@ const inky = { ...base, key: 'test-inky', name: 'Test Inky', rarity: 'common' as
 const snare = { ...base, key: 'test-snare', name: 'Test Snare', rarity: 'uncommon' as const, play: 'set' as const, trap: { trigger: { on: 'visit' as const } }, validateConfig: inky.validateConfig };
 const move = { ...base, key: 'test-move', name: 'Test Move', rarity: 'common' as const, validateConfig: (c: unknown) => ok(c) };
 const shield = { ...base, key: 'test-shield', name: 'Test Shield', rarity: 'uncommon' as const, play: 'use' as const, gimmick: { kind: 'ward' as const, upTo: 'uncommon' as const }, lasts: { unit: 'day' as const, count: 7 }, validateConfig: (c: unknown) => ok(c) };
-const tested = { ...instance, cards: [...instance.cards, inky, snare, move, shield] };
+const hush = { ...base, key: 'test-hush', name: 'Test Hush', rarity: 'uncommon' as const, play: 'use' as const, gimmick: { kind: 'noQuote' as const }, lasts: { unit: 'day' as const, count: 7 }, validateConfig: (c: unknown) => ok(c) };
+const tested = { ...instance, cards: [...instance.cards, inky, snare, move, shield, hush] };
 const setAct = { id: 'k', kind: 'set', thread: 'th', payload: {} };
 
 test('a Set is decided by its card\'s rules and written by set_card; its answer and its broadcast carry no card key', async () => {
@@ -1134,3 +1135,19 @@ test('each refusal of a skim, a ride and a scored-as play comes back as a plain 
     }
   });
 }
+
+test('a no-quote card is refused before SQL on a post whose read holds a live back, and in its own words', async () => {
+  const { dbs, calls } = pair({ whoami, card_target_reach: { reach: 'post', act: target, kind: 'post', length: 10, body: 'x'.repeat(10), effects: [{ card: null, act: 'b', faceDown: true, ends: new Date(Date.now() + 1e6).toISOString() }] } });
+  const out = await runAction(dbs, tested, { action: 'useCard', card: 'test-hush', character: id, target, config: {} });
+  assert.deepEqual({ status: out.status, body: out.body }, { status: 400, body: { field: 'config', error: 'Test Hush stops quotes, and this post holds a card face down; take that card back first' } });
+  assert.ok(!calls.some((c) => c.startsWith('service:play_card:')), calls.join('\n'));
+});
+
+test('a Set is refused before SQL on a post whose read holds a live no-quote, in the words of decideSet', async () => {
+  const ends = new Date(Date.now() + 1e6).toISOString();
+  const { dbs, calls } = pair({ whoami, card_target_reach: { reach: 'post', act: target, kind: 'post', length: 10, body: 'x'.repeat(10), effects: [{ card: 'test-hush', act: 'h', gimmick: { kind: 'noQuote' }, ends }] } });
+  const out = await runAction(dbs, tested, { action: 'setCard', card: 'test-move', character: id, target });
+  assert.equal(out.status, 400);
+  assert.match(String((out.body as { error: string }).error), /^this post's Test Hush stops quotes until .+, so no card is set face down here until then$/);
+  assert.ok(!calls.some((c) => c.startsWith('service:set_card:')), calls.join('\n'));
+});

@@ -24,7 +24,7 @@ import { decide } from '../../rules/actions.ts';
 import { rollPack } from '../../rules/packs.ts';
 import { beltHolder, outfitProblems, PIECE_TURN_MOST, PIECE_WIDTH, type Piece } from '../../rules/cosmetics.ts';
 import { RARITIES, type Rarity } from '../../rules/cards.ts';
-import { atOrBelow, giftSplit, spanMs, OLD_VOICE_OFF, withheld, playOf as kindOfPlay, postTarget, casterMessage, decidePlay, decideSet, decideUse, decideDraw, decideWash, effectsOnTarget, type BeyondPost, type CardEffect, type CardRules, type CardTarget, type EffectsAbove, type PostTarget, type Reach, type SetConditions } from '../../rules/cards.ts';
+import { atOrBelow, giftSplit, spanMs, OLD_VOICE_OFF, withheld, playOf as kindOfPlay, postTarget, casterMessage, decidePlay, decideSet, decideUse, decideDraw, decideWash, effectsOnTarget, noQuoteWords, quoteStop, type BeyondPost, type CardEffect, type CardRules, type CardTarget, type EffectsAbove, type PostTarget, type Reach, type SetConditions } from '../../rules/cards.ts';
 import { sameName } from '../../rules/names.ts';
 import { GRID, count, fromBits, minus, union, type Cells } from '../../rules/surface.ts';
 import { earnedGroup } from '../../rules/groups.ts';
@@ -36,7 +36,7 @@ import { ADMIN_AWARDS_PAGE, ALERTS_PAGE, ALERTS_UNREAD_BOUND, type FailureKind, 
 import { buildMoveNotice, toDemand, toProgress } from './moves.ts';
 import { TIP_KEYS, TOUR_KEYS } from '../tips/keys.ts';
 import { PLAYS_PER_POST } from '../cards/plays.ts';
-import { visibleText } from '../../bbcode/visible.ts';
+import { quotedActs, visibleText } from '../../bbcode/visible.ts';
 import { parse } from '../../bbcode/parse.ts';
 import { pageOf } from '../thread/pages.ts';
 import { PROFILE_ROWS, RECORD_PAGE, type RecordKind } from '../profile/record.ts';
@@ -1150,6 +1150,27 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     }
   }
 
+  /**
+   * The acts_quote_guard (Task 3): the refusal for the first Act a body or a target quotes that carries a live no-quote, in the words every writer is given, or null.
+   * The quoted Acts are the target (a post's `quoting`) and every real quote the body holds, less those the edited post's current body already held. `thread` is where the
+   * Act is written (null for a thread not yet made), so a quote from another thread says so.
+   */
+  function stoppedQuote(thread: Id | null, target: Id | null, body: string, already: string = ''): string | null {
+    // As the guard on acts does, a body is walked only where it holds a quote tag, and the current body only where the first list holds an Act.
+    const inBody = (text: string): string[] => (/\[quote=/i.test(text) ? quotedActs(parse(text)) : []);
+    const named = [...new Set([...(target === null ? [] : [target]), ...inBody(body)])];
+    if (named.length === 0) return null;
+    const held = new Set(inBody(already));
+    const quoted = named.filter((q) => !held.has(q));
+    for (const q of quoted) {
+      const stop = quoteStop(effectsOn(q), new Date(now()));
+      if (!stop) continue;
+      const quotedPost = acts.get(q)!;
+      return noQuoteWords(instance.cards.find((c) => c.key === stop.card)?.name ?? String(stop.card), stop.ends, thread !== null && quotedPost.thread === thread ? quotedPost.seq : null);
+    }
+    return null;
+  }
+
   function post(thread: Id, character: Id, body: string, quote: Id | null, framing?: readonly Id[]): Answer<Act> {
     const bad = request({ action: 'post', thread, character, body, quote, ...(framing ? { framing } : {}) });
     if (bad) return bad;
@@ -1159,6 +1180,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (isRefusal(found)) return found;
     if (found.board.isSystem) return refuse(SYSTEM_BOARD);
     if (quote !== null && !acts.has(quote)) return refuse('there is no such Act to quote');
+    const stopped = stoppedQuote(thread, quote, body);
+    if (stopped) return refuse(stopped);
     const written = write({ character, kind: 'post', thread, target: quote, payload: { body } });
     sendAct(written);
     writeFramed(body, framing, written);
@@ -1173,6 +1196,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const board = boards.find((b) => b.slug === boardSlug);
     if (!board) return refuse('there is no such board');
     if (board.isSystem) return refuse(SYSTEM_BOARD);
+    const stopped = stoppedQuote(null, null, body);
+    if (stopped) return refuse(stopped);
     const t = openThread(board.id, title, null);
     const written = write({ character, kind: 'post', thread: t.id, payload: { body } });
     sendThread(t);
@@ -1190,6 +1215,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (!from || from.kind === 'edit') return refuse('there is no such Act to spin from');
     const home = boards.find((b) => b.id === threads.get(from.thread)!.board)!;
     const board = home.isSystem ? playersBoard! : home;
+    const stopped = stoppedQuote(null, null, body);
+    if (stopped) return refuse(stopped);
     const t = openThread(board.id, title, origin);
     const written = write({ character, kind: 'spin', thread: t.id, target: origin, payload: { title, body } });
     sendThread(t);
@@ -1792,7 +1819,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   /**
    * The cards set face down (face_down, 0054): which card a set is, its setter's account alone; when it ends; the spring that ended it.
    * Mirrored: a catching set card catches the one card it names on a cast (the setter takes the card, a `caught` ledger row, no payout). NOT mirrored: a Move set face down never springs on a quote
-   * (no card lands on the quoting post, character, thread or board, and its phrase is never matched), a Hall Pass never ends a visit, and a ward does not stop a landing. Those are the server's to test
+   * (no card lands on the quoting post, character, thread or board, and its phrase is never matched), a Hall Pass never ends a visit, a ward does not stop a landing, an Earn lays no boost (settlement is the server's), and a staff character is not refused a cast earn or given a plain reply where its target cannot be quoted (write_staff_act). A no-quote is mirrored: a post, a new thread, a spin and an edit are refused a quote of a stopped post in noQuoteWords. Those are the server's to test
    * (supabase/tests/0135-face-down-moves.sql); a test that needs one writes the spring with `seed.spring`.
    */
   /** The back of each card set face down: `catches` is the card a catching set card names and `phrase` the words a Move waits for, both from the card's own rules (decideSet), as set_card stores them. */
@@ -2017,6 +2044,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (isRefusal(c)) return c;
     const original = acts.get(target);
     if (!original || original.kind !== 'post' || original.character !== character) return refuse('that is not a post of this character\'s');
+    const stopped = stoppedQuote(original.thread, null, body, String(edits(original).at(-1)?.payload.body ?? original.payload.body ?? ''));
+    if (stopped) return refuse(stopped);
     write({ character, kind: 'edit', thread: original.thread, target, payload: { body } });
     sendAct(original);
     return ok(publicAct(original));

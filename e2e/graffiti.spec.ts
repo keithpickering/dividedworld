@@ -129,7 +129,7 @@ test.describe('on a wide screen', () => {
     await world(page);
     await openThread(page);
     await page.getByRole('button', { name: /^Hand, \d+ postcards?$/ }).click();
-    await page.getByRole('region', { name: 'Your hand' }).getByRole('button', { name: /^Graffiti, / }).first().click();
+    await page.getByRole('dialog', { name: 'Your hand' }).getByRole('button', { name: /^Graffiti, / }).first().click();
     const ghost = post(page).getByRole('button', { name: `Play Graffiti on post ${POST}` });
     await ghost.click();
     /* The drawing is the card's form: Tag it waits for something drawn, and says so. */

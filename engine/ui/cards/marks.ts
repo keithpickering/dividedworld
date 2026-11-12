@@ -90,13 +90,16 @@ const list = (words: readonly string[]): string => (words.length <= 2 ? words.jo
 /**
  * A use card's words, as the Lens's status for a live one: what it does while it is up, and when it ends (or ended), the end in the
  * reader's zone. They are read from the effect's own numbers: a ward says everything it turns away (a card by the name `nameOf` gives), a price what a cast
- * costs more, an earn how much more a reaction earns (an earn's `by` is a share: 0.1 is 10%).
+ * costs more, an earn how much more a reaction earns (an earn's `by` is a share: 0.1 is 10%), a ride the share of a vote's price it pays its
+ * author for a card another player casts there, and a no-quote only that the post cannot be quoted.
  */
 export function gimmickWords(effect: GimmickEffect, ends: string | undefined, now: Date = new Date(), nameOf: (key: string) => string = (key) => key): { readonly state: string; readonly ends?: string; readonly report?: string } {
   if (ends !== undefined && Date.parse(ends) <= now.getTime()) return { state: 'Ended, changing nothing', ends: `Ended ${dayAndTime(ends)}` };
   const finish = (state: string, report?: string) => ({ state, ...(ends !== undefined ? { ends: endsWords(ends) } : {}), ...(report !== undefined ? { report } : {}) });
   if (effect.kind === 'price') return finish(`${list(effect.flavors.map(capital))} cards cost ${orbs(effect.add)} more here`);
   if (effect.kind === 'earn') return finish(`Earns ${Math.round(effect.by * 100)}% more from some reactions`);
+  /* A no-quote stops a quote of its post while it is up; the heading says so and the end is the Lens's own line. */
+  if (effect.kind === 'noQuote') return finish('Cannot be quoted');
   /* A ride pays the post's author, from the cards others cast on it: the heading is the short status, and the report says how much, from the effect's own share. */
   if (effect.kind === 'ride') return finish('Pays its author for votes here', `Each vote on a card another player casts here pays its author ${shareWords(effect.share)}.`);
   /* A ward turns away a card that meets any one of its conditions, so it says every one, in the order the rules read them. When that is more than a heading may run, the heading is the short "some cards" and the whole list is the detail. */

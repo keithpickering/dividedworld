@@ -34,7 +34,7 @@ import { lowerFirst } from '../copy-words.ts';
 import { billPost, drawnOf } from '../cards/billing.ts';
 import { CalloutProvider } from '../cards/Callout.tsx';
 import { LensProvider } from '../cards/Lens.tsx';
-import { createPlays, effectCards, hydrate, readEffects, readSurface, rereadSurfaces } from '../cards/plays.ts';
+import { createPlays, effectCards, hydrate, readEffects, readSurface, rereadSurfaces, usePlays } from '../cards/plays.ts';
 import { Composer, SystemBoardNote, type ComposerHandle } from '../composer/Composer.tsx';
 import { useKayfa } from '../context.tsx';
 import { ENGINE_DEFAULT_PRONOUNS } from '../../rules/pronouns.ts';
@@ -56,7 +56,7 @@ import { emptyFeed, feedReducer, newer, ordered, shownEnd, waitingPosts, type Fe
 import { ActIndex, actLoader, type Located } from './locate.tsx';
 import { pageEndsThread, pageOf, pageRange, seqOfHash, threadHref } from './pages.ts';
 import { FollowControl } from './Follow.tsx';
-import { ActArticle, ThreadHead } from './Post.tsx';
+import { ActArticle, quoteStopped, ThreadHead } from './Post.tsx';
 import { SelectionQuote } from './SelectionQuote.tsx';
 import { ThreadCtx, type ThreadContext } from './context.ts';
 import { text } from './lines.tsx';
@@ -94,7 +94,7 @@ function loadedFrom(page: ThreadPage, perPage: number, back: ThreadReturn | null
 const keyOf = (l: { query: URLSearchParams; hash: string }) => `${l.query.toString() ? `?${l.query.toString()}` : ''}${l.hash ? `#${l.hash}` : ''}`;
 
 function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: ThreadPage }) {
-  const { api, settings, ui } = useKayfa();
+  const { api, settings, ui, instance } = useKayfa();
   const P = settings.postsPerPage;
   const player = usePlayer();
   /* The page is a landing place for glitter while a thread is on screen (docs/plans/2026-11-11-shake-design.md section 5); leaving sweeps it. */
@@ -687,17 +687,24 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
   const shown = useMemo(() => ordered(feed.shown), [feed.shown]);
   const quotableAt = useCallback((seq: number) => {
     const a = shown.find((x) => x.seq === seq);
-    return a && (a.kind === 'post' || a.kind === 'spin') ? a : undefined;
-  }, [shown]);
+    /* A post under a live no-quote offers nothing to quote: read from the plays as they are when the selection is made. */
+    return a && (a.kind === 'post' || a.kind === 'spin') && !quoteStopped(plays.get(a.id).plays, instance) ? a : undefined;
+  }, [shown, plays, instance]);
 
   /* The last post shown, to quote from the toolbar (the thread's latest only when its tail is on screen). */
-  const latest = useMemo(() => {
+  const lastPost = useMemo(() => {
     for (let i = shown.length - 1; i >= 0; i--) {
       const a = shown[i]!;
-      if (a.kind === 'post' || a.kind === 'spin') return { id: a.id, body: text(a.currentPayload.body) };
+      if (a.kind === 'post' || a.kind === 'spin') return a;
     }
     return null;
   }, [shown]);
+  /* Drawn again when the last post's plays change, so a no-quote that lands or is reversed there takes the toolbar's Quote away or gives it back; one that merely runs out is seen at the next such draw or page read, not at its end. The server's guard decides a quote regardless. */
+  const lastPlays = usePlays(plays, lastPost?.id ?? '');
+  const latest = useMemo(
+    () => (lastPost && !quoteStopped(lastPlays.plays, instance) ? { id: lastPost.id, body: text(lastPost.currentPayload.body) } : null),
+    [lastPost, lastPlays, instance],
+  );
 
   /* A reply the player just made: shown at once at the foot, or, when the foot is not loaded, opened at its page. Focus goes to it and the polite region says so. */
   const posted = async (a: Act) => {

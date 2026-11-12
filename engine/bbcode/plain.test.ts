@@ -10,7 +10,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { collapse, PLAIN_FIXTURES } from './plain.fixtures.ts';
 import { parse } from './parse.ts';
-import { excerptText, visibleText } from './visible.ts';
+import { excerptText, quotedActs, visibleText } from './visible.ts';
 
 test('there are fixtures, each named once', () => {
   assert.ok(PLAIN_FIXTURES.length >= 20);
@@ -27,6 +27,13 @@ for (const f of PLAIN_FIXTURES) {
   if (f.excerptOf === undefined) continue;
   test(`excerpt: ${f.name}`, () => {
     assert.equal(collapse(excerptText(parse(f.body), f.excerptOf!)), f.excerpt);
+  });
+}
+
+for (const f of PLAIN_FIXTURES) {
+  if (f.quotes === undefined) continue;
+  test(`quotes: ${f.name}`, () => {
+    assert.deepEqual(quotedActs(parse(f.body)), f.quotes);
   });
 }
 

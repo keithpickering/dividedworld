@@ -546,7 +546,9 @@ function playProblems(c: CardRules, reactionKeys: ReadonlySet<string> = new Set(
   if (play === 'keep') out.push(`${who} is kept, and Keep is not built until it is designed`);
   if (c.trap !== undefined && play !== 'set') out.push(`${who} has a trap, and only a set card has one`);
   if (play === 'set' && c.trap === undefined) out.push(`${who} is a set card with no trap`);
-  if (c.gimmick !== undefined && play !== 'use') out.push(`${who} has a gimmick, and only a use card has one`);
+  const castEarn = play === 'cast' && c.gimmick?.kind === 'earn' && Array.isArray(c.reaches) && c.reaches.length === 1 && c.reaches[0] === 'character';
+  if (c.gimmick !== undefined && play !== 'use' && !castEarn) out.push(`${who} has a gimmick, and only a use card has one, or a cast card on a character an earn`);
+  if (castEarn) out.push(...gimmickProblems(c.gimmick, who, reactionKeys));
   if (play === 'use') {
     if (c.gimmick === undefined) out.push(`${who} is a use card with no gimmick`);
     else out.push(...gimmickProblems(c.gimmick, who, reactionKeys));
@@ -567,6 +569,7 @@ function playProblems(c: CardRules, reactionKeys: ReadonlySet<string> = new Set(
   else if (match !== undefined && play === 'set') out.push(...matchProblems(match, who));
   if (c.catches !== undefined && typeof c.catches !== 'function') out.push(`${who} has a catch that is not a function`);
   else if (c.catches !== undefined && !(play === 'set' && on === 'cast')) out.push(`${who} has a catch, and only a set card that springs on a cast does`);
+  if (c.gimmick?.kind === 'noQuote' && c.reaches !== undefined && !(Array.isArray(c.reaches) && c.reaches.length === 1 && c.reaches[0] === 'post')) out.push(`${who} stops quotes, and a card that stops quotes reaches a post alone`);
   if (c.gimmick?.kind === 'ride' && postAlone === false) out.push(`${who} has a ride, and a card with a ride reaches a post alone`);
   if (c.trap?.outcome !== undefined) out.push(...outcomeProblems(c.trap.outcome, who, play, on, match));
   if (c.skim !== undefined) out.push(...skimProblems(c, who, play));
@@ -645,6 +648,7 @@ function gimmickProblems(g: unknown, who: string, reactionKeys: ReadonlySet<stri
   } else if (e.kind === 'earn') {
     if (typeof e.by !== 'number' || !(e.by > 0 && e.by <= 1)) out.push(e.by === undefined ? `${who} has an earn with no by; by is above 0 and at most 1` : `${who} has an earn of ${JSON.stringify(e.by)}; by is above 0 and at most 1`);
     if (e.quadrants === undefined && e.reactions === undefined) out.push(`${who} has an earn that names no quadrant and no reaction`);
+    if (e.group !== undefined && (typeof e.group !== 'string' || e.group === '')) out.push(`${who} has an earn with the group ${JSON.stringify(e.group)}; a group is a word`);
     if (e.quadrants !== undefined) {
       if (!list(e.quadrants)) out.push(`${who} has an earn naming no quadrant; a quadrant is ${QUADRANTS.join(', ')}`);
       else for (const q of e.quadrants) if (!QUADRANTS.includes(q as never)) out.push(`${who} has an earn naming the quadrant ${JSON.stringify(q)}; a quadrant is ${QUADRANTS.join(', ')}`);
@@ -659,6 +663,8 @@ function gimmickProblems(g: unknown, who: string, reactionKeys: ReadonlySet<stri
   } else if (e.kind === 'ride') {
     const why = shareProblem(e, who, 'a ride', 'a ride of');
     if (why) out.push(why);
+  } else if (e.kind === 'noQuote') {
+    // It has no numbers: a card that stops quotes stops them all, and what it reaches is playProblems'.
   } else {
     out.push(`${who} has a gimmick of kind ${JSON.stringify(e.kind)}; a gimmick is ${GIMMICK_KINDS.slice(0, -1).join(', ')} or ${GIMMICK_KINDS.at(-1)}`);
   }

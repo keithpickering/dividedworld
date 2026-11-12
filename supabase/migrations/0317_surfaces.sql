@@ -744,8 +744,8 @@ grant execute on function surface_cuts_of(uuid) to service_role;
 
 -- --------------------------------------------------------------------------------------------- 6. the redefined functions ----
 
--- place_cast (0153), opening the surface of a play whose card is a surface card, with the play: the same transaction, so a play and its wall land together. A play a back caught never landed, and opens none; a ride
--- back lets the play land, and does. Everything else as 0153 wrote it.
+-- place_cast (0316), opening the surface of a play whose card is a surface card, with the play: the same transaction, so a play and its wall land together. A play a back caught never landed, and opens none; a ride
+-- back lets the play land, and does. Everything else as 0316 wrote it.
 create or replace function place_cast(caster uuid, card text, target uuid, config jsonb, message text, reach text, from_post uuid, payer uuid, price integer, marker jsonb default '{}')
 returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
@@ -798,6 +798,11 @@ begin
   if kind_of.play = 'use' and reach = 'board' then
     raise exception '% is never used on a board', kind_of.name using hint = 'kayfabb.refusal', errcode = '22023';
   end if;
+  -- A staff character casts no card that carries a gimmick (a cast earn): the settlement leaves a staff character's Acts out, so the play's Lens would claim a boost that is never paid. Plain words, no refusal hint:
+  -- a pool persona is never offered one (cards.ts, staffOffers), so this is for a caller that skipped the offer.
+  if staff_caster and kind_of.play = 'cast' and kind_of.gimmick is not null then
+    raise exception 'a staff character casts no card that carries an earn' using errcode = '22023';
+  end if;
 
   if reach = 'post' then
     -- The target's row is locked, so plays on one post are laid one at a time and each counts the last.
@@ -805,6 +810,14 @@ begin
     if target_kind is distinct from 'post' then raise exception 'a card lands on a post' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
     if kind_of.play = 'use' and author is distinct from caster then
       raise exception '% is used on your own post' , kind_of.name using hint = 'kayfabb.refusal', errcode = '42501';
+    end if;
+    -- A card that stops quotes is not laid on a post that holds a card face down: a back springs on a quote, and the two would pull against each other. A back is live by the predicate place_set uses (public, since
+    -- the back is); the post's row is locked above and place_set takes the same row first, so the two are laid one at a time.
+    if kind_of.play = 'use' and kind_of.gimmick ->> 'kind' = 'noQuote'
+       and exists (select 1 from face_down f where f.post = target and f.ends_at > now()
+                   and not exists (select 1 from acts s where s.kind = 'spring' and (s.payload ->> 'set') = f.play::text)
+                   and not exists (select 1 from acts s where s.kind = 'take_back' and (s.payload ->> 'set') = f.play::text)) then
+      raise exception '% stops quotes, and this post holds a card face down; take that card back first', kind_of.name using hint = 'kayfabb.refusal', errcode = '23505';
     end if;
     -- A live ward Gimmick on the post turns away a cast its rarity, flavor or name covers, in the same words for everyone (cards.ts's wardWords).
     if kind_of.play = 'cast' then
@@ -1630,8 +1643,8 @@ create view my_walls_drawn_on as
 revoke all on my_walls_drawn_on from anon, public;
 grant select on my_walls_drawn_on to authenticated;
 
--- log_page (0213), also reading the two views above as `draws` and `wallsDrawn` (newest first by `at`, at most 200, the columns the adapter's log() reads). The plays and posts they name are among the Acts the page
--- names (never the draws' own Acts, which hold strokes), and the characters they name (a drawer, a washer) among its people. Everything else as 0213 wrote it (the cosmetics source and the profiles carrying profile_cosmetics).
+-- log_page (0290), also reading the two views above as `draws` and `wallsDrawn` (newest first by `at`, at most 200, the columns the adapter's log() reads). The plays and posts they name are among the Acts the page
+-- names (never the draws' own Acts, which hold strokes), and the characters they name (a drawer, a washer) among its people. Everything else as 0290 wrote it (the shares' card, the cosmetics source and the profiles carrying profile_cosmetics).
 create or replace function log_page(in_before timestamptz) returns jsonb
 language sql stable security invoker set search_path = public, pg_temp
 begin atomic

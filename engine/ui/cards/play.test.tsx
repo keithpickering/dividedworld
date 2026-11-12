@@ -99,11 +99,11 @@ async function open(w: ReturnType<typeof world>, ui: CardUi[] = cards) {
 }
 const post = (seq: number) => document.getElementById(`post-${seq}`)!;
 const handButton = () => screen.getByRole('button', { name: /^Hand, \d postcards?/u });
-const drawer = () => screen.getByRole('region', { name: 'Your hand' });
+const drawer = () => screen.getByRole('dialog', { name: 'Your hand' });
 const here = (seq: number) => within(post(seq)).queryByRole('button', { name: `Play Whoops! on post ${seq}` });
 const arm = async (user: ReturnType<typeof userEvent.setup>) => {
   await user.click(handButton());
-  await user.click(within(drawer()).getAllByRole('button', { name: 'Whoops!, Salty, Cast, common postcard' })[0]!);
+  await user.click(within(drawer()).getByRole('button', { name: 'Whoops!, Salty, Cast, common postcard, 2 in hand' }));
 };
 
 beforeEach(() => {
@@ -126,7 +126,7 @@ describe('the post offers no "Play card"', () => {
     await user.keyboard('{Escape}');
     expect(screen.queryByRole('button', { name: 'Play card' })).toBeNull();
     if (handButton().getAttribute('aria-expanded') !== 'true') await user.click(handButton());
-    expect(within(drawer()).getAllByRole('button', { name: 'Whoops!, Salty, Cast, common postcard' })).toHaveLength(2);
+    expect(within(drawer()).getByRole('button', { name: 'Whoops!, Salty, Cast, common postcard, 2 in hand' })).toBeInTheDocument();
     expect(within(drawer()).getByRole('button', { name: 'Stick Around, Sweet, Cast, common postcard' })).toBeInTheDocument();
   });
 });
@@ -267,10 +267,11 @@ describe('arming a card', () => {
     expect(here(2)).toBeInTheDocument();
     expect(here(3)).toBeInTheDocument();
     expect(here(4)).toBeNull();
-    /* The armed card says so in its name and carries its tag; the other copy does not. */
-    const armed = within(drawer()).getByRole('button', { name: 'Whoops!, Salty, Cast, common postcard, armed: pick a post' });
+    /* Arming put the hand away (the Main board's modal); opened again, the armed card says so in its name and carries its tag, and its name is no longer the plain one. */
+    await user.click(handButton());
+    const armed = within(drawer()).getByRole('button', { name: 'Whoops!, Salty, Cast, common postcard, 2 in hand, armed: pick a post' });
     expect(armed.closest('li')).toHaveTextContent('Armed · pick a post');
-    expect(within(drawer()).getAllByRole('button', { name: 'Whoops!, Salty, Cast, common postcard' })).toHaveLength(1);
+    expect(within(drawer()).queryByRole('button', { name: 'Whoops!, Salty, Cast, common postcard, 2 in hand' })).toBeNull();
   });
 
   test('the button belongs to its post: its name is the card\'s and the post\'s number', async () => {
@@ -282,22 +283,27 @@ describe('arming a card', () => {
     expect(here(3)).toHaveAccessibleName('Play Whoops! on post 3');
   });
 
-  test('Esc puts the card back and leaves the hand open; pressing the armed card does the same', async () => {
+  test('Esc puts the card back; pressing the armed card in the open hand does the same and leaves the hand open', async () => {
     const user = userEvent.setup();
     const w = world();
     await open(w);
     await arm(user);
+    /* Arming put the hand away, so the Esc is the card's own. */
+    expect(handButton()).toHaveAttribute('aria-expanded', 'false');
     await user.keyboard('{Escape}');
     expect(here(2)).toBeNull();
-    expect(handButton()).toHaveAttribute('aria-expanded', 'true');
-    expect(within(drawer()).getAllByRole('button', { name: 'Whoops!, Salty, Cast, common postcard' })).toHaveLength(2);
+    expect(handButton()).toHaveAttribute('aria-expanded', 'false');
+    await user.click(handButton());
+    expect(within(drawer()).getByRole('button', { name: 'Whoops!, Salty, Cast, common postcard, 2 in hand' })).toBeInTheDocument();
     /* A second Esc is the hand's own. */
     await user.keyboard('{Escape}');
     expect(handButton()).toHaveAttribute('aria-expanded', 'false');
     await arm(user);
     expect(here(2)).toBeInTheDocument();
-    await user.click(within(drawer()).getByRole('button', { name: 'Whoops!, Salty, Cast, common postcard, armed: pick a post' }));
+    await user.click(handButton());
+    await user.click(within(drawer()).getByRole('button', { name: 'Whoops!, Salty, Cast, common postcard, 2 in hand, armed: pick a post' }));
     expect(here(2)).toBeNull();
+    expect(handButton()).toHaveAttribute('aria-expanded', 'true');
   });
 
   test('it is said to a screen reader when a card is armed and when it is put back', async () => {

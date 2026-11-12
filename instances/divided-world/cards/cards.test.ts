@@ -11,7 +11,8 @@ import { GRID, cellsOf, count, type Cells } from '../../../engine/rules/surface.
 import { NAMED_COLORS } from '../../../engine/bbcode/parse.ts';
 import { cards } from './index.ts';
 import { instance } from '../index.ts';
-import { atOrBelow, castOnPost, giftSplit, openDrive, staffConfigOf, decidePlay, decideSet, decideUse, postTarget, type CardRules } from '../../../engine/rules/cards.ts';
+import { publicityTour } from './publicity-tour.ts';
+import { atOrBelow, castOnPost, giftSplit, openDrive, staffOffers, staffConfigOf, decidePlay, decideSet, decideUse, postTarget, type CardRules } from '../../../engine/rules/cards.ts';
 import { PEELS, autocorrect } from './autocorrect.ts';
 import { decide } from '../../../engine/rules/actions.ts';
 import { instanceProblems, withOverrides } from '../../../engine/rules/instance.ts';
@@ -25,7 +26,7 @@ const priceOf = (key: string): number => instance.machine.find((m) => 'card' in 
 const post = (length: number): CardTarget => ({ reach: 'post', act: 'p1', kind: 'post', length, text: '' });
 
 test('the instance sells its cards at their prices', () => {
-  assert.deepEqual(cards.map((c) => [c.key, c.alignment, priceOf(c.key)]), [['stick-around', 'sweet', 100], ['whoops', 'salty', 100], ['card-collector', 'salty', 150], ['hall-pass', 'sweet', 150], ['force-field', 'sweet', 150], ['publicity-tour', 'sweet', 150], ['heat-magnet', 'salty', 150], ['class-clown', 'pepperoni', 150], ['good-vibes', 'sweet', 150], ['glitter-bomb', 'pepperoni', 150], ['main-event', 'sweet', 300], ['feelin-fab', 'sweet', 20], ['autocorrect', 'pepperoni', 100], ['you-were-saying', 'pepperoni', 100], ['below-the-fold', 'salty', 100], ['mooch', 'salty', 150], ['toll', 'pepperoni', 150], ['4d-chess', 'salty', 150], ['off-day', 'salty', 500], ['jimmy-wails', 'sweet', 200], ['graffiti', 'pepperoni', 300]]);
+  assert.deepEqual(cards.map((c) => [c.key, c.alignment, priceOf(c.key)]), [['stick-around', 'sweet', 100], ['whoops', 'salty', 100], ['card-collector', 'salty', 150], ['hall-pass', 'sweet', 150], ['force-field', 'sweet', 150], ['publicity-tour', 'sweet', 150], ['heat-magnet', 'salty', 150], ['class-clown', 'pepperoni', 150], ['good-vibes', 'sweet', 150], ['glitter-bomb', 'pepperoni', 150], ['main-event', 'sweet', 300], ['feelin-fab', 'sweet', 20], ['autocorrect', 'pepperoni', 100], ['you-were-saying', 'pepperoni', 100], ['below-the-fold', 'salty', 100], ['mooch', 'salty', 150], ['toll', 'pepperoni', 150], ['4d-chess', 'salty', 150], ['off-day', 'salty', 500], ['jimmy-wails', 'sweet', 200], ['sugar-coat', 'sweet', 300], ['hype-up', 'sweet', 150], ['last-word', 'salty', 150], ['graffiti', 'pepperoni', 300]]);
   assert.deepEqual(instanceProblems(instance), []);
   assert.deepEqual(instance.cards, cards);
 });
@@ -201,7 +202,7 @@ test('the instance sells Card Collector, Force Field and the new Gimmicks, each 
 
 test('Publicity Tour, Heat Magnet, Class Clown and Good Vibes are Gimmicks with the effects the design names', () => {
   const hours36 = { unit: 'hour', count: 36 };
-  assert.deepEqual([by('publicity-tour').reaches, by('publicity-tour').lasts, by('publicity-tour').gimmick], [['character'], hours36, { kind: 'earn', quadrants: ['excitedPositive', 'calmPositive'], by: 0.1 }]);
+  assert.deepEqual([by('publicity-tour').reaches, by('publicity-tour').lasts, by('publicity-tour').gimmick], [['character'], hours36, { kind: 'earn', quadrants: ['excitedPositive', 'calmPositive'], by: 0.1, group: 'publicity' }]);
   assert.deepEqual([by('heat-magnet').reaches, by('heat-magnet').lasts, by('heat-magnet').gimmick], [['character'], hours36, { kind: 'earn', quadrants: ['excitedNegative', 'boredNegative'], by: 0.1 }]);
   assert.deepEqual([by('class-clown').reaches, by('class-clown').lasts, by('class-clown').gimmick], [['character'], hours36, { kind: 'earn', reactions: ['laughing', 'eye-roll'], by: 0.5 }]);
   assert.deepEqual([by('good-vibes').reaches, by('good-vibes').lasts, by('good-vibes').gimmick], [['thread'], { unit: 'day', count: 3 }, { kind: 'price', flavors: ['salty'], add: 25 }]);
@@ -516,22 +517,23 @@ test('Autocorrect\'s phrase is its set phrase', () => {
   assert.equal(by('card-collector').setPhrase, undefined);
 });
 
-test('the Booster\'s hit pull gives uncommon 74, rare 24 and legendary 2, over the cards', async () => {
+test('the Booster\'s hit pull gives uncommon 74, rare 24 and legendary 2, over the twenty-four cards', async () => {
   const { packOdds } = await import('../../../engine/rules/packs.ts');
   const booster = instance.packs.find((p) => p.key === 'booster')!;
   assert.deepEqual(booster.pulls.at(-1)!.weights, { uncommon: 74, rare: 24, legendary: 2 });
   const hit = packOdds(booster, cards, instance.settings).at(-1)!;
   const chance = new Map(hit.flatMap((r) => r.cards.map((c) => [c.card, c.chance] as const)));
-  // The Gimmicks, Part 6 and Jimmy Wails joined the Booster by their rarity, as a new card does, with nothing listed in packs.ts: twelve uncommons share the 74 (You Were Saying? and Below the Fold are commons, and the hit pull takes none).
-  // Graffiti, the second rare, joined the Booster too and splits the rare 24 with Main Event.
-  assert.equal(cards.length, 21);
-  assert.ok(Math.abs(chance.get('main-event')! - 0.12) < 1e-9, `Main Event at ${chance.get('main-event')}`);
-  assert.ok(Math.abs(chance.get('graffiti')! - 0.12) < 1e-9, `Graffiti at ${chance.get('graffiti')}`);
+  // The Gimmicks, Part 6, Jimmy Wails and Part 4 joined the Booster by their rarity, as a new card does, with nothing listed in packs.ts: fourteen uncommons share the 74 (You Were Saying? and Below the Fold are commons, and the hit pull takes none).
+  // Sugar Coat and Graffiti are the second and third rares, which share the 24 with Main Event.
+  assert.equal(cards.length, 24);
+  assert.ok(Math.abs(chance.get('main-event')! - 0.08) < 1e-9, `Main Event at ${chance.get('main-event')}`);
+  assert.ok(Math.abs(chance.get('sugar-coat')! - 0.08) < 1e-9, `Sugar Coat at ${chance.get('sugar-coat')}`);
+  assert.ok(Math.abs(chance.get('graffiti')! - 0.08) < 1e-9, `Graffiti at ${chance.get('graffiti')}`);
   assert.ok(Math.abs(chance.get('off-day')! - 0.02) < 1e-9, `Off Day at ${chance.get('off-day')}`);
   const uncommons = cards.filter((c) => c.rarity === 'uncommon');
-  assert.equal(uncommons.length, 12);
-  for (const c of uncommons) assert.ok(Math.abs(chance.get(c.key)! - 0.74 / 12) < 1e-9, `${c.key} at ${chance.get(c.key)}`);
-  assert.equal(chance.size, uncommons.length + 3);
+  assert.equal(uncommons.length, 14);
+  for (const c of uncommons) assert.ok(Math.abs(chance.get(c.key)! - 0.74 / 14) < 1e-9, `${c.key} at ${chance.get(c.key)}`);
+  assert.equal(chance.size, uncommons.length + 4);
 });
 
 /* Card notes, Part 6 (docs/plans/2026-11-11-card-notes-part-6-plan.md, Task 7): Mooch, Toll, 4D Chess and Off Day. */
@@ -626,6 +628,53 @@ test('Off Day refuses a class the instance lacks and lands on a character', () =
   const up = (n: number) => Array.from({ length: n }, (_, i) => ({ card: 'off-day', act: `o${i}`, reach: 'character' as const, ends: new Date(Date.now() + 86_400_000).toISOString() }));
   assert.equal(off.canApply(chara, up(1)).ok, true, 'the next window\'s lands while this one is live');
   assert.deepEqual(off.canApply(chara, up(2)), { ok: false, why: 'this character already carries 2 of that card, the most it takes' });
+});
+
+/* Card notes, Part 4 (docs/plans/2026-11-11-card-notes-part-4-plan.md, Task 6): Sugar Coat, Hype-Up and Last Word. */
+test('Sugar Coat, Hype-Up and Last Word are in the instance, sold as the plan says, and the instance stays whole', () => {
+  const slot = (k: string) => instance.machine.find((m) => 'card' in m.item && m.item.card === k);
+  assert.deepEqual(['sugar-coat', 'hype-up', 'last-word'].map((k) => [k, by(k).rarity, by(k).play ?? 'cast', by(k).alignment, slot(k)?.availability, slot(k)?.price]), [
+    ['sugar-coat', 'rare', 'use', 'sweet', 'hidden', 300],
+    ['hype-up', 'uncommon', 'cast', 'sweet', 'onSale', 150],
+    ['last-word', 'uncommon', 'use', 'salty', 'onSale', 150],
+  ]);
+  assert.deepEqual(by('sugar-coat').gimmick, { kind: 'ward', flavors: ['salty', 'pepperoni'] });
+  assert.deepEqual(by('last-word').gimmick, { kind: 'noQuote' });
+  assert.deepEqual([by('sugar-coat').lasts, by('last-word').lasts], [{ unit: 'day', count: 7 }, { unit: 'day', count: 7 }]);
+  assert.deepEqual(instanceProblems(instance), []);
+});
+
+test('Hype-Up holds the very numbers Publicity Tour holds', () => {
+  assert.equal(by('hype-up').gimmick, publicityTour.gimmick);
+  assert.equal(by('hype-up').lasts, publicityTour.lasts);
+});
+
+test('Sugar Coat turns away Salty and Pepperoni cards, and passes a Sweet one', () => {
+  const ward = [{ card: 'sugar-coat', act: 'k1', gimmick: by('sugar-coat').gimmick, ends: new Date(Date.now() + 86_400_000).toISOString() }];
+  const context = { nameOf: (key: string) => cards.find((c) => c.key === key)!.name };
+  const salty = { ...by('whoops'), rarity: 'common' as const };
+  const pepperoni = { ...by('main-event'), alignment: 'pepperoni' as const, rarity: 'legendary' as const, reaches: ['post' as const] };
+  assert.deepEqual(decidePlay(salty, settings, post(10), ward, { color: 'red' }, '', context), { ok: false, why: "this post's Sugar Coat turns away Salty cards" });
+  assert.deepEqual(decidePlay(pepperoni, settings, post(10), ward, {}, '', context), { ok: false, why: "this post's Sugar Coat turns away Pepperoni cards" });
+  const sweet = { ...by('stick-around'), rarity: 'rare' as const };
+  assert.equal(decidePlay(sweet, settings, post(10), ward, { sentence: 'Read it.' }, '', context).ok, true);
+});
+
+test('Last Word is refused on a post with a live back, lands on one without, and a second is refused', () => {
+  const lastWord = by('last-word');
+  const live = new Date(Date.now() + 86_400_000).toISOString();
+  assert.equal(decideUse(lastWord, settings, post(10), [{ card: null, act: 'b1', faceDown: true, ends: live }], {}, '').ok, false, 'a back is live');
+  assert.equal(decideUse(lastWord, settings, post(10), [{ card: null, act: 'b1', faceDown: true, ends: new Date(Date.now() - 1000).toISOString() }], {}, '').ok, true, 'a back that has ended');
+  assert.equal(decideUse(lastWord, settings, post(10), [], {}, '').ok, true);
+  assert.equal(decideUse(lastWord, settings, post(10), [{ card: 'last-word', act: 'k1', gimmick: lastWord.gimmick, ends: live }], {}, '').ok, false, 'a second');
+});
+
+test('Hype-Up lands on a character, is refused on a post, is not cast on a post and is not offered to a persona', () => {
+  const hypeUp = by('hype-up');
+  assert.equal(hypeUp.canApply({ reach: 'character', character: 'c1' }, []).ok, true);
+  assert.equal(hypeUp.canApply(post(10), []).ok, false);
+  assert.equal(castOnPost(hypeUp), false, 'Card Collector cannot name it');
+  assert.equal(staffOffers(hypeUp), false);
 });
 
 // Jimmy Wails (docs/plans/2026-11-03-jimmy-wails-plan.md, Task 6): a Sweet uncommon Cast on a post whose plays share a drive, each drawing a plate and needing a sob story.
