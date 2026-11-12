@@ -1847,10 +1847,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const on = acts.get(target);
     if (!on) return refuse('there is no such post', 'target');
     const rules = instance.cards.find((c) => c.key === card)!;
-    /* A card that replies carries its reply, with a letter or a digit in it, and any other card is given none (play_card, 0410); the words and their length are the act function's, above. */
+    /* A card that replies carries its reply; its words and their length are the act function's, above, and the rest of the reply's refusals are play_card's, below (0410). */
     const carries = rules.replies === true;
-    if (reply !== undefined && !carries) return refuse('only a card that carries a reply takes one', 'body');
-    if (carries && !/[\p{L}\p{N}]/u.test(reply?.body ?? '')) return refuse('write the reply this card carries', 'body');
     const text = (publicAct(on).currentPayload as { body?: unknown }).body;
     const effects = effectsOn(target);
     // Decided and written in one step, with no gap for an edit to land in, so the fake checks no version (play_card does, 0070).
@@ -1863,12 +1861,15 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     }
     const c = acting(character);
     if (isRefusal(c)) return c;
-    /* The reply is a post of the card's thread: not on The System's board, and not by a banned character (write_reply, not_banned). */
+    /* play_card's order: the character is the player's, then not banned (every play meets not_banned there; the fake holds it for a card that replies), then a reply with a letter or a digit in it, and any other card is given none. */
     if (carries) {
-      if (boards.find((b) => b.id === threads.get(on.thread)!.board)!.isSystem) return refuse(SYSTEM_BOARD);
       const banned = bannedUntilOf(character);
       if (banned !== null) return refuse(`this character is banned until ${iso(banned)}; the ban ends by itself then`);
     }
+    if (reply !== undefined && !carries) return refuse('only a card that carries a reply takes one', 'body');
+    if (carries && !/[\p{L}\p{N}]/u.test(reply?.body ?? '')) return refuse('write the reply this card carries', 'body');
+    /* The reply is a post of the card's thread, and not on The System's board (write_reply). */
+    if (carries && boards.find((b) => b.id === threads.get(on.thread)!.board)!.isSystem) return refuse(SYSTEM_BOARD);
     const account = me()!;
     settleBacks(account);
     if ((account.cards[card] ?? 0) < 1) return refuse(`you hold no "${card}" card; the Vending Machine sells them`);
@@ -3872,8 +3873,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const page = Math.min(last, Math.max(1, want));
       const range = core.acts(thread, (page - 1) * perPage + 1, page * perPage);
       /* A reply a play in force draws under its parent is left out of its own number's page (page_acts), and the number is named in `cut`. */
-      const cut = range.flatMap((a) => { const u = drawnBy(a.id); return u === undefined ? [] : [{ seq: a.seq!, parentSeq: acts.get(u.parent)!.seq! }]; });
-      const shownActs = range.filter((a) => drawnBy(a.id) === undefined);
+      const drawn = range.map((a) => [a, drawnBy(a.id)] as const);
+      const cut = drawn.flatMap(([a, u]) => (u === undefined ? [] : [{ seq: a.seq!, parentSeq: acts.get(u.parent)!.seq! }]));
+      const shownActs = drawn.filter(([, u]) => u === undefined).map(([a]) => a);
       /* The replies drawn under the page's posts, one level deep and one for each post, so a nested reply's marks, plays and author arrive with the page. */
       const onPage = new Set(shownActs.map((a) => a.id));
       const under = [...underPlays].filter(([play, u]) => onPage.has(u.parent) && !over(play))
