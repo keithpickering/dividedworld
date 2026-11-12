@@ -2,7 +2,7 @@ import { act, cleanup, render, screen, waitFor, within } from '@testing-library/
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { ReadFailure } from '../../engine/ui/data/api.ts';
-import { createFake } from '../../engine/ui/data/fake.ts';
+import { createFake, TEST_LINK } from '../../engine/ui/data/fake.ts';
 import { instance } from '../../instances/divided-world/index.ts';
 import { instanceUi } from '../../instances/divided-world/ui/index.ts';
 import { App, ESTIMATE_WAIT_MS, NO_MENU } from './App.tsx';
@@ -908,5 +908,58 @@ describe('the crossing', () => {
     expect(screens[0]!.querySelector('h1')).not.toHaveTextContent(/Settings/u);
     expect(screen.getAllByRole('main')).toHaveLength(1);
     await waitFor(() => expect(document.querySelectorAll('.kb-glass-screen')).toHaveLength(1), { timeout: 3000 });
+  });
+});
+
+/*
+ * The emailed link, through the real shell. The press changes the session's account, which starts the routed screen afresh (Shell, above);
+ * the screen's link in hand must outlive that, so "You are signed in as ..." shows and nothing moves on until Continue.
+ */
+describe('The emailed link, through the app', () => {
+  const linked = async (next: string | null) => {
+    const fake = createFake({ instance, settings: fallbackSettings });
+    seedDemo(fake);
+    await fake.signOut();
+    fake.seed.account('known', { email: 'known@example.test' });
+    await fake.requestCode('known@example.test', null, next);
+    return fake;
+  };
+
+  test('the press shows the signed-in sentence and moves on only at Continue', async () => {
+    const fake = await linked('/settings');
+    window.history.pushState(null, '', `/sign-in?next=%2Fsettings#token_hash=${TEST_LINK}`);
+    render(<App api={fake} />);
+    await screen.findByText('This link signs you in. It works once.');
+    await waitFor(() => expect(window.location.hash).toBe(''));
+    await userEvent.click(screen.getByRole('button', { name: /^Sign in$/u }));
+    expect(await screen.findByText('You are signed in as known@example.test.')).toBeInTheDocument();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(window.location.pathname).toBe('/sign-in');
+    expect(screen.getByText('You are signed in as known@example.test.')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    await waitFor(() => expect(window.location.pathname).toBe('/settings'));
+    expect(window.location.href).not.toContain(TEST_LINK);
+  });
+
+  test('a link left in hand never revives a panel on a later visit', async () => {
+    const fake = await linked(null);
+    window.history.pushState(null, '', `/sign-in#token_hash=${TEST_LINK}`);
+    render(<App api={fake} />);
+    await screen.findByText('This link signs you in. It works once.');
+    /* Leave for the board, then come back by the HUD's Sign in: the address has no fragment, and the old token is not what the page shows. */
+    await userEvent.click(screen.getByRole('link', { name: 'Back to the board' }));
+    /* The glass that left is held for its exit (and would be the same screen again if the move were undone in that time); the visit is a later one once it is gone. */
+    await waitFor(() => expect(Array.from(document.querySelectorAll<HTMLElement>('[data-kb-world]')).map((e) => e.dataset.kbWorld)).toEqual(['board']), { timeout: 5000 });
+    await userEvent.click(await within(await screen.findByRole('region', { name: 'Game HUD' })).findByRole('link', { name: 'Sign in' }));
+    expect(await screen.findByLabelText('Email address')).toBeInTheDocument();
+    expect(screen.queryByText('This link signs you in. It works once.')).toBeNull();
+  });
+
+  test('a signed-in player who opens /sign-in with no link is moved on at once', async () => {
+    const fake = createFake({ instance, settings: fallbackSettings });
+    seedDemo(fake);
+    window.history.pushState(null, '', '/sign-in?next=%2Fsettings');
+    render(<App api={fake} />);
+    await waitFor(() => expect(window.location.pathname).toBe('/settings'));
   });
 });

@@ -13,6 +13,7 @@ import { applyAppearance } from '../../engine/ui/appearance.ts';
 import { setTiltPreference } from '../../engine/ui/shine/tilt.ts';
 import { KayfaProvider } from '../../engine/ui/context.tsx';
 import { BoardScreen } from '../../engine/ui/board/Board.tsx';
+import { LinkHandKeeper } from '../../engine/ui/account/LinkHand.tsx';
 import { AccountGate } from '../../engine/ui/account/OpenAccount.tsx';
 import { ProfileScreen } from '../../engine/ui/profile/Profile.tsx';
 import { RecordScreen } from '../../engine/ui/profile/Record.tsx';
@@ -209,6 +210,8 @@ function Shell({ routes }: { readonly routes: readonly Route[] }) {
   }
   const content = (
     <AccountGate>
+      {/* The emailed link in hand is the sign-in page's alone, and outlives the screen starting afresh under the account it signed in. */}
+      <LinkHandKeeper />
       <Suspense fallback={<div aria-busy="true" />}>
         <Routes key={mountedFor.n} routes={routes} {...(surface ? { failures: GLASS_FAILURES } : {})} />
       </Suspense>

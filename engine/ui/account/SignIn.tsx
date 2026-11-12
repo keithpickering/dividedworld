@@ -22,7 +22,7 @@ import { PageHead } from '../glass/PageHead.tsx';
 import { ReachAPerson } from '../contact/Contact.tsx';
 import { addressOf, useLocation, useNavigate } from '../router.tsx';
 import { LinkPanel } from './LinkPanel.tsx';
-import { tokenHashOf } from './link.ts';
+import { holdLink, linkAtMount } from './link.ts';
 import { safeNext } from './next.ts';
 import { OpenAccount } from './OpenAccount.tsx';
 import { setWhy, useSession } from './session.ts';
@@ -64,9 +64,11 @@ export function SignInScreen({ mode }: { readonly mode: 'sign-in' | 'register' }
   const [sent, setSent] = useState<Sent | null>(null);
   const [asked, setAsked] = useState(0);
   const codeField = useRef<HTMLInputElement>(null);
-  /* The emailed link's token, held in memory only: the address loses its fragment as the screen stands (the query stays, `next` with it), so no history entry holds it. */
-  const [link, setLink] = useState(() => tokenHashOf(location.hash));
-  useEffect(() => { if (link !== null) navigate(addressOf(location), { replace: true }); }, []); // eslint-disable-line react-hooks/exhaustive-deps -- once, as the screen stands: the fragment is read at mount and later changes of the address must not run it again
+  /* The emailed link's token, held in memory only: the address loses its fragment as the screen stands (the query stays, `next` with it), so no history entry holds it. The module keeps it (and whether this page's press signed in) across the screen starting afresh under the account the press signed in (link.ts). */
+  const [start] = useState(() => linkAtMount(location.hash, location.path));
+  const [link, setLinkState] = useState<string | null>(start.tokenHash);
+  const setLink = (value: string | null) => { holdLink(value); setLinkState(value); };
+  useEffect(() => { if (link !== null && location.hash !== '') navigate(addressOf(location), { replace: true }); }, []); // eslint-disable-line react-hooks/exhaustive-deps -- once, as the screen stands: the fragment is read at mount and later changes of the address must not run it again
   /* A refusal of the link while a session already holds an account: the screen stays on the form with the sentence, and Stay signed in is the way on. */
   const [held, setHeld] = useState(false);
 
@@ -150,7 +152,7 @@ export function SignInScreen({ mode }: { readonly mode: 'sign-in' | 'register' }
         {title}
         <div className="kb-door">
           <CalmRegion className="kb-door-form">
-            <LinkPanel tokenHash={link} registering={registering} onAside={() => setLink(null)} onRefused={(text) => { setHeld(session.account !== null); setLink(null); setRefusal({ text, field: null }); }} />
+            <LinkPanel tokenHash={link} signedIn={start.pressed} registering={registering} onAside={() => setLink(null)} onRefused={(text) => { setHeld(session.account !== null); setLink(null); setRefusal({ text, field: null }); }} />
           </CalmRegion>
           {aside}
         </div>

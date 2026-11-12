@@ -10,22 +10,25 @@ import { useEffect, useRef, useState } from 'react';
 import { useKayfa } from '../context.tsx';
 import { LOST_ANSWER } from '../data/api.ts';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
+import { markPressed } from './link.ts';
 import { setWhy, useSession } from './session.ts';
 
 type Props = {
   readonly tokenHash: string;
+  /** The press already signed in: the screen started afresh under the account it signed in, and says so rather than asking again. */
+  readonly signedIn?: boolean;
   readonly registering: boolean;
   readonly onAside: () => void;
   readonly onRefused: (sentence: string) => void;
 };
 type Phase = 'ready' | 'done';
 
-export function LinkPanel({ tokenHash, registering, onAside, onRefused }: Props) {
+export function LinkPanel({ tokenHash, signedIn = false, registering, onAside, onRefused }: Props) {
   const { api } = useKayfa();
   const session = useSession();
   /* Whether a session was here before the press: it says who the link would sign out. Read once, as the panel stands. */
   const [wasSignedIn] = useState(() => session?.signedIn === true);
-  const [phase, setPhase] = useState<Phase>('ready');
+  const [phase, setPhase] = useState<Phase>(signedIn ? 'done' : 'ready');
   const [address, setAddress] = useState<string | null>(null);
   /* The address could not be read: the states then say their sentence without it. */
   const [unread, setUnread] = useState(false);
@@ -49,14 +52,17 @@ export function LinkPanel({ tokenHash, registering, onAside, onRefused }: Props)
     if (busy) return;
     setBusy(true);
     setLost(false);
+    /* Marked before the answer: it changes the session, and the screen may start afresh before this function resumes. */
+    markPressed(true);
     try {
       const r = await api.verifyLink(tokenHash);
-      if (!r.ok) { onRefused(r.error); return; }
-      if (!r.value.account) { setWhy(r.value.why ?? null); onAside(); return; }
+      if (!r.ok) { markPressed(false); onRefused(r.error); return; }
+      if (!r.value.account) { markPressed(false); setWhy(r.value.why ?? null); onAside(); return; }
       setAddress(null);
       setUnread(false);
       setPhase('done');
     } catch {
+      markPressed(false);
       setLost(true);
     } finally {
       setBusy(false);

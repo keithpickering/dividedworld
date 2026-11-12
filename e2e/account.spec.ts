@@ -1,8 +1,38 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 /* The demo account's address, and the code the in-memory backend accepts for any address. */
 const EMAIL = 'demo-player@example.test';
 const TEST_CODE = '123456';
+
+/* The fake's link (engine/ui/data/fake.ts's TEST_LINK): it signs in the address of the last code asked for. */
+const TEST_LINK = 'test-link-hash-0123456789_ABCDEF';
+
+/** Moves the app to `to` as a link does, with no load: a load starts the demo world over, signed in. */
+const goInApp = (page: Page, to: string) => page.evaluate((p) => { history.pushState(null, '', p); window.dispatchEvent(new PopStateEvent('popstate')); }, to);
+
+/**
+ * A reader of a thread signs out and asks for a code on `/sign-in?next=<the thread>`, then opens the emailed link as
+ * its button does. Returns the thread's path.
+ */
+async function openLinkFromThread(page: Page, hash: string): Promise<string> {
+  await page.goto('/b/general');
+  await page.getByRole('link', { name: 'Who keeps reacting with a thumbs up?', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: 'Your reply' })).toBeVisible();
+  const thread = new URL(page.url()).pathname;
+  await page.goto('/settings?section=account');
+  await page.getByRole('button', { name: 'Sign out' }).click();
+  await expect(page.getByRole('region', { name: 'Game HUD' }).getByRole('link', { name: 'Sign in' })).toBeVisible();
+  await goInApp(page, `/sign-in?next=${encodeURIComponent(thread)}`);
+  await page.getByLabel('Email address').fill(EMAIL);
+  await page.keyboard.press('Enter');
+  await expect(page.getByLabel('Code from the email')).toBeVisible();
+  expect(await page.evaluate(() => (globalThis as unknown as { __kbFake: { lastNext(): string | null } }).__kbFake.lastNext())).toBe(thread);
+  /* The page the email's button opens: the same query, and the link in the fragment. */
+  await goInApp(page, '/');
+  await expect(page.getByLabel('Code from the email')).toHaveCount(0);
+  await goInApp(page, `/sign-in?next=${encodeURIComponent(thread)}#token_hash=${hash}`);
+  return thread;
+}
 
 test('signs out, then signs in again with a code, by keyboard alone', async ({ page }) => {
   await page.goto('/settings?section=board');
@@ -71,4 +101,25 @@ test('on a phone the door\'s field rows are bare: the generic phone row\'s 16px 
     expect(pads.length, path).toBeGreaterThan(0);
     for (const pad of pads) expect(pad, path).toEqual(['0px', '0px']);
   }
+});
+
+test('the emailed link: the page shows the panel, the press signs in, and Continue lands on the thread the code was asked from', async ({ page }) => {
+  const thread = await openLinkFromThread(page, TEST_LINK);
+  await expect(page.getByText('This link signs you in. It works once.')).toBeVisible();
+  await expect(page.getByLabel('Email address')).toHaveCount(0);
+  /* Opening the page spent nothing, and no history entry holds the fragment. */
+  expect(new URL(page.url()).hash).toBe('');
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await expect(page.getByText(`You are signed in as ${EMAIL}.`)).toBeVisible();
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await expect(page).toHaveURL((u) => u.pathname === thread);
+  await expect(page.getByRole('textbox', { name: 'Your reply' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Game HUD' }).getByRole('combobox', { name: 'Swap mask' })).toBeVisible();
+});
+
+test('a refused link ends on the form with the sentence', async ({ page }) => {
+  await openLinkFromThread(page, 'not-the-link-0123456789_ABCDEF');
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await expect(page.getByRole('alert')).toHaveText(/that link does not work, or it has expired: ask for a new code/u);
+  await expect(page.getByLabel('Email address')).toBeVisible();
 });
