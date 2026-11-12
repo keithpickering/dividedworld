@@ -1100,22 +1100,16 @@ test('each refusal of a skim, a ride and a scored-as play comes back as a plain 
     ]);
   });
 
-  test('a surface card (a cast card) set face down is written by set_surface_card with its draft, and refused without a first draw', async () => {
-    const { dbs, calls } = pair({ instance_settings: rows(30), whoami, card_target_reach: { reach: 'post', act: target, kind: 'post', length: 10, body: 'hello', effects: [] }, set_surface_card: { id: 's', thread } });
-    const out = await runAction(dbs, walled, { action: 'setCard', card: 'wall', character: id, target, config: { color: 'red' }, first: dab });
-    assert.equal(out.status, 200, JSON.stringify(out.body));
-    const sent = JSON.parse(calls.find((c) => c.startsWith('service:set_surface_card:'))!.slice('service:set_surface_card:'.length));
-    assert.deepEqual({ draft: sent.draft, most: sent.most, most_live: sent.most_live, first: sent.first, who: sent.who }, { draft: { strokes: dab.strokes }, most: 3000, most_live: 7, first: undefined, who: whoami });
-    assert.equal(sent.draft_cells.length, 10000);
-    assert.ok(!calls.some((c) => c.includes('service:set_card:')));
-    const none = pair({ whoami });
-    const refused = await runAction(none.dbs, walled, { action: 'setCard', card: 'wall', character: id, target, config: {} });
-    assert.deepEqual(refused.body, { field: 'first', error: 'draw your tag first' });
-    assert.equal(none.calls.length, 0);
+  test('a surface card is cast face up and never set face down: a set is refused in decideSet\'s words and calls no RPC', async () => {
+    const { dbs, calls } = pair({ instance_settings: rows(30), whoami, card_target_reach: { reach: 'post', act: target, kind: 'post', length: 10, body: 'hello', effects: [] } });
+    const out = await runAction(dbs, walled, { action: 'setCard', card: 'wall', character: id, target, config: { color: 'red' } });
+    assert.equal(out.status, 400, JSON.stringify(out.body));
+    assert.match(JSON.stringify(out.body), /is cast face up and never set face down/);
+    assert.ok(!calls.some((c) => c.startsWith('service:set_card:') || c.startsWith('service:set_surface_card:')), calls.join(','));
   });
 
   test('a first draw the card refuses is refused on the field `first`, so the screen shows it on the drawing', async () => {
-    for (const action of ['playCard', 'setCard']) {
+    for (const action of ['playCard']) {
       const { dbs } = pair({ instance_settings: rows(30), whoami, card_target_reach: { reach: 'post', act: target, kind: 'post', length: 10, body: 'hello', effects: [] } });
       const out = await runAction(dbs, walled, { action, card: 'wall', character: id, target, config: { color: 'red' }, message: '', first: 'scribble' });
       assert.deepEqual({ status: out.status, body: out.body }, { status: 400, body: { field: 'first', error: 'draw some strokes' } }, action);

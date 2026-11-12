@@ -226,6 +226,19 @@ $$;
 create function pg_temp.board(slug text) returns uuid language sql as $$ select id from boards where boards.slug = board.slug $$;
 create function pg_temp.announcements() returns uuid language sql as $$ select (s.value #>> '{}')::uuid from settings s where s.key = 'systemAnnouncements' $$;
 
+-- A back set before 0343 (supabase/migrations/0343_surface_face_up.sql): a surface card is cast face up now and face_down_never_writes refuses its back, so these fixtures write the rows set_surface_card
+-- wrote then (the set Act, the back and its draft row) directly, with that trigger disabled in this transaction. They stand for backs set before 0343; what they test is that such a back still springs and is taken back.
+alter table face_down disable trigger face_down_never_writes;
+create function pg_temp.old_back(ann uuid, setter uuid, in_post uuid, draft jsonb, cells bit(10000), most integer default 4000) returns text language plpgsql as $$
+declare in_thread uuid; written uuid;
+begin
+  select a.thread into in_thread from acts a where a.id = in_post;
+  insert into acts (character, kind, thread, target_act_id, payload) values (setter, 'set', in_thread, in_post, '{}') returning id into written;
+  insert into face_down (play, account, card, config, post, thread, round, ends_at)
+  values (written, ann, 'sfwall', '{}', in_post, in_thread, (select count(*) from face_down f where f.post = in_post) + 1, now() + interval '1 day');
+  insert into face_down_draws (play, payload, cells, most, most_live) values (written, draft - 'cells', cells, most, 48);
+  return jsonb_build_object('id', written)::text;
+end $$;
 -- A wall as place_cast leaves one: a post by `author`, a play of the wall card on it, and its open surface.
 create function pg_temp.wall(author uuid, in_thread uuid, out post uuid, out play uuid) language plpgsql as $$
 begin
@@ -534,12 +547,10 @@ declare
   q1 uuid; q2 uuid; set1 uuid; set2 uuid; spring jsonb; struck uuid; got text;
 begin
   insert into card_ledger (account, card, kind, price) values (ann, 'sfwall', 'bought', 0), (ann, 'sfwall', 'bought', 0);
-  got := pg_temp.as_val(null, format('select set_surface_card(%L, %L, %L, %L, %L, 0, null, null, null, null, null, %L, %L, 4000, 48)::text', ann, 'sfwall', a, p1, '{}',
-    '{"strokes": [{"width": 0.01, "points": [[0.1, 0.1]]}]}'::jsonb, pg_temp.cells(0, 500)::text));
+  got := pg_temp.old_back(ann, a, p1, '{"strokes": [{"width": 0.01, "points": [[0.1, 0.1]]}]}'::jsonb, pg_temp.cells(0, 500));
   if got like 'ERROR:%' then raise exception 'a surface card is set face down with its draft: %', got; end if;
   set1 := (got::jsonb ->> 'id')::uuid;
-  got := pg_temp.as_val(null, format('select set_surface_card(%L, %L, %L, %L, %L, 0, null, null, null, null, null, %L, %L, 4000, 48)::text', ann, 'sfwall', a, p2, '{}',
-    '{"strokes": [{"width": 0.5, "points": [[0.1, 0.1]]}]}'::jsonb, pg_temp.cells(0, 4500)::text));
+  got := pg_temp.old_back(ann, a, p2, '{"strokes": [{"width": 0.5, "points": [[0.1, 0.1]]}]}'::jsonb, pg_temp.cells(0, 4500));
   if got like 'ERROR:%' then raise exception 'a draft over the limit is kept all the same: %', got; end if;
   set2 := (got::jsonb ->> 'id')::uuid;
   if (select count(*) from face_down_draws where play in (set1, set2)) is distinct from 2 then raise exception 'the drafts are kept in a private row beside the backs'; end if;
@@ -711,34 +722,22 @@ begin
   if (select payload ->> 'cells' from acts where target_act_id = w.play and kind = 'draw') is null then raise exception 'but the Act keeps its cells for rebuild_surface'; end if;
 end $$;
 
--- ---- 17. A face-down draft does not outlive its card ----
+-- ---- 17. A back taken back takes its draft with it ----
 do $$
 declare
   ann uuid := tests.account('sf-17-ann');
   a uuid := tests.character(ann, 'Sf Seventeen Ann');
-  t uuid := tests.thread('Sf seventeen'); p1 uuid := tests.post(a, t, 'To be taken back.'); p2 uuid := tests.post(a, t, 'To run out.'); p3 uuid := tests.post(a, t, 'Set after.'); p4 uuid := tests.post(a, t, 'Just ran out.');
-  set1 uuid; set2 uuid; set4 uuid; got text;
+  t uuid := tests.thread('Sf seventeen'); p1 uuid := tests.post(a, t, 'To be taken back.');
+  set1 uuid; got text;
   draft text := '{"strokes": [{"width": 0.01, "points": [[0.1, 0.1]]}]}';
 begin
   insert into card_ledger (account, card, kind, price) values (ann, 'sfwall', 'bought', 0), (ann, 'sfwall', 'bought', 0), (ann, 'sfwall', 'bought', 0);
-  got := pg_temp.as_val(null, format('select set_surface_card(%L, %L, %L, %L, %L, 0, null, null, null, null, null, %L, %L, 4000, 48)::text', ann, 'sfwall', a, p1, '{}', draft, pg_temp.cells(0, 10)::text));
+  got := pg_temp.old_back(ann, a, p1, draft::jsonb, pg_temp.cells(0, 10));
   set1 := (got::jsonb ->> 'id')::uuid;
   got := pg_temp.as_val(null, format('select take_back(%L, %L, %L)::text', ann, a, set1));
   if got like 'ERROR:%' then raise exception 'the back is taken back: %', got; end if;
   if exists (select 1 from face_down_draws where play = set1) then raise exception 'a taken-back card takes its draft with it'; end if;
-  -- A back that ran out writes nothing; the next surface card set sweeps the drafts of backs past their time.
-  insert into acts (character, kind, thread, target_act_id, payload) values (a, 'set', t, p2, '{}') returning id into set2;
-  insert into face_down (play, account, card, config, post, thread, round, ends_at) values (set2, ann, 'sfwall', '{}', p2, t, 9, now() - interval '1 hour');
-  insert into face_down_draws (play, payload, cells, most) values (set2, draft::jsonb, pg_temp.cells(0, 10), 4000);
-  -- A back that ran out seconds ago may be read by a spring in flight: its draft is swept only once the back has been over for a minute.
-  insert into acts (character, kind, thread, target_act_id, payload) values (a, 'set', t, p4, '{}') returning id into set4;
-  insert into face_down (play, account, card, config, post, thread, round, ends_at) values (set4, ann, 'sfwall', '{}', p4, t, 9, now() - interval '10 seconds');
-  insert into face_down_draws (play, payload, cells, most) values (set4, draft::jsonb, pg_temp.cells(0, 10), 4000);
-  got := pg_temp.as_val(null, format('select set_surface_card(%L, %L, %L, %L, %L, 0, null, null, null, null, null, %L, %L, 4000, 48)::text', ann, 'sfwall', a, p3, '{}', draft, pg_temp.cells(0, 10)::text));
-  if got like 'ERROR:%' then raise exception 'a card is set: %', got; end if;
-  if exists (select 1 from face_down_draws where play = set2) then raise exception 'the draft of a back past its time is swept'; end if;
-  if not exists (select 1 from face_down_draws where play = set4) then raise exception 'the draft of a back that ran out seconds ago is kept, for a spring in flight'; end if;
-  if (select count(*) from face_down_draws) is distinct from 2 then raise exception 'only the live back and the one just over keep their drafts'; end if;
+  -- A back that ran out keeps its draft row: set_surface_card swept those and is dropped (0343), and the row goes when face_down_draws does (the design, section 1).
 end $$;
 
 -- ---- 18. pool_thread names the live walls on the page it reads: play, card key and a few plain words about whose post it is on; nothing of an owner ----

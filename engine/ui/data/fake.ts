@@ -2110,14 +2110,14 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   }
 
   /** set_card (0142): a Move or another set card, decided by the card's rules (decideSet, whose catch and phrase the back keeps), then the author, the hand and the post's one back are the database's. */
-  function setCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, when?: SetConditions, first?: unknown): Answer<Act> {
-    const bad = request({ action: 'setCard', card, character, target, config, ...(when ? { when } : {}), ...(first === undefined ? {} : { first }) });
+  function setCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, when?: SetConditions): Answer<Act> {
+    const bad = request({ action: 'setCard', card, character, target, config, ...(when ? { when } : {}) });
     if (bad) return bad;
     const on = acts.get(target);
     if (!on) return refuse('there is no such post', 'target');
     const rules = instance.cards.find((c) => c.key === card)!;
     const text = (publicAct(on).currentPayload as { body?: unknown }).body;
-    const decided = decideSet(rules, settings, postTarget(on.id, on.kind as PostTarget['kind'], text), effectsOn(target), config, instance.cards, { ...(when ?? {}), first }, new Date(now()));
+    const decided = decideSet(rules, settings, postTarget(on.id, on.kind as PostTarget['kind'], text), effectsOn(target), config, instance.cards, when ?? {}, new Date(now()));
     if (!decided.ok) return refuse(decided.why, 'config');
     /* As set_card (0144) says it: a named id that is not a debuted character, one message for a missing and an undebuted one, by its place in the list. */
     const unknown = (decided.value.who?.characters ?? []).findIndex((id) => characters.get(id)?.debutedAt == null);
