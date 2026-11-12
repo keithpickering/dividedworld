@@ -35,6 +35,8 @@ export interface Feed {
   readonly summary: ThreadSummary | null;
   readonly firstPage: number;
   readonly lastPage: number;
+  /** The first number the loaded run covers (its first page's start): a number below it is on a page this screen is not showing. */
+  readonly start: number;
   /** The highest seq read from the server. */
   readonly baseEnd: number;
   /** The highest seq the shown run covers, numbers no Act answers to included. */
@@ -57,7 +59,7 @@ export interface Feed {
 
 export type FeedAction =
   /** `back`: what the thread showed and knew of when the reader left it for the glass, on the read Back opens. */
-  | { readonly type: 'loaded'; readonly summary: ThreadSummary; readonly firstPage: number; readonly lastPage: number; readonly acts: readonly Act[]; readonly tailLoaded: boolean; readonly through?: number; readonly back?: ThreadReturn | null; readonly cut?: readonly number[] }
+  | { readonly type: 'loaded'; readonly summary: ThreadSummary; readonly firstPage: number; readonly lastPage: number; readonly acts: readonly Act[]; readonly tailLoaded: boolean; readonly through?: number; readonly back?: ThreadReturn | null; readonly cut?: readonly number[]; readonly start?: number }
   | { readonly type: 'more'; readonly page: number; readonly acts: readonly Act[]; readonly tailLoaded: boolean; readonly through?: number; readonly cut?: readonly number[] }
   /** A play in force drew the Act with this number under a post: the number is left empty. */
   | { readonly type: 'cut'; readonly seq: number }
@@ -68,11 +70,17 @@ export type FeedAction =
   | { readonly type: 'release'; readonly slide: boolean; readonly force: boolean };
 
 export const emptyFeed: Feed = {
-  ready: false, summary: null, firstPage: 1, lastPage: 1, baseEnd: 0, through: 0, cut: new Set(), serverLast: 0, tailLoaded: false,
+  ready: false, summary: null, firstPage: 1, lastPage: 1, start: 1, baseEnd: 0, through: 0, cut: new Set(), serverLast: 0, tailLoaded: false,
   shown: new Map(), held: new Map(), slid: new Set(), knownLast: 0, newFrom: null,
 };
 
 const maxSeq = (acts: Iterable<Act>, from = 0) => { let m = from; for (const a of acts) if (a.seq !== null && a.seq > m) m = a.seq; return m; };
+
+/** Where a read's run starts when the read does not say: its lowest number, an Act's or a cut one; 1 for a read that holds none. */
+const firstOf = (acts: readonly Act[], cut: readonly number[] = []): number => {
+  const all = [...acts.flatMap((x) => (x.seq === null ? [] : [x.seq])), ...cut];
+  return all.length === 0 ? 1 : Math.min(...all);
+};
 
 /** The first number at or after `n` that is not cut: a cut number is empty on its page, so what follows it follows what came before it. */
 const stepOver = (cut: ReadonlySet<number>, n: number): number => { while (cut.has(n + 1)) n++; return n; };
@@ -122,7 +130,7 @@ export function feedReducer(f: Feed, a: FeedAction): Feed {
       if (back) newFrom = a.acts.some((x) => x.seq !== null && x.seq > back.shown) ? back.shown + 1 : knownLast > back.known ? back.known + 1 : null;
       else if (f.newFrom !== null) newFrom = f.newFrom > baseEnd ? f.newFrom : knownLast > baseEnd ? baseEnd + 1 : null;
       return {
-        ready: true, summary: a.summary, firstPage: a.firstPage, lastPage: a.lastPage, baseEnd, through: back ? 0 : a.through ?? 0, serverLast,
+        ready: true, summary: a.summary, firstPage: a.firstPage, lastPage: a.lastPage, start: a.start ?? firstOf(a.acts, a.cut), baseEnd, through: back ? 0 : a.through ?? 0, serverLast,
         tailLoaded: a.tailLoaded || baseEnd >= serverLast, shown, held, slid: new Set(), knownLast, newFrom, cut: new Set(a.cut ?? []),
       };
     }
@@ -175,7 +183,8 @@ export function feedReducer(f: Feed, a: FeedAction): Feed {
       const cut = new Set(f.cut);
       const was = cut.delete(act.seq);
       if (f.shown.has(act.id) || f.held.has(act.id)) return was ? { ...f, cut } : f;
-      /* Inside the run (cut numbers at its end included) the Act takes its number; at the tail it waits as a live Act does; on a page not read, its page has it. */
+      /* Inside the run (from its first number to its end, cut numbers at the end included) the Act takes its number; at the tail it waits as a live Act does; on a page not read, its page has it. */
+      if (act.seq < f.start) return was ? { ...f, cut } : f;
       if (act.seq <= shownEnd(f)) return { ...f, cut, shown: new Map(f.shown).set(act.id, act) };
       if (f.tailLoaded) return { ...f, cut, held: new Map(f.held).set(act.id, act), knownLast: Math.max(f.knownLast, act.seq) };
       return was ? { ...f, cut } : f;

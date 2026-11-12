@@ -88,7 +88,7 @@ export function ThreadScreen({ thread, doc }: { readonly thread: Id; readonly do
 function loadedFrom(page: ThreadPage, perPage: number, back: ThreadReturn | null): FeedAction {
   const { start, end } = pageRange(page.page, perPage);
   const ends = pageEndsThread(page.acts.length, { start, end }, page.thread.lastSeq);
-  return { type: 'loaded', summary: page.thread, firstPage: page.page, lastPage: page.page, acts: page.acts, tailLoaded: ends, through: ends ? page.thread.lastSeq : end, back, cut: page.cut.map((c) => c.seq) };
+  return { type: 'loaded', summary: page.thread, firstPage: page.page, lastPage: page.page, acts: page.acts, tailLoaded: ends, through: ends ? page.thread.lastSeq : end, back, start, cut: page.cut.map((c) => c.seq) };
 }
 
 const keyOf = (l: { query: URLSearchParams; hash: string }) => `${l.query.toString() ? `?${l.query.toString()}` : ''}${l.hash ? `#${l.hash}` : ''}`;
@@ -213,6 +213,15 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
    */
   const aboveOf = useRef(new Map<number, { readonly ticket: number; readonly ids: ReadonlySet<Id> }>());
   const tickets = useRef(0);
+  /* The same rule for the replies under posts: the ticket taken when an `under` event or a play's `card_end` was heard, by the play and by the reply's number. A read asked before it
+     saw the play as it was, and must not undo what the event said (un-nest a reply, or put it back after its play ended). */
+  const heardPlay = useRef(new Map<Id, number>());
+  const heardSeq = useRef(new Map<number, number>());
+  const heard = useCallback((play: Id, seq: number | null) => {
+    const at = ++tickets.current;
+    heardPlay.current.set(play, at);
+    if (seq !== null) heardSeq.current.set(seq, at);
+  }, []);
   /*
    * A page document taken into the stores: its authors, the plays on its posts and above them with their saved states, the player's releases
    * and card backs, the tallies, the player's own reactions and the threads spun from them, all ready to show, and each post's plays billed
@@ -248,18 +257,20 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
     /* The replies drawn under this page's posts are posts of the page, read with it: their reactions, spins and plays are the page's. A post of the page that no reply is drawn under now
        has none: its play ended, and the reply goes to its number. A number the page holds an Act for that the feed holds cut is the same end seen from its own page; a number it leaves
        empty is cut. */
-    for (const u of page.under) putNested(u.parent, u.play, u.act);
+    /* A read asked before an `under` or an end of a play that was heard since is older than it: what it says of that play, and of that number, is not taken. */
+    const stale = (play: Id | null, seq: number | null) => (play !== null && ticket < (heardPlay.current.get(play) ?? 0)) || (seq !== null && ticket < (heardSeq.current.get(seq) ?? 0));
+    for (const u of page.under) if (!stale(u.play, u.act.seq)) putNested(u.parent, u.play, u.act);
     const drawn = new Set(page.under.map((u) => u.parent));
     const onPage = new Set(page.acts.map((a) => a.id));
     const live = feedRef.current.ready;
     for (const [parent, under] of nested.current) {
-      if (!onPage.has(parent) || drawn.has(parent)) continue;
+      if (!onPage.has(parent) || drawn.has(parent) || stale(under.play, under.act.seq)) continue;
       dropNested(under.play);
       if (live) feedDispatch.current({ type: 'uncut', act: under.act });
     }
     if (live) {
-      for (const a of page.acts) if (a.seq !== null && feedRef.current.cut.has(a.seq)) feedDispatch.current({ type: 'uncut', act: a });
-      for (const c of page.cut) feedDispatch.current({ type: 'cut', seq: c.seq });
+      for (const a of page.acts) if (a.seq !== null && feedRef.current.cut.has(a.seq) && !stale(null, a.seq)) feedDispatch.current({ type: 'uncut', act: a });
+      for (const c of page.cut) if (!stale(null, c.seq)) feedDispatch.current({ type: 'cut', seq: c.seq });
     }
     const under = page.under.map((u) => u.act);
     const posts = [...page.acts, ...under].filter((a) => a.kind === 'post').map((a) => a.id);
@@ -326,6 +337,8 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
   /* How far the reader has read, as the document says; never lower than what was sent. */
   const sent = useRef(doc.reading[thread] ?? 0);
   const seen = useRef(0);
+  /* The numbers of the replies drawn under a post that have come into view: seeing one reads it only when it is the next unread number, so one seen early waits here until the reader reads up to it. */
+  const seenCut = useRef(new Set<number>());
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const flush = useCallback(() => {
     if (timer.current) { clearTimeout(timer.current); timer.current = null; }
@@ -348,17 +361,21 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
            (the numbers between, if any, all cut), so a reply on page one never marks the pages between as read. */
         if (kbCutSeq !== undefined) {
           const at = Number(kbCutSeq);
-          const read = Math.max(seen.current, sent.current);
-          /* The numbers cut that this screen knows: those of the pages it holds, and those of every reply it draws, whose own number may be on a page it does not. */
-          const drawn = new Set([...nested.current.values()].map((u) => u.act.seq));
-          let next = true;
-          for (let n = read + 1; n < at; n++) if (!feedRef.current.cut.has(n) && !drawn.has(n)) { next = false; break; }
-          if (Number.isFinite(at) && at > read && next) seen.current = at;
+          if (Number.isFinite(at)) seenCut.current.add(at);
           continue;
         }
         const seq = Number(kbSeq);
         if (Number.isFinite(seq) && seq > seen.current) seen.current = seq;
       }
+      /* Reads on over the replies the reader has seen: the numbers right after what is read that are replies cut in under a post and have come into view. A reply not seen holds the line, and so does
+         an ordinary post: only a number that is cut and seen is read for the reader, and the numbers cut that no reply on screen stands for (its post is on a page not loaded) are passed over only on the way to one that was. */
+      const drawn = new Set([...nested.current.values()].map((u) => u.act.seq));
+      let reach = 0;
+      for (let n = Math.max(seen.current, sent.current) + 1; feedRef.current.cut.has(n) || drawn.has(n); n++) {
+        if (drawn.has(n) && !seenCut.current.has(n)) break;
+        if (seenCut.current.has(n)) reach = n;
+      }
+      if (reach > seen.current) seen.current = reach;
       if (seen.current > sent.current && !timer.current) timer.current = setTimeout(flush, READ_DEBOUNCE_MS);
     });
   });
@@ -638,6 +655,7 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
           plays.add([a]);
           /* The end of a play that drew a reply under a post sets the reply on its number: the feed takes it where its number is shown. */
           const ended = typeof a.targetActId === 'string' ? dropNested(a.targetActId) : undefined;
+          if (typeof a.targetActId === 'string') heard(a.targetActId, ended?.act.seq ?? null);
           if (ended) dispatch({ type: 'uncut', act: ended.act });
           return;
         }
@@ -671,6 +689,7 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
         /* The reply is drawn under its post and never at the tail: it is heard on this event alone, never as an Act, and its number is left empty. */
         void ensurePeople([a.character]).then(() => {
           if (plays.get(parent).plays.some((p) => p.id === play && p.reversed)) { dispatch({ type: 'live', act: a }); return; }
+          heard(play, a.seq);
           putNested(parent, play, a);
           if (a.seq !== null) dispatch({ type: 'cut', seq: a.seq });
           const at = feedRef.current.shown.get(parent)?.seq;
@@ -703,7 +722,7 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
     };
     const off = api.subscribeThread(thread, listener);
     return () => { off(); joined.current.thread = false; };
-  }, [api, thread, ensurePeople, tallies, plays, effects, ui.copy.staffWord, joinedAt, nestedBy, putNested, dropNested]);
+  }, [api, thread, ensurePeople, tallies, plays, effects, ui.copy.staffWord, joinedAt, nestedBy, putNested, dropNested, heard]);
 
   /* A play beyond a post is announced on `reach`, which every signed-in page hears, since it is played from a post in some other thread
      as often as this one (a character's) and on The System's announcements thread (a board's). This page keeps the plays whose target it
@@ -797,7 +816,8 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
   );
   const shown = useMemo(() => ordered(feed.shown), [feed.shown]);
   const quotableAt = useCallback((seq: number) => {
-    const a = shown.find((x) => x.seq === seq);
+    /* A reply drawn under a post is a post of the screen as any, found by its own number. */
+    const a = shown.find((x) => x.seq === seq) ?? [...nested.current.values()].find((u) => u.act.seq === seq)?.act;
     /* A post under a live no-quote offers nothing to quote: read from the plays as they are when the selection is made. */
     return a && (a.kind === 'post' || a.kind === 'spin') && !quoteStopped(plays.get(a.id).plays, instance) ? a : undefined;
   }, [shown, plays, instance]);
@@ -871,6 +891,11 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
   /* The board's name for the crumb: the page's own board, or the frame's list of boards (boot's) by the thread's board. Neither known, the crumb leaves it out. */
   const crumbBoard = doc.board ?? boot?.boards.find((b) => b.id === summary.board) ?? null;
 
+  /* "Jump to latest" leads to the last number that is an ordinary post: a cut number is a reply drawn under a post elsewhere, and the page of its number has no post of it. Known cuts are the feed's and those of the replies drawn. */
+  const drawnSeqs = new Set([...nested.current.values()].map((u) => u.act.seq));
+  let newest = feed.knownLast;
+  while (newest > 1 && (feed.cut.has(newest) || drawnSeqs.has(newest))) newest--;
+
   const pager = (where: 'top' | 'bottom') => lastPage > 1 && (
     <nav className="kb-pager kb-small" aria-label={`Pages, ${where}`}>
       <span className="kb-pager-where">{feed.lastPage > feed.firstPage ? `Pages ${feed.firstPage} to ${feed.lastPage}` : `Page ${feed.firstPage}`} of {lastPage}</span>
@@ -879,7 +904,7 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
         : p === feed.firstPage && feed.lastPage === feed.firstPage
           ? <span key={p} className="kb-pager-here" aria-current="page">{p}</span>
           : <Link key={p} to={threadHref(thread, p)} aria-label={`Page ${p}`}>{p}</Link>)}
-      <Link to={threadHref(thread, lastPage, feed.knownLast)} onClick={() => dispatch({ type: 'release', slide: false, force: true })}>Jump to latest</Link>
+      <Link to={threadHref(thread, pageOf(newest, P), newest)} onClick={() => dispatch({ type: 'release', slide: false, force: true })}>Jump to latest</Link>
     </nav>
   );
 

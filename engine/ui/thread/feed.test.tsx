@@ -176,4 +176,16 @@ describe('a number whose Act is drawn under a post elsewhere', () => {
     expect(seqs(un.shown)).toEqual(run(1, 20).map((a) => a.seq));
     expect(un.held.size).toBe(0);
   });
+  it('on a later page, a lower number is another page\'s: only the number is let go, the run keeps its own', () => {
+    /* The reader is on page 3 of a 45-post thread (41 to 45); reply 12, cut under post 3, has its play end. */
+    const f = reduce(loaded({ acts: run(41, 45), last: 45, page: 3 }), { type: 'cut', seq: 12 });
+    const un = feedReducer(f, { type: 'uncut', act: act(12) });
+    expect(un.cut.has(12)).toBe(false);
+    expect(seqs(un.shown)).toEqual(run(41, 45).map((a) => a.seq));
+    expect(un.held.size).toBe(0);
+  });
+  it('a number the page starts with and leaves empty is inside the run: the Act takes it', () => {
+    const f = reduce({ ...loaded({ acts: run(42, 45), last: 45, page: 3 }), start: 41, cut: [41] } as FeedAction);
+    expect(seqs(feedReducer(f, { type: 'uncut', act: act(41) }).shown)).toEqual(run(41, 45).map((a) => a.seq));
+  });
 });
