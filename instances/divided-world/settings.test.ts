@@ -1,3 +1,4 @@
+import { laughTrack } from './cards/laugh-track.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { instanceProblems, settingsProblems } from '../../engine/rules/instance.ts';
@@ -175,4 +176,10 @@ test('hints: the words claim no more than the threshold proves (a lead is "most"
       assert.doesNotMatch(w.line + ' ' + w.detail, /\b(nobody|no one|everyone|half the|all of)\b/i, `${pattern} (card ${card}) overstates what fired it: ${w.detail}`);
     }
   }
+});
+
+test('Laugh Track\'s band, airtime and hold are set, inside their bounds', () => {
+  const held = defaults.cardSettings;
+  assert.deepEqual([held['laughTrack.band'], held['laughTrack.airMs'], held['laughTrack.holdMs']], [34, 1200, 4000]);
+  for (const r of laughTrack.screenReads as readonly { key: string; min: number; max: number }[]) assert.ok(held[r.key]! >= r.min! && held[r.key]! <= r.max!, r.key);
 });

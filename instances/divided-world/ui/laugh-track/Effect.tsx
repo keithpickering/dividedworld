@@ -1,14 +1,16 @@
 /**
- * Laugh Track's effect on a post (docs/plans/2026-11-11-laugh-track-design.md, sections 6 and 8; plan Task 13). The audience is heard
- * and captioned as a reader reaches each cued phrase; the words stay where they were, and what the reader reads is never sent or saved.
+ * Laugh Track's effect on a post (docs/plans/2026-11-11-laugh-track-design.md, sections 6 and 8; plan Task 13; when a place fires and how it
+ * sounds are docs/plans/2026-11-12-laugh-track-band-design.md, sections 1 to 3). The audience is heard
+ * and captioned as a reader reads each cued phrase, which is to say once a place has rested in the reading band; the words stay where they were, and what the reader reads is never sent or saved.
  *
  * Each place (a cue's phrase found by `placesOf`, the engine's one matcher, over the post's visible text) is a `wrap` run of a `TextLayer`,
  * drawn as `span.dw-lt-cue`. Before its place fires nothing marks it, so the joke is not telegraphed. Once it fires the piece carries the
  * class `dw-lt-fired`, a dotted underline in its flavor ink (a `text-decoration`, so no word moves), and its first piece is a button, named by its own visible words and then "Replay: the audience boos" (WCAG 2.5.3, Label in Name), that
  * replays the take (hover with a mouse, focus, a press, Enter or Space).
  *
- * The page's watcher (watch.ts) says when a place fires and holds the page's audience, its murmurs: this effect only registers each place
- * with it, hands it the way to make a kind's loop, and plays the place's take. A take is picked from the play, its seed and the place
+ * The page's watcher (watch.ts) says when a place fires: a place fires once it has been in the reading band for the dwell, one at a time in the
+ * page's order with airtime between (a place that leaves the band keeps its turn for a while), never because a pointer is over it. It holds the page's audience, its murmurs: this effect only registers each place
+ * with it, hands it the way to make a kind's loop, and plays the place's take, answering the watcher with the play's own answer (the take's length). A take is picked from the play, its seed and the place
  * (`seeded`), so every screen picks the same, and it is one of three.
  *
  * Fired places are this visit's own state: nothing is saved or sent, and nothing here reads who wrote the post or who cast the card
@@ -35,7 +37,7 @@ import { forgetVoice, register, type Screen, type Unregister } from './watch.ts'
 import './laugh-track.css';
 
 /** The numbers the screens read from the card's settings when the instance has not set them (laugh-track.ts `screenReads`). */
-const DEFAULTS = { line: 40, dwellMs: 400, reachRem: 12, murmurMost: 35, fadeMs: 250 } as const;
+const DEFAULTS = { line: 40, dwellMs: 400, reachRem: 12, murmurMost: 35, fadeMs: 250, band: 34, airMs: 1200, holdMs: 4000 } as const;
 /** The loop that builds before each kind of hit, by sound. */
 const LOOPS: Readonly<Record<Sound, string>> = { laugh: 'laugh-track.titter', cheer: 'laugh-track.ooh', boo: 'laugh-track.grumble' };
 const VERBS: Readonly<Record<Sound, string>> = { laugh: 'laughs', cheer: 'cheers', boo: 'boos' };
@@ -110,6 +112,7 @@ function Live({ post, plays, show, met, children }: EffectProps) {
   const screen = useMemo<Screen>(() => ({
     line: cards['laughTrack.line'] ?? DEFAULTS.line, dwellMs: cards['laughTrack.dwellMs'] ?? DEFAULTS.dwellMs, reachRem: cards['laughTrack.reachRem'] ?? DEFAULTS.reachRem,
     murmurMost: cards['laughTrack.murmurMost'] ?? DEFAULTS.murmurMost, fadeMs: cards['laughTrack.fadeMs'] ?? DEFAULTS.fadeMs,
+    band: cards['laughTrack.band'] ?? DEFAULTS.band, airMs: cards['laughTrack.airMs'] ?? DEFAULTS.airMs, holdMs: cards['laughTrack.holdMs'] ?? DEFAULTS.holdMs,
   }), [cards]);
   /* The places that have fired this visit, and the first piece drawn of each (its button): this screen's own state, never saved or sent. */
   const [fired, setFired] = useState<ReadonlySet<string>>(() => new Set());
@@ -123,19 +126,22 @@ function Live({ post, plays, show, met, children }: EffectProps) {
   const metOnce = useRef(false);
   const lastPlay = useRef<Record<string, number>>({});
 
-  const replay = useCallback((spot: Spot, opts?: { fadeMs: number }) => {
+  /* A first fire and a replay play alike: the take fades in over the one before it and tails off over its last `fadeMs`. The answer is the play's own, which the watcher reads for the take's length. */
+  const replay = useCallback((spot: Spot) => {
     const at = Date.now();
-    if (at - (lastPlay.current[spot.key] ?? -Infinity) < SAME_GESTURE_MS) return;
+    if (at - (lastPlay.current[spot.key] ?? -Infinity) < SAME_GESTURE_MS) return undefined;
     lastPlay.current[spot.key] = at;
-    void now.current.sound.play(spot.take, { group: 'audience', ...opts });
+    const { fadeMs } = now.current.screen;
+    return now.current.sound.play(spot.take, { group: 'audience', fadeMs, tailMs: fadeMs });
   }, []);
 
   const fire = useCallback((spot: Spot) => {
-    if (firedNow.current.has(spot.key)) return;
+    if (firedNow.current.has(spot.key)) return undefined;
     firedNow.current = new Set(firedNow.current).add(spot.key);
     setFired(firedNow.current);
-    replay(spot, { fadeMs: now.current.screen.fadeMs });
+    const played = replay(spot);
     if (!metOnce.current) { metOnce.current = true; now.current.met(); }
+    return played;
   }, [replay]);
 
   /* The page's watcher holds a registration for each place drawn and not yet fired. */
@@ -199,14 +205,14 @@ function Live({ post, plays, show, met, children }: EffectProps) {
 
   const runs = useMemo<TextRun[]>(() => spots.map((spot) => {
     const done = fired.has(spot.key);
-    const press = (e: KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); replay(spot); } };
+    const press = (e: KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); void replay(spot); } };
     return {
       start: spot.start, end: spot.end, key: `lt:${spot.key}`, z: Z, mode: 'wrap',
       render: ({ text, key }) => !done ? pieceOf(spot, key, text) : pieceOf(spot, key, text, {
         className: 'dw-lt-cue dw-lt-fired',
-        onPointerEnter: (e: { pointerType: string }) => { if (e.pointerType === 'mouse') replay(spot); },
-        onFocus: () => { replay(spot); },
-        onClick: () => { replay(spot); },
+        onPointerEnter: (e: { pointerType: string }) => { if (e.pointerType === 'mouse') void replay(spot); },
+        onFocus: () => { void replay(spot); },
+        onClick: () => { void replay(spot); },
         onKeyDown: press,
         ...(first[spot.key] === key ? { tabIndex: 0, role: 'button', 'aria-label': `${text}. Replay: the audience ${VERBS[spot.sound]}` } : null),
       }),
