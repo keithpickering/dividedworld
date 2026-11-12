@@ -26,6 +26,8 @@ const hub = vi.hoisted(() => ({
   mode: 'fake' as 'fake' | 'real',
   specs: [] as unknown[],
   gone: new Set<unknown>(),
+  forgets: 0,
+  gameOn: false,
   offs: [] as { (): void; refresh: () => void }[],
   sound: null as null | { play: (key: string, o?: unknown) => Promise<null>; loop: (key: string, o: unknown) => { setGain: (g: number) => void; stop: (f: number) => void }; caption: (key: string) => void },
 }));
@@ -35,6 +37,7 @@ vi.mock('./watch.ts', async (original) => {
   const actual = await original<typeof import('./watch.ts')>();
   return {
     ...actual,
+    forgetVoice: () => { hub.forgets++; actual.forgetVoice(); },
     register: (spec: PlaceSpec) => {
       if (hub.mode === 'real') return actual.register(spec);
       hub.specs.push(spec);
@@ -44,6 +47,8 @@ vi.mock('./watch.ts', async (original) => {
     },
   };
 });
+/* The account's game-sound choice, set by the test. */
+vi.mock('../../../../engine/ui/audio/useGameSound.ts', () => ({ useGameSound: () => ({ on: hub.gameOn, set: () => {} }) }));
 /* The sound: a fake the test reads, or the real hook where `hub.sound` is null. */
 vi.mock('../../../../engine/ui/audio/sound.ts', async (original) => {
   const actual = await original<typeof import('../../../../engine/ui/audio/sound.ts')>();
@@ -105,7 +110,7 @@ const fakeSoundHub = () => {
 let heard: ReturnType<typeof fakeSoundHub>;
 
 beforeEach(() => {
-  hub.mode = 'fake'; hub.specs = []; hub.offs = []; hub.gone = new Set();
+  hub.mode = 'fake'; hub.specs = []; hub.offs = []; hub.gone = new Set(); hub.forgets = 0; hub.gameOn = false;
   heard = fakeSoundHub();
   hub.sound = heard as unknown as typeof hub.sound;
 });
@@ -195,6 +200,18 @@ describe('Laugh Track: a replay', () => {
     again(() => { fireEvent.click(p!); });
     again(() => { fireEvent.keyDown(p!, { key: 'Enter' }); });
     again(() => { fireEvent.keyDown(p!, { key: ' ' }); });
+  });
+
+  test('Enter and Space on a fired place are default-prevented, so a Space does not scroll the page', () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    mount();
+    fire(0);
+    const [p] = pieces();
+    /* fireEvent returns false when a handler called preventDefault. */
+    expect(fireEvent.keyDown(p!, { key: ' ' })).toBe(false);
+    vi.setSystemTime(Date.now() + 1000);
+    expect(fireEvent.keyDown(p!, { key: 'Enter' })).toBe(false);
+    expect(fireEvent.keyDown(p!, { key: 'a' })).toBe(true);
   });
 
   test('a touch that only brushes a place does not replay it, and the events of one gesture play one take', () => {
@@ -288,6 +305,21 @@ describe('Laugh Track: with Game sounds off', () => {
     mount({ sounds: true });
     await act(async () => { (hub.specs[0] as PlaceSpec).fire(); await Promise.resolve(); await Promise.resolve(); });
     expect(captions.current()).toMatchObject({ text: 'The audience boos' });
+  });
+});
+
+describe('Laugh Track: Game sounds toggled mid-page', () => {
+  test('the watcher is told when the account\'s game sound changes, and not on mount', () => {
+    const m = mount();
+    expect(hub.forgets).toBe(0);
+    hub.gameOn = true;
+    m.edit(BODY + ' ');
+    expect(hub.forgets).toBe(1);
+    m.edit(BODY + '  ');
+    expect(hub.forgets).toBe(1);
+    hub.gameOn = false;
+    m.edit(BODY + '   ');
+    expect(hub.forgets).toBe(2);
   });
 });
 

@@ -1,7 +1,7 @@
 /**
  * The page's one watcher for Laugh Track (docs/plans/2026-11-11-laugh-track-design.md, sections 6 and 8; plan Task 13). Every cued place
  * on the page, of every post, registers here, and the page holds ONE `IntersectionObserver` (which places are near the viewport), ONE
- * passive scroll listener and ONE pointermove listener (a mouse only), however many posts and places there are. Forty posts of thirty
+ * passive scroll listener, ONE pointermove listener (a mouse only) and ONE resize listener, however many posts and places there are. Forty posts of thirty
  * places cost exactly that, and a still page costs no frame.
  *
  * Frames (`requestAnimationFrame`) run only while the page scrolls, a mouse moves, or a place rests on the line waiting out its dwell, and
@@ -62,8 +62,11 @@ let frame: number | null = null;
 let pointer: Point | null = null;
 let rem = 16;
 let screen: Screen | null = null;
+/** How many registered places have not fired: kept, so no frame and no unregister scans every place to ask. */
+let unfired = 0;
 
-const anyUnfired = (): boolean => [...places].some((p) => !p.fired);
+/** What the watcher holds, for a test to look inside. */
+export const __inspect = () => ({ places: places.size, elements: byElement.size, near: near.size, unfired, murmuring: murmuring !== null, listening: observer !== null });
 
 /** Lets the page's loop go with the fade; nothing is left to leak. */
 function hush(fadeMs?: number): void {
@@ -75,6 +78,19 @@ function hush(fadeMs?: number): void {
 }
 
 function onScroll(): void { wake(); }
+/** The root font size, and so the reach in px, can change with the window (zoom, a text-size setting): read again, the observer's margin rebuilt if it moved. */
+function onResize(): void {
+  if (!screen) return;
+  const next = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+  if (next !== rem) {
+    rem = next;
+    const old = observer;
+    observer = makeObserver(screen);
+    for (const place of places) if (!place.fired) for (const e of place.watched) observer.observe(e);
+    old?.disconnect();
+  }
+  wake();
+}
 function onPointer(e: unknown): void {
   const p = e as { pointerType?: string; clientX: number; clientY: number };
   if (p.pointerType !== 'mouse') return;
@@ -82,10 +98,8 @@ function onPointer(e: unknown): void {
   wake();
 }
 
-function start(first: Screen): void {
-  screen = first;
-  rem = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
-  observer = new IntersectionObserver((entries) => {
+function makeObserver(first: Screen): IntersectionObserver {
+  return new IntersectionObserver((entries) => {
     for (const e of entries) {
       const place = byElement.get(e.target);
       if (!place) continue;
@@ -94,6 +108,13 @@ function start(first: Screen): void {
     }
     wake();
   }, { rootMargin: `${first.reachRem * rem}px 0px` });
+}
+
+function start(first: Screen): void {
+  screen = first;
+  rem = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+  observer = makeObserver(first);
+  window.addEventListener('resize', onResize, { passive: true });
   /* The scroll of any scroller on the page, not the window's alone: it does not bubble, so it is captured. */
   document.addEventListener('scroll', onScroll, { passive: true, capture: true });
   document.addEventListener('pointermove', onPointer, { passive: true });
@@ -102,11 +123,14 @@ function start(first: Screen): void {
 function stop(): void {
   document.removeEventListener('scroll', onScroll, { capture: true } as EventListenerOptions);
   document.removeEventListener('pointermove', onPointer);
+  window.removeEventListener('resize', onResize);
   observer?.disconnect();
   observer = null;
   if (frame !== null) cancelAnimationFrame(frame);
   frame = null; pointer = null; screen = null;
   near.clear();
+  byElement.clear();
+  unfired = 0;
 }
 
 function wake(): void {
@@ -123,7 +147,7 @@ function boxes(place: Place): Rect[] {
 
 /** The page's one loop: the nearest unfired place's kind, at its gain; none near sets the gain to 0, and none unfired lets it go. */
 function murmur(best: { gain: number; place: Place } | null): void {
-  if (!anyUnfired()) { hush(); return; }
+  if (unfired === 0) { hush(); return; }
   if (!best || best.gain <= 0) { if (murmuring && murmuring.gain !== 0) { murmuring.voice.setGain(0); murmuring.gain = 0; } return; }
   const { gain, place } = best;
   const kind = place.spec.kind;
@@ -153,16 +177,18 @@ function tick(now: number): void {
   let fadeMs: number | null = null;
   for (const place of due) {
     place.fired = true;
+    unfired--;
     place.since = null;
     near.delete(place);
     measured.delete(place);
-    if (observer) for (const e of place.watched) observer.unobserve(e);
+    for (const e of place.watched) { observer?.unobserve(e); byElement.delete(e); }
     place.watched = new Set();
+    place.seen.clear();
     fadeMs = place.spec.screen.fadeMs;
     place.spec.fire();
   }
   /* A fire fades the murmur over the fade, under the take, and makes no loop in its frame; the next frame with a place near makes a fresh one. */
-  if (fadeMs !== null) { hush(fadeMs); if (!anyUnfired()) return; }
+  if (fadeMs !== null) { hush(fadeMs); if (unfired === 0) return; }
   else {
     let best: { gain: number; place: Place } | null = null;
     for (const [place, rects] of measured) {
@@ -177,6 +203,7 @@ function tick(now: number): void {
 }
 
 function observe(place: Place): void {
+  if (place.fired) return;
   const now = new Set(Array.from(place.spec.els()));
   for (const e of place.watched) if (!now.has(e)) { observer?.unobserve(e); byElement.delete(e); place.seen.delete(e); }
   for (const e of now) if (!place.watched.has(e)) { byElement.set(e, place); observer?.observe(e); }
@@ -191,15 +218,27 @@ export function register(spec: PlaceSpec): Unregister {
   if (places.size === 0) start(spec.screen);
   const place: Place = { spec, seen: new Set(), watched: new Set(), fired: false, since: null };
   places.add(place);
+  unfired++;
   observe(place);
   const off = (() => {
     if (!places.delete(place)) return;
+    if (!place.fired) unfired--;
     for (const e of place.watched) { observer?.unobserve(e); byElement.delete(e); }
     near.delete(place);
     if (places.size === 0) { hush(); stop(); return; }
-    if (!anyUnfired()) hush();
+    if (unfired === 0) hush();
     wake();
   }) as Unregister;
   off.refresh = () => { if (places.has(place)) observe(place); };
   return off;
+}
+
+/**
+ * Game sounds were switched off or on: the engine's mixer ends a loop when its bus goes off, and the handle does not say so, so the page's
+ * loop is let go (its caption released) and the next frame with a place near makes a fresh one, which sounds if the bus is on and is
+ * captioned by its gain alone if it is not.
+ */
+export function forgetVoice(): void {
+  hush(0);
+  wake();
 }

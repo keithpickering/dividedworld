@@ -31,7 +31,7 @@ import type { CardPlay, CardView, EffectProps } from '../../../../engine/ui/card
 import { useKayfa } from '../../../../engine/ui/context.tsx';
 import { placesOf, type Cue, type Sound } from '../../cards/laugh-track.ts';
 import { seeded } from '../seeded.ts';
-import { register, type Screen, type Unregister } from './watch.ts';
+import { forgetVoice, register, type Screen, type Unregister } from './watch.ts';
 import './laugh-track.css';
 
 /** The numbers the screens read from the card's settings when the instance has not set them (laugh-track.ts `screenReads`). */
@@ -170,6 +170,14 @@ function Live({ post, plays, show, met, children }: EffectProps) {
     watch.observe(el, { childList: true, subtree: true });
     return () => { watch.disconnect(); };
   }); // eslint-disable-line react-hooks/exhaustive-deps
+  /* Game sounds switched off or on: the mixer ends a loop whose bus went off and its handle does not say so, so the watcher is told to
+     let its loop go and make a fresh one at the next near frame (the first render is not a change). */
+  const soundOn = useRef(gameSound.on);
+  useEffect(() => {
+    if (soundOn.current === gameSound.on) return;
+    soundOn.current = gameSound.on;
+    forgetVoice();
+  }, [gameSound.on]);
   /* The post going lets every place go; the watcher stops a kind's loop with its last place, which is how no held caption outlives the post. */
   useEffect(() => () => {
     for (const off of registered.current.values()) off();

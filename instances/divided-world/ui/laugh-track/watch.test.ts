@@ -1,12 +1,12 @@
 /**
  * The page's one watcher (docs/plans/2026-11-11-laugh-track-plan.md, Task 13), over a fake observer, fake frames and fake listeners, under
  * plain node: a place resting on the line for the dwell fires once and one flung past does not; the nearest place of a kind, on whichever
- * post, wins its kind's murmur; the page holds one observer and two listeners however many places it has; frames run only while something
+ * post, wins its kind's murmur; the page holds one observer, a scroll, a pointermove and a resize listener however many places it has; frames run only while something
  * moves or waits; and the loops stop when the last place of a kind goes.
  */
 import { afterEach, beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { register, type PlaceSpec, type Voice } from './watch.ts';
+import { __inspect, forgetVoice, register, type PlaceSpec, type Voice } from './watch.ts';
 
 type Rect = { top: number; bottom: number; left: number; right: number };
 const rect = (top: number, bottom = top + 20): Rect => ({ top, bottom, left: 10, right: 90 });
@@ -27,6 +27,7 @@ class FakeObserver {
 }
 
 let frames: ((t: number) => void)[];
+let fontSize = '16px';
 let listeners: Map<string, Set<(e: unknown) => void>>;
 const step = (t: number) => { const run = frames; frames = []; for (const f of run) f(t); };
 const emit = (type: string, e: unknown = {}) => { for (const f of [...(listeners.get(type) ?? [])]) f(e); };
@@ -36,13 +37,17 @@ const saved = { ...globalThis } as Record<string, unknown>;
 let registered: (() => void)[] = [];
 
 beforeEach(() => {
-  frames = []; listeners = new Map(); FakeObserver.all = []; current = null;
+  frames = []; listeners = new Map(); FakeObserver.all = []; current = null; fontSize = '16px';
   const g = globalThis as unknown as Record<string, unknown>;
   g.IntersectionObserver = FakeObserver;
   g.requestAnimationFrame = (f: (t: number) => void) => { frames.push(f); return frames.length; };
   g.cancelAnimationFrame = () => { frames = []; };
-  g.window = { innerHeight: 900 };
-  g.getComputedStyle = () => ({ fontSize: '16px' });
+  g.window = {
+    innerHeight: 900,
+    addEventListener(type: string, f: (e: unknown) => void) { (listeners.get(type) ?? listeners.set(type, new Set()).get(type)!).add(f); },
+    removeEventListener(type: string, f: (e: unknown) => void) { listeners.get(type)?.delete(f); },
+  };
+  g.getComputedStyle = () => ({ fontSize });
   g.document = {
     documentElement: { style: { getPropertyValue: () => '76px' } },
     addEventListener(type: string, f: (e: unknown) => void) { (listeners.get(type) ?? listeners.set(type, new Set()).get(type)!).add(f); },
@@ -209,18 +214,37 @@ test('two posts share the one voice: one going leaves it, and the last one stops
   assert.deepEqual(v.stops, [250]);
 });
 
-test('forty posts of thirty places cost one observer and two listeners, and no frame while the page is still', () => {
+test('a busy page: 1,200 places cost one observer and three listeners, no frame while still, and a frame measures only the places near', () => {
   const offs: (() => void)[] = [];
   const log = made();
-  for (let post = 0; post < 40; post++) for (let i = 0; i < 30; i++) offs.push(register({ els: () => [el(rect(2000 + post * 1000 + i * 30))] as unknown as Element[], kind: 'laugh', screen: SCREEN, voice: () => ({ setGain() {}, stop() {} }), fire: () => { log.fires++; } }));
+  let nearMeasured = 0;
+  const els: { getClientRects(): Rect[] }[] = [];
+  for (let post = 0; post < 40; post++) for (let i = 0; i < 30; i++) {
+    const n = post * 30 + i;
+    const isNear = n < 6;
+    /* A far place's box is never asked for: measuring one is a failure. */
+    const e = { getClientRects(): Rect[] { if (!isNear) throw new Error(`place ${n} is far and was measured`); nearMeasured++; return [rect(300 + n * 30)]; } };
+    els.push(e);
+    offs.push(register({ els: () => [e] as unknown as Element[], kind: 'laugh', screen: SCREEN, voice: () => ({ setGain() {}, stop() {} }), fire: () => { log.fires++; } }));
+    registered.push(offs.at(-1)!);
+  }
   assert.equal(FakeObserver.all.length, 1);
-  assert.equal(count(), 2);
-  assert.deepEqual([...listeners.keys()].sort(), ['pointermove', 'scroll']);
+  assert.equal(count(), 3);
+  assert.deepEqual([...listeners.keys()].sort(), ['pointermove', 'resize', 'scroll']);
   assert.equal(FakeObserver.all[0]!.options.rootMargin, '192px 0px');
+  assert.equal(__inspect().unfired, 1200);
+  assert.equal(frames.length, 0, 'nothing is near, so nothing is looked at');
+  for (let n = 0; n < 6; n++) FakeObserver.all[0]!.see(els[n]);
+  step(1000);
+  assert.equal(nearMeasured, 6, 'one frame measures the six near places and no other');
   while (frames.length) step(1000);
-  assert.equal(frames.length, 0, 'the first look settles');
+  nearMeasured = 0;
   step(2000); step(3000);
-  assert.equal(frames.length, 0);
+  assert.equal(frames.length, 0, 'a still page asks for no frame');
+  assert.equal(nearMeasured, 0);
+  emit('scroll'); step(4000);
+  assert.equal(nearMeasured, 6, 'a scrolling frame measures the near places alone');
+  assert.equal(__inspect().unfired, 1200);
   for (const off of offs) off();
   assert.equal(count(), 0, 'the listeners go with the last place');
   assert.equal(FakeObserver.all[0]!.disconnected, true);
@@ -257,4 +281,70 @@ test('a page with no observer registers nothing and binds nothing', () => {
   assert.equal(count(), 0);
   assert.equal(frames.length, 0);
   off(); off.refresh();
+});
+
+test('a place that fired lets go of its pieces, and a post whose places all fired and went leaves the watcher holding nothing', () => {
+  const log = made(); const a = el(rect(320, 340)); const b = el(rect(325, 345));
+  const offA = place(log, 'boo', a); const offB = place(log, 'cheer', b);
+  assert.equal(__inspect().elements, 2);
+  step(1000); step(1401);
+  assert.equal(log.fires, 2);
+  assert.equal(__inspect().elements, 0, 'a fired place is no longer looked up by its pieces');
+  assert.ok(!FakeObserver.all[0]!.observed.has(a) && !FakeObserver.all[0]!.observed.has(b), 'and no longer observed');
+  assert.equal(__inspect().unfired, 0);
+  offA();
+  assert.equal(__inspect().places, 1);
+  offB();
+  assert.deepEqual(__inspect(), { places: 0, elements: 0, near: 0, unfired: 0, murmuring: false, listening: false });
+});
+
+test('the counter of unfired places follows a fire and an unregister', () => {
+  const log = made(); const a = el(rect(320, 340)); const b = el(rect(700, 720));
+  const offA = place(log, 'boo', a); place(log, 'boo', b);
+  assert.equal(__inspect().unfired, 2);
+  step(1000); step(1401);
+  assert.equal(__inspect().unfired, 1);
+  offA();
+  assert.equal(__inspect().unfired, 1, 'a fired place going does not count twice');
+});
+
+test('Game sounds toggled off and on: the dead loop is let go, and the next near frame makes a fresh one that sounds', () => {
+  const log = made(); const e = el(rect(400, 420));
+  place(log, 'boo', e);
+  step(1000);
+  assert.equal(log.voices.length, 1);
+  /* The mixer ended the loop when its bus went off: the handle is dead and ignores its gain. */
+  log.voices[0]!.dead = true; current = null;
+  emit('scroll'); step(1100);
+  assert.equal(log.voices.length, 1, 'without the signal the watcher keeps the dead handle');
+  forgetVoice();
+  assert.deepEqual(log.voices[0]!.stops, [0], 'the dead loop is let go (its held caption released)');
+  assert.equal(__inspect().murmuring, false);
+  assert.equal(frames.length, 1, 'and a frame is woken');
+  step(1200);
+  assert.equal(log.voices.length, 2, 'the next near frame makes a fresh loop');
+  assert.equal(log.voices[1]!.dead, false);
+  assert.ok(log.voices[1]!.gains.at(-1)! > 0, 'and it sounds');
+});
+
+test('a resize reads the root font size again, rebuilds the observer\'s reach if it changed, and wakes a frame', () => {
+  const log = made(); const e = el(rect(400, 420));
+  place(log, 'boo', e);
+  step(1000);
+  assert.equal(frames.length, 0);
+  const first = FakeObserver.all[0]!;
+  assert.equal(first.options.rootMargin, '192px 0px');
+  emit('resize');
+  assert.equal(FakeObserver.all.length, 1, 'the same size rebuilds nothing');
+  assert.equal(frames.length, 1, 'but wakes a frame');
+  step(1100);
+  fontSize = '20px';
+  emit('resize');
+  assert.equal(FakeObserver.all.length, 2, 'a new size rebuilds the observer');
+  const second = FakeObserver.all[1]!;
+  assert.equal(second.options.rootMargin, '240px 0px');
+  assert.equal(first.disconnected, true);
+  assert.ok(second.observed.has(e), 'the places\' pieces are observed again');
+  assert.equal(frames.length, 1);
+  assert.equal(count(), 3, 'still one listener of each');
 });
