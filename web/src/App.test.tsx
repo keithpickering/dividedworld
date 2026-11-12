@@ -971,6 +971,71 @@ describe('The emailed link, through the app', () => {
     expect(screen.getByText('You are signed in as known@example.test.')).toBeInTheDocument();
   });
 
+  test('an in-app move to the other screen sets the link aside: the ordinary form, no panel, nothing spent', async () => {
+    const fake = await linked(null);
+    const verify = vi.spyOn(fake, 'verifyLink');
+    window.history.pushState(null, '', `/sign-in#token_hash=${TEST_LINK}`);
+    render(<App api={fake} />);
+    await screen.findByText('This link signs you in. It works once.');
+    await userEvent.click(within(screen.getByRole('complementary', { name: 'Other ways in' })).getByRole('link', { name: 'Register' }));
+    await waitFor(() => expect(window.location.pathname).toBe('/register'));
+    expect(await screen.findByLabelText('Email address')).toBeInTheDocument();
+    /* The screen that is leaving is held for its exit: the page settles on the one world's form alone. */
+    await waitFor(() => expect(screen.queryByText(/This link/u)).toBeNull(), { timeout: 5000 });
+    expect(screen.queryByRole('button', { name: 'Finish signing up' })).toBeNull();
+    expect(verify).not.toHaveBeenCalled();
+  });
+
+  test('Not you? Sign out shows the signed-out form and never the false "You are signed in."', async () => {
+    const fake = await linked(null);
+    window.history.pushState(null, '', `/sign-in#token_hash=${TEST_LINK}`);
+    render(<App api={fake} />);
+    /* The backend's answer for a session with no account is a refusal, as the real one's is (the fake's is an empty address). */
+    const real = fake.signInAddress.bind(fake);
+    vi.spyOn(fake, 'signInAddress').mockImplementation(async () => { const a = await real(); if (a === null) throw new Error('not signed in'); return a; });
+    /* The session's change reaches the app before the sign-out call answers, as a real backend's auth event can: the screen starts afresh while the call is still awaited. */
+    const realOut = fake.signOut.bind(fake);
+    vi.spyOn(fake, 'signOut').mockImplementation(async () => { await realOut(); await new Promise((r) => setTimeout(r, 100)); });
+    await screen.findByText('This link signs you in. It works once.');
+    await userEvent.click(screen.getByRole('button', { name: /^Sign in$/u }));
+    expect(await screen.findByText('You are signed in as known@example.test.')).toBeInTheDocument();
+    /* Even a sentence that only flashes is seen: every change of the page is checked for the fallback. */
+    let flashed = false;
+    const watch = new MutationObserver(() => { if (/You are signed in\.(?!\w)/u.test(document.body.textContent ?? '')) flashed = true; });
+    watch.observe(document.body, { subtree: true, childList: true, characterData: true });
+    await userEvent.click(screen.getByRole('button', { name: 'Not you? Sign out' }));
+    expect(await screen.findByLabelText('Email address')).toBeInTheDocument();
+    await new Promise((r) => setTimeout(r, 200));
+    watch.disconnect();
+    expect(flashed).toBe(false);
+    expect((await fake.session()).account).toBeNull();
+    expect(screen.queryByText(/You are signed in/u)).toBeNull();
+    expect(window.location.pathname).toBe('/sign-in');
+  });
+
+  test('a refused link shows the form with the refusal, and a screen started afresh brings no panel back', async () => {
+    const fake = await linked(null);
+    window.history.pushState(null, '', '/sign-in#token_hash=aaaaaaaaaaaaaaaaaaaa');
+    render(<App api={fake} />);
+    await userEvent.click(await screen.findByRole('button', { name: /^Sign in$/u }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('that link does not work, or it has expired: ask for a new code');
+    expect(screen.getByLabelText('Email address')).toBeInTheDocument();
+    expect(screen.queryByText('This link signs you in. It works once.')).toBeNull();
+  });
+
+  test('a link that opens no account shows the way on, and no panel returns', async () => {
+    const fake = createFake({ instance, settings: { ...fallbackSettings, registrationMode: 'closed' } });
+    seedDemo(fake);
+    await fake.signOut();
+    await fake.requestCode('new@example.test', null, null);
+    window.history.pushState(null, '', `/register#token_hash=${TEST_LINK}`);
+    render(<App api={fake} />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Finish signing up' }));
+    await waitFor(() => expect(screen.queryByText('This link finishes signing you up. It works once.')).toBeNull());
+    expect(screen.queryByLabelText('Email address')).toBeNull();
+    expect(screen.getByRole('heading', { name: /./u, level: 2 })).toBeInTheDocument();
+  });
+
   test('a signed-in player who opens /sign-in with no link is moved on at once', async () => {
     const fake = createFake({ instance, settings: fallbackSettings });
     seedDemo(fake);

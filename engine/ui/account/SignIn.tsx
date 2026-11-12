@@ -74,6 +74,14 @@ export function SignInScreen({ mode }: { readonly mode: 'sign-in' | 'register' }
   useEffect(() => { if (link !== null && location.hash !== '') navigate(addressOf(location), { replace: true }); }, []); // eslint-disable-line react-hooks/exhaustive-deps -- once, as the screen stands: the fragment is read at mount and later changes of the address must not run it again
   /* A refusal of the link while a session already holds an account: the screen stays on the form with the sentence, and Stay signed in is the way on. */
   const [held, setHeld] = useState(false);
+  /* Leaving the page the link came to sets it aside, though the routes keep this same screen across Sign in and Register: the next page shows its ordinary form. The provider drops its hand on the same move. */
+  const mountedAt = useRef(location.path);
+  useEffect(() => {
+    if (mountedAt.current === location.path) return;
+    mountedAt.current = location.path;
+    setLink(null);
+    setHeld(false);
+  }, [location.path]); // eslint-disable-line react-hooks/exhaustive-deps -- only a change of the page runs it
 
   /* While a link is held the screen stays: the link's panel says who is signed in, and its Continue is what moves on. */
   useEffect(() => { if (session?.account && link === null && !held) navigate(next, { replace: true }); }, [session?.account, link, held, navigate, next]);

@@ -6,6 +6,7 @@ import { LOST_ANSWER } from '../data/api.ts';
 import { TEST_CODE, TEST_LINK } from '../data/fake.ts';
 import { buildWorld, renderIn } from '../test-world.tsx';
 import { LinkHandProvider } from './LinkHand.tsx';
+import { useLocation, useNavigate } from '../router.tsx';
 import { SignInScreen } from './SignIn.tsx';
 
 beforeEach(() => { localStorage.clear(); });
@@ -654,9 +655,15 @@ describe('The emailed link', () => {
 
   /* A provider above the screen (the app's) keeps the link and the press across the screen starting afresh, which a key change stands in for. */
   describe('under a link hand provider', () => {
-    function Remountable() {
+    function Remountable({ mode = 'sign-in' }: { readonly mode?: 'sign-in' | 'register' }) {
       const [n, setN] = useState(0);
-      return <><button type="button" onClick={() => setN((v) => v + 1)}>Start afresh</button><SignInScreen key={n} mode="sign-in" /></>;
+      return <><button type="button" onClick={() => setN((v) => v + 1)}>Start afresh</button><SignInScreen key={n} mode={mode} /></>;
+    }
+    /* The routes render the same screen at the same position for both paths, so a move between them does not remount it. */
+    function Moves() {
+      const navigate = useNavigate();
+      const { path } = useLocation();
+      return <><button type="button" onClick={() => navigate('/register')}>Go to register</button><SignInScreen mode={path === '/register' ? 'register' : 'sign-in'} /></>;
     }
     const openHeld = (w: ReturnType<typeof world>, path: string) => renderIn(w.fake, <LinkHandProvider><Remountable /></LinkHandProvider>, { path });
 
@@ -679,6 +686,39 @@ describe('The emailed link', () => {
       await waitFor(() => expect(screen.queryByText(/You are signed in as/u)).toBeNull());
       expect(screen.queryByText('This link signs you in. It works once.')).toBeNull();
       expect(screen.queryByRole('button', { name: 'Continue' })).toBeNull();
+    });
+
+    test('a move of the address to the other screen sets the link aside, under the provider too', async () => {
+      const w = await linked();
+      const verify = vi.spyOn(w.fake, 'verifyLink');
+      renderIn(w.fake, <LinkHandProvider><Moves /></LinkHandProvider>, { path: `/sign-in${FRAGMENT}` });
+      await screen.findByText('This link signs you in. It works once.');
+      await userEvent.click(screen.getByRole('button', { name: 'Go to register' }));
+      expect(await screen.findByLabelText('Email address')).toBeInTheDocument();
+      expect(screen.queryByText(/This link/u)).toBeNull();
+      expect(verify).not.toHaveBeenCalled();
+    });
+
+    test('a refused link leaves the form, and a screen started afresh shows no panel', async () => {
+      const w = await linked();
+      openHeld(w, '/sign-in#token_hash=aaaaaaaaaaaaaaaaaaaa');
+      await userEvent.click(await screen.findByRole('button', { name: 'Sign in' }));
+      expect(await screen.findByRole('alert')).toHaveTextContent('that link does not work');
+      await userEvent.click(screen.getByRole('button', { name: 'Start afresh' }));
+      expect(await screen.findByLabelText('Email address')).toBeInTheDocument();
+      expect(screen.queryByText('This link signs you in. It works once.')).toBeNull();
+    });
+
+    test('a link that opens no account shows the way on, and a screen started afresh brings no panel back', async () => {
+      const w = world('closed');
+      await w.fake.requestCode('new@example.test', null, null);
+      renderIn(w.fake, <LinkHandProvider><Remountable mode="register" /></LinkHandProvider>, { path: `/register${FRAGMENT}`, settings: { registrationMode: 'closed' } });
+      await userEvent.click(await screen.findByRole('button', { name: 'Finish signing up' }));
+      await waitFor(() => expect(screen.queryByText('This link finishes signing you up. It works once.')).toBeNull());
+      await userEvent.click(screen.getByRole('button', { name: 'Start afresh' }));
+      await waitFor(() => expect(screen.queryByText('This link finishes signing you up. It works once.')).toBeNull());
+      expect(screen.queryByRole('button', { name: 'Finish signing up' })).toBeNull();
+      expect(screen.queryByLabelText('Email address')).toBeNull();
     });
 
     test('a link not yet pressed is still in hand after starting afresh', async () => {

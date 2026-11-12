@@ -71,6 +71,8 @@ export function LinkPanel({ tokenHash, signedIn = false, registering, onAside, o
     }
   };
   const signOut = async () => {
+    /* The hand is cleared first: signing out changes the account, the screen may start afresh before this call answers, and it must not start in the signed-in phase of a link whose session is gone. The screen's own link is set aside after, so its move on to `next` does not run while the account is still there. */
+    hand?.hold(null, '');
     try { await api.signOut(); } catch { /* The form is where the player goes either way; the session says whether they are out. */ }
     onAside();
   };
