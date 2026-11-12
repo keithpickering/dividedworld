@@ -251,8 +251,6 @@ describe('the page sound', () => {
 
   test('a stop in the gap between the mixer\'s answer and its handle arriving still ends the source', async () => {
     const { result } = renderHook(() => useSound(), { wrapper: wrap });
-    on('game');
-    await gesture();
     let handle!: Loop;
     /* The mixer asks `cancelled` once, right after the file decodes and before it starts the source; a stop that comes from another microtask after that
        (here the source's own start) is past the mixer's check and reaches the handle before the page's `.then` has run. */
@@ -266,12 +264,8 @@ describe('the page sound', () => {
     resetSound({ makeContext, fetchBytes });
     on('game');
     await gesture();
-    await act(async () => {
-      handle = result.current.loop('build', { id: 'meter' });
-      for (let i = 0; i < 8; i++) await Promise.resolve();
-    });
-    expect(sources).toHaveLength(1);
-    expect(sources[0]!.stop).toHaveBeenCalled();
+    await act(async () => { handle = result.current.loop('build', { id: 'meter' }); });
+    await vi.waitFor(() => { expect(sources).toHaveLength(1); expect(sources[0]!.stop).toHaveBeenCalled(); });
     expect(captions.current()).toBeNull();
   });
 

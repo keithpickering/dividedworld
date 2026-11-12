@@ -31,14 +31,19 @@ const toTheLine = (page: Page) => page.evaluate(() => {
   window.scrollBy({ top: box.top + box.height / 2 - line, behavior: 'instant' });
 });
 
-/** The page flung from its top to its foot at about 900 px a second and back to the top: every cue crosses the line in well under the dwell. */
-const fling = (page: Page) => page.evaluate(() => new Promise<void>((done) => {
+/** The page flung from its top to its foot at about 900 px a second and back to the top: every cue crosses the line in well under the dwell.
+    Resolves with the number of steps at which a cue's box straddled the reading line, so a test can tell a fling that crossed cues from one that touched none. */
+const fling = (page: Page) => page.evaluate(() => new Promise<number>((done) => {
   const foot = document.documentElement.scrollHeight;
+  const hud = Number.parseFloat(document.documentElement.style.getPropertyValue('--kb-hud-measured')) || 0;
+  const line = ((window.innerHeight - hud) * 40) / 100;
   let y = 0;
+  let straddles = 0;
   const step = () => {
     window.scrollTo({ top: y, behavior: 'instant' });
+    for (const cue of document.querySelectorAll('.dw-lt-cue')) if (Array.from(cue.getClientRects()).some((r) => r.top <= line && line <= r.bottom)) straddles++;
     y += 15;
-    if (y < foot) requestAnimationFrame(step); else { window.scrollTo({ top: 0, behavior: 'instant' }); done(); }
+    if (y < foot) requestAnimationFrame(step); else { window.scrollTo({ top: 0, behavior: 'instant' }); done(straddles); }
   };
   step();
 }));
@@ -76,8 +81,8 @@ for (const [name, id, size] of [['Main', 'boards-21-laugh-track--main', MAIN], [
 
     test('a fast scroll past every cue fires nothing', async ({ page }) => {
       await openStory(page, id, size);
-      await fling(page);
-      /* Longer than the dwell, so a place that had been counted would have fired by now. */
+      expect(await fling(page), 'the fling crossed cues over the line, so a fire could have happened').toBeGreaterThan(0);
+      /* A correctness wait, not a settle: longer than the 400 ms dwell, so a place that had been counted would have fired by now. */
       await page.waitForTimeout(1000);
       expect(await page.locator('.dw-lt-fired').count()).toBe(0);
     });
@@ -94,6 +99,8 @@ for (const [name, id, size] of [['Main', 'boards-21-laugh-track--main', MAIN], [
       expect(name).toBe('Luigi. Replay: the audience boos');
       expect(await page.evaluate(() => document.activeElement?.getAttribute('role'))).toBe('button');
       await page.keyboard.press('Enter');
+      /* Enter keeps the place a fired one; what the replay does (says its caption again) needs the app's caption bar, which a story has none of, and is
+         asserted in the app test 'a fire says the caption on the real bar, in capitals by CSS, and Enter on the fired place says it again'. */
       expect(await page.evaluate(() => document.activeElement?.classList.contains('dw-lt-fired'))).toBe(true);
     });
   });
@@ -134,9 +141,12 @@ const region = (page: Page) => page.getByRole('status', { name: 'Sound captions'
 test('a fire says the caption on the real bar, in capitals by CSS, and Enter on the fired place says it again', async ({ page }) => {
   await openInApp(page, MAIN);
   await toTheLine(page);
-  await expect(region(page)).toHaveText('The audience boos', { timeout: 4000 });
   const bar = page.locator('.kb-captions-bar');
-  await expect(bar).toBeVisible();
+  /* A fire's caption lasts 2500 ms: its visibility and words are read together in one polled check, so a slow worker cannot let it lapse between two steps. */
+  await expect(async () => {
+    expect(await bar.isVisible()).toBe(true);
+    expect(await region(page).textContent()).toBe('The audience boos');
+  }).toPass({ timeout: 4000 });
   expect(await page.locator('.kb-captions-text').evaluate((el) => getComputedStyle(el).textTransform)).toBe('uppercase');
   expect(await page.locator('.kb-captions-text').evaluate((el) => (el as HTMLElement).innerText)).toBe('THE AUDIENCE BOOS');
   /* The caption is put away; a press on the fired place says it again. */
@@ -144,6 +154,7 @@ test('a fire says the caption on the real bar, in capitals by CSS, and Enter on 
   await button.focus();
   await page.evaluate(() => (globalThis as unknown as { __kbCaptions: { reset(): void } }).__kbCaptions.reset());
   await expect(bar).toHaveCount(0);
+  /* The same-gesture guard: the focus above replayed the take, and a replay within 300 ms (SAME_GESTURE_MS in Effect.tsx) of another is the same gesture and is dropped. */
   await page.waitForTimeout(400);
   await page.keyboard.press('Enter');
   await expect(region(page)).toHaveText('The audience boos');
@@ -152,9 +163,12 @@ test('a fire says the caption on the real bar, in capitals by CSS, and Enter on 
 
 test('at a phone\'s width the caption fits inside the gutters', async ({ page }) => {
   await openInApp(page, PHONE);
-  await toTheLine(page);
+  /* A long caption held for a minute (the words of e2e/captions.spec.ts's LONG), so the bar's box is the long one and nothing else can stand in for it. */
+  const LONG = 'A very long crowd laughs at the thing that was just said, and keeps on going well past the width of a phone';
+  await page.evaluate((text) => (globalThis as unknown as { __kbCaptions: { say(w: { text: string; ms: number }): void } }).__kbCaptions.say({ text, ms: 60_000 }), LONG);
   const bar = page.locator('.kb-captions-bar');
   await expect(bar).toBeVisible({ timeout: 4000 });
+  await expect(region(page)).toHaveText(LONG);
   const b = await bar.boundingBox();
   if (!b) throw new Error('the bar has no box');
   expect(b.x).toBeGreaterThanOrEqual(16 - 0.5);
