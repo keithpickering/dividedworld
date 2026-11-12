@@ -36,12 +36,18 @@
  * the page layout that decides whether an `update` is HOT (and so how many index entries one more read finds), and
  * the session's plan cache (the first counted call plans custom, the second generic). A plan assertion on a toy
  * fixture then reads whichever plan those leftovers happen to price lowest, and passes or fails on what ran before it.
- * So `vacuum (analyze)` (VACUUM_STATEMENT, a psql call of its own, since it cannot run in a transaction) runs on the
- * scratch database before each file: dead rows reclaimed, statistics true to the committed rows, autovacuum's
+ * So `vacuum (analyze)` (VACUUM_STATEMENT) runs on the scratch database before each file: dead rows reclaimed, statistics true to the committed rows, autovacuum's
  * thresholds reset so it has no reason to run during the file. It is fixed here and not in each file so that no file
  * has to remember it; a file's plan assertion must still stand on its own fixture and `analyze` it, at the scale
- * the assertion is about, since this fixes where a file starts and never what its own rows do to a plan. If the vacuum
- * fails, that file's step fails with the error and the file is not run.
+ * the assertion is about, since this fixes where a file starts and never what its own rows do to a plan.
+ *
+ * An assertion file's vacuum travels in the file's own psql call, ahead of its transaction: the SQL sent is
+ * `vacuum (analyze); begin;`, the file, `rollback;`. psql runs with ON_ERROR_STOP and without --single-transaction, so the
+ * vacuum is outside any transaction (it cannot run in one), and if it fails psql stops there: the file is not run and its
+ * step fails with the vacuum's error. `begin;` stays on the vacuum's line so a file's line N is still line N+1 of what psql
+ * reads, and the `psql:<stdin>:N:` in an error means what it always did. A call of its own for each file started ~230 more
+ * psql processes, which is minutes of the build's self-test, where psql is a Node shim. An end-to-end file is run by
+ * `node --test`, not psql, so its vacuum stays a psql call of its own right before it, and if that fails the file is not run.
  *
  * A hang fails, and names its file. Every connection to the scratch database, each file's psql and every
  * dblink session a race test opens, starts with SESSION_BOUNDS, set on the database itself so no helper
@@ -178,8 +184,8 @@ export const FILE_TIMEOUT_MS = Number(process.env.KAYFABB_SQL_FILE_TIMEOUT_MS) >
 export const boundsSql = (db) => Object.entries(SESSION_BOUNDS).map(([k, v]) => `alter database ${db} set ${k} to '${v}';`).join('\n');
 
 /**
- * What runs on the scratch database before each assertion file and each end-to-end file (see the header), in a psql call
- * of its own, since `vacuum` cannot run in a transaction. Exported so tools/test-sql-refusal.mjs reads the text sent.
+ * What runs on the scratch database before each assertion file (the start of the file's own psql call) and each end-to-end
+ * file (a psql call of its own), outside any transaction (see the header). Exported so tools/test-sql-refusal.mjs reads the text sent.
  */
 export const VACUUM_STATEMENT = 'vacuum (analyze);';
 
@@ -238,10 +244,8 @@ function main() {
       if (/(^|;)\s*(commit|rollback(?!\s+to\b))\b/im.test(withoutDollarQuotes(code))) { step(t, 'ends its own transaction, which would escape the rollback around it'); continue; }
       const blind = nullBlind(code);
       if (blind.length) { step(t, `passes when its select finds no row; use \`is distinct from\`:\n          ${blind.join('\n          ')}`); continue; }
-      const vacuumed = psql(target, VACUUM_STATEMENT);
-      if (vacuumed) { step(t, `${VACUUM_STATEMENT} failed, so the file was not run:\n${vacuumed}`); continue; }
       ran++;
-      step(t, psql(target, `begin;\n${sql}\nrollback;\n`));
+      step(t, psql(target, `${VACUUM_STATEMENT} begin;\n${sql}\nrollback;\n`));
     }
     /* End to end: TypeScript that runs the Edge Functions' own core against this scratch
        database (supabase/tests/e2e/NNNN-*.ts, Node's test runner), so the contract between the
