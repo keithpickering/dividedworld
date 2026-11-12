@@ -1,14 +1,15 @@
+import { useState } from 'react';
 import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { LOST_ANSWER } from '../data/api.ts';
 import { TEST_CODE, TEST_LINK } from '../data/fake.ts';
 import { buildWorld, renderIn } from '../test-world.tsx';
-import { resetLink } from './link.ts';
+import { LinkHandProvider } from './LinkHand.tsx';
 import { SignInScreen } from './SignIn.tsx';
 
 beforeEach(() => { localStorage.clear(); });
-afterEach(() => { cleanup(); resetLink(); vi.restoreAllMocks(); });
+afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 function world(mode: 'open' | 'invite' | 'closed' = 'invite') {
   const fake = buildWorld({ registrationMode: mode });
@@ -629,8 +630,8 @@ describe('The emailed link', () => {
     expect(screen.queryByText('This link signs you in. It works once.')).toBeNull();
   });
 
-  /* No keeper is rendered here: the link lives in the screen's own state, so a screen that is gone holds nothing for the next. */
-  test('a screen with no keeper holds nothing: a later visit with no fragment shows the ordinary form', async () => {
+  /* No provider is rendered here: the link lives in the screen's own state, so a screen that is gone holds nothing for the next. */
+  test('a screen with no provider holds nothing: a later visit with no fragment shows the ordinary form', async () => {
     const w = await linked();
     open(w, 'sign-in', `/sign-in${FRAGMENT}`);
     expect(await screen.findByText('This link signs you in. It works once.')).toBeInTheDocument();
@@ -649,5 +650,43 @@ describe('The emailed link', () => {
     open(w, 'sign-in', '/sign-in');
     expect(screen.queryByText(/You are signed in as/u)).toBeNull();
     expect(screen.queryByText('This link signs you in. It works once.')).toBeNull();
+  });
+
+  /* A provider above the screen (the app's) keeps the link and the press across the screen starting afresh, which a key change stands in for. */
+  describe('under a link hand provider', () => {
+    function Remountable() {
+      const [n, setN] = useState(0);
+      return <><button type="button" onClick={() => setN((v) => v + 1)}>Start afresh</button><SignInScreen key={n} mode="sign-in" /></>;
+    }
+    const openHeld = (w: ReturnType<typeof world>, path: string) => renderIn(w.fake, <LinkHandProvider><Remountable /></LinkHandProvider>, { path });
+
+    test('a screen started afresh after the press still says the press signed in', async () => {
+      const w = await linked();
+      openHeld(w, `/sign-in${FRAGMENT}`);
+      await userEvent.click(await screen.findByRole('button', { name: 'Sign in' }));
+      expect(await screen.findByText('You are signed in as known@example.test.')).toBeInTheDocument();
+      await userEvent.click(screen.getByRole('button', { name: 'Start afresh' }));
+      expect(await screen.findByText('You are signed in as known@example.test.')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Continue' })).toBeInTheDocument();
+    });
+
+    test('after Continue, a screen started afresh shows no panel', async () => {
+      const w = await linked();
+      openHeld(w, `/sign-in${FRAGMENT}`);
+      await userEvent.click(await screen.findByRole('button', { name: 'Sign in' }));
+      await userEvent.click(await screen.findByRole('button', { name: 'Continue' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Start afresh' }));
+      await waitFor(() => expect(screen.queryByText(/You are signed in as/u)).toBeNull());
+      expect(screen.queryByText('This link signs you in. It works once.')).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Continue' })).toBeNull();
+    });
+
+    test('a link not yet pressed is still in hand after starting afresh', async () => {
+      const w = await linked();
+      openHeld(w, `/sign-in${FRAGMENT}`);
+      await screen.findByText('This link signs you in. It works once.');
+      await userEvent.click(screen.getByRole('button', { name: 'Start afresh' }));
+      expect(await screen.findByText('This link signs you in. It works once.')).toBeInTheDocument();
+    });
   });
 });

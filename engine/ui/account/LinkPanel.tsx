@@ -10,7 +10,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useKayfa } from '../context.tsx';
 import { LOST_ANSWER } from '../data/api.ts';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
-import { markPressed } from './link.ts';
+import { useLinkHand } from './LinkHand.tsx';
 import { setWhy, useSession } from './session.ts';
 
 type Props = {
@@ -26,6 +26,8 @@ type Phase = 'ready' | 'done';
 export function LinkPanel({ tokenHash, signedIn = false, registering, onAside, onRefused }: Props) {
   const { api } = useKayfa();
   const session = useSession();
+  const hand = useLinkHand();
+  const markPressed = (pressed: boolean) => hand?.setPressed(pressed);
   /* Whether a session was here before the press: it says who the link would sign out. Read once, as the panel stands. */
   const [wasSignedIn] = useState(() => session?.signedIn === true);
   const [phase, setPhase] = useState<Phase>(signedIn ? 'done' : 'ready');

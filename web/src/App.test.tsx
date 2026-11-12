@@ -955,6 +955,22 @@ describe('The emailed link, through the app', () => {
     expect(screen.queryByText('This link signs you in. It works once.')).toBeNull();
   });
 
+  test('a link opened by an in-app move from a board page keeps its signed-in sentence through the press', async () => {
+    const fake = await linked('/settings');
+    window.history.pushState(null, '', '/');
+    render(<App api={fake} />);
+    await screen.findByRole('region', { name: 'Game HUD' });
+    /* A move inside the app, from a board page to the link's address, crosses worlds: both hold the routed screen until the old one is released. */
+    act(() => { window.history.pushState(null, '', `/sign-in?next=%2Fsettings#token_hash=${TEST_LINK}`); window.dispatchEvent(new PopStateEvent('popstate')); });
+    await screen.findByText('This link signs you in. It works once.');
+    await waitFor(() => expect(Array.from(document.querySelectorAll<HTMLElement>('[data-kb-world]')).map((e) => e.dataset.kbWorld)).toEqual(['glass']), { timeout: 5000 });
+    await userEvent.click(screen.getByRole('button', { name: /^Sign in$/u }));
+    expect(await screen.findByText('You are signed in as known@example.test.')).toBeInTheDocument();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(window.location.pathname).toBe('/sign-in');
+    expect(screen.getByText('You are signed in as known@example.test.')).toBeInTheDocument();
+  });
+
   test('a signed-in player who opens /sign-in with no link is moved on at once', async () => {
     const fake = createFake({ instance, settings: fallbackSettings });
     seedDemo(fake);

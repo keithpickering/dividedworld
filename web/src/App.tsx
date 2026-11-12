@@ -13,7 +13,7 @@ import { applyAppearance } from '../../engine/ui/appearance.ts';
 import { setTiltPreference } from '../../engine/ui/shine/tilt.ts';
 import { KayfaProvider } from '../../engine/ui/context.tsx';
 import { BoardScreen } from '../../engine/ui/board/Board.tsx';
-import { LinkHandKeeper } from '../../engine/ui/account/LinkHand.tsx';
+import { LinkHandProvider } from '../../engine/ui/account/LinkHand.tsx';
 import { AccountGate } from '../../engine/ui/account/OpenAccount.tsx';
 import { ProfileScreen } from '../../engine/ui/profile/Profile.tsx';
 import { RecordScreen } from '../../engine/ui/profile/Record.tsx';
@@ -210,11 +210,12 @@ function Shell({ routes }: { readonly routes: readonly Route[] }) {
   }
   const content = (
     <AccountGate>
-      {/* The emailed link in hand is the sign-in page's alone, and outlives the screen starting afresh under the account it signed in. */}
-      <LinkHandKeeper />
-      <Suspense fallback={<div aria-busy="true" />}>
-        <Routes key={mountedFor.n} routes={routes} {...(surface ? { failures: GLASS_FAILURES } : {})} />
-      </Suspense>
+      {/* The emailed link in hand is the sign-in page's alone, and outlives the screen starting afresh under the account it signed in: the provider sits above the keyed Routes, in each world's own content. */}
+      <LinkHandProvider>
+        <Suspense fallback={<div aria-busy="true" />}>
+          <Routes key={mountedFor.n} routes={routes} {...(surface ? { failures: GLASS_FAILURES } : {})} />
+        </Suspense>
+      </LinkHandProvider>
       {/* A world that is leaving moves nobody: what a board page does on its own (below) stops with its exit, not at its end (the crossing, below). */}
       <WhilePresent>
         {/* The first load of a board page after a settlement the device has not seen opens its summary (engine/ui/log/Settlement.tsx). */}

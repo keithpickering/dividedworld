@@ -22,7 +22,8 @@ import { PageHead } from '../glass/PageHead.tsx';
 import { ReachAPerson } from '../contact/Contact.tsx';
 import { addressOf, useLocation, useNavigate } from '../router.tsx';
 import { LinkPanel } from './LinkPanel.tsx';
-import { holdLink, linkAtMount } from './link.ts';
+import { useLinkHand } from './LinkHand.tsx';
+import { tokenHashOf } from './link.ts';
 import { safeNext } from './next.ts';
 import { OpenAccount } from './OpenAccount.tsx';
 import { setWhy, useSession } from './session.ts';
@@ -64,11 +65,12 @@ export function SignInScreen({ mode }: { readonly mode: 'sign-in' | 'register' }
   const [sent, setSent] = useState<Sent | null>(null);
   const [asked, setAsked] = useState(0);
   const codeField = useRef<HTMLInputElement>(null);
-  /* The emailed link's token, held in memory only: the address loses its fragment as the screen stands (the query stays, `next` with it), so no history entry holds it. The module keeps it (and whether this page's press signed in) across the screen starting afresh under the account the press signed in (link.ts). */
-  const [start] = useState(() => linkAtMount(location.hash, location.path));
+  /* The emailed link's token, held in memory only: the address loses its fragment as the screen stands (the query stays, `next` with it), so no history entry holds it. A provider above (link hand, LinkHand.tsx) keeps it, and whether this page's press signed in, across the screen starting afresh under the account the press signed in; with none the screen's own state holds it. */
+  const hand = useLinkHand();
+  const [start] = useState(() => hand ? hand.read(location.hash, location.path) : { tokenHash: tokenHashOf(location.hash), pressed: false });
   const [link, setLinkState] = useState<string | null>(start.tokenHash);
-  const setLink = (value: string | null) => { holdLink(value, location.path); setLinkState(value); };
-  useEffect(() => { holdLink(link, location.path); }, []); // eslint-disable-line react-hooks/exhaustive-deps -- once: a first visit's link is held for the page once a keeper is keeping
+  const setLink = (value: string | null) => { hand?.hold(value, location.path); setLinkState(value); };
+  useEffect(() => { hand?.hold(link, location.path); }, []); // eslint-disable-line react-hooks/exhaustive-deps -- once: the link this screen started with is held for this page
   useEffect(() => { if (link !== null && location.hash !== '') navigate(addressOf(location), { replace: true }); }, []); // eslint-disable-line react-hooks/exhaustive-deps -- once, as the screen stands: the fragment is read at mount and later changes of the address must not run it again
   /* A refusal of the link while a session already holds an account: the screen stays on the form with the sentence, and Stay signed in is the way on. */
   const [held, setHeld] = useState(false);
