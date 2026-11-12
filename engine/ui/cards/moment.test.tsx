@@ -28,7 +28,10 @@ const trappy = rule('trappy', 'Trappy', { play: 'set', trap: { trigger: { on: 'v
 const sparkly = rule('sparkly', 'Sparkly', { rarity: 'uncommon', reaches: ['character'], lasts: { unit: 'day', count: 7 } });
 /* Lifty is a takeover that stacks: drawn in a moment, and outermost there as it is live. */
 const lifty = rule('lifty', 'Lifty', { stack: 2 });
-const instance: Instance = { ...testInstance, cards: [smear, ripple, holdy, tagger, shieldy, trappy, sparkly, lifty], settings: { ...testInstance.settings, setLasts: { unit: 'day', count: 7 } } };
+/* Slabby is a surface card (kept in a moment by its state, as a wall's washing is). */
+const strokesOk = (input: unknown) => ok({ strokes: [], payload: { input } });
+const slabby = rule('slabby', 'Slabby', { validateState: (s) => ok(s), surface: { limitKey: 'slabby.limit', mostLive: 48, validateDraw: strokesOk, validateWash: strokesOk } });
+const instance: Instance = { ...testInstance, cards: [smear, ripple, holdy, tagger, shieldy, trappy, sparkly, lifty, slabby], settings: { ...testInstance.settings, cardSettings: { 'slabby.limit': 40 }, setLasts: { unit: 'day', count: 7 } } };
 
 /* Each drawn card wraps the words in a box naming it, saying whether it was drawn still and what it was given. */
 const seen: { card: string; still: boolean; states: Readonly<Record<string, EffectState>> }[] = [];
@@ -38,7 +41,7 @@ const Wrap = (key: string) => function Effect({ children, still, states, show, p
   return <div data-kb-wrap={key}>{children}</div>;
 };
 const ui = (key: string, extra: Partial<CardUi> = {}): CardUi => ({ key, art: { color: '#ffd23f', ink: '#1a1300', canvas: '', mark: '', credit: 'Test' }, describe: () => `${key}.`, Effect: Wrap(key), ...extra });
-const cards: CardUi[] = [ui('smear'), ui('ripple'), ui('holdy', { takeover: true }), ui('tagger'), ui('shieldy'), ui('sparkly'), ui('lifty', { takeover: true })];
+const cards: CardUi[] = [ui('smear'), ui('ripple'), ui('holdy', { takeover: true }), ui('tagger'), ui('shieldy'), ui('sparkly'), ui('lifty', { takeover: true }), ui('slabby')];
 
 const at = (minutes: number) => new Date(Date.UTC(2026, 10, 3, 12, minutes)).toISOString();
 const act = (id: string, kind: Act['kind'], payload: Record<string, unknown>, minutes: number, extra: Partial<Act> = {}): Act => ({
@@ -63,6 +66,25 @@ const chain = () => {
 const named = (m: PlayMoment) => momentParts(m, instance.cards, cards, (c) => (c === 'c-spritey' ? 'Spritey' : 'someone')).named;
 
 afterEach(() => { seen.length = 0; vi.restoreAllMocks(); });
+
+describe('a surface in a moment', () => {
+  test('is still: its limit as the card\'s, no cells and no acts, and a draw and a wash that refuse without asking', async () => {
+    let got: EffectProps['surface'];
+    cards[7] = ui('slabby', { Effect: ({ surface, children }: EffectProps) => { got = surface; return <div data-kb-wrap="slabby">{children}</div>; } });
+    try {
+      const { spies } = draw(moment([{ act: card('k1', 'slabby', 5), state: null }]));
+      await vi.waitFor(() => expect(got).toBeDefined());
+      expect(got).toMatchObject({ covered: 0, most: 4000, acts: null });
+      got!.near();
+      const refused = [await got!.draw('k1', 'c-x', {}), await got!.wash('k1', {})];
+      expect(refused.every((a) => a.ok === false)).toBe(true);
+      expect(refused[0]).toMatchObject({ error: 'a moment is drawn as it was, and nothing in it is saved' });
+      expect(spies.api.draw).toBeDefined();
+    } finally {
+      cards[7] = ui('slabby');
+    }
+  });
+});
 
 describe('a moment draws still', () => {
   test('each drawn card is given still, its state as saved then, and a save, a release and a met that do nothing', async () => {

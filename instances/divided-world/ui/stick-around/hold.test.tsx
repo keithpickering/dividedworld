@@ -24,6 +24,7 @@ import { viewProblems } from '../../../../engine/ui/cards/lens-words.ts';
 import { HoldStage, StickAroundEffect } from './Effect.tsx';
 import { ESC_QUIET_MS } from './takeover.ts';
 import { LoadedThread } from '../../../../engine/ui/loaded.tsx';
+import { NO_INK } from '../../../../engine/ui/cards/claims.ts';
 
 const SENTENCE = 'I have read every word of Spritey\'s changelog and I feel changed.';
 const WINDOW = 800;
@@ -682,7 +683,7 @@ describe('an effect given more than one play', () => {
     return (
       <HoldStage.Provider value={{ mode: 'view', level: 0 }}>
         <StickAroundEffect
-          post={act1()} plays={plays} states={{}} released={released} written={new Map()} reader={{ author: false, caster: false }} place="thread" reach="post" still={false} save={vi.fn()} show={() => {}} met={() => {}} holdScreen={() => {}} marks={null} nameOf={() => 'A character'}
+          post={act1()} plays={plays} states={{}} released={released} written={new Map()} reader={{ author: false, caster: false }} place="thread" reach="post" still={false} save={vi.fn()} show={() => {}} met={() => {}} ink={NO_INK} holdScreen={() => {}} marks={null} nameOf={() => 'A character'}
           release={async (id) => { setReleased((r) => new Set([...r, id])); return { ok: true, value: { play: id, releasedAt: 'now' } } as never; }}
           give={async () => ({ ok: false, error: 'no' })} moreGifts={async () => {}} wallet={null}
         >

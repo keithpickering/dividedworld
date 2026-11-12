@@ -454,6 +454,7 @@ export function instanceProblems(instance: Instance): string[] {
   for (const k of duplicates(instance.cards, (c) => c.key)) out.push(`card key "${k}" is used twice`);
   for (const c of instance.cards) {
     if (c.stack !== undefined && !isWhole(c.stack, 1)) out.push(`card "${c.key}" stacks ${JSON.stringify(c.stack)}; a stack is a whole number, at least 1`);
+    out.push(...surfaceProblems(c));
     out.push(...playProblems(c, new Set(instance.reactions.map((r) => r.key))), ...reachProblems(c, instance.settings), ...drawProblems(c), ...driveProblems(c, instance.settings), ...needsMessageProblems(c));
   }
   if (!instance.boards.length) out.push('the instance has no board');
@@ -515,6 +516,19 @@ export function instanceProblems(instance: Instance): string[] {
     }
   }
   out.push(...systemProblems(instance));
+  return out;
+}
+
+/** A surface card is a cast card on a post with a stack of 1 (surface design), and its limit is one of its screenReads, so the settings hold it within bounds. */
+function surfaceProblems(c: CardRules): string[] {
+  if (c.surface === undefined) return [];
+  const out: string[] = [];
+  const who = `card "${c.key}" has a surface`;
+  if ((c.play ?? 'cast') !== 'cast') out.push(`${who}, and only a cast card does`);
+  if (c.reaches !== undefined && !(c.reaches.length === 1 && c.reaches[0] === 'post')) out.push(`${who}, and a card that does reaches a post alone`);
+  if ((c.stack ?? 1) !== 1) out.push(`${who} and a stack of ${JSON.stringify(c.stack)}; a surface card has a stack of 1`);
+  if (!(c.screenReads ?? []).some((r) => (typeof r === 'string' ? r : r.key) === c.surface?.limitKey)) out.push(`${who} whose limit "${c.surface.limitKey}" is not one of its screenReads`);
+  if (!isWhole(c.surface.mostLive, 1)) out.push(`${who} whose most live draws is ${JSON.stringify(c.surface.mostLive)}; it is a whole number, at least 1`);
   return out;
 }
 
