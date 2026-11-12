@@ -102,7 +102,8 @@ const BROADCASTS: Record<string, (answer: Row) => Broadcast[]> = {
   // A Turn waits for the settlement, whose tally is sent from there (settle/core.ts).
   turn: () => [],
   withdraw_turn: () => [],
-  react: (a) => withSprung(a, a.thread ? [{ topic: `thread:${a.thread}`, event: 'tally', payload: { act: a.act, tally: a.tally } }] : []),
+  // A null tally is a post whose totals are hidden (a blind study): there is none to send.
+  react: (a) => withSprung(a, a.thread && a.tally !== null ? [{ topic: `thread:${a.thread}`, event: 'tally', payload: { act: a.act, tally: a.tally } }] : []),
   save_effect_state: (a) => (a.thread ? [{ topic: `thread:${a.thread}`, event: 'effect', payload: { play: a.play, saved_at: a.saved_at } }] : []),
   // A gift is an Act of the drive's thread, heard as a play is. The answer also holds the giver's own balance, which is the giver's alone and is never sent on.
   donate: (a) => act(a.gift),

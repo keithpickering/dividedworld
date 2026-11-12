@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { applyCap, estimateForOwner, settle, shareEntries, type LedgerEntry } from './settle.ts';
-import type { ClassInput, ClassRules, Earning, Instance, InputAct, InputReaction, SettlementInput } from './types.ts';
+import type { ClassInput, ClassRules, Quadrant, Earning, Instance, InputAct, InputReaction, SettlementInput } from './types.ts';
 import { systemSettings, testSystem, testGroups } from './test-system.ts';
 
 /* Two fake classes. "fan" earns a vote per whole excited-positive vote and loses one per bored-negative
@@ -1132,6 +1132,7 @@ const cardsWorld: Instance = {
     { ...splat, key: 'cheer', alignment: 'sweet', play: 'set', trap: { trigger: { on: 'visit' } } },
     { ...splat, key: 'calmBoost', gimmick: { kind: 'earn', quadrants: ['calmPositive'], by: 0.1 } },
     { ...splat, key: 'fireBoost', gimmick: { kind: 'earn', reactions: ['fire'], by: 0.5 } },
+    { ...splat, key: 'laughBoost', gimmick: { kind: 'earn', reactions: ['laughing'], by: 0.5 } },
     { ...splat, key: 'dustBoost', gimmick: { kind: 'earn', quadrants: ['calmPositive'], by: 1e-8 } },
     { ...splat, key: 'useGrouped', play: 'use' as const, gimmick: { kind: 'earn', quadrants: ['calmPositive'], by: 0.1, group: 'warm' } },
     { ...splat, key: 'castGrouped', reaches: ['character'] as const, gimmick: { kind: 'earn', quadrants: ['calmPositive'], by: 0.1, group: 'warm' } },
@@ -1254,6 +1255,23 @@ test('an earn gimmick that names a reaction raises that reaction and leaves anot
   ]), cardsWorld);
   assert.equal(amountOf(r, 'tom-1', 'kinded.nod'), 20);
   assert.equal(amountOf(r, 'tom-1', 'card.boost'), 5, 'half of the fire vote only');
+});
+/* A post-local reaction (Overreaction): its kind is not one of the instance's, so the row carries its own quadrant. */
+const local = (act: string, player: string, character: string, kind: string, at: number, quadrant?: Quadrant): InputReaction => ({ ...react(act, player, character, kind, at), ...(quadrant ? { quadrant } : {}) });
+test('a post-local reaction pays a Face as a fire does, and costs a Jabroni as a zzz does, by the quadrant it was sent with', () => {
+  const run = (kind: string, quadrant?: Quadrant) => settle(earnBoard([], [local('tp1', 'bob', 'bob-1', kind, FROM + 5 * H, quadrant)]), cardsWorld);
+  assert.equal(amountOf(run('x-1f480', 'excitedPositive'), 'tom-1', 'kinded.nod'), amountOf(run('fire'), 'tom-1', 'kinded.nod'), 'paid as a fire');
+  assert.equal(amountOf(run('x-1f480', 'excitedPositive'), 'tom-1', 'kinded.nod'), 10);
+  assert.equal(amountOf(run('x-1f480', 'boredNegative'), 'tom-1', 'kinded.groan'), amountOf(run('zzz'), 'tom-1', 'kinded.groan'), 'costs as a zzz');
+  assert.equal(amountOf(run('x-1f480', 'boredNegative'), 'tom-1', 'kinded.groan'), -10);
+});
+test('a post-local reaction sent with no quadrant is an unknown kind, as before', () => {
+  assert.throws(() => settle(earnBoard([], [local('tp1', 'bob', 'bob-1', 'x-1f480', FROM + 5 * H)]), cardsWorld), /reaction kind "x-1f480"/);
+});
+test('an earn gimmick naming a reaction leaves a post-local reaction of the same quadrant alone', () => {
+  const r = settle(earnBoard([onTom('g1', 'laughBoost', FROM + 2 * H)], [local('tp1', 'bob', 'bob-1', 'x-1f480', FROM + 5 * H, 'excitedPositive')]), cardsWorld);
+  assert.equal(amountOf(r, 'tom-1', 'kinded.nod'), 10);
+  assert.equal(amountOf(r, 'tom-1', 'card.boost'), 0);
 });
 test('a gimmick on a post raises that post\'s earnings alone, and two gimmicks each raise on their own', () => {
   const onPost: InputAct = { id: 'g2', character: 'tom-1', kind: 'card', at: FROM + 2 * H, thread: 't1', target: 'tp1', card: 'fireBoost', ends: FROM + 20 * H };
