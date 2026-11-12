@@ -67,3 +67,32 @@ test('a player\'s play is never repaired: six cues are refused, not trimmed', ()
   assert.equal(decided.ok, false);
   assert.match(decided.ok ? '' : decided.why, /1 to 5 cues/);
 });
+
+test('canApply refuses a cue nested in another, with a third inside the outer one after the inner ends', () => {
+  const text = 'alpha bravo charlie delta echoes foxtrot';
+  const outer = 'alpha bravo charlie delta'; // chars 0 to 25
+  const inner = 'bravo'; // inside the outer
+  const third = 'charlie'; // also inside the outer, after the inner ends
+  const verdict = laughTrack.canApply(target(text), [], { cues: [cue(outer), cue(inner), cue(third)] }, new Date());
+  assert.equal(verdict.ok, false);
+  assert.match(verdict.ok ? '' : verdict.why, /two cues cover the same words/);
+});
+
+test('canApply refuses a post with 200000 places in the card\'s own words, never throws, and is quick', () => {
+  const text = 'word '.repeat(200000);
+  const started = performance.now();
+  const verdict = laughTrack.canApply(target(text), [], { cues: [cue('word')] }, new Date());
+  const took = performance.now() - started;
+  assert.equal(verdict.ok, false);
+  assert.equal(verdict.ok ? '' : verdict.why, `these cues cover 200000 places in this post; a play covers at most ${PLACES.most}`);
+  assert.ok(took < 1500, `took ${Math.round(took)} ms`);
+});
+
+test('repairStaff does not throw and stays quick on a post with a very long run of places', () => {
+  const text = 'word '.repeat(20000);
+  const started = performance.now();
+  const out = repair([cue('word'), cue('word word')], text);
+  assert.ok(performance.now() - started < 1500);
+  assert.ok(Array.isArray((out.config as { cues: Cue[] }).cues));
+  repair([cue('word')], 'word '.repeat(200000));
+});

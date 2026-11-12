@@ -37,6 +37,24 @@ export function placesOf(text: string, cues: readonly Pick<Cue, 'phrase'>[]): Pl
   return places.sort((a, b) => a.from - b.from || a.to - b.to || a.cue - b.cue);
 }
 
+/** Whether any span of `a` overlaps any span of `b`, both sorted by `from`: one pass over the two, each span against the furthest end of the other side so far. */
+function crosses(a: readonly { readonly from: number; readonly to: number }[], b: readonly { readonly from: number; readonly to: number }[]): boolean {
+  let i = 0;
+  let j = 0;
+  let aTo = -Infinity;
+  let bTo = -Infinity;
+  while (i < a.length || j < b.length) {
+    if (j >= b.length || (i < a.length && a[i]!.from <= b[j]!.from)) {
+      if (bTo > a[i]!.from) return true;
+      aTo = Math.max(aTo, a[i++]!.to);
+    } else {
+      if (aTo > b[j]!.from) return true;
+      bTo = Math.max(bTo, b[j++]!.to);
+    }
+  }
+  return false;
+}
+
 const cuesOf = (config: unknown): readonly Cue[] | null => {
   const cues = typeof config === 'object' && config !== null ? (config as { cues?: unknown }).cues : undefined;
   return Array.isArray(cues) && cues.every((c) => typeof c?.phrase === 'string') ? (cues as readonly Cue[]) : null;
@@ -65,8 +83,7 @@ function repairCues(config: unknown, target: PostTarget): { readonly config: unk
   const clear: Cue[] = [];
   for (const c of kept as Cue[]) {
     const mine = occurrences(target.text, c.phrase);
-    const theirs = clear.flatMap((o) => occurrences(target.text, o.phrase));
-    if (!clear.some((o) => sameWords(o.phrase, c.phrase)) && !mine.some((a) => theirs.some((b) => a.from < b.to && b.from < a.to))) clear.push(c);
+    if (!clear.some((o) => sameWords(o.phrase, c.phrase)) && !crosses(mine, placesOf(target.text, clear))) clear.push(c);
   }
   drop('overlapsEarlierCue', clear);
   drop('mostFiveCues', kept.slice(0, CUES.most));
@@ -110,7 +127,11 @@ export const laughTrack: CardRules<LaughTrackConfig> = {
     if (!lands.ok || !cues || target.reach !== 'post') return lands;
     for (const c of cues) if (!occurrences(target.text, c.phrase).length) return refuse(`“${c.phrase}” is not in this post's own words`);
     const places = placesOf(target.text, cues);
-    for (let i = 1; i < places.length; i++) if (places[i]!.from < Math.max(...places.slice(0, i).map((p) => p.to))) return refuse('two cues cover the same words');
+    let to = -Infinity;
+    for (const p of places) {
+      if (p.from < to) return refuse('two cues cover the same words');
+      to = Math.max(to, p.to);
+    }
     if (places.length > PLACES.most) return refuse(`these cues cover ${places.length} places in this post; a play covers at most ${PLACES.most}`);
     return lands;
   },
