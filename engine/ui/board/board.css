@@ -54,6 +54,23 @@
   font-variant-numeric: tabular-nums;
 }
 
+/*
+ * Every cell of a row stands on the title's baseline, not its top, at every width (docs/plans/2026-11-12-list-rows-design.md, section 2.3): the
+ * title is 16px bold in a 24px box and a count is 13.75px text, so top-aligned cells put a count about 3px above the title's baseline. The
+ * folder cell keeps its own alignment, set below at a selector that is not lower than this one.
+ */
+.kb-table.kb-thread-list .kb-thread-row > td {
+  vertical-align: baseline;
+}
+
+/*
+ * "Spun from" has a line of its own under the title at every width (section 2.2): the title always stands alone, and neither a long title nor
+ * a long origin wraps beside the other.
+ */
+.kb-thread-spun {
+  display: block;
+}
+
 /* A fixed table takes its widths from its header row: say them there too. */
 .kb-thread-list th { box-sizing: border-box; }
 .kb-thread-list th:nth-child(1) { width: 48px; }
@@ -104,8 +121,11 @@
   display: none;
 }
 
-/* The status cell holds one 24 by 20 folder (Icons.tsx), centered; its words are visually hidden. */
-.kb-thread-list td.kb-thread-flags {
+/*
+ * The status cell holds one 24 by 20 folder (Icons.tsx), centered; its words are visually hidden. Its selector is raised to the baseline rule's
+ * above (`.kb-table.kb-thread-list .kb-thread-row > td`) so that the folder stays centered on a desktop and does not take the title's baseline.
+ */
+.kb-table.kb-thread-list .kb-thread-row > td.kb-thread-flags {
   text-align: center;
   vertical-align: middle;
   padding-inline: 6px;
@@ -226,7 +246,7 @@
   container-type: inline-size;
 }
 
-/* The fold's separators ("169 replies · 4 views · last: Pipewrench, Oct 5") are paint: out of the reading order and out of a table's width. */
+/* The fold's separator ("169 replies · 4 views") is paint: out of the reading order and out of a table's width. The last post has no separator, a line of its own. */
 .kb-thread-sep {
   display: none;
 }
@@ -235,7 +255,9 @@
   /*
    * The phone's list (docs/research/2026-11-06-board-look/03-phone.html): still a ruled table of the board's grays, each row two cells wide,
    * its folder in a 40px column of its own and its words beside it, where the counts fold into one line under the title. The table's
-   * elements are blocks here, so a row's cells flow as one text: the grid is the table's gap, and a row's ground is its own.
+   * elements are blocks here, so a row's cells flow as one text: the grid is the table's gap, and a row's ground is its own. A row is two
+   * lines under its title (docs/plans/2026-11-12-list-rows-design.md, section 2.1): "169 replies · 4 views", then "last: [avatar] Pipewrench,
+   * Oct 5" as a block of its own, so no line ends on a "·" or a comma and nothing breaks mid-phrase.
    */
   .kb-thread-list {
     display: grid;
@@ -332,11 +354,18 @@
     display: none;
   }
 
-  /* The counts: one line, in the third gray's type, the figures in the ink; a unit and a date keep their words whole. */
+  /* The counts: one line, in the third gray's type, the figures in the ink; a unit and a date keep their words whole. The last post leaves that line for the next, a block in the same type. */
   .kb-table.kb-thread-list .kb-thread-row > td.kb-thread-replies,
-  .kb-table.kb-thread-list .kb-thread-row > td.kb-thread-views,
-  .kb-table.kb-thread-list .kb-thread-row > td.kb-thread-last {
+  .kb-table.kb-thread-list .kb-thread-row > td.kb-thread-views {
     display: inline;
+    text-align: left;
+    color: var(--kb-muted);
+    font-size: var(--kb-size-small);
+    line-height: 1.6;
+  }
+
+  .kb-table.kb-thread-list .kb-thread-row > td.kb-thread-last {
+    display: block;
     text-align: left;
     color: var(--kb-muted);
     font-size: var(--kb-size-small);
