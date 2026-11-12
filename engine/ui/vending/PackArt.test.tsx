@@ -69,7 +69,7 @@ describe('the stylesheet', () => {
     expect(at, selector).toBeGreaterThanOrEqual(0);
     return css.slice(at, css.indexOf('}', at));
   };
-  /* The tear's points: the ones written with the tear's two heights. */
+  /* The tear's vertices (thirteen, so twelve segments): the ones written with the tear's two heights. */
   const tear = (b: string) => [...b.matchAll(/([\d.]+%) var\(--kb-tear-(?:hi|lo)\)/gu)].map((m) => m[0]);
 
   test('a pictured whole pack has no clip and no background', () => {
@@ -85,5 +85,12 @@ describe('the stylesheet', () => {
       expect(drawnTear).toHaveLength(13);
       expect(picturedTear).toEqual(drawnTear);
     }
+  });
+
+  test('the pictured rules come after the drawn pack\'s rules they override', () => {
+    for (const part of ['opened', 'top']) {
+      expect(css.indexOf(`.kb-pack[data-kb-pictured][data-part='${part}'] {`), part).toBeGreaterThan(css.indexOf(`.kb-pack[data-part='${part}'] {`));
+    }
+    expect(css.indexOf('.kb-pack[data-kb-pictured] {')).toBeGreaterThan(css.indexOf('.kb-pack {'));
   });
 });

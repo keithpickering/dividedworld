@@ -38,8 +38,8 @@
 
 /*
  * A pictured pack (`data-kb-pictured`, PackArt.tsx): the picture is the whole pack on a transparent ground, so its outline is the pack's and the box
- * carries no background and no crimp clip. Torn, the box is cut along the tear line alone, closed by the box's plain corners. The tear's twelve
- * points are the same as the polygons above; PackArt.test.tsx reads both and compares them, so a change to one fails until the other follows.
+ * carries no background and no crimp clip. Torn, the box is cut along the tear line alone, closed by the box's plain corners. The tear's thirteen
+ * vertices (twelve segments) are the same as the polygons above; PackArt.test.tsx reads both and compares them, so a change to one fails until the other follows.
  */
 .kb-pack[data-kb-pictured] {
   background: none;
