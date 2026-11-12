@@ -19,10 +19,12 @@ test('a code is asked for and checked at Supabase Auth\'s own endpoints, called 
   const auth = gotrue({ ...opts, fetch });
   await auth.requestCode('a@b.c', { create: true, invite: 'code', redirect: 'https://dw.test/register' });
   await auth.requestCode('a@b.c', { create: false, invite: null, redirect: 'https://dw.test/sign-in?next=%2Fa%3Fb%3D1' });
+  await auth.requestCode('a@b.c', { create: true, invite: null, redirect: 'https://dw.test/register', conduct: 2 });
   assert.deepEqual(await auth.verifyCode('a@b.c', '123456'), { session });
   assert.deepEqual(calls.map((c) => [c.url, c.body]), [
     ['https://p.example/auth/v1/otp?redirect_to=https%3A%2F%2Fdw.test%2Fregister', { email: 'a@b.c', create_user: true, data: { invite: 'code' } }],
     ['https://p.example/auth/v1/otp?redirect_to=https%3A%2F%2Fdw.test%2Fsign-in%3Fnext%3D%252Fa%253Fb%253D1', { email: 'a@b.c', create_user: false, data: { invite: null } }],
+    ['https://p.example/auth/v1/otp?redirect_to=https%3A%2F%2Fdw.test%2Fregister', { email: 'a@b.c', create_user: true, data: { invite: null, conduct: 2 } }],
     ['https://p.example/auth/v1/verify', { type: 'email', email: 'a@b.c', token: '123456' }],
   ]);
   assert.ok(calls.every((c) => c.apikey === 'sb_publishable_p' && c.authorization === null), 'the key in apikey alone');
@@ -37,6 +39,31 @@ test('a refused code is a wrong or expired one; anything else is thrown', async 
   await assert.rejects(gotrue({ ...opts, fetch: refuse({}, 429) }).verifyCode('a@b.c', '1'));
   await assert.rejects(gotrue({ ...opts, fetch: refuse({ error_code: 'captcha_failed' }, 400) }).verifyCode('a@b.c', '1'));
   await assert.rejects(gotrue({ ...opts, fetch: refuse({}, 500) }).verifyCode('a@b.c', '1'));
+});
+
+test('a login Auth has banned is told apart from a wrong code: the verify is refused as barred, for a 400 or a 403', async () => {
+  const refuse = (body: unknown, status: number) => recorder(() => new Response(JSON.stringify(body), { status })).fetch;
+  for (const status of [400, 403]) {
+    assert.deepEqual(await gotrue({ ...opts, fetch: refuse({ error_code: 'user_banned', msg: 'User is banned' }, status) }).verifyCode('a@b.c', '1'), { refused: 'barred' }, String(status));
+  }
+});
+
+test('a ban answered in the OAuth style (invalid_grant described as banned) is barred too, while a bare invalid_grant stays a wrong code', async () => {
+  const refuse = (body: unknown, status: number) => recorder(() => new Response(JSON.stringify(body), { status })).fetch;
+  for (const status of [400, 403]) {
+    assert.deepEqual(await gotrue({ ...opts, fetch: refuse({ error: 'invalid_grant', error_description: 'User is banned' }, status) }).verifyCode('a@b.c', '1'), { refused: 'barred' }, String(status));
+  }
+  assert.deepEqual(await gotrue({ ...opts, fetch: refuse({ error: 'invalid_grant', error_description: 'Token has expired or is invalid' }, 400) }).verifyCode('a@b.c', '1'), { refused: 'code' });
+});
+
+test('a banned login following the emailed link is barred as it is by a code, in either style of answer; a spent link stays a refused link', async () => {
+  const refuse = (body: unknown, status: number) => recorder(() => new Response(JSON.stringify(body), { status })).fetch;
+  const hash = 'pkce_0123456789abcdef-hash';
+  for (const status of [400, 403]) {
+    assert.deepEqual(await gotrue({ ...opts, fetch: refuse({ error_code: 'user_banned', msg: 'User is banned' }, status) }).verifyLink(hash), { refused: 'barred' }, String(status));
+    assert.deepEqual(await gotrue({ ...opts, fetch: refuse({ error: 'invalid_grant', error_description: 'User is banned' }, status) }).verifyLink(hash), { refused: 'barred' }, String(status));
+  }
+  assert.deepEqual(await gotrue({ ...opts, fetch: refuse({ error_code: 'otp_expired' }, 403) }).verifyLink(hash), { refused: 'link' });
 });
 
 test('a code request, after the answer, is retried once on a transport failure, and its refusals are logged, never thrown', async () => {

@@ -13,6 +13,8 @@ import { useLocation, useNavigate } from '../router.tsx';
 import { useSession, useWhy } from './session.ts';
 import './account.css';
 import { CalmRegion } from '../glass/Calm.tsx';
+import { Accept } from '../conduct/Accept.tsx';
+import { Barred, barHolds } from './Barred.tsx';
 
 export function OpenAccount() {
   const { api, settings } = useKayfa();
@@ -76,12 +78,16 @@ export function OpenAccount() {
 }
 
 /**
- * Shows the open-account path in place of a page while the player is signed in with no account; the sign-in pages are let through, and so is Reach a person
+ * Shows the bar, or the code to accept, in place of every page for an account that has one; and the open-account path in place of a page while the player is signed in with no account; the sign-in pages are let through, and so is Reach a person
  * (/contact), since a player stuck here is the one who most needs a way to reach an admin.
  */
 export function AccountGate({ children }: { readonly children: ReactNode }) {
   const session = useSession();
   const { path } = useLocation();
+  const { api } = useKayfa();
+  /* A bar comes first, then the code; neither lets any page through, and a stale suspension (its date passed on this clock) is no bar. */
+  if (path !== CONTACT_PATH && session && (!session.signedIn || session.account !== null) && barHolds(session.bar, api.now())) return <Barred until={session.bar.unknown ? undefined : session.bar.until} signedIn={session.signedIn} />;
+  if (session?.signedIn && session.account && !session.conductAccepted) return <Accept />;
   if (session?.signedIn && !session.account && path !== '/sign-in' && path !== '/register' && path !== CONTACT_PATH) {
     return <div className="kb-acct"><CalmRegion className="kb-acct-panel"><OpenAccount /></CalmRegion></div>;
   }

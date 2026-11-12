@@ -178,6 +178,10 @@ test('hints: the words claim no more than the threshold proves (a lead is "most"
   }
 });
 
+test('a Random Event finds a card rarely: about one in thirty', () => {
+  assert.deepEqual(defaults.cosmetics.events.outcomes, { line: 70, gear: 20, card: 3 });
+});
+
 test('Laugh Track\'s mark is set, the dropped numbers are gone, and every held number is inside its bounds', () => {
   const held = defaults.cardSettings;
   assert.equal(held['laughTrack.markMost'], 100);

@@ -88,7 +88,7 @@ const on = (id: string, role: string, name: string, more: Partial<Landmark> = {}
  * What the phone board draws that the build does not follow, by decision: the board's screens are cut from the middle of each page (the queue from its
  * Waiting group, Write an update from its head), where the build draws the whole page: the title and lead and To do above the queue, and Updates' title, lede
  * and the Write an update button above the form, which also has its note under the head. So a screen's first part stands lower than the board's, by the shift
- * measured, and each part under it is held from that first part, at the shift the build's fuller words and spacing make. Write an update's
+ * measured (the 601.4 is 42.3px more than the first run's: the admin pages' strip wraps to a second row at 390px, Trophies standing alone on it, since main's trophies admin page, cosmetics Task 11, added its button after our Reports one, conduct plan Task 7), and each part under it is held from that first part, at the shift the build's fuller words and spacing make. Write an update's
  * head stands 266.5px lower: the page's title and lede are above the form. Its presses end with `scroll: 'top'`, since a fill scrolls the page
  * by how the hint under What changed wraps, and the sticky bar then stands over a page that has moved with it (CI's narrower text moved it
  * 26px). The phone's menu is a Back row with the tabs in a row of their own under it, which the board draws as Back alone, so the bar is not compared by its size. No type on this board is compared (the build sets a phone in
@@ -100,7 +100,7 @@ export const phone: BoardManifest = {
   build: { story: 'boards-00-admin-queue--admin-queue-phone' },
   landmarks: [
     ...bar(0),
-    on('waiting-head', 'heading', 'WAITING TO LAND 1', { buildName: 'Waiting to land 1', buildShift: { y: 601.4 } }),
+    on('waiting-head', 'heading', 'WAITING TO LAND 1', { buildName: 'Waiting to land 1', buildShift: { y: 601.4 + 42.3 } }),
     on('countdown', 'text', 'IN 17 HOURS', { origin: 'waiting-head', buildShift: { y: 11 } }),
     on('why', 'text', 'Changes back when 8 different characters post there, or Nov 14.', { buildName: "Why, in The Director's words: “Games has gone soft. Time for discipline.”", origin: 'waiting-head', box: 'none' }),
     on('hold', 'button', 'HOLD', { buildName: 'Hold: Small Soldiers Situation Room', origin: 'why', originEdge: 'bottom' }),

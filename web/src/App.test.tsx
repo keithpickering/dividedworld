@@ -338,6 +338,19 @@ test('/contact, signed out, is a glass page on the settings smoke that shows the
   expect(window.location.pathname).toBe('/');
 });
 
+test('/conduct, signed out, is a glass page on the settings smoke that lists the instance\'s sections', async () => {
+  window.history.pushState(null, '', '/conduct');
+  const fake = createFake({ instance, settings: fallbackSettings });
+  render(<App api={fake} />);
+  expect(await screen.findByRole('heading', { level: 1, name: 'Code of conduct' })).toBeInTheDocument();
+  expect(document.getElementById('person')).not.toBeNull();
+  expect(screen.queryByRole('banner')).toBeNull();
+  expect(screen.queryByRole('region', { name: 'Game HUD' })).toBeNull();
+  expect(document.querySelector('.kb-glass-content-panel')).toBeNull();
+  await userEvent.click(within(await screen.findByRole('navigation', { name: 'Menu' })).getByRole('link', { name: 'Back to the board' }));
+  expect(window.location.pathname).toBe('/');
+});
+
 test('/invites opens Settings › Account, where invites now live, and keeps the address working', async () => {
   window.history.pushState(null, '', '/invites');
   const fake = createFake({ instance, settings: fallbackSettings });

@@ -1,0 +1,362 @@
+/*
+ * What the conduct boards add to the app's own stylesheets (docs/research/2026-11-02-conduct/README.md). Everything the app
+ * already draws comes from engine/ui and the instance's theme through the <link>s in each board; this file holds only
+ * (1) the board's stage, which stands a fixed-size window under the glass layers the real app positions by script,
+ * (2) the proposed pieces of Task 6, named as the build will name them (kb-hidden-note, kb-hidden-own, kb-report-*), and
+ * (3) the annotation captions, which are the board's own and not part of any screen.
+ * Every color in the proposed pieces is a glass token (tokens come from glass-tokens.css, written by mock.mjs from glass.json).
+ */
+
+/* ---- the stage: a window of fixed size, the Lens and the dialogs placed inside it instead of the viewport ---- */
+
+.stage {
+  position: relative;
+  overflow: hidden;
+  height: var(--stage-h, 900px);
+}
+
+.stage .kb-page {
+  padding-bottom: 2em;
+}
+
+.stage .kb-glass-overlay {
+  position: absolute;
+}
+
+/* The Lens, docked: the Float's 16px from the top and right, 460px wide at 1440. The page gives its room up (Float.tsx publishRoom). */
+.stage .kb-float {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 460px;
+}
+
+.stage.has-dock .kb-page {
+  width: calc(100% - 460px - 48px);
+  margin-left: 24px;
+  margin-right: auto;
+}
+
+:root[data-kb-layout='phone'] .stage .kb-float {
+  top: auto;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: auto;
+  max-width: none;
+}
+
+:root[data-kb-layout='phone'] .stage.has-dock .kb-page {
+  width: 96%;
+  margin: 0 auto;
+}
+
+:root[data-kb-layout='phone'] .stage .kb-float > .kb-glass-dialog.kb-lens {
+  max-height: calc(var(--stage-h) - 120px);
+}
+
+/* A phone's dialog is a sheet on the window's foot. */
+:root[data-kb-layout='phone'] .stage .kb-glass-overlay[data-kb-sheet] {
+  display: flex;
+  align-items: flex-end;
+  padding: 0;
+}
+
+:root[data-kb-layout='phone'] .stage .kb-glass-overlay[data-kb-sheet] > .kb-glass-dialog {
+  width: 100%;
+  max-height: 100%;
+  overflow-y: auto;
+}
+
+/* ---- the states board: three dialogs standing side by side on one dim ground, one under another on a phone ---- */
+
+.states {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 430px));
+  gap: 24px;
+  align-items: start;
+  justify-content: center;
+  padding: 40px 24px;
+  background: color-mix(in srgb, var(--kb-glass-ground) 100%, transparent);
+}
+
+.states > figure {
+  margin: 0;
+  min-width: 0;
+}
+
+.states .kb-glass-dialog {
+  width: 100%;
+  --kb-dialog-pad-x: 28px;
+}
+
+:root[data-kb-layout='phone'] .states {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 28px;
+  padding: 20px 8px;
+}
+
+.state-cap {
+  margin: 0 0 10px;
+  font: 800 var(--kb-glass-size-label) / 1.2 var(--kb-glass-font-body);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--kb-glass-text-2);
+}
+
+/* ---- annotations: the board's own captions, never part of a screen ---- */
+
+.cap {
+  margin: 1.4em 0 0.5em;
+  font: bold var(--kb-size-small) / 1.3 var(--kb-font-mono);
+  color: var(--kb-muted);
+}
+
+/* ---- Report to admins: the plain link ---- */
+
+/*
+ * At the very foot of the Lens: a hairline rule sets it apart, then a plain text link in the glass's pale link ink and the glass's label
+ * size. Never a tab, mark, chip or button. It is the last thing in the Lens's scrolling body.
+ */
+.kb-report-foot {
+  margin: 20px 0 0;
+  padding: 12px 0 0;
+  border-top: 1px solid color-mix(in srgb, var(--kb-glass-text) 22%, transparent);
+}
+
+.kb-report-link {
+  display: inline-block;
+  padding-block: 6px;
+  font-size: var(--kb-glass-size-label);
+  font-weight: 600;
+  color: var(--kb-glass-pale);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-report-link {
+  font-size: var(--kb-glass-size-phone-body);
+}
+
+/* On a History row: the board's own plain link, at the board's small size. */
+.kb-report-row-link {
+  margin-left: 0.5em;
+}
+
+/* ---- the hidden note ---- */
+
+/*
+ * One calm glass strip in place of the words: a dark field under the 1px pale-cyan seam rule, the account notice's plain look with
+ * no left bar, no glow, no mark. Text is the glass's text on its field (about 15:1); the link is the glass's pale ink (about 13:1).
+ */
+.kb-hidden-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 16px;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 12px 16px;
+  border-top: 1px solid var(--kb-glass-pale);
+  background: var(--kb-glass-field);
+  font-family: var(--kb-glass-font-body);
+  font-size: var(--kb-glass-size-label);
+  font-weight: 600;
+  line-height: 1.4;
+  font-style: normal;
+  color: var(--kb-glass-text);
+}
+
+.kb-hidden-note a {
+  color: var(--kb-glass-pale);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-hidden-note {
+  font-size: var(--kb-glass-size-phone-body);
+}
+
+/* In a quote's frame and a History row the strip is inline with the words' own margins. */
+.kb-quote-body > .kb-hidden-note,
+.kb-post-history .kb-hidden-note {
+  margin: 0.3em 0 0.1em;
+}
+
+/* The author's own panel under the note: muted, plain, ruled all round, never filled with an ink. */
+.kb-hidden-own {
+  box-sizing: border-box;
+  margin: 8px 0 0;
+  padding: 14px 16px 16px;
+  border: 1px solid color-mix(in srgb, var(--kb-glass-text) 30%, transparent);
+  background: var(--kb-glass-field-2);
+  font-family: var(--kb-glass-font-body);
+  font-size: var(--kb-glass-size-label);
+  font-weight: 500;
+  line-height: 1.45;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-hidden-own-head {
+  margin: 0 0 8px;
+  font-size: var(--kb-glass-size-label);
+  font-weight: 800;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-hidden-own-words {
+  margin: 0 0 14px;
+  font: var(--kb-size-body) / var(--kb-line) var(--kb-font-body);
+  color: var(--kb-glass-text);
+}
+
+.kb-hidden-own p {
+  margin: 0;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-hidden-own {
+  font-size: var(--kb-glass-size-phone-body);
+}
+
+/* ---- the report dialog ---- */
+
+.kb-report-body > * + * {
+  margin-top: 20px;
+}
+
+.kb-report-body .kb-acct-text {
+  margin-bottom: 0;
+  max-width: 62ch;
+}
+
+.kb-report-sections {
+  margin: 20px 0 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.kb-report-section {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 20px;
+  padding: 4px 0;
+  border-top: 1px solid color-mix(in srgb, var(--kb-glass-text) 22%, transparent);
+}
+
+.kb-report-section:last-child {
+  border-bottom: 1px solid color-mix(in srgb, var(--kb-glass-text) 22%, transparent);
+}
+
+.kb-report-section > label {
+  display: flex;
+  flex: 1 1 14em;
+  gap: 14px;
+  align-items: center;
+  min-height: 52px;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--kb-glass-text);
+  cursor: pointer;
+}
+
+.kb-report-section > label > input {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  margin: 0;
+  accent-color: var(--kb-glass-pale);
+}
+
+.kb-report-section > label > input:focus-visible {
+  outline: 3px solid var(--kb-glass-text-hi);
+  outline-offset: 3px;
+}
+
+.kb-report-section > a {
+  flex: none;
+  padding-block: 8px;
+  font-size: var(--kb-glass-size-label);
+  font-weight: 600;
+  color: var(--kb-glass-pale);
+  text-underline-offset: 4px;
+}
+
+.kb-report-label {
+  display: block;
+  margin: 0 0 8px;
+  font-size: var(--kb-glass-size-lead);
+  font-weight: 800;
+  line-height: 1.15;
+  color: var(--kb-glass-text);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-report-label {
+  font-size: var(--kb-glass-size-phone-body);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-report-section > label {
+  font-size: var(--kb-glass-size-phone-body);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-report-section > a {
+  font-size: var(--kb-glass-size-phone-small);
+}
+
+.kb-report-body .kb-mod-textarea {
+  min-height: 7rem;
+  max-width: none;
+}
+
+.kb-report-body .kb-glass-field-count {
+  color: var(--kb-glass-text-2);
+}
+
+.kb-report-body .kb-glass-form-foot {
+  margin-top: 24px;
+}
+
+/* A state said in place of the form, or above it: the words, with a plain 3px rule in the text color. No red, no pink. */
+.kb-report-said {
+  max-width: 62ch;
+  margin: 0;
+  padding-left: 14px;
+  border-left: 3px solid var(--kb-glass-text);
+  font-size: var(--kb-glass-size-body);
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--kb-glass-text);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-report-said {
+  font-size: var(--kb-glass-size-phone-body);
+}
+
+/* ---- a plain button that is drawn as a link (the app's own are <button>s where they open a dialog) ---- */
+
+.kb-linklike {
+  border: 0;
+  background: none;
+  font-family: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.kb-report-row-link {
+  padding: 0;
+  color: var(--kb-link);
+  text-underline-offset: 0.15em;
+}
+
+/* One markup for each layout, so a board needs no script to choose between the centered modal and the sheet. */
+.only-phone { display: none; }
+:root[data-kb-layout='phone'] .only-main { display: none; }
+:root[data-kb-layout='phone'] .only-phone { display: block; }
+
+.kb-report-body .kb-glass-form-foot > .kb-button-row { margin-left: auto; }
+.kb-report-foot .kb-report-link { padding-inline: 0; }

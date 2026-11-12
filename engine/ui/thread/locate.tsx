@@ -23,7 +23,7 @@ export interface Located { readonly thread: Id; readonly seq: number }
 export const ActIndex = createContext<(id: Id) => Located | undefined>(() => undefined);
 
 /** What is kept of an Act read by id. */
-export interface Known { readonly thread: Id; readonly seq: number | null; readonly character: Id | null }
+export interface Known { readonly thread: Id; readonly seq: number | null; readonly character: Id | null; /** Any version of the post is hidden now (`Act.anyHidden`): a quote of it is emptied. */ readonly hidden: boolean }
 
 /** How many Acts' answers are remembered. */
 export const ACT_CACHE_SIZE = 500;
@@ -82,7 +82,7 @@ function createBatch<V>(readMany: (ids: readonly Id[]) => Promise<ReadonlyMap<Id
   };
 }
 
-const known = (a: Act): Known => ({ thread: a.thread, seq: a.seq, character: a.character });
+const known = (a: Act): Known => ({ thread: a.thread, seq: a.seq, character: a.character, hidden: a.anyHidden === true });
 
 const loaders = new WeakMap<KayfaApi, ActLoader>();
 export function actLoader(api: KayfaApi): ActLoader {

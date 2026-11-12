@@ -190,7 +190,7 @@ describe('the footer ends every board page', () => {
     cleanup();
     const copy = { siteName: 'X', siteTagline: 'x', shopName: 'S' };
     render(
-      <RouterProvider><KayfaProvider value={{ api: {}, instance: { classes: [], cards: [], settings: {} }, ui: { glass: testGlass, copy, cards: [], frontDoor: { prompt: { title: 'Who?', line: 'A game.' } } }, settings: {} } as unknown as Kayfa}><PlayerProvider api={{ session: async () => ({ signedIn: false, account: null }), onSession: () => () => {} } as unknown as KayfaApi}><Frame><p>x</p></Frame></PlayerProvider></KayfaProvider></RouterProvider>,
+      <RouterProvider><KayfaProvider value={{ api: {}, instance: { classes: [], cards: [], settings: {} }, ui: { glass: testGlass, copy, cards: [], frontDoor: { prompt: { title: 'Who?', line: 'A game.' } } }, settings: {} } as unknown as Kayfa}><PlayerProvider api={{ session: async () => ({ signedIn: false, account: null, bar: null, conductAccepted: true }), onSession: () => () => {} } as unknown as KayfaApi}><Frame><p>x</p></Frame></PlayerProvider></KayfaProvider></RouterProvider>,
     );
     expect(screen.getByRole('contentinfo')).toHaveTextContent('Powered by KayfaBB');
     expect(document.querySelector('.kb-badges')).toBeNull();

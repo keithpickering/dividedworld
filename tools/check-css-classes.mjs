@@ -49,6 +49,7 @@ export const ALLOWED_HOOKS = new Set([
   'kb-sign-in',
   'kb-index',
   'kb-contact',
+  'kb-conduct',
   'kb-staff',
   'kb-open-account',
   'kb-edit-post',

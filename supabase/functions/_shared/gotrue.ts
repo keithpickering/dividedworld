@@ -37,7 +37,7 @@ export function gotrue(options: { url: string; key: string; fetch?: typeof globa
     console.error(`auth ${path} did not answer`);
   };
   /** A check of a code or a link: one retry on a transport failure, one refusal told apart, the rest thrown. */
-  async function check<R extends 'code' | 'link'>(body: Record<string, string>, refusal: R): Promise<{ session: Session } | { refused: R }> {
+  async function check<R extends 'code' | 'link'>(body: Record<string, string>, refusal: R): Promise<{ session: Session } | { refused: R | 'barred' }> {
     let response: Response | undefined;
     for (let attempt = 1; attempt <= 2; attempt++) {
       if (attempt > 1) await sleep(250);
@@ -52,13 +52,17 @@ export function gotrue(options: { url: string; key: string; fetch?: typeof globa
     if (!response || response.status >= 500) throw new Error(`auth ${refusal} check answered ${response?.status ?? 'nothing'}`);
     const answer = await response.json().catch(() => ({})) as Record<string, unknown>;
     if (response.ok) return { session: answer as never };
+    // Older Auth answers a ban in the OAuth style (invalid_grant, described as banned): it is the ban, so it is checked before invalid_grant is taken for a wrong code.
+    if ((response.status === 400 || response.status === 403) && answer.error === 'invalid_grant' && /banned/i.test(String(answer.error_description ?? answer.msg ?? ''))) return { refused: 'barred' };
+    // A suspended or banned login carries Auth's ban (mail/core.ts); Auth refuses it after a correct code, which proves nothing to anyone who does not hold the address.
+    if ((response.status === 400 || response.status === 403) && answer.error_code === 'user_banned') return { refused: 'barred' };
     // A wrong token and one for an address with no login are one refusal to Auth too.
     if ((response.status === 400 || response.status === 403)
         && (answer.error_code === 'otp_expired' || answer.error_code === 'otp_invalid' || answer.error === 'invalid_grant')) return { refused: refusal };
     throw new Error(`auth ${refusal} check answered ${response.status} ${String(answer.error_code ?? answer.error ?? '')}`);
   }
   return {
-    requestCode: (email, o) => afterward('otp', { email, create_user: o.create, data: { invite: o.invite } }, `?redirect_to=${encodeURIComponent(o.redirect)}`),
+    requestCode: (email, o) => afterward('otp', { email, create_user: o.create, data: { invite: o.invite, ...(o.conduct === undefined ? {} : { conduct: o.conduct }) } }, `?redirect_to=${encodeURIComponent(o.redirect)}`),
     verifyCode: (email, code) => check({ type: 'email', email, token: code }, 'code'),
     verifyLink: (tokenHash) => check({ type: 'email', token_hash: tokenHash }, 'link'),
   };
