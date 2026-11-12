@@ -8,12 +8,14 @@
  * (`CardView`), and the mark and the Lens draw from it; the post's own body holds the effect and nothing a player
  * presses.
  *
- * An effect (`CardUi.Effect`) wraps the post's words wherever they are drawn (the thread, and the ORIGIN box of a
- * thread spun from the post). Each played card's wraps the cards played before it, in play order, so the latest is
- * outermost, except a card with `CardUi.takeover` (Stick Around, which lifts the post out of its thread): those wrap last, so
- * every other card's effect is inside a takeover's `children`, and several takeovers wrap in their own play order. A card with `CardUi.beneath`
- * (the layer other cards' ink lies on) wraps first of all, so every card without it is outside it, and among several play order holds. Only a
- * takeover is given the post's `marks` (the strip the post's date row draws, handed in by the post) and draws them on the post
+ * An effect (`CardUi.Effect`) wraps the post's words wherever they are drawn (the thread, and the ORIGIN box of a thread spun
+ * from the post). The order they nest in is `nestOrder`'s, the one place it is stated, from the innermost out: the cards that write
+ * (`CardRules.writes`, on the post's own reach) wrap the words first, so a tail they draw is the words' next sibling under every other
+ * card, whatever the play order; then the cards with `CardUi.beneath` (the layer other cards' ink lies on); then every other card, so the
+ * latest played is outermost; then the takeovers (Stick Around, which lifts the post out of its thread), so every other card's effect is
+ * inside a takeover's `children`. Each group keeps play order, and a card that writes and takes over is a takeover. The thread's and the
+ * board's plays wrap as their own layers do. The moment (`MomentEffects`) and a History version (`VersionEffects`) nest by the same
+ * function. Only a takeover is given the post's `marks` (the strip the post's date row draws, handed in by the post) and draws them on the post
  * it lifts. A post with no plays, or whose plays' cards draw no effect, is drawn untouched.
  */
 import { createPortal } from 'react-dom';
@@ -43,9 +45,10 @@ const NOT_AUTHOR = 'only the post\'s author saves what is on it';
 export const SAMPLE = 'this is a sample post';
 
 /**
- * Wraps a post's words in the effect of each card played on it, in play order, and in the effects of the live plays above it (the
- * card mechanic's design, section 7): the board's innermost, then the thread's, then its author's, then the post's own, as a card's
- * rules see them (effectsOnTarget), with every takeover outermost. A play beyond a post stops wrapping at its end, by itself.
+ * Wraps a post's words in the effect of each card played on it, and in the effects of the live plays above it (the card mechanic's
+ * design, section 7): the layers in the order the board's, the thread's, the author's, then the post's own, as a card's rules see them
+ * (effectsOnTarget), nested as `nestOrder` says (a card that writes innermost, every takeover outermost). A play beyond a post stops
+ * wrapping at its end, by itself.
  */
 export function PostEffects({ plays, post, board = null, place, marks = null, nameOf, bodyOf, children }: {
   readonly plays: Plays; readonly post: Act; readonly place: EffectPlace;
@@ -215,43 +218,49 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
   const bodyEl = bodyRef.current;
   /* The slot is the outermost thing here, so a play landing on the post mid-compose (a layer wrapping the words) never moves it in the tree: it would remount, and the card's drawing with it. */
   const slot = (inner: ReactNode) => (composing && play && Compose && bodyEl ? <ComposeSlot composing={composing} Compose={Compose} post={post} play={play} body={bodyEl}>{inner}</ComposeSlot> : inner);
-  /* The post's words sit in `bodyEl`, a div the slot owns (so it is one element however the layers wrap it), innermost inside every layer. */
-  const words = composing && Compose && bodyEl ? <WordsIn el={bodyEl}>{children}</WordsIn> : children;
-  if (layers.every((l) => l.acting.length === 0) && !momentAct) return <>{slot(words)}</>;
+  /* The post's words sit in `bodyEl`, a div the slot owns (so it is one element however the layers wrap it), innermost inside every layer but a card that writes's. */
+  const plain = (inner: ReactNode) => (composing && Compose && bodyEl ? <WordsIn el={bodyEl}>{inner}</WordsIn> : inner);
+  if (layers.every((l) => l.acting.length === 0) && !momentAct) return <>{slot(plain(children))}</>;
   const takes = (key: string) => ui.cards.find((c) => c.key === key)?.takeover === true;
-  /* Each layer's cards in the order each was first played there, the first innermost; every takeover after all of them. */
+  /* Each layer's cards in the order each was first played there; `nestOrder` says the order they nest in. */
   const wraps = layers.flatMap((l) => [...new Set(l.acting.map((p) => p.card))].map((key) => ({ ...l, key })));
-  const beneath = (key: string) => ui.cards.find((c) => c.key === key)?.beneath === true;
-  const ordered = [...wraps.filter((w) => !takes(w.key) && beneath(w.key)), ...wraps.filter((w) => !takes(w.key) && !beneath(w.key)), ...wraps.filter((w) => takes(w.key))];
-  let wrapped = words;
+  const { writing: within, rest } = nestOrder(wraps, ui.cards, writing);
+  const wrapIn = (node: ReactNode, list: readonly (typeof wraps)[number][], from: number): ReactNode => {
+    let wrapped = node;
+    for (const [i, { key, reach, acting, of }] of list.entries()) {
+      const card = ui.cards.find((c) => c.key === key);
+      if (!card?.Effect) continue;
+      const mine = acting.filter((p) => p.card === key);
+      const Effect = card.Effect;
+      wrapped = (
+        <BoundEffect
+          key={`${reach}:${key}`} Effect={Effect} store={plays} reach={reach}
+          post={post} plays={mine} states={of.states} released={of.released} place={place} marks={card.takeover ? marks : null}
+          written={writtenOf(written, mine, writing)} {...(drawn !== null && reach === 'post' ? { version: drawn } : {})}
+          save={reach === 'post' ? save : beyondSave} release={release} nameOf={nameOf}
+          give={give} moreGifts={moreGifts} wallet={wallet}
+          {...(reach === 'post' && driving.has(key) ? { drives: drivesOf(played, key, gifts, at) } : {})}
+          reader={{ author: author !== null, caster: mine.some((p) => actingCharacters.some((c) => c.id === p.caster)) }}
+          ink={claims.at(`${reach}:${key}`, from + i)} {...(reach === 'post' ? { surface: surfaceOf(key, mine, of) } : {})}
+        >
+          {wrapped}
+        </BoundEffect>
+      );
+    }
+    return wrapped;
+  };
+  /* A shown moment replaces the words and every effect inside the takeovers (`MomentView` is given the words as they are drawn without it). */
   if (momentAct && bodyOf) {
-    wrapped = (
+    const shown = (
       <MomentView
-        play={momentAct} place={place} nameOf={nameOf} bodyOf={bodyOf} now={words}
+        play={momentAct} place={place} nameOf={nameOf} bodyOf={bodyOf} now={plain(children)}
         back={() => lens.showMoment(null)}
       />
     );
+    return <>{slot(wrapIn(shown, rest.filter((w) => takes(w.key)), 0))}</>;
   }
-  for (const [rank, { key, reach, acting, of }] of (momentAct ? ordered.filter((w) => takes(w.key)) : ordered).entries()) {
-    const card = ui.cards.find((c) => c.key === key);
-    if (!card?.Effect) continue;
-    const mine = acting.filter((p) => p.card === key);
-    const Effect = card.Effect;
-    wrapped = (
-      <BoundEffect
-        key={`${reach}:${key}`} Effect={Effect} store={plays} reach={reach}
-        post={post} plays={mine} states={of.states} released={of.released} place={place} marks={card.takeover ? marks : null}
-        written={writtenOf(written, mine, writing)} {...(drawn !== null && reach === 'post' ? { version: drawn } : {})}
-        save={reach === 'post' ? save : beyondSave} release={release} nameOf={nameOf}
-        give={give} moreGifts={moreGifts} wallet={wallet}
-        {...(reach === 'post' && driving.has(key) ? { drives: drivesOf(played, key, gifts, at) } : {})}
-        reader={{ author: author !== null, caster: mine.some((p) => actingCharacters.some((c) => c.id === p.caster)) }}
-        ink={claims.at(`${reach}:${key}`, rank)} {...(reach === 'post' ? { surface: surfaceOf(key, mine, of) } : {})}
-      >
-        {wrapped}
-      </BoundEffect>
-    );
-  }
+  /* The effects of the cards that write wrap the words first, so a tail is their next sibling under every other card; a compose's body holds both. */
+  const wrapped = wrapIn(plain(wrapIn(children, within, 0)), rest, within.length);
   return <>{slot(wrapped)}</>;
 }
 
@@ -298,6 +307,26 @@ function WordsIn({ el, children }: { readonly el: HTMLDivElement; readonly child
 function afterSurface(plays: Plays, api: KayfaApi, play: Id, covered: number, live: readonly Id[]): void {
   plays.setSurfaces({ [play]: { covered, live } });
   if (plays.wantsSurface(play)) void readSurface(api, plays, play);
+}
+
+/**
+ * The order cards nest around a post's words, the one place it is stated (PostEffects, MomentEffects and VersionEffects all take it). Given the
+ * cards to wrap in play order (one entry for each card of a layer, `reach` naming the layer where it is not the post's own), it returns the
+ * cards that write on the post's own reach as `writing`, which wrap the words first so their tail is the words' next sibling under every other
+ * card, and `rest` outward from them: the `beneath` cards, then the others, then the takeovers, each group in the order given. A takeover is
+ * a takeover whatever else it is. It reads the cards' rules and UI alone, never who played a card or who owns a character.
+ */
+export function nestOrder<T extends { readonly key: string; readonly reach?: Reach }>(
+  cards: readonly T[], ui: readonly CardUi[], writing: ReadonlySet<string>,
+): { readonly writing: readonly T[]; readonly rest: readonly T[] } {
+  const take = (key: string) => ui.find((c) => c.key === key)?.takeover === true;
+  const under = (key: string) => ui.find((c) => c.key === key)?.beneath === true;
+  const inside = (c: T) => !take(c.key) && writing.has(c.key) && (c.reach === undefined || c.reach === 'post');
+  const others = cards.filter((c) => !inside(c));
+  return {
+    writing: cards.filter(inside),
+    rest: [...others.filter((c) => !take(c.key) && under(c.key)), ...others.filter((c) => !take(c.key) && !under(c.key)), ...others.filter((c) => take(c.key))],
+  };
 }
 
 /** The keys of the cards that write (`CardRules.writes`): only their plays have tails to read. */
@@ -482,7 +511,7 @@ const NONE_RELEASED: ReadonlySet<Id> = new Set();
  * A play's moment, drawn: `children` (the moment's version of the post, as the caller draws a post's words) wrapped in the effects of
  * the moment's drawn layers (`momentParts`), each given `still`, the state it had saved then, no marks, a `save` and a `release` that
  * refuse without asking, and a `met` that does nothing; its `show` hands the view's words to `onWords`, by card. The layers wrap in
- * the order PostEffects wraps a post's own (the cards as each was first played, the first innermost, every takeover outermost), from a
+ * the order PostEffects wraps a post's own (`nestOrder`), from a
  * Plays store of its own, so nothing here reads or changes the live post's. The reader is nobody in particular: a moment is the same
  * for every reader.
  */
@@ -513,10 +542,9 @@ export function MomentEffects({ moment, place, nameOf, onWords, children }: {
   const tailRows = useTails(moment.version, writingPlays.map((p) => p.id));
   const at = useMomentVersion(moment.version, writingPlays.length > 0);
   const written = useMemo(() => resolveWritten(tailRows, [], at, 'version'), [tailRows, at]);
-  const takes = (key: string) => ui.cards.find((c) => c.key === key)?.takeover === true;
-  const keys = [...new Set(here.plays.map((p) => p.card))];
+  const order = nestOrder([...new Set(here.plays.map((p) => p.card))].map((key) => ({ key })), ui.cards, writing);
   let wrapped = children;
-  for (const key of [...keys.filter((k) => !takes(k)), ...keys.filter(takes)]) {
+  for (const { key } of [...order.writing, ...order.rest]) {
     const Effect = ui.cards.find((c) => c.key === key)!.Effect!;
     wrapped = (
       <StillEffect key={key} Effect={Effect} card={key} onWords={onWords}
@@ -556,12 +584,12 @@ export function VersionEffects({ post, version, plays, written, nameOf = () => '
   readonly written: ReadonlyMap<Id, Written>;
   readonly nameOf?: (character: Id | null) => string; readonly children: ReactNode;
 }) {
-  const { ui } = useKayfa();
+  const { ui, instance } = useKayfa();
+  const writing = useMemo(() => writingKeys(instance.cards), [instance.cards]);
   const has = plays.filter((p) => written.has(p.id));
-  const takes = (key: string) => ui.cards.find((c) => c.key === key)?.takeover === true;
-  const keys = [...new Set(has.map((p) => p.card))].filter((k) => ui.cards.find((c) => c.key === k)?.Effect);
+  const order = nestOrder([...new Set(has.map((p) => p.card))].filter((k) => ui.cards.find((c) => c.key === k)?.Effect).map((key) => ({ key })), ui.cards, writing);
   let wrapped = children;
-  for (const key of [...keys.filter((k) => !takes(k)), ...keys.filter(takes)]) {
+  for (const { key } of [...order.writing, ...order.rest]) {
     const Effect = ui.cards.find((c) => c.key === key)!.Effect!;
     wrapped = (
       <StillEffect key={key} Effect={Effect} card={key} onWords={nothing}
