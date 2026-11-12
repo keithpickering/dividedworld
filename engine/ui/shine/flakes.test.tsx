@@ -260,7 +260,13 @@ describe('the cling layer', () => {
   /* Issue #412's findings, and a hit's one owner (docs/plans/2026-11-11-shake-design.md section 4). */
   describe('a hit has one owner at a time', () => {
     const inked = (el: HTMLElement): HTMLElement => { for (const k of ['--kb-bg', ...POST_INK]) el.style.setProperty(k, light[k]!); return el; };
-    const child = (body: HTMLElement): HTMLElement => { const el = inked(document.createElement('div')); body.append(el); return el; };
+    /* A surface over its hit, as Glitter Bomb's face lies over the body it paints: the hit's box is its own, so a flake lands in it. */
+    const child = (body: HTMLElement): HTMLElement => {
+      const el = inked(document.createElement('div'));
+      el.getBoundingClientRect = () => body.getBoundingClientRect();
+      body.append(el);
+      return el;
+    };
     const mk = () => makeFlakes({ seed: 'sticky', box: { w: 296, h: 296 }, inks: GLITTER, holo: 7, density: 70, glint: GLINT });
     /** A pointer sweep over the page at x: how much of a host's glitter it picks up. */
     const sweepAt = (x: number): number => {
