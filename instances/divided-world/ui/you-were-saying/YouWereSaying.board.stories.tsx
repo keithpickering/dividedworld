@@ -35,8 +35,7 @@ const TAILS: Record<Case, readonly (string | null)[]> = {
   tapedLast: [' And the princess agrees, mostly.'],
 };
 /* Which card is played first (the lower layer): in tapedFirst Autocorrect, in tapedLast You Were Saying?. */
-const AC_LAYER: Partial<Record<Case, number>> = { tapedFirst: 1, tapedLast: 2 };
-const YWS_LAYER: Partial<Record<Case, number>> = { tapedFirst: 2, tapedLast: 1 };
+const TAPED_LAYERS = { tapedFirst: { ac: 1, yws: 2 }, tapedLast: { ac: 2, yws: 1 } } as const;
 
 function Tailed({ shown, mode, reduced }: Args) {
   const { api } = useKayfa();
@@ -56,11 +55,11 @@ function Tailed({ shown, mode, reduced }: Args) {
       const [[author], [caster]] = await Promise.all([api.acts(thread, 41, 41), api.acts(thread, 42, 42)]);
       if (!author?.character || !caster?.character) return;
       const fake = api as Fake;
-      const taped = shown === 'tapedFirst' || shown === 'tapedLast';
+      const taped = shown === 'tapedFirst' || shown === 'tapedLast' ? TAPED_LAYERS[shown] : null;
       const post = fake.seed.post(thread, author.character, taped ? TAPED_BODY : BODY);
-      if (taped) fake.seed.card(caster.character!, post, 'autocorrect', { layer: AC_LAYER[shown]!, live: true, config: TAPED_PHRASE, message: '' });
+      if (taped) fake.seed.card(caster.character!, post, 'autocorrect', { layer: taped.ac, live: true, config: TAPED_PHRASE, message: '' });
       TAILS[shown].forEach((words, i) => {
-        const play = fake.seed.card(caster.character!, post, 'you-were-saying', { layer: YWS_LAYER[shown] ?? i + 1, live: true, config: { steps: 0 }, message: '' });
+        const play = fake.seed.card(caster.character!, post, 'you-were-saying', { layer: taped ? taped.yws : i + 1, live: true, config: { steps: 0 }, message: '' });
         if (words !== null) fake.seed.text(play, post, { text: words }, { quiet: true });
       });
       if (live) setSeeded(thread);

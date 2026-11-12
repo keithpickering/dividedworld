@@ -40,10 +40,19 @@ for (const story of ['taped-first', 'taped-last']) {
           const words = tail0.closest('article')!.querySelector('.kb-bb')!;
           const range = document.createRange();
           range.selectNodeContents(words);
-          const last = [...range.getClientRects()].filter((r) => r.width > 0).at(-1)!;
+          const rects = [...range.getClientRects()].filter((r) => r.width > 0);
+          /* Lines: cluster the rects' vertical centers, a new line when a center is more than half a rect's height from its line's first, so a nested box (Autocorrect's segment) on a line is that line. */
+          const tol = Math.max(...rects.map((r) => r.height)) / 2;
+          const lines: { center: number; height: number; right: number }[] = [];
+          for (const r of [...rects].sort((x, y) => x.top + x.height / 2 - (y.top + y.height / 2))) {
+            const c = r.top + r.height / 2;
+            const line = lines.at(-1);
+            if (line && c - line.center <= tol) { line.right = Math.max(line.right, r.right); line.height = Math.max(line.height, r.height); }
+            else lines.push({ center: c, height: r.height, right: r.right });
+          }
+          const last = lines.at(-1)!;
           const first = tail0.getClientRects()[0]!;
-          const rows = new Set([...range.getClientRects()].filter((r) => r.width > 0).map((r) => Math.round(r.top / 4)));
-          return { lastCenter: last.top + last.height / 2, lastRight: last.right, lastHeight: last.height, tailCenter: first.top + first.height / 2, tailLeft: first.left, lines: rows.size };
+          return { lastCenter: last.center, lastRight: last.right, lastHeight: last.height, tailCenter: first.top + first.height / 2, tailLeft: first.left, lines: lines.length };
         });
         expect(m.lines).toBeGreaterThanOrEqual(3);
         expect(Math.abs(m.tailCenter - m.lastCenter)).toBeLessThanOrEqual(m.lastHeight / 2);
