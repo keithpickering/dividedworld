@@ -31,7 +31,8 @@
  *   only there), and needs a calm where that says `calmed`. Under the large size a class's large color is
  *   body text (#54): it takes the body path, at the 4.5:1 ceiling worked out from its own color.
  * - **Ink** (a token tagged `ink`, or a class's ink) stands on an opaque fill, and is not held to a
- *   ceiling over the smoke: the guard holds it to 4.5:1 on its fill.
+ *   ceiling over the smoke: the guard holds it to 4.5:1 on its fill. A color that is also one of the key's
+ *   text tokens (white, the caption's ink, is the high key's body text) is judged as that text, never as ink.
  * - **The brightest pixel.** With all text made transparent, the brightest pixel under the line's
  *   box is under its color's ceiling for the surface.
  * - **High contrast.** Under the `high` key every line is in one of that key's text colors and
