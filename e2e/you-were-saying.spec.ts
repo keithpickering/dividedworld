@@ -51,15 +51,22 @@ for (const story of ['taped-first', 'taped-last']) {
       });
 
       test('every piece of tape lies over a box of its words', async ({ page }) => {
-        /* A strip's segments are named by the offsets they cover, not by the strip, so a piece is held to lie over some segment's box. */
+        /*
+         * The story has one strip, and a segment the strip covers is the one Autocorrect hides from readers (`aria-hidden`), so the covered segments
+         * are its strip's words. A piece's box holds one line of the strip's words: its center falls inside a covered segment's box, and it spans
+         * that box across (a few pixels of slack for the tape's tilt), so a piece shifted by a line or off its words cannot pass.
+         */
         const off = await page.evaluate(() => {
-          const segs = [...document.querySelectorAll<HTMLElement>('[data-kb-ac-seg]')].flatMap((s) => [...s.getClientRects()]);
+          const covered = [...document.querySelectorAll<HTMLElement>('[data-kb-ac-seg][aria-hidden="true"]')].flatMap((s) => [...s.getClientRects()].filter((r) => r.width > 0));
           const pieces = [...document.querySelectorAll<HTMLElement>('[data-kb-ac-piece]')];
+          const tol = 4;
           return pieces.flatMap((p) => {
             const b = p.getBoundingClientRect();
-            const over = segs.some((r) => b.left < r.right + 2 && b.right > r.left - 2 && b.top < r.bottom + 2 && b.bottom > r.top - 2);
+            const cx = b.left + b.width / 2;
+            const cy = b.top + b.height / 2;
+            const over = covered.some((r) => cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom && b.left <= r.left + tol && b.right >= r.right - tol);
             return over ? [] : [`${p.dataset.kbAcPiece} line ${p.dataset.kbAcLine}`];
-          }).concat(pieces.length ? [] : ['no piece']);
+          }).concat(pieces.length ? [] : ['no piece'], covered.length ? [] : ['no covered segment']);
         });
         expect(off).toEqual([]);
       });
