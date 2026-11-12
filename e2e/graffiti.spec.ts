@@ -505,3 +505,97 @@ test.describe('the dock folds, on a phone', () => {
     await inWindow(page, 'Tag it');
   });
 });
+
+/*
+ * Draw mode opens with the post clear of the dock, and no dock control is under the HUD's peek. The post's body is read a second after the press, when a smooth
+ * scroll has long finished; the post starts low in the window, where the dock is about to cover it.
+ */
+const body = (page: Page) => page.locator(`#post-${POST} .kb-act-main`);
+const clear = (page: Page) => page.evaluate((n) => {
+  const b = document.querySelector(`#post-${n} .kb-act-main`)!.getBoundingClientRect();
+  const top = parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop) || 0;
+  const d = document.querySelector('.kb-graffiti-dock')!.getBoundingClientRect();
+  return { top: b.top, bottom: b.bottom, clearTop: top, dockTop: d.top };
+}, POST);
+function expectClear(r: { top: number; bottom: number; clearTop: number; dockTop: number }, how: string): void {
+  if (r.bottom - r.top > r.dockTop - r.clearTop) expect(Math.abs(r.top - r.clearTop), `${how}: a tall body's top at the clear top`).toBeLessThanOrEqual(2);
+  else {
+    expect(r.top, `${how}: body top below the menu bar`).toBeGreaterThanOrEqual(r.clearTop - 1);
+    expect(r.bottom, `${how}: body bottom above the dock`).toBeLessThanOrEqual(r.dockTop + 1);
+  }
+}
+/** The post scrolled so its top lies at `share` of the window's height, below where the dock will be, then the card armed and the ghost pressed. */
+async function lowThenPress(page: Page, share: number, tile: boolean): Promise<void> {
+  await world(page, tile ? SOME : null);
+  await openThread(page);
+  await page.evaluate(([n, s]) => {
+    const r = document.querySelector(`#post-${n} .kb-act-main`)!.getBoundingClientRect();
+    window.scrollBy({ top: r.top - window.innerHeight * s, behavior: 'instant' });
+  }, [POST, share] as const);
+  if (tile) await post(page).getByRole('button', { name: 'Draw' }).click();
+  else {
+    await arm(page);
+    await post(page).getByRole('button', { name: /^Play Graffiti on post \d+$/ }).click();
+  }
+  await expect(dock(page)).toBeVisible();
+  await page.waitForTimeout(1000);
+}
+
+for (const [name, reduced] of [['smooth', 'no-preference'], ['reduced motion', 'reduce']] as const) {
+  test.describe(`the post is brought clear of the dock, wide, ${name}`, () => {
+    test.use({ viewport: { width: 1280, height: 800 }, reducedMotion: reduced });
+    test('pressing the ghost on a post low in the window', async ({ page }) => {
+      await lowThenPress(page, 0.75, false);
+      expectClear(await clear(page), 'ghost');
+    });
+    test('the Draw tile on a wall', async ({ page }) => {
+      await lowThenPress(page, 0.75, true);
+      expectClear(await clear(page), 'Draw tile');
+    });
+  });
+}
+
+test.describe('the post is brought clear of the dock, on a phone', () => {
+  const { defaultBrowserType: _browser, ...pixel } = devices['Pixel 7'];
+  test.use({ ...pixel });
+  test('pressing the ghost on a post low in the window', async ({ page }) => {
+    await lowThenPress(page, 0.7, false);
+    expectClear(await clear(page), 'ghost');
+  });
+  test('the Draw tile', async ({ page }) => {
+    await lowThenPress(page, 0.7, true);
+    expectClear(await clear(page), 'Draw tile');
+  });
+  test('reduced motion', async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await lowThenPress(page, 0.7, false);
+    expectClear(await clear(page), 'ghost, reduced');
+  });
+});
+
+/*
+ * The HUD's peek (the "Playing · post #N" tag and the hand's card) hangs up over the dock's right edge on the wide layout, and takes no pointer, so elementFromPoint cannot
+ * see it: no dock button's box may meet the box of the tag or of the card, expanded or folded. (Below the wide layout there is no peek, and there is nothing to meet.)
+ */
+for (const width of [1024, 1280, 1600]) {
+  test.describe(`the HUD's peek covers no dock control, ${width}px`, () => {
+    test.use({ viewport: { width, height: 800 }, reducedMotion: 'reduce' });
+    test('expanded and folded', async ({ page }) => {
+      await dockOpen(page);
+      if (width >= 1280) await expect(peek(page, `Playing · post #${POST}`).first()).toBeVisible();
+      const met = () => page.evaluate(() => {
+        const dock = document.querySelector('.kb-graffiti-dock')!;
+        const peeks = [...document.querySelectorAll('.kb-hand-armed, .kb-hand-peek-card')].map((e) => ({ name: e.className, r: e.getBoundingClientRect() })).filter((p) => p.r.width > 0);
+        return [...dock.querySelectorAll<HTMLElement>('button, [role="tab"]')].flatMap((b) => {
+          const r = b.getBoundingClientRect();
+          if (r.height === 0) return [];
+          return peeks.filter(({ r: p }) => r.left + 2 < p.right && r.right - 2 > p.left && r.top + 2 < p.bottom && r.bottom - 2 > p.top).map((p) => `${b.getAttribute('aria-label') ?? b.textContent?.trim()} meets ${p.name}`);
+        });
+      });
+      expect(await met(), 'expanded: controls under the peek').toEqual([]);
+      await dock(page).getByRole('button', { name: 'Hide tools' }).click();
+      await expect(dock(page).getByRole('tab')).toHaveCount(0);
+      expect(await met(), 'folded: controls under the peek').toEqual([]);
+    });
+  });
+}

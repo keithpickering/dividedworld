@@ -838,7 +838,7 @@ describe('a card that is played on the post (CardUi.Compose)', () => {
   let answered: Answer<unknown> | null = null;
   let seen: ComposeProps | null = null;
   function Draw(props: ComposeProps) {
-    const { post, submit, cancel, hold, children } = props;
+    const { post, submit, cancel, hold, ready, children } = props;
     const [answer, setAnswer] = useState<Answer<unknown> | null>(null);
     const [strokes, setStrokes] = useState(0);
     seen = props;
@@ -851,6 +851,7 @@ describe('a card that is played on the post (CardUi.Compose)', () => {
         <button type="button" onClick={() => hold(null)}>Wipe</button>
         <button type="button" onClick={() => void submit({ color: '#ff2bd6' }, { strokes: 1 }).then((a) => { answered = a; setAnswer(a); })}>Tag it</button>
         <button type="button" onClick={cancel}>Cancel drawing</button>
+        <button type="button" onClick={ready}>Screen is up</button>
         {answer && !answer.ok && <p role="alert">{answer.error}</p>}
       </div>
     );
@@ -1325,6 +1326,23 @@ describe('a card that is played on the post (CardUi.Compose)', () => {
       boxAt(2, 60, 900);
       await open(user);
       expect(scroll).not.toHaveBeenCalled();
+    });
+
+    test('a card whose screen mounts late says so, and the post is brought clear then, once the padding is set', async () => {
+      const user = userEvent.setup();
+      await onPost();
+      const scroll = vi.fn();
+      body(2).scrollIntoView = scroll;
+      boxAt(2, 300, 300);
+      /* The card's screen is not up yet (a lazy chunk): no padding, so the post, wholly in the window, is left where it is. */
+      document.documentElement.style.scrollPaddingBottom = '0px';
+      await open(user);
+      expect(scroll).not.toHaveBeenCalled();
+      document.documentElement.style.scrollPaddingBottom = '400px';
+      await user.click(screen.getByRole('button', { name: 'Screen is up' }));
+      await frame();
+      expect(scroll).toHaveBeenCalledWith({ block: 'start', behavior: 'smooth' });
+      expect(scroll).toHaveBeenCalledTimes(1);
     });
 
     test('the measure is made after the card has set the scroll padding, and only once for one compose', async () => {

@@ -280,7 +280,7 @@ function ComposeSlot({ composing, Compose, post, play, body, children }: {
   }, [play, composing]);
   return (
     <div className="kb-compose-slot">
-      <Compose post={post} box={box} under={body} submit={play.submitCompose} cancel={play.cancelCompose} hold={play.holdCompose}>{children}</Compose>
+      <Compose post={post} box={box} under={body} submit={play.submitCompose} cancel={play.cancelCompose} hold={play.holdCompose} ready={play.composeReady}>{children}</Compose>
       {/* Esc and Cancel do nothing while the play is out; this is where a sighted player sees why (the status says it aloud). */}
       {play.sending && <p className="kb-notice">Your play is on its way.</p>}
     </div>

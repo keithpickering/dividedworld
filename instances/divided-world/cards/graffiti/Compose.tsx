@@ -342,7 +342,7 @@ export function DrawMode(p: DrawModeProps) {
 }
 
 /** The card's `CardUi.Compose`: the drawing beneath every layer of the post, and the toolbar under the post. */
-export function Compose({ box, under, submit, cancel, hold, children }: ComposeProps) {
+export function Compose({ box, under, submit, cancel, hold, ready, children }: ComposeProps) {
   const { settings } = useKayfa();
   const most = (settings.cardSettings['graffiti.limit'] ?? DEFAULT_LIMIT) * 100;
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -359,6 +359,9 @@ export function Compose({ box, under, submit, cancel, hold, children }: ComposeP
     return () => { under.style.position = was; };
   }, [under]);
   useLayoutEffect(() => { setDockHost(dockHostOf(under) ?? fallback); }, [under, fallback]);
+  /* This component is a lazy chunk, so it mounts after the commit that opened the compose, which the engine measured the post in before any dock covered it. The dock's own
+     layout effect (Toolbar.tsx) has set the root's scroll padding by this effect, so the engine is told now and measures again. */
+  useEffect(() => { ready(); }, [ready]);
 
   /* The box is the post body's (`.kb-act-main`), the one the wall paints in and Whoops! measures, and not the words' element, which on a one-line post is a strip:
      strokes are shares of the same box before and after Tag it. The words' element sits inside it, so the drawing is offset by where the body begins. */

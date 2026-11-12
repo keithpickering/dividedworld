@@ -106,6 +106,8 @@ export interface PlayControls {
   readonly holdCompose: (ask: string | null) => void;
   /** The compose's slot is gone (its post left the screen): the compose ends with it, with no ask the page could not wait for. */
   readonly dropCompose: (composing: Composing) => void;
+  /** The compose's screen is on the page (`ComposeProps.ready`): the post being played on is brought clear of what the screen covers, a frame later. */
+  readonly composeReady: () => void;
 }
 
 /** The one play being made on a post itself (`CardUi.Compose`). */
@@ -295,14 +297,21 @@ export function PlayProvider({ children }: { readonly children: ReactNode }) {
    */
   const composeKey = compose === null ? null : `${compose.card}:${compose.target.post?.id ?? ''}`;
   const composeSeq = compose?.target.post?.seq ?? null;
-  useEffect(() => {
-    if (composeKey === null || composeSeq === null) return undefined;
-    const frame = requestAnimationFrame(() => {
-      const body = document.querySelector<HTMLElement>(`#post-${composeSeq} .kb-act-main`);
+  const clearFrame = useRef(0);
+  /* Reads the post under play when the frame runs, not when asked: a compose that ended in between runs nothing. */
+  const bringComposeClear = useCallback(() => {
+    cancelAnimationFrame(clearFrame.current);
+    clearFrame.current = requestAnimationFrame(() => {
+      const seq = composeNow.current?.target.post?.seq;
+      const body = seq === undefined ? null : document.querySelector<HTMLElement>(`#post-${seq} .kb-act-main`);
       if (body) bringClear(body);
     });
-    return () => cancelAnimationFrame(frame);
-  }, [composeKey, composeSeq]);
+  }, []);
+  useEffect(() => {
+    if (composeKey === null || composeSeq === null) return undefined;
+    bringComposeClear();
+    return () => cancelAnimationFrame(clearFrame.current);
+  }, [composeKey, composeSeq, bringComposeClear]);
   /* Esc leaves a compose before anything else answers it (the armed card's own Esc, a Lens): captured at the window so it comes first. */
   const open = compose !== null;
   useEffect(() => {
@@ -344,8 +353,8 @@ export function PlayProvider({ children }: { readonly children: ReactNode }) {
   const playingCard = compose?.card ?? null;
   const playing = useMemo(() => (playingCard !== null && playingSeq !== null ? { card: playingCard, seq: playingSeq } : null), [playingCard, playingSeq]);
   const controls = useMemo<PlayControls>(
-    () => ({ armed, handOpen, setHandOpen, arm, faceDown, choose, openForm, readyForm, opening, compose, playing, openCompose, submitCompose, cancelCompose, sending: out, holdCompose, dropCompose }),
-    [armed, handOpen, setHandOpen, arm, faceDown, choose, openForm, readyForm, opening, compose, playing, openCompose, submitCompose, cancelCompose, out, holdCompose, dropCompose],
+    () => ({ armed, handOpen, setHandOpen, arm, faceDown, choose, openForm, readyForm, opening, compose, playing, openCompose, submitCompose, cancelCompose, sending: out, holdCompose, dropCompose, composeReady: bringComposeClear }),
+    [armed, handOpen, setHandOpen, arm, faceDown, choose, openForm, readyForm, opening, compose, playing, openCompose, submitCompose, cancelCompose, out, holdCompose, dropCompose, bringComposeClear],
   );
 
   return (

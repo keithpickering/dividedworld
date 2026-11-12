@@ -155,6 +155,19 @@ export function Toolbar(p: ToolbarProps) {
     const column = el.closest<HTMLElement>('.kb-acts') ?? el.closest<HTMLElement>('.kb-page');
     const size = () => {
       root.style.setProperty('--kb-graffiti-dock-h', `${el.offsetHeight}px`);
+      /* The HUD's peek hangs over the dock's right end on a wide screen and takes no pointer: the played card over the dock's lower rows, and its "Playing · post #N" tag, wider than the
+         card, over the header's buttons. The dock keeps clear of what is measured: its body of the card's left edge, the header's buttons of the tag's, whatever the window's width or the tag's words. */
+      const right = el.getBoundingClientRect().right;
+      const leftOf = (sel: string) => {
+        /* The hand and the HUD each keep a copy of the tag, one of them hidden (no width). */
+        const seen = [...document.querySelectorAll(sel)].map((e) => e.getBoundingClientRect()).filter((r) => r.width > 0 && r.left < right && r.right > right - 400);
+        return seen.length > 0 ? Math.min(...seen.map((r) => r.left)) : null;
+      };
+      const card = leftOf('.kb-hand-peek-card'), tag = leftOf('.kb-hand-armed');
+      const cardGap = card === null ? 0 : Math.ceil(right - card) + 12;
+      const tagGap = tag === null ? 0 : Math.ceil(right - tag) + 12;
+      if (cardGap > 0) root.style.setProperty('--kb-graffiti-dock-peek', `${cardGap}px`); else root.style.removeProperty('--kb-graffiti-dock-peek');
+      if (tagGap > cardGap) root.style.setProperty('--kb-graffiti-dock-tag', `${tagGap - cardGap}px`); else root.style.removeProperty('--kb-graffiti-dock-tag');
       if (!column) return;
       const at = column.getBoundingClientRect();
       root.style.setProperty('--kb-graffiti-dock-left', `${Math.max(0, Math.round(at.left))}px`);
@@ -166,11 +179,13 @@ export function Toolbar(p: ToolbarProps) {
     watch?.observe(el);
     if (column) watch?.observe(column);
     window.addEventListener('resize', size);
+    const tag = document.querySelector('.kb-hand-armed');
+    if (tag) watch?.observe(tag);
     return () => {
       watch?.disconnect();
       window.removeEventListener('resize', size);
       root.removeAttribute('data-kb-graffiti-dock');
-      for (const v of ['--kb-graffiti-dock-h', '--kb-graffiti-dock-left', '--kb-graffiti-dock-right']) root.style.removeProperty(v);
+      for (const v of ['--kb-graffiti-dock-h', '--kb-graffiti-dock-left', '--kb-graffiti-dock-right', '--kb-graffiti-dock-peek', '--kb-graffiti-dock-tag']) root.style.removeProperty(v);
     };
   }, []);
 
