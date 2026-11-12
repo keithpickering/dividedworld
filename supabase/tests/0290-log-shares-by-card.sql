@@ -18,15 +18,16 @@ declare
   doc jsonb;
   got text;
 begin
+  -- The card y is sent before the card x, entry and share, so the order log_page reads them in is its own and never the order they were written in.
   said := apply_settlement(w1, w2, jsonb_build_array(
-      jsonb_build_object('player', ann, 'character', a, 'reason', 'card.ride', 'amount', 10, 'params', '{"card": "x"}'::jsonb),
       jsonb_build_object('player', ann, 'character', a, 'reason', 'card.ride', 'amount', 4, 'params', '{"card": "y"}'::jsonb),
+      jsonb_build_object('player', ann, 'character', a, 'reason', 'card.ride', 'amount', 10, 'params', '{"card": "x"}'::jsonb),
       jsonb_build_object('player', ann, 'character', a, 'reason', 'alpha.cheered', 'amount', 3),
       jsonb_build_object('player', bob, 'character', b, 'reason', 'alpha.cheered', 'amount', 2)),
     '{}', '[]',
     jsonb_build_array(
-      jsonb_build_object('character', a, 'reason', 'card.ride', 'card', 'x', 'act', p1, 'quadrant', 'excitedPositive', 'amount', 10),
       jsonb_build_object('character', a, 'reason', 'card.ride', 'card', 'y', 'act', p1, 'quadrant', 'excitedPositive', 'amount', 4),
+      jsonb_build_object('character', a, 'reason', 'card.ride', 'card', 'x', 'act', p1, 'quadrant', 'excitedPositive', 'amount', 10),
       jsonb_build_object('character', a, 'reason', 'alpha.cheered', 'act', p1, 'quadrant', 'excitedPositive', 'amount', 3),
       jsonb_build_object('character', b, 'reason', 'alpha.cheered', 'act', p1, 'quadrant', 'excitedPositive', 'amount', 2)));
   if not (said ->> 'applied')::boolean then raise exception 'the settlement should apply: %', said; end if;

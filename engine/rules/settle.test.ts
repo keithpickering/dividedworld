@@ -1644,6 +1644,8 @@ test('entryKey is the player and the line key, and the line key tells two cards,
   assert.equal(entryKey({ player: 'u', character: 'c', reason: 'card.ride', params: { card: 'x' } }), `u\u0000${lineKey('c', 'card.ride', 'x')}`);
   assert.equal(entryKey({ player: 'u', character: 'c', reason: 'face.cheered' }), `u\u0000${lineKey('c', 'face.cheered', null)}`);
   assert.equal(entryKey({ player: 'u', character: 'c', reason: 'card.ride', params: { card: 'x' } }), 'u\u0000c\u0000card.ride\u0000x');
+  /* Any string is a card to the key, as it was to entryKey before lineKey; apply_settlement refuses an empty one (0150). */
+  assert.equal(entryKey({ player: 'u', character: 'c', reason: 'card.ride', params: { card: '' } }), 'u\u0000c\u0000card.ride\u0000');
   assert.notEqual(lineKey('c', 'card.ride', 'x'), lineKey('c', 'card.ride', 'y'));
   assert.notEqual(lineKey('c', 'card.ride', 'x'), lineKey('c', 'card.ride', null));
 });

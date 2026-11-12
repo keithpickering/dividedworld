@@ -93,7 +93,7 @@ export const entryKey = (c: { player: string; character: string; reason: string;
  * settlement (`entryKey`) and on the screens (the log's page), so the two never keep a second key that merely agrees.
  */
 export const lineKey = (character: string, reason: string, card?: unknown) =>
-  `${character}\u0000${reason}${typeof card === 'string' && card !== '' ? `\u0000${card}` : ''}`;
+  `${character}\u0000${reason}${typeof card === 'string' ? `\u0000${card}` : ''}`;
 
 /** What the owner's log shows of an entry: which Act, which quadrant, how much, in whole hundredths that add up to the entry. */
 export interface Detail {

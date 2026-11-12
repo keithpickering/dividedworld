@@ -2555,6 +2555,13 @@ describe('a screen in one call', () => {
       expect(older.log).not.toHaveProperty('scoredAs');
     });
 
+    it('files each card\'s shares under its own line, where two lines of one character and reason name two cards', async () => {
+      const ride = (card: string, amount: number) => ({ ...LEDGER_ROW, reason: 'card.ride', amount, params: { card } });
+      const share = (card: string | null, amount: number) => ({ settlement: 9, character: B, reason: 'card.ride', card, act: A, quadrant: 'excitedPositive', amount });
+      const page = await once('log_page', doc(SRC({ ledger: [ride('x', 3), ride('y', 7)] }), { shares: [share('x', 3), share('y', 7)] })).api.logPage(null);
+      expect(page.log.settlements[0]!.lines.map((l) => [l.params?.['card'], l.shares.map((s) => s.amount)])).toEqual([['x', [3]], ['y', [7]]]);
+    });
+
     it('sends the cursor by name and maps the sources through the log\'s own mappers, and what the lines name', async () => {
       const answer = doc(SRC({
         ledger: [LEDGER_ROW], wallet: [{ settlement: 9, kind: 'settlement', change: 15, overflow: 0, floored: 0, balance_after: 472, ref: null, at: '2026-10-30T08:17:02+00:00' }],
