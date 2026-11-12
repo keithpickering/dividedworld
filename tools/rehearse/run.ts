@@ -19,7 +19,7 @@ import { STALL_MS, Stalled, within, type Dispatched } from "./dispatch.ts";
 import { collect } from "./collect.ts";
 import { reportHtml } from "../../engine/rehearsal/report.ts";
 import { rehearsedInstance } from "./instance.ts";
-import { DATABASE, setUp, timeline, type CastMember, type Players, type Setup, type Timeline } from "./setup.ts";
+import { DATABASE, setUp, timeline, writeModelTiers, type CastMember, type Players, type Setup, type Timeline } from "./setup.ts";
 
 /** One filler action's end: through, or refused (a refusal is recorded and the run goes on). */
 export interface FillerResult {
@@ -65,6 +65,8 @@ export interface RehearseOptions {
   /** Where the run's directory is made; defaults to `rehearsals/<scenario>`. */
   readonly runsDir?: string;
   readonly keep?: boolean;
+  /** The model each tier asks for, where named (`--strong`, `--light`): written to the rehearsal's own settings before the first job. */
+  readonly tiers?: { readonly strong?: string; readonly light?: string };
   /** How long one step may take in real time before the run stops as stalled (dispatch.ts, STALL_MS; tests shorten it). */
   readonly stallMs?: number;
   /** Replaces `runAction` for the filler (tests). */
@@ -179,6 +181,7 @@ export async function rehearse(o: RehearseOptions): Promise<RawRun> {
     setup = await setUp(cluster, admin, instance, content, scenario, tl);
     const conn = setup.conn;
     const service = conn.db("service");
+    await writeModelTiers(conn, o.tiers ?? {});
 
     // The shipped value is off; backstory runs with the System off whatever a profile says.
     await conn.sql("update settings set value = 'false'::jsonb where key = 'systemEnabled'");

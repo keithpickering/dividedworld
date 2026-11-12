@@ -22,7 +22,7 @@ test('changing any one field of a chat request, or the model, changes the key', 
   const changed: Partial<ChatRequest>[] = [
     { duty: 'chatter' }, { tier: 'light' }, { system: 'You are not.' }, { messages: [{ role: 'user', content: 'Stop.' }] },
     { messages: [{ role: 'assistant', content: 'Go.' }] }, { schema: { type: 'object' } },
-    { rules: { type: 'object', fields: { a: { type: 'string', maxLength: 6 } } } }, { rules: undefined }, { maxTokens: 1001 },
+    { rules: { type: 'object', fields: { a: { type: 'string', maxLength: 6 } } } }, { rules: undefined }, { maxTokens: 1001 }, { cachePrefix: true },
   ];
   const base = key();
   const seen = new Set([base]);
