@@ -49,19 +49,26 @@ export function IndexScreen({ doc }: { readonly doc: ScreenDoc<IndexPage> }) {
                   <br />
                   <span className="kb-small kb-muted">{b.description}</span>
                 </td>
-                <td role="cell" className="kb-board-threads kb-num"><span className="kb-num">{b.threadCount}</span><span className="kb-board-unit"> threads</span></td>
+                <td role="cell" className="kb-board-threads kb-num"><span className="kb-num">{b.threadCount}</span><span className="kb-board-unit">{b.threadCount === 1 ? ' thread' : ' threads'}</span></td>
                 <td role="cell" className="kb-board-last">
-                  {b.lastAt === null ? <><span className="kb-board-sep" aria-hidden="true"> · </span><span>None yet</span></> : (
+                  <span className="kb-board-last-label">last: </span>
+                  {b.lastAt === null ? <span>None yet</span> : (
                     <>
-                      <span className="kb-board-sep" aria-hidden="true"> · </span>
-                      {b.lastThread && b.lastTitle && <><Link to={`/t/${b.lastThread}`} className="kb-board-last-title">{b.lastTitle}</Link><br /></>}
-                      <span className="kb-board-last-label">last: </span>
-                      <Byline character={who} id={b.lastCharacter} name={who?.name} link avatar={false} />
-                      <span className="kb-board-sep" aria-hidden="true">, </span>
-                      <br />
-                      {b.lastThread
-                        ? <Link to={`/t/${b.lastThread}`} className="kb-muted"><Ago at={b.lastAt} /><span className="kb-visually-hidden"> — latest post in {b.name}</span></Link>
-                        : <span className="kb-muted"><Ago at={b.lastAt} /></span>}
+                      {b.lastThread && b.lastTitle && (
+                        <>
+                          <Link to={`/t/${b.lastThread}`} className="kb-board-last-title">{b.lastTitle}</Link>
+                          <span className="kb-board-sep" aria-hidden="true"> · </span>
+                          <br />
+                        </>
+                      )}
+                      <span className="kb-board-last-by">
+                        <Byline character={who} id={b.lastCharacter} name={who?.name} link avatar={false} />
+                        <span className="kb-board-sep" aria-hidden="true">, </span>
+                        <br />
+                        {b.lastThread
+                          ? <Link to={`/t/${b.lastThread}`} className="kb-muted"><Ago at={b.lastAt} /><span className="kb-visually-hidden"> — latest post in {b.name}</span></Link>
+                          : <span className="kb-muted"><Ago at={b.lastAt} /></span>}
+                      </span>
                     </>
                   )}
                 </td>
