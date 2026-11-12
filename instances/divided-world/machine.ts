@@ -2,6 +2,7 @@
  * Divided World's Vending Machine, slot by slot in grid order (docs/plans/2026-11-04-booster-packs-design.md): a price in
  * hundredths of an orb and whether it is on sale. Starting numbers the season review replaces. Main Event starts hidden:
  * the Boss's moves bring it out. Off Day, the legendary, and Sugar Coat, the second rare, start hidden too and follow it, and Graffiti, the third rare, the last slot.
+ * Line Cutter and Feelin' Glam (card notes, Part 2), the fourth and fifth rares, are hidden and last of all, so no slot before them moves.
  * Jimmy Wails was the last on-sale slot; Hype-Up and Last Word (card notes, Part 4) follow it, so no drawn slot moves.
  */
 import { deepFreeze } from '../../engine/rules/instance.ts';
@@ -34,4 +35,6 @@ export const machine: readonly SlotSeed[] = deepFreeze<SlotSeed[]>([
   { item: { card: 'off-day' }, availability: 'hidden', price: 500 },
   { item: { card: 'sugar-coat' }, availability: 'hidden', price: 300 },
   { item: { card: 'graffiti' }, availability: 'hidden', price: 300 },
+  { item: { card: 'line-cutter' }, availability: 'hidden', price: 300 },
+  { item: { card: 'feelin-glam' }, availability: 'hidden', price: 300 },
 ]);

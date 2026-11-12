@@ -172,8 +172,11 @@ export const defaults: Settings = deepFreeze<Settings>({
   setLasts: { unit: 'day', count: 7 },
   /** A card reaches a character from uncommon, a thread from uncommon (Good Vibes; Main Event is rare) and a board only as a legendary (the card mechanic's design, section 7). */
   reachRarity: { character: 'uncommon', thread: 'uncommon', board: 'legendary' },
-  /** A character effect lasts at most a week; a thread's at most three days (Good Vibes); a board's at most a day. */
-  reachLasts: { character: { unit: 'day', count: 7 }, thread: { unit: 'day', count: 3 }, board: { unit: 'day', count: 1 } },
+  /**
+   * A character effect lasts at most a week; a thread's at most a week too (Feelin' Glam; the owner's answer 5 in docs/plans/2026-11-11-card-notes-design.md:
+   * a thread is no stronger than a character). Good Vibes and Main Event keep their own shorter times. A board's lasts at most a day.
+   */
+  reachLasts: { character: { unit: 'day', count: 7 }, thread: { unit: 'day', count: 7 }, board: { unit: 'day', count: 1 } },
   /**
    * Hints (the alerts design's section 5): a pattern needs a crowd (eight reactions in the window, so one stray reaction is never a trend),
    * a clear lead (six in ten in one quadrant), and a real split (three in ten on each side to be divisive), counted over six hours.

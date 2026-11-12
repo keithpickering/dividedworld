@@ -28,7 +28,7 @@ const priceOf = (key: string): number => instance.machine.find((m) => 'card' in 
 const post = (length: number): CardTarget => ({ reach: 'post', act: 'p1', kind: 'post', length, text: '' });
 
 test('the instance sells its cards at their prices', () => {
-  assert.deepEqual(cards.map((c) => [c.key, c.alignment, priceOf(c.key)]), [['stick-around', 'sweet', 100], ['whoops', 'salty', 100], ['card-collector', 'salty', 150], ['hall-pass', 'sweet', 150], ['force-field', 'sweet', 150], ['publicity-tour', 'sweet', 150], ['heat-magnet', 'salty', 150], ['class-clown', 'pepperoni', 150], ['good-vibes', 'sweet', 150], ['glitter-bomb', 'pepperoni', 150], ['main-event', 'sweet', 300], ['feelin-fab', 'sweet', 20], ['autocorrect', 'pepperoni', 100], ['you-were-saying', 'pepperoni', 100], ['below-the-fold', 'salty', 100], ['mooch', 'salty', 150], ['toll', 'pepperoni', 150], ['4d-chess', 'salty', 150], ['off-day', 'salty', 500], ['jimmy-wails', 'sweet', 200], ['sugar-coat', 'sweet', 300], ['hype-up', 'sweet', 150], ['last-word', 'salty', 150], ['laugh-track', 'pepperoni', 150], ['graffiti', 'pepperoni', 300]]);
+  assert.deepEqual(cards.map((c) => [c.key, c.alignment, priceOf(c.key)]), [['stick-around', 'sweet', 100], ['whoops', 'salty', 100], ['card-collector', 'salty', 150], ['hall-pass', 'sweet', 150], ['force-field', 'sweet', 150], ['publicity-tour', 'sweet', 150], ['heat-magnet', 'salty', 150], ['class-clown', 'pepperoni', 150], ['good-vibes', 'sweet', 150], ['glitter-bomb', 'pepperoni', 150], ['main-event', 'sweet', 300], ['feelin-fab', 'sweet', 20], ['autocorrect', 'pepperoni', 100], ['you-were-saying', 'pepperoni', 100], ['below-the-fold', 'salty', 100], ['mooch', 'salty', 150], ['toll', 'pepperoni', 150], ['4d-chess', 'salty', 150], ['off-day', 'salty', 500], ['jimmy-wails', 'sweet', 200], ['sugar-coat', 'sweet', 300], ['hype-up', 'sweet', 150], ['last-word', 'salty', 150], ['laugh-track', 'pepperoni', 150], ['graffiti', 'pepperoni', 300], ['line-cutter', 'pepperoni', 300], ['feelin-glam', 'sweet', 300]]);
   assert.deepEqual(instanceProblems(instance), []);
   assert.deepEqual(instance.cards, cards);
 });
@@ -273,7 +273,7 @@ test('Glitter Bomb is an uncommon Pepperoni Cast on a character, for a week; Mai
 test('the instance, with its cards beyond a post, has no problems, and its reach settings are the design\'s', () => {
   assert.deepEqual(instanceProblems(instance), []);
   assert.deepEqual(settings.reachRarity, { character: 'uncommon', thread: 'uncommon', board: 'legendary' });
-  assert.deepEqual(settings.reachLasts, { character: { unit: 'day', count: 7 }, thread: { unit: 'day', count: 3 }, board: { unit: 'day', count: 1 } });
+  assert.deepEqual(settings.reachLasts, { character: { unit: 'day', count: 7 }, thread: { unit: 'day', count: 7 }, board: { unit: 'day', count: 1 } });
 });
 
 /* Feelin' Fab (docs/plans/2026-11-02-onboarding-plan.md, Task 10). */
@@ -550,23 +550,25 @@ test('Autocorrect\'s phrase is its set phrase', () => {
   assert.equal(by('card-collector').setPhrase, undefined);
 });
 
-test('the Booster\'s hit pull gives uncommon 74, rare 24 and legendary 2, over the twenty-four cards', async () => {
+test('the Booster\'s hit pull gives uncommon 74, rare 24 and legendary 2, shared evenly within a rarity', async () => {
   const { packOdds } = await import('../../../engine/rules/packs.ts');
   const booster = instance.packs.find((p) => p.key === 'booster')!;
   assert.deepEqual(booster.pulls.at(-1)!.weights, { uncommon: 74, rare: 24, legendary: 2 });
   const hit = packOdds(booster, cards, instance.settings).at(-1)!;
   const chance = new Map(hit.flatMap((r) => r.cards.map((c) => [c.card, c.chance] as const)));
   // The Gimmicks, Part 6, Jimmy Wails, Part 4 and Laugh Track joined the Booster by their rarity, as a new card does, with nothing listed in packs.ts: fifteen uncommons share the 74 (You Were Saying? and Below the Fold are commons, and the hit pull takes none).
-  // Sugar Coat and Graffiti are the second and third rares, which share the 24 with Main Event.
-  assert.equal(cards.length, 25);
-  assert.ok(Math.abs(chance.get('main-event')! - 0.08) < 1e-9, `Main Event at ${chance.get('main-event')}`);
-  assert.ok(Math.abs(chance.get('sugar-coat')! - 0.08) < 1e-9, `Sugar Coat at ${chance.get('sugar-coat')}`);
-  assert.ok(Math.abs(chance.get('graffiti')! - 0.08) < 1e-9, `Graffiti at ${chance.get('graffiti')}`);
+  // Sugar Coat, Graffiti, Line Cutter and Feelin' Glam are the rares that share the 24 with Main Event: five, at 0.048 each.
+  assert.equal(cards.length, 27);
+  assert.ok(Math.abs(chance.get('main-event')! - 0.048) < 1e-9, `Main Event at ${chance.get('main-event')}`);
+  assert.ok(Math.abs(chance.get('sugar-coat')! - 0.048) < 1e-9, `Sugar Coat at ${chance.get('sugar-coat')}`);
+  assert.ok(Math.abs(chance.get('graffiti')! - 0.048) < 1e-9, `Graffiti at ${chance.get('graffiti')}`);
+  assert.ok(Math.abs(chance.get('line-cutter')! - 0.048) < 1e-9, `Line Cutter at ${chance.get('line-cutter')}`);
+  assert.ok(Math.abs(chance.get('feelin-glam')! - 0.048) < 1e-9, `Feelin' Glam at ${chance.get('feelin-glam')}`);
   assert.ok(Math.abs(chance.get('off-day')! - 0.02) < 1e-9, `Off Day at ${chance.get('off-day')}`);
   const uncommons = cards.filter((c) => c.rarity === 'uncommon');
   assert.equal(uncommons.length, 15);
   for (const c of uncommons) assert.ok(Math.abs(chance.get(c.key)! - 0.74 / 15) < 1e-9, `${c.key} at ${chance.get(c.key)}`);
-  assert.equal(chance.size, uncommons.length + 4);
+  assert.equal(chance.size, uncommons.length + 6);
 });
 
 /* Card notes, Part 6 (docs/plans/2026-11-11-card-notes-part-6-plan.md, Task 7): Mooch, Toll, 4D Chess and Off Day. */
@@ -959,7 +961,7 @@ test('Graffiti: the largest draw fits 64 KiB as Postgres writes it', () => {
 
 test('Graffiti is a rare Pepperoni surface on a post, one a post, in the machine at 300, hidden', () => {
   assert.deepEqual([graffiti.rarity, graffiti.alignment, graffiti.stack, surf.limitKey, surf.mostLive], ['rare', 'pepperoni', 1, 'graffiti.limit', 48]);
-  assert.deepEqual(instance.machine.at(-1), { item: { card: 'graffiti' }, availability: 'hidden', price: 300 });
+  assert.deepEqual(instance.machine.find((m) => 'card' in m.item && m.item.card === 'graffiti'), { item: { card: 'graffiti' }, availability: 'hidden', price: 300 });
   assert.equal(instance.settings.cardSettings['graffiti.limit'], 40);
   assert.deepEqual(instanceProblems(instance), []);
   assert.deepEqual(instanceProblems({ ...instance, settings: withOverrides(settings, { cardSettings: { 'graffiti.limit': 101 } }) }).filter((p) => /graffiti/.test(p)).length > 0, true);
@@ -999,4 +1001,51 @@ test('Graffiti: every stencil at the last spot fits 64 KiB as Postgres writes it
   for (let y = 0; y < 34; y++) for (let x = 0; x < 34; x++) inTopLeft ||= covered(cells, x, y);
   assert.equal(inTopLeft, true);
   assert.equal(covered(cells, 50, 50), false);
+});
+
+/* Card notes, Part 2 (docs/plans/2026-11-11-card-notes-part-2-plan.md, Task 8): Line Cutter and Feelin' Glam. */
+test("Line Cutter and Feelin' Glam are rares in the instance, hidden at 300 after every on-sale slot, and the instance stays whole", () => {
+  const at = (k: string) => instance.machine.findIndex((m) => 'card' in m.item && m.item.card === k);
+  assert.deepEqual(['line-cutter', 'feelin-glam'].map((k) => [k, by(k).rarity, by(k).play ?? 'cast', by(k).alignment, by(k).reaches ?? ['post'], by(k).stack ?? 1, instance.machine[at(k)]?.availability, instance.machine[at(k)]?.price]), [
+    ['line-cutter', 'rare', 'cast', 'pepperoni', ['post'], 1, 'hidden', 300],
+    ['feelin-glam', 'rare', 'cast', 'sweet', ['thread'], 1, 'hidden', 300],
+  ]);
+  assert.deepEqual([by('line-cutter').replies, by('line-cutter').lasts, by('feelin-glam').keeps, by('feelin-glam').lasts], [true, undefined, true, { unit: 'day', count: 7 }]);
+  // The boards hold slots by place: a hidden slot is never among the on-sale run, and these two are the machine's last.
+  assert.deepEqual([at('line-cutter'), at('feelin-glam')], [instance.machine.length - 2, instance.machine.length - 1]);
+  assert.deepEqual(settings.reachLasts.thread, { unit: 'day', count: 7 }, "a thread's effect lasts at most a week, Feelin' Glam's");
+  assert.deepEqual(instanceProblems(instance), []);
+});
+
+test('Line Cutter lands on a post, once, never under a reply that cut in, and costs nothing more', () => {
+  const cutter = by('line-cutter');
+  const thread = { reach: 'thread' as const, thread: 't1' };
+  assert.equal(cutter.canApply(post(10), []).ok, true);
+  assert.deepEqual(cutter.canApply(thread, []), { ok: false, why: 'this card lands on a post' });
+  assert.deepEqual(cutter.canApply(post(10), [{ card: 'line-cutter', act: 'k1' }]), { ok: false, why: 'this post already carries that card' });
+  assert.deepEqual(decidePlay(cutter, settings, { reach: 'post', act: 'p1', kind: 'post', length: 10, text: '', under: 'p0' }, [], {}, ''), { ok: false, why: 'a reply drawn under a post takes no reply under it' });
+  assert.equal(cutter.playPrice(settings, post(10), {}), 0);
+  assert.equal(castOnPost(cutter), true, 'Card Collector may name it');
+  assert.equal(staffOffers(cutter), false, 'a persona has no reply to carry');
+  assert.deepEqual(decideSet(cutter, settings, post(10), [], {}, cards), { ok: false, why: 'Line Cutter carries a reply, so it is cast face up and never set face down' });
+});
+
+test("a Sugar Coat on the post turns a Line Cutter away, and a Force Field does not", () => {
+  const live = new Date(Date.now() + 86_400_000).toISOString();
+  const context = { nameOf: (key: string) => cards.find((c) => c.key === key)!.name };
+  const coat = [{ card: 'sugar-coat', act: 'k1', gimmick: by('sugar-coat').gimmick, ends: live }];
+  assert.deepEqual(decidePlay(by('line-cutter'), settings, post(10), coat, {}, '', context), { ok: false, why: "this post's Sugar Coat turns away Pepperoni cards" });
+  const field = [{ card: 'force-field', act: 'k2', gimmick: by('force-field').gimmick, ends: live }];
+  assert.equal(decidePlay(by('line-cutter'), settings, post(10), field, {}, '', context).ok, true, 'Force Field stops at uncommon, and Line Cutter is rare');
+});
+
+test("Feelin' Glam lands on a thread, one at a time, and costs nothing more", () => {
+  const glam = by('feelin-glam');
+  const thread = { reach: 'thread' as const, thread: 't1' };
+  const live = new Date(Date.now() + 86_400_000).toISOString();
+  assert.equal(glam.canApply(thread, []).ok, true);
+  assert.deepEqual(glam.canApply(post(10), []), { ok: false, why: 'this card lands on a thread' });
+  assert.deepEqual(glam.canApply(thread, [{ card: 'feelin-glam', act: 'k1', reach: 'thread', ends: live }]), { ok: false, why: 'this thread already carries that card' });
+  assert.equal(glam.canApply(thread, [{ card: 'feelin-glam', act: 'k1', reach: 'thread', ends: new Date(Date.now() - 1000).toISOString() }]).ok, true, 'one that has worn off is no longer in the way');
+  assert.equal(glam.playPrice(settings, thread, {}), 0);
 });
