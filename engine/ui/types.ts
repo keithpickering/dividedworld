@@ -421,11 +421,12 @@ export interface InstanceUi {
   /** How each pack the instance sells draws itself, by the rules' `PackRules.key`: its name and its face art, placed as a card's face art is (engine/ui/cards/types.ts, `CardArt`). */
   readonly packs: Readonly<Record<string, { readonly name: string; readonly art: CardArt }>>;
   /**
-   * The instance's mark for a card's back: a URL the bundler resolved, drawn at the center of the back's crossed bands
-   * (`PostcardBack`). It is the instance's, never a card's, so a back still says nothing about the card it is. Without it the back
-   * is the glass's bands alone.
+   * The instance's look for a card's back (`PostcardBack`), each a URL the bundler resolved. `mark` is drawn at the center of the
+   * back's crossed bands; without it the back is the bands alone. `canvas` is a picture for the back, a canvas as a card's is
+   * (specs/card-art.md); a back with its picture draws that, and no mark over it. Both are the instance's, never a card's, and
+   * every card has the same back, so a back still says nothing about the card it is.
    */
-  readonly cardBack?: { readonly mark: string };
+  readonly cardBack?: { readonly mark: string; readonly canvas?: string };
   /** The instance's onboarding words, in its developer persona's voice (docs/plans/2026-11-02-onboarding-plan.md, Task 4). */
   readonly onboarding: OnboardingUi;
   /** The instance's Strategy Guide: its prose, and Gabe's hint for each class (docs/plans/2026-11-02-onboarding-plan.md, Task 8). */

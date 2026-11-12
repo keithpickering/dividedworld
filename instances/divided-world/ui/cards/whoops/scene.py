@@ -6,6 +6,7 @@ import numpy as np
 import bpy
 from scipy import sparse
 from scipy.sparse.linalg import cg
+os.environ.setdefault('ART_SAMPLES', '256')   # this picture shipped at 256 samples; the rig's default is the other cards' 200
 import rig
 
 OUT = sys.argv[-1]
@@ -123,7 +124,7 @@ def inflate(f, ppu, cap):
     h[inside] = 2 * np.sqrt(np.maximum(u, 0))
     return cap * np.tanh(h / cap) + 0.16 * h
 
-MESH = int(os.environ.get('WHOOPS_MESH', '130'))     # mesh points per world unit
+MESH = int(os.environ.get('WHOOPS_MESH', '170'))     # mesh points per world unit
 TEX = MESH * 3
 print('fields'); fm, fb, fp = (field(b, MESH) for b in (main, back, pale))
 print('inflate'); hm, hb, hp = inflate(fm, MESH, 0.34), inflate(fb, MESH, 0.2), inflate(fp, MESH, 0.2)

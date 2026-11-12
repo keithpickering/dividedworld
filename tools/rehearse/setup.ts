@@ -256,3 +256,25 @@ async function writeBossMemory(conn: Connection, instance: Instance, memory: Mem
   await conn.sql("insert into staff_memory (staff, meeting, at, body) values ($1, $2, to_timestamp($3 / 1000.0), $4::jsonb)", [staff, meeting[0]?.id, slot + MINUTE, JSON.stringify(body)]);
   return notes;
 }
+
+/**
+ * The tiers a run names, written as the instance's `modelTiers` setting in the rehearsal's own database (the rehearsal's cluster only),
+ * merged over what the seed put there so a tier not named keeps the instance's model. The handlers read the setting from the database
+ * each job (`withDatabaseSettings`), so this is before the first job. With no tier named nothing is written.
+ */
+export async function writeModelTiers(conn: Connection, tiers: { readonly strong?: string; readonly light?: string }): Promise<void> {
+  const named = { ...(tiers.strong === undefined ? {} : { strong: tiers.strong }), ...(tiers.light === undefined ? {} : { light: tiers.light }) };
+  if (Object.keys(named).length === 0) return;
+  // The settings check (supabase/migrations/0149_card_writes.sql) wants both tiers in the row; with no row to merge over, a lone tier would be refused in its words, so say it in ours.
+  const row = (await conn.sql("select value from settings where key = 'modelTiers'"))[0]?.value as { strong?: unknown; light?: unknown } | undefined;
+  for (const tier of ["strong", "light"] as const) {
+    if (named[tier as keyof typeof named] === undefined && (typeof row?.[tier] !== "string" || row[tier] === "")) {
+      throw new Error(`The database has no modelTiers setting holding a "${tier}" model, so naming only the other tier would leave "${tier}" missing. Name both --strong and --light.`);
+    }
+  }
+  // One statement, so a tier not named keeps the instance's model whatever else the row held.
+  await conn.sql(
+    "insert into settings (key, value) values ('modelTiers', $1::jsonb) on conflict (key) do update set value = settings.value || excluded.value",
+    [JSON.stringify(named)],
+  );
+}

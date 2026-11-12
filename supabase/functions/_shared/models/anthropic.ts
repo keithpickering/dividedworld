@@ -21,11 +21,13 @@ export interface RawChat {
 }
 
 export async function anthropicChat(request: ChatRequest, model: string, apiKey: string, wire: Wire): Promise<RawChat> {
+  // `cachePrefix`: the system prompt and the first message are one cacheable prefix, the same in the calls that follow.
+  const mark = { cache_control: { type: 'ephemeral' } } as const;
   const body = {
     model,
     max_tokens: request.maxTokens,
-    system: request.system,
-    messages: request.messages.map((m) => ({ role: m.role, content: m.content })),
+    system: request.cachePrefix ? [{ type: 'text', text: request.system, ...mark }] : request.system,
+    messages: request.messages.map((m, i) => ({ role: m.role, content: request.cachePrefix && i === 0 ? [{ type: 'text', text: m.content, ...mark }] : m.content })),
     output_config: { format: { type: 'json_schema', schema: request.schema } },
   };
   const answer = (await postJson(ANTHROPIC_URL, { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' }, body, wire)) as {

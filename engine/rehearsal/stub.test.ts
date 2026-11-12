@@ -4,7 +4,7 @@ import { leastAnswer } from './stub.ts';
 import { systemSettings, testSystem } from '../rules/test-system.ts';
 import { PRONOUN_PRESETS } from '../rules/pronouns.ts';
 import { phaseAt } from '../system/phases.ts';
-import { MEETING_RULE, repairAnswer, ruleSchema, type RepairContext } from '../system/meeting.ts';
+import { MEETING_RULE, MEETING_PARTS, partRule, partSchema, repairAnswer, ruleSchema, type RepairContext } from '../system/meeting.ts';
 import { CHATTER_RULE, chatterSchema, repairChatter, type OfferedCard } from '../system/chatter.ts';
 import { FILING_RULE, PATROL_RULE, filingPrompt, patrolPrompt, repairFiling, repairPatrol, type FilingInput, type PatrolInput } from '../system/judgment.ts';
 import { APOLOGY_RULE, apologyPrompt, repairApology } from '../system/apology.ts';
@@ -54,6 +54,26 @@ test('the meeting\'s schema gives an answer its repair accepts or rejects by nam
     groups: { conferred: new Map(), capped: new Set(), held: new Set() },
   };
   settled(repairAnswer(answer, ctx));
+});
+
+test('each part of the meeting, answered by the stub from its own schema, passes its part rule and repairAnswer', () => {
+  const settings = { ...systemSettings, reactionCap: 3 };
+  const ctx: RepairContext = {
+    settings, system: testSystem, boss: testSystem.firstBoss, phase: phaseAt({ startsAt: NOW - 30 * 24 * H, endsAt: NOW + 60 * 24 * H }, NOW, settings),
+    bank: 5, now: NOW, boards: new Set([GAMES]), threads: new Set(), isPublic: () => false, successorAllowed: false, successors: new Set(), mods: new Set(), rules: [],
+    groups: { conferred: new Map(), capped: new Set(), held: new Set() },
+  };
+  assert.deepEqual(MEETING_PARTS.map((p) => p.key), ['moves', 'staff', 'self']);
+  const keys = (a: unknown): string[] => Object.keys(a as object);
+  for (const { key } of MEETING_PARTS) {
+    const answer = leastAnswer(partSchema(key));
+    const shaped = repair(answer, partRule(key));
+    assert.ok(shaped.ok, `${key}: ${JSON.stringify(shaped)}`);
+    const r = repairAnswer(answer, ctx);
+    assert.ok(r.ok, `${key}: ${JSON.stringify(r)}`);
+    assert.deepEqual(keys(answer), key === 'moves' ? ['moves', 'inherited'] : key === 'staff' ? [] : ['memory', 'profile']);
+    if (r.ok) assert.equal(r.memory !== undefined, key === 'self');
+  }
 });
 
 test('chatter\'s schema, asked for a title and offered cards, gives an answer repairChatter accepts or rejects by name', () => {

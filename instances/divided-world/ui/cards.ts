@@ -42,7 +42,7 @@ import hallPassArt from './cards/hall-pass/art.json';
 import belowTheFoldCanvas from './cards/below-the-fold/art.webp?url';
 import belowTheFoldMark from './cards/below-the-fold/mark.svg?url';
 import belowTheFoldArt from './cards/below-the-fold/art.json';
-import youWereSayingCanvas from './cards/you-were-saying/art.svg?url';
+import youWereSayingCanvas from './cards/you-were-saying/art.webp?url';
 import youWereSayingMark from './cards/you-were-saying/mark.svg?url';
 import youWereSayingArt from './cards/you-were-saying/art.json';
 import { ConfigForm as YouWereSayingConfigForm } from '../cards/you-were-saying/ConfigForm.tsx';

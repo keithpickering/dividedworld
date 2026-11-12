@@ -2,7 +2,7 @@
  * Booster packs board 02, the reveal (docs/research/2026-11-07-booster-packs/02-reveal.html, 1440 by 1080): the story `Boards/Booster packs`, `Machine`, with
  * the Booster bought and three of its five cards turned, reached by the presses a player makes (select the Booster, Buy, turn the next card three times).
  * The emptied pack is parked at the top with its foot in view, "3 OF 5 TURNED OVER" under its name, the card last turned at the sheet's size in the middle,
- * the five in pull order beneath it at the fan's size (the next card's back a button, the hit's back gold), and Turn the next card, Turn all and Close.
+ * the five in pull order beneath it at the fan's size (the next card's back a button; the hit's back is like the others, by the owner's decision of 2026-11-11, where the board drew it gold), and Turn the next card, Turn all and Close.
  * The plan is docs/plans/2026-11-04-booster-packs-plan.md, Task 5.
  *
  * Departures, by decision:
