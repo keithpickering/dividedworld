@@ -91,10 +91,16 @@ async function lightOf(page: Page) {
     const d = c.width > 0 && c.height > 0 ? ctx.getImageData(0, 0, c.width, c.height).data : new Uint8ClampedArray(0);
     let lit = 0;
     let sum = 0;
-    for (let i = 0; i < d.length; i += 4) { if (d[i + 3]! > 0) lit++; sum = (sum * 31 + d[i]! + d[i + 1]! * 3 + d[i + 2]! * 7 + d[i + 3]! * 11) % 2147483647; }
-    return { width: c.width, lit, sum };
+    let weight = 0;
+    let weightedX = 0;
+    for (let i = 0; i < d.length; i += 4) { if (d[i + 3]! > 0) lit++; weight += d[i + 3]!; weightedX += d[i + 3]! * (((i / 4) % c.width) + 0.5); sum = (sum * 31 + d[i]! + d[i + 1]! * 3 + d[i + 2]! * 7 + d[i + 3]! * 11) % 2147483647; }
+    /* The alpha-weighted centroid's x as a fraction of the bitmap's width (0.5 when nothing is lit). */
+    return { width: c.width, lit, sum, centroidX: weight > 0 ? weightedX / weight / c.width : 0.5 };
   });
 }
+
+/** How far right, as a fraction of the bitmap's width, the light's centroid must move. */
+const MOVED = 0.15;
 
 async function theSlotsPack(page: Page) {
   await page.setViewportSize({ width: 1440, height: 1080 });
@@ -105,12 +111,18 @@ async function theSlotsPack(page: Page) {
   return pack;
 }
 
-test('the Booster in the slot is a picture with a light: after a pointer move its canvas holds lit pixels', async ({ page }) => {
+test('the Booster in the slot is a picture with a light: after a pointer move its canvas holds lit pixels, and the light follows the pointer', async ({ page }) => {
   const pack = await theSlotsPack(page);
   const box = (await pack.boundingBox())!;
   await page.mouse.move(box.x + box.width * 0.3, box.y + box.height * 0.3, { steps: 4 });
   await page.mouse.move(box.x + box.width * 0.6, box.y + box.height * 0.6, { steps: 4 });
   await expect.poll(async () => (await lightOf(page)).lit, { timeout: 5000 }).toBeGreaterThan(0);
+  /* The loop takes the pointer across the whole viewport: far upper left, then far lower right, and the light's centroid moves right (about 0.4 of the bitmap measured; idle drift alone moves it by about 0.05). */
+  await page.mouse.move(2, 2, { steps: 6 });
+  await expect.poll(async () => (await lightOf(page)).lit, { timeout: 5000 }).toBeGreaterThan(0);
+  const left = (await lightOf(page)).centroidX;
+  await page.mouse.move(1438, 1078, { steps: 6 });
+  await expect.poll(async () => (await lightOf(page)).centroidX, { timeout: 5000 }).toBeGreaterThan(left + MOVED);
 });
 
 test.describe('with motion reduced', () => {
@@ -119,10 +131,9 @@ test.describe('with motion reduced', () => {
     const pack = await theSlotsPack(page);
     const box = (await pack.boundingBox())!;
     await page.mouse.move(box.x + box.width * 0.3, box.y + box.height * 0.3, { steps: 4 });
-    await page.waitForTimeout(600);
-    const before = await lightOf(page);
     /* The still light is drawn (not an empty canvas that would equal itself): a reduced-motion pack is lit, only not by the pointer. */
-    expect(before.lit).toBeGreaterThan(0);
+    await expect.poll(async () => (await lightOf(page)).lit, { timeout: 5000 }).toBeGreaterThan(0);
+    const before = await lightOf(page);
     await page.mouse.move(box.x + box.width * 0.8, box.y + box.height * 0.8, { steps: 6 });
     await page.waitForTimeout(600);
     expect(await lightOf(page)).toEqual(before);
