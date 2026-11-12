@@ -1321,9 +1321,8 @@ function unhit(host: HTMLElement, options: ClingOptions): void {
 /**
  * Lands a flake that is past its hang if a landing place is under it, and says whether it did. In order: the registered host whose hit
  * the browser finds there (task order: an effect's surface, then a post cell), where the point lies in that host's box, in that host's
- * own px; else, where the thread's page
- * surface is live and the point's ground is the page's, the page, in document px; else it keeps flying (chrome with a ground of its
- * own would hide glitter lying on the page under it). The one hit test a flake costs per `CHECK_S`; the host's rect is the one measure a landing costs.
+ * own px; else, where the thread's page surface is live and the point's ground is the page's, the page, in document px; else it keeps
+ * flying (chrome with a ground of its own would hide glitter lying on the page under it). The one hit test a flake costs per `CHECK_S`; the host's rect is the one measure a landing costs.
  */
 function landOn(b: Falling, now: number): boolean {
   const el = elementAt(b.x, b.y);
