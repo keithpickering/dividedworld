@@ -52,6 +52,8 @@ describe('the rows stand on the title\'s baseline (2.3)', () => {
       .filter((m) => /kb-thread-flags/u.test(m[1]!) && /vertical-align/u.test(m[2]!));
     expect(flags.length).toBeGreaterThan(0);
     for (const m of flags) expect(m[2]).toMatch(/vertical-align:\s*middle/u);
+    // It must also out-rank the baseline rule above (0,3,1): a lower selector would give the folder the baseline.
+    expect(flags.some((m) => /\.kb-thread-row\s*>\s*td\.kb-thread-flags/u.test(m[1]!))).toBe(true);
   });
 });
 
