@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   DROPS_MOST, END_BULB, FIELD_MOST, WASH_TAKES, beginPen, beginWash, cellGrid, denseGrid, endsOf, fieldAtPoint, kOf, linesOf,
-  penLine, pointGrid, radiusOf, splatInto, strokesInto, washLine, type FieldStroke, type Grid,
+  penLine, pointGrid, beginLine, radiusOf, splatInto, strokesInto, washLine, type FieldStroke, type Grid,
 } from './field.ts';
 import { THRESHOLD, fieldGrid, makeSplat, mulberry32, type Box, type Splat } from './splat.ts';
 import { brushOf, fitStroke, type Pt, type Stroke } from './scrub.ts';
@@ -21,7 +21,7 @@ const wash = (points: Pt[], brush: { width: number; aspect: number }, extra: obj
 const near = (a: number, b: number, tol: number, what = '') => assert.ok(Math.abs(a - b) <= tol, `${what} ${a} vs ${b} (tolerance ${tol})`);
 const fill = (g: Grid, v: number) => g.values.fill(v);
 /** The grid's value at a px position (the point whose center is nearest). */
-const at = (g: Grid, box: Box, x: number, y: number) => g.values[Math.min(g.rows - 1, Math.floor(y / g.step)) * g.cols + Math.min(g.cols - 1, Math.floor(x / g.step))]!;
+const at = (g: Grid, x: number, y: number) => g.values[Math.min(g.rows - 1, Math.floor(y / g.step)) * g.cols + Math.min(g.cols - 1, Math.floor(x / g.step))]!;
 
 test('the constants are named', () => {
   assert.deepEqual([WASH_TAKES, END_BULB, DROPS_MOST, FIELD_MOST], [1.5, 1.35, 3, 16]);
@@ -73,20 +73,22 @@ test('no bulge at a line\'s own points: the center line varies by under 2%', () 
   penLine(g, WIDE, [pen(pts, brush)]);
   /* Away from the end: the bulb (2.7r reach) is the end's, not the line's own points. */
   let lo = Infinity, hi = -Infinity;
-  for (let x = 110; x < 215; x++) { const v = at(g, WIDE, x + 0.5, 165); lo = Math.min(lo, v); hi = Math.max(hi, v); }
+  for (let x = 110; x < 215; x++) { const v = at(g, x + 0.5, 165); lo = Math.min(lo, v); hi = Math.max(hi, v); }
   assert.ok((hi - lo) / hi < 0.02, `varies ${lo}..${hi}`);
+  near((hi + lo) / 2, 1, 0.05, 'the level');
 });
 
-test('a join is rounded: where a line meets the splat\'s edge the field is above both alone', () => {
+test('a splat and a line each below the threshold are ink together: the fields add where they meet', () => {
   const splat: Splat = { balls: [{ x: 0.625, y: 0.5, r: 0.1 }], placement: { cx: 0.625, cy: 0.5 } };
   const rPx = 0.1 * Math.sqrt((WIDE.w * WIDE.h) / 1.25), edgeX = 494 + rPx;
   const brush = brushOf(16, WIDE), line = [pen([[(edgeX + 60) / WIDE.w, 0.5], [(edgeX + 8) / WIDE.w, 0.5]], brush)];
-  /* The meeting point: where the line's end lies a radius short of the splat's edge, along the joint. */
-  const x = edgeX + 2, y = 165 + 9;
-  const both = fieldAtPoint(splat, WIDE, line, x, y);
-  assert.ok(both > fieldAtPoint(splat, WIDE, [], x, y));
-  assert.ok(both > fieldAtPoint(NONE, WIDE, line, x, y));
-  assert.ok(both >= THRESHOLD);
+  /* A point just off both the splat's edge and the line's flank (found by scanning): 0.336 from each, 0.673 together. */
+  const x = edgeX + 4, y = 165 + 12;
+  const splatOnly = fieldAtPoint(splat, WIDE, [], x, y), lineOnly = fieldAtPoint(NONE, WIDE, line, x, y), both = fieldAtPoint(splat, WIDE, line, x, y);
+  assert.ok(splatOnly < THRESHOLD, `the splat alone ${splatOnly}`);
+  assert.ok(lineOnly < THRESHOLD, `the line alone ${lineOnly}`);
+  assert.ok(both >= THRESHOLD, `together ${both}`);
+  near(both, splatOnly + lineOnly, 1e-5, 'the sum');
 });
 
 test('one line in pieces is one line: the same field, and one bulb', () => {
@@ -156,7 +158,7 @@ test('one pass takes WASH_TAKES, whether its points are 5px or 25px apart', () =
     const brush = brushOf(30, MID), g = denseGrid(MID, 1);
     fill(g, 3);
     washLine(g, MID, [straight(MID, gap, brush) as FieldStroke]);
-    near(at(g, MID, 250, 219), 3 - WASH_TAKES, 0.05, `gap ${gap}`);
+    near(at(g, 250, 219), 3 - WASH_TAKES, 0.05, `gap ${gap}`);
   }
 });
 
@@ -165,26 +167,45 @@ test('passes add: a thin arm clears in one pass, the core takes two', () => {
   fill(g, 3); fill(arm, 0.7);
   const one = straight(MID, 5, brush) as FieldStroke;
   washLine(g, MID, [one]); washLine(arm, MID, [one]);
-  assert.ok(at(arm, MID, 250, 219) <= 0.001, 'arm after one');
-  assert.ok(at(g, MID, 250, 219) > 1, 'core after one');
+  assert.ok(at(arm, 250, 219) <= 0.001, 'arm after one');
+  near(at(g, 250, 219), 3 - WASH_TAKES, 0.05, 'core after one');
   washLine(g, MID, [one]);
-  assert.ok(at(g, MID, 250, 219) <= 0.05, `core after two ${at(g, MID, 250, 219)}`);
+  assert.ok(at(g, 250, 219) <= 5e-3, `core after two ${at(g, 250, 219)}`);
 });
 
 test('a dab is one pass: a one-point wash lowers its center by WASH_TAKES', () => {
   const brush = brushOf(30, MID), g = denseGrid(MID, 1);
   fill(g, 3);
   washLine(g, MID, [wash([[250.5 / MID.w, 219.5 / MID.h]], brush)]);
-  near(at(g, MID, 250.5, 219.5), 3 - WASH_TAKES, 1e-4);
+  near(at(g, 250.5, 219.5), 3 - WASH_TAKES, 1e-4);
   /* Incrementally: the disc shows at once, the top-up at the lift. */
   const h = denseGrid(MID, 1);
   fill(h, 3);
   const line = beginWash(h, MID, brush);
   line.to([250.5 / MID.w, 219.5 / MID.h]);
-  const mid = at(h, MID, 250.5, 219.5);
+  const mid = at(h, 250.5, 219.5);
   assert.ok(mid < 3 && mid > 3 - WASH_TAKES);
   line.end();
-  near(at(h, MID, 250.5, 219.5), 3 - WASH_TAKES, 1e-4);
+  near(at(h, 250.5, 219.5), 3 - WASH_TAKES, 1e-4);
+});
+
+test('a short drag is a dab: a line under 2r long takes WASH_TAKES under its end, as a tap does', () => {
+  const brush = brushOf(30, MID);
+  for (const drag of [3, 4, 14]) {
+    const g = denseGrid(MID, 1);
+    fill(g, 3);
+    const line = beginWash(g, MID, brush);
+    line.to([250.5 / MID.w, 219.5 / MID.h]);
+    line.to([(250.5 + drag) / MID.w, 219.5 / MID.h]);
+    line.end();
+    near(at(g, 250.5 + drag, 219.5), 3 - WASH_TAKES, 0.05, `a ${drag}px drag`);
+  }
+  /* A line of 2r or more is a pass, not a dab: nothing is added at its end. */
+  const g = denseGrid(MID, 1), h = denseGrid(MID, 1);
+  fill(g, 3); fill(h, 3);
+  const long = (grid: Grid, end: boolean) => { const l = beginWash(grid, MID, brush); l.to([250.5 / MID.w, 219.5 / MID.h]); l.to([(250.5 + 40) / MID.w, 219.5 / MID.h]); if (end) l.end(); };
+  long(g, true); long(h, false);
+  assert.deepEqual(g.values, h.values);
 });
 
 test('never below zero, and every point lowered is marked washed (and no other)', () => {
@@ -244,9 +265,33 @@ test('a line can be driven incrementally, and each call returns the rectangle it
   assert.ok(g.values[200 * g.cols + 130]! > 0.9);
   line.end();
   /* The scope is cleared when the line ends: a second line starts fresh. */
-  const second = beginPen(g, MID, brush);
+    const second = beginPen(g, MID, brush);
   second.to([100 / MID.w, 200 / MID.h]);
   assert.ok(g.values[200 * g.cols + 100]! > 1.5, 'a second line adds');
+});
+
+test('a pen line must be ended before another begins on its grid: a second beginPen throws, until end()', () => {
+  const brush = brushOf(16, MID), g = denseGrid(MID, 1), other = denseGrid(MID, 1);
+  const first = beginPen(g, MID, brush);
+  first.to([0.2, 0.5]);
+  assert.throws(() => beginPen(g, MID, brush), /open/);
+  assert.throws(() => beginLine(g, MID, pen([], brush)), /open/);
+  assert.doesNotThrow(() => beginPen(other, MID, brush).end(), 'another grid is its own scope');
+  assert.doesNotThrow(() => beginWash(g, MID, brush).end(), 'a wash has no scope');
+  first.end();
+  assert.doesNotThrow(() => beginPen(g, MID, brush).end());
+});
+
+test('cost: 400 corner-to-corner pen segments visit only the cells the capsule can reach', () => {
+  const brush = brushOf(16, MID), g = denseGrid(MID, 1), line = beginPen(g, MID, brush);
+  g.work = { visits: 0 };
+  const t = performance.now();
+  for (let i = 0; i < 401; i++) line.to(i % 2 ? [(MID.w - 10) / MID.w, (MID.h - 10) / MID.h] : [10 / MID.w, 10 / MID.h]);
+  line.end();
+  console.log(`# long pen segments: ${g.work.visits} visits, ${(performance.now() - t).toFixed(0)}ms`);
+  /* A capsule 16px across and ~850px long is ~27,000 cells; its bounding box is ~350,000. */
+  assert.ok(g.work.visits < 400 * 60_000, `${g.work.visits} visits`);
+  assert.ok(g.values[219 * g.cols + 377]! > 0.9, 'the line is there');
 });
 
 test('cost: 12,000 points of 30px wash under 1.5s, 12,000 points of 16px pen under 600ms', () => {
