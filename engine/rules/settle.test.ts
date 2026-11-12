@@ -1265,6 +1265,23 @@ test('a post-local reaction pays a Face as a fire does, and costs a Jabroni as a
   assert.equal(amountOf(run('x-1f480', 'boredNegative'), 'tom-1', 'kinded.groan'), amountOf(run('zzz'), 'tom-1', 'kinded.groan'), 'costs as a zzz');
   assert.equal(amountOf(run('x-1f480', 'boredNegative'), 'tom-1', 'kinded.groan'), -10);
 });
+test('the instance\'s map wins over a quadrant sent with one of its own kinds', () => {
+  const run = (quadrant?: Quadrant) => settle(earnBoard([], [local('tp1', 'bob', 'bob-1', 'fire', FROM + 5 * H, quadrant)]), cardsWorld);
+  assert.equal(amountOf(run('boredNegative'), 'tom-1', 'kinded.nod'), amountOf(run(), 'tom-1', 'kinded.nod'), 'paid as a fire does');
+  assert.equal(amountOf(run('boredNegative'), 'tom-1', 'kinded.nod'), 10);
+  assert.equal(amountOf(run('boredNegative'), 'tom-1', 'kinded.groan'), 0, 'not costed as a zzz');
+});
+test('the estimate\'s lift counts a post-local reaction by its sent quadrant', () => {
+  const b = base();
+  const input: SettlementInput = {
+    ...b,
+    characters: [...b.characters, { id: 'cat-thief', player: 'cat', classes: [{ class: 'thief', from: 0 }] }],
+    acts: [...b.acts, { id: 'k1', character: 'cat-thief', kind: 'card', at: FROM + 3 * H + 30, thread: 't1', target: 'p1', card: 'splat' }],
+    reactions: [local('p1', 'bob', 'bob-1', 'x-1f480', FROM + 5 * H, 'excitedPositive')],
+  };
+  const thunder = estimateForOwner(input, withClasses(thief), 'cat').lines.filter((l) => l.reason === 'thief.thunder');
+  assert.deepEqual(thunder.map((l) => [l.act, l.at, l.amount]), [['k1', FROM + 5 * H, 10]], 'one line, at the local reaction\'s time');
+});
 test('a post-local reaction sent with no quadrant is an unknown kind, as before', () => {
   assert.throws(() => settle(earnBoard([], [local('tp1', 'bob', 'bob-1', 'x-1f480', FROM + 5 * H)]), cardsWorld), /reaction kind "x-1f480"/);
 });
