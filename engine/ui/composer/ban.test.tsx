@@ -15,9 +15,9 @@ afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); });
 function banned(hours = 5) {
   const w = threadWorld();
   const clerk = w.fake.seed.staff('clerk', 'The Clerk', 'mod');
-  const visit = w.fake.seed.visit(clerk, w.ids[1]!, { at: Date.now() - 3_600_000, endsInMs: 60_000 });
+  const visit = w.fake.seed.visit(clerk, w.ids[1]!, { at: w.fake.clock.now() - 3_600_000, endsInMs: 60_000 });
   const inf = w.fake.seed.infraction(visit, { points: 10, band: 'severe' });
-  w.fake.seed.ban(w.pipe, Date.now() + hours * 3_600_000, { infraction: inf });
+  w.fake.seed.ban(w.pipe, w.fake.clock.now() + hours * 3_600_000, { infraction: inf });
   return w;
 }
 
@@ -108,6 +108,7 @@ describe('the composer of a banned mask', () => {
     openThread(w);
     await replyBox();
     await screen.findByText(/is banned until/u);
+    w.fake.clock.advance(3_600_000 + 1000);
     await act(async () => { await vi.advanceTimersByTimeAsync(3_600_000 + 1000); });
     await waitFor(() => expect(screen.queryByText(/is banned until/u)).toBeNull());
     await userEvent.click(await replyBox());
@@ -121,8 +122,10 @@ describe('the composer of a banned mask', () => {
     openThread(w);
     await replyBox();
     await screen.findByText(/is banned until/u);
+    w.fake.clock.advance(26 * 86_400_000);
     await act(async () => { await vi.advanceTimersByTimeAsync(26 * 86_400_000); });
     expect(screen.queryByText(/is banned until/u)).not.toBeNull();
+    w.fake.clock.advance(5 * 86_400_000);
     await act(async () => { await vi.advanceTimersByTimeAsync(5 * 86_400_000); });
     await waitFor(() => expect(screen.queryByText(/is banned until/u)).toBeNull());
   });

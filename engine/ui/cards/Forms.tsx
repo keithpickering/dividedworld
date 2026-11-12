@@ -285,7 +285,7 @@ export function AppealForm({ infraction, visit, nameOf, modPronouns = null, ban,
           <>
             <p className="kb-visit-facts">
               {f !== null && <>The punishment: {rule}, a {f.band} breach, {pointsPlain(f.points)} on {nameOf(f.character)}&apos;s warn bar
-                  {f.expiresAt !== '' ? (Date.parse(f.expiresAt) > Date.now() ? `, dropping off ${shortDate(f.expiresAt)}` : `, dropped off ${shortDate(f.expiresAt)}`) : ''}.</>}
+                  {f.expiresAt !== '' ? (Date.parse(f.expiresAt) > api.now() ? `, dropping off ${shortDate(f.expiresAt)}` : `, dropped off ${shortDate(f.expiresAt)}`) : ''}.</>}
             </p>
             <p className="kb-visit-terms">{appealTerms(mod, visit ? modPronouns : null, { points: f === null ? 0 : f.points })}</p>
           </>

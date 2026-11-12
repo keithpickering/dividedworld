@@ -335,7 +335,7 @@ describe('a visit\'s mark', () => {
   const visited = (endsInMinutes = 161) => {
     const w = world();
     const clerk = w.fake.seed.staff('clerk', 'The Clerk', 'mod', { pronouns: PRONOUN_PRESETS.she });
-    const visit = w.fake.seed.visit(clerk, w.second, { at: Date.now(), endsInMs: endsInMinutes * MINUTE });
+    const visit = w.fake.seed.visit(clerk, w.second, { at: w.fake.clock.now(), endsInMs: endsInMinutes * MINUTE });
     return { ...w, clerk, visit };
   };
   const visitMark = async (seq = 2) => within(await article(seq)).findByRole('button', { name: /Opens the visit\.$/u });
@@ -387,9 +387,11 @@ describe('a visit\'s mark', () => {
       open(w);
       const mark = await visitMark();
       expect(mark).toHaveTextContent('2:41');
+      w.fake.clock.advance(MINUTE);
       await act(async () => { vi.advanceTimersByTime(MINUTE); });
       expect(mark).toHaveTextContent('2:40');
       expect(mark).toHaveAccessibleName(/2:40 left, 2 hours 40 minutes/u);
+      w.fake.clock.advance(160 * MINUTE);
       await act(async () => { vi.advanceTimersByTime(160 * MINUTE); });
       expect(mark).toHaveTextContent('0:00');
     } finally { vi.useRealTimers(); }
@@ -408,7 +410,7 @@ describe('a visit\'s mark', () => {
     vi.spyOn(globalThis, 'clearInterval').mockImplementation(((id: Parameters<typeof clearInterval>[0]) => { cleared.push(id); realClear(id); }) as typeof clearInterval);
     const w = visited();
     const third = w.fake.seed.post(w.thread, w.spritey, 'post 4');
-    w.fake.seed.visit(w.clerk, third, { at: Date.now(), endsInMs: 90 * MINUTE });
+    w.fake.seed.visit(w.clerk, third, { at: w.fake.clock.now(), endsInMs: 90 * MINUTE });
     const view = open(w);
     await visitMark(2);
     await visitMark(4);
@@ -427,7 +429,7 @@ describe('a visit\'s mark', () => {
     }) as typeof setInterval);
     const w = visited(-5);
     const filed = w.fake.seed.post(w.thread, w.spritey, 'post 4');
-    const v = w.fake.seed.visit(w.clerk, filed, { at: Date.now(), endsInMs: 90 * MINUTE });
+    const v = w.fake.seed.visit(w.clerk, filed, { at: w.fake.clock.now(), endsInMs: 90 * MINUTE });
     w.fake.seed.visitEnd(v, { outcome: 'filed', line: 'Filed.' });
     open(w);
     expect(await visitMark(2)).toHaveTextContent('0:00');
