@@ -636,3 +636,55 @@ describe('Mooch, Toll, 4D Chess and Off Day in plain words (card notes Part 6, T
     expect(instanceUiProblems(instanceUi, instance)).toEqual([]);
   });
 });
+
+describe('Divided World\'s sounds', () => {
+  const soundsDir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'sounds');
+  const manifest = JSON.parse(fs.readFileSync(path.join(soundsDir, 'sounds.json'), 'utf8')) as { file: string }[];
+  const manifestFiles = manifest.map((m) => m.file);
+  /* The table the design gives, one row per slot, in order. */
+  const TABLE = [
+    { key: 'laugh-track.laugh-1', file: 'laugh-1.mp3', caption: 'The audience laughs', ink: 'var(--kb-pepperoni)' },
+    { key: 'laugh-track.laugh-2', file: 'laugh-2.mp3', caption: 'The audience laughs', ink: 'var(--kb-pepperoni)' },
+    { key: 'laugh-track.laugh-3', file: 'laugh-3.mp3', caption: 'The audience laughs', ink: 'var(--kb-pepperoni)' },
+    { key: 'laugh-track.cheer-1', file: 'cheer-1.mp3', caption: 'The audience cheers', ink: 'var(--kb-sweet)' },
+    { key: 'laugh-track.cheer-2', file: 'cheer-2.mp3', caption: 'The audience cheers', ink: 'var(--kb-sweet)' },
+    { key: 'laugh-track.cheer-3', file: 'cheer-3.mp3', caption: 'The audience cheers', ink: 'var(--kb-sweet)' },
+    { key: 'laugh-track.boo-1', file: 'boo-1.mp3', caption: 'The audience boos', ink: 'var(--kb-salty)' },
+    { key: 'laugh-track.boo-2', file: 'boo-2.mp3', caption: 'The audience boos', ink: 'var(--kb-salty)' },
+    { key: 'laugh-track.boo-3', file: 'boo-3.mp3', caption: 'The audience boos', ink: 'var(--kb-salty)' },
+    { key: 'laugh-track.titter', file: 'titter.mp3', caption: 'The audience titters', ink: 'var(--kb-pepperoni)', loop: true },
+    { key: 'laugh-track.ooh', file: 'ooh.mp3', caption: 'The audience goes “ooh”', ink: 'var(--kb-sweet)', loop: true },
+    { key: 'laugh-track.grumble', file: 'grumble.mp3', caption: 'A grumble rises', ink: 'var(--kb-salty)', loop: true },
+  ];
+  const slots = instanceUi.sounds?.slots ?? [];
+
+  test('there are exactly the twelve slots of the design, in order, with their keys, captions, inks and loops', () => {
+    expect(slots.map((s) => s.key)).toEqual(TABLE.map((t) => t.key));
+    for (const row of TABLE) {
+      const slot = slots.find((s) => s.key === row.key);
+      expect(slot, `${row.key} is a slot`).toBeDefined();
+      expect(slot!.caption, `${row.key}'s caption`).toBe(row.caption);
+      expect(slot!.ink, `${row.key}'s ink`).toBe(row.ink);
+      expect(slot!.loop, `${row.key}'s loop`).toEqual(row.loop ? true : undefined);
+    }
+    expect(slots).toHaveLength(12);
+  });
+  test('every slot plays on the game bus', () => {
+    for (const slot of slots) expect(slot.bus, `${slot.key}'s bus`).toBe('game');
+  });
+  test('every slot\'s file is in the folder\'s manifest, and is the file the design names', () => {
+    for (const row of TABLE) {
+      const slot = slots.find((s) => s.key === row.key)!;
+      expect(manifestFiles, `${row.file} is in sounds.json`).toContain(row.file);
+      expect(path.posix.basename(slot.src.split(/[?#]/u)[0]!), `${row.key}'s file`).toBe(row.file);
+    }
+  });
+  test('every caption is non-empty and every key is unique', () => {
+    for (const slot of slots) expect(slot.caption.trim(), `${slot.key}'s caption`).not.toBe('');
+    expect(new Set(slots.map((s) => s.key)).size).toBe(slots.length);
+  });
+  test('the preview names a slot, the game bus\'s', () => {
+    expect(instanceUi.sounds?.preview?.game).toBe('laugh-track.laugh-1');
+    expect(slots.map((s) => s.key)).toContain(instanceUi.sounds?.preview?.game);
+  });
+});
