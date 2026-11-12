@@ -75,7 +75,6 @@ import { cascade, CASCADE_BEAT_MS, orbFills } from '../orbs/fill.ts';
 import { motionReduced, useTextSize } from '../appearance.ts';
 import { ALERTS_UNREAD_BOUND } from '../data/api.ts';
 import { Toasts } from '../alerts/Toasts.tsx';
-import { Captions } from '../audio/Captions.tsx';
 import { useAlertFeed } from '../alerts/useAlertFeed.ts';
 import { HUD_CLASS } from '../glass/place.ts';
 import { Smoke, useSurfaceStyle } from '../glass/Smoke.tsx';
@@ -233,6 +232,8 @@ export function Hud() {
    * The HUD is drawn at the board's scale (`zoom`, frame.css), and a box measured here is the
    * window's, so the height is set as it stands, for what sits outside the HUD, and the tab's points
    * are divided by the HUD's zoom, since they are set on the HUD and drawn at it.
+   * What stands above the HUD by this height is the caption bar, which the app shell mounts once at the page
+   * root (web/src/App.tsx's Shell); a host of the Frame that wants captions mounts `<Captions />` itself.
    *
    * Watching the section and the bar's three groups is enough: the HUD's height changes only with
    * the section's box, and the aura moves only when the section's width or the size of a group
@@ -661,8 +662,7 @@ export function Hud() {
           </Smoke>
         </div>
       </section>
-      {/* The caption bar is the page's, signed in or not: sound captions are never behind a sign-in. */}
-      <Captions />
+      {/* The caption bar is the page's (web/src/App.tsx's Shell mounts it once, glass and board alike), so the HUD holds none. */}
       {signedIn && (
         <Toasts
           key={player.session.account ?? ''}
