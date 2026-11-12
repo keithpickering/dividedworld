@@ -102,7 +102,7 @@ const drawer = () => screen.getByRole('region', { name: 'Your hand' });
 const here = (seq: number) => within(post(seq)).queryByRole('button', { name: `Play Whoops! on post ${seq}` });
 const arm = async (user: ReturnType<typeof userEvent.setup>) => {
   await user.click(handButton());
-  await user.click(within(drawer()).getAllByRole('button', { name: 'Whoops!, Salty, Cast, common postcard' })[0]!);
+  await user.click(within(drawer()).getByRole('button', { name: 'Whoops!, Salty, Cast, common postcard, 2 in hand' }));
 };
 
 beforeEach(() => {
@@ -125,7 +125,7 @@ describe('the post offers no "Play card"', () => {
     await user.keyboard('{Escape}');
     expect(screen.queryByRole('button', { name: 'Play card' })).toBeNull();
     if (handButton().getAttribute('aria-expanded') !== 'true') await user.click(handButton());
-    expect(within(drawer()).getAllByRole('button', { name: 'Whoops!, Salty, Cast, common postcard' })).toHaveLength(2);
+    expect(within(drawer()).getByRole('button', { name: 'Whoops!, Salty, Cast, common postcard, 2 in hand' })).toBeInTheDocument();
     expect(within(drawer()).getByRole('button', { name: 'Stick Around, Sweet, Cast, common postcard' })).toBeInTheDocument();
   });
 });
@@ -266,10 +266,10 @@ describe('arming a card', () => {
     expect(here(2)).toBeInTheDocument();
     expect(here(3)).toBeInTheDocument();
     expect(here(4)).toBeNull();
-    /* The armed card says so in its name and carries its tag; the other copy does not. */
-    const armed = within(drawer()).getByRole('button', { name: 'Whoops!, Salty, Cast, common postcard, armed: pick a post' });
+    /* The armed card says so in its name and carries its tag; its name is no longer the plain one. */
+    const armed = within(drawer()).getByRole('button', { name: 'Whoops!, Salty, Cast, common postcard, 2 in hand, armed: pick a post' });
     expect(armed.closest('li')).toHaveTextContent('Armed · pick a post');
-    expect(within(drawer()).getAllByRole('button', { name: 'Whoops!, Salty, Cast, common postcard' })).toHaveLength(1);
+    expect(within(drawer()).queryByRole('button', { name: 'Whoops!, Salty, Cast, common postcard, 2 in hand' })).toBeNull();
   });
 
   test('the button belongs to its post: its name is the card\'s and the post\'s number', async () => {
@@ -289,13 +289,13 @@ describe('arming a card', () => {
     await user.keyboard('{Escape}');
     expect(here(2)).toBeNull();
     expect(handButton()).toHaveAttribute('aria-expanded', 'true');
-    expect(within(drawer()).getAllByRole('button', { name: 'Whoops!, Salty, Cast, common postcard' })).toHaveLength(2);
+    expect(within(drawer()).getByRole('button', { name: 'Whoops!, Salty, Cast, common postcard, 2 in hand' })).toBeInTheDocument();
     /* A second Esc is the hand's own. */
     await user.keyboard('{Escape}');
     expect(handButton()).toHaveAttribute('aria-expanded', 'false');
     await arm(user);
     expect(here(2)).toBeInTheDocument();
-    await user.click(within(drawer()).getByRole('button', { name: 'Whoops!, Salty, Cast, common postcard, armed: pick a post' }));
+    await user.click(within(drawer()).getByRole('button', { name: 'Whoops!, Salty, Cast, common postcard, 2 in hand, armed: pick a post' }));
     expect(here(2)).toBeNull();
   });
 

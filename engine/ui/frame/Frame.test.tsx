@@ -377,9 +377,9 @@ describe('the hand', () => {
     await userEvent.click(hand);
     expect(hand).toHaveAccessibleName('Hand, 3 postcards, open');
     expect(hand).toHaveAttribute('aria-expanded', 'true');
-    /* One card for each copy held, each a button by its name. */
+    /* One card for each kind held, each a button by its name, with how many when more than one. */
     const drawer = screen.getByRole('region', { name: 'Your hand' });
-    expect(within(drawer).getAllByRole('button', { name: 'Whoops!, Salty, Cast, common postcard' })).toHaveLength(2);
+    expect(within(drawer).getByRole('button', { name: 'Whoops!, Salty, Cast, common postcard, 2 in hand' })).toBeInTheDocument();
     expect(within(drawer).getByRole('button', { name: 'Stick Around, Sweet, Cast, common postcard' })).toBeInTheDocument();
   });
   test('Esc closes the drawer and returns focus to the hand, and does not open the menu', async () => {
