@@ -12,13 +12,18 @@ test.use({ viewport: { width: 1440, height: 1120 }, reducedMotion: 'reduce' });
 const HOLD_MS = Number(/export const HOLD_MS = (\d+)/.exec(readFileSync(new URL('../instances/divided-world/cards/wiping.ts', import.meta.url), 'utf8'))?.[1]);
 if (!Number.isFinite(HOLD_MS)) throw new Error('HOLD_MS is not in instances/divided-world/cards/wiping.ts');
 
+/*
+ * How much ink the canvas holds: the sum of its alpha, in whole pixels' worth. A wash takes some of the field each pass (the ink field
+ * design), so a scrubbed core is thinned and see-through well before it is gone, and a count of pixels past a cutoff would not move until
+ * the ink was gone; the sum falls with every pass.
+ */
 const inked = (page: Page, selector = '#post-41 .kb-whoops-ink') => page.evaluate((sel) => {
   const c = document.querySelector<HTMLCanvasElement>(sel);
   if (!c) return 0;
   const d = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
   let n = 0;
-  for (let i = 3; i < d.length; i += 4) if (d[i]! > 40) n++;
-  return n;
+  for (let i = 3; i < d.length; i += 4) n += d[i]! / 255;
+  return Math.round(n);
 }, selector);
 
 /**
@@ -399,14 +404,234 @@ test('a mouse dab washes the ink where the pointer pressed, not offset by the fr
   await page.mouse.move(at.x, at.y);
   await page.mouse.down();
   await page.mouse.up();
-  await expect.poll(async () => (await alphas()).a.filter((v) => v > 40).length).toBeLessThan(before.a.filter((v) => v > 40).length);
+  /* A dab takes some of the field under it, so the ink there is thinned (its alpha falls) and not necessarily gone. */
+  const THINNED = 12;
+  const total = (a: readonly number[]) => a.reduce((n, v) => n + v, 0);
+  await expect.poll(async () => total((await alphas()).a)).toBeLessThan(total(before.a));
   const after = await alphas();
   const k = before.w / before.css;
   let n = 0, sx = 0, sy = 0;
   for (let i = 0; i < before.a.length; i++) {
-    if (before.a[i]! > 40 && after.a[i]! <= 40) { n++; sx += (i % before.w) / k; sy += Math.floor(i / before.w) / k; }
+    const lost = before.a[i]! - after.a[i]!;
+    if (lost > THINNED) { n += lost; sx += (lost * (i % before.w)) / k; sy += (lost * Math.floor(i / before.w)) / k; }
   }
-  expect(n).toBeGreaterThan(20);
-  expect(Math.abs(sx / n - (at.x - rect!.x))).toBeLessThan(2);
-  expect(Math.abs(sy / n - (at.y - rect!.y))).toBeLessThan(2);
+  expect(n).toBeGreaterThan(2000);
+  /* The thinned patch is the dab's disc cut by the splat's own edge, so its center of mass is near the press and not on it; an offset by the frame's place in the cell is tens of px. */
+  expect(Math.abs(sx / n - (at.x - rect!.x))).toBeLessThan(8);
+  expect(Math.abs(sy / n - (at.y - rect!.y))).toBeLessThan(8);
+});
+
+/*
+ * The ink field's look in the running game (docs/plans/2026-11-12-whoops-ink-field-design.md): the author's pen line ends in a bulb, a
+ * wash takes some of the field each pass so the core is see-through before it is gone, and "Hold to scrub" goes round a splat more than once.
+ */
+const SPOT = '#post-41 .kb-whoops-ink';
+const MARK = '#post-41 .kb-mark[data-kb-card="whoops"]:not(.kb-ghost-mark)';
+
+/** The post's field is built (its layers' pictures are held): until then the canvas is the flat stand-in, which a scrub only dims, and these tests read the field's look. */
+const built = (page: Page) => expect.poll(() => page.evaluate(() => {
+  const el = document.querySelector('#post-41 .kb-whoops')!;
+  return Number(el.getAttribute('data-kb-pictures')) === (el.getAttribute('data-kb-layers') ?? '').split(' ').length;
+}), { timeout: 20_000 }).toBe(true);
+
+/** The card's tip ("Got it") comes up some while after the post and covers part of the ink, so a stroke there is the tip's: it is put away first. */
+async function putAwayTip(page: Page): Promise<void> {
+  const got = page.locator('#post-41 .kb-callout').getByRole('button', { name: 'Got it' });
+  await got.click({ timeout: 5000 }).catch(() => undefined);
+  await expect(page.locator('#post-41 .kb-callout')).toBeHidden();
+}
+
+/** The Lens's own tile of `name`, pressed, and the Lens closed again (a tool stays chosen, a hold is pressed apart). */
+async function chooseTool(page: Page, name: string): Promise<void> {
+  await page.locator(MARK).click();
+  const lens = page.getByRole('dialog', { name: 'Cards on this post' });
+  await lens.getByRole('button', { name }).click();
+  await page.keyboard.press('Escape');
+  await expect(lens).toBeHidden();
+}
+
+test('an author\'s pen line ends in a bulb wider than the line', async ({ page }) => {
+  await page.goto('/?fixture=boards&moment=01-main');
+  await expect(page.locator(SPOT)).toBeVisible();
+  await expect.poll(() => inked(page)).toBeGreaterThan(1000);
+  await built(page);
+  await putAwayTip(page);
+  await chooseTool(page, 'Write in ink');
+  await page.locator(SPOT).evaluate((el) => el.scrollIntoView({ block: 'center' }));
+  /* A band of the post's body out of the splat's edge (no ink on the canvas there), where the page is the post's own words and not a control. */
+  const band = await page.evaluate(() => {
+    const c = document.querySelector<HTMLCanvasElement>('#post-41 .kb-whoops-ink')!;
+    const post = c.closest('.kb-act-main');
+    const r = c.getBoundingClientRect();
+    const d = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
+    const k = c.width / r.width;
+    const empty = (x: number, y: number) => {
+      const px = Math.floor(x * k), py = Math.floor(y * k);
+      return px >= 0 && py >= 0 && px < c.width && py < c.height && d[(py * c.width + px) * 4 + 3] === 0;
+    };
+    const free = (x: number, y: number) => {
+      const e = document.elementFromPoint(r.left + x, r.top + y);
+      return e !== null && post !== null && post.contains(e) && e.closest('.kb-callout, [data-kb-over-ink]') === null;
+    };
+    for (let y = 24; y < r.height - 24; y += 4) {
+      if (r.top + y < 80 || r.top + y > innerHeight - 80) continue;
+      for (let x = 20; x < r.width - 200; x += 6) {
+        let ok = true;
+        for (let dx = 0; dx <= 180 && ok; dx += 6) for (let dy = -24; dy <= 24 && ok; dy += 6) ok = empty(x + dx, y + dy);
+        if (ok && free(x, y) && free(x + 160, y)) return { x: r.left + x, y: r.top + y };
+      }
+    }
+    return null;
+  });
+  expect(band).not.toBeNull();
+  const LENGTH = 140;
+  await page.mouse.move(band!.x, band!.y);
+  await page.mouse.down();
+  await page.mouse.move(band!.x + LENGTH, band!.y, { steps: 25 });
+  await page.mouse.up();
+  /* The line, read from the alpha: how thick the ink is down each column of the band, mid-line and at the line's end. */
+  const read = () => page.evaluate(([x0, y0, length]) => {
+    const c = document.querySelector<HTMLCanvasElement>('#post-41 .kb-whoops-ink')!;
+    const r = c.getBoundingClientRect();
+    const d = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
+    const k = c.width / r.width;
+    const thick = (x: number) => {
+      let n = 0;
+      for (let y = y0 - r.top - 24; y <= y0 - r.top + 24; y += 1 / k) {
+        const px = Math.floor((x - r.left) * k), py = Math.floor(y * k);
+        if (px >= 0 && py >= 0 && px < c.width && py < c.height && d[(py * c.width + px) * 4 + 3]! > 40) n++;
+      }
+      return n / k;
+    };
+    const mid: number[] = [];
+    for (let x = x0 + length * 0.3; x <= x0 + length * 0.7; x += 2) mid.push(thick(x));
+    mid.sort((a, b) => a - b);
+    let end = 0;
+    for (let x = x0 + length - 18; x <= x0 + length + 2; x += 1) end = Math.max(end, thick(x));
+    return { mid: mid[Math.floor(mid.length / 2)]!, end };
+  }, [band!.x, band!.y, LENGTH] as const);
+  await page.waitForTimeout(100);
+  await built(page);
+  await expect.poll(async () => (await read()).mid).toBeGreaterThan(4);
+  const line = await read();
+  /* The bulb is 1.35 of the pen's radius where the line is 1 (field.ts END_BULB), so the ink at the end is clearly thicker than mid-line. */
+  expect(line.end, `mid-line ${line.mid}px, at the end ${line.end}px`).toBeGreaterThan(line.mid * 1.15);
+});
+
+/** The canvas's alpha (0 to 255) at the point of the thickest ink (the center of the biggest disc the splat holds) and where that is, in the page's px. */
+const core = (page: Page) => page.evaluate(() => {
+  const c = document.querySelector<HTMLCanvasElement>('#post-41 .kb-whoops-ink')!;
+  const r = c.getBoundingClientRect();
+  const k = c.width / r.width;
+  const d = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
+  /* Distance to the nearest empty pixel, two sweeps (a chamfer): its peak is the splat's deepest part. */
+  const w = c.width, h = c.height, dist = new Float32Array(w * h);
+  for (let i = 0; i < w * h; i++) dist[i] = d[i * 4 + 3]! > 40 ? 1e6 : 0;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = y * w + x;
+    if (x > 0) dist[i] = Math.min(dist[i]!, dist[i - 1]! + 1);
+    if (y > 0) dist[i] = Math.min(dist[i]!, dist[i - w]! + 1);
+  }
+  for (let y = h - 1; y >= 0; y--) for (let x = w - 1; x >= 0; x--) {
+    const i = y * w + x;
+    if (x < w - 1) dist[i] = Math.min(dist[i]!, dist[i + 1]! + 1);
+    if (y < h - 1) dist[i] = Math.min(dist[i]!, dist[i + w]! + 1);
+  }
+  let best = 0;
+  for (let i = 1; i < w * h; i++) if (dist[i]! > dist[best]!) best = i;
+  return { x: r.left + (best % w) / k, y: r.top + Math.floor(best / w) / k, reach: dist[best]! / k };
+});
+
+const alphaAt = (page: Page, x: number, y: number) => page.evaluate(([px, py]) => {
+  const c = document.querySelector<HTMLCanvasElement>('#post-41 .kb-whoops-ink')!;
+  const r = c.getBoundingClientRect();
+  const k = c.width / r.width;
+  return c.getContext('2d')!.getImageData(Math.floor((px! - r.left) * k), Math.floor((py! - r.top) * k), 1, 1).data[3]!;
+}, [x, y] as const);
+
+test('a reader scrubs the core: one pass leaves it see-through and not gone, and a few more clear it', async ({ page }) => {
+  await page.goto('/?fixture=boards&moment=01-main');
+  await expect(page.locator(SPOT)).toBeVisible();
+  await expect.poll(() => inked(page)).toBeGreaterThan(1000);
+  await built(page);
+  await putAwayTip(page);
+  await page.locator(SPOT).evaluate((el) => el.scrollIntoView({ block: 'center' }));
+  const at = await core(page);
+  expect(at.reach).toBeGreaterThan(20);
+  const rectOf = () => page.locator(SPOT).evaluate((el) => { const r = el.getBoundingClientRect(); return { x: r.left, y: r.top }; });
+  const rect0 = await rectOf();
+  /* The page may settle a little as a pass is made (a saved report, a tip going), so the core is followed by where the canvas lies now. */
+  const here = async () => { const r = await rectOf(); return { x: at.x + r.x - rect0.x, y: at.y + r.y - rect0.y }; };
+  const full = await alphaAt(page, at.x, at.y);
+  expect(full).toBeGreaterThan(200);
+  /* One pass: a stroke straight across the core, its own length and a brush each side. */
+  const pass = async () => {
+    /* A press while a rebuild of the field is out is the page's (nothing is built to take it), so each pass waits for the build to be back, and the next for this one's. */
+    await built(page);
+    const p = await here();
+    await page.mouse.move(p.x - 60, p.y);
+    await page.mouse.down();
+    await page.mouse.move(p.x + 60, p.y, { steps: 12 });
+    await page.mouse.up();
+    /* The canvas is drawn on the next frames and a pass shows when it has: read once the build is back and it has stopped changing. */
+    await page.waitForTimeout(100);
+    await built(page);
+    const read = async () => { const q = await here(); return alphaAt(page, q.x, q.y); };
+    let was = -1, now = await read();
+    for (let i = 0; i < 20 && now !== was; i++) { was = now; await page.waitForTimeout(120); now = await read(); }
+    return now;
+  };
+  const seen: number[] = [];
+  /* The core takes two to six passes or more (the design); a cap well past that keeps a regression from looping on. */
+  for (let i = 0; i < 14 && (seen.at(-1) ?? 1) > 0; i++) seen.push(await pass());
+  expect(seen[0], `after one pass: ${seen.join(', ')}`).toBeGreaterThan(0);
+  expect(seen.at(-1), `the alpha after each pass: ${seen.join(', ')}`).toBe(0);
+  expect(seen.length, `the alpha after each pass: ${seen.join(', ')}`).toBeGreaterThan(1);
+  /* See-through before gone: some pass leaves the core lowered and above 0, and it never darkens. */
+  expect(seen.some((a) => a > 0 && a < full), `the alpha after each pass: ${seen.join(', ')} from ${full}`).toBe(true);
+  for (let i = 1; i < seen.length; i++) expect(seen[i]!).toBeLessThanOrEqual(seen[i - 1]!);
+});
+
+test('"Hold to scrub" clears a splat, and goes over some line more than once', async ({ page }) => {
+  test.setTimeout(240_000);
+  await page.goto('/?fixture=boards&moment=01-main');
+  await expect(page.locator(SPOT)).toBeVisible();
+  await expect.poll(() => inked(page)).toBeGreaterThan(1000);
+  await built(page);
+  await page.locator(MARK).click();
+  const lens = page.getByRole('dialog', { name: 'Cards on this post' });
+  const tile = lens.getByRole('button', { name: 'Hold to scrub' });
+  await tile.focus();
+  const whoops = page.locator('#post-41 .kb-whoops');
+  /* The ink in each band of the canvas, a band being the sweep's line (22.5px), sampled as the sweep runs. */
+  const bands = () => page.evaluate(() => {
+    const c = document.querySelector<HTMLCanvasElement>('#post-41 .kb-whoops-ink')!;
+    const k = c.width / c.getBoundingClientRect().width, row = Math.max(1, Math.round(22.5 * k));
+    const d = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
+    const out: number[] = [];
+    for (let y0 = 0; y0 < c.height; y0 += row) {
+      let n = 0;
+      for (let y = y0; y < Math.min(c.height, y0 + row); y++) for (let x = 0; x < c.width; x += 2) n += d[(y * c.width + x) * 4 + 3]! / 255;
+      out.push(n);
+    }
+    return out;
+  });
+  const start = await bands();
+  const drops = start.map(() => 0);
+  let last = start, plateau = start.map(() => 0);
+  await page.keyboard.down('Space');
+  const until = Date.now() + 200_000;
+  /* A band's ink falls while the sweep is on it, then holds while the sweep is elsewhere; a fall after a hold is another pass. */
+  while (Date.now() < until && (await whoops.getAttribute('data-kb-layers')) !== 'clean') {
+    await page.waitForTimeout(250);
+    const now = await bands();
+    now.forEach((v, i) => {
+      if (v < last[i]! - 2) { if (plateau[i]! >= 3) drops[i]!++; else if (drops[i] === 0) drops[i] = 1; plateau[i] = 0; } else plateau[i]!++;
+    });
+    last = now;
+  }
+  await page.keyboard.up('Space');
+  await expect(whoops).toHaveAttribute('data-kb-layers', 'clean');
+  await expect(whoops).toHaveAttribute('data-kb-washed', /^1\.000$|^0?\.9\d\d$/u);
+  expect(Math.max(...drops), `passes seen over each band: ${drops.join(' ')}`).toBeGreaterThanOrEqual(2);
 });
