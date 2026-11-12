@@ -23,9 +23,10 @@
  * written, in a sentence (`CardUi.summary`), in the sheet's line.
  *
  * A card is a button, and pressing it is the caller's to answer (engine/ui/cards/play.tsx): `armed` is
- * the key of the card that waits to be played ("Whoops! is armed. Every post it can land on now shows
- * a dashed + mark beside its date, named Play Whoops! on that post. Press it to play Whoops! there"; its name says ", armed: pick a post", and it carries that as a floating tag and
- * pulses), and `onPick` is what pressing a card does. With neither, pressing a card shows its rules
+ * the key of the card that waits to be played, and `onPick` is what pressing a card does. An armed
+ * card's name ends ", armed: pick a post", and it carries that as a floating tag and pulses; the sheet's line then says, for Whoops!,
+ * "Whoops! is armed. Every post it can land on now shows a dashed + mark beside its date, named Play Whoops! on that post.
+ * Press it to play Whoops! there". With neither, pressing a card shows its rules
  * in the sheet's line.
  */
 import { useId, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
@@ -78,16 +79,18 @@ export function Hand({ held, faces, armed = null, onPick, onClose, vendingHref }
   const slots = arcSlots(arc.map((c) => c.group));
   const shown = main ? arc.length : cards.length;
   /* Rows further back stand lower; within a row a card is above the one to its left. */
-  const stack = new Map(arc.map((c, i) => [c.face.key, i] as const).sort((p, q) => slots[q[1]]!.row - slots[p[1]]!.row || p[1] - q[1]).map(([key], z) => [key, z + 1] as const));
+  const byDepth = arc.map((c, i) => ({ key: c.face.key, i })).sort((p, q) => slots[q.i]!.row - slots[p.i]!.row || p.i - q.i);
+  const stack = new Map(byDepth.map(({ key }, z) => [key, z + 1] as const));
   const count = held.reduce((n, h) => n + h.held, 0);
   const [viewed, setViewed] = useState<string | null>(null);
   const inView = faces.find((f) => f.key === (armed ?? viewed ?? (main ? arc[0] : cards[0])?.face.key));
   const list = useRef<HTMLUListElement>(null);
   /* The Main board's keys: arrows and Home/End move along the cards, Tab and Shift+Tab wrap at the ends. */
   const onKeys = (e: KeyboardEvent<HTMLUListElement>) => {
-    if (!main || e.altKey || e.ctrlKey || e.metaKey) return;
+    if (!main || e.defaultPrevented || e.nativeEvent.isComposing || e.altKey || e.ctrlKey || e.metaKey) return;
     const buttons = [...(list.current?.querySelectorAll<HTMLButtonElement>('li.kb-hand-card > button') ?? [])];
-    const at = buttons.indexOf((e.target as HTMLElement).closest('button')!);
+    const from = (e.target as HTMLElement).closest('button');
+    const at = from ? buttons.indexOf(from) : -1;
     if (at < 0) return;
     const to = e.key === 'ArrowRight' ? Math.min(at + 1, buttons.length - 1)
       : e.key === 'ArrowLeft' ? Math.max(at - 1, 0)

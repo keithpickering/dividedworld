@@ -1,4 +1,5 @@
 import { fireEvent, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { buildWorld, renderIn } from '../test-world.tsx';
 import { Hand, drawn } from './Hand.tsx';
@@ -67,9 +68,15 @@ describe('the hand on the Main board', () => {
     expect(focused()).toBe('a');
   });
 
-  test('each card\'s button stays in the tab order', () => {
+  test('each card\'s button is reachable by Tab, in order', async () => {
     arcHand();
-    for (const b of document.querySelectorAll('li.kb-hand-card > button')) expect(b).not.toHaveAttribute('tabindex', '-1');
+    const buttons = [...document.querySelectorAll<HTMLButtonElement>('li.kb-hand-card > button')];
+    expect(buttons.length).toBeGreaterThan(1);
+    buttons[0]!.focus();
+    for (const b of buttons.slice(1)) {
+      await userEvent.tab();
+      expect(b).toHaveFocus();
+    }
   });
 });
 
