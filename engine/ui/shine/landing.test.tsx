@@ -402,7 +402,52 @@ describe('refit and re-attach', () => {
     for (const l of ours) expect(resizes(rem)).toContain(l);
   });
 
-  it('a zero or NaN rect gives a tile of a pixel, never a NaN size, and never throws', () => {
+  it('a tile whose corner is at or past the page\'s right edge takes no room, so landing by the edge never makes the page scroll sideways', () => {
+    /* jsdom's page is innerWidth wide (1024, two tile columns exactly): a flake within REACH of the edge touches column 2. */
+    keep(landPage());
+    drop(1021, 300);
+    settle();
+    const tiles = pageTiles();
+    for (const t of tiles) FakeObserver.report(t, true);
+    const past = tiles.filter((t) => t.style.left === '1024px');
+    expect(past.length).toBeGreaterThan(0);
+    for (const t of past) expect([t.style.display, t.style.width, t.width]).toEqual(['none', '0px', 0]);
+    for (const t of tiles) if (t.style.display !== 'none') expect(parseFloat(t.style.left) + parseFloat(t.style.width)).toBeLessThanOrEqual(1024);
+  });
+
+  it('a window that narrows past a tile\'s corner hides the tile, and widening shows it and draws it again', () => {
+    keep(landPage());
+    drop(700, 300);
+    settle();
+    const tile = pageTiles().find((t) => t.style.left === '512px')!;
+    FakeObserver.report(tile, true);
+    expect([tile.style.display, tile.style.width]).toEqual(['', '512px']);
+    vi.stubGlobal('innerWidth', 500);
+    window.dispatchEvent(new Event('resize'));
+    expect([tile.style.display, tile.style.width, tile.width]).toEqual(['none', '0px', 0]);
+    const draws = probe.draws();
+    vi.stubGlobal('innerWidth', 1024);
+    window.dispatchEvent(new Event('resize'));
+    expect([tile.style.display, tile.style.width, tile.width]).toEqual(['', '512px', 512]);
+    expect(probe.draws()).toBeGreaterThan(draws);
+  });
+
+  it('the page\'s tiles refit when the page\'s own box narrows with no resize event, as a scrollbar that shows up narrows it', () => {
+    keep(landPage());
+    drop(1000, 300);
+    settle();
+    const tile = pageTiles().find((t) => t.style.left === '512px')!;
+    FakeObserver.report(tile, true);
+    expect(tile.style.width).toBe('512px');
+    const de = document.documentElement;
+    Object.defineProperty(de, 'clientWidth', { configurable: true, get: () => 1009 });
+    try {
+      FakeResize.fire(de);
+      expect([tile.style.width, tile.width]).toEqual(['497px', 497]);
+    } finally { delete (de as { clientWidth?: number }).clientWidth; }
+  });
+
+  it('a zero or NaN rect gives a tile that takes no room, never a NaN size, and never throws', () => {
     const { article, main } = post();
     keep(landPost(article));
     drop(300, 250);
@@ -416,7 +461,7 @@ describe('refit and re-attach', () => {
       expect([tile.style.width, tile.style.height]).toEqual(['400px', '150px']);
       resize(main, w, h);
       expect(() => FakeResize.fire(main)).not.toThrow();
-      expect([tile.style.width, tile.style.height]).toEqual(['1px', '1px']);
+      expect([tile.style.display, tile.style.width, tile.style.height, tile.width]).toEqual(['none', '0px', '0px', 0]);
     }
   });
 

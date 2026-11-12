@@ -45,6 +45,11 @@ let draws = 0;
 const pageHost = {};
 let pageHolds = 0;
 let onResize: (() => void) | null = null;
+/**
+ * The page's own box, watched: it narrows with no resize event when a vertical scrollbar shows up (a page grown taller), and the page's
+ * tiles must narrow with it or the last column stands past the edge.
+ */
+let pageBox: ResizeObserver | null = null;
 /** Whether an element's point is the page's ground, per element, for the frame being run. */
 let ground = new Map<Element, boolean>();
 
@@ -123,12 +128,20 @@ function attach(t: Tile): void {
   } catch { /* a cell taken apart under it: the next call puts it back */ }
 }
 
-/** Sizes the tile's box to what is left of its surface from its corner, and its backing store to that at the density. */
+/**
+ * Sizes the tile's box to what is left of its surface from its corner. A tile whose corner is at or past its surface's edge (a flake
+ * within `REACH` of the edge touches the next column; the surface narrowed under it; a zero rect) has nothing left and takes no room:
+ * it is `display: none` and 0 by 0, so it never stands past the edge and makes the page scroll sideways. It stays, so a surface that
+ * grows back over it shows it again.
+ */
 function fit(t: Tile): { w: number; h: number } {
   const size = sizeOf(t.s);
-  const w = Math.max(1, Math.min(TILE_W, Math.ceil(size.w - t.tx * TILE_W))), h = Math.max(1, Math.min(TILE_H, Math.ceil(size.h - t.ty * TILE_H)));
+  const left = Math.ceil(size.w - t.tx * TILE_W), down = Math.ceil(size.h - t.ty * TILE_H);
+  const room = left > 0 && down > 0;
+  const w = room ? Math.min(TILE_W, left) : 0, h = room ? Math.min(TILE_H, down) : 0;
   const st = t.canvas.style;
   st.position = 'absolute'; st.left = `${t.tx * TILE_W}px`; st.top = `${t.ty * TILE_H}px`; st.width = `${w}px`; st.height = `${h}px`; st.pointerEvents = 'none';
+  st.display = room ? '' : 'none';
   return { w, h };
 }
 
@@ -141,6 +154,12 @@ function draw(t: Tile, keep = false): void {
   const { w, h } = fit(t);
   const d = density();
   const x0 = t.tx * TILE_W, y0 = t.ty * TILE_H;
+  if (!w || !h) {
+    /* No room: nothing to draw. It is kept while a flake lies in its square of the grid, for the surface to grow back over. */
+    const any = loose(t.s.host).some((f) => f.x + REACH >= x0 && f.x - REACH < x0 + TILE_W && f.y + REACH >= y0 && f.y - REACH < y0 + TILE_H);
+    if (keep || any) { t.canvas.width = 0; t.canvas.height = 0; } else removeTile(t);
+    return;
+  }
   const mine = loose(t.s.host).filter((f) => f.x + REACH >= x0 && f.x - REACH < x0 + w && f.y + REACH >= y0 && f.y - REACH < y0 + h) as LooseFlake[];
   if (!mine.length) {
     if (keep) { t.canvas.width = 0; t.canvas.height = 0; } else removeTile(t);
@@ -260,6 +279,7 @@ export function landPage(): () => void {
     surfaces.set(pageHost, s);
     onResize = () => refit(s);
     if (typeof window !== 'undefined') window.addEventListener('resize', onResize);
+    if (typeof ResizeObserver !== 'undefined') { pageBox = new ResizeObserver(onResize); pageBox.observe(document.documentElement); }
     hooks.page = { host: pageHost, landed: () => { const l = loose(pageHost); const f = l[l.length - 1]; if (f) mark(s, f as LooseFlake, true); } };
   }
   hold();
@@ -270,6 +290,7 @@ export function landPage(): () => void {
     if (--pageHolds === 0) {
       if (onResize) window.removeEventListener('resize', onResize);
       onResize = null;
+      pageBox?.disconnect(); pageBox = null;
       sweepLoose();
       for (const s of surfaces.values()) removeTiles(s);
       surfaces.delete(pageHost);
@@ -303,6 +324,7 @@ export const probe = {
     ground = new Map();
     if (onResize) window.removeEventListener('resize', onResize);
     onResize = null;
+    pageBox?.disconnect(); pageBox = null;
     draws = 0; pageHolds = 0; hooked = 0; hooks.page = null;
     setLanding(null);
   },
