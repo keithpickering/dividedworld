@@ -412,3 +412,38 @@ test.describe('playing Graffiti, on a phone', () => {
   test.use({ ...pixel });
   test('one ghost, the dock in the window above the HUD, and Esc brings the ghost back', async ({ page }) => { await playingFlow(page); });
 });
+
+/*
+ * Focus is not obscured by the dock (WCAG 2.4.11): with draw mode open, Tab through the page's controls from the top, and every control of a post that takes focus is in
+ * the window clear of the dock, which lies over the foot of the window. The post under play is taller than the window, so its low controls (Quote, Edit, History, Report,
+ * Permalink, React) start below the dock's top and the browser must scroll them clear.
+ */
+test.describe('focus under the dock, wide', () => {
+  test.use({ viewport: { width: 1280, height: 800 }, reducedMotion: 'reduce' });
+  test('a post control reached by Tab is scrolled clear of the dock', async ({ page }) => {
+    await world(page);
+    await openThread(page);
+    await page.evaluate((n) => { document.querySelector<HTMLElement>(`#post-${n} .kb-act-main`)!.style.minHeight = '1500px'; }, POST);
+    await arm(page);
+    await post(page).getByRole('button', { name: /^Play Graffiti on post \d+$/ }).click();
+    await expect(dock(page)).toBeVisible();
+    await page.evaluate(() => { window.scrollTo(0, 0); (document.activeElement as HTMLElement | null)?.blur(); });
+    const seen: string[] = [];
+    const hidden: string[] = [];
+    for (let i = 0; i < 60; i++) {
+      await page.keyboard.press('Tab');
+      const r = await page.evaluate(() => {
+        const el = document.activeElement as HTMLElement | null;
+        const d = document.querySelector('.kb-graffiti-dock');
+        if (!el || !d || d.contains(el) || !el.closest('[id^="post-"]')) return null;
+        const b = el.getBoundingClientRect();
+        return { name: el.getAttribute('aria-label') ?? (el.textContent ?? '').trim().slice(0, 30), bottom: b.bottom, dockTop: d.getBoundingClientRect().top };
+      });
+      if (!r) continue;
+      seen.push(r.name);
+      if (r.bottom > r.dockTop + 0.5) hidden.push(`${r.name} (bottom ${Math.round(r.bottom)} > dock top ${Math.round(r.dockTop)})`);
+    }
+    expect(seen.length, 'Tab reached controls of posts').toBeGreaterThan(3);
+    expect(hidden, 'post controls left behind the dock').toEqual([]);
+  });
+});

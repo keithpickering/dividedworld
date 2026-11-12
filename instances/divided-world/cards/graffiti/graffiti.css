@@ -143,6 +143,13 @@
   padding-bottom: var(--kb-graffiti-dock-h, 0px);
 }
 
+/* The dock lies over the foot of the window, so a control that takes focus (Tab) must be scrolled clear of it, not left behind it (WCAG 2.4.11, focus not obscured).
+   The browser scrolls a focused control into view inside the scroll-padding, so the foot's padding is the dock and the HUD beneath it. Both variables are set on
+   the root element's style (the toolbar and Hud.tsx). */
+:root[data-kb-graffiti-dock] {
+  scroll-padding-bottom: calc(var(--kb-graffiti-dock-h, 0px) + var(--kb-hud-measured, 0px));
+}
+
 .kb-graffiti-label {
   display: flex;
   justify-content: space-between;
