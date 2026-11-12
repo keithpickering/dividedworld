@@ -34,13 +34,13 @@ export const isBack = (kind: string): boolean => kind === CARD_BACK || kind.star
 const sprungKind = (spring: Id) => `${CARD_BACK}:${spring}`;
 
 /** Whether a back's time has passed, at the end the server stored: a back with none is over only when it springs or is taken back. */
-export const backOver = (back: CardPlay, now: number = Date.now()): boolean => back.endsAt != null && Date.parse(back.endsAt) <= now;
+export const backOver = (back: CardPlay, now: number): boolean => back.endsAt != null && Date.parse(back.endsAt) <= now;
 
 /**
  * The plays a post shows: all but a card back whose time has passed with nothing springing it, or that its setter took back, which is gone, as the server drops it
  * (card_target). Its end is the one the server stored when it was set (`endsAt`).
  */
-export function shownPlays(plays: readonly CardPlay[], now: number = Date.now()): readonly CardPlay[] {
+export function shownPlays(plays: readonly CardPlay[], now: number): readonly CardPlay[] {
   const shown = plays.filter((p) => !(p.faceDown && !p.revealed && (p.takenBack !== undefined || backOver(p, now))));
   return shown.length === plays.length ? plays : shown;
 }
@@ -93,7 +93,7 @@ export const homeOf = (play: Pick<CardPlay, 'post' | 'on'>): Id => play.on ?? pl
  * arrived, and it was refunded) and a play beyond a post whose end has passed (it ends on its timer, its way out). A Use's end on a post is the Lens's to say ("has ended"), so it is kept. What counts layers, offers
  * a card or pins a thread reads this; the marks and the Lens read `markedPlays`, which keeps an ended play on a post to say so.
  */
-export function livePlays(plays: readonly CardPlay[], now: number = Date.now()): readonly CardPlay[] {
+export function livePlays(plays: readonly CardPlay[], now: number): readonly CardPlay[] {
   const live = plays.filter((p) => !p.reversed && !p.untaken && !(p.reach && p.ends !== undefined && Date.parse(p.ends) <= now));
   return live.length === plays.length ? plays : live;
 }
@@ -103,13 +103,13 @@ export function livePlays(plays: readonly CardPlay[], now: number = Date.now()):
  * play is, so its mark and its Lens row can say "Ended by an admin" or "Didn't take". Its layer is off all the same (`livePlays`,
  * `effectsOf`, the post's effects); the marks do not count it.
  */
-export function markedPlays(plays: readonly CardPlay[], now: number = Date.now()): readonly CardPlay[] {
+export function markedPlays(plays: readonly CardPlay[], now: number): readonly CardPlay[] {
   const marked = plays.filter((p) => !(p.reach && (p.reversed || (p.ends !== undefined && Date.parse(p.ends) <= now))));
   return marked.length === plays.length ? plays : marked;
 }
 
 /** The soonest end still ahead among plays beyond a post, as an epoch, or null: when what is drawn changes next by itself. */
-export function nextEnd(plays: readonly CardPlay[], now: number = Date.now()): number | null {
+export function nextEnd(plays: readonly CardPlay[], now: number): number | null {
   let soonest: number | null = null;
   for (const p of plays) {
     if (!p.reach || p.ends === undefined) continue;

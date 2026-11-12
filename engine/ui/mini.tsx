@@ -10,7 +10,7 @@ import { sameYear } from './postbit/dates.ts';
 import { Link } from './router.tsx';
 import { usePlayer } from './player.tsx';
 import { useBoot } from './boot.tsx';
-import { useKayfa } from './context.tsx';
+import { useKayfa, useKayfaIfAny } from './context.tsx';
 import './mini.css';
 
 /** A character's square avatar, or its initial where it has none. Decoration: the name beside it says who. */
@@ -56,7 +56,7 @@ export function Byline({ character, name, link, id, avatar = true }: { readonly 
  * "just now", "2 min ago", "3 hr ago", "yesterday", "5 days ago", then a date. On a phone (`dropYear`) a date in the current year, by
  * `nowMs`, is "Oct 5" and not "Oct 5, 2026": the 2003 board's phone folds its rows to one line, and a date never breaks.
  */
-export function ago(iso: string, nowMs = Date.now(), dropYear = false): string {
+export function ago(iso: string, nowMs: number, dropYear = false): string {
   const diff = Math.max(0, nowMs - Date.parse(iso));
   const minute = 60_000;
   if (diff < minute) return 'just now';
@@ -70,8 +70,11 @@ export function ago(iso: string, nowMs = Date.now(), dropYear = false): string {
 }
 
 export function Ago({ at, now }: { readonly at: string; readonly now?: number }) {
+  const kayfa = useKayfaIfAny();
   const narrow = useNarrow();
-  return <time dateTime={at} title={new Date(at).toLocaleString('en-US')}>{ago(at, now, narrow)}</time>;
+  const clock = now ?? kayfa?.api.now();
+  if (clock === undefined) throw new Error('a time is read against a clock: the page gives one (a KayfaProvider) or the caller does (`now`)');
+  return <time dateTime={at} title={new Date(at).toLocaleString('en-US')}>{ago(at, clock, narrow)}</time>;
 }
 
 /**
