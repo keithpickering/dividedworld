@@ -742,16 +742,19 @@ export interface Standing {
   readonly name: string;
   /** Hundredths. */
   readonly standing: number;
-  /** Ties share a place, and the next standing takes the next place (dense, #453). */
-  readonly place: number;
+  /**
+   * Ties share a place, and the next standing takes the next place (dense, #453). Only a standing above zero is placed: a standing of 0 or below is
+   * `null`, unplaced (#492), as the season's results list it.
+   */
+  readonly place: number | null;
 }
 
 /** A character's standing, its place and how many characters have debuted (`standing_place`). */
 export interface StandingPlace {
   /** Hundredths. */
   readonly standing: number;
-  /** Ties share a place, and the next standing takes the next place (dense, #453). */
-  readonly place: number;
+  /** Ties share a place, and the next standing takes the next place (dense, #453); `null` for a standing of 0 or below, unplaced (#492). */
+  readonly place: number | null;
   readonly of: number;
 }
 
@@ -1479,15 +1482,19 @@ export interface SeasonFinished {
 export interface SeasonResultRow {
   readonly character: Id;
   readonly name: string;
-  /** Dense, as the live standings' (#453): a tie shares a place and the next standing takes the next one. */
-  readonly place: number;
+  /**
+   * Dense, as the live standings' (#453): a tie shares a place and the next standing takes the next one. `null` where the season ended with the mask at
+   * 0 or below: unplaced, with no place trophy (#492). The table lists the placed first, then the unplaced by standing.
+   */
+  readonly place: number | null;
   readonly standing: number;
   readonly shown: readonly SeasonShown[];
 }
 /** One of a character's past seasons (`profile_page` and `record_page`, 0099): where it finished, and when the results landed. */
 export interface SeasonRecordRow {
   readonly season: number;
-  readonly place: number;
+  /** `null` where it finished at 0 or below, unplaced (#492). */
+  readonly place: number | null;
   readonly standing: number;
   readonly at: string;
 }

@@ -56,6 +56,17 @@ describe('the pronouns line', () => {
 });
 
 describe('the public profile', () => {
+  test('a character at 0 Aura or below has no place this season: its Place says unplaced, never a number (#492)', async () => {
+    const fake = buildWorld();
+    const w = world(fake);
+    fake.seed.settle({ at: Date.UTC(2026, 9, 30, 8), debut: false, standings: { [w.pipe]: 0 } });
+    open(w.pipe, fake);
+    const facts = await screen.findByRole('table', { name: 'About Pipewrench' });
+    await waitFor(() => expect(fact(facts, 'Aura this season')).toHaveTextContent('0.00'));
+    expect(fact(facts, 'Place')).toHaveTextContent(/^Unplaced \(a place needs Aura above 0\) in season/u);
+    expect(fact(facts, 'Place')).not.toHaveTextContent(/\d of \d/u);
+  });
+
   test('its facts: name, title, rank, exact standing and when it settled, place, counts, month joined, signature', async () => {
     const fake = buildWorld();
     const w = world(fake);

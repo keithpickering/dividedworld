@@ -84,6 +84,8 @@ function Results({ item, own, className }: { readonly item: SeasonNewsItem; read
     <>
       <h3>Season {item.season} results</h3>
       <p>The final standings, and the class each player made public that season. Never who played them.</p>
+      {/* The podium is the placed masks alone (#492): a season where none finished above 0 gave no place. */}
+      {item.top.length === 0 && <p>No character finished above 0 Aura, so none took a place.</p>}
       {item.top.length > 0 && (
         <ol className="kb-season-podium-list">
           {item.top.map((r) => {

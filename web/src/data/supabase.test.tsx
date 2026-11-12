@@ -282,6 +282,10 @@ describe('reads and their rows', () => {
     expect(landing[0]?.debuts).toEqual([{ character: A, name: 'Thwompson', class: 'face', was: null }]);
     expect(landing[0]?.turns).toEqual([{ character: B, name: 'Pipewrench', class: 'heel', was: 'face' }]);
     expect(news[2]).toMatchObject({ act: null, thread: null, seq: null, quote: null, name: 'Mister Spreadsheet', top: [], debuts: [], turns: [] });
+    /* The podium is the placed alone (#492): a row with no place, which the server does not send, is no step of it. */
+    const unplaced = await harness(() => rows([{ kind: 'results', act: null, thread: null, seq: null, at: '2026-10-28T12:00:00Z', season: 1, name: null, quote: null, count: 2,
+      detail: { top: [{ character: A, name: 'Spritey', place: 1, standing: 500, shown: [] }, { character: B, name: 'Idle', place: null, standing: 0, shown: [] }] } }])).api.seasonNews();
+    expect(unplaced[0]?.top.map((t) => t.character)).toEqual([A]);
   });
 
   it('counts a character\'s posts, spins and cards from its one counter row, never from its Acts', async () => {
@@ -343,6 +347,8 @@ describe('reads and their rows', () => {
     const refused = harness(() => json({ message: 'no' }, 400));
     await expect(refused.api.standingPlace(B)).rejects.toThrow();
     expect(await harness(() => json({})).api.standingPlace('not-an-id')).toBeNull();
+    /* A standing of 0 or below holds no place (#492): null, never 0. */
+    expect(await harness(() => json({ standing: 0, place: null, of: 40 })).api.standingPlace(B)).toEqual({ standing: 0, place: null, of: 40 });
   });
 
 
@@ -362,6 +368,8 @@ describe('reads and their rows', () => {
     expect(h.rest().map((r) => r.url.pathname.replace(`${REST}/`, ''))).toEqual(['rpc/standings_page']);
     expect(h.to('rpc/standings_page')[0]?.body).toEqual({ page_offset: 1200, page_limit: 50 });
     expect(h.to('season_standings')).toEqual([]);
+    /* A row at 0 or below is unplaced (#492): its place is null, never 0. */
+    expect(await harness(() => json([{ character: B, name: 'Bea', standing: -5, place: null }])).api.standingsPage(0, 50)).toEqual([{ character: B, name: 'Bea', standing: -5, place: null }]);
     /* At most a row cap's worth, whatever is asked; no page asked of no rows; a page past the end is no rows. */
     const capped = harness(() => json([]));
     expect(await capped.api.standingsPage(0, 5000)).toEqual([]);
@@ -2751,6 +2759,8 @@ describe('a screen in one call', () => {
       { character: B, name: 'Pipewrench', place: 2, standing: 40, shown: [] },
     ]);
     expect(only(page, 'results_page')).toEqual({ in_season: 2, page: 3 });
+    /* An unplaced row (a standing of 0 or below, #492) keeps its null place. */
+    expect(await once('results_page', [{ character: A, name: 'Idle', place: null, standing: 0, shown: [] }]).api.resultsPage(2, 1)).toEqual([{ character: A, name: 'Idle', place: null, standing: 0, shown: [] }]);
     expect(await once('results_page', null).api.resultsPage(2, 1)).toEqual([]);
     const place = once('result_place', 51);
     expect(await place.api.resultPlace(2, B)).toBe(51);

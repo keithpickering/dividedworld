@@ -1558,8 +1558,9 @@ describe('a place and a standing, read for one character or a page of them', () 
     fake.seed.settle({ standings: { [anaFace]: 300, [anaHeel]: 300, [boFace]: -40 }, debut: false });
     const all = await fake.standingsPage(0, 1000);
     for (const s of all) expect(await fake.standingPlace(s.character)).toEqual({ standing: s.standing, place: s.place, of: all.length });
-    /* Dense (#453): the debt stands one place below the tie at 300, place 2 of 3, where it was last by count. */
-    expect((await fake.standingPlace(boFace))?.place).toBe(2);
+    /* A debt holds no place (#492): only a standing above zero is placed. The tie at 300 shares place 1. */
+    expect(await fake.standingPlace(boFace)).toEqual({ standing: -40, place: null, of: all.length });
+    expect((await fake.standingPlace(anaHeel))?.place).toBe(1);
     expect(await fake.standingPlace(waiting)).toBeNull();
     expect(await fake.standingPlace('nobody')).toBeNull();
   });
@@ -1655,6 +1656,27 @@ describe('a finished season\'s results and its announcements', () => {
     expect(item!.top.map((t) => [t.character, t.place])).toEqual([[boFace, 1], [anaFace, 2], [anaHeel, 3]]);
   });
 
+  test('an unplaced row (a standing of 0 or below, #492) follows the placed ones by standing, and the news podium is the placed alone', async () => {
+    const w = world();
+    w.fake.seed.season({ number: 1, startsAt: new Date(at(1)).toISOString(), endsAt: new Date(at(28)).toISOString() });
+    w.fake.seed.season({ number: 2, startsAt: new Date(at(28)).toISOString() });
+    const boHeel = w.fake.seed.character(w.bo, 'Bo Heel', 'heel');
+    w.fake.seed.seasonResults(1, [
+      { character: w.anaHeel, place: null, standing: -30 },
+      { character: boHeel, place: null, standing: 0 },
+      { character: w.anaFace, place: null, standing: 0 },
+      { character: w.boFace, place: 1, standing: 500 },
+    ], { at: at(28, 12) });
+    expect((await w.fake.resultsPage(1, 1)).map((r) => [r.name, r.place, r.standing])).toEqual([
+      ['Bo Face', 1, 500], ['Ana Face', null, 0], ['Bo Heel', null, 0], ['Ana Heel', null, -30],
+    ]);
+    expect([await w.fake.resultPlace(1, w.boFace), await w.fake.resultPlace(1, w.anaFace), await w.fake.resultPlace(1, boHeel), await w.fake.resultPlace(1, w.anaHeel)]).toEqual([0, 1, 2, 3]);
+    const [item] = await w.fake.seasonNews();
+    expect(item!.top.map((t) => [t.character, t.place])).toEqual([[w.boFace, 1]]);
+    expect(item!.count).toBe(4);
+    expect((await w.fake.profilePage(w.anaHeel))?.seasons).toEqual([{ season: 1, place: null, standing: -30, at: new Date(at(28, 12)).toISOString() }]);
+  });
+
   test('seed.announce writes the character\'s own announce Act in the season\'s Promos thread, which a board lists', async () => {
     const { fake, anaFace, boFace } = world();
     const first = fake.seed.announce(anaFace, 'debut', { class: 'face', at: at(5, 8) });
@@ -1719,16 +1741,19 @@ describe('a finished season\'s results and its announcements', () => {
 });
 
 describe('a page of the standings', () => {
-  test('standingsPage pages the ranking as standings_page does: ties share a place across a page boundary, nothing settled stands at 0, debts last, empty past the end', async () => {
+  test('standingsPage pages the ranking as standings_page does: ties share a place across a page boundary, nothing settled stands at 0 unplaced, debts last and unplaced, empty past the end', async () => {
     const { fake, bo, anaFace, anaHeel, boFace } = world();
     const boHeel = fake.seed.character(bo, 'Bo Heel', 'heel');
     const boLurk = fake.seed.character(bo, 'Bo Lurk', 'lurker');
     fake.seed.settle({ standings: { [anaFace]: 300, [anaHeel]: 300, [boFace]: 500, [boHeel]: -40 }, debut: false });
-    const row = (s: { name: string; standing: number; place: number }) => [s.name, s.standing, s.place];
+    const row = (s: { name: string; standing: number; place: number | null }) => [s.name, s.standing, s.place];
     expect((await fake.standingsPage(0, 2)).map(row)).toEqual([['Bo Face', 500, 1], ['Ana Face', 300, 2]]);
-    /* Places are dense (#453): the tie at 300 is place 2 and the next standing place 3, never 4. */
-    expect((await fake.standingsPage(2, 2)).map(row)).toEqual([['Ana Heel', 300, 2], ['Bo Lurk', 0, 3]]);
-    expect((await fake.standingsPage(4, 2)).map(row)).toEqual([['Bo Heel', -40, 4]]);
+    /* Places are dense (#453): the tie at 300 is place 2. A standing of 0 or below holds no place (#492): the masks below are listed by standing, unplaced. */
+    expect((await fake.standingsPage(2, 2)).map(row)).toEqual([['Ana Heel', 300, 2], ['Bo Lurk', 0, null]]);
+    expect((await fake.standingsPage(4, 2)).map(row)).toEqual([['Bo Heel', -40, null]]);
+    expect(await fake.standingPlace(boLurk)).toMatchObject({ standing: 0, place: null });
+    expect(await fake.standingPlace(boHeel)).toMatchObject({ standing: -40, place: null });
+    expect(await fake.standingPlace(anaHeel)).toMatchObject({ standing: 300, place: 2 });
     expect((await fake.standingsPage(4, 2))[0]?.character).toBe(boHeel);
     expect((await fake.standingsPage(3, 1))[0]?.character).toBe(boLurk);
     expect(await fake.standingsPage(5, 2)).toEqual([]);

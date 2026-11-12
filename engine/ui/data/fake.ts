@@ -43,7 +43,7 @@ import { actsFollowed, actsNamed } from '../log/lines.ts';
 import { micros, readLogPageNow, type LedgerRow, type ShareRow } from './log-page.ts';
 import type {
   AdminQueue, BoardName, Demand, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesCursor, MovesLog, QueuedMove, StaffCardPlay, StaffProfile,
-  Act, Apology, Bar, AccountListener, Tail, ActKind, Alert, ContactLink, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, TallyName, SeasonShown, Update, UpdateChange, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, CardEvent, PackEvent, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, DebutLoudness, EffectState, PlayMoment,
+  Act, Apology, Bar, AccountListener, Tail, ActKind, Alert, ContactLink, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResult, SeasonResultRow, TallyName, SeasonShown, Update, UpdateChange, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, CardEvent, PackEvent, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, DebutLoudness, EffectState, PlayMoment,
   DebutTiming, Estimate, EstimateLine, FollowedThread, Frame, HeldCard, Id, KayfaApi, LogShare, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, PreferencesPatch, Refusal,
   Boot, BoardPage, IndexPage, Opened, AdminSlot, Slot, SlotMove, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, LogPage,
   AdminAward, AdminKind, BeltCursor, BeltPage, BeltReign, RandomEvent, ShownTrophy, TrophyAwardFailure, TrophyCursor, TrophyItem, TrophyPage, WardrobeItem,
@@ -179,7 +179,7 @@ export interface Seed {
    * dated `at` (else now). The fake never ends a season itself; this is the state its end would have left. Written once: a second call for the
    * season throws, as the table refuses an edit.
    */
-  seasonResults(season: number, rows: readonly { character: Id; name?: string; place: number; standing: number; shown?: readonly SeasonShown[] }[], options?: { at?: number }): void;
+  seasonResults(season: number, rows: readonly { character: Id; name?: string; place: number | null; standing: number; shown?: readonly SeasonShown[] }[], options?: { at?: number }): void;
   avatar(character: Id, urls: { square?: string; portrait?: string }): void;
   /** A tally on an Act as if that many others had reacted, kind by kind: no one's reaction (no account or character stands behind it), only the counts every reader sees. */
   tally(act: Id, counts: Readonly<Record<string, number>>): void;
@@ -979,14 +979,21 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const row = r.rows.find((x) => x.character === id);
     return row ? [{ season, place: row.place, standing: row.standing, at: iso(r.at) }] : [];
   }).slice(0, 50);
-  /** The final table's order (`season_results_by_place`): place, then name, then character. */
+  /**
+   * The final table's order (`season_results_by_standing`, 0163): standing, highest first, then name, then character. Places are dense by standing, so the
+   * placed come first by place and the unplaced (a standing of 0 or below, #492) follow them by standing.
+   */
   const resultOrder = (rows: readonly SeasonResultRow[]): SeasonResultRow[] =>
-    [...rows].sort((x, y) => x.place - y.place || (x.name < y.name ? -1 : x.name > y.name ? 1 : 0) || (x.character < y.character ? -1 : x.character > y.character ? 1 : 0));
+    [...rows].sort((x, y) => y.standing - x.standing || (x.name < y.name ? -1 : x.name > y.name ? 1 : 0) || (x.character < y.character ? -1 : x.character > y.character ? 1 : 0));
   /** `season_news` (0063, 0099, 0100) over what the fake holds: a results item from each season's rows, each landing of announce Acts and each old tally with names, the Boss's arrival and farewell. */
   function newsItems(): SeasonNewsItem[] {
     const out: SeasonNewsItem[] = [];
     const base = { act: null, thread: null, seq: null, name: null, quote: null, count: null, top: [], debuts: [], turns: [] } as const;
-    for (const [season, r] of results) out.push({ ...base, kind: 'results', at: iso(r.at), season, count: r.rows.length, top: resultOrder(r.rows).slice(0, 3) });
+    /* The podium is the first three placed rows (season_news, 0163): an unplaced mask is on no podium (#492). */
+    for (const [season, r] of results) {
+      const top = resultOrder(r.rows).flatMap((x): SeasonResult[] => (x.place === null ? [] : [{ ...x, place: x.place }])).slice(0, 3);
+      out.push({ ...base, kind: 'results', at: iso(r.at), season, count: r.rows.length, top });
+    }
     for (const a of acts.values()) {
       if (a.kind !== 'tally') continue;
       const debuts = names(a.payload['debuts']);
@@ -2210,13 +2217,14 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   /* ------------------------------------------------------------------ the api ---- */
   /**
    * The season's standings, every debuted character ranked, as standings_page pages them: by standing, ties sharing a place, then by name. A place is dense (#453): one
-   * more than the distinct standings above, so a tie never costs the next standing its place. In memory, so the whole of it.
+   * more than the distinct standings above, so a tie never costs the next standing its place. Only a standing above zero is placed: 0 or below is null (#492).
+   * In memory, so the whole of it.
    */
   const ranking = (): Standing[] => {
     const listed = [...characters.values()].filter((c) => c.debutedAt !== null).map((c) => ({ character: c.id, name: c.name, standing: standingOf.get(c.id) ?? 0 }));
     return listed
-      .map((s): Standing => ({ ...s, place: 1 + new Set(listed.filter((o) => o.standing > s.standing).map((o) => o.standing)).size }))
-      .sort((a, b) => a.place - b.place || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+      .map((s): Standing => ({ ...s, place: s.standing > 0 ? 1 + new Set(listed.filter((o) => o.standing > s.standing).map((o) => o.standing)).size : null }))
+      .sort((a, b) => b.standing - a.standing || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   };
   /** A place's presence box (presence_box, 0093): the characters present within the window, longest there first. It marks no one present. */
   function presenceAt(where: PresencePlace): Presence {

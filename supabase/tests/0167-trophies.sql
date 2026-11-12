@@ -337,7 +337,8 @@ begin
   end if;
   if (select count(*) from trophy_awards where character = c1 and trophy = 'tt-champion') is distinct from 2::bigint then raise exception 'a character can win a place in two seasons'; end if;
   -- The awards cannot be written: the season still ends, with its results, and the failure is kept for an admin, who can read it and give the places by hand.
-  insert into standings (character, season, amount) select c1, id, 1 from seasons where ends_at is null on conflict do nothing;
+  -- c1 stands above zero, so the season has a place to give (#492: a season where every mask stands at 0 gives none, and has no award to fail).
+  insert into standings (character, season, amount) select c1, id, 1 from seasons where ends_at is null on conflict (season, character) do update set amount = excluded.amount;
   s3 := (select id from seasons where ends_at is null);
   alter table trophy_awards add constraint tt_poison check (false) not valid;
   if pg_temp.error(format('select reveal_season(%L)', ended + interval '2 days')) is not null then raise exception 'a season whose awards could not be written did not end: %', pg_temp.error(format('select reveal_season(%L)', ended + interval '2 days')); end if;
@@ -351,6 +352,101 @@ begin
   if jsonb_array_length(seen) is distinct from 1 or (seen -> 0 ->> 'season')::bigint is distinct from (select number from seasons where id = s3) or seen -> 0 ->> 'move' is not null or seen -> 0 ->> 'error' not like '%tt_poison%' then raise exception 'an admin reads the failed season: %', seen; end if;
   perform tests.become(p1);
   if pg_temp.refusal('select trophy_award_failures()') is null then raise exception 'a player read the award failures'; end if;
+  perform tests.unbecome();
+end $$;
+
+-- ---- A standing of 0 or below takes no place and no trophy (#492): places count standings above zero, densely ----
+-- The owner's answer on #492 (option 2): a mask whose season standing is 0 or below is listed unplaced, with no place and no season place trophy, and
+-- no alert of one; the masks above zero are placed densely (#453). The live standings number places the same way, since between seasons they show the
+-- very table the results froze.
+select tests.unbecome();
+do $$
+declare
+  t0 timestamptz := (select starts_at from seasons where ends_at is null);
+  sa bigint := (select id from seasons where ends_at is null);
+  na integer := (select number from seasons where ends_at is null);
+  sb bigint; nb integer;
+  pz uuid[] := array[]::uuid[]; cz uuid[] := array[]::uuid[];
+  top uuid; tie1 uuid; tie2 uuid; zero1 uuid; zero2 uuid; below uuid;
+  i integer; seen jsonb; viewer uuid := tests.account('tz-viewer');
+begin
+  top := tests.character(tests.account('tz-top'), 'Tz Top', 'alpha', t0 + interval '1 hour');
+  for i in 1..5 loop
+    pz := pz || tests.account('tz-idle-' || i);
+    cz := cz || tests.character(pz[i], 'Tz Idle ' || i, 'alpha', t0 + interval '1 hour');
+  end loop;
+  -- One mask at 500 and five at 0: one place 1 and five unplaced.
+  insert into standings (character, season, amount) values (top, sa, 500) on conflict (season, character) do update set amount = excluded.amount;
+  insert into standings (character, season, amount) select c, sa, 0 from unnest(cz) c on conflict (season, character) do update set amount = excluded.amount;
+  -- Live, as the season stands: the mask above zero is first, and a mask at 0 holds no place on the standings, its place, or the view.
+  if (standing_place(top) ->> 'place')::integer is distinct from 1 then raise exception 'a standing above zero is placed live: %', standing_place(top); end if;
+  if standing_place(cz[1]) -> 'place' is distinct from 'null'::jsonb or (standing_place(cz[1]) ->> 'standing')::integer is distinct from 0 then
+    raise exception 'a standing of 0 holds no place live, and still says its standing (#492): %', standing_place(cz[1]);
+  end if;
+  if (select count(*) from season_standings v where v.character = any (cz) and v.place is null) is distinct from 5::bigint or (select place from season_standings where character = top) is distinct from 1::bigint then
+    raise exception 'season_standings places a standing of 0 (#492): %', (select jsonb_agg(to_jsonb(v)) from season_standings v where v.character = any (cz || top));
+  end if;
+  if (select count(*) from standings_page(0, 1000) p where p.character = any (cz) and p.place is null) is distinct from 5::bigint or (select p.place from standings_page(0, 1000) p where p.character = top) is distinct from 1::bigint then
+    raise exception 'standings_page places a standing of 0 (#492): %', (select jsonb_agg(to_jsonb(p)) from standings_page(0, 1000) p where p.character = any (cz || top));
+  end if;
+  if reveal_season(t0 + interval '1 day') is null then raise exception 'the season did not roll over'; end if;
+  if (select place from season_results where season = sa and character = top) is distinct from 1 then raise exception 'the mask at 500 is first'; end if;
+  if (select count(*) from season_results where season = sa and character = any (cz) and place is null and standing = 0) is distinct from 5::bigint then
+    raise exception 'the five at 0 are unplaced (#492): %', (select jsonb_agg(to_jsonb(r)) from season_results r where r.season = sa and r.character = any (cz));
+  end if;
+  if exists (select 1 from season_results where season = sa and standing <= 0 and place is not null) then raise exception 'no standing of 0 or below has a place (#492)'; end if;
+  if (select string_agg(a.trophy, ',') from trophy_awards a where a.season = sa) is distinct from 'tt-champion' or (select character from trophy_awards where season = sa) is distinct from top then
+    raise exception 'one Champion only, and no place trophy to a standing of 0 (#492): %', (select jsonb_agg(to_jsonb(a)) from trophy_awards a where a.season = sa);
+  end if;
+  if exists (select 1 from alerts where account = any (pz) and kind = 'trophy') then raise exception 'an idle mask''s player was alerted to a trophy (#492)'; end if;
+  if (select count(*) from alerts where account = (select owner from characters where id = top) and kind = 'trophy') is distinct from 1::bigint then raise exception 'the Champion''s player is alerted once'; end if;
+  -- Season News: the podium is the placed masks alone.
+  seen := (select n.detail -> 'top' from season_news(null, 50) n where n.kind = 'results' and n.season = na);
+  if jsonb_array_length(seen) is distinct from 1 or seen -> 0 ->> 'character' is distinct from top::text then raise exception 'the results item''s top is the placed masks alone (#492): %', seen; end if;
+
+  -- The next season: a tie above zero beside zeros and a standing below zero. 300, 300, 0, 0, -20: two places 1 and three unplaced, two Champions, no Runner-Up.
+  sb := (select id from seasons where ends_at is null);
+  nb := (select number from seasons where ends_at is null);
+  tie1 := cz[1]; tie2 := cz[2]; zero1 := cz[3]; zero2 := cz[4]; below := cz[5];
+  insert into standings (character, season, amount) values (tie1, sb, 300), (tie2, sb, 300), (zero1, sb, 0), (zero2, sb, 0), (below, sb, -20), (top, sb, 0)
+  on conflict (season, character) do update set amount = excluded.amount;
+  if standing_place(below) -> 'place' is distinct from 'null'::jsonb or (standing_place(below) ->> 'standing')::integer is distinct from -20 then raise exception 'a standing below zero holds no place live (#492): %', standing_place(below); end if;
+  if (standing_place(tie2) ->> 'place')::integer is distinct from 1 then raise exception 'a tie above zero shares place 1: %', standing_place(tie2); end if;
+  if (select string_agg(p.name || '=' || coalesce(p.place::text, '-'), ',' order by p.standing desc, p.name) from standings_page(0, 1000) p where p.character = any (cz || top))
+     is distinct from 'Tz Idle 1=1,Tz Idle 2=1,Tz Idle 3=-,Tz Idle 4=-,Tz Top=-,Tz Idle 5=-' then
+    raise exception 'standings_page: a tie above zero shares 1, and 0 and below are unplaced (#492): %', (select string_agg(p.name || '=' || coalesce(p.place::text, '-'), ',' order by p.standing desc, p.name) from standings_page(0, 1000) p where p.character = any (cz || top));
+  end if;
+  if reveal_season(t0 + interval '2 days') is null then raise exception 'the next season did not roll over'; end if;
+  if (select string_agg(c.name || '=' || coalesce(r.place::text, '-'), ',' order by r.standing desc, c.name) from season_results r join characters c on c.id = r.character where r.season = sb and c.name like 'Tz %')
+     is distinct from 'Tz Idle 1=1,Tz Idle 2=1,Tz Idle 3=-,Tz Idle 4=-,Tz Top=-,Tz Idle 5=-' then
+    raise exception 'a tie above zero shares place 1 beside zeros and a negative, all unplaced (#492): %', (select string_agg(c.name || '=' || coalesce(r.place::text, '-'), ',' order by r.standing desc, c.name) from season_results r join characters c on c.id = r.character where r.season = sb and c.name like 'Tz %');
+  end if;
+  if (select string_agg(a.trophy || '=' || c.name, ',' order by c.name) from trophy_awards a join characters c on c.id = a.character where a.season = sb)
+     is distinct from 'tt-champion=Tz Idle 1,tt-champion=Tz Idle 2' then
+    raise exception 'two Champions for the tie, and nothing for 0 or below (#492): %', (select string_agg(a.trophy || '=' || c.name, ',' order by c.name) from trophy_awards a join characters c on c.id = a.character where a.season = sb);
+  end if;
+  if exists (select 1 from alerts where account = any (pz[3:5]) and kind = 'trophy') then raise exception 'a mask at 0 or below was alerted to a trophy (#492)'; end if;
+
+  -- The reads: a page lists the placed first, then the unplaced by standing, then name; the lowest standing is last.
+  perform tests.become(viewer);
+  if (select count(*) from results_page(nb, 1) r where r.character = any (cz) and r.place is null) is distinct from 3::bigint then
+    raise exception 'results_page lists three unplaced, with no place (#492): %', (select jsonb_agg(to_jsonb(r)) from results_page(nb, 1) r);
+  end if;
+  if result_place(nb, tie1) is distinct from 0 or result_place(nb, tie2) is distinct from 1 then raise exception 'the placed masks come first: %, %', result_place(nb, tie1), result_place(nb, tie2); end if;
+  if result_place(nb, below) is distinct from (select results_count - 1 from seasons where id = sb) then raise exception 'the standing below zero is last: % of %', result_place(nb, below), (select results_count from seasons where id = sb); end if;
+  if not (result_place(nb, zero1) > result_place(nb, tie2) and result_place(nb, zero1) < result_place(nb, zero2) and result_place(nb, zero2) < result_place(nb, below)) then
+    raise exception 'unplaced masks follow the placed, by standing and then name: %, %, %', result_place(nb, zero1), result_place(nb, zero2), result_place(nb, below);
+  end if;
+  if (select array_agg(r.character order by o) from results_page(nb, 1) with ordinality as r(character, name, place, standing, shown, o) where r.character = any (cz || top))
+     is distinct from array[tie1, tie2, zero1, zero2, top, below] then
+    raise exception 'results_page orders the placed, then the unplaced by standing and name: %', (select jsonb_agg(to_jsonb(r)) from results_page(nb, 1) r);
+  end if;
+  if (select (e ->> 'place') from jsonb_array_elements(profile_page(below) -> 'seasons') e where (e ->> 'season')::integer = nb) is not null
+     or not exists (select 1 from jsonb_array_elements(profile_page(below) -> 'seasons') e where (e ->> 'season')::integer = nb and e -> 'place' = 'null'::jsonb and (e ->> 'standing')::integer = -20) then
+    raise exception 'the profile lists an unplaced season with no place and its standing (#492): %', profile_page(below) -> 'seasons';
+  end if;
+  seen := (select n.detail -> 'top' from season_news(null, 50) n where n.kind = 'results' and n.season = nb);
+  if (select string_agg(e ->> 'name', ',' order by e ->> 'name') from jsonb_array_elements(seen) e) is distinct from 'Tz Idle 1,Tz Idle 2' then raise exception 'the podium is the two Champions alone (#492): %', seen; end if;
   perform tests.unbecome();
 end $$;
 

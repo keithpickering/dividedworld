@@ -29,8 +29,9 @@ begin
     raise exception 'the standings rank by settled standing, ties sharing a place and the next standing taking the next (#453): %', (select jsonb_agg(to_jsonb(x)) from season_standings x where character in (a, b, c, d));
   end if;
   -- Places are dense (#453): one more than the distinct standings above, so a tie above never costs the next mask its place.
-  if (select (standing, place) from season_standings where character = zero) is distinct from (0, 1 + (select count(distinct standing) from season_standings where standing > 0)) then
-    raise exception 'a debuted character with nothing settled stands at 0, one place below each distinct standing above it (dense, #453)';
+  -- A standing of 0 or below holds no place (#492): only a standing above zero is placed.
+  if (select (standing, place) from season_standings where character = zero) is distinct from (0, null::bigint) then
+    raise exception 'a debuted character with nothing settled stands at 0, with no place (#492)';
   end if;
   if (select count(*) from information_schema.columns where table_name = 'season_standings') is distinct from 4::bigint then raise exception 'the standings say only a character, its name, its standing and its place'; end if;
 

@@ -112,8 +112,8 @@ begin
   select count(*) into total from season_standings;
   -- The ranking, read as its owner (no client reads season_standings), then asked of standing_place as a player.
   ranked := (select jsonb_agg(to_jsonb(x)) from season_standings x);
-  -- Places are dense (#453): a debt stands one place below each distinct standing at or above 0, however many characters share one.
-  at_or_above_0 := (select count(distinct standing) from season_standings where standing >= 0);
+  -- Places are dense (#453) and count only standings above zero (#492): a standing of 0 or a debt holds none.
+  at_or_above_0 := (select count(distinct standing) from season_standings where standing > 0);
 
   perform tests.become(bob);
   perform auth.assert_impersonating();
@@ -124,13 +124,13 @@ begin
       raise exception 'standing_place of % is % but the ranking says standing %, place %, of %', r.name, got, r.standing, r.place, total;
     end if;
   end loop;
-  -- The cases by name: ties share a place; no row stands at 0; a debt stands below every character with no row.
+  -- The cases by name: ties share a place; no row stands at 0, with no place; a debt holds no place, and still says its standing (#492).
   if (standing_place(tied_b) ->> 'place')::integer is distinct from 2 then raise exception 'ties share the place above them'; end if;
-  if (standing_place(nothing) ->> 'standing')::integer is distinct from 0 then raise exception 'no row stands at 0'; end if;
-  if (standing_place(owes) ->> 'place')::integer is distinct from at_or_above_0 + 1 then raise exception 'a negative standing is one place below each distinct standing at or above 0 (dense, #453), the characters with no row among them: %', standing_place(owes); end if;
-  if (standing_place(owes_same) ->> 'place')::integer is distinct from (standing_place(owes) ->> 'place')::integer then raise exception 'equal debts share a place'; end if;
-  -- Dense (#453): the larger debt is one place below the two equal smaller ones, where it was two by count.
-  if (standing_place(owes_more) ->> 'place')::integer is distinct from (standing_place(owes) ->> 'place')::integer + 1 then raise exception 'a larger debt is the next place below the two smaller ones (dense, #453)'; end if;
+  if (standing_place(nothing) ->> 'standing')::integer is distinct from 0 or standing_place(nothing) -> 'place' is distinct from 'null'::jsonb then raise exception 'no row stands at 0, unplaced (#492): %', standing_place(nothing); end if;
+  if standing_place(zero_row) -> 'place' is distinct from 'null'::jsonb then raise exception 'a standing of 0 holds no place (#492): %', standing_place(zero_row); end if;
+  if standing_place(owes) is distinct from jsonb_build_object('standing', -200, 'place', null, 'of', total) then raise exception 'a negative standing holds no place and says its standing (#492): %', standing_place(owes); end if;
+  if standing_place(owes_more) -> 'place' is distinct from 'null'::jsonb or (standing_place(owes_more) ->> 'standing')::integer is distinct from -700 then raise exception 'a larger debt holds no place either (#492): %', standing_place(owes_more); end if;
+  if at_or_above_0 < 2 or (standing_place(tied_b) ->> 'place')::integer > at_or_above_0 then raise exception 'the places count the standings above zero alone: %', at_or_above_0; end if;
   -- A character waiting to debut and a character that does not exist answer alike (nothing), so the answer proves neither.
   if standing_place(waiting) is not null or standing_place(gen_random_uuid()) is not null then raise exception 'a waiting or unknown character has no standing'; end if;
   perform tests.unbecome();

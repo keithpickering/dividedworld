@@ -442,11 +442,136 @@ begin
 end $$;
 revoke execute on function award_demand_trophies(uuid) from public, anon, authenticated;
 
+-- -------------------------------------------------------------------------------- a standing of 0 or below takes no place (#492) ----
+
+-- The owner's answer on #492 (option 2): a mask whose season standing is 0 or below gets no place and no season place trophy, and the results list it unplaced.
+-- Places count only the standings above zero, densely (#453): standings 500, 0 and 0 give one place 1 and two unplaced, where every idle mask shared the
+-- last place before, and a season where most masks did nothing gave each a Runner-Up. A row's place is null where it is unplaced (season_results.place loses its
+-- not null; its check still holds for a place that is written). The live standings place the same way (standing_place, standings_page, season_standings, below), since
+-- between seasons they show the very table the results froze, and one place means one thing on every screen.
+--
+-- The table's order is its standings' order: by standing, highest first, then name, then id. Places are dense by standing, so the placed rows come first in
+-- place order and the unplaced follow them by standing (0 before a standing below it), which an order on a nullable place could only say with a second key.
+-- season_results_by_standing replaces season_results_by_place, so a page is still read in order from an index with the limit pushed down, and a character's
+-- index in the order is two counts of index ranges: the rows standing above it, and those at its standing ahead of it by name and id. A row written before
+-- #492 keeps the place it was written with ("Append-only"); its standing orders it as the place did, the places having been ranked by standing.
+alter table season_results alter column place drop not null;
+drop index season_results_by_place;
+create index season_results_by_standing on season_results (season, standing desc, name, character);
+
+-- results_page (0099), in the table's order: the placed first, by place, then the unplaced by standing. Everything else as 0099 wrote it.
+create or replace function results_page(in_season integer, page integer) returns table ("character" uuid, name text, place integer, standing integer, shown jsonb)
+language sql stable security invoker set search_path = public, pg_temp
+begin atomic
+  select r.character, r.name, r.place, r.standing, r.shown
+  from season_results r
+  -- The season's id as an init plan, so the order is read from the index (season_results_by_standing) with the limit pushed down, as a join would not.
+  where r.season = (select f.id from seasons_finished f where f.number = in_season)
+  order by r.standing desc, r.name, r.character
+  offset (least(greatest(coalesce(page, 1), 1), 10000) - 1) * 50 limit 50;
+end;
+
+-- result_place (0099), the character's index in that order: the rows standing above it, and those at its standing ahead of it by name and id, each counted
+-- from a range of season_results_by_standing. Null where the season has no row for it, as before.
+create or replace function result_place(in_season integer, in_character uuid) returns integer
+language sql stable security invoker set search_path = public, pg_temp
+begin atomic
+  select ((select count(*) from season_results r where r.season = f.id and r.standing > x.standing)
+        + (select count(*) from season_results r where r.season = f.id and r.standing = x.standing and (r.name, r.character) < (x.name, x.character)))::integer
+  from seasons_finished f join season_results x on x.season = f.id and x.character = in_character
+  where f.number = in_season;
+end;
+
+-- season_news (0100), its results item's `top` the season's first three placed rows: a podium of the masks that placed, so a season where one mask stood
+-- above zero shows one. Read from season_results_by_standing, where the placed rows come first. Everything else as 0100 wrote it.
+create or replace function season_news(before timestamptz default null, most integer default 20) returns setof season_news_row
+language sql stable security definer set search_path = public, pg_temp as $$
+  with
+  lim as (select coalesce($1, 'infinity'::timestamptz) as b, greatest(1, least(coalesce($2, 20), 50)) as k),
+  ann as (select (select (s.value #>> '{}')::uuid from settings s where s.key = 'systemAnnouncements') as thread),
+  r_floor as (
+    select coalesce((select s.results_at from seasons s where s.results_at is not null and s.results_at < (select b from lim)
+                     order by s.results_at desc, s.number desc offset (select k - 1 from lim) limit 1), '-infinity'::timestamptz) as at
+  ),
+  results as (
+    select 'results'::text as kind, null::uuid as act, null::uuid as thread, null::integer as seq, s.results_at as at, s.number as season,
+           null::text as name, null::text as quote, coalesce(s.results_count, 0) as count,
+           jsonb_build_object('top', (
+             select coalesce(jsonb_agg(jsonb_build_object('character', t.character, 'name', t.name, 'place', t.place, 'standing', t.standing, 'shown', t.shown)
+                                       order by t.place, t.name, t.character), '[]'::jsonb)
+             from (select r.* from season_results r where r.season = s.id and r.place is not null order by r.standing desc, r.name, r.character limit 3) t)) as detail
+    from seasons s
+    where s.results_at is not null and s.results_at < (select b from lim) and s.results_at >= (select at from r_floor)
+  ),
+  t_floor as (
+    select coalesce((select n.landed_at from news_landed n where n.kind in ('tally', 'announcements') and n.landed_at < (select b from lim)
+                     order by n.landed_at desc, n.act desc offset (select k - 1 from lim) limit 1), '-infinity'::timestamptz) as at
+  ),
+  tallies as (
+    select 'tally'::text as kind, a.id as act, a.thread, a.seq, n.landed_at as at,
+           case when n.kind = 'tally' then (a.payload ->> 'season')::integer else (select s.number from seasons s where s.turns_thread = a.thread) end as season,
+           null::text as name, null::text as quote,
+           case when n.kind = 'tally' then tally_names(a.payload)
+                else (select count(*) from acts x where x.kind = 'announce' and x.thread = a.thread and x.created_at = a.created_at)::integer end as count,
+           case when n.kind = 'tally' then
+             jsonb_build_object('debuts', case when jsonb_typeof(a.payload -> 'debuts') = 'array' then a.payload -> 'debuts' else '[]'::jsonb end,
+                                'turns', case when jsonb_typeof(a.payload -> 'turns') = 'array' then a.payload -> 'turns' else '[]'::jsonb end)
+           else (
+             select jsonb_build_object(
+               'debuts', coalesce(jsonb_agg(f.entry order by f.seq) filter (where f.what = 'debut'), '[]'::jsonb),
+               'turns', coalesce(jsonb_agg(f.entry order by f.seq) filter (where f.what = 'turn'), '[]'::jsonb))
+             from (
+               select x.seq, x.payload ->> 'what' as what,
+                      jsonb_build_object('character', x.character, 'name', c.name)
+                        || case when x.payload ? 'class' then jsonb_build_object('class', x.payload -> 'class') else '{}'::jsonb end
+                        || case when x.payload ? 'was' then jsonb_build_object('was', x.payload -> 'was') else '{}'::jsonb end as entry
+               from acts x join characters c on c.id = x.character
+               where x.kind = 'announce' and x.thread = a.thread and x.created_at = a.created_at
+               order by x.seq limit 20
+             ) f) end as detail
+    from news_landed n join acts a on a.id = n.act
+    where n.kind in ('tally', 'announcements') and n.landed_at < (select b from lim) and n.landed_at >= (select at from t_floor)
+  ),
+  boss_all as materialized (
+    select 'bossArrived'::text as kind, h.boss as who, h.landed_at as at, h.number as season, 'bossArrival'::text as line from season_boss_changes h
+    where h.landed_at < (select b from lim)
+    union all
+    select 'bossLeft', h.outgoing, h.landed_at, h.number - 1, 'bossFarewell' from season_boss_changes h
+    where h.outgoing is not null and h.landed_at < (select b from lim)
+  ),
+  boss_page as (
+    select * from boss_all c
+    where c.at >= coalesce((select c2.at from boss_all c2 order by c2.at desc offset (select k - 1 from lim) limit 1), '-infinity'::timestamptz)
+  ),
+  bosses as (
+    select c.kind, p.id as act, p.thread, p.seq, c.at, c.season, (select ch.name from characters ch where ch.staff = c.who) as name,
+           left(p.body, 600) as quote, null::integer as count, null::jsonb as detail
+    from boss_page c
+    left join lateral (
+      select a.id, a.thread, a.seq, a.payload ->> 'body' as body
+      from characters ch join acts a on a.character = ch.id
+      where ch.staff = c.who and a.created_at = c.at and a.kind = 'post' and a.thread = (select thread from ann)
+        and exists (select 1 from settings s where s.key = 'systemLines' and jsonb_typeof(s.value -> c.line) = 'array' and jsonb_array_length(s.value -> c.line) > 0)
+      order by a.seq limit 1
+    ) p on true
+  ),
+  merged as (
+    select * from results union all select * from tallies union all select * from bosses
+  )
+  select m.kind, m.act, m.thread, m.seq, m.at, m.season, m.name, m.quote, m.count, m.detail
+  from merged m
+  where m.at >= coalesce((select m2.at from merged m2 order by m2.at desc offset (select k - 1 from lim) limit 1), '-infinity'::timestamptz)
+  order by m.at desc, m.kind, m.act nulls first
+$$;
+revoke execute on function season_news(timestamptz, integer) from public, anon;
+grant execute on function season_news(timestamptz, integer) to authenticated;
+
 -- ------------------------------------------------------------------------------------------------------ the season's places ----
 
 -- reveal_season (0099), also giving the season's places a trophy each (below the results' insert, in its transaction), and numbering the places densely (#453):
 -- standings 100, 90, 90 and 80 are places 1, 2, 2 and 3, so a tie never costs the next mask its place ("otherwise we are punishing people for doing well just
--- because somebody else did exactly as well"). The live standings number them the same way (below). Everything else as 0099 wrote it.
+-- because somebody else did exactly as well"). Only a standing above zero is placed (#492, below): a standing of 0 or below is written with no place, so it takes
+-- no place trophy and its player no alert of one. The live standings number them the same way (below). Everything else as 0099 wrote it.
 create or replace function reveal_season(ended timestamptz) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
@@ -479,7 +604,7 @@ begin
   -- the reveal it wrote (0028), as its tally stands before it in the thread. A character that debuts at this very settlement played no part in the
   -- season, and is the next one's.
   insert into season_results (season, character, name, place, standing, shown)
-    select s.id, c.id, c.name, dense_rank() over (order by coalesce(st.amount, 0) desc), coalesce(st.amount, 0),
+    select s.id, c.id, c.name, case when coalesce(st.amount, 0) > 0 then dense_rank() over (order by coalesce(st.amount, 0) desc) end, coalesce(st.amount, 0),
         coalesce((
           select jsonb_agg(x.entry order by x.at, x.after, x.act) from (
             select r.at, 1 as after, r.act, jsonb_build_object('kind', 'reveal', 'act', r.act, 'at', r.at, 'class', r.class, 'via', r.via) as entry
@@ -495,7 +620,8 @@ begin
   get diagnostics written = row_count;
   update seasons set results_at = now(), results_count = written where id = s.id;
   -- The season's places (0163): each character at place 1 to 3 gets the trophy the instance gives for that place. Places are season_results' own, dense (#453), so a tie shares
-  -- one and the next mask takes the next place, as the table shows it: 100, 90, 90, 80 give a Champion, two Runner-Up and a Third. Staff are not in season_results, and the table refuses them besides. In the results' transaction, but a failure here does not end it.
+  -- one and the next mask takes the next place, as the table shows it: 100, 90, 90, 80 give a Champion, two Runner-Up and a Third. An unplaced row (#492) joins no kind:
+  -- 500, 0, 0 give one Champion and nothing else. Staff are not in season_results, and the table refuses them besides. In the results' transaction, but a failure here does not end it.
   -- In a block of its own: the season ends whatever happens here. A failure is a warning and a row (trophy_award_failures) for an admin, who can give the places by hand.
   begin
     insert into trophy_awards (trophy, character, by, season)
@@ -529,16 +655,17 @@ end $$;
 -- nothing settled stands at 0), that is fewer probes than the characters 0030 counted. Since the roster (0030) every debuted character has a row from
 -- its debut and in every season that opens, so the distinct amounts are the rows' own.
 
--- season_standings (0021), its places dense. Everything else as 0021 wrote it.
+-- season_standings (0021), its places dense, and a standing of 0 or below unplaced (#492). Everything else as 0021 wrote it.
 create or replace view season_standings as
   select c.id as character, c.name, coalesce(s.amount, 0) as standing,
-    dense_rank() over (order by coalesce(s.amount, 0) desc) as place
+    case when coalesce(s.amount, 0) > 0 then dense_rank() over (order by coalesce(s.amount, 0) desc) end as place
   from characters c
   left join standings s on s.character = c.id
     and s.season = coalesce((select id from seasons where ends_at is null), (select id from seasons order by starts_at desc limit 1))
   where c.debuted_at is not null;
 
--- standing_place (0030), its place one more than the distinct standings above. Everything else as 0030 wrote it.
+-- standing_place (0030), its place one more than the distinct standings above, and none for a standing of 0 or below (#492), which walks nothing: at a busy
+-- instance most masks stand at 0, and theirs costs one probe. Everything else as 0030 wrote it.
 create or replace function standing_place(of_character uuid) returns jsonb
 language plpgsql stable security definer set search_path = public, pg_temp as $$
 declare
@@ -549,6 +676,7 @@ declare
 begin
   if not exists (select 1 from characters c where c.id = of_character and c.debuted_at is not null) then return null; end if;
   mine := coalesce((select s.amount from standings s where s.season = open_season and s.character = of_character), 0);
+  if mine <= 0 then return jsonb_build_object('standing', mine, 'place', null, 'of', size); end if;
   -- The distinct standings above, walked down the index from the highest: each step is the next lower amount still above this one.
   with recursive above(amount) as (
     (select s.amount from standings s where s.season = open_season and s.amount > mine order by s.amount desc limit 1)
@@ -561,7 +689,8 @@ begin
 end $$;
 
 -- standings_page (0030), its places dense: the page's first row stands one past the distinct standings above it (the same walk as standing_place's),
--- and each row after it one place lower for each new standing on the page. Everything else as 0030 wrote it.
+-- and each row after it one place lower for each new standing on the page. A row at 0 or below has no place (#492), and a page that starts there walks
+-- nothing. Everything else as 0030 wrote it.
 create or replace function standings_page(page_offset integer, page_limit integer)
 returns table ("character" uuid, name text, standing integer, place bigint)
 language sql stable security definer set search_path = public, pg_temp as $$
@@ -582,7 +711,8 @@ language sql stable security definer set search_path = public, pg_temp as $$
     order by x.amount desc, x.name
     limit least(greatest(page_limit, 0), 1000)
   ), above(amount) as (
-    (select s.amount from standings s where s.season = (select standings_season()) and s.amount > (select amount from start) order by s.amount desc limit 1)
+    (select s.amount from standings s where s.season = (select standings_season()) and s.amount > (select amount from start) and (select amount from start) > 0
+     order by s.amount desc limit 1)
     union all
     select (select s.amount from standings s
             where s.season = (select standings_season()) and s.amount > (select amount from start) and s.amount < a.amount order by s.amount desc limit 1)
@@ -590,17 +720,18 @@ language sql stable security definer set search_path = public, pg_temp as $$
   ), head as materialized (
     select 1 + (select count(a.amount) from above a) as place
   )
-  select p.character, p.name, p.amount, h.place + dense_rank() over (order by p.amount desc) - 1
+  select p.character, p.name, p.amount, case when p.amount > 0 then h.place + dense_rank() over (order by p.amount desc) - 1 end
   from page p cross join head h
   order by p.n
 $$;
 
--- backfill_season_results (0099), its places for a season revealed before the places were written dense, as reveal_season's are. Everything else
+-- backfill_season_results (0099), its places for a season revealed before the places were written dense, as reveal_season's are, and none for a
+-- standing of 0 or below (#492), whatever an old reveal Act wrote: the Act stays as written, and the row places as every other does. Everything else
 -- as 0099 wrote it.
 create or replace function backfill_season_results() returns void
 language sql security definer set search_path = public, pg_temp as $$
   insert into season_results (season, character, name, place, standing, shown)
-  select f.season, f.character, f.name, coalesce(f.place, dense_rank() over (partition by f.season order by f.standing desc)), f.standing, f.shown
+  select f.season, f.character, f.name, case when f.standing > 0 then coalesce(f.place, dense_rank() over (partition by f.season order by f.standing desc)) end, f.standing, f.shown
   from (
     select s.id as season, c.id as character, r.payload ->> 'name' as name, (r.payload ->> 'place')::integer as place,
            coalesce((r.payload ->> 'standing')::integer, st.amount, 0) as standing,

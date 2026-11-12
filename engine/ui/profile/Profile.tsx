@@ -91,7 +91,9 @@ function Profile({ character: c, doc }: { readonly character: Character; readonl
     ...(data.standing && data.settledAt
       ? [
         { key: 'aura', label: 'Aura this season', value: <><b>{figure(data.standing.standing)}</b> <span className="kb-muted">(settled {dayAndTime(data.settledAt)})</span></> },
-        { key: 'place', label: 'Place', value: <>{data.standing.place}{data.standing.of > 0 && <> of {data.standing.of}</>}{data.season !== null && <> in season {data.season}</>} · <Link to="/season?tab=rankings">season standings</Link></> },
+        { key: 'place', label: 'Place', value: <>{data.standing.place === null
+          ? <>Unplaced <span className="kb-muted">(a place needs Aura above 0)</span></>
+          : <>{data.standing.place}{data.standing.of > 0 && <> of {data.standing.of}</>}</>}{data.season !== null && <> in season {data.season}</>} · <Link to="/season?tab=rankings">season standings</Link></> },
       ]
       : [{ key: 'aura', label: 'Aura this season', value: <span className="kb-muted">Nothing has settled for {pronounWords(c.pronouns).them} yet. <Link to="/season?tab=rankings">Season standings</Link></span> }]),
     { key: 'posts', label: 'Posts', value: data.counts.posts },

@@ -104,6 +104,8 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const str = (v: unknown): string | null => (typeof v === 'string' ? v : null);
 const num = (v: unknown, d = 0): number => (typeof v === 'number' && Number.isFinite(v) ? v : d);
+/** A season place as the reads answer it: a number, or null where the mask is unplaced (a standing of 0 or below, #492). */
+const placeOrNull = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 /** A jsonb object of numbers by key (a ledger row's `params`, 0073), and for a card's boost the card's key as a string; null where it is none or holds anything else. */
 const numbers = (v: unknown): Readonly<Record<string, number | string>> | null =>
   typeof v === 'object' && v !== null && !Array.isArray(v) && Object.values(v).every((x) => typeof x === 'string' || (typeof x === 'number' && Number.isFinite(x))) ? v as Record<string, number | string> : null;
@@ -183,12 +185,13 @@ function toShown(v: unknown): SeasonShown[] {
 /** One row of a finished season's table (`results_page`), or one of the top three a results item carries. A row with no character is no row. */
 function toResult(t: Row): SeasonResultRow[] {
   return typeof t?.['character'] === 'string'
-    ? [{ character: t['character'], name: String(t['name'] ?? ''), place: num(t['place']), standing: num(t['standing']), shown: toShown(t['shown']) }] : [];
+    ? [{ character: t['character'], name: String(t['name'] ?? ''), place: placeOrNull(t['place']), standing: num(t['standing']), shown: toShown(t['shown']) }] : [];
 }
 /** One row of `season_news` (0063, 0099, 0100). Its public detail is read as the server wrote it; what is not in the shape is left out. A results item has no Act, thread or sequence number. */
 function toSeasonNews(r: Row): SeasonNewsItem {
   const detail = (r['detail'] ?? {}) as Row;
-  const top = rowsOf(detail['top']).flatMap(toResult);
+  /* The podium is the placed rows alone (season_news, 0163); an unplaced row the server should not send is no step of it (#492). */
+  const top = rowsOf(detail['top']).flatMap(toResult).flatMap((t) => (t.place === null ? [] : [{ ...t, place: t.place }]));
   return {
     kind: r['kind'], act: r['act'] ?? null, thread: r['thread'] ?? null, seq: r['seq'] === null || r['seq'] === undefined ? null : num(r['seq']), at: String(r['at']),
     season: num(r['season']), name: str(r['name']), quote: str(r['quote']), count: r['count'] === null || r['count'] === undefined ? null : num(r['count']),
@@ -197,7 +200,7 @@ function toSeasonNews(r: Row): SeasonNewsItem {
 }
 /** One of a character's past seasons, as profile_page and record_page answer it; a row with no season number is no row. */
 function toSeasonRecord(r: Row): SeasonRecordRow[] {
-  return typeof r?.['season'] === 'number' ? [{ season: r['season'], place: num(r['place']), standing: num(r['standing']), at: String(r['at']) }] : [];
+  return typeof r?.['season'] === 'number' ? [{ season: r['season'], place: placeOrNull(r['place']), standing: num(r['standing']), at: String(r['at']) }] : [];
 }
 
 /** A search cursor as the search reads return it; one with no time or Act is no cursor. */
@@ -373,7 +376,7 @@ const toPlayAbove = (x: Row): PlayAbove => ({ play: x['play'], reach: x['reach']
 const toPinned = (x: Row): PinnedThread => ({ thread: toThread(x['thread']), play: x['play'], endsAt: x['ends_at'], act: toAct(x['act']) });
 /** standing_place's answer; null where it is none. */
 const toStandingPlace = (v: unknown): StandingPlace | null =>
-  v && typeof v === 'object' && !Array.isArray(v) ? { standing: num((v as Row)['standing']), place: num((v as Row)['place']), of: num((v as Row)['of']) } : null;
+  v && typeof v === 'object' && !Array.isArray(v) ? { standing: num((v as Row)['standing']), place: placeOrNull((v as Row)['place']), of: num((v as Row)['of']) } : null;
 /** The bell's count as alertsUnread() answers it: whole, at least 0, to the bound. */
 const toUnread = (v: unknown): number => Math.min(ALERTS_UNREAD_BOUND, Math.max(0, Math.floor(num(v))));
 /** character_post_counts' row, or none: a character that has done nothing counts zero. */
@@ -528,7 +531,7 @@ const toFinished = (x: Row): SeasonFinished[] => (typeof x?.['number'] === 'numb
   ? [{ number: x['number'], startsAt: String(x['starts_at']), endsAt: String(x['ends_at']), resultsAt: String(x['results_at']), characters: num(x['characters']) }] : []);
 
 /** One row of `standings_page`, or of the season page's standings. */
-const toStanding = (x: Row): Standing => ({ character: x['character'], name: x['name'], standing: num(x['standing']), place: num(x['place']) });
+const toStanding = (x: Row): Standing => ({ character: x['character'], name: x['name'], standing: num(x['standing']), place: placeOrNull(x['place']) });
 
 /** One row of `my_alerts`; a kind this build does not know (a newer server's) is no line, rather than a line a screen cannot word. */
 function toAlert(a: Row): Alert[] {
