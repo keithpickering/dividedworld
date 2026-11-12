@@ -113,6 +113,36 @@ image decoded for an 18px tile, once for every face-down card on a page, is a co
 The design is `docs/plans/2026-11-11-rendered-card-back-design.md`, a record; it gave the hit pull a second picture,
 which the owner took out the same day.
 
+## A pack
+
+A pack's art is the instance's too, one folder per pack: `instances/<name>/ui/packs/<key>/`, where the key is the
+pack's in the rules. It is a card's folder with one more file allowed:
+
+- **`art.svg` or `art.webp`**, exactly one. An SVG is foil (`InstanceUi.packs[key].art.canvas`): the engine crimps it to
+  a wrapper's zigzag ends and draws the seals, a sheen, the mark, the name and the count on it. A WebP is a picture of
+  the whole pack (`art.picture`): 1080 by 1680, on a transparent ground, so its outline is the pack's edge.
+- **`relief.webp`**, optional and only beside an `art.webp` (`art.relief`): which way the film faces at each point, in
+  the camera's frame, 540 by 840, with the picture's outline as its alpha. Red is the normal's x, green its up and blue
+  its lean toward the viewer, each from -1..1 into 0..1.
+- **`mark.svg`** and **`art.json`**, as a card's. The mark is drawn only on a pack with no picture.
+
+With a picture, `PackArt` (`engine/ui/vending/PackArt.tsx`) draws the picture contained in the pack's box, and the count
+over it in the instance's ink. It draws no crimp, seal, sheen, mark or name: the picture holds them. The count is the
+engine's because it comes from the pack's rules, so it stays true when the rules change and the art does not; a picture
+leaves the band where it is printed, from 74% to 82% of its height, quiet. An opened pack is the same picture cut along
+the engine's tear line, so every pack tears the same way.
+
+With a relief as well, one canvas over the picture holds the highlight the page's light adds
+(`engine/ui/shine/relief.ts`, `engine/ui/vending/packLight.ts`): the light is the one a shiny post has, it rests under
+reduced motion, and the canvas never holds the pack itself. So a pack with no relief, a relief that fails to load or
+cannot be read, and a browser with no canvas all show the still picture, whole.
+
+The guard holds a pack's folder to what it holds a card's, and a `relief.webp` to a still WebP of exactly 540 by 840,
+at most 200 KB, never without an `art.webp`. Nothing compares a relief with its picture: an instance that renders one
+again renders the other.
+
+The design is `docs/plans/2026-11-12-booster-pack-render-design.md`, a record.
+
 ## A variant is the same canvas
 
 A variant of a card is another canvas of the same size, not a different frame: an SVG on the same `0 0 540 840`
