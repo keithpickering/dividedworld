@@ -595,25 +595,7 @@ begin
   if exists (select 1 from acts where kind = 'visit_end' and target_act_id = v) or not exists (select 1 from visits_open where visit_act = v) then raise exception 'the forged end landed'; end if;
 end $$;
 
--- ---- 17. The repeat-charge lookup is read by index: the post's visits by acts_visits_by_post, their joins by acts_visit_joins ----
-do $$
-declare
-  plan text := '';
-  ln record;
-  p uuid := (select a.id from acts a where a.kind = 'post' limit 1);
-begin
-  -- The function pins its search_path, which keeps EXPLAIN from seeing inside it; its own body, without the pin, is what is explained.
-  execute format('create function pg_temp.matches(post uuid, ch jsonb) returns setof integer language sql stable as %L', (select prosrc from pg_proc where proname = 'visit_charge_matches'));
-  if not exists (select 1 from pg_proc where proname = 'visit_charge_matches' and proconfig @> array['search_path=public, pg_temp']) then raise exception 'visit_charge_matches does not pin its search_path'; end if;
-  set local enable_seqscan = off;
-  for ln in execute format('explain select * from pg_temp.matches(%L, %L::jsonb)', p, '{"cause": "rule", "rule_number": 1, "board": "x"}') loop
-    plan := plan || E'\n' || ln."QUERY PLAN";
-  end loop;
-  set local enable_seqscan = on;
-  if plan not like '%acts_visits_by_post%' or plan not like '%acts_visit_joins%' or plan not like '%acts_one_visit_end%' or plan not like '%Index Cond%' then
-    raise exception 'the repeat-charge lookup is not read by the visit, join and end indexes: %', plan;
-  end if;
-end $$;
+-- ---- 17. The repeat-charge lookup's reads on a busy instance: at the end of this file, since its fixture would stand under every section after it ----
 
 -- ---- 18. thread_page drops anything but kind, question index and price from a challenge ----
 do $$
@@ -711,4 +693,105 @@ begin
   perform tests.unbecome();
   if not exists (select 1 from jsonb_array_elements(page -> 'visits') e where e ->> 'post' = p::text and e #>> '{end,outcome}' = 'dropped') then raise exception 'the post does not show its visit ended'; end if;
   drop trigger vs_poison2 on acts;
+end $$;
+
+-- ---- 17. The repeat-charge lookup reads only its post's visits, joins and ends, by their indexes, on a busy instance, whenever the statistics were gathered ----
+-- A handful of Acts fits one page, where the planner's choice of index says nothing, so the lookup is planned on a busy instance's Acts: 60,000 posts, 22,000 visits
+-- (one post in three has one; one in thirty a second, its first ended reversed or dropped), 13,200 joins and 16,500 ends. It is planned twice: under statistics gathered
+-- before any of the joins were written (a planner that trusts them expects one join in the instance, and a lookup that lets it choose the order reads every join), and
+-- again after ANALYZE. Both times every scan of Acts is one of the three indexes with an Index Cond, and the Acts read are no more than the post's own.
+-- This section is last because its Acts are written with the triggers off, and would stand under every section after it.
+
+-- Every scan of Acts in a plan: the index it reads (null for a scan of the table), its Index Cond, and the rows it read (returned or thrown away by a filter, times its loops).
+create function pg_temp.acts_scans(node jsonb) returns table (index_name text, index_cond text, read numeric) language sql as $$
+  select node ->> 'Index Name', node ->> 'Index Cond',
+         ((node ->> 'Actual Rows')::numeric + coalesce((node ->> 'Rows Removed by Filter')::numeric, 0) + coalesce((node ->> 'Rows Removed by Index Recheck')::numeric, 0)) * (node ->> 'Actual Loops')::numeric
+  where node ->> 'Relation Name' = 'acts' or node ->> 'Index Name' like 'acts%'
+  union all
+  select s.* from jsonb_array_elements(coalesce(node -> 'Plans', '[]'::jsonb)) k, pg_temp.acts_scans(k) s
+$$;
+
+do $$
+declare
+  base timestamptz := now() - interval '300 days';
+  scale_board uuid;
+  author uuid := tests.character(tests.account('vs-scale'), 'Vs Scale');
+  mod uuid := (select id from characters where staff = 'vs-m1');
+  stats text;
+  probe record;
+  plan jsonb;
+  own bigint;
+  named text[];
+  loose text;
+  read numeric;
+begin
+  if not exists (select 1 from pg_proc where proname = 'visit_charge_matches' and proconfig @> array['search_path=public, pg_temp']) then raise exception 'visit_charge_matches does not pin its search_path'; end if;
+  -- The function pins its search_path, which keeps EXPLAIN from seeing inside it; its own body, without the pin, is what is explained. A SQL function's statement is
+  -- planned without its arguments' values, so the copy is planned the same way: as a prepared statement's generic plan.
+  execute format('create function pg_temp.matches(post uuid, ch jsonb) returns setof integer language sql stable as %L', (select prosrc from pg_proc where proname = 'visit_charge_matches'));
+  prepare vs_matches(uuid, jsonb) as select * from pg_temp.matches($1, $2);
+  set local plan_cache_mode = force_generic_plan;
+
+  insert into boards (slug, name) values ('vs-scale', 'Vs Scale') returning id into scale_board;
+  insert into threads (id, board, title, next_seq)
+  select ('00000000-0000-4107-8000-' || lpad(g::text, 12, '0'))::uuid, scale_board, 'Vs scale thread ' || g, 151 from generate_series(1, 400) g;
+  alter table acts disable trigger user;
+  insert into acts (id, character, kind, thread, payload, seq, created_at)
+  select ('00000000-0000-4107-a000-' || lpad(g::text, 12, '0'))::uuid, author, 'post', ('00000000-0000-4107-8000-' || lpad((g % 400 + 1)::text, 12, '0'))::uuid,
+         jsonb_build_object('body', 'Scale post ' || g), (g - 1) / 400 + 1, base + g * interval '1 second'
+  from generate_series(1, 60000) g;
+  -- Visit n (1 to 20,000) is on post 3n; visit 20,000 + m (1 to 2,000) is a second visit on post 30m, whose first visit is n = 10m. Each charges rule 1, 2 or 3.
+  insert into acts (id, character, kind, thread, target_act_id, payload, created_at)
+  select ('00000000-0000-4107-b000-' || lpad(x.n::text, 12, '0'))::uuid, mod, 'visit', ('00000000-0000-4107-8000-' || lpad((x.post_n % 400 + 1)::text, 12, '0'))::uuid,
+         ('00000000-0000-4107-a000-' || lpad(x.post_n::text, 12, '0'))::uuid,
+         jsonb_build_object('charges', jsonb_build_array(jsonb_build_object('rule_number', 1 + x.n % 3, 'board', scale_board, 'band', 'minor', 'cause', 'rule',
+             'about_act', '00000000-0000-4107-a000-' || lpad(x.post_n::text, 12, '0'))),
+           'ends_at', base + interval '2 days', 'challenge', jsonb_build_object('kind', 'distraction'), 'line', 'Looking.'),
+         base + interval '1 day' + x.n * interval '1 second'
+  from (select n, case when n <= 20000 then 3 * n else 30 * (n - 20000) end as post_n from generate_series(1, 22000) n) x;
+  -- Three visits in four have ended; every first visit of a post with two ended reversed or dropped.
+  insert into acts (character, kind, thread, target_act_id, payload, created_at)
+  select null, 'visit_end', v.thread, v.id,
+         jsonb_build_object('visit_act', v.id, 'line', 'Done.',
+           'outcome', case when v.n <= 20000 and v.n % 20 = 0 then 'reversed' when v.n <= 20000 and v.n % 10 = 0 then 'dropped' when v.n % 3 = 0 then 'intercepted' else 'filed' end),
+         v.created_at + interval '1 hour'
+  from (select a.id, a.thread, a.created_at, right(a.id::text, 12)::integer as n from acts a where a.kind = 'visit' and a.id::text like '00000000-0000-4107-b000-%') v
+  where v.n % 4 <> 1 or (v.n <= 20000 and v.n % 10 = 0);
+  -- Statistics gathered now know of no join on the scale board, and of the few this file wrote among 98,500 Acts.
+  analyze acts;
+  -- Every other visit has a join (rule 5), and every tenth a second (rule 6).
+  insert into acts (character, kind, thread, target_act_id, payload, created_at)
+  select mod, 'visit_join', v.thread, v.id,
+         jsonb_build_object('band', 'moderate', 'charge', jsonb_build_object('rule_number', 4 + k, 'board', scale_board, 'band', 'moderate', 'cause', 'rule', 'about_act', v.target_act_id)),
+         v.created_at + k * interval '1 second'
+  from (select a.id, a.thread, a.target_act_id, a.created_at, right(a.id::text, 12)::integer as n from acts a where a.kind = 'visit' and a.id::text like '00000000-0000-4107-b000-%') v
+  cross join generate_series(1, 2) k
+  where v.n % 2 = 0 and (k = 1 or v.n % 10 = 0);
+  alter table acts enable trigger user;
+
+  foreach stats in array array['gathered before the joins', 'fresh'] loop
+    if stats = 'fresh' then analyze acts; end if;
+    -- Post 60: two visits (the first reversed), three joins, two ends; rule 5 is on a join to its second visit. Post 6: one visit, one join, one end; rule 3 is its visit's
+    -- own charge. Post 600: two visits (the first reversed, charging rule 3), three joins; rule 3 is on the reversed visit alone, so it is no repeat. Post 61: no visit.
+    for probe in select * from (values (60, 5, true), (6, 3, true), (600, 3, false), (61, 1, false)) as x(post_n, rule_number, repeats) loop
+      execute format('explain (analyze, format json) execute vs_matches(%L, %L)', ('00000000-0000-4107-a000-' || lpad(probe.post_n::text, 12, '0'))::uuid,
+        jsonb_build_object('cause', 'rule', 'rule_number', probe.rule_number, 'board', scale_board)) into plan;
+      select count(distinct v.id) + count(x.id) into own from acts v
+        left join acts x on x.target_act_id = v.id and x.kind in ('visit_join', 'visit_end')
+        where v.kind = 'visit' and v.target_act_id = ('00000000-0000-4107-a000-' || lpad(probe.post_n::text, 12, '0'))::uuid;
+      select array_agg(distinct s.index_name order by s.index_name), string_agg(coalesce(s.index_name, 'the table'), ', ') filter (where s.index_cond is null), coalesce(sum(s.read), 0)
+        into named, loose, read from pg_temp.acts_scans(plan -> 0 -> 'Plan') s;
+      if named is distinct from array['acts_one_visit_end', 'acts_visit_joins', 'acts_visits_by_post'] or loose is not null then
+        raise exception 'with statistics %, the repeat-charge lookup for post % is not read by the visit, join and end indexes, each by an Index Cond (it reads %, and with no Index Cond %): %', stats, probe.post_n, named, coalesce(loose, 'nothing'), plan;
+      end if;
+      if read > own then
+        raise exception 'with statistics %, the repeat-charge lookup for post % read % Acts, and the post''s visits, joins and ends are %: %', stats, probe.post_n, read, own, plan;
+      end if;
+      if (plan -> 0 -> 'Plan' ->> 'Actual Rows')::integer > 0 is distinct from probe.repeats then
+        raise exception 'with statistics %, the repeat-charge lookup for post % and rule % found % rows', stats, probe.post_n, probe.rule_number, plan -> 0 -> 'Plan' ->> 'Actual Rows';
+      end if;
+    end loop;
+  end loop;
+  set local plan_cache_mode = auto;
+  deallocate vs_matches;
 end $$;
