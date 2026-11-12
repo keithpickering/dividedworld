@@ -88,6 +88,8 @@ export const STEPS = [
   'node tools/check-mail.mjs',
   'node tools/test-card-art.mjs',
   'node tools/check-card-art.mjs',
+  'node tools/test-sounds.mjs',
+  'node tools/check-sounds.mjs',
   'node tools/test-theme.mjs',
   'node tools/check-theme.mjs',
   'node tools/test-theme-preview.mjs',

@@ -31,7 +31,8 @@
  *   only there), and needs a calm where that says `calmed`. Under the large size a class's large color is
  *   body text (#54): it takes the body path, at the 4.5:1 ceiling worked out from its own color.
  * - **Ink** (a token tagged `ink`, or a class's ink) stands on an opaque fill, and is not held to a
- *   ceiling over the smoke: the guard holds it to 4.5:1 on its fill.
+ *   ceiling over the smoke: the guard holds it to 4.5:1 on its fill. A color that is also one of the key's
+ *   text tokens (white, the caption's ink, is the high key's body text) is judged as that text, never as ink.
  * - **The brightest pixel.** With all text made transparent, the brightest pixel under the line's
  *   box is under its color's ceiling for the surface.
  * - **High contrast.** Under the `high` key every line is in one of that key's text colors and
@@ -254,7 +255,10 @@ export function judge(fact: TextFact, ctx: JudgeContext): string[] {
     out.push(`${at}: inks ${round1(fact.ink)}px at ${round1(fact.size)}px of ${fact.family}, under the floor of ${INK_FLOOR}px of ink`);
   }
   if (fact.color[3] < 1) out.push(`${at}: its color ${colorText(fact.color)} is translucent; glass type is opaque`);
-  const roles = ctx.palette.roles.get(keyOf(fact.color)) ?? [];
+  const named = ctx.palette.roles.get(keyOf(fact.color)) ?? [];
+  /* A color that is both a text token and an ink (the caption's white is the key's body text too) is judged as text: the ink reading excuses a line from every ceiling on an opaque fill, and would excuse all of that text. Only a color with no text role is read as an ink. */
+  const textual = named.filter((r) => r.kind !== 'ink');
+  const roles = textual.length > 0 ? textual : named;
   if (roles.length === 0) out.push(`${at}: its color ${colorText([fact.color[0], fact.color[1], fact.color[2], 1])} is not one of the glass's text colors in the ${ctx.palette.key} key`);
   /* Under high contrast the ground is solid, so the smoke's ceilings do not apply; the key's colors, which the guard holds at 7:1 on that ground, do. */
   if (ctx.high) {

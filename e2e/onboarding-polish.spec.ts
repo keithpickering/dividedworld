@@ -98,11 +98,11 @@ test.describe('390', () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
   /* The theme row is the board look's tiles alone (docs/plans/2026-11-06-board-look-plan.md, Task 16: "the tiles alone"), with no note under
-     them (Settings › The board says it); Motion, Text size and Brighter effects are the skewed radios, each with its note. */
+     them (Settings › The board says it); Motion, Text size, Brighter effects and the two Sound rows (their volume slider shows only while On, and the default is Off) are the skewed radios, each with its note. */
   test('Before you start: each setting is a full-width block, its options whole, its note under them', async ({ page }) => {
     await page.goto('/welcome');
     const rows = page.locator('.kb-welcome-setup .kb-acct-row');
-    await expect(rows).toHaveCount(4);
+    await expect(rows).toHaveCount(6);
     const read = await rows.evaluateAll((els) => els.map((row) => {
       const box = row.getBoundingClientRect();
       const label = row.querySelector('.kb-acct-row-legend')!.getBoundingClientRect();
@@ -114,7 +114,7 @@ test.describe('390', () => {
       });
       return { tiles: row.querySelector('.kb-tp-tiles') !== null, width: box.width, labelBottom: label.bottom, optionsTop: options.top, optionsBottom: options.bottom, noteTop: note?.top ?? null, noteWidth: note?.width ?? null, faces };
     }));
-    expect(read.map((row) => row.tiles), 'the theme row is the tiles, and the three after it are radios').toEqual([true, false, false, false]);
+    expect(read.map((row) => row.tiles), 'the theme row is the tiles, and the five after it are radios').toEqual([true, false, false, false, false, false]);
     for (const row of read) {
       expect(row.width, 'the setting is the width of the block').toBeGreaterThan(320);
       expect(row.optionsTop, 'the options are under the label, not beside it').toBeGreaterThanOrEqual(row.labelBottom - 1);

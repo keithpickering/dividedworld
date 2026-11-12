@@ -103,11 +103,11 @@ export function loadContact(env: GlassEnv, preload: Preload): Promise<readonly C
   return beside(preload, () => env.api.adminContact());
 }
 
-export type SettingsSection = 'account' | 'accessibility' | 'board' | 'notifications';
+export type SettingsSection = 'account' | 'accessibility' | 'sound' | 'board' | 'notifications';
 
 export const settingsSection = (query: Query): SettingsSection => {
   const asked = query.get('section');
-  return asked === 'account' || asked === 'board' || asked === 'notifications' ? asked : 'accessibility';
+  return asked === 'account' || asked === 'sound' || asked === 'board' || asked === 'notifications' ? asked : 'accessibility';
 };
 
 export const settingsKey = (query: Query): string => settingsSection(query);

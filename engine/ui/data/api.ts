@@ -966,6 +966,14 @@ export interface Preferences {
   readonly tilt: 'off' | 'on';
   /** Whether card effects use their full colors even below the usual contrast standard; standard until the player turns it on. */
   readonly effects: 'standard' | 'bright';
+  /** Whether the game's own sounds (a card's, a mark's) play; off until the player turns it on. */
+  readonly gameSound: 'off' | 'on';
+  /** The game sounds' volume, 0 to 100 in steps of 5. */
+  readonly gameVolume: number;
+  /** Whether the interface's sounds play; off until the player turns it on. */
+  readonly interfaceSound: 'off' | 'on';
+  /** The interface sounds' volume, 0 to 100 in steps of 5. */
+  readonly interfaceVolume: number;
   /**
    * The card kinds (their keys) this account has met: a kind's first mark on a page shows its callout until the kind is in this
    * set. Changed only by `meetCard` and `restoreTips`, never by `setPreferences`; at most 64, read by its own account alone.
@@ -998,7 +1006,7 @@ export interface Preferences {
 export type PreferencesPatch = Partial<Omit<Preferences, 'cardsMet' | 'alertsSeenAt' | 'settlementSeen' | 'welcomedAt' | 'tips' | 'tipsSeen'>>;
 
 /** What an account's preferences are before it has set any (account_preferences' defaults). */
-export const DEFAULT_PREFERENCES: Preferences = { theme: 'default', mode: 'system', postbit: 'side', motion: 'system', smoke: 'full', contrast: 'standard', textSize: 100, tilt: 'off', effects: 'standard', cardsMet: [], alertsSeenAt: null, settlementSeen: null, toasts: null, welcomedAt: null, tips: 'on', tipsSeen: [] };
+export const DEFAULT_PREFERENCES: Preferences = { theme: 'default', mode: 'system', postbit: 'side', motion: 'system', smoke: 'full', contrast: 'standard', textSize: 100, tilt: 'off', effects: 'standard', gameSound: 'off', gameVolume: 80, interfaceSound: 'off', interfaceVolume: 80, cardsMet: [], alertsSeenAt: null, settlementSeen: null, toasts: null, welcomedAt: null, tips: 'on', tipsSeen: [] };
 
 export interface MyInvite {
   readonly id: number;

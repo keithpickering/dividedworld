@@ -12,6 +12,8 @@
  *
  * The rail holds a fourth tab since the board look (Settings › The board, between Accessibility and Notifications; this board draws three), so Notifications stands a
  * tab (48px and the 8px gap, less the 12px the shorter tabs before it give back) lower than the board draws it, and Reach a person with it (`buildShift`, as the run measured).
+ * Settings holds a Sound tab as well, between Accessibility and The board (docs/plans/2026-11-11-laugh-track-design.md: Settings gains a Sound section), which this board does not
+ * draw: one more tab, 48px and the 8px gap, so Notifications and Reach a person stand another 56px lower than before (`buildShift`, as the run measured).
  *
  * Departures by decision:
  *  - The board draws each invite with a code ("ab12cd34") and "USED · Nov 2". The build never has a code to show: the server gives a code once, when the
@@ -42,8 +44,8 @@ const manifest: BoardManifest = {
     { id: 'sections', role: 'navigation', name: 'Settings sections', box: 'across', type: false },
     { id: 'section-account', role: 'link', name: 'ACCOUNT', within: 'sections', origin: 'sections', box: 'height', type: false, buildShift: BUTTON },
     { id: 'section-accessibility', role: 'link', name: 'ACCESSIBILITY', within: 'sections', origin: 'sections', box: 'height', type: false, buildShift: { y: -6, height: -6 } },
-    { id: 'section-notifications', role: 'link', name: 'NOTIFICATIONS', within: 'sections', origin: 'sections', box: 'height', type: false, buildShift: { y: 44, height: -6 } },
-    { id: 'reach', role: 'link', name: 'Reach a person', origin: 'sections', box: 'position', buildShift: { y: 40 } },
+    { id: 'section-notifications', role: 'link', name: 'NOTIFICATIONS', within: 'sections', origin: 'sections', box: 'height', type: false, buildShift: { y: 100, height: -6 } },
+    { id: 'reach', role: 'link', name: 'Reach a person', origin: 'sections', box: 'position', buildShift: { y: 96 } },
 
     { id: 'account', role: 'heading', name: 'ACCOUNT', box: 'across' },
     { id: 'lead', role: 'text', name: 'Out of character: what you sign in with, and who you bring in.', origin: 'account' },
