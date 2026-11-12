@@ -225,6 +225,26 @@ describe('A barred account (the conduct plan, Task 4)', () => {
   });
 });
 
+describe('A signed-out session carrying a bar of unknown end (Auth refused a refresh or a sign-in as banned)', () => {
+  test('the gate shows Barred, not the page: the title and words say barred, with no date and no "banned", and the one button is Use another address', async () => {
+    const fake = buildWorld();
+    vi.spyOn(fake, 'session').mockResolvedValue({ signedIn: false, account: null, bar: { until: null, unknown: true }, conductAccepted: true });
+    renderIn(fake, <AccountGate><p>The page</p></AccountGate>, { path: '/' });
+    expect(await screen.findByRole('heading', { name: 'This account is barred' })).toBeInTheDocument();
+    expect(screen.getByText('This account is barred. An admin may have emailed you the details. To appeal, reply to that email, or reach a person through Contact.')).toBeInTheDocument();
+    expect(screen.queryByText(/banned|until|went wrong/u)).toBeNull();
+    expect(screen.queryByText('The page')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Use another address' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Reach a person' })).toHaveAttribute('href', '/contact');
+  });
+
+  test('a signed-out session with no bar shows the page', async () => {
+    const fake = buildWorld();
+    renderIn(fake, <AccountGate><p>The page</p></AccountGate>, { path: '/' });
+    expect(await screen.findByText('The page')).toBeInTheDocument();
+  });
+});
+
 describe('An account that has not accepted the code (the conduct plan, Task 4)', () => {
   test('sees the code and I agree, in place of the page; agreeing sends the version and lets the player through', async () => {
     const fake = barredWorld(null, { unaccepted: true });

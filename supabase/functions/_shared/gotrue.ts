@@ -50,6 +50,8 @@ export function gotrue(options: { url: string; key: string; fetch?: typeof globa
       if (!response || response.status >= 500) throw new Error(`auth code check answered ${response?.status ?? 'nothing'}`);
       const body = await response.json().catch(() => ({})) as Record<string, unknown>;
       if (response.ok) return { session: body as never };
+      // Older Auth answers a ban in the OAuth style (invalid_grant, described as banned): it is the ban, so it is checked before invalid_grant is taken for a wrong code.
+      if ((response.status === 400 || response.status === 403) && body.error === 'invalid_grant' && /banned/i.test(String(body.error_description ?? body.msg ?? ''))) return { refused: 'barred' };
       // A wrong code and one for an address with no login are one refusal to Auth too.
       if ((response.status === 400 || response.status === 403)
           && (body.error_code === 'otp_expired' || body.error_code === 'otp_invalid' || body.error === 'invalid_grant')) return { refused: 'code' };

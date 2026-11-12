@@ -48,6 +48,14 @@ test('a login Auth has banned is told apart from a wrong code: the verify is ref
   }
 });
 
+test('a ban answered in the OAuth style (invalid_grant described as banned) is barred too, while a bare invalid_grant stays a wrong code', async () => {
+  const refuse = (body: unknown, status: number) => recorder(() => new Response(JSON.stringify(body), { status })).fetch;
+  for (const status of [400, 403]) {
+    assert.deepEqual(await gotrue({ ...opts, fetch: refuse({ error: 'invalid_grant', error_description: 'User is banned' }, status) }).verifyCode('a@b.c', '1'), { refused: 'barred' }, String(status));
+  }
+  assert.deepEqual(await gotrue({ ...opts, fetch: refuse({ error: 'invalid_grant', error_description: 'Token has expired or is invalid' }, 400) }).verifyCode('a@b.c', '1'), { refused: 'code' });
+});
+
 test('a code request, after the answer, is retried once on a transport failure, and its refusals are logged, never thrown', async () => {
   let n = 0;
   const flaky = (async () => (++n === 1 ? new Response('', { status: 503 }) : new Response('{}', { status: 200 }))) as unknown as typeof globalThis.fetch;

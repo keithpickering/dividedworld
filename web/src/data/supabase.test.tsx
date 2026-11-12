@@ -2906,6 +2906,50 @@ describe('reports, appeals and what a page says of a ban', () => {
   });
 });
 
+describe('a refresh Auth refuses as banned (a barred player whose stored session is stale)', () => {
+  const EXPIRED = `${B64({ alg: 'HS256', typ: 'JWT' })}.${B64({ sub: 'u-1', aud: 'authenticated', role: 'authenticated', exp: 1000 })}.sig`;
+  const BAR = { signedIn: false, account: null, bar: { until: null, unknown: true }, conductAccepted: true };
+  /** A harness whose sign-in installs an expired token, so Auth is asked to refresh it and answers as banned. */
+  const banned = () => harness((r) => {
+    if (r.url.pathname === '/functions/v1/account') return json({ session: { ...SESSION, access_token: EXPIRED }, account: true });
+    if (r.url.pathname === '/auth/v1/token') return json({ code: 400, error_code: 'user_banned', msg: 'User is banned' }, 400);
+    if (r.url.pathname === '/auth/v1/logout') return new Response(null, { status: 204 });
+    return undefined;
+  });
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
+
+  it('is signed out with a bar of unknown end, read from the refusal, and the listeners are told', async () => {
+    const h = banned();
+    const heard = vi.fn();
+    h.api.onSession(heard);
+    await h.api.verifyCode('a@b.c', '123456');
+    await settle();
+    expect(h.log.some((r) => r.url.pathname === '/auth/v1/token')).toBe(true);
+    expect(await h.api.session()).toEqual(BAR);
+    expect(heard).toHaveBeenCalledWith(BAR);
+  });
+
+  it('a refusal on another auth path, or another answer on the refresh, sets no bar', async () => {
+    const h = harness((r) => {
+      if (r.url.pathname === '/functions/v1/account') return json({ session: { ...SESSION, access_token: EXPIRED }, account: true });
+      if (r.url.pathname === '/auth/v1/token') return json({ code: 400, error_code: 'refresh_token_not_found' }, 400);
+      return undefined;
+    });
+    await h.api.verifyCode('a@b.c', '123456');
+    await settle();
+    expect((await h.api.session()).bar).toBeNull();
+  });
+
+  it('signing out clears the bar, so Use another address leaves the barred screen', async () => {
+    const h = banned();
+    await h.api.verifyCode('a@b.c', '123456');
+    await settle();
+    expect((await h.api.session()).bar).toEqual({ until: null, unknown: true });
+    await h.api.signOut();
+    expect(await h.api.session()).toEqual({ signedIn: false, account: null, bar: null, conductAccepted: true });
+  });
+});
+
 describe('the session carries the bar and the code (the conduct plan, Task 4)', () => {
   const signedIn = (extra: (r: Rec) => Response | undefined) => harness((r) => {
     if (r.url.pathname === '/functions/v1/account') return json({ session: SESSION, account: true });
