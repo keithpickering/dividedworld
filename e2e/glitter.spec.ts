@@ -91,54 +91,86 @@ const landed = (page: Page) => page.evaluate(() => window.__kbLanding?.landed() 
 const nextFrame = (page: Page) => page.evaluate(() => new Promise<void>((r) => { requestAnimationFrame(() => r()); }));
 
 /**
- * The bench's fling: 6,000 px a second coasting with exp(-2.6 dt), by scrollBy each frame, down (`dir` 1) or back up (-1). The post is read
- * first: its burst fires once its burst point has stayed in the middle of the view for 300 ms, and a post that has never been read has no
- * flakes to shake.
+ * A post is read first: its burst fires once its burst point has stayed in the middle of the view for 300 ms, and a post that has never
+ * been read has no flakes to shake.
  */
 const read = new WeakSet<Page>();
-async function fling(page: Page, dir: 1 | -1 = 1): Promise<void> {
-  if (dir === 1 && !read.has(page)) {
-    read.add(page);
-    await page.locator(HOST).first().scrollIntoViewIfNeeded();
-    await expect.poll(() => page.evaluate(() => window.__kbShineDraws?.(0) ?? -1)).toBeGreaterThan(0);
-    await page.waitForTimeout(2500);
-  }
-  if (dir === 1) { await page.evaluate(() => { window.scrollTo(0, 0); }); await page.waitForTimeout(300); }
-  await page.evaluate(async (d) => {
+async function readPost(page: Page): Promise<void> {
+  if (read.has(page)) return;
+  read.add(page);
+  await page.locator(HOST).first().scrollIntoViewIfNeeded();
+  await expect.poll(() => page.evaluate(() => window.__kbShineDraws?.(0) ?? -1)).toBeGreaterThan(0);
+  await page.waitForTimeout(2500);
+}
+
+/**
+ * The bench's flick: a hand jostling the page at the top, `JOSTLES` times. Each jostle is a frame scrolled down at `JOSTLE` px a second,
+ * just past the shake threshold (SHAKE_SPEED, 2,200), then three frames back up at a third of that pace, under the threshold, so it
+ * shakes nothing back and the page ends where it began.
+ *
+ * Why this and not a long fling: a flake is thrown at 0.55 of the scroll's speed against the page's way and one that flies off the screen
+ * is culled (the owner's decision), and the page's own ground is only the 121 px gutters, the thin gaps between posts and the band above
+ * the first post (document y 120 to 243 at 1440 by 1120). A 6,000 px/s fling throws its flakes 280 to 660 px and carries the page 1,000 px
+ * from under them, so it almost never lands one on the page (measured: none in eight flings, in CI and here). A jostle sheds from the first
+ * post while it is near the top of the view and moves the page so little that the band above it is still in view where the flakes
+ * come down: some come back to rest on the post's cell, some on the band, in every flick (measured, 30 flicks: 2 to 9 on the cell
+ * and 7 to 19 on the page at 2,800 px/s a flick).
+ */
+const JOSTLE = 2800, JOSTLES = 10;
+async function flick(page: Page): Promise<void> {
+  await page.evaluate(() => { window.scrollTo(0, 0); });
+  await page.waitForTimeout(300);
+  await page.evaluate(async ({ v, n }) => {
+    let last = performance.now(), k = 0;
+    await new Promise<void>((done) => {
+      const step = (now: number) => {
+        const dt = Math.min(0.05, (now - last) / 1000); last = now;
+        window.scrollBy(0, k % 4 === 0 ? v * dt : -v * dt / 3);
+        if (++k >= n * 4) done(); else requestAnimationFrame(step);
+      };
+      requestAnimationFrame(step);
+    });
+  }, { v: JOSTLE, n: JOSTLES });
+}
+
+/** The old bench's fling, a long one: 6,000 px a second coasting with exp(-2.6 dt). Used where nothing should land, to be sure it could have. */
+async function fling(page: Page): Promise<void> {
+  await readPost(page);
+  await page.evaluate(() => { window.scrollTo(0, 0); });
+  await page.waitForTimeout(300);
+  await page.evaluate(async () => {
     let v = 6000, last = performance.now();
     await new Promise<void>((done) => {
       const step = (now: number) => {
         const dt = Math.min(0.05, (now - last) / 1000); last = now;
-        window.scrollBy(0, d * v * dt);
+        window.scrollBy(0, v * dt);
         v *= Math.exp(-2.6 * dt);
         if (v < 30) done(); else requestAnimationFrame(step);
       };
       requestAnimationFrame(step);
     });
-  }, dir);
+  });
 }
 
 /**
- * A post 130 px tall is in view for four frames of a 6,000 px/s fling (100 px a frame), and a flake sheds per px scrolled, about 40 over
- * the post's whole pass at a full flick; a flake that flies over the top or past the bottom is culled, and where the rest land (a post cell,
- * or the gutters and gaps that are the page's ground) is the flake's own. So flings go down and back up until glitter has landed on a post
- * cell and on the page, each given the plan's 3 s, at most `FLINGS` of them.
+ * Glitter that lands is the flake's own: some on a post's cell and some on the page's ground. So flicks go on, each given the plan's 3 s
+ * to land, until glitter lies on a post cell and on the page, at most `FLINGS` of them (the first has done it in every run measured).
  */
-const FLINGS = 8;
+const FLINGS = 4;
 async function flingUntilLanded(page: Page): Promise<void> {
+  await readPost(page);
   const both = async () => { const l = await landed(page); return l!.cell > 0 && l!.page > 0; };
   for (let i = 0; i < FLINGS; i++) {
-    await fling(page, i % 2 === 0 ? 1 : -1);
+    await flick(page);
     const end = Date.now() + 3000;
     while (Date.now() < end) { if (await both()) return; await page.waitForTimeout(100); }
   }
-  expect(await landed(page), `after ${FLINGS} flings`).toMatchObject({ cell: expect.any(Number), page: expect.any(Number) });
-  expect(await both(), `glitter on a post cell and on the page after ${FLINGS} flings: ${JSON.stringify(await landed(page))}`).toBe(true);
+  expect(await both(), `glitter on a post cell and on the page after ${FLINGS} flicks: ${JSON.stringify(await landed(page))}`).toBe(true);
 }
 
 async function seeded(page: Page, name: string): Promise<void> {
-  /* The story's own size (the Glitter story is opened at 1440 by 1120): a post is in view for as many frames of a 6,000 px/s fling as the
-   * view is tall, and a short view shakes only a few flakes off it. */
+  /* The story's own size (the Glitter story is opened at 1440 by 1120): the band of page above the first post is as tall as the
+   * flick needs, and a short view shakes only a few flakes off it. */
   await page.setViewportSize({ width: 1440, height: 1120 });
   await page.goto(STORY(name));
   await expect.poll(() => page.locator(HOST).count()).toBeGreaterThan(0);
@@ -156,7 +188,9 @@ test('a fling shakes glitter onto a post and the page, and nothing stays in the 
   await flingUntilLanded(page);
   await page.waitForTimeout(5000);
   expect(await page.evaluate(() => window.__kbLanding!.tiles().cell > 0 && window.__kbLanding!.tiles().page > 0)).toBe(true);
-  expect(await page.locator('canvas[data-kb-shine="cling"]').count()).toBe(0);
+  /* A flake over what is neither a glitter cell nor the page's ground (a postbit, another post) keeps falling at its settled speed, about
+   * 70 px a second, until it is over ground or leaves the screen (shake design, section 4): up to 16 s down a view 1,120 px tall. */
+  await expect(page.locator('canvas[data-kb-shine="cling"]')).toHaveCount(0, { timeout: 20_000 });
 });
 
 test('leaving the thread sweeps what landed', async ({ page }) => {
@@ -164,30 +198,52 @@ test('leaving the thread sweeps what landed', async ({ page }) => {
   await flingUntilLanded(page);
 
   await page.locator('a[href*="/b/"]').first().click();
-  await expect.poll(async () => { const l = await landed(page); return l!.page + l!.cell; }, { timeout: 5000 }).toBe(0);
+  /* Every kind of landed glitter goes: the effect's own, a post cell's and the page's. */
+  await expect.poll(async () => { const l = await landed(page); return [l!.effect, l!.cell, l!.page]; }, { timeout: 5000 }).toEqual([0, 0, 0]);
   expect(await page.evaluate(() => window.__kbLanding!.tiles().page)).toBe(0);
 });
 
 test('what landed shows, a scroll over it draws no tile, and the ground is not painted over', async ({ page }) => {
   await seeded(page, 'light');
   await flingUntilLanded(page);
-  await page.waitForTimeout(1500);
-  /* A tile out of view has no backing store, so each kind's first tile is brought into view, read once it has drawn again, and its flake's
-   * point compared with the ground there: the same screen with every tile hidden. */
-  const withTiles = new Map<string, { x: number; y: number; png: string; scroll: number }>();
+  /* A second flick, so that more than the first flake lies on each. */
+  await flick(page);
+  await page.waitForTimeout(3000);
+  /* A tile out of view has no backing store, so each kind's first tile is brought into view, read once it has drawn again, and its
+   * flakes' points compared with the ground there: the same screen with every tile hidden. A flake can lie where a word's pixel is
+   * painted over it, so the kind's strongest few are compared and at least one must differ (the page's own cells paint over the glitter
+   * under their words, as the post's do). */
+  const SAMPLES = 6;
+  const withTiles = new Map<string, { at: { x: number; y: number; png: string }[]; scroll: number }>();
   for (const kind of ['cell', 'page']) {
-    const tile = page.locator(`canvas[data-kb-landing="${kind}"]`).first();
-    await tile.evaluate((t) => { t.scrollIntoView({ block: 'center' }); });
-    await page.waitForTimeout(600);
-    const at = await tile.evaluate((t: HTMLCanvasElement) => {
-      const r = t.getBoundingClientRect();
-      const { data } = t.getContext('2d')!.getImageData(0, 0, t.width, t.height);
-      let best = -1, alpha = 0;
-      for (let i = 3; i < data.length; i += 4) if (data[i]! > alpha) { alpha = data[i]!; best = i >> 2; }
-      return best < 0 ? null : { x: r.left + ((best % t.width) / t.width) * r.width, y: r.top + (Math.floor(best / t.width) / t.height) * r.height };
-    });
-    expect(at, `a painted flake on the ${kind}'s tile`).not.toBeNull();
-    withTiles.set(kind, { ...at!, png: await shot(page, at!.x, at!.y), scroll: await page.evaluate(() => window.scrollY) });
+    /* The first tile that shows a flake: a tile holds the flakes of its own patch of the surface, and a patch may hold only a few. */
+    const tiles = page.locator(`canvas[data-kb-landing="${kind}"]`);
+    expect(await tiles.count(), `${kind} tiles`).toBeGreaterThan(0);
+    let points: { x: number; y: number }[] = [];
+    for (let k = 0; k < await tiles.count() && points.length === 0; k++) {
+      const tile = tiles.nth(k);
+      await tile.evaluate((t) => { t.scrollIntoView({ block: 'center' }); });
+      await page.waitForTimeout(600);
+      points = await tile.evaluate((t: HTMLCanvasElement, n: number) => {
+        const r = t.getBoundingClientRect();
+        const { data } = t.getContext('2d')!.getImageData(0, 0, t.width, t.height);
+        const painted: { p: number; a: number }[] = [];
+        for (let i = 3; i < data.length; i += 4) if (data[i]! > 0) painted.push({ p: i >> 2, a: data[i]! });
+        painted.sort((u, v) => v.a - u.a);
+        const out: { x: number; y: number }[] = [];
+        for (const { p } of painted) {
+          const x = r.left + ((p % t.width) / t.width) * r.width, y = r.top + (Math.floor(p / t.width) / t.height) * r.height;
+          if (x < 0 || y < 0 || x > innerWidth || y > innerHeight) continue;
+          if (out.every((o) => Math.hypot(o.x - x, o.y - y) > 14)) out.push({ x, y });
+          if (out.length >= n) break;
+        }
+        return out;
+      }, SAMPLES);
+    }
+    expect(points.length, `painted flakes on the ${kind}'s tile`).toBeGreaterThan(0);
+    const at = [];
+    for (const q of points) at.push({ ...q, png: await shot(page, q.x, q.y) });
+    withTiles.set(kind, { at, scroll: await page.evaluate(() => window.scrollY) });
     /* A scroll over landed glitter draws no tile. */
     const draws0 = await page.evaluate(() => window.__kbLanding!.draws());
     await page.evaluate(() => { window.scrollBy(0, 30); });
@@ -199,13 +255,16 @@ test('what landed shows, a scroll over it draws no tile, and the ground is not p
   for (const [kind, w] of withTiles) {
     await page.evaluate((y) => { window.scrollTo(0, y); }, w.scroll);
     await nextFrame(page); await nextFrame(page);
-    expect(await shot(page, w.x, w.y), `the ${kind} flake's point is the ground's`).not.toBe(w.png);
+    let differ = 0;
+    for (const q of w.at) if ((await shot(page, q.x, q.y)) !== q.png) differ++;
+    expect(differ, `some of the ${kind}'s ${w.at.length} flakes' points are not the ground's`).toBeGreaterThan(0);
   }
 });
 
 test('under reduced motion a fling lands nothing', async ({ page }) => {
   await seeded(page, 'still');
   await fling(page);
+  await flick(page);
   await page.waitForTimeout(3000);
   expect(await landed(page)).toEqual({ effect: 0, cell: 0, page: 0 });
 });
