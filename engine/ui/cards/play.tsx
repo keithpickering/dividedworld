@@ -37,6 +37,7 @@ import { plainRefusal } from './faces.ts';
 import type { Plays } from './plays.ts';
 import type { PronounSet } from '../../rules/pronouns.ts';
 import type { BeyondPost, EffectsAbove } from '../../rules/cards.ts';
+import { bringClear } from './clear.ts';
 import { Layers } from '../glass/layer.tsx';
 import { PREPARED_FAILED, usePrepared } from '../glass/prepared.ts';
 
@@ -88,8 +89,13 @@ export interface PlayControls {
   readonly opening: (card: string, target: PlayTarget) => boolean;
   /** The play being made on a post itself, or null; the post's effect slot mounts the card's `Compose` for it. */
   readonly compose: Composing | null;
+  /**
+   * The post a card is being played on, while a compose is open on one: derived from `compose`, so it is the signed-in account's alone and is gone in
+   * the commit a compose ends (its post leaving the page, an account switch). Ghosts and the hand read this, never their own copy of it.
+   */
+  readonly playing: { readonly card: string; readonly seq: number } | null;
   /** Open a compose on a post (replacing one already open, after its ask). */
-  readonly openCompose: (card: string, target: PlayTarget, mode: 'cast' | 'set') => void;
+  readonly openCompose: (card: string, target: PlayTarget) => void;
   /** Land the compose's play, as PlayForm does: the answer, or the refusal, which leaves the compose open. */
   readonly submitCompose: (config: unknown, first: unknown) => Promise<Answer<unknown>>;
   /** A way out of the compose, asking first when the card holds work. */
@@ -100,12 +106,13 @@ export interface PlayControls {
   readonly holdCompose: (ask: string | null) => void;
   /** The compose's slot is gone (its post left the screen): the compose ends with it, with no ask the page could not wait for. */
   readonly dropCompose: (composing: Composing) => void;
+  /** The compose's screen is on the page (`ComposeProps.ready`): the post being played on is brought clear of what the screen covers, a frame later. */
+  readonly composeReady: () => void;
 }
 
 /** The one play being made on a post itself (`CardUi.Compose`). */
 export interface Composing {
   readonly card: string;
-  readonly mode: 'cast' | 'set';
   readonly target: PlayTarget;
 }
 
@@ -227,13 +234,13 @@ export function PlayProvider({ children }: { readonly children: ReactNode }) {
   /* A read that failed is said to a screen reader in the status the form's states use, until the next press. */
   useEffect(() => { if (readFailed) setSaid(PREPARED_FAILED); }, [readFailed, setSaid]);
 
-  const openCompose = useCallback((card: string, target: PlayTarget, mode: 'cast' | 'set') => {
+  const openCompose = useCallback((card: string, target: PlayTarget) => {
     const same = composeNow.current;
-    if (same && same.card === card && same.target.post?.id === target.post?.id && same.mode === mode) return;
+    if (same && same.card === card && same.target.post?.id === target.post?.id) return;
     setHandOpen(false);
     const open = () => {
       endCompose(false);
-      setComposeHeld({ card, target, mode, for: accountNow.current });
+      setComposeHeld({ card, target, for: accountNow.current });
       setSaid(`${nameOf(card)} is open on ${target.author}'s post #${target.post?.seq ?? ''}. Esc leaves it.`);
     };
     if (same) leave(open); else open();
@@ -242,7 +249,7 @@ export function PlayProvider({ children }: { readonly children: ReactNode }) {
   const holdCompose = useCallback((ask: string | null) => { askNow.current = ask; setAskHeld(ask); }, []);
   const dropCompose = useCallback((gone: Composing) => {
     const now = composeNow.current;
-    if (now && now.card === gone.card && now.mode === gone.mode && now.target.post?.id === gone.target.post?.id) endCompose(false);
+    if (now && now.card === gone.card && now.target.post?.id === gone.target.post?.id) endCompose(false);
   }, [endCompose]);
   const submitCompose = useCallback((config: unknown, first: unknown): Promise<Answer<unknown>> => {
     /* One play at a time: a press while one is out is the same press. */
@@ -251,14 +258,14 @@ export function PlayProvider({ children }: { readonly children: ReactNode }) {
     const p = playerNow.current;
     if (!c || !c.target.post) return Promise.resolve({ ok: false, error: 'there is nothing open to play' });
     const post = c.target.post;
-    const who = c.mode === 'set' ? p.actingCharacters.find((a) => a.id === post.character) ?? p.hudCharacter : p.hudCharacter;
+    const who = p.hudCharacter;
     if (!who) return Promise.resolve({ ok: false, error: 'choose a character to play as' });
     const owner = accountNow.current;
     const what = (config ?? {}) as Readonly<Record<string, unknown>>;
     const run = (async (): Promise<Answer<unknown>> => {
       let answer: Answer<Act>;
       try {
-        answer = c.mode === 'set' ? await api.setCard(c.card, who.id, post.id, what, undefined, first) : await api.playCard(c.card, who.id, post.id, what, '', undefined, undefined, first);
+        answer = await api.playCard(c.card, who.id, post.id, what, '', undefined, undefined, first);
       } catch {
         return { ok: false, error: 'no answer came back, so the play may or may not have gone through', uncertain: true };
       }
@@ -268,13 +275,12 @@ export function PlayProvider({ children }: { readonly children: ReactNode }) {
       try {
         await c.target.know([act.character]);
         c.target.plays.add([act]);
-        if (act.kind === 'set') c.target.plays.setFaces(await api.myFaceDown([act.id]).catch(() => ({})));
         await playerNow.current.refresh();
       } catch { /* the play has landed; the page catches up from its channel */ }
       if (accountNow.current !== owner) return answer;
       endCompose(true);
       setArmed(null);
-      setSaid(`${c.mode === 'set' ? 'Set' : 'Played'} ${nameOf(c.card)} ${c.mode === 'set' ? 'face down ' : ''}on ${c.target.author}'s post #${post.seq ?? ''}.`);
+      setSaid(`Played ${nameOf(c.card)} on ${c.target.author}'s post #${post.seq ?? ''}.`);
       return answer;
     })();
     sending.current = run;
@@ -283,6 +289,29 @@ export function PlayProvider({ children }: { readonly children: ReactNode }) {
     void run.then(done, done);
     return run;
   }, [api, endCompose, nameOf, setArmed, setSaid]);
+  /*
+   * The post's body is brought clear of what covers the window's edges (the sticky bar, the HUD and the dock a card's screen sets at the foot) when a compose
+   * opens, so the drawing has room. It is measured here, after the commit that mounted the card's `Compose` and after its layout effects set the root's scroll
+   * padding, and one frame later still so a dock's measured height is in place: measured inside `openCompose` it would run before any of that and see no padding.
+   * Keyed on the compose's card and post, so it runs once per compose, not on each render, and the compose ending runs nothing.
+   */
+  const composeKey = compose === null ? null : `${compose.card}:${compose.target.post?.id ?? ''}`;
+  const composeSeq = compose?.target.post?.seq ?? null;
+  const clearFrame = useRef(0);
+  /* Reads the post under play when the frame runs, not when asked: a compose that ended in between runs nothing. */
+  const bringComposeClear = useCallback(() => {
+    cancelAnimationFrame(clearFrame.current);
+    clearFrame.current = requestAnimationFrame(() => {
+      const seq = composeNow.current?.target.post?.seq;
+      const body = seq === undefined ? null : document.querySelector<HTMLElement>(`#post-${seq} .kb-act-main`);
+      if (body) bringClear(body);
+    });
+  }, []);
+  useEffect(() => {
+    if (composeKey === null || composeSeq === null) return undefined;
+    bringComposeClear();
+    return () => cancelAnimationFrame(clearFrame.current);
+  }, [composeKey, composeSeq, bringComposeClear]);
   /* Esc leaves a compose before anything else answers it (the armed card's own Esc, a Lens): captured at the window so it comes first. */
   const open = compose !== null;
   useEffect(() => {
@@ -319,9 +348,13 @@ export function PlayProvider({ children }: { readonly children: ReactNode }) {
     return () => window.removeEventListener('beforeunload', onUnload);
   }, [holding]);
 
+  /* From `compose`, which is read against the signed-in account above: a compose that has ended is null here in the same commit. */
+  const playingSeq = compose?.target.post?.seq ?? null;
+  const playingCard = compose?.card ?? null;
+  const playing = useMemo(() => (playingCard !== null && playingSeq !== null ? { card: playingCard, seq: playingSeq } : null), [playingCard, playingSeq]);
   const controls = useMemo<PlayControls>(
-    () => ({ armed, handOpen, setHandOpen, arm, faceDown, choose, openForm, readyForm, opening, compose, openCompose, submitCompose, cancelCompose, sending: out, holdCompose, dropCompose }),
-    [armed, handOpen, setHandOpen, arm, faceDown, choose, openForm, readyForm, opening, compose, openCompose, submitCompose, cancelCompose, out, holdCompose, dropCompose],
+    () => ({ armed, handOpen, setHandOpen, arm, faceDown, choose, openForm, readyForm, opening, compose, playing, openCompose, submitCompose, cancelCompose, sending: out, holdCompose, dropCompose, composeReady: bringComposeClear }),
+    [armed, handOpen, setHandOpen, arm, faceDown, choose, openForm, readyForm, opening, compose, playing, openCompose, submitCompose, cancelCompose, out, holdCompose, dropCompose, bringComposeClear],
   );
 
   return (

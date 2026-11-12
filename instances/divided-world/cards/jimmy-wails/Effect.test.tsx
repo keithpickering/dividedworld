@@ -108,6 +108,22 @@ describe('the carousel', () => {
     expect(screen.getAllByRole('figure')).toHaveLength(1);
   });
 
+  test('credits one photograph, the one on view, under the slides and outside their live region; a hidden slide is inert', () => {
+    mount({ drives: [drive({ plays: [play(1, 'dark-logo'), play(2, 'close-up'), play(3, 'pinstripe')] })] });
+    const credits = () => [...document.querySelectorAll('.dw-jw-credit')];
+    expect(credits()).toHaveLength(1);
+    expect(credits()[0]!.textContent).toBe('Photo: Nicolas Goldberg, CC BY-SA 3.0, edited');
+    expect(document.querySelector('.dw-jw-slides')!.contains(credits()[0]!)).toBe(false);
+    expect(document.querySelector('.dw-jw-carousel')!.contains(credits()[0]!)).toBe(true);
+    expect(screen.getAllByRole('link')).toHaveLength(2);
+    fireEvent.click(screen.getByRole('button', { name: 'Show appeal 3' }));
+    expect(credits()).toHaveLength(1);
+    expect(credits()[0]!.textContent).toBe('Photo: Manuel Archain, CC BY-SA 3.0, edited');
+    const hidden = [...document.querySelectorAll('.dw-jw-slide')].filter((slide) => slide.getAttribute('data-active') !== 'true');
+    expect(hidden).toHaveLength(2);
+    for (const slide of hidden) expect(slide.hasAttribute('inert')).toBe(true);
+  });
+
   test('pauses while the pointer is over it', async () => {
     mount();
     const carousel = screen.getByRole('region', { name: 'Appeals' });

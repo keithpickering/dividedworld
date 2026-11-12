@@ -172,7 +172,7 @@ describe('a card that writes nests innermost', () => {
   test('with a compose open on the post, the tail is inside the compose\'s body, next to the words, and the other cards are outside it', async () => {
     const Open = ({ target }: { readonly target: PlayTarget }) => {
       const p = usePlay();
-      useEffect(() => { p?.openCompose('comp', target, 'cast'); }, []);
+      useEffect(() => { p?.openCompose('comp', target); }, []);
       return null;
     };
     const target: PlayTarget = { post: words, title: 't', author: 'a', to: '/x', plays: createPlays(), know: async () => {} };

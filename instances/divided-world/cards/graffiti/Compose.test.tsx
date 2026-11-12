@@ -5,7 +5,7 @@
  * pixels are spray.test.tsx's), and what the drawing holds is read from the attributes it publishes. The cursor is the whoops module's own
  * (cursor.test.tsx); here it is watched.
  */
-import { act, fireEvent, screen } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { ComposeProps } from '../../../../engine/ui/cards/types.ts';
@@ -39,18 +39,18 @@ beforeEach(() => {
 const unders: HTMLElement[] = [];
 afterEach(() => { vi.useRealTimers(); for (const el of unders.splice(0)) el.remove(); });
 
-function mountCompose(o: { readonly mode?: 'cast' | 'set'; readonly submit?: ComposeProps['submit'] } = {}) {
+function mountCompose(o: { readonly submit?: ComposeProps['submit'] } = {}) {
   /* The element around the post's words, which the engine owns and the card draws into. */
   const under = document.createElement('div');
   document.body.append(under);
   unders.push(under);
-  const props = { post: POST, mode: o.mode ?? 'cast', box: BOX, under, submit: vi.fn(o.submit ?? ok), cancel: vi.fn(), hold: vi.fn(), children: <p>The post&apos;s words.</p> } satisfies ComposeProps;
+  const props = { post: POST, box: BOX, under, submit: vi.fn(o.submit ?? ok), cancel: vi.fn(), hold: vi.fn(), ready: vi.fn(), children: <p>The post&apos;s words.</p> } satisfies ComposeProps;
   const world = renderInWorld(<Compose {...props} />);
   return { ...world, props, under, surface: under.querySelector('[data-kb-draw-surface]') as HTMLElement };
 }
 
 function mountDraw(o: Partial<DrawModeProps> = {}) {
-  const props: DrawModeProps = { mode: 'cast', box: BOX, wall: null, covered: 0, most: 4000, dockHost: null, asks: true, submit: vi.fn(ok), cancel: vi.fn(), done: vi.fn(), hold: vi.fn(), onDraft: vi.fn(), overlayStyle: {}, ...o };
+  const props: DrawModeProps = { box: BOX, wall: null, covered: 0, most: 4000, dockHost: null, asks: true, submit: vi.fn(ok), cancel: vi.fn(), done: vi.fn(), hold: vi.fn(), onDraft: vi.fn(), overlayStyle: {}, ...o };
   const world = renderInWorld(<DrawMode {...props} />);
   return { ...world, props, surface: world.container.querySelector('[data-kb-draw-surface]') as HTMLElement };
 }
@@ -66,9 +66,24 @@ function drag(el: HTMLElement, points: readonly (readonly [number, number])[]) {
   act(() => { fireEvent.pointerUp(el, { clientX: lx, clientY: ly, pointerId: 1, pointerType: 'mouse' }); });
 }
 const LINE = [[0.2, 0.3], [0.4, 0.3], [0.6, 0.3]] as const;
-const tag = () => screen.getByRole('button', { name: /^(Tag it|Set it)$/ });
+const tag = () => screen.getByRole('button', { name: 'Tag it' });
 
 describe('Compose, on the post a card is played on', () => {
+  test('it says its screen is up once the dock is mounted, which is when the engine brings the post clear of it', async () => {
+    const { props } = mountCompose();
+    await waitFor(() => expect(document.documentElement.hasAttribute('data-kb-graffiti-dock')).toBe(true));
+    expect(props.ready).toHaveBeenCalledTimes(1);
+  });
+
+  test('the toolbar mounts once at open, in the host it is portaled to, so its mount effect and its fold state are not run twice', async () => {
+    const focus = vi.spyOn(HTMLElement.prototype, 'focus');
+    try {
+      mountCompose();
+      await waitFor(() => expect(document.documentElement.hasAttribute('data-kb-graffiti-dock')).toBe(true));
+      expect(focus.mock.calls.filter(([o]) => (o as FocusOptions | undefined)?.preventScroll === true)).toHaveLength(1);
+    } finally { focus.mockRestore(); }
+  });
+
   test('draws the post\'s words as given, and the drawing and its surface in the element around them, lifted so no other card\'s ink takes a press there', () => {
     const { container, surface, under } = mountCompose();
     expect(container).toHaveTextContent('The post\'s words.');
@@ -81,7 +96,7 @@ describe('Compose, on the post a card is played on', () => {
 
   test('draws nothing before the words\' box is measured, and nothing without the element around them', () => {
     const under = document.createElement('div');
-    const { container } = renderInWorld(<Compose post={POST} mode="cast" box={null} under={under} submit={ok} cancel={() => {}} hold={() => {}}><p>The post&apos;s words.</p></Compose>);
+    const { container } = renderInWorld(<Compose post={POST} box={null} under={under} submit={ok} cancel={() => {}} hold={() => {}} ready={() => {}}><p>The post&apos;s words.</p></Compose>);
     expect(container).toHaveTextContent('The post\'s words.');
     expect(under.querySelector('canvas')).toBeNull();
     expect(screen.getByText('Draw something first')).toBeInTheDocument();
@@ -179,14 +194,6 @@ describe('Compose, on the post a card is played on', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(LOST_ANSWER);
     expect(strokes(surface)).toBe(1);
   });
-
-  test('set on one\'s own post, the button is Set it and sends the same', async () => {
-    const user = userEvent.setup();
-    const { surface, props } = mountCompose({ mode: 'set' });
-    drag(surface, LINE);
-    await user.click(screen.getByRole('button', { name: 'Set it' }));
-    expect(props.submit).toHaveBeenCalledTimes(1);
-  });
 });
 
 describe('a stencil', () => {
@@ -241,7 +248,7 @@ describe('review fixes', () => {
     Object.defineProperty(cell, 'clientWidth', { configurable: true, value: 600 });
     Object.defineProperty(cell, 'clientHeight', { configurable: true, value: 200 });
     const submit = vi.fn(ok);
-    renderInWorld(<Compose post={POST} mode="cast" box={{ w: 600, h: 22 }} under={under} submit={submit} cancel={() => {}} hold={() => {}}><p>One line.</p></Compose>);
+    renderInWorld(<Compose post={POST} box={{ w: 600, h: 22 }} under={under} submit={submit} cancel={() => {}} hold={() => {}} ready={() => {}}><p>One line.</p></Compose>);
     const surface = under.querySelector('[data-kb-draw-surface]') as HTMLElement;
     expect(surface.style.width).toBe('600px');
     expect(surface.style.height).toBe('200px');
@@ -307,7 +314,7 @@ describe('review fixes', () => {
     const under = document.createElement('div');
     document.body.append(under);
     unders.push(under);
-    const { container } = renderInWorld(<Compose post={POST} mode="cast" box={{ w: 601, h: 400 }} under={under} submit={ok} cancel={() => {}} hold={() => {}}><p>x</p></Compose>);
+    const { container } = renderInWorld(<Compose post={POST} box={{ w: 601, h: 400 }} under={under} submit={ok} cancel={() => {}} hold={() => {}} ready={() => {}}><p>x</p></Compose>);
     void container;
     drag(under.querySelector('[data-kb-draw-surface]') as HTMLElement, LINE);
     const painted = (vi.mocked(spray.paintWall).mock.calls.at(-1)![3][0]!.payload as { strokes: { aspect: number }[] }).strokes[0]!.aspect;

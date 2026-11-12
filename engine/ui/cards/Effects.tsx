@@ -287,8 +287,8 @@ function ComposeSlot({ composing, Compose, post, play, body, children }: {
     return () => { alive.current = false; setTimeout(() => { if (!alive.current) play.dropCompose(composing); }, 0); };
   }, [play, composing]);
   return (
-    <div className="kb-compose-slot" data-kb-compose={composing.mode}>
-      <Compose post={post} mode={composing.mode} box={box} under={body} submit={play.submitCompose} cancel={play.cancelCompose} hold={play.holdCompose}>{children}</Compose>
+    <div className="kb-compose-slot">
+      <Compose post={post} box={box} under={body} submit={play.submitCompose} cancel={play.cancelCompose} hold={play.holdCompose} ready={play.composeReady}>{children}</Compose>
       {/* Esc and Cancel do nothing while the play is out; this is where a sighted player sees why (the status says it aloud). */}
       {play.sending && <p className="kb-notice">Your play is on its way.</p>}
     </div>

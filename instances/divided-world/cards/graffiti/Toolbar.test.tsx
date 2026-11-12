@@ -4,19 +4,19 @@
  * says and calls: the controls are reachable by Tab and named, the cans and the caps are radiogroups with arrow keys, and Tag it says why it is
  * not ready.
  */
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
-import { describe, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { CANS, type Can, type Cap } from '../graffiti.ts';
 import { STENCIL_KEYS, type StencilKey } from './stencils.ts';
-import { Toolbar, type ToolbarProps } from './Toolbar.tsx';
+import { dockHostOf, Toolbar, type ToolbarProps } from './Toolbar.tsx';
 
 const EMPTY = { wall: 3100, after: 3100, most: 4000, over: false };
 
 function propsOf(over: Partial<ToolbarProps> = {}): ToolbarProps {
   return {
-    mode: 'cast', can: 'cyan', onCan: vi.fn(), cap: 'stock', onCap: vi.fn(), tab: 'spray', onTab: vi.fn(), stencil: null, onStencil: vi.fn(), spot: 4, onSpot: vi.fn(),
+    can: 'cyan', onCan: vi.fn(), cap: 'stock', onCap: vi.fn(), tab: 'spray', onTab: vi.fn(), stencil: null, onStencil: vi.fn(), spot: 4, onSpot: vi.fn(),
     meter: EMPTY, hasDraft: false, canUndo: false, onUndo: vi.fn(), onCancel: vi.fn(), onSubmit: vi.fn(), busy: false, refusal: null, notice: null,
     asking: null, onLeave: vi.fn(), onStay: vi.fn(), ...over,
   };
@@ -43,8 +43,8 @@ describe('every control is reachable by Tab and named', () => {
     const user = userEvent.setup();
     render(<Toolbar {...propsOf({ canUndo: true, hasDraft: true })} />);
     const seen: (string | null)[] = [];
-    for (let i = 0; i < 6; i++) { await user.tab(); seen.push(focusedName()); }
-    expect(seen).toEqual(['Spray', 'Cyan', 'Stock', 'Undo', 'Cancel', 'Tag it']);
+    for (let i = 0; i < 7; i++) { await user.tab(); seen.push(focusedName()); }
+    expect(seen).toEqual(['Hide tools', 'Spray', 'Cyan', 'Stock', 'Undo', 'Cancel', 'Tag it']);
     for (const control of [...screen.getAllByRole('button'), ...screen.getAllByRole('radio'), ...screen.getAllByRole('tab')]) expect(control).toHaveAccessibleName();
   });
 
@@ -52,8 +52,8 @@ describe('every control is reachable by Tab and named', () => {
     const user = userEvent.setup();
     render(<Toolbar {...propsOf({ tab: 'stencils', stencil: 'crown', hasDraft: true })} />);
     const seen: (string | null)[] = [];
-    for (let i = 0; i < 6; i++) { await user.tab(); seen.push(focusedName()); }
-    expect(seen).toEqual(['Stencils', 'Crown', 'Cyan', 'Middle center', 'Cancel', 'Tag it']);
+    for (let i = 0; i < 7; i++) { await user.tab(); seen.push(focusedName()); }
+    expect(seen).toEqual(['Hide tools', 'Stencils', 'Crown', 'Cyan', 'Middle center', 'Cancel', 'Tag it']);
     for (const control of [...screen.getAllByRole('button'), ...screen.getAllByRole('radio'), ...screen.getAllByRole('tab')]) expect(control).toHaveAccessibleName();
   });
 
@@ -68,6 +68,7 @@ describe('every control is reachable by Tab and named', () => {
   test('the arrow keys move between the tabs', async () => {
     const user = userEvent.setup();
     render(<Kept />);
+    await user.tab();
     await user.tab();
     await user.keyboard('{ArrowRight}');
     expect(screen.getByRole('tab', { name: 'Stencils' })).toHaveAttribute('aria-selected', 'true');
@@ -180,12 +181,6 @@ describe('Tag it', () => {
     expect(onSubmit).toHaveBeenCalledTimes(1);
   });
 
-  test('is Set it when the card is set face down', () => {
-    render(<Toolbar {...propsOf({ mode: 'set' })} />);
-    expect(screen.getByRole('button', { name: 'Set it' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Tag it' })).toBeNull();
-  });
-
   test('on the Stencils tab with nothing chosen it asks for a stencil', () => {
     render(<Toolbar {...propsOf({ tab: 'stencils' })} />);
     expect(screen.getByText('Choose a stencil first')).toBeInTheDocument();
@@ -270,5 +265,138 @@ describe('the Stencils tab', () => {
     expect(screen.getByRole('radio', { name: 'Middle left' })).toBeChecked();
     fireEvent.keyDown(screen.getByRole('radio', { name: 'Middle left' }), { key: 'End' });
     expect(screen.getByRole('radio', { name: 'Bottom right' })).toBeChecked();
+  });
+
+  test('focusOnMount focuses the first control without scrolling the page away from the post', () => {
+    const focus = vi.spyOn(HTMLElement.prototype, 'focus');
+    try {
+      render(<Toolbar {...propsOf({ focusOnMount: true })} />);
+      expect(focus).toHaveBeenCalledWith({ preventScroll: true });
+    } finally { focus.mockRestore(); }
+  });
+
+  test('the dock measures the thread column beside its own height, so a wide dock lines up with the posts and the page keeps its foot clear', () => {
+    const root = document.documentElement;
+    const rect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      const r = this.classList.contains('kb-acts') ? { left: 120, right: 920 } : { left: 0, right: 0 };
+      return { ...r, top: 0, bottom: 0, width: r.right - r.left, height: 0, x: r.left, y: 0, toJSON: () => ({}) } as DOMRect;
+    });
+    const width = vi.spyOn(root, 'clientWidth', 'get').mockReturnValue(1000);
+    try {
+      const { unmount } = render(<div className="kb-acts"><Toolbar {...propsOf()} /></div>);
+      expect(root.style.getPropertyValue('--kb-graffiti-dock-left')).toBe('120px');
+      expect(root.style.getPropertyValue('--kb-graffiti-dock-right')).toBe('80px');
+      expect(root.style.getPropertyValue('--kb-graffiti-dock-h')).not.toBe('');
+      unmount();
+      for (const v of ['--kb-graffiti-dock-left', '--kb-graffiti-dock-right', '--kb-graffiti-dock-h']) expect(root.style.getPropertyValue(v)).toBe('');
+    } finally { rect.mockRestore(); width.mockRestore(); }
+  });
+
+  /* The HUD's peek: boxes are mocked by class (jsdom has no layout). The dock is 800 to 920 wide, 700 to 800 tall. */
+  describe('the dock keeps clear of the HUD\'s peek', () => {
+    type Box = { left: number; right: number; top: number; bottom: number };
+    const boxes = new Map<string, Box>();
+    let rect: ReturnType<typeof vi.spyOn>;
+    const peekVar = () => document.documentElement.style.getPropertyValue('--kb-graffiti-dock-peek');
+    const tagVar = () => document.documentElement.style.getPropertyValue('--kb-graffiti-dock-tag');
+    beforeEach(() => {
+      boxes.clear();
+      boxes.set('kb-graffiti-dock', { left: 400, right: 920, top: 700, bottom: 800 });
+      rect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+        const b = [...boxes].find(([c]) => this.classList.contains(c) || (c.startsWith('#') && this.id === c.slice(1)))?.[1] ?? { left: 0, right: 0, top: 0, bottom: 0 };
+        return { ...b, width: b.right - b.left, height: b.bottom - b.top, x: b.left, y: b.top, toJSON: () => ({}) } as DOMRect;
+      });
+    });
+    afterEach(() => { rect.mockRestore(); document.body.innerHTML = ''; });
+
+    test('a hidden copy of the tag first in the DOM is ignored and the visible one is measured', async () => {
+      document.body.innerHTML = '<div id="hud"><span class="kb-hand-armed" id="hidden"></span><span class="kb-hand-armed" id="seen"></span></div>';
+      boxes.set('#seen', { left: 760, right: 900, top: 710, bottom: 740 });
+      const { unmount } = render(<Toolbar {...propsOf()} />);
+      await waitFor(() => expect(tagVar()).toBe('172px'));
+      unmount();
+    });
+
+    test('a tag that does not overlap the dock vertically adds nothing', () => {
+      document.body.innerHTML = '<span class="kb-hand-armed" id="far"></span>';
+      boxes.set('#far', { left: 760, right: 900, top: 100, bottom: 130 });
+      const { unmount } = render(<Toolbar {...propsOf()} />);
+      expect(tagVar()).toBe('');
+      unmount();
+    });
+
+    test('a peek card added after mount sets the variable and removing it clears it; unmount removes the variables', async () => {
+      const { unmount } = render(<Toolbar {...propsOf()} />);
+      expect(peekVar()).toBe('');
+      boxes.set('kb-hand-peek-card', { left: 780, right: 940, top: 720, bottom: 790 });
+      act(() => { const c = document.createElement('div'); c.className = 'kb-hand-peek-card'; document.body.append(c); });
+      await waitFor(() => expect(peekVar()).toBe('152px'));
+      act(() => { document.querySelector('.kb-hand-peek-card')!.remove(); });
+      await waitFor(() => expect(peekVar()).toBe(''));
+      act(() => { const c = document.createElement('div'); c.className = 'kb-hand-peek-card'; document.body.append(c); });
+      await waitFor(() => expect(peekVar()).toBe('152px'));
+      unmount();
+      for (const v of ['--kb-graffiti-dock-h', '--kb-graffiti-dock-peek', '--kb-graffiti-dock-tag']) expect(document.documentElement.style.getPropertyValue(v)).toBe('');
+    });
+  });
+
+  test('the dock is hosted by the posts\' table, never inside a post, whose isolation would trap its z-index under the posts that follow', () => {
+    document.body.innerHTML = '<div class="kb-acts"><article class="kb-act" style="isolation: isolate"><div class="kb-act-main"><p id="words"></p></div></article></div><div id="loose"></div>';
+    const words = document.getElementById('words');
+    expect(dockHostOf(words)).toBe(document.querySelector('.kb-acts'));
+    /* Off the thread's table, the post itself; with neither, nothing. */
+    document.body.innerHTML = '<article class="kb-act"><p id="words"></p></article>';
+    expect(dockHostOf(document.getElementById('words'))).toBe(document.querySelector('.kb-act'));
+    expect(dockHostOf(document.body)).toBeNull();
+    expect(dockHostOf(null)).toBeNull();
+  });
+});
+
+describe('the dock collapses to its header', () => {
+  const toggle = () => screen.getByRole('button', { name: /^(Hide|Show) tools$/ });
+
+  test('a disclosure button in the header, open by default, controls the tools', () => {
+    render(<Toolbar {...propsOf()} />);
+    expect(toggle()).toHaveTextContent('Hide tools');
+    expect(toggle()).toHaveAttribute('aria-expanded', 'true');
+    const tools = document.getElementById(toggle().getAttribute('aria-controls')!)!;
+    expect(tools).not.toBeNull();
+    expect(tools).toContainElement(screen.getByRole('tablist'));
+    expect(tools).toContainElement(screen.getByRole('radiogroup', { name: 'Can' }));
+  });
+
+  test('collapsed, the tools leave the accessibility tree and Cancel, Tag it and the reason stay', async () => {
+    const user = userEvent.setup();
+    const onCancel = vi.fn();
+    render(<Toolbar {...propsOf({ onCancel })} />);
+    await user.click(toggle());
+    expect(toggle()).toHaveAttribute('aria-expanded', 'false');
+    expect(toggle()).toHaveTextContent('Show tools');
+    expect(screen.queryByRole('tab')).toBeNull();
+    expect(screen.queryByRole('radio')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Tag it' })).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByText('Draw something first')).toBeVisible();
+    expect(screen.getByText('Cyan')).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(onCancel).toHaveBeenCalled();
+  });
+
+  test('opened again, the same can, cap and tab are there, and a keyboard works the button', async () => {
+    const user = userEvent.setup();
+    render(<Kept />);
+    await user.click(screen.getByRole('radio', { name: 'Red' }));
+    await user.click(screen.getByRole('radio', { name: 'Fat' }));
+    await user.click(screen.getByRole('tab', { name: 'Stencils' }));
+    toggle().focus();
+    await user.keyboard('{Enter}');
+    expect(screen.queryByRole('tab')).toBeNull();
+    await user.keyboard(' ');
+    expect(toggle()).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('tab', { name: 'Stencils' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('radio', { name: 'Red' })).toBeChecked();
+    await user.click(screen.getByRole('tab', { name: 'Spray' }));
+    expect(screen.getByRole('radio', { name: 'Fat' })).toBeChecked();
   });
 });
