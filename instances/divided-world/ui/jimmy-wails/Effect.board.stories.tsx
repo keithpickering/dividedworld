@@ -24,6 +24,7 @@ import { useKayfa } from '../../../../engine/ui/context.tsx';
 import type { Fake } from '../../../../engine/ui/data/fake.ts';
 import { useLocation } from '../../../../engine/ui/router.tsx';
 import { LoadedThread } from '../../../../engine/ui/loaded.tsx';
+import { PLATES } from './plates.ts';
 
 type Case = 'black-short' | 'grey-short' | 'away-short' | 'away-long' | 'red-short' | 'red-long' | 'full-short' | 'pinstripe-short' | 'pinstripe-long' | 'blue-short' | 'blue-long' | 'close-short' | 'close-long' | 'dark-short' | 'dark-long' | 'three' | 'wall' | 'closed' | 'earlier' | 'origin' | 'short';
 
@@ -38,7 +39,8 @@ const SHORT = ['Please, a few Aura keep the Mushroom Kingdom online.', 'The Thwo
 /** Exactly 200 characters. */
 const LONG = 'Every year I ask, and every year the Mushroom Kingdom answers with a polite silence. This year I only need enough Aura to keep the lights on, the pipes warm and the Goombas fed, so, please, read this.';
 const DONORS = ['Gloomba', 'Spritey', 'Toadette', 'Mrs. Hooligan', 'Wiggler', 'Koopa Kid', 'Blooper', 'Lakitu Jr.', 'Bob-omb', 'Thwomp', 'Shy Guy', 'Boo Hoo', 'Pokey', 'Chain Chomp', 'Cheep Cheep', 'Fuzzy', 'Podoboo', 'Rex', 'Dry Bones', 'Monty Mole', 'Birdo', 'Petey', 'Hammer Bro', 'Piranha', 'Amazing Flyin', 'Magikoopa'];
-const PLATE_KEYS = ['blue-shirt', 'close-up', 'dark-logo', 'black-shirt', 'grey-jacket', 'looking-away', 'red-wall', 'full-length', 'pinstripe'] as const;
+/** The pool's keys in its own order (plates.ts), so a case's `plate` is a plate's place in the pool. */
+const PLATE_KEYS = PLATES.map((p) => p.key);
 const DAY = 86_400_000;
 
 const SINGLE: Partial<Record<Case, { readonly plate: number; readonly long: boolean }>> = {

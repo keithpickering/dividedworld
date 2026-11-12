@@ -3,7 +3,7 @@ Jimmy Wails's later plates, made from their photographs (CREDITS.md names each o
 
     python3 make.py <folder of sources> <folder to write into>
 
-A source is the photograph's 960-pixel-wide rendering from Wikimedia Commons, saved under the name in SOURCES. Each plate is a crop
+A source is the photograph's 960-pixel-wide rendering from Wikimedia Commons, saved under the name PLATES gives it. Each plate is a crop
 scaled to 300 pixels high, with the edge beside its words faded into the ground the words sit on, as the Wikimedia Foundation's own
 banners faded theirs. A plate whose words sit to the picture's left carries that ground in the file; one whose words sit to its right
 gets a panel from plates.ts. The script prints each plate's size and, for a box given in BOXES, the darkest and lightest color under
