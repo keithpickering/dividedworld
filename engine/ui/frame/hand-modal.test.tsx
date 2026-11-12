@@ -194,7 +194,7 @@ describe('the hand on the Main board, reopened while it gathers', () => {
     expect(drawer).not.toHaveAttribute('inert');
     expect(document.querySelector('.kb-hud')).toHaveAttribute('data-kb-hand-open');
     /* The stopped gather's committed pose is not left on the cards for the deal to start from or to keep: each card is back on its slot's stylesheet. */
-    await act(async () => { for (const r of dealing) r.settle(); });
+    await act(async () => { for (const r of dealing) r.settle(); await new Promise((r) => setTimeout(r, 50)); });
     for (const li of drawer.querySelectorAll<HTMLElement>('li.kb-hand-card')) {
       expect(li.style.opacity).toBe('');
       expect(li.style.transform).toBe('');
