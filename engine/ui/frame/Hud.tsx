@@ -363,12 +363,9 @@ export function Hud() {
         li.style.transition = 'none';
         const rest = () => li.style.removeProperty('transition');
         if (handOpen) {
-          /* The entrance has no end callback: the play removes the card's inline transform when it lands, and that is when the ease comes back. */
-          let wrote = false;
-          const watch = new MutationObserver(() => { if (li.style.transform !== '') wrote = true; else if (wrote) { watch.disconnect(); rest(); } });
-          watch.observe(li, { attributes: true, attributeFilter: ['style'] });
-          const stop = playIn(li, p);
-          runs.push(() => { stop(); watch.disconnect(); rest(); });
+          /* When the card lands the play removes its inline transform, and the stylesheet's ease for the lift comes back. */
+          const stop = playIn(li, p, rest);
+          runs.push(() => { stop(); rest(); });
           return;
         }
         runs.push(playOut(li, p, () => { rest(); if (--left === 0) setDrawerLeaving(false); }));

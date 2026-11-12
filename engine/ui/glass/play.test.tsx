@@ -38,6 +38,22 @@ describe('the drawer plays', () => {
     stop();
     expect(fakes[0]!.stop).toHaveBeenCalledTimes(1);
   });
+  test('an entrance calls its end when it lands, after clearing, and not when it was stopped', async () => {
+    const end = vi.fn();
+    el.style.opacity = '0.2';
+    playIn(el, { initial: { opacity: 0 }, animate: { opacity: 1 } } as never, end);
+    expect(end).not.toHaveBeenCalled();
+    fakes[0]!.settle();
+    await flush();
+    expect(end).toHaveBeenCalledTimes(1);
+    expect(el.style.opacity).toBe('');
+    const again = vi.fn();
+    const stop = playIn(el, { initial: { opacity: 0 }, animate: { opacity: 1 } } as never, again);
+    stop();
+    fakes[1]!.settle();
+    await flush();
+    expect(again).not.toHaveBeenCalled();
+  });
   test('an exit that runs to its end clears and ends', async () => {
     const end = vi.fn();
     el.style.opacity = '0.2';

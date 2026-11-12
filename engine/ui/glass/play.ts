@@ -28,8 +28,8 @@ function clear(el: HTMLElement, keys: Iterable<string>) {
 export type Stop = () => void;
 const NOTHING: Stop = () => {};
 
-/** Plays `p`'s entrance on `el`, from `initial` to `animate`. Returns the run's stop. */
-export function playIn(el: HTMLElement, p: MotionProps): Stop {
+/** Plays `p`'s entrance on `el`, from `initial` to `animate`, and calls `end` once it has landed (or failed) and the element is cleared, unless the run was stopped first. Returns the run's stop. */
+export function playIn(el: HTMLElement, p: MotionProps, end?: () => void): Stop {
   if (!p.initial || !p.animate || typeof p.initial === 'string' || typeof p.animate === 'string') return NOTHING;
   const from = split(p.initial).values;
   const { values: to, transition } = split(p.animate);
@@ -37,7 +37,7 @@ export function playIn(el: HTMLElement, p: MotionProps): Stop {
   if (typeof transformOrigin === 'string') el.style.transformOrigin = transformOrigin;
   const frames = Object.fromEntries(Object.keys(rest).map((k) => [k, [from[k] ?? rest[k], rest[k]]]));
   let stopped = false;
-  const done = () => { if (!stopped) clear(el, Object.keys(to)); };
+  const done = () => { if (stopped) return; clear(el, Object.keys(to)); end?.(); };
   try {
     const a = animate(el, frames as never, transition as never);
     a.then(done, done);
