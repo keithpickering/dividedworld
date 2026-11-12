@@ -154,7 +154,7 @@ describe('Divided World\'s cards in the guide, in the glass\'s words about setti
     expect(feelinFab.stack).toBe(3);
     expect(t.summary).toBe("Cast on a thread. Every post there gets one more level of Feelin' Fab's rainbow for a week, and posts written in that time keep it.");
     expect(t.describe).toMatch(/^A Sweet card, rare, cast on a thread from its title\. For a week, every post in the thread is drawn with one more level of Feelin' Fab's rainbow, up to Feelin' Fab's three: /u);
-    expect(t.describe).toContain("It takes none of a post's three Feelin' Fab places. A post written in the thread during that time keeps its extra level for good; every other post loses it when the time is up. One fits on a thread at a time.");
+    expect(t.describe).toContain("It takes none of a post's three Feelin' Fab places. A post written in the thread during that time keeps its extra level after it; every other post loses it when the time is up. If an admin ends the card, every post loses the level. One fits on a thread at a time.");
     expect(ui.hint).toBe("A Feelin' Glam: every post in this thread glows one level more.");
     expect(typeof ui.status === 'function' && [ui.status([{} as never]), ui.status([])]).toEqual(['One more rainbow level here', 'Kept by posts from its week']);
   });

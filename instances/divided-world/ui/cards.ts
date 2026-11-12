@@ -510,7 +510,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
     status: (plays) => (plays.length > 0 ? 'One more rainbow level here' : 'Kept by posts from its week'),
     hint: "A Feelin' Glam: every post in this thread glows one level more.",
     describe: () =>
-      `A Sweet card, ${feelinGlam.rarity}, cast on a thread from its title. For ${spanWords(feelinGlam.lasts!)}, every post in the thread is drawn with one more level of Feelin' Fab's rainbow, up to Feelin' Fab's three: two Feelin' Fabs and a Feelin' Glam make the full prism. It takes none of a post's three Feelin' Fab places. A post written in the thread during that time keeps its extra level for good; every other post loses it when the time is up. One fits on a thread at a time. ${setMoveWords("the quoting post's thread")} It costs nothing more to play.`,
+      `A Sweet card, ${feelinGlam.rarity}, cast on a thread from its title. For ${spanWords(feelinGlam.lasts!)}, every post in the thread is drawn with one more level of Feelin' Fab's rainbow, up to Feelin' Fab's three: two Feelin' Fabs and a Feelin' Glam make the full prism. It takes none of a post's three Feelin' Fab places. A post written in the thread during that time keeps its extra level after it; every other post loses it when the time is up. If an admin ends the card, every post loses the level. One fits on a thread at a time. ${setMoveWords("the quoting post's thread")} It costs nothing more to play.`,
   },
   /*
    * Hall Pass (docs/plans/2026-11-07-face-down-moves-design.md, section 4): Sweet's cyan, as Force Field is. A Gimmick, set face down
