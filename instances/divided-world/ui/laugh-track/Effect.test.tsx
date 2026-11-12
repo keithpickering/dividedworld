@@ -20,7 +20,7 @@ import { renderInWorld } from '../../../../engine/ui/test-world.tsx';
 import { AutocorrectEffect } from '../../cards/autocorrect/Effect.tsx';
 import { sounds } from '../sounds.ts';
 import { seeded } from '../seeded.ts';
-import { DEFAULTS, LaughTrackEffect } from './Effect.tsx';
+import { DEFAULTS, LaughTrackEffect, __resetPointer } from './Effect.tsx';
 import { defaults as instanceDefaults } from '../../settings.ts';
 import type { PlaceSpec } from './watch.ts';
 
@@ -121,6 +121,7 @@ const fakeSoundHub = () => {
 let heard: ReturnType<typeof fakeSoundHub>;
 
 beforeEach(() => {
+  __resetPointer();
   hub.mode = 'fake'; hub.specs = []; hub.offs = []; hub.gone = new Set(); hub.forgets = 0; hub.gameOn = false; hub.quiets = [];
   heard = fakeSoundHub();
   hub.sound = heard as unknown as typeof hub.sound;
@@ -209,6 +210,7 @@ describe('Laugh Track: the gestures', () => {
   test('a mouse that moves onto a place plays its take, marks it heard and says the card is met once', () => {
     const m = mount();
     const [p, q] = pieces();
+    act(() => { move(document.body, 1, 1); });
     act(() => { enter(p!, 10, 10); });
     expect(heard.play).toHaveBeenCalledTimes(1);
     expect(heard.play).toHaveBeenCalledWith(take('boo', 0), PLAYED);
@@ -240,6 +242,7 @@ describe('Laugh Track: the gestures', () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     mount();
     const [p] = pieces();
+    act(() => { move(document.body, 1, 1); });
     act(() => { enter(p!, 10, 10); });
     expect(heard.play).toHaveBeenCalledTimes(1);
     vi.setSystemTime(Date.now() + 1000);
@@ -255,6 +258,7 @@ describe('Laugh Track: the gestures', () => {
     mount({ body: 'Luigi is [b]great[/b] today.', plays: [playOf([{ phrase: 'is great', sound: 'cheer' }])] });
     const [a, b] = pieces();
     expect(a!.getAttribute('data-lt-place')).toBe(b!.getAttribute('data-lt-place'));
+    act(() => { move(document.body, 1, 1); });
     act(() => { enter(a!, 10, 10); });
     expect(heard.play).toHaveBeenCalledTimes(1);
     vi.setSystemTime(Date.now() + 1000);
@@ -318,6 +322,67 @@ describe('Laugh Track: the gestures', () => {
     fireEvent.click(p!);
     expect(heard.play).toHaveBeenCalledTimes(1);
     expect(hub.quiets).toHaveLength(1);
+  });
+});
+
+describe('Laugh Track: where the mouse last was (the design\'s section 1, "The mouse must move")', () => {
+  test('a post mounted later knows where the mouse last was: its place entered there plays nothing, a move over it plays', () => {
+    mount();
+    act(() => { move(document.body, 10, 10); });
+    mount();
+    const b = pieces()[5];
+    expect(pieces()).toHaveLength(10);
+    act(() => { enter(b!, 10, 10); });
+    expect(heard.play).not.toHaveBeenCalled();
+    act(() => { move(b!, 11, 10); });
+    expect(heard.play).toHaveBeenCalledTimes(1);
+  });
+
+  test('with no last position at all, an enter fires nothing and records where it was; a move there does nothing; a move elsewhere plays once', () => {
+    mount();
+    const [p] = pieces();
+    act(() => { enter(p!, 50, 50); });
+    expect(heard.play).not.toHaveBeenCalled();
+    act(() => { move(p!, 50, 50); });
+    expect(heard.play).not.toHaveBeenCalled();
+    act(() => { move(p!, 51, 50); });
+    expect(heard.play).toHaveBeenCalledTimes(1);
+    act(() => { move(p!, 52, 50); });
+    expect(heard.play).toHaveBeenCalledTimes(1);
+  });
+
+  test('an enter that fires is not fired again by the same-position move that follows it', () => {
+    mount();
+    const [p] = pieces();
+    act(() => { move(document.body, 1, 1); });
+    act(() => { enter(p!, 20, 20); move(p!, 20, 20); });
+    expect(heard.play).toHaveBeenCalledTimes(1);
+  });
+
+  test('one pointermove listener serves every post, and it is gone when the last post is', () => {
+    const add = vi.spyOn(document, 'addEventListener');
+    const remove = vi.spyOn(document, 'removeEventListener');
+    const m = mount({ posts: 2 });
+    expect(add.mock.calls.filter((c) => c[0] === 'pointermove')).toHaveLength(1);
+    expect(remove.mock.calls.filter((c) => c[0] === 'pointermove')).toHaveLength(0);
+    m.unmount();
+    expect(remove.mock.calls.filter((c) => c[0] === 'pointermove')).toHaveLength(1);
+  });
+
+  test('a place whose pieces were removed under the mouse can be fired again by a fresh enter', () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const m = mount();
+    const [p] = pieces();
+    act(() => { move(document.body, 1, 1); });
+    act(() => { enter(p!, 10, 10); });
+    expect(heard.play).toHaveBeenCalledTimes(1);
+    /* The pieces go while the mouse is over them: no pointerleave comes. */
+    m.edit('Mario wins.');
+    expect(pieces()).toHaveLength(0);
+    m.edit(BODY);
+    vi.setSystemTime(Date.now() + 1000);
+    act(() => { enter(pieces()[0]!, 30, 30); });
+    expect(heard.play).toHaveBeenCalledTimes(2);
   });
 });
 
