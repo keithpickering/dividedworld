@@ -1,7 +1,8 @@
 /**
  * The still contract (docs/plans/2026-11-03-effect-history-plan.md, Task 7; engine/ui/cards/types.ts, `EffectProps.still`): every card
  * of the instance that a moment draws (`drawnInMoment`) and that has an effect is drawn under `still` without saving, releasing,
- * meeting or holding the screen, however a reader presses and drags across it. Today that is Whoops! and Feelin' Fab (and Glitter Bomb,
+ * meeting or holding the screen, however a reader presses and drags across it. Today that is Whoops!, Feelin' Fab, and the two veils, Whodunnit? and Blind Study,
+ * which last (and Glitter Bomb,
  * which lasts, though it lands beyond a post and so is named in a moment, never drawn); a card added later that skips the contract fails
  * here. A vitest file, since it draws the effects: cards.test.ts runs under node:test with no document.
  */
@@ -32,12 +33,12 @@ afterEach(() => {
 /* Glitter Bomb lands beyond a post, so a moment names it and never draws it; if one is ever drawn (a post's own Effect, still), it keeps the contract too. */
 const drawn = instanceUi.cards.filter((c) => c.Effect && (c.key === 'glitter-bomb' || drawnInMoment(instance.cards.find((r) => r.key === c.key)!)));
 
-test('the instance has cards a moment draws, Whoops! and Feelin\' Fab among them, and Glitter Bomb is held to the same contract', () => {
-  expect(drawn.map((c) => c.key)).toEqual(expect.arrayContaining(['whoops', 'feelin-fab', 'glitter-bomb']));
+test('the instance has cards a moment draws, Whoops!, Feelin\' Fab and both veils among them, and Glitter Bomb is held to the same contract', () => {
+  expect(drawn.map((c) => c.key)).toEqual(expect.arrayContaining(['whoops', 'feelin-fab', 'glitter-bomb', 'whodunnit', 'blind-study']));
 });
 
 test.each(drawn.map((c) => [c.key, c] as const))('%s, drawn still, saves, releases, meets and holds nothing, whatever is pressed', (key, card) => {
-  const plays: CardPlay[] = [1, 2].map((n) => ({ id: `${key}-${n}`, card: key, layer: n, caster: 'c2', message: '', config: { color: '#ffd93d', seed: n }, playedAt: `2026-11-03T12:0${n}:00.000Z`, post: POST.id }));
+  const plays: CardPlay[] = [1, 2].map((n) => ({ id: `${key}-${n}`, card: key, layer: n, caster: 'c2', message: '', config: { color: '#ffd93d', seed: n }, playedAt: `2026-11-03T12:0${n}:00.000Z`, post: POST.id, ends: n === 1 ? '2026-11-06T12:00:00.000Z' : '2099-01-01T00:00:00.000Z' }));
   const save = vi.fn(async (play: string) => ({ ok: true as const, value: { play, savedAt: '2026-11-03T13:00:00.000Z' } }));
   const release = vi.fn(async (play: string) => ({ ok: true as const, value: { play, releasedAt: '2026-11-03T13:00:00.000Z' } }));
   const met = vi.fn();
