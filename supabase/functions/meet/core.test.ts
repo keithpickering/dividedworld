@@ -82,6 +82,9 @@ interface World {
   machine?: unknown[];
   /** The groups as meeting_context() lists them (0131): the conferred catalog, and the characters that are capped or held. */
   groups?: { conferred: { key: string; name: string; tone: string }[]; characters: { id: string; capped: boolean; held: boolean }[] };
+  /** The Boss's trophies as boss_trophies() lists them (0208), and what trophy_award_facts says stands. */
+  trophies?: { key: string; name: string; belt: boolean; holder: { id: string; name: string } | null }[];
+  trophyFacts?: { barred: string[]; given: string[] };
   /** What the apply says it returned from the Mods (default: nothing is said). */
   applyThrows?: boolean;
   /** What meeting_context() says of the Boss's arc (0230): the beats unlocked and not played, and the kinds held back; absent: an older database. */
@@ -116,6 +119,8 @@ function fakeDb(w: World = {}) {
         case 'staff_memory_at': return (w.memories?.[String(args.staff)] ? (w.memoryAt ?? '2026-10-31T09:23:00.000Z') : null) as T;
         case 'staff_memory_latest': return (w.memories?.[String(args.staff)] ?? null) as T;
         case 'bank_now': return (w.bank ?? 5.9) as T;
+        case 'boss_trophies': return (w.trophies ?? []) as T;
+        case 'trophy_award_facts': return (w.trophyFacts ?? { barred: [], given: [] }) as T;
         case 'public_characters': return (args.ids as string[]).filter((id) => (w.publicIds ?? [ANN, BOB]).includes(id)) as T;
         case 'apply_meeting':
           if (w.applyThrows) throw new DatabaseError('apply_meeting: the moves and allowances cost 9 and the bank holds 2', '23514', 400);
@@ -973,6 +978,33 @@ test('a new Boss is handed its predecessor\'s facts and note as its own to weigh
   await run(none.db, nm.models, quiet, SLOT, clock, noFeeds);
   assert.doesNotMatch(nm.chats[0]!.messages[0]!.content, /Your predecessor/);
 });
+
+
+test('the Boss\'s trophies are in its reference text; an award is queued as a favor, and the limits drop one the database says cannot be given', async () => {
+  const trophies = [{ key: 'pet', name: 'Pet', belt: false, holder: null }, { key: 'belt', name: 'Belt', belt: true, holder: { id: BOB, name: 'Bob' } }];
+  const d = fakeDb({ trophies, trophyFacts: { barred: [], given: [`pet:${BOB}`] } });
+  const live = { go_live_at: new Date(NOW + 30 * H).toISOString(), expires_in_hours: 24, why: 'Deserved.' };
+  const m = fakeModels(answer([
+    { kind: 'awardTrophy', params: { trophy: 'pet', character: ANN }, ...live },
+    { kind: 'awardTrophy', params: { trophy: 'pet', character: BOB }, ...live },
+    { kind: 'awardTrophy', params: { trophy: 'hat', character: ANN }, ...live },
+    { kind: 'awardTrophy', params: { trophy: 'belt', character: BOB }, ...live },
+  ]));
+  const out = await run(d.db, m.models, quiet, SLOT, clock, noFeeds);
+  assert.equal(out.status, 'ok', JSON.stringify(out));
+  const text = m.chats[0]!.messages[0]!.content;
+  assert.match(text, /## Trophies you may give/);
+  assert.match(text, /- belt: Belt \(a belt, held by Bob\)/);
+  assert.deepEqual(d.calls.find((c) => c.fn === 'trophy_award_facts')!.args.awards.map((a: any) => `${a.trophy}:${a.character}`), [`pet:${ANN}`, `pet:${BOB}`, `hat:${ANN}`, `belt:${BOB}`]);
+  const moves = d.state.applied[0]!.payload.moves;
+  assert.deepEqual(moves.map((x: any) => x.params), [{ trophy: 'pet', character: ANN }]);
+  assert.ok(!('demand' in moves[0]), 'a favor is queued with no demand key at all, not a null');
+  // No award named: the database is not asked what stands.
+  const plain = fakeDb({ trophies });
+  await run(plain.db, fakeModels(answer([])).models, quiet, SLOT, clock, noFeeds);
+  assert.equal(plain.count('trophy_award_facts'), 0);
+});
+
 
 // The meeting is a call for each part (provider-schemas design, section 4): moves, bundle, staff, then self, each shown the earlier answers. The bundle is a part of its own because the moves part is 39 of the provider's 40 properties.
 const partOf = (r: ChatRequest): MeetingPartKey => MEETING_PARTS.find((p) => p.fields.every((f) => f in ((r.schema as any).properties ?? {})))!.key;

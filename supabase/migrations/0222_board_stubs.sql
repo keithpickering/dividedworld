@@ -27,6 +27,8 @@
 -- scan of moves: the page costs what that board's own departures cost, whatever the instance's history. The index index_page reads is unchanged (boards_now's closed is computed once a board).
 -- Masks. A move, the board a thread is on and its title are public; nothing here is computed from who owns a character, a class or a reaction.
 -- Append-only. No Act is touched; the new table is written once a row and never updated.
+--
+-- Ported onto main (merge of #449 Cosmetics, migrations 0205-0213): board_page and index_page: rebuilt on 0210's bodies (main's profile_cosmetics on every face kept); settings_held: on 0213's body, as in 0221.
 
 create table thread_departures (
   act uuid primary key references acts (id),
@@ -178,7 +180,7 @@ begin atomic
                      'id', c.id, 'name', c.name, 'joined', c.joined, 'staff', c.staff, 'office', c.office,
                      'profile', case when f.character is null then null else jsonb_build_object(
                        'title', f.title, 'signature', f.signature, 'avatar_square', f.avatar_square, 'avatar_portrait', f.avatar_portrait,
-                       'square_frame', f.square_frame, 'portrait_frame', f.portrait_frame, 'pip_style', f.pip_style, 'pronouns', f.pronouns) end)), '[]'::jsonb)
+                       'square_frame', f.square_frame, 'portrait_frame', f.portrait_frame, 'pip_style', f.pip_style, 'pronouns', f.pronouns) || profile_cosmetics(f.character) end)), '[]'::jsonb)
                    from characters_public c left join character_profiles f on f.character = c.id
                    where c.id in (select b.last_character from bs b where b.last_character is not null)),
     'presence', presence_box('index', null),
@@ -254,7 +256,7 @@ begin atomic
                      'id', c.id, 'name', c.name, 'joined', c.joined, 'staff', c.staff, 'office', c.office,
                      'profile', case when f.character is null then null else jsonb_build_object(
                        'title', f.title, 'signature', f.signature, 'avatar_square', f.avatar_square, 'avatar_portrait', f.avatar_portrait,
-                       'square_frame', f.square_frame, 'portrait_frame', f.portrait_frame, 'pip_style', f.pip_style, 'pronouns', f.pronouns) end)), '[]'::jsonb)
+                       'square_frame', f.square_frame, 'portrait_frame', f.portrait_frame, 'pip_style', f.pip_style, 'pronouns', f.pronouns) || profile_cosmetics(f.character) end)), '[]'::jsonb)
                    from characters_public c left join character_profiles f on f.character = c.id
                    where c.id in (select id from people where id is not null)),
     'presence', case when p.board is null then null else presence_box('board', p.board) end,
@@ -271,7 +273,7 @@ declare
   shape text;
   phase text;
   pkey text;
-  kinds text[] := array['quote', 'cardOnYours', 'trapStruck', 'trapSprang', 'hint', 'ruling', 'settlement', 'followed', 'update', 'seasonNews', 'cardEnded', 'framed'];
+  kinds text[] := array['quote', 'cardOnYours', 'trapStruck', 'trapSprang', 'hint', 'ruling', 'settlement', 'followed', 'update', 'seasonNews', 'cardEnded', 'framed', 'trophy', 'beltLost', 'beltBack'];
 begin
   why := case new.key
     when 'walletCap' then case when not setting_whole(v, 1) then 'a whole number of hundredths, at least 1' end
@@ -340,6 +342,7 @@ begin
     when 'warnBar' then setting_warnbar(v)
     when 'pronouns' then case when not pronouns_hold(pronouns_lowered(v)) then 'an object of five words of 1 to 12 letters each (an apostrophe or a hyphen between two letters is allowed) and a plural, true or false' end
     when 'apology' then setting_apology(v)
+    when 'cosmetics' then setting_cosmetics(v)
     when 'modelTiers' then case when not coalesce(jsonb_typeof(v) = 'object'
         and jsonb_typeof(v -> 'strong') = 'string' and btrim(v ->> 'strong', E' \t\n\r\f\v') <> ''
         and jsonb_typeof(v -> 'light') = 'string' and btrim(v ->> 'light', E' \t\n\r\f\v') <> '', false)

@@ -29,6 +29,8 @@ import type { ContactScreen } from './contact/Contact.tsx';
 import type { WelcomeScreen } from './welcome/Welcome.tsx';
 import type { QueueScreen } from './admin/Queue.tsx';
 import type { MachineScreen } from './admin/Machine.tsx';
+import type { TrophiesScreen } from './admin/Trophies.tsx';
+import type { Wardrobe } from './wardrobe/Wardrobe.tsx';
 import type { LogScreen } from './log/Log.tsx';
 import type { SettlementScreen } from './log/Settlement.tsx';
 
@@ -57,6 +59,8 @@ export interface GlassScreens {
   readonly welcome: GlassScreen<Props<typeof WelcomeScreen>>;
   readonly queue: GlassScreen<Props<typeof QueueScreen>>;
   readonly machine: GlassScreen<Props<typeof MachineScreen>>;
+  readonly trophies: GlassScreen<Props<typeof TrophiesScreen>>;
+  readonly wardrobe: GlassScreen<Props<typeof Wardrobe>>;
   readonly log: GlassScreen<Props<typeof LogScreen>>;
   readonly settlement: GlassScreen<Props<typeof SettlementScreen>>;
 }
@@ -83,6 +87,8 @@ export function glassRoutes(env: GlassEnv, s: GlassScreens, extras: GlassExtras 
   const ContactC = s.contact.Component;
   const QueueC = s.queue.Component;
   const MachineC = s.machine.Component;
+  const TrophiesC = s.trophies.Component;
+  const WardrobeC = s.wardrobe.Component;
   const LogC = s.log.Component;
   const SettlementC = s.settlement.Component;
   const SettingsC = s.settings.Component;
@@ -110,6 +116,8 @@ export function glassRoutes(env: GlassEnv, s: GlassScreens, extras: GlassExtras 
     { path: '/welcome', ...chunk(s.welcome), render: () => <WelcomeC /> },
     { path: '/admin/queue', load: () => loadQueue(env, s.queue.preload), key: queueKey, render: (_, doc) => <QueueC doc={doc as Props<typeof QueueScreen>['doc']} now={extras.now} /> },
     { path: '/admin/machine', ...chunk(s.machine), render: () => <MachineC /> },
+    { path: '/admin/trophies', ...chunk(s.trophies), render: () => <TrophiesC /> },
+    { path: '/wardrobe', ...chunk(s.wardrobe), render: () => <WardrobeC /> },
     { path: '/log', load: loadLogDoc, key: logKey, render: (_, doc) => <LogC doc={doc as Props<typeof LogScreen>['doc']} /> },
     { path: '/log/settlement', load: loadLogDoc, key: logKey, render: (_, doc) => <SettlementC doc={doc as Props<typeof SettlementScreen>['doc']} /> },
     { path: '/sign-in', ...chunk(s.signIn), render: () => <SignInC mode="sign-in" /> },

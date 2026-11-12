@@ -101,6 +101,7 @@ test('the seed carries the engine\'s catalogs of moves (with whether each is str
     { key: 'pullSlot', structural: false, shapesBoard: false, lasting: false, offices: ['boss'], derived: [] },
     { key: 'repriceSlot', structural: false, shapesBoard: false, lasting: false, offices: ['boss'], derived: [] },
     { key: 'flashSale', structural: false, shapesBoard: false, lasting: false, offices: ['boss'], derived: [] },
+    { key: 'awardTrophy', structural: false, shapesBoard: false, lasting: false, offices: ['boss'], derived: ['trophyName', 'characterName'] },
     { key: 'createBoard', structural: true, shapesBoard: true, lasting: true, offices: ['boss'], derived: [] },
     { key: 'moveThread', structural: false, shapesBoard: false, lasting: true, offices: ['boss'], derived: [] },
     { key: 'mergeBoard', structural: true, shapesBoard: true, lasting: true, offices: ['boss'], derived: [] },
@@ -190,4 +191,22 @@ test('a persona\'s phase days are seeded as phaseAt reads them: whole, from 1 to
   assert.deepEqual(days(PHASE_CAPS.honeymoon.days, 7), { honeymoon: PHASE_CAPS.honeymoon.days, meltdown: 7 });
   assert.equal(PHASE_CAPS.honeymoon.days, 42, 'SQL\'s arc_season_span cuts at 42 too');
   assert.equal(PHASE_CAPS.meltdown.days, 42, 'SQL\'s arc_season_span cuts at 42 too');
+});
+
+test('the seed carries the trophy catalog: the kinds with their words and belts, the three places, the Boss\'s kinds and the met demand\'s (0206)', () => {
+  const { trophies } = instanceSeed(instance);
+  assert.deepEqual(trophies.kinds.map((k) => k.key), instance.trophies.kinds.map((k) => k.key));
+  assert.deepEqual(trophies.kinds.filter((k) => k.belt).map((k) => k.key), instance.trophies.kinds.filter((k) => k.belt).map((k) => k.key), 'a belt is said as a belt');
+  for (const k of trophies.kinds) assert.equal(typeof k.belt, 'boolean');
+  assert.deepEqual(trophies.seasonPlaces, [...instance.trophies.seasonPlaces]);
+  assert.deepEqual(trophies.boss, [...instance.trophies.boss]);
+  assert.equal(trophies.demandMet, instance.trophies.demandMet);
+  assert.ok(trophies.kinds.every((k) => !k.key.startsWith('made-')), 'an instance key never begins with the admin page\'s prefix');
+});
+
+test('the seed carries the instance\'s Random Event lines, each with its key, outcome and text (0207)', () => {
+  const { eventLines } = instanceSeed(instance);
+  assert.ok(eventLines.length > 0, 'the instance has event lines');
+  assert.deepEqual(eventLines.map((l) => [l.key, l.outcome, l.text]), instance.events.lines.map((l) => [l.key, l.outcome, l.text]));
+  assert.ok(['line', 'gear', 'card'].every((o) => eventLines.some((l) => l.outcome === o)), 'every outcome has a line to say');
 });

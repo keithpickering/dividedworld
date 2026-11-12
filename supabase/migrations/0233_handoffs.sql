@@ -24,6 +24,8 @@
 -- Port from main (#486, supabase/migrations/0193_meeting_parts.sql, which now runs before this one): apply_meeting writes the Boss's staff_memory row only when the payload's `memory` is an object, and its
 -- staff_profiles row only when `profile` is, so a part of the meeting that failed leaves the Boss's memory or profile as it was (both tables are append-only, so "as it was" is the last row). Everything else in
 -- apply_meeting is as this file writes it.
+--
+-- Ported onto main (merge of #449 Cosmetics, migrations 0205-0213): settings_held: rebuilt on 0213's body, as in 0221.
 
 create table handoffs (
   id bigint generated always as identity primary key,
@@ -189,7 +191,7 @@ declare
   shape text;
   phase text;
   pkey text;
-  kinds text[] := array['quote', 'cardOnYours', 'trapStruck', 'trapSprang', 'hint', 'ruling', 'settlement', 'followed', 'update', 'seasonNews', 'cardEnded', 'framed'];
+  kinds text[] := array['quote', 'cardOnYours', 'trapStruck', 'trapSprang', 'hint', 'ruling', 'settlement', 'followed', 'update', 'seasonNews', 'cardEnded', 'framed', 'trophy', 'beltLost', 'beltBack'];
 begin
   why := case new.key
     when 'walletCap' then case when not setting_whole(v, 1) then 'a whole number of hundredths, at least 1' end
@@ -261,6 +263,7 @@ begin
     when 'warnBar' then setting_warnbar(v)
     when 'pronouns' then case when not pronouns_hold(pronouns_lowered(v)) then 'an object of five words of 1 to 12 letters each (an apostrophe or a hyphen between two letters is allowed) and a plural, true or false' end
     when 'apology' then setting_apology(v)
+    when 'cosmetics' then setting_cosmetics(v)
     when 'modelTiers' then case when not coalesce(jsonb_typeof(v) = 'object'
         and jsonb_typeof(v -> 'strong') = 'string' and btrim(v ->> 'strong', E' \t\n\r\f\v') <> ''
         and jsonb_typeof(v -> 'light') = 'string' and btrim(v ->> 'light', E' \t\n\r\f\v') <> '', false)

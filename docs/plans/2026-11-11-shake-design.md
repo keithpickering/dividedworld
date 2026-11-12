@@ -49,9 +49,13 @@ of it fades in the air.
 
 The owner's settings are the defaults: thrown with 55%, air drag 7, flutter 50%, hang time 0.6 s.
 
-- **The trigger.** Shake starts at 2,200 CSS px a second of scroll, as today. A full flick shakes about 40 flakes off
-  each Glitter Bomb post in view, over its first 0.4 s, scaled from 40% at the threshold to 100% at twice it. At most
-  400 flakes are in the air across the page (today 160 falling).
+- **The trigger.** Shake starts at 2,200 CSS px a second of scroll, as today. Each scroll event or frame past
+  that speed sheds, off each Glitter Bomb post in view, a number proportional to the distance it scrolled (`|v| ×` the
+  frame's gap, in px) at 0.0354 flakes a px (40 over a 1,130 px pass: a post 130 px tall crossing a view 1,000 px tall),
+  scaled from 40% at the threshold to 100% at twice it. A post's whole pass at a full flick sheds about 40 (30 to 50),
+  at the threshold about 16, whatever the frame rate: the count never depends on elapsed time (a fast pass keeps a post
+  in view for only about four frames). At most 400 flakes are in the air across the page (today 160 falling). Amended
+  2026-11-12 by the owner (section 7): this replaces "about 40 over a flick's first 0.4 s".
 - **The throw.** Each flake is a copy of a settled flake on screen (the post keeps its own; the Shine design's reason
   holds). It leaves at its spot with a vertical speed of `-v × 0.55 × (0.6 to 1.4)`, where `v` is the scroll's speed
   (down positive, so a scroll down throws it up the screen with the post), and a sideways speed of up to 11% of `|v|`
@@ -61,8 +65,9 @@ The owner's settings are the defaults: thrown with 55%, air drag 7, flutter 50%,
   its phase the flake's own). It turns at 6 to 20 radians a second, faster while it moves fast, and its turn makes it
   flash as the cling layer's flakes do.
 - **Landing.** After its hang time (0.6 s × 0.6 to 1.4), a flake lands at the next frame where it is over a landing
-  place: a Glitter Bomb surface, a post cell or the page. A flake that has left the top of the screen comes back down
-  first; one that leaves the bottom or the sides is gone, as glitter thrown off a table is.
+  place: a Glitter Bomb surface, a post cell or the page. A flake that leaves the screen by 10 px, past the top as
+  past the bottom or the sides, is gone, as glitter thrown off a table is; it is culled when it flies off. (Amended
+  2026-11-12 by the owner: the design had a flake above the top coming back down first.)
 - **The cursor.** A flake dropped from the cursor leaves with a sideways speed of up to 20 px a second, falls at 30 to 80
   px a second, and hangs 0.15 to 0.5 s.
 - **Reduced motion.** It shakes nothing and picks nothing up, as today.
@@ -82,8 +87,8 @@ The owner's settings are the defaults: thrown with 55%, air drag 7, flutter 50%,
 - **Chrome with its own ground.** The banner, the nav bar, the thread's head and pager rows and the glass HUD each paint
   a ground of their own, which would hide glitter lying on the page under them. A flake that settles over one keeps
   falling at its settled speed until it is over a post or the page's own ground, or leaves the screen. Those bars are a
-  row or two tall, so the fall is short. This is the one place glitter still falls on, and it is listed for the owner
-  in the PR's design questions.
+  row or two tall, so the fall is short. This is the one place glitter still falls on. The owner answered 2026-11-12
+  ("just the page is fine"): the page's ground is the landing place, and chrome keeps no glitter of its own.
 - **Layout shifts.** Glitter on a post moves with the post. Glitter on the page stays where it landed on the page; if
   the layout above it moves, it may end up beside or under a different post (behind it, since the page lies under the
   posts). That is accepted: it is glitter on the floor.
@@ -120,7 +125,14 @@ The owner's settings are the defaults: thrown with 55%, air drag 7, flutter 50%,
   there are at most the tiles in view that hold glitter, fewer than the 300 flakes and in practice a handful. Each is
   drawn once per landing, never per frame, so a fast scroll over landed glitter draws nothing but the air layer.
 
-## 7. Open
+## 7. Answered
 
-- Whether chrome with its own ground should catch glitter as a post cell does, instead of letting it fall on to the
-  page (section 4). Asked in the PR.
+The owner's answers, 2026-11-12, to the questions this design left open:
+
+- **Chrome with its own ground.** "Just the page is fine": no change. Glitter keeps falling past chrome until it is
+  over a post or the page's ground (section 4).
+- **Above the top.** "Let them fly offscreen and cull them when they do": a flake that leaves the top of the viewport
+  by 10 px is gone, exactly as one that leaves the bottom or the sides (section 3).
+- **How many.** Four a post sounded light; it should be "more about releasing an appropriate number at an appropriate
+  speed according to the velocity of a scroll event that happens while an affected post is in view": the number shed
+  follows the scroll's distance per event, and the flake's own speed already follows `v` (section 3).

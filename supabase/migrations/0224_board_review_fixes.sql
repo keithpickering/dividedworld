@@ -9,6 +9,8 @@
 -- 4. move_thread_names: a waiting or held move names the board the thread is on "as of now"; it is commented so.
 --
 -- Cost: the chain is a handful of boards_now probes, only for a closed board's page or a refused start. Masks: boards and moves are public.
+--
+-- Ported onto main (merge of #449 Cosmetics, migrations 0205-0213): board_page: rebuilt on 0210's body (main's profile_cosmetics on every face kept), as in 0222.
 
 create function board_fallback(in_board uuid) returns uuid
 language sql stable security definer set search_path = public, pg_temp as $$
@@ -134,7 +136,7 @@ begin atomic
                      'id', c.id, 'name', c.name, 'joined', c.joined, 'staff', c.staff, 'office', c.office,
                      'profile', case when f.character is null then null else jsonb_build_object(
                        'title', f.title, 'signature', f.signature, 'avatar_square', f.avatar_square, 'avatar_portrait', f.avatar_portrait,
-                       'square_frame', f.square_frame, 'portrait_frame', f.portrait_frame, 'pip_style', f.pip_style, 'pronouns', f.pronouns) end)), '[]'::jsonb)
+                       'square_frame', f.square_frame, 'portrait_frame', f.portrait_frame, 'pip_style', f.pip_style, 'pronouns', f.pronouns) || profile_cosmetics(f.character) end)), '[]'::jsonb)
                    from characters_public c left join character_profiles f on f.character = c.id
                    where c.id in (select id from people where id is not null)),
     'presence', case when p.board is null then null else presence_box('board', p.board) end,

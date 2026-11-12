@@ -21,6 +21,8 @@
 
 -- The board a thread is on is a public fact (a thread's page and its board's list show it), and it is all the count needs of a thread. thread_list answers it too, but only through
 -- joins that read every Act, which a 21-day count must not pay for. The role reads the thread's id and its board, and nothing else of the row.
+--
+-- Ported onto main (merge of #449 Cosmetics, migrations 0205-0213): settings_held: rebuilt on 0213's body (main's three alert kinds, trophy, beltLost and beltBack, and its 'cosmetics' check kept beside this migration's own).
 grant select (id, board) on threads to kayfabb_digest;
 create policy digest_reads on threads for select to kayfabb_digest using (true);
 
@@ -312,7 +314,7 @@ declare
   shape text;
   phase text;
   pkey text;
-  kinds text[] := array['quote', 'cardOnYours', 'trapStruck', 'trapSprang', 'hint', 'ruling', 'settlement', 'followed', 'update', 'seasonNews', 'cardEnded', 'framed'];
+  kinds text[] := array['quote', 'cardOnYours', 'trapStruck', 'trapSprang', 'hint', 'ruling', 'settlement', 'followed', 'update', 'seasonNews', 'cardEnded', 'framed', 'trophy', 'beltLost', 'beltBack'];
 begin
   why := case new.key
     when 'walletCap' then case when not setting_whole(v, 1) then 'a whole number of hundredths, at least 1' end
@@ -380,6 +382,7 @@ begin
     when 'warnBar' then setting_warnbar(v)
     when 'pronouns' then case when not pronouns_hold(pronouns_lowered(v)) then 'an object of five words of 1 to 12 letters each (an apostrophe or a hyphen between two letters is allowed) and a plural, true or false' end
     when 'apology' then setting_apology(v)
+    when 'cosmetics' then setting_cosmetics(v)
     when 'modelTiers' then case when not coalesce(jsonb_typeof(v) = 'object'
         and jsonb_typeof(v -> 'strong') = 'string' and btrim(v ->> 'strong', E' \t\n\r\f\v') <> ''
         and jsonb_typeof(v -> 'light') = 'string' and btrim(v ->> 'light', E' \t\n\r\f\v') <> '', false)

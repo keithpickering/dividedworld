@@ -18,6 +18,7 @@ test('meet: a good request runs the meeting on the database deps.db made, with m
       case 'staff_career': return { led: [], offices: [] };
       case 'staff_notes_recent': return [];
       case 'bank_now': return 5;
+      case 'boss_trophies': return [];
       default: throw new Error(`the fake database has no ${fn}`);
     }
   }, { fetch: (async (url: unknown) => { fetched.push(String(url)); throw new Error('feed down'); }) as typeof fetch });

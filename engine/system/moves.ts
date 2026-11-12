@@ -91,6 +91,21 @@ export interface MachineLimits {
   /** A flash sale's window in hours, from and to. */
   readonly flashHoursLeast: number;
   readonly flashHoursMost: number;
+  /**
+   * What the Boss's trophy award is held to (cosmetics design, section 4), read from the database by the meeting: the instance's Boss list and what stands now. Left out, no
+   * trophy is on a list, so an award is refused: the limit fails closed.
+   */
+  readonly trophies?: TrophyFacts;
+}
+
+/**
+ * The trophies as an award reads them: the kinds the Boss may give with each belt's holder now, the characters no award may name (staff and retired ones), and the
+ * standing awards of this season as `trophy:character` (lowercase). All of it is public in play: a trophy shows on a postbit, and a belt's holder is on its page.
+ */
+export interface TrophyFacts {
+  readonly boss: readonly { readonly key: string; readonly name: string; readonly belt: boolean; readonly holder: string | null; readonly holderName: string | null }[];
+  readonly barred: ReadonlySet<string>;
+  readonly given: ReadonlySet<string>;
 }
 
 export function machineLimits(economy: Readonly<Record<string, number>> = {}): MachineLimits {
@@ -160,6 +175,8 @@ export interface MoveNames {
   /** The board a `moveThread` took the thread from, or the board a `mergeBoard` closes (and its id, so the sentence can link it), as it is called now. */
   readonly source?: string;
   readonly sourceId?: string;
+  /** A trophy's name, for a move that gives one (params hold only its key). */
+  readonly trophy?: string;
 }
 
 const text = (v: unknown): string => (typeof v === 'string' ? v : '');
@@ -432,7 +449,40 @@ export const MERGE_BOARD: MoveKind = {
   parts: (p, was, tense, names) => [tense === 'plan' ? 'Merge ' : 'Merged ', boardPart(p['board'], was ?? 'a board'), ' into ', boardPart(p['into'], names?.board ?? 'a board')],
 };
 
-export const MOVE_KINDS: readonly MoveKind[] = [RENAME_BOARD, NAME_SUCCESSOR, SET_RULE, CONFER_GROUP, PULL_SLOT, REPRICE_SLOT, FLASH_SALE, CREATE_BOARD, MOVE_THREAD, MERGE_BOARD];
+/**
+ * The Boss gives a character a trophy from the instance's Boss list, or a belt (cosmetics design, section 4). A favor: it carries no demand, and the award is its whole effect,
+ * so the move ends the moment it lands and the trophy stays (an admin can take it back). The limits are the list, the character (not staff, not retired), a trophy that is not a
+ * belt given at most once a season to a character, and a belt never to its holder. The shape is checked here; the list and what stands are `limits.trophies`, read from the
+ * database, and SQL holds the same limits at landing (supabase/migrations/0208_award_trophy_move.sql).
+ */
+export const AWARD_TROPHY: MoveKind = {
+  key: 'awardTrophy',
+  offices: ['boss'],
+  structural: false,
+  shapesBoard: false,
+  lasting: false,
+  askable: true,
+  label: '{role} gave out a trophy',
+  params: { type: 'object', fields: { trophy: { type: 'string', minLength: 1, maxLength: 60 }, character: { type: 'string', minLength: 36, maxLength: 36 } } },
+  uuids: ['character'],
+  check: (g, limits) => {
+    const trophies = limits.trophies;
+    const kind = trophies?.boss.find((t) => t.key === text(g['trophy']));
+    if (!trophies || !kind) return { path: 'trophy', predicate: 'onBossList' };
+    const who = text(g['character']);
+    if (trophies.barred.has(who)) return { path: 'character', predicate: 'notStaffOrRetired' };
+    if (kind.belt) return kind.holder === who ? { path: 'trophy', predicate: 'notItsHolder' } : null;
+    return trophies.given.has(`${kind.key}:${who}`.toLowerCase()) ? { path: 'trophy', predicate: 'notGivenThisSeason' } : null;
+  },
+  demand: () => 'none',
+  plain: 'the giving of the {trophyName} trophy to {characterName}',
+  /** SQL's `system_line` fills them: the trophy's name from `trophy_kinds`, the character's from its row (both public: a trophy shows on a postbit). */
+  derived: ['trophyName', 'characterName'],
+  template: (p, role, names) => `${role} gave ${names?.character ?? 'a member'} the trophy ${names?.trophy ?? text(p['trophy'])}.`,
+  parts: (p, _was, tense, names) => [`${tense === 'plan' ? 'Give' : 'Gave'} ${names?.character ?? 'a member'} the trophy ${names?.trophy ?? text(p['trophy'])}`],
+};
+
+export const MOVE_KINDS: readonly MoveKind[] = [RENAME_BOARD, NAME_SUCCESSOR, SET_RULE, CONFER_GROUP, PULL_SLOT, REPRICE_SLOT, FLASH_SALE, AWARD_TROPHY, CREATE_BOARD, MOVE_THREAD, MERGE_BOARD];
 
 /** The moves the Boss may propose among its `moves`: the catalog less the ones another answer queues. */
 export const ASKABLE_MOVE_KINDS: readonly MoveKind[] = MOVE_KINDS.filter((k) => k.askable);

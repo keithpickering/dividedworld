@@ -31,6 +31,8 @@
 -- Ways out. No state is added for a player: a thread that is moved can be moved back by an admin, and every lasting move ends by reversal.
 -- Append-only. No Act is touched: a thread's board is derived from the Acts, and origin_board is the one fact about a thread that is written once.
 -- All three functions are for service_role and the tick alone.
+--
+-- Ported onto main (merge of #449 Cosmetics, migrations 0205-0213): seed_instance: rebuilt on 0207's body (main's gear, eventLines and trophies sections kept beside this migration's own).
 
 alter table move_kinds add column lasting boolean not null default false;
 
@@ -241,6 +243,39 @@ begin
   select e ->> 'key', e -> 'pulls', coalesce(array(select jsonb_array_elements_text(e -> 'leaves')), '{}')
   from jsonb_array_elements(coalesce(payload -> 'packs', '[]')) e
   on conflict (key) do update set pulls = excluded.pulls, leaves = excluded.leaves;
+  if payload ? 'gear' then
+    insert into gear_kinds (key, rarity) select e ->> 'key', e ->> 'rarity' from jsonb_array_elements(payload -> 'gear') e
+    on conflict (key) do update set rarity = excluded.rarity;
+    delete from gear_kinds k where not exists (select 1 from jsonb_array_elements(payload -> 'gear') e where e ->> 'key' = k.key)
+      and not exists (select 1 from gear_ledger l where l.gear = k.key) and not exists (select 1 from gear_worn w where w.gear = k.key);
+  end if;
+  if payload ? 'eventLines' then
+    insert into event_lines (key, outcome, text) select e ->> 'key', e ->> 'outcome', e ->> 'text' from jsonb_array_elements(payload -> 'eventLines') e
+    on conflict (key) do update set outcome = excluded.outcome, text = excluded.text;
+    delete from event_lines l where not exists (select 1 from jsonb_array_elements(payload -> 'eventLines') e where e ->> 'key' = l.key);
+  end if;
+  -- The instance's trophy kinds (0206): added and brought up to date, the places, the Boss's kinds and the met demand's set as the catalog names them, and a kind the instance
+  -- dropped removed unless an award names it. An admin-made kind is never touched, and an instance key that begins `made-` is refused (those are the admin page's).
+  if payload ? 'trophies' then
+    select string_agg(e ->> 'key', ', ') into unknown from jsonb_array_elements(payload -> 'trophies' -> 'kinds') e where e ->> 'key' like 'made-%';
+    if unknown is not null then raise exception 'a trophy key begins "made-" only on the admin page: %', unknown using errcode = '22023'; end if;
+    select string_agg(k, ', ') into unknown
+    from (select jsonb_array_elements_text(coalesce(payload -> 'trophies' -> 'seasonPlaces', '[]') || coalesce(payload -> 'trophies' -> 'boss', '[]')
+                                           || case when payload -> 'trophies' ? 'demandMet' then jsonb_build_array(payload -> 'trophies' ->> 'demandMet') else '[]'::jsonb end) k) n
+    where not exists (select 1 from jsonb_array_elements(payload -> 'trophies' -> 'kinds') e where e ->> 'key' = n.k);
+    if unknown is not null then raise exception 'the trophy catalog names kinds it does not define: %', unknown using errcode = '22023'; end if;
+    -- The flags are cleared and set again, so that the unique indexes never see a place twice.
+    update trophy_kinds set season_place = null, boss_gives = false, demand_met = false where made_by is null and (season_place is not null or boss_gives or demand_met);
+    insert into trophy_kinds (key, name, line, belt) select e ->> 'key', e ->> 'name', nullif(e ->> 'line', ''), coalesce((e ->> 'belt')::boolean, false)
+    from jsonb_array_elements(payload -> 'trophies' -> 'kinds') e
+    on conflict (key) do update set name = excluded.name, line = excluded.line, belt = excluded.belt;
+    update trophy_kinds k set season_place = p.n::smallint
+    from jsonb_array_elements_text(coalesce(payload -> 'trophies' -> 'seasonPlaces', '[]')) with ordinality p(key, n) where k.key = p.key;
+    update trophy_kinds k set boss_gives = true where k.key in (select jsonb_array_elements_text(coalesce(payload -> 'trophies' -> 'boss', '[]')));
+    update trophy_kinds k set demand_met = true where k.key = payload -> 'trophies' ->> 'demandMet';
+    delete from trophy_kinds k where k.made_by is null and not exists (select 1 from jsonb_array_elements(payload -> 'trophies' -> 'kinds') e where e ->> 'key' = k.key)
+      and not exists (select 1 from trophy_awards a where a.trophy = k.key);
+  end if;
   insert into machine_slots (position, card, pack, availability, price)
   select (select coalesce(max(position), 0) from machine_slots) + row_number() over (order by m.i), m.e ->> 'card', m.e ->> 'pack', m.e ->> 'availability', (m.e ->> 'price')::integer
   from jsonb_array_elements(coalesce(payload -> 'machine', '[]')) with ordinality m(e, i)

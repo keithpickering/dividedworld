@@ -40,6 +40,8 @@
 -- Merged with main's 0154 (#469): system_tick ends a visit that cannot be filed as 'dropped' (end_visit(..., 'dropped', ...)), no longer 'reversed'; carried into this definition, which is built on 0140's body.
 
 -- ---------------------------------------------------------------------------------------------------- boards ----
+--
+-- Ported onto main (merge of #449 Cosmetics, migrations 0205-0213): system_tick: rebuilt on 0208's body (main's awardTrophy refusal and landing, the met demand's trophies in their own block, and 'awardsFailed' kept beside this migration's own).
 
 create unique index boards_created_by_act on boards (created_by_act) where created_by_act is not null;
 create index acts_move_thread_board on acts ((lower(payload #>> '{params,board}'))) where kind = 'move' and payload ->> 'kind' = 'moveThread';
@@ -493,6 +495,7 @@ declare
   expired integer := 0;
   failed integer := 0;
   unmet integer := 0;
+  awards_failed integer := 0;
   checked integer := 0;
   out_of_time boolean := false;
   superseded integer := 0;
@@ -548,11 +551,26 @@ begin
           end if;
           first_before := first_open_board();
         end if;
+        -- The Boss's trophy (0208) is checked against the instance as it is now: a character that has since become staff or retired, a trophy it was given meanwhile, a belt it
+        -- already holds. Refused for good with the reason, as the machine's moves are, and never applied: it is no Act, so no award was written and nothing needs reversing.
+        if due.kind = 'awardTrophy' then
+          clash := trophy_move_problem(due.params, due.demand);
+          if clash is not null then
+            update queued_moves set failed_at = now(), failure = left('that trophy cannot be given: ' || clash, 500), refused_at = now() where id = due.id;
+            continue;
+          end if;
+        end if;
         written := (write_staff_act(due.staff, 'move', ann, null,
           jsonb_build_object('kind', due.kind, 'params', due.params, 'body', system_line(case when due.kind = 'setRule' then 'ruleSet' else 'moveLanded' end, due.kind, due.params, due.staff))
           || case when due.demand is not null then jsonb_build_object('demand', due.demand) else '{}'::jsonb end
           || case when due.expires_at is not null then jsonb_build_object('expires_at', due.expires_at) else '{}'::jsonb end) ->> 'id')::uuid;
         update queued_moves set landed_act = written where id = due.id;
+        -- The award is the move's whole effect and outlasts it: written in this transaction, naming the move's Act, and the move ends at once (`spent`, as a nomination does). If
+        -- either fails, the Act goes with them (this block's rollback) and the move is left due, with the failure recorded below.
+        if due.kind = 'awardTrophy' then
+          insert into trophy_awards (trophy, character, by, act) values (due.params ->> 'trophy', (due.params ->> 'character')::uuid, 'boss', written);
+          perform end_move(written, 'spent', 'award');
+        end if;
         if due.kind = 'renameBoard' and due.admin_description is not null then
           perform write_describe((due.params ->> 'board')::uuid, due.admin_description, written);
         end if;
@@ -636,7 +654,22 @@ begin
       counted := demand_progress_or_error(inforce.move_act);
       if coalesce((counted ->> 'met')::boolean, false) then
         did_end := (end_move(inforce.move_act, 'met', 'demand') ->> 'ended')::boolean;
-        if did_end then met := met + 1; end if;
+        if did_end then
+          met := met + 1;
+          -- The met demand's trophy to each character that made it (0206), in a block of its own: the move is ended whatever happens here. A failure is a warning, a row
+          -- (trophy_award_failures) and a count in the tick's answer, and an admin can give the trophy by hand.
+          begin
+            perform award_demand_trophies(inforce.move_act);
+          exception when others then
+            awards_failed := awards_failed + 1;
+            raise warning 'system_tick: the trophies for move % were not given: % (%)', inforce.move_act, sqlerrm, sqlstate;
+            begin
+              insert into trophy_award_failures (move_act, error) values (inforce.move_act, left(sqlerrm || ' (' || sqlstate || ')', 500))
+              on conflict (move_act) do update set error = excluded.error, at = now();
+            exception when others then null;
+            end;
+          end;
+        end if;
       end if;
     exception when others then
       failed := failed + 1;
@@ -714,5 +747,5 @@ begin
   end loop;
 
   return jsonb_build_object('landed', landed, 'met', met, 'expired', expired, 'superseded', superseded, 'unmet', unmet, 'failed', failed, 'checked', checked, 'visits', filed, 'budget', out_of_time,
-    'noThread', enabled and ann is null);
+    'noThread', enabled and ann is null, 'awardsFailed', awards_failed);
 end $$;

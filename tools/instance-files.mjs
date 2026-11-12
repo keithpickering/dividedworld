@@ -38,9 +38,13 @@ export function args(argv, usage) {
 /**
  * The buckets an instance keeps files in, each with the table and columns that name its files: an
  * export carries every file a row names, and an import puts each back under its name, so the
- * imported forum shows the same avatars (supabase/migrations/0019_profiles.sql, 0025_avatars.sql).
+ * imported forum shows the same avatars and trophy pictures (supabase/migrations/0019_profiles.sql, 0025_avatars.sql, 0206_trophies.sql).
  */
-export const BUCKETS = [{ bucket: 'avatars', table: 'public.character_profiles', columns: ['avatar_square', 'avatar_portrait'], contentType: 'image/webp' }];
+export const BUCKETS = [
+  { bucket: 'avatars', table: 'public.character_profiles', columns: ['avatar_square', 'avatar_portrait'], contentType: 'image/webp' },
+  // The pictures of the trophies an admin made (supabase/migrations/0206_trophies.sql): the file each kind's `art` names, put back under the same name.
+  { bucket: 'trophies', table: 'public.trophy_kinds', columns: ['art'], contentType: 'image/webp' },
+];
 
 /** The environment variable that holds the secret key Storage is called with; never printed, never on a command line. */
 export const STORAGE_KEY = 'KAYFABB_STORAGE_KEY';

@@ -44,7 +44,9 @@ import { useBoot } from '../boot.tsx';
 import { isSignedOutDoc, type ScreenDoc } from '../screen-docs.ts';
 import { FrontDoor } from '../front-door/FrontDoor.tsx';
 import { motionReduced } from '../appearance.ts';
+import { RandomEvent } from '../events/RandomEvent.tsx';
 import { usePlayer } from '../player.tsx';
+import { landPage } from '../shine/landing.ts';
 import { PresenceBox } from '../presence/PresenceBox.tsx';
 import type { PostbitLayout, PostbitPerson } from '../postbit/Postbit.tsx';
 import { reveals } from '../postbit/reveals.ts';
@@ -95,6 +97,8 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
   const { api, settings, ui } = useKayfa();
   const P = settings.postsPerPage;
   const player = usePlayer();
+  /* The page is a landing place for glitter while a thread is on screen (docs/plans/2026-11-11-shake-design.md section 5); leaving sweeps it. */
+  useEffect(() => landPage(), []);
   /* Only an admin's Lens offers "End this card": the page asks once, as Updates does. */
   const admin = useIsAdmin(api, player.session.signedIn);
   const navigate = useNavigate();
@@ -754,6 +758,7 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
 
   return (
     <div className="kb-thread" data-kb-thread={thread} data-kb-known={feed.knownLast} aria-busy={busy || undefined}>
+      <RandomEvent />
       <p className="kb-crumb"><Link to="/">Index</Link> › {crumbBoard && <><Link to={`/b/${crumbBoard.slug}`}>{crumbBoard.name}</Link> › </>}{summary.title}</p>
       <ActIndex.Provider value={index}>
         <ThreadCtx.Provider value={context}>

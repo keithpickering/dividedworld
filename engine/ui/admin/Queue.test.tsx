@@ -965,3 +965,18 @@ describe('a bundle: a merge\'s label and a wait on a move', () => {
     expect(bundle).not.toHaveTextContent(/Waits for the part/u);
   });
 });
+
+describe('a trophy award in the queue', () => {
+  test('names the character it gives the trophy to, never "a member"', async () => {
+    const { w } = open({
+      build: (fake) => {
+        const ann = fake.seed.character(fake.seed.account('queue-ann'), 'Queue Ann', testInstance.classes[0]!.key);
+        fake.seed.trophyMove('director', { character: ann, trophy: 'p1' });
+      },
+    });
+    const force = await group(/^In force/u);
+    await waitFor(() => expect(force).toHaveTextContent('Queue Ann'));
+    expect(force).not.toHaveTextContent('a member');
+    expect(w.second).toBeTruthy();
+  });
+});

@@ -5,7 +5,7 @@ import type { InstanceUi } from '../types.ts';
 import { withStaffFace } from './staff-faces.ts';
 
 const base: Character = {
-  id: 'c1', name: 'Someone', title: '', signature: '', avatarSquare: null, avatarPortrait: null, squareFrame: null, portraitFrame: null,
+  id: 'c1', name: 'Someone', title: '', signature: '', avatarSquare: null, avatarPortrait: null, squareFrame: null, portraitFrame: null, portraitTallness: null, outfit: [], trophies: [],
   pipStyle: 'default', pronouns: { subject: 'they', object: 'them', possessive: 'their', reflexive: 'themself', plural: true } as unknown as Character['pronouns'], joined: '2026-11-01', group: 'g',
 };
 const ui = {

@@ -12,6 +12,8 @@
  *    (the story's header). The tiles are compared by their names and modes, which are the stories'.
  *  - The miniature's sample text is plain (the authors are Ann, Bo and Cy where the board names the instance's characters), and it is decoration, so it is held
  *    by its banner, its bar and its button, not by the rows' words.
+ *  - The rail holds a Sound tab between Accessibility and The board that the board does not draw (docs/plans/2026-11-11-laugh-track-design.md: Settings gains a Sound
+ *    section), one tab of 48px and the 8px gap, so The board, Notifications and Reach a person stand 56px lower than they did (`rail`'s `buildShift`, as the run measured).
  *  - The buttons of the rail are GlassButtons, 48px tall where the board's `.btn` is 54, as board 33 holds them.
  *
  * Phone: board 21 is the picker at 390 by 844 (its own manifest); board 20 is this page with Hot Rod chosen.
@@ -31,9 +33,9 @@ export const rail = (current: string): Landmark[] => [
   { id: 'sections', role: 'navigation', name: 'Settings sections', box: 'across', type: false },
   { id: 'section-account', role: 'link', name: 'ACCOUNT', within: 'sections', origin: 'sections', box: 'height', type: false, buildShift: BUTTON },
   { id: 'section-accessibility', role: 'link', name: 'ACCESSIBILITY', within: 'sections', origin: 'sections', box: 'height', type: false, buildShift: { y: -6, height: -6 } },
-  { id: 'section-board', role: 'link', name: current, within: 'sections', origin: 'sections', box: 'height', type: false, buildShift: { y: -12, height: -6 } },
-  { id: 'section-notifications', role: 'link', name: 'NOTIFICATIONS', within: 'sections', origin: 'sections', box: 'height', type: false, buildShift: { y: -18, height: -6 } },
-  { id: 'reach', role: 'link', name: 'Reach a person', origin: 'sections', box: 'position', buildShift: { y: -24 } },
+  { id: 'section-board', role: 'link', name: current, within: 'sections', origin: 'sections', box: 'height', type: false, buildShift: { y: 44, height: -6 } },
+  { id: 'section-notifications', role: 'link', name: 'NOTIFICATIONS', within: 'sections', origin: 'sections', box: 'height', type: false, buildShift: { y: 38, height: -6 } },
+  { id: 'reach', role: 'link', name: 'Reach a person', origin: 'sections', box: 'position', buildShift: { y: 34 } },
 ];
 
 /** The section's two rows, the Theme row's miniature and tiles by their words, and the Mode row's choices. */
