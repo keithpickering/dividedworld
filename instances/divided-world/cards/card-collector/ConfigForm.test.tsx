@@ -37,9 +37,9 @@ describe('the card it waits for', () => {
     expect(screen.getByRole('radio', { name: 'Whoops! Move Common' })).toBeInTheDocument();
     const names = castable.map((f) => f.name);
     expect(radios.map((r, i) => r.closest('label')!.textContent)).toEqual(castable.map((f) => expect.stringContaining(f.name)));
-    expect(names).toEqual(cards.filter(castOnPost).map((c) => c.name));
+    expect(names).toEqual(cards.filter(castOnPost).filter((c) => c.name !== 'Whodunnit?').map((c) => c.name));
     expect(names).toEqual(expect.arrayContaining(['Whoops!', 'Stick Around', 'Autocorrect', "Feelin' Fab"]));
-    for (const not of ['Force Field', 'Card Collector', 'Hall Pass', 'Publicity Tour', 'Glitter Bomb', 'Main Event']) expect(names).not.toContain(not);
+    for (const not of ['Force Field', 'Card Collector', 'Hall Pass', 'Publicity Tour', 'Glitter Bomb', 'Main Event', 'Whodunnit?']) expect(names).not.toContain(not);
   });
 
   test('leaves out a card rarer than Card Collector itself, read from its rules', () => {
