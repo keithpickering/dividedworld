@@ -1186,3 +1186,16 @@ test('a card that replies is refused on a reply drawn under a post, before play_
   assert.deepEqual({ status: out.status, body: out.body }, { status: 400, body: { error: 'a reply drawn under a post takes no reply under it', field: 'config' } });
   assert.ok(!calls.some((c) => c.startsWith('service:play_card:')), calls.join('\n'));
 });
+
+test('a play of a card that replies, ridden by a back that lets it land, is heard as the card Act, the reply under its post, then the spring', async () => {
+  const spring = { id: 's', kind: 'card_spring', thread: 't' };
+  const reply = { id: 'r', kind: 'post', thread: 't', seq: 46 };
+  const { dbs } = pair({ whoami, card_target_reach: { reach: 'post', act: target, kind: 'post', length: 10, body: 'x'.repeat(10), effects: [] },
+    play_card: { id: 'k', kind: 'card', thread: 't', sprung: spring, under: { parent: target, play: 'k', act: reply } } });
+  const out = await runAction(dbs, instance, { action: 'playCard', card: 'line-cutter', character: id, target, config: {}, message: '', body: 'Cutting in.' });
+  assert.deepEqual(out.broadcasts, [
+    { topic: 'thread:t', event: 'act', payload: { id: 'k', kind: 'card', thread: 't' } },
+    { topic: 'thread:t', event: 'under', payload: { parent: target, play: 'k', act: reply } },
+    { topic: 'thread:t', event: 'act', payload: spring },
+  ]);
+});
