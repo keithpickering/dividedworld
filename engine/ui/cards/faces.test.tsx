@@ -102,6 +102,8 @@ describe('a card\'s rarity and play on its face', () => {
     expect(gem.getAttribute('title')).toBe('Rare');
     expect(document.querySelector('.kb-postcard-play')?.textContent).toBe('Cast');
     expect(new Set(RARITIES.map((r) => gemOf(r))).size).toBe(4);
+    // The legendary star is eight-pointed, far from the uncommon diamond, and carries the text selector so no phone draws it as an emoji.
+    expect(gemOf('legendary')).toBe('\u2734\uFE0E');
   });
   test('every word on a face is art to the layout check: aria-hidden and marked data-kb-art, at every size', () => {
     for (const size of ['fan', 'sheet'] as const) {
