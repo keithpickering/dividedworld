@@ -1165,7 +1165,7 @@ button.kb-hud-secret:focus-visible {
 /*
  * The arc's list spans the drawer's whole grid, since a hand of many kinds reaches left past the HUD's last column;
  * the cards' left is still measured from the hand button's place, the fifth column's (256px + x, as the board's three
- * stand), so the board's own three cards stand where they always did.
+ * stand), so the board's own three cards stand where they always did, at any window width.
  */
 :where(:root:not([data-kb-layout='phone'])) .kb-hand-cards {
   grid-column: 1 / -1;
@@ -1178,8 +1178,8 @@ button.kb-hud-secret:focus-visible {
 
 :where(:root:not([data-kb-layout='phone'])) .kb-hand-card {
   position: absolute;
-  /* The arc's card stands where its turn leaves it inside the window: 150px wide, and about 18px more a side where it leans. The fifth column starts at 420 + 44 + 452 + 28 = 944px of the grid, so the card's x is measured from there. */
-  left: min(calc(944px + 256px + var(--kb-fan-x)), calc(100% - 134px));
+  /* The arc's card stands where its turn leaves it inside the window: 150px wide, and about 18px more a side where it leans. The fifth column is the grid's last 426px at every width (the two gaps before it shrink below a 1440px window), so the card's x is measured from 426px short of the list's right edge: 256 - 426 = -170. */
+  left: min(calc(100% - 170px + var(--kb-fan-x)), calc(100% - 134px));
   top: calc(8.875rem + var(--kb-fan-y));
   z-index: var(--kb-fan-z);
   transform: rotate(var(--kb-fan-turn));
@@ -1271,7 +1271,8 @@ button.kb-hud-secret:focus-visible {
 
 .kb-hand-peek-card {
   position: absolute;
-  left: min(calc(944px + 256px), calc(100% - 134px));
+  /* Over the hand button as a card at x 0 stands: the peek is not a grid and its absolute card is placed from its padding box, so the fifth column starts 34px + 426px short of the right edge, and 256 - 460 = -204. */
+  left: calc(100% - 204px);
   top: -90px;
   pointer-events: none;
 }
