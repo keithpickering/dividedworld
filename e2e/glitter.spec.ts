@@ -105,8 +105,8 @@ async function readPost(page: Page): Promise<void> {
 
 /**
  * The bench's flick: a hand jostling the page at the top, `JOSTLES` times. Each jostle is a frame scrolled down at `JOSTLE` px a second,
- * just past the shake threshold (SHAKE_SPEED, 2,200), then three frames back up at a third of that pace, under the threshold, so it
- * shakes nothing back and the page ends where it began.
+ * just past the shake threshold (SHAKE_SPEED, 2,200), then back up at a sixth of that pace, under the threshold, so it shakes nothing
+ * back and the page ends where it began.
  *
  * Why this and not a long fling: a flake is thrown at 0.55 of the scroll's speed against the page's way and one that flies off the screen
  * is culled (the owner's decision), and the page's own ground is only the 121 px gutters, the thin gaps between posts and the band above
@@ -116,10 +116,13 @@ async function readPost(page: Page): Promise<void> {
  * come down: some come back to rest on the post's cell, some on the band, in every flick (measured, 30 flicks: 2 to 9 on the cell
  * and 7 to 19 on the page at 2,800 px/s a flick).
  *
- * The engine reads a scroll's speed from the page's own clock (the distance between two scroll events over the time between them), so
- * each frame scrolls `JOSTLE` times the time the frame really took, never a capped one: with the gap capped at 50 ms, a frame of 65 ms
- * or more on a busy CI shard read under SHAKE_SPEED and shook nothing (#520). The way back goes at a third of the pace by the same clock,
- * frame by frame, until the page is where it began, however the frames fell.
+ * The engine reads a scroll's speed from the page's own clock: the distance between two scroll events over the time between them. So
+ * the down frame scrolls `JOSTLE` times the time the frame really took, never 50 ms at most: with that cap a frame of 65 ms or more on a
+ * busy CI shard read under SHAKE_SPEED and shook nothing (#520). A scroll made in one frame is heard in the next, so the speed read is
+ * `JOSTLE` only where the two frames are alike; on uneven frames a jostle can read slow and shed nothing, and `flingUntilLanded` flicks
+ * again rather than count on one. A frame past 80 ms scrolls 80 ms' worth, so the band above the first post stays in view (the engine
+ * hears no shake across a gap of 100 ms anyway). The way back goes at a sixth of the pace by the same clock, under SHAKE_SPEED with a
+ * frame four times its neighbour, until the page is where it began.
  */
 const JOSTLE = 2800, JOSTLES = 10;
 async function flick(page: Page): Promise<void> {
@@ -131,11 +134,11 @@ async function flick(page: Page): Promise<void> {
       const step = (now: number) => {
         const dt = (now - last) / 1000; last = now;
         if (back > 0) {
-          const up = Math.min(back, (v / 3) * dt);
+          const up = Math.min(back, (v / 6) * dt);
           window.scrollBy(0, -up); back -= up;
         } else if (jostles++ < n) {
           const before = window.scrollY;
-          window.scrollBy(0, v * dt);
+          window.scrollBy(0, v * Math.min(0.08, dt));
           back = window.scrollY - before;
         } else { done(); return; }
         requestAnimationFrame(step);
@@ -166,9 +169,10 @@ async function fling(page: Page): Promise<void> {
 
 /**
  * Glitter that lands is the flake's own: some on a post's cell and some on the page's ground. So flicks go on, each given the plan's 3 s
- * to land, until glitter lies on a post cell and on the page, at most `FLINGS` of them (the first has done it in every run measured).
+ * to land, until glitter lies on a post cell and on the page, at most `FLINGS` of them. The first does it in nearly every run; on a
+ * busy shard's uneven frames a flick can shed little (see `flick`), so a few more are allowed before it fails.
  */
-const FLINGS = 4;
+const FLINGS = 8;
 async function flingUntilLanded(page: Page): Promise<void> {
   await readPost(page);
   const both = async () => { const l = await landed(page); return l!.cell > 0 && l!.page > 0; };
