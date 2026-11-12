@@ -108,6 +108,45 @@ begin
   if shown is distinct from format('[quote=%s][/quote] [quote=%s][/quote]', p, r) or said is distinct from 'false' then raise exception 'out of order: S is not served its layer: % %', shown, said; end if;
 end $$;
 
+-- ---- What a row's own `payload` is, apart from the current version: payload_concealing and payload_hidden (History reads them) ----
+-- A post whose original quotes a hidden post and whose current version is a clean edit is not concealing (the version a player reads is the edit's), but its original is, until its layer exists; an edit an
+-- admin hid has its own words hidden.
+do $$
+declare
+  admin_d uuid := tests.account('admin-payload');
+  author uuid := tests.account('author-payload');
+  reader uuid := tests.account('reader-payload');
+  ch_author uuid := tests.character(author, 'Pat');
+  ch_reader uuid := tests.character(reader, 'Rae');
+  th uuid := tests.thread('Payload flags');
+  base timestamptz := now() - interval '1 day';
+  hid uuid; orig uuid; clean_edit uuid; bad_edit uuid;
+  row_a record;
+begin
+  insert into admins (account) values (admin_d);
+  hid := tests.post(ch_author, th, 'Hidden for the payload flags.', base);
+  perform tests.become(admin_d);
+  perform decide(null, hid, 'hide', null, 'payload flags');
+  perform tests.unbecome();
+  orig := tests.post(ch_reader, th, format('[quote=%s]Hidden for the payload flags.[/quote] original', hid), base + interval '1 minute');
+  clean_edit := tests.act(ch_reader, 'edit', th, '{"body": "A clean edit."}', orig, base + interval '2 minutes');
+  perform tests.become(reader);
+  select a.concealing, a.payload_concealing, a.payload_hidden, a.hidden, a.current_payload ->> 'body' as cur, a.payload::text as raw into row_a from acts_public a where a.id = orig;
+  perform tests.unbecome();
+  if row_a.cur is distinct from 'A clean edit.' or row_a.concealing is distinct from false then raise exception 'the current version of a post with a clean edit is withheld: %', row_a; end if;
+  if row_a.payload_concealing is distinct from true then raise exception 'the original of a post that quotes a hidden post, under a clean edit, is not payload_concealing: %', row_a.payload_concealing; end if;
+  if row_a.payload_hidden is distinct from false or row_a.raw like '%Hidden for the payload flags%' then raise exception 'payload_hidden is set for a clean original, or the hidden words are in its payload: %', row_a; end if;
+  -- an edit an admin hid: its own words are hidden
+  bad_edit := tests.act(ch_reader, 'edit', th, '{"body": "An edit an admin will hide."}', orig, base + interval '3 minutes');
+  perform tests.become(admin_d);
+  perform decide(null, bad_edit, 'hide', null, 'the edit');
+  perform tests.unbecome();
+  perform tests.become(reader);
+  select a.payload_hidden, a.hidden, a.payload::text as raw into row_a from acts_public a where a.id = bad_edit;
+  perform tests.unbecome();
+  if row_a.payload_hidden is distinct from true or row_a.raw like '%will hide%' then raise exception 'a hidden edit is not payload_hidden, or its words reach a player: %', row_a; end if;
+end $$;
+
 do $$
 declare
   admin_a uuid := tests.account('admin-a');
@@ -188,6 +227,12 @@ begin
   perform tests.unbecome();
   select * into rd from tests.read_as(reader, q) x;
   if rd.body is distinct from 'layer of both' or rd.concealing then raise exception 'the newest layer is not the one served: %', rd.body; end if;
+  -- a layer already made for the set of now is not made again: the job's repeat is answered with the one there is
+  select count(*) into layers from quote_layers where act = q;
+  perform tests.become_service();
+  perform record_layer(q, array[p1, p2], 'layer of both, again');
+  perform tests.unbecome();
+  if (select count(*) from quote_layers where act = q) is distinct from layers then raise exception 'a layer for the set the latest layer is already for was written again'; end if;
 
   -- ---- an unhide needs no job: with nothing hidden among its quotes a post serves its own words at once ----
   perform tests.become(admin_a);
@@ -255,15 +300,16 @@ begin
   -- ---- who may call, who may read, and nothing is ever edited ----
   perform tests.become(reader);
   foreach said in array array[format('select * from conceal_due(5)'), format('select record_layer(%L, %L, %L)', q, array[p1], 'x'),
-    'select * from quote_layers', 'select * from quote_refs', 'select * from conceal_requests', 'select hidden_refs(' || quote_literal(q) || ')'] loop
+    'select * from quote_layers', 'select * from quote_refs', 'select * from conceal_requests', 'select * from conceal_answers', 'select hidden_refs(' || quote_literal(q) || ')'] loop
     if coalesce(tests.refusal(said), 'ran') not like '42501|%' then raise exception 'a player reached the conceal machinery: % -> %', said, coalesce(tests.refusal(said), 'ran'); end if;
   end loop;
   perform tests.unbecome();
   perform tests.become_anon();
   if coalesce(tests.refusal('select * from conceal_due(5)'), 'ran') not like '42501|%' then raise exception 'a visitor reached conceal_due'; end if;
   perform tests.unbecome();
-  foreach said in array array['update quote_layers set body = null', 'delete from quote_layers', 'truncate quote_layers', 'update quote_refs set quoted = quoted', 'delete from quote_refs', 'truncate quote_refs',
-    'update conceal_requests set act = act', 'delete from conceal_requests', 'truncate conceal_requests'] loop
+  foreach said in array array['update quote_layers set body = null', 'delete from quote_layers', 'truncate quote_layers cascade', 'update quote_refs set quoted = quoted', 'delete from quote_refs', 'truncate quote_refs',
+    'update conceal_requests set act = act', 'delete from conceal_requests', 'truncate conceal_requests cascade',
+    'update conceal_answers set layer = null', 'delete from conceal_answers', 'truncate conceal_answers'] loop
     if coalesce(tests.refusal(said), 'ran') not like 'P0001|%' then raise exception 'a conceal table was edited or emptied: % -> %', said, coalesce(tests.refusal(said), 'ran'); end if;
   end loop;
 
@@ -332,4 +378,93 @@ begin
   said := tests.refusal(format('select record_layer(%L, %L, %L)', q, array[p1], 'stale'));
   perform tests.unbecome();
   if said is not null or (select count(*) from quote_layers) is distinct from layers + 1 then raise exception 'POISON (b) was not seen: a stale set was refused by a record_layer that checks nothing (%)', said; end if;
+end $$;
+
+-- ---- What the job reads costs what is open, not what was ever asked: conceal_due over thousands of Acts whose requests are answered ----
+-- A busy instance holds tens of thousands of Acts that quote a hidden post, every request answered. The reading before conceal_answers grouped every request ever made and read the hidden set
+-- and the layer of each before it filtered (4.7 to 6.7 s at 20,000 Acts, 11 s at 40,000, nothing due). It is measured against the least any reading of the open requests costs, the same two
+-- tables anti-joined and grouped: a reading that does more per answered Act than that is a multiple of it that grows with the Acts (hundreds of times, with a hidden set read for each).
+-- Run last: the poison replaces conceal_due.
+
+-- The time of conceal_due over the time of the bare scan of open requests, the better of three runs of each, with one Act open; and, when `exact`, that only that Act comes out.
+create function tests.due_ratio(open_act uuid, p uuid, exact boolean, out due_ms numeric, out scan_ms numeric) language plpgsql as $$
+declare t0 timestamptz; ms numeric; r record; n integer;
+begin
+  for n in 1 .. 4 loop
+    t0 := clock_timestamp();
+    select d.act, d.hidden into r from conceal_due(100) d;
+    ms := extract(epoch from clock_timestamp() - t0) * 1000;
+    if n > 1 then due_ms := least(coalesce(due_ms, ms), ms); end if;
+    t0 := clock_timestamp();
+    perform count(*) from (select r2.act from conceal_requests r2 where not exists (select 1 from conceal_answers a where a.request = r2.id) group by r2.act) x;
+    ms := extract(epoch from clock_timestamp() - t0) * 1000;
+    if n > 1 then scan_ms := least(coalesce(scan_ms, ms), ms); end if;
+  end loop;
+  if exact and (r.act is distinct from open_act or r.hidden is distinct from array[p] or (select count(*) from conceal_due(100)) is distinct from 1) then
+    raise exception 'conceal_due does not return exactly the one Act with an open request: %', r;
+  end if;
+end $$;
+
+do $$
+declare
+  admin_c uuid := tests.account('admin-cost');
+  author uuid := tests.account('author-cost');
+  ch uuid := tests.character(author, 'Cost');
+  th uuid := tests.thread('Cost of the job');
+  base timestamptz := now() - interval '1 day';
+  p uuid;
+  open_act uuid;
+  have integer := 0;
+  total integer;
+  m record;
+  ratio numeric;
+  small numeric;
+begin
+  insert into admins (account) values (admin_c);
+  p := tests.post(ch, th, 'Hidden for the cost.', base);
+  perform tests.become(admin_c);
+  perform decide(null, p, 'hide', null, 'cost');
+  perform tests.unbecome();
+  foreach total in array array[2000, 20000] loop
+    -- Finished Acts: each quotes the hidden post (the trigger asks for its layer), its layer recorded for the set of now and its request answered, as the job leaves them.
+    insert into acts (character, kind, thread, payload, created_at)
+    select ch, 'post', th, jsonb_build_object('body', format('[quote=%s]words %s[/quote] done', p, g)), base + (g || ' seconds')::interval from generate_series(have + 1, total) g;
+    insert into quote_layers (act, hidden, body, upto)
+    select r.act, array[p], format('[quote=%s][/quote] done', p), r.id from conceal_requests r where not exists (select 1 from conceal_answers n where n.request = r.id);
+    insert into conceal_answers (request, layer)
+    select r.id, (select l.id from quote_layers l where l.act = r.act order by l.id desc limit 1) from conceal_requests r where not exists (select 1 from conceal_answers n where n.request = r.id);
+    have := total;
+    open_act := tests.post(ch, th, format('[quote=%s]open[/quote]', p), base + interval '2 days');
+    analyze conceal_requests; analyze conceal_answers; analyze quote_layers; analyze quote_refs;
+    select * into m from tests.due_ratio(open_act, p, true);
+    ratio := m.due_ms / greatest(m.scan_ms, 0.05);
+    raise notice 'conceal_due at % answered Acts: % ms, the bare scan of open requests % ms, ratio %', total, round(m.due_ms, 2), round(m.scan_ms, 2), round(ratio, 1);
+    if total = 2000 then small := ratio; end if;
+    if ratio > 25 then
+      raise exception 'conceal_due costs % times the bare scan of open requests at % Acts (% at 2,000): it does work for every Act ever requested', round(ratio, 1), total, round(small, 1);
+    end if;
+    -- The job answers it, as it leaves every Act.
+    perform tests.become_service();
+    perform record_layer(open_act, array[p], format('[quote=%s][/quote]', p));
+    perform tests.unbecome();
+    have := have + 1;
+  end loop;
+
+  -- The poison: the reading that groups every request ever made, reads each Act's hidden set and layer, and filters after. It must be seen at 20,000 Acts.
+  create or replace function conceal_due(most integer) returns table (act uuid, hidden uuid[], body text)
+  language sql stable security definer set search_path = public, pg_temp as $f$
+    select d.act, h.hs, x.payload ->> 'body'
+    from (select r.act, min(r.id) as first from conceal_requests r group by r.act) d
+    cross join lateral (select hidden_refs(d.act) as hs) h
+    join acts x on x.id = d.act
+    where (select l.hidden from quote_layers l where l.act = d.act order by l.at desc, l.id desc limit 1) is distinct from h.hs
+    order by d.first
+    limit greatest(conceal_due.most, 0)
+  $f$;
+  open_act := tests.post(ch, th, format('[quote=%s]open[/quote]', p), base + interval '3 days');
+  analyze conceal_requests;
+  select * into m from tests.due_ratio(open_act, p, false);
+  ratio := m.due_ms / greatest(m.scan_ms, 0.05);
+  raise notice 'POISON conceal_due (the old reading) at % Acts: % ms, ratio %', have, round(m.due_ms, 2), round(ratio, 1);
+  if ratio <= 25 then raise exception 'POISON (c) was not seen: the reading of every request ever made costs only % times the bare scan at % Acts', round(ratio, 1), have; end if;
 end $$;

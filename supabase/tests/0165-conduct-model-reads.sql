@@ -197,3 +197,60 @@ begin
   perform tests.unbecome();
   if jsonb_array_length(got) is distinct from 1 or got -> 0 ->> 'body' is distinct from '' then raise exception 'claim_card_writes sends the words of a hidden quoting post: %', got; end if;
 end $$;
+
+-- ---- A back's Quotes condition does not read a hidden post's words through a quote of it (0340's spring_facts: the excerpt is emptied while the back's own post is hidden) ----
+-- The phrase is found in the quoted words alone. The back sits on the post that is quoted, so while an admin has it hidden its words must not match, and once it is shown again they do.
+do $$
+declare
+  admin_a uuid := tests.account('admin-p');
+  author uuid := tests.account('author-p');
+  ch_author uuid := tests.character(author, 'Pia');
+  th uuid := tests.thread('Passage');
+  base timestamptz := '2032-01-01T00:00:00Z';
+  hid uuid; quoter uuid;
+  fd face_down;
+  f spring_facts;
+begin
+  insert into admins (account) values (admin_a);
+  hid := tests.post(ch_author, th, 'Only the hidden words say quokka parade.', base);
+  quoter := tests.post(ch_author, th, format('My own words [quote=%s]Only the hidden words say quokka parade.[/quote] and no more', hid), base + interval '1 minute');
+  fd.play := gen_random_uuid(); fd.post := hid; fd.passage := 'quokka parade';
+  f := spring_facts(fd, 'quote', quoter, null);
+  if f.passage_hit is distinct from true then raise exception 'a Quotes phrase found in the quoted words of a post nobody hid does not match, so the test below proves nothing: %', f.passage_hit; end if;
+  perform tests.become(admin_a);
+  perform decide(null, hid, 'hide', null, 'passage');
+  perform tests.unbecome();
+  f := spring_facts(fd, 'quote', quoter, null);
+  if f.passage_hit is distinct from false then raise exception 'a Quotes condition matches the words of a hidden post through a quote of it: %', f.passage_hit; end if;
+  perform tests.become(admin_a);
+  perform decide(null, hid, 'unhide', null, '');
+  perform tests.unbecome();
+  f := spring_facts(fd, 'quote', quoter, null);
+  if f.passage_hit is distinct from true then raise exception 'a Quotes condition does not match once the post is shown again: %', f.passage_hit; end if;
+end $$;
+
+-- ---- bbcode_walk's `unquoted` cuts every quote the one parser reads, closed or not, inside other tags or nested (0340) ----
+-- supabase/tests/data/unquoted-corpus.json is made by engine/bbcode/unquoted-corpus.test.ts: bodies of numbered marker words and, for each, the markers concealQuotes (the parser's own reading of a quote,
+-- with every id hidden) took out. No such marker may survive in what the database's walk calls unquoted, which is what a rule and a card's Says condition judge. The file is read by psql from the repository root
+-- (where `npm run test:sql` runs), and handed to the block as a setting, which lasts to the end of the file's transaction.
+\set unquoted_corpus `cat supabase/tests/data/unquoted-corpus.json`
+select set_config('kayfabb.unquoted_corpus', :'unquoted_corpus', true) \gset
+
+do $$
+declare
+  f record;
+  m text;
+  u text;
+  bodies integer := 0;
+  markers integer := 0;
+begin
+  for f in select e ->> 'name' as name, e ->> 'body' as body, e -> 'removed' as removed from jsonb_array_elements(current_setting('kayfabb.unquoted_corpus')::jsonb) e loop
+    u := (select w.unquoted from bbcode_walk(f.body, null) w);
+    bodies := bodies + 1;
+    for m in select jsonb_array_elements_text(f.removed) loop
+      markers := markers + 1;
+      if position(m in u) > 0 then raise exception 'bbcode_walk leaves the words of a quote in unquoted (%): % survives in %, from %', f.name, m, to_json(u), to_json(f.body); end if;
+    end loop;
+  end loop;
+  if bodies < 600 or markers < 200 then raise exception 'the unquoted corpus was not read whole: % bodies, % markers', bodies, markers; end if;
+end $$;

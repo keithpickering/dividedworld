@@ -283,10 +283,11 @@ test('an instance exported and imported into a fresh database is the same instan
       -- Moderation mail (0341): one outbox row and its attempt, so both tables have a row to carry across.
       insert into mail_outbox (account, template, facts, decision) select bob, 'reportRead', '{}', d.id from conduct_decisions d limit 1;
       insert into mail_attempts (outbox, kind, provider_id, error) select o.id, 'sent', 'export-prov-1', null from mail_outbox o limit 1;
-      -- A quote of that post (0340): the reference the trigger records, a request for the quoting post's layer and the layer itself, so each of the three tables that conceal quotes has a row to carry across.
+      -- A quote of that post (0340): the reference the trigger records, a request for the quoting post's layer and the layer itself, so each of the four tables that conceal quotes has a row to carry across (the answer names the request and the layer).
       perform tests.post(b, t, format('[quote=%s]Carried.[/quote] across', p), now());
       insert into conceal_requests (act) select r.act from quote_refs r where r.quoted = p limit 1;
       insert into quote_layers (act, hidden, body, upto) select r.act, array[p], format('[quote=%s][/quote] across', p), (select max(id) from conceal_requests) from quote_refs r where r.quoted = p limit 1;
+      insert into conceal_answers (request, layer) select (select max(id) from conceal_requests), (select max(id) from quote_layers);
       -- An admin ends that card with reverse_card, as ann, the admin (0092); the play's id is the one planted above.
       perform tests.become(ann);
       perform reverse_card('${endedPlay}');

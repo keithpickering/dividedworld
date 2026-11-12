@@ -235,21 +235,25 @@ $$;
 -- quoting version, append-only, never an edit of the post ("The System acts; it never destroys what a player wrote": the post's own words stay in `acts`). acts_public serves the layer
 -- whose hidden set is the current one and does no parsing on a read.
 --
--- Four tables, none reachable by a client:
+-- Five tables, none reachable by a client:
 --   quote_refs      every id a body names after `[quote=`: a superset of the real quotes (the id of a quote that is in a code block counts too), so no real quote is missed. Filled by a trigger
 --                   on every Act written with such a body, backfilled below. It says who to ask about, never what to show.
 --   conceal_requests  one row each time what is hidden may have changed for a quoting Act: a decision that hides, unhides or approves a version of a quoted post, the author's edit of a post
 --                   that has such a decision, and the writing of an Act that quotes a post with a hidden version. Append-only.
+--   conceal_answers one row for each request a layer's recording answered, naming the latest layer for the Act then (null when the Act had none and needed none). Append-only. A request is open
+--                   until it has one; record_layer answers only the requests it read before it read the hidden set, so a request that commits later stays open.
 --   quote_layers    the quoting version's body with the contents of its quotes of the hidden posts in `hidden` emptied (null when `hidden` is empty), the latest row of an Act winning, and
---                   `upto`, the last request of the Act the row had seen (a record of what it read; whether an Act is done is whether its latest layer is for the hidden set of now).
+--                   `upto`, the last request of the Act the row had seen (a record of what it read; whether an Act is done is whether its requests are answered, and whether a layer serves is whether it is for the hidden set of now).
 --
 -- Ways out ("No player is ever stuck"): a post whose quote of a hidden version has no layer yet is withheld behind a plain note that says it will show again in a moment; the job runs every
 -- minute and writes the layer, which ends the note by itself. An unhide, an approval or a hide that ends needs no job at all: with nothing hidden among its refs a post serves its own words.
 --
 -- At a busy instance: a read costs one probe of quote_refs for a body that quotes nothing hidden, and for a body that does, one more of the layer's index; nothing reads a body's length. A decision
 -- writes one request for each Act that quotes the post, an index range of quote_refs (quoted, act); the requests grow with admin decisions and the Acts quoting what they hide, never with posts read
--- or players. conceal_due compares each requested Act's latest layer with its hidden set of now, and a request marker table, a cursor or an `upto` test would be wrong here: ids committed out
--- of order would strand a request below a cursor, or have a layer made without it answer it.
+-- or players. conceal_due reads the open requests, those with no conceal_answers row (an anti-join of two tables that grow with decisions, never an Act's body or hidden set until the limit), and
+-- computes the hidden set only for the Acts it returns: at 20,000 Acts with every request answered it costs a few milliseconds (supabase/tests/0168-conduct-concealing.sql holds the ratio), where
+-- a read of the hidden set and the layer for every Act ever requested took 4.7 to 6.7 seconds at 20,000 Acts and 11 at 40,000. A cursor, or an `upto` test, would be wrong here: ids committed out of
+-- order would strand a request below a cursor, or have a layer made without it answer it; an answer names the one request it read, so neither can happen.
 create table quote_refs (
   act uuid not null references acts (id),
   quoted uuid not null,
@@ -276,10 +280,18 @@ create table quote_layers (
 );
 create index quote_layers_act on quote_layers (act, at desc, id desc);
 
+create table conceal_answers (
+  request bigint primary key references conceal_requests (id),
+  -- The Act's latest layer when the request was answered: null when it had none and needed none (an empty hidden set).
+  layer bigint references quote_layers (id),
+  at timestamptz not null default now()
+);
+
 alter table quote_refs enable row level security;
 alter table conceal_requests enable row level security;
 alter table quote_layers enable row level security;
-revoke all on quote_refs, conceal_requests, quote_layers from public, anon, authenticated;
+alter table conceal_answers enable row level security;
+revoke all on quote_refs, conceal_requests, quote_layers, conceal_answers from public, anon, authenticated;
 
 create function quote_refs_append_only() returns trigger
 language plpgsql set search_path = public, pg_temp as $$
@@ -296,12 +308,19 @@ language plpgsql set search_path = public, pg_temp as $$
 begin
   raise exception 'a quote layer is never edited or removed (%); write a new one over it', tg_op using errcode = 'P0001';
 end $$;
+create function conceal_answers_append_only() returns trigger
+language plpgsql set search_path = public, pg_temp as $$
+begin
+  raise exception 'an answer to a request to conceal is never edited or removed (%); the request is answered once', tg_op using errcode = 'P0001';
+end $$;
 create trigger quote_refs_no_update before update or delete on quote_refs for each row execute function quote_refs_append_only();
 create trigger quote_refs_no_truncate before truncate on quote_refs for each statement execute function quote_refs_append_only();
 create trigger conceal_requests_no_update before update or delete on conceal_requests for each row execute function conceal_requests_append_only();
 create trigger conceal_requests_no_truncate before truncate on conceal_requests for each statement execute function conceal_requests_append_only();
 create trigger quote_layers_no_update before update or delete on quote_layers for each row execute function quote_layers_append_only();
 create trigger quote_layers_no_truncate before truncate on quote_layers for each statement execute function quote_layers_append_only();
+create trigger conceal_answers_no_update before update or delete on conceal_answers for each row execute function conceal_answers_append_only();
+create trigger conceal_answers_no_truncate before truncate on conceal_answers for each statement execute function conceal_answers_append_only();
 -- Always: a session in replica mode, as a restore with triggers disabled runs, fires them too.
 alter table quote_refs enable always trigger quote_refs_no_update;
 alter table quote_refs enable always trigger quote_refs_no_truncate;
@@ -309,7 +328,9 @@ alter table conceal_requests enable always trigger conceal_requests_no_update;
 alter table conceal_requests enable always trigger conceal_requests_no_truncate;
 alter table quote_layers enable always trigger quote_layers_no_update;
 alter table quote_layers enable always trigger quote_layers_no_truncate;
-revoke execute on function quote_refs_append_only(), conceal_requests_append_only(), quote_layers_append_only() from public, anon, authenticated;
+alter table conceal_answers enable always trigger conceal_answers_no_update;
+alter table conceal_answers enable always trigger conceal_answers_no_truncate;
+revoke execute on function quote_refs_append_only(), conceal_requests_append_only(), quote_layers_append_only(), conceal_answers_append_only() from public, anon, authenticated;
 
 -- Every id a body names after `[quote=`, anywhere in the tag (a name may be quoted, padded or followed by `user=`; the parser's own reading of it is stricter than this and so is inside it).
 -- One pass of one regular expression, linear in the body.
@@ -410,34 +431,43 @@ $$;
 -- role alone calls it (the words are the quoting post's own, hidden quote included, and go to the job and nowhere else).
 create function conceal_due(most integer) returns table (act uuid, hidden uuid[], body text)
 language sql stable security definer set search_path = public, pg_temp as $$
-  -- An Act is due while it has a request and its latest layer was not made for the hidden set of now (or it has none): done is a fact about the set, never about which requests the layer had
-  -- seen, since requests commit out of order (a layer made without a request that committed after it would otherwise answer it). Only the Acts with requests are looked at, one index probe
-  -- of the layers and one of quote_refs each: the work grows with decisions and the Acts quoting what they decided on, never with posts.
+  -- A request is open until record_layer answers it (conceal_answers), and record_layer answers only the requests it read before it read the hidden set, so a request that commits out of
+  -- order stays open. Only the open requests are grouped, and the hidden set and the Act's words are read for the Acts that come out within the limit, oldest first: the work grows with the
+  -- open requests and a scan of two tables of decisions' size, never with the hidden sets or the layers of Acts that are done.
   select d.act, h.hs, x.payload ->> 'body'
-  from (select r.act, min(r.id) as first from conceal_requests r group by r.act) d
+  from (select r.act, min(r.id) as first from conceal_requests r
+        where not exists (select 1 from conceal_answers n where n.request = r.id) group by r.act order by min(r.id) limit greatest(conceal_due.most, 0)) d
   cross join lateral (select hidden_refs(d.act) as hs) h
   join acts x on x.id = d.act
-  where (select l.hidden from quote_layers l where l.act = d.act order by l.at desc, l.id desc limit 1) is distinct from h.hs
   order by d.first
-  limit greatest(conceal_due.most, 0)
 $$;
 
 -- The job's answer for an Act: the body with the contents of its quotes of the posts in `hidden` emptied (null when none). It is refused when `hidden` is not the set of now, so a job that
--- read the state before a decision cannot store, and then serve, a layer that shows what is hidden. Service role only.
+-- read the state before a decision cannot store, and then serve, a layer that shows what is hidden. It answers the requests it read, and no others. When the Act's latest layer is already for
+-- this set no new layer is written (the requests are answered with it), and an empty set with no layer at all needs none. Service role only.
 create function record_layer(act uuid, hidden uuid[], body text) returns bigint
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
   mine uuid[] := coalesce((select array_agg(distinct x order by x) from unnest(record_layer.hidden) x), '{}'::uuid[]);
+  asked bigint[];
   seen bigint;
+  latest quote_layers;
   id bigint;
 begin
-  -- The last request is read before the hidden set is, so a decision that lands in between leaves its request open.
-  select coalesce(max(r.id), 0) into seen from conceal_requests r where r.act = record_layer.act;
+  -- The open requests are read before the hidden set is, so a decision that lands in between leaves its request open.
+  select coalesce(array_agg(r.id), '{}'::bigint[]), coalesce(max(r.id), 0) into asked, seen
+  from conceal_requests r where r.act = record_layer.act and not exists (select 1 from conceal_answers n where n.request = r.id);
   if mine is distinct from hidden_refs(record_layer.act) then
     raise exception 'the hidden set changed since it was read; read it again' using hint = 'kayfabb.conceal_stale', errcode = 'P0001';
   end if;
-  insert into quote_layers (act, hidden, body, upto) values (record_layer.act, mine, case when cardinality(mine) = 0 then null else record_layer.body end, seen)
-  returning quote_layers.id into id;
+  select * into latest from quote_layers x where x.act = record_layer.act order by x.at desc, x.id desc limit 1;
+  if found and latest.hidden = mine then
+    id := latest.id;
+  elsif found or cardinality(mine) > 0 then
+    insert into quote_layers (act, hidden, body, upto) values (record_layer.act, mine, case when cardinality(mine) = 0 then null else record_layer.body end, seen)
+    returning quote_layers.id into id;
+  end if;
+  insert into conceal_answers (request, layer) select q, id from unnest(asked) q on conflict do nothing;
   return id;
 end $$;
 revoke execute on function quote_ids(text), conceal_layer(uuid), shown_payload(jsonb, boolean, boolean, boolean, text), public_payload(jsonb, boolean, uuid), conceal_due(integer), record_layer(uuid, uuid[], text)
