@@ -256,6 +256,33 @@ describe('a finished season, beyond what the eye sees', () => {
     expect(bodyRows().filter((r) => r.hasAttribute('data-kb-highlight'))).toHaveLength(0);
   });
 
+  test('a mask that finished at 0 or below is listed unplaced, after the placed ones by standing, and the page says why (#492)', async () => {
+    const fake = buildWorld();
+    const { seed } = fake;
+    const me = seed.account('me');
+    const top = seed.character(me, 'Top', 'face', { at: at(1) });
+    const idle = seed.character(me, 'Idle', 'face', { at: at(1) });
+    const idler = seed.character(me, 'Abed', 'face', { at: at(1) });
+    const owes = seed.character(me, 'Owes', 'heel', { at: at(1) });
+    seed.season({ number: 1, endsAt: new Date(at(30)).toISOString() });
+    seed.season({ number: 2, startsAt: new Date(at(30)).toISOString() });
+    seed.seasonResults(1, [
+      { character: owes, place: null, standing: -40 }, { character: idle, place: null, standing: 0 },
+      { character: top, place: 1, standing: 500 }, { character: idler, place: null, standing: 0 },
+    ], { at: at(30, 9) });
+    fake.signInAs(me);
+    renderIn(fake, <RankingsScreen embedded season={1} character={owes} />, { path: `/season?tab=rankings&season=1&character=${owes}` });
+    await waitFor(() => expect(bodyRows()).toHaveLength(4));
+    expect(names()).toEqual(['Top', 'Abed', 'Idle', 'Owes']);
+    const place = (name: string) => rowOf(name).querySelector('.kb-rankings-place')!;
+    expect(place('Top')).toHaveTextContent(/^1$/u);
+    for (const name of ['Abed', 'Idle', 'Owes']) expect(within(place(name) as HTMLElement).getByText('Unplaced')).toHaveClass('kb-visually-hidden');
+    expect(screen.getByText(/A character that finished at 0 Aura or below takes no place\./u)).toBeInTheDocument();
+    /* The linked character has its row, unplaced: that is not "no row". */
+    expect(screen.queryByText(/has no row in Season 1/u)).toBeNull();
+    expect(rowOf('Owes')).toHaveAttribute('data-kb-highlight');
+  });
+
   test('the season choice\'s layout does not depend on the order of the stylesheets', () => {
     const css = readFileSync('engine/ui/rankings/rankings.css', 'utf8');
     expect(css).toMatch(/^\.kb-rankings \.kb-rankings-choice \{/mu);
@@ -264,6 +291,21 @@ describe('a finished season, beyond what the eye sees', () => {
 });
 
 describe('Rankings', () => {
+  test('a character standing at 0 or below holds no place on today\'s standings, as the results will list it (#492)', async () => {
+    const w = world();
+    const idle = w.fake.seed.character(w.other, 'Idle', 'face', { at: at(1) });
+    const owes = w.fake.seed.character(w.other, 'Owes', 'face', { at: at(1) });
+    w.fake.seed.settle({ at: at(29, 9), debut: false, standings: { [owes]: -20 } });
+    w.fake.signInAs(w.me);
+    renderIn(w.fake, <RankingsScreen />, { path: '/rankings' });
+    await screen.findByRole('table');
+    expect(names().slice(-2)).toEqual(['Idle', 'Owes']);
+    expect(rowOf('Quiet').querySelector('.kb-rankings-place')).toHaveTextContent(/^4$/u);
+    expect(within(rowOf('Idle').querySelector('.kb-rankings-place') as HTMLElement).getByText('Unplaced')).toBeInTheDocument();
+    expect(within(rowOf('Owes').querySelector('.kb-rankings-place') as HTMLElement).getByText('Unplaced')).toBeInTheDocument();
+    expect(screen.getByText(/A character at 0 Aura or below takes no place\./u)).toBeInTheDocument();
+  });
+
   test('a character with no reveal shows no class', async () => {
     const w = world();
     w.fake.signInAs(w.me);

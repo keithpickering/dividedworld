@@ -162,10 +162,20 @@ describe('the full public record', () => {
   test('the seasons filter lists the character\'s past seasons and links each to its row on Rankings', async () => {
     const fake = buildWorld();
     const w = world(fake);
-    fake.seed.seasonResults(1, [{ character: w.spritey, place: 4, standing: 0 }]);
+    fake.seed.seasonResults(1, [{ character: w.spritey, place: 4, standing: 40 }]);
     open(fake, w.spritey, '?kind=seasons');
     const link = await screen.findByRole('link', { name: 'Season 1: finished #4' });
     expect(link).toHaveAttribute('href', `/season?tab=rankings&season=1&character=${w.spritey}`);
+  });
+
+  test('a season it finished at 0 or below is listed unplaced, never with a place (#492)', async () => {
+    const fake = buildWorld();
+    const w = world(fake);
+    fake.seed.seasonResults(1, [{ character: w.spritey, place: null, standing: 0 }]);
+    open(fake, w.spritey, '?kind=seasons');
+    const link = await screen.findByRole('link', { name: 'Season 1: finished unplaced, at 0 Aura or below' });
+    expect(link).toHaveAttribute('href', `/season?tab=rankings&season=1&character=${w.spritey}`);
+    expect(screen.queryByText(/finished #/u)).toBeNull();
   });
 
   test('a Turn that names its class is one Act in both the class statements and the Turns, and the class view draws both rows', async () => {

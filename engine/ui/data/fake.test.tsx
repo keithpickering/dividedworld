@@ -15,7 +15,7 @@ import { TIP_KEYS } from '../tips/keys.ts';
 import { createFake, FAKE_BACKEND_MARKER, START, TEST_CODE } from './fake.ts';
 import { cutLog, LOG_ROWS, micros } from './log-page.ts';
 import { actsFollowed, actsNamed } from '../log/lines.ts';
-import { systemSettings, testSystem, testGroups } from '../../rules/test-system.ts';
+import { systemSettings, testCosmeticsContent, testSystem, testGroups } from '../../rules/test-system.ts';
 import { ENGINE_DEFAULT_PRONOUNS, PRONOUN_PRESETS } from '../../rules/pronouns.ts';
 
 const settings: Settings = {
@@ -31,7 +31,7 @@ const earn = () => [];
 const instance: Instance = {
   key: 'test', name: 'Test',
   copy: { announcementsThreadTitle: 'Promos {season}' },
-  packs: [], machine: [],
+  packs: [], machine: [], ...testCosmeticsContent,
   classes: [{ key: 'face', name: 'Face', earn }, { key: 'heel', name: 'Heel', earn }, { key: 'lurker', name: 'Lurker', earn }],
   cards: [],
   reactions: [
@@ -460,6 +460,9 @@ describe('standings', () => {
     expect((await fake.standingsPage(0, 1000)).map((s) => [s.name, s.standing, s.place])).toEqual([
       ['Bo Face', 500, 1], ['Ana Face', 300, 2], ['Ana Heel', 300, 2],
     ]);
+    /* Dense (#453): the standing after a tie takes the next place. */
+    fake.seed.settle({ standings: { [anaFace]: 500, [anaHeel]: 300, [boFace]: 500 }, debut: false });
+    expect((await fake.standingsPage(0, 1000)).map((s) => [s.name, s.place])).toEqual([['Ana Face', 1], ['Bo Face', 1], ['Ana Heel', 2]]);
     expect(await fake.lastSettledAt()).toBe(new Date(fake.clock.now()).toISOString());
   });
 });
@@ -1560,7 +1563,9 @@ describe('a place and a standing, read for one character or a page of them', () 
     fake.seed.settle({ standings: { [anaFace]: 300, [anaHeel]: 300, [boFace]: -40 }, debut: false });
     const all = await fake.standingsPage(0, 1000);
     for (const s of all) expect(await fake.standingPlace(s.character)).toEqual({ standing: s.standing, place: s.place, of: all.length });
-    expect((await fake.standingPlace(boFace))?.place).toBe(all.length);
+    /* A debt holds no place (#492): only a standing above zero is placed. The tie at 300 shares place 1. */
+    expect(await fake.standingPlace(boFace)).toEqual({ standing: -40, place: null, of: all.length });
+    expect((await fake.standingPlace(anaHeel))?.place).toBe(1);
     expect(await fake.standingPlace(waiting)).toBeNull();
     expect(await fake.standingPlace('nobody')).toBeNull();
   });
@@ -1656,6 +1661,27 @@ describe('a finished season\'s results and its announcements', () => {
     expect(item!.top.map((t) => [t.character, t.place])).toEqual([[boFace, 1], [anaFace, 2], [anaHeel, 3]]);
   });
 
+  test('an unplaced row (a standing of 0 or below, #492) follows the placed ones by standing, and the news podium is the placed alone', async () => {
+    const w = world();
+    w.fake.seed.season({ number: 1, startsAt: new Date(at(1)).toISOString(), endsAt: new Date(at(28)).toISOString() });
+    w.fake.seed.season({ number: 2, startsAt: new Date(at(28)).toISOString() });
+    const boHeel = w.fake.seed.character(w.bo, 'Bo Heel', 'heel');
+    w.fake.seed.seasonResults(1, [
+      { character: w.anaHeel, place: null, standing: -30 },
+      { character: boHeel, place: null, standing: 0 },
+      { character: w.anaFace, place: null, standing: 0 },
+      { character: w.boFace, place: 1, standing: 500 },
+    ], { at: at(28, 12) });
+    expect((await w.fake.resultsPage(1, 1)).map((r) => [r.name, r.place, r.standing])).toEqual([
+      ['Bo Face', 1, 500], ['Ana Face', null, 0], ['Bo Heel', null, 0], ['Ana Heel', null, -30],
+    ]);
+    expect([await w.fake.resultPlace(1, w.boFace), await w.fake.resultPlace(1, w.anaFace), await w.fake.resultPlace(1, boHeel), await w.fake.resultPlace(1, w.anaHeel)]).toEqual([0, 1, 2, 3]);
+    const [item] = await w.fake.seasonNews();
+    expect(item!.top.map((t) => [t.character, t.place])).toEqual([[w.boFace, 1]]);
+    expect(item!.count).toBe(4);
+    expect((await w.fake.profilePage(w.anaHeel))?.seasons).toEqual([{ season: 1, place: null, standing: -30, at: new Date(at(28, 12)).toISOString() }]);
+  });
+
   test('seed.announce writes the character\'s own announce Act in the season\'s Promos thread, which a board lists', async () => {
     const { fake, anaFace, boFace } = world();
     const first = fake.seed.announce(anaFace, 'debut', { class: 'face', at: at(5, 8) });
@@ -1720,15 +1746,19 @@ describe('a finished season\'s results and its announcements', () => {
 });
 
 describe('a page of the standings', () => {
-  test('standingsPage pages the ranking as standings_page does: ties share a place across a page boundary, nothing settled stands at 0, debts last, empty past the end', async () => {
+  test('standingsPage pages the ranking as standings_page does: ties share a place across a page boundary, nothing settled stands at 0 unplaced, debts last and unplaced, empty past the end', async () => {
     const { fake, bo, anaFace, anaHeel, boFace } = world();
     const boHeel = fake.seed.character(bo, 'Bo Heel', 'heel');
     const boLurk = fake.seed.character(bo, 'Bo Lurk', 'lurker');
     fake.seed.settle({ standings: { [anaFace]: 300, [anaHeel]: 300, [boFace]: 500, [boHeel]: -40 }, debut: false });
-    const row = (s: { name: string; standing: number; place: number }) => [s.name, s.standing, s.place];
+    const row = (s: { name: string; standing: number; place: number | null }) => [s.name, s.standing, s.place];
     expect((await fake.standingsPage(0, 2)).map(row)).toEqual([['Bo Face', 500, 1], ['Ana Face', 300, 2]]);
-    expect((await fake.standingsPage(2, 2)).map(row)).toEqual([['Ana Heel', 300, 2], ['Bo Lurk', 0, 4]]);
-    expect((await fake.standingsPage(4, 2)).map(row)).toEqual([['Bo Heel', -40, 5]]);
+    /* Places are dense (#453): the tie at 300 is place 2. A standing of 0 or below holds no place (#492): the masks below are listed by standing, unplaced. */
+    expect((await fake.standingsPage(2, 2)).map(row)).toEqual([['Ana Heel', 300, 2], ['Bo Lurk', 0, null]]);
+    expect((await fake.standingsPage(4, 2)).map(row)).toEqual([['Bo Heel', -40, null]]);
+    expect(await fake.standingPlace(boLurk)).toMatchObject({ standing: 0, place: null });
+    expect(await fake.standingPlace(boHeel)).toMatchObject({ standing: -40, place: null });
+    expect(await fake.standingPlace(anaHeel)).toMatchObject({ standing: 300, place: 2 });
     expect((await fake.standingsPage(4, 2))[0]?.character).toBe(boHeel);
     expect((await fake.standingsPage(3, 1))[0]?.character).toBe(boLurk);
     expect(await fake.standingsPage(5, 2)).toEqual([]);
@@ -1757,7 +1787,7 @@ describe('the player\'s own log: the ledger with its shares, the wallet\'s event
     validateConfig: (c: unknown) => ({ ok: true as const, value: c ?? {} }),
   };
   const shop: Instance = { ...instance, cards: [splat], machine: [{ item: { card: splat.key }, availability: 'onSale' as const, price: 100 }], settings: { ...settings, economy: {} } };
-  const empty = { infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], settlements: [], wallet: [], cards: [], packs: [], playsOnMine: [], writes: [], saves: [], setEnds: [], caught: [], ended: [], before: null };
+  const empty = { infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], settlements: [], wallet: [], cards: [], packs: [], playsOnMine: [], writes: [], saves: [], setEnds: [], caught: [], ended: [], cosmetics: [], before: null };
 
   function logWorld() {
     const fake = createFake({ instance: shop });
@@ -3350,6 +3380,230 @@ describe('a card that writes: its tails, as post_tails and the worker leave them
   });
 });
 
+/* ---- gear, trophies and Random Events (cosmetics Task 6): the fake holds what set_outfit, show_trophies, trophies_of and random_event hold, in their words ---- */
+describe('gear, trophies and Random Events', () => {
+  const dressed: Instance = {
+    ...instance,
+    gear: [
+      { key: 'hat', name: 'Hat', line: 'A hat.', rarity: 'common' }, { key: 'mustache', name: 'Mustache', line: 'A mustache.', rarity: 'rare' },
+      { key: 'monocle', name: 'Monocle', line: 'A monocle.', rarity: 'common' },
+    ],
+    trophies: { kinds: [{ key: 'p1', name: 'First' }, { key: 'belt', name: 'The Belt', belt: true }, { key: 'pet', name: 'Pet' }, { key: 'p2', name: 'P2' }, { key: 'p3', name: 'P3' }, { key: 'met', name: 'Met' }], seasonPlaces: ['p1', 'p2', 'p3'], boss: ['belt', 'pet'], demandMet: 'met' },
+    events: { lines: [{ key: 'nothing', outcome: 'line', text: 'Nothing happens.' }, { key: 'found', outcome: 'gear', text: 'You find {item}.' }] },
+    settings: { ...settings, cosmetics: { ...settings.cosmetics, gear: { wornMost: 2, reach: 0.4 }, trophies: { shownMost: 2 }, events: { ...settings.cosmetics.events, windowMinutes: 15, dayMost: 2 } } },
+  };
+  const piece = (gear: string, layer: number) => ({ gear, x: 0.5, y: 0.5, w: 0.4, turn: 0, layer });
+  function dressing() {
+    const fake = createFake({ instance: dressed });
+    const ana = fake.seed.account('ana');
+    const bo = fake.seed.account('bo');
+    const a1 = fake.seed.character(ana, 'Ana One', 'face');
+    const a2 = fake.seed.character(ana, 'Ana Two', 'heel');
+    const b1 = fake.seed.character(bo, 'Bo One', 'face');
+    fake.seed.gear(ana, { hat: 1, mustache: 2, monocle: 1 });
+    fake.signInAs(ana);
+    return { fake, ana, bo, a1, a2, b1 };
+  }
+
+  test('an outfit worn shows on the public character, in layer order, and the wardrobe says where each copy is', async () => {
+    const { fake, a1, a2 } = dressing();
+    expect(must(await fake.setOutfit(a1, [piece('mustache', 1), piece('hat', 0)]))).toEqual({ worn: 2 });
+    expect((await fake.characters([a1]))[0]!.outfit.map((p) => p.gear)).toEqual(['hat', 'mustache']);
+    expect(must(await fake.wardrobe())).toEqual([
+      { gear: 'hat', rarity: 'common', held: 1, wornBy: [a1] }, { gear: 'monocle', rarity: 'common', held: 1, wornBy: [] }, { gear: 'mustache', rarity: 'rare', held: 2, wornBy: [a1] },
+    ]);
+    // The whole outfit replaces the one before; the other mask, with none of the hat free, is refused in the engine's words.
+    expect((await fake.setOutfit(a2, [piece('hat', 0)]))).toEqual(refused('"hat" is worn 1 time here, and 0 copies are free'));
+    expect(must(await fake.setOutfit(a1, [piece('monocle', 0)]))).toEqual({ worn: 1 });
+    expect(must(await fake.setOutfit(a2, [piece('hat', 0)]))).toEqual({ worn: 1 });
+  });
+
+  test('a piece over the worn limit, a shared layer, a bad bound and an unknown gear are refused in the server\'s words', async () => {
+    const { fake, a1 } = dressing();
+    expect(await fake.setOutfit(a1, [piece('hat', 0), piece('mustache', 1), piece('monocle', 2)])).toEqual(refused('3 pieces are worn; at most 2'));
+    expect(await fake.setOutfit(a1, [piece('hat', 0), piece('mustache', 0)])).toEqual(refused('"mustache" shares layer 0 with "hat"'));
+    expect(await fake.setOutfit(a1, [{ ...piece('hat', 0), w: 2 }])).toEqual(refused('a piece\'s width is from 0.05 to 1.5 of the portrait\'s width'));
+    expect(await fake.setOutfit(a1, [piece('hat', 2)])).toEqual(refused('a piece\'s layer is a whole number below 2'));
+    expect(await fake.setOutfit(a1, [piece('fez', 0)])).toEqual(refused('there is no gear "fez"'));
+    expect(await fake.setOutfit(a1, [piece('mustache', 0), piece('mustache', 1)])).toEqual({ ok: true, value: { worn: 2 } });
+    expect((await fake.characters([a1]))[0]!.outfit).toHaveLength(2);
+  });
+
+  test('a character the player does not play is refused, and a new portrait takes the outfit off', async () => {
+    const { fake, a1, b1 } = dressing();
+    expect(await fake.setOutfit(b1, [])).toEqual(refused('you do not play that character'));
+    expect(await fake.showTrophies(b1, [])).toEqual(refused('you do not play that character'));
+    expect(await fake.randomEvent(b1)).toEqual(refused('you do not play that character'));
+    fake.signInAs(null);
+    expect(await fake.wardrobe()).toEqual(refused('sign in to dress a character'));
+    fake.signInAs(fake.seed.account('cy'));
+    expect(must(await fake.wardrobe())).toEqual([]);
+  });
+
+  test('trophies show in the order the player chose, then the belts held; a reversal takes one off at once; a belt passes to the latest award', async () => {
+    const { fake, ana, a1, b1 } = dressing();
+    const t0 = Date.parse('2026-10-01T00:00:00Z');
+    const first = fake.seed.award(a1, 'p1', { at: t0 });
+    const pet = fake.seed.award(a1, 'pet', { at: t0 + 1000, by: 'boss' });
+    fake.seed.award(a1, 'belt', { at: t0 + 2000, by: 'boss' });
+    expect((await fake.characters([a1]))[0]!.trophies.map((t) => [t.name, t.held])).toEqual([['The Belt', true]]);
+    expect(must(await fake.showTrophies(a1, [pet, first]))).toEqual({ shown: 2 });
+    expect((await fake.characters([a1]))[0]!.trophies.map((t) => t.name)).toEqual(['Pet', 'First', 'The Belt']);
+    expect(await fake.showTrophies(a1, [pet, first, pet])).toEqual(refused('3 trophies are shown; at most 2'));
+    expect(await fake.showTrophies(a1, [pet, pet])).toEqual(refused('a trophy is shown once'));
+    expect(await fake.showTrophies(a1, [fake.seed.award(b1, 'p2')])).toEqual(refused('that trophy is not this character\'s'));
+    // The belt goes to Bo One with a later award; it leaves Ana One's shelf, and the lineage names both reigns.
+    fake.seed.award(b1, 'belt', { at: t0 + 3000 });
+    expect((await fake.characters([a1]))[0]!.trophies.map((t) => t.name)).toEqual(['Pet', 'First']);
+    expect(must(await fake.beltLineage('belt')).reigns.map((r) => [r.name, r.ended !== null, r.by])).toEqual([['Bo One', false, 'the season'], ['Ana One', true, 'the Boss']]);
+    expect(await fake.beltLineage('pet')).toEqual(refused('"pet" is not a belt'));
+    expect(await fake.beltLineage('nope')).toEqual(refused('there is no trophy "nope"'));
+    // A page is newest first; an admin's reversal takes an award off the page and out of the shown set.
+    fake.seed.admin(ana);
+    expect((await fake.trophies(a1)).awards.map((t) => t.name)).toEqual(['The Belt', 'Pet', 'First']);
+    expect(must(await fake.reverseAward(pet))).toEqual({ reversed: pet });
+    expect(await fake.reverseAward(pet)).toEqual(refused('that trophy was already taken back'));
+    expect((await fake.characters([a1]))[0]!.trophies.map((t) => t.name)).toEqual(['First']);
+    expect(await fake.showTrophies(a1, [pet])).toEqual(refused('that trophy has been taken back'));
+    expect((await fake.trophies(a1)).awards.map((t) => t.name)).toEqual(['The Belt', 'First']);
+  });
+
+  test('an award names its move and says whether it is shown; a belt\'s reigns page newest first from a cursor', async () => {
+    const { fake, a1, b1 } = dressing();
+    fake.seed.staff('s-boss', 'Boss Staff', 'boss');
+    const move = fake.seed.trophyMove('s-boss', { character: a1, trophy: 'pet' });
+    const t0 = Date.parse('2026-10-01T00:00:00Z');
+    const pet = fake.seed.award(a1, 'pet', { at: t0, by: 'boss', move });
+    fake.seed.award(a1, 'p1', { at: t0 + 1000, by: 'season' });
+    fake.seed.award(a1, 'p2', { at: t0 + 2000, by: 'admin' });
+    must(await fake.showTrophies(a1, [pet]));
+    const items = (await fake.trophies(a1)).awards;
+    expect(items.map((t) => [t.name, t.move !== null, t.season, t.shown])).toEqual([['P2', false, null, false], ['First', false, 1, false], ['Pet', true, null, true]]);
+    expect(items[2]!.move).toMatchObject({ act: move });
+    expect(items[2]!.move!.seq).toBeGreaterThan(0);
+    expect(items[2]!.by).toBe('Boss Staff, the Boss');
+    for (let i = 0; i < 25; i++) fake.seed.award(i % 2 ? a1 : b1, 'belt', { at: t0 + 10_000 + i * 1000, by: 'admin' });
+    const first = must(await fake.beltLineage('belt'));
+    expect(first.reigns).toHaveLength(20);
+    expect(first.more).toBe(true);
+    expect(first.reigns[0]).toMatchObject({ ended: null, by: 'an admin' });
+    const last = first.reigns[19]!;
+    const rest = must(await fake.beltLineage('belt', { before: last.began, beforeId: last.award }));
+    expect(rest.reigns).toHaveLength(5);
+    expect(rest.more).toBe(false);
+    expect(rest.reigns[0]!.ended).toBe(last.began);
+  });
+
+  test('reigns that began at the same moment are neither skipped nor repeated across a page edge', async () => {
+    const { fake, a1, b1 } = dressing();
+    const at = Date.parse('2026-10-01T00:00:00Z');
+    const ids = Array.from({ length: 22 }, (_, i) => fake.seed.award(i % 2 ? a1 : b1, 'belt', { at, by: 'admin' }));
+    const first = must(await fake.beltLineage('belt'));
+    const last = first.reigns[first.reigns.length - 1]!;
+    expect(first.reigns).toHaveLength(20);
+    expect(first.more).toBe(true);
+    const rest = must(await fake.beltLineage('belt', { before: last.began, beforeId: last.award }));
+    expect(rest.more).toBe(false);
+    expect([...first.reigns, ...rest.reigns].map((r) => r.award).sort()).toEqual([...ids].sort());
+  });
+
+  test('an admin\'s hand is an admin\'s alone; a player is refused in only_admins\'s words', async () => {
+    const { fake, ana, a1 } = dressing();
+    expect(await fake.grantGear(a1, 'hat', 1)).toEqual(refused('only an admin grants gear'));
+    expect(await fake.awardTrophy('pet', a1)).toEqual(refused('only an admin gives a trophy'));
+    expect(await fake.reverseAward('x')).toEqual(refused('only an admin takes a trophy back'));
+    expect(await fake.makeTrophy('Mine', null, null, false)).toEqual(refused('only an admin makes a trophy'));
+    fake.seed.admin(ana);
+    expect(must(await fake.grantGear(a1, 'hat', 2))).toEqual({ granted: 2 });
+    expect(await fake.grantGear(a1, 'hat', 0)).toEqual(refused('a grant is 1 to 100 copies'));
+    expect(must(await fake.wardrobe()).find((w) => w.gear === 'hat')?.held).toBe(3);
+    const made = must(await fake.makeTrophy('  Mine ', 'Made by hand.', null, true)).trophy;
+    expect(made).toMatch(/^made-/);
+    const award = must(await fake.awardTrophy(made, a1, '  Well done '));
+    expect((await fake.trophies(a1)).awards).toMatchObject([{ award: award.award, name: 'Mine', belt: true, held: true, line: 'Well done', by: 'an admin' }]);
+    expect(await fake.awardTrophy('pet', a1, 'x'.repeat(201))).toEqual(refused('a trophy\'s words are at most 200 characters'));
+  });
+
+  test('failed awards: unresolved first and paged, a hand give is recorded once, and what the failure was not for is refused, as give_failed_award does', async () => {
+    const { fake, ana, a1, a2, b1 } = dressing();
+    expect(await fake.trophyAwardFailures()).toEqual(refused('only an admin reads the trophies that could not be given'));
+    expect(await fake.giveFailedAward('x', a1)).toEqual(refused('only an admin gives an award that could not be written'));
+    fake.seed.admin(ana);
+    const move = fake.seed.awardFailure({ move: 'm1', season: null, at: '2026-10-01T00:00:00.000Z', error: 'm', trophy: 'met', characters: [{ id: a1, name: 'Ana One' }, { id: b1, name: 'Bo One' }] });
+    const season = fake.seed.awardFailure({ move: null, season: 1, at: '2026-10-02T00:00:00.000Z', error: 's', trophy: null, characters: [{ id: a2, name: 'Ana Two', place: 2 }] });
+    const unread = fake.seed.awardFailure({ move: 'm2', season: null, at: '2026-10-03T00:00:00.000Z', error: 'u', trophy: 'met', characters: null });
+    expect(must(await fake.trophyAwardFailures()).failures.map((f) => [f.id, f.open])).toEqual([[unread, true], [season, true], [move, true]]);
+    expect(must(await fake.trophyAwardFailures()).failures[2]!.characters!.map((c) => c.given)).toEqual([false, false]);
+    const award = must(await fake.giveFailedAward(move, a1));
+    expect((await fake.trophies(a1)).awards).toMatchObject([{ award: award.award, trophy: 'met', by: 'an admin' }]);
+    expect(await fake.giveFailedAward(move, a1)).toEqual(refused('that award was already given to that character'));
+    expect((await fake.trophies(a1)).awards).toHaveLength(1);
+    expect(must(await fake.trophyAwardFailures()).failures.find((f) => f.id === move)).toMatchObject({ open: true, characters: [{ id: a1, given: true }, { id: b1, given: false }] });
+    expect(await fake.giveFailedAward(move, a2)).toEqual(refused('that character was not one the failed award was for'));
+    expect(await fake.giveFailedAward(unread, a1)).toEqual(refused('the characters that award was for cannot be read now; give it from Award a trophy'));
+    expect(await fake.giveFailedAward('nope', a1)).toEqual(refused('there is no such failed award'));
+    // A season's failure gives the place's own kind; once every character has had theirs the failure is closed and goes behind the open ones.
+    must(await fake.giveFailedAward(season, a2));
+    expect((await fake.trophies(a2)).awards).toMatchObject([{ trophy: 'p2' }]);
+    must(await fake.giveFailedAward(move, b1));
+    expect(must(await fake.trophyAwardFailures()).failures.map((f) => [f.id, f.open])).toEqual([[unread, true], [season, false], [move, false]].sort((x, y) => Number(y[1]) - Number(x[1])));
+    // Paged: the cursor is the last row's instant, id and open.
+    for (let i = 0; i < 52; i += 1) fake.seed.awardFailure({ move: null, season: 2 + i, at: new Date(Date.parse('2026-09-01T00:00:00Z') + i * 60_000).toISOString(), error: `e${i}`, trophy: null, characters: [{ id: a1, name: 'Ana One', place: 1 }] });
+    const first = must(await fake.trophyAwardFailures());
+    expect(first.failures).toHaveLength(50);
+    expect(first.more).toBe(true);
+    const last = first.failures.at(-1)!;
+    const rest = must(await fake.trophyAwardFailures({ before: last.at, beforeId: last.id, beforeOpen: last.open }));
+    expect(rest.failures).toHaveLength(5);
+    expect(rest.more).toBe(false);
+    expect(new Set([...first.failures, ...rest.failures].map((f) => f.id)).size).toBe(55);
+    expect(rest.failures.slice(-2).map((f) => f.open)).toEqual([false, false]);
+  });
+
+  test('the wardrobe lists a character once for each piece of a gear it wears, as my_wardrobe does', async () => {
+    const { fake, a1 } = dressing();
+    must(await fake.setOutfit(a1, [piece('mustache', 0), piece('mustache', 1)]));
+    expect(must(await fake.wardrobe()).find((w) => w.gear === 'mustache')?.wornBy).toEqual([a1, a1]);
+  });
+
+  test('the Boss who gave a trophy is named as the SQL names it, by the Boss character, and plainly where none stands', async () => {
+    const { fake, a1 } = dressing();
+    fake.seed.award(a1, 'pet', { by: 'boss' });
+    expect((await fake.trophies(a1)).awards[0]!.by).toBe('the Boss');
+    fake.seed.staff('boss1', 'Sighbot', 'boss', { debuted: true });
+    expect((await fake.trophies(a1)).awards[0]!.by).toBe('Sighbot, the Boss');
+  });
+
+  test('a Random Event comes once a window and at most dayMost a day, from the scripted outcome, and a found gear is held at once', async () => {
+    const { fake, a1 } = dressing();
+    fake.seed.nextEvent({ outcome: 'gear', item: 'mustache', line: 'found' });
+    expect(must(await fake.randomEvent(a1))).toMatchObject({ outcome: 'gear', item: 'mustache', rarity: 'rare', line: 'You find {item}.', lineKey: 'found', character: a1 });
+    expect(must(await fake.wardrobe()).find((w) => w.gear === 'mustache')?.held).toBe(3);
+    // Inside the window: nothing, and nothing is used up.
+    fake.seed.nextEvent({ outcome: 'line', line: 'nothing' });
+    expect(must(await fake.randomEvent(a1))).toBeNull();
+    fake.clock.advance(16 * MINUTE);
+    expect(must(await fake.randomEvent(a1))).toMatchObject({ outcome: 'line', line: 'Nothing happens.', lineKey: 'nothing', item: null });
+    // The day's most is 2.
+    fake.clock.advance(16 * MINUTE);
+    fake.seed.nextEvent({ outcome: 'line', line: 'nothing' });
+    expect(must(await fake.randomEvent(a1))).toBeNull();
+    fake.clock.advance(DAY);
+    expect(must(await fake.randomEvent(a1))).toMatchObject({ outcome: 'line' });
+  });
+
+  test('a scripted roll that finds nothing answers null, an unscripted one finds nothing until a world turns the odds on, and then draws from the settings\' own odds', async () => {
+    const { fake, a1 } = dressing();
+    fake.seed.nextEvent(null);
+    expect(must(await fake.randomEvent(a1))).toBeNull();
+    fake.clock.advance(16 * MINUTE);
+    for (let i = 0; i < 20; i++) { expect(must(await fake.randomEvent(a1))).toBeNull(); fake.clock.advance(16 * MINUTE); }
+    fake.seed.eventsOn();
+    const drawn = must(await fake.randomEvent(a1));
+    expect(drawn === null || ['line', 'gear', 'card'].includes(drawn.outcome)).toBe(true);
+  });
+});
+
 describe('a drive and its gifts, refused and split as the database does', () => {
   /* A drive card: gifts of 0.10 and 0.25, of which The System keeps 20 percent, rounded up; a drive lasts 7 days from its latest play. */
   const appeal = {
@@ -3691,7 +3945,7 @@ describe('the log\'s scored-as rows (card notes, Part 6, Task 6)', () => {
     { settlement: 3, character: 'c1', classKey: 'heel', play: 'p3', card: 'dayoff', startsAt: '2026-10-31T00:00:00.000Z', endsAt: '2026-11-01T00:00:00.000Z' },
     { settlement: 2, character: 'c1', classKey: 'face', play: 'p2', card: 'dayoff', startsAt: '2026-10-30T00:00:00.000Z', endsAt: '2026-10-31T00:00:00.000Z' },
   ];
-  const empty = { ledger: [], shares: [], wallet: [], cards: [], packs: [], playsOnMine: [], writes: [], saves: [], setEnds: [], caught: [], ended: [], infractions: [], bans: [], groupMoves: [], reports: [], appeals: [] };
+  const empty = { ledger: [], shares: [], wallet: [], cards: [], packs: [], playsOnMine: [], writes: [], saves: [], setEnds: [], caught: [], ended: [], infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], cosmetics: [] };
 
   test('a page from an older payload, with no scoredAs key, has none, and the fake sends none', async () => {
     expect(cutLog(empty)).not.toHaveProperty('scoredAs');

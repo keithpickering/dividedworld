@@ -11,6 +11,7 @@ import { FOLLOWED_COUNT_CAP } from '../data/api.ts';
 import { pageOf, threadHref } from '../thread/pages.ts';
 import { shortQuote, springConditions } from '../cards/lens-words.ts';
 import { upperFirst } from '../copy-words.ts';
+import { inSentence } from '../log/lines.ts';
 
 /** A run of words: plain, or a title set in italics, as the board draws it. */
 export type Part = string | { readonly em: string };
@@ -261,6 +262,13 @@ export function wordsFor(row: Alert, ctx: WordsContext): Said {
         ways: postWay(post, row, ctx), who,
       };
     }
+    /* A trophy and a lost belt are the character's own player's: the Alert says which mask and which trophy (`sub`), and the log says who gave it or took it. */
+    case 'trophy':
+      return { line: [row.name !== null && row.sub !== null ? `${row.name} was given ${inSentence(row.sub)}` : 'One of your characters was given a trophy'], detail: ['The log says who gave it.'], ways: [{ text: 'Open My log', to: '/log' }], who };
+    case 'beltBack':
+      return { line: [row.name !== null && row.sub !== null ? `${row.name} holds ${inSentence(row.sub)} again` : 'One of your characters holds a belt again'], detail: ['The log says what changed.'], ways: [{ text: 'Open My log', to: '/log' }], who };
+    case 'beltLost':
+      return { line: [row.name !== null && row.sub !== null ? `${row.name} lost ${inSentence(row.sub)}` : 'One of your characters lost a belt'], detail: ['The log says who took it.'], ways: [{ text: 'Open My log', to: '/log' }], who };
     case 'ruling':
       return { line: [`A ruling landed on ${row.name ?? 'your character'}`], detail: sentences(['The ruling is public, on the board.'], inTitle(row)), ways: postWay(aboutPost(act, ctx), row, ctx), who };
     case 'settlement': {

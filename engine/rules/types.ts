@@ -12,6 +12,7 @@
 import type { GroupsContent } from './groups.ts';
 import type { BeyondPost, CardRules, Rarity } from './cards.ts';
 import type { PackRules, SlotSeed } from './packs.ts';
+import type { EventLine, GearRules, TrophyCatalog } from './cosmetics.ts';
 import type { StockLineKey } from '../system/stock.ts';
 import type { Duty } from '../system/duties.ts';
 import type { HintSettings } from './hints.ts';
@@ -316,6 +317,37 @@ export interface Settings {
   readonly toastDefaults: readonly AlertKind[];
   /** The model each tier of a call uses (the meeting runs on `strong`, small lines on `light`), as the provider names it. */
   readonly modelTiers: { readonly strong: string; readonly light: string };
+  /**
+   * The cosmetics' numbers (the cosmetics design): how much gear a character wears and how far past the portrait it reaches, how many
+   * trophies a postbit shows, and how often and how oddly a Random Event strikes. Each is a starting point the season review replaces.
+   */
+  readonly cosmetics: CosmeticsSettings;
+}
+
+/** `Settings.cosmetics`. Weights are positive whole numbers; `outcomes.none` may be 0 (and is 0 when left out). */
+export interface CosmeticsSettings {
+  readonly gear: {
+    /** The most pieces one character wears; a piece's layer is a whole number below it. */
+    readonly wornMost: number;
+    /** How far a piece may reach past each edge of the portrait, as a fraction of the portrait's width. */
+    readonly reach: number;
+  };
+  readonly trophies: {
+    /** The most trophies a postbit shows; the rest are on the character's page. */
+    readonly shownMost: number;
+  };
+  readonly events: {
+    /** How long a Random Event's window is: one chance at most per character in it. */
+    readonly windowMinutes: number;
+    /** The most Random Events one character gets in a rolling 24 hours. */
+    readonly dayMost: number;
+    /** The weight of each outcome of an event; `none` is an event that happens to nobody. */
+    readonly outcomes: { readonly line: number; readonly gear: number; readonly card: number; readonly none?: number };
+    /** The weight of each rarity of a found piece of gear; a rarity the instance has no gear at is never named. */
+    readonly gearRarity: Readonly<Partial<Record<Rarity, number>>>;
+    /** The weight of each rarity of a found card. */
+    readonly cardRarity: Readonly<Partial<Record<Rarity, number>>>;
+  };
 }
 
 /**
@@ -808,4 +840,10 @@ export interface Instance {
   readonly packs: readonly PackRules[];
   /** The machine's slots in grid order: the cards and packs it sells, each at a price (hundredths of an orb) and an availability. */
   readonly machine: readonly SlotSeed[];
+  /** The gear a character can wear (engine/rules/cosmetics.ts); its art is `InstanceUi.gear`. */
+  readonly gear: readonly GearRules[];
+  /** The trophy kinds the code defines, and which are the places, the Boss's and the demand's. */
+  readonly trophies: TrophyCatalog;
+  /** What Random Events say. */
+  readonly events: { readonly lines: readonly EventLine[] };
 }

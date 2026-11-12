@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
-import type { Character } from '../data/api.ts';
+import type { Character, ShownTrophy } from '../data/api.ts';
 import { widthOf } from '../test-width.ts';
 import { renderInWorld } from '../test-world.tsx';
 import { monthYear, shortDate } from './dates.ts';
@@ -12,7 +12,7 @@ import { ENGINE_DEFAULT_PRONOUNS } from '../../rules/pronouns.ts';
 
 const character = (over: Partial<Character> = {}): Character => ({
   id: 'c1', name: 'Pipewrench', title: 'Professional Wrench', signature: '', avatarSquare: 'sq.webp', avatarPortrait: 'tall.webp',
-  squareFrame: null, portraitFrame: null, pipStyle: 'default', pronouns: ENGINE_DEFAULT_PRONOUNS, joined: '2026-10-01', group: 'members', ...over,
+  squareFrame: null, portraitFrame: null, portraitTallness: null, outfit: [], trophies: [], pipStyle: 'default', pronouns: ENGINE_DEFAULT_PRONOUNS, joined: '2026-10-01', group: 'members', ...over,
 });
 const person = (over: Partial<PostbitPerson> = {}, c: Partial<Character> = {}): PostbitPerson => ({
   character: character(c), posts: 212, standing: 650, revealed: null, turnedAt: null, ...over,
@@ -310,23 +310,162 @@ describe('the side by side avatar slot, in the stylesheet', () => {
   const css = readFileSync('engine/ui/postbit/postbit.css', 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '');
   /* The declarations of the first rule whose selector contains `selector`, in any media block. */
   const rule = (selector: string) => {
-    const at = css.indexOf(selector);
-    if (at < 0) return null;
-    return css.slice(css.indexOf('{', at) + 1, css.indexOf('}', at));
+    const found = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/gu)].filter((m) => m[1]!.split(',').some((x) => x.trim().endsWith(selector.replace(/ \{$/u, ''))));
+    return found.length === 0 ? null : found.map((m) => m[2]!).join('');
   };
 
   /* A portrait is any shape from 1:1 to 1:2 (profile-edit/frames.ts). A slot fixed at 1:2 with `cover` crops every
      portrait shorter than that, so the slot must take the picture's own shape once it loads. */
   test('a portrait\'s slot takes the portrait\'s own shape, not a fixed 1:2 crop', () => {
     expect(rule('.kb-postbit-avatar[data-kb-slot="portrait"] {')).toMatch(/aspect-ratio:\s*auto\s*;/u);
-    expect(rule('.kb-postbit-avatar[data-kb-slot="portrait"] img')).toMatch(/aspect-ratio:\s*auto 1 \/ 2\s*;/u);
-    expect(rule('.kb-postbit-avatar[data-kb-slot="portrait"] img')).toMatch(/height:\s*auto\s*;/u);
+    expect(rule('.kb-postbit-avatar[data-kb-slot="portrait"] > picture > img')).toMatch(/aspect-ratio:\s*auto 1 \/ 2\s*;/u);
+    expect(rule('.kb-postbit-avatar[data-kb-slot="portrait"] > picture > img')).toMatch(/height:\s*auto\s*;/u);
   });
 
   test('the phone keeps its small square, which the portrait\'s rules must not reach', () => {
     const phone = css.slice(css.indexOf('@media (max-width: 40em)'));
-    expect(phone).not.toContain('data-kb-slot="portrait"');
     expect(css).toMatch(/@media not all and \(max-width: 40em\)\s*\{[^@]*data-kb-slot="portrait"/u);
+  });
+});
+
+describe('gear on the postbit', () => {
+  const worn = [{ gear: 'band', x: 0.5, y: 0, w: 0.5, turn: 0, layer: 0 }];
+  const SQUARE = { x: 0, y: 0, w: 1, h: 0.5 };
+
+  test('a portrait wears its pieces in a layer of its own, hidden from assistive tech', () => {
+    show(person({}, { outfit: worn, portraitTallness: 1.5 }));
+    const layer = slot().querySelector('.kb-outfit')!;
+    expect(layer).toHaveAttribute('aria-hidden', 'true');
+    expect(layer.querySelectorAll('img')).toHaveLength(1);
+    expect(slot().querySelector('picture img')).toHaveAttribute('src', 'tall.webp');
+  });
+
+  test('the tall slot takes the portrait\'s tallness as its aspect ratio', () => {
+    show(person({}, { portraitTallness: 1.4 }));
+    expect((slot() as HTMLElement).style.aspectRatio).toBe('1 / 1.4');
+  });
+
+  test('the stacked band and the phone draw the square, with the pieces cut through its frame', () => {
+    show(person({}, { outfit: [{ ...worn[0]!, y: 0.25 }], squareFrame: SQUARE, portraitTallness: 2 }), 'stacked');
+    expect(slot().querySelector('.kb-outfit')).toHaveAttribute('data-kb-on', 'square');
+    expect(slot().querySelector<HTMLElement>('.kb-outfit img')!.style.top).toBe('50%');
+  });
+
+  test('a side by side portrait carries both layers in the DOM at every width, and the stylesheet shows one', () => {
+    const outfit = [{ ...worn[0]!, y: 0.25 }];
+    for (const w of [1440, 390]) {
+      document.body.innerHTML = '';
+      widthOf(w);
+      show(person({}, { outfit, squareFrame: SQUARE, portraitTallness: 2 }));
+      expect(slot()).toHaveAttribute('data-kb-slot', 'portrait');
+      expect(slot().querySelector('.kb-outfit[data-kb-on="portrait"]')).not.toBeNull();
+      expect(slot().querySelector('.kb-outfit[data-kb-on="square"]')).not.toBeNull();
+    }
+    const css = readFileSync('engine/ui/postbit/postbit.css', 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '');
+    const phone = css.slice(css.indexOf('@media (max-width: 40em)'));
+    expect(css).toMatch(/\.kb-outfit\[data-kb-on="square"\]\s*\{[^}]*display:\s*none/u);
+    expect(phone).toMatch(/data-kb-square[^{]*\.kb-outfit\[data-kb-on="portrait"\]\s*\{[^}]*display:\s*none/u);
+    expect(phone).toMatch(/\.kb-outfit\[data-kb-on="square"\]\s*\{[^}]*display:\s*block/u);
+  });
+
+  test('no rule hides the square outfit outside the side layout, and the phone crops the portrait slot with cover', () => {
+    const css = readFileSync('engine/ui/postbit/postbit.css', 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '');
+    const hides = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/gu)].filter((m) => /display:\s*none/u.test(m[2]!) && m[1]!.includes('data-kb-on="square"'));
+    expect(hides.length).toBeGreaterThan(0);
+    for (const m of hides) expect(m[1]).toContain('data-kb-postbit="side"');
+    const phone = css.slice(css.indexOf('@media (max-width: 40em)'));
+    expect(phone).toMatch(/data-kb-slot="portrait"\]\s*>\s*picture\s*>\s*img\s*\{[^}]*object-fit:\s*cover/u);
+  });
+
+  test('a mask with no portrait draws its square or initial and no gear', () => {
+    show(person({}, { avatarPortrait: null, outfit: worn }));
+    expect(slot().querySelector('.kb-outfit')).toBeNull();
+  });
+
+  test('a mask with a portrait and no gear draws no layer', () => {
+    show(person({}, { outfit: [] }));
+    expect(slot().querySelector('.kb-outfit')).toBeNull();
+  });
+});
+
+describe('a portrait with no square', () => {
+  const worn = [{ gear: 'band', x: 0.5, y: 0.1, w: 0.5, turn: 0, layer: 0 }];
+  test('stacked, the square gear is not drawn over the initial letter', () => {
+    show(person({}, { avatarSquare: null, outfit: worn, portraitTallness: 2 }), 'stacked');
+    expect(slot().querySelector('.kb-outfit')).toBeNull();
+    expect(slot()).toHaveTextContent('P');
+  });
+
+  test('on a phone its portrait gear is hidden, since the 1:1 cover slot is not the portrait\'s shape', () => {
+    const css = readFileSync('engine/ui/postbit/postbit.css', 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '');
+    const phone = css.slice(css.indexOf('@media (max-width: 40em)'));
+    expect(phone).toMatch(/data-kb-slot="portrait"\]:not\(\[data-kb-square\]\)\s*>\s*\.kb-outfit\[data-kb-on="portrait"\]\s*\{[^}]*display:\s*none/u);
+  });
+});
+
+describe('the post cells over the postbit\'s gear, in the stylesheet', () => {
+  const strip = (f: string) => readFileSync(f, 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '');
+  const css = strip('engine/ui/thread/thread.css');
+  const decls = (sel: string) => [...css.matchAll(/([^{}]+)\{([^{}]*)\}/gu)].filter((m) => m[1]!.split(',').some((x) => x.trim() === sel)).map((m) => m[2]!).join('');
+  const z = (d: string) => Number(/z-index:\s*(-?\d+)/u.exec(d)?.[1] ?? 'NaN');
+
+  /*
+   * Gear may reach right past the postbit's cell; the post's meta, words, actions and panels are cells on their own ground over it, so the text
+   * always wins. The postbit goes under them (-1, in the post's own stacking context) rather than lifting them: a lifted line above would trap
+   * the marks strip and the callout that hang from it over the words (thread.css). jsdom has no stacking: e2e/post-layers.spec.ts holds this
+   * in a browser, and these hold the rules it rests on.
+   */
+  test('the post is a stacking context and the postbit\'s cell lies under the others at a negative level', () => {
+    expect(decls('.kb-act')).toMatch(/isolation:\s*isolate/u);
+    expect(z(decls('.kb-act > .kb-postbit'))).toBeLessThan(0);
+    expect(z(decls('.kb-act-main'))).toBeGreaterThan(z(decls('.kb-act > .kb-postbit')));
+  });
+
+  test('the line above, the actions and the panels take no level, so what hangs from the line above stays in the post\'s stack', () => {
+    for (const sel of ['.kb-act-meta', '.kb-act-foot', '.kb-act-panels']) expect(decls(sel), sel).not.toMatch(/z-index/u);
+  });
+
+  test('every post cell keeps the post ground the lift relies on', () => {
+    expect(decls('.kb-act > *')).toMatch(/background:\s*var\(--kb-post-bg\)/u);
+  });
+});
+
+describe('the postbit\'s phone block', () => {
+  /* The slicing tests above take everything from the phone's media block to the end of the file: that is the phone's only if the block stays after the wide rules. */
+  test('the phone block comes after the wide block', () => {
+    const css = readFileSync('engine/ui/postbit/postbit.css', 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '');
+    const wide = css.indexOf('@media not all and (max-width: 40em)');
+    const phone = css.indexOf('@media (max-width: 40em)');
+    expect(wide).toBeGreaterThan(-1);
+    expect(phone).toBeGreaterThan(wide);
+  });
+});
+
+describe('the postbit\'s text over the outfit, in the stylesheet', () => {
+  const css = readFileSync('engine/ui/postbit/postbit.css', 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '');
+  const decls = (selector: string) => [...css.matchAll(/([^{}]+)\{([^{}]*)\}/gu)].filter((m) => m[1]!.split(',').some((x) => x.trim() === selector || x.trim().endsWith(` ${selector}`))).map((m) => m[2]!).join('');
+  const z = (d: string) => Number(/z-index:\s*(-?\d+)/u.exec(d)?.[1] ?? 'NaN');
+
+  test('the name, title, rank, trophies and counts are on a layer above the avatar slot, each run on the board\'s ground', () => {
+    const text = decls('.kb-postbit[data-kb-postbit="side"] .kb-postbit-text > *');
+    expect(z(text)).toBeGreaterThan(z(decls('.kb-postbit-avatar')));
+    expect(text).toMatch(/background:\s*var\(--kb-post-bg,\s*var\(--kb-bg\)\)/u);
+    expect(text).not.toMatch(/background:\s*var\(--kb-bg\)\s*;/u);
+    expect(decls('.kb-postbit-avatar')).toMatch(/position:\s*relative/u);
+  });
+
+  test('the text-over-gear rule is scoped to wide windows and the phone side layout is not touched by it', () => {
+    expect(css).toMatch(/@media not all and \(max-width: 40em\)\s*\{[^@]*\.kb-postbit-text > \*/u);
+    const bare = css.replace(/@media[^{]*\{(?:[^{}]*\{[^{}]*\})*\s*\}/gu, '');
+    expect(bare).not.toMatch(/\.kb-postbit-text > \*/u);
+  });
+
+  test('the tall slot lets gear reach past its edge and does not crop the portrait', () => {
+    const slot = decls('.kb-postbit-avatar[data-kb-slot="portrait"]');
+    expect(slot).toMatch(/overflow:\s*visible/u);
+    const wide = css.slice(0, css.indexOf('@media (max-width: 40em)'));
+    const wideImg = [...wide.matchAll(/([^{}]+)\{([^{}]*)\}/gu)].filter((m) => m[1]!.trim().endsWith('.kb-postbit-avatar[data-kb-slot="portrait"] > picture > img')).map((m) => m[2]!).join('');
+    expect(wideImg).not.toMatch(/object-fit:\s*cover/u);
   });
 });
 
@@ -367,5 +506,65 @@ describe('the group bar on the postbit', () => {
   test('a character whose group the settings do not list gets no bar rather than a wrong one', () => {
     show(person({}, { group: 'gone' }));
     expect(document.querySelector('.kb-group-bar')).toBeNull();
+  });
+});
+
+describe('trophies on the postbit', () => {
+  const t = (award: string, trophy: string, name: string, over: Partial<ShownTrophy> = {}): ShownTrophy => ({ award, trophy, name, art: null, belt: false, held: false, ...over });
+  const four = [t('a1', 'p1', 'First'), t('a2', 'p2', 'Second'), t('a3', 'p3', 'Third'), t('a4', 'met', 'Fourth')];
+  const belt = t('b1', 'belt', 'Test Belt', { belt: true, held: true });
+  const bit = () => screen.getByRole('group', { name: 'About Pipewrench' });
+
+  test('a fourth chosen trophy is not drawn, though the answer carries it (shownMost is 3)', () => {
+    widthOf(1440);
+    show(person({}, { trophies: four }));
+    expect(Array.from(bit().querySelectorAll('img.kb-trophy')).map((i) => i.getAttribute('alt'))).toEqual(['First', 'Second', 'Third']);
+  });
+
+  test('each is an image whose alt and title are its name, under the rank', () => {
+    widthOf(1440);
+    show(person({}, { trophies: [four[0]!] }));
+    const img = within(bit()).getByAltText('First');
+    expect(img).toHaveAttribute('title', 'First');
+    expect(img).toHaveAttribute('src', 'p1.svg');
+    expect(before(document.querySelector('.kb-postbit-rank')!, img)).toBe(true);
+  });
+
+  test('a held belt is drawn beside the three chosen, and does not use a place', () => {
+    widthOf(1440);
+    show(person({}, { trophies: [...four.slice(0, 3), belt] }));
+    expect(Array.from(bit().querySelectorAll('img.kb-trophy')).map((i) => i.getAttribute('alt'))).toEqual(['First', 'Second', 'Third', 'Test Belt']);
+  });
+
+  test('a held belt is drawn on the stacked band, beside the name, and the chosen trophies are not', () => {
+    show(person({}, { trophies: [...four, belt] }), 'stacked');
+    const imgs = Array.from(bit().querySelectorAll('img.kb-trophy'));
+    expect(imgs.map((i) => i.getAttribute('alt'))).toEqual(['Test Belt']);
+    expect(imgs[0]!.closest('.kb-postbit-name')).not.toBeNull();
+  });
+
+  test('a phone draws the held belt only, whatever the reader chose', () => {
+    widthOf(390);
+    show(person({}, { trophies: [...four, belt] }), 'side');
+    expect(Array.from(bit().querySelectorAll('img.kb-trophy')).map((i) => i.getAttribute('alt'))).toEqual(['Test Belt']);
+  });
+
+  test('a belt no longer held is only a trophy, and a postbit with none draws no row', () => {
+    widthOf(1440);
+    show(person({}, { trophies: [] }));
+    expect(document.querySelector('.kb-postbit-trophies')).toBeNull();
+  });
+
+  test('the trophy row is a direct child of the text layer, so the ground rule above gear reaches it', () => {
+    widthOf(1440);
+    show(person({}, { trophies: four }));
+    expect(document.querySelector('.kb-postbit-text > .kb-postbit-trophies')).not.toBeNull();
+  });
+
+  test('passes axe with trophies and a belt drawn', async () => {
+    widthOf(1440);
+    show(person({}, { trophies: [...four, belt] }));
+    const bad = await axeViolations(bit());
+    expect(bad, describeViolations(bad)).toEqual([]);
   });
 });
