@@ -24,11 +24,13 @@ class FakeSource {
   loop = false;
   started = false;
   stoppedAt: number | undefined;
+  stops = 0;
+  disconnects = 0;
   onended: (() => void) | null = null;
   connect() {}
-  disconnect() {}
+  disconnect() { this.disconnects += 1; }
   start() { this.started = true; }
-  stop(when?: number) { this.stoppedAt = when ?? 0; }
+  stop(when?: number) { this.stops += 1; this.stoppedAt = when ?? 0; }
 }
 class FakeContext {
   currentTime = 10;
@@ -417,5 +419,70 @@ describe('mixer', () => {
       assert.equal(marks(ctx.gains[i]!, 'ramp')[0]![0], 1, `gain ${String(g)}`);
       i += 1;
     }
+  });
+
+  it('21. a play replaced with less than the fade left ramps to 0 by its buffer\'s natural end, not past it', async () => {
+    const m = make();
+    await m.unlock();
+    m.setBus('game', { on: true, volume: 100 });
+    longer(2);
+    await m.play(boo, { group: 'g', fadeMs: 250 });
+    const oldVoice = ctx.gains[1]!;
+    ctx.currentTime = 11.9;
+    await m.play(cheer, { group: 'g', fadeMs: 250 });
+    assert.deepEqual(marks(oldVoice, 'ramp').at(-1), [0, 12], 'the ramp ends at the natural end, not at 12.15');
+    assert.ok(near(ctx.sources[0]!.stoppedAt!, 12));
+  });
+
+  it('22. with less than EDGE_MS left, or the natural end already past, the fade-out still takes EDGE_MS and the source is stopped once', async () => {
+    const m = make();
+    await m.unlock();
+    m.setBus('game', { on: true, volume: 100 });
+    longer(2);
+    await m.play(boo, { group: 'g', fadeMs: 250 });
+    ctx.currentTime = 11.998;
+    await m.play(cheer, { group: 'g', fadeMs: 250 });
+    assert.ok(near(marks(ctx.gains[1]!, 'ramp').at(-1)![1], 11.998 + EDGE), 'under EDGE_MS left: a ramp of EDGE_MS');
+    assert.equal(ctx.sources[0]!.stops, 1);
+    ctx.currentTime = 15;
+    await m.play(boo, { group: 'g', fadeMs: 250 });
+    assert.ok(near(marks(ctx.gains[2]!, 'ramp').at(-1)![1], 15 + EDGE), 'natural end past: a ramp of EDGE_MS, never zero or negative');
+    assert.equal(ctx.sources[1]!.stops, 1);
+  });
+
+  it('23. a loop\'s fade-out is the full fade however long it has run, and a play with plenty left fades over the full fade', async () => {
+    const m = make();
+    await m.unlock();
+    m.setBus('game', { on: true, volume: 100 });
+    longer(2);
+    const h = (await m.loop(slot('build', { loop: true })))!;
+    ctx.currentTime = 50;
+    h.stop(250);
+    assert.deepEqual(marks(ctx.gains[1]!, 'ramp').at(-1), [0, 50.25]);
+    ctx.currentTime = 60;
+    await m.play(boo, { group: 'g', fadeMs: 250 });
+    ctx.currentTime = 60.1;
+    await m.play(cheer, { group: 'g', fadeMs: 250 });
+    assert.ok(near(marks(ctx.gains[2]!, 'ramp').at(-1)![1], 60.35));
+  });
+
+  it('24. a replaced voice stops once and disconnects once whichever of its natural end or its fade-out comes first; a bus going off stops no play twice', async () => {
+    const m = make();
+    await m.unlock();
+    m.setBus('game', { on: true, volume: 100 });
+    longer(2);
+    await m.play(boo, { group: 'g', fadeMs: 250 });
+    ctx.currentTime = 11.9;
+    await m.play(cheer, { group: 'g', fadeMs: 250 });
+    const first = ctx.sources[0]!;
+    first.onended?.();
+    assert.deepEqual([first.stops, first.disconnects], [1, 1], 'replaced, then ended');
+    const second = ctx.sources[1]!;
+    second.onended?.();
+    ctx.currentTime = 20;
+    await m.play(boo, { group: 'g', fadeMs: 250 });
+    assert.equal(second.stops, 0, 'a voice that ended before it was replaced is not stopped');
+    m.setBus('game', { on: false, volume: 100 });
+    assert.deepEqual(ctx.sources.map((s) => s.stops), [1, 0, 0]);
   });
 });

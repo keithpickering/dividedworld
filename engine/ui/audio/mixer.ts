@@ -54,7 +54,7 @@ export function createMixer(deps: MixerDeps): Mixer {
     interface: { on: false, volume: 100, node: null },
   };
   const loops: Record<SoundBus, Set<(why: LoopStop) => void>> = { game: new Set(), interface: new Set() };
-  /** A group's current voice, and the way to end it over `fadeMs` (a play fades out, a loop stops). */
+  /** A group's current voice, and the way to end it over `fadeMs` (a play fades out, a loop stops). A play's fade-out never outlasts its file. */
   const groups = new Map<string, { source: SourceLike; end(fadeMs: number): void }>();
   const buffers = new Map<string, Promise<{ readonly duration: number } | null>>();
 
@@ -89,10 +89,17 @@ export function createMixer(deps: MixerDeps): Mixer {
     }
     return pending;
   }
-  /** Fade a voice out over `fadeMs` and stop its source then; the source's end disconnects both. */
-  function fadeOut(c: AudioContextLike, voice: GainNodeLike, source: SourceLike, fadeMs: number): void {
+  /**
+   * Fade a voice out over `fadeMs` and stop its source then; the source's end disconnects both, once, whichever of the natural end or this
+   * stop comes first. A played voice has a natural end (`naturalEnd`, on the context's clock) and its source stops there on its own, so
+   * the ramp is shortened to finish by it: a ramp still partway down when the source ends is a click. The ramp is never shorter than
+   * `EDGE_MS`, so a voice replaced in its last few milliseconds, or after its end, still ramps over a real interval. A loop has no end.
+   */
+  function fadeOut(c: AudioContextLike, voice: GainNodeLike, source: SourceLike, fadeMs: number, naturalEnd?: number): void {
     const now = c.currentTime;
-    const at = now + Math.max(fadeMs, EDGE_MS) / 1000;
+    const edge = EDGE_MS / 1000;
+    const wanted = Math.max(fadeMs, EDGE_MS) / 1000;
+    const at = now + (naturalEnd === undefined ? wanted : Math.min(wanted, Math.max(naturalEnd - now, edge)));
     voice.gain.cancelScheduledValues(now);
     voice.gain.setValueAtTime(voice.gain.value, now);
     voice.gain.linearRampToValueAtTime(0, at);
@@ -104,6 +111,7 @@ export function createMixer(deps: MixerDeps): Mixer {
    * The tail never starts inside the fade-in: it starts at the later of "`tailMs` before the end" and "the end of the ramp up", so a tail as
    * long as the file, or a file shorter than fade-in plus tail, still ramps up fully and then down, and neither is a step (a level set at the
    * start of the fade-in would be the click the ramps exist to remove). A loop gets no ramp up and no tail, and stays silent until its owner's `setGain`.
+   * A play also returns its natural end (a loop has none), which a later fade-out needs.
    */
   function start(c: AudioContextLike, slot: SoundSlot, buffer: { readonly duration: number }, looped: boolean, fadeInMs: number, tailMs = 0) {
     const bus = busNode(c, slot.bus);
@@ -113,6 +121,7 @@ export function createMixer(deps: MixerDeps): Mixer {
     source.loop = looped;
     const now = c.currentTime;
     voice.gain.setValueAtTime(0, now);
+    const naturalEnd = looped ? undefined : now + buffer.duration;
     if (!looped) {
       const level = gainOf(slot);
       const end = now + buffer.duration;
@@ -127,7 +136,7 @@ export function createMixer(deps: MixerDeps): Mixer {
     voice.connect(bus);
     source.onended = () => { source.disconnect(); voice.disconnect(); };
     source.start();
-    return { source, voice };
+    return { source, voice, naturalEnd };
   }
   /** Both entry points' shared gate: null where nothing may sound, else the context and the decoded buffer. */
   async function ready(slot: SoundSlot) {
@@ -169,10 +178,10 @@ export function createMixer(deps: MixerDeps): Mixer {
         const fadeMs = o.fadeMs ?? 0;
         const prior = o.group === undefined ? undefined : groups.get(o.group);
         if (prior) prior.end(fadeMs);
-        const { source, voice } = start(c, slot, buffer, false, o.group === undefined ? 0 : fadeMs, o.tailMs);
+        const { source, voice, naturalEnd } = start(c, slot, buffer, false, o.group === undefined ? 0 : fadeMs, o.tailMs);
         if (o.group !== undefined) {
           const group = o.group;
-          groups.set(group, { source, end: (ms) => fadeOut(c, voice, source, ms) });
+          groups.set(group, { source, end: (ms) => fadeOut(c, voice, source, ms, naturalEnd) });
           const done = source.onended;
           source.onended = () => { done?.(); if (groups.get(group)?.source === source) groups.delete(group); };
         }
