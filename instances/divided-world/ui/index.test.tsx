@@ -902,6 +902,27 @@ describe('Divided World\'s sounds', () => {
   });
 });
 
+/* The engine's card draws its own ring (engine/ui/cards/postcard.css): a Use's is not painted, so a rule here that painted one would lay a solid ring under its dashes. */
+describe('Divided World\'s stylesheets and the card\'s ring', () => {
+  test('no rule paints a card\'s ring in a width or color of its own', () => {
+    expect(ringFaults(path.join(path.dirname(fileURLToPath(import.meta.url)), '..'))).toEqual([]);
+  });
+});
+
+/** Each rule under `root`, outside postcard.css, that paints a ring on a card (a shadow with no offset or blur) in a width or color of its own. */
+function ringFaults(root: string): string[] {
+  const faults: string[] = [];
+  for (const file of fs.readdirSync(root, { recursive: true, encoding: 'utf8' }).filter((f) => f.endsWith('.css') && path.basename(f) !== 'postcard.css' && !f.includes('node_modules'))) {
+    for (const m of fs.readFileSync(path.join(root, file), 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '').matchAll(/([^{}]+)\{([^{}]*)\}/gu)) {
+      if (!/\.kb-postcard(?![-\w])/u.test(m[1]!)) continue;
+      for (const shadow of /box-shadow:([^;]*)/u.exec(m[2]!)?.[1]?.split(/,(?![^(]*\))/u) ?? []) {
+        if (/^\s*0 0 0 \S/u.test(shadow) && !shadow.includes('inset') && shadow.trim() !== '0 0 0 var(--kb-pc-ring) var(--kb-pc-ring-color)') faults.push(`${file}: ${m[1]!.trim()} { ${shadow.trim()} }`);
+      }
+    }
+  }
+  return faults;
+}
+
 /* The screens ask where each card lands with no settings at all (engine/ui/cards/land.ts): a card whose rules read the economy while deciding a
    play (You Were Saying?'s length) once threw on every post it was offered on. Each of the instance's cards is asked as the screens ask it. */
 describe('where each card lands, as the screens ask it', () => {
