@@ -180,6 +180,6 @@ test('hints: the words claim no more than the threshold proves (a lead is "most"
 
 test('Laugh Track\'s band, airtime and hold are set, inside their bounds', () => {
   const held = defaults.cardSettings;
-  assert.deepEqual([held['laughTrack.band'], held['laughTrack.airMs'], held['laughTrack.holdMs']], [34, 1200, 4000]);
+  assert.deepEqual([held['laughTrack.band'], held['laughTrack.airMs'], held['laughTrack.holdMs']], [34, 1200, 18000]);
   for (const r of laughTrack.screenReads as readonly { key: string; min: number; max: number }[]) assert.ok(held[r.key]! >= r.min && held[r.key]! <= r.max, r.key);
 });

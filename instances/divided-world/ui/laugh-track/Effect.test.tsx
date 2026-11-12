@@ -192,12 +192,12 @@ describe('Laugh Track: the registration', () => {
     let answer: unknown;
     act(() => { answer = spec.fire(); });
     expect(await answer).toEqual({ lengthMs: 900 });
-    expect(spec.screen).toMatchObject({ band: 34, airMs: 1200, holdMs: 4000 });
+    expect(spec.screen).toMatchObject({ band: 34, airMs: 1200, holdMs: 18000 });
   });
 
-  test('with no card settings the screen falls back to the defaults: band 34, airMs 1200, holdMs 4000', () => {
+  test('with no card settings the screen falls back to the defaults: band 34, airMs 1200, holdMs 18000', () => {
     mount({ cardSettings: {} });
-    expect((hub.specs[0] as PlaceSpec).screen).toMatchObject({ band: 34, airMs: 1200, holdMs: 4000 });
+    expect((hub.specs[0] as PlaceSpec).screen).toMatchObject({ band: 34, airMs: 1200, holdMs: 18000 });
   });
 
   test('the instance\'s card settings for every laughTrack screen key equal the effect\'s fallback defaults', () => {

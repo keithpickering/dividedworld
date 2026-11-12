@@ -24,7 +24,7 @@
  * one makes it (so a page nobody scrolls to a cue fetches nothing), a nearer place of another kind stops it with the fade and then makes the
  * new kind's, and a fire stops it with the fade (the take crosses over it). After a fire the murmur is held at nothing, and no loop is made,
  * until the take's tail begins (the take's length from `fire()`'s answer less the fade), or for the airtime when the play did not sound or
- * answers late (an answer counts until a frame has run past the airtime, so one that comes at once still counts when the airtime is 0). A fire that throws or rejects is no take. An `airMs`, `holdMs` or `lengthMs` that is not a finite number, or is negative, reads as its default (1200, 4000) or, for a length, as no answer. It is stopped when no unfired place is left, and with the last place, so no held caption outlives the last post (#496).
+ * answers late (an answer counts until a frame has run past the airtime, so one that comes at once still counts when the airtime is 0). A fire that throws or rejects is no take. An `airMs`, `holdMs` or `lengthMs` that is not a finite number, or is negative, reads as its default (1200, 18000) or, for a length, as no answer. It is stopped when no unfired place is left, and with the last place, so no held caption outlives the last post (#496).
  * `reachRem` and the screen numbers are read from the first place to register: every place of an instance reads the same card settings.
  *
  * Nothing here reads who owns, wrote or cast anything, and nothing leaves the screen. Each listener is added when the first place
@@ -107,8 +107,8 @@ let lastFire: object | null = null;
 /** The hold has run out since the last fire (a frame after the fire's own ran past it): a take that answers after that no longer holds the murmur. */
 let holdOver = true;
 
-/** The card's defaults, for a setting that is missing, not a number or negative: such a value never stalls the queue or keeps a turn for ever. */
-export const DEFAULT_AIR_MS = 1200, DEFAULT_HOLD_MS = 4000;
+/** The card's defaults, for a setting that is missing, not a number or negative: such a value never stalls the queue or keeps a turn for ever. The hold is 18000 so that a cue the reader earned outlasts a dense post's queue: 14 cues at one fire per 1200ms is 16800ms, and a shorter hold lapsed cues that were still waiting their turn (the e2e reader fired 8 of 14 at 4000). */
+export const DEFAULT_AIR_MS = 1200, DEFAULT_HOLD_MS = 18000;
 const settled = (v: unknown, fallback: number): number => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : fallback);
 
 /** A failing fire is "no take" to the queue, but it is still a failure: report it where an uncaught throw would land (`window.onerror`, the console)

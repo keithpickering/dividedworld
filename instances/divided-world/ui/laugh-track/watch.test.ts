@@ -627,15 +627,15 @@ test('a screen whose airMs is missing or NaN still fires a queue of two, spaced 
   }
 });
 
-test('a screen whose holdMs is NaN uses the default 4000ms: a waiting place that left lapses', () => {
-  const log = made(); const bad = { ...SCREEN, airMs: 9000, holdMs: Number.NaN };
+test('a screen whose holdMs is NaN uses the default 18000ms: a waiting place that left lapses', () => {
+  const log = made(); const bad = { ...SCREEN, airMs: 30000, holdMs: Number.NaN };
   const first = inDocumentAt(el(IN()), 1); const waits = inDocumentAt(el(rect(330, 350)), 2);
   place(log, 'boo', first, {}, 'first', bad); place(log, 'boo', waits, {}, 'waits', bad);
   play(1000, 1400);
   waits.rects = [OUT()]; emit('scroll'); step(1450);
-  step(5450);
+  step(19450);
   assert.equal(__inspect().earned, 1, 'exactly the default hold keeps the turn');
-  step(5451);
+  step(19451);
   assert.equal(__inspect().earned, 0, '1ms past loses it');
 });
 

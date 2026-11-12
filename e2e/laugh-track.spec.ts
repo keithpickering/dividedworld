@@ -252,7 +252,7 @@ test('a caption said on the sound settings page is visible and not covered', asy
 /* ------------------------------------------------------------------------------------------------------------------------------------------------------
    A reader, in a browser (the band plan, Task 6): a person reading a long post with the cast cues, by the wheel, from the top to the foot.
    The post is the shape of the owner's first cast: three long paragraphs, 14 cued places, several on one row and five in one paragraph.
-   The band (laughTrack.band 34), the air (airMs 1200) and the hold (holdMs 4000) are not set here: the spec relies on the defaults.
+   The band (laughTrack.band 34), the air (airMs 1200) and the hold (holdMs 18000) are not set here: the spec relies on the defaults.
    ------------------------------------------------------------------------------------------------------------------------------------------------------ */
 const READER_PARAGRAPHS = [
   'I have been reading the forums for years, and the thing I keep noticing is how a fan game gets judged before anyone has played it. A screenshot goes up, a few people squint at it, and by lunch the verdict is already in. Mario fans are the harshest critics of all, which is funny, because Mario fans are also the ones who stay up until four in the morning testing a build for a total stranger. The sprites are always borrowed, the music is always a remix, and the physics are always off by a hair, yet everyone keeps coming back for more. A fan game is a love letter written in somebody else\'s handwriting, and it gets passed around the room until the paper goes soft at the folds and every corner has a coffee ring on it, and nobody who holds it can quite say who wrote it first.',
