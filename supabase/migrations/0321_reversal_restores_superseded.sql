@@ -2,7 +2,7 @@
 --
 -- A thread's place from moveThreads is the latest landed moveThread of it that has not been ended as reversed or overturned. An end as superseded does not take a move out of
 -- that reckoning, so when the move that superseded it is reversed the earlier move's board applies again. For every other purpose a superseded move stays ended (it is not in
--- open_moves, it is not in force, nothing writes a new Act for it). thread_place and thread_places_computed are redefined from 0154 and keep agreeing (0300 holds them equal).
+-- open_moves, it is not in force, nothing writes a new Act for it). thread_place and thread_places_computed are redefined from 0154 and keep agreeing (0327 holds them equal).
 -- Several moves land in one tick's transaction with one created_at, so the latest is told by the Act's seq in its thread (the announcements thread's, in landing order) before its id.
 -- end_move's rebuild set is unchanged: a moveThread's end rebuilds its own thread, which is the only thread whose place it can change; a merge or created board's set already reads
 -- every moveThread Act naming a board, ended or not.

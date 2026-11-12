@@ -2274,7 +2274,7 @@ describe('the moves a board shows, a staff profile and the admin queue', () => {
       roster: [{ staff: 'the-clerk', name: 'The Clerk', pronouns: PRONOUN_PRESETS.he }, { staff: 7, name: 'bad' }],
       todos: [{ season: 3, boss: 'the-clerk', bossName: 'The Clerk', bossPronouns: PRONOUN_PRESETS.he, bossWas: 'mod', outgoing: 'director', outgoingName: 'The Director', outgoingPronouns: null, outgoingOffice: 'member', how: 'rotation', landedAt: '2026-11-01T00:00:00+00:00' }],
     };
-    /* A part of a bundle says its bundle, role and the bundle's name (0302); a move that is none says null for each. */
+    /* A part of a bundle says its bundle, role and the bundle's name (0329); a move that is none says null for each. */
     queue.waiting[0] = { ...queue.waiting[0]!, bundle: C, role: 'minus', bundleName: 'The Split', waitsFor: [{ id: 3, role: 'minus', kind: 'createBoard', name: 'World -1' }, 'junk'] } as (typeof queue.waiting)[0];
     const h = harness((r) => {
       if (r.url.pathname.endsWith('/rpc/admin_queue')) return json(queue);

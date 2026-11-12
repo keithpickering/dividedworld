@@ -1,4 +1,4 @@
--- The beat-event guard (0305) let a faithful import through: its checks of a live insert (the persona has the beat, the beat's last event, the bundle) read persona_arcs
+-- The beat-event guard (0332) let a faithful import through: its checks of a live insert (the persona has the beat, the beat's last event, the bundle) read persona_arcs
 -- and queued_moves, which an import writes after this table, so an exported log of valid events was refused ("the persona exp-boss has no beat split"). Under
 -- session_replication_role = 'replica' the insert is now carried as written, as 0072's moments are; update, delete and truncate stay refused in every mode.
 

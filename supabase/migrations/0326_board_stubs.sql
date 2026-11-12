@@ -6,7 +6,7 @@
 -- that took its threads, and the refusal says where to start the thread instead.
 --
 -- "Moved away at time t" is read from the move's landing, not guessed afterward. thread_departures (act, thread, from_board, left_at) is one row for each moveThread Act, written by a
--- trigger when the Act is inserted, from the board the thread is stored on at that instant: the landing writes the Act and only then rebuilds threads.board (0293), so the stored board is
+-- trigger when the Act is inserted, from the board the thread is stored on at that instant: the landing writes the Act and only then rebuilds threads.board (0320), so the stored board is
 -- exactly the one it leaves, a merge's re-homing included. It is insert-only (its guard is enabled always), like origin_board: it is a fact about the Act it names, the way `seq` is. A
 -- move later reversed or overturned is ignored by the read (its move_end), and a thread that is back on the board is no stub of it. A move that was superseded stays a stub of the
 -- board it left (the thread did leave), and the board it is on now is read from threads.board, so a stub always names where the thread is today. A mergeBoard writes no row: the merged
@@ -18,10 +18,10 @@
 --   moved_stub_days()            the setting, 7 where an instance seeded before it has none (as digestBoards).
 --   board_page (0125)            gains `closed`, `mergedInto`, `fallback` and `stubs`; a closed board's page lists nothing (no threads, pins, banner or presence) and keeps the board and the count of unread.
 --   index_page (0143)            leaves out a closed board.
---   start_thread (0130)          refuses a closed board after the board is found, beside not_the_systems; before it asks, it takes the board's shared place key (lock_board_start, 0312) in a statement of its
+--   start_thread (0130)          refuses a closed board after the board is found, beside not_the_systems; before it asks, it takes the board's shared place key (lock_board_start, 0339) in a statement of its
 --                                own, so a merge or a reversed createBoard that has committed is seen by the check that follows (final review of PR #450, F7), and one that is still open refuses the start at once, in
---                                plain words, where it waited for the move before (delta review F14). Every insert into threads, this one's included, also meets the guard of 0312 (threads_on_open_board).
---   settings_held (0298)         copied whole; movedStubDays is a whole number from 1 to 365.
+--                                plain words, where it waited for the move before (delta review F14). Every insert into threads, this one's included, also meets the guard of 0339 (threads_on_open_board).
+--   settings_held (0325)         copied whole; movedStubDays is a whole number from 1 to 365.
 --
 -- Cost on a busy instance. Write: one row a moveThread, which is a Boss's decision (a few a meeting), and nothing for any other Act. Read: a board's page reads thread_departures by
 -- (from_board, left_at desc), a range of the moves that left that board inside the window, then one probe of threads by id each (50 at most). It never reads the Acts of other boards or a
@@ -29,7 +29,7 @@
 -- Masks. A move, the board a thread is on and its title are public; nothing here is computed from who owns a character, a class or a reaction.
 -- Append-only. No Act is touched; the new table is written once a row and never updated.
 --
--- Ported onto main (merge of #449 Cosmetics, migrations 0205-0213): board_page and index_page: rebuilt on 0210's bodies (main's profile_cosmetics on every face kept); settings_held: on 0213's body, as in 0298.
+-- Ported onto main (merge of #449 Cosmetics, migrations 0205-0213): board_page and index_page: rebuilt on 0210's bodies (main's profile_cosmetics on every face kept); settings_held: on 0213's body, as in 0325.
 
 create table thread_departures (
   act uuid primary key references acts (id),
@@ -265,7 +265,7 @@ begin atomic
   from b left join p on p.board = b.id;
 end;
 
--- settings_held (0298), also holding movedStubDays (a whole number from 1 to 365). Everything else as 0298 wrote it.
+-- settings_held (0325), also holding movedStubDays (a whole number from 1 to 365). Everything else as 0325 wrote it.
 create or replace function settings_held() returns trigger
 language plpgsql set search_path = public, pg_temp as $$
 declare

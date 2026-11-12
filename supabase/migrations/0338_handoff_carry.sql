@@ -1,12 +1,12 @@
 -- A later meeting's silence displaces nothing (docs/plans/2026-11-06-fangame-split-plan.md, Task 8, review).
 --
--- apply_meeting (0310) wrote a row with a null farewell when a later in-window meeting gave only a note, and that row stood as the season's latest, so a real farewell gave way to the stock
+-- apply_meeting (0337) wrote a row with a null farewell when a later in-window meeting gave only a note, and that row stood as the season's latest, so a real farewell gave way to the stock
 -- line. The new row now carries the latest row's farewell where this meeting gave none, and its note where it gave none. Done here and not in a trigger: an import inserts rows in replica mode,
--- and must not have them changed. Everything else as 0310 wrote it.
+-- and must not have them changed. Everything else as 0337 wrote it.
 -- Port from main (#486, supabase/migrations/0193_meeting_parts.sql, which now runs before this one): apply_meeting writes the Boss's staff_memory row only when the payload's `memory` is an object, and its
 -- staff_profiles row only when `profile` is, so a part of the meeting that failed leaves the Boss's memory or profile as it was (both tables are append-only, so "as it was" is the last row). Everything else in
 -- apply_meeting is as this file writes it.
--- One lock order (0312; delta review F13): apply_meeting takes the global place key (lock_thread_places) before its first write whenever its answer names a lasting move (a move, or a part of a bundle, of a
+-- One lock order (0339; delta review F13): apply_meeting takes the global place key (lock_thread_places) before its first write whenever its answer names a lasting move (a move, or a part of a bundle, of a
 -- lasting kind) or an inheritance decision (an `end` ends a lasting move as superseded), where it used to write a move_keep Act, into the thread an admin's reversal writes its end into, before the end_move
 -- that takes the key. The two now meet the key first.
 create or replace function apply_meeting(meeting bigint, payload jsonb) returns jsonb
@@ -116,7 +116,7 @@ begin
     idx := idx + 1;
     select * into kind_row from move_kinds k where k.key = mv ->> 'kind';
     if not found then raise exception 'there is no move kind "%"', mv ->> 'kind' using errcode = '23514'; end if;
-    -- A kind the Boss does not use yet (its persona holds it back until a beat unlocks, 0306) is skipped and recorded, and costs nothing: the engine drops it too, and the database holds the line.
+    -- A kind the Boss does not use yet (its persona holds it back until a beat unlocks, 0333) is skipped and recorded, and costs nothing: the engine drops it too, and the database holds the line.
     if kind_row.key = any (held) then
       held_skipped := held_skipped || jsonb_build_array(jsonb_build_object('index', idx - 1, 'kind', kind_row.key));
       continue;
@@ -345,7 +345,7 @@ begin
     end if;
   end loop;
 
-  -- The farewell and the handoff (0310), kept only from a meeting within farewellWindowHours of the season's end: the engine's repair already dropped them from any other, and the database holds
+  -- The farewell and the handoff (0337), kept only from a meeting within farewellWindowHours of the season's end: the engine's repair already dropped them from any other, and the database holds
   -- the same line. Each is trimmed to its bound (the farewell to postMaxLength, the note to 2000) and the trim is recorded, never a lost answer. A blank one is none; a meeting that gives neither
   -- writes no row, so an earlier meeting's words are not displaced by silence. A new row is the latest of its season, and the ones before it stay.
   if hf_farewell is not null or hf_note is not null then
@@ -421,7 +421,7 @@ begin
       'rulesSkipped', rules_skipped,
       'machineSkipped', machine_skipped,
       'lastingSkipped', lasting_skipped,
-      -- What was actually played (0308): the engine's `beatsDefaulted` and its `playedWithDefaults` trims say what it meant to play, and are kept only for the beats this transaction played.
+      -- What was actually played (0335): the engine's `beatsDefaulted` and its `playedWithDefaults` trims say what it meant to play, and are kept only for the beats this transaction played.
       'beatsPlayed', to_jsonb(beats_played),
       'beatsDefaulted', coalesce((select jsonb_agg(d.k) from jsonb_array_elements_text(case when jsonb_typeof(payload #> '{record,beatsDefaulted}') = 'array' then payload #> '{record,beatsDefaulted}' else '[]'::jsonb end) d(k) where d.k = any (beats_played)), '[]'::jsonb),
       'trims', coalesce((select jsonb_agg(x.t order by x.n) from jsonb_array_elements(case when jsonb_typeof(payload #> '{record,trims}') = 'array' then payload #> '{record,trims}' else '[]'::jsonb end) with ordinality x(t, n)

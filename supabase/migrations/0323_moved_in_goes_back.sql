@@ -1,7 +1,7 @@
 -- Threads moved into a reversed board go back (design section 4: a reversed createBoard sends threads moved in "back to where they were").
 --
--- A moveThread whose target is a created board whose createBoard has ended (any end, as 0292's one rule for a closed made board) no longer counts in a thread's place, as a move onto a
--- board that is not there never did. The thread then takes its earlier move's board (a superseded move counts, 0294) or its origin. Only a thread STARTED in the board goes to its
+-- A moveThread whose target is a created board whose createBoard has ended (any end, as 0319's one rule for a closed made board) no longer counts in a thread's place, as a move onto a
+-- board that is not there never did. The thread then takes its earlier move's board (a superseded move counts, 0321) or its origin. Only a thread STARTED in the board goes to its
 -- fallback, or to the first open non-system board. A moveThread onto a board later merged still follows the merge, which carries its threads. thread_place and thread_places_computed
 -- are redefined from 0156 and agree (0180 holds them equal). end_move's rebuild set already covers these threads: threads_touching_board reads every moveThread Act that names
 -- the ended board, and those stored on it.
@@ -83,7 +83,7 @@ language sql stable security definer set search_path = public, pg_temp as $$
   select t.id, p.cur from threads t left join mt on mt.th = t.id join placed p on p.board = coalesce(mt.bd, t.origin_board)
 $$;
 
--- moves_log (0295), the latest end told by its seq in the move's thread before its id: the two ends of a move can be written in one transaction, with one created_at.
+-- moves_log (0322), the latest end told by its seq in the move's thread before its id: the two ends of a move can be written in one transaction, with one created_at.
 create or replace view moves_log as
   select a.id, c.staff, a.payload ->> 'kind' as kind, a.payload -> 'params' as params, a.payload -> 'demand' as demand,
          move_expires_at(a.id) as expires_at, a.thread, a.created_at as at,

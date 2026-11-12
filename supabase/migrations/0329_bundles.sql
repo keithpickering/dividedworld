@@ -10,7 +10,7 @@
 --                   bundle, into a board a createBoard made). It is recorded when the move is queued, as the design says.
 --   move_dependencies   (act, on_act): written when a dependent move lands, one row for each move it builds on. Insert-only, its guards fire always; reverse_move reads it to follow a reversal.
 --   hold_move       holds the move and, in the same transaction and at the same instant, every move still waiting that builds on it, breadth first. Holding a part never holds what it builds on.
---   reverse_move    (0312) takes the global place key before its first end. Ends the move as reversed and, in the same transaction, every landed move that builds on it, breadth first, each as reversed by the admin with an end of its own, and holds every move
+--   reverse_move    (0339) takes the global place key before its first end. Ends the move as reversed and, in the same transaction, every landed move that builds on it, breadth first, each as reversed by the admin with an end of its own, and holds every move
 --                   still waiting that builds on one of them. An admin may hold or reverse any one part, and what builds on it follows.
 --   admin_queue     says each part's `bundle`, `role` and `bundleName` in every group a part can be in.
 --   moves_log       gains `bundle` and `role` at its end.
@@ -30,7 +30,7 @@
 
 -- ------------------------------------------------------------------------------ the columns ----
 --
--- Ported onto main (merge of #449 Cosmetics, migrations 0205-0213): system_tick: rebuilt on 0208's body, as in 0293.
+-- Ported onto main (merge of #449 Cosmetics, migrations 0205-0213): system_tick: rebuilt on 0208's body, as in 0320.
 
 alter table queued_moves
   add column bundle uuid,
@@ -88,8 +88,8 @@ grant execute on function role_board(uuid, text) to service_role;
 
 -- ------------------------------------------------------------------------------- the guard ----
 
--- queued_moves_guard (0293), also holding a part to its bundle: one name, a role named only inside a bundle, by a part that exists and makes a board; and setting what a move depends on. A part's
--- bundle, name, role and dependencies never change once queued. Everything else as 0293 wrote it.
+-- queued_moves_guard (0320), also holding a part to its bundle: one name, a role named only inside a bundle, by a part that exists and makes a board; and setting what a move depends on. A part's
+-- bundle, name, role and dependencies never change once queued. Everything else as 0320 wrote it.
 create or replace function queued_moves_guard() returns trigger
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
@@ -141,12 +141,12 @@ begin
       problem := machine_move_problem(new.kind, new.params, new.demand, new.go_live_at, new.expires_at, false);
       if problem is not null then raise exception 'a machine move is refused: %', problem using errcode = '23514'; end if;
     end if;
-    -- A lasting move (0293) has no expiry and carries no demand: the meeting queues it with an expiry of its own length (0 hours), which is nothing, so the guard keeps none.
+    -- A lasting move (0320) has no expiry and carries no demand: the meeting queues it with an expiry of its own length (0 hours), which is nothing, so the guard keeps none.
     if (select k.lasting from move_kinds k where k.key = new.kind) then
       if new.demand is not null then raise exception 'a % has no demand; what it builds stays', new.kind using errcode = '23514'; end if;
       new.expires_at := null;
     end if;
-    -- A bundle (0302): parts sharing one id and one name. A part may name another part's result by its role, {"role": r}, where a board goes; the part it names is the bundle's own, made
+    -- A bundle (0329): parts sharing one id and one name. A part may name another part's result by its role, {"role": r}, where a board goes; the part it names is the bundle's own, made
     -- earlier in the queue, and makes a board. What a move builds on is its `depends_on`, set here and nowhere else: a caller's value is never kept. A later move naming a board a move made
     -- (a real id, outside any bundle) depends on that move's row too, so an admin's hold or reversal of the creation follows it.
     new.depends_on := null;
@@ -339,7 +339,7 @@ end $$;
 
 -- ------------------------------------------------------------------------------- the tick ----
 
--- system_tick (0293), also landing a part after the parts it builds on, with its roles resolved to the boards they made, and recording what each landed move was built on. Everything else as 0293 wrote it.
+-- system_tick (0320), also landing a part after the parts it builds on, with its roles resolved to the boards they made, and recording what each landed move was built on. Everything else as 0320 wrote it.
 create or replace function system_tick() returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
@@ -395,7 +395,7 @@ begin
       -- the tick, so the checks below read what the admin committed.
       if due.kind in ('pullSlot', 'repriceSlot', 'flashSale') then perform pg_advisory_xact_lock(hashtext('kayfabb.machine')); end if;
       begin
-        -- A part of a bundle (0302) lands after the parts it builds on, and not before: one of them still waiting, and this one waits; one refused, and it is refused with it (nothing
+        -- A part of a bundle (0329) lands after the parts it builds on, and not before: one of them still waiting, and this one waits; one refused, and it is refused with it (nothing
         -- will ever make the board it names); one held (an admin's hold follows its dependents at once, so this only meets a row queued after the hold), and it is held with it. Then each
         -- role in its params is the board the part it names made, in the Act, so the Act says which board it moved to and the log can name it.
         lp := due.params;
@@ -437,7 +437,7 @@ begin
             continue;
           end if;
         end if;
-        -- The three moves that build the board are checked against the boards and threads as they are now (0293), as a machine move is against the machine: state changes between
+        -- The three moves that build the board are checked against the boards and threads as they are now (0320), as a machine move is against the machine: state changes between
         -- the queue and the landing (a board closed, a thread gone, a merge that would now make a cycle). Refused for good, with the reason; it is no Act, so nothing needs reversing.
         if due.kind in ('createBoard', 'moveThread', 'mergeBoard') then
           clash := lasting_move_problem(due.kind, lp);
@@ -712,7 +712,7 @@ declare
   dep uuid;
 begin
   perform only_admins('reverses a move');
-  -- A reversal ends a chain of moves, any of which may be lasting: the global place key (0312) first, before the first per-move key of any of them, so the tick and a second reversal meet it in one order.
+  -- A reversal ends a chain of moves, any of which may be lasting: the global place key (0339) first, before the first per-move key of any of them, so the tick and a second reversal meet it in one order.
   perform lock_thread_places();
   if not exists (select 1 from acts a where a.id = move_act and a.kind = 'move') then
     raise exception 'that is not a move' using hint = 'kayfabb.refusal', errcode = 'P0002';
@@ -880,7 +880,7 @@ end $$;
 
 -- -------------------------------------------------------------------------------- the log ----
 
--- moves_log (0296), also saying the bundle and the role of the part a move was (null for a move outside a bundle, and for a visit, a report or an appeal), at its end. The columns before are as 0296 wrote
+-- moves_log (0323), also saying the bundle and the role of the part a move was (null for a move outside a bundle, and for a visit, a report or an appeal), at its end. The columns before are as 0323 wrote
 -- them, and so is every row.
 create or replace view moves_log as
   select a.id, c.staff, a.payload ->> 'kind' as kind, a.payload -> 'params' as params, a.payload -> 'demand' as demand,

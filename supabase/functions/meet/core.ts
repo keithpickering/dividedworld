@@ -111,14 +111,14 @@ interface Context {
    * move in force on each. Nothing about a purchase or a buyer. Absent from an older database, where the Boss has no machine to move.
    */
   readonly machine?: readonly MachineSlotFacts[];
-  /** The Boss's arc as the database reads it (0307, over arc_for_meeting): the beats unlocked and not yet played, with whether each is due, and the kinds held back. Absent from an older database, which holds nothing back. */
+  /** The Boss's arc as the database reads it (0334, over arc_for_meeting): the beats unlocked and not yet played, with whether each is due, and the kinds held back. Absent from an older database, which holds nothing back. */
   readonly arc?: ArcRead;
   /**
-   * What the code knows of the open season (0310), handed over only to a meeting within farewellWindowHours of the season's end, to write its handoff from; null or absent otherwise, and from an
+   * What the code knows of the open season (0337), handed over only to a meeting within farewellWindowHours of the season's end, to write its handoff from; null or absent otherwise, and from an
    * older database, which keeps no handoff.
    */
   readonly handoffFacts?: HandoffFacts | null;
-  /** What a new Boss is handed for inheritanceGraceDays after the handover (0310): the outgoing Boss, the facts of the season it led and its note (null where its last meeting failed). Null or absent otherwise. */
+  /** What a new Boss is handed for inheritanceGraceDays after the handover (0337): the outgoing Boss, the facts of the season it led and its note (null where its last meeting failed). Null or absent otherwise. */
   readonly predecessor?: { readonly staff: string; readonly season: number; readonly note: string | null; readonly facts: HandoffFacts } | null;
   /**
    * The groups (0131): the conferred catalog, and the characters no move may name now (capped at the punishment cap, or held by a group move in force or queued), each with the
@@ -469,7 +469,7 @@ export async function runMeeting(
         // The handover's two answers (the database acts on them: a nomination is queued, each inherited move kept or ended, none at the bank's cost).
         successor: repaired.successor,
         inherited: repaired.inherited,
-        // The Boss's last words, in character, and its note out of character (0310): present only from a meeting within the farewell window, trimmed, and stored as a row of their own.
+        // The Boss's last words, in character, and its note out of character (0337): present only from a meeting within the farewell window, trimmed, and stored as a row of their own.
         ...(repaired.farewell !== null ? { farewell: repaired.farewell } : {}),
         ...(repaired.handoff !== null ? { handoff: repaired.handoff } : {}),
         // The Mods' orders: each with its beat, its line, its allowance (out of the Boss's bank, which the database charges) and its new memory.

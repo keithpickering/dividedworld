@@ -4,12 +4,12 @@
 --    the queue's guard and lost every other move in the answer. It now runs lasting_move_problem for them (and refuses a demand, which a lasting move cannot carry), skips the move and records
 --    it as `lastingSkipped` ({index, why}) on the meeting's record, as a machine move is. meeting_context (0140) leaves a closed board out of its board list (chosen over marking it closed:
 --    the model is never offered a board it could not rename, merge into or move a thread onto, and the engine's "is a board the meeting was given" drops then follow without a change to it).
--- 2. A superseded moveThread restored by the reversal of its superseder is in force again (0294 puts its board back in the thread's place), so open_moves, and with it the admin queue's list of
+-- 2. A superseded moveThread restored by the reversal of its superseder is in force again (0321 puts its board back in the thread's place), so open_moves, and with it the admin queue's list of
 --    moves in force, shows it and an admin can find it to reverse it. move_thread_effective(thread) is the latest moveThread of the thread not ended reversed or overturned: the move the
 --    thread's place reads. acts_track_moves (0046) keeps open_moves to it: a move_end of a moveThread takes that move out and puts the effective one in if it has no end but a
 --    supersession; a moveThread landing takes out the restored ones it supersedes (the tick ends the ones with no end). rebuild_open_moves (0046) derives the same rows from the Acts.
 --    Derived from the ends, append-only.
--- 3. boards_now (0293) called board_merge_into, and a function in a view is checked against the role that reads the view (only the view's tables are the owner's), so anon, authenticated and the
+-- 3. boards_now (0320) called board_merge_into, and a function in a view is checked against the role that reads the view (only the view's tables are the owner's), so anon, authenticated and the
 --    digest role were refused (permission denied for function board_merge_into) whenever a board was read. It now reads the merge inline, as the view's own tables, so no role needs execute on a
 --    helper and the helpers stay the service role's. 0182 reads boards_now as each role and the board index as a signed-in player; 0050, 0051 and 0057 read the digest.
 -- Port from main (#486, supabase/migrations/0193_meeting_parts.sql, which now runs before this one): apply_meeting writes the Boss's staff_memory row only when the payload's `memory` is an object, and its
@@ -418,7 +418,7 @@ begin
     'returned', returned, 'handed', handed);
 end $$;
 
--- boards_now (0293), the merge read inline, so no reader needs execute on a helper function. Columns and rows as 0293 wrote them.
+-- boards_now (0320), the merge read inline, so no reader needs execute on a helper function. Columns and rows as 0320 wrote them.
 create or replace view boards_now as
   with live as materialized (
     select a.id as move_act, a.created_at, a.payload #>> '{params,board}' as board, a.payload #>> '{params,name}' as name,

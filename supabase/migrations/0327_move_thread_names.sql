@@ -1,7 +1,7 @@
 -- The words that name a moved thread (docs/plans/2026-11-06-fangame-split-plan.md, Task 3, the move sentences).
 --
 -- A moveThread Act holds ids. The sentence "The Boss moved <thread> from <board> to <board>." needs the thread's title now and the board it left. move_thread_names reads both for a
--- handful of moves at once: `items` is a jsonb array of {thread, act}. For a landed move (act given) the board it left is the one thread_departures (0299) wrote when the Act landed; for
+-- handful of moves at once: `items` is a jsonb array of {thread, act}. For a landed move (act given) the board it left is the one thread_departures (0326) wrote when the Act landed; for
 -- a move still waiting (no act) it is the board the thread is on now, which is what it will leave. The answer is an array of {key, title, from}, `key` being the act when given, else the thread.
 -- Every field is public: a thread's title, and the board it was on. Nothing is computed from who owns a character, a class or a reaction. At most 50 items are read.
 create function move_thread_names(items jsonb) returns jsonb

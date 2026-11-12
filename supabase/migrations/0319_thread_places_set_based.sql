@@ -1,6 +1,6 @@
--- Thread places, set-based, and one rule for "in force" (review of 0291, plan Task 1).
+-- Thread places, set-based, and one rule for "in force" (review of 0318, plan Task 1).
 --
--- Lasting moves never expire, so open_moves keeps a row for each of them for good: it is not small on a busy instance, and 0291's thread_place, which scanned the
+-- Lasting moves never expire, so open_moves keeps a row for each of them for good: it is not small on a busy instance, and 0318's thread_place, which scanned the
 -- open moves for each thread, made a rebuild of every thread cost threads x lasting moves (twice over for the drift check). This migration:
 --
 --   thread_places_computed()    every thread's place at once: the in-force moveThread, mergeBoard and createBoard rows are read once, keyed by thread and by board; each
@@ -14,10 +14,10 @@
 --   acts_move_thread, acts_merge_board    partial expression indexes on the moves' params.
 --
 -- In force, one rule for every lasting kind: a lasting move is in force until it has any move_end (reversed, superseded or overturned), which is what open_moves holds.
--- So a createBoard ended for any reason closes its board (0291 read only `reversed`), and its threads go to its fallback, else the first open non-system board.
+-- So a createBoard ended for any reason closes its board (0318 read only `reversed`), and its threads go to its fallback, else the first open non-system board.
 --
 -- A param that is not a uuid, or names no board (a merge's `into`, a move's `board`, a fallback), makes that move no move at all: it is read as null, never an error.
--- The two functions the readers of a place share (safe_uuid, board_merge_into) are for the database alone, as 0291's are.
+-- The two functions the readers of a place share (safe_uuid, board_merge_into) are for the database alone, as 0318's are.
 --
 -- Not changed: a merge cycle is not refused here (queue or landing time, a later task); a cycle stops after 50 steps. board_thread_counts does not yet follow a thread
 -- whose board changes (a later task).
