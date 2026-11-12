@@ -808,8 +808,13 @@ begin
             and p.proname in ('search_posts', 'search_threads', 'search_suggest', 'search_cursor_ok') and (p.prosecdef or p.prosqlbody is null or p.provolatile = 'v') loop
     raise exception '% is a definer, volatile, or not SQL-standard bodied', fn;
   end loop;
-  for fn in select p.oid::regprocedure::text from pg_proc p where p.pronamespace = 'public'::regnamespace and p.proname in ('search_matches', 'search_matches_sql', 'search_walk', 'search_walk_sql') and (p.prosecdef or p.provolatile <> 's') loop
+  for fn in select p.oid::regprocedure::text from pg_proc p where p.pronamespace = 'public'::regnamespace and p.proname in ('search_matches_sql', 'search_walk_sql', 'search_match_conds') and (p.prosecdef or p.provolatile <> 's') loop
     raise exception '% is a definer or not stable', fn;
+  end loop;
+  -- The three that run the built text read post_search.character, which a signed-in player is not granted (the post's author is shown through shown_author): definers, stable, search_path pinned ending in pg_temp.
+  for fn in select p.oid::regprocedure::text from pg_proc p where p.pronamespace = 'public'::regnamespace and p.proname in ('search_matches', 'search_walk', 'search_thread_matches')
+            and not (p.prosecdef and p.provolatile = 's' and exists (select 1 from unnest(p.proconfig) c where c like 'search_path=%pg_temp')) loop
+    raise exception '% is not a stable definer with a pinned search_path', fn;
   end loop;
   if (select count(*) from pg_proc p where p.pronamespace = 'public'::regnamespace
       and p.proname in ('search_posts', 'search_threads', 'search_suggest', 'search_matches', 'search_matches_sql', 'search_suggest_threads', 'search_cursor_ok', 'search_updates_thread', 'suggest_characters',
@@ -883,6 +888,74 @@ begin
   if jsonb_array_length(search_threads('zebrafish', null, b2, null, null, true, null, null, 20) -> 'results') is distinct from 1 or jsonb_array_length(search_posts('zebrafish', null, b2, null, null, true, null, null, 20) -> 'results') is distinct from 1
      or (search_threads('zebrafish', null, b2, null, null, false, 'newest', null, 20) -> 'results' -> 0 ->> 'board')::uuid is distinct from b2 then
     raise exception 'a moved thread is not found, titles only or by its newest match, in its new board'; end if;
+  perform tests.unbecome();
+end
+$test$;
+
+-- 14c. A post under a live author veil (supabase/migrations/0400_post_veils.sql, section on search): the search finds it under the stand-in and not under its author, a word in it finds it
+--      shown as the stand-in's, and post_search.character is no column a signed-in player reads. The veil is left in the table, live, for the scale test below: every bound there holds with it.
+do $test$
+declare
+  ann uuid := tests.account('veil searcher');
+  rdr uuid := tests.account('veil reader');
+  a uuid := tests.character(ann, 'Veiled Vera');
+  b uuid := tests.character(ann, 'Veiled Vince');
+  stand uuid;
+  t uuid := tests.thread('Veiled pie thread');
+  p uuid; q uuid; play uuid;
+  j jsonb; got text;
+begin
+  select c.id into stand from characters c where c.staff_kind = 'anonymous';
+  if stand is null then
+    insert into characters (name, staff, staff_kind, debuted_at) values ('Anonymous', 'anonymous', 'anonymous', now()) returning id into stand;
+    insert into character_profiles (character, title, signature) values (stand, 'Could be anyone.', '');
+  end if;
+  p := tests.post(a, t, 'A persimmon cobbler, whose author hides.');
+  q := tests.post(a, t, 'A persimmon pudding, in the open.');
+  -- A veil as a cast leaves it (the post's play is a card Act on it); written here as the table holds it, so this file needs no card.
+  insert into card_kinds (key, name, alignment, rarity, play, reaches, lasts, veil, stack) values ('srchveil', 'Srch Veil', 'salty', 'rare', 'cast', '{post}', interval '3 days', 'author', 1) on conflict (key) do nothing;
+  play := tests.act(b, 'card', t, '{"card": "srchveil", "reach": "post"}', p);
+  insert into post_veils (play, post, veil, author, caster_account, ends_at) values (play, p, 'author', a, ann, now() + interval '3 days');
+
+  perform tests.become(rdr);
+  -- By the author: the open post is found and the veiled one is not.
+  j := search_posts('persimmon', a, null, null, null, false, 'newest', null, 20);
+  if (select array_agg(r ->> 'act' order by r ->> 'act') from jsonb_array_elements(j -> 'results') r) is distinct from array[q::text] or (j ->> 'count')::integer is distinct from 1 then
+    raise exception 'a search by the author finds the veiled post, or misses the open one: %', j;
+  end if;
+  j := search_threads('cobbler', a, null, null, null, false, 'newest', null, 20);
+  if jsonb_array_length(j -> 'results') is distinct from 0 then raise exception 'a thread search by the author finds the veiled post: %', j; end if;
+  -- By the stand-in: the veiled post is found, as the stand-in's, and the open one is not.
+  j := search_posts('persimmon', stand, null, null, null, false, 'newest', null, 20);
+  if (select array_agg(r ->> 'act' order by r ->> 'act') from jsonb_array_elements(j -> 'results') r) is distinct from array[p::text] or (j ->> 'count')::integer is distinct from 1
+     or (j -> 'results' -> 0 ->> 'character')::uuid is distinct from stand or j::text like '%' || a::text || '%' then
+    raise exception 'a search by the stand-in does not find the veiled post as the stand-in''s: %', j;
+  end if;
+  j := search_threads('cobbler', stand, null, null, null, false, 'newest', null, 20);
+  if jsonb_array_length(j -> 'results') is distinct from 1 or (j -> 'results' -> 0 ->> 'matches')::integer is distinct from 1 or j::text like '%' || a::text || '%' then
+    raise exception 'a thread search by the stand-in does not find the veiled post: %', j;
+  end if;
+  -- By a word in it, with no author: found, under the stand-in, the author's id nowhere.
+  for got in select unnest(array['newest', 'oldest', 'relevance']) loop
+    j := search_posts('cobbler', null, null, null, null, false, got, null, 20);
+    if jsonb_array_length(j -> 'results') is distinct from 1 or (j -> 'results' -> 0 ->> 'character')::uuid is distinct from stand or j::text like '%' || a::text || '%' then
+      raise exception 'a word in the veiled post (%) does not find it under the stand-in: %', got, j;
+    end if;
+    j := search_threads('cobbler', null, null, null, null, false, got, null, 20);
+    if jsonb_array_length(j -> 'results') is distinct from 1 or (j -> 'results' -> 0 ->> 'character')::uuid is distinct from stand or j::text like '%' || a::text || '%' then
+      raise exception 'a word in the veiled post (%) does not find its thread under the stand-in: %', got, j;
+    end if;
+  end loop;
+  -- The open post of the same author shows the author, as it always did.
+  j := search_posts('pudding', null, null, null, null, false, 'newest', null, 20);
+  if (j -> 'results' -> 0 ->> 'character')::uuid is distinct from a then raise exception 'an open post shows someone else: %', j; end if;
+  -- The column is not a signed-in player's to read; the rest of the table is.
+  got := pg_temp.refusal('select character from post_search');
+  if got is null or got not like '42501%' then raise exception 'post_search.character is readable by a signed-in player: %', got; end if;
+  got := pg_temp.refusal('select act, thread, board, first, created_at, words from post_search limit 1');
+  if got is not null then raise exception 'the rest of post_search is no longer readable: %', got; end if;
+  got := pg_temp.refusal('select * from post_search limit 1');
+  if got is null or got not like '42501%' then raise exception 'select * from post_search is allowed: %', got; end if;
   perform tests.unbecome();
 end
 $test$;
@@ -1248,7 +1321,10 @@ begin
   -- The count is of the first `pool` matches (5,000): the newest 1,000 are the keys of the 1,000 odd threads, and more matches than the pool remain, so it says so.
   if (j ->> 'count')::integer <> 1000 or not (j ->> 'more')::boolean or not (j ->> 'pooled')::boolean then raise exception 'threads for the common word: %', j - 'results'; end if;
   -- BOUND-1: no walk by time reads more than the pool's worth of matches, however many there are (100,000 here, the thread keys among the newest 1,000), read in the plan that runs.
+  -- The text is run by the definer that builds it (search_walk), so its plan is read as the owner here: the signed-in role is granted neither post_search.character nor shown_author.
+  perform tests.unbecome();
   execute 'explain (analyze, format json) ' || search_walk_sql('common', null, null, null, null, false, true, null, null, pool) into plan;
+  perform tests.become(who);
   if pg_temp.max_limit_read(plan) > pool + 1 then raise exception 'a walk read more than the pool and one: %', plan; end if;
   if (select count(*) from search_walk('common', null, null, null, null, false, true, null, null, 100000, pool) w where not w.stop) is distinct from 1000 or (select count(*) from search_walk('common', null, null, null, null, false, true, null, null, 100000, pool) w where w.stop) is distinct from 1 then
     raise exception 'a walk of the common word did not find the 1,000 keys among the first % matches and stop', pool; end if;

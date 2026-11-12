@@ -2403,6 +2403,134 @@ create or replace view my_group_moves with (security_invoker = true) as
   where c.owner = auth.uid();
 
 
+-- ===================================================================================== 7. search ====
+-- post_search keeps the true `character` (its indexes and the plans 0117 was tuned on are untouched), and a signed-in player is no longer granted the column: the search shows a veiled post under the stand-in
+-- and finds it by the stand-in, through the two functions that run the built text, now definers (their text is built from typed literals alone, every value through %L, so what they run as the owner is
+-- never a caller's). The conditions and the select lists are the ones that change; search_matches_sql, search_walk_sql and search_match_conds stay invokers, as 0117 wrote them, and run as the definer that
+-- calls them. search_thread_matches counts by author as the conditions do, so it reads the column and is a definer too. Nothing differs by who asks: a veil is a public fact of the post.
+revoke select on post_search from authenticated;
+grant select (act, thread, board, first, created_at, words) on post_search to authenticated;
+
+-- search_match_conds (0117_search), with the author condition read through the veil: for an author that is not the stand-in, the author's posts that no live author veil is on; for the stand-in, the posts a live
+-- author veil is on (author_veiled's probe, written out). Everything else as 0117 wrote it.
+create or replace function search_match_conds(al text, tsq tsquery, author uuid, from_at timestamptz, to_at timestamptz, titles_only boolean)
+returns text[]
+language plpgsql stable security invoker set search_path = public, pg_temp as $$
+declare
+  conds text[] := '{}';
+begin
+  if tsq is not null and numnode(tsq) = 0 then
+    conds := conds || 'false'::text;                  -- only stop words or symbols: no lexeme to find, so nothing is found
+  elsif tsq is not null then
+    conds := conds || format('%I.words @@ %L::tsquery', al, tsq::text);
+    if titles_only then conds := conds || format('ts_filter(%I.words, %L) @@ %L::tsquery', al, '{a}', tsq::text); end if;
+  end if;
+  -- A post under a live author veil is the stand-in's, and its true author's no more: a search by the author does not find it and a search by the stand-in does. The condition is author_veiled's own probe of
+  -- post_veils_post, written out as a (not) exists and not as a call: a call to a function is a filter the planner can only guess the share of, and with the guess it turned the walk's per-match probe (one row
+  -- read to find a thread's next match) into a read of the thread's rest, a sort, on a table 0116's bounds were measured on; an exists is an anti-join it costs from post_veils' own statistics.
+  if author is not null then
+    if author is not distinct from stand_in() then conds := conds || format('exists (select 1 from post_veils_live v where v.post = %I.act and v.veil = %L)', al, 'author');
+    else conds := conds || format('%I."character" = %L::uuid', al, author) || format('not exists (select 1 from post_veils_live v where v.post = %I.act and v.veil = %L)', al, 'author'); end if;
+  end if;
+  if from_at is not null then conds := conds || format('%I.created_at >= %L::timestamptz', al, from_at); end if;
+  if to_at is not null then conds := conds || format('%I.created_at < %L::timestamptz', al, to_at); end if;
+  if titles_only then conds := conds || format('%I.first', al); end if;
+  return conds;
+end $$;
+
+-- search_matches_sql (0117_search), giving shown_author(p.act, p."character") as `character` in its two select lists. Everything else as 0117 wrote it.
+create or replace function search_matches_sql(q text, author uuid, board uuid, from_at timestamptz, to_at timestamptz, titles_only boolean, newest boolean, after_at timestamptz, after_act uuid, lim integer)
+returns text
+language plpgsql stable security invoker set search_path = public, pg_temp as $$
+declare
+  tsq tsquery := case when btrim(coalesce(q, '')) = '' then null else websearch_to_tsquery(search_lang(), q) end;
+  dir text := case when coalesce(newest, true) then 'desc' else 'asc' end;
+  updates uuid := search_updates_thread();
+  conds text[] := array['true'] || search_match_conds('p', tsq, author, from_at, to_at, titles_only);
+begin
+  if after_at is not null then
+    conds := conds || format('(p.created_at, p.act) %s (%L::timestamptz, %L::uuid)', case when dir = 'desc' then '<' else '>' end, after_at,
+                             coalesce(after_act, case when dir = 'desc' then 'ffffffff-ffff-ffff-ffff-ffffffffffff' else '00000000-0000-0000-0000-000000000000' end::uuid));
+  end if;
+  if updates is not null then conds := conds || format('p.thread <> %L::uuid', updates); end if;
+  -- With a word and a board the board is asked for as its text, which only post_search_board_words and post_search_first_words hold; with no word it is the column, which the keyset btrees walk.
+  if board is not null then conds := conds || case when tsq is null then format('p.board = %L::uuid', board) else format('p.board::text = %L', board::text) end; end if;
+  -- An author with no board: the author's own posts are the bound. The word's index is closed to the plan (the word is read through a concatenation, which no index holds), so the only way to the matches is the author's
+  -- index, post_search_character, whose rows are the author's own (A), and not the word's matches in every board, which the planner chose for a common word when it had no statistics for the author's column.
+  if tsq is not null and author is not null and board is null then
+    conds := array_replace(conds, format('p.words @@ %L::tsquery', tsq::text), format('(p.words || %L::tsvector) @@ %L::tsquery', '', tsq::text));
+  end if;
+  if tsq is null or not (board is not null or coalesce(titles_only, false)) then
+    -- The matches in order, off the keyset btrees (post_search_newest and its board, first-post and character siblings): the walk stops at `lim`. With no word, the filters alone, bounded by the rows it passes, which they
+    -- keep to a share of the table. With a word and neither a board nor titles only, the word is a filter on that walk or the planner finds its matches through the word's index and sorts them, and either way a broad
+    -- word costs what a narrow one does: a common word finds its `lim` matches at the newest rows (the page or the pool, whatever the instance holds), a rare one reads the few rows it is in (post_search_words).
+    -- With a word and an author, the word is closed to every index (above), so this walk goes down the author's keyset btree (post_search_character) and stops at `lim`: a common word reads about the page, a rare one
+    -- reads the author's posts (A) to find its few, the price of a plan that no statistics can turn toward the word's matches in every board.
+    return format('select p.act, p.thread, p.board, t.title, shown_author(p.act, p."character") as "character", p.created_at, p.words from post_search p join threads t on t.id = p.thread where %s order by p.created_at %s, p.act %s limit %s',
+                  array_to_string(conds, ' and '), dir, dir, greatest(coalesce(lim, 0), 0)::integer);
+  end if;
+  -- With a word and a board, or titles only: the word's matches in that board, or in the first posts, are found first and ordered after. The matches are a `materialized` CTE with no ORDER BY, so the only plans open to the
+  -- planner for it are the ones that find the matches (the GIN indexes on the word, with the board where one is given, or its first posts), and none of them can walk a keyset btree in time order and drop rows that do not
+  -- hold the word. Without this the order by ... limit offered the planner that walk, and whether it took it depended on its estimate of how common the word is: a rare word estimated common, in a board with none of it, read
+  -- every post of the board to find nothing (supabase/tests/0116-search.sql, BOUND-2). Now the rows read are the filter's own matches (M) at most, whatever the statistics say: the worst case of a word found in
+  -- every post of the board is the cost of sorting M; a request asks for its page and for its count separately (search_posts, search_threads), so it sorts M twice. A board or titles only is what keeps M to a share of the instance; with
+  -- neither, M is the word's matches in every board, and sorting them is the cost the walk above does not pay. The thread's title is joined after the limit, to the rows that stay.
+  return format('with m as materialized (select p.act, p.thread, p.board, shown_author(p.act, p."character") as "character", p.created_at, p.words from post_search p where %s) '
+                'select o.act, o.thread, o.board, t.title, o."character", o.created_at, o.words '
+                'from (select * from m order by m.created_at %s, m.act %s limit %s) o join threads t on t.id = o.thread order by o.created_at %s, o.act %s',
+                array_to_string(conds, ' and '), dir, dir, greatest(coalesce(lim, 0), 0)::integer, dir, dir);
+end $$;
+
+-- search_matches and search_walk (0117_search), definers with the search_path pinned ending in pg_temp, as the text they run is typed literals alone. Their bodies are as 0117 wrote them; the grants are 0117's.
+create or replace function search_matches(p_q text, p_author uuid, p_board uuid, p_from_at timestamptz, p_to_at timestamptz, p_titles_only boolean, p_newest boolean, p_after_at timestamptz, p_after_act uuid, p_lim integer)
+returns table (act uuid, thread uuid, board uuid, title text, "character" uuid, created_at timestamptz, words tsvector)
+language plpgsql stable security definer set search_path = public, pg_temp as $$
+begin
+  return query execute search_matches_sql(p_q, p_author, p_board, p_from_at, p_to_at, p_titles_only, p_newest, p_after_at, p_after_act, p_lim);
+end $$;
+
+create or replace function search_walk(p_q text, p_author uuid, p_board uuid, p_from_at timestamptz, p_to_at timestamptz, p_titles_only boolean, p_newest boolean, p_after_at timestamptz, p_after_act uuid, p_want integer, p_budget integer)
+returns table (act uuid, thread uuid, board uuid, title text, "character" uuid, created_at timestamptz, stop boolean)
+language plpgsql stable security definer set search_path = public, pg_temp as $$
+declare
+  r record;
+  read_n integer := 0;
+  kept integer := 0;
+  last_at timestamptz;
+  last_act uuid;
+begin
+  if coalesce(p_want, 0) <= 0 or coalesce(p_budget, 0) <= 0 then return; end if;
+  for r in execute search_walk_sql(p_q, p_author, p_board, p_from_at, p_to_at, p_titles_only, p_newest, p_after_at, p_after_act, p_budget) loop
+    if read_n >= p_budget then          -- a match beyond the budget: the walk stopped short, and resumes after the last match it read
+      act := last_act; thread := null; board := null; title := null; "character" := null; created_at := last_at; stop := true;
+      return next;
+      return;
+    end if;
+    read_n := read_n + 1; last_at := r.created_at; last_act := r.act;
+    if r.is_key then
+      act := r.act; thread := r.thread; board := r.board; title := r.title; "character" := r."character"; created_at := r.created_at; stop := false;
+      return next;
+      kept := kept + 1;
+      if kept >= p_want then return; end if;
+    end if;
+  end loop;
+end $$;
+
+-- search_thread_matches (0117_search), a definer, counting a thread's matches by author through the veil as search_match_conds does. Everything else as 0117 wrote it.
+create or replace function search_thread_matches(thread uuid, tsq tsquery, author uuid, from_at timestamptz, to_at timestamptz, titles_only boolean) returns bigint
+language sql stable security definer set search_path = public, pg_temp as $$
+  select count(*) from (
+    select 1 from post_search p2
+    where p2.thread = $1
+      and ($2 is null or p2.words @@ $2)
+      and (not coalesce($6, false) or $2 is null or ts_filter(p2.words, '{a}') @@ $2)
+      and ($3 is null or case when $3 is not distinct from stand_in() then author_veiled(p2.act) else p2."character" = $3 and not author_veiled(p2.act) end)
+      and p2.created_at >= coalesce($4, '-infinity') and p2.created_at < coalesce($5, 'infinity')
+      and (not coalesce($6, false) or exists (select 1 from acts_public f where f.id = p2.act and f.seq = 1))
+    limit 101) z
+$$;
+
+
 -- ===================================================================================== grants ====
 -- Every helper above is for no API role: the views that read the veils own their rights and call none of them (a view's functions are run as its reader, so acts_public, thread_open and
 -- my_cards_ended write out what stand_in() and shown_author() say), and the definer functions that call them own theirs. land_refusal and land_rows are called by place_cast and the springs alone.

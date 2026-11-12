@@ -8,12 +8,12 @@
 --     fixture proves nothing, so the test fails on one that does not; a probe that carries no character at all says so (`fires` false) and can only show absence.
 --  2. After the cast, as R, no probe finds it. The reads are those the plan names: the thread's page, acts_public (by id, by thread, by character A and by the stand-in), thread_open and thread_list, the board and the index,
 --     the profile of A (P absent) and of the stand-in (P present), the record, alerts, the log, followed threads, the caster's ended plays, a play's moment, the effects above a page's characters, post tails, boot, and the
---     staff presence box. Search is Task 3's: its three reads are listed as `pending` below and are asserted to STILL find the author, so the day Task 3 closes one this test fails and says to move it to `swept`.
+--     staff presence box. Search (search_posts, search_threads, search_suggest) is swept too, with the functions under it and post_search.
 --  3. COMPLETENESS. One list holds every table, view and function a signed-in player may read or run, each marked `swept`, `no author` (with its reason) or `pending`, and the test fails on a name the catalog holds and the
 --     list does not (and on one the list holds and the catalog does not). Its poison: the test makes a granted view `select id, character from acts`, asserts the check names it, and drops it.
 --
---  How Task 3 slots in: move `search_posts`, `search_threads` and `search_suggest` (and `search_suggest_threads`) from the `pending` block of the list to `swept` (change their mark), add their probes to the `probes`
---  below with `pending` false, and delete the `pending` probes; the post_search grant and the author condition are Task 3's own.
+--  A read that still carries the author and is another task's to close is marked `pending` (in the list and in its probe), and is asserted to STILL find the author, so the day its task closes it this test fails and
+--  says to move it to `swept`. None is pending now.
 
 create function pg_temp.coded(stmt text) returns text language plpgsql as $$
 begin
@@ -117,7 +117,7 @@ select 'relation', n, m, w from (values
   ('play_moment_layers', 'no author', 'the layers of a play''s moment: play ids and saved states'),
   ('play_moments', 'no author', 'the version of a post a play was made on: ids'),
   ('play_reach', 'no author', 'a play beyond a post: its target character, thread or board, which is public; a card on a character is played from one of its posts, so its Act points at that post and names its author: land_refusal refuses a veil on such a post, and none is played from a veiled one (the stand-in is no target), both held below and in 0166-post-veils.sql'),
-  ('post_search', 'pending', 'its `character` column is a post''s author; Task 3 grants every column but it and reads it through the projection'),
+  ('post_search', 'swept', 'granted every column but `character`; the search reads it through the projection'),
   ('reaction_kinds', 'no author', 'the instance''s reactions'),
   ('reaction_tallies', 'no author', 'counts of reactions to an Act: no character'),
   ('reading', 'no author', 'the caller''s own reading places (row security)'),
@@ -249,18 +249,18 @@ select 'function', n, m, w from (values
   ('search_cursor_cast', 'no author', 'a pure function of its argument'),
   ('search_cursor_ok', 'no author', 'a pure function of its arguments'),
   ('search_lang', 'no author', 'a setting'),
-  ('search_match_conds', 'pending', 'the search''s author condition reads post_search.character; Task 3 gives it the projection'),
-  ('search_matches', 'pending', 'the search''s walk returns post_search.character; Task 3 makes it a definer and gives it the projection'),
-  ('search_matches_sql', 'pending', 'the search''s text names post_search.character; Task 3 gives it shown_author'),
+  ('search_match_conds', 'swept', 'the author condition: a veiled post is found under the stand-in and not under its author (author_veiled)'),
+  ('search_matches', 'swept', 'a definer; returns shown_author, so a veiled post is the stand-in''s'),
+  ('search_matches_sql', 'swept', 'the text gives shown_author(p.act, p.character) as the character'),
   ('search_post_cards', 'no author', 'the cards on a post: no character'),
-  ('search_posts', 'pending', 'returns post_search.character; Task 3 closes it'),
+  ('search_posts', 'swept', 'returns the projection''s character (shown_author), never post_search.character'),
   ('search_suggest', 'swept', 'suggests thread titles, boards and characters by name: no post''s author (its sweep can only show absence)'),
   ('search_suggest_threads', 'no author', 'suggests thread titles and boards: no author'),
-  ('search_thread_matches', 'pending', 'counts post_search rows by author; Task 3 closes it'),
-  ('search_threads', 'pending', 'returns post_search.character; Task 3 closes it'),
+  ('search_thread_matches', 'swept', 'a definer; counts by author through the veil as search_match_conds does'),
+  ('search_threads', 'swept', 'returns the projection''s character (shown_author), never post_search.character'),
   ('search_updates_thread', 'no author', 'the Updates thread''s id'),
-  ('search_walk', 'pending', 'the search''s walk reads post_search.character; Task 3 makes it a definer and gives it the projection'),
-  ('search_walk_sql', 'pending', 'the search''s text names post_search.character; Task 3 gives it shown_author'),
+  ('search_walk', 'swept', 'a definer; its rows come from search_matches_sql''s text, so a veiled post is the stand-in''s'),
+  ('search_walk_sql', 'swept', 'its conditions are search_match_conds'', its rows search_matches_sql''s'),
   ('search_words', 'no author', 'a pure function of its arguments'),
   ('season_news', 'no author', 'season news: public'),
   ('season_page', 'no author', 'a season''s page: results per character, public'),
@@ -443,8 +443,15 @@ begin
     ('boot', 'id', 'select boot()::text', false, false),
     ('presence_box', 'standname', 'select presence_box(''thread'', current_setting(''sweep.t'')::uuid)::text', false, false),
     ('character_post_counts', 'counts', 'select jsonb_build_object(''counts'', (select n.posts from character_post_counts n where n.character = current_setting(''sweep.a'')::uuid), ''listed'', (select count(*) from acts_public x where x.character = current_setting(''sweep.a'')::uuid and x.kind = ''post''), ''profile'', profile_page(current_setting(''sweep.a'')::uuid) -> ''counts'' -> ''posts'', ''stand'', coalesce((select n.posts from character_post_counts n where n.character = current_setting(''sweep.stand'')::uuid), 0), ''stand_listed'', (select count(*) from acts_public x where x.character = current_setting(''sweep.stand'')::uuid and x.kind = ''post''))::text', false, false),
-    ('search_posts', 'id', 'select search_posts(''pie'', null, null, null, null, false, ''newest'', null, 20)::text', true, true),
-    ('search_threads', 'id', 'select search_threads(''pie'', null, null, null, null, false, ''newest'', null, 20)::text', true, true),
+    ('search_posts', 'id', 'select search_posts(''pie'', null, null, null, null, false, ''newest'', null, 20)::text', true, false),
+    ('search_threads', 'id', 'select search_threads(''pie'', null, null, null, null, false, ''newest'', null, 20)::text', true, false),
+    ('search_matches', 'id', 'select coalesce(jsonb_agg(to_jsonb(m)), ''[]'')::text from search_matches(''pie'', null, null, null, null, false, true, null, null, 20) m', true, false),
+    ('search_walk', 'id', 'select coalesce(jsonb_agg(to_jsonb(w)), ''[]'')::text from search_walk(''pie'', null, null, null, null, false, true, null, null, 20, 100) w', true, false),
+    ('search_matches_sql', 'id', 'select search_matches_sql(''pie'', null, null, null, null, false, true, null, null, 20)', false, false),
+    ('search_walk_sql', 'id', 'select search_walk_sql(''pie'', null, null, null, null, false, true, null, null, 100)', false, false),
+    ('search_match_conds', 'id', 'select search_match_conds(''p'', websearch_to_tsquery(''english'', ''pie''), null::uuid, null::timestamptz, null::timestamptz, false)::text', false, false),
+    ('search_thread_matches', 'id', 'select search_thread_matches(current_setting(''sweep.t'')::uuid, websearch_to_tsquery(''english'', ''pie''), current_setting(''sweep.a'')::uuid, null, null, false)::text', false, false),
+    ('post_search', 'id', 'select coalesce(jsonb_agg(to_jsonb(x)), ''[]'')::text from (select act, thread, board, first, created_at, words from post_search) x', false, false),
     ('search_suggest', 'id', 'select search_suggest(''Sw sweep'', array[''threads''], null, true, 10)::text', false, false);
 
   -- Whether a probe's answer holds what it looks for.
