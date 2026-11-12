@@ -8,7 +8,9 @@ both are records.
 ## An art set
 
 Every card has an art set, one folder per card in an instance: `instances/<name>/ui/cards/<key>/`. Plain files directly
-in `ui/cards/` are not folders and the guard does not read them.
+in `ui/cards/` are not folders and the guard does not read them. Nor does it read a folder there whose name could not
+be a card's key (lowercase words joined by hyphens), such as the `__pycache__` Python leaves when a scene is run: that
+is a tool's leavings, not a card.
 
 - **The canvas**, the card's picture: `art.svg` or `art.webp`, exactly one.
   - **`art.svg`** is vector, so it is sharp from the smallest size to the largest. Its root `svg` has a viewBox of
@@ -26,7 +28,7 @@ in `ui/cards/` are not folders and the guard does not read them.
 - The card's color, ink and tagline live in the instance's `CardUi`, not in the folder.
 
 ```json
-{ "credit": "Divided World", "license": "The project's own art. The owner gives its license when the repository has one." }
+{ "credit": "Divided World", "license": "CC0 1.0 Universal: https://creativecommons.org/publicdomain/zero/1.0/" }
 ```
 
 ## The template's numbers
@@ -83,6 +85,33 @@ extended file (EXIF, XMP) are not read; they are inert in an `<img>`.
 
 The guard reads only the files named here. Anything else in a card's folder is the instance's, such as the scene a
 rendered picture was made from.
+
+## The card back
+
+A back says nothing about the card it is, so its look is the instance's and the same for every card. Without anything
+from the instance, `PostcardBack` draws the stylesheet's back: smoke in the glass's colors and, where the instance gives
+one, its mark (`InstanceUi.cardBack.mark`) at the center.
+
+An instance may give the back its picture, in one folder, `instances/<name>/ui/card-back/`:
+
+- **`art.svg` or `art.webp`**, exactly one: the back of every card (`InstanceUi.cardBack.canvas`).
+- **`art.json`**, the manifest, as a card's. A back has no foot line, so the credit is shown nowhere; it is there so the
+  art's terms are with the art.
+- No `mark.svg`: the back's mark is the instance's own, and a back has no tile of its own.
+
+The picture is a canvas as a card's is, held by the guard to the same rules: an SVG on `0 0 540 840` that runs and
+fetches nothing, or a still WebP of exactly 1080 by 1680, at most 400 KB. A back with its picture draws that on the
+canvas, as a face draws its art, and no mark over it: the picture holds the emblem. The frame is the engine's either way.
+
+A pack's hit pull has no back of its own. A gold back shown only while a pack opens would suggest that a card set face
+down could look different, so every back is the same back. The opening still says which card is the hit by its place, the last, and marks it in
+gold once it is turned.
+
+The small tile of a face-down card on a post is not given the picture. It keeps the stylesheet's smoke: a 1080 by 1680
+image decoded for an 18px tile, once for every face-down card on a page, is a cost with nothing to show for it.
+
+The design is `docs/plans/2026-11-11-rendered-card-back-design.md`, a record; it gave the hit pull a second picture,
+which the owner took out the same day.
 
 ## A variant is the same canvas
 

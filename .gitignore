@@ -17,3 +17,5 @@ e2e/report/
 
 # Python bytecode from running the card render scenes (docs/research/2026-11-11-card-renders).
 __pycache__/
+# Blender writes this 24 MB noise tile into the working folder when it simulates fire (Heat Magnet's scene).
+waveletNoiseTile.bin

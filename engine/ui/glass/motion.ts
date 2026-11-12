@@ -368,7 +368,7 @@ export function deal(feel: ActiveFeel, index: number, delays: readonly number[],
   return { animate: { x: to.x, y: to.y, rotate: 0, scale: to.scale, transition: landing(feel, feel.enter, (delays[index] ?? 0) * 3) } };
 }
 
-/** The hit's beat: its gold back pulses once, scale 1, 1.05, 1, over `screen`, eased. */
+/** The hit's beat: its back pulses once before it turns, scale 1, 1.05, 1, over `screen`, eased. */
 export function beat(feel: ActiveFeel): MotionProps {
   if (!feel) return {};
   return { animate: { scale: [1, 1.05, 1], transition: { ...eased(feel, feel.screen), times: [0, 0.45, 1] } } };

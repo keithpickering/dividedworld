@@ -815,7 +815,7 @@ button.kb-vending-slot[aria-disabled='true'] {
   margin: 0;
 }
 
-/* "In this pack": five small backs, the last the hit's gold, and the line about opening. */
+/* "In this pack": five small backs, all the same, and the line about opening. */
 .kb-vending-inpack {
   padding: 14px;
   border: 1px solid color-mix(in srgb, var(--kb-glass-pale) 35%, transparent);
