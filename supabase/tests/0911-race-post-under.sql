@@ -21,7 +21,7 @@ begin
     insert into acts (id, character, kind, thread, payload) values (%10$L, %5$L, 'post', %9$L, '{"body": "one"}'), (%11$L, %5$L, 'post', %9$L, '{"body": "two"}'),
       (%12$L, %5$L, 'post', %9$L, '{"body": "three"}'), (%13$L, %5$L, 'post', %9$L, '{"body": "four"}');
     insert into wallets (account, balance) values (%2$L, 500), (%3$L, 500), (%1$L, 500);
-    insert into card_ledger (account, card, kind, price) values (%2$L, 'parcut', 'bought', 0), (%2$L, 'parcut', 'bought', 0), (%2$L, 'parcut', 'bought', 0), (%3$L, 'parcut', 'bought', 0), (%1$L, 'parmove', 'bought', 0);
+    insert into card_ledger (account, card, kind, price) values (%2$L, 'parcut', 'bought', 0), (%2$L, 'parcut', 'bought', 0), (%2$L, 'parcut', 'bought', 0), (%2$L, 'parcut', 'bought', 0), (%3$L, 'parcut', 'bought', 0), (%1$L, 'parmove', 'bought', 0);
     do $e$ begin perform set_card(%1$L, 'parmove', %5$L, %13$L, '{"phrase": "par phrase"}', 0, null, 'par phrase'); end $e$;
   $sql$, ann, bob, cal, dee, a, b, c, d, t, p1, p2, p3, p4));
   select count(*) into posts_before from acts where thread = t and kind = 'post';

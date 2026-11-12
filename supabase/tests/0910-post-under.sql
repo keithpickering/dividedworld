@@ -80,7 +80,8 @@ begin
   insert into card_kinds (key, name, alignment, rarity, play, stack, reaches, replies, trap, lasts, gimmick) values
     ('pacut', 'Pa Cut', 'pepperoni', 'rare', 'cast', 1, '{post}', true, null, null, null),
     ('patrap', 'Pa Trap', 'sweet', 'rare', 'set', 1, '{post}', false, '{"trigger": {"on": "cast"}}', null, null),
-    ('paward', 'Pa Ward', 'sweet', 'common', 'use', 1, '{post}', false, null, interval '7 days', '{"kind": "ward", "flavors": ["pepperoni"]}');
+    ('paward', 'Pa Ward', 'sweet', 'common', 'use', 1, '{post}', false, null, interval '7 days', '{"kind": "ward", "flavors": ["pepperoni"]}'),
+    ('paride', 'Pa Ride', 'sweet', 'rare', 'set', 1, '{post}', false, '{"trigger": {"on": "cast"}, "outcome": {"kind": "ride", "share": 1}}', null, null);
 end $$;
 
 -- ---- A play of a card that replies writes the card Act, the reply and one post_under row, and spends once ----
@@ -334,4 +335,99 @@ begin
   -- The guard holds where the table is written directly: a row whose parent is the reply of a row in force is refused in the guard's words.
   why := pg_temp.coded(format('insert into post_under (play, parent, reply, thread) select gen_random_uuid(), reply, %L, %L from post_under where play = %L', p, t, (played ->> 'id')::uuid));
   if why is distinct from '23505 a reply drawn under a post takes no reply under it' then raise exception 'a row under a reply in force: %', why; end if;
+end $$;
+
+-- ---- A cast a ride back lets land writes its reply, its row and answers `under`; the outcomes of a cast on a back are: caught (above), ridden (here) and no back at all (the first block) ----
+do $$
+declare
+  ann uuid := tests.account('ph-ann'); bob uuid := tests.account('ph-bob');
+  a uuid := tests.character(ann, 'Ph Ann'); b uuid := tests.character(bob, 'Ph Bob');
+  t uuid := tests.thread('Ph rode'); p uuid := tests.post(a, t, 'A post with a ride back.');
+  back uuid; played jsonb; k acts%rowtype;
+begin
+  perform pg_temp.hand(ann, 'paride');
+  perform pg_temp.hand(bob, 'pacut');
+  insert into wallets (account, balance) values (bob, 500);
+  perform tests.become_service();
+  back := (set_card(ann, 'paride', a, p, '{"quadrant": "excitedPositive"}', 0, 'pacut') ->> 'id')::uuid;
+  played := play_card(bob, 'pacut', b, p, '{}', 0, '', reply => 'Cutting past the ride.');
+  perform tests.unbecome();
+  select * into k from acts where id = (played ->> 'id')::uuid;
+  if played -> 'sprung' is null or played #>> '{sprung,payload,did}' is distinct from 'rode' or k.payload ? 'caught' or k.payload ->> 'rode' is distinct from back::text then
+    raise exception 'the cast met a ride back: % %', played -> 'sprung', k.payload;
+  end if;
+  if not exists (select 1 from acts r where r.id = (k.payload ->> 'reply')::uuid and r.kind = 'post' and r.thread = t and r.character = b and r.payload ->> 'body' = 'Cutting past the ride.') then
+    raise exception 'a cast that rode wrote no reply: %', k.payload;
+  end if;
+  if (select count(*) from post_under u where u.play = k.id and u.parent = p and u.reply = (k.payload ->> 'reply')::uuid) is distinct from 1
+     or played #>> '{under,parent}' is distinct from p::text or played #>> '{under,act}' is null or played #>> '{under,play}' is distinct from k.id::text then
+    raise exception 'a cast that rode writes its row and answers under: %', played;
+  end if;
+end $$;
+
+-- ---- The framing a reply carries is the framing a post's is ----
+do $$
+declare
+  ann uuid := tests.account('pi-ann'); bob uuid := tests.account('pi-bob'); cal uuid := tests.account('pi-cal');
+  a uuid := tests.character(ann, 'Pi Ann'); b uuid := tests.character(bob, 'Pi Bob'); c uuid := tests.character(cal, 'Pi Cal');
+  t uuid := tests.thread('Pi framing'); p uuid := tests.post(a, t, 'The parent.'); p2 uuid := tests.post(a, t, 'Another.');
+  body text := 'He said [quote="Cal" user=' || c || ']things[/quote]'; played jsonb; reply_id uuid; made jsonb; plain jsonb;
+begin
+  perform pg_temp.hand(bob, 'pacut', 'pacut');
+  insert into wallets (account, balance) values (bob, 500);
+  perform tests.become_service();
+  played := play_card(bob, 'pacut', b, p, '{}', 0, '', reply => body, framing => array[c]);
+  perform tests.unbecome();
+  reply_id := (played #>> '{under,act,id}')::uuid;
+  if (select count(*) from alerts where kind = 'framed' and act = reply_id) is distinct from 1
+     or not exists (select 1 from alerts where kind = 'framed' and act = reply_id and account = cal and character = c) then
+    raise exception 'a reply that frames a character alerts its owner once, about the reply';
+  end if;
+  -- As a post of the same words and framing does.
+  perform tests.become(bob);
+  made := post(t, b, body, null, array[c]);
+  perform tests.unbecome();
+  if (select count(*) from alerts where kind = 'framed' and act = (made ->> 'id')::uuid and account = cal and character = c) is distinct from 1 then
+    raise exception 'post() with the same framing alerts the same way';
+  end if;
+  -- And none without it.
+  perform pg_temp.hand(bob, 'pacut');
+  perform tests.become_service();
+  plain := play_card(bob, 'pacut', b, p2, '{}', 0, '', reply => body);
+  perform tests.unbecome();
+  if exists (select 1 from alerts where kind = 'framed' and act = (plain #>> '{under,act,id}')::uuid) then raise exception 'a reply with no framing alerts nobody'; end if;
+end $$;
+
+-- ---- The guard on post_under refuses a parent or a reply that is no post of the thread, and a reach that is not a post's is refused with nothing written ----
+do $$
+declare
+  ann uuid := tests.account('pj-ann'); bob uuid := tests.account('pj-bob');
+  a uuid := tests.character(ann, 'Pj Ann'); b uuid := tests.character(bob, 'Pj Bob');
+  t uuid := tests.thread('Pj guard'); t2 uuid := tests.thread('Pj other'); p uuid := tests.post(a, t, 'Parent.'); r uuid := tests.post(a, t, 'Reply.'); other uuid := tests.post(a, t2, 'Elsewhere.');
+  played jsonb; why text; s0 text;
+begin
+  perform pg_temp.hand(bob, 'pacut');
+  insert into wallets (account, balance) values (bob, 500);
+  perform tests.become_service();
+  played := play_card(bob, 'pacut', b, p, '{}', 0, '', reply => 'Making a card Act.');
+  perform tests.unbecome();
+  -- A parent that is a card Act, not a post.
+  why := pg_temp.coded(format('insert into post_under (play, parent, reply, thread) values (gen_random_uuid(), %L, %L, %L)', (played ->> 'id')::uuid, r, t));
+  if why is distinct from '23514 a reply is drawn under a post of its own thread' then raise exception 'a parent that is no post: %', why; end if;
+  -- A reply that is a post of another thread.
+  why := pg_temp.coded(format('insert into post_under (play, parent, reply, thread) values (gen_random_uuid(), %L, %L, %L)', p, other, t));
+  if why is distinct from '23514 a reply is drawn under a post of its own thread' then raise exception 'a reply of another thread: %', why; end if;
+  -- A parent that is no Act at all.
+  why := pg_temp.coded(format('insert into post_under (play, parent, reply, thread) values (gen_random_uuid(), gen_random_uuid(), %L, %L)', r, t));
+  if why is distinct from '23514 a reply is drawn under a post of its own thread' then raise exception 'a parent that is nothing: %', why; end if;
+  if (select count(*) from post_under where reply in (r, other)) is distinct from 0 then raise exception 'a refused row stayed'; end if;
+
+  -- A card that replies played at any reach but a post.
+  perform pg_temp.hand(bob, 'pacut');
+  s0 := pg_temp.state(bob, 'pacut');
+  why := pg_temp.coded(format('select play_card(%L, %L, %L, %L, %L, 0, %L, %L, reply => %L)', bob, 'pacut', b, a, '{}', '', 'character', 'At a character.'));
+  if why is distinct from '22023 this card lands on a post' then raise exception 'a card that replies played at a character: %', why; end if;
+  why := pg_temp.coded(format('select play_card(%L, %L, %L, %L, %L, 0, %L, %L, reply => %L)', bob, 'pacut', b, t, '{}', '', 'thread', 'At a thread.'));
+  if why is distinct from '22023 this card lands on a post' then raise exception 'a card that replies played at a thread: %', why; end if;
+  if pg_temp.state(bob, 'pacut') is distinct from s0 then raise exception 'a refused reach wrote or spent something: % to %', s0, pg_temp.state(bob, 'pacut'); end if;
 end $$;

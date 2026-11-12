@@ -23,8 +23,8 @@
 -- replies needs a reply with a letter or digit in it, and any other kind is given none. The card Act's payload names the reply (`reply`), whether or not the cast was caught;
 -- a caught cast (a Trap Card that names the kind) writes no reply: the card Act is the finished, caught play it is today, and no post has the id it names. A ride back lets
 -- the cast land, so its reply is written. The answer gains `under` where a reply was written: the parent, the play and the reply as an Act.
--- seed_instance and card_target are 0332's and 0153's, with this migration's change alone: seed_instance sets the two columns; card_target answers `under` for a reply in force.
--- SQL mirrors none of instance.ts's checks of `writes` (card_kinds_problem holds only the skim's, which says a skim does not write), so it mirrors none of `replies`' or `keeps'`: the
+-- seed_instance and card_target are 0332's and 0317's, with this migration's change alone: seed_instance sets the two columns; card_target answers `under` for a reply in force.
+-- SQL mirrors none of instance.ts's checks of `writes` (card_kinds_problem holds only the skim's, which says a skim does not write), so it mirrors none of `replies`' or `keeps`: the
 -- catalog is the engine's (instanceProblems, which the build runs over every instance), and the guards above hold what the database must hold itself.
 --
 -- Lock order (0075's header, steps 1 to 6; 0142's, for lock_for_quote). A play that also posts takes the player's accounts row (1), then the parent's acts row (2), then
@@ -527,7 +527,7 @@ grant execute on function play_card(uuid, text, uuid, uuid, jsonb, integer, text
 
 -- ------------------------------------------------------------------------------------------------------ card_target ----
 
--- card_target (0153's), with `under`; everything else as 0153 wrote it.
+-- card_target (0317's), with `under`; everything else as 0317 wrote it.
 create or replace function public.card_target(target uuid)
  RETURNS jsonb
  LANGUAGE sql
