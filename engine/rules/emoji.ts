@@ -29,7 +29,7 @@ export function singleEmoji(value: unknown): string | null {
 
 /** The emoji without its variation selector (U+FE0F) and skin tone (U+1F3FB to U+1F3FF), for comparing: `❤` is `❤️`, and `👍🏽` is `👍`. */
 export function emojiBase(emoji: string): string {
-  return emoji.replace(/[️\u{1F3FB}-\u{1F3FF}]/gu, '');
+  return emoji.replace(/[\u{FE0F}\u{1F3FB}-\u{1F3FF}]/gu, '');
 }
 
 /** `x-` and the emoji's code points in lower-case hex, joined by hyphens (`💀` is `x-1f480`); it fits the key pattern `^[a-z][a-z0-9-]*$`. */
@@ -45,7 +45,8 @@ export function emojiOfKey(key: string): string | null {
   const points = hex.map((h) => parseInt(h, 16));
   if (points.some((p) => p > 0x10ffff)) return null;
   const emoji = String.fromCodePoint(...points);
-  return singleEmoji(emoji) === emoji ? emoji : null;
+  // One emoji has one key: a key spelled another way (surrogate halves, leading zeros) is no key, or a tally could split.
+  return singleEmoji(emoji) === emoji && localKey(emoji) === key ? emoji : null;
 }
 
 /** The one validator a `reaction` card's `validateConfig` calls: the emoji, then the quadrant, each refused in the caster's words. */

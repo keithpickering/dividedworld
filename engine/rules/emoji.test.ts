@@ -50,5 +50,5 @@ test('the quadrant must be one of the four, and a good configuration is returned
 });
 
 test('only a local key turns back into an emoji', () => {
-  for (const k of ['like', 'x-', 'x-zz', 'x-1f480-', 'X-1f480', 'x-110000', '']) assert.equal(emojiOfKey(k), null, k);
+  for (const k of ['like', 'x-', 'x-zz', 'x-1f480-', 'X-1f480', 'x-110000', 'x-d83d-de00', 'x-0023-fe0f-20e3', '']) assert.equal(emojiOfKey(k), null, k);
 });
