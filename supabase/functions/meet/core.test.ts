@@ -828,7 +828,7 @@ const perPart = (whole: Record<string, unknown>, override: Partial<Record<Meetin
   return Object.fromEntries(fieldsOf(k).filter((f) => f in whole).map((f) => [f, whole[f]]));
 };
 
-test('a meeting is three chat calls in order, each with its part\'s schema, rule and token cap, the same cached prefix, and the earlier answers as prior turns', async () => {
+test('a meeting is three chat calls in order, each with its part\'s schema, rule and token cap, and the earlier answers as prior turns', async () => {
   const d = fakeDb(modWorld());
   const whole = answer([rename(0)], { orders: [orderFor(MOD_A, [BOARD], 1)] });
   const m = fakeModels(perPart(whole));
@@ -836,7 +836,7 @@ test('a meeting is three chat calls in order, each with its part\'s schema, rule
   assert.equal(out.status, 'ok', JSON.stringify(out));
   assert.deepEqual(m.chats.map(partOf), ['moves', 'staff', 'self']);
   assert.deepEqual(m.chats.map((c) => c.maxTokens), [6000, 3000, 3000]);
-  assert.deepEqual(m.chats.map((c) => c.cachePrefix), [true, true, true]);
+  assert.deepEqual(m.chats.map((c) => 'cachePrefix' in c), [false, false, false]);
   m.chats.forEach((c, i) => {
     const k = MEETING_PARTS[i]!.key;
     assert.deepEqual(c.schema, partSchema(k));
