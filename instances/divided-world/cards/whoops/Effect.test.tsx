@@ -180,8 +180,31 @@ function drag(frame: HTMLElement, points: readonly (readonly [number, number])[]
   act(() => { fireEvent.pointerUp(frame, { clientX: lx, clientY: ly, pointerId: 1, pointerType: 'mouse' }); });
 }
 
-/** A point on the splat's ink, in shares: its core's center. */
+/**
+ * A point on the splat's ink, in shares, where ONE wash pass shows. A wash takes `WASH_TAKES` (1.5) of the field a pass and a splat's
+ * core is 2 to 8 deep, so a single drag from the core's center leaves it inked (the old rule, one pass clears what is under the brush,
+ * no longer holds): the spot is the thin ink nearest the core, where a short drag to the right of it does wash some cells.
+ */
+const spots = new Map<string, [number, number]>();
 function inkSpot(ink: LayerInk): [number, number] {
+  const b = ink.box;
+  const key = `${ink.splat.placement.cx},${ink.splat.placement.cy},${b.w}x${b.h}`;
+  const kept = spots.get(key);
+  if (kept) return kept;
+  const { cx, cy } = ink.splat.placement;
+  const x0 = cx / DESIGN.w;
+  const candidates: [number, number][] = [];
+  for (let y = 0; y <= 1; y += 6 / b.h) for (let x = 0; x <= 1; x += 6 / b.w) if (ink.has(x, y) && ink.valueAt(x, y) < 1) candidates.push([x, y]);
+  candidates.sort((p, q) => Math.hypot(p[0] - x0, p[1] - cy) - Math.hypot(q[0] - x0, q[1] - cy));
+  for (const [x, y] of candidates.slice(0, 60)) {
+    const fresh = new LayerInk(ink.splat, [{ tool: 'wash', ...brushOf(BRUSH_PX, b), points: [[x, y], [x + 0.05, y]] }], b);
+    if (fresh.washed > 0) { spots.set(key, [x, y]); return [x, y]; }
+  }
+  throw new Error('no thin ink on this splat');
+}
+
+/** A point on the splat's ink, in shares: its core's center, which takes several passes to wash. */
+function coreSpot(ink: LayerInk): [number, number] {
   const { cx, cy } = ink.splat.placement;
   const x = cx / DESIGN.w;
   return ink.has(x, cy) ? [x, cy] : [x, cy + 0.05];
@@ -201,14 +224,19 @@ function rowAcross(ink: LayerInk, y: number): [number, number][] {
   return row.filter((_, i) => i === 0 || i % 5 === 0 || i === row.length - 1);
 }
 
-/** Drag rows across a layer's ink until it is washed to `share`, as a hand would. */
+/** The most passes over the whole layer a test scrubs: a pass takes `WASH_TAKES` (1.5) of the field and a core is up to about 8.5 deep, so cleaning takes several. */
+const MOST_PASSES = 14;
+
+/** Drag rows across a layer's ink, pass after pass over it, until it is washed to `share`, as a hand would. Each row is found again on the model, which keeps up with what was washed. */
 function scrubTo(frame: HTMLElement, root: HTMLElement, layer: number, ink: LayerInk, share: number) {
   const b = brush();
-  for (let y = 0; y <= 1 && washed(root)[layer]! < share; y += (BRUSH_PX * 0.7) / boxNow().h) {
-    const row = rowAcross(ink, y);
-    if (row.length >= 2) {
-      drag(frame, row);
-      washOn(ink, row, b);
+  for (let pass = 0; pass < MOST_PASSES && washed(root)[layer]! < share; pass++) {
+    for (let y = 0; y <= 1 && washed(root)[layer]! < share; y += (BRUSH_PX * 0.7) / boxNow().h) {
+      const row = rowAcross(ink, y);
+      if (row.length >= 2) {
+        drag(frame, row);
+        washOn(ink, row, b);
+      }
     }
   }
 }
@@ -218,13 +246,15 @@ function scrubPath(ink: LayerInk, share: number): [number, number][] {
   const b = brush();
   const path: [number, number][] = [];
   let back = false;
-  for (let y = 0; y <= 1 && ink.washed < share; y += (BRUSH_PX * 0.7) / boxNow().h) {
-    const row = rowAcross(ink, y);
-    if (row.length < 2) continue;
-    if (back) row.reverse();
-    back = !back;
-    washOn(ink, path.length > 0 ? [path[path.length - 1]!, ...row] : row, b);
-    path.push(...row);
+  for (let pass = 0; pass < MOST_PASSES && ink.washed < share; pass++) {
+    for (let y = 0; y <= 1 && ink.washed < share; y += (BRUSH_PX * 0.7) / boxNow().h) {
+      const row = rowAcross(ink, y);
+      if (row.length < 2) continue;
+      if (back) row.reverse();
+      back = !back;
+      washOn(ink, path.length > 0 ? [path[path.length - 1]!, ...row] : row, b);
+      path.push(...row);
+    }
   }
   return path;
 }
@@ -327,12 +357,15 @@ describe('scrubbing', () => {
     expect(spot, 'two splats on one post overlap somewhere').not.toBeNull();
     /* Wash the top layer away around the spot, then start there again. */
     const around: [number, number][] = [[spot![0], spot![1]], [spot![0] + 0.06, spot![1]], [spot![0] + 0.12, spot![1]], [spot![0], spot![1]], [spot![0] - 0.06, spot![1]], [spot![0] - 0.12, spot![1]]];
-    drag(frame, around);
-    washOn(top, around, brush());
+    for (let pass = 0; pass < MOST_PASSES && top.has(spot![0], spot![1]); pass++) {
+      drag(frame, around);
+      washOn(top, around, brush());
+    }
     const before = washed(root);
     expect(before[1]).toBeGreaterThan(0);
     expect(before[0]).toBe(0);
-    drag(frame, [[spot![0], spot![1]], [spot![0] + 0.03, spot![1]], [spot![0] + 0.06, spot![1]]]);
+    /* The layer under may be deep there: its first pass takes some of it, and a few more open a hole. */
+    for (let pass = 0; pass < MOST_PASSES && washed(root)[0] === 0; pass++) drag(frame, [[spot![0], spot![1]], [spot![0] + 0.03, spot![1]], [spot![0] + 0.06, spot![1]]]);
     expect(washed(root)[0]).toBeGreaterThan(0);
   });
 
@@ -386,11 +419,12 @@ describe('scrubbing', () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     boxHeight = 330;
     const wide = mount({ author: true });
-    const [x, y] = inkSpot(inkOf(0));
-    drag(wide.frame, [[x, y], [x + 0.05, y], [x + 0.1, y]]);
+    const [x, y] = coreSpot(inkOf(0));
+    /* Passes take some each: six over the same places leave a hole on the phone's box too, whatever is there. */
+    for (let pass = 0; pass < 6; pass++) drag(wide.frame, [[x, y], [x + 0.05, y], [x + 0.1, y]]);
     act(() => { vi.advanceTimersByTime(2000); });
     const saved = wide.save.mock.calls[0]![1] as { strokes: { width: number; aspect: number; points: string }[] };
-    expect(saved.strokes).toHaveLength(1);
+    expect(saved.strokes).toHaveLength(6);
     /* The brush is 30px on its drawer's screen: a share of the width, with the box's proportions beside it. */
     expect(saved.strokes[0]!.width).toBeCloseTo(30 / 988, 4);
     expect(saved.strokes[0]!.aspect).toBeCloseTo(988 / 330, 2);
@@ -652,9 +686,12 @@ describe('the keyboard path', () => {
     hold(button);
     frames(8000);
     expect(states(root)).toEqual(['live']);
-    frames(55000);
+    /* Every pass takes `WASH_TAKES` of the ink and a core takes several, so it is about 86 seconds at the sweep's pace (it was a minute while one pass cleared): a hand's time, never a moment and never none. */
+    let t = 8000;
+    while (states(root)[0] === 'live' && t < 150_000) { frames(1000); t += 1000; }
     expect(states(root)).toEqual(['clean']);
-  }, 30_000);
+    expect(t).toBeGreaterThan(30_000);
+  }, 60_000);
 
   test('a line it uncovers is said, in the polite region on the page from the start', () => {
     clock();
@@ -673,9 +710,11 @@ describe('the keyboard path', () => {
     const { root } = mount({ layers: 2 });
     const button = screen.getByRole('button', { name: 'Hold to scrub' });
     hold(button);
-    frames(60000);
+    /* Each layer takes a hand's time, as one does alone (about 86 seconds each at the sweep's pace). */
+    let t = 0;
+    while (states(root)[1] === 'live' && t < 150_000) { frames(1000); t += 1000; }
     expect(states(root)[1]).toBe('clean');
-    frames(60000);
+    while (states(root)[0] === 'live' && t < 300_000) { frames(1000); t += 1000; }
     expect(states(root)).toEqual(['clean', 'clean']);
   }, 60_000);
 });
@@ -826,7 +865,8 @@ describe('the author\'s pen strokes belong to their layer', () => {
   test('a reader\'s stroke over a pen stroke removes it on their screen, and the line is read', () => {
     const { frame, root, save } = mount({ states: saved('play-1', [penAt(penLine)]) });
     expect(readout(root)).not.toContain(name(penLine));
-    drag(frame, [0.1, 0.3, 0.5, 0.7, 0.9].map((x): [number, number] => [x, lineY(penLine)]));
+    /* A pass takes 1.5 of a field that is 1 under a pen line, so one clears the pen, but a splat's core on the same line takes several: the whole width, a few times over. */
+    for (let pass = 0; pass < 6; pass++) drag(frame, [0, 0.1, 0.3, 0.5, 0.7, 0.9, 1].map((x): [number, number] => [x, lineY(penLine)]));
     expect(readout(root)).toContain(name(penLine));
     expect(save).not.toHaveBeenCalled();
   });
@@ -1008,28 +1048,35 @@ describe('the body\'s box', () => {
     const moved: Box = { w: 600, h: 300 };
     frameBox = moved;
     away.append(root);
-    const [x, y] = inkSpot(new LayerInk(splatFor(0), [], moved));
+    /* The core is ink on the screen's old box as well as on the moved one: the press that finds the words moved is taken on the model as it stood. */
+    const [x, y] = coreSpot(new LayerInk(splatFor(0), [], moved));
     const at = (b: Box, dx = 0) => ({ clientX: (x + dx) * b.w, clientY: y * b.h, pointerId: 1, button: 0, pointerType: 'mouse' as const });
     /* The old cell is told nothing and does nothing. */
     expect(fireEvent.pointerDown(cell, at(moved)), 'the cell it left takes nothing').toBe(true);
     expect(washed(root)[0]).toBe(0);
-    act(() => { fireEvent.pointerDown(frame, at(moved)); });
-    act(() => { fireEvent.pointerMove(frame, at(moved, 0.06)); });
-    act(() => { fireEvent.pointerUp(frame, at(moved, 0.06)); });
+    /* A pass takes some, and a core takes several. */
+    const PASSES = 6;
+    for (let pass = 0; pass < PASSES; pass++) {
+      act(() => { fireEvent.pointerDown(frame, at(moved)); });
+      act(() => { fireEvent.pointerMove(frame, at(moved, 0.06)); });
+      act(() => { fireEvent.pointerUp(frame, at(moved, 0.06)); });
+    }
     const canvas = root.querySelector('canvas[data-kb-effect-ink]') as HTMLCanvasElement;
     expect(washed(root)[0], 'the frame takes the press where it now lives').toBeGreaterThan(0);
     expect(canvas.width, 'in the frame\'s box, not the cell\'s').toBe(600);
-    const expected = new LayerInk(splatFor(0), [{ tool: 'wash', ...brushOf(BRUSH_PX, moved), points: [[x, y], [x + 0.06, y]] }], moved).washed;
+    const expected = new LayerInk(splatFor(0), Array.from({ length: PASSES }, () => ({ tool: 'wash', ...brushOf(BRUSH_PX, moved), points: [[x, y], [x + 0.06, y]] }) as Stroke), moved).washed;
     expect(washed(root)[0]).toBeCloseTo(expected, 1);
     const before = washed(root)[0]!;
     /* Back in the cell by appendChild alone: a press in its gutter, outside the frame, washes again. */
     frameBox = null;
     cell.append(root);
-    const [x2, y2] = inkSpot(inkOf(0));
+    const [x2, y2] = coreSpot(inkOf(0));
     const gutter = (dx: number) => ({ clientX: (x2 + dx) * boxNow().w, clientY: (y2 + 6 * LINE_PX / boxNow().h) * boxNow().h, pointerId: 2, button: 0, pointerType: 'mouse' as const });
-    act(() => { fireEvent.pointerDown(cell, gutter(0)); });
-    act(() => { fireEvent.pointerMove(cell, gutter(0.06)); });
-    act(() => { fireEvent.pointerUp(cell, gutter(0.06)); });
+    for (let pass = 0; pass < PASSES; pass++) {
+      act(() => { fireEvent.pointerDown(cell, gutter(0)); });
+      act(() => { fireEvent.pointerMove(cell, gutter(0.06)); });
+      act(() => { fireEvent.pointerUp(cell, gutter(0.06)); });
+    }
     expect(washed(root)[0], 'the cell takes it again').toBeGreaterThan(before);
     away.remove();
   });
@@ -1618,9 +1665,12 @@ describe('the share that counts as clean', () => {
       const { frame, root } = mount({ clean });
       const ink = inkOf(0);
       let share = 0;
-      for (let y = 0; y <= 1 && share < 0.5 && states(root)[0] === 'live'; y += (BRUSH_PX * 0.7) / boxNow().h) {
-        const row = rowAcross(ink, y);
-        if (row.length >= 2) { drag(frame, row); share = washed(root)[0]!; }
+      /* A pass takes some, so the rows are gone over again until the share is reached (the model's rows follow what is left). */
+      for (let pass = 0; pass < MOST_PASSES && share < 0.5 && states(root)[0] === 'live'; pass++) {
+        for (let y = 0; y <= 1 && share < 0.5 && states(root)[0] === 'live'; y += (BRUSH_PX * 0.7) / boxNow().h) {
+          const row = rowAcross(ink, y);
+          if (row.length >= 2) { drag(frame, row); washOn(ink, row, brush()); share = washed(root)[0]!; }
+        }
       }
       return { state: states(root)[0], root };
     };
@@ -1629,9 +1679,11 @@ describe('the share that counts as clean', () => {
     /* The unrounded share, as the ink holds it: read it back from a rebuild of the same strokes. */
     const mirror = inkOf(0);
     let share = 0;
-    for (let y = 0; y <= 1 && share < 0.5; y += (BRUSH_PX * 0.7) / boxNow().h) {
-      const row = rowAcross(mirror, y);
-      if (row.length >= 2) { washOn(mirror, row, brush()); share = mirror.washed; }
+    for (let pass = 0; pass < MOST_PASSES && share < 0.5; pass++) {
+      for (let y = 0; y <= 1 && share < 0.5; y += (BRUSH_PX * 0.7) / boxNow().h) {
+        const row = rowAcross(mirror, y);
+        if (row.length >= 2) { washOn(mirror, row, brush()); share = mirror.washed; }
+      }
     }
     expect(reach(share * 100 * (1 + 1e-6)).state, 'a hair under the share').toBe('live');
     expect(reach(share * 100).state, 'at the share').toBe('clean');
