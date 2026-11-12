@@ -8,13 +8,18 @@
  * pale ink gets a darker rim scaled by its luminance so it has an edge on a white page; a broad gloss and a
  * slightly darker underside lie on top. The result is cached by the Effect, one per layer per box.
  *
- * `shadeField` (ink-field design, sections 2 and 5) is that shading over any rectangle of a field grid, with the
- * gloss and underside in the same loop and washed ink thinned; `paintSplat` is the splat's grid alone through it.
- * `paint` composes a post's layers' pictures, bottom to top, each at its alpha, and draws no strokes. `paintStandIn`
- * is a layer's picture before its build arrives: the cached splat with its strokes drawn flat on it, a wash
- * destination-out, as the painter did before the field. A stroke is kept in shares of the box with the proportions it
- * was made in, so it is drawn under a transform that makes the brush a circle. A canvas is painted only for a post near
- * the viewport (Effect.tsx) and is dropped when it leaves.
+ * `shadeField` is that shading over any rectangle of a field grid, with the gloss and underside in the same loop and
+ * washed ink thinned; `paintSplat` is the splat's grid alone through it. The field it shades is the model: field.ts holds
+ * the one implementation of the operations (a pen adds to the field and melts in, a wash takes some each pass,
+ * `WASH_TAKES`), run here over a dense grid and by `LayerInk` over its cells, so the picture and the counts cannot
+ * disagree (docs/plans/2026-11-12-whoops-ink-field-design.md, sections 2, 3 and 5). A layer's picture is built once from
+ * its strokes (build.ts), in a worker when the layer is heavy; live strokes are then run into the grid and only the
+ * rectangle they changed is shaded again. `paint` composes a post's layers' pictures, bottom to top, each at its alpha,
+ * and draws no strokes. `paintStandIn` is what shows while a heavy build is out, and only then: the cached splat with
+ * its strokes drawn on it as a stand-in (a pen in the layer's ink, a wash taking some away, destination-out), which is
+ * an approximation of the field and is replaced by the build's picture when it arrives. A stroke is kept in shares of
+ * the box with the proportions it was made in, so it is drawn under a transform that makes the brush a circle. A canvas
+ * is painted only for a post near the viewport (Effect.tsx) and is dropped when it leaves.
  */
 import { rgbOf, luminance, THRESHOLD, type Box, type Splat } from './splat.ts';
 import { type Stroke } from './scrub.ts';

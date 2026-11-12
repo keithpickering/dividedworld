@@ -8,10 +8,18 @@
  * stroke lands on the same shares of the box, not the same words, wherever the box is, and survives an edit. A brush is a size on the screen, so
  * its measures are in px; a stroke keeps its brush as a share of the box's width (`width`) and the drawer's box's
  * proportions (`aspect`), which makes it an ellipse of `width / 2` across and `width / 2 * aspect` down, in shares,
- * on any box: round on the drawer's screen, stretched with the box on another. A layer's ink is the seeded splat
- * (splat.ts) over the box, less the washed strokes on it; "does this point still have ink" is geometry (the
- * splat's outline, and the distance to a stroke's path in the ellipse's own unit circle), never a read of pixels,
- * so it costs no canvas. Each screen's model is its own; for the same strokes the shares are close, not equal.
+ * on any box: round on the drawer's screen, stretched with the box on another.
+ *
+ * The model is the field (docs/plans/2026-11-12-whoops-ink-field-design.md). A layer's ink is the seeded splat (splat.ts), a field
+ * of balls over the box, with each stroke's operation applied to it in the order made: a pen line adds to the field
+ * and melts into it (its ends swell, a quick lift throws drops), and a wash takes some of it each pass (`WASH_TAKES`),
+ * so a thin arm clears in a pass and a core takes several, and a pass does not clear the cells it reaches. Ink is
+ * wherever the field reaches THRESHOLD. There is one implementation of those operations, in field.ts, shared with the
+ * painter (paint.ts shades the same field over a denser grid), so what is counted here and what is drawn cannot
+ * disagree. "Does this point still have ink" is that field's value, never a read of pixels, so it costs no canvas.
+ * A stroke's points are kept packed when saved (points.ts), and a layer too heavy to build on the page is built in a
+ * worker (build.ts) with a stand-in drawn meanwhile; this model never waits for either. Each screen's model is its
+ * own; for the same strokes the shares are close, not equal.
  */
 import { STROKES } from '../whoops.ts';
 import { addBall, beginLine, penAt, cellGrid, endsOf, kOf, linesOf, pointGrid, radiusOf, splatInto, type Ball, type Grid, type Rect } from './field.ts';

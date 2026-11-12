@@ -16,14 +16,14 @@ import { renderInWorld } from '../../../../engine/ui/test-world.tsx';
 import { STROKES, whoops } from '../whoops.ts';
 import { LOST_ANSWER } from '../../../../engine/ui/data/api.ts';
 import { DROPS_SPEED, Effect, MAX_SAVE_RETRIES, RETRY_AFTER_MS, SAVE_AFTER_MS, dropsOf, percentWashed, savedOf } from './Effect.tsx';
-import { buildLayer, layerKey, type BuildInput } from './build.ts';
+import { FIELD_SCALE, buildLayer, layerKey, type BuildInput } from './build.ts';
 import type { BuildClient } from './buildClient.ts';
 import { viewProblems } from '../../../../engine/ui/cards/lens-words.ts';
 import { cursor } from './cursor.ts';
 import { paint, paintStandIn, type PaintLayer } from './paint.ts';
 import { decodePoints, packStroke } from './points.ts';
-import { BRUSH_PX, LayerInk, PEN_PX, ROW_PX, brushOf, coveredLines, fits, type Pt, type Stroke } from './scrub.ts';
-import { DESIGN, makeSplat, type Box } from './splat.ts';
+import { BRUSH_PX, LayerInk, PEN_PX, ROW_PX, brushOf, coveredLines, fits, fitStroke, minStepOf, type Pt, type Stroke } from './scrub.ts';
+import { DESIGN, THRESHOLD, makeSplat, type Box } from './splat.ts';
 import * as suds from './suds.ts';
 import { createClaims } from '../../../../engine/ui/cards/claims.ts';
 
@@ -712,8 +712,9 @@ describe('the keyboard path', () => {
     frames(8000);
     expect(states(root)).toEqual(['live']);
     /* Every pass takes `WASH_TAKES` of the ink and a core takes several, so it is about 86 seconds at the sweep's pace (it was a minute while one pass cleared): a hand's time, never a moment and never none. */
+    /* It measures the sweep's own time to clean one layer in fake time: 86 seconds. The upper bound is 1.25 times that, so a sweep that slows by a quarter is caught. */
     let t = 8000;
-    while (states(root)[0] === 'live' && t < 150_000) { frames(1000); t += 1000; }
+    while (states(root)[0] === 'live' && t < 108_000) { frames(1000); t += 1000; }
     expect(states(root)).toEqual(['clean']);
     expect(t).toBeGreaterThan(30_000);
   }, 60_000);
@@ -1265,6 +1266,35 @@ describe('a finger', () => {
   /** A finger on the splat's ink, and the same shifted by px. */
   const spot = () => px(...inkSpot(inkOf(0)));
   const shifted = (p: readonly [number, number], dx: number, dy: number): readonly [number, number] => [p[0] + dx, p[1] + dy];
+
+  test('a finger tapping while a pen stroke is live is refused, as a second mouse press is: nothing throws and the pen stroke completes and saves', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const errors: unknown[] = [];
+    const onError = (e: ErrorEvent) => { errors.push(e.error ?? e.message); e.preventDefault(); };
+    window.addEventListener('error', onError);
+    try {
+      const { frame, cell, save } = mount({ author: true });
+      fireEvent.click(screen.getByRole('button', { name: 'Write in ink' }));
+      const line: [number, number][] = [[0.03, 0.985], [0.08, 0.985], [0.13, 0.985]];
+      const [first, ...rest] = line.map(([x, y]) => px(x, y));
+      act(() => { fireEvent.pointerDown(frame, { clientX: first![0], clientY: first![1], pointerId: 1, button: 0, pointerType: 'mouse' }); });
+      act(() => { fireEvent.pointerMove(frame, { clientX: rest[0]![0], clientY: rest[0]![1], pointerId: 1, pointerType: 'mouse' }); });
+      /* A finger taps while the pen is down: the pen's stroke is the one live, and stays so. */
+      const tap = px(0.5, 0.5);
+      touch(cell, 'touchstart', [{ id: 7, at: tap }], [{ id: 7, at: tap }]);
+      touch(cell, 'touchend', [], [{ id: 7, at: tap }]);
+      act(() => { fireEvent.pointerMove(frame, { clientX: rest[1]![0], clientY: rest[1]![1], pointerId: 1, pointerType: 'mouse' }); });
+      act(() => { fireEvent.pointerUp(frame, { clientX: rest[1]![0], clientY: rest[1]![1], pointerId: 1, pointerType: 'mouse' }); });
+      expect(errors, 'no handler threw').toEqual([]);
+      await settle(SAVE_AFTER_MS);
+      expect(save).toHaveBeenCalledTimes(1);
+      const strokes = savedOf(save.mock.calls[0]![1]).strokes;
+      expect(strokes.map((s) => s.tool), 'the pen stroke, and no wash from the tap').toEqual(['ink']);
+      expect(strokes[0]!.points.length, 'the pen stroke carried on to its end').toBeGreaterThanOrEqual(2);
+    } finally {
+      window.removeEventListener('error', onError);
+    }
+  });
 
   test('a quick vertical swipe from ink washes nothing, and its touchmove is not prevented', () => {
     clock();
@@ -2240,6 +2270,159 @@ describe('the ink field: the picture a layer is drawn from', () => {
     frames();
     expect(root.dataset.kbPictures).toBe('0');
   });
+
+  /** A post that goes far from the viewport and comes back, and the build client held by the test. */
+  function viewport() {
+    const watchers: ((entries: { isIntersecting: boolean }[]) => void)[] = [];
+    vi.stubGlobal('IntersectionObserver', class {
+      constructor(watch: (entries: { isIntersecting: boolean }[]) => void) { watchers.push(watch); }
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    });
+    return (isIntersecting: boolean) => act(() => { watchers.forEach((w) => w([{ isIntersecting }])); });
+  }
+
+  test('a resize while the build is out, with one stroke finished and one still open: after the build arrives both are in the picture once, and in the model', () => {
+    clock();
+    layoutLines = TEXT_LINES;
+    const resizes: (() => void)[] = [];
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(cb: () => void) { resizes.push(cb); }
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    });
+    const fk = fakeCanvases();
+    const held = heldClient();
+    const { frame, root } = mount({ author: true });
+    writeInk();
+    frames();
+    /* Two lines no splat covers at either width, so only a pen stroke can hide them. */
+    const lineY = (k: number) => (k + 0.5) / TEXT_LINES;
+    const clear = (k: number) => [MAX_FRAME, 800].every((w) => !coveredLines([{ top: lineY(k) - 0.001, bottom: lineY(k) + 0.001, text: '' }], [new LayerInk(splatFor(0), [], { w, h: TEXT_LINES * LINE_PX })])[0]);
+    const k1 = Array.from({ length: TEXT_LINES - 6 }, (_, k) => k).find((k) => clear(k) && clear(k + 3) && clear(k + 6))!;
+    expect(k1, 'a pair of clear lines exists').toBeDefined();
+    const y1 = lineY(k1), y2 = lineY(k1 + 3);
+    const [first, second]: [number, number][][] = [[[0.02, y1], [0.5, y1], [0.98, y1]], [[0.02, y2], [0.5, y2], [0.98, y2]]];
+    const oldPen = pen();
+    /* One stroke finished, then one open, with the first request still out. */
+    at(frame, 'pointerDown', first![0]!, 1000);
+    at(frame, 'pointerMove', first![1]!, 1100);
+    at(frame, 'pointerMove', first![2]!, 1200);
+    at(frame, 'pointerUp', first![2]!, 1400);
+    at(frame, 'pointerDown', second![0]!, 2000);
+    at(frame, 'pointerMove', second![1]!, 2100);
+    /* The body is resized: the model is built again and the build asked for again at the new size. */
+    boxWidth = 800;
+    act(() => { resizes.forEach((r) => r()); });
+    frames();
+    expect(held.asks.size, 'only the new size is waited for').toBe(1);
+    const asked = [...held.asks.values()][0]!.input;
+    expect(asked.box.w).toBe(800);
+    expect(asked.strokes.map((s) => s.tool), 'the finished stroke is in what the build is asked for').toEqual(['ink']);
+    held.release();
+    frames();
+    at(frame, 'pointerMove', second![2]!, 2200);
+    at(frame, 'pointerUp', second![2]!, 2400);
+    frames();
+    const done = lastPicture(fk, root);
+    expect(done.build).toBe(true);
+    const open: Stroke = { tool: 'ink', color: COLORS[0]!, ...oldPen, points: second!, drops: 0 };
+    const got = fk.of(done.src).surface;
+    /* A line of pixels along a stroke's edge sits on the threshold, where the build's stored field (rounded to 1/4096) and the live grid's differ in the last place: so the pictures are compared by how many pixels differ, not by the worst one. */
+    const apart = (a: Uint8ClampedArray, b: Uint8ClampedArray) => { let n = 0; for (let i = 0; i < a.length; i += 4) if (Math.abs(a[i]! - b[i]!) > 4 || Math.abs(a[i + 3]! - b[i + 3]!) > 4) n++; return n; };
+    expect(apart(got, referenceOf([...asked.strokes, open])), 'both strokes are in the picture').toBeLessThan(boxNow().w);
+    expect(apart(got, referenceOf([...asked.strokes, ...asked.strokes, open])), 'the finished one is in once').toBeGreaterThan(5 * boxNow().w);
+    expect(apart(got, referenceOf([...asked.strokes, open, open])), 'and so is the open one').toBeGreaterThan(5 * boxNow().w);
+    expect(apart(got, referenceOf(asked.strokes)), 'the open one is in').toBeGreaterThan(5 * boxNow().w);
+    /* The model has both: the line under each is hidden from a screen reader. */
+    expect(readout(root)).not.toContain(nameOfLine(k1));
+    expect(readout(root)).not.toContain(nameOfLine(k1 + 3));
+    expect(readout(root), 'a line clear of both is still read').toContain(nameOfLine(k1 + 6));
+  });
+
+  test('a reader\'s unsaved strokes survive the post leaving and returning, in the model and in the picture', () => {
+    clock();
+    const fk = fakeCanvases();
+    const see = viewport();
+    const held = heldClient();
+    const { frame, root } = mount();
+    see(true);
+    frames();
+    held.release();
+    frames();
+    const [x, y] = inkSpot(inkOf(0));
+    const rows: [number, number][][] = [0, 0.02, 0.04].map((dy) => [[x, y + dy], [x + 0.05, y + dy], [x + 0.1, y + dy]]);
+    for (const row of rows) drag(frame, row);
+    const share = washed(root)[0]!;
+    expect(share, 'the strokes washed something').toBeGreaterThan(0);
+    see(false);
+    frames();
+    expect(root.dataset.kbPictures).toBe('0');
+    see(true);
+    frames();
+    /* The model came back from the strokes kept on this screen. */
+    expect(washed(root)[0], 'the washed share is the same').toBeCloseTo(share, 3);
+    frames();
+    const done = lastPicture(fk, root);
+    expect(done.build).toBe(true);
+    /* The strokes come back as this screen kept them: simplified, as a stroke is when it is kept (`fitStroke`). */
+    const made = rows.flatMap((row) => fitStroke(washStroke(row), minStepOf(boxNow())));
+    expect(maxDiff(fk.of(done.src).surface, referenceOf(made)), 'the picture holds them').toBeLessThanOrEqual(4);
+    expect(maxDiff(fk.of(done.src).surface, referenceOf([])), 'and is not the untouched layer').toBeGreaterThan(8);
+  });
+
+  test('after live strokes the picture\'s grid and the model agree: the washed share, and the field at the model\'s cell centers', () => {
+    clock();
+    const fk = fakeCanvases();
+    /* Builds answered at once by a client of the test's own (the page's shared one may hold a key another test left waiting under fake timers). */
+    heldClient(false);
+    const { frame, root } = mount();
+    frames();
+    const [x, y] = inkSpot(inkOf(0));
+    /* The strokes as the screen made them (a reader's, full resolution: both the model and the grid hold them so until the next rebuild). */
+    const kept = [0, 0.02, 0.04, 0.06].map((dy) => washStroke([[x - 0.05, y + dy], [x, y + dy], [x + 0.05, y + dy], [x + 0.1, y + dy]]));
+    for (const dy of [0, 0.02, 0.04, 0.06]) drag(frame, [[x - 0.05, y + dy], [x, y + dy], [x + 0.05, y + dy], [x + 0.1, y + dy]]);
+    frames();
+    const picture = lastPicture(fk, root);
+    expect(picture.build).toBe(true);
+    expect(maxDiff(fk.of(picture.src).surface, referenceOf(kept)), 'the picture is the grid the strokes were applied to').toBeLessThanOrEqual(4);
+    /* The grid as built from the same strokes, read at the model's cell centers. */
+    const box = boxNow();
+    const model = inkOf(0, kept);
+    const grid = buildLayer({ seed: SEEDS[0]!, color: COLORS[0]!, box, density: 1, strokes: kept });
+    const once = buildLayer({ seed: SEEDS[0]!, color: COLORS[0]!, box, density: 1, strokes: [] });
+    const cols = Math.ceil(box.w);
+    const at1 = (field: Uint16Array, cx: number, cy: number) => field[Math.min(Math.ceil(box.h) - 1, Math.floor(cy)) * cols + Math.min(cols - 1, Math.floor(cx))]! / FIELD_SCALE;
+    const { cols: mc, rows: mr, step } = model.cells;
+    let total = 0, left = 0, apart = 0;
+    for (let j = 0; j < mr; j++) for (let i = 0; i < mc; i++) {
+      const cx = (i + 0.5) * step, cy = (j + 0.5) * step;
+      const was = at1(once.field, cx, cy) >= THRESHOLD, now = at1(grid.field, cx, cy) >= THRESHOLD;
+      if (was) { total++; if (now) left++; }
+      if (now !== (model.cells.values[j * mc + i]! >= THRESHOLD)) apart++;
+    }
+    expect(total).toBeGreaterThan(0);
+    expect(1 - left / total, 'the grid\'s washed share, at the model\'s cells').toBeCloseTo(model.washed, 1);
+    expect(1 - left / total).toBeCloseTo(washed(root)[0]!, 1);
+    expect(apart / (mc * mr), 'cells where the grid and the model disagree on ink: a rounding\'s worth').toBeLessThan(0.01);
+  });
+
+  test('a layer a reader scrubs clean lets its picture, grid and canvas go while the post stays', () => {
+    clock();
+    fakeCanvases();
+    document.documentElement.setAttribute('data-kb-motion', 'reduce');
+    const held = heldClient(false);
+    const { frame, root } = mount({ layers: 1 });
+    frames();
+    expect(root.dataset.kbPictures, 'drawn from a build').toBe('1');
+    scrubTo(frame, root, 0, inkOf(0), 0.96);
+    frames();
+    expect(states(root)).toEqual(['clean']);
+    expect(root.dataset.kbPictures, 'nothing is held for a layer that is gone').toBe('0');
+    expect(held.cancelled.length, 'its build slot was let go').toBeGreaterThanOrEqual(1);
+  }, 60_000);
 
   test('a layer is asked for with the key of its strokes, so a stroke changes it', () => {
     clock();

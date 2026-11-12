@@ -18,15 +18,19 @@
  * a sideways swipe or a press held 180ms wipes, a tap washes a dab, and a second finger is the page's. Pointer events of type touch
  * are ignored, so a finger is never read twice.
  *
- * What is the model and what is drawn. A layer's ink is the seeded splat less the strokes washed on it
- * (scrub.ts `LayerInk`), which is geometry and costs no canvas, so which layer a stroke scrubs, how much
- * of a layer is washed and which lines of text lie under ink are answered without reading a pixel,
- * each screen's own. The author's pen strokes (written back in a layer's ink) are that layer's ink
- * like the splat: a reader's stroke scrubs them on their screen, a line under one is hidden from a screen reader,
- * and the layers above them cover them. The canvas (paint.ts) only draws that model, and only for a post near
- * the viewport: a page can hold many splatted posts and a canvas is megabytes. The grids the model keeps
- * are let go with it (a post that has left holds only the strokes made on this screen) and are built
- * again when it returns.
+ * What is the model and what is drawn. The model is the field (docs/plans/2026-11-12-whoops-ink-field-design.md): a layer's ink is
+ * the seeded splat's field with each stroke's operation applied in the order made (`LayerInk`, scrub.ts), one implementation in
+ * field.ts shared with the painter, so which layer a stroke scrubs, how much of a layer is washed and which lines of text lie
+ * under ink are answered without reading a pixel, each screen's own. A wash takes some of the field each pass (`WASH_TAKES`), so a
+ * thin arm clears in a pass and a core takes several; a pen adds to the field and melts into it, with a bulb at its end and
+ * drops from a quick lift. The author's pen strokes (written back in a layer's ink) are that layer's ink like the splat: a reader's
+ * stroke scrubs them on their screen, a line under one is hidden from a screen reader, and the layers above them cover them. A
+ * stroke's points are packed when saved (points.ts). The canvas only shows the model, and only for a post near the viewport: a page
+ * can hold many splatted posts and a canvas is megabytes. A layer's picture is its build (build.ts): made on the spot when the
+ * layer is light and in a worker when it is heavy, with a stand-in (paint.ts `paintStandIn`) drawn meanwhile, and a stroke made
+ * while a build is out is applied to it once it arrives. Live strokes then go into the layer's grid and only the rectangle they
+ * changed is shaded again. A layer washed clean lets its picture go at once. The grids are let go with the post (a post that has
+ * left holds only the strokes made on this screen) and are built again when it returns.
  *
  * Whose strokes. A stroke scrubs the top layer that still has ink where it starts. A reader's strokes
  * are kept in this component's memory only, so a reload brings the ink back. The post author's are
@@ -523,6 +527,7 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
   const requestPic = (i: number, layer: Layer, b: Box, q: number): void => {
     const id = layer.play.id;
     const strokes = [...savedFor(id).strokes, ...(mine.current.get(id) ?? [])];
+    /* The build input holds the strokes as saved (simplified), while the model keeps this screen's own strokes at full resolution until its next rebuild: the two differ by under a quarter of a brush, the difference the design accepts (docs/plans/2026-11-12-whoops-ink-field-design.md). */
     const key = layerKey(id, b, q, strokes);
     const pic: Pic = { geo: `${layer.seed}|${layer.color}|${b.w}x${b.h}|${q}`, color: layer.color, key, box: b, q, grid: null, canvas: null, late: [], dirty: null };
     pics.current[i] = pic;
@@ -660,7 +665,14 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
         alpha = reduced || at === undefined ? 0 : Math.max(0, 1 - (performance.now() - at) / FADE_MS);
         if (alpha > 0) fading = true;
       }
-      if (alpha <= 0) return;
+      if (alpha <= 0) {
+        /* A layer that is clean and faded is gone for good: its picture, grid and canvas are let go now, not held until the post leaves. */
+        if (pics.current[i]) {
+          dropPic(i);
+          setPictures(pics.current.filter((p) => p?.grid).length);
+        }
+        return;
+      }
       /* The layer's picture is its build, asked for here the first time the layer is drawn (a light one is back before the frame is), and kept while the post is near. */
       const q = Math.min(1, density);
       if (pics.current[i]?.geo !== `${layer.seed}|${layer.color}|${sz.box.w}x${sz.box.h}|${q}`) {
@@ -910,8 +922,13 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
   /** What the drawn cursor shows, kept while a stroke is under way. */
   const shown = useRef<{ mode: CursorMode; ink?: string }>({ mode: null });
 
-  /** Begins a stroke at `p`, on the layer it takes: false when there is none. */
+  /**
+   * Begins a stroke at `p`, on the layer it takes: false when there is none, or when a stroke is already live. One hand makes one stroke:
+   * a mouse press while a stroke is live is refused (`onPointerDown`), and a finger is refused the same way, so the stroke under way ends
+   * with its own pointer and is saved whole. Finishing it for the finger would cut a pen line short on a palm resting on the screen.
+   */
   const begin = (p: Pt, pointer: number, touch: boolean, t: number = performance.now()): boolean => {
+    if (live.current) return false;
     const layer = layerAt(p);
     if (layer < 0) return false;
     meet();
