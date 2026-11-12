@@ -322,12 +322,17 @@ describe('the frame says how a card is played', () => {
     expect(has(played('use'), '.kb-postcard-fold')).toBe(false);
   });
 
-  test('each type\'s frame is drawn, a Set\'s outside ring and a Use\'s dashed one, never under 1.5px', () => {
+  test('each type\'s frame is drawn inside the one outline, a Set\'s second line and a Use\'s dashed one, never under 1.5px', () => {
+    /* The outline is one ring's width at every size, and each type's line is that width or a border no thinner (docs/plans/2026-11-12-card-frame-outline.md). */
+    for (const width of [.../--kb-pc-ring:\s*([\d.]+)px/gu[Symbol.matchAll](css)].map((m) => Number(m[1]))) expect(width).toBeGreaterThanOrEqual(1.5);
+    expect(body('.kb-postcard')).toMatch(/--kb-pc-ring:\s*1\.5px/u);
     /* A shadow keeps 1.5px at a pixel ratio of 1, where a border of that width is floored to 1px. */
-    expect(body(".kb-postcard[data-kb-play='set']::before")).toMatch(/box-shadow:\s*0 0 0 (?:1\.5|[2-9])px var\(--kb-card-color\)/u);
+    expect(body(".kb-postcard[data-kb-play='set']::before")).toMatch(/box-shadow:\s*0 0 0 var\(--kb-pc-ring\) var\(--kb-card-color\)/u);
     expect(/\[data-kb-play='set'\]::before\s*\{([^}]*)\}/u.exec(css.slice(0, css.indexOf('@media (forced-colors')))![1]).not.toMatch(/border:/u);
     expect(body(".kb-postcard[data-kb-play='use']::before")).toMatch(/border:\s*(?:1\.5|[2-9])px dashed var\(--kb-card-color\)/u);
-    expect(body(".kb-postcard[data-kb-play='set']::before,\n.kb-postcard[data-kb-play='use']::before")).toMatch(/inset:\s*-/u);
+    /* No line starts a fixed length outside the card: a Use's box is the outline's own, and a Set's is inside the card (e2e/card-frames.spec.ts measures both). */
+    expect(css).not.toMatch(/inset:\s*-\d/u);
+    expect(body(".kb-postcard[data-kb-play='use']::before")).toMatch(/inset:\s*calc\(-1 \* var\(--kb-pc-ring\)\)/u);
     expect(body(".kb-postcard[data-kb-play='cast']::before")).toBe('');
     expect(body('.kb-postcard-fold')).toMatch(/left:\s*0/u);
     /* Above the canvas (z-index 0), which is later in the markup, and below the words; one flat fill. */

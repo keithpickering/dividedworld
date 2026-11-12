@@ -15,6 +15,10 @@
 .kb-postcard {
   --kb-card-color: var(--kb-glass-neon);
   --kb-card-ink: var(--kb-glass-ink-neon);
+  /* The card's outline: a ring this wide outside its box, in every type and on the back. A type changes how the ring is drawn and
+     what is inside it, never where it ends (docs/plans/2026-11-12-card-frame-outline.md). */
+  --kb-pc-ring: 1.5px;
+  --kb-pc-ring-color: var(--kb-card-color);
   position: relative;
   display: block;
   box-sizing: border-box;
@@ -27,7 +31,7 @@
   text-align: left;
   font: inherit;
   background: var(--kb-glass-card);
-  box-shadow: 0 0 0 1.5px var(--kb-card-color), 0 0 14px color-mix(in srgb, var(--kb-card-color) 50%, transparent);
+  box-shadow: 0 0 0 var(--kb-pc-ring) var(--kb-pc-ring-color), 0 0 14px color-mix(in srgb, var(--kb-card-color) 50%, transparent);
   /* A card is a drawing of one size: its words never outgrow it, whatever the text size (cqw is a share of the card's own width). */
   container-type: inline-size;
 }
@@ -37,40 +41,47 @@ button.kb-postcard {
 }
 
 .kb-postcard[data-size='fan'] {
-  box-shadow: 0 0 0 1.5px var(--kb-card-color), 0 0 22px color-mix(in srgb, var(--kb-card-color) 55%, transparent), 0 18px 30px color-mix(in srgb, var(--kb-glass-ground) 90%, transparent);
+  box-shadow: 0 0 0 var(--kb-pc-ring) var(--kb-pc-ring-color), 0 0 22px color-mix(in srgb, var(--kb-card-color) 55%, transparent), 0 18px 30px color-mix(in srgb, var(--kb-glass-ground) 90%, transparent);
 }
 
 .kb-postcard[data-size='sheet'] {
-  box-shadow: 0 0 0 2px var(--kb-card-color), 0 0 30px color-mix(in srgb, var(--kb-card-color) 60%, transparent), 0 30px 50px color-mix(in srgb, var(--kb-glass-ground) 90%, transparent);
+  --kb-pc-ring: 2px;
+  box-shadow: 0 0 0 var(--kb-pc-ring) var(--kb-pc-ring-color), 0 0 30px color-mix(in srgb, var(--kb-card-color) 60%, transparent), 0 30px 50px color-mix(in srgb, var(--kb-glass-ground) 90%, transparent);
 }
 
 /*
- * How a card is played, in its frame (the card types' design, section 9). A Cast is the solid ring above. A Set has a second ring
- * outside the first and a folded corner at the bottom left; a Use has a dashed ring in place of the solid one. The lines are drawn as a ring
- * on the pseudo-element, which the armed ring's ::after does not use. A Set's ring is a shadow, a Use's a dashed border: at least 1.5px
+ * How a card is played, in its frame (the card types' design, section 9, as docs/plans/2026-11-12-card-frame-outline.md redrew it).
+ * Every type has the one outline, the ring above, so cards of a size are one size and one corner to the eye. A Cast is that ring,
+ * solid. A Set has a second line inside it, on the card's border, and a folded corner at the bottom left. A Use has the ring dashed:
+ * its solid ring is not painted, and a dashed border is laid where the ring was, its outer edge on the ring's. The lines are drawn on
+ * the ::before, which the armed ring's ::after does not use. A Set's second line is a shadow, a Use's a dashed border: at least 1.5px
  * at every size, and a shadow keeps its 1.5px at a pixel ratio of 1, where a border of that width is floored to 1px.
  */
 .kb-postcard[data-kb-play='set']::before,
 .kb-postcard[data-kb-play='use']::before {
   content: '';
   position: absolute;
-  inset: -5px;
-  border-radius: calc(var(--kb-pc-radius) + 5px);
   pointer-events: none;
 }
 
+/* The second line: one ring's width, a gap inside the outline (three tenths of the border, never under 1.5px), so it ends inside
+   the border at every size and never reaches the canvas. Its box is the line's inner edge; the shadow is drawn outward from it. */
 .kb-postcard[data-kb-play='set']::before {
-  box-shadow: 0 0 0 1.5px var(--kb-card-color);
+  --kb-pc-second: calc(max(1.5px, var(--kb-pc-border) * 0.3) + var(--kb-pc-ring));
+  inset: var(--kb-pc-second);
+  border-radius: calc(var(--kb-pc-radius) - var(--kb-pc-second));
+  box-shadow: 0 0 0 var(--kb-pc-ring) var(--kb-card-color);
 }
 
+/* The glow, and at the larger sizes the card's shadow, stay as every card's: only the ring's own paint is dropped. */
 .kb-postcard[data-kb-play='use'] {
-  box-shadow: 0 0 14px color-mix(in srgb, var(--kb-card-color) 50%, transparent);
+  --kb-pc-ring-color: transparent;
 }
 
 .kb-postcard[data-kb-play='use']::before {
-  inset: -3px;
+  inset: calc(-1 * var(--kb-pc-ring));
   border: 2px dashed var(--kb-card-color);
-  border-radius: calc(var(--kb-pc-radius) + 3px);
+  border-radius: calc(var(--kb-pc-radius) + var(--kb-pc-ring));
 }
 
 .kb-postcard[data-kb-play='use'][data-size='sheet']::before {
