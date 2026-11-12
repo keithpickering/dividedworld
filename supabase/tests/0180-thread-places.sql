@@ -85,7 +85,9 @@ declare
 begin
   if exists (select 1 from thread_places_drift()) then raise exception 'drift on a fresh fixture: %', (select count(*) from thread_places_drift()); end if;
   -- The poison: a thread's board changed by hand, with no move behind it.
+  set local session_replication_role = replica;  -- threads.board is written only by rebuild_thread_places (0192), but for a session in replica mode
   update threads set board = pg_temp.board('elsewhere') where id = t;
+  set local session_replication_role = origin;
   select * into row from thread_places_drift();
   if not found or row.thread is distinct from t or row.stored is distinct from pg_temp.board('elsewhere') or row.rebuilt is distinct from pg_temp.board('general') then
     raise exception 'drift did not list the hand-edited thread: %', row;
