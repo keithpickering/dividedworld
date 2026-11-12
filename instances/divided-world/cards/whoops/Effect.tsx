@@ -53,7 +53,7 @@ import type { CardPlay, CardView, EffectProps, KitControl } from '../../../../en
 import { HOLD_MS, MAX_SAVE_RETRIES, RETRY_AFTER_MS, SLOP_PX, SUPPRESS_MS, overInk, swipeKind } from '../wiping.ts';
 import { cursor, type CursorMode } from './cursor.ts';
 import { readLines } from './lines.ts';
-import { MAX_CANVAS_PX, MAX_DPR, paint, paintSplat, type Geometry, type PaintLayer } from './paint.ts';
+import { MAX_CANVAS_PX, MAX_DPR, paint, paintSplat, paintStandIn, type Geometry, type PaintLayer } from './paint.ts';
 import {
   BRUSH_PX, LayerInk, PEN_PX, ROW_PX, SWEEP_BRUSH_ROWS, bandsOf, brushOf, coveredLines, fits, fitStroke, minStepOf, sweepStep, topLayer,
   type Pt, type Stroke, type Sweep, type TextLine,
@@ -449,7 +449,7 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
           ? { tool: 'wash', width: stroking.width, aspect: stroking.aspect, points: stroking.points }
           : { tool: 'ink', color: stroking.color, width: stroking.width, aspect: stroking.aspect, points: stroking.points });
       }
-      if (alpha > 0) layersOut.push({ painted: paintedFor(i, inks.current[i]!, layer.color, layer.seed, sz.box, density), color: layer.color, strokes, alpha });
+      if (alpha > 0) layersOut.push({ picture: paintStandIn({ painted: paintedFor(i, inks.current[i]!, layer.color, layer.seed, sz.box, density), color: layer.color, strokes }, geometry, canvas.width, canvas.height, i), alpha });
     });
     paint(canvas, geometry, layersOut);
     if (fading) schedulePaint();

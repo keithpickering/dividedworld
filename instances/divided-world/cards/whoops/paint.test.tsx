@@ -1,11 +1,13 @@
 /**
- * Whoops!'s painter (refinements plan Task 4). jsdom has no canvas, so a 2D context is stubbed two ways: a
+ * Whoops!'s painter (refinements plan Task 4; ink-field plan Task 4). jsdom has no canvas, so a 2D context is stubbed two ways: a
  * recorder that logs every call and style set (for what `paint` draws, and how), and a small one that keeps
  * ImageData (for the pixels `paintSplat` writes, which the e2e in Task 9 sees in a real browser).
  */
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import { covers, fieldAt, fieldGrid, makeSplat, THRESHOLD, type Box } from './splat.ts';
-import { MAX_CANVAS_PX, paint, paintSplat, type PaintLayer } from './paint.ts';
+import { MAX_CANVAS_PX, STAND_IN_WASH, THIN_FLOOR, THIN_SPAN, paint, paintSplat, paintStandIn, shadeField, type PaintLayer, type StandIn } from './paint.ts';
+import { denseGrid, makeGrid, splatInto, type Grid, type Rect } from './field.ts';
+import fixtureJson from './paint.fixture.json';
 import { type Stroke } from './scrub.ts';
 
 const realGetContext = HTMLCanvasElement.prototype.getContext;
@@ -35,42 +37,63 @@ function recording() {
 
 const BOX: Box = { w: 400, h: 200 };
 const splat = makeSplat(7);
-const layer = (strokes: readonly Stroke[] = [], alpha = 1): PaintLayer => ({ painted: document.createElement('canvas'), color: '#ff2bd6', strokes, alpha });
+const standIn = (strokes: readonly Stroke[] = []): StandIn => ({ painted: document.createElement('canvas'), color: '#ff2bd6', strokes });
+const layer = (alpha = 1): PaintLayer => ({ picture: document.createElement('canvas'), alpha });
 const geo = { dpr: 1, box: BOX, top: 0, left: 0 };
-const canvasOf = () => { const c = document.createElement('canvas'); c.width = 400; c.height = 200; return c; };
+const canvasOf = (w = 400, h = 200) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
 
 describe('paint', () => {
-  beforeEach(() => { (globalThis as { Path2D?: unknown }).Path2D ??= class {}; });
-
-  test('draws one image per live layer onto the ink canvas, and none for a layer at alpha 0', () => {
+  test('draws one picture per live layer, in order, at its alpha, and none for a layer at alpha 0', () => {
     const calls = recording();
-    paint(canvasOf(), geo, [layer(), layer([], 0), layer([], 0.5)]);
-    const main = calls.filter((c) => c.who === 'main' && c.op === 'drawImage');
-    expect(main).toHaveLength(2);
-    expect(main.map((c) => c.style.globalAlpha)).toEqual([1, 0.5]);
+    const a = layer(), b = layer(0), c = layer(0.5);
+    paint(canvasOf(), geo, [a, b, c]);
+    const draws = calls.filter((x) => x.op === 'drawImage');
+    expect(draws.map((x) => x.args[0])).toEqual([a.picture, c.picture]);
+    expect(draws.map((x) => x.style.globalAlpha)).toEqual([1, 0.5]);
   });
 
-  test('a wash is drawn destination-out, a pen source-over in its own color', () => {
+  test('draws each picture scaled to the box, not its own size, and draws no stroke', () => {
     const calls = recording();
-    const wash: Stroke = { tool: 'wash', width: 0.1, aspect: 2, points: [[0.2, 0.5], [0.4, 0.5]] };
-    const pen: Stroke = { tool: 'ink', color: '#19e3ff', width: 0.02, aspect: 2, points: [[0.2, 0.2], [0.4, 0.2]] };
-    paint(canvasOf(), geo, [layer([wash, pen])]);
+    paint(canvasOf(), { dpr: 2, box: BOX, top: 3, left: 5 }, [layer()]);
+    expect(calls.find((c) => c.op === 'drawImage')!.args.slice(1)).toEqual([10, 6, 800, 400]);
+    expect(calls.filter((c) => c.op === 'stroke' || c.op === 'beginPath')).toHaveLength(0);
+  });
+
+  test.each([[0, 200], [400, 0], [Number.NaN, 200], [400, Infinity]])('a box of %s by %s draws nothing', (w, h) => {
+    const calls = recording();
+    expect(() => paint(canvasOf(), { dpr: 1, box: { w, h }, top: 0, left: 0 }, [layer()])).not.toThrow();
+    expect(calls.filter((c) => c.op === 'drawImage')).toHaveLength(0);
+    expect(calls.filter((c) => c.op === 'clearRect')).toHaveLength(1);
+  });
+});
+
+describe('paintStandIn', () => {
+  beforeEach(() => { (globalThis as { Path2D?: unknown }).Path2D ??= class {}; });
+  const wash: Stroke = { tool: 'wash', width: 0.1, aspect: 2, points: [[0.2, 0.5], [0.4, 0.5]] };
+  const pen: Stroke = { tool: 'ink', color: '#19e3ff', width: 0.02, aspect: 2, points: [[0.2, 0.2], [0.4, 0.2]] };
+
+  test('draws a pen stroke and a wash in order: the pen flat in its color, the wash destination-out at STAND_IN_WASH with the blur', () => {
+    const calls = recording();
+    paintStandIn(standIn([pen, wash]), geo, 400, 200, 0);
     const strokes = calls.filter((c) => c.op === 'stroke');
-    expect(strokes.map((c) => c.who)).toEqual(['work', 'work']);
-    expect(strokes[0]!.style.globalCompositeOperation).toBe('destination-out');
-    expect(strokes[0]!.style.shadowBlur).toBe(2.5);
-    expect(strokes[1]!.style.globalCompositeOperation).toBe('source-over');
-    expect(strokes[1]!.style.strokeStyle).toBe('#19e3ff');
-    expect(strokes[1]!.style.shadowBlur).toBe(0);
+    expect(strokes).toHaveLength(2);
+    expect(strokes[0]!.style.globalCompositeOperation).toBe('source-over');
+    expect(strokes[0]!.style.strokeStyle).toBe('#19e3ff');
+    expect(strokes[0]!.style.globalAlpha).toBe(1);
+    expect(strokes[0]!.style.shadowBlur).toBe(0);
+    expect(strokes[1]!.style.globalCompositeOperation).toBe('destination-out');
+    expect(strokes[1]!.style.globalAlpha).toBe(STAND_IN_WASH);
+    expect(STAND_IN_WASH).toBe(0.5);
+    expect(strokes[1]!.style.shadowBlur).toBe(2.5);
   });
 
   test('a stroke from a box of another aspect is drawn under the transform that makes its brush that ellipse', () => {
     const calls = recording();
     /* Drawn on a 400x200 box (aspect 2); made on a box of aspect 0.5, so across is 0.1 / 2 * 400 = 20 px and down 0.1 / 2 * 0.5 * 200 = 5 px. */
     const s: Stroke = { tool: 'wash', width: 0.1, aspect: 0.5, points: [[0.5, 0.5], [0.6, 0.5]] };
-    paint(canvasOf(), { dpr: 2, box: BOX, top: 3, left: 5 }, [layer([s])]);
+    paintStandIn(standIn([s]), { dpr: 2, box: BOX, top: 3, left: 5 }, 800, 400, 0);
     const i = calls.findIndex((c) => c.op === 'stroke');
-    const set = calls.slice(0, i).filter((c) => c.who === 'work' && c.op === 'setTransform').at(-1)!;
+    const set = calls.slice(0, i).filter((c) => c.op === 'setTransform').at(-1)!;
     const [a, b, c, d, e, f] = set.args as number[];
     expect([b, c]).toEqual([0, 0]);
     expect(d! / a!).toBeCloseTo(0.5 * 200 / 400, 10);
@@ -83,61 +106,97 @@ describe('paint', () => {
     expect(moved[1]! * d! + f!).toBeCloseTo(0.5 * 200 * 2 + 6, 10);
   });
 
-  test('draws the painted splat scaled to the box, not the splat\'s own size', () => {
+  test('draws the cached splat scaled to the box first, after a clear, and leaves no shadow or alpha set', () => {
     const calls = recording();
-    paint(canvasOf(), { dpr: 2, box: BOX, top: 3, left: 5 }, [layer()]);
-    const d = calls.find((c) => c.who === 'work' && c.op === 'drawImage')!;
-    expect(d.args.slice(1)).toEqual([10, 6, 800, 400]);
-  });
-});
-
-describe('paint, scratch and degenerate boxes', () => {
-  beforeEach(() => { (globalThis as { Path2D?: unknown }).Path2D ??= class {}; });
-
-  test('the shared scratch is cleared for each layer, and a wash\'s shadow does not leak into the next layer\'s drawImage', () => {
-    const calls = recording();
-    const wash: Stroke = { tool: 'wash', width: 0.1, aspect: 2, points: [[0.2, 0.5], [0.4, 0.5]] };
-    paint(canvasOf(), geo, [layer([wash]), layer([])]);
-    const work = calls.filter((c) => c.who === 'work');
-    expect(work.filter((c) => c.op === 'clearRect')).toHaveLength(2);
-    const clears = work.map((c, i) => (c.op === 'clearRect' ? i : -1)).filter((i) => i >= 0);
-    const draws = work.map((c, i) => (c.op === 'drawImage' ? i : -1)).filter((i) => i >= 0);
-    expect(clears[0]).toBeLessThan(draws[0]!);
-    expect(clears[1]).toBeGreaterThan(draws[0]!);
-    expect(clears[1]).toBeLessThan(draws[1]!);
-    const second = work[draws[1]!]!;
-    expect(second.style.shadowBlur).toBe(0);
-    expect(second.style.shadowColor).toBe('transparent');
-    expect(second.style.globalCompositeOperation).toBe('source-over');
-    for (const d of calls.filter((c) => c.who === 'main' && c.op === 'drawImage')) expect(d.style.shadowBlur ?? 0).toBe(0);
+    const picture = paintStandIn(standIn([wash]), { dpr: 2, box: BOX, top: 3, left: 5 }, 800, 400, 0);
+    expect(picture.width).toBe(800);
+    const ops = calls.map((c) => c.op);
+    expect(ops.indexOf('clearRect')).toBeLessThan(ops.indexOf('drawImage'));
+    expect(ops.indexOf('drawImage')).toBeLessThan(ops.indexOf('stroke'));
+    expect(calls.find((c) => c.op === 'drawImage')!.args.slice(1)).toEqual([10, 6, 800, 400]);
+    const last = calls.at(-1)!;
+    expect(last.style.shadowBlur).toBe(0);
+    expect(last.style.globalAlpha).toBe(1);
   });
 
-  test('the shared scratch is sized to the canvas being painted, so a tall canvas after a wide one never grows it past MAX_CANVAS_PX', () => {
-    const calls = recording();
-    const sized = (w: number, h: number) => {
-      const c = document.createElement('canvas');
-      c.width = w;
-      c.height = h;
-      return c;
-    };
-    const scratchAfter = (w: number, h: number): [number, number] => {
-      calls.length = 0;
-      paint(sized(w, h), { dpr: 1, box: { w, h }, top: 0, left: 0 }, [layer([])]);
-      const scratch = calls.find((c) => c.op === 'drawImage' && c.args.length === 9)!.args[0] as HTMLCanvasElement;
-      return [scratch.width, scratch.height];
-    };
+  test('a slot is one canvas sized to what is being painted, so a tall canvas after a wide one never grows it past MAX_CANVAS_PX', () => {
+    recording();
     for (const [w, h] of [[780, 600], [279, 14307], [988, 4000]] as const) {
-      const [sw, sh] = scratchAfter(w, h);
-      expect([sw, sh], `the scratch after a ${w} by ${h} canvas`).toEqual([w, h]);
-      expect(sw * sh).toBeLessThanOrEqual(MAX_CANVAS_PX);
+      const cv = paintStandIn(standIn(), { dpr: 1, box: { w, h }, top: 0, left: 0 }, w, h, 0);
+      expect([cv.width, cv.height]).toEqual([w, h]);
+      expect(w * h).toBeLessThanOrEqual(MAX_CANVAS_PX);
     }
   });
 
-  test.each([[0, 200], [400, 0], [Number.NaN, 200], [400, Infinity]])('a box of %s by %s draws nothing', (w, h) => {
+  test.each([[0, 200], [Number.NaN, 200]])('a box of %s by %s draws nothing', (w, h) => {
     const calls = recording();
-    const wash: Stroke = { tool: 'wash', width: 0.1, aspect: 2, points: [[0.2, 0.5], [0.4, 0.5]] };
-    expect(() => paint(canvasOf(), { dpr: 1, box: { w, h }, top: 0, left: 0 }, [layer([wash])])).not.toThrow();
+    paintStandIn(standIn([wash]), { dpr: 1, box: { w, h }, top: 0, left: 0 }, 10, 10, 0);
     expect(calls.filter((c) => c.op === 'drawImage' || c.op === 'stroke')).toHaveLength(0);
+  });
+});
+
+describe('shadeField', () => {
+  const fixture = fixtureJson as { box: Box; layers: { color: string; px: number[][] }[] };
+  const pixels = (grid: Grid) => ({ width: grid.cols, height: grid.rows, data: new Uint8ClampedArray(grid.cols * grid.rows * 4) });
+  const whole = (grid: Grid): Rect => ({ x0: 0, y0: 0, x1: grid.cols, y1: grid.rows });
+
+  test('the splat alone looks as the old paintSplat did, within 1 per channel, at a few hundred pixels a color', () => {
+    const grid = denseGrid(fixture.box, 1);
+    splatInto(grid, makeSplat(7), fixture.box);
+    for (const { color, px } of fixture.layers) {
+      const out = pixels(grid);
+      shadeField(grid, grid.washed, color, 1, whole(grid), out);
+      expect(px.length).toBeGreaterThan(300);
+      for (const [x, y, r, g, b, a] of px as [number, number, number, number, number, number][]) {
+        const o = (y * grid.cols + x) * 4;
+        const got = [out.data[o]!, out.data[o + 1]!, out.data[o + 2]!, out.data[o + 3]!];
+        const want = [r, g, b, a];
+        /* A pixel with no ink has no color to compare. */
+        got.forEach((v, c) => c < 3 && a === 0 || expect(Math.abs(v - want[c]!), `${color} pixel ${x},${y} channel ${c}: ${v} vs ${want[c]}`).toBeLessThanOrEqual(1));
+      }
+    }
+  });
+
+  /** A grid of one value along a row, shaded: the pixel at the middle. */
+  const plateau = (v: number, washed: 0 | 1) => {
+    const grid = makeGrid(9, 9, 1);
+    grid.values.fill(v);
+    const w = new Uint8Array(81).fill(washed);
+    const out = pixels(grid);
+    shadeField(grid, w, '#202020', 1, { x0: 0, y0: 0, x1: 9, y1: 9 }, out);
+    return out.data[(4 * 9 + 4) * 4 + 3]!;
+  };
+
+  test('thinned ink is see-through: a washed point at T + 0.2 has under half the opacity of an unwashed one', () => {
+    const v = THRESHOLD + 0.2;
+    const plain = plateau(v, 0), thin = plateau(v, 1);
+    expect(plain).toBe(255);
+    expect(thin).toBeGreaterThan(0);
+    expect(thin).toBeLessThan(plain * 0.5);
+    expect(thin / 255).toBeCloseTo(THIN_FLOOR + (1 - THIN_FLOOR) * 0.2 / THIN_SPAN, 1);
+    expect([THIN_FLOOR, THIN_SPAN]).toEqual([0.35, 1.2]);
+  });
+
+  test('a rectangle\'s shading equals the whole\'s, inside the rectangle, and writes nothing past one point beyond it', () => {
+    const grid = denseGrid({ w: 120, h: 80 }, 1);
+    splatInto(grid, splat, { w: 120, h: 80 });
+    /* A wash-like dent and a washed mark, then the whole and a rectangle. */
+    for (let y = 30; y < 50; y++) for (let x = 40; x < 70; x++) { grid.values[y * 120 + x]! *= 0.5; grid.washed[y * 120 + x] = 1; }
+    const all = pixels(grid), part = pixels(grid);
+    shadeField(grid, grid.washed, '#ff2bd6', 1, whole(grid), all);
+    const rect: Rect = { x0: 35, y0: 25, x1: 75, y1: 55 };
+    shadeField(grid, grid.washed, '#ff2bd6', 1, rect, part);
+    let inside = 0;
+    for (let y = 0; y < 80; y++) for (let x = 0; x < 120; x++) {
+      const o = (y * 120 + x) * 4;
+      const grown = x >= rect.x0 - 1 && x < rect.x1 + 1 && y >= rect.y0 - 1 && y < rect.y1 + 1;
+      for (let c = 0; c < 4; c++) {
+        if (grown) expect(part.data[o + c]).toBe(all.data[o + c]);
+        else expect(part.data[o + c]).toBe(0);
+      }
+      if (grown) inside++;
+    }
+    expect(inside).toBe(42 * 32);
   });
 });
 

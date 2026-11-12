@@ -18,7 +18,7 @@ import { LOST_ANSWER } from '../../../../engine/ui/data/api.ts';
 import { Effect, MAX_SAVE_RETRIES, RETRY_AFTER_MS, SAVE_AFTER_MS, percentWashed } from './Effect.tsx';
 import { viewProblems } from '../../../../engine/ui/cards/lens-words.ts';
 import { cursor } from './cursor.ts';
-import { paint, type PaintLayer } from './paint.ts';
+import { paint, paintStandIn, type PaintLayer } from './paint.ts';
 import { decodePoints, packStroke } from './points.ts';
 import { BRUSH_PX, LayerInk, PEN_PX, ROW_PX, brushOf, coveredLines, type Pt, type Stroke } from './scrub.ts';
 import { DESIGN, makeSplat, type Box } from './splat.ts';
@@ -869,13 +869,15 @@ describe('the canvas', () => {
     (globalThis as { Path2D?: unknown }).Path2D ??= class {};
     const canvas = document.createElement('canvas');
     canvas.width = canvas.height = 64;
+    canvases.set(canvas, 'main');
     const stroke: Stroke = { tool: 'ink', color: '#19e3ff', ...pen(), points: [[0.2, 0.2], [0.4, 0.2]] };
     const painted = document.createElement('canvas');
+    const geo = { dpr: 1, box: { w: 64, h: 64 }, left: 0, top: 0 };
     const layers: PaintLayer[] = [
-      { painted, color: COLORS[0]!, strokes: [stroke], alpha: 1 },
-      { painted, color: COLORS[1]!, strokes: [], alpha: 1 },
+      { picture: paintStandIn({ painted, color: COLORS[0]!, strokes: [stroke] }, geo, 64, 64, 0), alpha: 1 },
+      { picture: paintStandIn({ painted, color: COLORS[1]!, strokes: [] }, geo, 64, 64, 1), alpha: 1 },
     ];
-    paint(canvas, { dpr: 1, box: { w: 64, h: 64 }, left: 0, top: 0 }, layers);
+    paint(canvas, geo, layers);
     expect(penColors).toEqual(['work:#19e3ff']);
     expect(log.filter((l) => l === 'main.stroke')).toEqual([]);
   });
