@@ -431,7 +431,7 @@ begin
     reads_hook := (select jsonb_object_agg(relname, jsonb_build_array(seq_scan - (before -> relname ->> 0)::bigint, idx_scan - (before -> relname ->> 1)::bigint)) from pg_stat_xact_user_tables where relname in ('face_down', 'card_kinds', 'acts'));
     if reads_idle is distinct from reads_hook then raise exception 'an Idle and a Move read differently (%): % / %', mode, reads_idle, reads_hook; end if;
     -- A count of nothing would agree with itself: each call read every table counted.
-    if exists (select 1 from jsonb_each(reads_idle) r where (r.value ->> 0)::bigint + (r.value ->> 1)::bigint < 1) or (select count(*) from jsonb_object_keys(reads_idle)) <> 3 then
+    if exists (select 1 from jsonb_each(reads_idle) r where (r.value ->> 0)::bigint + (r.value ->> 1)::bigint < 1) or (select count(*) from jsonb_object_keys(reads_idle)) is distinct from 3 then
       raise exception 'a spring''s reads were not counted (%): %', mode, reads_idle;
     end if;
   end loop;
