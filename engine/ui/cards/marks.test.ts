@@ -76,7 +76,7 @@ describe('a card back, a ward and a caught play, in words', () => {
     assert.deepEqual(gimmickWords({ kind: 'noQuote' }, '2026-10-31T10:00:00.000Z', now), { state: 'Ended, changing nothing', ends: `Ended ${dayAndTime('2026-10-31T10:00:00.000Z')}` });
     assert.deepEqual(gimmickWords({ kind: 'ward', upTo: 'uncommon' }, end, now), { state: 'Turns away cards up to uncommon', ends: `Ends ${dayAndTime(end)}` });
     for (const effect of [{ kind: 'noQuote' }, { kind: 'ward', upTo: 'uncommon' }, { kind: 'price', flavors: ['salty'], add: 25 }, { kind: 'earn', by: 0.1 }, { kind: 'ride', share: 0.5 }] as const) {
-      assert.deepEqual(wordsProblems('state', gimmickWords(effect, undefined).state), [], effect.kind);
+      assert.deepEqual(wordsProblems('state', gimmickWords(effect, undefined, now).state), [], effect.kind);
       assert.deepEqual(gimmickWords(effect, '2026-10-31T10:00:00.000Z', now), { state: 'Ended, changing nothing', ends: `Ended ${dayAndTime('2026-10-31T10:00:00.000Z')}` }, effect.kind);
     }
   });

@@ -9,6 +9,7 @@ import { Postbit, Signature, type PostbitPerson } from './Postbit.tsx';
 import { reveals } from './reveals.ts';
 import { axeViolations, describeViolations } from '../a11y.ts';
 import { ENGINE_DEFAULT_PRONOUNS } from '../../rules/pronouns.ts';
+import { START } from '../data/fake.ts';
 
 const character = (over: Partial<Character> = {}): Character => ({
   id: 'c1', name: 'Pipewrench', title: 'Professional Wrench', signature: '', avatarSquare: 'sq.webp', avatarPortrait: 'tall.webp',
@@ -285,22 +286,22 @@ describe('the warn meter and BANNED (the Mod Bots design, section 9)', () => {
   });
 
   test('BANNED is on the title line while the ban holds, with when it ends for a screen reader', () => {
-    show(person({}, { bannedUntil: new Date(Date.now() + 3_600_000).toISOString() }));
+    show(person({}, { bannedUntil: new Date(START + 3_600_000).toISOString() }));
     const title = document.querySelector('.kb-postbit-title')!;
     expect(title).toHaveTextContent('Professional Wrench BANNED');
     expect(title.querySelector('.kb-visually-hidden')?.textContent).toMatch(/^ until /u);
   });
 
   test('BANNED stands alone where the character has no title, and is gone once the ban has ended', () => {
-    const { unmount } = show(person({}, { title: '', bannedUntil: new Date(Date.now() + 3_600_000).toISOString() }));
+    const { unmount } = show(person({}, { title: '', bannedUntil: new Date(START + 3_600_000).toISOString() }));
     expect(document.querySelector('.kb-postbit-title')).toHaveTextContent('BANNED');
     unmount();
-    show(person({}, { bannedUntil: new Date(Date.now() - 1000).toISOString() }));
+    show(person({}, { bannedUntil: new Date(START - 1000).toISOString() }));
     expect(screen.queryByText('BANNED')).toBeNull();
   });
 
   test('passes axe with the meter and BANNED drawn', async () => {
-    show(person({}, { warnPoints: 6, bannedUntil: new Date(Date.now() + 3_600_000).toISOString() }));
+    show(person({}, { warnPoints: 6, bannedUntil: new Date(START + 3_600_000).toISOString() }));
     const bad = await axeViolations(screen.getByRole('group', { name: 'About Pipewrench' }));
     expect(bad, describeViolations(bad)).toEqual([]);
   });
