@@ -71,6 +71,23 @@ const rectOf = (page: Page, row: string, part: string): Promise<(Rect | null)[]>
   return { top: b.top, bottom: b.bottom, left: b.left, right: b.right };
 }), [row, part] as const);
 
+/** The index's last post with a title cut to leave the unit part of a line (see below): where the byline's "·", name and date stand against the title's last line, and whether the list scrolls sideways. An inline byline lets them flow on after the title and break apart; an inline-block one moves whole. */
+const byline = (page: Page) => page.evaluate(() => {
+  const by = document.querySelector('.kb-board-last-by')!;
+  const title = document.querySelector('.kb-board-last-title') as HTMLElement;
+  const cell = by.closest('td')!.getBoundingClientRect();
+  const partsOf = () => [by.querySelector('.kb-board-sep'), by.querySelector('.kb-who'), by.querySelector('a:not(.kb-who a)')].map((e) => e!.getBoundingClientRect());
+  /* The title is cut to the words that leave the unit's line no room for the whole of it, but room for its "·": the unit must move whole, where an inline one would break after the "·". */
+  const unit = partsOf().reduce((sum, r) => sum + r.width, 0);
+  title.textContent = 'w';
+  for (let i = 0; i < 60 && cell.right - title.getBoundingClientRect().right > unit - 40; i++) title.textContent += ' word';
+  const tr = [...title.getClientRects()];
+  const parts = partsOf();
+  const middles = parts.map((r) => r.top + r.height / 2);
+  const list = document.querySelector('.kb-board-list')!;
+  return { parts: parts.length, room: cell.right - title.getBoundingClientRect().right, unit, spread: Math.max(...middles) - Math.min(...middles), firstTop: Math.min(...parts.map((r) => r.top)), titleBottom: tr[tr.length - 1]!.bottom, listScroll: list.scrollWidth - list.clientWidth, pageScroll: document.documentElement.scrollWidth - document.documentElement.clientWidth };
+});
+
 const DESK = { width: 1440, height: 1000 };
 const THREAD_PARTS = ['.kb-thread-title b', '.kb-thread-replies > .kb-num', '.kb-thread-views > .kb-num', '.kb-thread-last .kb-who a'] as const;
 const BOARD_PARTS = ['.kb-board-link b', '.kb-board-threads > .kb-num', '.kb-board-last-title'] as const;
@@ -172,17 +189,12 @@ for (const size of [{ width: 390, height: 844 }, { width: 360, height: 800 }]) {
     });
   }
 
-  test(`7: a long title and a long name keep the byline whole and the list inside the window ${at}`, async ({ page }) => {
+  test(`7: a title that leaves the byline part of a line moves it whole to the next, and the list stays inside the window ${at}`, async ({ page }) => {
     await open(page, LONG, '.kb-board-last-title', size);
-    const m = await page.evaluate(() => {
-      const by = document.querySelector('.kb-board-last-by')!;
-      const title = document.querySelector('.kb-board-last-title')!;
-      const tr = [...title.getClientRects()];
-      const list = document.querySelector('.kb-board-list')!;
-      return { rects: by.getClientRects().length, byTop: by.getBoundingClientRect().top, titleBottom: tr[tr.length - 1]!.bottom, listScroll: list.scrollWidth - list.clientWidth, pageScroll: document.documentElement.scrollWidth - document.documentElement.clientWidth };
-    });
-    expect(m.rects, 'the byline moved whole').toBe(1);
-    expect(m.byTop, 'under the title\'s last line').toBeGreaterThanOrEqual(m.titleBottom - 0.5);
+    const m = await byline(page);
+    expect(m.parts, 'the "·", the name and the date').toBe(3);
+    expect(m.spread, 'the "·", the name and the date on one line').toBeLessThanOrEqual(12);
+    expect(m.firstTop, 'the unit starts under the title\'s last line').toBeGreaterThanOrEqual(m.titleBottom - 0.5);
     expect(m.listScroll).toBeLessThanOrEqual(0);
     expect(m.pageScroll).toBeLessThanOrEqual(0);
   });
@@ -199,6 +211,19 @@ test('poison: top-aligned cells are named as off the title\'s baseline (case 1)'
   await open(page, BOARD, '.kb-thread-row', DESK);
   const rows = await baselines(page, '.kb-thread-row', THREAD_PARTS);
   expect(pastCase1(rows).some((past) => past > 0)).toBe(true);
+});
+
+test('poison: a byline that flows on after the title is named as breaking apart (case 7)', async ({ page }) => {
+  await page.addInitScript(() => {
+    document.addEventListener('DOMContentLoaded', () => {
+      const style = document.createElement('style');
+      style.textContent = '.kb-board-last-by { display: inline !important }';
+      document.head.append(style);
+    });
+  });
+  await open(page, LONG, '.kb-board-last-title', { width: 390, height: 844 });
+  const m = await byline(page);
+  expect(m.spread > 12 || m.firstTop < m.titleBottom - 0.5).toBe(true);
 });
 
 test('poison: a last post that goes back inline is named as not below the counts (case 4)', async ({ page }) => {
