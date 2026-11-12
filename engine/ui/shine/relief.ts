@@ -6,6 +6,8 @@
  * Units: `normals` and `tint` are 8-bit RGBA, `w * h` pixels row by row, top row first. A decoded normal is a unit vector
  * with x to the right, y DOWN the screen (as a `Light`'s is) and z toward the viewer. A light is in a `Light`'s units, -1..1
  * across the pack; the pack's pixels run x in -1..1 and y in -h/w..h/w. No DOM, no canvas; `lightRelief` allocates nothing.
+ * A pixel that is transparent (the relief's alpha 0) is written as four zeros; a pixel too dim to reach half a level of alpha
+ * keeps its color and gets alpha 0.
  */
 import type { Light } from './band.ts';
 
@@ -23,6 +25,24 @@ export type Relief = {
 /** A decoded normal shorter than this (about three 8-bit steps from the zero vector) has no direction and faces the viewer. */
 const ZERO = 0.03;
 const LIGHT_Z = 0.9;
+
+/** The highlight's two lobes, a tight s^48 and a broad s^16, for s = the normal's dot with the half vector. */
+const specular = (s: number): number => {
+  let s2 = s * s; s2 *= s2; s2 *= s2; s2 *= s2; // s^16
+  return s2 * s2 * s2 * 0.9 + s2 * 0.12;
+};
+/**
+ * Below this s the highlight cannot reach half a level of alpha even at relief alpha 1 (the lobes only grow with s), so the
+ * power chain is skipped. Found once by bisection, then a hair lower so rounding can never skip a pixel that would show.
+ */
+const S_MIN = (() => {
+  let lo = 0, hi = 1;
+  for (let k = 0; k < 60; k++) {
+    const mid = (lo + hi) / 2;
+    if (specular(mid) * 255 < 0.5) lo = mid; else hi = mid;
+  }
+  return lo * 0.9999;
+})();
 
 /** Decode `normals` (and `tint`, or white) once; green's sign is turned so y runs down the screen. */
 export function makeRelief(normals: Uint8ClampedArray, tint: Uint8ClampedArray | null, w: number, h: number): Relief {
@@ -49,40 +69,46 @@ export function makeRelief(normals: Uint8ClampedArray, tint: Uint8ClampedArray |
   return { w, h, normals: nrm, color, alpha };
 }
 
-/** Write the highlight of `light` into `out` (`w * h` RGBA); rows outside `rows` are written transparent. */
+/**
+ * Write the highlight of `light` into `out`, which is `w * h * 4` bytes (RGBA); rows outside `rows` are written as four
+ * zeros. `rows.top` is floored and `rows.bottom` ceiled, both clamped to 0..h, so a fractional bound still draws the rows
+ * it touches.
+ */
 export function lightRelief(relief: Relief, light: Light, out: Uint8ClampedArray, rows?: { top: number; bottom: number }): void {
   const { w, h, normals, color, alpha } = relief;
-  const top = rows ? Math.max(0, rows.top) : 0;
-  const bottom = rows ? Math.min(h, rows.bottom) : h;
-  const aspect = h / w;
-  const lx = light.x * 1.3;
-  const ly = light.y * 1.3 * aspect;
+  const top = rows ? Math.max(0, Math.floor(rows.top)) : 0;
+  const bottom = rows ? Math.min(h, Math.ceil(rows.bottom)) : h;
   out.fill(0, 0, top * w * 4);
   out.fill(0, Math.max(top, bottom) * w * 4, w * h * 4);
+  const aspect = h / w;
+  const colStep = 2 / w;
+  const lx = light.x * 1.3 + 1; // the light's x less a pixel's x of 2 * c / w - 1 is this less c * colStep
+  const ly = light.y * 1.3 * aspect;
+  const rowStep = 2 / h * aspect;
+  const zz = LIGHT_Z * LIGHT_Z;
   for (let r = top; r < bottom; r++) {
-    const py = (2 * r / h - 1) * aspect;
-    for (let c = 0; c < w; c++) {
-      const i = r * w + c;
-      const o = i * 4;
+    const dy = ly - (r * rowStep - aspect);
+    const rest = dy * dy + zz; // everything of the light's distance that does not change along the row
+    let i = r * w, o = i * 4, n = i * 3;
+    for (let c = 0; c < w; c++, i++, o += 4, n += 3) {
       const a = alpha[i]!;
       if (a === 0) {
+        out[o] = 0; out[o + 1] = 0; out[o + 2] = 0; out[o + 3] = 0;
+        continue;
+      }
+      const dx = lx - c * colStep;
+      const l = 1 / Math.sqrt(dx * dx + rest); // 1 / the light's distance; its unit direction is (dx, dy, LIGHT_Z) * l
+      // The half vector is that direction plus (0, 0, 1), whose length squared is 2 (1 + LIGHT_Z * l).
+      const dl = LIGHT_Z * l;
+      const s = (l * (normals[n]! * dx + normals[n + 1]! * dy) + normals[n + 2]! * (dl + 1)) / Math.sqrt(2 * (1 + dl));
+      out[o] = color[n]!;
+      out[o + 1] = color[n + 1]!;
+      out[o + 2] = color[n + 2]!;
+      if (s <= S_MIN) {
         out[o + 3] = 0;
         continue;
       }
-      const px = 2 * c / w - 1;
-      let dx = lx - px, dy = ly - py, dz = LIGHT_Z;
-      let l = 1 / Math.hypot(dx, dy, dz);
-      dx *= l; dy *= l; dz *= l;
-      let hx = dx, hy = dy, hz = dz + 1;
-      l = 1 / Math.hypot(hx, hy, hz);
-      hx *= l; hy *= l; hz *= l;
-      let s = normals[i * 3]! * hx + normals[i * 3 + 1]! * hy + normals[i * 3 + 2]! * hz;
-      s = s > 0 ? s : 0;
-      let s2 = s * s; s2 *= s2; s2 *= s2; s2 *= s2; // s^16
-      const spec = s2 * s2 * s2 * 0.9 + s2 * 0.12; // s^48 and a broad s^16
-      out[o] = color[i * 3]!;
-      out[o + 1] = color[i * 3 + 1]!;
-      out[o + 2] = color[i * 3 + 2]!;
+      const spec = specular(s);
       out[o + 3] = (spec > 1 ? 1 : spec) * a * 255;
     }
   }
