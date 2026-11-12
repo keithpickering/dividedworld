@@ -8,9 +8,10 @@
  * address with no login asked for without making one or a 429 from Auth's hourly email limit
  * among them, is logged by its status alone and dropped. A code check runs before the answer and
  * is retried once on a transport failure too; a wrong or expired code is the one refusal told
- * apart, and anything else is thrown, for the account function's plain retry-later.
+ * apart, and anything else is thrown, for the account function's plain retry-later. The email's
+ * link is checked the same way, by its token hash, and the hash is never logged.
  */
-import type { Auth } from '../account/core.ts';
+import type { Auth, Session } from '../account/core.ts';
 
 export function gotrue(options: { url: string; key: string; fetch?: typeof globalThis.fetch; sleep?: (ms: number) => Promise<void> }): Auth {
   const send = options.fetch ?? globalThis.fetch;
@@ -33,27 +34,30 @@ export function gotrue(options: { url: string; key: string; fetch?: typeof globa
     }
     console.error(`auth ${path} did not answer`);
   };
+  /** A check of a code or a link: one retry on a transport failure, one refusal told apart, the rest thrown. */
+  async function check<R extends 'code' | 'link'>(body: Record<string, string>, refusal: R): Promise<{ session: Session } | { refused: R }> {
+    let response: Response | undefined;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      if (attempt > 1) await sleep(250);
+      try {
+        response = await call('verify', body);
+        if (response.status < 500) break;
+        await response.body?.cancel();
+      } catch (e) {
+        if (attempt === 2) throw e;
+      }
+    }
+    if (!response || response.status >= 500) throw new Error(`auth ${refusal} check answered ${response?.status ?? 'nothing'}`);
+    const answer = await response.json().catch(() => ({})) as Record<string, unknown>;
+    if (response.ok) return { session: answer as never };
+    // A wrong token and one for an address with no login are one refusal to Auth too.
+    if ((response.status === 400 || response.status === 403)
+        && (answer.error_code === 'otp_expired' || answer.error_code === 'otp_invalid' || answer.error === 'invalid_grant')) return { refused: refusal };
+    throw new Error(`auth ${refusal} check answered ${response.status} ${String(answer.error_code ?? answer.error ?? '')}`);
+  }
   return {
     requestCode: (email, o) => afterward('otp', { email, create_user: o.create, data: { invite: o.invite } }),
-    async verifyCode(email, code) {
-      let response: Response | undefined;
-      for (let attempt = 1; attempt <= 2; attempt++) {
-        if (attempt > 1) await sleep(250);
-        try {
-          response = await call('verify', { type: 'email', email, token: code });
-          if (response.status < 500) break;
-          await response.body?.cancel();
-        } catch (e) {
-          if (attempt === 2) throw e;
-        }
-      }
-      if (!response || response.status >= 500) throw new Error(`auth code check answered ${response?.status ?? 'nothing'}`);
-      const body = await response.json().catch(() => ({})) as Record<string, unknown>;
-      if (response.ok) return { session: body as never };
-      // A wrong code and one for an address with no login are one refusal to Auth too.
-      if ((response.status === 400 || response.status === 403)
-          && (body.error_code === 'otp_expired' || body.error_code === 'otp_invalid' || body.error === 'invalid_grant')) return { refused: 'code' };
-      throw new Error(`auth code check answered ${response.status} ${String(body.error_code ?? body.error ?? '')}`);
-    },
+    verifyCode: (email, code) => check({ type: 'email', email, token: code }, 'code'),
+    verifyLink: (tokenHash) => check({ type: 'email', token_hash: tokenHash }, 'link'),
   };
 }

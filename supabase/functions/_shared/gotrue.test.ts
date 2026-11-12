@@ -71,3 +71,21 @@ test('a code check is retried once when Auth does not answer or answers a 5xx, n
     assert.equal(k, 1, String(status));
   }
 });
+
+test('a link\'s hash is checked at /verify with the public key; a spent one is the link\'s refusal, a blip is retried, and two blips throw', async () => {
+  const hash = 'pkce_0123456789abcdef-GOOD_hash';
+  const { calls, fetch } = recorder(() => new Response(JSON.stringify(session), { status: 200 }));
+  assert.deepEqual(await gotrue({ ...opts, fetch }).verifyLink(hash), { session });
+  assert.deepEqual(calls.map((c) => [c.url, c.body, c.apikey, c.authorization]), [['https://p.example/auth/v1/verify', { type: 'email', token_hash: hash }, 'sb_publishable_p', null]]);
+  const expired = recorder(() => new Response(JSON.stringify({ error_code: 'otp_expired' }), { status: 403 })).fetch;
+  assert.deepEqual(await gotrue({ ...opts, fetch: expired }).verifyLink(hash), { refused: 'link' });
+  let n = 0;
+  const blip = (async () => (++n === 1 ? new Response('', { status: 500 }) : new Response(JSON.stringify(session), { status: 200 }))) as unknown as typeof globalThis.fetch;
+  assert.deepEqual(await gotrue({ ...opts, fetch: blip }).verifyLink(hash), { session });
+  assert.equal(n, 2);
+  let m = 0;
+  const down = (async () => { m++; return new Response('', { status: 500 }); }) as unknown as typeof globalThis.fetch;
+  await assert.rejects(gotrue({ ...opts, fetch: down }).verifyLink(hash));
+  assert.equal(m, 2);
+  await assert.rejects(gotrue({ ...opts, fetch: recorder(() => new Response('{}', { status: 429 })).fetch }).verifyLink(hash));
+});

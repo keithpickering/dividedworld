@@ -20,8 +20,9 @@
  * the login as its metadata. It is spent only when the login opens its account, at its first
  * sign-in (supabase/migrations/0009_registration.sql). Where that fails (the invite was spent
  * meanwhile), the sign-in still succeeds and says the way out: another invite, opened with the
- * act function's openAccount action (engine/rules/actions.ts). A link from the email signs in through Auth itself, and the client then calls
- * open_account() as this does.
+ * act function's openAccount action (engine/rules/actions.ts). The email's link does not go to Auth: it opens the
+ * instance's own page with the token's hash in the fragment, and that page calls verifyLink, which checks the hash
+ * with Auth and then opens the account exactly as a code does, with the same answers held to the same floor.
  */
 import { DatabaseError, type Db } from '../_shared/rpc.ts';
 import { REFUSAL_HINT } from '../act/core.ts';
@@ -41,6 +42,8 @@ export interface Auth {
   /** Emails a code and a link; `create` lets it make a login for an address with none, carrying the invite. */
   requestCode(email: string, options: { create: boolean; invite: string | null }): Promise<void>;
   verifyCode(email: string, code: string): Promise<{ session: Session } | { refused: 'code' }>;
+  /** The same token as the code, by the hash the email's link carries. */
+  verifyLink(tokenHash: string): Promise<{ session: Session } | { refused: 'link' }>;
 }
 
 export interface Clock {
@@ -57,6 +60,7 @@ export interface AccountAnswer {
 
 const SENT_CODE = 'If this address can sign in here, a code and a link to sign in are on their way to it. A new login needs an invite where this instance asks for one. If nothing comes in a few minutes, ask again.';
 const NO_MATCH = 'that code does not match, or it has expired: ask for a new one';
+const NO_LINK = 'that link does not work, or it has expired: ask for a new code';
 
 const refused = (field: string, error: string): AccountAnswer => ({ status: 400, body: { field, error } });
 
@@ -70,6 +74,29 @@ const code = (r: Fields): string | AccountAnswer => {
   const v = typeof r.code === 'string' ? r.code.replace(/\s+/g, '') : '';
   return /^\d{6,10}$/.test(v) ? v : refused('code', 'is the digits from the email');
 };
+
+/** A token hash is URL-safe text; one that is not is refused as a spent one is, so the two read alike. */
+const tokenHash = (r: Fields): string | AccountAnswer => {
+  const v = typeof r.tokenHash === 'string' ? r.tokenHash.trim() : '';
+  return /^[A-Za-z0-9_-]{16,256}$/.test(v) ? v : refused('link', NO_LINK);
+};
+
+/** What follows a successful check, of a code or a link alike: the login's account opens, or its way out is said. */
+async function opened(deps: { player: (token: string) => Db }, session: Session): Promise<AccountAnswer> {
+  const invite = session.user.user_metadata?.invite;
+  try {
+    await deps.player(session.access_token).rpc('open_account', { code: typeof invite === 'string' ? invite : null });
+    return { status: 200, body: { session, account: true } };
+  } catch (e) {
+    if (e instanceof DatabaseError && e.hint === REFUSAL_HINT) {
+      // The way out, said plainly: another invite, or, while registration is closed, an
+      // admin opening it, after which the next sign-in opens the account.
+      const way = /closed/.test(e.reason) ? 'when an admin opens it again, your next sign-in opens your account' : 'open the account with another invite';
+      return { status: 200, body: { session, account: false, why: `${e.reason}; ${way}` } };
+    }
+    throw e;
+  }
+}
 
 async function answer(deps: { auth: Auth; service: Db; player: (token: string) => Db }, request: unknown): Promise<AccountAnswer> {
   if (typeof request !== 'object' || request === null) return refused('action', 'a request is an object naming its action');
@@ -97,22 +124,17 @@ async function answer(deps: { auth: Auth; service: Db; player: (token: string) =
       if (typeof digits !== 'string') return digits;
       const out = await deps.auth.verifyCode(address, digits);
       if ('refused' in out) return refused('code', NO_MATCH);
-      const invite = out.session.user.user_metadata?.invite;
-      try {
-        await deps.player(out.session.access_token).rpc('open_account', { code: typeof invite === 'string' ? invite : null });
-        return { status: 200, body: { session: out.session, account: true } };
-      } catch (e) {
-        if (e instanceof DatabaseError && e.hint === REFUSAL_HINT) {
-          // The way out, said plainly: another invite, or, while registration is closed, an
-          // admin opening it, after which the next sign-in opens the account.
-          const way = /closed/.test(e.reason) ? 'when an admin opens it again, your next sign-in opens your account' : 'open the account with another invite';
-          return { status: 200, body: { session: out.session, account: false, why: `${e.reason}; ${way}` } };
-        }
-        throw e;
-      }
+      return opened(deps, out.session);
+    }
+    case 'verifyLink': {
+      const hash = tokenHash(r);
+      if (typeof hash !== 'string') return hash;
+      const out = await deps.auth.verifyLink(hash);
+      if ('refused' in out) return refused('link', NO_LINK);
+      return opened(deps, out.session);
     }
     default:
-      return refused('action', 'the actions are requestCode and verifyCode');
+      return refused('action', 'the actions are requestCode, verifyCode and verifyLink');
   }
 }
 
@@ -123,7 +145,7 @@ export async function runAccount(deps: { auth: Auth; service: Db; player: (token
     out = await answer(deps, request);
   } catch (e) {
     console.error('account failed', e);
-    out = { status: 503, body: { error: (request as Fields | null)?.action === 'verifyCode' ? 'signing in is not working right now; try again' : 'that could not be done right now; try again' } };
+    out = { status: 503, body: { error: ['verifyCode', 'verifyLink'].includes((request as Fields | null)?.action as string) ? 'signing in is not working right now; try again' : 'that could not be done right now; try again' } };
   }
   const took = deps.clock.now() - start;
   await deps.clock.sleep(Math.max(1, Math.ceil(took / ANSWER_FLOOR_MS)) * ANSWER_FLOOR_MS - took);

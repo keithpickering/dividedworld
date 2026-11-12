@@ -8,9 +8,11 @@ const KNOWN = 'known@test.invalid';
 const UNKNOWN = 'nobody@test.invalid';
 const INVITE = 'good-invite-code';
 const CODE = '123456';
+const LINK = 'pkce_0123456789abcdef-GOOD_hash';
+const LINK_NO_MATCH = { field: 'link', error: 'that link does not work, or it has expired: ask for a new code' };
 
 const session: Session = { access_token: 'tok', refresh_token: 'ref', expires_in: 3600, user: { id: 'u1', user_metadata: { invite: INVITE } } };
-const noAuth: Auth = { requestCode: async () => {}, verifyCode: async () => ({ refused: 'code' }) };
+const noAuth: Auth = { requestCode: async () => {}, verifyCode: async () => ({ refused: 'code' }), verifyLink: async () => ({ refused: 'link' }) };
 
 /**
  * A virtual clock, and a Supabase Auth whose work takes longer for an address it knows, as
@@ -24,6 +26,7 @@ function world(options: { mode?: 'open' | 'invite' | 'closed' } = {}) {
   const auth: Auth = {
     requestCode: async (email, o) => { work(email); calls.push(`requestCode:${email}:${JSON.stringify(o)}`); },
     verifyCode: async (email, code) => { work(email); calls.push(`verifyCode:${email}`); return email === KNOWN && code === CODE ? { session } : { refused: 'code' }; },
+    verifyLink: async (hash) => { now += 90; calls.push('verifyLink'); return hash === LINK ? { session } : { refused: 'link' }; },
   };
   const mode = options.mode ?? 'invite';
   const service: Db = { rpc: async <T>(fn: string, args: Record<string, unknown>) => { calls.push(`service:${fn}:${JSON.stringify(args)}`); return (fn === 'invite_open' ? (mode === 'closed' ? 'closed' : mode === 'open' || args.code === INVITE ? 'opens' : 'nothing') : null) as T; } };
@@ -131,7 +134,7 @@ test('no path takes a password', async () => {
   const w = world();
   for (const action of ['signUp', 'signIn', 'reset', 'resend']) {
     const out = await w.answer({ action, email: KNOWN, password: 'right password', invite: INVITE });
-    assert.deepEqual(out.body, { field: 'action', error: 'the actions are requestCode and verifyCode' }, action);
+    assert.deepEqual(out.body, { field: 'action', error: 'the actions are requestCode, verifyCode and verifyLink' }, action);
   }
   assert.ok(!w.calls.some((c) => !c.startsWith('service')), 'a password request reached Auth');
   // Nor does a code request carry one on to Auth.
@@ -215,5 +218,56 @@ test('Auth failing to answer a code is a plain retry-later, in the same time', a
   const clock = { now: () => now, sleep: async (ms: number) => { now += ms; } };
   const down: Auth = { ...noAuth, verifyCode: async () => { throw new Error('upstream 503'); } };
   const out = await runAccount({ auth: down, service: { rpc: async () => null as never }, player: () => ({ rpc: async () => null as never }), clock }, { action: 'verifyCode', email: KNOWN, code: CODE });
+  assert.deepEqual([out.status, out.body, now], [503, { error: 'signing in is not working right now; try again' }, ANSWER_FLOOR_MS]);
+});
+
+test('a link\'s hash Auth accepts signs in, opens the login\'s account with the invite it asked with, and answers with the session', async () => {
+  const w = world();
+  const out = await w.answer({ action: 'verifyLink', tokenHash: LINK });
+  assert.equal(out.status, 200);
+  assert.deepEqual(out.body, { session, account: true });
+  assert.ok(w.calls.includes(`player(tok):open_account:${JSON.stringify({ code: INVITE })}`));
+  assert.equal(out.took % ANSWER_FLOOR_MS, 0);
+  assert.equal(out.later, undefined);
+});
+
+test('a link for a login whose invite was spent signs in with no account, and says what a code says for it', async () => {
+  const w = world();
+  const spent = new DatabaseError('open_account: that invite opens nothing', 'P0001', 400, 'that invite opens nothing', REFUSAL_HINT);
+  const base = { service: { rpc: async () => { throw new Error('unused'); } } as Db, player: () => ({ rpc: async () => { throw spent; } }) as Db, clock: w.clock };
+  const bare = { access_token: 't', refresh_token: 'r', expires_in: 1, user: { id: 'u', user_metadata: {} } };
+  const viaLink = await runAccount({ ...base, auth: { ...noAuth, verifyLink: async () => ({ session: bare }) } }, { action: 'verifyLink', tokenHash: LINK });
+  const viaCode = await runAccount({ ...base, auth: { ...noAuth, verifyCode: async () => ({ session: bare }) } }, { action: 'verifyCode', email: KNOWN, code: CODE });
+  assert.equal(viaLink.status, 200);
+  assert.equal((viaLink.body as { account: boolean }).account, false);
+  assert.match((viaLink.body as { why: string }).why, /that invite opens nothing.*another invite/);
+  assert.deepEqual(viaLink.body, viaCode.body);
+});
+
+test('a hash Auth refuses is one sentence, in a whole number of floors; a malformed one reads alike and never reaches Auth', async () => {
+  const w = world();
+  const refusedByAuth = await w.answer({ action: 'verifyLink', tokenHash: 'pkce_0123456789abcdef-SPENT_hash' });
+  assert.equal(refusedByAuth.status, 400);
+  assert.deepEqual(refusedByAuth.body, LINK_NO_MATCH);
+  assert.equal(refusedByAuth.took % ANSWER_FLOOR_MS, 0);
+  assert.equal(refusedByAuth.later, undefined);
+  assert.equal(w.calls.filter((c) => c === 'verifyLink').length, 1);
+  const m = world();
+  for (const tokenHash of ['', 42, 'a'.repeat(300), 'has a space in it 0123456789', 'short', undefined, ' ' + 'a'.repeat(15) + ' ']) {
+    const out = await m.answer({ action: 'verifyLink', tokenHash });
+    assert.equal(out.status, 400, String(tokenHash));
+    assert.deepEqual(out.body, LINK_NO_MATCH, String(tokenHash));
+    assert.equal(out.took % ANSWER_FLOOR_MS, 0);
+  }
+  assert.ok(!m.calls.includes('verifyLink'), 'a malformed hash reached Auth');
+  // Spaces at the ends are not part of a hash, as for an address.
+  assert.equal((await m.answer({ action: 'verifyLink', tokenHash: ` ${LINK} ` })).status, 200);
+});
+
+test('Auth failing to answer a link is a plain retry-later, in the same time', async () => {
+  let now = 0;
+  const clock = { now: () => now, sleep: async (ms: number) => { now += ms; } };
+  const down: Auth = { ...noAuth, verifyLink: async () => { throw new Error('upstream 503'); } };
+  const out = await runAccount({ auth: down, service: { rpc: async () => null as never }, player: () => ({ rpc: async () => null as never }), clock }, { action: 'verifyLink', tokenHash: LINK });
   assert.deepEqual([out.status, out.body, now], [503, { error: 'signing in is not working right now; try again' }, ANSWER_FLOOR_MS]);
 });
