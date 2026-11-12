@@ -14,7 +14,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useKayfa } from '../context.tsx';
 import { lowerFirst } from '../copy-words.ts';
-import type { Act, Board, BoardPage, Character, Id, PinnedThread, ThreadSummary } from '../data/api.ts';
+import type { Act, Board, BoardClosed, BoardPage, BoardStub, Character, Id, PinnedThread, ThreadSummary } from '../data/api.ts';
 import { useUntil } from '../cards/Effects.tsx';
 import { LensProvider } from '../cards/Lens.tsx';
 import { PostMarks } from '../cards/Marks.tsx';
@@ -49,6 +49,8 @@ interface Loaded {
   readonly characters: ReadonlyMap<Id, Character>;
   /** Page 1's pinned threads (Main Event's kind): drawn above its rows, taking none of its slots. Empty on every other page. */
   readonly pins: readonly PinnedThread[];
+  /** The threads moved away within the instance's `movedStubDays`, drawn under the board's own rows on page one (the later pages have none). */
+  readonly stubs: readonly BoardStub[];
 }
 
 const threadHref = (thread: Id, page: number, seq?: number) => `/t/${thread}?page=${page}${seq === undefined ? '' : `#post-${seq}`}`;
@@ -61,7 +63,30 @@ const pageOf = (seq: number, perPage: number) => Math.max(1, Math.ceil(seq / per
  */
 export function BoardScreen({ slug, doc }: { readonly slug: string; readonly doc: ScreenDoc<BoardPage> }) {
   if (isSignedOutDoc(doc)) return <FrontDoor />;
+  if (doc.closed) return <ClosedBoard key={slug} board={doc.board} closed={doc.closed} />;
   return <BoardView key={slug} slug={slug} doc={doc} />;
+}
+
+/**
+ * A closed board (merged into another, or made by a move that was reversed): its name, and one plain line that links to the board that took its threads. No list, no New Thread
+ * and no description: there is nothing to do here but go on, and the line says where. It is the glass's own plain words, never in character ("The fiction may lie; the log never does").
+ */
+export function ClosedBoard({ board, closed }: { readonly board: Board; readonly closed: BoardClosed }) {
+  const go = (to: { readonly slug: string; readonly name: string }) => <Link to={`/b/${encodeURIComponent(to.slug)}`}>{to.name}</Link>;
+  /* The words say what happened (merged into X) and, when X was closed too, where its threads are now (the first open board). */
+  const open = closed.goesTo;
+  const first = closed.mergedInto ?? closed.fallback;
+  let line: React.ReactNode;
+  if (closed.mergedInto) line = <>This board was merged into {go(closed.mergedInto)}.{open && open.id !== closed.mergedInto.id && <> That board was closed too; its threads are in {go(open)}.</>}</>;
+  else if (open ?? first) line = <>This board was closed. Its threads are in {go((open ?? first)!)}.</>;
+  else line = <>This board was closed. Its threads were moved to other boards; look for them on the <Link to="/">index</Link>.</>;
+  return (
+    <div className="kb-board kb-board-closed" data-kb-board={board.slug}>
+      <p className="kb-crumb"><Link to="/">Index</Link> › {board.name}</p>
+      <h1 className="kb-heading kb-board-title">{board.name}</h1>
+      <p className="kb-board-closed-line">{line}</p>
+    </div>
+  );
 }
 
 function BoardView({ slug, doc }: { readonly slug: string; readonly doc: BoardPage }) {
@@ -100,7 +125,7 @@ function BoardView({ slug, doc }: { readonly slug: string; readonly doc: BoardPa
   }, [doc]); // eslint-disable-line react-hooks/exhaustive-deps -- the stores are this view's own and never change
   const state = useMemo<Loaded>(() => ({
     board: doc.board, threads: doc.threads, total: doc.total, page: doc.page, reading: doc.reading, views: doc.views,
-    characters: new Map(doc.characters.map((c) => [c.id, c])), pins: doc.pins,
+    characters: new Map(doc.characters.map((c) => [c.id, c])), pins: doc.pins, stubs: doc.stubs,
   }), [doc]);
   /* A page turn is a navigation to the next page's document: what a spin form held open belonged to the page before. */
   useEffect(() => setSpinOrigin(null), [doc]);
@@ -157,7 +182,7 @@ function BoardView({ slug, doc }: { readonly slug: string; readonly doc: BoardPa
       {board.isSystem
         ? <p className="kb-board-readonly kb-small">Only {lowerFirst(ui.copy.staffWord)} post here. You can react to what they say, and spin a thread from it.</p>
         : <NewThread key={board.slug} board={board.slug} boardId={board.id} />}
-      {threads.length === 0 && state.pins.length === 0 ? (
+      {threads.length === 0 && state.pins.length === 0 && state.stubs.length === 0 ? (
         <p className="kb-board-empty">No threads here yet.</p>
       ) : (
         <>
@@ -178,6 +203,7 @@ function BoardView({ slug, doc }: { readonly slug: string; readonly doc: BoardPa
             <tbody role="rowgroup">
               {threads.filter((t) => !state.pins.some((p) => p.thread.id === t.id)).map((t) => <ThreadRow key={t.id} t={t} loaded={loaded} perPage={settings.postsPerPage} hot={settings.hotReplies} />)}
             </tbody>
+            <Stubs stubs={state.stubs} />
           </table>
           </div>
           <Legend hot={settings.hotReplies} />
@@ -246,6 +272,26 @@ function Pinned({ loaded, plays, tallies, mine, nameOf, faceOf, perPage, hot, on
       ))}
       {/* A 4px row in the third gray splits the pins from the rest; it is paint, so it is out of the reading order. */}
       <tr role="presentation" aria-hidden="true" className="kb-thread-gap"><td role="presentation" colSpan={5} /></tr>
+    </tbody>
+  );
+}
+
+/**
+ * The threads that were moved away from this board lately: one quiet row each, under the board's own, "Moved: <title>" linking to the thread, and the board it is on now. A
+ * stub is a pointer and no thread (no folder, no counts), and it goes by itself when the instance's `movedStubDays` pass: it is the board's own page that stops listing it.
+ */
+function Stubs({ stubs }: { readonly stubs: readonly BoardStub[] }) {
+  if (stubs.length === 0) return null;
+  return (
+    <tbody role="rowgroup" className="kb-thread-stubs" data-kb-stubs="">
+      {stubs.map((s) => (
+        <tr key={s.thread} role="row" className="kb-thread-stub">
+          <td role="cell" colSpan={5} className="kb-thread-stub-cell">
+            <Link to={threadHref(s.thread, 1)} className="kb-thread-title">Moved: {s.title}</Link>
+            <span className="kb-thread-stub-where kb-small kb-muted"> · now on <Link to={`/b/${encodeURIComponent(s.movedTo.slug)}`}>{s.movedTo.name}</Link>, moved <Ago at={s.movedAt} /></span>
+          </td>
+        </tr>
+      ))}
     </tbody>
   );
 }

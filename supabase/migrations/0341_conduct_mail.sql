@@ -97,7 +97,7 @@ begin
   insert into mail_outbox (account, template, facts, decision) values (who, tmpl, facts, d.id);
 end $$;
 
--- decide_report and decide (0318), enqueuing the mail: the same text, with the mail added. A later migration that re-creates either takes its text from here.
+-- decide_report and decide (0340), enqueuing the mail: the same text, with the mail added. A later migration that re-creates either takes its text from here.
 create or replace function decide_report(report bigint, outcomes jsonb) returns bigint[]
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
@@ -147,7 +147,7 @@ begin
       (o ->> 'until')::timestamptz,
       o ->> 'note');
   end loop;
-  -- The mail (0319): the author's, for each decision that has one, and the reporter's reportRead, the same words whatever was decided.
+  -- The mail (0341): the author's, for each decision that has one, and the reporter's reportRead, the same words whatever was decided.
   foreach name in array made::text[] loop perform mail_for_decision(name::bigint); end loop;
   insert into mail_outbox (account, template, facts, decision) values (r.reporter, 'reportRead', '{}', made[1]);
   return made;
@@ -234,7 +234,7 @@ end $$;
 revoke execute on function schedule_mail() from public, anon, authenticated;
 select schedule_mail();
 
--- The job that conceals quotes of hidden posts (0318's quote_layers): the conceal Edge Function reads conceal_due and records a layer for each, every minute, as mail is sent.
+-- The job that conceals quotes of hidden posts (0340's quote_layers): the conceal Edge Function reads conceal_due and records a layer for each, every minute, as mail is sent.
 create function schedule_conceal() returns bigint
 language plpgsql security definer set search_path = public, pg_temp as $$
 begin

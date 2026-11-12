@@ -10,6 +10,7 @@
  * Part 6 (docs/plans/2026-11-11-card-notes-part-6-plan.md): Mooch, Toll and 4D Chess pay a share of a vote, and Off Day scores a character as a class.
  * Part 4 (docs/plans/2026-11-11-card-notes-part-4-plan.md): Sugar Coat turns away Salty and Pepperoni cards, Hype-Up is Publicity Tour's push on another's mask, and Last Word stops quotes of a post.
  * Jimmy Wails, the first card with a drive: an appeal cast on a post that anyone may give to (docs/plans/2026-11-03-jimmy-wails-design.md).
+ * Laugh Track, an audience that laughs, cheers or boos at the cued words of a post as a reader reaches them (docs/plans/2026-11-11-laugh-track-design.md).
  * Graffiti, the first surface: a wall on a post any character may draw on (docs/plans/2026-11-11-graffiti-design.md).
  */
 import { QUADRANTS } from '../../../engine/rules/types.ts';
@@ -28,6 +29,7 @@ import { hallPass } from './hall-pass.ts';
 import { heatMagnet } from './heat-magnet.ts';
 import { hypeUp } from './hype-up.ts';
 import { jimmyWails } from './jimmy-wails.ts';
+import { laughTrack } from './laugh-track.ts';
 import { lastWord } from './last-word.ts';
 import { mainEvent } from './main-event.ts';
 import { mooch } from './mooch.ts';
@@ -39,7 +41,7 @@ import { sugarCoat } from './sugar-coat.ts';
 import { whoops } from './whoops.ts';
 import { youWereSaying } from './you-were-saying.ts';
 
-const listed: readonly CardRules[] = [stickAround as CardRules, whoops as CardRules, cardCollectorBase as CardRules, hallPass as CardRules, forceField as CardRules, publicityTour as CardRules, heatMagnet as CardRules, classClown as CardRules, goodVibes as CardRules, glitterBomb as CardRules, mainEvent as CardRules, feelinFab as CardRules, autocorrect as CardRules, youWereSaying as CardRules, belowTheFold as CardRules, mooch as CardRules, toll as CardRules, fourDChessBase as CardRules, offDay as CardRules, jimmyWails as CardRules, sugarCoat as CardRules, hypeUp as CardRules, lastWord as CardRules, graffiti as CardRules];
+const listed: readonly CardRules[] = [stickAround as CardRules, whoops as CardRules, cardCollectorBase as CardRules, hallPass as CardRules, forceField as CardRules, publicityTour as CardRules, heatMagnet as CardRules, classClown as CardRules, goodVibes as CardRules, glitterBomb as CardRules, mainEvent as CardRules, feelinFab as CardRules, autocorrect as CardRules, youWereSaying as CardRules, belowTheFold as CardRules, mooch as CardRules, toll as CardRules, fourDChessBase as CardRules, offDay as CardRules, jimmyWails as CardRules, sugarCoat as CardRules, hypeUp as CardRules, lastWord as CardRules, laughTrack as CardRules, graffiti as CardRules];
 
 /**
  * Card Collector, with the card a persona may name as an enum of the instance's cards cast on a post at or below its own rarity (the only

@@ -248,7 +248,7 @@ $$;
 --
 -- At a busy instance: a read costs one probe of quote_refs for a body that quotes nothing hidden, and for a body that does, one more of the layer's index; nothing reads a body's length. A decision
 -- writes one request for each Act that quotes the post, an index range of quote_refs (quoted, act); the requests grow with admin decisions and the Acts quoting what they hide, never with posts read
--- or players. conceal_due anti-joins the requests to their layers as mail_due (0319) does the outbox to its attempts, and a request marker table or a cursor would be wrong here: ids committed out
+-- or players. conceal_due anti-joins the requests to their layers as mail_due (0341) does the outbox to its attempts, and a request marker table or a cursor would be wrong here: ids committed out
 -- of order would strand a request below a cursor.
 create table quote_refs (
   act uuid not null references acts (id),
@@ -1762,7 +1762,7 @@ begin
 end $$;
 revoke execute on function setting_conduct(jsonb) from public, anon, authenticated;
 
--- settings_held (0130), also holding `conduct` and the two settings the seed writes beside it, `conductVersion` and `conductSections`. Everything else as 0130 wrote it.
+-- settings_held (0130, last re-created by 0337), also holding `conduct` and the two settings the seed writes beside it, `conductVersion` and `conductSections`. Everything else as 0337 left it.
 create or replace function public.settings_held()
  RETURNS trigger
  LANGUAGE plpgsql
@@ -1822,6 +1822,12 @@ begin
     when 'microEventDailyCalls' then case when not setting_whole(v, 0) then 'a whole number of calls, at least 0' end
     when 'digestThreads' then case when not setting_whole(v, 1, 25) then 'a whole number of threads, at least 1 and at most 25' end
     when 'digestExcerpts' then case when not setting_whole(v, 1, 20) then 'a whole number of posts, at least 1 and at most 20' end
+    when 'digestBoards' then case when not setting_whole(v, 1, 30) then 'a whole number of boards, at least 1 and at most 30' end
+    when 'digestBoardDays' then case when not setting_whole(v, 1, 365) then 'a whole number of days, at least 1 and at most 365' end
+    when 'movedStubDays' then case when not setting_whole(v, 1, 365) then 'a whole number of days, at least 1 and at most 365' end
+    when 'bundleMostParts' then case when not setting_whole(v, 1, 16) then 'a whole number of parts, at least 1 and at most 16' end
+    when 'bundleAuthoredMostParts' then case when not setting_whole(v, 1, 16) then 'a whole number of parts, at least 1 and at most 16' end
+    when 'farewellWindowHours' then case when not setting_whole(v, 1, 720) then 'a whole number of hours, at least 1 and at most 720' end
     when 'digestExcerptChars' then case when not setting_whole(v, 1, 1000) then 'a whole number of characters, at least 1 and at most 1000' end
     when 'memoryOpinions' then case when not setting_whole(v, 1) then 'a whole number of opinions, at least 1' end
     when 'memoryGrudges' then case when not setting_whole(v, 1) then 'a whole number of grudges, at least 1' end

@@ -1,4 +1,4 @@
--- Where a hidden version's words could still leak, and the screens that must say it is hidden (supabase/migrations/0318_conduct.sql; the
+-- Where a hidden version's words could still leak, and the screens that must say it is hidden (supabase/migrations/0340_conduct.sql; the
 -- conduct plan, Task 2): a model's and a card's reads of a post go through the public form, the screen functions give a hidden post no body, a search finds neither
 -- a hidden version's words nor a version a later hide covers, the well-formedness trigger and decide_report refuse what they should, and no function a player, the digest or the
 -- service can run reads a body from `acts` unreviewed. How a quote of a hidden post is concealed (the layer and the job) is 0168-conduct-concealing.sql's; the reading of BBCode itself
@@ -181,7 +181,7 @@ declare
     'conceal_due(integer)', 'acts_quote_refs()',
     -- Runs from the service role to seed an instance from a document; its `'title'` is the document's, and its one read of `acts` is a move's kind.
     'seed_instance(jsonb)',
-    -- A trigger function that indexes an Act as it is written, which only the table's trigger runs; acts_search_hidden and conduct_decisions_search (0318) take a hidden version's
+    -- A trigger function that indexes an Act as it is written, which only the table's trigger runs; acts_search_hidden and conduct_decisions_search (0340) take a hidden version's
     -- words out of the index and keep them out.
     'acts_search()',
     -- Read a post's body through acts_public (card_target) or public_payload with version_hidden (claim_card_writes, which the check no longer sees in that form); the

@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { demandNeeds, endedWords, moveLabel, moveParts, wayOut } from './move-words.ts';
+import { moveKind } from '../../system/moves.ts';
 
 const board = '11111111-1111-4111-8111-111111111111';
 const demand = { kind: 'distinctCharactersOnBoard', params: { board, count: 12 } };
@@ -54,4 +55,32 @@ test('a stripped, apologized and overturned move each say so plainly', () => {
   assert.equal(endedWords({ why: 'unmet', by: 'tick', at: local(9, 31) }, null), 'Stripped: the demand was not met by its check');
   assert.equal(endedWords({ why: 'met', by: 'tick', at: local(9, 31) }, { kind: 'apologyAccepted', params: {} }), 'Ended: an apology was accepted');
   assert.equal(endedWords({ why: 'overturned', by: 'admin', at: local(9, 31) }, null), 'Ended: overturned on appeal');
+});
+
+test('a thread move names the thread and both boards by their current names, in plain words', () => {
+  const thread = '22222222-2222-4222-8222-222222222222';
+  const to = '33333333-3333-4333-8333-333333333333';
+  const names = { thread: 'Best bread', source: 'General', board: 'Toast Corner' };
+  assert.deepEqual(moveParts('moveThread', { thread, board: to }, null, 'done', names), ['Moved Best bread from ', { board: '', name: 'General' }, ' to ', { board: to, name: 'Toast Corner' }]);
+  assert.deepEqual(moveParts('moveThread', { thread, board: to }, null, 'plan', names), ['Move Best bread from ', { board: '', name: 'General' }, ' to ', { board: to, name: 'Toast Corner' }]);
+  // Without the thread's or the first board's name the sentence still says what it can, plainly.
+  assert.deepEqual(moveParts('moveThread', { thread, board: to }, null, 'done', { board: 'Toast Corner' }), ['Moved a thread to ', { board: to, name: 'Toast Corner' }]);
+  assert.match(moveKind('moveThread')!.template({ thread, board: to }, 'The System', names), /^The System moved Best bread from General to Toast Corner\. /u);
+  assert.equal(moveKind('moveThread')!.template({ thread, board: to }, 'The Boss', { board: 'Toast Corner' }), 'The Boss moved a thread to Toast Corner. Nothing in the thread was changed; the board it left lists where it went for a few days.');
+});
+
+test('a board made and a board merged read as plain sentences naming the boards', () => {
+  const from = '44444444-4444-4444-8444-444444444444';
+  const into = '55555555-5555-4555-8555-555555555555';
+  assert.deepEqual(moveParts('createBoard', { name: 'Minus World', premise: 'p', description: 'd' }, null, 'plan'), ['Create a board named "Minus World"']);
+  assert.deepEqual(moveParts('createBoard', { name: 'Minus World', premise: 'p', description: 'd' }, null, 'done'), ['Created a board named "Minus World"']);
+  assert.deepEqual(moveParts('mergeBoard', { board: from, into }, 'Off Topic', 'plan', { board: 'General' }), ['Merge ', { board: from, name: 'Off Topic' }, ' into ', { board: into, name: 'General' }]);
+  assert.equal(moveKind('mergeBoard')!.template({ board: from, into }, 'The System', { source: 'Off Topic', board: 'General' }), 'The System merged Off Topic into General. Its threads moved with it, and the board is closed.');
+  assert.equal(moveKind('createBoard')!.template({ name: 'Minus World', premise: 'Glitches.', description: 'd' }, 'The System'), 'The System made a board named "Minus World". Its subject is: Glitches.');
+});
+
+test('a move that lasts says what it asks plainly: nothing, and no expiry', () => {
+  assert.match(demandNeeds(null, 'createBoard'), /does not run out/u);
+  assert.match(demandNeeds(null, 'mergeBoard'), /does not run out/u);
+  assert.match(demandNeeds(null, 'moveThread'), /does not run out/u);
 });

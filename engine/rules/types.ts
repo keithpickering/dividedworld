@@ -17,7 +17,8 @@ import type { StockLineKey } from '../system/stock.ts';
 import type { Duty } from '../system/duties.ts';
 import type { HintSettings } from './hints.ts';
 import type { AlertKind } from './alerts.ts';
-import type { PhaseOverrides, PhaseSettings } from '../system/phases.ts';
+import type { PhaseName, PhaseOverrides, PhaseSettings } from '../system/phases.ts';
+import type { Condition, Due } from '../system/conditions.ts';
 import type { PoolTrigger, PostingOffice } from '../system/pool.ts';
 import type { PronounSet } from './pronouns.ts';
 
@@ -275,6 +276,18 @@ export interface Settings {
   readonly microEventDailyCalls: number;
   /** How many threads the Boss's digest of public play holds. A starting point. */
   readonly digestThreads: number;
+  /** How many boards the Boss's digest lines: when there are more open boards, the busiest half and the quietest half. A starting point. */
+  readonly digestBoards: number;
+  /** How many days back, from the digest's end, a board line counts its posts. A starting point. */
+  readonly digestBoardDays: number;
+  /** How many days a board lists a thread that was moved away from it, as a stub row that says where it went (board_page). After that the board forgets it; the thread is on its new board for good. */
+  readonly movedStubDays: number;
+  /** How many hours before a season's end a Boss's meeting is told to write its farewell (in character) and its handoff note (out of character); a meeting outside the window is not. The bound is held in SQL's settings_held too. */
+  readonly farewellWindowHours: number;
+  /** The most parts a bundle the Boss composes in a meeting holds (the design's section 5; 4 by default). The bound is held in SQL's settings_held too. */
+  readonly bundleMostParts: number;
+  /** The most parts a bundle a persona's file authors (an arc beat's template) holds. An authored bundle costs nothing from the bank, so it is bounded by what a writer may write (8 by default). */
+  readonly bundleAuthoredMostParts: number;
   /** How many top posts the digest quotes. A starting point. */
   readonly digestExcerpts: number;
   /** How many characters of a post the digest quotes. A starting point. */
@@ -737,6 +750,38 @@ export type Weakness =
   | { readonly kind: 'distraction' };
 
 /**
+ * A bundle a persona's file authors (an arc beat's, fangame split design, section 5): parts that share one id when they are queued, each an ordinary move with its own Act. A part
+ * names the move kind it is and its params; a param may name the board another part of the bundle makes by that part's role (`{role}`), or one an earlier beat's bundle made
+ * (`{role, beat}`). The writer's fixed params are the writer's: a name here is held to the kind's own bounds and not to the instance's board-name style. A slot is a param the Boss
+ * fills in at the meeting, with a default that is played where it leaves the beat out; a name the Boss fills into a slot is held to the style.
+ */
+export interface BundleTemplate {
+  readonly name: string;
+  readonly parts: readonly {
+    readonly role: string;
+    readonly kind: string;
+    readonly params: Readonly<Record<string, unknown>>;
+    readonly slots?: Readonly<Record<string, { readonly default: unknown; readonly hint: string }>>;
+  }[];
+}
+
+/**
+ * One step of a persona's plan (fangame split design, sections 1 and 2). Not a Mod Bot's patrol `beats` (the boards it watches): the arc's tables in SQL are `arc_beat_events` and
+ * `persona_arcs`. The brief is the Boss's private intent, shown at a meeting only once the beat has unlocked: code opens the window, and the Boss picks the moment. `due` makes it
+ * required by a point of the season, and leaves it out (the beat is optional) and it lapses at the season's end. A mini-arc is a beat outside the arc's order; it plays once a season
+ * unless its writer marks it `repeatable`, and is never due.
+ */
+export interface Beat {
+  readonly key: string;
+  /** Every one must hold, and the tick checks them (public facts only). */
+  readonly unlock: readonly Condition[];
+  readonly brief: string;
+  readonly due?: Due & { readonly phase?: PhaseName };
+  readonly bundle?: BundleTemplate;
+  readonly repeatable?: boolean;
+}
+
+/**
  * A persona in the instance's one roster (the staff roster design, section 1): a staff character and the mind that plays
  * it. Every persona carries every field a Boss has and every field a Mod Bot has, so any persona can hold any office
  * without a second shape.
@@ -754,8 +799,14 @@ export interface Persona extends StaffSeed {
   readonly inheritsMemoryOf?: string;
   /** Its own phase numbers as a Boss, clamped into the engine's caps (`PHASE_CAPS`). */
   readonly phases?: PhaseOverrides;
-  /** The kinds of board it likes to patrol. */
+  /** The kinds of board it likes to patrol. (Not an arc's beats: see `arc`.) */
   readonly beats: readonly string[];
+  /** Its season arc: the plan for how a season goes as Boss, beat by beat, a secret even from the Boss until a beat unlocks. Left out, it runs as every persona does. */
+  readonly arc?: readonly Beat[];
+  /** Beats outside the arc's order, unlocked by their own conditions. */
+  readonly miniArcs?: readonly Beat[];
+  /** Move kinds it does not use until the named beat unlocks; until then the kind is not shown at its meetings and an answer naming it is dropped and recorded. */
+  readonly holdsBack?: readonly { readonly kind: string; readonly until: string }[];
   /** The predicate keys it lobbies for. */
   readonly petRules: readonly string[];
   /** How long its visits run, in hours, and which bands it pushes for. */

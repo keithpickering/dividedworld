@@ -15,7 +15,7 @@
 import { concealQuotes } from '../../../engine/bbcode/conceal.ts';
 import { DatabaseError } from '../_shared/rpc.ts';
 
-/** The hint `record_layer` raises with when the hidden set it was given is not the current one (0318). */
+/** The hint `record_layer` raises with when the hidden set it was given is not the current one (0340). */
 export const STALE_HINT = 'kayfabb.conceal_stale';
 
 /** One Act that is due (what the SQL `conceal_due(most)` returns). */

@@ -73,7 +73,7 @@ begin
   if f.by_body like '%secret%' then raise exception 'spring_facts reads a hidden post''s words through a quote: %', f.by_body; end if;
 end $$;
 
--- ---- A card that writes reads the version it writes on through the public form (0149's claim_card_writes, re-created by 0319) ----
+-- ---- A card that writes reads the version it writes on through the public form (0149's claim_card_writes, re-created by 0341) ----
 do $$
 declare
   admin_a uuid := tests.account('admin-w');

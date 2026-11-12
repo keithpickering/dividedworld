@@ -3397,6 +3397,16 @@ describe('a card that writes: its tails, as post_tails and the worker leave them
   });
 });
 
+describe('the fake gives every character it shows the instance\'s face for it', () => {
+  test('a staff character is shown through `face`, and a player is shown as it is', async () => {
+    const fake = createFake({ instance, face: (c) => (c.staff === 'pictured' ? { ...c, avatarSquare: '/pictured.webp' } : c) });
+    const staffId = fake.seed.staff('pictured', 'Pictured', 'boss');
+    const plain = fake.seed.staff('plain', 'Plain', 'mod');
+    expect((await fake.characters([staffId]))[0]?.avatarSquare).toBe('/pictured.webp');
+    expect((await fake.characters([plain]))[0]?.avatarSquare).toBeNull();
+  });
+});
+
 /* ---- gear, trophies and Random Events (cosmetics Task 6): the fake holds what set_outfit, show_trophies, trophies_of and random_event hold, in their words ---- */
 describe('gear, trophies and Random Events', () => {
   const dressed: Instance = {

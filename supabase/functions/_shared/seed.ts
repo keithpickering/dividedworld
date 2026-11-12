@@ -12,6 +12,9 @@ import { MOVE_KINDS } from '../../../engine/system/moves.ts';
 import { BBCODE_TAGS } from '../../../engine/bbcode/parse.ts';
 import { PREDICATES } from '../../../engine/rules/predicates.ts';
 import { DEMAND_KINDS } from '../../../engine/system/demands.ts';
+import { CONDITIONS } from '../../../engine/system/conditions.ts';
+import { PHASE_CAPS } from '../../../engine/system/phases.ts';
+import type { Beat, Persona } from '../../../engine/rules/types.ts';
 
 /** What a persona's visits can be talked down with, as the seed carries it in `challenge`: the kind and its number, never a quiz's questions or answers (those travel in `quiz`). */
 function challengeOf(w: Weakness): { kind: string; questions?: number; price?: number } {
@@ -26,8 +29,29 @@ function quizOf(w: Weakness): { quiz: { question: string; choices: string[]; ans
 }
 
 /**
+ * A persona's arc as the seed carries it to `persona_arcs` (0332): each beat's key, whether it is a mini-arc and repeatable, its unlock conditions and its due point, in the persona's
+ * order (the arc, then the mini-arcs). Never a brief or a bundle template: those are the instance's, read by the meeting in code, as the prompts are, so the database holds only what
+ * it checks. An arc's beat is not a patrol `beats` (the boards a Mod Bot watches), which travels beside it unchanged.
+ */
+function arcOf(p: Persona): { key: string; mini: boolean; repeatable: boolean; unlock: Beat['unlock']; due: Beat['due'] | null }[] {
+  const one = (b: Beat, mini: boolean) => ({ key: b.key, mini, repeatable: mini && b.repeatable === true, unlock: b.unlock, due: b.due ?? null });
+  return [...(p.arc ?? []).map((b) => one(b, false)), ...(p.miniArcs ?? []).map((b) => one(b, true))];
+}
+
+/**
+ * A persona's own phase lengths in days, for the beats that read a phase: only the two phases that have a length, and only where the persona overrides it, made whole and held to the
+ * engine's caps (`PHASE_CAPS`) exactly as `phaseAt` holds them, so the seed carries only what SQL's arc_season_span reads as it is (it makes the same cut, as a guard).
+ */
+function phaseDaysOf(p: Persona): { honeymoon?: number; meltdown?: number } {
+  const cut = (given: number | undefined, cap: number): number | undefined => (typeof given === 'number' && Number.isFinite(given) ? Math.min(Math.max(Math.floor(given), 1), cap) : undefined);
+  const h = cut(p.phases?.honeymoon?.days, PHASE_CAPS.honeymoon.days);
+  const m = cut(p.phases?.meltdown?.days, PHASE_CAPS.meltdown.days);
+  return { ...(h !== undefined ? { honeymoon: h } : {}), ...(m !== undefined ? { meltdown: m } : {}) };
+}
+
+/**
  * What the seed reads of the instance's code of conduct (`InstanceUi.conduct`): its version and each section's key, typed by shape so the seed never imports the
- * engine's UI. SQL reads them as the settings `conductVersion` and `conductSections` (0318): the version an account must have accepted, and the sections a
+ * engine's UI. SQL reads them as the settings `conductVersion` and `conductSections` (0340): the version an account must have accepted, and the sections a
  * report may name.
  */
 export interface ConductSeed {
@@ -44,7 +68,7 @@ export function instanceSeed(instance: Instance, conduct: ConductSeed) {
       ...instance.settings, copy: instance.copy,
       systemLines: instance.system.stockLines,
       systemMoveWords: Object.fromEntries(MOVE_KINDS.map((m) => [m.key, m.plain])),
-      // The code of conduct's version and section keys (0318), from the instance's UI content, so SQL names no section.
+      // The code of conduct's version and section keys (0340), from the instance's UI content, so SQL names no section.
       conductVersion: conduct.version,
       conductSections: conduct.sections.map((c) => c.key),
     } as Record<string, unknown>,
@@ -106,7 +130,9 @@ export function instanceSeed(instance: Instance, conduct: ConductSeed) {
         ...instance.system.roster.map((p) => ({ key: p.key, name: p.name, title: p.title, signature: p.signature, beats: [...p.beats],
           visitHours: { least: p.strictness.visitHours.least, most: p.strictness.visitHours.most }, challenge: challengeOf(p.weakness), ...quizOf(p.weakness),
           // A persona's own pronouns (0124); left out, seed_instance gives it the instance's default.
-          ...(p.pronouns !== undefined ? { pronouns: p.pronouns } : {}) })),
+          ...(p.pronouns !== undefined ? { pronouns: p.pronouns } : {}),
+          // The arc's part that SQL checks (0332): its beats, the kinds held back until a beat, and the phase lengths its conditions read.
+          arc: arcOf(p), holdsBack: (p.holdsBack ?? []).map((h) => ({ kind: h.kind, until: h.until })), phaseDays: phaseDaysOf(p) })),
       ],
       firstStaff: [...instance.system.firstStaff],
       // The first season's Boss, set on an open season that has none (0047).
@@ -115,11 +141,13 @@ export function instanceSeed(instance: Instance, conduct: ConductSeed) {
       announcementsTitle: instance.system.announcementsTitle,
       // The engine's catalogs of moves and demands (0046), so SQL and TypeScript read one list. This file is the composition
       // root: the engine names no instance, and the SQL names no kind of its own.
-      moves: MOVE_KINDS.map((m) => ({ key: m.key, structural: m.structural, shapesBoard: m.shapesBoard, offices: [...m.offices], derived: [...(m.derived ?? [])] })),
+      moves: MOVE_KINDS.map((m) => ({ key: m.key, structural: m.structural, shapesBoard: m.shapesBoard, lasting: m.lasting, offices: [...m.offices], derived: [...(m.derived ?? [])] })),
       // The rule predicates (0102): the keys `rule_breaks` has a branch for, the kind and bounds of each parameter, and the rule in plain
       // words with `{param}` where the parameter goes (`system_line` fills it).
       predicates: PREDICATES.map((p) => ({ key: p.key, param: p.param, least: p.bounds?.least ?? null, most: p.bounds?.most ?? null, plain: p.plain('{param}'), ...(p.param === 'tag' ? { tags: [...BBCODE_TAGS] } : {}) })),
       demands: DEMAND_KINDS.map((d) => ({ key: d.key })),
+      // The conditions that unlock a beat (0332): the keys `beat_condition_holds` has a branch for, which supabase/tests/0186-arcs.sql proves.
+      conditions: CONDITIONS.map((c) => ({ key: c.key, plain: c.plain })),
     },
   };
 }

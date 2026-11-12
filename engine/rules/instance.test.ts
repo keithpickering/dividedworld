@@ -50,6 +50,12 @@ const settings: Settings = {
   structuralHoldHours: 24,
   microEventDailyCalls: 20,
   digestThreads: 10,
+  digestBoards: 30,
+  digestBoardDays: 21,
+  movedStubDays: 7,
+  bundleMostParts: 4,
+  farewellWindowHours: 36,
+  bundleAuthoredMostParts: 8,
   digestExcerpts: 8,
   digestExcerptChars: 280,
   memoryOpinions: 40,
@@ -596,7 +602,7 @@ test('the new settings are checked like the others', () => {
   assert.match(bad('meetingCron', 'daily'), /meetingCron/);
   assert.match(bad('phases', { ...settings.phases, reign: { weeklyMoves: 0, bankCap: 10, moveExpiryMostDays: 28 } }), /phases/);
   assert.match(bad('phases', { ...settings.phases, honeymoon: { weeklyMoves: 2, bankCap: 4, moveExpiryMostDays: 7 } }), /phases/);
-  for (const k of ['inheritanceGraceDays', 'rosterRecentExcluded', 'structuralHoldHours', 'microEventDailyCalls', 'digestThreads', 'digestExcerpts', 'digestExcerptChars', 'memoryOpinions', 'memoryGrudges', 'memoryWheelhouse', 'memoryRealWorld', 'boardNameMaxLength', 'moveExpiryMostDays', 'moveExpiryLeastHours', 'demandCheckMinutes', 'demandChecksPerTick']) {
+  for (const k of ['inheritanceGraceDays', 'rosterRecentExcluded', 'structuralHoldHours', 'microEventDailyCalls', 'digestThreads', 'digestBoards', 'digestBoardDays', 'movedStubDays', 'farewellWindowHours', 'bundleMostParts', 'bundleAuthoredMostParts', 'digestExcerpts', 'digestExcerptChars', 'memoryOpinions', 'memoryGrudges', 'memoryWheelhouse', 'memoryRealWorld', 'boardNameMaxLength', 'moveExpiryMostDays', 'moveExpiryLeastHours', 'demandCheckMinutes', 'demandChecksPerTick']) {
     assert.match(bad(k, -1), new RegExp(k), k);
     assert.match(bad(k, 1.5), new RegExp(k), k);
   }
@@ -605,11 +611,22 @@ test('the new settings are checked like the others', () => {
     assert.match(bad(k, 2.5), new RegExp(k), k);
   }
   // The digest settings have a ceiling too: an admin setting cannot grow the meeting's prompt without bound.
-  for (const [k, most] of [['digestThreads', DIGEST_MOST.threads], ['digestExcerpts', DIGEST_MOST.excerpts], ['digestExcerptChars', DIGEST_MOST.excerptChars]] as const) {
+  for (const [k, most] of [['digestThreads', DIGEST_MOST.threads], ['digestBoards', DIGEST_MOST.boards], ['digestBoardDays', DIGEST_MOST.boardDays], ['digestExcerpts', DIGEST_MOST.excerpts], ['digestExcerptChars', DIGEST_MOST.excerptChars]] as const) {
     assert.match(bad(k, most + 1), new RegExp(k), k);
     assert.deepEqual(settingsProblems({ ...settings, [k]: most }), [], `${k} may be its ceiling`);
   }
   // The tick's demand-check pacing: at least 1, and a ceiling so a setting cannot make the per-minute transaction unbounded.
+  // How long a moved thread's stub stays on the board it left: at least a day, at most a year, as the migration's check holds.
+  assert.match(bad('movedStubDays', 0), /movedStubDays/);
+  assert.match(bad('movedStubDays', 366), /movedStubDays/);
+  assert.deepEqual(settingsProblems({ ...settings, movedStubDays: 365 }), []);
+  // The bundle bounds: a composed bundle and an authored one each hold from one part to sixteen, so a setting cannot make a bundle unbounded.
+  for (const k of ['bundleMostParts', 'bundleAuthoredMostParts']) {
+    assert.match(bad(k, 0), new RegExp(k), k);
+    assert.match(bad(k, 17), new RegExp(k), k);
+    assert.deepEqual(settingsProblems({ ...settings, [k]: 16 }), [], `${k} may be 16`);
+    assert.deepEqual(settingsProblems({ ...settings, [k]: 1 }), [], `${k} may be 1`);
+  }
   for (const [k, most] of [['demandCheckMinutes', 1440], ['demandChecksPerTick', 1000]] as const) {
     assert.match(bad(k, 0), new RegExp(k), k);
     assert.match(bad(k, most + 1), new RegExp(k), k);
@@ -1046,6 +1063,124 @@ test('a scrubWords entry that is empty or not lower case is a problem', () => {
   assert.match(instanceProblems(withWords(['  '])).join('\n'), /scrubWords entry is empty/);
   assert.match(instanceProblems(withWords(['BadWord'])).join('\n'), /scrubWords entry "BadWord" is not lower case/);
   assert.match(instanceProblems({ ...good, system: { ...system, scrubWords: undefined } } as unknown as Instance).join('\n'), /no system\.scrubWords list/);
+});
+
+/* ------------------------------------------------------------------------ arcs: beats, conditions, held-back kinds ---- */
+
+const split = {
+  key: 'split',
+  unlock: [{ kind: 'phase', phase: 'reign' }],
+  due: { phase: 'reign', daysIntoPhase: 7 },
+  brief: 'Make two boards.',
+  bundle: {
+    name: 'The Split',
+    parts: [
+      { role: 'minus', kind: 'createBoard', params: { name: 'World -1', premise: 'Everything else.', description: 'Not fangames.' } },
+      { role: 'fangames', kind: 'createBoard', params: {}, slots: { name: { default: 'Palace', hint: 'a board name' } } },
+    ],
+  },
+} as const;
+const picking = { key: 'picking-apart', unlock: [{ kind: 'beatLanded', beat: 'split' }], brief: 'Move threads.' } as const;
+const everything = {
+  key: 'everything',
+  unlock: [{ kind: 'phase', daysBeforeEnd: 7 }, { kind: 'beatLanded', beat: 'split' }],
+  due: { daysBeforeEnd: 2 },
+  brief: 'Merge it all.',
+  bundle: { name: 'Everything', parts: [{ role: 'final', kind: 'mergeBoard', params: { board: { role: 'fangames', beat: 'split' }, into: { role: 'minus', beat: 'split' } } }] },
+} as const;
+const lap = {
+  key: 'victory-lap',
+  unlock: [{ kind: 'boardActivity', board: { role: 'fangames', beat: 'split' }, days: 7, above: { role: 'minus', beat: 'split' } }],
+  brief: 'Tidy.',
+} as const;
+const arcFields = {
+  arc: [split, picking, everything],
+  miniArcs: [lap],
+  holdsBack: [{ kind: 'createBoard', until: 'split' }, { kind: 'moveThread', until: 'picking-apart' }],
+} as unknown as Partial<Persona>;
+const arcOf = (change: Record<string, unknown>) => said(withBoss({ ...arcFields, ...change } as Partial<Persona>));
+const arcWith = (arc: unknown[], extra: Record<string, unknown> = {}) => arcOf({ arc, ...extra });
+
+test('a persona with an arc, a mini-arc and held-back kinds passes; one with none runs as every persona does', () => {
+  assert.deepEqual(instanceProblems(withBoss(arcFields)), []);
+  assert.deepEqual(instanceProblems(withBoss({})), []);
+});
+
+test('two beats with one key are a problem, across the arc and the mini-arcs', () => {
+  assert.match(arcWith([split, { ...picking, key: 'split' }]), /persona "boss-a".*beat "split" is used twice.*\(isUnique\)/);
+  assert.match(arcOf({ miniArcs: [{ ...lap, key: 'split' }] }), /persona "boss-a".*beat "split" is used twice.*\(isUnique\)/);
+});
+
+test('a beat key is a lowercase key, and a beat needs a brief and an unlock', () => {
+  assert.match(arcWith([{ ...split, key: 'The Split' }]), /persona "boss-a".*beat "The Split".*\(isKey\)/);
+  assert.match(arcWith([{ ...split, brief: ' ' }]), /persona "boss-a".*beat "split".*brief.*\(required\)/);
+  assert.match(arcWith([{ ...split, unlock: [] }]), /persona "boss-a".*beat "split".*unlock.*\(atLeast\(1\)\)/);
+});
+
+test('a beat whose condition key is unknown is a problem naming the key and the list', () => {
+  assert.match(arcWith([{ ...split, unlock: [{ kind: 'fullMoon' }] }]), /persona "boss-a".*beat "split".*unlock 1.*"fullMoon".*\(oneOf\(phase, beatLanded, boardActivity, moveReversed, demandResolved\)\)/);
+  assert.match(arcWith([{ ...split, unlock: [{ kind: 'demandResolved', outcome: 'late' }] }]), /persona "boss-a".*beat "split".*unlock 1.*\(oneOf\(met, failed\)\)/);
+});
+
+test('a beatLanded that names no beat of the persona, itself or a later beat is a problem', () => {
+  assert.match(arcWith([split, { ...picking, unlock: [{ kind: 'beatLanded', beat: 'ghost' }] }]), /persona "boss-a".*beat "picking-apart".*"ghost".*\(beatOfPersona\)/);
+  assert.match(arcWith([split, { ...picking, unlock: [{ kind: 'beatLanded', beat: 'picking-apart' }] }]), /persona "boss-a".*beat "picking-apart".*\(earlierBeat\)/);
+  assert.match(arcWith([{ ...split, unlock: [{ kind: 'beatLanded', beat: 'picking-apart' }] }, picking]), /persona "boss-a".*beat "split".*"picking-apart".*\(earlierBeat\)/);
+});
+
+test('a bundle template part whose kind is not in the catalog is a problem', () => {
+  const bundle = { ...split.bundle, parts: [{ ...split.bundle.parts[0], kind: 'burnBoard' }, split.bundle.parts[1]] };
+  assert.match(arcWith([{ ...split, bundle }]), /persona "boss-a".*beat "split".*part "minus".*"burnBoard".*\(oneOf\(renameBoard, .*createBoard.*\)\)/);
+});
+
+test('a role used and never made is a problem: in its bundle, or from another beat', () => {
+  const lost = { ...split, bundle: { ...split.bundle, parts: [{ ...split.bundle.parts[0], params: { ...split.bundle.parts[0].params, board: { role: 'nowhere' } } }, split.bundle.parts[1]] } };
+  assert.match(arcWith([lost]), /persona "boss-a".*beat "split".*part "minus".*role "nowhere".*\(roleMade\)/);
+  // A part names the parts before it only: the role is made by a later part.
+  const later = { ...split, bundle: { ...split.bundle, parts: [{ role: 'a', kind: 'mergeBoard', params: { board: { role: 'b' }, into: { role: 'b' } } }, { role: 'b', kind: 'createBoard', params: {} }] } };
+  assert.match(arcWith([later]), /persona "boss-a".*beat "split".*part "a".*role "b".*\(roleMade\)/);
+  // {role, beat}: the beat must be an earlier one of the persona's with a bundle that has the role.
+  const wrongRole = { ...everything, bundle: { ...everything.bundle, parts: [{ role: 'final', kind: 'mergeBoard', params: { board: { role: 'fangames', beat: 'split' }, into: { role: 'void', beat: 'split' } } }] } };
+  assert.match(arcWith([split, picking, wrongRole]), /persona "boss-a".*beat "everything".*role "void".*beat "split".*\(roleMade\)/);
+  assert.match(arcWith([split, { ...picking, unlock: [{ kind: 'boardActivity', board: { role: 'fangames', beat: 'picking-apart' }, days: 7, above: 1 }] }]), /persona "boss-a".*beat "picking-apart".*role "fangames".*beat "picking-apart".*\(roleMade\)/);
+  assert.match(arcOf({ miniArcs: [{ ...lap, unlock: [{ kind: 'boardActivity', board: { role: 'fangames', beat: 'ghost' }, days: 7, above: 1 }] }] }), /persona "boss-a".*beat "victory-lap".*beat "ghost".*\(beatOfPersona\)/);
+});
+
+test('a role made twice in one bundle is a problem', () => {
+  const twice = { ...split, bundle: { ...split.bundle, parts: [split.bundle.parts[0], { ...split.bundle.parts[1], role: 'minus' }] } };
+  assert.match(arcWith([twice]), /persona "boss-a".*beat "split".*role "minus" is used twice.*\(isUnique\)/);
+});
+
+test('a slot that is also a fixed param is a problem', () => {
+  const both = { ...split, bundle: { ...split.bundle, parts: [split.bundle.parts[0], { ...split.bundle.parts[1], params: { name: 'Fixed' } }] } };
+  assert.match(arcWith([both]), /persona "boss-a".*beat "split".*part "fangames".*slot "name".*\(notFixed\)/);
+});
+
+test('holdsBack naming an unknown kind or an unknown beat is a problem', () => {
+  assert.match(arcOf({ holdsBack: [{ kind: 'burnBoard', until: 'split' }] }), /persona "boss-a".*holdsBack.*"burnBoard".*\(oneOf\(renameBoard, .*createBoard.*\)\)/);
+  assert.match(arcOf({ holdsBack: [{ kind: 'createBoard', until: 'ghost' }] }), /persona "boss-a".*holdsBack.*"createBoard".*"ghost".*\(beatOfPersona\)/);
+  assert.match(arcOf({ holdsBack: [{ kind: 'createBoard', until: 'split' }, { kind: 'createBoard', until: 'picking-apart' }] }), /persona "boss-a".*holdsBack.*"createBoard".*twice.*\(isUnique\)/);
+});
+
+test('a due point on a mini-arc is a problem, and so is repeatable on an arc beat', () => {
+  assert.match(arcOf({ miniArcs: [{ ...lap, due: { daysBeforeEnd: 2 } }] }), /persona "boss-a".*beat "victory-lap".*mini-arc.*due.*\(noDueOnMiniArc\)/);
+  assert.match(arcWith([{ ...split, repeatable: true }]), /persona "boss-a".*beat "split".*repeatable.*\(miniArcOnly\)/);
+  assert.deepEqual(instanceProblems(withBoss({ ...arcFields, miniArcs: [{ ...lap, repeatable: true }] } as Partial<Persona>)), []);
+});
+
+test('a due point is held to its shape', () => {
+  assert.match(arcWith([{ ...split, due: {} }]), /persona "boss-a".*beat "split".*due.*\(atLeastOneOf\(phase, daysIntoPhase, daysBeforeEnd\)\)/);
+  assert.match(arcWith([{ ...split, due: { daysIntoPhase: 3 } }]), /persona "boss-a".*beat "split".*due.*\(requires\(phase\)\)/);
+});
+
+test('an authored bundle over bundleAuthoredMostParts is a problem, and a persona has a bounded number of beats', () => {
+  const part = (i: number) => ({ role: `p${i}`, kind: 'createBoard', params: {} });
+  const nine = { ...split, bundle: { name: 'Nine', parts: Array.from({ length: 9 }, (_, i) => part(i)) } };
+  assert.match(arcWith([nine]), /persona "boss-a".*beat "split".*9 parts.*\(atMost\(8\)\)/);
+  const eight = { ...split, bundle: { name: 'Eight', parts: Array.from({ length: 8 }, (_, i) => part(i)) } };
+  assert.deepEqual(instanceProblems(withBoss({ ...arcFields, arc: [eight], miniArcs: [], holdsBack: [] } as Partial<Persona>)), []);
+  const many = Array.from({ length: 25 }, (_, i) => ({ ...picking, key: `b${i}`, unlock: [{ kind: 'phase', phase: 'reign' }] }));
+  assert.match(arcWith(many, { miniArcs: [], holdsBack: [] }), /persona "boss-a".*25 beats.*\(atMost\(24\)\)/);
 });
 
 // Cosmetics: gear, trophies and Random Events (docs/plans/2026-11-04-cosmetics-plan.md, Task 1).

@@ -32,7 +32,7 @@ declare
                            'my_cosmetic_log',
                            -- The search index (0117): one row per post or spin, readable as the Acts are; the table is no client's to write.
                            'post_search',
-                           -- The admins' re-review list (0318): the versions brought back by an author's edit, read by admins alone (the view is empty for anyone else).
+                           -- The admins' re-review list (0340): the versions brought back by an author's edit, read by admins alone (the view is empty for anyone else).
                            'reviews_due'];
   callable text[] := array['react(uuid,uuid,text)', 'start_thread(text,uuid,text,text,uuid[])', 'post(uuid,uuid,text,uuid,uuid[])',
                            'edit_post(uuid,uuid,text)', 'spin(uuid,uuid,text,text,uuid[])', 'whoami()', 'card_target(uuid)', 'card_of_play(uuid)', 'turn(uuid,text,text)', 'withdraw_turn(uuid)', 'create_invite()', 'reissue_invite(bigint)', 'open_account(text,integer)', 'create_character(text,text,text,text,jsonb)', 'set_debut(uuid,text,text)',
@@ -127,9 +127,13 @@ declare
                            'search_matches_sql(text,uuid,uuid,timestampwithtimezone,timestampwithtimezone,boolean,boolean,timestampwithtimezone,uuid,integer)', 'search_walk_sql(text,uuid,uuid,timestampwithtimezone,timestampwithtimezone,boolean,boolean,timestampwithtimezone,uuid,integer)', 'search_cursor_ok(jsonb,boolean)', 'search_cursor_cast(jsonb)', 'search_updates_thread()',
                            'search_match_conds(text,tsquery,uuid,timestampwithtimezone,timestampwithtimezone,boolean)', 'search_thread_matches(uuid,tsquery,uuid,timestampwithtimezone,timestampwithtimezone,boolean)', 'search_post_cards(uuid)',
                            -- The pulls check on pack_kinds (0139), granted to PUBLIC like them, and the count of a hand, which the ledger's policy cuts to the caller's own cards (my_cards calls it).
-                           -- Whether a spring or a take-back of a back exists (0318), the one fact card_held, which runs as its caller, can no longer read from the Acts' payload.
+                           -- Whether a spring or a take-back of a back exists (0340), the one fact card_held, which runs as its caller, can no longer read from the Acts' payload.
                            'pack_pulls_problem(jsonb)', 'card_held(uuid,text)', 'back_closed(uuid)',
-                           -- Conduct (0318). The player's doors: the code accepted, a report to admins and the caller's own bar and log. The admin's: deciding and reading a version's words,
+                           -- A board's page reads the stubs of the threads moved away from it and, for a closed board, where its threads went (0326); the page is a signed-in read of public facts.
+                           'board_stubs(uuid)', 'board_closed_to(uuid)',
+                           -- The title of a moved thread and the board it left, for a move's sentence (0327): public facts.
+                           'move_thread_names(jsonb)',
+                           -- Conduct (0340). The player's doors: the code accepted, a report to admins and the caller's own bar and log. The admin's: deciding and reading a version's words,
                            -- each refused to anyone who is not an admin. And the two functions acts_public calls as its reader: whether a version is hidden, a public fact
                            -- of its id as acts_public's `hidden` is, what the layer of a quoting post's body comes to, and what a payload shows.
                            'accept_conduct(integer)', 'conduct_accepted()', 'report_post(uuid,text,text)', 'my_bar()', 'my_conduct_log(integer)',
@@ -172,6 +176,34 @@ begin
     bad := bad || E'\n  an append-only trigger is missing';
   end if;
   if bad <> '' then raise exception 'acts can be changed:%', bad; end if;
+
+  -- The dependencies of the moves (0329) are insert-only too, and no client's: the guards fire always, so not even a restore in replica mode can change one.
+  for r in select t.tgname from pg_trigger t where t.tgrelid = 'public.move_dependencies'::regclass and not t.tgisinternal and t.tgenabled <> 'A'
+  loop bad := bad || format(E'\n  trigger %s does not fire always', r.tgname); end loop;
+  if (select count(*) from pg_trigger t where t.tgrelid = 'public.move_dependencies'::regclass and t.tgname in ('move_dependencies_insert', 'move_dependencies_no_update', 'move_dependencies_no_truncate')) is distinct from 3 then
+    bad := bad || E'\n  a guard of move_dependencies is missing';
+  end if;
+  if bad <> '' then raise exception 'move_dependencies can be changed:%', bad; end if;
+
+  -- A beat's events (0332) are insert-only too, and no client's: four guards (insert, update, delete, truncate), each firing always.
+  for r in select t.tgname from pg_trigger t where t.tgrelid = 'public.arc_beat_events'::regclass and not t.tgisinternal and t.tgenabled <> 'A'
+  loop bad := bad || format(E'\n  trigger %s does not fire always', r.tgname); end loop;
+  if (select count(*) from pg_trigger t where t.tgrelid = 'public.arc_beat_events'::regclass and t.tgname in ('arc_beat_events_insert', 'arc_beat_events_no_update', 'arc_beat_events_no_delete', 'arc_beat_events_no_truncate')) is distinct from 4 then
+    bad := bad || E'\n  a guard of arc_beat_events is missing';
+  end if;
+  if bad <> '' then raise exception 'arc_beat_events can be changed:%', bad; end if;
+
+  -- A Boss's farewell and handoff (0337) are insert-only too, and no client's: it is out of character and never shown to players. Three guards (update, delete, truncate), each firing
+  -- always, and no grant to an API role on the table or on the view that reads its latest row.
+  for r in select t.tgname from pg_trigger t where t.tgrelid = 'public.handoffs'::regclass and not t.tgisinternal and t.tgenabled <> 'A'
+  loop bad := bad || format(E'\n  trigger %s does not fire always', r.tgname); end loop;
+  if (select count(*) from pg_trigger t where t.tgrelid = 'public.handoffs'::regclass and t.tgname in ('handoffs_no_update', 'handoffs_no_delete', 'handoffs_no_truncate')) is distinct from 3 then
+    bad := bad || E'\n  a guard of handoffs is missing';
+  end if;
+  for r in select c.relname, a.rolname from pg_class c cross join (values ('anon'), ('authenticated')) a(rolname)
+    where c.relname in ('handoffs', 'handoffs_latest') and c.relnamespace = 'public'::regnamespace and has_table_privilege(a.rolname, c.oid, 'select, insert, update, delete')
+  loop bad := bad || format(E'\n  %s can reach %s', r.rolname, r.relname); end loop;
+  if bad <> '' then raise exception 'handoffs can be changed or read:%', bad; end if;
 end $$;
 
 -- Replica mode, as a restore with triggers disabled runs, still cannot change an Act.

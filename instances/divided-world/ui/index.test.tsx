@@ -17,11 +17,13 @@ import { logRows } from '../../../engine/ui/log/lines.ts';
 import type { Act, Log } from '../../../engine/ui/data/api.ts';
 import { instanceUi, REASON_KEYS, wordsRead } from './index.ts';
 import { spanWords } from './cards.ts';
+import { webpSize } from '../../../engine/ui/profile-edit/webp.ts';
 import { gearUi } from './cosmetics.ts';
 import { mooch } from '../cards/mooch.ts';
 import { toll } from '../cards/toll.ts';
 import { fourDChess } from '../cards/4d-chess.ts';
 import { offDay } from '../cards/off-day.ts';
+import { CUES, laughTrack } from '../cards/laugh-track.ts';
 import { LOG_DRAW, LOG_WASH, describeDraw } from '../cards/graffiti/words.ts';
 import { wordsProblems } from '../../../engine/ui/cards/lens-words.ts';
 import type { CardPlay } from '../../../engine/ui/cards/types.ts';
@@ -111,7 +113,7 @@ describe('Divided World\'s cards in the guide, in the glass\'s words about setti
     for (const text of [t.describe, t.summary]) expect(text).not.toMatch(/pays you|what it cost|wallet|what the caster paid/u);
   });
   test('each Move says what setting it does, landing at its own reach and no other', () => {
-    const lands = { whoops: 'the quoting post', 'stick-around': 'the quoting post', autocorrect: 'the quoting post', 'feelin-fab': 'the quoting post', 'below-the-fold': 'the quoting post', 'glitter-bomb': "the quoting post's character", 'hype-up': "the quoting post's character", 'main-event': "the quoting post's thread" };
+    const lands = { whoops: 'the quoting post', 'stick-around': 'the quoting post', autocorrect: 'the quoting post', 'feelin-fab': 'the quoting post', 'below-the-fold': 'the quoting post', 'laugh-track': 'the quoting post', 'glitter-bomb': "the quoting post's character", 'hype-up': "the quoting post's character", 'main-event': "the quoting post's thread" };
     for (const [key, reach] of Object.entries(lands)) {
       expect(face(key).describe, key).toContain(`You can also set it face down on one of your own posts: it springs on the next quote of that post and lands on ${reach} at no further cost, using up the card.`);
     }
@@ -278,6 +280,55 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     const whoops = instanceUi.cards.find((c) => c.key === 'whoops')!;
     expect(whoops.describe(instance.settings)).toContain('0.25 more for every 500 characters');
     expect(whoops.describe({ ...instance.settings, economy: { ...instance.settings.economy, 'whoops.perLength': 250 } })).toContain('2.50 more');
+  });
+  test('Laugh Track has its face, its machine slot and its rules in words true to the card and the settings', () => {
+    const ui = instanceUi.cards.find((c) => c.key === 'laugh-track')!;
+    expect(ui.art.color).toBe('#d24a2c');
+    expect(ui.art.ink).toBe('#1a0602');
+    expect(ui.art.tagline).toBe('Give a post a studio audience.');
+    expect(ui.summary).toBe('Cues a studio audience to laugh, cheer or boo at the words you choose, wherever they appear in a post.');
+    expect(ui.status).toBe('A studio audience on cue');
+    expect(ui.hint).toBe('A Laugh Track: the audience reacts when you reach certain words. Turn on Game sounds in Settings to hear it.');
+    expect(ui.Effect).toBeDefined();
+    expect(ui.ConfigForm).toBeDefined();
+    expect(ui.logPlay!({}, {} as never)).toBe('It gave the post a studio audience.');
+    const e = instance.settings.economy;
+    const surcharge = ui.surcharge as (s: typeof instance.settings) => string;
+    expect(surcharge(instance.settings)).toBe('Many places, +0.05 per place past 5');
+    // Autocorrect's form: the amount is an orb amount (hundredths to two places), each value read with a fallback of 0.
+    expect(surcharge({ ...instance.settings, economy: { ...instance.settings.economy, 'laughTrack.perPlace': 10 } })).toBe('Many places, +0.10 per place past 5');
+    expect(surcharge({ ...instance.settings, economy: { ...instance.settings.economy, 'laughTrack.freePlaces': undefined as never } })).toBe('Many places, +0.05 per place past 0');
+    const said = ui.describe(instance.settings);
+    expect(said).toBe(`A Pepperoni card, ${laughTrack.rarity}. You choose up to five phrases in a post and give each a sound: the audience laughs, cheers or boos. Wherever a phrase appears in the post's own words, the audience reacts as a reader reaches it, and builds up as they get close. Every reaction is also shown as a caption, so it works with sound off. One audience fits on a post. You can also set it face down on one of your own posts: it springs on the next quote of that post and lands on the quoting post at no further cost, using up the card. Set face down, it waits for a quote that says its first phrase. It costs more to play the more places its phrases cover.`);
+    // True to the rules, each claim in the words tied to the rule that makes it so.
+    const post = (text: string) => ({ reach: 'post', act: 'p1', kind: 'post', length: text.length, text } as never);
+    const cueOf = (phrase: string, sound: string) => ({ phrase, sound });
+    expect(CUES.most).toBe(5);
+    expect(said).toContain('up to five phrases');
+    const words = ['abcd', 'efgh', 'ijkl', 'mnop', 'qrst', 'uvwx'];
+    expect(laughTrack.validateConfig!({ cues: words.slice(0, CUES.most).map((w) => cueOf(w, 'laugh')) }).ok).toBe(true);
+    expect(laughTrack.validateConfig!({ cues: words.slice(0, CUES.most + 1).map((w) => cueOf(w, 'laugh')) }).ok).toBe(false);
+    expect(said).toContain('laughs, cheers or boos');
+    for (const sound of ['laugh', 'cheer', 'boo']) expect(laughTrack.validateConfig!({ cues: [cueOf('abcd', sound)] }).ok, sound).toBe(true);
+    expect(laughTrack.validateConfig!({ cues: [cueOf('abcd', 'groan')] }).ok).toBe(false);
+    expect(said).toContain('One audience fits on a post.');
+    const config = { cues: [{ phrase: 'abcd', sound: 'laugh' as const }] };
+    const audience = { card: 'laugh-track', act: 'a1' };
+    expect(laughTrack.canApply(post('abcd'), [], config, new Date()).ok).toBe(true);
+    expect(laughTrack.canApply(post('abcd'), [audience], config, new Date())).toEqual({ ok: false, why: 'this post already has an audience' });
+    expect(said).toContain('It costs more to play the more places its phrases cover.');
+    const free = e['laughTrack.freePlaces']!;
+    const priceAt = (places: number) => laughTrack.playPrice!(instance.settings, post('abcd '.repeat(places)), config);
+    expect(priceAt(free)).toBe(0);
+    expect(priceAt(free + 1)).toBe(e['laughTrack.perPlace']);
+    expect(priceAt(free + 2)).toBeGreaterThan(priceAt(free + 1));
+    expect(priceAt(30)).toBe(e['laughTrack.mostAdded']);
+    expect(laughTrack.rarity).toBe('uncommon');
+    expect(laughTrack.alignment).toBe('pepperoni');
+    expect(laughTrack.setPhrase!({ cues: [{ phrase: 'first one', sound: 'boo' }, { phrase: 'second', sound: 'cheer' }] })).toBe('first one');
+    const at = instance.machine.findIndex((m) => 'card' in m.item && m.item.card === 'laugh-track');
+    expect(instance.machine[at]).toEqual({ item: { card: 'laugh-track' }, availability: 'onSale', price: 150 });
+    expect(instance.machine.slice(at + 1).every((m) => m.availability !== 'onSale')).toBe(true);
   });
   test('Whoops! draws its effect and its ink form, and each play\'s tag takes its own ink', () => {
     const whoops = instanceUi.cards.find((c) => c.key === 'whoops')!;
@@ -550,6 +601,76 @@ describe('a Booster in the log (the booster packs plan, Task 7)', () => {
   });
 });
 
+/* Staff pictures (the fangame split plan, Task 10): a persona's face is a file the bundler gave, held to the shapes the postbit and the profile draw. */
+type Picture = { readonly kind: 'png' | 'webp'; readonly width: number; readonly height: number; readonly bytes: number };
+
+/** A bundler URL or data URL as the file's bytes; a URL names a file by its basename in the given folder. */
+function bytesOfUrl(url: string, folder: string): Uint8Array {
+  if (url.startsWith('data:')) return Uint8Array.from(Buffer.from(url.slice(url.indexOf(',') + 1), url.includes(';base64') ? 'base64' : 'utf8'));
+  return new Uint8Array(fs.readFileSync(path.join(folder, path.basename(url.split('?')[0]!))));
+}
+
+/** A PNG's or WebP's shape, or why it is neither. */
+function pictureOf(bytes: Uint8Array): Picture | string {
+  const view = Buffer.from(bytes);
+  if (view.subarray(1, 4).toString('latin1') === 'PNG') return { kind: 'png', width: view.readUInt32BE(16), height: view.readUInt32BE(20), bytes: bytes.length };
+  const size = webpSize(bytes);
+  return size === null ? 'is neither a PNG nor a WebP' : { kind: 'webp', ...size, bytes: bytes.length };
+}
+
+/** What is wrong with a persona's pictures, as sentences. */
+function staffPictureProblems(map: NonNullable<typeof instanceUi.staffAvatars>, personas: readonly string[], folder: string): string[] {
+  const problems: string[] = [];
+  for (const [key, faces] of Object.entries(map)) {
+    if (!personas.includes(key)) problems.push(`${key} names no persona in the roster`);
+    const square = pictureOf(bytesOfUrl(faces.square, folder));
+    if (typeof square === 'string') problems.push(`${key}'s square ${square}`);
+    else {
+      if (square.width !== square.height) problems.push(`${key}'s square is ${square.width} by ${square.height}, not square`);
+      if (square.width < 256) problems.push(`${key}'s square is ${square.width} wide, under 256`);
+      if (square.bytes > 100 * 1024) problems.push(`${key}'s square is ${square.bytes} bytes, over 100 KB`);
+    }
+    if (faces.portrait === undefined) continue;
+    const portrait = pictureOf(bytesOfUrl(faces.portrait, folder));
+    if (typeof portrait === 'string') problems.push(`${key}'s portrait ${portrait}`);
+    else {
+      if (portrait.width < 256 || portrait.width > 512) problems.push(`${key}'s portrait is ${portrait.width} wide, outside 256 to 512`);
+      if (portrait.height < portrait.width || portrait.height > 2 * portrait.width) problems.push(`${key}'s portrait is ${portrait.width} by ${portrait.height}, outside 1 to 2 times as tall as wide`);
+      if (portrait.bytes > 400 * 1024) problems.push(`${key}'s portrait is ${portrait.bytes} bytes, over 400 KB`);
+    }
+  }
+  return problems;
+}
+
+describe('Divided World\'s staff pictures', () => {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const avatars = path.join(here, 'avatars');
+  const fixtures = path.join(here, 'fixtures-staff-avatars');
+  const roster = instance.system!.roster.map((p) => p.key);
+  const fixtureUrl = (name: string) => `/fixtures/${name}`;
+
+  test('every key names a persona in the roster, and every picture holds its shape', () => {
+    expect(instanceUi.staffAvatars, 'the instance gives staff pictures').toBeDefined();
+    expect(staffPictureProblems(instanceUi.staffAvatars!, roster, avatars)).toEqual([]);
+  });
+  test('a key that names nobody is red', () => {
+    const problems = staffPictureProblems({ nobody: instanceUi.staffAvatars!['fangame']! }, roster, avatars);
+    expect(problems).toEqual(['nobody names no persona in the roster']);
+  });
+  test('a 255-wide square is red', () => {
+    const problems = staffPictureProblems({ fangame: { square: fixtureUrl('square-255.webp') } }, roster, fixtures);
+    expect(problems).toEqual(expect.arrayContaining(['fangame\'s square is 255 wide, under 256']));
+  });
+  test('a 3:1 portrait is red', () => {
+    const problems = staffPictureProblems({ fangame: { square: fixtureUrl('square-ok.png'), portrait: fixtureUrl('portrait-3to1.webp') } }, roster, fixtures);
+    expect(problems).toEqual(['fangame\'s portrait is 300 by 900, outside 1 to 2 times as tall as wide']);
+  });
+  test('FanGaME has both pictures', () => {
+    expect(instanceUi.staffAvatars?.['fangame']?.square).toMatch(/fangame-square.*\.webp|^data:image\/webp/u);
+    expect(instanceUi.staffAvatars?.['fangame']?.portrait).toMatch(/fangame-portrait.*\.webp|^data:image\/webp/u);
+  });
+});
+
 describe('Sugar Coat, Hype-Up and Last Word in plain words (card notes Part 4, Task 7)', () => {
   const ui = (key: string) => instanceUi.cards.find((c) => c.key === key)!;
   test('each wears its flavor\'s color with its ink, says what it does in a tagline and a summary, and keeps its status to six words', () => {
@@ -733,5 +854,57 @@ describe('Mooch, Toll, 4D Chess and Off Day in plain words (card notes Part 6, T
 
   test('every status passes the instance check, and the check is run against the real instance', () => {
     expect(instanceUiProblems(instanceUi, instance)).toEqual([]);
+  });
+});
+
+describe('Divided World\'s sounds', () => {
+  const soundsDir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'sounds');
+  const manifest = JSON.parse(fs.readFileSync(path.join(soundsDir, 'sounds.json'), 'utf8')) as { file: string }[];
+  const manifestFiles = manifest.map((m) => m.file);
+  /* The table the design gives, one row per slot, in order. */
+  const TABLE = [
+    { key: 'laugh-track.laugh-1', file: 'laugh-1.mp3', caption: 'The audience laughs', ink: 'var(--kb-pepperoni)' },
+    { key: 'laugh-track.laugh-2', file: 'laugh-2.mp3', caption: 'The audience laughs', ink: 'var(--kb-pepperoni)' },
+    { key: 'laugh-track.laugh-3', file: 'laugh-3.mp3', caption: 'The audience laughs', ink: 'var(--kb-pepperoni)' },
+    { key: 'laugh-track.cheer-1', file: 'cheer-1.mp3', caption: 'The audience cheers', ink: 'var(--kb-sweet)' },
+    { key: 'laugh-track.cheer-2', file: 'cheer-2.mp3', caption: 'The audience cheers', ink: 'var(--kb-sweet)' },
+    { key: 'laugh-track.cheer-3', file: 'cheer-3.mp3', caption: 'The audience cheers', ink: 'var(--kb-sweet)' },
+    { key: 'laugh-track.boo-1', file: 'boo-1.mp3', caption: 'The audience boos', ink: 'var(--kb-salty)' },
+    { key: 'laugh-track.boo-2', file: 'boo-2.mp3', caption: 'The audience boos', ink: 'var(--kb-salty)' },
+    { key: 'laugh-track.boo-3', file: 'boo-3.mp3', caption: 'The audience boos', ink: 'var(--kb-salty)' },
+    { key: 'laugh-track.titter', file: 'titter.mp3', caption: 'The audience titters', ink: 'var(--kb-pepperoni)', loop: true },
+    { key: 'laugh-track.ooh', file: 'ooh.mp3', caption: 'The audience goes “ooh”', ink: 'var(--kb-sweet)', loop: true },
+    { key: 'laugh-track.grumble', file: 'grumble.mp3', caption: 'A grumble rises', ink: 'var(--kb-salty)', loop: true },
+  ];
+  const slots = instanceUi.sounds?.slots ?? [];
+
+  test('there are exactly the twelve slots of the design, in order, with their keys, captions, inks and loops', () => {
+    expect(slots.map((s) => s.key)).toEqual(TABLE.map((t) => t.key));
+    for (const row of TABLE) {
+      const slot = slots.find((s) => s.key === row.key);
+      expect(slot, `${row.key} is a slot`).toBeDefined();
+      expect(slot!.caption, `${row.key}'s caption`).toBe(row.caption);
+      expect(slot!.ink, `${row.key}'s ink`).toBe(row.ink);
+      expect(slot!.loop, `${row.key}'s loop`).toEqual(row.loop ? true : undefined);
+    }
+    expect(slots).toHaveLength(12);
+  });
+  test('every slot plays on the game bus', () => {
+    for (const slot of slots) expect(slot.bus, `${slot.key}'s bus`).toBe('game');
+  });
+  test('every slot\'s file is in the folder\'s manifest, and is the file the design names', () => {
+    for (const row of TABLE) {
+      const slot = slots.find((s) => s.key === row.key)!;
+      expect(manifestFiles, `${row.file} is in sounds.json`).toContain(row.file);
+      expect(path.posix.basename(slot.src.split(/[?#]/u)[0]!), `${row.key}'s file`).toBe(row.file);
+    }
+  });
+  test('every caption is non-empty and every key is unique', () => {
+    for (const slot of slots) expect(slot.caption.trim(), `${slot.key}'s caption`).not.toBe('');
+    expect(new Set(slots.map((s) => s.key)).size).toBe(slots.length);
+  });
+  test('the preview names a slot, the game bus\'s', () => {
+    expect(instanceUi.sounds?.preview?.game).toBe('laugh-track.laugh-1');
+    expect(slots.map((s) => s.key)).toContain(instanceUi.sounds?.preview?.game);
   });
 });

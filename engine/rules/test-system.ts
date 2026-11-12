@@ -29,7 +29,7 @@ export const testCosmeticsContent: Pick<Instance, 'gear' | 'trophies' | 'events'
   events: { lines: [] },
 };
 
-export const systemSettings: Pick<Settings, 'modBots' | 'warnBar' | 'apology' | 'conduct' | 'systemEnabled' | 'oldVoice' | 'cardWriteSettleSeconds' | 'pronouns' | 'meetingCron' | 'phases' | 'inheritanceGraceDays' | 'rosterRecentExcluded' | 'structuralHoldHours' | 'microEventDailyCalls' | 'digestThreads' | 'digestExcerpts' | 'digestExcerptChars' | 'memoryOpinions' | 'memoryGrudges' | 'memoryWheelhouse' | 'memoryRealWorld' | 'pool' | 'boardNameMaxLength' | 'moveExpiryMostDays' | 'moveExpiryLeastHours' | 'demandCheckMinutes' | 'demandChecksPerTick' | 'modelTiers' | 'cosmetics'> = {
+export const systemSettings: Pick<Settings, 'modBots' | 'warnBar' | 'apology' | 'conduct' | 'systemEnabled' | 'oldVoice' | 'cardWriteSettleSeconds' | 'pronouns' | 'meetingCron' | 'phases' | 'inheritanceGraceDays' | 'rosterRecentExcluded' | 'structuralHoldHours' | 'microEventDailyCalls' | 'digestThreads' | 'digestBoards' | 'digestBoardDays' | 'movedStubDays' | 'farewellWindowHours' | 'bundleMostParts' | 'bundleAuthoredMostParts' | 'digestExcerpts' | 'digestExcerptChars' | 'memoryOpinions' | 'memoryGrudges' | 'memoryWheelhouse' | 'memoryRealWorld' | 'pool' | 'boardNameMaxLength' | 'moveExpiryMostDays' | 'moveExpiryLeastHours' | 'demandCheckMinutes' | 'demandChecksPerTick' | 'modelTiers' | 'cosmetics'> = {
   systemEnabled: false,
   oldVoice: true,
   cardWriteSettleSeconds: 30,
@@ -41,7 +41,7 @@ export const systemSettings: Pick<Settings, 'modBots' | 'warnBar' | 'apology' | 
     reign: { weeklyMoves: 5, bankCap: 10, moveExpiryMostDays: 28 },
     meltdown: { days: 21, weeklyMoves: 8, bankCap: 14, moveExpiryMostDays: 42 },
   },
-  inheritanceGraceDays: 3, rosterRecentExcluded: 2, structuralHoldHours: 24, microEventDailyCalls: 20, digestThreads: 10, digestExcerpts: 8,
+  inheritanceGraceDays: 3, rosterRecentExcluded: 2, structuralHoldHours: 24, microEventDailyCalls: 20, digestThreads: 10, digestBoards: 30, digestBoardDays: 21, movedStubDays: 7, farewellWindowHours: 36, bundleMostParts: 4, bundleAuthoredMostParts: 8, digestExcerpts: 8,
   digestExcerptChars: 280, memoryOpinions: 40, memoryGrudges: 20, memoryWheelhouse: 30, memoryRealWorld: 30, pool: testPool, modBots: testModBots, warnBar: testWarnBar, apology: testApologySettings, boardNameMaxLength: 60, moveExpiryMostDays: 42, moveExpiryLeastHours: 24, demandCheckMinutes: 5, demandChecksPerTick: 40,
   modelTiers: { strong: 'claude-opus-5-5', light: 'claude-haiku-5-5' },
   cosmetics: { gear: { wornMost: 12, reach: 0.4 }, trophies: { shownMost: 3 }, events: { windowMinutes: 15, dayMost: 4, outcomes: { line: 70, gear: 20, card: 10 }, gearRarity: { common: 80, uncommon: 17, rare: 3 }, cardRarity: { common: 80, uncommon: 17, rare: 3 } } },

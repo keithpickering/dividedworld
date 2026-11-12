@@ -223,7 +223,7 @@ function ModerationLog({ staff, bot, pronouns }: { readonly staff: string; reado
                   ? <ModActCells row={r} perPage={settings.postsPerPage} />
                   : (
                     <>
-                      <td role="cell"><MoveSentence kind={r.kind} params={r.params} character={characterOf(r.params)} boards={boards} bosses={bosses} unnamed={UNINTRODUCED} tense="done" /></td>
+                      <td role="cell"><MoveSentence kind={r.kind} params={r.params} character={characterOf(r.params)} boards={boards} bosses={bosses} unnamed={UNINTRODUCED} tense="done" act={r.act} /></td>
                       <td role="cell" className="kb-small kb-muted">{endedWords(r.end, r.demand, r.keptBy ? bosses.find((b) => b.staff === r.keptBy)?.name ?? UNINTRODUCED : null)}</td>
                     </>
                   )}

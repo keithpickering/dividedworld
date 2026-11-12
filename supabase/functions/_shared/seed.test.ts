@@ -8,12 +8,13 @@ import { PREDICATES } from '../../../engine/rules/predicates.ts';
 import { DEMAND_KINDS } from '../../../engine/system/demands.ts';
 import { PRONOUN_PRESETS } from '../../../engine/rules/pronouns.ts';
 import type { Persona } from '../../../engine/rules/types.ts';
+import { PHASE_CAPS } from '../../../engine/system/phases.ts';
 
 test('the seed carries every setting, class, reaction, card and board of the instance, in the shape seed_instance() reads', () => {
   const seed = instanceSeed(instance, conduct);
   assert.deepEqual(Object.keys(seed.settings).sort(), [...Object.keys(instance.settings), 'copy', 'systemLines', 'systemMoveWords', 'conductVersion', 'conductSections'].sort());
-  assert.equal(seed.settings.conductVersion, conduct.version, 'the version an account must have accepted (0318)');
-  assert.deepEqual(seed.settings.conductSections, conduct.sections.map((c) => c.key), 'the sections a report may name, by key (0318)');
+  assert.equal(seed.settings.conductVersion, conduct.version, 'the version an account must have accepted (0340)');
+  assert.deepEqual(seed.settings.conductSections, conduct.sections.map((c) => c.key), 'the sections a report may name, by key (0340)');
   assert.deepEqual(seed.settings.conduct, instance.settings.conduct, 'the open-report limit and the admin address ride with the instance\'s settings');
   assert.deepEqual(seed.settings.systemLines, instance.system.stockLines, 'the tick (0048) fills these lines in SQL');
   assert.deepEqual(seed.settings.systemMoveWords, Object.fromEntries(MOVE_KINDS.map((m) => [m.key, m.plain])), '{move}, in plain words, by kind');
@@ -66,7 +67,7 @@ test('the seed carries the roster as staff characters, one kind of persona, the 
   assert.equal(seed.system.firstBoss, instance.system.firstBoss, 'the first season\'s Boss');
   for (const s of seed.system.staff) {
     const p = roster.find((r) => r.key === s.key)!;
-    assert.deepEqual(Object.keys(s).sort(), (p.weakness.kind === 'quiz' ? ['beats', 'challenge', 'key', 'name', 'pronouns', 'quiz', 'signature', 'title', 'visitHours'] : ['beats', 'challenge', 'key', 'name', 'pronouns', 'signature', 'title', 'visitHours']));
+    assert.deepEqual(Object.keys(s).sort(), (p.weakness.kind === 'quiz' ? ['arc', 'beats', 'challenge', 'holdsBack', 'key', 'name', 'phaseDays', 'pronouns', 'quiz', 'signature', 'title', 'visitHours'] : ['arc', 'beats', 'challenge', 'holdsBack', 'key', 'name', 'phaseDays', 'pronouns', 'signature', 'title', 'visitHours']));
     assert.deepEqual((s as { pronouns?: unknown }).pronouns, p.pronouns, 'a persona\'s pronouns travel on its roster entry');
     assert.deepEqual(s.beats, [...p.beats], 'the beat preferences travel, for beat_of (0103)');
     // A quiz persona's questions travel as a list of their own, beside the challenge (never in it), for seed_instance to keep where no client can read them (0108).
@@ -96,16 +97,19 @@ test('a roster entry carries pronouns only when its persona declares them, and t
 
 test('the seed carries the engine\'s catalogs of moves (with whether each is structural, shapes a board, and which offices make it, and the tokens SQL derives for its words) and demands', () => {
   const { moves, demands } = instanceSeed(instance, conduct).system;
-  assert.deepEqual(moves, MOVE_KINDS.map((m) => ({ key: m.key, structural: m.structural, shapesBoard: m.shapesBoard, offices: m.offices, derived: m.derived ?? [] })));
+  assert.deepEqual(moves, MOVE_KINDS.map((m) => ({ key: m.key, structural: m.structural, shapesBoard: m.shapesBoard, lasting: m.lasting, offices: m.offices, derived: m.derived ?? [] })));
   assert.deepEqual(moves, [
-    { key: 'renameBoard', structural: true, shapesBoard: true, offices: ['boss'], derived: [] },
-    { key: 'nameSuccessor', structural: true, shapesBoard: false, offices: ['boss'], derived: [] },
-    { key: 'setRule', structural: false, shapesBoard: false, offices: ['boss', 'mod'], derived: [] },
-    { key: 'conferGroup', structural: false, shapesBoard: false, offices: ['boss', 'mod'], derived: ['groupName'] },
-    { key: 'pullSlot', structural: false, shapesBoard: false, offices: ['boss'], derived: [] },
-    { key: 'repriceSlot', structural: false, shapesBoard: false, offices: ['boss'], derived: [] },
-    { key: 'flashSale', structural: false, shapesBoard: false, offices: ['boss'], derived: [] },
-    { key: 'awardTrophy', structural: false, shapesBoard: false, offices: ['boss'], derived: ['trophyName', 'characterName'] },
+    { key: 'renameBoard', structural: true, shapesBoard: true, lasting: false, offices: ['boss'], derived: [] },
+    { key: 'nameSuccessor', structural: true, shapesBoard: false, lasting: false, offices: ['boss'], derived: [] },
+    { key: 'setRule', structural: false, shapesBoard: false, lasting: false, offices: ['boss', 'mod'], derived: [] },
+    { key: 'conferGroup', structural: false, shapesBoard: false, lasting: false, offices: ['boss', 'mod'], derived: ['groupName'] },
+    { key: 'pullSlot', structural: false, shapesBoard: false, lasting: false, offices: ['boss'], derived: [] },
+    { key: 'repriceSlot', structural: false, shapesBoard: false, lasting: false, offices: ['boss'], derived: [] },
+    { key: 'flashSale', structural: false, shapesBoard: false, lasting: false, offices: ['boss'], derived: [] },
+    { key: 'awardTrophy', structural: false, shapesBoard: false, lasting: false, offices: ['boss'], derived: ['trophyName', 'characterName'] },
+    { key: 'createBoard', structural: true, shapesBoard: true, lasting: true, offices: ['boss'], derived: [] },
+    { key: 'moveThread', structural: false, shapesBoard: false, lasting: true, offices: ['boss'], derived: [] },
+    { key: 'mergeBoard', structural: true, shapesBoard: true, lasting: true, offices: ['boss'], derived: [] },
   ]);
   assert.deepEqual(demands.map((d) => d.key), DEMAND_KINDS.map((d) => d.key));
   assert.ok(demands.length >= 5);
@@ -159,6 +163,39 @@ test('the seed carries the developer persona: the instance\'s, or the engine\'s 
   assert.deepEqual(instanceSeed({ ...instance, developer: { name: 'Dev', tagline: 'Hi.' } }, conduct).developer, { name: 'Dev', title: 'Hi.' });
   assert.ok(!instanceSeed(instance, conduct).system.staff.some((s) => s.key === 'developer'), 'the developer is not in the roster a model is handed');
   assert.ok(!('developer' in instanceSeed(instance, conduct).system), 'nothing under `system`, which is all the Director reads, names the developer');
+});
+
+test('the seed carries the conditions and each persona\'s arc as SQL checks it: keys, conditions, due points, held-back kinds and phase days, never a brief or a template (0332)', () => {
+  const first = instance.system.roster[0]!;
+  const arced: Persona = {
+    ...first,
+    phases: { honeymoon: { days: 5 } },
+    arc: [{ key: 'one', unlock: [{ kind: 'phase', phase: 'reign' }], due: { phase: 'reign', daysIntoPhase: 7 }, brief: 'A secret.', bundle: { name: 'B', parts: [{ role: 'r', kind: 'createBoard', params: {} }] } }],
+    miniArcs: [{ key: 'two', unlock: [{ kind: 'moveReversed' }], brief: 'Another.', repeatable: true }],
+    holdsBack: [{ kind: 'createBoard', until: 'one' }],
+  };
+  const seed = instanceSeed({ ...instance, system: { ...instance.system, roster: [arced, ...instance.system.roster.slice(1)] } }, conduct);
+  assert.deepEqual(seed.system.conditions.map((c) => c.key), ['phase', 'beatLanded', 'boardActivity', 'moveReversed', 'demandResolved']);
+  const p = seed.system.staff[0]!;
+  assert.deepEqual(p.arc, [
+    { key: 'one', mini: false, repeatable: false, unlock: [{ kind: 'phase', phase: 'reign' }], due: { phase: 'reign', daysIntoPhase: 7 } },
+    { key: 'two', mini: true, repeatable: true, unlock: [{ kind: 'moveReversed' }], due: null },
+  ]);
+  assert.deepEqual(p.holdsBack, [{ kind: 'createBoard', until: 'one' }]);
+  assert.deepEqual(p.phaseDays, { honeymoon: 5 });
+  assert.ok(!JSON.stringify(p).includes('A secret') && !JSON.stringify(p).includes('Another'), 'a brief travelled in the seed');
+  assert.deepEqual(seed.system.staff[1]!.arc, [], 'a persona with no arc has none');
+  assert.equal(seed.system.staff[0]!.beats.length, first.beats.length, 'the patrol beats are as they were');
+});
+
+test('a persona\'s phase days are seeded as phaseAt reads them: whole, from 1 to the engine\'s cap (0333)', () => {
+  const first = instance.system.roster[0]!;
+  const days = (h: number, m: number) => instanceSeed({ ...instance, system: { ...instance.system, roster: [{ ...first, phases: { honeymoon: { days: h }, meltdown: { days: m } } }, ...instance.system.roster.slice(1)] } }, conduct).system.staff[0]!.phaseDays;
+  assert.deepEqual(days(2.5, 500), { honeymoon: 2, meltdown: PHASE_CAPS.meltdown.days });
+  assert.deepEqual(days(0, -3), { honeymoon: 1, meltdown: 1 });
+  assert.deepEqual(days(PHASE_CAPS.honeymoon.days, 7), { honeymoon: PHASE_CAPS.honeymoon.days, meltdown: 7 });
+  assert.equal(PHASE_CAPS.honeymoon.days, 42, 'SQL\'s arc_season_span cuts at 42 too');
+  assert.equal(PHASE_CAPS.meltdown.days, 42, 'SQL\'s arc_season_span cuts at 42 too');
 });
 
 test('the seed carries the trophy catalog: the kinds with their words and belts, the three places, the Boss\'s kinds and the met demand\'s (0206)', () => {
