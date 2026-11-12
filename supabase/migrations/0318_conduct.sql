@@ -227,376 +227,217 @@ language sql stable security definer set search_path = public, pg_temp as $$
      and (version_hidden(q, q) or exists (select 1 from acts e where e.kind = 'edit' and e.target_act_id = q and version_hidden(e.id, q)))
 $$;
 
--- ----------------------------------------------------------------------------- reading a body as the parser does ----
+-- -------------------------------------------------------------------------- quotes of hidden posts, as a layer ----
 
--- Whether `s` is longer than `bound` as JavaScript counts it. parse.ts bounds a name, a tag and an address with `.length`, which counts UTF-16 code units, so a
--- character above U+FFFF (an emoji) is two; Postgres's length() counts it one. A string cannot be longer in units than twice its characters, so the count is made
--- only where the two could disagree.
-create function bb_over(s text, bound integer) returns boolean
-language sql immutable set search_path = public, pg_temp as $$
-  select case
-    when length(s) > bound then true
-    when length(s) * 2 <= bound then false
-    else length(s) + length(regexp_replace(s, '[^\U00010000-\U0010FFFF]', '', 'g')) > bound
-  end
+-- A quote copies the words it quotes, so a version that is hidden is readable in every post that quotes it, unless those quotes are emptied. The database does not read BBCode
+-- (a copy of the parser in SQL drifted from engine/bbcode/parse.ts four times in review, each a leak or a read a crafted post could make unbearably slow). The one parser does it, as a
+-- job: engine/bbcode/conceal.ts's concealQuotes, run by the conceal Edge Function over the posts that quote a hidden version, and its result is stored here as a layer beside the
+-- quoting version, append-only, never an edit of the post ("The System acts; it never destroys what a player wrote": the post's own words stay in `acts`). acts_public serves the layer
+-- whose hidden set is the current one and does no parsing on a read.
+--
+-- Four tables, none reachable by a client:
+--   quote_refs      every id a body names after `[quote=`: a superset of the real quotes (the id of a quote that is in a code block counts too), so no real quote is missed. Filled by a trigger
+--                   on every Act written with such a body, backfilled below. It says who to ask about, never what to show.
+--   conceal_requests  one row each time what is hidden may have changed for a quoting Act: a decision that hides, unhides or approves a version of a quoted post, the author's edit of a post
+--                   that has such a decision, and the writing of an Act that quotes a post with a hidden version. Append-only.
+--   quote_layers    the quoting version's body with the contents of its quotes of the hidden posts in `hidden` emptied (null when `hidden` is empty), the latest row of an Act winning, and
+--                   `upto`, the last request of the Act the row answers. A request is done when a layer with `upto` at or after it exists, so nothing is ever marked in place.
+--
+-- Ways out ("No player is ever stuck"): a post whose quote of a hidden version has no layer yet is withheld behind a plain note that says it will show again in a moment; the job runs every
+-- minute and writes the layer, which ends the note by itself. An unhide, an approval or a hide that ends needs no job at all: with nothing hidden among its refs a post serves its own words.
+--
+-- At a busy instance: a read costs one probe of quote_refs for a body that quotes nothing hidden, and for a body that does, one more of the layer's index; nothing reads a body's length. A decision
+-- writes one request for each Act that quotes the post, an index range of quote_refs (quoted, act); the requests grow with admin decisions and the Acts quoting what they hide, never with posts read
+-- or players. conceal_due anti-joins the requests to their layers as mail_due (0319) does the outbox to its attempts, and a request marker table or a cursor would be wrong here: ids committed out
+-- of order would strand a request below a cursor.
+create table quote_refs (
+  act uuid not null references acts (id),
+  quoted uuid not null,
+  primary key (act, quoted)
+);
+create index quote_refs_quoted on quote_refs (quoted, act);
+
+create table conceal_requests (
+  id bigint generated always as identity primary key,
+  act uuid not null references acts (id),
+  at timestamptz not null default now()
+);
+create index conceal_requests_act on conceal_requests (act, id desc);
+
+create table quote_layers (
+  id bigint generated always as identity primary key,
+  act uuid not null references acts (id),
+  -- The ids of the quoted posts with a hidden version when the layer was made, sorted, each once.
+  hidden uuid[] not null,
+  body text,
+  upto bigint not null default 0,
+  at timestamptz not null default now(),
+  check ((cardinality(hidden) = 0) = (body is null))
+);
+create index quote_layers_act on quote_layers (act, at desc, id desc);
+
+alter table quote_refs enable row level security;
+alter table conceal_requests enable row level security;
+alter table quote_layers enable row level security;
+revoke all on quote_refs, conceal_requests, quote_layers from public, anon, authenticated;
+
+create function quote_refs_append_only() returns trigger
+language plpgsql set search_path = public, pg_temp as $$
+begin
+  raise exception 'a quote reference is never edited or removed (%); an Act''s words do not change', tg_op using errcode = 'P0001';
+end $$;
+create function conceal_requests_append_only() returns trigger
+language plpgsql set search_path = public, pg_temp as $$
+begin
+  raise exception 'a request to conceal is never edited or removed (%); write a new one', tg_op using errcode = 'P0001';
+end $$;
+create function quote_layers_append_only() returns trigger
+language plpgsql set search_path = public, pg_temp as $$
+begin
+  raise exception 'a quote layer is never edited or removed (%); write a new one over it', tg_op using errcode = 'P0001';
+end $$;
+create trigger quote_refs_no_update before update or delete on quote_refs for each row execute function quote_refs_append_only();
+create trigger quote_refs_no_truncate before truncate on quote_refs for each statement execute function quote_refs_append_only();
+create trigger conceal_requests_no_update before update or delete on conceal_requests for each row execute function conceal_requests_append_only();
+create trigger conceal_requests_no_truncate before truncate on conceal_requests for each statement execute function conceal_requests_append_only();
+create trigger quote_layers_no_update before update or delete on quote_layers for each row execute function quote_layers_append_only();
+create trigger quote_layers_no_truncate before truncate on quote_layers for each statement execute function quote_layers_append_only();
+-- Always: a session in replica mode, as a restore with triggers disabled runs, fires them too.
+alter table quote_refs enable always trigger quote_refs_no_update;
+alter table quote_refs enable always trigger quote_refs_no_truncate;
+alter table conceal_requests enable always trigger conceal_requests_no_update;
+alter table conceal_requests enable always trigger conceal_requests_no_truncate;
+alter table quote_layers enable always trigger quote_layers_no_update;
+alter table quote_layers enable always trigger quote_layers_no_truncate;
+revoke execute on function quote_refs_append_only(), conceal_requests_append_only(), quote_layers_append_only() from public, anon, authenticated;
+
+-- Every id a body names after `[quote=`, anywhere in the tag (a name may be quoted, padded or followed by `user=`; the parser's own reading of it is stricter than this and so is inside it).
+-- One pass of one regular expression, linear in the body.
+create function quote_ids(body text) returns setof uuid
+language sql immutable parallel safe set search_path = public, pg_temp as $$
+  select distinct lower(m[1])::uuid
+  from regexp_matches(body, '\[quote=[^\[\]]*?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})', 'gi') m
 $$;
 
--- Whether `v` is an address the parser accepts as a link (engine/bbcode/parse.ts, checkedUrl with safeHref's list: http, https, mailto, or a path on this
--- site). Only the parser's own refusals are mirrored: length, a character no address may hold, the scheme list, and an http(s) authority with no credentials
--- and a real host. The parser needs it to know whether a `[url=…]` is a real link (a real link is closed by the next one, which can close a quote with it).
-create function bb_safe_href(v text) returns boolean
-language plpgsql immutable set search_path = public, pg_temp as $$
-declare
-  s text := regexp_replace(v, '^\s+|\s+$', '', 'g');
-  sch text[];
-  rest text;
-  auth text;
-  host text;
-  port text;
-begin
-  if s = '' or bb_over(s, 2048)
-     or s ~ '[\s\x01-\x1f\x7f-\x9f"''<>`\\­͏؀-؅؜۝܏᠎​-‏ -‮⁠-⁤⁦-⁯ᅟᅠ⠀ㅤ﻿ﾠ￹-￻]' then
-    return false;
-  end if;
-  sch := regexp_match(s, '^([^:/?#]*):');
-  if sch is not null then
-    if lower(sch[1]) not in ('http', 'https', 'mailto') then return false; end if;
-    rest := substr(s, length(sch[1]) + 2);
-    if lower(sch[1]) = 'mailto' then return rest <> ''; end if;
-    auth := (regexp_match(rest, '^//([^/?#]*)'))[1];
-    if auth is null then return false; end if;
-    host := split_part(auth, ':', 1);
-    if strpos(auth, ':') > 0 then
-      port := substr(auth, strpos(auth, ':') + 1);
-      if port !~ '^[0-9]{1,5}$' then return false; end if;
-    end if;
-    return host ~* '^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$' and strpos(host, '..') = 0;
-  end if;
-  return left(s, 1) = '/' and left(s, 2) <> '//';
-end $$;
+-- Backfill: the Acts already written.
+insert into quote_refs (act, quoted)
+select a.id, q from acts a, lateral quote_ids(a.payload ->> 'body') q
+where a.payload ->> 'body' ilike '%[quote=%'
+on conflict do nothing;
 
--- Whether `content` is what a `[video]` or `[youtube]` shows as a video: engine/bbcode/video.ts's videoOf, read as it does. A `[youtube]` also takes a bare 11-character
--- id. Otherwise an http(s) address with no explicit port (the scheme's own is none), on a host the table knows, with the path shape that host wants (youtu.be/<id>,
--- youtube.com/watch?v=<id> or /shorts/<id> or /live/<id>, vimeo.com/<digits>, clips.twitch.tv/<clip>, twitch.tv/<name>/clip/<clip>, streamable.com/<id>,
--- nicovideo.jp/watch/<id>, soundcloud.com/<a>/<b>); a known host with any other path is not a video, and only a host the table does not know can be a file, an https
--- address ending .mp4 or .webm. A query or path the URL parser would rewrite (a percent sign in a parameter name, a dot segment) is read as not a video: the error is
--- then over-emptying a quote the parser would have kept inside a video, and never keeping words the parser would show. Only a body with `[quote=` in it reaches this.
-create function bb_video_like(content text, is_youtube boolean) returns boolean
-language plpgsql immutable set search_path = public, pg_temp as $$
-declare
-  s text := regexp_replace(content, '^\s+|\s+$', '', 'g');
-  m text[];
-  host text;
-  path text;
-  query text;
-  port text;
-  segs text[];
-  n integer;
-  a text;
-  b text;
-  c text;
-  kv text;
-  nm text;
-  dflt integer;
-begin
-  if s = '' then return false; end if;
-  if is_youtube and s ~ '^[A-Za-z0-9_-]{11}$' then return true; end if;
-  if not bb_safe_href(s) or s !~* '^https?:' then return false; end if;
-  m := regexp_match(s, '^([a-zA-Z]+)://([^/?#]*)([^?#]*)(?:\?([^#]*))?', 'i');
-  if m is null then return false; end if;
-  host := lower(split_part(m[2], ':', 1));
-  port := case when strpos(m[2], ':') > 0 then substr(m[2], strpos(m[2], ':') + 1) end;
-  path := m[3];
-  query := m[4];
-  -- A host the URL parser refuses is not a video, and the parser then reads a quote inside the address as a quote: an `xn--` label (which must be valid punycode, and is not
-  -- checked here) and a last label that is a number (`example.123`) or hex (`example.0x1f`), which the parser reads as an IPv4 address and refuses unless it is a valid one.
-  -- A valid IPv4 file address and a valid internationalized name are over-emptied by this, which is the safe error.
-  if exists (select 1 from unnest(string_to_array(host, '.')) l where l ~ '^xn--') then return false; end if;
-  if (string_to_array(host, '.'))[cardinality(string_to_array(host, '.'))] ~ '^([0-9]+|0x[0-9a-f]*)$' then return false; end if;
-  if port is not null and port <> '' then
-    dflt := (case when lower(m[1]) = 'https' then 443 else 80 end);
-    if port::integer > 65535 or port::integer <> dflt then return false; end if;
-  end if;
-  segs := string_to_array(regexp_replace(path, '/$', ''), '/');
-  if array_length(segs, 1) is null then
-    segs := '{}';
-  else
-    segs := segs[2:];
-  end if;
-  n := coalesce(array_length(segs, 1), 0);
-  if exists (select 1 from unnest(segs) x where x ~* '^(\.|%2e)(\.|%2e)?$') then return false; end if;
-  a := segs[1]; b := segs[2]; c := segs[3];
-  if host = 'youtu.be' then
-    return n = 1 and a ~ '^[A-Za-z0-9_-]{11}$';
-  elsif host in ('youtube.com', 'www.youtube.com', 'm.youtube.com') then
-    if n = 1 and a = 'watch' then
-      for kv in select unnest(string_to_array(coalesce(query, ''), '&')) loop
-        nm := split_part(kv, '=', 1);
-        if nm ~ '[%+]' then return false; end if;
-        if nm = 'v' then return substr(kv, 3) ~ '^[A-Za-z0-9_-]{11}$' and strpos(kv, '=') = 2; end if;
-      end loop;
-      return false;
-    end if;
-    return n = 2 and a in ('shorts', 'live') and b ~ '^[A-Za-z0-9_-]{11}$';
-  elsif host in ('vimeo.com', 'www.vimeo.com') then
-    return n = 1 and a ~ '^[0-9]{1,12}$';
-  elsif host = 'clips.twitch.tv' then
-    return n = 1 and a ~ '^[A-Za-z0-9_-]{1,100}$';
-  elsif host in ('twitch.tv', 'www.twitch.tv') then
-    return n = 3 and a ~ '^[A-Za-z0-9_-]{1,100}$' and b = 'clip' and c ~ '^[A-Za-z0-9_-]{1,100}$';
-  elsif host in ('streamable.com', 'www.streamable.com') then
-    return n = 1 and a ~* '^[a-z0-9]{3,16}$';
-  elsif host in ('nicovideo.jp', 'www.nicovideo.jp') then
-    return n = 2 and a = 'watch' and b ~ '^(sm|nm|so)[0-9]{1,12}$';
-  elsif host in ('soundcloud.com', 'www.soundcloud.com') then
-    return n = 2 and a ~ '^[A-Za-z0-9_-]{1,100}$' and b ~ '^[A-Za-z0-9_-]{1,100}$';
-  end if;
-  return lower(m[1]) = 'https' and path ~* '\.(mp4|webm)$';
-end $$;
-
--- What follows `quote` in a quote opener, read as parse.ts's quoteHead does: 'real:<id>' for a quote of an Act (the name an id, quoted or not, with or without ` user=<id>`
--- after it), 'counterfeit' for a quote with any other name or none, and null when the opener is only words. Case of the id is dropped.
-create function bb_quote_head(rest text) returns text
-language plpgsql immutable set search_path = public, pg_temp as $$
-declare
-  uuid_re constant text := '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
-  -- JavaScript's `\s` and `trim()`: WhiteSpace and LineTerminator, which Postgres's `\s` is not (it leaves out U+00A0, U+FEFF and the rest above U+007F)
-  ws constant text := '[\t\n\v\f\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]';
-  v text;
-  nm text;
-  tail text;
-  j integer;
-  m text[];
-begin
-  if left(rest, 1) = '=' then
-    v := substr(rest, 2);
-    if left(v, 1) = '"' then
-      j := strpos(substr(v, 2), '"');
-      if j = 0 then return null; end if;
-      nm := substr(v, 2, j - 1);
-      tail := substr(v, j + 2);
-    else
-      m := regexp_match(v, '^(.*?)(' || ws || 'user=.*)$', 'i');
-      if m is null then nm := v; tail := ''; else nm := m[1]; tail := m[2]; end if;
-    end if;
-    nm := regexp_replace(nm, '^' || ws || '+|' || ws || '+$', '', 'g');
-    if nm = '' or bb_over(nm, 80) then return null; end if;
-  else
-    tail := rest;
-  end if;
-  if tail <> '' then
-    m := regexp_match(tail, '^' || ws || '+user=(.*)$', 'i');
-    if m is null or m[1] !~* uuid_re then return null; end if;
-  end if;
-  if nm is not null and nm ~* uuid_re then return 'real:' || lower(nm); end if;
-  return 'counterfeit';
-end $$;
-
--- A body with the contents of every quote of a hidden post emptied. The quote keeps its opener and its closer, so it still names its Act and the renderer shows the
--- note in its place. It reads the body as engine/bbcode/parse.ts does, so a quote is where the parser finds one: tags are `[`…`]` runs of up to MAX_TAG
--- characters with no `[` inside; `[noparse]` and `[code]` (and a `[img]`, `[video]` or `[youtube]` the parser shows) hold their contents as words, which are no
--- tag; a closer closes the nearest open tag of its name, closing whatever was opened inside it, and with none open it is words; a `[url]` closes an open link (and what
--- is inside it); inside an open inline spoiler the block tags are words; and the tags still open at the end are closed there. A hidden quote that never closes is
--- emptied to the end of the body, as the parser's own reading of it is. A quote of a hidden post inside a quote already emptied is inside it. The parser keeps a
--- shared fixture, supabase/tests/data/conduct-quote-corpus.json, that 0164-conduct-leaks.sql runs through this function and engine/bbcode/conceal.test.ts runs
--- through the parser, so neither reading can move without the other failing. It runs only on a body that contains `[quote=` (public_payload asks), and walks it only if one of its quote openers names a post with a hidden version. Known gap, not a
--- leak: tags past 32 real ones deep (the parser's MAX_DEPTH) count every tag as real here.
-create function conceal_quotes(body text) returns text
-language plpgsql stable security definer set search_path = public, pg_temp as $$
-declare
-  qid text;
-  found_hidden boolean;
-  ws constant text := '[\t\n\v\f\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]';
-  pieces text[];
-  tags text[];
-  starts integer[] := '{}';
-  n integer;
-  i integer;
-  j integer;
-  at integer := 1;
-  tag text;
-  b text;
-  nm text;
-  val text;
-  qrest text;
-  head text;
-  eqp integer;
-  isc boolean;
-  tend integer;
-  tstart integer;
-  within text;
-  skip boolean;
-  real_frame boolean;
-  -- the open tags, innermost last: the name, and whether the frame is a real one
-  st_name text[] := '{}';
-  st_real boolean[] := '{}';
-  cnt jsonb := '{}';
-  sz integer := 0;
-  nreal integer := 0;
-  nurl integer := 0;
-  nisp integer := 0;
-  hid integer := 0;
-  -- where each raw closer was last found: 0 not looked up yet, -1 none after this point
-  rawat jsonb := '{}';
-  raw_at integer;
-  result text := '';
-  copied integer := 1;
-  popped_name text;
-  popped_real boolean;
-  openers constant text[] := array['b','i','u','s','color','size','url','img','code','quote','list','spoiler','ispoiler','video','youtube','center','left','right','hr','sub','sup','font','marquee','glow','shadow','rainbow','highlight','noparse'];
-  closers constant text[] := array['b','i','u','s','color','size','url','quote','list','spoiler','ispoiler','video','youtube','center','left','right','sub','sup','font','marquee','glow','shadow','rainbow','highlight'];
-  blocks constant text[] := array['quote','code','list','spoiler','center','left','right','hr','video','youtube','marquee'];
-begin
-  if body is null or body !~* '\[quote=' then return body; end if;
-  -- Nothing to do unless the body holds the id of a hidden post. A pure superset of what bb_quote_head reads: every UUID-shaped run anywhere in the body, whatever surrounds it (an id
-  -- an opener reads is whole, so no run that is part of one is missed), and one indexed probe for each until one is hidden.
-  found_hidden := false;
-  for qid in select distinct lower(m[1]) from regexp_matches(body, '([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})', 'gi') m loop
-    if quote_hidden(qid::uuid) then found_hidden := true; exit; end if;
-  end loop;
-  if not found_hidden then return body; end if;
-  pieces := regexp_split_to_array(body, '\[[^\[\]]*\]');
-  tags := array(select m[1] from regexp_matches(body, '(\[[^\[\]]*\])', 'g') m);
-  n := coalesce(array_length(tags, 1), 0);
-  for i in 1 .. n loop
-    at := at + length(pieces[i]);
-    starts[i] := at;
-    at := at + length(tags[i]);
-  end loop;
-
-  i := 1;
-  while i <= n loop
-    tag := tags[i];
-    tstart := starts[i];
-    tend := tstart + length(tag);
-    b := substr(tag, 2, length(tag) - 2);
-    i := i + 1;
-    if b = '' or bb_over(b, 2064) or b = '*' then continue; end if;
-    isc := false; val := null; qrest := null;
-    if left(b, 1) = '/' then
-      nm := lower(substr(b, 2));
-      if not nm = any (closers) then continue; end if;
-      isc := true;
-    elsif b ~* ('^quote($|=|' || ws || ')') then
-      nm := 'quote';
-      qrest := substr(b, 6);
-    else
-      eqp := strpos(b, '=');
-      nm := lower(case when eqp = 0 then b else left(b, eqp - 1) end);
-      if not nm = any (openers) then continue; end if;
-      if eqp > 0 then
-        val := substr(b, eqp + 1);
-        if length(val) >= 2 and left(val, 1) = '"' and right(val, 1) = '"' then val := substr(val, 2, length(val) - 2); end if;
-      end if;
-    end if;
-
-    -- inside an open inline spoiler, a block tag, a link and another spoiler are words
-    if nisp > 0 and (nm = any (blocks) or nm = 'url' or (nm = 'ispoiler' and not isc)) then continue; end if;
-
-    if isc then
-      -- the closer closes the nearest open tag of its name and what was opened inside it; with none open it is words
-      if coalesce((cnt ->> nm)::integer, 0) > 0 then
-        loop
-          popped_name := st_name[sz]; popped_real := st_real[sz];
-          st_name := st_name[1 : sz - 1]; st_real := st_real[1 : sz - 1];
-          cnt := jsonb_set(cnt, array[popped_name], to_jsonb((cnt ->> popped_name)::integer - 1));
-          if popped_real then
-            nreal := nreal - 1;
-            if popped_name = 'url' then nurl := nurl - 1; end if;
-            if popped_name = 'ispoiler' then nisp := nisp - 1; end if;
-          end if;
-          sz := sz - 1;
-          exit when popped_name = nm;
-        end loop;
-        if hid > sz then
-          -- the hidden quote ended here, closed by this tag or by the tag it was inside: what it held is dropped, and the tag stays
-          copied := tstart; hid := 0;
-        end if;
-      end if;
-    elsif nm in ('code', 'img', 'video', 'youtube', 'noparse') then
-      skip := false;
-      if val is null then
-        raw_at := coalesce((rawat ->> nm)::integer, 0);
-        if raw_at = 0 or (raw_at > 0 and raw_at < i) then
-          raw_at := -1;
-          for j in i .. n loop
-            if lower(tags[j]) = '[/' || nm || ']' then raw_at := j; exit; end if;
-          end loop;
-          rawat := jsonb_set(rawat, array[nm], to_jsonb(raw_at));
-        end if;
-        if raw_at > 0 then
-          -- parse.ts gives an image or a video contents of at most MAX_URL_LENGTH + 64 characters; longer is words, and is decided by the length alone, so the
-          -- stretch to the closer is never copied for every opener in front of it
-          if nm in ('code', 'noparse') then skip := true;
-          elsif starts[raw_at] - tend > 2048 + 64 then skip := false;
-          else
-            within := substr(body, tend, starts[raw_at] - tend);
-            if bb_over(within, 2048 + 64) then skip := false;
-            elsif nm = 'img' then skip := bb_safe_href(within) and within ~* '^\s*https?:';
-            else skip := bb_video_like(within, nm = 'youtube');
-            end if;
-          end if;
-          if skip then i := raw_at + 1; end if;
-        end if;
-      end if;
-    else
-      real_frame := true;
-      if nm = 'url' then
-        if val is not null and not bb_safe_href(val) then
-          real_frame := false;
-        else
-          -- a new link closes an open one, and whatever was opened inside it
-          while nurl > 0 loop
-            popped_name := st_name[sz]; popped_real := st_real[sz];
-            st_name := st_name[1 : sz - 1]; st_real := st_real[1 : sz - 1];
-            cnt := jsonb_set(cnt, array[popped_name], to_jsonb((cnt ->> popped_name)::integer - 1));
-            if popped_real then
-              nreal := nreal - 1;
-              if popped_name = 'url' then nurl := nurl - 1; end if;
-              if popped_name = 'ispoiler' then nisp := nisp - 1; end if;
-            end if;
-            sz := sz - 1;
-          end loop;
-          if hid > sz then copied := tstart; hid := 0; end if;
-        end if;
-      elsif nm = 'quote' then
-        head := bb_quote_head(qrest);
-        if head is null then real_frame := false; end if;
-      elsif nm = 'ispoiler' then
-        if val is not null then real_frame := false; end if;
-      elsif nm = 'hr' then
-        continue;
-      end if;
-      if real_frame and nreal >= 32 then real_frame := false; end if;
-      st_name := st_name || nm; st_real := st_real || real_frame; sz := sz + 1;
-      cnt := jsonb_set(cnt, array[nm], to_jsonb(coalesce((cnt ->> nm)::integer, 0) + 1));
-      if real_frame then
-        nreal := nreal + 1;
-        if nm = 'url' then nurl := nurl + 1; end if;
-        if nm = 'ispoiler' then nisp := nisp + 1; end if;
-      end if;
-      if nm = 'quote' and hid = 0 and head like 'real:%' and quote_hidden(substr(head, 6)::uuid) then
-        -- the opener stays; what the quote holds goes, up to the tag that ends it
-        result := result || substr(body, copied, tend - copied);
-        copied := tend; hid := sz;
-      end if;
-    end if;
-  end loop;
-  if hid = 0 then result := result || substr(body, copied); end if;
-  return result;
-end $$;
-
--- What a payload shows a player: a hidden version's body is null; any other body has the contents of its quotes of hidden posts emptied.
--- A payload with no text body is left as it is.
-create function public_payload(p jsonb, hidden boolean) returns jsonb
+-- The ids of the quoted posts, among those an Act's body names, that have a hidden version now: sorted, each once, empty when there are none (the Act serves its own words).
+create function hidden_refs(v uuid) returns uuid[]
 language sql stable security definer set search_path = public, pg_temp as $$
+  select coalesce(array_agg(r.quoted order by r.quoted), '{}'::uuid[]) from quote_refs r where r.act = v and quote_hidden(r.quoted)
+$$;
+
+-- Ask for a layer of every Act that quotes `post`.
+create function conceal_request_quoters(post uuid) returns void
+language sql security definer set search_path = public, pg_temp as $$
+  insert into conceal_requests (act) select r.act from quote_refs r where r.quoted = post
+$$;
+
+-- Writing an Act whose body quotes: record what it quotes, and ask for its layer at once if any of it is hidden now.
+create function acts_quote_refs() returns trigger
+language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  insert into quote_refs (act, quoted) select new.id, q from quote_ids(new.payload ->> 'body') q on conflict do nothing;
+  if exists (select 1 from quote_refs r where r.act = new.id and quote_hidden(r.quoted)) then
+    insert into conceal_requests (act) values (new.id);
+  end if;
+  return null;
+end $$;
+create trigger acts_quote_refs after insert on acts for each row
+  when (new.payload ->> 'body' ilike '%[quote=%') execute function acts_quote_refs();
+
+-- An admin's decision that hides, unhides or approves a version changes what is hidden for every Act that quotes the post.
+create function conduct_decisions_conceal() returns trigger
+language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  perform conceal_request_quoters(new.post);
+  return null;
+end $$;
+create trigger conduct_decisions_conceal after insert on conduct_decisions for each row
+  when (new.outcome in ('hide', 'hideUntilEdited', 'unhide', 'approve') and new.post is not null) execute function conduct_decisions_conceal();
+
+-- The author's edit of a post an admin decided on is where a hide until edited ends, which computes, with no decision of its own: ask again. (It is a probe of the decisions' own index for
+-- any edit, and a request for a post nobody quotes writes nothing.)
+create function acts_edit_conceal() returns trigger
+language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  if exists (select 1 from conduct_decisions x where x.post = new.target_act_id and x.outcome in ('hide', 'hideUntilEdited', 'unhide', 'approve')) then
+    perform conceal_request_quoters(new.target_act_id);
+  end if;
+  return null;
+end $$;
+create trigger acts_edit_conceal after insert on acts for each row when (new.kind = 'edit') execute function acts_edit_conceal();
+revoke execute on function hidden_refs(uuid), conceal_request_quoters(uuid), acts_quote_refs(), conduct_decisions_conceal(), acts_edit_conceal() from public, anon, authenticated;
+
+-- What an Act's quotes of hidden posts come to now: `refs` whether any quote of a hidden post is named, `ready` whether a layer made for exactly the hidden set of now exists, and its body.
+-- For a body that names nothing hidden, one probe of quote_refs. No parsing, whatever the body.
+create function conceal_layer(v uuid) returns table (refs boolean, ready boolean, body text)
+language plpgsql stable security definer rows 1 set search_path = public, pg_temp as $$
+declare
+  hs uuid[] := hidden_refs(v);
+  l quote_layers;
+begin
+  if cardinality(hs) = 0 then return query select false, true, null::text; return; end if;
+  select * into l from quote_layers x where x.act = v order by x.at desc, x.id desc limit 1;
+  if found and l.hidden = hs then return query select true, true, l.body; return; end if;
+  return query select true, false, null::text;
+end $$;
+
+-- What a payload shows a player: a hidden version's body is null; a body that names a quote of a hidden post is the layer's, or null until the job has made it (`ready` false, and
+-- acts_public says `concealing`); any other body is as written. A payload with no text body is left as it is. `v` is the Act the payload belongs to.
+create function shown_payload(p jsonb, hidden boolean, refs boolean, ready boolean, layer text) returns jsonb
+language sql immutable set search_path = public, pg_temp as $$
   select case
     when p is null or jsonb_typeof(p -> 'body') is distinct from 'string' then p
     when hidden then jsonb_set(p, '{body}', 'null'::jsonb)
-    when p ->> 'body' ilike '%[quote=%' then jsonb_set(p, '{body}', to_jsonb(conceal_quotes(p ->> 'body')))
-    else p
+    when not refs then p
+    when ready then jsonb_set(p, '{body}', to_jsonb(layer))
+    else jsonb_set(p, '{body}', 'null'::jsonb)
   end
 $$;
+create function public_payload(p jsonb, hidden boolean, v uuid) returns jsonb
+language sql stable security definer set search_path = public, pg_temp as $$
+  select case when hidden or p is null or jsonb_typeof(p -> 'body') is distinct from 'string' then shown_payload(p, hidden, false, true, null)
+              else (select shown_payload(p, false, c.refs, c.ready, c.body) from conceal_layer(v) c) end
+$$;
+
+-- The work for the job: the Acts with an open request, oldest first, the hidden set each must be concealed against now, and the Act's own words, which the job's parser reads. The service
+-- role alone calls it (the words are the quoting post's own, hidden quote included, and go to the job and nowhere else).
+create function conceal_due(most integer) returns table (act uuid, hidden uuid[], body text)
+language sql stable security definer set search_path = public, pg_temp as $$
+  select d.act, hidden_refs(d.act), x.payload ->> 'body'
+  from (select r.act, min(r.id) as first from conceal_requests r
+        where not exists (select 1 from quote_layers l where l.act = r.act and l.upto >= r.id)
+        group by r.act order by min(r.id) limit greatest(conceal_due.most, 0)) d
+  join acts x on x.id = d.act
+  order by d.first
+$$;
+
+-- The job's answer for an Act: the body with the contents of its quotes of the posts in `hidden` emptied (null when none). It is refused when `hidden` is not the set of now, so a job that
+-- read the state before a decision cannot store, and then serve, a layer that shows what is hidden. Service role only.
+create function record_layer(act uuid, hidden uuid[], body text) returns bigint
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  mine uuid[] := coalesce((select array_agg(distinct x order by x) from unnest(record_layer.hidden) x), '{}'::uuid[]);
+  seen bigint;
+  id bigint;
+begin
+  -- The last request is read before the hidden set is, so a decision that lands in between leaves its request open.
+  select coalesce(max(r.id), 0) into seen from conceal_requests r where r.act = record_layer.act;
+  if mine is distinct from hidden_refs(record_layer.act) then
+    raise exception 'the hidden set changed since it was read; read it again' using hint = 'kayfabb.conceal_stale', errcode = 'P0001';
+  end if;
+  insert into quote_layers (act, hidden, body, upto) values (record_layer.act, mine, case when cardinality(mine) = 0 then null else record_layer.body end, seen)
+  returning quote_layers.id into id;
+  return id;
+end $$;
+revoke execute on function quote_ids(text), conceal_layer(uuid), shown_payload(jsonb, boolean, boolean, boolean, text), public_payload(jsonb, boolean, uuid), conceal_due(integer), record_layer(uuid, uuid[], text)
+  from public, anon, authenticated;
+grant execute on function conceal_due(integer), record_layer(uuid, uuid[], text) to service_role;
 
 -- Two reads of a post's words that feed a model or a card's condition, now reading what a player would read (0105's rule_breaks and 0144's spring_facts, each
 -- otherwise as that migration left it): a hidden version has no words to judge, and the contents of a quote of a hidden post are emptied. rule_breaks finds
@@ -611,7 +452,7 @@ declare
   body text;
   broken boolean;
 begin
-  select a.character, a.thread, a.seq, a.created_at, coalesce(public_payload(a.payload, false) ->> 'body', '') as body, t.board, t.title into p
+  select a.character, a.thread, a.seq, a.created_at, coalesce(public_payload(a.payload, false, a.id) ->> 'body', '') as body, t.board, t.title into p
   from acts a join threads t on t.id = a.thread where a.id = post_act and a.kind in ('post', 'spin') and not coalesce(version_hidden(a.id), false);
   if not found then return; end if;
   body := p.body;
@@ -669,7 +510,7 @@ begin
   f.reach := coalesce(k.reaches[1], 'post');
   -- 3. The Act that met the back: its kind, character, thread, board and words, and the thread's first post and the announcements thread a board card would be written in. For a cast
   -- or a visit by_act is not a post, or not yet written, and these find what they find.
-  select a.kind, a.character, a.thread, public_payload(a.payload, coalesce(version_hidden(a.id), false)) ->> 'body', t.board into f.by_kind, f.by_character, f.by_thread, f.by_body, f.by_board
+  select a.kind, a.character, a.thread, public_payload(a.payload, coalesce(version_hidden(a.id), false), a.id) ->> 'body', t.board into f.by_kind, f.by_character, f.by_thread, f.by_body, f.by_board
   from acts a left join threads t on t.id = a.thread where a.id = by_act;
   select a.id into f.first_post from acts a where a.thread = f.by_thread and a.seq = 1 and a.kind = 'post';
   select t.id into f.announce_thread from settings s join threads t on t.id::text = s.value #>> '{}' where s.key = 'systemAnnouncements';
@@ -790,7 +631,7 @@ language sql stable security definer set search_path = public, pg_temp as $$
            left(p.body, 600) as quote, null::integer as count, null::jsonb as detail
     from boss_page c
     left join lateral (
-      select a.id, a.thread, a.seq, public_payload(a.payload, version_hidden(a.id)) ->> 'body' as body
+      select a.id, a.thread, a.seq, public_payload(a.payload, version_hidden(a.id), a.id) ->> 'body' as body
       from characters ch join acts a on a.character = ch.id
       where ch.staff = c.who and a.created_at = c.at and a.kind = 'post' and a.thread = (select thread from ann)
         and exists (select 1 from settings s where s.key = 'systemLines' and jsonb_typeof(s.value -> c.line) = 'array' and jsonb_array_length(s.value -> c.line) > 0)
@@ -834,27 +675,27 @@ create view reviews_due as
     and exists (select 1 from acts x where x.kind = 'edit' and x.target_act_id = d.post and x.created_at > d.at)
     and not exists (select 1 from conduct_decisions l where l.post = d.post and l.id > d.id and l.outcome in ('hide', 'hideUntilEdited', 'unhide', 'approve'));
 
--- acts_public (0156), every column and grant as it was, with `hidden` and `any_hidden` last, after 0156's `ends_at`: a hidden version's body is null, `hidden` says so, and the
--- contents of a quote of a hidden post are empty in any body. `payload` is the version the Act is (a post's original, an edit's own words);
--- `current_payload` is the post's current version, and `hidden` says whether that version is hidden. `any_hidden` says whether any version of the post is (quote_hidden, the predicate that empties a
--- quote of it), which is what a quote's note stands on. A view calls its functions with its
--- caller's privileges, so each is granted to the roles that read it.
--- Measured with `explain (analyze, buffers)` and auto_explain's nested statements on a scratch database of 50,000 posts in 50 threads, 2,000 decisions on random posts and 5,000
--- bodies that quote: every probe is an index probe, never a scan. A post nobody decided on costs one index-only probe of conduct_decisions_post for `hidden` and one for
--- `any_hidden` (2 buffers each) and a probe of acts_edits for its latest edit; a decided post adds one index probe for its latest decision of the version (3 buffers).
--- conceal_quotes runs only on the 10% of bodies that hold `[quote=`. A page of 20 posts (an acts_thread_seq_key range, then these probes per row) reads about 300 buffers and
--- runs in 1.1 to 1.6 ms, roughly 60 microseconds a post, and the cost grows with the page and not with the thread, the decisions or the board.
+-- acts_public (0156), every column and grant as it was, with `hidden`, `any_hidden` and `concealing` last, after 0156's `ends_at`: a hidden version's body is null, `hidden` says so, and a body
+-- that quotes a hidden post is served as its layer (quote_layers: the one parser's concealQuotes, run by the conceal job, empties the contents of those quotes) once the layer made for
+-- the hidden set of now exists. Until it does the body is null and `concealing` is true (the screen says the post will show again in a moment, never the hidden words; like `hidden`, `concealing` is about the current version); with nothing hidden among
+-- what it quotes a body is as written, which needs no job. `payload` is the version the Act is (a post's original, an edit's own words);
+-- `current_payload` is the post's current version, and `hidden` says whether that version is hidden. `any_hidden` says whether any version of the post is (quote_hidden), which is what a quote's note stands on.
+-- A view calls its functions with its caller's privileges, so each is granted to the roles that read it.
+-- A post nobody decided on costs one index-only probe of conduct_decisions_post for `hidden` and one for `any_hidden` (2 buffers each), a probe of acts_edits for its latest edit and one of
+-- quote_refs for each version (conceal_layer); a decided post adds one index probe for its latest decision of the version, and a body that quotes a hidden post one more of quote_layers. Nothing here
+-- reads a body's length or parses it: a page of 20 posts costs the same whatever the 20 bodies hold (supabase/tests/0168-conduct-concealing.sql holds it).
 create or replace view acts_public as
   select a.id, a.character, a.kind, a.thread, a.target_act_id, a.seq, a.created_at,
-         public_payload(a.payload, h.own) as payload,
-         public_payload(coalesce(e.payload, a.payload), h.cur) as current_payload,
+         shown_payload(a.payload, h.own, co.refs, co.ready, co.body) as payload,
+         shown_payload(coalesce(e.payload, a.payload), h.cur, coalesce(cc.refs, co.refs), coalesce(cc.ready, co.ready), coalesce(cc.body, co.body)) as current_payload,
          e.created_at as edited_at,
          case when e.created_at > a.created_at + coalesce(span_interval((select g.value from settings g where g.key = 'editGrace')), interval '0')
            then e.created_at end as shown_edited_at,
          case when a.kind = 'card' then exists (select 1 from card_write_refunds r where r.play = a.id) end as untaken,
          case when a.kind = 'set' then (select f.ends_at from face_down f where f.play = a.id) end as ends_at,
          h.cur as hidden,
-         a.kind = 'post' and quote_hidden(a.id) as any_hidden
+         a.kind = 'post' and quote_hidden(a.id) as any_hidden,
+         not h.cur and coalesce(cc.refs, co.refs) and not coalesce(cc.ready, co.ready) as concealing
   from acts a
   left join lateral (
     select x.id, x.payload, x.created_at from acts x
@@ -864,7 +705,9 @@ create or replace view acts_public as
   cross join lateral (
     select o.own, case when e.id is null then o.own else version_hidden(e.id, a.id) end as cur
     from (select a.kind in ('post', 'edit') and version_hidden(a.id, case when a.kind = 'edit' then a.target_act_id else a.id end) as own) o
-  ) h;
+  ) h
+  cross join lateral conceal_layer(a.id) co
+  left join lateral conceal_layer(e.id) cc on e.id is not null;
 
 -- Words are read through acts_public, never from the table: a player's `select` on `acts` loses the `payload` column. A hidden version's words, and the copy of
 -- them inside a post that quotes it, are in `payload`, and no row policy can empty a quote's contents, so the column goes. Everything else on the row stays as public as
@@ -1326,7 +1169,7 @@ begin
          coalesce(span_interval(setting('reachLasts') -> 'board'), interval '1000 months') as board into bound;
   return jsonb_build_object(
     'version', act_projection(on_post.id) || jsonb_build_object(
-      'current_payload', public_payload(v.payload, version_hidden(v.id)),
+      'current_payload', public_payload(v.payload, version_hidden(v.id), v.id),
       'edited_at', case when v.kind = 'edit' then v.created_at end,
       'shown_edited_at', case when v.kind = 'edit' and v.created_at > on_post.created_at + grace then v.created_at end),
     -- The rows' order is for a stable answer only: a caught play and its spring share a transaction's time, so readers order the layers
@@ -1399,7 +1242,7 @@ begin
   select coalesce(jsonb_agg(jsonb_build_object(
       'play', t.play, 'version', t.version, 'post', t.post, 'thread', pa.thread, 'attempts', t.attempts,
       'card', pl.payload ->> 'card', 'config', coalesce(pl.payload -> 'config', '{}'::jsonb), 'tokens', (pl.payload ->> 'tokens')::integer,
-      'author', ch.name, 'body', coalesce(public_payload(v.payload, version_hidden(v.id, pa.id)) ->> 'body', ''), 'title', th.title,
+      'author', ch.name, 'body', coalesce(public_payload(v.payload, version_hidden(v.id, pa.id), v.id) ->> 'body', ''), 'title', th.title,
       'before', (select coalesce(jsonb_agg(jsonb_build_object('name', x.name, 'body', x.body) order by x.seq), '[]'::jsonb)
                  from (select n.seq, cn.name, coalesce(n.current_payload ->> 'body', '') as body
                        from acts_public n join characters_public cn on cn.id = n.character
@@ -2035,10 +1878,12 @@ revoke execute on function conduct_author(uuid), conduct_write(bigint, uuid, uui
   account_bar(uuid), refuse_if_barred(uuid) from public, anon, authenticated;
 -- acts_public calls two functions with its readers' privileges (the digest's role and the service role read it too);
 -- every other helper is reached through those and runs as its owner.
-revoke execute on function version_hidden(uuid, uuid), version_hidden(uuid), quote_hidden(uuid), conceal_quotes(text), public_payload(jsonb, boolean),
-  bb_over(text, integer), bb_safe_href(text), bb_video_like(text, boolean), bb_quote_head(text) from public, anon, authenticated;
-revoke execute on function version_hidden(uuid), conceal_quotes(text) from authenticated;
-grant execute on function version_hidden(uuid, uuid), quote_hidden(uuid), public_payload(jsonb, boolean) to authenticated, service_role, kayfabb_digest;
+revoke execute on function version_hidden(uuid, uuid), version_hidden(uuid), quote_hidden(uuid) from public, anon, authenticated;
+revoke execute on function version_hidden(uuid) from authenticated;
+grant execute on function version_hidden(uuid, uuid), quote_hidden(uuid) to authenticated, service_role, kayfabb_digest;
+-- acts_public reads the layer through these (security definer, so no one reads quote_layers or quote_refs itself).
+revoke execute on function conceal_layer(uuid), shown_payload(jsonb, boolean, boolean, boolean, text) from public, anon, authenticated;
+grant execute on function conceal_layer(uuid), shown_payload(jsonb, boolean, boolean, boolean, text) to authenticated, service_role, kayfabb_digest;
 revoke execute on function accept_conduct(integer), conduct_accepted(), report_post(uuid, text, text), decide_report(bigint, jsonb), decide(uuid, uuid, text, timestamptz, text),
   admin_version(uuid), my_bar(), my_conduct_log(integer) from public, anon;
 grant execute on function accept_conduct(integer), conduct_accepted(), report_post(uuid, text, text), decide_report(bigint, jsonb), decide(uuid, uuid, text, timestamptz, text),

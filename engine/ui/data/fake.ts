@@ -38,6 +38,7 @@ import { TIP_KEYS, TOUR_KEYS } from '../tips/keys.ts';
 import { PLAYS_PER_POST } from '../cards/plays.ts';
 import { quotedActs, visibleText } from '../../bbcode/visible.ts';
 import { parse } from '../../bbcode/parse.ts';
+import { concealQuotes } from '../../bbcode/conceal.ts';
 import { pageOf } from '../thread/pages.ts';
 import { PROFILE_ROWS, RECORD_PAGE, type RecordKind } from '../profile/record.ts';
 import { actsFollowed, actsNamed } from '../log/lines.ts';
@@ -150,6 +151,10 @@ export interface Seed {
    * `myHiddenVersion` gives to the author of a version hidden until edited.
    */
   hide(version: Id, how: 'hide' | 'hideUntilEdited' | 'waiting'): void;
+  /** A version that quotes a post an admin hid whose layer the conceal job has not written yet: its body is null and `concealing` true until `concealed` says the job has run. */
+  concealing(version: Id): void;
+  /** The conceal job has run for this version: its body is served again, with the quotes of hidden posts emptied. */
+  concealed(version: Id): void;
   /** A mail whose latest attempt failed (it is tried again) or was refused (never again). */
   failedMail(mail: { account: Id; template: string; kind: 'failed' | 'refused'; error: string; at?: number }): void;
   /** Mail waiting to go because no admin reply-to address is set (`n` rows with no attempt); with none set, `addressSet` is false. */
@@ -672,30 +677,25 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
 
   /** The versions hidden from players (hide, hideUntilEdited, and an edit that waits for an admin), as acts_public's `hidden` and `public_payload` serve them. */
   const hiddenVersions = new Map<Id, 'hide' | 'hideUntilEdited' | 'waiting'>();
-  /** A body with the contents of each quote of a post with a hidden version emptied, as `conceal_quotes` does (0318); the opener and the closer stay. */
-  const concealQuotes = (body: string): string => {
-    let out = body;
-    for (const v of hiddenVersions.keys()) {
-      const post = acts.get(v)?.kind === 'edit' ? acts.get(v)!.target : v;
-      if (post === null) continue;
-      out = out.replace(new RegExp(`(\\[quote="?${post}"?[^\\]]*\\])[\\s\\S]*?(\\[/quote\\])`, 'giu'), '$1$2');
-    }
-    return out;
-  };
-  /** A payload as a player reads it (`public_payload`): a hidden version's body is null; any other has its quotes of hidden posts emptied. */
-  const publicPayload = (payload: Readonly<Record<string, unknown>>, hidden: boolean): Readonly<Record<string, unknown>> =>
-    typeof payload['body'] !== 'string' ? payload : hidden ? { ...payload, body: null } : { ...payload, body: concealQuotes(payload['body']) };
+  /** The quoting versions whose layer the job has not written yet (seeded): their bodies are withheld and `concealing` is true, as acts_public serves them (0318). */
+  const concealingActs = new Set<Id>();
+  /** The posts with a hidden version, whose quotes the conceal job empties. */
+  const hiddenPosts = (): Set<string> => new Set([...hiddenVersions.keys()].map((v) => (acts.get(v)?.kind === 'edit' ? acts.get(v)!.target : v)).filter((p): p is Id => p !== null));
+  /** A payload as a player reads it (`shown_payload`): a hidden version's body is null, and so is a body awaiting its layer; any other has its quotes of hidden posts emptied by the engine's own concealQuotes, as the job does. */
+  const publicPayload = (payload: Readonly<Record<string, unknown>>, hidden: boolean, version: Id): Readonly<Record<string, unknown>> =>
+    typeof payload['body'] !== 'string' ? payload : hidden || concealingActs.has(version) ? { ...payload, body: null } : { ...payload, body: concealQuotes(payload['body'], hiddenPosts()) };
 
   function publicAct(a: ActRec): Act {
     const latest = a.kind === 'post' ? edits(a).at(-1) : undefined;
     const own = hiddenVersions.has(a.id);
     const cur = latest === undefined ? own : hiddenVersions.has(latest.id);
     return {
-      id: a.id, character: a.character, kind: a.kind, thread: a.thread, targetActId: a.target, seq: a.seq, createdAt: iso(a.at), payload: publicPayload(a.payload, own),
-      currentPayload: publicPayload(latest?.payload ?? a.payload, cur),
+      id: a.id, character: a.character, kind: a.kind, thread: a.thread, targetActId: a.target, seq: a.seq, createdAt: iso(a.at), payload: publicPayload(a.payload, own, a.id),
+      currentPayload: publicPayload(latest?.payload ?? a.payload, cur, latest?.id ?? a.id),
       editedAt: latest ? iso(latest.at) : null,
       shownEditedAt: latest && latest.at > a.at + span(settings.editGrace) ? iso(latest.at) : null,
       hidden: cur,
+      ...(concealingActs.has(latest?.id ?? a.id) && !cur ? { concealing: true } : {}),
       ...(a.kind === 'post' && (own || edits(a).some((e) => hiddenVersions.has(e.id))) ? { anyHidden: true } : {}),
       ...(untakenPlays.has(a.id) ? { untaken: true as const } : {}),
       /* A set's end is the face_down row's, stored when it was set (acts_public.ends_at, 0156). */
@@ -3286,10 +3286,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const original = acts.get(id);
       if (!original || original.kind !== 'post') return [];
       const versions = edits(original).map((e): Act => ({
-        id: e.id, character: e.character, kind: 'edit', thread: e.thread, targetActId: id, seq: null, createdAt: iso(e.at), payload: publicPayload(e.payload, hiddenVersions.has(e.id)),
-        currentPayload: publicPayload(e.payload, hiddenVersions.has(e.id)), editedAt: null, shownEditedAt: null, hidden: hiddenVersions.has(e.id),
+        id: e.id, character: e.character, kind: 'edit', thread: e.thread, targetActId: id, seq: null, createdAt: iso(e.at), payload: publicPayload(e.payload, hiddenVersions.has(e.id), e.id),
+        currentPayload: publicPayload(e.payload, hiddenVersions.has(e.id), e.id), editedAt: null, shownEditedAt: null, hidden: hiddenVersions.has(e.id),
+        ...(concealingActs.has(e.id) && !hiddenVersions.has(e.id) ? { concealing: true } : {}),
       }));
-      return [{ ...publicAct(original), currentPayload: publicPayload(original.payload, hiddenVersions.has(id)), editedAt: null, shownEditedAt: null, hidden: hiddenVersions.has(id) }, ...versions];
+      return [{ ...publicAct(original), currentPayload: publicPayload(original.payload, hiddenVersions.has(id), id), editedAt: null, shownEditedAt: null, hidden: hiddenVersions.has(id) }, ...versions];
     },
     spunFrom: (act, limit = SPUN_FROM_MAX) => [...threads.values()].filter((t) => t.origin === act).sort((a, b) => a.at - b.at).slice(0, limit).map(summary),
     spunFromMany(ids, limit) {
@@ -4403,6 +4404,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       return id;
     },
     hide(version, how) { if (!acts.has(version)) throw new Error(`no such act ${version}`); hiddenVersions.set(version, how); },
+    concealing(version) { if (!acts.has(version)) throw new Error(`no such act ${version}`); concealingActs.add(version); },
+    concealed(version) { concealingActs.delete(version); },
     conductReview(r) { conductReviews.push({ decision: conductNextId++, post: r.post, version: r.version ?? r.post, words: r.words, at: r.at ?? now() }); },
     failedMail(m) { conductFailed.push({ id: conductNextId++, account: m.account, template: m.template, kind: m.kind, error: m.error, at: iso(m.at ?? now()), atMs: m.at ?? now() }); },
     mailWaiting(n) { conductWaiting = n; conductAddress = false; },

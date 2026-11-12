@@ -170,6 +170,7 @@ function toAct(r: Row): Act {
     shownEditedAt: r['shown_edited_at'] ?? null,
     ...(r['hidden'] === true ? { hidden: true } : {}),
     ...(r['any_hidden'] === true ? { anyHidden: true } : {}),
+    ...(r['concealing'] === true ? { concealing: true } : {}),
     ...(r['untaken'] === true ? { untaken: true as const } : {}),
     ...(typeof r['ends_at'] === 'string' ? { endsAt: r['ends_at'] } : {}),
   };

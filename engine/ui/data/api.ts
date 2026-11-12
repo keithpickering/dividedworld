@@ -406,6 +406,11 @@ export interface Act {
   /** Whether any version of this post is hidden (`acts_public.any_hidden`, 0318): the predicate that empties a quote of it, so what a quote's hidden note stands on. Absent reads as no. */
   readonly anyHidden?: boolean;
   /**
+   * Whether this post's current version quotes a post an admin hid and has no concealed body yet (`acts_public.concealing`, 0318): its words are null in `payload` and `currentPayload`
+   * until the conceal job has written the layer that empties those quotes, a minute or so, and the screen says so plainly in their place. Absent reads as no.
+   */
+  readonly concealing?: boolean;
+  /**
    * Set only on a card play whose first generation failed, which is then refunded and over (`acts_public.untaken`, 0149): public, the
    * same for every reader, and nothing of the refund rides with it. A play carrying it is not in force, as one with a `card_end` is not.
    */

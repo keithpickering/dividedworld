@@ -37,13 +37,15 @@ declare
   ch_other uuid := tests.character(other, 'Cy');
   th uuid := tests.thread('Conduct');
   base timestamptz := now() - interval '1 day';
-  p1 uuid; p2 uuid; p3 uuid; p4 uuid; q uuid; e1 uuid; e2 uuid; e3 uuid; tally uuid;
+  p1 uuid; p2 uuid; p3 uuid; p4 uuid; q uuid; q2 uuid; e1 uuid; e2 uuid; e3 uuid; tally uuid;
   r1 bigint; r2 bigint; r3 bigint; r4 bigint;
   seen text;
   n integer;
   got jsonb;
   words text;
   hid boolean;
+  conc boolean;
+  due record;
   rows_made bigint[];
 begin
   insert into admins (account) values (admin_a);
@@ -183,14 +185,31 @@ begin
   q := tests.post(ch_other, th,
     format('[quote=%s user=%s]Ada: First words.[quote]nested[/quote] more[/quote] mine [quote="%s"]kept[/quote] and [QUOTE=%s]again[/QUOTE] end', p1, ch_author, p4, upper(p1::text)),
     base + interval '5 minutes');
+  -- The database does not read BBCode. Until the conceal job has recorded the quoting post's layer, the post is withheld whole, with `concealing` true and no words of the hidden post anywhere.
   perform tests.become(rep);
-  select a.current_payload ->> 'body' into words from acts_public a where a.id = q;
+  select a.current_payload ->> 'body', a.payload ->> 'body', a.concealing into words, seen, conc from acts_public a where a.id = q;
   perform tests.unbecome();
-  if words is distinct from format('[quote=%s user=%s][/quote] mine [quote="%s"]kept[/quote] and [QUOTE=%s][/QUOTE] end', p1, ch_author, p4, upper(p1::text)) then
-    raise exception 'a quote of a hidden post was not emptied, or lost its id: %', words;
+  if words is not null or seen is not null or conc is distinct from true then raise exception 'a quote of a hidden post is not withheld before the job has run: % % %', words, seen, conc; end if;
+  -- The job (as the service role): the post is due, with the hidden set it must be concealed against and its own words; the layer it records (the engine's concealQuotes does this in the real job, by the
+  -- corpus the parser's tests hold it to) is served from then on, the quote emptied and keeping its id.
+  perform tests.become_service();
+  select * into due from conceal_due(10) d where d.act = q;
+  if due.act is null or due.hidden is distinct from array[p1] or due.body not like '%First words.%' then raise exception 'the quoting post is not due with its hidden set: %', due; end if;
+  perform record_layer(q, array[p1], format('[quote=%s user=%s][/quote] mine [quote="%s"]kept[/quote] and [QUOTE=%s][/QUOTE] end', p1, ch_author, p4, upper(p1::text)));
+  if exists (select 1 from conceal_due(10) d where d.act = q) then raise exception 'a recorded layer leaves the post due'; end if;
+  perform tests.unbecome();
+  perform tests.become(rep);
+  select a.current_payload ->> 'body', a.concealing into words, conc from acts_public a where a.id = q;
+  perform tests.unbecome();
+  if words is distinct from format('[quote=%s user=%s][/quote] mine [quote="%s"]kept[/quote] and [QUOTE=%s][/QUOTE] end', p1, ch_author, p4, upper(p1::text)) or conc is distinct from false then
+    raise exception 'a quote of a hidden post was not served as its layer, or lost its id: % %', words, conc;
   end if;
-  -- The body of an unhidden post with no quote, and one that quotes only a post nobody hid, is not touched.
-  if (select conceal_quotes('plain [quote=' || p4 || ']x[/quote]')) is distinct from 'plain [quote=' || p4 || ']x[/quote]' then raise exception 'a quote of an unhidden post was changed'; end if;
+  -- A body that quotes only a post nobody hid has no layer and needs no job: it is served as written, from the first read.
+  q2 := tests.post(ch_other, th, 'plain [quote=' || p4 || ']x[/quote]', base + interval '5 minutes 30 seconds');
+  perform tests.become(rep);
+  select a.current_payload ->> 'body', a.concealing into words, conc from acts_public a where a.id = q2;
+  perform tests.unbecome();
+  if words is distinct from 'plain [quote=' || p4 || ']x[/quote]' or conc is distinct from false then raise exception 'a quote of an unhidden post was changed or withheld: % %', words, conc; end if;
 
   -- History: an edit is its own version, hidden alone. p2 is edited twice; the first edit is hidden.
   e1 := tests.act(ch_author, 'edit', th, '{"body": "Second, edited."}', p2, base + interval '10 minutes');
@@ -214,9 +233,10 @@ begin
   perform tests.become(rep);
   select (a.current_payload ->> 'body'), a.hidden into words, hid from acts_public a where a.id = p1;
   if words is distinct from 'First words.' or hid is distinct from false then raise exception 'an unhidden post is still hidden: % %', words, hid; end if;
-  select a.current_payload ->> 'body' into words from acts_public a where a.id = q;
+  select a.current_payload ->> 'body', a.concealing into words, conc from acts_public a where a.id = q;
   perform tests.unbecome();
-  if words not like '%First words.%' then raise exception 'a quote of an unhidden post is still emptied: %', words; end if;
+  -- With nothing hidden among its quotes the post serves its own words again at once, with no job run: the layer of the hidden set no longer matches and is not read.
+  if words not like '%First words.%' or conc is distinct from false then raise exception 'a quote of an unhidden post is still emptied or withheld: % %', words, conc; end if;
 
   -- ---- Search: a hidden version's words match nothing, in the search or in the index a player can read ----
   declare pz uuid := tests.post(ch_author, th, 'The word is zanzibar, said once.', base + interval '6 minutes');

@@ -283,6 +283,10 @@ test('an instance exported and imported into a fresh database is the same instan
       -- Moderation mail (0319): one outbox row and its attempt, so both tables have a row to carry across.
       insert into mail_outbox (account, template, facts, decision) select bob, 'reportRead', '{}', d.id from conduct_decisions d limit 1;
       insert into mail_attempts (outbox, kind, provider_id, error) select o.id, 'sent', 'export-prov-1', null from mail_outbox o limit 1;
+      -- A quote of that post (0318): the reference the trigger records, a request for the quoting post's layer and the layer itself, so each of the three tables that conceal quotes has a row to carry across.
+      perform tests.post(b, t, format('[quote=%s]Carried.[/quote] across', p), now());
+      insert into conceal_requests (act) select r.act from quote_refs r where r.quoted = p limit 1;
+      insert into quote_layers (act, hidden, body, upto) select r.act, array[p], format('[quote=%s][/quote] across', p), (select max(id) from conceal_requests) from quote_refs r where r.quoted = p limit 1;
       -- An admin ends that card with reverse_card, as ann, the admin (0092); the play's id is the one planted above.
       perform tests.become(ann);
       perform reverse_card('${endedPlay}');
@@ -790,7 +794,7 @@ test('an instance exported and imported into a fresh database is the same instan
 
     // The jobs that run the instance are there, each scheduled from the imported settings: the
     // settlement's, the view count's, the Boss's meeting and the pool's chatter.
-    assert.equal(psqlOn(fresh.toString(), `select string_agg(jobname, ',' order by jobname) from cron.job where jobname like 'kayfabb-%'`), 'kayfabb-chatter,kayfabb-mail,kayfabb-meet,kayfabb-search-rebuild,kayfabb-settle,kayfabb-staff,kayfabb-system-tick,kayfabb-view-counts,kayfabb-write');
+    assert.equal(psqlOn(fresh.toString(), `select string_agg(jobname, ',' order by jobname) from cron.job where jobname like 'kayfabb-%'`), 'kayfabb-chatter,kayfabb-conceal,kayfabb-mail,kayfabb-meet,kayfabb-search-rebuild,kayfabb-settle,kayfabb-staff,kayfabb-system-tick,kayfabb-view-counts,kayfabb-write');
 
     // And a second import onto what is no longer a fresh instance is refused, naming why.
     const twice = await run('import-instance.mjs', ['--from', dir, '--to', fresh.toString(), '--storage', newStore.url]);

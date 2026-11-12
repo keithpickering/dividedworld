@@ -37,7 +37,7 @@ import { useKayfa } from '../context.tsx';
 import { ThreadCtx, useThread, type ThreadContext } from './context.ts';
 import { moveOffice } from '../board/move-words.ts';
 import { GroupMoveLine, RulingTag, rulingOf } from './GroupMove.tsx';
-import { HiddenNote, HiddenOwn, useMyHidden } from '../conduct/Hidden.tsx';
+import { ConcealingNote, HiddenNote, HiddenOwn, useMyHidden } from '../conduct/Hidden.tsx';
 import { AnnounceLine, LastEdited, MoveEndLine, MoveKeepLine, SystemPost, UnmaskLine, quoteHead, text, useHistory, when, type PostAbout } from './lines.tsx';
 import { pageOf, threadHref } from './pages.ts';
 
@@ -105,7 +105,9 @@ function Body({ act, name, spoken, person, editing, own, onEdit, onDone, marks, 
           {!editing && <ViolationNotice visit={visit} />}
           {editing
             ? <EditPost key={own?.words ?? ''} act={act} seq={act.seq!} onDone={onDone} onSaved={changed} {...(own ? { start: own.words } : {})} />
-            : hidden
+            : act.concealing === true && !hidden
+              ? <ConcealingNote />
+              : hidden
               ? (
                 <>
                   <HiddenNote />

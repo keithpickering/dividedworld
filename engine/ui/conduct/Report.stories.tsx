@@ -142,6 +142,19 @@ export const QuoteOfAHiddenPost: Story = {
   },
 };
 
+/** A post that quotes a hidden post, in the minute before the conceal job has written its layer: the plain note in place of its words, never the hidden note. */
+export const QuotingAHiddenPostForAMoment: Story = {
+  args: { title: TITLE },
+  parameters: {
+    world: ((fake, instance) => {
+      const w = cast(fake, instance);
+      fake.seed.hide(w.second, 'hide');
+      fake.seed.concealing(fake.seed.post(w.t.thread, w.spritey, `[quote=${w.second}]Receipts: the cape pun.[/quote]I will say it where everyone can see it.`, { at: T0 + 4 * MIN }));
+    }) satisfies World,
+    path: '/t/x',
+  },
+};
+
 /** The author's own view of a post hidden until they edit it: the note, then "Only you see this" with their words and Edit. */
 export const AuthorHiddenUntilEdited: Story = {
   args: { title: TITLE },

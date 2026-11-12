@@ -193,6 +193,76 @@ describe('a quote of a hidden version', () => {
   });
 });
 
+describe('a post that quotes a hidden post, before the conceal job has written its layer', () => {
+  const CONCEALING = 'Part of this post quotes a post an admin hid. It will show again in a moment.';
+
+  test('shows the plain note in place of its words, which is not the hidden note, and none of the hidden words', async () => {
+    const w = world();
+    w.fake.seed.hide(w.theirs, 'hide');
+    const quoting = w.fake.seed.post(w.thread, w.pipe, `[quote=${w.theirs}]${WORDS}[/quote]I answer that.`);
+    w.fake.seed.concealing(quoting);
+    open(w);
+    const art = await article(4);
+    const note = within(art).getByRole('note');
+    expect(note).toHaveTextContent(CONCEALING);
+    expect(note).not.toHaveTextContent(NOTE);
+    expect(art).not.toHaveTextContent(WORDS);
+    expect(art).not.toHaveTextContent('I answer that.');
+    expect(within(art).getByRole('group', { name: 'About Pipewrench' })).toBeInTheDocument();
+    expect(within(art).getByRole('button', { name: 'History' })).toBeInTheDocument();
+  });
+
+  test('shows the words, with the hidden quote emptied, once the job has run (the note ends by itself)', async () => {
+    const w = world();
+    w.fake.seed.hide(w.theirs, 'hide');
+    const quoting = w.fake.seed.post(w.thread, w.pipe, `[quote=${w.theirs}]${WORDS}[/quote]I answer that.`);
+    w.fake.seed.concealing(quoting);
+    w.fake.seed.concealed(quoting);
+    open(w);
+    const art = await article(4);
+    expect(within(art).queryByText(CONCEALING)).toBeNull();
+    expect(art).toHaveTextContent('I answer that.');
+    expect(art).not.toHaveTextContent(WORDS);
+  });
+
+  test('POISON: a withheld Act that still carries a body never draws it', async () => {
+    const w = world();
+    const tapped = tap(w.fake);
+    open(w);
+    await article(2);
+    const original = (await w.fake.acts(w.thread, 2, 2))[0]!;
+    const leaked: Act = { ...original, concealing: true, payload: { body: WORDS }, currentPayload: { body: WORDS } };
+    act(() => { tapped().onAct?.(leaked); });
+    await waitFor(() => expect(within(document.getElementById('post-2')!).getByRole('note')).toHaveTextContent(CONCEALING));
+    expect(document.getElementById('post-2')).not.toHaveTextContent(WORDS);
+  });
+
+  test('an edit that is withheld is the plain note in History, and the original beside it keeps its words', async () => {
+    const w = world();
+    w.fake.seed.hide(w.theirs, 'hide');
+    const edit = w.fake.seed.edit(w.mine, w.pipe, `[quote=${w.theirs}]${WORDS}[/quote]now`, { at: Date.now() + 10 * 60_000 });
+    w.fake.seed.concealing(edit);
+    open(w);
+    const art = await article(3);
+    expect(within(art).getByRole('note')).toHaveTextContent(CONCEALING);
+    await userEvent.click(within(art).getByRole('button', { name: 'History' }));
+    const rows = within(await within(art).findByRole('list', { name: 'Versions of this post, oldest first' })).getAllByRole('listitem');
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toHaveTextContent(`${WORDS}, from me`);
+    expect(within(rows[1]!).getByRole('note')).toHaveTextContent(CONCEALING);
+    expect(within(rows[1]!).queryByText(NOTE)).toBeNull();
+  });
+
+  test('has no axe violations', async () => {
+    const w = world();
+    w.fake.seed.hide(w.theirs, 'hide');
+    const quoting = w.fake.seed.post(w.thread, w.pipe, `[quote=${w.theirs}]${WORDS}[/quote]I answer that.`);
+    w.fake.seed.concealing(quoting);
+    open(w);
+    expect(describeViolations(await axeViolations(await article(4)))).toBe('');
+  });
+});
+
 describe('the author of a version hidden until they edit it', () => {
   test('sees their own words under the note, "Only you see this", with Edit, which opens the editor on those words', async () => {
     const w = world();

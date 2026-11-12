@@ -12,7 +12,7 @@ import { PLAYS_PER_POST, createPlays, livePlays, type Plays } from '../cards/pla
 import type { CardPlay } from '../cards/types.ts';
 import { resolveWritten } from '../cards/written.ts';
 import { Debuts, RevealPost, TallyPost } from '../reveal/Reveal.tsx';
-import { HiddenNote } from '../conduct/Hidden.tsx';
+import { ConcealingNote, HiddenNote } from '../conduct/Hidden.tsx';
 import { ReportLink } from '../conduct/Report.tsx';
 
 import { sameYear } from '../postbit/dates.ts';
@@ -68,6 +68,8 @@ export interface PostAbout { readonly seq: number | null; readonly name: string 
  * `hidden`, which for a post is whether its *current* version is hidden, so it is read from its words.
  */
 const versionHidden = (v: Act): boolean => typeof v.payload.body !== 'string' || (v.kind === 'edit' && v.hidden === true);
+/** Whether a History row's words are withheld for a moment, not hidden: an edit that quotes a post an admin hid, before the conceal job has written its layer (`concealing`, which for an edit is its own). */
+const versionConcealing = (v: Act): boolean => v.kind === 'edit' && v.concealing === true && v.hidden !== true;
 
 /**
  * What History needs of a post's writing plays: the live plays of cards that write on it and every row of their tails, read once when History
@@ -129,7 +131,9 @@ function Versions({ post, about }: { readonly post: Id; readonly about: PostAbou
         return (
           <li key={v.id}>
             <span className="kb-small kb-muted">{which}, {when(v.createdAt)}{last ? ' · Current' : ''}</span>
-            {hidden
+            {versionConcealing(v)
+              ? <ConcealingNote />
+              : hidden
               ? <HiddenNote />
               : (
                 <>

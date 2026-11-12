@@ -62,16 +62,16 @@ export function within<T>(step: string, work: Promise<T>, ms: number = STALL_MS)
 export class UnknownFunction extends Error {
   readonly path: string;
   constructor(path: string) {
-    super(`no handler for ${path}: the dispatcher knows meet, chatter, staff, settle, write and mail`);
+    super(`no handler for ${path}: the dispatcher knows meet, chatter, staff, settle, write, mail and conceal`);
     this.name = "UnknownFunction";
     this.path = path;
   }
 }
 
 const MODEL_FUNCTIONS = new Set(["meet", "chatter", "staff", "write"]);
-export const REAL = ["meet", "chatter", "staff", "settle", "write", "mail"];
+export const REAL = ["meet", "chatter", "staff", "settle", "write", "mail", "conceal"];
 /** Functions with no handler.ts of their own (their deployed file is a Deno.serve one): the rehearsal's twin, in tools/rehearse/. */
-const REHEARSAL_OWN = new Set(["mail"]);
+const REHEARSAL_OWN = new Set(["mail", "conceal"]);
 
 async function handlerFor(ctx: DispatchCtx, name: string, path: string): Promise<Handler> {
   if (ctx.handlers) {

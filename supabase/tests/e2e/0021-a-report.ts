@@ -11,6 +11,8 @@
  *   6. A second report is decided with a suspension: the gate refuses the author's account (my_bar, played_by with the barred hint), the mail sender sends the suspended mail to the
  *      author and the reporter's reportRead to the reporter (the same bytes whatever was decided), and the fake Auth admin is told to ban the login until the date.
  *   7. An admin lifts it: the bar is gone, the next mail run clears the Auth ban and sends the lifted mail.
+ *   8. A post quotes the reported one, whose first versions are hidden: the quoting post is withheld until the conceal job (its own core, with the engine's real concealQuotes) has run, and then
+ *      reads with the quote emptied and its id kept; an unhide shows the words again with no job run.
  *
  * Stepped over, as the files before it step over theirs: a post's edits are written with `tests.act` (the action function is an Edge Function's, and this file is about the
  * conduct functions), dated after the decision they follow. Every account and post here is this file's own, and the outbox is read for them alone, since the files before
@@ -22,6 +24,7 @@ import { psqlDb, sql, scratchSeed } from './psql-db.ts';
 import { instance } from '../../functions/_shared/instance.ts';
 import { runMail, type AuthAdmin, type MailDb, type MailRow } from '../../functions/mail/core.ts';
 import { renderOutboxRow } from '../../functions/_shared/mail/conduct.ts';
+import { runConceal, type ConcealDb, type ConcealRow } from '../../functions/conceal/core.ts';
 
 const json = <T = Record<string, any>>(text: string): T => JSON.parse(text) as T;
 const one = (query: string) => sql(query);
@@ -152,4 +155,25 @@ test('a report is hidden until edited, edited, hidden again, edited and approved
   bans.length = 0;
   await run();
   assert.deepEqual([sent.length, bans.length], [0, 0]);
+
+  // ---- 8. A quote of a hidden post: withheld until the conceal job runs, then emptied ----
+  const cy = one(`select tests.character('${reporter}', 'Report Cy')`);
+  const quoting = one(`select tests.post('${cy}', '${thread}', '[quote=${post}]Kindest words.[/quote] I agree, and a [b]bold[/b] ending.', now() + interval '10 minutes')`);
+  const quoted = () => json<{ body: string | null; concealing: boolean }>(sql(`select jsonb_build_object('body', a.current_payload ->> 'body', 'concealing', a.concealing)::text from acts_public a where a.id = '${quoting}'`));
+  // The post's offending versions (the original of step 2 and the first edit of step 4) are still hidden, so a quote of it is withheld from the moment it is written.
+  assert.deepEqual(quoted(), { body: null, concealing: true }, 'a quote of a hidden post is withheld until the job has run');
+  const conceal: ConcealDb = {
+    /* conceal_due returns a table, which the psql adapter's one-value rpc cannot wrap, so it is read as the service role would read it. */
+    async due(most) { return json<ConcealRow[]>(sql(`select coalesce(jsonb_agg(to_jsonb(x)), '[]') from public.conceal_due(500) x`)).filter((r) => r.act === quoting).slice(0, most); },
+    async record(act, hidden, body) { await service.rpc('record_layer', { act, hidden: [...hidden], body }); },
+  };
+  assert.deepEqual(await runConceal({ db: conceal, most: 50 }), { status: 'done', due: 1, recorded: 1, stale: 0, failed: 0 });
+  assert.deepEqual(quoted(), { body: `[quote=${post}][/quote] I agree, and a [b]bold[/b] ending.`, concealing: false });
+  assert.equal(JSON.stringify(sql(`select to_jsonb(a)::text from acts_public a where a.id = '${quoting}'`)).includes('Kindest words'), false, 'the quoted words reached the row');
+  assert.deepEqual(await runConceal({ db: conceal, most: 50 }), { status: 'done', due: 0, recorded: 0, stale: 0, failed: 0 });
+  // An unhide of the original keeps the first edit's hide, so the layer made for the same set still serves; the unhide that ends the last hidden version needs no job.
+  await asAdmin.rpc('decide', { account: null, version_act: post, outcome: 'unhide', until: null, note: '' });
+  assert.deepEqual(quoted(), { body: `[quote=${post}][/quote] I agree, and a [b]bold[/b] ending.`, concealing: false }, 'the first edit is still hidden, so the layer made for the same set still serves');
+  await asAdmin.rpc('decide', { account: null, version_act: e1, outcome: 'unhide', until: null, note: '' });
+  assert.deepEqual(quoted(), { body: `[quote=${post}]Kindest words.[/quote] I agree, and a [b]bold[/b] ending.`, concealing: false }, 'an unhide shows the words with no job run');
 });

@@ -28,6 +28,15 @@ export function HiddenNote() {
 }
 
 /**
+ * The note for a post whose words are withheld for a moment: it quotes a post an admin hid, and the job that empties that quote (the conceal job, a minute or so) has not written the
+ * post's layer yet. The glass speaking plainly: nothing is wrong with the post, and the note ends by itself when the layer exists. It never carries the hidden words, and it is not the
+ * hidden note, since no admin hid this post.
+ */
+export function ConcealingNote() {
+  return <p className="kb-glass kb-hidden-note" role="note">Part of this post quotes a post an admin hid. It will show again in a moment.</p>;
+}
+
+/**
  * What the post's own player may read of it while it is hidden (`my_hidden_version`): undefined while it is being read, null for nothing more than the note. It asks only when
  * `own` (the reader plays the post's mask, which the reader's own screen knows) and the post is hidden.
  */

@@ -234,6 +234,27 @@ end $$;
 revoke execute on function schedule_mail() from public, anon, authenticated;
 select schedule_mail();
 
+-- The job that conceals quotes of hidden posts (0318's quote_layers): the conceal Edge Function reads conceal_due and records a layer for each, every minute, as mail is sent.
+create function schedule_conceal() returns bigint
+language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  return cron.schedule('kayfabb-conceal', '* * * * *', $job$
+    select net.http_post(
+      url := s.base || '/functions/v1/conceal',
+      headers := jsonb_build_object('Content-Type', 'application/json', 'apikey', s.secret),
+      body := '{}'::jsonb,
+      timeout_milliseconds := 60000
+    )
+    from (
+      select (select decrypted_secret from vault.decrypted_secrets where name = 'kayfabb_functions_url') as base,
+             (select decrypted_secret from vault.decrypted_secrets where name = 'kayfabb_jobs_key') as secret
+    ) s
+    where s.base is not null and s.secret is not null
+  $job$);
+end $$;
+revoke execute on function schedule_conceal() from public, anon, authenticated;
+select schedule_conceal();
+
 -- -------------------------------------------------------------------------------- registration (Task 5) ----
 
 -- open_account (0020), recording the acceptance of the code the sign-up page showed: the register form's checkbox is the acceptance, and the version it
