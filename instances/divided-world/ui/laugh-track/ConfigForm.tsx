@@ -8,6 +8,11 @@
  * The post's words are shown to select from. A selection never overwrites: it fills the first cue whose phrase is empty (trimmed to whole
  * words by the same matcher), else adds a cue while there are fewer than five, else changes nothing and the total's live region says all five
  * are filled, until a cue is cleared or removed. Typing a phrase stays a full path for a keyboard.
+ *
+ * One drag (a pointer, a touch handle, Shift+arrow) reports many selections, each growing or shrinking the last ("Luigi", then "Luigi waved"),
+ * so a selection that contains or is contained in the one before, while its cue still holds exactly what that selection wrote, is the same
+ * selection and rewrites that cue; otherwise a drag would spread partial phrases over several cues. Typing in, adding, removing or clearing
+ * a cue ends it, and the next selection fills as above.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { occurrences } from '../../../../engine/bbcode/phrase.ts';
@@ -77,6 +82,8 @@ export function ConfigForm({ config, onChange, post, id }: ConfigFormProps) {
 
   /* The rows as the last change left them, so two selections before a draw each see the other's work. */
   const current = useRef(rows);
+  /* The cue the last selection filled and the phrase it wrote there; typing in, adding, removing or clearing a cue forgets it. */
+  const lastFilled = useRef<{ key: number; phrase: string } | null>(null);
   const set = (next: Row[]) => {
     current.current = next;
     setRows(next);
@@ -95,11 +102,13 @@ export function ConfigForm({ config, onChange, post, id }: ConfigFormProps) {
   });
 
   const remove = (i: number) => {
+    lastFilled.current = null;
     const next = current.current.filter((_, j) => j !== i);
     refocus.current = Math.min(i, next.length - 1);
     set(next);
   };
   const add = () => {
+    lastFilled.current = null;
     const next = [...current.current, { key: nextKey(), cue: BLANK }];
     refocus.current = next.length - 1;
     set(next);
@@ -110,10 +119,24 @@ export function ConfigForm({ config, onChange, post, id }: ConfigFormProps) {
     const phrase = wholeWords(selected, text);
     if (!phrase) return;
     const rs = current.current;
+    /* One drag reports many selections, each growing or shrinking the last: while that cue still holds what the last selection wrote, it is the same selection. */
+    const last = lastFilled.current;
+    const same = last ? rs.findIndex((r) => r.key === last.key && r.cue.phrase === last.phrase) : -1;
+    if (last && same >= 0 && (phrase.includes(last.phrase) || last.phrase.includes(phrase))) {
+      if (phrase === last.phrase) return;
+      lastFilled.current = { key: last.key, phrase };
+      edit(same, { phrase });
+      return;
+    }
     const empty = rs.findIndex((r) => r.cue.phrase.trim() === '');
-    if (empty >= 0) edit(empty, { phrase });
-    else if (rs.length < CUES.most) set([...rs, { key: nextKey(), cue: { ...BLANK, phrase } }]);
-    else setFull(true);
+    if (empty >= 0) {
+      lastFilled.current = { key: rs[empty]!.key, phrase };
+      edit(empty, { phrase });
+    } else if (rs.length < CUES.most) {
+      const key = nextKey();
+      set([...rs, { key, cue: { ...BLANK, phrase } }]);
+      lastFilled.current = { key, phrase };
+    } else setFull(true);
   };
 
   return (
@@ -137,7 +160,7 @@ export function ConfigForm({ config, onChange, post, id }: ConfigFormProps) {
               label={`Cue ${i + 1}`}
               value={cue.phrase}
               maxLength={PHRASE.most}
-              onChange={(phrase) => edit(i, { phrase })}
+              onChange={(phrase) => { lastFilled.current = null; edit(i, { phrase }); }}
               hint={hint}
               why={bound}
               action={rows.length > 1 ? (
