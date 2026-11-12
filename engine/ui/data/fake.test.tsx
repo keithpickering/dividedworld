@@ -17,6 +17,7 @@ import { cutLog, LOG_ROWS, micros } from './log-page.ts';
 import { actsFollowed, actsNamed } from '../log/lines.ts';
 import { systemSettings, testSystem, testGroups } from '../../rules/test-system.ts';
 import { ENGINE_DEFAULT_PRONOUNS, PRONOUN_PRESETS } from '../../rules/pronouns.ts';
+import { localReaction } from '../../rules/emoji.ts';
 
 const settings: Settings = {
   walletCap: 600, vote: 10, halving: 0.5, reactionCap: 3, charactersPerPlayer: 3,
@@ -3792,5 +3793,216 @@ describe('a no-quote on a post, and a cast card that carries an earn', () => {
     expect(typeof played.payload.ends).toBe('string');
     expect((await fake.effectsAbove([boFace], thread, board)).map((e) => [e.play, e.target])).toEqual([[played.id, boFace]]);
     expect(await fake.playCard('glow', anaFace, boFace, {}, '', 'character', theirs)).toEqual(refused('this character already carries that card', 'config'));
+  });
+});
+
+describe('post veils, blind totals and a post-local reaction (card notes, Part 3, Task 7)', () => {
+  const ok = <T,>(value: T) => ({ ok: true as const, value });
+  const base = { playPrice: () => 0, validateConfig: (c: unknown) => ok(c ?? {}) };
+  const lands = (rules: Pick<CardRules, 'key' | 'stack' | 'reaches'>) => (t: CardTarget, e: readonly CardEffect[], _config?: unknown, now?: Date) => landsOn(rules, t, e, now);
+  const hearts: Instance['reactions'] = [...instance.reactions, { key: 'heart', emoji: '\u2764\uFE0F', quadrant: 'calmPositive' }];
+  const three = { unit: 'day' as const, count: 3 };
+  const whodunnit = { ...base, key: 'whodunnit', name: 'Whodunnit?', alignment: 'pepperoni' as const, rarity: 'rare' as const, reaches: ['post' as const], lasts: three, veil: 'author' as const, canApply: lands({ key: 'whodunnit', reaches: ['post'] }) };
+  const blind = { ...base, key: 'blind-study', name: 'Blind Study', alignment: 'pepperoni' as const, rarity: 'uncommon' as const, reaches: ['post' as const], lasts: three, veil: 'totals' as const, canApply: lands({ key: 'blind-study', reaches: ['post'] }) };
+  const overreaction = {
+    ...base, key: 'overreaction', name: 'Overreaction', alignment: 'pepperoni' as const, rarity: 'common' as const, reaches: ['post' as const], stack: 3, reaction: true as const,
+    validateConfig: (c: unknown) => localReaction(c, hearts), canApply: lands({ key: 'overreaction', stack: 3, reaches: ['post'] }),
+  };
+  const glow = { ...base, key: 'glow', name: 'Glow', alignment: 'sweet' as const, rarity: 'uncommon' as const, reaches: ['character' as const], lasts: three, canApply: lands({ key: 'glow', reaches: ['character'] }) };
+  const cards = [whodunnit, blind, overreaction, glow];
+  const veils: Instance = { ...instance, cards, reactions: hearts, anonymous: { name: 'Nobody', tagline: '' }, machine: cards.map((c) => ({ item: { card: c.key }, availability: 'onSale' as const, price: 100 })), settings: { ...settings, economy: {}, postMaxLength: 2000 } };
+  const skull = { emoji: '\u{1F480}', quadrant: 'excitedPositive' };
+  /** Ana plays the cards; Bo wrote the post that opens the thread, and Cy is a third player. Signed in as Ana. */
+  function veilWorld(on: Instance = veils) {
+    const fake = createFake({ instance: on });
+    const ana = fake.seed.account('ana');
+    const bo = fake.seed.account('bo');
+    const cy = fake.seed.account('cy');
+    const anaFace = fake.seed.character(ana, 'Ana Face', 'face');
+    const boFace = fake.seed.character(bo, 'Bo Face', 'face');
+    const cyFace = fake.seed.character(cy, 'Cy Face', 'face');
+    const { thread, act: post } = fake.seed.thread('general', boFace, 'Hello', 'First post');
+    fake.seed.cards(ana, { whodunnit: 3, 'blind-study': 3, overreaction: 5, glow: 2 });
+    fake.signInAs(ana);
+    return { fake, ana, bo, cy, anaFace, boFace, cyFace, thread, post };
+  }
+  type VeilWorld = ReturnType<typeof veilWorld>;
+  /** Ana's Whodunnit? on the post; the stand-in's id, as every reader finds it: the veiled post's character. */
+  const veil = async (w: VeilWorld) => { must(await w.fake.playCard('whodunnit', w.anaFace, w.post, {}, '')); return (await w.fake.act(w.post))!.character!; };
+  const pageActs = async (w: VeilWorld, as: string) => { w.fake.signInAs(as); return (await w.fake.threadPage(w.thread, { page: 1 }, 5, []))!; };
+
+  test('the stand-in is a character of its own, named by the instance (else the engine\'s plain one), holding the anonymous office, and no player\'s', async () => {
+    const w = veilWorld();
+    const stand = await veil(w);
+    expect(stand).not.toBe(w.boFace);
+    expect((await w.fake.characters([stand]))[0]).toMatchObject({ id: stand, name: 'Nobody', staff: 'anonymous', office: 'anonymous' });
+    expect((await w.fake.myCharacters()).map((c) => c.id)).not.toContain(stand);
+    const plain = veilWorld({ ...veils, anonymous: undefined });
+    expect((await plain.fake.characters([await veil(plain)]))[0]).toMatchObject({ name: 'Anonymous' });
+  });
+
+  test('a veiled post shows the stand-in in the page with its edit, for every reader; the author\'s reply elsewhere and another\'s card on it keep their names; it ends by itself, and by an admin', async () => {
+    const w = veilWorld();
+    const reply = w.fake.seed.thread('general', w.boFace, 'Elsewhere', 'a reply elsewhere').act;
+    w.fake.signInAs(w.ana);
+    w.fake.signInAs(w.bo);
+    must(await w.fake.edit(w.post, w.boFace, 'First post, edited'));
+    w.fake.signInAs(w.ana);
+    const stand = await veil(w);
+    const card = must(await w.fake.playCard('overreaction', w.anaFace, w.post, skull, ''));
+    for (const reader of [w.ana, w.bo, w.cy]) {
+      const page = await pageActs(w, reader);
+      expect(page.acts.filter((a) => a.id === w.post).map((a) => a.character)).toEqual([stand]);
+      expect((await w.fake.history(w.post)).map((a) => [a.kind, a.character])).toEqual([['post', stand], ['edit', stand]]);
+      expect(page.plays.find((a) => a.id === card.id)!.character).toBe(w.anaFace);
+      expect(page.people.map((p) => p.character.id)).toContain(stand);
+      expect(page.people.map((p) => p.character.id)).not.toContain(w.boFace);
+    }
+    expect((await w.fake.act(reply))!.character).toBe(w.boFace);
+    /* Only the author's player is told that the post is theirs, and until when. */
+    const mine = (await pageActs(w, w.bo)).veiled;
+    expect(mine).toEqual([{ post: w.post, character: w.boFace, play: expect.any(String), endsAt: new Date(w.fake.clock.now() + 3 * DAY).toISOString() }]);
+    expect((await pageActs(w, w.cy)).veiled).toEqual([]);
+    expect((await pageActs(w, w.ana)).veiled).toEqual([]);
+    /* A second is refused while it is up. At its end the author shows again, and the same card lands again. */
+    w.fake.signInAs(w.ana);
+    expect(await w.fake.playCard('whodunnit', w.anaFace, w.post, {}, '')).toMatchObject({ ok: false, error: 'this post already carries that card' });
+    w.fake.clock.advance(3 * DAY + MINUTE);
+    expect((await w.fake.history(w.post)).map((a) => a.character)).toEqual([w.boFace, w.boFace]);
+    expect((await pageActs(w, w.bo)).veiled).toEqual([]);
+    w.fake.signInAs(w.ana);
+    const again = must(await w.fake.playCard('whodunnit', w.anaFace, w.post, {}, ''));
+    expect((await w.fake.act(w.post))!.character).toBe(stand);
+    w.fake.signInAs(w.fake.seed.account('boss', { admin: true }));
+    must(await w.fake.reverseCard(again.id));
+    expect((await w.fake.act(w.post))!.character).toBe(w.boFace);
+  });
+
+  test('a profile\'s list leaves a veiled post out of its author\'s and puts it in the stand-in\'s, and the counts follow', async () => {
+    const w = veilWorld();
+    const before = await w.fake.profilePage(w.boFace);
+    expect(before!.acts.map((a) => a.id)).toEqual([w.post]);
+    expect(before!.counts.posts).toBe(1);
+    const stand = await veil(w);
+    const author = await w.fake.profilePage(w.boFace);
+    expect(author!.acts).toEqual([]);
+    expect(author!.counts.posts).toBe(0);
+    const shown = await w.fake.profilePage(stand);
+    expect(shown!.acts.map((a) => [a.id, a.character])).toEqual([[w.post, stand]]);
+    expect(shown!.counts.posts).toBe(1);
+  });
+
+  test('a search by the author does not find a veiled post, a search by the stand-in does, and a hit names the stand-in', async () => {
+    const w = veilWorld();
+    const query = (author: string | null) => ({ q: 'First', author, board: null, fromAt: null, toAt: null, titlesOnly: false, sort: null, perPage: null });
+    expect((await w.fake.searchPosts(query(w.boFace))).results.map((r) => r.act)).toEqual([w.post]);
+    const stand = await veil(w);
+    expect((await w.fake.searchPosts(query(w.boFace))).results).toEqual([]);
+    expect((await w.fake.searchPosts(query(stand))).results.map((r) => [r.act, r.character, r.name])).toEqual([[w.post, stand, 'Nobody']]);
+    expect((await w.fake.searchPosts(query(null))).results.map((r) => [r.character, r.name])).toEqual([[stand, 'Nobody']]);
+    expect((await w.fake.searchThreads(query(null))).results.map((r) => [r.character, r.name])).toEqual([[stand, 'Nobody']]);
+  });
+
+  test('an alert about a quote of a veiled post carries the post under the stand-in, and its people', async () => {
+    const w = veilWorld();
+    const stand = await veil(w);
+    const quote = must(await w.fake.post(w.thread, w.anaFace, 'I quote that', w.post));
+    w.fake.signInAs(w.bo);
+    const page = await w.fake.alertsPage(null);
+    expect(page.alerts.map((a) => a.act)).toContain(quote.id);
+    expect(page.acts.find((a) => a.id === w.post)!.character).toBe(stand);
+    expect(page.people.map((p) => p.id)).toContain(stand);
+    expect(page.people.map((p) => p.id)).not.toContain(w.boFace);
+  });
+
+  test('the thread list names the stand-in as the first and last poster of a thread whose opening or newest post is veiled', async () => {
+    const w = veilWorld();
+    const stand = await veil(w);
+    expect(await w.fake.thread(w.thread)).toMatchObject({ firstCharacter: stand, lastCharacter: stand });
+    expect((await w.fake.threads((await w.fake.board('general'))!.id, { offset: 0, limit: 20 })).threads[0]).toMatchObject({ firstCharacter: stand, lastCharacter: stand });
+    w.fake.seed.post(w.thread, w.cyFace, 'later');
+    expect(await w.fake.thread(w.thread)).toMatchObject({ firstCharacter: stand, lastCharacter: w.cyFace });
+  });
+
+  test('a veil is refused on a post by the staff and on a post a Mod Bot has been to, in the same words, and a character card on the stand-in is refused', async () => {
+    const w = veilWorld();
+    const mod = w.fake.seed.staff('s-mod', 'Mod Staff', 'mod');
+    const staffPost = w.fake.seed.staffPost(mod, w.thread, 'From the staff');
+    expect(await w.fake.playCard('whodunnit', w.anaFace, staffPost, {}, '')).toEqual(refused('a post by the staff keeps its name'));
+    const visited = w.fake.seed.post(w.thread, w.cyFace, 'Visited');
+    w.fake.seed.visit(mod, visited);
+    expect(await w.fake.playCard('whodunnit', w.anaFace, visited, {}, '')).toEqual(refused('a Mod Bot has been to this post, so its author is on the record'));
+    expect(await w.fake.myCards().then((h) => h.find((c) => c.card === 'whodunnit')?.held)).toBe(3);
+    const stand = await veil(w);
+    expect(await w.fake.playCard('glow', w.anaFace, stand, {}, '', 'character', w.post)).toEqual(refused('no card is played on a stand-in'));
+    expect(await w.fake.myCards().then((h) => h.find((c) => c.card === 'glow')?.held)).toBe(2);
+  });
+
+  test('a report of a veiled post is refused before anything is paid, saying when its author shows again', async () => {
+    const w = veilWorld();
+    w.fake.seed.staff('s-mod', 'Mod Staff', 'mod');
+    w.fake.seed.wallet(w.ana, 500);
+    await veil(w);
+    const until = new Date(w.fake.clock.now() + 3 * DAY).toISOString().slice(0, 16).replace('T', ' ');
+    expect(await w.fake.fileReport(w.anaFace, w.post, 'rude')).toEqual(refused(`this post's author is hidden until ${until} UTC; report it after`));
+    expect(await w.fake.wallet()).toEqual({ balance: 500, cap: 600 });
+    expect(await w.fake.reportsLeft(w.anaFace)).toBe(3);
+  });
+
+  test('a blind post gives its tallies to its author\'s player and the caster alone, and a reaction to it answers no tally and sends none', async () => {
+    const w = veilWorld();
+    must(await w.fake.playCard('blind-study', w.anaFace, w.post, {}, ''));
+    w.fake.seed.tally(w.post, { fire: 2 });
+    w.fake.signInAs(w.cy);
+    const heard: Tally[] = [];
+    w.fake.subscribeThread(w.thread, { onTally: (_act, tally: Tally) => heard.push(tally) });
+    expect(must(await w.fake.react(w.post, w.cyFace, 'tea'))).toEqual({ act: w.post, tally: null });
+    await flush();
+    expect(heard).toEqual([]);
+    expect((await pageActs(w, w.cy)).tallies[w.post]).toEqual({});
+    expect(await w.fake.tallies([w.post])).toEqual({ [w.post]: {} });
+    expect((await pageActs(w, w.bo)).tallies[w.post]).toEqual({ fire: 2, tea: 1 });
+    expect((await pageActs(w, w.ana)).tallies[w.post]).toEqual({ fire: 2, tea: 1 });
+    expect(must(await w.fake.react(w.post, w.anaFace, 'zzz'))).toEqual({ act: w.post, tally: null });
+    w.fake.clock.advance(3 * DAY + MINUTE);
+    expect((await pageActs(w, w.cy)).tallies[w.post]).toEqual({ fire: 2, tea: 1, zzz: 1 });
+    expect(must(await w.fake.react(w.post, w.cyFace, 'fire')).tally).toEqual({ fire: 3, tea: 1, zzz: 1 });
+  });
+
+  test('a blind post comes back to everyone at an admin\'s end', async () => {
+    const w = veilWorld();
+    const play = must(await w.fake.playCard('blind-study', w.anaFace, w.post, {}, ''));
+    w.fake.seed.tally(w.post, { fire: 2 });
+    expect((await pageActs(w, w.cy)).tallies[w.post]).toEqual({});
+    w.fake.signInAs(w.fake.seed.account('boss', { admin: true }));
+    must(await w.fake.reverseCard(play.id));
+    expect((await pageActs(w, w.cy)).tallies[w.post]).toEqual({ fire: 2 });
+  });
+
+  test('a post-local kind is taken by react on its post alone, refused on another post, repeated, and once its play is ended', async () => {
+    const w = veilWorld();
+    const elsewhere = w.fake.seed.post(w.thread, w.boFace, 'Another post');
+    const play = must(await w.fake.playCard('overreaction', w.anaFace, w.post, skull, ''));
+    w.fake.signInAs(w.cy);
+    expect(must(await w.fake.react(w.post, w.cyFace, 'x-1f480'))).toEqual({ act: w.post, tally: { 'x-1f480': 1 } });
+    expect(await w.fake.react(elsewhere, w.cyFace, 'x-1f480')).toEqual(refused('there is no reaction "x-1f480"', 'kind'));
+    expect(await w.fake.react(w.post, w.cyFace, 'x-1f4a9')).toEqual(refused('there is no reaction "x-1f4a9"', 'kind'));
+    w.fake.signInAs(w.ana);
+    expect(await w.fake.playCard('overreaction', w.anaFace, w.post, skull, '')).toEqual(refused('this post already has that reaction', 'config'));
+    expect(await w.fake.playCard('overreaction', w.anaFace, w.post, { emoji: '\u2764\uFE0F', quadrant: 'calmPositive' }, '')).toEqual(refused('this forum already has that reaction', 'config'));
+    must(await w.fake.playCard('overreaction', w.anaFace, w.post, { emoji: '\u{1F44D}\u{1F3FD}', quadrant: 'calmPositive' }, ''));
+    w.fake.signInAs(w.cy);
+    w.fake.signInAs(w.cy);
+    expect(must(await w.fake.react(w.post, w.cyFace, 'x-1f44d-1f3fd')).tally).toEqual({ 'x-1f480': 1, 'x-1f44d-1f3fd': 1 });
+    w.fake.signInAs(w.fake.seed.account('boss', { admin: true }));
+    must(await w.fake.reverseCard(play.id));
+    const second = w.fake.seed.account('dee');
+    const deeFace = w.fake.seed.character(second, 'Dee Face', 'face');
+    w.fake.signInAs(second);
+    expect(await w.fake.react(w.post, deeFace, 'x-1f480')).toEqual(refused('that reaction is no longer offered on this post'));
+    expect((await pageActs(w, second)).tallies[w.post]).toEqual({ 'x-1f480': 1, 'x-1f44d-1f3fd': 1 });
+    /* The ended emoji is still held by the post. */
+    w.fake.signInAs(w.ana);
+    expect(await w.fake.playCard('overreaction', w.anaFace, w.post, skull, '')).toEqual(refused('this post already has that reaction', 'config'));
   });
 });

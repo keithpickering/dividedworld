@@ -559,8 +559,8 @@ export interface Character {
   readonly bannedUntil?: string;
 }
 
-/** An office a staff character holds (0082). `waiting` is never shown on a character (a persona that has not debuted is in no public list); `developer` is the developer persona's, which holds no office. */
-export type Office = 'boss' | 'mod' | 'member' | 'benched' | 'waiting' | 'developer';
+/** An office a staff character holds (0082). `waiting` is never shown on a character (a persona that has not debuted is in no public list); `developer` is the developer persona's, which holds no office; `anonymous` is the stand-in's, shown for a post whose author a card has hidden, and holds no badge either. */
+export type Office = 'boss' | 'mod' | 'member' | 'benched' | 'waiting' | 'developer' | 'anonymous';
 
 /** A character's season standing and its place, as a page of the standings lists it (standings_page). */
 export interface Standing {
@@ -1808,6 +1808,11 @@ export interface ThreadPage {
   readonly plays: Awaited<ReturnType<KayfaApi['cardsOnMany']>>;
   readonly above: Awaited<ReturnType<KayfaApi['effectsAbove']>>;
   readonly faces: Awaited<ReturnType<KayfaApi['myFaceDown']>>;
+  /**
+   * The caller's own veiled posts among the page's (`my_veiled_posts`): a post whose author an author veil hides is shown under the stand-in to every reader, and only its author's player
+   * is told here that it is theirs, which of their characters wrote it, the veil's play and when it ends. Empty for everyone else.
+   */
+  readonly veiled: readonly { readonly post: Id; readonly character: Id; readonly play: Id; readonly endsAt: string }[];
   readonly states: Awaited<ReturnType<KayfaApi['effectStates']>>;
   readonly releases: Awaited<ReturnType<KayfaApi['myReleases']>>;
   readonly tallies: Awaited<ReturnType<KayfaApi['tallies']>>;
@@ -2367,7 +2372,8 @@ export interface KayfaApi {
   releaseEffect(play: Id): Promise<Answer<{ readonly play: Id; readonly releasedAt: string }>>;
   /** Save the state of a play's effect, as the character that wrote the post it landed on (no one else may); the card's rules bound what it holds. */
   saveEffect(play: Id, character: Id, state: Readonly<Record<string, unknown>>): Promise<Answer<{ readonly play: Id; readonly savedAt: string }>>;
-  react(act: Id, character: Id, kind: string): Promise<Answer<{ readonly act: Id; readonly tally: Tally }>>;
+  /** Leave a reaction: an instance's kind, or a post-local one (key `x-…`) its post offers. The tally is null where the post's totals are hidden (a blind post), for everyone alike. */
+  react(act: Id, character: Id, kind: string): Promise<Answer<{ readonly act: Id; readonly tally: Tally | null }>>;
   turn(character: Id, to: string, loudness: 'silent' | 'announced', showFrom: boolean, showTo: boolean): Promise<Answer<TurnAsked>>;
   withdrawTurn(character: Id): Promise<Answer<{ readonly withdrawn: true }>>;
   unmask(character: Id, thread: Id, message: string): Promise<Answer<Act>>;
