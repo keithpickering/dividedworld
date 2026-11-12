@@ -11,7 +11,7 @@ test('a path on the site is returned with its query and fragment', () => {
 });
 
 test('anything that leaves the site, or is not a path, is null', () => {
-  for (const next of ['//evil.example', '//evil.example/x', '/\\evil.example', '/\t/evil.example', '/\n/evil.example', 'https://evil.example/', 'javascript:alert(1)', 'standings', '', ' /x', null, undefined, 7, {}, ['/x']]) {
+  for (const next of ['//evil.example', '//evil.example/x', '/\\evil.example', '/.//evil.example', '/..//evil.example', '/a/..//evil.example', '/./\\evil.example', '/%2e%2e//evil.example', '/\t.//evil.example', '/\t/evil.example', '/\n/evil.example', 'https://evil.example/', 'javascript:alert(1)', 'standings', '', ' /x', null, undefined, 7, {}, ['/x']]) {
     assert.equal(sameSitePath(next, ORIGIN), null, JSON.stringify(next));
   }
 });

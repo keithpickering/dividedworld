@@ -9,7 +9,7 @@ export const NEXT_MAX = 512;
 
 /**
  * `next` as a path, query and fragment on `origin`, or null. A string that starts with `/`, is at most
- * NEXT_MAX characters and resolves against `origin` to that same origin; anything else is null.
+ * NEXT_MAX characters and resolves against `origin` to that same origin, as does the path it resolves to; anything else is null.
  */
 export function sameSitePath(next: unknown, origin: string): string | null {
   if (typeof next !== 'string' || !next.startsWith('/') || next.length > NEXT_MAX) return null;
@@ -18,5 +18,8 @@ export function sameSitePath(next: unknown, origin: string): string | null {
   let url: URL;
   try { url = new URL(next, origin); } catch { return null; }
   if (url.origin !== origin) return null;
-  return url.pathname + url.search + url.hash;
+  // What goes out is read again, by the page or by a router: "/.//evil.example" is on this site and its
+  // path is "//evil.example", which is not. So the path that goes out must resolve here too.
+  const path = url.pathname + url.search + url.hash;
+  try { return new URL(path, origin).origin === origin ? path : null; } catch { return null; }
 }

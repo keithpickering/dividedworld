@@ -286,7 +286,7 @@ test('the link\'s page follows the invite and carries a next on this site, encod
   assert.equal((await asked({ next: '/board/general?page=2' })).redirect, `${SITE}/sign-in?next=%2Fboard%2Fgeneral%3Fpage%3D2`);
   assert.equal((await asked({ next: '/board/general?page=2', invite: INVITE })).redirect, `${SITE}/register?next=%2Fboard%2Fgeneral%3Fpage%3D2`);
   const none = await asked({});
-  for (const next of ['/', '//evil.example', 'https://evil.example/', '/\\evil.example', '/' + 'a'.repeat(512), 7, null, {}]) {
+  for (const next of ['/', '//evil.example', 'https://evil.example/', '/\\evil.example', '/.//evil.example', '/./\\evil.example', '/' + 'a'.repeat(512), 7, null, {}]) {
     const dropped = await asked({ next });
     assert.equal(dropped.redirect, `${SITE}/sign-in`, JSON.stringify(next).slice(0, 40));
     assert.deepEqual([dropped.out.status, dropped.out.body, dropped.out.took], [none.out.status, none.out.body, none.out.took]);
