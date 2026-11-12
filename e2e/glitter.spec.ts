@@ -122,8 +122,8 @@ async function readPost(page: Page): Promise<void> {
  * `JOSTLE` only where the two frames are alike; on uneven frames a jostle can read slow and shed nothing, and `flingUntilLanded` flicks
  * again rather than count on one. A frame past 80 ms scrolls 80 ms' worth, so the band above the first post stays in view (the engine
  * hears no shake across a gap of 100 ms anyway). The way back goes at a sixth of the pace by the same clock, at most 50 ms' worth a
- * frame, so it reads under SHAKE_SPEED however the frames fall (23 px over a 60 Hz frame is 1,400 px a second), until the page is where
- * it began.
+ * frame, so it reads under SHAKE_SPEED however the frames fall (the cap's 23 px, heard across a 60 Hz frame, reads 1,400 px a second),
+ * until the page is where it began.
  */
 const JOSTLE = 2800, JOSTLES = 10;
 async function flick(page: Page): Promise<void> {
