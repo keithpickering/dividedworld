@@ -56,6 +56,11 @@ import { mainEvent } from '../cards/main-event.ts';
 import { forceField } from '../cards/force-field.ts';
 import { feelinFab } from '../cards/feelin-fab.ts';
 import { belowTheFold } from '../cards/below-the-fold.ts';
+import { laughTrack } from '../cards/laugh-track.ts';
+import laughTrackCanvas from './cards/laugh-track/art.webp?url';
+import laughTrackMark from './cards/laugh-track/mark.svg?url';
+import laughTrackArt from './cards/laugh-track/art.json';
+import { ConfigForm as LaughTrackConfigForm } from './laugh-track/ConfigForm.tsx';
 import { graffiti } from '../cards/graffiti.ts';
 import { LOG_DRAW as GRAFFITI_LOG_DRAW, LOG_WASH as GRAFFITI_LOG_WASH, describeDraw as describeGraffitiDraw } from '../cards/graffiti/words.ts';
 import { ConfigForm as CardCollectorConfigForm } from '../cards/card-collector/ConfigForm.tsx';
@@ -180,6 +185,7 @@ const StickAroundEffect = lazy(() => import('./stick-around/Effect.tsx').then((m
 const AutocorrectEffect = lazy(() => import('../cards/autocorrect/Effect.tsx').then((m) => ({ default: m.AutocorrectEffect })));
 const FeelinFabEffect = lazy(() => import('./feelin-fab/Effect.tsx').then((m) => ({ default: m.FeelinFabEffect })));
 const GlitterBombEffect = lazy(() => import('./glitter-bomb/Effect.tsx').then((m) => ({ default: m.GlitterBombEffect })));
+const LaughTrackEffect = lazy(() => import('./laugh-track/Effect.tsx').then((m) => ({ default: m.LaughTrackEffect })));
 const BelowTheFoldEffect = lazy(() => import('./below-the-fold/Effect.tsx').then((m) => ({ default: m.BelowTheFoldEffect })));
 const YouWereSayingEffect = lazy(() => import('../cards/you-were-saying/Effect.tsx').then((m) => ({ default: m.YouWereSayingEffect })));
 const JimmyWailsEffect = lazy(() => import('../cards/jimmy-wails/Effect.tsx').then((m) => ({ default: m.JimmyWailsEffect })));
@@ -271,6 +277,23 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
     hint: 'Press the bar to read the post.',
     describe: () =>
       `A Salty card, ${belowTheFold.rarity}. It folds a post behind a bar, for every reader alike: the post's words are still there, and anyone opens them with one press of the bar, which lasts until they leave the page. One fold fits on a post. ${setMoveWords('the quoting post')} It costs nothing more to play.`,
+  },
+  /*
+   * Laugh Track (docs/plans/2026-11-11-laugh-track-design.md): Pepperoni's color. Its effect is the audience, heard and captioned as a
+   * reader reaches each cued phrase (ui/laugh-track/Effect.tsx); the form picks the cues (ui/laugh-track/ConfigForm.tsx).
+   */
+  {
+    key: 'laugh-track',
+    art: { color: '#d24a2c', ink: '#1a0602', canvas: laughTrackCanvas, mark: laughTrackMark, credit: laughTrackArt.credit, tagline: 'Give a post a studio audience.' },
+    summary: 'Cues a studio audience to laugh, cheer or boo at the words you choose, wherever they appear in a post.',
+    status: 'A studio audience on cue',
+    hint: 'A Laugh Track: the audience reacts when you reach certain words. Turn on Game sounds in Settings to hear it.',
+    Effect: LaughTrackEffect,
+    ConfigForm: LaughTrackConfigForm,
+    surcharge: (s: Settings) => `Many places, +${orbs(s.economy['laughTrack.perPlace'] ?? 0)} per place past ${s.economy['laughTrack.freePlaces'] ?? 0}`,
+    describe: () =>
+      `A Pepperoni card, ${laughTrack.rarity}. You choose up to five phrases in a post and give each a sound: the audience laughs, cheers or boos. Wherever a phrase appears in the post's own words, the audience reacts as a reader reaches it, and builds up as they get close. Every reaction is also shown as a caption, so it works with sound off. One audience fits on a post. ${setMoveWords('the quoting post')} Set face down, it waits for a quote that says its first phrase. It costs more to play the more places its phrases cover.`,
+    logPlay: () => 'It gave the post a studio audience.',
   },
   /*
    * The card mechanic's first plays (docs/plans/2026-11-01-card-mechanic-design.md, section 6). Pepperoni's color is the

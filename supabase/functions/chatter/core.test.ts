@@ -10,6 +10,7 @@ import type { ChatRequest, CompletionRequest, ModelResult, Models } from '../../
 import type { Instance } from '../../../engine/rules/types.ts';
 import { autocorrect as autocorrectRules } from '../../../instances/divided-world/cards/autocorrect.ts';
 import { staffOffers } from '../../../engine/rules/cards.ts';
+import { laughTrack as laughTrackRules } from '../../../instances/divided-world/cards/laugh-track.ts';
 import { whoops as whoopsRules } from '../../../instances/divided-world/cards/whoops.ts';
 
 const dividedWorld: Instance = placeholderWorld(realInstance);
@@ -691,6 +692,64 @@ test('a wrongly typed option costs neither the post nor the card: the ink falls 
   assert.ok(pick.trims.some((t) => t.path === 'card.config.whoops'));
   const auto = await run(fakeDb(oneReply), fakeModels(asks({ key: 'autocorrect', config: { autocorrect: 'teal' } })));
   assert.ok(auto.status === 'ok' && auto.picks.every((x) => x.status === 'posted'), 'a non-object option for the chosen card is trimmed and the post stands');
+});
+
+const NATO = 'alpha bravo charlie delta echoes foxtrot golfing hotel';
+const cues = (...words: string[]) => ({ cues: words.map((phrase) => ({ phrase, sound: 'laugh' })) });
+
+test('a persona\'s seven Laugh Track cues become five with one trim named, and the five-cue play is made rather than the fallback', async () => {
+  const d = fakeDb({ pool: { threadsWeekly: 0, cardRarityMost: 'uncommon' }, targetBody: NATO });
+  const m = fakeModels(asks({ key: 'laugh-track', config: { 'laugh-track': cues('alpha', 'bravo', 'charlie', 'delta', 'echoes', 'foxtrot', 'golfing') } }));
+  const out = await run(d, m);
+  assert.ok(out.status === 'ok');
+  const play = d.of('staff_play_card')[0]!;
+  assert.equal(play.card, 'laugh-track');
+  assert.deepEqual((play.config as { cues: { phrase: string }[] }).cues.map((c) => c.phrase), ['alpha', 'bravo', 'charlie', 'delta', 'echoes']);
+  assert.equal(laughTrackRules.validateConfig(play.config).ok, true);
+  const pick = out.picks.find((x) => x.card)!;
+  assert.equal(pick.cardOptionsFailed, undefined, 'the repaired options passed');
+  assert.deepEqual(pick.trims.filter((t) => t.path === 'card.config.laugh-track.cues'), [{ path: 'card.config.laugh-track.cues', predicate: 'mostFiveCues', before: 7, after: 5 }]);
+  const spend = d.state.spends.find((x) => x.staff === play.staff_key)!;
+  assert.deepEqual(spend.record.trims.filter((t: { path: string }) => t.path === 'card.config.laugh-track.cues').length, 1, 'and it is on the call\'s record');
+});
+
+test('Laugh Track cues none of which are in the post are refused in the card\'s own words, with the original options and no invented cue', async () => {
+  const d = fakeDb({ pool: { threadsWeekly: 0, cardRarityMost: 'uncommon' }, targetBody: NATO });
+  const out = await run(d, fakeModels(asks({ key: 'laugh-track', config: { 'laugh-track': cues('banana split') } })));
+  assert.ok(out.status === 'ok');
+  const pick = out.picks.find((x) => x.cardOptionsFailed)!;
+  assert.match(pick.cardOptionsFailed!, /laugh-track: .*banana split/);
+  assert.equal(pick.trims.some((t) => t.path === 'card.config.laugh-track.cues'), false, 'nothing was repaired');
+  assert.equal(d.count('staff_play_card'), 0);
+});
+
+test('the card\'s repair trims are on the record even when the decision then refuses', async () => {
+  const trim = { path: 'card.config.laugh-track.cues', predicate: 'mostFiveCues', before: 9, after: 0 };
+  const repairing = { ...laughTrackRules, repairStaff: () => ({ config: { cues: [] }, trims: [trim] }) };
+  const tuned: Instance = { ...dividedWorld, cards: dividedWorld.cards.map((c) => (c.key === 'laugh-track' ? repairing : c)) };
+  const d = fakeDb({ pool: { threadsWeekly: 0, cardRarityMost: 'uncommon' }, targetBody: NATO });
+  const out = await run(d, fakeModels(asks({ key: 'laugh-track', config: { 'laugh-track': cues('alpha') } })), tuned);
+  assert.ok(out.status === 'ok');
+  const pick = out.picks.find((x) => x.cardOptionsFailed)!;
+  assert.ok(pick, 'the options were refused');
+  assert.deepEqual(pick.trims.filter((t) => t.predicate === 'mostFiveCues'), [trim], 'the repair\'s trim is named though the decision refused');
+  const spend = d.state.spends.find((x) => x.staff === pick.staff)!;
+  assert.ok(spend.record.trims.some((t: { predicate: string }) => t.predicate === 'mostFiveCues'), 'and it is on the call\'s record');
+});
+
+test('a repairStaff that throws is no repair: the options are decided as given, the fallback is built and the throw is named', async () => {
+  const throwing = { ...whoopsRules, repairStaff: () => { throw new SyntaxError('Invalid regular expression'); } };
+  const tuned: Instance = { ...dividedWorld, cards: dividedWorld.cards.map((c) => (c.key === 'whoops' ? throwing : c)) };
+  const bad = await run(fakeDb(oneReply), fakeModels(asks({ key: 'whoops', config: { whoops: { color: 5 } } })), tuned);
+  assert.ok(bad.status === 'ok');
+  const pick = bad.picks.find((x) => x.card)!;
+  assert.equal(pick.status, 'posted', 'the post stands');
+  assert.ok(pick.trims.some((t) => t.path === 'card.config.whoops' && t.predicate === 'repairThrew'), 'the throw is named');
+  assert.ok(pick.trims.some((t) => t.path === 'card.config.whoops' && t.after === 0 && t.predicate !== 'repairThrew'), 'the options failed as they would without the hook');
+  const d = fakeDb(oneReply);
+  const good = await run(d, fakeModels(asks({ key: 'whoops', config: { whoops: { color: '#12ab34' } } })), tuned);
+  assert.ok(good.status === 'ok');
+  assert.deepEqual(d.of('staff_play_card')[0]!.config, { color: '#12ab34' }, 'valid options are decided as given');
 });
 
 test('a Set with options reads its own new post as the target, after it is written, and sets with the decided config', async () => {

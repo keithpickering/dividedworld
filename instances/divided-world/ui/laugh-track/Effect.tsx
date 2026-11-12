@@ -1,0 +1,237 @@
+/**
+ * Laugh Track's effect on a post (docs/plans/2026-11-11-laugh-track-design.md, sections 6 and 8; plan Task 13). The audience is heard
+ * and captioned as a reader reaches each cued phrase; the words stay where they were, and what the reader reads is never sent or saved.
+ *
+ * Each place (a cue's phrase found by `placesOf`, the engine's one matcher, over the post's visible text) is a `wrap` run of a `TextLayer`,
+ * drawn as `span.dw-lt-cue`. Before its place fires nothing marks it, so the joke is not telegraphed. Once it fires the piece carries the
+ * class `dw-lt-fired`, a dotted underline in its flavor ink (a `text-decoration`, so no word moves), and its first piece is a button, named by its own visible words and then "Replay: the audience boos" (WCAG 2.5.3, Label in Name), that
+ * replays the take (hover with a mouse, focus, a press, Enter or Space).
+ *
+ * The page's watcher (watch.ts) says when a place fires and holds the page's audience, its murmurs: this effect only registers each place
+ * with it, hands it the way to make a kind's loop, and plays the place's take. A take is picked from the play, its seed and the place
+ * (`seeded`), so every screen picks the same, and it is one of three.
+ *
+ * Fired places are this visit's own state: nothing is saved or sent, and nothing here reads who wrote the post or who cast the card
+ * (`reader.author` and `reader.caster` are never read), so no sound, caption or timing depends on who owns anything.
+ *
+ * Under another card's words: the runs are `wrap` runs at z -1, a level under every other card's wrap run at 0 and every replace run. Where
+ * the two share a stretch (Autocorrect's tape over a phrase) the tape's run is the one drawn there, whichever card was played first, so the
+ * phrase has no place drawn and the underline never shows through the tape; the rest of the cue's places are drawn as usual.
+ *
+ * `still` (a play's moment in history) is a component of its own that draws the places unmarked and uses no sound, no watcher and no
+ * handler; its Lens says how many cues the play holds.
+ */
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { parse } from '../../../../engine/bbcode/parse.ts';
+import { visibleText } from '../../../../engine/bbcode/visible.ts';
+import { TextLayer, type TextRun } from '../../../../engine/ui/bbcode/layers.tsx';
+import { useSound } from '../../../../engine/ui/audio/sound.ts';
+import { useGameSound } from '../../../../engine/ui/audio/useGameSound.ts';
+import type { CardPlay, CardView, EffectProps } from '../../../../engine/ui/cards/types.ts';
+import { useKayfa } from '../../../../engine/ui/context.tsx';
+import { placesOf, type Cue, type Sound } from '../../cards/laugh-track.ts';
+import { seeded } from '../seeded.ts';
+import { forgetVoice, register, type Screen, type Unregister } from './watch.ts';
+import './laugh-track.css';
+
+/** The numbers the screens read from the card's settings when the instance has not set them (laugh-track.ts `screenReads`). */
+const DEFAULTS = { line: 40, dwellMs: 400, reachRem: 12, murmurMost: 35, fadeMs: 250 } as const;
+/** The loop that builds before each kind of hit, by sound. */
+const LOOPS: Readonly<Record<Sound, string>> = { laugh: 'laugh-track.titter', cheer: 'laugh-track.ooh', boo: 'laugh-track.grumble' };
+const VERBS: Readonly<Record<Sound, string>> = { laugh: 'laughs', cheer: 'cheers', boo: 'boos' };
+/** The events of one gesture (a press focuses a button and then presses it) replay once: a replay within this many ms of another is the same gesture. */
+const SAME_GESTURE_MS = 300;
+/** Laugh Track's runs lie under every other card's wrap run (see the file's header). */
+const Z = -1;
+
+/** One cued place on the post. */
+interface Spot {
+  readonly key: string;
+  readonly start: number;
+  readonly end: number;
+  readonly sound: Sound;
+  /** The take this place plays: one of the sound's three. */
+  readonly take: string;
+}
+
+const isCue = (c: unknown): c is Cue => typeof c === 'object' && c !== null && typeof (c as Cue).phrase === 'string' && ['laugh', 'cheer', 'boo'].includes((c as Cue).sound);
+
+/** The post's cued places, in the order of the text, for each of the card's plays: those a cue's phrase still finds. */
+function spotsOf(text: string, plays: readonly CardPlay[]): Spot[] {
+  return plays.flatMap((play) => {
+    const { cues, seed } = play.config as { cues?: unknown; seed?: unknown };
+    if (play.caught || !Array.isArray(cues) || !cues.every(isCue)) return [];
+    return placesOf(text, cues).map((place, i): Spot => {
+      const sound = cues[place.cue]!.sound;
+      const n = 1 + Math.floor(seeded(`${play.id}:${typeof seed === 'number' ? seed : 0}:${i}`)() * 3);
+      return { key: `${play.id}:${i}`, start: place.start, end: place.end, sound, take: `laugh-track.${sound}-${n}` };
+    });
+  });
+}
+
+function useSpots(post: EffectProps['post'], plays: readonly CardPlay[]) {
+  const body = typeof post.currentPayload.body === 'string' ? post.currentPayload.body : '';
+  const text = useMemo(() => visibleText(parse(body)), [body]);
+  /* The plays by content, so a new array of equal plays is not a new set of places. */
+  const playsKey = JSON.stringify(plays.map((p) => [p.id, p.caught ?? null, p.config]));
+  const spots = useMemo(() => spotsOf(text, plays), [text, playsKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  return spots;
+}
+
+/** A piece of a place, drawn for `run`: the words in a span that the rest of the effect finds by its place's key. */
+const pieceOf = (spot: Spot, key: string, text: string, extra?: Record<string, unknown>): ReactNode => (
+  <span key={key} data-sound={spot.sound} data-lt-place={spot.key} data-lt-piece={key} {...extra} className={extra?.['className'] as string | undefined ?? 'dw-lt-cue'}>{text}</span>
+);
+
+/** A play's moment: the places drawn unmarked, with nothing registered, played or bound. */
+function Moment({ post, plays, show, children }: EffectProps) {
+  const spots = useSpots(post, plays);
+  const runs = useMemo<TextRun[]>(() => spots.map((s) => ({ start: s.start, end: s.end, key: `lt:${s.key}`, z: Z, mode: 'wrap', render: ({ text, key }) => pieceOf(s, key, text) })), [spots]);
+  /* The cues the play holds, whatever the version of the post shown finds: a moment says what was played. */
+  const held = plays.reduce((n, p) => { const { cues } = p.config as { cues?: unknown }; return n + (!p.caught && Array.isArray(cues) ? cues.filter(isCue).length : 0); }, 0);
+  const view: CardView = { progress: null, state: `${held} ${held === 1 ? 'cue' : 'cues'}`, yours: false, controls: [], notes: {} };
+  const viewKey = JSON.stringify(view);
+  const now = useRef(view);
+  now.current = view;
+  const showRef = useRef(show);
+  showRef.current = show;
+  useEffect(() => { showRef.current(now.current); }, [viewKey]);
+  useEffect(() => () => { showRef.current(null); }, []);
+  return <div className="dw-lt"><TextLayer runs={runs}>{children}</TextLayer></div>;
+}
+
+function Live({ post, plays, show, met, children }: EffectProps) {
+  const { settings } = useKayfa();
+  const sound = useSound();
+  const gameSound = useGameSound();
+  const spots = useSpots(post, plays);
+  const root = useRef<HTMLDivElement>(null);
+  const cards = settings.cardSettings;
+  const screen = useMemo<Screen>(() => ({
+    line: cards['laughTrack.line'] ?? DEFAULTS.line, dwellMs: cards['laughTrack.dwellMs'] ?? DEFAULTS.dwellMs, reachRem: cards['laughTrack.reachRem'] ?? DEFAULTS.reachRem,
+    murmurMost: cards['laughTrack.murmurMost'] ?? DEFAULTS.murmurMost, fadeMs: cards['laughTrack.fadeMs'] ?? DEFAULTS.fadeMs,
+  }), [cards]);
+  /* The places that have fired this visit, and the first piece drawn of each (its button): this screen's own state, never saved or sent. */
+  const [fired, setFired] = useState<ReadonlySet<string>>(() => new Set());
+  const [first, setFirst] = useState<Readonly<Record<string, string>>>({});
+  const firedNow = useRef(fired);
+  firedNow.current = fired;
+
+  /* What the callbacks below read, so a registration lives as long as its place does and not as long as a render. */
+  const now = useRef({ sound, show, met, screen, spots });
+  now.current = { sound, show, met, screen, spots };
+  const metOnce = useRef(false);
+  const lastPlay = useRef<Record<string, number>>({});
+
+  const replay = useCallback((spot: Spot, opts?: { fadeMs: number }) => {
+    const at = Date.now();
+    if (at - (lastPlay.current[spot.key] ?? -Infinity) < SAME_GESTURE_MS) return;
+    lastPlay.current[spot.key] = at;
+    void now.current.sound.play(spot.take, { group: 'audience', ...opts });
+  }, []);
+
+  const fire = useCallback((spot: Spot) => {
+    if (firedNow.current.has(spot.key)) return;
+    firedNow.current = new Set(firedNow.current).add(spot.key);
+    setFired(firedNow.current);
+    replay(spot, { fadeMs: now.current.screen.fadeMs });
+    if (!metOnce.current) { metOnce.current = true; now.current.met(); }
+  }, [replay]);
+
+  /* The page's watcher holds a registration for each place drawn and not yet fired. */
+  const registered = useRef(new Map<string, Unregister>());
+  const sync = useCallback(() => {
+    const el = root.current;
+    if (!el) return;
+    const drawn = new Set<string>();
+    for (const e of el.querySelectorAll('[data-lt-place]')) drawn.add(e.getAttribute('data-lt-place')!);
+    const mine = new Map(now.current.spots.map((s) => [s.key, s]));
+    for (const [key, off] of registered.current) {
+      if (!drawn.has(key) || !mine.has(key) || firedNow.current.has(key)) { off(); registered.current.delete(key); } else off.refresh();
+    }
+    for (const spot of mine.values()) {
+      if (!drawn.has(spot.key) || firedNow.current.has(spot.key) || registered.current.has(spot.key)) continue;
+      registered.current.set(spot.key, register({
+        els: () => el.querySelectorAll(`[data-lt-place="${spot.key}"]`),
+        kind: spot.sound,
+        screen: now.current.screen,
+        voice: (kind) => now.current.sound.loop(LOOPS[kind as Sound], { group: 'audience-build', id: `laugh-track:${kind}` }),
+        fire: () => fire(spot),
+      }));
+    }
+  }, [fire]);
+  const spotsKey = spots.map((s) => `${s.key}@${s.start}-${s.end}`).join(',');
+  useEffect(() => { sync(); }, [spotsKey, screen, fired, sync]);
+  /* A card over this one (a tape peeled, a play ended) draws the words again without drawing this effect: its places are looked for again. */
+  useEffect(() => {
+    const el = root.current;
+    if (!el || typeof MutationObserver !== 'function') return;
+    const watch = new MutationObserver(() => { sync(); findFirsts(); });
+    watch.observe(el, { childList: true, subtree: true });
+    return () => { watch.disconnect(); };
+  }); // eslint-disable-line react-hooks/exhaustive-deps
+  /* Game sounds switched off or on: the mixer ends a loop whose bus went off and its handle does not say so, so the watcher is told to
+     let its loop go and make a fresh one at the next near frame (the first render is not a change). */
+  const soundOn = useRef(gameSound.on);
+  useEffect(() => {
+    if (soundOn.current === gameSound.on) return;
+    soundOn.current = gameSound.on;
+    forgetVoice();
+  }, [gameSound.on]);
+  /* The post going lets every place go; the watcher stops a kind's loop with its last place, which is how no held caption outlives the post. */
+  useEffect(() => () => {
+    for (const off of registered.current.values()) off();
+    registered.current.clear();
+  }, []);
+
+  /* The first piece drawn of each fired place is its button. */
+  const findFirsts = useCallback(() => {
+    const el = root.current;
+    if (!el) return;
+    const found: Record<string, string> = {};
+    for (const e of el.querySelectorAll('[data-lt-place]')) {
+      const place = e.getAttribute('data-lt-place')!;
+      if (firedNow.current.has(place) && !(place in found)) found[place] = e.getAttribute('data-lt-piece')!;
+    }
+    setFirst((was) => (JSON.stringify(was) === JSON.stringify(found) ? was : found));
+  }, []);
+  useLayoutEffect(() => { findFirsts(); }, [fired, spotsKey, findFirsts]);
+
+  const runs = useMemo<TextRun[]>(() => spots.map((spot) => {
+    const done = fired.has(spot.key);
+    const press = (e: KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); replay(spot); } };
+    return {
+      start: spot.start, end: spot.end, key: `lt:${spot.key}`, z: Z, mode: 'wrap',
+      render: ({ text, key }) => !done ? pieceOf(spot, key, text) : pieceOf(spot, key, text, {
+        className: 'dw-lt-cue dw-lt-fired',
+        onPointerEnter: (e: { pointerType: string }) => { if (e.pointerType === 'mouse') replay(spot); },
+        onFocus: () => { replay(spot); },
+        onClick: () => { replay(spot); },
+        onKeyDown: press,
+        ...(first[spot.key] === key ? { tabIndex: 0, role: 'button', 'aria-label': `${text}. Replay: the audience ${VERBS[spot.sound]}` } : null),
+      }),
+    };
+  }), [spots, fired, first, replay]);
+
+  /* The Lens's words: how many cues have been heard on this visit, and the toggle for Game sounds. */
+  const heard = spots.filter((s) => fired.has(s.key)).length;
+  const view: CardView = {
+    progress: spots.length ? Math.round((heard / spots.length) * 1000) / 1000 : null,
+    state: spots.length ? `${heard} of ${spots.length} cues heard` : 'No cues in this version',
+    yours: false,
+    controls: [{ kind: 'toggle', label: 'Game sounds', on: gameSound.on, set: gameSound.set }],
+    notes: {},
+  };
+  const viewKey = JSON.stringify({ ...view, controls: view.controls.map((c) => [c.kind, c.label, 'on' in c ? c.on : null]) });
+  const latest = useRef(view);
+  latest.current = view;
+  useEffect(() => { now.current.show(latest.current); }, [viewKey]);
+  useEffect(() => () => { now.current.show(null); }, []);
+
+  return <div ref={root} className="dw-lt"><TextLayer runs={runs}>{children}</TextLayer></div>;
+}
+
+export function LaughTrackEffect(props: EffectProps) {
+  /* `still` is fixed for a post's life, so the two never swap hooks mid-life. */
+  return props.still ? <Moment {...props} /> : <Live {...props} />;
+}

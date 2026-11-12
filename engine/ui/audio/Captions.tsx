@@ -10,6 +10,9 @@
  * It fades over 150ms and, under reduced motion, appears and goes with no motion. It lets every press through. While a caption shows it measures
  * itself and sets `--kb-captions-measured` (its height and the gap under it) on the root, so the toasts stand above it; cleared otherwise.
  * A caption names its way out (captions.ts): a say ends by itself, a hold at its release.
+ *
+ * The app shell mounts `<Captions />` once, at the page root (web/src/App.tsx's Shell), outside both worlds; a host of the engine's Frame that wants
+ * captions must mount it itself, since neither the Frame nor the HUD does.
  */
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { motionReduced } from '../appearance.ts';

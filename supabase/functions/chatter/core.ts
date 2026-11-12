@@ -380,6 +380,7 @@ async function onePick(r: PickRun): Promise<PickRecord> {
           const decideFirst = async (pick: unknown): Promise<{ ok: true; draw: DecidedDraw } | { ok: false; why: string }> => {
             if (wall !== undefined) { const d = decideDraw(rules, tuned.settings, pick); return d.ok ? { ok: true, draw: d.value } : { ok: false, why: d.why }; }
             const d = await decideOptions(db, tuned, rules, p.quoting, 'reply', {}, pick);
+            trims.push(...d.trims);
             return d.ok && d.draw !== undefined ? { ok: true, draw: d.draw } : { ok: false, why: d.ok ? 'no first draw' : d.why };
           };
           let first: DecidedDraw | undefined;
@@ -413,6 +414,8 @@ async function onePick(r: PickRun): Promise<PickRecord> {
           let config: unknown = null;
           if (rules && answer.card.config !== undefined) {
             const decided = await decideOptions(db, tuned, rules, answer.card.on === 'reply' ? p.quoting : post, answer.card.on, answer.card.config);
+            // What the card's repair trimmed (its `repairStaff`) is written on the call's record beside the options' own, whether or not the options then pass.
+            trims.push(...decided.trims);
             if (decided.ok) config = decided.config;
             else {
               const failed = `${answer.card.key}: ${decided.why}`;
@@ -488,16 +491,25 @@ function beatsBoard(persona: Persona, slugs: ReadonlySet<string>, seed: string):
  * error is thrown, as any other; a target that cannot be read is a failure of the options, so the fallback plays.
  */
 async function decideOptions(db: Db, tuned: Instance, rules: Instance['cards'][number], target: string | null, on: 'reply' | 'own', config: unknown, first?: unknown):
-  Promise<{ ok: true; config: unknown; draw?: DecidedDraw } | { ok: false; why: string }> {
-  if (target === null) return { ok: false, why: 'there is no post to read' };
+  Promise<({ ok: true; config: unknown; draw?: DecidedDraw } | { ok: false; why: string }) & { trims: readonly Trim[] }> {
+  if (target === null) return { ok: false, why: 'there is no post to read', trims: [] };
   const read = await db.rpc<(CardTarget & { effects: CardEffect[]; above?: EffectsAbove }) | null>('card_target_reach', { reach: 'post', target });
-  if (!read) return { ok: false, why: 'there is no such post' };
+  if (!read) return { ok: false, why: 'there is no such post', trims: [] };
   const { effects: own, above = {}, ...said } = read;
   const post = said as { act: string; kind: Parameters<typeof postTarget>[1]; body?: unknown; version?: string };
   const t = postTarget(post.act, post.kind, post.body, post.version);
   const effects = effectsOnTarget(t, own ?? [], above);
+  // The card's own repair of what the persona chose, against the post as its rules see it, before the options are decided; a player's play never comes here.
+  // A repair that throws is no repair: the options are decided as given, and the throw is named like a trim, so a card's bug never costs the answer.
+  let repaired: { readonly config: unknown; readonly trims: readonly Trim[] } = { config, trims: [] };
+  try {
+    repaired = rules.repairStaff?.(config, t) ?? repaired;
+  } catch (e) {
+    repaired = { config, trims: [{ path: `card.config.${rules.key}`, predicate: 'repairThrew', before: 1, after: 1 }] };
+  }
+  const trims: readonly Trim[] = repaired.trims;
   const decided = on === 'own'
-    ? decideSet(rules, tuned.settings, t, effects, config, tuned.cards)
-    : decidePlay(rules, tuned.settings, t, effects, config, '', { nameOf: (key) => tuned.cards.find((c) => c.key === key)?.name ?? key, first });
-  return decided.ok ? { ok: true, config: decided.value.config, ...(decided.value.draw === undefined ? {} : { draw: decided.value.draw }) } : { ok: false, why: decided.why };
+    ? decideSet(rules, tuned.settings, t, effects, repaired.config, tuned.cards)
+    : decidePlay(rules, tuned.settings, t, effects, repaired.config, '', { nameOf: (key) => tuned.cards.find((c) => c.key === key)?.name ?? key, first });
+  return decided.ok ? { ok: true, config: decided.value.config, ...(decided.value.draw === undefined ? {} : { draw: decided.value.draw }), trims } : { ok: false, why: decided.why, trims };
 }

@@ -186,6 +186,29 @@ describe('mixer', () => {
     assert.deepEqual(newVoice.gain.log, ['set 0 10.5', 'ramp 1 12.5']);
   });
 
+  it('6b. a loop starts at gain 0, so it is silent until its owner raises it', async () => {
+    const m = make();
+    await m.unlock();
+    m.setBus('game', { on: true, volume: 100 });
+    await m.loop(slot('build', { loop: true }));
+    assert.equal(ctx.gains[1]!.gain.value, 0);
+    assert.equal(ctx.sources[0]!.started, true);
+  });
+
+  it('6c. a loop cancelled before it resolves never starts a source and never replaces its group', async () => {
+    const m = make();
+    await m.unlock();
+    m.setBus('game', { on: true, volume: 100 });
+    await m.loop(slot('build', { loop: true }), { group: 'g' });
+    const first = ctx.sources[0]!;
+    let cancelled = false;
+    const pending = m.loop(slot('build2', { loop: true }), { group: 'g', cancelled: () => cancelled });
+    cancelled = true;
+    assert.equal(await pending, null);
+    assert.equal(ctx.sources.length, 1, 'no second source was made');
+    assert.equal(first.stoppedAt, undefined, 'the group\'s loop was not replaced');
+  });
+
   it('9. setGain cancels what was scheduled before it targets', async () => {
     const m = make();
     await m.unlock();
@@ -193,7 +216,7 @@ describe('mixer', () => {
     const h = (await m.loop(slot('build', { loop: true })))!;
     h.setGain(0.5);
     const log = ctx.gains[1]!.gain.log;
-    assert.deepEqual(log.slice(-3), ['cancel 10', 'set 1 10', 'target 0.5 10']);
+    assert.deepEqual(log.slice(-3), ['cancel 10', 'set 0 10', 'target 0.5 10']);
   });
 
   it('10. a rejected resume leaves the mixer locked, and a later unlock can unlock it', async () => {

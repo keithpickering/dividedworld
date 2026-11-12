@@ -13,6 +13,7 @@ import { cardsUi } from './cards.ts';
 import { quadrantLabels } from './quadrant-labels.ts';
 import { cards as instanceCards } from '../cards/index.ts';
 import { packsUi } from './packs.ts';
+import { sounds } from './sounds.ts';
 import { gearUi, trophiesUi } from './cosmetics.ts';
 import theme from './theme.css?url';
 import themePreview from './theme.css?preview';
@@ -185,6 +186,8 @@ export const instanceUi: InstanceUi = Object.freeze({
   glass,
   cards: cardsUi,
   packs: packsUi,
+  /* The laugh track: the audience's sounds, each with its caption (sounds.ts). */
+  sounds,
   gear: gearUi,
   trophies: trophiesUi,
   /* The back of a card wears the favicon's coin (the owner's word, 2026-11-07). */

@@ -28,6 +28,7 @@ import { Page as GlassPage } from '../../engine/ui/glass/Page.tsx';
 import { IndexScreen } from '../../engine/ui/index/Index.tsx';
 import { PlayerProvider, usePlayer, type PlayerInitial } from '../../engine/ui/player.tsx';
 import { seasonAt } from '../../engine/ui/season/Season.tsx';
+import { Captions } from '../../engine/ui/audio/Captions.tsx';
 import { SendToWelcome } from '../../engine/ui/welcome/Welcome.tsx';
 import { SettlementOnLoad } from '../../engine/ui/log/Settlement.tsx';
 import { match, RouterProvider, useLocation, useNavigate, useRouterAccount, useRouterInternals } from '../../engine/ui/router.tsx';
@@ -260,6 +261,7 @@ function Shell({ routes }: { readonly routes: readonly Route[] }) {
   const { exitRested, onRest } = useRest(world);
   const leave: PinnedExit = { scrollY: window.scrollY, rested: exitRested };
   return (
+    <>
     <AnimatePresence initial={false} custom={leave}>
       {surface
         ? (
@@ -272,6 +274,9 @@ function Shell({ routes }: { readonly routes: readonly Route[] }) {
         )
         : <Leaving key="board" pin holdUntil={feel ? holdBoard : undefined} className="kb-world" data-kb-world="board"><Frame>{content}</Frame></Leaving>}
     </AnimatePresence>
+    {/* The caption bar is the page's, once, outside both worlds: the glass pages play sound too, and it stands above the HUD where there is one (--kb-hud-measured, 0px fallback) and at the screen's bottom where there is none. Sound captions are never behind a sign-in. */}
+    <Captions />
+    </>
   );
 }
 
