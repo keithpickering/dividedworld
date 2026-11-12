@@ -735,6 +735,27 @@ $$;
 -- planner's whole view of the table, pg_statistic and the page and row counts of the table and its indexes), and put back by deleting what is there and moving them down.
 create temp table scale_stats_holder (x integer);
 create temp table scale_stats_class (state integer, rel oid, relpages integer, reltuples real, relallvisible integer);
+-- What an instance's Acts say of themselves before a Mod has visited anyone, or before one has joined a visit: the kinds named appear in no statistics (the earlier sections of
+-- this file left a few dozen visits behind, which statistics gathered here would list, and the state should not turn on how many); and, where asked, no Act targets another
+-- (those few dozen also give the target column a spread of values, and with none the estimate of a visit's probe is a tie of cost between two indexes of the same predicate).
+-- The indexes of the kinds named hold no entry, as they did.
+create function pg_temp.no_such_acts(kinds text[], untargeted boolean) returns void language plpgsql as $$
+begin
+  update pg_statistic s set stanumbers1 = (select array_agg(case when u.v = any (kinds) then 0 else u.f end order by u.i)
+                                             from unnest(s.stanumbers1, (s.stavalues1::text)::text[]) with ordinality as u(f, v, i))
+   where s.starelid = 'acts'::regclass and s.stakind1 = 1
+     and s.staattnum = (select a.attnum from pg_attribute a where a.attrelid = 'acts'::regclass and a.attname = 'kind');
+  -- and the indexes of just those kinds hold nothing.
+  update pg_class c set relpages = 1, reltuples = 0 from pg_index i
+   where i.indrelid = 'acts'::regclass and c.oid = i.indexrelid and exists (select 1 from unnest(kinds) k where pg_get_expr(i.indpred, i.indrelid) = format('(kind = %L::text)', k));
+  if untargeted then
+    update pg_statistic s set stanullfrac = 1, stadistinct = 0, stakind1 = 0, stakind2 = 0, stakind3 = 0, stakind4 = 0, stakind5 = 0,
+           stanumbers1 = null, stanumbers2 = null, stanumbers3 = null, stanumbers4 = null, stanumbers5 = null, stavalues1 = null, stavalues2 = null, stavalues3 = null, stavalues4 = null, stavalues5 = null
+     where s.starelid = 'acts'::regclass and s.staattnum = (select a.attnum from pg_attribute a where a.attrelid = 'acts'::regclass and a.attname = 'target_act_id');
+    delete from pg_statistic s where s.starelid = 'acts'::regclass and s.staattnum = (select a.attnum from pg_attribute a where a.attrelid = 'acts'::regclass and a.attname = 'thread');
+  end if;
+end $$;
+
 create function pg_temp.keep_stats(state integer) returns void language plpgsql as $$
 declare cols text := (select string_agg(quote_ident(a.attname), ', ' order by a.attnum) from pg_attribute a where a.attrelid = 'pg_statistic'::regclass and a.attnum > 0 and a.attname not in ('starelid', 'staattnum'));
 begin
@@ -784,6 +805,7 @@ begin
   from generate_series(1, 60000) g;
   -- Statistics gathered now know of no visit, no join and no end among the 60,000 posts.
   analyze acts;
+  perform pg_temp.no_such_acts(array['visit', 'visit_join', 'visit_end'], true);
   perform pg_temp.keep_stats(2);
   -- Visit n (1 to 20,000) is on post 3n; visit 20,000 + m (1 to 2,000) is a second visit on post 30m, whose first visit is n = 10m. Each charges rule 1, 2 or 3.
   insert into acts (id, character, kind, thread, target_act_id, payload, created_at)
@@ -804,6 +826,7 @@ begin
   where v.n % 4 <> 1 or (v.n <= 20000 and v.n % 10 = 0);
   -- Statistics gathered now know of no join on the scale board, and of the few this file wrote among 98,500 Acts.
   analyze acts;
+  perform pg_temp.no_such_acts(array['visit_join'], false);
   perform pg_temp.keep_stats(3);
   -- Every other visit has a join (rule 5), and every tenth a second (rule 6).
   insert into acts (character, kind, thread, target_act_id, payload, created_at)
