@@ -39,3 +39,21 @@ test('every slot has a finite gain above 0, and every file in the manifest is a 
   const slotFiles = sounds.slots.map((s) => s.src.replace(/^.*\//, '')).sort();
   assert.deepEqual(slotFiles, manifest.map((e) => e.file).sort());
 });
+
+test('every slot\'s gain is the gain of its own file\'s manifest entry', () => {
+  for (const s of sounds.slots) {
+    const file = s.src.replace(/^.*\//, '');
+    const entry = manifest.find((e) => e.file === file);
+    assert.ok(entry, `${s.key} names ${file}, which the manifest lacks`);
+    assert.ok(near(s.gain as number, gainOf(entry)), `${s.key} has gain ${s.gain}, not the gain of ${file}`);
+  }
+});
+
+test('laugh-3 is loud and near full scale: brought down for loudness, and its peak ends under -1 dBFS', () => {
+  const entry = manifest.find((e) => e.file === 'laugh-3.mp3');
+  assert.ok(entry);
+  assert.deepEqual([entry.lufs, entry.peak], [-11.7, -0.9]);
+  const slot = sounds.slots.find((s) => s.key === 'laugh-track.laugh-3');
+  assert.ok(slot && near(slot.gain as number, 10 ** (-6.3 / 20)), String(slot?.gain));
+  assert.ok(20 * Math.log10(slot.gain as number) + entry.peak <= -1);
+});

@@ -21,13 +21,16 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'
 
 function measure(file) {
   const run = spawnSync('ffmpeg', ['-hide_banner', '-nostats', '-i', file, '-af', 'ebur128=peak=true', '-f', 'null', '-'], { encoding: 'utf8' });
-  if (run.error) return { missing: true };
+  if (run.error) return { error: `ffmpeg could not be run on ${file}: ${run.error.message}` };
   // The summary is the last block of stderr; the running lines before it also carry `I:`.
   const summary = run.stderr.slice(run.stderr.lastIndexOf('Summary:'));
   const lufs = /^\s*I:\s+(-?[\d.]+|-inf)\s+LUFS/m.exec(summary);
   const peak = /^\s*Peak:\s+(-?[\d.]+|-inf)\s+dBFS/m.exec(summary);
   if (run.status !== 0 || !lufs || !peak) return { error: `ffmpeg gave no loudness summary for ${file}` };
-  return { lufs: Number(lufs[1]), peak: Number(peak[1]) };
+  const values = { lufs: Number(lufs[1]), peak: Number(peak[1]) };
+  // `-inf` matches the patterns and is not a number: a silent file has no level to write.
+  if (!Number.isFinite(values.lufs) || !Number.isFinite(values.peak)) return { error: `${file} has no measurable level (silent)` };
+  return values;
 }
 
 function main() {
