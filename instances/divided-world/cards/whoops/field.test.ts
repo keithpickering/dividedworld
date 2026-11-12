@@ -97,11 +97,11 @@ test('one line in pieces is one line: the same field, and one bulb', () => {
   for (let i = 0; i < 1200; i++) {
     if (x > 960 || x < 20) dir = -dir;
     x += dir * 7;
-    pts.push([x / WIDE.w, (15 + (i / 1200) * 300) / WIDE.h]);
+    // A wiggle of 8px each way, past the simplification's quarter-radius tolerance, so fitStroke keeps the points.
+    pts.push([x / WIDE.w, (15 + (i / 1200) * 300 + (i % 2 ? 8 : -8)) / WIDE.h]);
   }
-  const cut = fitStroke({ tool: 'ink', color: 'black', ...brush, points: pts }, [5 / WIDE.w, 5 / WIDE.h]);
-  assert.ok(cut.length >= 3, `${cut.length} pieces`);
-  const pieces = cut.map((s, i): FieldStroke => (i ? { ...s, continues: true } : s)).map((s, i, all) => (i === all.length - 1 ? { ...s, drops: 2 } : s));
+  const pieces: FieldStroke[] = fitStroke({ tool: 'ink', color: 'black', ...brush, points: pts, drops: 2 }, [5 / WIDE.w, 5 / WIDE.h]);
+  assert.ok(pieces.length >= 3, `${pieces.length} pieces`);
   assert.equal(linesOf(pieces).length, 1);
   const whole: FieldStroke = { ...pieces[0]!, points: pieces.flatMap((s, i) => (i ? s.points.slice(1) : s.points)), drops: 2 };
   delete (whole as { continues?: true }).continues;
