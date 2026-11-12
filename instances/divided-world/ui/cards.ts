@@ -132,11 +132,12 @@ const setMoveWords = (lands: string) => `You can also set it face down on one of
 /** A span in words: "a week", "3 days". */
 export const spanWords = (s: { readonly unit: string; readonly count: number }) => (s.unit === 'day' && s.count === 7 ? 'a week' : s.count === 1 ? `${s.unit === 'hour' ? 'an' : 'a'} ${s.unit}` : `${s.count} ${s.unit}s`);
 
-/** What an Earn Gimmick adds to a reaction's count, and what a Price Gimmick adds to a cast, read from the card's own rules: "10%", "0.25". */
-const earnBy = (c: { readonly gimmick?: GimmickEffect }) => {
+/** What an Earn Gimmick adds to a reaction's count, as the end of a sentence, read from the card's own rules: "20% higher", or "doubled" at exactly 1. */
+const earnWords = (c: { readonly gimmick?: GimmickEffect }) => {
   if (c.gimmick?.kind !== 'earn') throw new Error('card has no earn gimmick');
-  return `${Math.round(c.gimmick.by * 100)}%`;
+  return c.gimmick.by === 1 ? 'doubled' : `${Math.round(c.gimmick.by * 100)}% higher`;
 };
+/** What a Price Gimmick adds to a cast, read from the card's own rules: "0.25". */
 const priceAdd = (c: { readonly gimmick?: GimmickEffect }) => {
   if (c.gimmick?.kind !== 'price') throw new Error('card has no price gimmick');
   return orbs(c.gimmick.add);
@@ -340,38 +341,38 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
   {
     key: 'publicity-tour',
     art: { color: '#2ee6ff', ink: '#03141a', canvas: publicityTourCanvas, mark: publicityTourMark, credit: publicityTourArt.credit, tagline: 'Earn more from positive reactions.' },
-    summary: `Used on your own character. For ${spanWords(publicityTour.lasts!)}, what it earns from positive reactions is ${earnBy(publicityTour)} higher. A loss is never made worse.`,
+    summary: `Used on your own character. For ${spanWords(publicityTour.lasts!)}, what it earns from positive reactions is ${earnWords(publicityTour)}. A loss is never made worse.`,
     status: 'Earns more from positive reactions',
     describe: (settings: Settings) =>
-      `A Sweet card, ${publicityTour.rarity}, used on your own character, the one playing it. For ${spanWords(publicityTour.lasts!)}, whatever that character earns from a positive reaction (excited or calm) to its posts is ${earnBy(publicityTour)} higher, and then it stops by itself. It never makes a loss worse. It costs nothing more to use.`,
-    logPlay: () => `What that character earns from positive reactions is ${earnBy(publicityTour)} higher until it ends.`,
+      `A Sweet card, ${publicityTour.rarity}, used on your own character, the one playing it. For ${spanWords(publicityTour.lasts!)}, whatever that character earns from a positive reaction (excited or calm) to its posts is ${earnWords(publicityTour)}, and then it stops by itself. It never makes a loss worse. It costs nothing more to use.`,
+    logPlay: () => `What that character earns from positive reactions is ${earnWords(publicityTour)} until it ends.`,
   },
   {
     key: 'hype-up',
     art: { color: '#2ee6ff', ink: '#03141a', canvas: hypeUpCanvas, mark: hypeUpMark, credit: hypeUpArt.credit, tagline: 'Give a character a push.' },
-    summary: `Cast on a character. For ${spanWords(hypeUp.lasts!)}, what it earns from positive reactions is ${earnBy(hypeUp)} higher. A loss is never made worse.`,
+    summary: `Cast on a character. For ${spanWords(hypeUp.lasts!)}, what it earns from positive reactions is ${earnWords(hypeUp)}. A loss is never made worse.`,
     status: 'Earns more from positive reactions',
     describe: (settings: Settings) =>
-      `A Sweet card, ${hypeUp.rarity}, cast from any post by the character it lands on. For ${spanWords(hypeUp.lasts!)}, whatever that character earns from a positive reaction (excited or calm) to its posts is ${earnBy(hypeUp)} higher, and then it stops by itself. It never makes a loss worse, and it takes nothing from you. It does not add to that character's own Publicity Tour: while both are up, the larger of the two applies. A Mod Bot earns nothing, so it gains nothing from one. ${setMoveWords("the quoting post's character")} It costs nothing more to play.`,
-    logPlay: () => `What that character earns from positive reactions is ${earnBy(hypeUp)} higher until it ends.`,
+      `A Sweet card, ${hypeUp.rarity}, cast from any post by the character it lands on. For ${spanWords(hypeUp.lasts!)}, whatever that character earns from a positive reaction (excited or calm) to its posts is ${earnWords(hypeUp)}, and then it stops by itself. It never makes a loss worse, and it takes nothing from you. It does not add to that character's own Publicity Tour: while both are up, the larger of the two applies. A Mod Bot earns nothing, so it gains nothing from one. ${setMoveWords("the quoting post's character")} It costs nothing more to play.`,
+    logPlay: () => `What that character earns from positive reactions is ${earnWords(hypeUp)} until it ends.`,
   },
   {
     key: 'heat-magnet',
     art: { color: '#ff3d7f', ink: '#14030a', canvas: heatMagnetCanvas, mark: heatMagnetMark, credit: heatMagnetArt.credit, tagline: 'Earn more from negative reactions.' },
-    summary: `Used on your own character. For ${spanWords(heatMagnet.lasts!)}, what it earns from negative reactions is ${earnBy(heatMagnet)} higher. A loss is never made worse.`,
+    summary: `Used on your own character. For ${spanWords(heatMagnet.lasts!)}, what it earns from negative reactions is ${earnWords(heatMagnet)}. A loss is never made worse.`,
     status: 'Earns more from negative reactions',
     describe: (settings: Settings) =>
-      `A Salty card, ${heatMagnet.rarity}, used on your own character, the one playing it. For ${spanWords(heatMagnet.lasts!)}, whatever that character earns from a negative reaction (excited or bored) to its posts is ${earnBy(heatMagnet)} higher, and then it stops by itself. It never makes a loss worse. It costs nothing more to use.`,
-    logPlay: () => `What that character earns from negative reactions is ${earnBy(heatMagnet)} higher until it ends.`,
+      `A Salty card, ${heatMagnet.rarity}, used on your own character, the one playing it. For ${spanWords(heatMagnet.lasts!)}, whatever that character earns from a negative reaction (excited or bored) to its posts is ${earnWords(heatMagnet)}, and then it stops by itself. It never makes a loss worse. It costs nothing more to use.`,
+    logPlay: () => `What that character earns from negative reactions is ${earnWords(heatMagnet)} until it ends.`,
   },
   {
     key: 'class-clown',
     art: { color: '#d24a2c', ink: '#1a0602', canvas: classClownCanvas, mark: classClownMark, credit: classClownArt.credit, tagline: 'Earn more from laughs and eye rolls.' },
-    summary: `Used on your own character. For ${spanWords(classClown.lasts!)}, what it earns from 😂 and 🙄 is ${earnBy(classClown)} higher. A loss is never made worse.`,
+    summary: `Used on your own character. For ${spanWords(classClown.lasts!)}, what it earns from 😂 and 🙄 is ${earnWords(classClown)}. A loss is never made worse.`,
     status: 'Earns more from laughs',
     describe: (settings: Settings) =>
-      `A Pepperoni card, ${classClown.rarity}, used on your own character, the one playing it. For ${spanWords(classClown.lasts!)}, whatever that character earns from a 😂 or a 🙄 on its posts is ${earnBy(classClown)} higher, and then it stops by itself. It never makes a loss worse. It costs nothing more to use.`,
-    logPlay: () => `What that character earns from 😂 and 🙄 is ${earnBy(classClown)} higher until it ends.`,
+      `A Pepperoni card, ${classClown.rarity}, used on your own character, the one playing it. For ${spanWords(classClown.lasts!)}, whatever that character earns from a 😂 or a 🙄 on its posts is ${earnWords(classClown)}, and then it stops by itself. It never makes a loss worse. It costs nothing more to use.`,
+    logPlay: () => `What that character earns from 😂 and 🙄 is ${earnWords(classClown)} until it ends.`,
   },
   {
     key: 'good-vibes',
