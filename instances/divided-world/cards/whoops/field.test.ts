@@ -5,8 +5,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  DROPS_MOST, END_BULB, FIELD_MOST, WASH_TAKES, beginPen, beginWash, cellGrid, denseGrid, endsOf, fieldAtPoint, kOf, linesOf,
-  penLine, pointGrid, beginLine, radiusOf, splatInto, strokesInto, washLine, type FieldStroke, type Grid,
+  DROPS_MOST, END_BULB, FIELD_MOST, WASH_TAKES, beginPen, beginWash, cellGrid, denseGrid, addBall, endsOf, fieldAtPoint, kOf, linesOf,
+  penAt, penLine, pointGrid, beginLine, radiusOf, splatInto, strokesInto, washLine, type FieldStroke, type Grid,
 } from './field.ts';
 import { THRESHOLD, fieldGrid, makeSplat, mulberry32, type Box, type Splat } from './splat.ts';
 import { brushOf, fitStroke, type Pt, type Stroke } from './scrub.ts';
@@ -317,4 +317,28 @@ test('cost: 12,000 points of 30px wash under 1.5s, 12,000 points of 16px pen und
   console.log(`# wash ${washMs.toFixed(0)}ms, pen ${penMs.toFixed(0)}ms`);
   assert.ok(washMs < 1500, `wash ${washMs}ms`);
   assert.ok(penMs < 600, `pen ${penMs}ms`);
+});
+
+test('penAt: a pen line at a point, plus its end balls, is penLine on that point (one kernel for painter and model)', () => {
+  const rnd = mulberry32(7);
+  for (const box of [WIDE, TALL, MID]) for (const aspect of [1, 0.4, 2.5]) {
+    const brush = { width: 18, aspect }, k = kOf(brush, box), r = radiusOf(brush, box);
+    for (let trial = 0; trial < 6; trial++) {
+      const n = trial === 0 ? 1 : 2 + Math.floor(rnd() * 6);
+      const pts: Pt[] = [];
+      const cx = 0.2 + rnd() * 0.6, cy = 0.2 + rnd() * 0.6;
+      for (let i = 0; i < n; i++) pts.push([cx + (rnd() - 0.5) * 0.25, cy + (rnd() - 0.5) * 0.25]);
+      const line = [pen(pts, brush, { drops: Math.floor(rnd() * 4) })];
+      const balls = endsOf(line, box);
+      for (let q = 0; q < 60; q++) {
+        const x = (cx + (rnd() - 0.5) * 0.5) * box.w, y = (cy + (rnd() - 0.5) * 0.5) * box.h;
+        const g = pointGrid(x, y);
+        penLine(g, box, line);
+        const v = penAt(pts, brush, box, x, y / k);
+        const gb = pointGrid(x, y);
+        for (const b of balls) addBall(gb, k, b);
+        near(v + gb.values[0]!, g.values[0]!, 1e-5, `${box.w}x${box.h} aspect ${aspect} r ${r}`);
+      }
+    }
+  }
 });

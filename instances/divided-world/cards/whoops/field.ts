@@ -210,6 +210,40 @@ export interface Line {
   end(drops?: number): Rect;
 }
 
+/**
+ * One pen segment's value at a point: (1 - d^2/R^2)^3 for d the distance to the segment (t clamped to its ends), 0 at
+ * R or beyond. (px, py) is the point from the segment's start in round space, (sx, sy) the segment, `inv` is 1 / its
+ * squared length (0 for a point), `R2` is R squared. The painter's grid and the model's point both call this.
+ */
+export function penKernel(px: number, py: number, sx: number, sy: number, inv: number, R2: number): number {
+  let t = (px * sx + py * sy) * inv;
+  t = t < 0 ? 0 : t > 1 ? 1 : t;
+  const ex = px - t * sx, ey = py - t * sy, d2 = ex * ex + ey * ey;
+  if (d2 >= R2) return 0;
+  const q = 1 - d2 / R2;
+  return q * q * q;
+}
+
+/**
+ * A pen line's field at one point, without its end balls: the most any segment gives it (a one-point line is a
+ * zero-length segment), a segment whose box lies more than R = 2r away skipped. `points` are shares of the box;
+ * (x, y) is in round space (px across, px down divided by the brush's k).
+ */
+export function penAt(points: readonly Pt[], brush: Brush, box: Box, x: number, y: number): number {
+  const k = kOf(brush, box), R = 2 * radiusOf(brush, box), R2 = R * R;
+  let most = 0;
+  const n = points.length;
+  for (let i = n === 1 ? 0 : 1; i < n; i++) {
+    const a = points[n === 1 ? 0 : i - 1]!, b = points[i]!;
+    const ax = a[0] * box.w, ay = (a[1] * box.h) / k, bx = b[0] * box.w, by = (b[1] * box.h) / k;
+    if (x < Math.min(ax, bx) - R || x > Math.max(ax, bx) + R || y < Math.min(ay, by) - R || y > Math.max(ay, by) + R) continue;
+    const sx = bx - ax, sy = by - ay, L2 = sx * sx + sy * sy;
+    const kv = penKernel(x - ax, y - ay, sx, sy, L2 > 0 ? 1 / L2 : 0, R2);
+    if (kv > most) most = kv;
+  }
+  return most;
+}
+
 /** Begin a pen line: each segment adds (1 - d^2/R^2)^3 within R = 2r, a point keeping the most any segment gives it. */
 export function beginPen(grid: Grid, box: Box, brush: Brush): Line {
   if (grid.penOpen) throw new Error('a pen line is already open on this grid: end() it before beginning another');
@@ -233,12 +267,9 @@ export function beginPen(grid: Grid, box: Box, brush: Brush): Line {
       const xa = ax + sx * t0, xb = ax + sx * t1, [i0, i1] = colsIn(grid, rect, Math.min(xa, xb) - R, Math.max(xa, xb) + R);
       if (grid.work) grid.work.visits += Math.max(0, i1 - i0);
       for (let i = i0; i < i1; i++) {
-        const px = grid.ox + i * grid.step - ax;
-        let t = (px * sx + py * sy) * inv;
-        t = t < 0 ? 0 : t > 1 ? 1 : t;
-        const ex = px - t * sx, ey = py - t * sy, d2 = ex * ex + ey * ey;
-        if (d2 >= R2) continue;
-        const q = 1 - d2 / R2, kv = q * q * q, m = row + i, had = scope[m]!;
+        const kv = penKernel(grid.ox + i * grid.step - ax, py, sx, sy, inv, R2);
+        if (kv === 0) continue;
+        const m = row + i, had = scope[m]!;
         if (kv > had) { grid.values[m] = grid.values[m]! + (kv - had); scope[m] = kv; }
       }
     }

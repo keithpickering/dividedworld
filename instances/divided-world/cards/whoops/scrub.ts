@@ -14,7 +14,7 @@
  * so it costs no canvas. Each screen's model is its own; for the same strokes the shares are close, not equal.
  */
 import { STROKES } from '../whoops.ts';
-import { addBall, beginLine, cellGrid, endsOf, kOf, linesOf, pointGrid, radiusOf, splatInto, type Ball, type Grid, type Rect } from './field.ts';
+import { addBall, beginLine, penAt, cellGrid, endsOf, kOf, linesOf, pointGrid, radiusOf, splatInto, type Ball, type Grid, type Rect } from './field.ts';
 import { THRESHOLD, type Box, type Splat } from './splat.ts';
 
 /** The wash's brush and the author's pen, in px: a hand-sized brush on the board's 15px type, the pen about half of it. */
@@ -345,7 +345,6 @@ export class LayerInk {
     g.values[0] = splat;
     g.washed[0] = 0;
     g.penOpen = false;
-    g.scope?.fill(0);
     for (const idx of near) {
       const rec = this.lines[idx]!;
       if (rec.first.tool === 'wash') {
@@ -365,19 +364,7 @@ export class LayerInk {
    * are the balls kept at `end`.
    */
   private replayPen(g: Grid, rec: LineRec, px: number, py: number): void {
-    const { box } = this, R = rec.reach, R2 = R * R, pts = rec.points;
-    let most = 0;
-    const seg = (a: Pt, b: Pt) => {
-      const ax = a[0] * box.w, ay = (a[1] * box.h) / rec.k, bx = b[0] * box.w, by = (b[1] * box.h) / rec.k;
-      if (px < Math.min(ax, bx) - R || px > Math.max(ax, bx) + R || py < Math.min(ay, by) - R || py > Math.max(ay, by) + R) return;
-      const d2 = segment2(px, py, ax, ay, bx, by);
-      if (d2 >= R2) return;
-      const q = 1 - d2 / R2, kv = q * q * q;
-      if (kv > most) most = kv;
-    };
-    if (pts.length === 1) seg(pts[0]!, pts[0]!);
-    else for (let i = 1; i < pts.length; i++) seg(pts[i - 1]!, pts[i]!);
-    g.values[0] = g.values[0]! + most;
+    g.values[0] = g.values[0]! + penAt(rec.points, rec.first, this.box, px, py);
     if (!rec.open && rec.balls) for (const ball of rec.balls) addBall(g, rec.k, ball);
   }
 
