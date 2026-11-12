@@ -1,9 +1,9 @@
 /**
- * Laugh Track on a thread, as stories for the owner's word (docs/plans/2026-11-11-laugh-track-plan.md, Task 13): the bench's thread
- * (docs/research/2026-11-11-laugh-track-bench/01-bench.html), a post in which "Luigi" is booed twice, a phrase is cheered and another is
- * laughed at, on the Main board and at 390 wide, the Phone one. Nothing marks a cue before it fires; `OnTheLine` scrolls the first
- * "Luigi" onto the reading line and holds it there past the dwell, so it has fired and wears its dotted underline in Salty's ink.
- * The story route renders no play function, so e2e/laugh-track.spec.ts does the scrolling itself.
+ * Laugh Track on a thread, as stories for the owner's word (docs/plans/2026-11-11-laugh-track-plan.md, Task 13; the point-and-hear rule is docs/plans/2026-11-12-laugh-track-point-plan.md, Task 4):
+ * the bench's thread (docs/research/2026-11-11-laugh-track-bench/01-bench.html), a post in which "Luigi" is booed twice, a phrase is cheered and another is
+ * laughed at, on the Main board and at 390 wide, the Phone one. `Main` and `Phone` show the thread at rest, no cue marked. `NearMain` and `NearPhone` scroll the
+ * first "Luigi" onto the reading line: its dotted underline is at full in Salty's ink and nothing has been heard. `HeardMain` and `HeardPhone` then click it:
+ * it is heard and stays underlined at full. The story route renders no play function, so e2e/laugh-track.spec.ts does the scrolling and the clicking itself.
  */
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { waitFor } from 'storybook/test';
@@ -53,14 +53,14 @@ export default meta;
 type Story = StoryObj<typeof Thread>;
 const phone = { viewport: { value: 'glassPhone390', isRotated: false } };
 
-/** The line's place in the window, as the card's default reads it (laughTrack.line: 40% of the way down the space above the HUD). The line's middle is inside the reading band (laughTrack.band, 34% of that space, centered on the line), so a cue scrolled to it is read. */
-async function toTheLine(canvasElement: HTMLElement): Promise<void> {
+/** The line's place in the window, as the card's default reads it (laughTrack.line: 40% of the way down the space above the HUD). A cue scrolled to it is as near as it gets, so its mark is full. */
+async function toTheLine(canvasElement: HTMLElement): Promise<HTMLElement | null> {
   /* jsdom, where the stories are swept for accessibility (web/a11y.test.tsx), has no layout and no IntersectionObserver, so the watcher
-     registers nothing and no cue could fire; there the story shows the unfired screen, and the fired one is held in a browser by
+     registers nothing and no mark could show; there the story shows the thread at rest, and the near and heard screens are held in a browser by
      e2e/a11y.spec.ts and e2e/laugh-track.spec.ts. */
-  if (typeof IntersectionObserver === 'undefined') return;
+  if (typeof IntersectionObserver === 'undefined') return null;
   const cue = await waitFor(() => {
-    const found = canvasElement.querySelector('.dw-lt-cue');
+    const found = canvasElement.querySelector<HTMLElement>('.dw-lt-cue');
     if (!found) throw new Error('the first cue is not drawn yet');
     return found;
   });
@@ -68,15 +68,27 @@ async function toTheLine(canvasElement: HTMLElement): Promise<void> {
   const line = ((window.innerHeight - hud) * 40) / 100;
   const box = cue.getBoundingClientRect();
   window.scrollBy(0, box.top + box.height / 2 - line);
-  /* The dwell is 0.4 seconds; the effect fires on the first frame after it. */
-  await waitFor(() => { if (!canvasElement.querySelector('.dw-lt-fired')) throw new Error('the cue has not fired'); }, { timeout: 4000 });
+  await waitFor(() => { if (cue.style.getPropertyValue('--dw-lt-near') !== '1') throw new Error('the cue is not marked yet'); }, { timeout: 4000 });
+  return cue;
+}
+
+/** Brings the first cue to the line and clicks it: it is heard. */
+async function heard(canvasElement: HTMLElement): Promise<void> {
+  const cue = await toTheLine(canvasElement);
+  if (!cue) return;
+  cue.click();
+  await waitFor(() => { if (!cue.classList.contains('dw-lt-fired')) throw new Error('the cue has not been heard'); }, { timeout: 4000 });
 }
 
 /** The thread on the Main board: no cue is marked. */
 export const Main: Story = {};
 /** The thread on the Phone board. */
 export const Phone: Story = { globals: phone };
-/** The first "Luigi" has rested on the line: it has fired and is underlined. */
-export const OnTheLineMain: Story = { name: 'On the line, main', play: async ({ canvasElement }) => { await toTheLine(canvasElement); } };
+/** The first "Luigi" is on the line: its dotted underline is at full, and nothing has been heard. */
+export const NearMain: Story = { name: 'Near, main', play: async ({ canvasElement }) => { await toTheLine(canvasElement); } };
 /** The same on the Phone board. */
-export const OnTheLinePhone: Story = { name: 'On the line, phone 390', globals: phone, play: async ({ canvasElement }) => { await toTheLine(canvasElement); } };
+export const NearPhone: Story = { name: 'Near, phone 390', globals: phone, play: async ({ canvasElement }) => { await toTheLine(canvasElement); } };
+/** The first "Luigi" was then clicked: it is heard and stays underlined. */
+export const HeardMain: Story = { name: 'Heard, main', play: async ({ canvasElement }) => { await heard(canvasElement); } };
+/** The same on the Phone board. */
+export const HeardPhone: Story = { name: 'Heard, phone 390', globals: phone, play: async ({ canvasElement }) => { await heard(canvasElement); } };

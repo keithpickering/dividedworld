@@ -1,8 +1,9 @@
 /**
- * Laugh Track's effect (docs/plans/2026-11-11-laugh-track-plan.md, Task 13). The watcher is faked, so a test fires a place by hand,
- * and `useSound` is faked, so a test sees what plays; two tests run the real watcher over a fake observer and fake frames (the loops the
- * page makes, and that they stop when the post goes), and one runs the real `useSound` over a faked mixer (a fire with Game sounds off
- * says its caption). jsdom has no layout: a test that needs a place on the line gives every piece a box there.
+ * Laugh Track's effect (docs/plans/2026-11-12-laugh-track-point-plan.md, Task 4; the first plan is docs/plans/2026-11-11-laugh-track-plan.md, Task 13).
+ * A reaction plays only by a gesture on a place (the design's section 1). The watcher is faked, so a test sees what each place registers and tells it
+ * its nearness by hand, and `useSound` is faked, so a test sees what plays; a few tests run the real watcher over a fake observer and fake
+ * frames (the mark, the loops the page makes, and that they stop when the post goes), and one runs the real `useSound` over a faked mixer
+ * (a gesture with Game sounds off says its caption). jsdom has no layout: a test that needs a place on the line gives every piece a box there.
  */
 import { act, cleanup, fireEvent, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
@@ -23,26 +24,29 @@ import { DEFAULTS, LaughTrackEffect } from './Effect.tsx';
 import { defaults as instanceDefaults } from '../../settings.ts';
 import type { PlaceSpec } from './watch.ts';
 
+type Off = { (): void; refresh: () => void; pin: (on: boolean) => void };
 const hub = vi.hoisted(() => ({
   mode: 'fake' as 'fake' | 'real',
   specs: [] as unknown[],
   gone: new Set<unknown>(),
   forgets: 0,
   gameOn: false,
-  offs: [] as { (): void; refresh: () => void }[],
+  offs: [] as unknown[],
+  quiets: [] as unknown[][],
   sound: null as null | { play: (key: string, o?: unknown) => Promise<null>; loop: (key: string, o: unknown) => { setGain: (g: number) => void; stop: (f: number) => void }; caption: (key: string) => void },
 }));
 
-/* The watcher: faked, so a place is fired by hand; or the real one, for the two tests that run it. */
+/* The watcher: faked, so a test sees each registration and tells a place its nearness by hand; or the real one, for the tests that run it. */
 vi.mock('./watch.ts', async (original) => {
   const actual = await original<typeof import('./watch.ts')>();
   return {
     ...actual,
     forgetVoice: () => { hub.forgets++; actual.forgetVoice(); },
+    quiet: (answer: unknown, fadeMs: number) => { if (hub.mode === 'real') (actual.quiet as (a: unknown, f: number) => void)(answer, fadeMs); else hub.quiets.push([answer, fadeMs]); },
     register: (spec: PlaceSpec) => {
       if (hub.mode === 'real') return actual.register(spec);
       hub.specs.push(spec);
-      const off = Object.assign(vi.fn(() => { hub.gone.add(spec); }), { refresh: vi.fn() });
+      const off = Object.assign(vi.fn(() => { hub.gone.add(spec); }), { refresh: vi.fn(), pin: vi.fn() });
       hub.offs.push(off);
       return off;
     },
@@ -97,12 +101,18 @@ function mount(o: Options = {}) {
   return { ...world, views, met, edit: (b: string) => act(() => setBody(b)) };
 }
 const pieces = () => [...document.querySelectorAll<HTMLElement>('.dw-lt-cue')];
+/** The first piece of each place: the buttons, in the page's order. */
+const buttons = () => pieces().filter((p) => p.getAttribute('role') === 'button');
 const lastView = (m: ReturnType<typeof mount>) => m.views.filter(Boolean).at(-1)!;
 /** The places registered with the watcher and not let go. */
 const live = () => (hub.specs as PlaceSpec[]).filter((s) => !hub.gone.has(s));
-const fire = (i: number) => act(() => { (hub.specs[i] as PlaceSpec).fire(); });
+const spec = (i: number) => hub.specs[i] as PlaceSpec;
+const off = (i: number) => hub.offs[i] as Off;
 /** The take the seed picks for place `i` of the play `lt1` (design section 6): the same on every screen. */
 const take = (sound: string, i: number, seed = 7, id = 'lt1') => `laugh-track.${sound}-${1 + Math.floor(seeded(`${id}:${seed}:${i}`)() * 3)}`;
+const move = (target: Element, x: number, y: number, pointerType = 'mouse') => fireEvent.pointerMove(target, { clientX: x, clientY: y, pointerType });
+const enter = (target: Element, x: number, y: number, pointerType = 'mouse') => fireEvent.pointerEnter(target, { clientX: x, clientY: y, pointerType });
+const PLAYED = { group: 'audience', fadeMs: 250, tailMs: 250 };
 
 const fakeSoundHub = () => {
   const handle = { setGain: vi.fn(), stop: vi.fn() };
@@ -111,7 +121,7 @@ const fakeSoundHub = () => {
 let heard: ReturnType<typeof fakeSoundHub>;
 
 beforeEach(() => {
-  hub.mode = 'fake'; hub.specs = []; hub.offs = []; hub.gone = new Set(); hub.forgets = 0; hub.gameOn = false;
+  hub.mode = 'fake'; hub.specs = []; hub.offs = []; hub.gone = new Set(); hub.forgets = 0; hub.gameOn = false; hub.quiets = [];
   heard = fakeSoundHub();
   hub.sound = heard as unknown as typeof hub.sound;
 });
@@ -124,17 +134,25 @@ afterEach(() => {
 });
 
 describe('Laugh Track: the places', () => {
-  test('each place is wrapped in its own piece, and nothing marks one before it fires', () => {
+  test('each place is a button from the start: its first piece is named by its words and "Play the audience\'s reaction"', () => {
     mount({ body: BODY + QUOTE });
     expect(pieces().map((p) => [p.textContent, p.getAttribute('data-sound')])).toEqual([['Luigi', 'boo'], ['great', 'cheer'], ['Luigi', 'boo'], ['Mario is', 'laugh'], ['great', 'cheer']]);
     for (const p of pieces()) {
       expect(p).not.toHaveClass('dw-lt-fired');
-      for (const a of ['tabindex', 'role', 'aria-label']) expect(p).not.toHaveAttribute(a);
+      expect(p).toHaveAttribute('role', 'button');
+      expect(p).toHaveAttribute('aria-label', `${p.textContent}. Play the audience's reaction`);
     }
     /* A quote's words are not in the visible text, so no place is drawn there. */
     expect(document.querySelector('blockquote .dw-lt-cue')).toBeNull();
     expect(live()).toHaveLength(5);
     expect(live().map((s) => s.kind)).toEqual(['boo', 'cheer', 'boo', 'laugh', 'cheer']);
+  });
+
+  test('a place that spans pieces has the button on its first piece alone', () => {
+    mount({ body: 'Luigi is [b]great[/b] today and Luigi is [b]great[/b] again.', plays: [playOf([{ phrase: 'is great', sound: 'cheer' }])] });
+    const spans = pieces();
+    expect(spans.length).toBeGreaterThan(buttons().length);
+    for (const p of spans) if (p.getAttribute('role') !== 'button') expect(p).not.toHaveAttribute('aria-label');
   });
 
   test('a cue whose phrase is no longer in the post draws no place and stays quiet', () => {
@@ -146,14 +164,14 @@ describe('Laugh Track: the places', () => {
     expect(lastView(m).state).toBe('No cues in this version');
   });
 
-  test('a fire plays the seeded take, marks the place, focuses nothing and says the card is met once', () => {
+  test('a click plays the seeded take, marks the place heard, names it for a replay, focuses nothing and says the card is met once', () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
     const m = mount();
-    fire(0);
+    fireEvent.click(pieces()[0]!);
     expect(heard.play).toHaveBeenCalledTimes(1);
-    expect(heard.play).toHaveBeenCalledWith(take('boo', 0), { group: 'audience', fadeMs: 250, tailMs: 250 });
+    expect(heard.play).toHaveBeenCalledWith(take('boo', 0), PLAYED);
     const [first, second] = pieces();
     expect(first).toHaveClass('dw-lt-fired');
-    expect(first).toHaveAttribute('tabindex', '0');
     expect(first).toHaveAttribute('role', 'button');
     expect(first).toHaveAttribute('aria-label', `${first!.textContent}. Replay: the audience boos`);
     expect(first!.getAttribute('aria-label')!.startsWith(first!.textContent!)).toBe(true);
@@ -161,116 +179,286 @@ describe('Laugh Track: the places', () => {
     expect(pieces().filter((p) => p.getAttribute('data-sound') === 'boo')[1]).not.toHaveClass('dw-lt-fired');
     expect(document.activeElement).toBe(document.body);
     expect(m.met).toHaveBeenCalledTimes(1);
-    fire(1);
+    fireEvent.click(pieces()[1]!);
     expect(m.met).toHaveBeenCalledTimes(1);
-    expect(heard.play).toHaveBeenLastCalledWith(take('cheer', 1), { group: 'audience', fadeMs: 250, tailMs: 250 });
+    expect(heard.play).toHaveBeenLastCalledWith(take('cheer', 1), PLAYED);
     expect(pieces()[1]).toHaveAttribute('aria-label', `${pieces()[1]!.textContent}. Replay: the audience cheers`);
+    vi.setSystemTime(Date.now() + 1000);
+    fireEvent.click(pieces()[3]!);
+    expect(pieces()[3]).toHaveAttribute('aria-label', 'Mario is. Replay: the audience laughs');
   });
 
   test('the take comes from the play, its seed and the place, so two places of one cue may differ and every screen agrees', () => {
     mount();
     const picked = [0, 1, 2, 3, 4].map((i) => take(['boo', 'cheer', 'boo', 'laugh', 'cheer'][i]!, i));
-    for (let i = 0; i < 5; i++) fire(i);
+    for (const p of pieces()) fireEvent.click(p);
     expect(heard.play.mock.calls.map((c) => (c as unknown[])[0])).toEqual(picked);
     expect(new Set(picked).size).toBeGreaterThan(1);
   });
 
   test('the underline is a text-decoration, so no word moves, and the effect adds no box of its own to a piece', () => {
     mount();
-    fire(0);
+    fireEvent.click(pieces()[0]!);
     const p = pieces()[0]!;
     expect(p.tagName).toBe('SPAN');
     expect(p.parentElement!.textContent).toContain('Luigi is great.');
   });
 });
 
-describe('Laugh Track: the registration', () => {
-  test('fire returns the play\'s promise, and the screen carries band, airMs and holdMs, from the instance\'s settings', async () => {
-    mount();
-    const spec = hub.specs[0] as PlaceSpec;
-    heard.play.mockResolvedValueOnce({ lengthMs: 900 } as never);
-    let answer: unknown;
-    act(() => { answer = spec.fire(); });
-    expect(await answer).toEqual({ lengthMs: 900 });
-    expect(spec.screen).toMatchObject({ band: 34, airMs: 1200, holdMs: 18000 });
+describe('Laugh Track: the gestures', () => {
+  test('a mouse that moves onto a place plays its take, marks it heard and says the card is met once', () => {
+    const m = mount();
+    const [p, q] = pieces();
+    act(() => { enter(p!, 10, 10); });
+    expect(heard.play).toHaveBeenCalledTimes(1);
+    expect(heard.play).toHaveBeenCalledWith(take('boo', 0), PLAYED);
+    expect(p).toHaveClass('dw-lt-fired');
+    expect(m.met).toHaveBeenCalledTimes(1);
+    act(() => { enter(q!, 40, 10); });
+    expect(heard.play).toHaveBeenCalledTimes(2);
+    expect(m.met).toHaveBeenCalledTimes(1);
   });
 
-  test('with no card settings the screen falls back to the defaults: band 34, airMs 1200, holdMs 18000', () => {
+  test('a place that scrolls under a resting mouse does not fire; the next move over it does; a touch brushing it does not', () => {
+    const m = mount();
+    const [p] = pieces();
+    act(() => { move(document.body, 5, 5); });
+    act(() => { enter(p!, 5, 5); });
+    expect(heard.play).not.toHaveBeenCalled();
+    expect(p).not.toHaveClass('dw-lt-fired');
+    act(() => { move(p!, 6, 6); });
+    expect(heard.play).toHaveBeenCalledTimes(1);
+    expect(m.met).toHaveBeenCalledTimes(1);
+    const q = pieces()[1]!;
+    act(() => { enter(q, 40, 40, 'touch'); });
+    act(() => { move(q, 41, 41, 'touch'); });
+    expect(heard.play).toHaveBeenCalledTimes(1);
+    expect(q).not.toHaveClass('dw-lt-fired');
+  });
+
+  test('a mouse resting still over a place, moved by a hair of nothing, fires only once a place is left and entered again', () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    mount();
+    const [p] = pieces();
+    act(() => { enter(p!, 10, 10); });
+    expect(heard.play).toHaveBeenCalledTimes(1);
+    vi.setSystemTime(Date.now() + 1000);
+    act(() => { move(p!, 11, 11); });
+    expect(heard.play).toHaveBeenCalledTimes(1);
+    act(() => { fireEvent.pointerLeave(p!, { pointerType: 'mouse' }); });
+    act(() => { enter(p!, 12, 12); });
+    expect(heard.play).toHaveBeenCalledTimes(2);
+  });
+
+  test('a tap or click fires, Enter and Space fire (default-prevented), and a second gesture inside 300ms does not play twice', () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    mount();
+    const [p, q, r] = pieces();
+    /* A mouse press focuses a button and then clicks it: one take. */
+    act(() => { enter(p!, 10, 10); p!.focus(); fireEvent.click(p!); });
+    expect(heard.play).toHaveBeenCalledTimes(1);
+    const again = (target: HTMLElement, gesture: () => void) => { vi.setSystemTime(Date.now() + 1000); heard.play.mockClear(); act(gesture); expect(heard.play).toHaveBeenCalledTimes(1); expect(heard.play).toHaveBeenCalledWith(expect.any(String), PLAYED); void target; };
+    again(p!, () => { fireEvent.click(p!); });
+    again(p!, () => { fireEvent.keyDown(p!, { key: 'Enter' }); });
+    again(p!, () => { fireEvent.keyDown(p!, { key: ' ' }); });
+    /* Enter and Space are default-prevented, so a Space does not scroll the page; other keys are not. */
+    vi.setSystemTime(Date.now() + 1000);
+    expect(fireEvent.keyDown(q!, { key: ' ' })).toBe(false);
+    vi.setSystemTime(Date.now() + 1000);
+    expect(fireEvent.keyDown(r!, { key: 'Enter' })).toBe(false);
+    expect(fireEvent.keyDown(r!, { key: 'a' })).toBe(true);
+  });
+
+  test('nothing else fires: the registration has no fire, and nothing the watcher calls plays a take', () => {
+    mount();
+    for (const s of hub.specs as PlaceSpec[]) {
+      expect(s).not.toHaveProperty('fire');
+      s.near(1); s.near(0.4); s.near(0);
+      s.voice(s.kind);
+    }
+    expect(heard.play).not.toHaveBeenCalled();
+    for (const p of pieces()) expect(p).not.toHaveClass('dw-lt-fired');
+  });
+
+  test('a fire and a replay call quiet with the play\'s promise and the fade', () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    mount();
+    const [p] = pieces();
+    fireEvent.click(p!);
+    expect(hub.quiets).toHaveLength(1);
+    expect(hub.quiets[0]![0]).toBe(heard.play.mock.results[0]!.value);
+    expect(hub.quiets[0]![1]).toBe(250);
+    vi.setSystemTime(Date.now() + 1000);
+    fireEvent.click(p!);
+    expect(hub.quiets).toHaveLength(2);
+    expect(hub.quiets[1]![0]).toBe(heard.play.mock.results[1]!.value);
+  });
+
+  test('a gesture played inside the guard says nothing to the quiet either', () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    mount();
+    const [p] = pieces();
+    fireEvent.click(p!);
+    fireEvent.click(p!);
+    expect(heard.play).toHaveBeenCalledTimes(1);
+    expect(hub.quiets).toHaveLength(1);
+  });
+});
+
+describe('Laugh Track: the mark', () => {
+  const near = (el: Element) => (el as HTMLElement).style.getPropertyValue('--dw-lt-near');
+
+  test('near(0.5) sets --dw-lt-near to 0.5 on every piece of that place and on no other', () => {
+    mount({ body: 'Luigi is [b]great[/b] today and Luigi is great.', plays: [playOf([{ phrase: 'is great', sound: 'cheer' }, { phrase: 'Luigi', sound: 'boo' }])] });
+    const first = hub.specs.findIndex((s) => (s as PlaceSpec).kind === 'cheer');
+    act(() => { spec(first).near(0.5); });
+    const key = pieces().find((p) => p.getAttribute('data-sound') === 'cheer')!.getAttribute('data-lt-place')!;
+    const mine = pieces().filter((p) => p.getAttribute('data-lt-place') === key);
+    expect(mine.length).toBeGreaterThan(0);
+    for (const p of mine) expect(near(p)).toBe('0.5');
+    for (const p of pieces().filter((p) => p.getAttribute('data-lt-place') !== key)) expect(near(p)).toBe('');
+  });
+
+  test('the mark is scaled by laughTrack.markMost: at 40, near(0.5) is 0.2; at 0 it is 0', () => {
+    mount({ cardSettings: { 'laughTrack.markMost': 40 } });
+    act(() => { spec(0).near(0.5); });
+    expect(near(pieces()[0]!)).toBe('0.2');
+    cleanup();
+    hub.specs = [];
+    mount({ cardSettings: { 'laughTrack.markMost': 0 } });
+    act(() => { spec(0).near(1); });
+    expect(near(pieces()[0]!)).toBe('0');
+  });
+
+  test('near on a place whose pieces were drawn again sets the new pieces', () => {
+    mount();
+    const old = pieces()[0]!;
+    const fresh = old.cloneNode(true) as HTMLElement;
+    old.replaceWith(fresh);
+    act(() => { spec(0).near(0.7); });
+    expect(near(fresh)).toBe('0.7');
+  });
+
+  test('no state is set for a nearness: telling a place its nearness draws nothing again', () => {
+    mount();
+    const before = pieces();
+    act(() => { spec(0).near(0.3); spec(0).near(0.9); });
+    expect(pieces().every((p, i) => p === before[i])).toBe(true);
+  });
+
+  test('a heard place wears the class that shows its mark at full, and the watcher is no longer told about it', () => {
+    mount();
+    fireEvent.click(pieces()[0]!);
+    expect(pieces()[0]).toHaveClass('dw-lt-fired');
+    expect(hub.gone.has(spec(0))).toBe(true);
+    expect(live()).toHaveLength(4);
+  });
+});
+
+describe('Laugh Track: one stop for a post', () => {
+  const stops = () => buttons().map((b) => b.getAttribute('tabindex'));
+
+  test('exactly one first piece has tabindex 0 and the rest -1', () => {
+    mount();
+    expect(buttons()).toHaveLength(5);
+    expect(stops()).toEqual(['0', '-1', '-1', '-1', '-1']);
+  });
+
+  test('the arrows move among the post\'s places with no wrap, Home and End go to the first and last, and the focused place becomes the stop', () => {
+    mount();
+    const b = buttons();
+    act(() => { b[0]!.focus(); });
+    const key = (i: number, k: string) => act(() => { fireEvent.keyDown(buttons()[i]!, { key: k }); });
+    key(0, 'ArrowRight'); expect(document.activeElement).toBe(b[1]);
+    key(1, 'ArrowDown'); expect(document.activeElement).toBe(b[2]);
+    key(2, 'ArrowLeft'); expect(document.activeElement).toBe(b[1]);
+    key(1, 'ArrowUp'); expect(document.activeElement).toBe(b[0]);
+    key(0, 'ArrowLeft'); expect(document.activeElement).toBe(b[0]);
+    key(0, 'End'); expect(document.activeElement).toBe(b[4]);
+    key(4, 'ArrowRight'); expect(document.activeElement).toBe(b[4]);
+    key(4, 'ArrowDown'); expect(document.activeElement).toBe(b[4]);
+    expect(stops()).toEqual(['-1', '-1', '-1', '-1', '0']);
+    key(4, 'Home'); expect(document.activeElement).toBe(b[0]);
+    expect(stops()).toEqual(['0', '-1', '-1', '-1', '-1']);
+    /* Moving among places plays nothing. */
+    expect(heard.play).not.toHaveBeenCalled();
+  });
+
+  test('a place removed while it was the stop hands the stop to the first place', () => {
+    const m = mount();
+    act(() => { buttons()[4]!.focus(); });
+    act(() => { buttons()[4]!.blur(); });
+    expect(stops()).toEqual(['-1', '-1', '-1', '-1', '0']);
+    m.edit('Luigi is great. Luigi wins, and Mario is');
+    expect(buttons()).toHaveLength(4);
+    expect(stops()).toEqual(['0', '-1', '-1', '-1']);
+  });
+
+  test('a heard place stays a button and can be the stop', () => {
+    mount();
+    fireEvent.click(pieces()[0]!);
+    act(() => { buttons()[2]!.focus(); });
+    expect(stops()).toEqual(['-1', '-1', '0', '-1', '-1']);
+  });
+});
+
+describe('Laugh Track: focus pins', () => {
+  test('focus on an unheard place pins it and blur lets it go, and focus plays no take', () => {
+    mount();
+    act(() => { buttons()[1]!.focus(); });
+    expect(off(1).pin).toHaveBeenCalledWith(true);
+    expect(off(0).pin).not.toHaveBeenCalled();
+    act(() => { buttons()[1]!.blur(); });
+    expect(off(1).pin).toHaveBeenLastCalledWith(false);
+    expect(heard.play).not.toHaveBeenCalled();
+    expect(hub.quiets).toHaveLength(0);
+  });
+
+  test('focus on a heard place plays nothing either', () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    mount();
+    fireEvent.click(pieces()[0]!);
+    heard.play.mockClear();
+    vi.setSystemTime(Date.now() + 1000);
+    act(() => { buttons()[0]!.focus(); });
+    act(() => { buttons()[0]!.blur(); });
+    expect(heard.play).not.toHaveBeenCalled();
+  });
+});
+
+describe('Laugh Track: the registration', () => {
+  test('the screen carries line, reachRem, murmurMost and fadeMs from the instance\'s settings', () => {
+    mount({ cardSettings: { 'laughTrack.line': 50, 'laughTrack.reachRem': 8, 'laughTrack.murmurMost': 20, 'laughTrack.fadeMs': 400 } });
+    expect(spec(0).screen).toEqual({ line: 50, reachRem: 8, murmurMost: 20, fadeMs: 400 });
+  });
+
+  test('with no card settings the screen falls back to the defaults', () => {
     mount({ cardSettings: {} });
-    expect((hub.specs[0] as PlaceSpec).screen).toMatchObject({ band: 34, airMs: 1200, holdMs: 18000 });
+    expect(spec(0).screen).toEqual({ line: 40, reachRem: 12, murmurMost: 35, fadeMs: 250 });
   });
 
   test('the instance\'s card settings for every laughTrack screen key equal the effect\'s fallback defaults', () => {
     const held = instanceDefaults.cardSettings;
+    expect(Object.keys(DEFAULTS).sort()).toEqual(['fadeMs', 'line', 'markMost', 'murmurMost', 'reachRem']);
     for (const [key, value] of Object.entries(DEFAULTS)) expect(held[`laughTrack.${key}`], key).toBe(value);
-  });
-
-  test('the screen carries band, airMs and holdMs from the card settings when they are set', () => {
-    mount({ cardSettings: { 'laughTrack.band': 50, 'laughTrack.airMs': 800, 'laughTrack.holdMs': 2500 } });
-    expect((hub.specs[0] as PlaceSpec).screen).toMatchObject({ band: 50, airMs: 800, holdMs: 2500 });
-  });
-});
-
-describe('Laugh Track: a replay', () => {
-  test('hover with a mouse, focus, a press, Enter and Space each play the take again, and nothing does before the place fires', () => {
-    vi.useFakeTimers({ toFake: ['Date'] });
-    mount();
-    const [p] = pieces();
-    fireEvent.pointerEnter(p!, { pointerType: 'mouse' }); fireEvent.click(p!); fireEvent.keyDown(p!, { key: 'Enter' });
-    expect(heard.play).not.toHaveBeenCalled();
-    fire(0);
-    const key = take('boo', 0);
-    const again = (act1: () => void) => { vi.setSystemTime(Date.now() + 1000); heard.play.mockClear(); act(act1); expect(heard.play).toHaveBeenCalledTimes(1); expect(heard.play).toHaveBeenCalledWith(key, { group: 'audience', fadeMs: 250, tailMs: 250 }); };
-    heard.play.mockClear();
-    again(() => { fireEvent.pointerEnter(p!, { pointerType: 'mouse' }); });
-    again(() => { p!.focus(); });
-    p!.blur();
-    again(() => { fireEvent.click(p!); });
-    again(() => { fireEvent.keyDown(p!, { key: 'Enter' }); });
-    again(() => { fireEvent.keyDown(p!, { key: ' ' }); });
-  });
-
-  test('Enter and Space on a fired place are default-prevented, so a Space does not scroll the page', () => {
-    vi.useFakeTimers({ toFake: ['Date'] });
-    mount();
-    fire(0);
-    const [p] = pieces();
-    /* fireEvent returns false when a handler called preventDefault. */
-    expect(fireEvent.keyDown(p!, { key: ' ' })).toBe(false);
-    vi.setSystemTime(Date.now() + 1000);
-    expect(fireEvent.keyDown(p!, { key: 'Enter' })).toBe(false);
-    expect(fireEvent.keyDown(p!, { key: 'a' })).toBe(true);
-  });
-
-  test('a touch that only brushes a place does not replay it, and the events of one gesture play one take', () => {
-    vi.useFakeTimers({ toFake: ['Date'] });
-    mount();
-    const [p] = pieces();
-    fire(0);
-    heard.play.mockClear();
-    vi.setSystemTime(Date.now() + 1000);
-    fireEvent.pointerEnter(p!, { pointerType: 'touch' });
-    expect(heard.play).not.toHaveBeenCalled();
-    /* A mouse press focuses, and so presses, a button: that is one replay. */
-    act(() => { fireEvent.pointerEnter(p!, { pointerType: 'mouse' }); p!.focus(); fireEvent.click(p!); });
-    expect(heard.play).toHaveBeenCalledTimes(1);
   });
 });
 
 describe('Laugh Track: the Lens', () => {
   test('the views are short plain statuses, hold no reader and carry one Game sounds toggle', () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
     const m = mount();
     const v0 = lastView(m);
     expect(v0).toMatchObject({ state: '0 of 5 cues heard', progress: 0, yours: false, notes: {} });
     expect(v0).not.toHaveProperty('ends');
     expect(v0.controls).toHaveLength(1);
     expect(v0.controls[0]).toMatchObject({ kind: 'toggle', label: 'Game sounds', on: false });
-    fire(0); fire(1);
+    fireEvent.click(pieces()[0]!); fireEvent.click(pieces()[1]!);
     expect(lastView(m)).toMatchObject({ state: '2 of 5 cues heard', progress: 0.4 });
     for (const v of m.views.filter(Boolean)) expect(viewProblems(v!, { holds: false, covers: false })).toEqual([]);
   });
 
-  test('one cue at one place is "1 cue" and a view is cleared when the post goes', () => {
+  test('one cue at one place is "0 of 1 cues heard" and a view is cleared when the post goes', () => {
     const m = mount({ plays: [playOf([{ phrase: 'Mario is', sound: 'laugh' }])] });
     expect(lastView(m).state).toBe('0 of 1 cues heard');
     m.unmount();
@@ -289,13 +477,14 @@ describe('Laugh Track: the Lens', () => {
     const spy = vi.fn(() => false);
     const reader = Object.defineProperties({}, { author: { get: spy, enumerable: true }, caster: { get: spy, enumerable: true } });
     renderInWorld(<LaughTrackEffect {...props} reader={reader as never}><BbCode text={BODY} /></LaughTrackEffect>);
-    fire(0);
+    const [p] = pieces();
+    act(() => { enter(p!, 3, 3); p!.focus(); fireEvent.click(p!); fireEvent.keyDown(p!, { key: 'Enter' }); fireEvent.keyDown(p!, { key: 'ArrowRight' }); spec(0).near(0.5); });
     expect(spy).not.toHaveBeenCalled();
   });
 });
 
 describe('Laugh Track: a play\'s moment (still)', () => {
-  test('nothing registers, fires, plays or binds, no piece is focusable, and the Lens says how many cues with no controls', () => {
+  test('nothing registers, plays or binds, no piece is focusable, and the Lens says how many cues with no controls', () => {
     const m = mount({ still: true });
     expect(hub.specs).toHaveLength(0);
     expect(hub.offs).toHaveLength(0);
@@ -307,6 +496,7 @@ describe('Laugh Track: a play\'s moment (still)', () => {
     }
     expect(heard.play).not.toHaveBeenCalled();
     expect(heard.loop).not.toHaveBeenCalled();
+    expect(hub.quiets).toHaveLength(0);
     expect(m.met).not.toHaveBeenCalled();
     expect(lastView(m)).toMatchObject({ state: '3 cues', controls: [], yours: false, notes: {} });
     expect(lastView(m).progress).toBeNull();
@@ -321,17 +511,17 @@ describe('Laugh Track: a play\'s moment (still)', () => {
   test('the ORIGIN box behaves as the thread does', () => {
     mount({ place: 'origin' });
     expect(live()).toHaveLength(5);
-    fire(0);
+    fireEvent.click(pieces()[0]!);
     expect(pieces()[0]).toHaveClass('dw-lt-fired');
   });
 });
 
 describe('Laugh Track: with Game sounds off', () => {
-  test('a fire says its caption, through the real sound hook over a faked mixer', async () => {
+  test('a gesture says its caption, through the real sound hook over a faked mixer', async () => {
     hub.sound = null;
     fakeSound();
     mount({ sounds: true });
-    await act(async () => { (hub.specs[0] as PlaceSpec).fire(); await Promise.resolve(); await Promise.resolve(); });
+    await act(async () => { fireEvent.click(pieces()[0]!); await Promise.resolve(); await Promise.resolve(); });
     expect(captions.current()).toMatchObject({ text: 'The audience boos' });
   });
 });
@@ -348,6 +538,15 @@ describe('Laugh Track: Game sounds toggled mid-page', () => {
     hub.gameOn = false;
     m.edit(BODY + '   ');
     expect(hub.forgets).toBe(2);
+  });
+});
+
+describe('Laugh Track: unmount', () => {
+  test('the post going lets every registration go', () => {
+    const m = mount();
+    expect(live()).toHaveLength(5);
+    m.unmount();
+    expect(live()).toHaveLength(0);
   });
 });
 
@@ -394,29 +593,35 @@ describe('Laugh Track: on a real page', () => {
     vi.spyOn(Element.prototype, 'getClientRects').mockImplementation(function (this: Element) { return (this.classList.contains('dw-lt-cue') ? [onLine()] : []) as unknown as DOMRectList; });
   });
   const see = () => act(() => { const io = FakeObserver.all[0]!; io.cb([...io.seen].map((target) => ({ target, isIntersecting: true }))); });
+  const LUIGI = { body: 'Luigi wins.', plays: [playOf([{ phrase: 'Luigi', sound: 'boo' }])] };
 
-  test('a place resting on the line fires after the dwell, and the page makes one loop of a kind however many posts there are', async () => {
-    const m = mount({ posts: 2, body: 'Luigi wins.', plays: [playOf([{ phrase: 'Luigi', sound: 'boo' }])] });
+  test('a place resting on the line for five seconds plays no take: its mark is full and the titter\'s loop is raised, one loop however many posts there are; a click plays the take and holds the loop at nothing', async () => {
+    const m = mount({ posts: 2, ...LUIGI });
     expect(FakeObserver.all).toHaveLength(1);
     see();
-    /* A frame adds at most 100ms, so the dwell is earned over frames a hundred ms apart; the second post's place waits out the airtime. */
     let t = 0;
-    const frames = async (ms: number) => { for (const end = t + ms; t < end; ) { t += 100; await step(t); } };
-    await frames(300);
+    for (let i = 0; i < 50; i++) { t += 100; await step(t); }
+    expect(heard.play).not.toHaveBeenCalled();
+    expect(pieces().map((p) => p.style.getPropertyValue('--dw-lt-near'))).toEqual(['1', '1']);
+    expect(pieces().some((p) => p.classList.contains('dw-lt-fired'))).toBe(false);
     expect(heard.loop).toHaveBeenCalledTimes(1);
     expect(heard.loop).toHaveBeenCalledWith('laugh-track.grumble', { group: 'audience-build', id: 'laugh-track:boo' });
     expect(heard.handle.setGain).toHaveBeenLastCalledWith(0.35);
-    expect(heard.play).not.toHaveBeenCalled();
-    await frames(300);
+    expect(m.met).not.toHaveBeenCalled();
+    act(() => { fireEvent.click(pieces()[0]!); });
     expect(heard.play).toHaveBeenCalledTimes(1);
-    await frames(1500);
-    expect(heard.play).toHaveBeenCalledTimes(2);
-    expect(pieces().every((p) => p.classList.contains('dw-lt-fired'))).toBe(true);
-    expect(m.met).toHaveBeenCalled();
+    expect(heard.play).toHaveBeenCalledWith(take('boo', 0), PLAYED);
+    expect(m.met).toHaveBeenCalledTimes(1);
+    expect(heard.handle.setGain).toHaveBeenLastCalledWith(0);
+    /* The other post's place is near and unheard: its murmur is held while the reaction sounds (the quiet keeps the clock of `performance.now()`, which the frames' own times follow in a browser) and returns after. */
+    await step(performance.now() + 100);
+    expect(heard.handle.setGain).toHaveBeenLastCalledWith(0);
+    await step(performance.now() + 2000);
+    expect(heard.handle.setGain).toHaveBeenLastCalledWith(0.35);
   });
 
   test('the post going stops its loops with the fade, so no held caption outlives it (#496)', async () => {
-    const m = mount({ body: 'Luigi wins.', plays: [playOf([{ phrase: 'Luigi', sound: 'boo' }])] });
+    const m = mount(LUIGI);
     see();
     await step(1000);
     expect(heard.loop).toHaveBeenCalledTimes(1);
@@ -443,7 +648,7 @@ describe('Laugh Track: on a real page', () => {
   });
 
   test('a post that never reaches the line makes no loop and fetches nothing', async () => {
-    mount({ body: 'Luigi wins.', plays: [playOf([{ phrase: 'Luigi', sound: 'boo' }])] });
+    mount(LUIGI);
     vi.spyOn(Element.prototype, 'getClientRects').mockImplementation(() => [{ top: 5000, bottom: 5020, left: 0, right: 50 }] as unknown as DOMRectList);
     see();
     await step(1000);
