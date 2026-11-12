@@ -100,8 +100,10 @@ export function createMixer(deps: MixerDeps): Mixer {
   }
   /**
    * Build a voice (source through its own gain into the bus) for a decoded buffer, started now. It always starts at 0. A play ramps to the
-   * slot's level over `fadeInMs` (at least `EDGE_MS`) and then, over its last `tailMs` (at least `EDGE_MS`, at most the file), back to 0;
-   * a loop gets no ramp up and no tail, and stays silent until its owner's `setGain`.
+   * slot's level over `fadeInMs` (at least `EDGE_MS`, at most half the file) and then, over its last `tailMs` (at least `EDGE_MS`), back to 0.
+   * The tail never starts inside the fade-in: it starts at the later of "`tailMs` before the end" and "the end of the ramp up", so a tail as
+   * long as the file, or a file shorter than fade-in plus tail, still ramps up fully and then down, and neither is a step (a level set at the
+   * start of the fade-in would be the click the ramps exist to remove). A loop gets no ramp up and no tail, and stays silent until its owner's `setGain`.
    */
   function start(c: AudioContextLike, slot: SoundSlot, buffer: { readonly duration: number }, looped: boolean, fadeInMs: number, tailMs = 0) {
     const bus = busNode(c, slot.bus);
@@ -114,9 +116,11 @@ export function createMixer(deps: MixerDeps): Mixer {
     if (!looped) {
       const level = gainOf(slot);
       const end = now + buffer.duration;
-      const tail = Math.min(Math.max(tailMs, EDGE_MS), buffer.duration * 1000) / 1000;
-      voice.gain.linearRampToValueAtTime(level, now + Math.max(fadeInMs, EDGE_MS) / 1000);
-      voice.gain.setValueAtTime(level, end - tail);
+      const fadeIn = Math.min(Math.max(fadeInMs, EDGE_MS) / 1000, buffer.duration / 2);
+      const tail = Math.max(tailMs, EDGE_MS) / 1000;
+      const rampedUp = now + fadeIn;
+      voice.gain.linearRampToValueAtTime(level, rampedUp);
+      voice.gain.setValueAtTime(level, Math.max(end - tail, rampedUp));
       voice.gain.linearRampToValueAtTime(0, end);
     }
     source.connect(voice);

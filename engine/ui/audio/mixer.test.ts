@@ -173,6 +173,7 @@ describe('mixer', () => {
     const m = make();
     await m.unlock();
     m.setBus('game', { on: true, volume: 100 });
+    ctx.decodeAudioData = (async () => ({ duration: 4 })) as never; // long enough that a 2s fade-in is not clamped to half the file
     await m.play(boo, { group: 'g', fadeMs: 2000 });
     const oldVoice = ctx.gains[1]!;
     assert.deepEqual(oldVoice.gain.log.slice(0, 2), ['set 0 10', 'ramp 1 12']);
@@ -322,16 +323,42 @@ describe('mixer', () => {
     const v1 = ctx.gains[1]!;
     assert.ok(near(marks(v1, 'set').at(-1)![1], 11.75) && marks(v1, 'set').at(-1)![0] === 1);
     assert.deepEqual(marks(v1, 'ramp').at(-1), [0, 12]);
-    await m.play(boo, { tailMs: 5000 });
-    const v2 = ctx.gains[2]!;
-    assert.ok(near(marks(v2, 'set').at(-1)![1], 10), 'a tail longer than the buffer starts at 0');
-    assert.deepEqual(marks(v2, 'ramp').at(-1), [0, 12]);
     await m.play(boo, { tailMs: 2 });
     await m.play(boo);
-    for (const v of [ctx.gains[3]!, ctx.gains[4]!]) {
+    for (const v of [ctx.gains[2]!, ctx.gains[3]!]) {
       assert.ok(near(marks(v, 'set').at(-1)![1], 12 - EDGE), 'a tail under EDGE_MS, or none, ramps over the last EDGE_MS');
       assert.deepEqual(marks(v, 'ramp').at(-1), [0, 12]);
     }
+  });
+
+  it('16b. a tail longer than the buffer never steps to a level at the start: it ramps up, then down to 0 at the end', async () => {
+    const m = make();
+    await m.unlock();
+    m.setBus('game', { on: true, volume: 100 });
+    longer(2);
+    await m.play(boo, { tailMs: 5000 });
+    const v = ctx.gains[1]!;
+    const rampIn = marks(v, 'ramp')[0]!;
+    assert.equal(rampIn[0], 1);
+    assert.deepEqual(marks(v, 'set').filter(([lv, t]) => lv !== 0 && t < rampIn[1] - 1e-9), [], 'no level is set before the ramp-in ends');
+    assert.ok(marks(v, 'set').filter(([lv]) => lv !== 0).every(([, t]) => t >= rampIn[1] - 1e-9));
+    assert.ok(rampIn[1] <= 11 + 1e-9, 'the ramp-in ends by the middle of the buffer');
+    assert.deepEqual(marks(v, 'ramp').at(-1), [0, 12]);
+  });
+
+  it('16c. a buffer shorter than fade-in plus tail: the ramp-in ends by the middle, the tail starts there, and 0 is reached at the end', async () => {
+    const m = make();
+    await m.unlock();
+    m.setBus('game', { on: true, volume: 100 });
+    longer(0.3);
+    await m.play(boo, { group: 'g', fadeMs: 250, tailMs: 250 });
+    const v = ctx.gains[1]!;
+    const rampIn = marks(v, 'ramp')[0]!;
+    assert.equal(rampIn[0], 1);
+    assert.ok(rampIn[1] <= 10.15 + 1e-9, 'the ramp-in ends no later than the middle');
+    assert.ok(near(marks(v, 'set').at(-1)![1], rampIn[1]) && marks(v, 'set').at(-1)![0] === 1, 'the tail starts at the ramp-in end');
+    assert.deepEqual(marks(v, 'set').filter(([lv, t]) => lv !== 0 && t < rampIn[1] - 1e-9), []);
+    assert.ok(near(marks(v, 'ramp').at(-1)![1], 10.3) && marks(v, 'ramp').at(-1)![0] === 0);
   });
 
   it('17. a voice replaced during its tail has the tail\'s ramp cancelled before its fade-out', async () => {
