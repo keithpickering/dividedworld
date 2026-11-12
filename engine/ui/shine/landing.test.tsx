@@ -245,6 +245,19 @@ describe('where a flake lands', () => {
     expect(cellTiles(meta)).toHaveLength(0);
   });
 
+  it('a flake over that tag, with the page live and the tag on the page\'s ground, lands on the page in document px, where the page\'s tiles draw it', () => {
+    const { article, meta } = post();
+    keep(landPost(article));
+    keep(landPage());
+    box(720, 100, 120, 80, meta);
+    drop(780, 140);
+    settle(0, 3000);
+    expect(cling.falling()).toBe(0);
+    expect(probe.landed().cell).toBe(0);
+    expect(probe.landed().page).toBeGreaterThan(5);
+    expect(pageTiles().length).toBeGreaterThanOrEqual(1);
+  });
+
   it('every flake a cell holds lies in the cell\'s box, so a tile is drawn for each and none is taken away while it holds one', () => {
     const { article, meta, main } = post();
     keep(landPost(article));
