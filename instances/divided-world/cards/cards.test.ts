@@ -232,10 +232,11 @@ test('the instance sells Card Collector, Force Field and the new Gimmicks, each 
 });
 
 test('Publicity Tour, Heat Magnet, Class Clown and Good Vibes are Gimmicks with the effects the design names', () => {
-  const hours36 = { unit: 'hour', count: 36 };
-  assert.deepEqual([by('publicity-tour').reaches, by('publicity-tour').lasts, by('publicity-tour').gimmick], [['character'], hours36, { kind: 'earn', quadrants: ['excitedPositive', 'calmPositive'], by: 0.1, group: 'publicity' }]);
-  assert.deepEqual([by('heat-magnet').reaches, by('heat-magnet').lasts, by('heat-magnet').gimmick], [['character'], hours36, { kind: 'earn', quadrants: ['excitedNegative', 'boredNegative'], by: 0.1 }]);
-  assert.deepEqual([by('class-clown').reaches, by('class-clown').lasts, by('class-clown').gimmick], [['character'], hours36, { kind: 'earn', reactions: ['laughing', 'eye-roll'], by: 0.5 }]);
+  const days3 = { unit: 'day', count: 3 };
+  assert.deepEqual([by('publicity-tour').reaches, by('publicity-tour').lasts, by('publicity-tour').gimmick], [['character'], days3, { kind: 'earn', quadrants: ['excitedPositive', 'calmPositive'], by: 0.2, group: 'publicity' }]);
+  assert.deepEqual([by('hype-up').reaches, by('hype-up').lasts, by('hype-up').gimmick], [['character'], days3, { kind: 'earn', quadrants: ['excitedPositive', 'calmPositive'], by: 0.2, group: 'publicity' }]);
+  assert.deepEqual([by('heat-magnet').reaches, by('heat-magnet').lasts, by('heat-magnet').gimmick], [['character'], days3, { kind: 'earn', quadrants: ['excitedNegative', 'boredNegative'], by: 0.2 }]);
+  assert.deepEqual([by('class-clown').reaches, by('class-clown').lasts, by('class-clown').gimmick], [['character'], days3, { kind: 'earn', reactions: ['laughing', 'eye-roll'], by: 1 }]);
   assert.deepEqual([by('good-vibes').reaches, by('good-vibes').lasts, by('good-vibes').gimmick], [['thread'], { unit: 'day', count: 3 }, { kind: 'price', flavors: ['salty'], add: 25 }]);
   for (const key of ['laughing', 'eye-roll']) assert.ok(instance.reactions.some((r) => r.key === key), key);
 });
