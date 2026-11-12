@@ -4,12 +4,13 @@
  * plan's section 7 lists what is compared; section 3 says where the build departs from the board
  * by a decision, and each departure is named where it sets a `buildName` or a box mode.
  *
- * The hand is the cards part's (the glass build plan, Part 3): the board draws three postcards fanned
- * through the HUD's seam, so the build is pressed on the hand button before it is read, which opens
- * the hand ("Hand, 3 postcards, open"; the board's button is unopened, the cards standing as the
- * armed card leaves them). The board's second card is the armed one; arming is cards Task 3's, so the
- * build's second Whoops! stands in the hand unarmed and the board's third, the one plain Whoops!,
- * is the build's second.
+ * The hand is the cards part's (the glass build plan, Part 3), and the hand-arc design
+ * (docs/plans/2026-11-12-hand-arc-design.md, section 5) is the departure: the board draws three postcards
+ * fanned through the HUD's seam, the build an arc with one face per kind. So the build is pressed on the
+ * hand button, then on Whoops! (which arms it and closes the arc), then on the hand button again, which
+ * opens the arc with Whoops! armed and lifted ("Hand, 3 postcards, open"; the board's button is
+ * unopened). The board's two Whoops! are the build's one, "2 in hand", and its armed one is compared by
+ * its name only.
  *
  * Left out until the part that builds them (the glass build plan, Part 3, the cards):
  *  - the splat itself on #41, which is pixels (the board's is a drawing in the same ink, the build's a
@@ -38,13 +39,15 @@ import type { BoardManifest } from '../board-match.ts';
  */
 const STICK = 'Stick Around, Sweet, Move. Hold a reader on a post., common postcard';
 const WHOOPS = 'Whoops!, Salty, Move. Splat a post in ink., common postcard';
+/* The hand arc draws one face per kind, so the board's two Whoops! are the build's one, "2 in hand" (the hand-arc design, section 5). */
+const WHOOPS_2 = `${WHOOPS}, 2 in hand`;
 /* The card mechanic (docs/plans/2026-11-01-card-plays-plan.md, Task 7) adds each card's play and rarity to its name: a departure from the board. */
 
 const manifest: BoardManifest = {
   board: '01-main',
   size: { width: 1440, height: 1120 },
   build: { moment: '01-main' },
-  press: [{ role: 'button', name: 'Hand, 3 postcards' }, { role: 'button', name: WHOOPS }],
+  press: [{ role: 'button', name: 'Hand, 3 postcards' }, { role: 'button', name: WHOOPS_2 }, { role: 'button', name: 'Hand, 3 postcards' }],
   landmarks: [
     /*
      * The banner: Index and the instance's boards. The board's Search is not built (section 3). The board draws its rows across
@@ -110,14 +113,15 @@ const manifest: BoardManifest = {
     { id: 'hud-hand', role: 'button', name: 'Hand, 3 postcards', buildName: 'Hand, 3 postcards, open', within: 'hud' },
     /* The fanned postcards at -11, -1 and 10 degrees: each a button by its name, compared by the turned card's bounds. */
     { id: 'card-stick', role: 'button', name: 'Stick Around, Sweet postcard', buildName: STICK, type: false },
-    { id: 'card-whoops-armed', role: 'button', name: 'Whoops!, Salty postcard, armed: pick a post', buildName: `${WHOOPS}, armed: pick a post`, type: false },
     /*
-     * The fan's last card is held inside the window (frame.css `.kb-hand-card`, the glass polish's layout check refusing an overflow), so it stands
-     * 36px further left than the board draws it: compared by its size.
+     * The hand-arc design's section 5 departs from the board here. The board's middle card is armed and raised 48px in the open fan; the build arms
+     * by closing the arc, so the match presses the hand button, Whoops! and the hand button again, and the armed card stands lifted (upright, higher
+     * and larger) where the board draws it in the fan. So the armed card and its tag are found, and their boxes are not compared. The board's third
+     * card, the plain Whoops!, is not drawn: the build has one face per kind, Whoops! with "2 in hand", so no `card-whoops` entry.
      */
-    { id: 'card-whoops', role: 'button', name: 'Whoops!, Salty postcard', buildName: WHOOPS, type: false, box: 'size' },
-    /* The armed card's floating tag. */
-    { id: 'armed-tag', role: 'text', name: 'Armed · pick a post' },
+    { id: 'card-whoops-armed', role: 'button', name: 'Whoops!, Salty postcard, armed: pick a post', buildName: `${WHOOPS_2}, armed: pick a post`, type: false, box: 'none' },
+    /* The armed card's floating tag: the hand-arc design's section 5 departure, by its box. */
+    { id: 'armed-tag', role: 'text', name: 'Armed · pick a post', box: 'none' },
   ],
 };
 
