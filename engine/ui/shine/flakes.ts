@@ -11,13 +11,16 @@
  *   `stepBurst(flakes, now)` and paints it with `drawBurst(ctx, flakes, band, now)` on a second canvas over the words. Both return whether another frame is needed. At most `MAX_IN_FLIGHT` fly across the page; past that a
  *   burst lands its remainder at once. Under reduced motion there is no burst and every flake is placed at once.
  * - Cling: a mouse passing over a `sticky` registered host picks flakes up (at most 26), they ride the pointer, drop off over
- *   anything else and land on whichever registered host is under them (or fade). A host that takes no pointer names the element
+ *   anything else, fly briefly and land on whichever registered host is under them after their hang. A host that takes no pointer names the element
  *   the pointer is over instead (`hit`), and is still where its flakes land, in its own px. Loose glitter is `loose(host)`, 300 across
  *   the page, oldest first, the reader's own and never saved. One page-fixed canvas draws the flakes in the air; it is made on
- *   the first pickup and removed after `IDLE_MS` with nothing carried or falling, in the shape of Whoops!'s drawn cursor so a
+ *   the first pickup and removed after `IDLE_MS` with nothing carried or in the air, in the shape of Whoops!'s drawn cursor so a
  *   later port to the engine loop is a move.
- * - Shake: a scroll of the page past `SHAKE_SPEED` shakes settled flakes off the sticky hosts on screen onto that same layer,
- *   where they fall and land or fade (`shake`): the touch reader's way to move the glitter, where a mouse picks it up.
+ * - Shake: a scroll of the page past `SHAKE_SPEED` shakes copies of settled flakes off the sticky hosts on screen, a frame at a time
+ *   for as long as it stays that fast (`shake`), onto that same layer: they are thrown the way the page was moving at about half its
+ *   speed, sprayed sideways, tumble as air drag slows them, settle at a slow flutter and land on the host under them after their
+ *   hang, or leave the screen past its top, bottom or sides (by 10 px: culled), never fading, a number per px scrolled so the frame rate never changes how many (docs/plans/2026-11-11-shake-design.md section 3). The touch
+ *   reader's way to move the glitter, where a mouse picks it up.
  * - The dark board (a band that ends far short of white): each ink is taken at the ceiling, saturated (`ceilingOf`), and a
  *   flake facing the light glints: its flare is added, in its own hue at full brightness with the instance's glint at its
  *   heart (`glintOf`). The glints alone leave the band (docs/plans/2026-11-06-shine-design.md section 5, issue #340), and
@@ -899,7 +902,32 @@ export function drawLoose(host: object, ctx: CanvasRenderingContext2D, light: Li
   if (list?.length) drawList(ctx, list, light, band, now, idle, starSprite(list[0]!.pal), density, null, false, false);
 }
 
-function addLoose(host: object, f: Flake): void {
+/**
+ * A flake lying loose: where it landed, in its surface's px, and what it needs to be drawn still (docs/plans/2026-11-11-shake-design.md
+ * section 5): `ph`, the turn it landed at, and `band`, the board it landed on.
+ */
+export type LooseFlake = Flake & { ph?: number; band?: Band };
+
+/**
+ * What the landing surfaces (engine/ui/shine/landing.ts) hang on the cling layer. `page` is the thread screen's own surface, a
+ * place a flake lands where no registered host is under it and `ground` says the point's ground is the page's; `dropped` hears a
+ * loose flake go off a host's list to the 300 cap; `frameEnd` runs at the end of each frame that moved a flake, once, after every
+ * landing in it. Nothing here is a loop's job: tiles are drawn on a landing and on a return to view, never per frame.
+ */
+export interface Landing {
+  page: { readonly host: object; landed(): void } | null;
+  ground(el: Element): boolean;
+  dropped(host: object, f: LooseFlake): void;
+  frameEnd(): void;
+}
+let landing: Landing | null = null;
+/** Installs the landing surfaces' hooks, or takes them off with `null`. */
+export function setLanding(l: Landing | null): void { landing = l; }
+
+/** Every loose flake on the page in the order it landed, with the host it lies on: a read-only view for a probe. */
+export const looseEntries = (): readonly { readonly host: object; readonly flake: Flake }[] => looseOrder;
+
+function addLoose(host: object, f: LooseFlake): void {
   loose(host).push(f);
   looseOrder.push({ host, flake: f });
   while (looseOrder.length > MAX_LOOSE) {
@@ -907,6 +935,7 @@ function addLoose(host: object, f: Flake): void {
     const list = looseByHost.get(old.host);
     const at = list ? list.indexOf(old.flake) : -1;
     if (list && at >= 0) list.splice(at, 1);
+    try { landing?.dropped(old.host, old.flake as LooseFlake); } catch (err) { console.error(err); }
   }
 }
 
@@ -934,20 +963,28 @@ export interface ClingOptions {
    * The element the pointer is over when it is over this host, where the host itself takes none: a layer with `pointer-events:
    * none`, laid over that element, holds nothing a pointer hits, so the browser names only the element (or what is in it) as an
    * event's target or at a point. By default the host. A flake that lands is still placed in the host's own px (issue #399).
+   * A hit has one owner at a time (issue #412): where several hosts name one hit, the one of the highest `rank` owns it, and
+   * among equal ranks the most recently registered. A host's way out hands the hit back to the one registered before it.
    */
   readonly hit?: HTMLElement;
+  /**
+   * Who wins a shared hit: an `effect` (a surface that draws its own loose glitter) over a `cell` (a post's cell), whichever
+   * registered first. Default `effect`.
+   */
+  readonly rank?: 'effect' | 'cell';
 }
 
 /* The cling layer is page-fixed and has no host of its own, so each flake keeps the band of the host it was picked up from
    (`bandFor` on that host's element at pickup): that is the board whose post inks it was lent against, and the layer is only
    ever drawn over registered hosts' boards. The page's root would be wrong the day a card themes a board of its own. */
 interface Carried { f: Flake; ox: number; oy: number; ph: number; band: Band }
-/* `over`: whether a registered host is under the flake, asked once when it starts to fade (and once more when it lands). */
-interface Falling { f: Flake; x: number; y: number; vx: number; vy: number; land: number; fallen: number; ph: number; band: Band; over?: boolean }
+/* A flake in the air (docs/plans/2026-11-11-shake-design.md section 3): `vx, vy` in px a second, `ph` its turn, `spin` how fast it
+   turns, `age` the seconds since it left and `hang` the seconds before it may land. It is drawn at full alpha always. */
+interface Falling { f: Flake; x: number; y: number; vx: number; vy: number; ph: number; spin: number; age: number; hang: number; next: number; band: Band }
 
 const hosts = new Map<HTMLElement, ClingOptions>();
-/** Each registered host's `hit` (the host itself by default), to the host: what a walk up from a node is matched against. */
-const hits = new Map<HTMLElement, HTMLElement>();
+/** Each registered host's `hit` (the host itself by default), to the hosts that name it in registration order: what a walk up from a node is matched against. */
+const hits = new Map<HTMLElement, HTMLElement[]>();
 let canvas: HTMLCanvasElement | null = null;
 let ctx: CanvasRenderingContext2D | null = null;
 let ratio = 1;
@@ -995,15 +1032,22 @@ const canAct = (e: Pick<PointerEvent, 'pointerType'>): boolean => e.pointerType 
 /** The registered host whose hit holds this node, if any: a walk up from the node, no measuring. */
 function hostOf(n: EventTarget | null | undefined): HTMLElement | null {
   for (let el = n instanceof Element ? n : null; el; el = el.parentElement) {
-    const host = hits.get(el as HTMLElement);
-    if (host) return host;
+    const list = hits.get(el as HTMLElement);
+    if (!list) continue;
+    /* The most recent host of the highest rank owns the hit. */
+    let owner: HTMLElement | null = null, best = -1;
+    for (const h of list) {
+      const rank = hosts.get(h)?.rank === 'cell' ? 0 : 1;
+      if (rank >= best) { owner = h; best = rank; }
+    }
+    if (owner) return owner;
   }
   return null;
 }
 
-/** The registered host under a viewport point, as the browser hit-tests it. */
-const hostUnder = (x: number, y: number): HTMLElement | null =>
-  typeof document === 'undefined' || !document.elementFromPoint ? null : hostOf(document.elementFromPoint(x, y));
+/** The element under a viewport point, as the browser hit-tests it. */
+const elementAt = (x: number, y: number): Element | null =>
+  typeof document === 'undefined' || !document.elementFromPoint ? null : document.elementFromPoint(x, y);
 
 /** A band read from a board's computed style is kept per host for this long: a sweep over a post asks the browser once, not per flake. */
 const BAND_MS = 100;
@@ -1096,7 +1140,8 @@ function onMove(e: PointerEvent): void {
     for (let i = carried.length - 1; i >= 0; i--) {
       if (cr() < moved * 0.006) {
         const c = carried.splice(i, 1)[0]!;
-        falling.push({ f: c.f, x: e.clientX + c.ox, y: e.clientY + c.oy, vy: 20 + cr() * 40, vx: (cr() - 0.5) * 30, land: 10 + cr() * 26, fallen: 0, ph: c.ph, band: c.band, over: undefined });
+        /* The cursor's numbers: up to 20 px a second sideways, 30 to 80 down, a hang of 0.15 to 0.5 s. */
+        falling.push({ f: c.f, x: e.clientX + c.ox, y: e.clientY + c.oy, vx: (cr() - 0.5) * 40, vy: 30 + cr() * 50, ph: c.ph, spin: 6 + cr() * 10, age: 0, hang: 0.15 + cr() * 0.35, next: 0, band: c.band });
       }
     }
   }
@@ -1107,19 +1152,49 @@ function onMove(e: PointerEvent): void {
 
 /**
  * A scroll this fast (CSS px a second) shakes glitter off the posts on screen: the touch reader's way to move it, where a mouse
- * picks it up. What is shaken off falls on the page-fixed layer, so it leaves the post's box, and lands on whichever registered host
- * is under it or fades, as a dropped flake does. As a mouse's pickup does, it takes a copy of a flake on screen (its ink, size and
- * turn, where it lies) and leaves the post as it was: taking the flake itself would repaint the post's whole base layer on every
- * frame of a fast scroll, the most expensive time to (e2e/shine.spec.ts's raster share went from 0.67 to 8.5 of the posts in view).
+ * picks it up. What is shaken off flies on the page-fixed layer, thrown the way the page was moving, so it leaves the post's box,
+ * tumbles through air drag, settles and lands on whichever registered host is under it after its hang, or leaves the screen: it
+ * never fades. As a mouse's pickup does, it takes a copy of a flake on screen (its ink, size and turn, where it lies) and leaves the
+ * post as it was: taking the flake itself would repaint the post's whole base layer on every frame of a fast scroll, the most
+ * expensive time to (e2e/shine.spec.ts's raster share went from 0.67 to 8.5 of the posts in view).
  */
 export const SHAKE_SPEED = 2200;
-/** At most this many flakes off one post in a frame, and this many falling across the page. */
-const SHAKE_PER_HOST = 8;
-const MAX_SHAKEN = 160;
+/*
+ * The flight (docs/plans/2026-11-11-shake-design.md section 3), exported so a test can state the numbers it holds to. A scroll sheds
+ * `SHAKE_PER_PX` flakes for each px it scrolls (its speed times the frame's gap, so the count never depends on the frame rate), off
+ * each post in view; at most `MAX_AIR` are in the air across the page. A flake leaves at `THROW` of the scroll's speed (0.6 to 1.4 times it) and up to `SPRAY` of it sideways either way; each
+ * frame drag (`DRAG`) slows it and gravity adds to its fall, so it settles to about `GRAVITY / DRAG` px a second, swaying up to
+ * `FLUTTER` px a second at `FLUTTER_RATE` radians a second. After its hang (`HANG_S` times 0.6 to 1.4) it lands where it is over a
+ * landing place.
+ */
+/**
+ * What a full flick (twice `SHAKE_SPEED`) sheds off one post over its whole pass through the view, the number the rate is chosen for.
+ * A post about 130 px tall crosses a view about 1,000 px tall in `SHAKE_PASS_PX` = 130 + 1,000 = 1,130 px of scrolling, so the per-px
+ * rate is 40 / 1,130 = 0.0354 a px; strength 1 sheds that and a scroll at the threshold 0.4 of it (about 16). A 6,000 px/s fling puts
+ * the post in view for only about four frames, so the count follows the distance each frame scrolled, never the time it took.
+ */
+export const SHAKE_PER_FLICK = 40;
+export const SHAKE_PASS_PX = 1130;
+export const SHAKE_PER_PX = SHAKE_PER_FLICK / SHAKE_PASS_PX;
+export const THROW = 0.55;
+export const SPRAY = 0.11;
+export const DRAG = 7;
+export const GRAVITY = 480;
+export const FLUTTER = 35;
+export const FLUTTER_RATE = 5.5;
+export const HANG_S = 0.6;
+export const MAX_AIR = 400;
+/**
+ * A flake past its hang is hit-tested at most this often (seconds): a hit test is a walk of the layout tree, and 400 flakes asking
+ * every frame is 24,000 a second. A place that comes under a flake catches it within this and a frame.
+ */
+export const CHECK_S = 0.1;
 
 let scrollSeen: { y: number; t: number } | null = null;
 let shakeFrame = 0;
 let shakeV = 0;
+/** When the last shake frame ran (the page's clock), so a flick's frames are handed their own `dt`. */
+let shakeLast: number | null = null;
 let scrollHeard = false;
 
 /** The page's scroll listener: on while a sticky host is registered, off with the last. */
@@ -1129,10 +1204,14 @@ function hearScroll(on: boolean): void {
   if (on) { addEventListener('scroll', onScroll, { passive: true }); return; }
   removeEventListener('scroll', onScroll);
   if (shakeFrame) cancelAnimationFrame(shakeFrame);
-  shakeFrame = 0; scrollSeen = null;
+  shakeFrame = 0; scrollSeen = null; shakeLast = null;
 }
 
-/** Every scroll of the page: past `SHAKE_SPEED`, one shake at the next frame, however many scroll events the frame holds. */
+/**
+ * Every scroll of the page: past `SHAKE_SPEED`, one shake at the next frame, however many scroll events the frame holds, so a flick
+ * shakes once a frame for as long as its speed stays past the threshold. The frame is handed the seconds since the one before (a
+ * flick's first frame, or one after a gap, counts as a 60 Hz frame).
+ */
 function onScroll(e: Event): void {
   const t = e.timeStamp, y = window.scrollY;
   const was = scrollSeen;
@@ -1141,21 +1220,28 @@ function onScroll(e: Event): void {
   const v = (y - was.y) / ((t - was.t) / 1000);
   if (Math.abs(v) < SHAKE_SPEED) return;
   shakeV = v;
-  if (!shakeFrame) shakeFrame = requestAnimationFrame((now) => { shakeFrame = 0; try { shake(shakeV, now); } catch (err) { console.error(err); } });
+  if (!shakeFrame) shakeFrame = requestAnimationFrame((now) => {
+    shakeFrame = 0;
+    const dt = shakeLast !== null && now - shakeLast > 0 && now - shakeLast < STALE_MS ? (now - shakeLast) / 1000 : 1 / 60;
+    shakeLast = now;
+    try { shake(shakeV, now, Math.min(0.05, dt)); } catch (err) { console.error(err); }
+  });
 }
 
 /**
- * Shakes glitter off the sticky hosts on screen, as a scroll at `v` px a second does (down is positive): copies of settled flakes on
- * screen, thrown the way the page was moving, falling. The post itself is not redrawn. A post mid-burst sheds nothing, and reduced
- * motion shakes nothing. Returns how many were shaken off. Exposed so a test can shake.
+ * Shakes glitter off the sticky hosts on screen, as a scroll at `v` px a second does (down is positive) over a frame of `dt`
+ * seconds, which scrolled `|v| x dt` px: `SHAKE_PER_PX x |v| x dt x (0.4 + 0.6 x strength)` flakes off each post (the fraction carried by a draw),
+ * strength running from 0 at `SHAKE_SPEED` to 1 at twice it. They are copies of settled flakes on screen, thrown up the screen on a
+ * scroll down and down it on a scroll up. The post itself is not redrawn. A post mid-burst sheds nothing, reduced motion shakes
+ * nothing, and no more than `MAX_AIR` are in the air. Returns how many were shaken off. Exposed so a test can shake.
  */
-export function shake(v: number, now: number): number {
+export function shake(v: number, now: number, dt: number): number {
   if (typeof document === 'undefined' || Math.abs(v) < SHAKE_SPEED || clingReduced()) return 0;
-  const over = Math.min(1, Math.max(0, (Math.abs(v) - SHAKE_SPEED) / SHAKE_SPEED));
+  const strength = Math.min(1, Math.max(0, (Math.abs(v) - SHAKE_SPEED) / SHAKE_SPEED));
   const vw = innerWidth, vh = innerHeight;
   let took = 0;
   for (const [host, opts] of hosts) {
-    if (falling.length >= MAX_SHAKEN) break;
+    if (falling.length >= MAX_AIR) break;
     if (!opts.sticky || !opts.flakes || !host.isConnected) continue;
     const f = opts.flakes as Inner;
     if (!f.fired || f.parts.length || !f.settled.length) continue;
@@ -1163,13 +1249,15 @@ export function shake(v: number, now: number): number {
     if (r.bottom <= 0 || r.top >= vh || r.right <= 0 || r.left >= vw) continue;
     const band = bandAt(host, now);
     if (!band) continue;
-    const n = Math.min(Math.round(2 + over * (SHAKE_PER_HOST - 2)), MAX_SHAKEN - falling.length);
+    const want = SHAKE_PER_PX * Math.abs(v) * dt * (0.4 + 0.6 * strength);
+    const n = Math.min(Math.floor(want) + (cr() < want % 1 ? 1 : 0), MAX_AIR - falling.length);
     let off = 0;
     for (let tries = 0; off < n && tries < n * 4; tries++) {
       const fl = f.settled[(cr() * f.settled.length) | 0]!;
       const x = r.left + fl.x, y = r.top + fl.y;
       if (x < 0 || y < 0 || x > vw || y > vh) continue;
-      falling.push({ f: { ...fl }, x, y, vx: (cr() - 0.5) * 80, vy: -v * (0.04 + cr() * 0.06), land: 30 + cr() * 140, fallen: 0, ph: cr() * 6, band, over: undefined });
+      /* Thrown with the page: it leaves at a share of the scroll's speed, against the way the page went, sprayed sideways. */
+      falling.push({ f: { ...fl }, x, y, vx: (cr() - 0.5) * 2 * SPRAY * Math.abs(v), vy: -v * THROW * (0.6 + cr() * 0.8), ph: cr() * 6, spin: 6 + cr() * 14, age: 0, hang: HANG_S * (0.6 + cr() * 0.8), next: 0, band });
       off++;
     }
     took += off;
@@ -1198,24 +1286,60 @@ export function sampleCling(flakes: Flakes, band: Band): Set<string> {
   return out;
 }
 
-/** One flake of the cling layer: one `setTransform` places it (no save/restore); the host's base transform is `d`, the canvas's px per CSS px. */
-function paint(c: CanvasRenderingContext2D, f: Flake, x: number, y: number, ph: number, alpha: number, band: Band, d: number): void {
+/**
+ * One flake of the cling layer: one `setTransform` places it (no save/restore); `d` is the canvas's px per CSS px. `x, y` are in the
+ * canvas's own CSS px, so a tile places a landed flake at its place in the tile. Draws at the context's alpha and records nothing.
+ */
+export function drawFlake(c: CanvasRenderingContext2D, f: Flake, x: number, y: number, ph: number, band: Band, d: number): void {
   const w = f.s * (0.4 + 0.6 * Math.abs(Math.cos(ph)));
   const rot = f.rot + ph * 0.3, cos = Math.cos(rot), sin = Math.sin(rot);
-  c.globalAlpha = alpha;
   c.fillStyle = clingColor(f, ph, band);
   c.setTransform(cos * d, sin * d, -sin * d, cos * d, x * d, y * d);
   c.fillRect(-f.s / 2, -f.s * 0.42, w, f.s * 0.84);
+}
+
+/** One flake of the cling layer, drawn and its square noted for the next frame's clear. */
+function paint(c: CanvasRenderingContext2D, f: Flake, x: number, y: number, ph: number, alpha: number, band: Band, d: number): void {
+  c.globalAlpha = alpha;
+  drawFlake(c, f, x, y, ph, band, d);
   c.globalAlpha = 1;
   /* The rect reaches 0.66 s from its center whatever its turn; a px more for the smoothing. */
   const r = 0.66 * f.s + 1;
   dirty.push(Math.floor((x - r) * d), Math.floor((y - r) * d), Math.ceil((x + r) * d), Math.ceil((y + r) * d));
 }
 
-/** Lets go of a host's hit, unless another host has taken it since. */
+/** Takes a host out of its hit's list, so the host before it owns the hit again. */
 function unhit(host: HTMLElement, options: ClingOptions): void {
   const hit = options.hit ?? host;
-  if (hits.get(hit) === host) hits.delete(hit);
+  const list = hits.get(hit);
+  if (!list) return;
+  const at = list.indexOf(host);
+  if (at >= 0) list.splice(at, 1);
+  if (!list.length) hits.delete(hit);
+}
+
+/**
+ * Lands a flake that is past its hang if a landing place is under it, and says whether it did. In order: the registered host whose hit
+ * the browser finds there (task order: an effect's surface, then a post cell), in that host's own px; else, where the thread's page
+ * surface is live and the point's ground is the page's, the page, in document px; else it keeps flying (chrome with a ground of its
+ * own would hide glitter lying on the page under it). The one hit test a flake costs per `CHECK_S`; the host's rect is the one measure a landing costs.
+ */
+function landOn(b: Falling, now: number): boolean {
+  const el = elementAt(b.x, b.y);
+  const host = hostOf(el);
+  let on: object, x: number, y: number, band: Band | null, told: (() => void) | undefined;
+  if (host) {
+    const r = host.getBoundingClientRect();
+    on = host; x = b.x - r.left; y = b.y - r.top; band = bandAt(host, now);
+    told = hosts.get(host)?.landed;
+  } else if (landing?.page && el && landing.ground(el)) {
+    on = landing.page.host; x = b.x + window.scrollX; y = b.y + window.scrollY; band = bandAt(document.documentElement, now);
+    told = landing.page.landed;
+  } else return false;
+  /* It keeps its turn and the board it lies on: a landed flake is drawn still, at that turn, in that board's band. */
+  addLoose(on, { ...b.f, x, y, ph: b.ph, band: band ?? b.band });
+  try { told?.(); } catch (err) { console.error(err); }
+  return true;
 }
 
 export const cling = {
@@ -1227,7 +1351,9 @@ export const cling = {
     const was = hosts.get(host);
     if (was) unhit(host, was);
     hosts.set(host, options);
-    hits.set(options.hit ?? host, host);
+    const hit = options.hit ?? host;
+    const list = hits.get(hit);
+    if (list) list.push(host); else hits.set(hit, [host]);
     if (options.sticky) hearScroll(true);
     return () => {
       if (hosts.get(host) === options) { hosts.delete(host); unhit(host, options); }
@@ -1263,26 +1389,26 @@ export const cling = {
       for (const c of carried) { c.ph += dt * (2 + mouse.speed * 0.4); paint(ctx, c.f, mouse.x + c.ox, mouse.y + c.oy, c.ph, 1, c.band, ratio); }
       mouse.speed *= Math.exp(-dt * 8);
     }
+    const vw = innerWidth, vh = innerHeight;
     for (let i = falling.length - 1; i >= 0; i--) {
       const b = falling[i]!;
-      b.vy = Math.min(90, b.vy + 300 * dt); b.x += b.vx * dt; b.y += b.vy * dt; b.fallen += b.vy * dt; b.ph += dt * 12;
-      if (b.fallen >= b.land) {
-        falling.splice(i, 1);
-        const host = hostUnder(b.x, b.y);
-        if (host) {
-          /* The one measure a flake costs: the post it lands on, to put it in that post's own px. */
-          const r = host.getBoundingClientRect();
-          addLoose(host, { ...b.f, x: b.x - r.left, y: b.y - r.top });
-          try { hosts.get(host)?.landed?.(); } catch (err) { console.error(err); }
-        }
-        continue;
+      /* Air drag pulls the throw down to a slow fall (gravity against drag: about GRAVITY / DRAG px a second), a flutter sways it,
+         and its turn is quicker while it moves quickly. */
+      const k = Math.exp(-DRAG * dt);
+      b.vx *= k; b.vy = b.vy * k + GRAVITY * dt;
+      b.age += dt;
+      b.x += (b.vx + FLUTTER * Math.sin(b.f.tph + b.age * FLUTTER_RATE)) * dt; b.y += b.vy * dt;
+      b.ph += dt * b.spin * (0.35 + 0.65 * Math.min(1, Math.hypot(b.vx, b.vy) / 400 + 0.3));
+      /* Off the bottom, the top or the sides (by 10 px), it is gone, as glitter thrown off a table is: a flake that flies off the screen is culled. */
+      if (b.y > vh + 10 || b.y < -10 || b.x < -10 || b.x > vw + 10) { falling.splice(i, 1); continue; }
+      if (b.age >= b.hang && b.age >= b.next) {
+        b.next = b.age + CHECK_S;
+        if (landOn(b, now)) { falling.splice(i, 1); continue; }
       }
-      /* A flake with nowhere to land fades through the last third of its fall. */
-      if (b.over === undefined && b.fallen > b.land * 0.67) b.over = hostUnder(b.x, b.y) !== null;
-      const fade = b.over === false ? Math.max(0, 1 - (b.fallen - b.land * 0.67) / (b.land * 0.33)) : 1;
-      paint(ctx, b.f, b.x, b.y, b.ph, fade, b.band, ratio);
+      paint(ctx, b.f, b.x, b.y, b.ph, 1, b.band, ratio);
     }
     ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    try { landing?.frameEnd(); } catch (err) { console.error(err); }
     if (!carried.length && !falling.length) settle();
   },
 

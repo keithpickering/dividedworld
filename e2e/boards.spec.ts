@@ -62,11 +62,6 @@ const REPORT = path.join(here, 'report', 'boards');
  * plan alone). A board of a later folder is <folder>/<name>, and its manifest's `board` is that whole id.
  */
 const PENDING: Readonly<Record<string, string>> = {
-  '2026-11-04-cosmetics/01-postbit': 'docs/plans/2026-11-04-cosmetics-plan.md',
-  '2026-11-04-cosmetics/02-dressup': 'docs/plans/2026-11-04-cosmetics-plan.md',
-  '2026-11-04-cosmetics/03-trophy-case': 'docs/plans/2026-11-04-cosmetics-plan.md',
-  '2026-11-04-cosmetics/04-event': 'docs/plans/2026-11-04-cosmetics-plan.md',
-  '2026-11-04-cosmetics/05-admin': 'docs/plans/2026-11-04-cosmetics-plan.md',
   '2026-11-05-card-template/01-layouts': 'docs/plans/2026-11-05-card-template-plan.md',
 };
 

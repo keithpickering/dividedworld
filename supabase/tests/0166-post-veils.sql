@@ -1,4 +1,4 @@
--- The author's veil (supabase/migrations/0300_post_veils.sql; docs/plans/2026-11-11-card-notes-part-3-plan.md, Task 2; engine/rules/cards.ts, CardRules.veil).
+-- The author's veil (supabase/migrations/0400_post_veils.sql; docs/plans/2026-11-11-card-notes-part-3-plan.md, Task 2; engine/rules/cards.ts, CardRules.veil).
 -- A cast card with `veil = 'author'` on a post withholds its author from every read while it is up: acts_public answers the one stand-in character for the post and for every Act its own author
 -- made on it, to every reader alike, and the author's own screens learn it is theirs only from my_veiled_posts. The cards are this file's own (vl...).
 --
@@ -13,6 +13,7 @@
 --  9. A card played from a post (at character reach) names its author: no veil lands on that post, from a cast or a spring, and none is played from a veiled one.
 -- 10. The staff lists, the pool's signals and the digest leave the stand-in out of the staff.
 -- 11. The counts: character_post_counts counts a veiled post for the stand-in while the veil is up, for every reader, and the author's own count is whole again by itself.
+-- 12. The groups are The System's own scoring: group_now reads the stored count, so a veil never moves a character's group, though the count a player reads drops for as long as it is up.
 --  0. The seed makes the stand-in once, and office says so (first, since the sections after it make the stand-in themselves).
 
 create function pg_temp.coded(stmt text) returns text language plpgsql as $$
@@ -643,7 +644,10 @@ begin
   if touched > 60 then raise exception 'a count read touches % buffers', touched; end if;
   touched := pg_temp.buffers_of(format('select character, posts from character_post_counts where character in (%L, %L)', a, stand));
   raise notice 'two counts read touch % buffers', touched;
-  if touched > 90 then raise exception 'two counts read touch % buffers', touched; end if;
+  /* Two counts are two reads of the stored rows' heap and of the live veils, plus the one walk of the veils both share. This file's own writes leave many versions of a counted row in the heap (nothing vacuums inside a
+     test's transaction), so the read walks them, and the planner's choice between an index and a bitmap scan of them moves a few buffers with the rows around it: 88 on the branch before 0195 to 0316 were merged
+     in, 96 after, a read that stays on the key and on the veils' index either way (the plan checks above). The bound is the shape (a few dozen buffers a count, never a scan of the table), not the margin. */
+  if touched > 130 then raise exception 'two counts read touch % buffers', touched; end if;
 end $$;
 
 -- ---- 9. A card played from a post names its author: no veil on that post, and none played from a veiled post ----
@@ -829,4 +833,32 @@ begin
   if (select to_jsonb(n) from (select coalesce(sum(posts), 0) as posts, coalesce(sum(spins), 0) as spins, coalesce(sum(cards), 0) as cards from character_post_counts where character = stand) n) is distinct from s0 then raise exception 'the stand-in keeps a count after the veil was ended'; end if;
   if (profile_page(a) -> 'counts' ->> 'posts')::integer is distinct from 4 then raise exception 'the author''s profile after the end: %', profile_page(a) -> 'counts'; end if;
   perform tests.unbecome();
+end $$;
+
+-- ---- 12. The groups read the truth: a veil never moves a character's group ----
+-- group_now is The System's own scoring (the ladder's posts rung), not a player's read, so it reads character_post_counts_base: a character whose count sits exactly at a rung's threshold keeps the rung
+-- while one of its posts is veiled, though the count a player reads (character_post_counts) is one lower for as long as the veil is up.
+select tests.unbecome();
+do $$
+declare
+  zed uuid := tests.account('vq-gzed'); cy uuid := tests.account('vq-gcy');
+  z uuid := tests.character(zed, 'Vq GZed'); c uuid := tests.character(cy, 'Vq GCy');
+  t uuid := tests.thread('Vq group');
+  p1 uuid := tests.post(z, t, 'The first post.'); p2 uuid := tests.post(z, t, 'The second post, veiled.');
+  veil uuid; before_group text; shown integer;
+begin
+  perform pg_temp.cards();
+  perform pg_temp.hand(cy, 'vlauthor');
+  -- A ladder of this test's own, above whatever the database holds: a default rung and a posts rung that Zed meets with exactly two posts.
+  insert into group_kinds (key, name, color, source, rung, condition) values ('vgLow', 'Vg Low', '#101010', 'ladder', 91, 'default');
+  insert into group_kinds (key, name, color, source, rung, condition, at_least) values ('vgHigh', 'Vg High', '#202020', 'ladder', 92, 'posts', 2);
+  before_group := group_now(z);
+  if before_group is distinct from 'vgHigh' then raise exception 'the character at the threshold is not in the rung before any veil: %', before_group; end if;
+  perform tests.become_service();
+  veil := (play_card(cy, 'vlauthor', c, p2, '{}', 0, '') ->> 'id')::uuid;
+  perform tests.unbecome();
+  -- A player's read of the count drops by the veiled post; the System's reading of it does not.
+  shown := (select posts from character_post_counts where character = z);
+  if shown is distinct from 1 then raise exception 'the count a player reads should hide the veiled post: %', shown; end if;
+  if group_now(z) is distinct from 'vgHigh' then raise exception 'a veil moved the group: % while the post is veiled', group_now(z); end if;
 end $$;

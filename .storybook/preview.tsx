@@ -75,6 +75,7 @@ const preview: Preview = {
      */
     viewport: {
       options: {
+        glassMain1440: { name: 'Main board, 1440 × 900', styles: { width: '1440px', height: '900px' }, type: 'desktop' },
         glassPhone390: { name: 'Phone board, 390 × 844', styles: { width: '390px', height: '844px' }, type: 'mobile' },
         boardAboveSwitch: { name: `Main board scaled, just above the switch, ${ABOVE} × 900`, styles: { width: `${ABOVE}px`, height: '900px' }, type: 'desktop' },
         boardBelowSwitch: { name: `Phone board, just below the switch, ${BELOW} × 900`, styles: { width: `${BELOW}px`, height: '900px' }, type: 'desktop' },

@@ -88,7 +88,14 @@ export interface LedgerEntry {
  * each naming its card. No other reason names a card, so no other class's entries change. A detail line and a share find their entry by it.
  */
 export const entryKey = (c: { player: string; character: string; reason: string; params?: Readonly<Record<string, number | string>> }) =>
-  `${c.player}\u0000${c.character}\u0000${c.reason}${typeof c.params?.card === 'string' ? `\u0000${c.params.card}` : ''}`;
+  `${c.player}\u0000${lineKey(c.character, c.reason, c.params?.card)}`;
+
+/**
+ * What makes a line of one player's log: a character, a reason and, where the entry names one, its card. A share finds its line by it, in the
+ * settlement (`entryKey`) and on the screens (the log's page), so the two never keep a second key that merely agrees.
+ */
+export const lineKey = (character: string, reason: string, card?: unknown) =>
+  `${character}\u0000${reason}${typeof card === 'string' ? `\u0000${card}` : ''}`;
 
 /** What the owner's log shows of an entry: which Act, which quadrant, how much, in whole hundredths that add up to the entry. */
 export interface Detail {

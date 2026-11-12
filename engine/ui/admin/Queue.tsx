@@ -32,6 +32,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { ENGINE_DEFAULT_PRONOUNS, words, type PronounSet } from '../../rules/pronouns.ts';
 import { demandAsk, demandKind, demandWords } from '../../system/demands.ts';
 import { MoveSentence } from '../board/MoveSentence.tsx';
+import { useMoveCharacters } from '../board/use-move-characters.ts';
 import { demandNeeds } from '../board/move-words.ts';
 import { dayAndTime } from '../characters/format.ts';
 import { useKayfa } from '../context.tsx';
@@ -326,6 +327,7 @@ function Todos({ rows, onDismissed }: { readonly rows: readonly HandoverTodo[]; 
 }
 
 function Waiting({ rows, more, boards, bosses, roster, now, onHold, onReplaced }: { readonly rows: readonly QueuedMove[]; readonly more: boolean; readonly boards: readonly BoardName[]; readonly bosses: readonly Roster[]; readonly roster: readonly Roster[]; readonly now: number; readonly onHold: (row: QueuedMove) => void; readonly onReplaced: () => Promise<void> }) {
+  const characterOf = useMoveCharacters(rows);
   const { api } = useKayfa();
   return (
     <CalmRegion as="section" className="kb-queue-group" aria-labelledby="queue-waiting" data-kb-group="waiting">
@@ -341,7 +343,7 @@ function Waiting({ rows, more, boards, bosses, roster, now, onHold, onReplaced }
               <p className="kb-queue-time">{dayAndTime(q.goLiveAt)}</p>
             </div>
             <div className="kb-queue-body">
-              <h3 className="kb-queue-sentence"><MoveSentence kind={q.kind} params={q.params} boards={boards} bosses={bosses} tense="plan" was={q.boardName} /></h3>
+              <h3 className="kb-queue-sentence"><MoveSentence kind={q.kind} params={q.params} character={characterOf(q.params)} boards={boards} bosses={bosses} tense="plan" was={q.boardName} /></h3>
               {premise && <p>New subject: {premise}</p>}
               <p>{demandNeeds(q.demand, q.kind)}{q.expiresAt && <> If that never happens, it ends on its own on {shortDate(q.expiresAt)}.</>}</p>
               {q.kind === 'nameSuccessor' && <p>If it lands and is not held or reversed, the Boss it names takes the seat when the season rolls over. Otherwise the roster&apos;s rotation chooses.</p>}
@@ -373,6 +375,7 @@ function Waiting({ rows, more, boards, bosses, roster, now, onHold, onReplaced }
 }
 
 function InForce({ rows, more, boards, bosses, onReverse }: { readonly rows: readonly MoveInForce[]; readonly more: boolean; readonly boards: readonly BoardName[]; readonly bosses: readonly Roster[]; readonly onReverse: (row: MoveInForce) => void }) {
+  const characterOf = useMoveCharacters(rows);
   return (
     <CalmRegion as="section" className="kb-queue-group" aria-labelledby="queue-in-force" data-kb-group="in-force">
       <GroupHead id="queue-in-force" title="In force" count={rows.length} more={more} />
@@ -387,7 +390,7 @@ function InForce({ rows, more, boards, bosses, onReverse }: { readonly rows: rea
               {m.expiresAt && <p className="kb-queue-time">ends {shortDate(m.expiresAt)}</p>}
             </div>
             <div className="kb-queue-body">
-              <h3 className="kb-queue-sentence"><MoveSentence kind={m.kind} params={m.params} boards={boards} bosses={bosses} tense="done" /></h3>
+              <h3 className="kb-queue-sentence"><MoveSentence kind={m.kind} params={m.params} character={characterOf(m.params)} boards={boards} bosses={bosses} tense="done" /></h3>
               {m.demand === null && <p>{demandNeeds(null, m.kind)}</p>}
               {m.demand !== null && (known ? <p>{(ok ? demandWords(m.demand, m.progress) : demandAsk(m.demand))}</p> : <p>It asks for something this page has no words for.</p>)}
               {ok && (
@@ -447,6 +450,7 @@ function endedLine(e: MoveEnded): string {
 }
 
 function Ended({ rows, more, boards, bosses }: { readonly rows: readonly MoveEnded[]; readonly more: boolean; readonly boards: readonly BoardName[]; readonly bosses: readonly Roster[] }) {
+  const characterOf = useMoveCharacters(rows);
   /* With nothing to unfold there is no fold: the line is shown under the head, not hidden in a closed details. */
   if (rows.length === 0) {
     return (
@@ -466,7 +470,7 @@ function Ended({ rows, more, boards, bosses }: { readonly rows: readonly MoveEnd
           <article key={`${e.act ?? 'q'}${e.id ?? ''}${e.at}`} className="kb-queue-move" data-kb-state="ended" data-kb-how={e.how}>
             <div className="kb-queue-body">
               <h3 className="kb-queue-sentence">
-                {e.card != null ? `${e.card}${e.boss ? ` by ${e.boss}` : ''}` : <MoveSentence kind={e.kind} params={e.params} boards={boards} bosses={bosses} tense={e.how === 'held' || e.how === 'refused' ? 'plan' : 'done'} />}
+                {e.card != null ? `${e.card}${e.boss ? ` by ${e.boss}` : ''}` : <MoveSentence kind={e.kind} params={e.params} character={characterOf(e.params)} boards={boards} bosses={bosses} tense={e.how === 'held' || e.how === 'refused' ? 'plan' : 'done'} />}
               </h3>
               <p>{endedLine(e)}</p>
             </div>
@@ -483,6 +487,7 @@ function Confirm({ asked, boards, bosses, onClose, onDone, onRefused, returnFocu
   readonly returnFocusTo: () => HTMLElement | null;
 }) {
   const { api, ui } = useKayfa();
+  const characterOf = useMoveCharacters([asked.row]);
   const role = ui.copy.roleWord;
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
@@ -509,7 +514,7 @@ function Confirm({ asked, boards, bosses, onClose, onDone, onRefused, returnFocu
   return (
     <Overlay title={hold ? 'Hold this move?' : 'Reverse this move?'} kicker="The System's moves" surface="settings" className="kb-queue-dialog" onClose={onClose} returnFocusTo={returnFocusTo}>
       <div className="kb-queue-confirm">
-        <p className="kb-queue-sentence"><MoveSentence kind={row.kind} params={row.params} boards={boards} bosses={bosses} tense={hold ? 'plan' : 'done'} was={hold ? (row as QueuedMove).boardName : undefined} /></p>
+        <p className="kb-queue-sentence"><MoveSentence kind={row.kind} params={row.params} character={characterOf(row.params)} boards={boards} bosses={bosses} tense={hold ? 'plan' : 'done'} was={hold ? (row as QueuedMove).boardName : undefined} /></p>
         <p>
           {hold
             ? `It will never land, and no player will see it. A hold cannot be taken back. ${role} chooses ${bw.their} next move at ${bw.their} next meeting, and learns of the hold only then.`

@@ -1,4 +1,4 @@
--- The author's veil, swept (supabase/migrations/0300_post_veils.sql; docs/plans/2026-11-11-card-notes-part-3-plan.md, Task 2, "veil-sweep"): the guard that the list of reads a veil changes is whole.
+-- The author's veil, swept (supabase/migrations/0400_post_veils.sql; docs/plans/2026-11-11-card-notes-part-3-plan.md, Task 2, "veil-sweep"): the guard that the list of reads a veil changes is whole.
 --
 -- A fixture: author A's post P opens a thread, with an edit, a use card of A's on it, another character's quote of it, a spin from it, a follower, an alert about it to a third player R, a card R played on it that an
 -- admin ended, and a card R played on A's character from a post of A's elsewhere, and another from a second post of A's (P4), which names A and points at P4: a veil on P4 is refused, and P, which nothing was played from, is veiled.
@@ -60,7 +60,7 @@ create temp table listed (kind text not null, name text not null, mark text not 
 insert into listed (kind, name, mark, why)
 select 'relation', n, m, w from (values
   -- tables and views
-  ('acts', 'no author', 'every column but `character` is granted (0300) and `select character from acts` is refused (0166-post-veils.sql); no other column names an author'),
+  ('acts', 'no author', 'every column but `character` is granted (0400) and `select character from acts` is refused (0166-post-veils.sql); no other column names an author'),
   ('acts_public', 'swept', 'the projection: by id, by thread, by character and by the stand-in'),
   ('account_preferences', 'no author', 'the caller''s own preferences (row security)'),
   ('accounts', 'no author', 'the caller''s own account (row security)'),
@@ -138,7 +138,13 @@ select 'relation', n, m, w from (values
   ('threads', 'no author', 'a thread''s title and counters'),
   ('turns_announced', 'no author', 'a Turn is the character''s own public Act, never a post'),
   ('wallet_events', 'no author', 'the caller''s own wallet events'),
-  ('wallets', 'no author', 'the caller''s own wallet')
+  ('wallets', 'no author', 'the caller''s own wallet'),
+  ('gear_kinds', 'no author', 'the instance''s gear catalog (key, rarity): no character'),
+  ('gear_ledger', 'no author', 'the caller''s own gear, by account (row security)'),
+  ('gear_worn', 'no author', 'the outfit a public character wears (0205): a fact of the character, never of a post'),
+  ('my_cosmetic_log', 'no author', 'the caller''s own cosmetic log (gear and trophies given to the caller''s own characters; a Boss''s award names the Boss, a staff character)'),
+  ('random_events', 'no author', 'the caller''s own random events (row security)'),
+  ('trophy_kinds', 'no author', 'the trophy catalog (key, name, line, belt, art): no character')
 ) t(n, m, w);
 insert into listed (kind, name, mark, why)
 select 'function', n, m, w from (values
@@ -288,7 +294,20 @@ select 'function', n, m, w from (values
   ('visit_quiz', 'no author', 'a visit''s quiz: no character'),
   ('warn_points', 'no author', 'a character''s warn points: a public fact of the character'),
   ('whoami', 'no author', 'the caller''s own account'),
-  ('withdraw_turn', 'no author', 'a write: the caller''s own character')
+  ('withdraw_turn', 'no author', 'a write: the caller''s own character'),
+  ('admin_awards', 'no author', 'an admin''s read of the awards given: each names the recipient character, its giver in words (a Boss or the season) and the award''s move, a staff Act; no post'),
+  ('admin_character_named', 'no author', 'an admin''s lookup of a character by its name, for an award: a name is public'),
+  ('award_trophy', 'no author', 'an admin''s write: an award to a named character'),
+  ('belt_lineage', 'no author', 'a belt''s holders in order: characters that were given it, by award, never by post'),
+  ('cosmetic_log_rows', 'no author', 'the caller''s own cosmetic log rows: gear and trophies of the caller''s own characters'),
+  ('give_failed_award', 'no author', 'an admin''s write: an award a failed move left owing'),
+  ('grant_gear', 'no author', 'an admin''s write: gear to a character'),
+  ('make_trophy', 'no author', 'an admin''s write: a trophy kind'),
+  ('my_wardrobe', 'no author', 'the caller''s own gear'),
+  ('profile_cosmetics', 'no author', 'a public character''s outfit and trophy shelf, by character id: a fact of the character, never of a post'),
+  ('reverse_award', 'no author', 'an admin''s write: takes an award back'),
+  ('trophies_of', 'no author', 'a public character''s trophies, by character id: each names its giver in words and its move, a staff Act'),
+  ('trophy_award_failures', 'no author', 'an admin''s read of the awards a failed move left owing: characters by name')
 ) t(n, m, w);
 
 -- What the catalog holds that a signed-in player may read or run, against what the list holds: names the list lacks, and names it holds that the catalog no longer does.

@@ -11,6 +11,8 @@ import { BootProvider } from '../../engine/ui/boot.tsx';
 import { CannotDisplay } from '../../engine/ui/frame/Unavailable.tsx';
 import { applyAppearance } from '../../engine/ui/appearance.ts';
 import { setTiltPreference } from '../../engine/ui/shine/tilt.ts';
+import { setSoundPreference } from '../../engine/ui/audio/sound.ts';
+import { DEFAULT_PREFERENCES } from '../../engine/ui/data/api.ts';
 import { KayfaProvider } from '../../engine/ui/context.tsx';
 import { BoardScreen } from '../../engine/ui/board/Board.tsx';
 import { AccountGate } from '../../engine/ui/account/OpenAccount.tsx';
@@ -61,6 +63,8 @@ const screens: GlassScreens = {
   welcome: lazyScreen(() => import('../../engine/ui/welcome/Welcome.tsx').then((m) => ({ default: m.WelcomeScreen }))),
   queue: lazyScreen(() => import('../../engine/ui/admin/Queue.tsx').then((m) => ({ default: m.QueueScreen }))),
   machine: lazyScreen(() => import('../../engine/ui/admin/Machine.tsx').then((m) => ({ default: m.MachineScreen }))),
+  trophies: lazyScreen(() => import('../../engine/ui/admin/Trophies.tsx').then((m) => ({ default: m.TrophiesScreen }))),
+  wardrobe: lazyScreen(() => import('../../engine/ui/wardrobe/Wardrobe.tsx').then((m) => ({ default: m.Wardrobe }))),
   log: lazyScreen(() => import('../../engine/ui/log/Log.tsx').then((m) => ({ default: m.LogScreen }))),
   settlement: lazyScreen(() => import('../../engine/ui/log/Settlement.tsx').then((m) => ({ default: m.SettlementScreen }))),
 };
@@ -130,6 +134,9 @@ const GLASS: Readonly<Record<string, GlassSurface>> = {
   '/alerts': 'settings',
   '/admin/queue': 'settings',
   '/admin/machine': 'settings',
+  '/admin/trophies': 'settings',
+  /* The dress-up page stands on the page smoke of Settings, for the same reason: no surface of its own. */
+  '/wardrobe': 'settings',
   '/log': 'log',
   '/log/settlement': 'settlement',
 };
@@ -170,11 +177,12 @@ function Appearance({ api, boot }: { readonly api: KayfaApi; readonly boot: Boot
     /* The device's look first, on every change of account: the last account's never stands for the next. */
     applyAppearance(document, { theme: 'system', motion: 'system' }, instanceUi.themes, instanceUi.glass);
     setTiltPreference('off');
+    setSoundPreference(DEFAULT_PREFERENCES);
     if (!session.account) return;
     /* Boot's preferences are this account's; a session that changed after boot is read again until boot is. */
-    if (boot) { applyAppearance(document, boot.preferences, instanceUi.themes, instanceUi.glass); setTiltPreference(boot.preferences.tilt); return; }
+    if (boot) { applyAppearance(document, boot.preferences, instanceUi.themes, instanceUi.glass); setTiltPreference(boot.preferences.tilt); setSoundPreference(boot.preferences); return; }
     let live = true;
-    void api.preferences().then((p) => { if (live) { applyAppearance(document, p, instanceUi.themes, instanceUi.glass); setTiltPreference(p.tilt); } }, () => { /* keep the device's choice */ });
+    void api.preferences().then((p) => { if (live) { applyAppearance(document, p, instanceUi.themes, instanceUi.glass); setTiltPreference(p.tilt); setSoundPreference(p); } }, () => { /* keep the device's choice */ });
     return () => { live = false; };
   }, [api, session.account, boot]);
   return null;

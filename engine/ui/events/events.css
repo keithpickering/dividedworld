@@ -1,0 +1,57 @@
+/*
+ * The Random Event dialog (RandomEvent.tsx; board 04 of docs/research/2026-11-04-cosmetics/): the picture beside the words inside the modal's box, stacked on a phone.
+ * Every color is a glass token; the window and the picture's box are the board's own px (760 and 150), the type the glass's.
+ */
+/* The overlay is the glass's (portaled to the body): the board's 760px window. */
+.kb-event-overlay {
+  width: min(100%, 760px);
+}
+
+.kb-event {
+  display: flex;
+  align-items: flex-start;
+  gap: 24px;
+  margin-bottom: 1em;
+}
+
+.kb-event-art {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 150px;
+  height: 150px;
+  border: 1px solid var(--kb-glass-text-2);
+  background: var(--kb-glass-card);
+}
+
+.kb-event-art img {
+  display: block;
+  width: 120px;
+  height: 80px;
+  object-fit: contain;
+}
+
+.kb-event-words {
+  min-width: 0;
+}
+
+.kb-event-words p {
+  margin: 0 0 0.5em;
+}
+
+.kb-event-line {
+  font-size: 1.25em;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.kb-event-words .kb-small {
+  font-size: var(--kb-glass-size-body);
+}
+
+@media (max-width: 30em) {
+  .kb-event {
+    flex-direction: column;
+  }
+}

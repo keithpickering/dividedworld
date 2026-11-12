@@ -18,6 +18,7 @@ import { careerText, type Career } from '../../system/career.ts';
 import { pronounLabel, words as pronounWords, type PronounSet } from '../../rules/pronouns.ts';
 import { BbCode } from '../bbcode/render.tsx';
 import { MoveSentence } from '../board/MoveSentence.tsx';
+import { useMoveCharacters } from '../board/use-move-characters.ts';
 import { endedWords } from '../board/move-words.ts';
 import { monthYear, shortDate } from '../postbit/dates.ts';
 import { GroupBar } from '../postbit/GroupBar.tsx';
@@ -173,6 +174,7 @@ function ModerationLog({ staff, bot, pronouns }: { readonly staff: string; reado
   const [boards, setBoards] = useState<readonly BoardName[]>([]);
   const [bosses, setBosses] = useState<readonly { readonly staff: string; readonly name: string }[]>([]);
   const [state, setState] = useState<'ready' | 'failed' | 'paging'>('ready');
+  const characterOf = useMoveCharacters(rows ?? []);
 
   useEffect(() => {
     let live = true;
@@ -221,7 +223,7 @@ function ModerationLog({ staff, bot, pronouns }: { readonly staff: string; reado
                   ? <ModActCells row={r} perPage={settings.postsPerPage} />
                   : (
                     <>
-                      <td role="cell"><MoveSentence kind={r.kind} params={r.params} boards={boards} bosses={bosses} unnamed={UNINTRODUCED} tense="done" /></td>
+                      <td role="cell"><MoveSentence kind={r.kind} params={r.params} character={characterOf(r.params)} boards={boards} bosses={bosses} unnamed={UNINTRODUCED} tense="done" /></td>
                       <td role="cell" className="kb-small kb-muted">{endedWords(r.end, r.demand, r.keptBy ? bosses.find((b) => b.staff === r.keptBy)?.name ?? UNINTRODUCED : null)}</td>
                     </>
                   )}

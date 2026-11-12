@@ -17,7 +17,7 @@
 --                          for a cast and by lay_sprung for a Move landing on a quote. spring_facts reads land_refusal, spring_traps lands a Move only when it has nothing to say. TASK 5 EXTENDS THESE TWO in a later
 --                          migration (the reaction card's configuration and its row); the places are marked `Task 5` below.
 --     5b. the counts       character_post_counts is a view that counts a veiled post (and its author's spins and cards on it) for the stand-in and not for its author while the veil is live, for every reader; the stored
---                          table is character_post_counts_base, written by the trigger as before and read by no API role. profile_page, record_page and my_characters_page are made again over the view.
+--                          table is character_post_counts_base, written by the trigger as before and read by no API role. group_now (the groups' posts rung, The System's own scoring) reads the stored table; profile_page, record_page and my_characters_page are made again over the view.
 --     6. the reads         thread_open, my_cards_ended (now the caller's own rows, as my_reactions is), play_moment, card_target_reach, start_visit, open_report, thread_page (`veiled`),
 --                          my_veiled_posts (the author's own rows), my_group_moves (a security-invoker view that read `acts.character`, which the revoke broke), presence_listed, pool_named, pool_signals
 --                          and system_digest (the staff lists that would take the stand-in for a persona).
@@ -65,8 +65,8 @@ language sql stable security definer set search_path = public, pg_temp as $$
   select c.id from characters c where c.staff_kind = 'anonymous'
 $$;
 
--- card_kinds_problem (0194_card_notes_part_4), with the refusal of a cast on a post that has a time up gone, and the veil's and the reaction's refusals in the engine's words (instance.ts, playProblems and veilProblems).
--- Everything else as 0194 wrote it.
+-- card_kinds_problem (0316_card_notes_part_4), with the refusal of a cast on a post that has a time up gone, and the veil's and the reaction's refusals in the engine's words (instance.ts, playProblems and veilProblems).
+-- Everything else as 0316 wrote it.
 
 create or replace function card_kinds_problem(cards jsonb) returns text
 language sql stable set search_path = public, pg_temp as $$
@@ -229,8 +229,8 @@ language sql stable set search_path = public, pg_temp as $$
   ) p where why is not null
 $$;
 
--- seed_instance (0153_drives), writing each card's `veil` and whether it adds a reaction (both the code's, so a re-seed that drops one clears it), and making the anonymous poster once, as it makes the developer.
--- Everything else as 0153 wrote it.
+-- seed_instance (0207_random_events), writing each card's `veil` and whether it adds a reaction (both the code's, so a re-seed that drops one clears it), and making the anonymous poster once, as it makes the developer.
+-- Everything else as 0207 wrote it.
 
 create or replace function seed_instance(payload jsonb) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
@@ -314,6 +314,39 @@ begin
   select e ->> 'key', e -> 'pulls', coalesce(array(select jsonb_array_elements_text(e -> 'leaves')), '{}')
   from jsonb_array_elements(coalesce(payload -> 'packs', '[]')) e
   on conflict (key) do update set pulls = excluded.pulls, leaves = excluded.leaves;
+  if payload ? 'gear' then
+    insert into gear_kinds (key, rarity) select e ->> 'key', e ->> 'rarity' from jsonb_array_elements(payload -> 'gear') e
+    on conflict (key) do update set rarity = excluded.rarity;
+    delete from gear_kinds k where not exists (select 1 from jsonb_array_elements(payload -> 'gear') e where e ->> 'key' = k.key)
+      and not exists (select 1 from gear_ledger l where l.gear = k.key) and not exists (select 1 from gear_worn w where w.gear = k.key);
+  end if;
+  if payload ? 'eventLines' then
+    insert into event_lines (key, outcome, text) select e ->> 'key', e ->> 'outcome', e ->> 'text' from jsonb_array_elements(payload -> 'eventLines') e
+    on conflict (key) do update set outcome = excluded.outcome, text = excluded.text;
+    delete from event_lines l where not exists (select 1 from jsonb_array_elements(payload -> 'eventLines') e where e ->> 'key' = l.key);
+  end if;
+  -- The instance's trophy kinds (0206): added and brought up to date, the places, the Boss's kinds and the met demand's set as the catalog names them, and a kind the instance
+  -- dropped removed unless an award names it. An admin-made kind is never touched, and an instance key that begins `made-` is refused (those are the admin page's).
+  if payload ? 'trophies' then
+    select string_agg(e ->> 'key', ', ') into unknown from jsonb_array_elements(payload -> 'trophies' -> 'kinds') e where e ->> 'key' like 'made-%';
+    if unknown is not null then raise exception 'a trophy key begins "made-" only on the admin page: %', unknown using errcode = '22023'; end if;
+    select string_agg(k, ', ') into unknown
+    from (select jsonb_array_elements_text(coalesce(payload -> 'trophies' -> 'seasonPlaces', '[]') || coalesce(payload -> 'trophies' -> 'boss', '[]')
+                                           || case when payload -> 'trophies' ? 'demandMet' then jsonb_build_array(payload -> 'trophies' ->> 'demandMet') else '[]'::jsonb end) k) n
+    where not exists (select 1 from jsonb_array_elements(payload -> 'trophies' -> 'kinds') e where e ->> 'key' = n.k);
+    if unknown is not null then raise exception 'the trophy catalog names kinds it does not define: %', unknown using errcode = '22023'; end if;
+    -- The flags are cleared and set again, so that the unique indexes never see a place twice.
+    update trophy_kinds set season_place = null, boss_gives = false, demand_met = false where made_by is null and (season_place is not null or boss_gives or demand_met);
+    insert into trophy_kinds (key, name, line, belt) select e ->> 'key', e ->> 'name', nullif(e ->> 'line', ''), coalesce((e ->> 'belt')::boolean, false)
+    from jsonb_array_elements(payload -> 'trophies' -> 'kinds') e
+    on conflict (key) do update set name = excluded.name, line = excluded.line, belt = excluded.belt;
+    update trophy_kinds k set season_place = p.n::smallint
+    from jsonb_array_elements_text(coalesce(payload -> 'trophies' -> 'seasonPlaces', '[]')) with ordinality p(key, n) where k.key = p.key;
+    update trophy_kinds k set boss_gives = true where k.key in (select jsonb_array_elements_text(coalesce(payload -> 'trophies' -> 'boss', '[]')));
+    update trophy_kinds k set demand_met = true where k.key = payload -> 'trophies' ->> 'demandMet';
+    delete from trophy_kinds k where k.made_by is null and not exists (select 1 from jsonb_array_elements(payload -> 'trophies' -> 'kinds') e where e ->> 'key' = k.key)
+      and not exists (select 1 from trophy_awards a where a.trophy = k.key);
+  end if;
   insert into machine_slots (position, card, pack, availability, price)
   select (select coalesce(max(position), 0) from machine_slots) + row_number() over (order by m.i), m.e ->> 'card', m.e ->> 'pack', m.e ->> 'availability', (m.e ->> 'price')::integer
   from jsonb_array_elements(coalesce(payload -> 'machine', '[]')) with ordinality m(e, i)
@@ -483,7 +516,7 @@ begin
        where board = sys and shard = coalesce((select c.shard from board_thread_counts c where c.board = sys order by c.shard for update skip locked limit 1), 0);
     end if;
   end if;
-  -- The anonymous poster (0300): a seed with an `anonymous` entry ({ name, title, avatar, pronouns }) makes the one stand-in, once, as it makes the developer: debuted at seed time, the tagline its profile title, the pronouns
+  -- The anonymous poster (0400): a seed with an `anonymous` entry ({ name, title, avatar, pronouns }) makes the one stand-in, once, as it makes the developer: debuted at seed time, the tagline its profile title, the pronouns
   -- rewritten on every seed when the seed names them, the avatar's asset key the instance's to change. What an admin wrote is never written over. A seed with none makes none, and stand_in() is then null (land_refusal
   -- refuses a veil until one exists); seed.ts always sends one, the engine's own when the instance names none.
   if jsonb_typeof(payload -> 'anonymous') = 'object' then
@@ -947,9 +980,9 @@ end $$;
 
 revoke execute on function lay_sprung(uuid, text, jsonb, uuid, text, uuid, uuid) from public, anon, authenticated, service_role;
 
--- place_cast (0194_card_notes_part_4), with four additions. (a) At post reach a cast card meets land_refusal (a staff post, a post a Mod Bot has been to) before anything is written, in the same words for every caster.
+-- place_cast (0316_card_notes_part_4), with four additions. (a) At post reach a cast card meets land_refusal (a staff post, a post a Mod Bot has been to) before anything is written, in the same words for every caster.
 -- (b) A post play of a card with a time up writes `ends` whatever the card is, where a use card's and a skim's alone did. (c) A card that lands on a post calls land_rows after its Act (a veil's row), except a play a back caught.
--- (d) At character reach the stand-in is no target. Everything else, the lock order included, as 0194 wrote it. Callable by no API role, as before.
+-- (d) At character reach the stand-in is no target. Everything else, the lock order included, as 0316 wrote it. Callable by no API role, as before.
 
 create or replace function place_cast(caster uuid, card text, target uuid, config jsonb, message text, reach text, from_post uuid, payer uuid, price integer, marker jsonb default '{}')
 returns jsonb
@@ -1297,7 +1330,43 @@ begin
 end $$;
 revoke execute on function lock_for_quote(uuid, uuid, uuid) from public, anon, authenticated, service_role;
 
--- profile_page, record_page (0156) and my_characters_page (0125), written again whole and unchanged: each reads the counts in a `begin atomic` body, which holds the relation it was made over, so the three are made again to
+-- group_now (0138_group_reads), reading the stored counts: a character's group is The System's own scoring, so a veil, which hides a post from every player's read of a count for three days, never moves
+-- anyone's group (a character at a rung's threshold keeps the rung while one of its posts is veiled). The posts rung is the one place the groups read a count. Everything else as 0138 wrote it.
+
+create or replace function group_now(in_character uuid) returns text
+language plpgsql stable security definer set search_path = public, pg_temp as $$
+declare
+  r record;
+  posts integer;
+  holds boolean;
+  open_group text;
+begin
+  -- A group a move confers wins while the move is open (open_moves: the moves in force). Found by the character's own index (acts_group_moves, 0129) and joined to open_moves
+  -- by its primary key, so the cost is the character's moves and not the instance's.
+  select a.payload #>> '{params,group}' into open_group
+  from acts a join open_moves o on o.move_act = a.id
+  where a.kind = 'move' and a.payload ->> 'kind' = 'conferGroup' and a.payload #>> '{params,character}' = in_character::text
+  order by o.landed_at desc, o.move_act desc limit 1;
+  if open_group is not null then return open_group; end if;
+  -- Else the highest rung whose condition holds, the highest first; the default rung holds for every character, so the walk ends.
+  for r in select k.key, k.condition, k.at_least from group_kinds k where k.source = 'ladder' order by k.rung desc loop
+    holds := case r.condition
+      when 'default' then true
+      when 'posts' then coalesce((select n.posts from character_post_counts_base n where n.character = in_character), 0) >= r.at_least
+      when 'seasons' then (select count(*) from season_results x where x.character = in_character) >= r.at_least
+      when 'staff' then exists (
+        select 1 from characters c left join staff_office_now o on o.staff = c.staff
+        where c.id = in_character and c.staff is not null and (c.staff_kind = 'developer' or o.office in ('boss', 'mod')))
+      else null end;
+    if holds is null then
+      raise exception 'group "%" has condition kind %, which group_now has no case for', r.key, coalesce(r.condition, 'null') using errcode = '22023';
+    end if;
+    if holds then return r.key; end if;
+  end loop;
+  return null;
+end $$;
+
+-- profile_page, record_page and my_characters_page (each 0210_screen_cosmetics), written again whole and unchanged: each reads the counts in a `begin atomic` body, which holds the relation it was made over, so the three are made again to
 -- hold the view that now has the name.
 create or replace function profile_page(in_character uuid) returns jsonb
 language sql stable security invoker set search_path = public, pg_temp
@@ -1316,7 +1385,7 @@ begin atomic
   )
   select case when not exists (select 1 from c) then null else jsonb_build_object(
     'character', (select to_jsonb(c) from c),
-    'profile', (select to_jsonb(p) from (
+    'profile', (select to_jsonb(p) || profile_cosmetics(p.character) from (
       select character, title, signature, avatar_square, avatar_portrait, square_frame, portrait_frame, pip_style, pronouns
       from character_profiles where character = in_character) p),
     'counts', (select to_jsonb(n) from (select character, posts, spins, cards from character_post_counts where character = in_character) n),
@@ -1378,7 +1447,7 @@ begin atomic
     'kind', (select kind from k),
     'page', (select page from k),
     'character', (select to_jsonb(c) from c),
-    'profile', (select to_jsonb(p) from (
+    'profile', (select to_jsonb(p) || profile_cosmetics(p.character) from (
       select character, title, signature, avatar_square, avatar_portrait, square_frame, portrait_frame, pip_style, pronouns
       from character_profiles where character = in_character) p),
     -- RecordScreen reads the counters for all, post, spin and card only.
@@ -1402,7 +1471,7 @@ begin atomic
         to_jsonb(c) || jsonb_build_object(
           'face', (
             select to_jsonb(cp) || jsonb_build_object('profile', (
-              select to_jsonb(p) from (
+              select to_jsonb(p) || profile_cosmetics(p.character) from (
                 select r.character, r.title, r.signature, r.avatar_square, r.avatar_portrait, r.square_frame, r.portrait_frame, r.pip_style, r.pronouns
                 from character_profiles r where r.character = cp.id) p))
             from characters_public cp where cp.id = c.id),
@@ -1764,7 +1833,7 @@ end $$;
 revoke execute on function open_report(uuid, uuid, text) from public, anon;
 grant execute on function open_report(uuid, uuid, text) to authenticated, service_role;
 
--- thread_page (0156_back_ends), also answering `veiled`: the caller's own veiled posts among the page's (my_veiled_posts), beside `faces`. Everything else as 0156 wrote it.
+-- thread_page (0210_screen_cosmetics), also answering `veiled`: the caller's own veiled posts among the page's (my_veiled_posts), beside `faces`. Everything else as 0210 wrote it.
 
 create or replace function thread_page(in_thread uuid, in_page integer, in_seq integer, per_page integer, effect_cards text[]) returns jsonb
 language sql stable security invoker set search_path = public, pg_temp
@@ -1843,7 +1912,7 @@ begin atomic
         'character', jsonb_build_object('id', c.id, 'name', c.name, 'joined', c.joined, 'staff', c.staff, 'office', c.office,
           'warn_points', c.warn_points, 'banned_until', c.banned_until, 'group', c."group"),
         'profile', (select jsonb_build_object('character', p.character, 'title', p.title, 'signature', p.signature, 'avatar_square', p.avatar_square,
-                      'avatar_portrait', p.avatar_portrait, 'square_frame', p.square_frame, 'portrait_frame', p.portrait_frame, 'pip_style', p.pip_style, 'pronouns', p.pronouns)
+                      'avatar_portrait', p.avatar_portrait, 'square_frame', p.square_frame, 'portrait_frame', p.portrait_frame, 'pip_style', p.pip_style, 'pronouns', p.pronouns) || profile_cosmetics(p.character)
                     from character_profiles p where p.character = c.id),
         'posts', coalesce((select n.posts from character_post_counts n where n.character = c.id), 0),
         'standing', coalesce((select st.standing from current_standings st where st.character = c.id), 0),

@@ -1,6 +1,8 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { act, cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { useLayoutEffect } from 'react';
+import { useLayoutEffect, useState } from 'react';
 import { afterEach, beforeEach, describe, expect, onTestFinished, test, vi } from 'vitest';
 import type { CardUi } from '../cards/types.ts';
 import type { Act, Id, ThreadListener } from '../data/api.ts';
@@ -16,12 +18,36 @@ import { returnState } from '../glass/back.ts';
 import { useNavigation } from '../router.tsx';
 import { LoadedThread } from '../loaded.tsx';
 import { spunLoader } from '../spin/spun.ts';
+import { SIGNED_OUT_DOC } from '../screen-docs.ts';
+import { tokensOf } from '../contrast.ts';
+import { POST_INK } from '../shine/band.ts';
+import { cling, landAll, loose, makeFlakes } from '../shine/flakes.ts';
+import { probe } from '../shine/landing.ts';
 
 /* The HUD's estimate is asked for through the player; this test file watches that call. */
 const landed = vi.hoisted(() => vi.fn());
 vi.mock('../player.tsx', async (original) => {
   const m = await original<typeof import('../player.tsx')>();
   return { ...m, usePlayer: () => ({ ...m.usePlayer(), reactionLanded: landed }) };
+});
+
+/* Glitter's landing places: the real ones, counted, so a test can ask what is registered and what has been let go. */
+const landing = vi.hoisted(() => ({ posts: new Set<HTMLElement>(), pages: 0, pageCalls: 0 }));
+vi.mock('../shine/landing.ts', async (original) => {
+  const m = await original<typeof import('../shine/landing.ts')>();
+  return {
+    ...m,
+    landPost: (article: HTMLElement) => {
+      const off = m.landPost(article);
+      landing.posts.add(article);
+      return () => { landing.posts.delete(article); off(); };
+    },
+    landPage: () => {
+      const off = m.landPage();
+      landing.pages++; landing.pageCalls++;
+      return () => { landing.pages--; off(); };
+    },
+  };
 });
 
 /* What a post's words cost to draw: every render of a body, and every parse of a long one. */
@@ -64,6 +90,7 @@ const watched = (el: Element | null) => waitFor(() => expect(MockObserver.all.so
 const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 beforeEach(() => {
+  landing.posts.clear(); landing.pages = 0; landing.pageCalls = 0;
   MockObserver.all = [];
   drawn.bodies = [];
   drawn.parses = [];
@@ -536,9 +563,13 @@ describe('the plays on a post: their tallies, own reactions and spins, read with
   test('a live reaction that makes a later play the most drawn leaves the order as it was, and a reread of the page reorders it', async () => {
     const w = played(25);
     const tapped = tap(w.fake);
+    const page = vi.spyOn(w.fake, 'threadPage');
     open(w);
     await waitFor(() => expect(billed(2)).toHaveLength(2));
     expect(billed(2)).toEqual(['whoops:2', 'stick-around:1']);
+    /* The catch-up's read of the page bills the post again, so it is taken in before the reactions land: on a slow machine it came after them and read them. */
+    await waitFor(() => expect(page).toHaveBeenCalledTimes(2));
+    await act(async () => { await page.mock.results[1]!.value; });
     w.fake.seed.react(w.other, w.spritey, w.second, 'fire');
     w.fake.seed.react(w.other, w.spritey, w.second, 'tea');
     deliver(() => tapped().onTally?.(w.second, { fire: 1, tea: 1 }));
@@ -2259,5 +2290,160 @@ describe('a post under an author veil', () => {
     await act(async () => { w.fake.clock.advance(10 * MIN + 1_000); await vi.advanceTimersByTimeAsync(10 * MIN + 2_000); });
     expect(await screen.findByRole('article', { name: /^Post 1 by Spritey$/u })).toBeInTheDocument();
     expect(read.mock.calls.length).toBeGreaterThan(armed);
+  });
+});
+
+describe('where glitter lands in a thread', () => {
+  test('a mounted post is registered as a landing place, and one that unmounts lets go of it', async () => {
+    const w = world(3);
+    const shown = open(w);
+    const second = await screen.findByRole('article', { name: /^Post 2 /u });
+    await waitFor(() => expect(landing.posts.has(second)).toBe(true));
+    expect(landing.posts.size).toBe(3);
+    shown.unmount();
+    expect(landing.posts.size).toBe(0);
+  });
+
+  test('a post that comes live is registered, and the one before it keeps its registration', async () => {
+    const w = world(2);
+    const tapped = tap(w.fake);
+    open(w);
+    await screen.findByRole('article', { name: /^Post 2 /u });
+    await waitFor(() => expect(landing.posts.size).toBe(2));
+    see(sentinel(), true);
+    deliver(() => tapped().onAct?.(live(w.thread, 3, w.pipe)));
+    await screen.findByRole('article', { name: /^Post 3 /u });
+    await waitFor(() => expect(landing.posts.size).toBe(3));
+    expect(landing.posts.has(post(1))).toBe(true);
+  });
+
+  /* Real glitter on the page and on a post cell: a sticky host far off lends flakes, a pointer move drops them where `elementFromPoint` says. */
+  const tokens = tokensOf(readFileSync(join(process.cwd(), 'engine/ui/tokens.css'), 'utf8')).light;
+  function seedGlitter(): { cell: HTMLElement; undo: () => void } {
+    const cell = post(2).querySelector<HTMLElement>('.kb-act-main')!;
+    for (const el of [document.body, ...Array.from(post(2).children).filter((c): c is HTMLElement => c instanceof HTMLElement)]) {
+      for (const k of ['--kb-bg', ...POST_INK]) el.style.setProperty(k, tokens[k]!);
+    }
+    const rect = (l: number, t: number, w: number, h: number) => () => ({ left: l, top: t, right: l + w, bottom: t + h, width: w, height: h, x: l, y: t, toJSON() {} });
+    cell.getBoundingClientRect = rect(100, 130, 600, 300);
+    const source = document.createElement('div');
+    source.getBoundingClientRect = rect(5000, 0, 300, 300);
+    document.body.append(source);
+    const ctx = new Proxy({}, { get: (_t, k) => (k === 'createRadialGradient' ? () => ({ addColorStop() {} }) : () => {}), set: () => true });
+    const realCtx = HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.getContext = (() => ctx) as never;
+    const realAt = document.elementFromPoint;
+    let target: Element = source;
+    document.elementFromPoint = () => target;
+    vi.stubGlobal('devicePixelRatio', 1);
+    document.documentElement.setAttribute('data-kb-motion', 'full');
+    const realMedia = window.matchMedia;
+    vi.stubGlobal('matchMedia', (q: string) => ({ get matches() { return q.includes('hover: hover'); }, addEventListener() {}, removeEventListener() {} }));
+    window.matchMedia = globalThis.matchMedia;
+    const flakes = makeFlakes({ seed: 'lend', box: { w: 300, h: 300 }, inks: ['#ff3b4a', '#2fd6ff', '#dfe4ec'], holo: 7, density: 70, glint: '#ffffff' });
+    landAll(flakes);
+    const unreg = cling.register(source, { sticky: true, flakes });
+    let t = 0;
+    const pointer = (x: number, y: number, over: Element) => {
+      const e = new MouseEvent('pointermove', { clientX: x, clientY: y, bubbles: true });
+      Object.defineProperty(e, 'pointerType', { value: 'mouse' });
+      Object.defineProperty(e, 'timeStamp', { value: (t += 1) });
+      Object.defineProperty(e, 'target', { value: over });
+      return e as PointerEvent;
+    };
+    const move = (x: number, y: number, over: Element) => window.dispatchEvent(pointer(x, y, over));
+    const drop = (x: number, y: number, over: Element) => {
+      target = source;
+      for (let i = 0; i < 400; i++) { const x0 = 5010 + (i % 2) * 120; cling.over(pointer(x0, 100, source)); move(x0, 100, source); }
+      target = over;
+      move(x, y, over);
+      for (let ms = 0; (cling.falling() || cling.carried()) && ms < 12000; ms += 16) cling.tick(ms);
+    };
+    drop(300, 250, cell);
+    drop(900, 300, document.body);
+    return { cell, undo: () => { unreg(); source.remove(); HTMLCanvasElement.prototype.getContext = realCtx; document.elementFromPoint = realAt; window.matchMedia = realMedia; } };
+  }
+
+  test('the thread screen holds the page while it is on screen, and leaving sweeps it: no loose flake, no tile, no cell marked landed', async () => {
+    const w = world(2);
+    const shown = open(w);
+    await screen.findByRole('article', { name: /^Post 2 /u });
+    await waitFor(() => expect(landing.pages).toBe(1));
+    vi.stubGlobal('requestAnimationFrame', () => 1);
+    vi.stubGlobal('cancelAnimationFrame', () => {});
+    const seeded = seedGlitter();
+    try {
+      const was = probe.landed();
+      expect(was.cell).toBeGreaterThan(5);
+      expect(was.page).toBeGreaterThan(5);
+      expect(loose(seeded.cell).length).toBe(was.cell);
+      expect(seeded.cell.hasAttribute('data-kb-landed')).toBe(true);
+      expect(document.querySelectorAll('canvas[data-kb-landing]').length).toBeGreaterThan(1);
+      shown.unmount();
+      expect(landing.pages).toBe(0);
+      expect(landing.posts.size).toBe(0);
+      expect(probe.landed()).toEqual({ effect: 0, cell: 0, page: 0 });
+      expect(document.querySelectorAll('canvas[data-kb-landing]')).toHaveLength(0);
+      expect(document.querySelectorAll('[data-kb-landed]')).toHaveLength(0);
+    } finally {
+      seeded.undo();
+      cling.reset();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  /* A thread (or the front door) is swapped in the same tree: the page is held by one thread view at a time. */
+  function Swap({ docs }: { readonly docs: Record<string, Awaited<ReturnType<Fake['threadPage']>> | typeof SIGNED_OUT_DOC>; }) {
+    const [at, setAt] = useState(Object.keys(docs)[0]!);
+    (Swap as unknown as { go: (k: string) => void }).go = setAt;
+    const [thread] = at.split('|');
+    return <ThreadScreen thread={thread!} doc={docs[at]! as never} />;
+  }
+  const swapTo = (k: string) => act(() => { (Swap as unknown as { go: (k: string) => void }).go(k); });
+
+  test('switching threads releases the old thread\'s page and holds the new one: 1, 0, 1 and never 2', async () => {
+    const w = world(2);
+    const other = w.fake.seed.thread('general', w.spritey, 'Another thread', 'other 1').thread;
+    const boot = await w.fake.boot();
+    const a = (await w.fake.threadPage(w.thread, { page: 1 }, 20, []))!;
+    const b = (await w.fake.threadPage(other, { page: 1 }, 20, []))!;
+    renderIn(w.fake, <Swap docs={{ [`${w.thread}|1`]: a, [`${other}|1`]: b }} />, { path: `/t/${w.thread}?page=1`, boot });
+    await screen.findByRole('article', { name: /^Post 2 /u });
+    await waitFor(() => expect(landing.pages).toBe(1));
+    const calls = landing.pageCalls;
+    await swapTo(`${other}|1`);
+    await screen.findByText('other 1');
+    expect(landing.pages).toBe(1);
+    expect(landing.pageCalls).toBe(calls + 1);
+    expect(screen.queryByRole('article', { name: /^Post 2 /u })).toBeNull();
+  });
+
+  test('a reader who signs out leaves the thread: the page is let go, and stays so', async () => {
+    const w = world(2);
+    const boot = await w.fake.boot();
+    const a = (await w.fake.threadPage(w.thread, { page: 1 }, 20, []))!;
+    renderIn(w.fake, <Swap docs={{ [`${w.thread}|in`]: a, [`${w.thread}|out`]: SIGNED_OUT_DOC }} />, { path: `/t/${w.thread}?page=1`, boot });
+    await screen.findByRole('article', { name: /^Post 2 /u });
+    await waitFor(() => expect(landing.pages).toBe(1));
+    const calls = landing.pageCalls;
+    await swapTo(`${w.thread}|out`);
+    expect(await screen.findByRole('heading', { level: 1, name: 'How do we explain this' })).toBeInTheDocument();
+    expect(landing.pages).toBe(0);
+    expect(landing.posts.size).toBe(0);
+    expect(landing.pageCalls).toBe(calls);
+    expect(probe.landed()).toEqual({ effect: 0, cell: 0, page: 0 });
+  });
+
+  /* Source-level guard: jsdom has no layout or stacking, so the stacking of a landed cell can only be asserted on the stylesheet's text. */
+  test('thread.css (source-level guard): a landed meta cell keeps a positive stack level over the body, so its hung marks and callout are not trapped under it', () => {
+    const css = readFileSync(join(process.cwd(), 'engine/ui/thread/thread.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '');
+    const rule = /(^|\})\s*\.kb-act\s*>\s*\.kb-act-meta\[data-kb-landed\]\s*\{([^}]*)\}/u.exec(css);
+    expect(rule, 'a rule for .kb-act > .kb-act-meta[data-kb-landed]').not.toBeNull();
+    const z = /z-index:\s*(\d+)/u.exec(rule![2]!);
+    expect(z, 'with a z-index').not.toBeNull();
+    expect(Number(z![1])).toBeGreaterThan(0);
+    /* Over the body's own level, which the body takes so a moment's glow covers the actions (and the postbit's gear is under it). */
+    const main = [...css.matchAll(/(?:^|\})\s*\.kb-act-main\s*\{([^}]*)\}/gu)].map((m) => /z-index:\s*(-?\d+)/u.exec(m[1]!)?.[1]).find((v) => v !== undefined);
+    expect(Number(z![1])).toBeGreaterThan(Number(main ?? 0));
   });
 });

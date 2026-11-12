@@ -459,7 +459,7 @@ begin
   -- quote: a post quoting it springs it, and lands its card on the quoting post.
   answer := post(t, b, 'As you said.', p_quote);
   if answer -> 'sprung' -> 'payload' ->> 'trigger' is distinct from 'quote' then raise exception 'a quote trap: %', answer; end if;
-  -- The card's character is read as the table's owner: a signed-in player is granted no `acts.character` (0300), only the projection.
+  -- The card's character is read as the table's owner: a signed-in player is granted no `acts.character` (0400), only the projection.
   perform tests.unbecome();
   if not exists (select 1 from acts k where k.kind = 'card' and k.target_act_id = (answer ->> 'id')::uuid and k.payload ->> 'card' = 'quoter' and k.character = a
                    and k.payload ->> 'spring' = answer -> 'sprung' ->> 'id') then

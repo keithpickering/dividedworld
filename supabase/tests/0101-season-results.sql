@@ -222,7 +222,8 @@ begin
   perform tests.unbecome();
 end $$;
 
--- ---- A page costs a page: the order is read from an index on (season, place, ...) ----
+-- ---- A page costs a page: the order is read from an index on (season, standing desc, ...) ----
+-- The table's order is its standings' (#492): the placed by place, then the unplaced (a standing of 0 or below) by standing, each tie by name and id.
 do $$
 declare ln record; plan text := '';
 begin
@@ -232,9 +233,19 @@ begin
   for ln in explain select r.character, r.name, r.place, r.standing, r.shown
     from season_results r
     where r.season = (select f.id from seasons_finished f where f.number = 50)
-    order by r.place, r.name, r.character
+    order by r.standing desc, r.name, r.character
     offset (least(greatest(1, 1), 10000) - 1) * 50 limit 50 loop plan := plan || E'\n' || ln."QUERY PLAN"; end loop;
-  if plan !~ 'season_results_by_place' or plan ~ 'Sort' then raise exception 'a results page is read in order from season_results_by_place:%', plan; end if;
+  if plan !~ 'season_results_by_standing' or plan ~ 'Sort' then raise exception 'a results page is read in order from season_results_by_standing:%', plan; end if;
+  if pg_get_functiondef('results_page(integer,integer)'::regprocedure) !~ 'ORDER BY r\.standing DESC, r\.name, r\."character"' then
+    raise exception 'results_page orders as this plan does: %', pg_get_functiondef('results_page(integer,integer)'::regprocedure);
+  end if;
+  -- A character's index is two ranges of the same index: the rows standing above it, and those at its standing ahead of it by name and id.
+  plan := '';
+  for ln in explain select (select count(*) from season_results r where r.season = 1 and r.standing > 100)
+                         + (select count(*) from season_results r where r.season = 1 and r.standing = 100 and (r.name, r.character) < ('Big', gen_random_uuid())) loop
+    plan := plan || E'\n' || ln."QUERY PLAN";
+  end loop;
+  if plan !~ 'season_results_by_standing' or plan ~ 'Seq Scan' then raise exception 'a character''s index counts ranges of season_results_by_standing:%', plan; end if;
 end $$;
 
 -- ---- The profile and the record read the table ----

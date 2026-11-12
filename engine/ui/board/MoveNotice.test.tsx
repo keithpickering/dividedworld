@@ -244,3 +244,18 @@ describe('a group move on the notice', () => {
     expect(await screen.findByRole('dialog')).toHaveTextContent('The Boss put Pipewrench in Trial Members, barred from posting on General.');
   });
 });
+
+describe('a trophy award on the notice', () => {
+  test('names the trophy by its name and the character by its own, never the key or "a member"', async () => {
+    const fake = buildWorld();
+    const me = fake.seed.account('me');
+    const pipe = fake.seed.character(me, 'Pipewrench', 'heel');
+    fake.seed.staff('director', 'The Director', 'boss');
+    const move = fake.seed.trophyMove('director', { character: pipe, trophy: 'p1' });
+    renderIn(fake, <MoveNotice act={move} />, { path: '/' });
+    await userEvent.click(await segment());
+    const detail = await screen.findByRole('dialog');
+    expect(detail).toHaveTextContent('The Boss gave Pipewrench the trophy P1.');
+    expect(detail).not.toHaveTextContent('a member');
+  });
+});

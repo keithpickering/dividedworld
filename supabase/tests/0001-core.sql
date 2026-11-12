@@ -103,7 +103,7 @@ begin
       -- my_cards_ended (0092) reads the owner to keep each caller to the ended plays cast through, or landed on, their own characters;
       -- 0094-card-end.sql holds that it shows nobody else's and names no owner.
       and not (u.view_name = 'my_cards_ended' and (u.table_name, u.column_name) = ('characters', 'owner'))
-      -- my_veiled_posts (0300) reads the owner to keep each caller to the live author veils on their own characters' posts; 0166-post-veils.sql holds that it shows nobody else's and names no owner or account.
+      -- my_veiled_posts (0400) reads the owner to keep each caller to the live author veils on their own characters' posts; 0166-post-veils.sql holds that it shows nobody else's and names no owner or account.
       and not (u.view_name = 'my_veiled_posts' and (u.table_name, u.column_name) = ('characters', 'owner'))
       -- my_infractions, my_bans, my_reports and my_appeals (0111), and my_group_moves (0134, the same for the moves into groups), read the owner to keep each caller to the punishments, reports and appeals of their own
       -- characters; 0113-mod-screens.sql holds that each shows nobody else's and names no owner or account.
