@@ -3052,7 +3052,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
           .flatMap((x) => x.lines.filter((l) => l.account === account).map((l) => ({ settlement: x.id, startsAt: iso(x.startsAt), endsAt: iso(x.endsAt), sharesKept: x.sharesKept, character: l.character, reason: l.reason, amount: l.amount, ...(l.params ? { params: l.params } : {}) }))));
         const read = new Set(ledger.map((l) => l.settlement));
         const shares: ShareRow[] = settlements.filter((x) => read.has(x.id))
-          .flatMap((x) => x.lines.filter((l) => l.account === account).flatMap((l) => l.shares.map((sh) => ({ settlement: x.id, character: l.character, reason: l.reason, ...sh }))));
+          .flatMap((x) => x.lines.filter((l) => l.account === account).flatMap((l) => l.shares.map((sh) => ({ settlement: x.id, character: l.character, reason: l.reason, card: typeof l.params?.card === 'string' ? l.params.card : null, ...sh }))));
         /* my_posts_played_on: the plays other players landed on the player's posts, characters, and threads their characters started (0056).
            A board has no owner, so a board play is no one's row. */
         const reachOf = (a: ActRec): 'post' | 'character' | 'thread' | 'board' => (a.payload.reach ?? 'post') as 'post' | 'character' | 'thread' | 'board';
