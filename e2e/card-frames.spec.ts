@@ -86,3 +86,28 @@ test('every card type has the same outline at a size, and its own line inside it
   expect(set.solid, 'a Set keeps the solid ring').toBe(true);
   expect(set.beforeInset, 'a Set\'s second line is inside the card').toBeGreaterThan(0);
 });
+
+test.describe('under forced colors', () => {
+  test.use({ forcedColors: 'active' });
+
+  /* Shadows are dropped there, so a Set's second line is a border: it stays where the shadow drew it, inside the card's border and clear of the canvas. */
+  test('a Set\'s second line stays on the card\'s border', async ({ page }) => {
+    await page.goto('/?fixture=boards&moment=07-vending');
+    const set = page.locator(".kb-postcard[data-kb-play='set']").first();
+    await expect(set).toBeVisible({ timeout: 10_000 });
+    const line = await set.evaluate((card) => {
+      const before = getComputedStyle(card, '::before');
+      const canvas = card.querySelector('.kb-postcard-canvas')!;
+      return {
+        style: before.borderTopStyle,
+        from: parseFloat(before.top),
+        to: parseFloat(before.top) + parseFloat(before.borderTopWidth),
+        /* Both from computed style, in the card's own lengths: the machine draws its slots scaled, which a measured box would carry and these do not. */
+        canvas: parseFloat(getComputedStyle(canvas).top),
+      };
+    });
+    expect(line.style, 'the second line is a border').toBe('solid');
+    expect(line.from, 'a gap inside the outline').toBeGreaterThanOrEqual(1.5);
+    expect(line.to, 'the line ends before the canvas').toBeLessThan(line.canvas);
+  });
+});

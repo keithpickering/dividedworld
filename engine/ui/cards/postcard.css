@@ -67,7 +67,8 @@ button.kb-postcard {
 /* The second line: one ring's width, a gap inside the outline (three tenths of the border, never under 1.5px), so it ends inside
    the border at every size and never reaches the canvas. Its box is the line's inner edge; the shadow is drawn outward from it. */
 .kb-postcard[data-kb-play='set']::before {
-  --kb-pc-second: calc(max(1.5px, var(--kb-pc-border) * 0.3) + var(--kb-pc-ring));
+  --kb-pc-gap: max(1.5px, var(--kb-pc-border) * 0.3);
+  --kb-pc-second: calc(var(--kb-pc-gap) + var(--kb-pc-ring));
   inset: var(--kb-pc-second);
   border-radius: calc(var(--kb-pc-radius) - var(--kb-pc-second));
   box-shadow: 0 0 0 var(--kb-pc-ring) var(--kb-card-color);
@@ -428,7 +429,8 @@ button.kb-postcard {
   .kb-postcard-back { outline: 1px solid CanvasText; }
   .kb-postcard-gem { outline: 1px solid CanvasText; }
   /* How a card is played is a border, which forced colors keep, in the system's text color. */
-  .kb-postcard[data-kb-play='set']::before { box-shadow: none; border: 2px solid CanvasText; }
+  /* A Set's second line as a border, drawn inward from where the shadow's outer edge was: its box starts at the gap, so the line is still on the card's border and clear of the canvas. */
+  .kb-postcard[data-kb-play='set']::before { inset: var(--kb-pc-gap); border-radius: calc(var(--kb-pc-radius) - var(--kb-pc-gap)); box-shadow: none; border: 2px solid CanvasText; }
   .kb-postcard[data-kb-play='use']::before { border-color: CanvasText; }
   .kb-postcard-fold { background: CanvasText; }
   .kb-postcard[data-armed]::after {
