@@ -30,7 +30,7 @@
  *
  * Portable by construction: no vendor client is imported, and the engine knows no instance.
  */
-import { PREDICATES, predicate } from '../rules/predicates.ts';
+import { PREDICATES, predicate, readParam } from '../rules/predicates.ts';
 import { selfPronounLine, taggedName, type PronounSet } from '../rules/pronouns.ts';
 import type { Persona, SystemContent } from '../rules/types.ts';
 import { personaPrompt } from './prompt.ts';
@@ -147,14 +147,15 @@ export function repairModMove(raw: unknown, ctx: ModMoveContext): RepairedMove {
   if (!isObject(raw['params'])) return no('move.params', 'isObject');
   const params: Record<string, unknown> = { ...raw['params'] };
   // A model gives a number as digits and "no parameter" as empty text: both are the same choice, so they are read as the predicate wants them.
-  const pred = typeof params['predicate'] === 'string' ? predicate(params['predicate']) : undefined;
-  if (pred?.param === 'count' && typeof params['param'] === 'string' && /^\s*\d+\s*$/.test(params['param'])) params['param'] = Number(params['param']);
-  if (pred?.param === 'none' && (params['param'] === '' || params['param'] === undefined)) params['param'] = null;
+  const read = typeof params['predicate'] === 'string' ? readParam(params['predicate'], params['param']) : { value: params['param'] };
+  if (read.trim || read.value !== params['param']) params['param'] = read.value;
+  // The Mod's param is optional in its schema, so empty text there is no field, as a left-out one is: only the count's digits are a repair worth recording.
+  const kept = read.trim?.predicate === 'asNone' ? undefined : read.trim;
   const checked = moveParamsProblems(kind.key, params);
   const under = (path: string): string => `move.params.${path}`;
-  const trims: Trim[] = [];
+  const trims: Trim[] = kept ? [{ ...kept, path: under(kept.path) }] : [];
   const carried = (): Trim[] => checked.trims.map((t) => ({ ...t, path: under(t.path) }));
-  if (!checked.ok) return no(under(checked.path), checked.predicate, carried());
+  if (!checked.ok) return no(under(checked.path), checked.predicate, [...trims, ...carried()]);
   trims.push(...carried());
   const given = checked.value as Record<string, unknown>;
 
@@ -874,7 +875,7 @@ export function patrolPrompt(i: PatrolInput): { readonly system: string; readonl
   const properties: Record<string, unknown> = {
     findings: {
       type: 'array',
-      maxItems: most,
+      // No maxItems: the provider refuses it (engine/system/schema.ts). The prompt names the bound and `repairPatrol` holds it.
       items: {
         type: 'object',
         properties: {

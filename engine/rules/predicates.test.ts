@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { PREDICATES, predicate, predicateProblems, ruleConflict, type RuleInForce } from './predicates.ts';
+import { PREDICATES, predicate, predicateProblems, readParam, ruleConflict, type RuleInForce } from './predicates.ts';
 import { BBCODE_TAGS } from '../bbcode/parse.ts';
 
 const keys = ['minLength', 'maxLength', 'noAllCaps', 'noDoublePost', 'noNecropost', 'noDuplicateTitle', 'bannedWord', 'requiredWord', 'noTag', 'repliesOnly'];
@@ -88,4 +88,20 @@ test('ruleConflict mirrors the database: the same pairs on the boards they share
   assert.match(ruleConflict([inForce(null, 'bannedWord', 'toast', 4)], B1, 'requiredWord', 'toast')!, /a house rule bans/);
   assert.equal(ruleConflict([inForce(null, 'noAllCaps', null)], B1, 'noAllCaps', null), null);
   assert.match(ruleConflict([inForce(B2, 'bannedWord', 'toast')], null, 'requiredWord', 'toast')!, /Rule 1 bans/);
+});
+
+test('readParam reads a count given as digits as its number, with a trim', () => {
+  assert.deepEqual(readParam('minLength', '12'), { value: 12, trim: { path: 'param', predicate: 'asNumber', before: 2, after: 12 } });
+  assert.deepEqual(readParam('noNecropost', ' 30 '), { value: 30, trim: { path: 'param', predicate: 'asNumber', before: 4, after: 30 } });
+});
+
+test('readParam reads empty text on a none predicate as none, with a trim, and a missing one as none with no trim', () => {
+  assert.deepEqual(readParam('noAllCaps', ''), { value: null, trim: { path: 'param', predicate: 'asNone', before: 0, after: 0 } });
+  assert.deepEqual(readParam('noDoublePost', undefined), { value: null });
+});
+
+test('readParam passes everything else through unchanged, with no trim', () => {
+  for (const [key, given] of [['bannedWord', 'toast'], ['noTag', 'b'], ['minLength', 12], ['minLength', 'twelve'], ['minLength', '1.5'], ['bannedWord', '12'], ['requiredWord', ''], ['noAllCaps', 'x'], ['noAllCaps', null], ['nope', '12']] as const) {
+    assert.deepEqual(readParam(key, given), { value: given }, `${key} ${String(given)}`);
+  }
 });
