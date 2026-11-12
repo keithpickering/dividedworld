@@ -20,7 +20,10 @@ import { LOST_ANSWER } from '../data/api.ts';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { PageHead } from '../glass/PageHead.tsx';
 import { ReachAPerson } from '../contact/Contact.tsx';
-import { useLocation, useNavigate } from '../router.tsx';
+import { addressOf, useLocation, useNavigate } from '../router.tsx';
+import { LinkPanel } from './LinkPanel.tsx';
+import { useLinkHand } from './LinkHand.tsx';
+import { tokenHashOf } from './link.ts';
 import { safeNext } from './next.ts';
 import { OpenAccount } from './OpenAccount.tsx';
 import { setWhy, useSession } from './session.ts';
@@ -36,7 +39,8 @@ const NO_ANSWER = 'No answer came back; ask again in a moment.';
 export function SignInScreen({ mode }: { readonly mode: 'sign-in' | 'register' }) {
   const { api, settings } = useKayfa();
   const session = useSession();
-  const { query } = useLocation();
+  const location = useLocation();
+  const { query } = location;
   const navigate = useNavigate();
   const registering = mode === 'register';
   const asksInvite = registering && settings.registrationMode === 'invite';
@@ -61,13 +65,31 @@ export function SignInScreen({ mode }: { readonly mode: 'sign-in' | 'register' }
   const [sent, setSent] = useState<Sent | null>(null);
   const [asked, setAsked] = useState(0);
   const codeField = useRef<HTMLInputElement>(null);
+  /* The emailed link's token, held in memory only: the address loses its fragment as the screen stands (the query stays, `next` with it), so no history entry holds it. A provider above (link hand, LinkHand.tsx) keeps it, and whether this page's press signed in, across the screen starting afresh under the account the press signed in; with none the screen's own state holds it. */
+  const hand = useLinkHand();
+  const [start] = useState(() => hand ? hand.read(location.hash, location.path) : { tokenHash: tokenHashOf(location.hash), pressed: false });
+  const [link, setLinkState] = useState<string | null>(start.tokenHash);
+  const setLink = (value: string | null) => { hand?.hold(value, location.path); setLinkState(value); };
+  useEffect(() => { hand?.hold(link, location.path); }, []); // eslint-disable-line react-hooks/exhaustive-deps -- once: the link this screen started with is held for this page
+  useEffect(() => { if (link !== null && location.hash !== '') navigate(addressOf(location), { replace: true }); }, []); // eslint-disable-line react-hooks/exhaustive-deps -- once, as the screen stands: the fragment is read at mount and later changes of the address must not run it again
+  /* A refusal of the link while a session already holds an account: the screen stays on the form with the sentence, and Stay signed in is the way on. */
+  const [held, setHeld] = useState(false);
+  /* Leaving the page the link came to sets it aside, though the routes keep this same screen across Sign in and Register: the next page shows its ordinary form. The provider drops its hand on the same move. */
+  const mountedAt = useRef(location.path);
+  useEffect(() => {
+    if (mountedAt.current === location.path) return;
+    mountedAt.current = location.path;
+    setLink(null);
+    setHeld(false);
+  }, [location.path]); // eslint-disable-line react-hooks/exhaustive-deps -- only a change of the page runs it
 
-  useEffect(() => { if (session?.account) navigate(next, { replace: true }); }, [session?.account, navigate, next]);
+  /* While a link is held the screen stays: the link's panel says who is signed in, and its Continue is what moves on. */
+  useEffect(() => { if (session?.account && link === null && !held) navigate(next, { replace: true }); }, [session?.account, link, held, navigate, next]);
   useEffect(() => { if (step === 'code') codeField.current?.focus(); }, [step]);
 
   const title = <PageHead title={registering ? 'Register' : 'Sign in'} />;
   if (session === null) return <div className="kb-acct" aria-busy="true" />;
-  if (session.signedIn && !session.account) return <div className="kb-acct">{title}<CalmRegion className="kb-acct-panel"><OpenAccount /></CalmRegion></div>;
+  if (link === null && session.signedIn && !session.account) return <div className="kb-acct">{title}<CalmRegion className="kb-acct-panel"><OpenAccount /></CalmRegion></div>;
 
   const ask = async (e?: FormEvent, again = false) => {
     e?.preventDefault();
@@ -76,7 +98,7 @@ export function SignInScreen({ mode }: { readonly mode: 'sign-in' | 'register' }
     setBusy('sending');
     setRefusal(null);
     try {
-      const r = await api.requestCode(email.trim(), registering && invite.trim() !== '' ? invite.trim() : null);
+      const r = await api.requestCode(email.trim(), registering && invite.trim() !== '' ? invite.trim() : null, next === '/' ? null : next);
       if (!r.ok) { setRefusal({ text: `${r.field === 'email' ? 'The address ' : ''}${r.error}`, field: r.field === 'email' || r.field === 'invite' ? r.field : null }); return; }
       setSent(r.value);
       setCode('');
@@ -105,6 +127,7 @@ export function SignInScreen({ mode }: { readonly mode: 'sign-in' | 'register' }
       }
       /* An open account moves this screen on through the session; one that is not open shows the way on, with its reason. */
       if (!r.value.account) setWhy(r.value.why ?? null);
+      setHeld(false);
     } catch {
       setRefusal({ text: LOST_ANSWER, field: null });
     } finally {
@@ -117,6 +140,7 @@ export function SignInScreen({ mode }: { readonly mode: 'sign-in' | 'register' }
     return { 'aria-invalid': refusal?.field === field ? true : undefined, 'aria-describedby': ids || undefined };
   };
   const alert = refusal && <p role="alert" id={errId} className="kb-acct-refusal">{refusal.text}</p>;
+  const stay = held && <GlassButton onClick={() => navigate(next, { replace: true })}>Stay signed in</GlassButton>;
   /* The other ways in: the other screen with why, and a person for the player who cannot get a code. */
   const aside = (
     <CalmRegion as="aside" aria-label="Other ways in" className="kb-door-aside">
@@ -133,6 +157,19 @@ export function SignInScreen({ mode }: { readonly mode: 'sign-in' | 'register' }
     </CalmRegion>
   );
 
+  if (link !== null) {
+    return (
+      <div className="kb-acct kb-sign-in">
+        {title}
+        <div className="kb-door">
+          <CalmRegion className="kb-door-form">
+            <LinkPanel tokenHash={link} signedIn={start.pressed} registering={registering} onAside={() => setLink(null)} onRefused={(text) => { setHeld(session.account !== null); setLink(null); setRefusal({ text, field: null }); }} />
+          </CalmRegion>
+          {aside}
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="kb-acct kb-sign-in">
       {title}
@@ -167,7 +204,7 @@ export function SignInScreen({ mode }: { readonly mode: 'sign-in' | 'register' }
               </>
             )}
             {alert}
-            <ButtonRow><GlassButton type="submit" kind="primary" busy={busy !== null}>Send a code</GlassButton></ButtonRow>
+            <ButtonRow><GlassButton type="submit" kind="primary" busy={busy !== null}>Send a code</GlassButton>{stay}</ButtonRow>
           </form>
         ) : (
           <form aria-label="Enter the code" aria-busy={busy !== null} onSubmit={(e) => void verify(e)} noValidate>
@@ -182,6 +219,7 @@ export function SignInScreen({ mode }: { readonly mode: 'sign-in' | 'register' }
               <GlassButton type="submit" kind="primary" busy={busy !== null}>Sign in</GlassButton>
               <GlassButton busy={busy !== null} onClick={() => void ask(undefined, true)}>Send a new code</GlassButton>
               <GlassButton onClick={() => { setStep('email'); setRefusal(null); }}>Use another address</GlassButton>
+              {stay}
             </ButtonRow>
             <p role="status" className="kb-acct-note">
               {asked > 0 ? <span key={asked}>Another code was asked for.</span> : ''}

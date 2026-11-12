@@ -849,6 +849,16 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
 
   /* ----------------------------------------------------------------- session ---- */
 
+  /** What a sign-in answer from the account function comes to, for a code and a link alike: the session it carries installed, and whether an account opened. */
+  async function signedIn(a: Answer<Row>): Promise<Answer<{ readonly account: boolean; readonly why?: string }>> {
+    if (!a.ok) return a;
+    const s = a.value['session'] as Row | undefined;
+    if (!s || !str(s['access_token']) || !str(s['refresh_token'])) return refusal(NOT_DONE);
+    const set = await client.auth.setSession({ access_token: s['access_token'], refresh_token: s['refresh_token'] }).catch(() => null);
+    if (!set || set.error) return refusal(NOT_DONE);
+    const why = str(a.value['why']);
+    return { ok: true, value: { account: a.value['account'] === true, ...(why ? { why } : {}) } };
+  }
   async function currentSession(): Promise<Session> {
     const { data } = await client.auth.getSession();
     if (!data.session) return { signedIn: false, account: null };
@@ -1122,6 +1132,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
   };
 
   const api: KayfaApi = {
+    now: () => Date.now(),
     session: currentSession,
     onSession(listener) {
       let heardFor: string | null | undefined;
@@ -1140,20 +1151,12 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       });
       return () => data.subscription.unsubscribe();
     },
-    async requestCode(email, invite) {
-      const a = await edge('account', { action: 'requestCode', email, invite }, NOT_DONE);
+    async requestCode(email, invite, next) {
+      const a = await edge('account', { action: 'requestCode', email, invite, next }, NOT_DONE);
       return a.ok ? { ok: true, value: { message: String(a.value['message'] ?? ''), ...(str(a.value['invite']) ? { invite: a.value['invite'] } : {}) } } : a;
     },
-    async verifyCode(email, code) {
-      const a = await edge('account', { action: 'verifyCode', email, code }, NOT_DONE);
-      if (!a.ok) return a;
-      const s = a.value['session'] as Row | undefined;
-      if (!s || !str(s['access_token']) || !str(s['refresh_token'])) return refusal(NOT_DONE);
-      const set = await client.auth.setSession({ access_token: s['access_token'], refresh_token: s['refresh_token'] }).catch(() => null);
-      if (!set || set.error) return refusal(NOT_DONE);
-      const why = str(a.value['why']);
-      return { ok: true, value: { account: a.value['account'] === true, ...(why ? { why } : {}) } };
-    },
+    verifyCode: async (email, code) => signedIn(await edge('account', { action: 'verifyCode', email, code }, NOT_DONE)),
+    verifyLink: async (tokenHash) => signedIn(await edge('account', { action: 'verifyLink', tokenHash }, NOT_DONE)),
     openAccount: (invite) => act({ action: 'openAccount', invite }, (r) => ({ opened: r['opened'] === true })),
     async signOut() {
       lastEstimate = null;
