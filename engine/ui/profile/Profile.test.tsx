@@ -1,8 +1,8 @@
-import { act, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, test, vi } from 'vitest';
 import { PRONOUN_PRESETS } from '../../rules/pronouns.ts';
 import type { Fake } from '../data/fake.ts';
-import { buildWorld, holdReads, renderIn } from '../test-world.tsx';
+import { buildWorld, holdReads, renderIn, testInstance } from '../test-world.tsx';
 import { pageOf, threadHref } from '../thread/pages.ts';
 import { ProfileScreen } from './Profile.tsx';
 import { LoadedProfile } from '../loaded.tsx';
@@ -315,4 +315,34 @@ describe('past seasons, announced Turns and the size of the season', () => {
     expect(read).toEqual([]);
   });
 
+});
+
+/* The stand-in a card's veil shows in place of a post's author (card notes, Part 3): the plain profile, with one glass line under its name. */
+describe('the stand-in\'s profile', () => {
+  const STAND_IN = 'This is a stand-in. It is shown in place of a post\'s author while a card hides them.';
+  const veiling = {
+    ...testInstance,
+    anonymous: { name: 'Nobody', tagline: 'Could be anyone.' },
+    cards: [...testInstance.cards, {
+      key: 'whodunnit', name: 'Whodunnit?', alignment: 'pepperoni' as const, rarity: 'rare' as const, reaches: ['post' as const], lasts: { unit: 'day' as const, count: 3 }, veil: 'author' as const,
+      playPrice: () => 0, validateConfig: () => ({ ok: true as const, value: {} }), canApply: () => ({ ok: true as const, value: undefined }),
+    }],
+  };
+
+  test('says what it is under its name, as one plain line; an ordinary character\'s profile has no such line', async () => {
+    const fake = buildWorld(undefined, veiling);
+    const w = world(fake);
+    fake.seed.cards(w.me, { whodunnit: 1 });
+    const played = await fake.playCard('whodunnit', w.pipe, w.act, {}, '');
+    expect(played.ok).toBe(true);
+    const stand = (await fake.act(w.act))!.character!;
+    renderIn(fake, <LoadedProfile id={stand} />, { path: `/c/${stand}`, instance: veiling });
+    const name = await screen.findByRole('heading', { level: 1, name: 'Nobody' });
+    expect(name.nextElementSibling).toHaveTextContent(STAND_IN);
+    expect(screen.getAllByText(STAND_IN)).toHaveLength(1);
+    cleanup();
+    renderIn(fake, <LoadedProfile id={w.pipe} />, { path: `/c/${w.pipe}`, instance: veiling });
+    await screen.findByRole('heading', { level: 1, name: 'Pipewrench' });
+    expect(screen.queryByText(STAND_IN)).toBeNull();
+  });
 });

@@ -21,7 +21,8 @@ import type { MyCharacter, MyReaction } from '../data/api.ts';
 import type { Quadrant } from '../../rules/types.ts';
 import { Overlay, type Placed } from '../glass/Overlay.tsx';
 import { useTip } from '../tips/Tips.tsx';
-import { readable } from './Reactions.tsx';
+import { localName, readable } from './Reactions.tsx';
+import type { LocalKind } from '../cards/plays.ts';
 import type { SendAnswer } from './send.ts';
 
 /** Top-left, top-right, bottom-left, bottom-right. */
@@ -73,6 +74,8 @@ interface Props {
    */
   readonly send: (kind: string) => Promise<SendAnswer>;
   readonly busy: boolean;
+  /** The reactions cards added to this post: the live ones are listed in their quadrant's group, after the instance's (an ended one is not offered). */
+  readonly local?: readonly LocalKind[];
   /** A refusal already given (a tile pressed in the row was refused): shown as the picker opens, in the alert. */
   readonly refusal?: string | null;
   /** The post's reactions row, which the picker opens by. */
@@ -80,7 +83,7 @@ interface Props {
   readonly onClose: (refocus: boolean) => void;
 }
 
-export function Picker({ subject, as, own, send, busy, refusal: given = null, anchor, onClose }: Props) {
+export function Picker({ subject, as, own, local = [], send, busy, refusal: given = null, anchor, onClose }: Props) {
   const { instance, ui, settings } = useKayfa();
   const [placed, setPlaced] = useState<Placed | null>(null);
   const grid = useRef<HTMLDivElement>(null);
@@ -127,7 +130,12 @@ export function Picker({ subject, as, own, send, busy, refusal: given = null, an
   };
 
   let first = true;
-  const at = cells(GRID.map((q) => instance.reactions.filter((r) => r.quadrant === q).length), columns);
+  /* A quadrant's kinds: the instance's, then the ones cards added to this post that are still live. */
+  const kindsOf = (q: Quadrant) => [
+    ...instance.reactions.filter((r) => r.quadrant === q).map((r) => ({ key: r.key, emoji: r.emoji, name: `${readable(r.key)}, ${ui.quadrantLabels[q]}` })),
+    ...local.filter((k) => k.quadrant === q && !k.ended).map((k) => ({ key: k.key, emoji: k.emoji, name: localName(k.emoji, ui.quadrantLabels[q]) })),
+  ];
+  const at = cells(GRID.map((q) => kindsOf(q).length), columns);
   return (
     <Overlay
       title={<span>React</span>} label={`React to ${subject}`} surface="react" className="kb-picker"
@@ -152,7 +160,7 @@ export function Picker({ subject, as, own, send, busy, refusal: given = null, an
                   <div key={q} className="kb-picker-quad" role="group" aria-labelledby={`${countId}-${q}`} data-kb-quadrant={q} style={worn}>
                     <div id={`${countId}-${q}`} className="kb-picker-label kb-glass-display">{ui.quadrantLabels[q]}</div>
                     <div className="kb-picker-kinds">
-                      {instance.reactions.filter((r) => r.quadrant === q).map((r, ki) => {
+                      {kindsOf(q).map((r, ki) => {
                         const ok = free(r.key);
                         const tab = ok && first;
                         if (ok) first = false;
@@ -160,7 +168,7 @@ export function Picker({ subject, as, own, send, busy, refusal: given = null, an
                           <button
                             key={r.key} type="button" className="kb-picker-kind" disabled={!ok} tabIndex={tab ? 0 : -1}
                             data-kb-reaction={r.key} data-kb-row={at[qi]![ki]!.row} data-kb-col={at[qi]![ki]!.col} data-kb-own={kinds.has(r.key) ? '' : undefined}
-                            aria-label={`${readable(r.key)}, ${ui.quadrantLabels[q]}${kinds.has(r.key) ? ', your reaction' : ''}`}
+                            aria-label={`${r.name}${kinds.has(r.key) ? ', your reaction' : ''}`}
                             onClick={() => void choose(r.key)}
                           >
                             <span aria-hidden="true">{r.emoji}</span>

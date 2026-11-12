@@ -306,6 +306,35 @@ describe('the warn meter and BANNED (the Mod Bots design, section 9)', () => {
   });
 });
 
+describe('the stand-in (card notes, Part 3)', () => {
+  /* The character a card's veil shows in place of a post's author: office `anonymous`. It wears no badge, no warn meter and no group bar, whatever its group and points say. */
+  const standIn = (over: Partial<Character> = {}) => person({ standing: null }, { name: 'Nobody', title: 'Could be anyone.', office: 'anonymous', group: 'cores', warnPoints: 6, ...over });
+
+  test('draws its name and title like any character\'s, and no staff badge, no warn meter and no group bar', () => {
+    show(standIn({ staff: 'anonymous' }));
+    const bit = screen.getByRole('group', { name: 'About Nobody' });
+    expect(within(bit).getByText('Nobody')).toBeInTheDocument();
+    expect(within(bit).getByText('Could be anyone.')).toBeInTheDocument();
+    expect(bit.querySelector('.kb-staff-badge')).toBeNull();
+    expect(within(bit).queryByRole('img', { name: /^Warnings/u })).toBeNull();
+    expect(bit.querySelector('.kb-group-bar')).toBeNull();
+    expect(bit.querySelector('.kb-postbit-group')).toBeNull();
+  });
+
+  test('with no staff key at all it is still unscored: no rank, no pips and no meter, no bar', () => {
+    show(standIn({ group: 'members' }));
+    const bit = screen.getByRole('group', { name: 'About Nobody' });
+    expect(bit.querySelector('.kb-group-bar')).toBeNull();
+    expect(within(bit).queryByRole('img', { name: /^Warnings/u })).toBeNull();
+    expect(bit.querySelector('.kb-postbit-rank')).toBeNull();
+  });
+
+  test('an ordinary character in the same group still wears its bar', () => {
+    show(person({}, { group: 'members' }));
+    expect(document.querySelector('.kb-group-bar')).not.toBeNull();
+  });
+});
+
 describe('the side by side avatar slot, in the stylesheet', () => {
   const css = readFileSync('engine/ui/postbit/postbit.css', 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '');
   /* The declarations of the first rule whose selector contains `selector`, in any media block. */

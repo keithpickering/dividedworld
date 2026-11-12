@@ -75,6 +75,9 @@ export const Postbit = memo(function Postbit({ person, layout, marks = null, lin
   const { character: c } = person;
   /* The look of the group it is in; a key the settings do not list (an answer older than groups) draws no bar rather than a wrong one. */
   const group = settings.groups.find((g) => g.key === c.group);
+  /* The stand-in a card's veil shows in place of a post's author (office `anonymous`) is no scored character and holds no rung: no bar, no badge, no meter, no rank. */
+  const standIn = c.office === 'anonymous';
+  const scored = !c.staff && !standIn;
   /* A stacked postbit, chosen or forced on a phone, drops Posts and Joined: the profile carries them a tap away (the board look design, section 3). */
   const narrow = useNarrow();
   const counts = layout === 'side' && !narrow;
@@ -91,7 +94,7 @@ export const Postbit = memo(function Postbit({ person, layout, marks = null, lin
       <div className="kb-postbit-text">
         <span className="kb-postbit-name">{link ? <Link to={`/c/${encodeURIComponent(c.id)}`}>{c.name}</Link> : c.name}</span>
         {/* The group's bar under the name; a staff character's has its office title beside it. */}
-        {(group || showsStaffBadge(c)) && <span className="kb-postbit-group">{group && <GroupBar look={group} />}<StaffBadge character={c} /></span>}
+        {!standIn && (group || showsStaffBadge(c)) && <span className="kb-postbit-group">{group && <GroupBar look={group} />}<StaffBadge character={c} /></span>}
         {marks && <span className="kb-postbit-marks">{marks}</span>}
         {(c.title || banned) && (
           <span className="kb-postbit-title kb-small kb-muted">
@@ -99,21 +102,21 @@ export const Postbit = memo(function Postbit({ person, layout, marks = null, lin
             {banned && <>{c.title && ' '}<strong className="kb-postbit-banned">BANNED<span className="kb-visually-hidden"> until {shortDate(c.bannedUntil!)}</span></strong></>}
           </span>
         )}
-        {/* A staff character is not scored: no rank, no pips, and no class to reveal. */}
-        {!c.staff && (
+        {/* A staff character, and the stand-in, are not scored: no rank, no pips, and no class to reveal. */}
+        {scored && (
           <span className="kb-postbit-rank">
             <span className="kb-postbit-rank-name" aria-hidden={instance.ranks.length > 0 || undefined}>{rank}</span>
             {instance.ranks.length > 0 && <Pips ranks={instance.ranks.length} index={index} name={rank} style={pipImages} />}
           </span>
         )}
-        {c.warnPoints !== undefined && c.warnPoints > 0 && !c.staff && <WarnMeter points={c.warnPoints} size={instance.settings.warnBar.size} />}
+        {c.warnPoints !== undefined && c.warnPoints > 0 && scored && <WarnMeter points={c.warnPoints} size={instance.settings.warnBar.size} />}
         {counts && (
           <span className="kb-postbit-counts kb-small kb-muted">
             <span>Posts: {person.posts}</span>
             {joined && <span>Joined {joined}</span>}
           </span>
         )}
-        {!c.staff && person.revealed && (
+        {scored && person.revealed && (
           <span className="kb-postbit-class kb-small">
             <span>Revealed: {className(person.revealed.class)} ({shortDate(person.revealed.at)})</span>
             {person.turnedAt && <span>Has Turned since ({shortDate(person.turnedAt)})</span>}

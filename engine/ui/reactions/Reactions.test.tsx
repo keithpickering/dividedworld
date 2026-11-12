@@ -1,7 +1,10 @@
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import type { Id } from '../data/api.ts';
+import type { Act, Id } from '../data/api.ts';
+import { createPlays } from '../cards/plays.ts';
+import { dayAndTime } from '../characters/format.ts';
+import { localKey } from '../../rules/emoji.ts';
 import type { Instance, Quadrant } from '../../rules/types.ts';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -873,5 +876,205 @@ describe('on a staged page (the front door)', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(screen.getByRole('button', { name: 'Tomato, 1, including yours' })).toBeInTheDocument();
     expect(called).toEqual([]);
+  });
+});
+
+/* Card notes, Part 3: a reaction a card adds to one post, and a post whose totals a card hides. */
+describe('a post-local reaction and a blind post', () => {
+  const ok = <T,>(value: T) => ({ ok: true as const, value });
+  const base = { playPrice: () => 0, validateConfig: (c: unknown) => ok(c ?? {}), canApply: () => ok(undefined), alignment: 'pepperoni' as const, reaches: ['post' as const] };
+  const veiling: Instance = {
+    ...testInstance,
+    cards: [
+      ...testInstance.cards,
+      { ...base, key: 'blind-study', name: 'Blind Study', rarity: 'uncommon', lasts: { unit: 'day', count: 3 }, veil: 'totals' },
+      { ...base, key: 'overreaction', name: 'Overreaction', rarity: 'common', stack: 3, reaction: true },
+    ],
+  };
+  const SKULL = '\u{1F480}';
+  const skullKey = localKey(SKULL);
+  let n = 0;
+  /** A card play on a post, as the thread's plays hold it: the Act of the card, its configuration and its caster. */
+  const play = (post: Id, card: string, caster: Id, payload: Record<string, unknown> = {}): Act => ({
+    id: `00000000-0000-4000-8000-${String(++n).padStart(12, '0')}`, character: caster, kind: 'card', thread: 'thread', targetActId: post, seq: null,
+    createdAt: '2026-10-29T12:00:00Z', payload: { card, message: '', config: {}, layer: 1, ...payload }, currentPayload: {}, editedAt: null, shownEditedAt: null,
+  });
+  const skull = (post: Id, caster: Id, quadrant = 'excitedPositive') => play(post, 'overreaction', caster, { config: { emoji: SKULL, quadrant } });
+  /** One post's row on stores the test holds, with this plays' store, for the reader the world signs in (Pipewrench and Mrs. Hooligan). */
+  function row(w: ReturnType<typeof world>, post: Id, author: Id | null, acts: readonly Act[]) {
+    const tallies = createTallies();
+    const mine = createMine();
+    const plays = createPlays();
+    plays.add(acts);
+    const view = renderIn(w.fake, <Reactions act={post} author={author} authorName="Spritey" tallies={tallies} mine={mine} plays={plays} />, { instance: veiling });
+    return { tallies, mine, plays, ...view };
+  }
+
+  describe('the row', () => {
+    test('draws a chip for a local key from the key alone, named by the emoji and "added by a card", with its count', async () => {
+      const w = world();
+      const v = row(w, w.theirs, w.spritey, []);
+      act(() => { v.tallies.merge(w.theirs, { fire: 1, [skullKey]: 2 }); });
+      const chip = await screen.findByRole('button', { name: `${SKULL}, added by a card, 2. React as Mrs. Hooligan` });
+      expect(chip).toHaveAttribute('data-kb-reaction', skullKey);
+      expect(chip).toHaveTextContent(`${SKULL} 2`);
+      expect(screen.getByRole('button', { name: 'Fire, 1. React as Mrs. Hooligan' })).toBeInTheDocument();
+    });
+
+    test('a key that is no emoji draws no chip', async () => {
+      const w = world();
+      const v = row(w, w.theirs, w.spritey, []);
+      act(() => { v.tallies.merge(w.theirs, { fire: 1, 'x-zzzz': 4, 'x-110000': 4 }); });
+      await screen.findByRole('button', { name: 'Fire, 1. React as Mrs. Hooligan' });
+      expect(within(screen.getByRole('list', { name: 'Reactions' })).getAllByRole('listitem')).toHaveLength(1);
+    });
+
+    test('the quadrant\'s label is in the chip\'s name when a play of the card says it', async () => {
+      const w = world();
+      const v = row(w, w.theirs, w.spritey, [skull(w.theirs, w.spritey)]);
+      act(() => { v.tallies.merge(w.theirs, { [skullKey]: 1 }); });
+      expect(await screen.findByRole('button', { name: `${SKULL}, Hype, added by a card, 1. React as Mrs. Hooligan` })).toBeInTheDocument();
+    });
+
+    test('pressing it reacts with its key', async () => {
+      const w = world();
+      const v = row(w, w.theirs, w.spritey, []);
+      act(() => { v.tallies.merge(w.theirs, { [skullKey]: 1 }); });
+      const react = vi.spyOn(w.fake, 'react').mockResolvedValue({ ok: true, value: { act: w.theirs, tally: { [skullKey]: 2 } } });
+      await userEvent.click(await screen.findByRole('button', { name: new RegExp(`^${SKULL}, added by a card, 1`, 'u') }));
+      expect(react).toHaveBeenCalledWith(w.theirs, w.hooligan, skullKey);
+    });
+
+    test('an ended kind is a chip with no press, since the server would refuse it', async () => {
+      const w = world();
+      const ended = skull(w.theirs, w.spritey);
+      const v = row(w, w.theirs, w.spritey, [ended]);
+      act(() => { v.plays.setEnded([ended.id]); v.tallies.merge(w.theirs, { [skullKey]: 3 }); });
+      const list = await screen.findByRole('list', { name: 'Reactions' });
+      expect(within(list).queryByRole('button')).toBeNull();
+      expect(within(list).getByText(`${SKULL}, Hype, added by a card, 3`)).toBeInTheDocument();
+    });
+  });
+
+  describe('the picker', () => {
+    test('lists a local kind in its quadrant\'s group after the instance\'s, named by the emoji, the quadrant\'s label and "added by a card"', async () => {
+      const w = world();
+      row(w, w.theirs, w.spritey, [skull(w.theirs, w.spritey)]);
+      const grid = await open();
+      const hype = grid.getByRole('group', { name: 'Hype' });
+      const buttons = within(hype).getAllByRole('button');
+      expect(buttons.map((b) => b.getAttribute('data-kb-reaction'))).toEqual(['fire', skullKey]);
+      expect(buttons[1]).toHaveAccessibleName(`${SKULL}, Hype, added by a card`);
+      expect(buttons[1]).toHaveTextContent(SKULL);
+    });
+
+    test('an ended kind is not offered, nor a caught play\'s', async () => {
+      const w = world();
+      const ended = skull(w.theirs, w.spritey);
+      const caught = play(w.theirs, 'overreaction', w.spritey, { config: { emoji: '\u{1F525}', quadrant: 'calmPositive' }, caught: 'some-set' });
+      const v = row(w, w.theirs, w.spritey, [ended, caught]);
+      act(() => { v.plays.setEnded([ended.id]); });
+      const grid = await open();
+      expect(grid.queryByRole('button', { name: /added by a card/u })).toBeNull();
+      expect(grid.getAllByRole('button').flatMap((b) => b.getAttribute('data-kb-reaction') ?? [])).toEqual(['tomato', 'fire', 'zzz', 'tea']);
+    });
+
+    test('choosing a local kind reacts with its key', async () => {
+      const w = world();
+      row(w, w.theirs, w.spritey, [skull(w.theirs, w.spritey, 'boredNegative')]);
+      const react = vi.spyOn(w.fake, 'react').mockResolvedValue({ ok: true, value: { act: w.theirs, tally: { [skullKey]: 1 } } });
+      const grid = await open();
+      await userEvent.click(grid.getByRole('button', { name: `${SKULL}, Groan, added by a card` }));
+      expect(react).toHaveBeenCalledWith(w.theirs, w.hooligan, skullKey);
+    });
+
+    test('the arrow keys reach it in the grid like any kind', async () => {
+      const w = world();
+      row(w, w.theirs, w.spritey, [skull(w.theirs, w.spritey, 'calmPositive')]);
+      const grid = await open();
+      const mine = grid.getByRole('button', { name: `${SKULL}, Calm, added by a card` });
+      const tea = grid.getByRole('button', { name: /^Tea, Calm/u });
+      expect([tea.dataset.kbRow, mine.dataset.kbRow]).toEqual(['1', '1']);
+      expect(Number(mine.dataset.kbCol)).toBeGreaterThan(Number(tea.dataset.kbCol));
+    });
+  });
+
+  describe('a blind post', () => {
+    const when = '2099-01-02T15:30:00Z';
+    const blind = (post: Id, caster: Id, ends = when) => play(post, 'blind-study', caster, { ends });
+    const until = dayAndTime(when);
+
+    test('for a third reader: no totals, her own reactions as chips with no number, and one line saying until when', async () => {
+      const w = world();
+      const v = row(w, w.theirs, w.spritey, [blind(w.theirs, w.fake.seed.character(w.fake.seed.account('caster'), 'Caster', 'face'))]);
+      /* Counts she read before the card landed stay out of sight, and anything the page brings. */
+      act(() => { v.tallies.merge(w.theirs, { fire: 4, tea: 2 }); v.mine.add({ act: w.theirs, kind: 'tea', character: w.hooligan }); });
+      const list = await screen.findByRole('list', { name: 'Reactions' });
+      await screen.findByRole('button', { name: 'React' });
+      const chips = within(list).getAllByRole('listitem');
+      expect(chips).toHaveLength(1);
+      expect(within(list).getByRole('button', { name: 'Tea, yours' })).toBeInTheDocument();
+      expect(chips[0]).toHaveTextContent(/^E$/u);
+      expect(chips[0]!.querySelector('[data-kb-own]')).not.toBeNull();
+      expect(screen.getByText(`Reaction totals are hidden on this post until ${until}.`)).toBeInTheDocument();
+      expect(screen.queryByText(/Only you and/u)).toBeNull();
+      expect(screen.queryByRole('button', { name: /^Fire/u })).toBeNull();
+      expect(await screen.findByRole('button', { name: 'React' })).toBeInTheDocument();
+    });
+
+    test('with none of her own, the line stands alone', async () => {
+      const w = world();
+      row(w, w.theirs, w.spritey, [blind(w.theirs, w.spritey)]);
+      expect(await screen.findByText(`Reaction totals are hidden on this post until ${until}.`)).toBeInTheDocument();
+      expect(screen.queryByRole('list', { name: 'Reactions' })).toBeNull();
+    });
+
+    test('for the author\'s player the totals come as ever, with the line naming the caster', async () => {
+      const w = world();
+      const v = row(w, w.sibling, w.hooligan, [blind(w.sibling, w.spritey)]);
+      act(() => { v.tallies.merge(w.sibling, { fire: 2, tea: 1 }); });
+      const list = await screen.findByRole('list', { name: 'Reactions' });
+      expect(within(list).getByText('Fire, 2')).toBeInTheDocument();
+      expect(within(list).getByText('Tea, 1')).toBeInTheDocument();
+      expect(screen.getByText(`Only you and the caster can see these until ${until}.`)).toBeInTheDocument();
+      expect(screen.queryByText(/Reaction totals are hidden/u)).toBeNull();
+    });
+
+    test('for the caster the totals come as ever, with the line naming the author', async () => {
+      const w = world();
+      const v = row(w, w.theirs, w.spritey, [blind(w.theirs, w.pipe)]);
+      act(() => { v.tallies.merge(w.theirs, { fire: 2 }); });
+      expect(await screen.findByRole('button', { name: 'Fire, 2. React as Mrs. Hooligan' })).toBeInTheDocument();
+      expect(screen.getByText(`Only you and the author can see these until ${until}.`)).toBeInTheDocument();
+    });
+
+    test('for one who is both, the line says only you', async () => {
+      const w = world();
+      row(w, w.sibling, w.hooligan, [blind(w.sibling, w.pipe)]);
+      expect(await screen.findByText(`Only you can see these until ${until}.`)).toBeInTheDocument();
+    });
+
+    test('with no play of the card, or its play ended by an admin, the row is as ever', async () => {
+      const w = world();
+      const ended = blind(w.theirs, w.spritey);
+      const v = row(w, w.theirs, w.spritey, [ended]);
+      act(() => { v.plays.setEnded([ended.id]); v.tallies.merge(w.theirs, { fire: 2 }); });
+      expect(await screen.findByRole('button', { name: 'Fire, 2. React as Mrs. Hooligan' })).toBeInTheDocument();
+      expect(screen.queryByText(/Reaction totals are hidden|Only you/u)).toBeNull();
+    });
+
+    test('the line goes when its time passes, with nothing read', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        const w = world();
+        const soon = new Date(Date.now() + 5_000).toISOString();
+        const v = row(w, w.theirs, w.spritey, [blind(w.theirs, w.spritey, soon)]);
+        act(() => { v.tallies.merge(w.theirs, { fire: 2 }); });
+        expect(await screen.findByText(/^Reaction totals are hidden on this post until /u)).toBeInTheDocument();
+        await act(async () => { await vi.advanceTimersByTimeAsync(6_000); });
+        expect(screen.queryByText(/^Reaction totals are hidden/u)).toBeNull();
+        expect(screen.getByRole('button', { name: 'Fire, 2. React as Mrs. Hooligan' })).toBeInTheDocument();
+      } finally { vi.useRealTimers(); }
+    });
   });
 });

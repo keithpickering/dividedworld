@@ -4,6 +4,8 @@ import { useLayoutEffect } from 'react';
 import { afterEach, beforeEach, describe, expect, onTestFinished, test, vi } from 'vitest';
 import type { CardUi } from '../cards/types.ts';
 import type { Act, Id, ThreadListener } from '../data/api.ts';
+import { landsOn } from '../../rules/cards.ts';
+import type { Instance } from '../../rules/types.ts';
 import type { Fake } from '../data/fake.ts';
 import { buildWorld, holdReads, renderIn, testInstance } from '../test-world.tsx';
 import { pageOf, pageRange, threadHref } from './pages.ts';
@@ -2189,5 +2191,73 @@ describe('a card an admin ended', () => {
     /* The end comes from the admin's call, not the Lens: only the broadcast carries it to this page. */
     await act(async () => { expect((await w.fake.reverseCard(played)).ok).toBe(true); });
     await waitFor(() => expect(within(post(2)).queryByTestId('fx-whoops')).toBeNull());
+  });
+});
+
+/* A card's author veil (card notes, Part 3): the post is drawn under the stand-in for every reader, and only its author's player is told it is theirs. */
+describe('a post under an author veil', () => {
+  const MIN = 60_000;
+  const ok = <T,>(value: T) => ({ ok: true as const, value });
+  const veiling: Instance = {
+    ...testInstance,
+    anonymous: { name: 'Nobody', tagline: 'Could be anyone.' },
+    cards: [...testInstance.cards, {
+      key: 'whodunnit', name: 'Whodunnit?', alignment: 'pepperoni', rarity: 'rare', reaches: ['post'], lasts: { unit: 'minute', count: 10 }, veil: 'author',
+      playPrice: () => 0, validateConfig: (c) => ok(c ?? {}), canApply: (t, e, _c, now) => landsOn({ key: 'whodunnit', reaches: ['post'] }, t, e, now),
+    }],
+  };
+  /** Spritey's Whodunnit? on Pipewrench's post 2 (the signed-in player's own), with a third player in the world. */
+  async function veiled() {
+    const w = world(3, undefined, veiling);
+    const third = w.fake.seed.account('third');
+    const thirdFace = w.fake.seed.character(third, 'Thirdwheel', 'face');
+    w.fake.seed.cards(w.other, { whodunnit: 1 });
+    w.fake.signInAs(w.other);
+    expect((await w.fake.playCard('whodunnit', w.spritey, w.ids[1]!, {}, '')).ok).toBe(true);
+    return { ...w, third, thirdFace };
+  }
+  const openVeiled = (w: { fake: Fake; thread: Id }) => renderIn(w.fake, <LoadedThread thread={w.thread} />, { path: `/t/${w.thread}`, instance: veiling });
+
+  test('its author\'s player has Edit and no React on it, though the post is drawn under the stand-in', async () => {
+    const w = await veiled();
+    w.fake.signInAs(w.me);
+    openVeiled(w);
+    const second = await screen.findByRole('article', { name: /^Post 2 by Nobody$/u });
+    expect(await within(second).findByRole('button', { name: 'Edit' })).toBeInTheDocument();
+    await within(post(3)).findByRole('button', { name: 'React' });
+    expect(within(second).queryByRole('button', { name: 'React' })).toBeNull();
+    expect(second).not.toHaveTextContent('Pipewrench');
+  });
+
+  test('a reader has neither Edit nor the author\'s name anywhere in the post\'s markup, and can react to it', async () => {
+    const w = await veiled();
+    w.fake.signInAs(w.third);
+    openVeiled(w);
+    const second = await screen.findByRole('article', { name: /^Post 2 by Nobody$/u });
+    expect(await within(second).findByRole('button', { name: 'React' })).toBeInTheDocument();
+    expect(within(second).queryByRole('button', { name: 'Edit' })).toBeNull();
+    expect(second.innerHTML).not.toContain('Pipewrench');
+    expect(second.innerHTML).toContain('Nobody');
+  });
+
+  test('the page is read again when a veil play arrives, and again at its end', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true, now: world(1).fake.clock.now() });
+    const w = world(3, undefined, veiling);
+    w.fake.seed.cards(w.me, { whodunnit: 1 });
+    vi.setSystemTime(w.fake.clock.now());
+    const read = vi.spyOn(w.fake, 'threadPage');
+    openVeiled(w);
+    expect(await screen.findByRole('article', { name: /^Post 1 by Spritey$/u })).toBeInTheDocument();
+    await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+    const settled = read.mock.calls.length;
+    /* A play arrives on the thread's topic: the post is read again, and the stand-in takes its place. */
+    await act(async () => { expect((await w.fake.playCard('whodunnit', w.pipe, w.ids[0]!, {}, '')).ok).toBe(true); });
+    expect(await screen.findByRole('article', { name: /^Post 1 by Nobody$/u })).toBeInTheDocument();
+    expect(read.mock.calls.length).toBeGreaterThan(settled);
+    /* At its end the page reads again by itself, and the author shows. */
+    const armed = read.mock.calls.length;
+    await act(async () => { w.fake.clock.advance(10 * MIN + 1_000); await vi.advanceTimersByTimeAsync(10 * MIN + 2_000); });
+    expect(await screen.findByRole('article', { name: /^Post 1 by Spritey$/u })).toBeInTheDocument();
+    expect(read.mock.calls.length).toBeGreaterThan(armed);
   });
 });
