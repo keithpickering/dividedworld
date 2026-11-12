@@ -217,6 +217,7 @@ select 'function', n, m, w from (values
   ('my_apologies', 'no author', 'the caller''s own apologies'),
   ('my_characters_page', 'no author', 'the caller''s own characters'),
   ('my_settlement_moved', 'no author', 'the caller''s own settlement'),
+  ('my_totals_withheld', 'no author', 'whether a post''s totals are withheld from the caller''s own account (a totals veil, 0401): a boolean about the totals, never a character; the reaction_tallies policy calls it'),
   ('next_settlement_at', 'no author', 'a time'),
   ('open_account', 'no author', 'a write: the caller''s own account'),
   ('open_appeal', 'no author', 'a write: the caller''s own appeal'),

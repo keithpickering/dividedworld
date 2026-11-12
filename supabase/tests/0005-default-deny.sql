@@ -82,6 +82,8 @@ declare
                            'season_news(timestampwithtimezone,integer)',
                            -- A play's moment (0072): what was on a post when a play landed.
                            'play_moment(uuid)',
+                           -- Whether a post's totals are withheld from the caller's own account (0401, a totals veil): the reaction_tallies policy calls it, as the reader. It takes no account: the two-argument form, which does, is granted to no one.
+                           'my_totals_withheld(uuid)',
                            -- A persona's career (0083): public facts about staff.
                            'staff_career(text)',
                            -- How players reach an admin (0081): a visitor and a player read the contact, an admin writes it.
