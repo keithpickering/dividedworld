@@ -44,6 +44,70 @@ begin
   return found;
 end $$;
 
+-- A request committed out of order is not answered by a layer made without it (the dead end a "done" read from `upto` alone made): admin A hides P and has not committed, so the request it
+-- wrote for S (a post quoting P and R) has the lower id; admin B hides R and commits, its request has the higher id; the job records a layer for {R} with everything seen up to B's request; A
+-- commits. S must be due again, for {P, R}, and served once that layer exists. The rows are committed (tests.commit), each name this file's; the job's side is this session, the service role.
+do $$
+declare
+  url text := current_setting('kayfabb.scratch_url');
+  adm_a uuid := gen_random_uuid(); adm_b uuid := gen_random_uuid(); wr uuid := gen_random_uuid();
+  ch uuid := gen_random_uuid(); th uuid := gen_random_uuid();
+  p uuid := gen_random_uuid(); r uuid := gen_random_uuid(); s uuid := gen_random_uuid();
+  due record;
+  said text;
+  shown text;
+begin
+  perform tests.commit(format($sql$
+    insert into auth.users (id, email) values (%1$L, 'cc-ooo-a@test.invalid'), (%2$L, 'cc-ooo-b@test.invalid'), (%3$L, 'cc-ooo-w@test.invalid');
+    insert into accounts (id) values (%1$L), (%2$L), (%3$L);
+    insert into admins (account) values (%1$L), (%2$L);
+    insert into characters (id, owner, name, debuted_at) values (%4$L, %3$L, 'Ooo Writer', now());
+    insert into class_history (character, class_key) values (%4$L, 'alpha');
+    insert into threads (id, board, title) select %5$L, b.id, 'Out of order' from boards b where b.slug = 'general';
+    insert into acts (id, character, kind, thread, payload) values (%6$L, %4$L, 'post', %5$L, '{"body": "Words of P."}'), (%7$L, %4$L, 'post', %5$L, '{"body": "Words of R."}');
+    insert into acts (id, character, kind, thread, payload) values (%8$L, %4$L, 'post', %5$L, jsonb_build_object('body', format('[quote=%%s]Words of P.[/quote] [quote=%%s]Words of R.[/quote]', %6$L::text, %7$L::text)));
+  $sql$, adm_a, adm_b, wr, ch, th, p, r, s));
+
+  -- A hides P and holds its transaction open.
+  perform extensions.dblink_connect('holder', url);
+  perform extensions.dblink_exec('holder', 'begin');
+  perform extensions.dblink_exec('holder', format($e$
+    select set_config('request.jwt.claims', jsonb_build_object('sub', %L::uuid, 'role', 'authenticated')::text, true);
+    select set_config('role', 'authenticated', true);
+    do $d$ begin perform decide(null, %L, 'hide', null, 'a'); end $d$
+  $e$, adm_a, p));
+  -- B hides R and commits.
+  perform tests.commit(format($e$
+    select set_config('request.jwt.claims', jsonb_build_object('sub', %L::uuid, 'role', 'authenticated')::text, true);
+    select set_config('role', 'authenticated', true);
+    do $d$ begin perform decide(null, %L, 'hide', null, 'b'); end $d$
+  $e$, adm_b, r));
+  -- The job reads what B's decision made due, and records its layer.
+  select * into due from tests.due_for(s) as t(act uuid, hidden uuid[], body text);
+  if due.act is null or due.hidden is distinct from array[r] then
+    perform extensions.dblink_exec('holder', 'rollback');
+    raise exception 'out of order: S is not due for {R} after B''s committed hide: %', due;
+  end if;
+  perform tests.become_service();
+  perform record_layer(s, array[r], format('[quote=%s]Words of P.[/quote] [quote=%s][/quote]', p, r));
+  perform tests.unbecome();
+  -- A commits.
+  perform extensions.dblink_exec('holder', 'commit');
+  perform extensions.dblink_disconnect('holder');
+
+  if not tests.is_due(s) then raise exception 'out of order: S, whose request was committed after a layer made without it, is not due again; it stays concealing forever'; end if;
+  select * into due from tests.due_for(s) as t(act uuid, hidden uuid[], body text);
+  if due.hidden is distinct from (select array_agg(x order by x) from unnest(array[p, r]) x) then raise exception 'out of order: S is due for % and not {P, R}', due.hidden; end if;
+  perform tests.become_service();
+  perform record_layer(s, array[p, r], format('[quote=%s][/quote] [quote=%s][/quote]', p, r));
+  perform tests.unbecome();
+  if tests.is_due(s) then raise exception 'out of order: S is still due after the layer for {P, R}'; end if;
+  perform tests.become(wr);
+  select a.current_payload ->> 'body', a.concealing::text into shown, said from acts_public a where a.id = s;
+  perform tests.unbecome();
+  if shown is distinct from format('[quote=%s][/quote] [quote=%s][/quote]', p, r) or said is distinct from 'false' then raise exception 'out of order: S is not served its layer: % %', shown, said; end if;
+end $$;
+
 do $$
 declare
   admin_a uuid := tests.account('admin-a');
@@ -172,20 +236,35 @@ begin
   perform tests.act(ch_author, 'edit', th, '{"body": "Fixed words."}', plain, base + interval '14 minutes');
   if (select count(*) from conceal_requests where act = q) <= reqs then raise exception 'the author''s edit did not ask for the quoters'' layers again'; end if;
 
+  -- ---- conceal_layer is granted to acts_public's readers, so a player can ask it of any Act: it never hands out the layer of a version an admin hid ----
+  perform tests.become_service();
+  perform record_layer(q2, array[p1], 'LAYERWORDS');
+  perform tests.unbecome();
+  perform tests.become(reader);
+  select c.body into said from conceal_layer(q2) c;
+  perform tests.unbecome();
+  if said is distinct from 'LAYERWORDS' then raise exception 'the layer of a version nobody hid is not served by conceal_layer, so the check below proves nothing: %', said; end if;
+  perform tests.become(admin_a);
+  perform decide(null, q2, 'hide', null, 'the quoting version');
+  perform tests.unbecome();
+  perform tests.become(reader);
+  select c.body into said from conceal_layer(q2) c;
+  perform tests.unbecome();
+  if said is not null then raise exception 'a player reads the words of a hidden version through conceal_layer: %', said; end if;
+
   -- ---- who may call, who may read, and nothing is ever edited ----
   perform tests.become(reader);
   foreach said in array array[format('select * from conceal_due(5)'), format('select record_layer(%L, %L, %L)', q, array[p1], 'x'),
-    'select * from quote_layers', 'select * from quote_refs', 'select * from conceal_requests', 'select hidden_refs(' || quote_literal(q) || ')',
-    'select * from conceal_layer(' || quote_literal(q) || ')'] loop
-    if tests.refusal(said) not like '42501|%' then raise exception 'a player reached the conceal machinery: % -> %', said, tests.refusal(said); end if;
+    'select * from quote_layers', 'select * from quote_refs', 'select * from conceal_requests', 'select hidden_refs(' || quote_literal(q) || ')'] loop
+    if coalesce(tests.refusal(said), 'ran') not like '42501|%' then raise exception 'a player reached the conceal machinery: % -> %', said, coalesce(tests.refusal(said), 'ran'); end if;
   end loop;
   perform tests.unbecome();
   perform tests.become_anon();
-  if tests.refusal('select * from conceal_due(5)') not like '42501|%' then raise exception 'a visitor reached conceal_due'; end if;
+  if coalesce(tests.refusal('select * from conceal_due(5)'), 'ran') not like '42501|%' then raise exception 'a visitor reached conceal_due'; end if;
   perform tests.unbecome();
   foreach said in array array['update quote_layers set body = null', 'delete from quote_layers', 'truncate quote_layers', 'update quote_refs set quoted = quoted', 'delete from quote_refs', 'truncate quote_refs',
     'update conceal_requests set act = act', 'delete from conceal_requests', 'truncate conceal_requests'] loop
-    if tests.refusal(said) not like 'P0001|%' then raise exception 'a conceal table was edited or emptied: % -> %', said, tests.refusal(said); end if;
+    if coalesce(tests.refusal(said), 'ran') not like 'P0001|%' then raise exception 'a conceal table was edited or emptied: % -> %', said, coalesce(tests.refusal(said), 'ran'); end if;
   end loop;
 
   -- ---- A page of hostile bodies costs the same whatever their length: nothing on a read walks a body's characters ----

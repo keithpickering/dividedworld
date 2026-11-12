@@ -43,7 +43,10 @@ test('an empty hidden set changes nothing, and a quote of another post is left a
 });
 
 test('a hidden id in upper case is the same id, as the parser reads it', () => {
-  assert.equal(concealQuotes(`[quote=${HIDDEN.toUpperCase()}]x[/quote]`, HIDE), `[quote=${HIDDEN.toUpperCase()}][/quote]`);
+  // An id with letters: one of digits alone is its own upper case and proves nothing.
+  const LETTERS = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  assert.notEqual(LETTERS.toUpperCase(), LETTERS);
+  assert.equal(concealQuotes(`[quote=${LETTERS.toUpperCase()}]x[/quote]`, new Set([LETTERS])), `[quote=${LETTERS.toUpperCase()}][/quote]`);
 });
 
 const PIECES = [

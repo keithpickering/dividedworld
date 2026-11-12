@@ -246,7 +246,7 @@ test('a banned login that gives the right code is told plainly it is barred (403
   const out = await runAccount({ auth: banned, service, player, clock }, { action: 'verifyCode', email: KNOWN, code: CODE });
   assert.equal(out.status, 403);
   assert.equal((out.body as { hint?: string }).hint, 'kayfabb.barred');
-  assert.match((out.body as { error: string }).error, /barred/);
+  assert.match((out.body as { error: string }).error, /locked/);
   assert.doesNotMatch((out.body as { error: string }).error, /try again/);
   // Asking for a code is answered the same for the banned address as for one with no login.
   const a = await runAccount({ auth: banned, service, player, clock }, { action: 'requestCode', email: KNOWN });

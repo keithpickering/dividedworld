@@ -16,6 +16,9 @@ declare
   f spring_facts;
   quoting uuid;
   hid_post uuid;
+  plain_q uuid;
+  loud uuid; long_reply uuid; short_reply uuid; secret_quote uuid; open_quote uuid;
+  r1 integer; r2 integer;
 begin
   seed := jsonb_build_object(
     'settings', jsonb_build_object('systemEnabled', true),
@@ -26,7 +29,9 @@ begin
       'moves', jsonb_build_array(jsonb_build_object('key', 'setRule', 'structural', false, 'shapesBoard', false, 'offices', jsonb_build_array('boss', 'mod'))),
       'demands', jsonb_build_array(jsonb_build_object('key', 'postsOnBoard')),
       'predicates', jsonb_build_array(
-        jsonb_build_object('key', 'noAllCaps', 'param', 'none', 'least', null, 'most', null, 'plain', 'no all-caps posts'))));
+        jsonb_build_object('key', 'noAllCaps', 'param', 'none', 'least', null, 'most', null, 'plain', 'no all-caps posts'),
+        jsonb_build_object('key', 'minLength', 'param', 'count', 'least', 1, 'most', 200, 'plain', 'posts of at least {param} characters'),
+        jsonb_build_object('key', 'bannedWord', 'param', 'word', 'least', 1, 'most', 40, 'plain', 'the word "{param}" is banned'))));
   perform seed_instance(seed);
   insert into admins (account) values (admin_a);
   th := tests.thread('Shouting');
@@ -71,6 +76,47 @@ begin
   quoting := tests.post(ch_author, th, format('Mine [quote=%s]The hidden secret.[/quote] end', hid_post), base + interval '5 minutes');
   f := spring_facts(null::face_down, 'quote', quoting, null);
   if f.by_body like '%secret%' then raise exception 'spring_facts reads a hidden post''s words through a quote: %', f.by_body; end if;
+
+  -- ---- A post that quotes a hidden one is judged on its own words, as soon as it is written and after its layer: the quote is neither a way out of a rule nor a way in ----
+  -- (rules and traps run in the posting transaction, before the conceal job has made the layer, when the public form of such a post is withheld.) hid_post is hidden here.
+  perform set_config('kayfabb.staff_writer', 'on', true);
+  perform tests.act((select id from characters where staff = 'rp-boss'), 'move', (select (s.value #>> '{}')::uuid from settings s where s.key = 'systemAnnouncements'),
+    jsonb_build_object('kind', 'setRule', 'body', 'A rule.', 'params', jsonb_build_object('board', null, 'predicate', 'minLength', 'param', 20, 'band', 'minor')), null, base + interval '6 minutes');
+  perform tests.act((select id from characters where staff = 'rp-boss'), 'move', (select (s.value #>> '{}')::uuid from settings s where s.key = 'systemAnnouncements'),
+    jsonb_build_object('kind', 'setRule', 'body', 'A rule.', 'params', jsonb_build_object('board', null, 'predicate', 'bannedWord', 'param', 'secret', 'band', 'minor')), null, base + interval '7 minutes');
+  perform set_config('kayfabb.staff_writer', '', true);
+  -- the rules are those, and a post of its own words that breaks none breaks none
+  plain_q := tests.post(ch_author, th, 'A calm post with enough words of its own.', base + interval '8 minutes');
+  select count(*) into n from rule_breaks(plain_q);
+  if n is distinct from 0 then raise exception 'a calm post of 40 characters breaks % rules, so the tests below prove nothing', n; end if;
+
+  loud := tests.post(ch_author, th, format('I AM SHOUTING AT EVERYONE HERE[quote=%s]the hidden secret quietly and slowly spoken aloud in many words[/quote]', hid_post), base + interval '9 minutes');
+  select count(*) into n from rule_breaks(loud);
+  if n is distinct from 1 or (select predicate from rule_breaks(loud)) is distinct from 'noAllCaps' then raise exception 'a shouting post that quotes a hidden one is immune to noAllCaps, or breaks another rule: % (%)', n, (select string_agg(predicate, ',') from rule_breaks(loud)); end if;
+  long_reply := tests.post(ch_author, th, format('This reply has plenty of words of its own[quote=%s]x[/quote]', hid_post), base + interval '10 minutes');
+  select count(*) into n from rule_breaks(long_reply);
+  if n is distinct from 0 then raise exception 'a long reply that quotes a hidden post breaks % rules (minLength judged the withheld form?): %', n, (select string_agg(predicate, ',') from rule_breaks(long_reply)); end if;
+  short_reply := tests.post(ch_author, th, format('ok[quote=%s]a long long long long long long quote[/quote]', plain_q), base + interval '11 minutes');
+  select count(*) into n from rule_breaks(short_reply);
+  if n is distinct from 1 or (select predicate from rule_breaks(short_reply)) is distinct from 'minLength' then raise exception 'a short reply is not short because it quotes a long post: % (%)', n, (select string_agg(predicate, ',') from rule_breaks(short_reply)); end if;
+  -- no word of a quote, hidden or not, is read by a rule: bannedWord 'secret' is in the quoted words and nowhere else
+  secret_quote := tests.post(ch_author, th, format('Fine words of my own here[quote=%s]the hidden secret quietly[/quote]', hid_post), base + interval '12 minutes');
+  select count(*) into n from rule_breaks(secret_quote);
+  if n is distinct from 0 then raise exception 'a rule read the words of a hidden post through a quote (%)', (select string_agg(predicate, ',') from rule_breaks(secret_quote)); end if;
+  open_quote := tests.post(ch_author, th, format('Fine words of my own here[quote=%s]a secret nobody hid[/quote]', plain_q), base + interval '13 minutes');
+  select count(*) into n from rule_breaks(open_quote);
+  if n is distinct from 0 then raise exception 'a rule read the quoted words of a post nobody hid (%)', (select string_agg(predicate, ',') from rule_breaks(open_quote)); end if;
+  -- a card's condition reads the same: nothing of the hidden words, and the post's own words whole
+  f := spring_facts(null::face_down, 'quote', secret_quote, null);
+  if f.by_body like '%secret%' or f.by_body is distinct from 'Fine words of my own here' then raise exception 'spring_facts reads % of a post that quotes a hidden one (before its layer)', f.by_body; end if;
+  -- after the layer the answers are the same
+  perform tests.become_service();
+  perform record_layer(loud, array[hid_post], format('I AM SHOUTING AT EVERYONE HERE[quote=%s][/quote]', hid_post));
+  perform record_layer(secret_quote, array[hid_post], format('Fine words of my own here[quote=%s][/quote]', hid_post));
+  perform tests.unbecome();
+  select count(*) into n from rule_breaks(loud);
+  select count(*) into r1 from rule_breaks(secret_quote);
+  if n is distinct from 1 or r1 is distinct from 0 then raise exception 'rule_breaks changes with the layer: % and % rows', n, r1; end if;
 end $$;
 
 -- ---- A card that writes reads the version it writes on through the public form (0149's claim_card_writes, re-created by 0341) ----

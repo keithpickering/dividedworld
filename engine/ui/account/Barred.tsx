@@ -35,8 +35,8 @@ export function Barred({ until, signedIn = true, onLeave }: { readonly until: st
     setBusy(true);
     try { await api.signOut(); onLeave?.(); } finally { setBusy(false); }
   };
-  const lead = until === undefined ? 'This account is barred.' : until === null ? 'This account is banned.' : `This account is suspended until ${dateOf(until)}.`;
-  const title = until === undefined ? 'This account is barred' : until === null ? 'This account is banned' : 'This account is suspended';
+  const lead = until === undefined ? 'This account is locked.' : until === null ? 'This account is banned.' : `This account is suspended until ${dateOf(until)}.`;
+  const title = until === undefined ? 'This account is locked' : until === null ? 'This account is banned' : 'This account is suspended';
   return (
     <div className="kb-acct">
       <CalmRegion className="kb-acct-panel">

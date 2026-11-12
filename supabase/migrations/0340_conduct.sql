@@ -241,15 +241,15 @@ $$;
 --   conceal_requests  one row each time what is hidden may have changed for a quoting Act: a decision that hides, unhides or approves a version of a quoted post, the author's edit of a post
 --                   that has such a decision, and the writing of an Act that quotes a post with a hidden version. Append-only.
 --   quote_layers    the quoting version's body with the contents of its quotes of the hidden posts in `hidden` emptied (null when `hidden` is empty), the latest row of an Act winning, and
---                   `upto`, the last request of the Act the row answers. A request is done when a layer with `upto` at or after it exists, so nothing is ever marked in place.
+--                   `upto`, the last request of the Act the row had seen (a record of what it read; whether an Act is done is whether its latest layer is for the hidden set of now).
 --
 -- Ways out ("No player is ever stuck"): a post whose quote of a hidden version has no layer yet is withheld behind a plain note that says it will show again in a moment; the job runs every
 -- minute and writes the layer, which ends the note by itself. An unhide, an approval or a hide that ends needs no job at all: with nothing hidden among its refs a post serves its own words.
 --
 -- At a busy instance: a read costs one probe of quote_refs for a body that quotes nothing hidden, and for a body that does, one more of the layer's index; nothing reads a body's length. A decision
 -- writes one request for each Act that quotes the post, an index range of quote_refs (quoted, act); the requests grow with admin decisions and the Acts quoting what they hide, never with posts read
--- or players. conceal_due anti-joins the requests to their layers as mail_due (0341) does the outbox to its attempts, and a request marker table or a cursor would be wrong here: ids committed out
--- of order would strand a request below a cursor.
+-- or players. conceal_due compares each requested Act's latest layer with its hidden set of now, and a request marker table, a cursor or an `upto` test would be wrong here: ids committed out
+-- of order would strand a request below a cursor, or have a layer made without it answer it.
 create table quote_refs (
   act uuid not null references acts (id),
   quoted uuid not null,
@@ -383,7 +383,8 @@ declare
 begin
   if cardinality(hs) = 0 then return query select false, true, null::text; return; end if;
   select * into l from quote_layers x where x.act = v order by x.at desc, x.id desc limit 1;
-  if found and l.hidden = hs then return query select true, true, l.body; return; end if;
+  -- Granted to the readers of acts_public, so any player can ask it of any Act: the layer of a version an admin hid is the words of a hidden version, and is not handed out.
+  if found and l.hidden = hs then return query select true, true, case when version_hidden(v) then null else l.body end; return; end if;
   return query select true, false, null::text;
 end $$;
 
@@ -409,12 +410,16 @@ $$;
 -- role alone calls it (the words are the quoting post's own, hidden quote included, and go to the job and nowhere else).
 create function conceal_due(most integer) returns table (act uuid, hidden uuid[], body text)
 language sql stable security definer set search_path = public, pg_temp as $$
-  select d.act, hidden_refs(d.act), x.payload ->> 'body'
-  from (select r.act, min(r.id) as first from conceal_requests r
-        where not exists (select 1 from quote_layers l where l.act = r.act and l.upto >= r.id)
-        group by r.act order by min(r.id) limit greatest(conceal_due.most, 0)) d
+  -- An Act is due while it has a request and its latest layer was not made for the hidden set of now (or it has none): done is a fact about the set, never about which requests the layer had
+  -- seen, since requests commit out of order (a layer made without a request that committed after it would otherwise answer it). Only the Acts with requests are looked at, one index probe
+  -- of the layers and one of quote_refs each: the work grows with decisions and the Acts quoting what they decided on, never with posts.
+  select d.act, h.hs, x.payload ->> 'body'
+  from (select r.act, min(r.id) as first from conceal_requests r group by r.act) d
+  cross join lateral (select hidden_refs(d.act) as hs) h
   join acts x on x.id = d.act
+  where (select l.hidden from quote_layers l where l.act = d.act order by l.at desc, l.id desc limit 1) is distinct from h.hs
   order by d.first
+  limit greatest(conceal_due.most, 0)
 $$;
 
 -- The job's answer for an Act: the body with the contents of its quotes of the posts in `hidden` emptied (null when none). It is refused when `hidden` is not the set of now, so a job that
@@ -439,10 +444,365 @@ revoke execute on function quote_ids(text), conceal_layer(uuid), shown_payload(j
   from public, anon, authenticated;
 grant execute on function conceal_due(integer), record_layer(uuid, uuid[], text) to service_role;
 
--- Two reads of a post's words that feed a model or a card's condition, now reading what a player would read (0105's rule_breaks and 0144's spring_facts, each
--- otherwise as that migration left it): a hidden version has no words to judge, and the contents of a quote of a hidden post are emptied. rule_breaks finds
--- nothing wrong with a post that is hidden, the words it counts being the public form's; spring_facts's `by_body` is null for a hidden version and has hidden quotes
--- emptied, so neither a Mod Bot's rule or visit, nor a Says or Quotes condition, reads what an admin hid.
+-- bbcode_walk (0316) also returns `unquoted`: the body as written with every real quote (the one parser's reading, and a quote that never closes to the end of the body) cut out, whole, tags
+-- and all of the rest kept. The two reads below judge that, so the words of a quote, hidden or not, never reach a judge, and a quote's tokens add nothing to what a post is judged to say.
+-- A return type cannot change under create or replace, so it is dropped and made again, copied from 0316 and changing only what is named at it; bbcode_plain and spring_facts call it by name.
+drop function bbcode_walk(text, uuid);
+
+create or replace function bbcode_walk(body text, quoted uuid) returns table(plain text, excerpt text, quotes text[], unquoted text)
+language plpgsql immutable parallel safe set search_path = public, pg_temp as $$
+declare
+  -- The tag names of engine/bbcode/parse.ts: BBCODE_TAGS (openers), its closers, the ones that keep a count of how many are open (every tag that makes a frame),
+  -- the block tags (BLOCK) that are text inside an inline spoiler, and the fonts (FONTS).
+  openers constant text[] := array['b','i','u','s','color','size','url','img','code','quote','list','spoiler','ispoiler','video','youtube','center','left','right','hr','sub','sup','font','marquee','glow','shadow','rainbow','highlight','noparse'];
+  closers constant text[] := array['b','i','u','s','color','size','url','quote','list','spoiler','ispoiler','video','youtube','center','left','right','sub','sup','font','marquee','glow','shadow','rainbow','highlight'];
+  counted constant text[] := array['b','i','u','s','color','size','url','quote','list','spoiler','ispoiler','center','left','right','sub','sup','font','marquee','glow','shadow','rainbow','highlight'];
+  blocks constant text[] := array['quote','code','list','spoiler','center','left','right','hr','video','youtube','marquee'];
+  fonts constant text[] := array['verdana','arial','tahoma','trebuchet ms','georgia','times new roman','courier new','comic sans ms','impact'];
+  named constant text[] := array['black','silver','gray','grey','white','maroon','red','purple','fuchsia','green','lime','olive','yellow','navy','blue','teal','aqua','orange','pink','brown','gold','cyan','magenta','violet','indigo','crimson','coral','salmon','turquoise','tan','khaki','beige'];
+  max_depth constant int := 32;       -- MAX_DEPTH
+  max_tag constant int := 2064;       -- MAX_TAG: MAX_URL_LENGTH (2048) + 16
+  max_raw constant int := 2112;       -- the longest image or video contents the parser checks: MAX_URL_LENGTH + 64
+  toks text[];
+  n int;
+  nxt_code int[];                     -- per token, the next token after it that is [/code], or 0
+  nxt_img int[];                      -- the same for [/img]
+  nxt_video int[];                    -- [/video]
+  nxt_youtube int[];                  -- [/youtube]
+  nxt_noparse int[];                  -- [/noparse]
+  cum int[];                          -- characters up to and including each token
+  seen_code int := 0;
+  seen_img int := 0;
+  seen_video int := 0;
+  seen_youtube int := 0;
+  seen_noparse int := 0;
+  -- The output: out[1..oc] are the pieces written so far (a piece past oc is stale and is overwritten). The stack: frame 1 is the root. A frame that is not literal
+  -- began at piece f_start, so its words are out[f_start + 1..oc]. A literal frame is an opener that became text, kept so its closer is text too; it owns nothing.
+  out text[] := array[]::text[];
+  oc int := 0;
+  f_kind text[] := array['root'];     -- root, pass (words go up), sep (words dropped, one separator goes up), keep (a sep whose words also go to the excerpt), list, bareurl, literal
+  f_name text[] := array[''];
+  f_start int[] := array[0];
+  f_depth int[] := array[0];
+  f_home int[] := array[1];
+  f_nodey boolean[] := array[false];  -- a node other than text and noparse was placed in this frame (a bare link is a link only around text alone, or one noparse alone)
+  f_np int[] := array[0];             -- how many noparse nodes were placed in this frame
+  f_npp int[] := array[0];            -- and how many pieces of out they took (a noparse's contents go in a token at a time)
+  sp int := 1;
+  cnt int[] := array_fill(0, array[22]);
+  open_urls int := 0;
+  open_isp int := 0;                  -- inline spoilers that are open and real
+  t int := 1;
+  unw int := 0;                       -- unwinding: 1 to a closer's name, 2 until no link is open, 3 to the end
+  unw_name text;
+  unw_raw text;
+  links_closed boolean := false;
+  tok text;
+  b text;
+  nm text;
+  val text;
+  qrest text;
+  eq int;
+  idx int;
+  j int;
+  k text;
+  fname text;
+  fstart int;
+  matched boolean;
+  cl text;
+  want text;                          -- how a tag that opens is opened: pass, sep, list, bareurl; null when it is text
+  contents text;
+  vid text;
+  piece text;
+  core int;                          -- the length of contents up to its last character that is not a blank
+  tail_len int;
+  -- The excerpt (this migration): ex[1..xc] are the pieces of the quotes of `quoted`, kept = how many such quotes have closed, open_sep = real quotes and real links open (a quote
+  -- is kept only with none open, so a quote inside another quote, or inside a link, is not found, as engine/bbcode/visible.ts excerptText does not find it).
+  ex text[] := array[]::text[];
+  xc int := 0;
+  kept int := 0;
+  open_sep int := 0;
+  quoted_text text := lower(quoted::text);
+  -- Every real quote the walk makes a frame for, the Act it names (lowercase), in the order they open: qs[1..qc], written by index as out[] is, never appended to in the loop; the list is made distinct once, at the end.
+  qs text[] := array[]::text[];
+  qc int := 0;
+  qact text;
+  -- The body as written with every real quote cut out, from its opener to its closer (and to the end of the body when it never closes): dd is a difference array over the tokens,
+  -- +1 at a dropped quote's opener and -1 after its last token, so the running sum says which tokens are inside a quote. Nested quotes sum, and the nesting costs nothing more.
+  f_tok int[] := array[0];            -- per frame, the token its opener was
+  dd int[];
+  dn int := 0;
+  ftok int;
+  dend int;
+begin
+  if body is null or body = '' then plain := ''; excerpt := ''; quotes := '{}'; unquoted := ''; return next; return; end if;
+  -- Tokens: a tag (`[`, no bracket, `]`), a lone `[`, or a run of text with no `[`.
+  select array_agg(coalesce(m[1], m[2]) order by o) into toks
+    from regexp_matches(body, '(\[[^\[\]]*\])|([^\[]+|\[)', 'g') with ordinality as r (m, o);
+  n := coalesce(array_length(toks, 1), 0);
+  nxt_code := array_fill(0, array[n]);
+  nxt_img := array_fill(0, array[n]);
+  nxt_video := array_fill(0, array[n]);
+  nxt_youtube := array_fill(0, array[n]);
+  nxt_noparse := array_fill(0, array[n]);
+  cum := array_fill(0, array[n]);
+  dd := array_fill(0, array[n + 2]);
+  for j in reverse n..1 loop
+    nxt_code[j] := seen_code;
+    nxt_img[j] := seen_img;
+    nxt_video[j] := seen_video;
+    nxt_youtube[j] := seen_youtube;
+    nxt_noparse[j] := seen_noparse;
+    if length(toks[j]) between 6 and 10 and left(toks[j], 2) = '[/' then
+      case lower(toks[j])
+        when '[/code]' then seen_code := j;
+        when '[/img]' then seen_img := j;
+        when '[/video]' then seen_video := j;
+        when '[/youtube]' then seen_youtube := j;
+        when '[/noparse]' then seen_noparse := j;
+        else null;
+      end case;
+    end if;
+  end loop;
+  for j in 1..n loop
+    cum[j] := coalesce(cum[j - 1], 0) + length(toks[j]);
+  end loop;
+
+  loop
+    -- Closing frames, one a pass.
+    if unw <> 0 then
+      if unw = 3 and sp = 1 then exit; end if;
+      if unw = 2 and open_urls = 0 then unw := 0; links_closed := true; continue; end if;
+      k := f_kind[sp]; fname := f_name[sp]; fstart := f_start[sp]; ftok := f_tok[sp];
+      matched := unw = 1 and fname = unw_name;
+      idx := array_position(counted, fname);
+      if idx is not null then cnt[idx] := cnt[idx] - 1; end if;
+      if k <> 'literal' and fname = 'url' then open_urls := open_urls - 1; end if;
+      if k <> 'literal' and fname = 'ispoiler' then open_isp := open_isp - 1; end if;
+      if k = 'sep' or k = 'keep' then open_sep := open_sep - 1; end if;
+      sp := sp - 1;
+      cl := case when matched then unw_raw end;
+      if k = 'literal' then
+        if matched then oc := oc + 1; out[oc] := unw_raw; end if;
+      else
+        if k = 'pass' then
+          null;                                       -- its words are already in place
+        elsif k = 'list' then
+          oc := oc + 1; out[oc] := E'\n';
+        elsif k = 'sep' or k = 'keep' then
+          -- A kept quote's words go to the excerpt first (nested real quotes and links in them are already one separator each, as in the plain output), one separator before each after the first.
+          -- Kept quotes never nest, so each piece of out is copied at most once and the cost stays linear.
+          if k = 'keep' then
+            if kept > 0 then xc := xc + 1; ex[xc] := E'\n'; end if;
+            kept := kept + 1;
+            for j in fstart + 1..oc loop xc := xc + 1; ex[xc] := out[j]; end loop;
+          end if;
+          oc := fstart + 1; out[oc] := E'\n';         -- drop its words, back to where it began
+          if fname = 'quote' then
+            -- its tokens, opener to the last one read (a closer that closed an outer frame to close this one is the outer frame's, so it stays)
+            dend := case when unw = 1 and not matched then t - 2 else t - 1 end;
+            dd[ftok] := dd[ftok] + 1; dd[dend + 1] := dd[dend + 1] - 1;
+          end if;
+        else -- bareurl: a link only when closed, around nothing but text that is one good address (or one noparse alone); its opener is the piece before its start
+          -- Its words are joined piece by piece and given up past the longest address: a slice of out would copy the whole array each time, and the words past that length cannot be an address.
+          -- The parser trims the words before it checks their length, so the blanks that lead are not joined and a piece's trailing blanks do not count: it stops only once the words up to the last character that is not a blank pass the longest address, and then the trimmed words are too long whatever follows. Each piece is trimmed once, so the join stays bounded and linear.
+          -- One noparse is a node, so it is the whole target only when nothing else was written in the frame: its pieces are the only ones after the opener.
+          contents := ''; core := 0;
+          if cl is not null and not f_nodey[sp + 1] and (f_np[sp + 1] = 0 or (f_np[sp + 1] = 1 and oc - fstart = f_npp[sp + 1])) then
+            for j in fstart + 1..oc loop
+              piece := out[j];
+              if contents = '' then piece := regexp_replace(piece, '^[\u0009-\u000d    -     　﻿]+', ''); end if;
+              if piece = '' then continue; end if;
+              tail_len := length(regexp_replace(piece, '[\u0009-\u000d    -     　﻿]+$', ''));
+              if tail_len > 0 then core := length(contents) + tail_len; end if;
+              contents := contents || piece;
+              if core > 2048 then exit; end if;
+            end loop;
+          end if;
+          if cl is not null and not f_nodey[sp + 1] and (f_np[sp + 1] = 0 or (f_np[sp + 1] = 1 and oc - fstart = f_npp[sp + 1])) and bbcode_plain_url_ok(contents, array['http','https','mailto'], true) then
+            oc := fstart; out[oc] := E'\n';
+          elsif cl is not null then
+            oc := oc + 1; out[oc] := cl;
+          end if;
+        end if;
+        f_nodey[f_home[sp]] := true;
+      end if;
+      if matched then unw := 0; end if;
+      continue;
+    end if;
+    if t > n then unw := 3; continue; end if;
+
+    tok := toks[t];
+    -- Text, a lone `[`, and a tag the parser does not read: the words as written.
+    if length(tok) < 2 or left(tok, 1) <> '[' then oc := oc + 1; out[oc] := tok; t := t + 1; continue; end if;
+    b := substr(tok, 2, length(tok) - 2);
+    if b = '' or length(b) > max_tag or (length(b) > max_tag / 2 and bbcode_plain_u16len(b) > max_tag) then
+      oc := oc + 1; out[oc] := tok; t := t + 1; continue;
+    end if;
+    val := null;
+    qrest := null;
+    if b = '*' then
+      nm := '*';
+    elsif left(b, 1) = '/' then
+      nm := lower(substr(b, 2));
+      if not (nm = any (closers)) then oc := oc + 1; out[oc] := tok; t := t + 1; continue; end if;
+      -- A closer with nothing open to close is text; otherwise it closes the nearest opener of its name and what was opened inside it. Inside an inline spoiler the closer of a block tag
+      -- or a link is text, and a [/video] or [/youtube] is always text (no frame of either is ever open).
+      t := t + 1;
+      if (open_isp > 0 and (nm = any (blocks) or nm = 'url')) or nm in ('video', 'youtube') or cnt[array_position(counted, nm)] = 0 then
+        oc := oc + 1; out[oc] := tok;
+      else
+        unw := 1; unw_name := nm; unw_raw := tok;
+      end if;
+      continue;
+    elsif left(b, 5) ~ '^[qQ][uU][oO][tT][eE]$' and (length(b) = 5 or substr(b, 6, 1) = '=' or substr(b, 6, 1) ~ '^[\u0009-\u000d    -     　﻿]$') then
+      nm := 'quote';
+      qrest := substr(b, 6);
+    else
+      eq := strpos(b, '=');
+      nm := lower(case when eq = 0 then b else left(b, eq - 1) end);
+      if not (nm = any (openers)) then oc := oc + 1; out[oc] := tok; t := t + 1; continue; end if;
+      if eq > 0 then
+        val := substr(b, eq + 1);
+        if length(val) >= 2 and left(val, 1) = '"' and right(val, 1) = '"' then val := substr(val, 2, length(val) - 2); end if;
+      end if;
+    end if;
+
+    if open_isp > 0 and nm <> '*' and (nm = any (blocks) or nm = 'url' or nm = 'ispoiler') then
+      -- A block tag, a link or another inline spoiler inside an inline spoiler is the words as written (the spoiler is a button, and a button holds nothing interactive).
+      oc := oc + 1; out[oc] := tok; t := t + 1; continue;
+    end if;
+
+    if nm = '*' then
+      -- An item marker is one only directly inside a list; elsewhere it is text.
+      oc := oc + 1;
+      if f_kind[f_home[sp]] = 'list' then out[oc] := E'\n'; else out[oc] := tok; end if;
+      t := t + 1; continue;
+    elsif nm = 'hr' then
+      -- A rule is a leaf with no closer; with an attribute it is text.
+      oc := oc + 1;
+      if val is null then out[oc] := E'\n'; f_nodey[f_home[sp]] := true; else out[oc] := tok; end if;
+      t := t + 1; continue;
+    elsif nm = 'code' then
+      -- Raw up to the closing tag; with none, or an attribute, only the opener is text.
+      if val is null and nxt_code[t] > 0 then
+        oc := oc + 1; out[oc] := E'\n'; f_nodey[f_home[sp]] := true; t := nxt_code[t] + 1; continue;
+      end if;
+      oc := oc + 1; out[oc] := tok; t := t + 1; continue;
+    elsif nm = 'noparse' then
+      -- Raw up to the closing tag, its contents one node of the post's own words as written (none at all when empty); with no closer, or an attribute, only the opener is text.
+      j := nxt_noparse[t];
+      if val is null and j > 0 then
+        if j > t + 1 then
+          -- Its tokens go in piece by piece (a substr of the body would walk to its offset each time, and a slice of toks would copy it), and are joined once at the end.
+          for idx in t + 1..j - 1 loop oc := oc + 1; out[oc] := toks[idx]; end loop;
+          f_np[f_home[sp]] := f_np[f_home[sp]] + 1;
+          f_npp[f_home[sp]] := f_npp[f_home[sp]] + (j - t - 1);
+        end if;
+        t := j + 1; continue;
+      end if;
+      oc := oc + 1; out[oc] := tok; t := t + 1; continue;
+    elsif nm = 'img' then
+      j := nxt_img[t];
+      if val is null and j > 0 and cum[j - 1] - cum[t] <= max_raw then
+        contents := '';                               -- joined token by token, since a slice of toks would copy the whole array each time; the check above bounds it
+        for idx in t + 1..j - 1 loop contents := contents || toks[idx]; end loop;
+        if bbcode_plain_u16len(contents) <= max_raw and bbcode_plain_url_ok(contents, array['http','https'], false) then
+          oc := oc + 1; out[oc] := E'\n'; f_nodey[f_home[sp]] := true; t := j + 1; continue;
+        end if;
+      end if;
+      oc := oc + 1; out[oc] := tok; t := t + 1; continue;
+    elsif nm = 'video' or nm = 'youtube' then
+      -- Taken as an image is; the contents (trimmed) must be an address videoOf has a player for, or for [youtube] a bare id. Otherwise only the opener is text.
+      j := case when nm = 'video' then nxt_video[t] else nxt_youtube[t] end;
+      if val is null and j > 0 and cum[j - 1] - cum[t] <= max_raw then
+        contents := '';
+        for idx in t + 1..j - 1 loop contents := contents || toks[idx]; end loop;
+        if bbcode_plain_u16len(contents) <= max_raw then
+          vid := bbcode_plain_trim(contents);
+          if vid <> '' and ((nm = 'youtube' and vid ~ '^[A-Za-z0-9_-]{11}$') or bbcode_plain_video_ok(vid) is true) then
+            oc := oc + 1; out[oc] := E'\n'; f_nodey[f_home[sp]] := true; t := j + 1; continue;
+          end if;
+        end if;
+      end if;
+      oc := oc + 1; out[oc] := tok; t := t + 1; continue;
+    end if;
+
+    want := null;
+    if nm in ('b','i','u','s','ispoiler','center','left','right','sub','sup','marquee','rainbow') then
+      if val is null then want := 'pass'; end if;
+    elsif nm = 'color' then
+      if val is not null and (lower(val) = any (named) or lower(val) ~ '^#([0-9a-f]{3}|[0-9a-f]{6})$') then want := 'pass'; end if;
+    elsif nm = 'size' then
+      if val is not null and val ~ '^[1-7]$' then want := 'pass'; end if;
+    elsif nm = 'quote' then
+      want := case bbcode_plain_quote_head(qrest) when 'real' then 'sep' when 'counterfeit' then 'pass' end;
+      -- A real quote of the Act asked for, with no real quote or real link open, is kept: cut from the plain output as any real quote is, and its words go to the excerpt.
+      if want = 'sep' and quoted is not null and open_sep = 0 and bbcode_plain_quote_act(qrest) = quoted_text then want := 'keep'; end if;
+    elsif nm = 'spoiler' then
+      if val is null or bbcode_plain_u16len(bbcode_plain_trim(val)) <= 80 then want := 'pass'; end if;
+    elsif nm = 'font' then
+      if val is not null and lower(bbcode_plain_trim(val)) = any (fonts) then want := 'pass'; end if;
+    elsif nm in ('glow','shadow','highlight') then
+      if val is null or lower(val) = any (named) or lower(val) ~ '^#([0-9a-f]{3}|[0-9a-f]{6})$' then want := 'pass'; end if;
+    elsif nm = 'list' then
+      if val is null or val = '1' then want := 'list'; end if;
+    elsif nm = 'url' then
+      if val is null then
+        want := 'bareurl';
+      elsif bbcode_plain_url_ok(val, array['http','https','mailto'], true) then
+        want := 'sep';
+      end if;
+      -- A link opened while another is open closes the open one first, with whatever was opened inside it.
+      if want is not null and open_urls > 0 and not links_closed then unw := 2; continue; end if;
+    end if;
+    links_closed := false;
+
+    if want is null or f_depth[f_home[sp]] >= max_depth then
+      -- An opener that is text, kept on the stack so its closer is text too.
+      oc := oc + 1; out[oc] := tok;
+      sp := sp + 1;
+      f_kind[sp] := 'literal'; f_name[sp] := nm; f_start[sp] := 0;
+      f_depth[sp] := f_depth[sp - 1]; f_home[sp] := f_home[sp - 1]; f_nodey[sp] := false; f_np[sp] := 0; f_npp[sp] := 0; f_tok[sp] := t;
+    else
+      -- A list puts a separator before its words, and a bare link its opener (given back as text if it is not a link), so each is the piece before the frame's start.
+      if want = 'list' then oc := oc + 1; out[oc] := E'\n'; elsif want = 'bareurl' then oc := oc + 1; out[oc] := tok; end if;
+      sp := sp + 1;
+      f_kind[sp] := want; f_name[sp] := nm; f_start[sp] := oc;
+      f_depth[sp] := f_depth[f_home[sp - 1]] + 1; f_home[sp] := sp; f_nodey[sp] := false; f_np[sp] := 0; f_npp[sp] := 0; f_tok[sp] := t;
+      if nm = 'url' then open_urls := open_urls + 1; end if;
+      if nm = 'ispoiler' then open_isp := open_isp + 1; end if;
+      if want = 'sep' or want = 'keep' then open_sep := open_sep + 1; end if;
+      -- A real quote that made a frame (one past max_depth is text, and is not here): its Act.
+      if nm = 'quote' and (want = 'sep' or want = 'keep') then
+        qact := bbcode_plain_quote_act(qrest);
+        if qact is not null then qc := qc + 1; qs[qc] := qact; end if;
+      end if;
+    end if;
+    cnt[array_position(counted, nm)] := cnt[array_position(counted, nm)] + 1;
+    t := t + 1;
+  end loop;
+  plain := array_to_string(out[1 : oc], '');
+  excerpt := array_to_string(ex[1 : xc], '');
+  oc := 0;
+  for j in 1..n loop
+    dn := dn + dd[j];
+    if dn <= 0 then oc := oc + 1; out[oc] := toks[j]; end if;
+  end loop;
+  unquoted := array_to_string(out[1 : oc], '');
+  -- Each Act once, at the place it first opens.
+  quotes := coalesce((select array_agg(d.x order by d.o) from (select distinct on (u.x) u.x, u.o from unnest(qs[1 : qc]) with ordinality u(x, o) order by u.x, u.o) d), '{}');
+  return next;
+  return;
+end
+$$;
+
+revoke execute on function bbcode_walk(text, uuid) from public, anon;
+grant execute on function bbcode_walk(text, uuid) to authenticated, service_role;
+
+-- Two reads of a post's words that feed a model or a card's condition (0105's rule_breaks and 0144's spring_facts, each otherwise as that migration left it): a hidden version has no
+-- words to judge, and the post is judged on its own words with every quote's contents cut out (bbcode_walk's `unquoted`), never on anyone's quoted words, hidden or not. They do not read
+-- public_payload: that is null while a post that quotes a hidden one waits for its layer, and a post that quotes any hidden id would then be immune to every rule and trap, or judged too short.
 create or replace function rule_breaks(post_act uuid, only_move uuid default null) returns setof rules_now
 language plpgsql stable security definer set search_path = public, pg_temp as $$
 declare
@@ -452,10 +812,11 @@ declare
   body text;
   broken boolean;
 begin
-  select a.character, a.thread, a.seq, a.created_at, coalesce(public_payload(a.payload, false, a.id) ->> 'body', '') as body, t.board, t.title into p
+  select a.character, a.thread, a.seq, a.created_at, a.payload ->> 'body' as body, t.board, t.title into p
   from acts a join threads t on t.id = a.thread where a.id = post_act and a.kind in ('post', 'spin') and not coalesce(version_hidden(a.id), false);
   if not found then return; end if;
-  body := p.body;
+  -- Only a body that names a quote is walked; one that does not has nothing to cut.
+  body := coalesce(case when p.body ilike '%[quote%' then (select w.unquoted from bbcode_walk(p.body, null) w) else p.body end, '');
   -- The post before this one in the thread: the unique (thread, seq) index walked back. A thread's opener has none.
   select x.character, x.created_at into prev from acts x
   where x.thread = p.thread and x.seq < p.seq and x.kind in ('post', 'spin') order by x.seq desc limit 1;
@@ -491,6 +852,7 @@ declare
   in_thread integer;
   in_board integer;
   walked_plain text;
+  raw_body text;
   walked_excerpt text;
   ic card_kinds%rowtype;
   m jsonb;
@@ -510,7 +872,7 @@ begin
   f.reach := coalesce(k.reaches[1], 'post');
   -- 3. The Act that met the back: its kind, character, thread, board and words, and the thread's first post and the announcements thread a board card would be written in. For a cast
   -- or a visit by_act is not a post, or not yet written, and these find what they find.
-  select a.kind, a.character, a.thread, public_payload(a.payload, coalesce(version_hidden(a.id), false), a.id) ->> 'body', t.board into f.by_kind, f.by_character, f.by_thread, f.by_body, f.by_board
+  select a.kind, a.character, a.thread, case when coalesce(version_hidden(a.id), false) then null else a.payload ->> 'body' end, t.board into f.by_kind, f.by_character, f.by_thread, raw_body, f.by_board
   from acts a left join threads t on t.id = a.thread where a.id = by_act;
   select a.id into f.first_post from acts a where a.thread = f.by_thread and a.seq = 1 and a.kind = 'post';
   select t.id into f.announce_thread from settings s join threads t on t.id::text = s.value #>> '{}' where s.key = 'systemAnnouncements';
@@ -554,7 +916,10 @@ begin
   f.caught := (fd.catches is not null and fd.catches = incoming_card and named is not null) or coalesce(matched, false);
   -- 7. ONE walk of the Act's words for every back: its own visible words, and the excerpt of the quotes of the back's post (null for a cast or a visit, whose by_act holds no words). A function in a FROM
   -- clause runs once however many columns are taken from it, and both are taken here, so the walk costs the same whatever the back holds.
-  select w.plain, w.excerpt into walked_plain, walked_excerpt from bbcode_walk(f.by_body, fd.post) w;
+  select w.plain, w.excerpt, w.unquoted into walked_plain, walked_excerpt, f.by_body from bbcode_walk(raw_body, fd.post) w;
+  -- A quote of a post an admin hid carries its words, so the Quotes condition does not read them (the Act's own words, with every quote cut out, are all `by_body` and Says read).
+  if coalesce(quote_hidden(fd.post), false) then walked_excerpt := ''; end if;
+  if raw_body is null then f.by_body := null; end if;
   -- 8. Both probes, for every back, whatever it holds: phrase_probe folds the text and compiles and runs a pattern of one shape (a back with no such condition has a pattern built around its own id, which
   -- cannot match), the Says over the Act's own words and the Quotes, on a token of its own, over the excerpt. And the Who check, against an empty list for Anyone.
   f.phrase_hit := coalesce(phrase_probe(walked_plain, fd.phrase, fd.play::text), false);
@@ -675,7 +1040,7 @@ create view reviews_due as
     and exists (select 1 from acts x where x.kind = 'edit' and x.target_act_id = d.post and x.created_at > d.at)
     and not exists (select 1 from conduct_decisions l where l.post = d.post and l.id > d.id and l.outcome in ('hide', 'hideUntilEdited', 'unhide', 'approve'));
 
--- acts_public (0156), every column and grant as it was, with `hidden`, `any_hidden` and `concealing` last, after 0156's `ends_at`: a hidden version's body is null, `hidden` says so, and a body
+-- acts_public (0156), every column and grant as it was, with `hidden`, `any_hidden`, `concealing`, `payload_hidden` and `payload_concealing` last (the last two are what the row's own `payload` is: a post's original, an edit's own words, which History reads), after 0156's `ends_at`: a hidden version's body is null, `hidden` says so, and a body
 -- that quotes a hidden post is served as its layer (quote_layers: the one parser's concealQuotes, run by the conceal job, empties the contents of those quotes) once the layer made for
 -- the hidden set of now exists. Until it does the body is null and `concealing` is true (the screen says the post will show again in a moment, never the hidden words; like `hidden`, `concealing` is about the current version); with nothing hidden among
 -- what it quotes a body is as written, which needs no job. `payload` is the version the Act is (a post's original, an edit's own words);
@@ -695,7 +1060,9 @@ create or replace view acts_public as
          case when a.kind = 'set' then (select f.ends_at from face_down f where f.play = a.id) end as ends_at,
          h.cur as hidden,
          a.kind = 'post' and quote_hidden(a.id) as any_hidden,
-         not h.cur and coalesce(cc.refs, co.refs) and not coalesce(cc.ready, co.ready) as concealing
+         not h.cur and coalesce(cc.refs, co.refs) and not coalesce(cc.ready, co.ready) as concealing,
+         h.own as payload_hidden,
+         not h.own and co.refs and not co.ready as payload_concealing
   from acts a
   left join lateral (
     select x.id, x.payload, x.created_at from acts x

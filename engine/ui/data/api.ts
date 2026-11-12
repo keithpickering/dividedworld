@@ -412,6 +412,13 @@ export interface Act {
    */
   readonly concealing?: boolean;
   /**
+   * What the version this row's own `payload` is says, which History reads: a post's row is its original and an edit's row is the edit, and `hidden` and `concealing` above are about a post's
+   * *current* version (`acts_public.payload_hidden`, `payload_concealing`, 0340). `payloadHidden`: an admin hid this version. `payloadConcealing`: this version quotes a post an admin hid and
+   * its layer is not written yet. Neither is read from the words, which are null for both and for a body that is simply absent. Absent reads as no.
+   */
+  readonly payloadHidden?: boolean;
+  readonly payloadConcealing?: boolean;
+  /**
    * Set only on a card play whose first generation failed, which is then refunded and over (`acts_public.untaken`, 0149): public, the
    * same for every reader, and nothing of the refund rides with it. A play carrying it is not in force, as one with a `card_end` is not.
    */

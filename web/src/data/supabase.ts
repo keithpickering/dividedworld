@@ -172,6 +172,8 @@ function toAct(r: Row): Act {
     ...(r['hidden'] === true ? { hidden: true } : {}),
     ...(r['any_hidden'] === true ? { anyHidden: true } : {}),
     ...(r['concealing'] === true ? { concealing: true } : {}),
+    ...(r['payload_hidden'] === true ? { payloadHidden: true } : {}),
+    ...(r['payload_concealing'] === true ? { payloadConcealing: true } : {}),
     ...(r['untaken'] === true ? { untaken: true as const } : {}),
     ...(typeof r['ends_at'] === 'string' ? { endsAt: r['ends_at'] } : {}),
   };

@@ -253,6 +253,22 @@ describe('a post that quotes a hidden post, before the conceal job has written i
     expect(within(rows[1]!).queryByText(NOTE)).toBeNull();
   });
 
+  test('an original that quotes a hidden post, under a current edit that does not, is the plain note in History, never "hidden by an admin"', async () => {
+    const w = world();
+    w.fake.seed.hide(w.theirs, 'hide');
+    const quoting = w.fake.seed.post(w.thread, w.pipe, `[quote=${w.theirs}]${WORDS}[/quote]I answer that.`);
+    w.fake.seed.concealing(quoting);
+    w.fake.seed.edit(quoting, w.pipe, 'a clean rewrite', { at: Date.now() + 10 * 60_000 });
+    open(w);
+    const art = await article(4);
+    await userEvent.click(within(art).getByRole('button', { name: 'History' }));
+    const rows = within(await within(art).findByRole('list', { name: 'Versions of this post, oldest first' })).getAllByRole('listitem');
+    expect(rows).toHaveLength(2);
+    expect(within(rows[0]!).getByRole('note')).toHaveTextContent(CONCEALING);
+    expect(within(rows[0]!).queryByText(NOTE)).toBeNull();
+    expect(rows[1]).toHaveTextContent('a clean rewrite');
+  });
+
   test('has no axe violations', async () => {
     const w = world();
     w.fake.seed.hide(w.theirs, 'hide');

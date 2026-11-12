@@ -63,13 +63,10 @@ export const quoteHead = (q: QuoteOf): ReactNode => <QuoteHead of={q} />;
 /** What names a post to a reader who reports one of its versions: its number and its author's name, as the post's own head says them. */
 export interface PostAbout { readonly seq: number | null; readonly name: string }
 
-/**
- * Whether a History row is a hidden version. A hidden version's words are null (`public_payload`, 0340); an edit's own `hidden` says so too. The original's own row cannot say it by
- * `hidden`, which for a post is whether its *current* version is hidden, so it is read from its words.
- */
-const versionHidden = (v: Act): boolean => typeof v.payload.body !== 'string' || (v.kind === 'edit' && v.hidden === true);
-/** Whether a History row's words are withheld for a moment, not hidden: an edit that quotes a post an admin hid, before the conceal job has written its layer (`concealing`, which for an edit is its own). */
-const versionConcealing = (v: Act): boolean => v.kind === 'edit' && v.concealing === true && v.hidden !== true;
+/** Whether a History row's version is hidden by an admin: `payloadHidden`, the row's own version (a post's original, an edit's own words), never read from its words, which are null for a version that is only waiting for its layer too. */
+const versionHidden = (v: Act): boolean => v.payloadHidden === true;
+/** Whether a History row's words are withheld for a moment, not hidden: the version quotes a post an admin hid and the conceal job has not written its layer (`payloadConcealing`, of the row's own version). */
+const versionConcealing = (v: Act): boolean => v.payloadConcealing === true && v.payloadHidden !== true;
 
 /**
  * What History needs of a post's writing plays: the live plays of cards that write on it and every row of their tails, read once when History

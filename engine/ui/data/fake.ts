@@ -750,6 +750,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       editedAt: latest ? iso(latest.at) : null,
       shownEditedAt: latest && latest.at > a.at + span(settings.editGrace) ? iso(latest.at) : null,
       hidden: cur,
+      ...(own ? { payloadHidden: true } : {}),
+      ...(concealingActs.has(a.id) && !own ? { payloadConcealing: true } : {}),
       ...(concealingActs.has(latest?.id ?? a.id) && !cur ? { concealing: true } : {}),
       ...(a.kind === 'post' && (own || edits(a).some((e) => hiddenVersions.has(e.id))) ? { anyHidden: true } : {}),
       ...(untakenPlays.has(a.id) ? { untaken: true as const } : {}),
@@ -3381,7 +3383,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const versions = edits(original).map((e): Act => ({
         id: e.id, character: e.character, kind: 'edit', thread: e.thread, targetActId: id, seq: null, createdAt: iso(e.at), payload: publicPayload(e.payload, hiddenVersions.has(e.id), e.id),
         currentPayload: publicPayload(e.payload, hiddenVersions.has(e.id), e.id), editedAt: null, shownEditedAt: null, hidden: hiddenVersions.has(e.id),
-        ...(concealingActs.has(e.id) && !hiddenVersions.has(e.id) ? { concealing: true } : {}),
+        ...(concealingActs.has(e.id) && !hiddenVersions.has(e.id) ? { concealing: true, payloadConcealing: true } : {}),
+        ...(hiddenVersions.has(e.id) ? { payloadHidden: true } : {}),
       }));
       return [{ ...publicAct(original), currentPayload: publicPayload(original.payload, hiddenVersions.has(id), id), editedAt: null, shownEditedAt: null, hidden: hiddenVersions.has(id) }, ...versions];
     },

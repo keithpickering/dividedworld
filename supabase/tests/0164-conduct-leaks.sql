@@ -179,6 +179,9 @@ declare
     -- The conceal job's own reads (service role only): conceal_due hands the job the quoting Act's own words, which its parser (the engine's concealQuotes) reads, and the trigger that records
     -- what an Act's body quotes (quote_refs) reads the body of the Act being written, `new.payload`, from its own writer. Neither answers a player.
     'conceal_due(integer)', 'acts_quote_refs()',
+    -- Judges a post's own words against the rules in force and returns the rules it breaks, never the words: it reads nothing of a hidden version (version_hidden), and passes the body through
+    -- bbcode_walk's `unquoted`, which cuts every quote out, so no one's quoted words, hidden or not, are judged. (public_payload is null while a post that quotes a hidden one waits for its layer.)
+    'rule_breaks(uuid,uuid)',
     -- Runs from the service role to seed an instance from a document; its `'title'` is the document's, and its one read of `acts` is a move's kind.
     'seed_instance(jsonb)',
     -- A trigger function that indexes an Act as it is written, which only the table's trigger runs; acts_search_hidden and conduct_decisions_search (0340) take a hidden version's

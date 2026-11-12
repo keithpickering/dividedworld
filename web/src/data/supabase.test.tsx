@@ -171,6 +171,14 @@ describe('what the adapter may request', () => {
     expect(versions.map((a) => a.anyHidden)).toEqual([true, undefined]);
   });
 
+  it('reads what a version\'s own words are from payload_hidden and payload_concealing, not from its body', async () => {
+    const row = { id: B, character: A, kind: 'post', thread: T, target_act_id: null, seq: 1, created_at: '2026-11-01T00:00:00+00:00', payload: { body: null }, current_payload: { body: 'Shown.' }, edited_at: null, shown_edited_at: null };
+    const h = harness((r) => (r.url.pathname === `${REST}/acts_public` ? rows([{ ...row, payload_concealing: true }, { ...row, id: A, payload_hidden: true }, { ...row, id: T }]) : undefined));
+    const versions = await h.api.history(B);
+    expect(versions.map((a) => a.payloadConcealing)).toEqual([true, undefined, undefined]);
+    expect(versions.map((a) => a.payloadHidden)).toEqual([undefined, true, undefined]);
+  });
+
   it('reports a version to admins through report_post, the note empty as null, and refuses in the server\'s words', async () => {
     const h = harness((r) => (r.url.pathname.endsWith('/rpc/report_post')
       ? (r.body as { section?: string }).section === 'hate' ? json({ code: '53400', message: 'you have 3 reports open, the most an account can; an admin will close one', hint: 'kayfabb.refusal' }, 400) : json(7)
@@ -1321,7 +1329,7 @@ describe('signing in goes through the account function', () => {
   });
 
   it('answers a sign-in Auth refused as barred with the barred answer, signed out, never "try again"', async () => {
-    const barred = harness(() => json({ error: 'this account is barred, so it cannot sign in; reach an admin through Contact to appeal', hint: 'kayfabb.barred' }, 403));
+    const barred = harness(() => json({ error: 'this account is locked, so it cannot sign in; reach an admin through Contact to appeal', hint: 'kayfabb.barred' }, 403));
     expect(await barred.api.verifyCode('a@b.c', '123456')).toEqual({ ok: true, value: { account: false, barred: { until: undefined } } });
   });
 
