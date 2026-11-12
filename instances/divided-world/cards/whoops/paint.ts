@@ -96,7 +96,7 @@ export function shadeField(grid: Grid, washed: Uint8Array, color: string, densit
       const k = Math.max(0, shade * (1 - rim));
       const gd = Math.hypot(x + 0.5 - gcx, y + 0.5 - gcy) / grad, ga = gd < 1 ? gA * (1 - gd) : 0;
       const r = Math.min(255, ir * k + 255 * spec), g = Math.min(255, ig * k + 255 * spec), b = Math.min(255, ib * k + 255 * spec);
-      const thin = washed[i] === 1 ? Math.min(1, THIN_FLOOR + ((1 - THIN_FLOOR) * (v - T)) / THIN_SPAN) : 1;
+      const thin = washed[i] === 1 ? Math.min(1, Math.max(0, THIN_FLOOR + ((1 - THIN_FLOOR) * (v - T)) / THIN_SPAN)) : 1;
       px[o] = (r * (1 - ga) + 255 * ga) * (1 - ua);
       px[o + 1] = (g * (1 - ga) + 255 * ga) * (1 - ua);
       px[o + 2] = (b * (1 - ga) + 255 * ga) * (1 - ua);
@@ -188,7 +188,7 @@ export interface StandIn {
  * so it is valid until the next call with that slot. A browser with no 2D context returns a blank one.
  */
 export function paintStandIn(layer: StandIn, geo: Geometry, width: number, height: number, slot: number): HTMLCanvasElement {
-  const work = slotOf(slot, width, height)!;
+  const work = slotOf(slot, width, height);
   const { dpr, box } = geo;
   if (!work) return slots[slot]!;
   work.setTransform(1, 0, 0, 1, 0, 0);

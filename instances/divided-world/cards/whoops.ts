@@ -20,6 +20,7 @@
  * which cards.test.ts measures as Postgres writes it.
  */
 import { decodePoints, encodePoints } from './whoops/points.ts';
+import type { Drops } from './whoops/scrub.ts';
 import { color, economyOf, landsOn, ok, refuse, type CardRules } from '../../../engine/rules/cards.ts';
 
 export const STROKES = { most: 200, points: 500, totalPoints: 40_000, widest: 1, deepest: 1 } as const;
@@ -30,7 +31,7 @@ const ASPECT = { least: 0.001, most: 1000 } as const;
 /** A stroke as the card saves it: its points packed (whoops/points.ts), `continues` on a piece of a line after the first, `drops` on a pen's last piece. */
 export type SavedStroke =
   | { tool: 'wash'; width: number; aspect: number; points: string; continues?: true }
-  | { tool: 'ink'; color: string; width: number; aspect: number; points: string; continues?: true; drops?: 0 | 1 | 2 | 3 };
+  | { tool: 'ink'; color: string; width: number; aspect: number; points: string; continues?: true; drops?: Drops };
 
 export const whoops: CardRules<{ color: string }> = {
   key: 'whoops',
@@ -86,12 +87,13 @@ export const whoops: CardRules<{ color: string }> = {
       if (continues) {
         const before = out[out.length - 1];
         const end = before && decodePoints(before.points)!.at(-1)!;
-        if (!before || before.tool !== tool || before.width !== w || before.aspect !== a || end![0] !== decoded[0]![0] || end![1] !== decoded[0]![1]) return refuse('a continued stroke starts where the last ended');
+        if (!before || before.tool !== tool || before.width !== w || before.aspect !== a || (before.tool === 'ink' && before.color !== ink) || end![0] !== decoded[0]![0] || end![1] !== decoded[0]![1]) return refuse('a continued stroke starts where the last ended, in the same tool, color and brush');
+        if (before.tool === 'ink' && before.drops !== undefined) return refuse('only a line\'s last piece throws drops');
       }
       if (drops !== undefined && (tool !== 'ink' || typeof drops !== 'number' || !Number.isInteger(drops) || drops < 0 || drops > 3)) return refuse('a stroke\'s drops are a whole number from 0 to 3, and only a pen\'s');
       const kept = encodePoints(decoded);
       const more = { ...(continues ? { continues: true as const } : null) };
-      out.push(tool === 'ink' ? { tool, color: ink!, width: w, aspect: a, points: kept, ...more, ...(drops !== undefined ? { drops: drops as 0 | 1 | 2 | 3 } : null) } : { tool, width: w, aspect: a, points: kept, ...more });
+      out.push(tool === 'ink' ? { tool, color: ink!, width: w, aspect: a, points: kept, ...more, ...(drops !== undefined ? { drops: drops as Drops } : null) } : { tool, width: w, aspect: a, points: kept, ...more });
     }
     return ok(clean === undefined ? { strokes: out } : { strokes: out, clean });
   },

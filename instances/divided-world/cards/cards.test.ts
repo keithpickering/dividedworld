@@ -170,6 +170,9 @@ test('Whoops! refuses a stroke whose points are not packed as the card writes th
   refused([ink, { ...cont, width: 0.05, continues: true }], started, 'a different width');
   refused([ink, { ...cont, aspect: 2, continues: true }], started, 'a different aspect');
   refused([wash, { ...cont, continues: true }], started, 'a different tool');
+  refused([ink, { ...cont, color: '#ff0000', continues: true }], started, 'a different color');
+  refused([{ ...ink, drops: 2 }, { ...cont, continues: true }], /only a line's last piece throws drops/, 'drops before a continued piece');
+  assert.equal(whoops.validateState!({ strokes: [ink, { ...cont, continues: true, drops: 2 }] }).ok, true, 'drops on the last piece');
   // drops: a whole number 0 to 3, on an ink stroke.
   for (const d of [0, 1, 2, 3]) assert.equal(whoops.validateState!({ strokes: [{ ...ink, drops: d }] }).ok, true, `drops ${d}`);
   for (const d of [4, -1, 1.5, '1', null]) refused([{ ...ink, drops: d }], /drops are a whole number from 0 to 3/, `drops ${JSON.stringify(d)}`);
@@ -178,13 +181,13 @@ test('Whoops! refuses a stroke whose points are not packed as the card writes th
 
 test('the most strokes Whoops! saves fit the database\'s bound, as Postgres writes them', () => {
   // The true worst case: the most strokes, each with an equal share of the total points, every key of every stroke at its longest:
-  // a seven-character color, continues, drops 3, the widest width, a three-figure aspect, and every point's difference the largest.
+  // a seven-character color, continues, drops 3 (on the last piece, the only one that may), the widest width, a three-figure aspect, and every point's difference the largest.
   const each = STROKES.totalPoints / STROKES.most;
   assert.ok(Number.isInteger(each) && each <= STROKES.points);
   // Alternating corners: each difference is 10,000 or -10,000 (each point packs to four bytes whatever its difference).
   const corners = (from: 0 | 1) => pack(Array.from({ length: each }, (_, i): Pt => ((i + from) % 2 === 0 ? [0, 0] : [1, 1])));
   const [there, back] = [corners(0), corners(1)]; // a piece ends on the corner the next one starts on
-  const pieces = Array.from({ length: STROKES.most }, (_, i) => ({ tool: 'ink', color: '#abcdef', width: 0.9999, aspect: 0.00123, points: i % 2 === 0 ? there : back, ...(i > 0 ? { continues: true } : null), drops: 3 }));
+  const pieces = Array.from({ length: STROKES.most }, (_, i) => ({ tool: 'ink', color: '#abcdef', width: 0.9999, aspect: 0.00123, points: i % 2 === 0 ? there : back, ...(i > 0 ? { continues: true } : null), ...(i === STROKES.most - 1 ? { drops: 3 } : null) }));
   const saved = whoops.validateState!({ strokes: pieces, clean: false });
   assert.equal(saved.ok, true, saved.ok ? '' : saved.why);
   const plain = JSON.stringify(saved.ok && saved.value);
@@ -201,8 +204,8 @@ test('a stroke\'s width is kept to a ten-thousandth, its aspect to three signifi
   assert.deepEqual(saved.ok && saved.value, { strokes: [{ tool: 'ink', color: 'red', width: 0.1235, aspect: 2.35, points: pack([[0.1235, 0.9877]]) }] });
   const small = whoops.validateState!({ strokes: [{ tool: 'wash', width: 0.5, aspect: 0.0123456, points: pack([[0, 0]]) }] });
   assert.deepEqual(small.ok && small.value, { strokes: [{ tool: 'wash', width: 0.5, aspect: 0.0123, points: pack([[0, 0]]) }] });
-  const pieces = whoops.validateState!({ strokes: [{ tool: 'ink', color: 'red', width: 0.1, aspect: 2, points: pack([[0.1, 0.1], [0.2, 0.2]]), drops: 2 }, { tool: 'ink', color: 'red', width: 0.1, aspect: 2, points: pack([[0.2, 0.2], [0.3, 0.3]]), continues: true }] });
-  assert.deepEqual(pieces.ok && (pieces.value as { strokes: { continues?: true; drops?: number }[] }).strokes.map((s) => [s.continues, s.drops]), [[undefined, 2], [true, undefined]], 'continues and drops are kept');
+  const pieces = whoops.validateState!({ strokes: [{ tool: 'ink', color: 'red', width: 0.1, aspect: 2, points: pack([[0.1, 0.1], [0.2, 0.2]]) }, { tool: 'ink', color: 'red', width: 0.1, aspect: 2, points: pack([[0.2, 0.2], [0.3, 0.3]]), continues: true, drops: 2 }] });
+  assert.deepEqual(pieces.ok && (pieces.value as { strokes: { continues?: true; drops?: number }[] }).strokes.map((s) => [s.continues, s.drops]), [[undefined, undefined], [true, 2]], 'continues and drops are kept');
 });
 
 test('Stick Around holds no state to save', () => {

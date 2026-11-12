@@ -36,8 +36,8 @@ const PASS_INTEGRAL = 32 / 35;
 /** The bulb is only added to a line at least this many radii long. */
 const BULB_MIN_LENGTH = 4;
 
-/** A stroke as the field reads it: today's `Stroke`, and the `continues` and `drops` that Task 2 adds to it. */
-export type FieldStroke = Stroke & { readonly continues?: true; readonly drops?: number };
+/** A stroke as the field reads it: the card's `Stroke`, with its `continues` and `drops`. */
+export type FieldStroke = Stroke;
 
 /** The brush a line is drawn with: what a stroke keeps of it. */
 export interface Brush { readonly width: number; readonly aspect: number }
@@ -345,8 +345,14 @@ function drawLine(grid: Grid, box: Box, pieces: readonly FieldStroke[]): Rect {
   if (!first) return empty();
   const line = beginLine(grid, box, first);
   let touched = empty();
-  for (const piece of pieces) for (const p of piece.points) touched = unionRect(touched, line.to(p));
-  return unionRect(touched, line.end(pieces[pieces.length - 1]!.drops));
+  /* A throw mid-line must not leave the grid's pen open. */
+  try {
+    for (const piece of pieces) for (const p of piece.points) touched = unionRect(touched, line.to(p));
+  } finally {
+    const last = pieces[pieces.length - 1]!;
+    touched = unionRect(touched, line.end(last.tool === 'ink' ? last.drops : undefined));
+  }
+  return touched;
 }
 
 /** A pen line's pieces (strokes joined by `continues`) in one scope, ends included. */

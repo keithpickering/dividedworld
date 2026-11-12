@@ -48,3 +48,18 @@ test('a string that is not what the card writes decodes to null', () => {
   first.writeUInt16LE(10_001, 0);
   assert.equal(decodePoints(first.toString('base64url')), null, 'a first point past 1');
 });
+
+test('encode and decode need no Node Buffer (the browser has none)', () => {
+  const pts: Pt[] = [[0.1235, 0.9877], [0.2, 0.3], [0.9, 0.05], [0, 1]];
+  const expected = encodePoints(pts);
+  const held = globalThis.Buffer;
+  // @ts-expect-error the browser has no Buffer
+  delete globalThis.Buffer;
+  try {
+    assert.equal(encodePoints(pts), expected);
+    assert.deepEqual(decodePoints(expected), pts);
+    assert.equal(decodePoints(expected.slice(0, -1) + 'B'), null, 'stray trailing bits still refused');
+  } finally {
+    globalThis.Buffer = held;
+  }
+});

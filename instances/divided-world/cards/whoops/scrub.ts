@@ -33,9 +33,11 @@ export const BUCKET_PX = 50;
 export const MIN_STEP_PX = 5;
 
 export type Pt = readonly [number, number];
+/** The droplets a lifted pen throws: 0 to 3 (the card refuses others). */
+export type Drops = 0 | 1 | 2 | 3;
 export type Stroke =
   | { readonly tool: 'wash'; readonly width: number; readonly aspect: number; readonly points: readonly Pt[]; readonly continues?: true }
-  | { readonly tool: 'ink'; readonly color: string; readonly width: number; readonly aspect: number; readonly points: readonly Pt[]; readonly continues?: true; /** 0 to 3 (the card refuses others); typed `number` while field.ts's `FieldStroke` also says `drops?: number`. */ readonly drops?: number };
+  | { readonly tool: 'ink'; readonly color: string; readonly width: number; readonly aspect: number; readonly points: readonly Pt[]; readonly continues?: true; readonly drops?: Drops };
 
 /** A brush `px` across on a drawer's `box`, as a stroke keeps it. */
 export function brushOf(px: number, box: Box): { readonly width: number; readonly aspect: number } {
@@ -54,8 +56,10 @@ const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n
 
 /**
  * Ramer-Douglas-Peucker over `pts` (in px): the indices of the points kept, the first and last always among them; a
- * point within `tol` of the line through the kept ones around it is dropped. Iterative, since a 500-point drag can be a
- * deep chain.
+ * point within `tol` of the line through the kept ones around it is dropped (distances compared squared, so the inner loop
+ * takes no square root). Iterative, since a 500-point drag can be a deep chain. Worst case O(n²) on one drag (every split
+ * peels one point); that is fine here, since a drag is bounded by what a hand reports between two lifts (a few thousand points
+ * at most) and the work runs once, when the stroke ends.
  */
 function simplify(pts: readonly Pt[], tol: number): number[] {
   const n = pts.length;
@@ -65,9 +69,9 @@ function simplify(pts: readonly Pt[], tol: number): number[] {
   const todo: [number, number][] = [[0, n - 1]];
   while (todo.length) {
     const [lo, hi] = todo.pop()!;
-    let far = -1, farD = tol;
+    let far = -1, farD = tol * tol;
     for (let i = lo + 1; i < hi; i++) {
-      const d = Math.sqrt(segment2(pts[i]![0], pts[i]![1], pts[lo]![0], pts[lo]![1], pts[hi]![0], pts[hi]![1]));
+      const d = segment2(pts[i]![0], pts[i]![1], pts[lo]![0], pts[lo]![1], pts[hi]![0], pts[hi]![1]);
       if (d > farD) { far = i; farD = d; }
     }
     if (far < 0) continue;

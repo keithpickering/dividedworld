@@ -15,7 +15,7 @@ import { Kit } from '../../../../engine/ui/cards/Kit.tsx';
 import { renderInWorld } from '../../../../engine/ui/test-world.tsx';
 import { STROKES, whoops } from '../whoops.ts';
 import { LOST_ANSWER } from '../../../../engine/ui/data/api.ts';
-import { Effect, MAX_SAVE_RETRIES, RETRY_AFTER_MS, SAVE_AFTER_MS, percentWashed } from './Effect.tsx';
+import { Effect, MAX_SAVE_RETRIES, RETRY_AFTER_MS, SAVE_AFTER_MS, percentWashed, savedOf } from './Effect.tsx';
 import { viewProblems } from '../../../../engine/ui/cards/lens-words.ts';
 import { cursor } from './cursor.ts';
 import { paint, paintStandIn, type PaintLayer } from './paint.ts';
@@ -236,6 +236,25 @@ function coveredLine(ink: LayerInk): { line: number; y: number } {
   throw new Error('no line lies under this splat');
 }
 const nameOfLine = (line: number) => `L${String(line).padStart(2, '0')} alpha beta gamma`;
+
+describe('a saved state, read defensively', () => {
+  const ink = (points: Pt[], extra: object = {}) => ({ tool: 'ink', color: 'red', width: 0.1, aspect: 2, points: packStroke({ tool: 'ink', color: 'red', width: 0.1, aspect: 2, points }).points, ...extra });
+  test('a continued stroke after a dropped one is not joined to whatever now precedes it', () => {
+    const good = ink([[0.1, 0.1], [0.2, 0.2]]);
+    const bad = ink([[0.2, 0.2], [0.3, 0.3]], { points: 'not+base64url' });
+    const orphan = ink([[0.3, 0.3], [0.4, 0.4]], { continues: true });
+    const read = savedOf({ strokes: [good, bad, orphan] }).strokes;
+    expect(read).toHaveLength(2);
+    expect(read[1]!.continues).toBeUndefined();
+    /* A continued piece that does follow its kept predecessor stays joined. */
+    const joined = savedOf({ strokes: [good, ink([[0.2, 0.2], [0.4, 0.4]], { continues: true })] }).strokes;
+    expect(joined[1]!.continues).toBe(true);
+    /* A different color, or a first point that is not the last one, is not a continuation. */
+    expect(savedOf({ strokes: [good, ink([[0.2, 0.2], [0.4, 0.4]], { continues: true, color: 'blue' })] }).strokes[1]!.continues).toBeUndefined();
+    expect(savedOf({ strokes: [good, ink([[0.25, 0.2], [0.4, 0.4]], { continues: true })] }).strokes[1]!.continues).toBeUndefined();
+    expect(savedOf({ strokes: [ink([[0.1, 0.1]], { continues: true })] }).strokes[0]!.continues).toBeUndefined();
+  });
+});
 
 describe('the layers', () => {
   test('a post with three plays draws three layers, the latest on top, and still draws its words', () => {

@@ -103,7 +103,7 @@ test('one line in pieces is one line: the same field, and one bulb', () => {
   const pieces: FieldStroke[] = fitStroke({ tool: 'ink', color: 'black', ...brush, points: pts, drops: 2 }, [5 / WIDE.w, 5 / WIDE.h]);
   assert.ok(pieces.length >= 3, `${pieces.length} pieces`);
   assert.equal(linesOf(pieces).length, 1);
-  const whole: FieldStroke = { ...pieces[0]!, points: pieces.flatMap((s, i) => (i ? s.points.slice(1) : s.points)), drops: 2 };
+  const whole: FieldStroke = { ...pieces[0]!, points: pieces.flatMap((s, i) => (i ? s.points.slice(1) : s.points)), drops: 2 } as FieldStroke;
   delete (whole as { continues?: true }).continues;
   const a = denseGrid(WIDE, 1), b = denseGrid(WIDE, 1);
   strokesInto(a, WIDE, pieces);
