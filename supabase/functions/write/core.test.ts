@@ -7,6 +7,8 @@ import { instance as base } from '../_shared/instance.ts';
 import { AnswerRejected, type CompletionRequest, type Models } from '../../../engine/system/model.ts';
 import type { CardRules } from '../../../engine/rules/cards.ts';
 import { writeTokensMost } from '../../../engine/rules/cards.ts';
+import { models as realModels } from '../_shared/models/index.ts';
+import type { ModelCallRow } from '../_shared/models/ledger.ts';
 import type { Instance } from '../../../engine/rules/types.ts';
 
 const P1 = '11111111-1111-4111-8111-111111111111';
@@ -229,14 +231,24 @@ test('a post an edit has emptied finishes emptyPost, with no call', async () => 
   assert.deepEqual(finishes(calls), [{ play: P1, version: V, text: null, failed: 'emptyPost' }]);
 });
 
-test('a frame that ignores its budget ends the job at once, finished promptTooLong and not left claimed', async () => {
+test('a frame that ignores its budget ends the job at once: nothing is sent, the job finishes promptTooLong on the first claim, and the ledger row is failed', async () => {
+  const long = { ...card, writes: { ...card.writes, frame: () => ({ prompt: 'x'.repeat(200), stop: ['\n\n'] }) } } as unknown as CardRules;
+  const inst: Instance = { ...instance, cards: [...base.cards, long] };
   const { db, calls } = fakeDb([[job()]]);
-  const { models, requests } = fakeModels(() => new AnswerRejected('the prompt is too long', 'promptTooLong'));
-  const out = await run(db, models);
-  assert.equal(requests.length, 1);
+  let fetched = 0;
+  const fetch = (async () => { fetched++; return new Response('{}'); }) as unknown as typeof globalThis.fetch;
+  const rows: ModelCallRow[] = [];
+  const real = realModels((n) => ({ SYSTEM_COMPLETIONS_URL: 'https://old.example' } as Record<string, string>)[n], async (row) => { rows.push(row); }, {
+    tiers: { strong: 's', light: 'l' }, fetch, sleep: async () => {}, oldVoice: { window: 100, count: (t: string) => t.length },
+  });
+  const out = await runWrites(db, real, inst, inst.settings, 8);
+  assert.equal(fetched, 0);
   assert.deepEqual(finishes(calls), [{ play: P1, version: V, text: null, failed: 'promptTooLong' }]);
   assert.equal(out.failed, 1);
   assert.equal(out.errored, 0);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0]!.outcome, 'failed');
+  assert.equal(rows[0]!.predicate, 'promptTooLong');
 });
 
 test('a play that bought more than the window leaves room for is asked for the most that fits, and framed with the rest as its budget', async () => {
@@ -250,5 +262,24 @@ test('a play that bought more than the window leaves room for is asked for the m
   const frame = frames[0] as { budget: number; count: (t: string) => number };
   assert.equal(frame.budget, 656 - 400);
   assert.equal(typeof frame.count, 'function');
-  assert.equal(frame.count('hello'), 1);
+});
+
+test('the frame is handed the counter of the settings\' tokenizer: bytes counts a byte each, gpt2 counts tokens', async () => {
+  for (const [kind, expected] of [['bytes', 5], ['gpt2', 1]] as const) {
+    frames.length = 0;
+    const settings = { ...instance.settings, oldVoiceTokenizer: kind };
+    const { db } = fakeDb([[job()]]);
+    await runWrites(db, fakeModels(() => 'x').models, instance, settings, 8);
+    assert.equal((frames[0] as { count: (t: string) => number }).count('hello'), expected, kind);
+  }
+});
+
+test('a play that bought less than the cap is asked for what it bought, and framed with the window less that', async () => {
+  frames.length = 0;
+  const settings = { ...instance.settings, oldVoiceWindow: 1024, oldVoicePromptFloor: 256 };
+  const { db } = fakeDb([[job({ tokens: 100 })]]);
+  const { models, requests } = fakeModels(() => 'x');
+  await runWrites(db, models, instance, settings, 8);
+  assert.equal(requests[0]!.maxTokens, 100);
+  assert.equal((frames[0] as { budget: number }).budget, 1024 - 100);
 });
