@@ -14,7 +14,8 @@ export function BlindStudyEffect({ plays, reader, show, met, still, children }: 
   const ends = play?.ends;
   const endsAt = ends === undefined ? Number.NaN : Date.parse(ends);
   const now = useAt(Number.isNaN(endsAt) ? [] : [endsAt]);
-  const over = !Number.isNaN(endsAt) && endsAt <= now;
+  /* A moment (`still`) drew the play while it was up (the engine drops a play whose end is not after the moment's time), so it is up whatever the clock says. */
+  const over = !still && !Number.isNaN(endsAt) && endsAt <= now;
   const there = play !== undefined;
   const sees = reader.author || reader.caster;
 
@@ -31,12 +32,13 @@ export function BlindStudyEffect({ plays, reader, show, met, still, children }: 
   }, [show, there, over, sees, ends]);
   useEffect(() => () => show(null), [show]);
 
+  /* The reader has met the card when its post is first drawn with the veil up; a play already over, and a moment, meet nothing. */
   const met1 = useRef(false);
   useEffect(() => {
-    if (still || !there || met1.current) return;
+    if (still || !there || over || met1.current) return;
     met1.current = true;
     met();
-  }, [met, still, there]);
+  }, [met, still, there, over]);
 
   return <>{children}</>;
 }

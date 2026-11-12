@@ -73,6 +73,22 @@ describe('Blind Study', () => {
     expect(met).not.toHaveBeenCalled();
   });
 
+  test('in a moment the play was up whatever the clock says: the totals are not showing', () => {
+    const { show } = setup({ still: true, plays: [play({ ends: '2026-11-10T12:00:00Z' })] });
+    expect(last(show).state).toBe('Totals hidden from you');
+    expect(last(show).ends).toBeDefined();
+  });
+
+  test('meets the card once when it is first drawn up, and not for a play already over', () => {
+    const up = vi.fn();
+    setup({ met: up });
+    expect(up).toHaveBeenCalledTimes(1);
+    cleanup();
+    const over = vi.fn();
+    setup({ met: over, plays: [play({ ends: '2026-11-10T12:00:00Z' })] });
+    expect(over).not.toHaveBeenCalled();
+  });
+
   test('clears its view when it goes', () => {
     const { show, unmount } = setup();
     unmount();

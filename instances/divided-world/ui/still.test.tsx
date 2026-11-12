@@ -68,3 +68,20 @@ test.each(drawn.map((c) => [c.key, c] as const))('%s, drawn still, saves, releas
   /* Nothing is made inert, and nothing is lifted out of the post. */
   expect(container.querySelector('[inert]')).toBeNull();
 });
+
+/* A play drawn still was up at the moment's time (the engine drops one whose end is not after it), so a veil whose end is behind the clock is still up: no wore-off line, no "name is back", no "totals are showing". */
+test.each(['whodunnit', 'blind-study'])('%s, drawn still with an end behind the clock, is drawn as it was up', async (key) => {
+  const card = instanceUi.cards.find((c) => c.key === key)!;
+  const Effect = card.Effect!;
+  const shown: string[] = [];
+  const props: EffectProps = {
+    post: POST, plays: [{ id: `${key}-1`, card: key, layer: 1, caster: 'c2', message: '', config: {}, playedAt: '2026-11-03T12:00:00.000Z', post: POST.id, ends: '2026-11-06T12:00:00.000Z' }], states: {}, released: new Set(), written: new Map(), reader: { author: false, caster: false }, place: 'thread', reach: 'post', still: true,
+    show: (view) => { if (view) shown.push(view.state); }, met: () => {}, holdScreen: () => {}, marks: null, save: async () => ({ ok: false, error: 'no' }), release: async () => ({ ok: false, error: 'no' }), nameOf: () => 'Spritey', give: async () => ({ ok: false, error: 'no' }), moreGifts: async () => {}, wallet: null, children: <p>hi</p>,
+  };
+  vi.setSystemTime(Date.parse('2026-11-12T12:00:00.000Z'));
+  const { container } = renderInWorld(<Effect {...props} />);
+  await act(async () => { await vi.advanceTimersByTimeAsync(100); });
+  expect(container.textContent).not.toContain('all along');
+  await vi.waitFor(() => expect(shown.length).toBeGreaterThan(0));
+  expect(shown.at(-1)).toBe(key === 'whodunnit' ? 'Author hidden from everyone' : 'Totals hidden from you');
+});

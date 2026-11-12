@@ -1,7 +1,7 @@
 /**
  * Whodunnit?'s effect (card notes Part 3, Task 11): while the veil is up the post is drawn as it is, with the Lens told who it hides the
  * author from; once the play's end has passed the post carries one line under its words saying the card wore off and whose post it was
- * all along; a play an admin ended draws no line; a moment draws the line as the time says and binds nothing.
+ * all along; a play an admin ended draws no line; a moment draws it as it was up, whatever the clock says, and binds nothing.
  */
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
@@ -10,6 +10,7 @@ import type { CardPlay, CardView, EffectProps } from '../../../../engine/ui/card
 import { viewProblems } from '../../../../engine/ui/cards/lens-words.ts';
 import { endsWords } from '../../../../engine/ui/cards/marks.ts';
 import { dayAndTime } from '../../../../engine/ui/characters/format.ts';
+import { ThreadCtx, type ThreadContext } from '../../../../engine/ui/thread/context.ts';
 import { WhodunnitEffect } from './Effect.tsx';
 
 const NOW = Date.parse('2026-11-12T12:00:00Z');
@@ -18,7 +19,7 @@ const UP = '2026-11-14T12:00:00Z';
 const OVER = '2026-11-10T12:00:00Z';
 const play = (over: Partial<CardPlay> = {}): CardPlay => ({ id: 'w1', card: 'whodunnit', layer: 1, caster: 'c2', message: '', config: {}, playedAt: '2026-11-11T12:00:00Z', post: 'p1', ends: UP, ...over });
 
-function setup(over: Partial<EffectProps> = {}) {
+function setup(over: Partial<EffectProps> = {}, standIn: string | null = null) {
   const show = vi.fn<(view: CardView | null) => void>();
   const met = vi.fn();
   const props: EffectProps = {
@@ -26,7 +27,11 @@ function setup(over: Partial<EffectProps> = {}) {
     show, met, holdScreen: () => {}, marks: null, save: async () => ({ ok: false, error: 'no' }), release: async () => ({ ok: false, error: 'no' }), nameOf: (c) => (c === 'c1' ? 'Gloomba' : 'Spritey'), give: async () => ({ ok: false, error: 'no' }), moreGifts: async () => {}, wallet: null,
     children: <p>The words of the post.</p>, ...over,
   };
-  return { show, met, props, ...render(<WhodunnitEffect {...props} />) };
+  /* The thread knows which character is the veil's stand-in (office `anonymous`); `standIn` is that, the engine's answer for this page. */
+  const ctx = { standIn: (c: string | null) => c === standIn } as unknown as ThreadContext;
+  const tree = (p: EffectProps) => <ThreadCtx.Provider value={ctx}><WhodunnitEffect {...p} /></ThreadCtx.Provider>;
+  const out = render(tree(props));
+  return { show, met, props, ...out, again: (next: Partial<EffectProps>) => out.rerender(tree({ ...props, ...next })) };
 }
 const last = (show: ReturnType<typeof setup>['show']): CardView => show.mock.calls.filter((c) => c[0] !== null).at(-1)![0]!;
 
@@ -92,6 +97,17 @@ describe('Whodunnit? once it has worn off', () => {
     expect(container.querySelectorAll('.dw-whodunnit-wore')).toHaveLength(1);
   });
 
+  test('until the page is read again it is still up: the post is still the stand-in, so no line and the name is not back', () => {
+    const stand = { ...post, character: 'anon' } as Act;
+    const { container, show, again } = setup({ post: stand, plays: [play({ ends: '2026-11-12T11:59:59Z' })] }, 'anon');
+    expect(container.querySelector('.dw-whodunnit-wore')).toBeNull();
+    expect(last(show).state).toBe('Author hidden from everyone');
+    /* The read that carries the true character arrives. */
+    again({ post, plays: [play({ ends: '2026-11-12T11:59:59Z' })] });
+    expect(container.querySelector('.dw-whodunnit-wore')).toHaveTextContent("This post was Gloomba's all along.");
+    expect(last(show).state).toBe('The name is back');
+  });
+
   test('says the name is back to the Lens, with no controls', () => {
     const { show } = setup({ plays: [play({ ends: OVER })] });
     expect(last(show)).toMatchObject({ state: 'The name is back', controls: [], yours: false });
@@ -118,9 +134,10 @@ describe('Whodunnit? once it has worn off', () => {
 });
 
 describe('Whodunnit? in a play\'s moment', () => {
-  test.each([[OVER, true], [UP, false]])('drawn still with an end of %s, the line is %s as the time says; nothing is met and nothing is bound', (ends, drawn) => {
+  test.each([[OVER], [UP]])('drawn still with an end of %s, the play was up at the moment: no line, the name is not back, whatever the clock says; nothing is met and nothing is bound', (ends) => {
     const { container, show, met } = setup({ still: true, plays: [play({ ends })] });
-    expect(container.querySelector('.dw-whodunnit-wore') !== null).toBe(drawn);
+    expect(container.querySelector('.dw-whodunnit-wore')).toBeNull();
+    expect(last(show).state).toBe('Author hidden from everyone');
     expect(met).not.toHaveBeenCalled();
     expect(last(show).controls).toEqual([]);
     for (const el of [...container.querySelectorAll<HTMLElement>('*')]) {

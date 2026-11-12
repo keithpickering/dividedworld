@@ -6,12 +6,13 @@
  * name is `nameOf(post.character)`. An admin's end reverses the play and the effect is gone, so it draws no line.
  *
  * It never reads who played the card. The time is read against the clock (`useAt` redraws it when the end passes, and the engine re-reads
- * the page about a second after it); a moment (`still`) reads the same, binds nothing and meets nothing.
+ * the page about a second after it); a moment (`still`) is drawn as the play was up, binds nothing and meets nothing.
  */
-import { useEffect, useRef } from 'react';
+import { useContext, useEffect, useRef } from 'react';
 import type { CardView, EffectProps } from '../../../../engine/ui/cards/types.ts';
 import { useAt } from '../../../../engine/ui/cards/plays.ts';
 import { endsWords } from '../../../../engine/ui/cards/marks.ts';
+import { ThreadCtx } from '../../../../engine/ui/thread/context.ts';
 import { dayAndTime } from '../../../../engine/ui/characters/format.ts';
 import './whodunnit.css';
 
@@ -21,7 +22,14 @@ export function WhodunnitEffect({ post, plays, reader, show, met, still, nameOf,
   const ends = play?.ends;
   const endsAt = ends === undefined ? Number.NaN : Date.parse(ends);
   const now = useAt(Number.isNaN(endsAt) ? [] : [endsAt]);
-  const over = !Number.isNaN(endsAt) && endsAt <= now;
+  /*
+   * Over is the time passed AND the post's character no longer the stand-in. The engine re-reads the page about a second after the end, and until
+   * then the post still carries the stand-in, so the line would name "Anonymous" and the Lens would say the name is back while it is not: the effect
+   * stays in its up view until the read that carries the true character arrives. A moment (`still`) drew the play while it was up (the engine drops a
+   * play whose end is not after the moment's time before drawing), so it is up whatever the clock says.
+   */
+  const standIn = useContext(ThreadCtx)?.standIn;
+  const over = !still && !Number.isNaN(endsAt) && endsAt <= now && !(standIn?.(post.character) ?? false);
   const there = play !== undefined;
   const author = reader.author;
 

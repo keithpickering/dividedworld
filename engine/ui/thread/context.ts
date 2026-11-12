@@ -27,6 +27,8 @@ export interface ThreadContext {
   readonly veiled?: ReadonlyMap<Id, Veiled>;
   /** A character's name as the thread knows it, for a card tag's caster: "A character" where it could not be read, The System's for none. */
   readonly nameOf: (character: Id | null) => string;
+  /** Whether a character is the stand-in a card's veil shows for a withheld author (office `anonymous`), as the thread knows it: false for none or one it could not read. An instance's effect reads it to tell a post still drawn under the stand-in from one that has its true character back. */
+  readonly standIn?: (character: Id | null) => boolean;
   /** A character's square picture URL as the thread knows it (read with the same people as `nameOf`), null for none or an unknown character. */
   readonly faceOf: (character: Id | null) => string | null;
   /** A character's pronouns as the thread knows them (its profile, read with the page): copy about a visit's Mod takes the set of the character holding the office now. The engine's it/its where the character could not be read. */
