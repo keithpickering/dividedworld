@@ -43,6 +43,12 @@ describe('the order of a hand', () => {
     expect(handOrder(all(faces), faces).map((c) => [c.face.key, c.group])).toEqual([['move', 0], ['second', 1], ['gimmick', 1]]);
   });
 
+  test('an empty hand, and a held card the instance does not list, draw nothing', () => {
+    expect(handOrder([], [move])).toEqual([]);
+    expect(handOrder([{ card: 'elsewhere', held: 2 }], [move])).toEqual([]);
+    expect(arcSlots([])).toEqual([]);
+  });
+
   test('a kind held three times is one entry; a kind held none is absent', () => {
     const faces = [move, reversal];
     expect(handOrder([{ card: 'move', held: 3 }, { card: 'reversal', held: 0 }], faces).map((c) => [c.face.key, c.held])).toEqual([['move', 3]]);
@@ -64,6 +70,11 @@ describe('the slots of an arc', () => {
     expect(s[0]!.deg).toBeCloseTo(TURN_FROM);
     expect(s[3]!.deg).toBeCloseTo(TURN_TO);
     expect(rowsOf(s)).toBe(1);
+    // The ends stand at the board's heights, and the middle bows up above the straight line between them.
+    expect(s[0]!.y).toBeCloseTo(-260);
+    expect(s[3]!.y).toBeCloseTo(-250);
+    expect(s[1]!.y).toBeLessThan(-260 + 10 / 3 - 1);
+    expect(s[2]!.y).toBeLessThan(-260 + 20 / 3 - 1);
   });
 
   test('22 kinds in three groups fit one row, each a step of at least the floor apart and a half step more at a group change', () => {
@@ -74,6 +85,9 @@ describe('the slots of an arc', () => {
     const g = gaps(s, 0);
     const step = Math.min(...g);
     expect(step).toBeGreaterThanOrEqual(ARC_FLOOR);
+    // The row fills the span: 21 steps and two half steps, from the card's right edge back to the span's left.
+    expect(step).toBeCloseTo((ARC_SPAN - CARD_WIDTH) / 22);
+    expect(s[0]!.x).toBeCloseTo(72 + CARD_WIDTH - ARC_SPAN);
     g.forEach((d, i) => expect(d).toBeCloseTo(groups[i] !== groups[i + 1] ? step * (1 + GROUP_GAP) : step));
   });
 

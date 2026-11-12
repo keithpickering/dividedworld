@@ -99,10 +99,10 @@ function split(groups: readonly number[], rows: number): readonly (readonly numb
 /** Where each card of a hand stands against the hand button, given each card's group in order. */
 export function arcSlots(groups: readonly number[]): readonly ArcSlot[] {
   const n = groups.length;
+  if (n === 0) return [];
   if (n === 1) return [BOARD[1]!];
   if (n === 2) return [BOARD[0]!, BOARD[2]!];
   if (n === 3) return BOARD;
-  if (n === 0) return [];
   let rows = 1;
   // Every row is held to the floor, not only the front one: a back row with a card fewer can carry more group changes,
   // and so more units and a narrower step.
@@ -116,7 +116,7 @@ export function arcSlots(groups: readonly number[]): readonly ArcSlot[] {
     return cards.map((_, i): ArcSlot => {
       const x = LAST_X - back[i]! * step;
       // A row of one card has no length to stand along; it stands at the last card's place, t = 1.
-      const t = LAST_X === first ? 1 : (x - first) / (LAST_X - first);
+      const t = cards.length === 1 ? 1 : (x - first) / (LAST_X - first);
       return {
         x,
         y: -260 + 10 * t - ARC_BOW * Math.sin(Math.PI * t) - ROW_RISE * row,
