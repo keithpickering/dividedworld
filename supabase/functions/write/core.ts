@@ -125,7 +125,7 @@ export async function runWrites(db: Db, models: Models, instance: Instance, sett
         duty: 'cardText' as const, play: job.play, lines: 'many' as const, maxTokens, maxChars: Math.min(MOST_CHARS, maxTokens * CHARS_A_TOKEN),
         temperature: 0.9, topP: 0.95, prompt, stop: stopAt,
       };
-      const shortUnder = Math.ceil(Math.round(settings.cardWriteShortShare * maxTokens * 1e9) / 1e9); // rounded first: 0.07 * 100 is 7.000000000000001;
+      const shortUnder = Math.ceil(Math.round(settings.cardWriteShortShare * maxTokens * 1e9) / 1e9); // rounded first: 0.07 * 100 is 7.000000000000001
       const firstCall = now();
       let best: { text: string; length: number } | null = null;
       for (let attempt = 0; attempt <= settings.cardWriteRerolls; attempt++) {
