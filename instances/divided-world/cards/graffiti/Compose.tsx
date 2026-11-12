@@ -366,7 +366,25 @@ export function Compose({ mode, box, under, submit, cancel, hold, children }: Co
   }, [under]);
   useLayoutEffect(() => { setDockHost(postOf(under) ?? fallback); }, [under, fallback]);
 
-  const size = box && box.w > 0 && box.h > 0 ? box : null;
+  /* The box is the post body's (`.kb-act-main`), the one the wall paints in and Whoops! measures, and not the words' element, which on a one-line post is a strip:
+     strokes are shares of the same box before and after Tag it. The words' element sits inside it, so the drawing is offset by where the body begins. */
+  const [cell, setCell] = useState<{ w: number; h: number; left: number; top: number } | null>(null);
+  useLayoutEffect(() => {
+    const body = under?.closest<HTMLElement>('.kb-act-main');
+    if (!under || !body) { setCell(null); return undefined; }
+    const measure = () => {
+      const u = under.getBoundingClientRect(), b = body.getBoundingClientRect();
+      const next = { w: body.clientWidth, h: body.clientHeight, left: b.left + body.clientLeft - u.left, top: b.top + body.clientTop - u.top };
+      setCell((was) => (was && was.w === next.w && was.h === next.h && was.left === next.left && was.top === next.top ? was : next));
+    };
+    measure();
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const watch = new ResizeObserver(measure);
+    watch.observe(body);
+    watch.observe(under);
+    return () => watch.disconnect();
+  }, [under, box]);
+  const size = cell && cell.w > 0 && cell.h > 0 ? { w: cell.w, h: cell.h } : box && box.w > 0 && box.h > 0 ? box : null;
   useLayoutEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !size) return;
@@ -377,7 +395,7 @@ export function Compose({ mode, box, under, submit, cancel, hold, children }: Co
     if (ctx) paintWall(ctx, size, dpr, draft ? [draft] : NO_ACTS);
   }, [draft, size, dpr]);
 
-  const onBox: CSSProperties = size ? { left: 0, top: 0, width: size.w, height: size.h } : {};
+  const onBox: CSSProperties = size ? { left: cell ? cell.left : 0, top: cell ? cell.top : 0, width: size.w, height: size.h } : {};
   return (
     <>
       {children}

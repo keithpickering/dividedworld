@@ -219,6 +219,32 @@ describe('a stencil', () => {
 });
 
 describe('review fixes', () => {
+  /* The composer's box is the post body's (`.kb-act-main`), the box the wall paints in, not the words' element, which on a one-line post is a strip (found in a browser: a Fat stroke read 84%). */
+  test('a stroke on a one-line post is kept in the body\'s box, aspect and shares, and the surface covers that box', async () => {
+    const user = userEvent.setup();
+    const cell = document.createElement('div');
+    cell.className = 'kb-act-main';
+    const under = document.createElement('div');
+    cell.append(under);
+    document.body.append(cell);
+    unders.push(cell);
+    Object.defineProperty(cell, 'clientWidth', { configurable: true, value: 600 });
+    Object.defineProperty(cell, 'clientHeight', { configurable: true, value: 200 });
+    const submit = vi.fn(ok);
+    renderInWorld(<Compose post={POST} mode="cast" box={{ w: 600, h: 22 }} under={under} submit={submit} cancel={() => {}} hold={() => {}}><p>One line.</p></Compose>);
+    const surface = under.querySelector('[data-kb-draw-surface]') as HTMLElement;
+    expect(surface.style.width).toBe('600px');
+    expect(surface.style.height).toBe('200px');
+    await user.click(screen.getByRole('radio', { name: 'Fat' }));
+    /* rects sit at 0,0 in jsdom with no size, so shares come from the box: 300,100 is the middle. */
+    act(() => { fireEvent.pointerDown(surface, { clientX: 300, clientY: 100, pointerId: 1, button: 0, pointerType: 'mouse' }); });
+    act(() => { fireEvent.pointerUp(surface, { clientX: 300, clientY: 100, pointerId: 1, pointerType: 'mouse' }); });
+    await user.click(tag());
+    const first = submit.mock.calls[0]![1] as { strokes: { aspect: number; points: number[][] }[] };
+    expect(first.strokes[0]!.aspect).toBe(3);
+    expect(first.strokes[0]!.points).toEqual([[0.5, 0.5]]);
+  });
+
   /* A passive listener's preventDefault is ignored and logs "Unable to preventDefault inside passive event listener" at each stroke (found in a real browser, e2e/graffiti.spec.ts). */
   test('the surface\'s pointerdown, which calls preventDefault, and its touchmove are not passive listeners', () => {
     const added: { readonly el: unknown; readonly type: string; readonly passive: unknown }[] = [];

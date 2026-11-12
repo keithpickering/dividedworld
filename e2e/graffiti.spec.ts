@@ -131,17 +131,21 @@ test.describe('on a wide screen', () => {
     const tag = dock(page).getByRole('button', { name: 'Tag it' });
     await expect(tag).toHaveAttribute('aria-disabled', 'true');
     await expect(dock(page)).toContainText('Draw something first');
-    /* The post's words are one line here, a strip the brush's width in height; a Skinny cap leaves room on it. */
-    await dock(page).getByRole('radio', { name: 'Skinny' }).click();
+    await dock(page).getByRole('radio', { name: 'Fat' }).click();
     await stroke(page, 0.5);
     await expect(surface(page)).toHaveAttribute('data-kb-strokes', '1');
     await expect(dock(page).locator('.kb-graffiti-label')).not.toContainText('Wall 0%');
+    /* The figure the toolbar read for the drawing is the wall's once it lands: the drawing and the wall are in the body's one box. */
+    const drawn = Number(/Wall (\d+)% of/iu.exec((await dock(page).locator('.kb-graffiti-label').textContent()) ?? '')![1]);
+    expect(drawn).toBeGreaterThan(0);
+    expect(drawn).toBeLessThan(LIMIT);
     await tag.click();
     await expect(dock(page)).toBeHidden();
     /* The post wears the card: its mark and the wall's ink. */
     await expect(post(page).locator('.kb-mark[data-kb-card="graffiti"]:not(.kb-ghost-mark)')).toBeVisible();
     await expect(wallInk(page)).toBeVisible();
     await expect.poll(() => inked(page)).toBeGreaterThan(500);
+    expect(await meter(page)).toBe(drawn);
     /* A wall takes a Draw tile for any character at the body's top right (a card's own tile, never over the words' left). */
     const tile = await post(page).getByRole('button', { name: 'Draw' }).boundingBox();
     const body = (await post(page).locator('.kb-act-main').boundingBox())!;
