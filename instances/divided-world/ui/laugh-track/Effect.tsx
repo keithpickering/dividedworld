@@ -151,8 +151,12 @@ function Live({ post, plays, show, met, children }: EffectProps) {
 
   /* A place's nearness becomes the mark's opacity, written to its pieces as they are now: no state, no render. */
   const mark = useCallback((key: string, n: number) => {
-    const value = String(Math.round(n * now.current.markMost) / 100);
-    for (const e of root.current?.querySelectorAll<HTMLElement>(`[data-lt-place="${key}"]`) ?? []) e.style.setProperty('--dw-lt-near', value);
+    const value = Math.round(n * now.current.markMost) / 100;
+    /* A zero is no property at all (the CSS falls back to 0), so the pointer cursor, which follows the property, follows only a showing mark. */
+    for (const e of root.current?.querySelectorAll<HTMLElement>(`[data-lt-place="${key}"]`) ?? []) {
+      if (value === 0) e.style.removeProperty('--dw-lt-near');
+      else e.style.setProperty('--dw-lt-near', String(value));
+    }
   }, []);
 
   /* The page's watcher holds a registration for each place drawn and not yet heard. */

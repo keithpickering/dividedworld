@@ -24,7 +24,7 @@
   --dw-lt-near: 1 !important;
   cursor: pointer;
 }
-/* A piece whose mark is showing is a button the pointer can press. */
+/* A piece whose mark is showing is a button the pointer can press. Effect.tsx writes --dw-lt-near only for a nonzero mark and removes it at 0, so this matches only a showing mark. */
 .dw-lt-cue[style*='--dw-lt-near'] {
   cursor: pointer;
 }

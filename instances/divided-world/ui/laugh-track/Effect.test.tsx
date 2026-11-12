@@ -250,6 +250,22 @@ describe('Laugh Track: the gestures', () => {
     expect(heard.play).toHaveBeenCalledTimes(2);
   });
 
+  test('a mouse moving from one piece of a place into another piece of it is not a new entry; leaving the place and coming back is', () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    mount({ body: 'Luigi is [b]great[/b] today.', plays: [playOf([{ phrase: 'is great', sound: 'cheer' }])] });
+    const [a, b] = pieces();
+    expect(a!.getAttribute('data-lt-place')).toBe(b!.getAttribute('data-lt-place'));
+    act(() => { enter(a!, 10, 10); });
+    expect(heard.play).toHaveBeenCalledTimes(1);
+    vi.setSystemTime(Date.now() + 1000);
+    act(() => { fireEvent.pointerLeave(a!, { pointerType: 'mouse', relatedTarget: b }); enter(b!, 30, 10); move(b!, 40, 20); });
+    expect(heard.play).toHaveBeenCalledTimes(1);
+    act(() => { fireEvent.pointerLeave(b!, { pointerType: 'mouse', relatedTarget: document.body }); });
+    vi.setSystemTime(Date.now() + 1000);
+    act(() => { enter(a!, 60, 30); });
+    expect(heard.play).toHaveBeenCalledTimes(2);
+  });
+
   test('a tap or click fires, Enter and Space fire (default-prevented), and a second gesture inside 300ms does not play twice', () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     mount();
@@ -327,7 +343,16 @@ describe('Laugh Track: the mark', () => {
     hub.specs = [];
     mount({ cardSettings: { 'laughTrack.markMost': 0 } });
     act(() => { spec(0).near(1); });
-    expect(near(pieces()[0]!)).toBe('0');
+    expect(pieces()[0]!.style.getPropertyValue('--dw-lt-near')).toBe('');
+    expect(pieces()[0]!.style.cssText).not.toContain('--dw-lt-near');
+  });
+
+  test('a nearness of 0 takes the property off the pieces, so the pointer cursor follows only a showing mark', () => {
+    mount();
+    act(() => { spec(0).near(0.5); });
+    expect(pieces()[0]!.style.cssText).toContain('--dw-lt-near');
+    act(() => { spec(0).near(0); });
+    for (const p of pieces()) { expect(near(p)).toBe(''); expect(p.style.cssText).not.toContain('--dw-lt-near'); }
   });
 
   test('near on a place whose pieces were drawn again sets the new pieces', () => {
