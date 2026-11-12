@@ -4,7 +4,7 @@
  * arming a card closes it and leaves the card's peek over the hand button. The Phone board's sheet is none of that.
  * The Frame here is the real one over a fake API, as Frame.test.tsx draws it.
  */
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { KayfaApi, MyCharacter } from '../data/api.ts';
@@ -15,6 +15,21 @@ import { testGlass } from '../test-world.tsx';
 import { forgetBoard } from '../glass/back.ts';
 import { Frame } from './Frame.tsx';
 import { ENGINE_DEFAULT_PRONOUNS } from '../../rules/pronouns.ts';
+
+/* jsdom has no WAAPI: Motion's `animate`, which glass/play.ts runs the cards' deal and gather with, is a stub that holds each run until a test settles it. */
+interface Run { readonly el: HTMLElement; readonly frames: Record<string, unknown[]>; settle: () => void; readonly stop: ReturnType<typeof vi.fn> }
+const runs: Run[] = [];
+vi.mock('motion/react', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('motion/react')>()),
+  animate: (el: HTMLElement, frames: Record<string, unknown[]>) => {
+    let settle: () => void = () => {};
+    const p = new Promise<void>((r) => { settle = r; });
+    /* Motion's stop() commits the pose the run had reached; a mid-gather card is part way to the hand button and part way faded. */
+    const run = { el, frames, settle, stop: vi.fn(() => { el.style.opacity = '0.4'; el.style.transform = 'translateX(30px) translateY(-20px) scale(0.8)'; }) };
+    runs.push(run);
+    return Object.assign(p, { stop: run.stop });
+  },
+}));
 
 const mine = (id: string, name: string): MyCharacter => ({
   id, name, pronouns: ENGINE_DEFAULT_PRONOUNS, class: 'heel', classSince: '2026-10-01T00:00:00Z', classShownAt: null, classDueAt: null, turnOpensAt: null, debutedAt: '2026-10-01T00:00:00Z',
@@ -63,7 +78,7 @@ function setup(page = <p>page</p>) {
 
 /* Under Off the drawer is shown and hidden at once, so each test sees the page the moment the hand closes. */
 beforeEach(() => { document.documentElement.setAttribute('data-kb-motion', 'reduce'); localStorage.clear(); sessionStorage.clear(); forgetBoard(); window.history.replaceState(null, '', '/'); });
-afterEach(() => { cleanup(); document.documentElement.removeAttribute('data-kb-motion'); document.documentElement.removeAttribute('data-kb-text-size'); vi.restoreAllMocks(); });
+afterEach(() => { runs.length = 0; cleanup(); document.documentElement.removeAttribute('data-kb-motion'); document.documentElement.removeAttribute('data-kb-text-size'); vi.restoreAllMocks(); });
 
 /** The Phone board's layout, as a player's text size of 150% makes it (useBoard.ts). */
 const phone = () => document.documentElement.setAttribute('data-kb-text-size', '150');
@@ -149,6 +164,51 @@ describe('the hand on the Main board is a modal', () => {
     expect(hand).toHaveAttribute('aria-expanded', 'true');
     expect(card(STICK)).toHaveAttribute('aria-pressed', 'false');
     expect(document.querySelector('.kb-hand-peek')).toBeNull();
+  });
+});
+
+describe('the hand on the Main board, reopened while it gathers', () => {
+  test('the cards play in again, and when the last gather ends the drawer is hidden, nothing is inert and the hand button has focus', async () => {
+    document.documentElement.setAttribute('data-kb-motion', 'full');
+    setup();
+    const hand = await handButton();
+    const drawer = document.querySelector<HTMLElement>('.kb-hand-drawer')!;
+    await userEvent.click(hand);
+    expect(runs).toHaveLength(2);
+    for (const r of runs) expect(r.el.matches('li.kb-hand-card')).toBe(true);
+    await act(async () => { for (const r of runs) r.settle(); });
+    runs.length = 0;
+    /* Close: the cards gather (exits), the drawer stays shown and inert. */
+    await userEvent.click(hand);
+    const gathering = [...runs];
+    expect(gathering).toHaveLength(2);
+    expect(drawer.hidden).toBe(false);
+    expect(drawer).toHaveAttribute('inert');
+    /* Reopen before the gather ends: it is stopped, the cards deal in again (a run from the hand button to the slot) and the drawer is live. */
+    await userEvent.click(hand);
+    for (const r of gathering) expect(r.stop).toHaveBeenCalledTimes(1);
+    const dealing = runs.slice(2);
+    expect(dealing).toHaveLength(2);
+    for (const r of dealing) expect(r.frames.scale?.[0]).toBe(0.6);
+    expect(drawer.hidden).toBe(false);
+    expect(drawer).not.toHaveAttribute('inert');
+    expect(document.querySelector('.kb-hud')).toHaveAttribute('data-kb-hand-open');
+    /* The stopped gather's committed pose is not left on the cards for the deal to start from or to keep: each card is back on its slot's stylesheet. */
+    await act(async () => { for (const r of dealing) r.settle(); });
+    for (const li of drawer.querySelectorAll<HTMLElement>('li.kb-hand-card')) {
+      expect(li.style.opacity).toBe('');
+      expect(li.style.transform).toBe('');
+      expect(getComputedStyle(li).opacity).toBe('1');
+    }
+    /* Close again, and let every run, the stale ones too, settle. */
+    await userEvent.click(hand);
+    const last = runs.slice(4);
+    expect(last).toHaveLength(2);
+    await act(async () => { for (const r of runs) r.settle(); });
+    expect(drawer.hidden).toBe(true);
+    expect(document.querySelector('[inert]')).toBeNull();
+    expect(document.querySelector('.kb-hud')).not.toHaveAttribute('data-kb-hand-open');
+    expect(hand).toHaveFocus();
   });
 });
 

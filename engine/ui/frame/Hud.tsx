@@ -349,6 +349,8 @@ export function Hud() {
     if (wide) {
       /* The Main board's cards deal from the hand button and gather back into it (motion.ts `fanDeal`), each on its own `li`; the drawer's box plays nothing. */
       const cards = [...el.querySelectorAll<HTMLElement>('li.kb-hand-card')];
+      /* A run that was just stopped (a reopen during the gather, or the reverse) leaves the pose it had reached written on the card, and a stopped run clears nothing: put each card back on its slot's stylesheet before measuring from it. */
+      for (const li of cards) { li.style.transition = 'none'; li.style.removeProperty('transform'); li.style.removeProperty('opacity'); }
       const delays = stagger(feel, cards.length);
       const runs: Stop[] = [];
       let left = cards.length;
