@@ -226,7 +226,7 @@ export function MarkStrip({ post, plays, tallies, onOpen, open = null, ghost, re
   const { instance } = useKayfa();
   /* A play beyond a post goes at its end, by itself: no reread (its way out). */
   const now = useUntil(here.billed);
-  const billed = useMemo(() => markedPlays(shownPlays(here.billed), now), [here.billed, now]);
+  const billed = useMemo(() => markedPlays(shownPlays(here.billed, now), now), [here.billed, now]);
   const byKind = useKindPlays(billed);
   /* `onOpen` may be a new function every render of the post; the marks are given one that is not. */
   const latest = useRef(onOpen);

@@ -22,9 +22,7 @@ const blot: CardRules = { ...base, key: 'blot', name: 'Blot', alignment: 'salty'
 const snare: CardRules = { ...base, key: 'snare', name: 'Snare', alignment: 'salty', rarity: 'uncommon', play: 'set', trap: { trigger: { on: 'cast' } }, catches: () => 'blot', canApply: () => ok(undefined) };
 /** A common Move, set face down with a Who condition naming only a retired character, so its back looks like a trap's and never springs. */
 const dud: CardRules = { ...base, key: 'dud', name: 'Dud', alignment: 'pepperoni', rarity: 'common', canApply: (t, e, _config, now) => landsOn({ key: 'dud' }, t, e, now) };
-const instance: Instance = { ...testInstance, cards: [blot, snare, dud], settings: { ...testInstance.settings, economy: { 'x.price': 100 },
-  /* Long, because the screens read a back's end against the real clock and the fake's starts on a fixed date. */
-  setLasts: { unit: 'day', count: 3650 } } };
+const instance: Instance = { ...testInstance, cards: [blot, snare, dud], settings: { ...testInstance.settings, economy: { 'x.price': 100 } } };
 
 /** Blot draws a marker around the post's words, so a test sees whether its effect was drawn. */
 function Splash({ children }: EffectProps) {
