@@ -243,6 +243,7 @@ declare
   u text;
   bodies integer := 0;
   markers integer := 0;
+  kept integer := 0;
 begin
   for f in select e ->> 'name' as name, e ->> 'body' as body, e -> 'removed' as removed from jsonb_array_elements(current_setting('kayfabb.unquoted_corpus')::jsonb) e loop
     u := (select w.unquoted from bbcode_walk(f.body, null) w);
@@ -253,4 +254,13 @@ begin
     end loop;
   end loop;
   if bodies < 600 or markers < 200 then raise exception 'the unquoted corpus was not read whole: % bodies, % markers', bodies, markers; end if;
+  -- The converse: a cut too wide (a counterfeit `[quote=zz]` read as a real frame) takes words the parser keeps. Every marker of the body that concealQuotes did not remove must still be in unquoted.
+  for f in select e ->> 'name' as name, e ->> 'body' as body, e -> 'removed' as removed from jsonb_array_elements(current_setting('kayfabb.unquoted_corpus')::jsonb) e loop
+    u := (select w.unquoted from bbcode_walk(f.body, null) w);
+    for m in select distinct x[1] from regexp_matches(f.body, '(mk[0-9]+x)', 'g') x loop
+      kept := kept + 1;
+      if not (f.removed ? m) and position(m in u) = 0 then raise exception 'bbcode_walk cuts words the parser keeps (%): % is missing from %, from %', f.name, m, to_json(u), to_json(f.body); end if;
+    end loop;
+  end loop;
+  if kept < 400 then raise exception 'the kept markers of the unquoted corpus were not read: %', kept; end if;
 end $$;

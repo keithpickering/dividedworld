@@ -242,7 +242,7 @@ $$;
 --                   that has such a decision, and the writing of an Act that quotes a post with a hidden version. Append-only.
 --   conceal_answers one row for each request a layer's recording answered, naming the latest layer for the Act then (null when the Act had none and needed none). Append-only. A request is open
 --                   until it has one; record_layer answers only the requests it read before it read the hidden set, so a request that commits later stays open.
---   quote_layers    the quoting version's body with the contents of its quotes of the hidden posts in `hidden` emptied (null when `hidden` is empty), the latest row of an Act winning, and
+--   quote_layers    the quoting version's body with the contents of its quotes of the hidden posts in `hidden` emptied (null when `hidden` is empty), the latest row of an Act (the greatest id) winning, and
 --                   `upto`, the last request of the Act the row had seen (a record of what it read; whether an Act is done is whether its requests are answered, and whether a layer serves is whether it is for the hidden set of now).
 --
 -- Ways out ("No player is ever stuck"): a post whose quote of a hidden version has no layer yet is withheld behind a plain note that says it will show again in a moment; the job runs every
@@ -250,8 +250,9 @@ $$;
 --
 -- At a busy instance: a read costs one probe of quote_refs for a body that quotes nothing hidden, and for a body that does, one more of the layer's index; nothing reads a body's length. A decision
 -- writes one request for each Act that quotes the post, an index range of quote_refs (quoted, act); the requests grow with admin decisions and the Acts quoting what they hide, never with posts read
--- or players. conceal_due reads the open requests, those with no conceal_answers row (an anti-join of two tables that grow with decisions, never an Act's body or hidden set until the limit), and
--- computes the hidden set only for the Acts it returns: at 20,000 Acts with every request answered it costs a few milliseconds (supabase/tests/0168-conduct-concealing.sql holds the ratio), where
+-- or players. conceal_due reads the open requests, those with no conceal_answers row: an anti-join linear in every request ever written (about 0.4 microseconds each, so about 100 ms at 240,000
+-- requests; the same shape as mail_due), though never in an Act's body or hidden set until the limit. It computes the hidden set only for the Acts it returns: at 20,000 Acts with every request
+-- answered it costs a few milliseconds (supabase/tests/0168-conduct-concealing.sql holds the ratio), where
 -- a read of the hidden set and the layer for every Act ever requested took 4.7 to 6.7 seconds at 20,000 Acts and 11 at 40,000. A cursor, or an `upto` test, would be wrong here: ids committed out of
 -- order would strand a request below a cursor, or have a layer made without it answer it; an answer names the one request it read, so neither can happen.
 create table quote_refs (
@@ -278,7 +279,7 @@ create table quote_layers (
   at timestamptz not null default now(),
   check ((cardinality(hidden) = 0) = (body is null))
 );
-create index quote_layers_act on quote_layers (act, at desc, id desc);
+create index quote_layers_act on quote_layers (act, id desc);
 
 create table conceal_answers (
   request bigint primary key references conceal_requests (id),
@@ -403,7 +404,7 @@ declare
   l quote_layers;
 begin
   if cardinality(hs) = 0 then return query select false, true, null::text; return; end if;
-  select * into l from quote_layers x where x.act = v order by x.at desc, x.id desc limit 1;
+  select * into l from quote_layers x where x.act = v order by x.id desc limit 1;
   -- Granted to the readers of acts_public, so any player can ask it of any Act: the layer of a version an admin hid is the words of a hidden version, and is not handed out.
   if found and l.hidden = hs then return query select true, true, case when version_hidden(v) then null else l.body end; return; end if;
   return query select true, false, null::text;
@@ -454,13 +455,16 @@ declare
   latest quote_layers;
   id bigint;
 begin
+  -- One recording of an Act at a time, taken before anything is read: two runs of the job for one Act would otherwise each read the requests and the hidden set of their own moment and write layers in
+  -- an order no timestamp tells (`at` is the start of the transaction, not of the insert), and "the latest layer" is the one written last, by id, which the lock makes the one that read last.
+  perform pg_advisory_xact_lock(hashtextextended('conceal:' || record_layer.act::text, 0));
   -- The open requests are read before the hidden set is, so a decision that lands in between leaves its request open.
   select coalesce(array_agg(r.id), '{}'::bigint[]), coalesce(max(r.id), 0) into asked, seen
   from conceal_requests r where r.act = record_layer.act and not exists (select 1 from conceal_answers n where n.request = r.id);
   if mine is distinct from hidden_refs(record_layer.act) then
     raise exception 'the hidden set changed since it was read; read it again' using hint = 'kayfabb.conceal_stale', errcode = 'P0001';
   end if;
-  select * into latest from quote_layers x where x.act = record_layer.act order by x.at desc, x.id desc limit 1;
+  select * into latest from quote_layers x where x.act = record_layer.act order by x.id desc limit 1;
   if found and latest.hidden = mine then
     id := latest.id;
   elsif found or cardinality(mine) > 0 then

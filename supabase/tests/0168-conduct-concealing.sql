@@ -108,6 +108,156 @@ begin
   if shown is distinct from format('[quote=%s][/quote] [quote=%s][/quote]', p, r) or said is distinct from 'false' then raise exception 'out of order: S is not served its layer: % %', shown, said; end if;
 end $$;
 
+-- Closes the dblink sessions a race test opened, whatever state it left them in, so a failed assertion reports itself and not a leftover connection.
+create function tests.race_close(names text[]) returns void language plpgsql as $$
+declare n text;
+begin
+  foreach n in array names loop
+    begin perform extensions.dblink_exec(n, 'rollback'); exception when others then null; end;
+    begin perform extensions.dblink_disconnect(n); exception when others then null; end;
+  end loop;
+end $$;
+
+-- Two runs of the job for one Act at once must not strand it (the dead end a layer ordered by its transaction's start made): job B begins first, job A (which begins later) records {P1} and holds its
+-- transaction open, an admin hides P2 (a second request for S), and B records {P1, P2}, which waits on A. A commits, then B. The layers are written in that order, and "the latest layer" must be the
+-- one written last, B's, for the hidden set of now; ordered by the start of the transaction it is A's stale {P1}, every request is answered, S is not due, and S stays concealing forever.
+-- The rows are committed (tests.commit); the two jobs and the admin are dblink sessions.
+do $$
+declare
+  url text := current_setting('kayfabb.scratch_url');
+  adm uuid := gen_random_uuid(); wr uuid := gen_random_uuid();
+  ch uuid := gen_random_uuid(); th uuid := gen_random_uuid();
+  p1 uuid := gen_random_uuid(); p2 uuid := gen_random_uuid(); s uuid := gen_random_uuid();
+  layer_text text; shown text; said text; waited integer := 0; got bigint;
+  svc text := $c$do $d$ begin perform set_config('request.jwt.claims', '{"role": "service_role"}', true); perform set_config('role', 'service_role', true); end $d$ $c$;
+begin
+  perform tests.commit(format($sql$
+    insert into auth.users (id, email) values (%1$L, 'cc-race-a@test.invalid'), (%2$L, 'cc-race-w@test.invalid');
+    insert into accounts (id) values (%1$L), (%2$L);
+    insert into admins (account) values (%1$L);
+    insert into characters (id, owner, name, debuted_at) values (%3$L, %2$L, 'Race Writer', now());
+    insert into class_history (character, class_key) values (%3$L, 'alpha');
+    insert into threads (id, board, title) select %4$L, b.id, 'Racing jobs' from boards b where b.slug = 'general';
+    insert into acts (id, character, kind, thread, payload) values (%5$L, %3$L, 'post', %4$L, '{"body": "Words of P1."}'), (%6$L, %3$L, 'post', %4$L, '{"body": "Words of P2."}');
+    insert into acts (id, character, kind, thread, payload) values (%7$L, %3$L, 'post', %4$L, jsonb_build_object('body', format('[quote=%%s]Words of P1.[/quote] [quote=%%s]Words of P2.[/quote]', %5$L::text, %6$L::text)));
+  $sql$, adm, wr, ch, th, p1, p2, s));
+  layer_text := format('[quote=%s][/quote] [quote=%s][/quote]', p1, p2);
+  -- P1 is hidden and committed: S has its request (r1), for {P1}.
+  perform tests.commit(format($e$
+    select set_config('request.jwt.claims', jsonb_build_object('sub', %L::uuid, 'role', 'authenticated')::text, true);
+    select set_config('role', 'authenticated', true);
+    do $d$ begin perform decide(null, %L, 'hide', null, 'p1'); end $d$
+  $e$, adm, p1));
+  begin
+    -- B begins first, and only then A.
+    perform extensions.dblink_connect('job_b', url);
+    perform extensions.dblink_exec('job_b', 'begin');
+    perform extensions.dblink_exec('job_b', svc);
+    perform pg_sleep(0.05);
+    perform extensions.dblink_connect('job_a', url);
+    perform extensions.dblink_exec('job_a', 'begin');
+    perform extensions.dblink_exec('job_a', svc);
+    -- A records {P1} and holds.
+    perform extensions.dblink_exec('job_a', format('do $d$ begin perform record_layer(%L, %L, %L); end $d$', s, array[p1], format('[quote=%s][/quote] [quote=%s]Words of P2.[/quote]', p1, p2)));
+    -- An admin hides P2, committed: the second request for S.
+    perform tests.commit(format($e$
+      select set_config('request.jwt.claims', jsonb_build_object('sub', %L::uuid, 'role', 'authenticated')::text, true);
+      select set_config('role', 'authenticated', true);
+      do $d$ begin perform decide(null, %L, 'hide', null, 'p2'); end $d$
+    $e$, adm, p2));
+    -- B records {P1, P2} (it began first), and waits on A.
+    perform extensions.dblink_send_query('job_b', format('select record_layer(%L, %L, %L)', s, (select array_agg(x order by x) from unnest(array[p1, p2]) x), layer_text));
+    loop
+      exit when exists (select 1 from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock' and pid <> pg_backend_pid());
+      waited := waited + 1;
+      if waited > 200 then raise exception 'race: job B neither waits on job A nor finishes: it was never held'; end if;
+      exit when extensions.dblink_is_busy('job_b') = 0;
+      perform pg_sleep(0.05);
+    end loop;
+    perform extensions.dblink_exec('job_a', 'commit');
+    select r into got from extensions.dblink_get_result('job_b') as t(r bigint);
+    perform extensions.dblink_get_result('job_b') ;
+    perform extensions.dblink_exec('job_b', 'commit');
+  exception when others then
+    perform tests.race_close(array['job_a', 'job_b']);
+    raise;
+  end;
+  perform tests.race_close(array['job_a', 'job_b']);
+  -- Every request is answered. Either S is due again, or it is served the layer for {P1, P2}: it is never left concealing with nothing due.
+  perform tests.become(wr);
+  select a.current_payload ->> 'body', a.concealing::text into shown, said from acts_public a where a.id = s;
+  perform tests.unbecome();
+  if not tests.is_due(s) and (shown is distinct from layer_text or said is distinct from 'false') then
+    raise exception 'race: S is left concealing with nothing due after two runs of the job (a stale layer is the latest): served % concealing %', shown, said;
+  end if;
+end $$;
+
+-- The open requests are read before the hidden set (record_layer's order), so a decision that commits between the two reads leaves its request open. A hook on hidden_refs (renamed, and put back)
+-- commits an admin's hide of P2 right after the hidden set is read: the job read {P1}, and the request the decision wrote must not be answered by the layer for {P1}. With the reads the other way
+-- round the request is read after the decision, and answered by the stale layer: S is not due and stays concealing forever.
+do $$
+declare
+  url text := current_setting('kayfabb.scratch_url');
+  adm uuid := gen_random_uuid(); wr uuid := gen_random_uuid();
+  ch uuid := gen_random_uuid(); th uuid := gen_random_uuid();
+  p1 uuid := gen_random_uuid(); p2 uuid := gen_random_uuid(); s uuid := gen_random_uuid();
+  due record; shown text; said text;
+begin
+  perform tests.commit(format($sql$
+    insert into auth.users (id, email) values (%1$L, 'cc-late-a@test.invalid'), (%2$L, 'cc-late-w@test.invalid');
+    insert into accounts (id) values (%1$L), (%2$L);
+    insert into admins (account) values (%1$L);
+    insert into characters (id, owner, name, debuted_at) values (%3$L, %2$L, 'Late Writer', now());
+    insert into class_history (character, class_key) values (%3$L, 'alpha');
+    insert into threads (id, board, title) select %4$L, b.id, 'Late decision' from boards b where b.slug = 'general';
+    insert into acts (id, character, kind, thread, payload) values (%5$L, %3$L, 'post', %4$L, '{"body": "Words of P1."}'), (%6$L, %3$L, 'post', %4$L, '{"body": "Words of P2."}');
+    insert into acts (id, character, kind, thread, payload) values (%7$L, %3$L, 'post', %4$L, jsonb_build_object('body', format('[quote=%%s]Words of P1.[/quote] [quote=%%s]Words of P2.[/quote]', %5$L::text, %6$L::text)));
+  $sql$, adm, wr, ch, th, p1, p2, s));
+  perform tests.commit(format($e$
+    select set_config('request.jwt.claims', jsonb_build_object('sub', %L::uuid, 'role', 'authenticated')::text, true);
+    select set_config('role', 'authenticated', true);
+    do $d$ begin perform decide(null, %L, 'hide', null, 'p1'); end $d$
+  $e$, adm, p1));
+  -- The admin's hide of P2 is made and held, uncommitted, in its own session.
+  begin
+    perform extensions.dblink_connect('late_admin', url);
+    perform extensions.dblink_exec('late_admin', 'begin');
+    perform extensions.dblink_exec('late_admin', format($e$
+      select set_config('request.jwt.claims', jsonb_build_object('sub', %L::uuid, 'role', 'authenticated')::text, true);
+      select set_config('role', 'authenticated', true);
+      do $d$ begin perform decide(null, %L, 'hide', null, 'p2'); end $d$
+    $e$, adm, p2));
+    alter function hidden_refs(uuid) rename to hidden_refs_real;
+    create function hidden_refs(v uuid) returns uuid[] language plpgsql security definer set search_path = public, pg_temp as $f$
+    declare r uuid[] := hidden_refs_real(v);
+    begin
+      if current_setting('kayfabb.late_hook', true) = 'on' then
+        perform set_config('kayfabb.late_hook', 'off', true);
+        perform extensions.dblink_exec('late_admin', 'commit');
+      end if;
+      return r;
+    end $f$;
+    perform set_config('kayfabb.late_hook', 'on', true);
+    perform tests.become_service();
+    perform record_layer(s, array[p1], format('[quote=%s][/quote] [quote=%s]Words of P2.[/quote]', p1, p2));
+    perform tests.unbecome();
+    drop function hidden_refs(uuid);
+    alter function hidden_refs_real(uuid) rename to hidden_refs;
+  exception when others then
+    perform tests.race_close(array['late_admin']);
+    raise;
+  end;
+  perform tests.race_close(array['late_admin']);
+  if (select count(*) from conceal_requests r where r.act = s) is distinct from 2 then raise exception 'late decision: the hook did not commit the decision between the reads'; end if;
+  if not tests.is_due(s) then raise exception 'late decision: S is not due, though a decision committed after the job read the hidden set: its request was answered by the layer for {P1}'; end if;
+  select * into due from tests.due_for(s) as t(act uuid, hidden uuid[], body text);
+  if due.hidden is distinct from (select array_agg(x order by x) from unnest(array[p1, p2]) x) then raise exception 'late decision: S is due for % and not {P1, P2}', due.hidden; end if;
+  perform tests.become_service();
+  perform record_layer(s, array[p1, p2], format('[quote=%s][/quote] [quote=%s][/quote]', p1, p2));
+  perform tests.unbecome();
+  if tests.is_due(s) then raise exception 'late decision: S is still due after the layer for {P1, P2}'; end if;
+end $$;
+
 -- ---- What a row's own `payload` is, apart from the current version: payload_concealing and payload_hidden (History reads them) ----
 -- A post whose original quotes a hidden post and whose current version is a clean edit is not concealing (the version a player reads is the edit's), but its original is, until its layer exists; an edit an
 -- admin hid has its own words hidden.
@@ -221,16 +371,16 @@ begin
   select * into rd from tests.read_as(reader, q) x;
   if rd.body is not null or rd.concealing is distinct from true then raise exception 'a layer made for another hidden set was served: % %', rd.body, rd.concealing; end if;
   select * into rd from tests.due_for(q) as t(act uuid, hidden uuid[], body text);
-  if rd.hidden is distinct from (select array_agg(x order by x) from unnest(array[p1, p2]) x) then raise exception 'the second hide is not due with both ids: %', rd.hidden; end if;
+  if rd.hidden is distinct from (select array_agg(x order by x) from unnest(array[p1, p2]) x) then raise exception 'the second hide is not due with layer_text ids: %', rd.hidden; end if;
   perform tests.become_service();
-  perform record_layer(q, array[p2, p1, p1], 'layer of both');
+  perform record_layer(q, array[p2, p1, p1], 'layer of layer_text');
   perform tests.unbecome();
   select * into rd from tests.read_as(reader, q) x;
-  if rd.body is distinct from 'layer of both' or rd.concealing then raise exception 'the newest layer is not the one served: %', rd.body; end if;
+  if rd.body is distinct from 'layer of layer_text' or rd.concealing then raise exception 'the newest layer is not the one served: %', rd.body; end if;
   -- a layer already made for the set of now is not made again: the job's repeat is answered with the one there is
   select count(*) into layers from quote_layers where act = q;
   perform tests.become_service();
-  perform record_layer(q, array[p1, p2], 'layer of both, again');
+  perform record_layer(q, array[p1, p2], 'layer of layer_text, again');
   perform tests.unbecome();
   if (select count(*) from quote_layers where act = q) is distinct from layers then raise exception 'a layer for the set the latest layer is already for was written again'; end if;
 
@@ -307,11 +457,22 @@ begin
   perform tests.become_anon();
   if coalesce(tests.refusal('select * from conceal_due(5)'), 'ran') not like '42501|%' then raise exception 'a visitor reached conceal_due'; end if;
   perform tests.unbecome();
-  foreach said in array array['update quote_layers set body = null', 'delete from quote_layers', 'truncate quote_layers cascade', 'update quote_refs set quoted = quoted', 'delete from quote_refs', 'truncate quote_refs',
-    'update conceal_requests set act = act', 'delete from conceal_requests', 'truncate conceal_requests cascade',
-    'update conceal_answers set layer = null', 'delete from conceal_answers', 'truncate conceal_answers'] loop
-    if coalesce(tests.refusal(said), 'ran') not like 'P0001|%' then raise exception 'a conceal table was edited or emptied: % -> %', said, coalesce(tests.refusal(said), 'ran'); end if;
-  end loop;
+  -- Each statement is refused by its own table's guard, named by its message: a `truncate ... cascade` of a table also reaches conceal_answers, whose own guard would answer for a table whose guard is
+  -- missing, so a bare P0001 cannot say which guard spoke.
+  declare
+    g record;
+  begin
+    for g in select * from (values
+      ('update quote_layers set body = null', 'a quote layer is never edited%'), ('delete from quote_layers', 'a quote layer is never edited%'), ('truncate quote_layers cascade', 'a quote layer is never edited%'),
+      ('update quote_refs set quoted = quoted', 'a quote reference is never edited%'), ('delete from quote_refs', 'a quote reference is never edited%'), ('truncate quote_refs', 'a quote reference is never edited%'),
+      ('update conceal_requests set act = act', 'a request to conceal is never edited%'), ('delete from conceal_requests', 'a request to conceal is never edited%'),
+      ('truncate conceal_requests cascade', 'a request to conceal is never edited%'),
+      ('update conceal_answers set layer = null', 'an answer to a request to conceal is never edited%'), ('delete from conceal_answers', 'an answer to a request to conceal is never edited%'),
+      ('truncate conceal_answers', 'an answer to a request to conceal is never edited%')) v(stmt, msg) loop
+      said := coalesce(tests.refusal(g.stmt), 'ran');
+      if said not like 'P0001|%|' || g.msg then raise exception 'a conceal table was edited or emptied, or refused by another table''s guard: % -> %', g.stmt, said; end if;
+    end loop;
+  end;
 
   -- ---- A page of hostile bodies costs the same whatever their length: nothing on a read walks a body's characters ----
   -- Twenty posts a thread, each a quote of a hidden post wrapping a thousand openers, the layer recorded (what the job makes of it is the engine's). Work per character on a read would show as a
@@ -457,7 +618,7 @@ begin
     from (select r.act, min(r.id) as first from conceal_requests r group by r.act) d
     cross join lateral (select hidden_refs(d.act) as hs) h
     join acts x on x.id = d.act
-    where (select l.hidden from quote_layers l where l.act = d.act order by l.at desc, l.id desc limit 1) is distinct from h.hs
+    where (select l.hidden from quote_layers l where l.act = d.act order by l.id desc limit 1) is distinct from h.hs
     order by d.first
     limit greatest(conceal_due.most, 0)
   $f$;
