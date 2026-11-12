@@ -132,7 +132,7 @@ describe('Divided World\'s cards in the guide, in the glass\'s words about setti
     expect(t.summary).toBe('Posts your reply right under a post, where it stays however long the thread grows.');
     expect(ui.status).toBe('A reply cut in under it');
     expect(ui.hint).toBe('A Line Cutter: the reply under this post was written later and cut in line.');
-    expect(ui.logPlay?.({}, instance.settings)).toBe('It put a reply right under the post.');
+    expect(ui.logPlay?.({}, {})).toBe('It put a reply right under the post.');
     expect(t.describe).not.toMatch(/face down on one of your own posts/u);
     expect(t.describe).toMatch(/^A Pepperoni card, rare\. /u);
     expect(lineCutter.rarity).toBe('rare');
