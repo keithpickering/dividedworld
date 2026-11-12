@@ -101,6 +101,8 @@ async function lightOf(page: Page) {
 
 /** How far right, as a fraction of the bitmap's width, the light's centroid must move. */
 const MOVED = 0.15;
+/** The same for a pointer moved across the pack's own box, 10% to 90% of its width (about 0.21 measured; idle drift alone moves it by about 0.05). */
+const NEAR_MOVED = 0.12;
 
 async function theSlotsPack(page: Page) {
   await page.setViewportSize({ width: 1440, height: 1080 });
@@ -123,6 +125,13 @@ test('the Booster in the slot is a picture with a light: after a pointer move it
   const left = (await lightOf(page)).centroidX;
   await page.mouse.move(1438, 1078, { steps: 6 });
   await expect.poll(async () => (await lightOf(page)).centroidX, { timeout: 5000 }).toBeGreaterThan(left + MOVED);
+  /* A pack is lit from near: the pointer across the pack's own 50 px moves the highlight with it, and not only the drift's worth. */
+  await page.mouse.move(box.x + box.width * 0.1, box.y + box.height / 2, { steps: 6 });
+  await expect.poll(async () => (await lightOf(page)).lit, { timeout: 5000 }).toBeGreaterThan(0);
+  await page.waitForTimeout(600);
+  const leftEdge = (await lightOf(page)).centroidX;
+  await page.mouse.move(box.x + box.width * 0.9, box.y + box.height / 2, { steps: 6 });
+  await expect.poll(async () => (await lightOf(page)).centroidX, { timeout: 5000 }).toBeGreaterThan(leftEdge + NEAR_MOVED);
 });
 
 test.describe('with motion reduced', () => {

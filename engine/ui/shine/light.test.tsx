@@ -67,6 +67,110 @@ describe('lightAt', () => {
   });
 });
 
+/* The formula before `near` existed, written out by hand: a host that is not near must get exactly this. */
+function formerLight(input: LightInput, rect: { readonly top: number; readonly height: number; readonly left?: number; readonly width?: number }, vh: number, t: number, phase: number) {
+  let x = REST.x * 0.4 + input.px * 0.9;
+  let y = REST.y * 0.4 + input.py * 0.55;
+  const s = vh > 0 ? (rect.top + rect.height / 2) / vh - 0.5 : 0;
+  y += s * 2.8;
+  x += s * 0.9;
+  if (input.tilt) { x += input.tx * 1.1; y += input.ty * 1.1; }
+  x += Math.sin(t / 1700 + phase) * 0.1 + Math.sin(t / 640 + phase * 0.3) * 0.025;
+  y += Math.cos(t / 2100) * 0.08 + Math.cos(t / 530 + phase) * 0.02;
+  return { x: Math.max(-1.5, Math.min(1.5, x)), y: Math.max(-1.5, Math.min(1.5, y)) };
+}
+
+describe('lightAt for a near host', () => {
+  beforeEach(() => document.documentElement.setAttribute('data-kb-motion', 'full'));
+  afterEach(() => document.documentElement.removeAttribute('data-kb-motion'));
+  const W = 1000;
+  /* A pack 200 by 300 centered at (500, 500) in a 1000 by 1000 window. */
+  const pack = { top: 350, height: 300, left: 400, width: 200 };
+  const vp = { height: VH, width: W };
+  /* A pointer at client (cx, cy) as the store holds it. */
+  const at = (cx: number, cy: number): LightInput => ({ ...base, px: (cx / W - 0.5) * 2, py: (cy / VH - 0.5) * 2, pointed: true });
+
+  it('a host that is not near gets exactly the former light, for several inputs', () => {
+    const inputs: LightInput[] = [base, { ...base, px: 0.5, py: -1, pointed: true }, { px: -0.3, py: 0.8, tx: 0.4, ty: -0.2, tilt: true, pointed: true }, { px: 5, py: -5, tx: 0, ty: 0, tilt: false }];
+    for (const input of inputs) for (const [rect, t, phase] of [[pack, 0, 0], [{ ...pack, top: 20 }, 1234, 7], [{ ...pack, top: 900 }, 99999, 2.4]] as const) {
+      const former = formerLight(input, rect, VH, t, phase);
+      for (const got of [lightAt(input, rect, vp, t, phase), lightAt(input, rect, vp, t, phase, false)]) {
+        near(got.x, former.x);
+        near(got.y, former.y);
+      }
+    }
+  });
+  it('adds 0.7 of the pointer offset from the host center, in half-widths and half-heights', () => {
+    const off = lightAt(at(500, 500), pack, vp, 0, 0, false);
+    const on = lightAt(at(550, 575), pack, vp, 0, 0, true);
+    const plain = lightAt(at(550, 575), pack, vp, 0, 0, false);
+    near(on.x - plain.x, 0.7 * 0.5);
+    near(on.y - plain.y, 0.7 * 0.5);
+    /* A pointer at the host's own center adds nothing. */
+    const centered = lightAt(at(500, 500), pack, vp, 0, 0, true);
+    near(centered.x, off.x);
+    near(centered.y, off.y);
+  });
+  it('clamps the offset to -1..1, so a pointer far from the host holds the light at the host edge', () => {
+    const edge = lightAt(at(600, 650), pack, vp, 0, 0, true);
+    const plainEdge = lightAt(at(600, 650), pack, vp, 0, 0, false);
+    near(edge.x - plainEdge.x, 0.7);
+    const far = lightAt(at(800, 800), pack, vp, 0, 0, true);
+    const plainFar = lightAt(at(800, 800), pack, vp, 0, 0, false);
+    near(far.x - plainFar.x, 0.7);
+    near(far.y - plainFar.y, 0.7);
+    const farLeft = lightAt(at(200, 200), pack, vp, 0, 0, true);
+    const plainLeft = lightAt(at(200, 200), pack, vp, 0, 0, false);
+    near(farLeft.x - plainLeft.x, -0.7);
+    near(farLeft.y - plainLeft.y, -0.7);
+  });
+  it('still clamps the result to +-1.5', () => {
+    expect(lightAt({ ...at(1000, 1000), px: 1, py: 1 }, { top: 5000, height: 10, left: 0, width: 10 }, vp, 0, 0, true)).toEqual({ x: 1.5, y: 1.5 });
+  });
+  it('with no fine pointer (the store never moved) a near host gets no near term, not one measured from the window middle', () => {
+    const off = lightAt(base, { top: 350, height: 300, left: 0, width: 200 }, vp, 0, 0, true);
+    const former = formerLight(base, { top: 350, height: 300 }, VH, 0, 0);
+    near(off.x, former.x);
+    near(off.y, former.y);
+  });
+  it('returns REST under reduced motion', () => {
+    document.documentElement.setAttribute('data-kb-motion', 'reduce');
+    expect(lightAt(at(600, 650), pack, vp, 0, 0, true)).toEqual(REST);
+  });
+  it('a host with no width or height, or a window with no width, gets no near term and stays finite', () => {
+    for (const [rect, v] of [[{ top: 0, height: 0, left: 0, width: 0 }, vp], [pack, { height: VH, width: 0 }], [{ top: 350, height: 300 }, vp]] as const) {
+      const l = lightAt(at(600, 650), rect, v, 0, 0, true);
+      const former = formerLight(at(600, 650), rect, v.height, 0, 0);
+      near(l.x, former.x);
+      near(l.y, former.y);
+    }
+  });
+  it('the store marks the pointer as placed only after a mouse or pen move on a fine pointer', () => {
+    window.matchMedia = ((q: string) => ({ matches: q.includes('hover: hover'), media: q, addEventListener: () => {}, removeEventListener: () => {} })) as unknown as typeof window.matchMedia;
+    light.reset();
+    const host = {};
+    light.attach(host);
+    expect(light.input().pointed).toBe(false);
+    const ev = (type: string) => { const e = new Event('pointermove'); Object.assign(e, { pointerType: type, clientX: 10, clientY: 10 }); window.dispatchEvent(e); };
+    ev('touch');
+    expect(light.input().pointed).toBe(false);
+    ev('mouse');
+    expect(light.input().pointed).toBe(true);
+    light.reset();
+    expect(light.input().pointed).toBe(false);
+  });
+  it('a device with no fine pointer never places the pointer', () => {
+    window.matchMedia = ((q: string) => ({ matches: false, media: q, addEventListener: () => {}, removeEventListener: () => {} })) as unknown as typeof window.matchMedia;
+    light.reset();
+    light.attach({});
+    const e = new Event('pointermove');
+    Object.assign(e, { pointerType: 'mouse', clientX: 10, clientY: 10 });
+    window.dispatchEvent(e);
+    expect(light.input().pointed).toBe(false);
+    light.reset();
+  });
+});
+
 describe('ease', () => {
   it('has a 110ms time constant', () => {
     near(ease(0, 1, 0.11), 1 - Math.exp(-1));

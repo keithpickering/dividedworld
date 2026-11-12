@@ -133,8 +133,9 @@ leaves the band where it is printed, from 74% to 82% of its height, quiet. An op
 the engine's tear line, so every pack tears the same way.
 
 With a relief as well, one canvas over the picture holds the highlight the page's light adds
-(`engine/ui/shine/relief.ts`, `engine/ui/vending/packLight.ts`): the light is the one a shiny post has, it rests under
-reduced motion, and the canvas never holds the pack itself. So a pack with no relief, a relief that fails to load or
+(`engine/ui/shine/relief.ts`, `engine/ui/vending/packLight.ts`): the light is the page's, and it also follows the pointer across the
+pack itself (the pack asks the loop to light it from near, so the highlight sits near the pointer while it is over the pack),
+it rests under reduced motion, and the canvas never holds the pack itself. So a pack with no relief, a relief that fails to load or
 cannot be read, and a browser with no canvas all show the still picture, whole.
 
 The guard holds a pack's folder to what it holds a card's, and a `relief.webp` to a still WebP of exactly 540 by 840,

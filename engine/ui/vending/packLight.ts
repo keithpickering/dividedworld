@@ -160,6 +160,7 @@ export function PackLight({ picture, relief, part }: PackLightProps) {
         };
         register(host, canvas, seen, density, (f) => { frameLight = f.light; return draw(); }, {
           quiet: true,
+          near: true,
           hidden: () => { canvas.width = 0; canvas.height = 0; data = null; },
         });
       });

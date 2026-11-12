@@ -4,10 +4,10 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { light as pageLight } from '../shine/light.ts';
 import { probe } from '../shine/loop.ts';
 
-const lit = vi.hoisted(() => ({ calls: [] as { rows: { top: number; bottom: number } | undefined; w: number; h: number }[], tints: [] as (Uint8ClampedArray | null)[] }));
+const lit = vi.hoisted(() => ({ calls: [] as { rows: { top: number; bottom: number } | undefined; w: number; h: number; light: { x: number; y: number } }[], tints: [] as (Uint8ClampedArray | null)[] }));
 vi.mock('../shine/relief.ts', async (importOriginal) => {
   const real = await importOriginal<typeof import('../shine/relief.ts')>();
-  return { ...real, makeRelief: vi.fn((normals, tint, w, h) => { lit.tints.push(tint); return real.makeRelief(normals, tint, w, h); }), lightRelief: vi.fn((relief, light, out, rows) => { lit.calls.push({ rows, w: relief.w, h: relief.h }); real.lightRelief(relief, light, out, rows); }) };
+  return { ...real, makeRelief: vi.fn((normals, tint, w, h) => { lit.tints.push(tint); return real.makeRelief(normals, tint, w, h); }), lightRelief: vi.fn((relief, light, out, rows) => { lit.calls.push({ rows, w: relief.w, h: relief.h, light: { ...light } }); real.lightRelief(relief, light, out, rows); }) };
 });
 import { PackLight, RESIZE_DEBOUNCE_MS } from './packLight.ts';
 
@@ -114,6 +114,25 @@ describe('the pack\'s light', () => {
     const stop = watchShinyInView((c) => seen.push(c));
     stop();
     expect(seen).toEqual([null]);
+  });
+
+  test('is lit from near: the light answers the pointer\'s place over the pack, not only over the window', async () => {
+    document.documentElement.setAttribute('data-kb-motion', 'full');
+    window.matchMedia = ((q: string) => ({ matches: q.includes('hover: hover'), media: q, addEventListener: () => {}, removeEventListener: () => {} })) as unknown as typeof window.matchMedia;
+    await mount(fresh());
+    const e = new Event('pointermove');
+    Object.assign(e, { pointerType: 'mouse', clientX: 260, clientY: 400 });
+    window.dispatchEvent(e);
+    see(canvas(), true);
+    frames(1);
+    expect(lit.calls).toHaveLength(1);
+    const { lightAt } = await import('../shine/light.ts');
+    const rect = { top: 0, height: 420, left: 0, width: 270 };
+    const vp = { height: window.innerHeight, width: window.innerWidth };
+    const want = lightAt(pageLight.input(), rect, vp, 16, 0, true);
+    expect(lit.calls[0]!.light.x).toBeCloseTo(want.x, 9);
+    expect(lit.calls[0]!.light.y).toBeCloseTo(want.y, 9);
+    expect(want.x, 'the near term is in it').not.toBeCloseTo(lightAt(pageLight.input(), rect, vp, 16, 0, false).x, 3);
   });
 
   test('two packs with the same relief at the same size load it once', async () => {
