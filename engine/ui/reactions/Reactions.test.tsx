@@ -1067,11 +1067,12 @@ describe('a post-local reaction and a blind post', () => {
       vi.useFakeTimers({ shouldAdvanceTime: true });
       try {
         const w = world();
-        const soon = new Date(Date.now() + 5_000).toISOString();
+        /* The page's clock is the backend's (`api.now()`), the fake's own, which the test advances. */
+        const soon = new Date(w.fake.clock.now() + 5_000).toISOString();
         const v = row(w, w.theirs, w.spritey, [blind(w.theirs, w.spritey, soon)]);
         act(() => { v.tallies.merge(w.theirs, { fire: 2 }); });
         expect(await screen.findByText(/^Reaction totals are hidden on this post until /u)).toBeInTheDocument();
-        await act(async () => { await vi.advanceTimersByTimeAsync(6_000); });
+        await act(async () => { w.fake.clock.advance(6_000); await vi.advanceTimersByTimeAsync(6_000); });
         expect(screen.queryByText(/^Reaction totals are hidden/u)).toBeNull();
         expect(screen.getByRole('button', { name: 'Fire, 2. React as Mrs. Hooligan' })).toBeInTheDocument();
       } finally { vi.useRealTimers(); }

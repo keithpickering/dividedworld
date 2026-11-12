@@ -890,7 +890,7 @@ describe('a visitor\'s calls', () => {
     });
     await h.api.settings();
     await h.api.boards();
-    await h.api.requestCode('a@b.c', null).catch(() => undefined);
+    await h.api.requestCode('a@b.c', null, null).catch(() => undefined);
     expect(h.log.length).toBeGreaterThanOrEqual(3);
     expect(h.log.some((r) => r.url.pathname === '/functions/v1/account')).toBe(true);
     for (const r of h.log) {
@@ -1268,10 +1268,10 @@ describe('signing in goes through the account function', () => {
       if (r.url.pathname === '/rest/v1/rpc/whoami') return json(A);
       return undefined;
     });
-    expect(await h.api.requestCode(' a@b.c ', 'inv')).toEqual({ ok: true, value: { message: 'If this address can sign in...', invite: 'that invite opens nothing, so no new login is made with it' } });
+    expect(await h.api.requestCode(' a@b.c ', 'inv', '/board/general?page=2')).toEqual({ ok: true, value: { message: 'If this address can sign in...', invite: 'that invite opens nothing, so no new login is made with it' } });
     expect(await h.api.verifyCode('a@b.c', '123456')).toEqual({ ok: true, value: { account: true } });
     expect(h.log.filter((r) => r.url.pathname === '/functions/v1/account').map((r) => r.body)).toEqual([
-      { action: 'requestCode', email: ' a@b.c ', invite: 'inv' },
+      { action: 'requestCode', email: ' a@b.c ', invite: 'inv', next: '/board/general?page=2' },
       { action: 'verifyCode', email: 'a@b.c', code: '123456' },
     ]);
     expect(await h.api.session()).toEqual({ signedIn: true, account: A });
@@ -1284,6 +1284,34 @@ describe('signing in goes through the account function', () => {
     expect(await wrong.api.verifyCode('a@b.c', '000000')).toEqual({ ok: false, error: 'that code does not match, or it has expired: ask for a new one', field: 'code' });
     const closed = harness((r) => (r.url.pathname === '/auth/v1/user' ? json(SESSION.user) : json({ session: SESSION, account: false, why: 'registration is closed; when an admin opens it again, your next sign-in opens your account' })));
     expect(await closed.api.verifyCode('a@b.c', '123456')).toEqual({ ok: true, value: { account: false, why: 'registration is closed; when an admin opens it again, your next sign-in opens your account' } });
+  });
+
+  it('verifies a link hash there, installs the session it carries, and says why an account stayed closed', async () => {
+    const hash = 'abcDEF123_-abcDEF123_-abcDEF123_-';
+    const h = harness((r) => {
+      if (r.url.pathname === '/functions/v1/account') return json({ session: SESSION, account: true });
+      if (r.url.pathname === '/auth/v1/user') return json(SESSION.user);
+      if (r.url.pathname === '/rest/v1/rpc/whoami') return json(A);
+      return undefined;
+    });
+    expect(await h.api.verifyLink(hash)).toEqual({ ok: true, value: { account: true } });
+    expect(h.log.filter((r) => r.url.pathname === '/functions/v1/account').map((r) => r.body)).toEqual([{ action: 'verifyLink', tokenHash: hash }]);
+    expect(await h.api.session()).toEqual({ signedIn: true, account: A });
+    expect(h.log.some((r) => /\/auth\/v1\/(otp|verify|recover|signup|magiclink)/.test(r.url.pathname))).toBe(false);
+    const closed = harness((r) => (r.url.pathname === '/auth/v1/user' ? json(SESSION.user) : json({ session: SESSION, account: false, why: 'registration is closed; when an admin opens it again, your next sign-in opens your account' })));
+    expect(await closed.api.verifyLink(hash)).toEqual({ ok: true, value: { account: false, why: 'registration is closed; when an admin opens it again, your next sign-in opens your account' } });
+  });
+
+  it('passes a refused link through with its field and sets no session, and a body with no session is not done', async () => {
+    const hash = 'abcDEF123_-abcDEF123_-abcDEF123_-';
+    const sentence = 'that link does not work, or it has expired: ask for a new code';
+    const wrong = harness(() => json({ field: 'link', error: sentence }, 400));
+    expect(await wrong.api.verifyLink(hash)).toEqual({ ok: false, error: sentence, field: 'link' });
+    expect(await wrong.api.session()).toEqual({ signedIn: false, account: null });
+    const bare = harness(() => json({ account: true }));
+    const answer = await bare.api.verifyLink(hash);
+    expect(answer.ok).toBe(false);
+    expect(await bare.api.session()).toEqual({ signedIn: false, account: null });
   });
 
   it('is signed out with no account call when there is no session', async () => {

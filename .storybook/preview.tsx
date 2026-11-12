@@ -27,6 +27,7 @@ import { instance } from '../instances/divided-world/index.ts';
 import { instanceUi } from '../instances/divided-world/ui/index.ts';
 import { fallbackSettings } from '../web/src/data/settings.ts';
 import { assertMoment, createBoardsFake, seedBoards } from '../web/src/data/fixtures/boards.ts';
+import { onPageClock } from '../web/src/data/fixtures/page-clock.ts';
 
 /* The instance's glass, as the app puts it on the page. */
 applyGlass(document.documentElement, instanceUi.glass, 'standard');
@@ -43,12 +44,12 @@ const withWorld: Decorator = (Story, context) => {
     if (moment !== undefined) {
       const named = assertMoment(moment);
       const fake = createBoardsFake(named);
-      return { api: fake, path: seedBoards(fake, named) };
+      return { api: onPageClock(fake), path: seedBoards(fake, named) };
     }
     if (!world && !path) return null;
     const fake = createFake({ instance, settings: fallbackSettings });
     world?.(fake, instance);
-    return { api: fake, path };
+    return { api: onPageClock(fake), path };
   }, [world, path, moment]);
   if (!made) return <Story />;
   const { api } = made;

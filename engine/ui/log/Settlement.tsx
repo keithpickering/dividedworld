@@ -57,8 +57,8 @@ function shownTab(data: LogData, tab: Id | null) {
 
 /** The summary of the newest settlement in `data`, for one character's tab: the ready state's content, inside the page's ways out. */
 export function Summary({ data, tab, onTab }: { readonly data: LogData; readonly tab: Id | null; readonly onTab: (tab: Id) => void }) {
-  const { instance, ui, settings } = useKayfa();
-  const words: Words = { instance, ui, postsPerPage: settings.postsPerPage, economy: economyNow(instance.settings, settings.economy) };
+  const { api, instance, ui, settings } = useKayfa();
+  const words: Words = { instance, ui, postsPerPage: settings.postsPerPage, economy: economyNow(instance.settings, settings.economy), now: api.now() };
   const s = data.log.settlements[0]!;
   const tabs = tabsOf(data);
   const current = shownTab(data, tab);

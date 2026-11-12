@@ -12,6 +12,7 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import type { Act, ActKind, EffectState, Id, KayfaApi, SurfaceAct, SurfaceNow } from '../data/api.ts';
 import type { InstanceUi } from '../types.ts';
+import { useKayfa } from '../context.tsx';
 import { BEYOND_POST, type BeyondPost, type CardRules } from '../../rules/cards.ts';
 import { localKey, singleEmoji } from '../../rules/emoji.ts';
 import { QUADRANTS, type Quadrant, type Settings, type Span } from '../../rules/types.ts';
@@ -35,13 +36,13 @@ export const isBack = (kind: string): boolean => kind === CARD_BACK || kind.star
 const sprungKind = (spring: Id) => `${CARD_BACK}:${spring}`;
 
 /** Whether a back's time has passed, at the end the server stored: a back with none is over only when it springs or is taken back. */
-export const backOver = (back: CardPlay, now: number = Date.now()): boolean => back.endsAt != null && Date.parse(back.endsAt) <= now;
+export const backOver = (back: CardPlay, now: number): boolean => back.endsAt != null && Date.parse(back.endsAt) <= now;
 
 /**
  * The plays a post shows: all but a card back whose time has passed with nothing springing it, or that its setter took back, which is gone, as the server drops it
  * (card_target). Its end is the one the server stored when it was set (`endsAt`).
  */
-export function shownPlays(plays: readonly CardPlay[], now: number = Date.now()): readonly CardPlay[] {
+export function shownPlays(plays: readonly CardPlay[], now: number): readonly CardPlay[] {
   const shown = plays.filter((p) => !(p.faceDown && !p.revealed && (p.takenBack !== undefined || backOver(p, now))));
   return shown.length === plays.length ? plays : shown;
 }
@@ -94,7 +95,7 @@ export const homeOf = (play: Pick<CardPlay, 'post' | 'on'>): Id => play.on ?? pl
  * arrived, and it was refunded) and a play beyond a post whose end has passed (it ends on its timer, its way out). A Use's end on a post is the Lens's to say ("has ended"), so it is kept. What counts layers, offers
  * a card or pins a thread reads this; the marks and the Lens read `markedPlays`, which keeps an ended play on a post to say so.
  */
-export function livePlays(plays: readonly CardPlay[], now: number = Date.now()): readonly CardPlay[] {
+export function livePlays(plays: readonly CardPlay[], now: number): readonly CardPlay[] {
   const live = plays.filter((p) => !p.reversed && !p.untaken && !(p.reach && p.ends !== undefined && Date.parse(p.ends) <= now));
   return live.length === plays.length ? plays : live;
 }
@@ -104,7 +105,7 @@ export function livePlays(plays: readonly CardPlay[], now: number = Date.now()):
  * play is, so its mark and its Lens row can say "Ended by an admin" or "Didn't take". Its layer is off all the same (`livePlays`,
  * `effectsOf`, the post's effects); the marks do not count it.
  */
-export function markedPlays(plays: readonly CardPlay[], now: number = Date.now()): readonly CardPlay[] {
+export function markedPlays(plays: readonly CardPlay[], now: number): readonly CardPlay[] {
   const marked = plays.filter((p) => !(p.reach && (p.reversed || (p.ends !== undefined && Date.parse(p.ends) <= now))));
   return marked.length === plays.length ? plays : marked;
 }
@@ -117,14 +118,15 @@ export const TIMER_MOST = 2 ** 31 - 1;
  * read. Nothing is scheduled while none is ahead.
  */
 export function useAt(ends: readonly number[]): number {
-  const [now, setNow] = useState(() => Date.now());
+  const { api } = useKayfa();
+  const [now, setNow] = useState(() => api.now());
   const ahead = ends.filter((e) => e > now);
   const next = ahead.length === 0 ? null : Math.min(...ahead);
   useEffect(() => {
     if (next === null) return;
-    const timer = setTimeout(() => setNow(Date.now()), Math.min(TIMER_MOST, Math.max(0, next - Date.now()) + 1));
+    const timer = setTimeout(() => setNow(api.now()), Math.min(TIMER_MOST, Math.max(0, next - api.now()) + 1));
     return () => clearTimeout(timer);
-  }, [next, now]);
+  }, [api, next, now]);
   return now;
 }
 
@@ -164,14 +166,14 @@ export function localKindsOf(plays: readonly CardPlay[], cards: readonly Pick<Ca
 export interface BlindPlay { readonly play: Id; readonly caster: Id | null; readonly ends: string }
 
 /** The plays on a post that hide its reaction totals now: a `totals` veil, in force, whose end is still ahead. */
-export function blindPlaysOf(plays: readonly CardPlay[], cards: readonly Pick<CardRules, 'key' | 'veil'>[], now: number = Date.now()): readonly BlindPlay[] {
+export function blindPlaysOf(plays: readonly CardPlay[], cards: readonly Pick<CardRules, 'key' | 'veil'>[], now: number): readonly BlindPlay[] {
   return plays
     .filter((p) => standing(p) && !p.reversed && p.ends !== undefined && Date.parse(p.ends) > now && cards.some((c) => c.key === p.card && c.veil === 'totals'))
     .map((p) => ({ play: p.id, caster: p.caster, ends: p.ends! }));
 }
 
 /** The soonest end still ahead among plays beyond a post, as an epoch, or null: when what is drawn changes next by itself. */
-export function nextEnd(plays: readonly CardPlay[], now: number = Date.now()): number | null {
+export function nextEnd(plays: readonly CardPlay[], now: number): number | null {
   let soonest: number | null = null;
   for (const p of plays) {
     if (!p.reach || p.ends === undefined) continue;

@@ -656,11 +656,11 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
   /* The page's one timer for veils: when the soonest veil still up ends, the page is read again, since nothing says so on the channel. Re-armed as plays come and go. */
   useEffect(() => {
     if (veils.size === 0) return undefined;
-    const next = nextVeilEnd(plays, feed.shown.keys(), veils);
+    const next = nextVeilEnd(plays, feed.shown.keys(), veils, api.now());
     if (next === null) return undefined;
-    const timer = setTimeout(() => { askCatchUp.current(); setVeilClock((n) => n + 1); }, Math.min(TIMER_MOST, Math.max(0, next - Date.now()) + VEIL_READ_GRACE_MS));
+    const timer = setTimeout(() => { askCatchUp.current(); setVeilClock((n) => n + 1); }, Math.min(TIMER_MOST, Math.max(0, next - api.now()) + VEIL_READ_GRACE_MS));
     return () => clearTimeout(timer);
-  }, [veils, plays, feed.shown, veilClock]);
+  }, [api, veils, plays, feed.shown, veilClock]);
 
   /* At the bottom of the last page, held Acts come in, sliding. */
   useEffect(() => {

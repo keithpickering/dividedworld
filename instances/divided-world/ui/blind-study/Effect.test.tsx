@@ -9,7 +9,12 @@ import type { CardPlay, CardView, EffectProps } from '../../../../engine/ui/card
 import { viewProblems } from '../../../../engine/ui/cards/lens-words.ts';
 import { endsWords } from '../../../../engine/ui/cards/marks.ts';
 import { NO_INK } from '../../../../engine/ui/cards/claims.ts';
+import { KayfaProvider, type Kayfa } from '../../../../engine/ui/context.tsx';
 import { BlindStudyEffect } from './Effect.tsx';
+
+/** The page's clock is the backend's (`api.now()`); a test's is its own fake one. */
+const kayfa = { api: { now: () => Date.now() } } as unknown as Kayfa;
+const inPage = (el: React.ReactElement) => <KayfaProvider value={kayfa}>{el}</KayfaProvider>;
 
 const NOW = Date.parse('2026-11-12T12:00:00Z');
 const post: Act = { id: 'p1', character: 'c1', kind: 'post', thread: 't1', targetActId: null, seq: 1, createdAt: '2026-11-08T12:00:00Z', payload: { body: 'hi' }, currentPayload: { body: 'hi' }, editedAt: null } as unknown as Act;
@@ -23,7 +28,7 @@ function setup(over: Partial<EffectProps> = {}) {
     show, met: () => {}, ink: NO_INK, holdScreen: () => {}, marks: null, save: async () => ({ ok: false, error: 'no' }), release: async () => ({ ok: false, error: 'no' }), nameOf: () => 'Spritey', give: async () => ({ ok: false, error: 'no' }), moreGifts: async () => {}, wallet: null,
     children: <p>The words of the post.</p>, ...over,
   };
-  return { show, ...render(<BlindStudyEffect {...props} />) };
+  return { show, ...render(inPage(<BlindStudyEffect {...props} />)) };
 }
 const last = (show: ReturnType<typeof setup>['show']): CardView => show.mock.calls.filter((c) => c[0] !== null).at(-1)![0]!;
 

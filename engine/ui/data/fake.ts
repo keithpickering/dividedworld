@@ -66,6 +66,9 @@ const SEASONED_WELCOME = '2026-10-01T00:00:00.000Z';
 /** The code `verifyCode` accepts for any address. */
 export const TEST_CODE = '123456';
 
+/** The link hash `verifyLink` accepts, for the address of the last code asked for: the shape the server takes (16 to 256 of A-Z, a-z, 0-9, `_` and `-`). */
+export const TEST_LINK = 'test-link-hash-0123456789_ABCDEF';
+
 const CODE_MESSAGE = 'If this address can sign in here, a code and a link to sign in are on their way to it. A new login needs an invite where this instance asks for one. If nothing comes in a few minutes, ask again.';
 const ALREADY_PUBLIC = 'that character\'s class is already public; after a Turn, the new class can be revealed';
 const SYSTEM_BOARD = 'only the staff post here; spin a thread from what they said';
@@ -348,6 +351,8 @@ interface SeedAct {
 export interface Fake extends KayfaApi {
   signInAs(account: Id | null): void;
   emailOf(account: Id): string;
+  /** The `next` the last code was asked with, null where none was. */
+  lastNext(): string | null;
   readonly clock: { now(): number; advance(ms: number): void };
   readonly broadcast: {
     /** Every event the server would have sent, held or not. */
@@ -454,7 +459,7 @@ const UNPLACED: ReadonlySet<ActKind> = new Set<ActKind>(['edit', 'card', 'set', 
  */
 type WriteName = { [K in keyof KayfaApi]: KayfaApi[K] extends (...a: never[]) => Promise<infer R> ? (R extends Answer<unknown> ? K : never) : never }[keyof KayfaApi] | 'markRead' | 'signOut';
 const WRITES: ReadonlySet<string> = new Set(Object.keys({
-  requestCode: true, verifyCode: true, openAccount: true, signOut: true, postUpdate: true, dismissHandoverTodo: true, setAdminContact: true,
+  requestCode: true, verifyCode: true, verifyLink: true, openAccount: true, signOut: true, postUpdate: true, dismissHandoverTodo: true, setAdminContact: true,
   holdMove: true, reverseMove: true, reverseCard: true, replaceSuccessor: true, replaceQueuedDescription: true, describeBoard: true, setSlot: true,
   moveSlot: true, saveMachine: true, intercept: true, fileReport: true, fileAppeal: true, markRead: true, setPresenceHidden: true,
   setPreferences: true, meetCard: true, seeWelcome: true, seeTip: true, skipTips: true, resumeTips: true, restoreTips: true, replayTour: true,
@@ -465,7 +470,7 @@ const WRITES: ReadonlySet<string> = new Set(Object.keys({
   trophyAwardFailures: true, giveFailedAward: true, adminAwards: true, adminCharacterNamed: true,
 } satisfies Record<WriteName, true>));
 /** The methods that are not a promise of something: everything else is made one. */
-const NOT_PROMISED = new Set(['onSession', 'subscribeThread', 'subscribeBoard', 'subscribeAccount', 'subscribeReach']);
+const NOT_PROMISED = new Set(['now', 'onSession', 'subscribeThread', 'subscribeBoard', 'subscribeAccount', 'subscribeReach']);
 type Sync<T> = { [K in keyof T]: T[K] extends (...a: infer A) => Promise<infer R> ? (...a: A) => R : T[K] };
 
 /**
@@ -532,6 +537,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const postKindKey = (post: Id, key: string) => `${post} ${key}`;
   const invites: InviteRec[] = [];
   const pendingInvite = new Map<string, string | null>();
+  /** The address the last code was asked for, which `TEST_LINK` signs in. */
+  let lastAsked: string | null = null;
+  let lastNextAsked: string | null = null;
   const views = new Map<Id, number>();
   /** Presence (0041): one row per character, written only by that character's own polls. */
   const presence = new Map<Id, { kind: PresencePlace['kind']; place: Id | null; board: Id | null; placeSince: number; onlineSince: number; seenAt: number }>();
@@ -860,7 +868,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const takesEffectAt = () => (nextSettlement === null ? null : iso(nextSettlement));
 
   /** The points of a character's infractions that have not dropped off (the seeds write no ban, so none resets the bar). */
-  const warnOf = (id: Id): number => [...acts.values()].reduce((n, a) => (a.kind === 'infraction' && a.payload.character === id && Date.parse(a.payload.expires_at as string) > Date.now() ? n + (a.payload.points as number) : n), 0);
+  const warnOf = (id: Id): number => [...acts.values()].reduce((n, a) => (a.kind === 'infraction' && a.payload.character === id && Date.parse(a.payload.expires_at as string) > now() ? n + (a.payload.points as number) : n), 0);
   /** When a character's latest running ban ends, or null (banned_until, 0109): a ban's end, an appeal's ruling on it read in its place. */
   const bannedUntilOf = (id: Id): number | null => {
     let latest: number | null = null;
@@ -2887,13 +2895,26 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return prefix.length >= 4 && words.some((w) => w.length >= prefix.length && oneOff(w.slice(0, prefix.length), prefix)) ? 1 : 0;
   }
 
+  /** Signs an address in once its code or link is good: a known account, an account its invite opens, or no account and the reason. */
+  function signInVerified(address: string): Answer<{ readonly account: boolean; readonly why?: string }> {
+    const known = byEmail.get(address);
+    if (known) { setSession({ email: address, account: known }); return ok({ account: true }); }
+    const opened = tryOpen(address, pendingInvite.get(address) ?? null);
+    if ('account' in opened) { setSession({ email: address, account: opened.account }); return ok({ account: true }); }
+    setSession({ email: address, account: null });
+    return ok({ account: false, why: `${opened.why}; ${opened.way}` });
+  }
+
   const core: Sync<KayfaApi> = {
+    now: () => now(),
     session: () => sessionNow(),
     onSession(listener) { sessionListeners.add(listener); return () => { sessionListeners.delete(listener); }; },
-    requestCode(email, invite) {
+    requestCode(email, invite, next) {
       const address = email.trim().toLowerCase();
       if (address.length < 3 || address.length > 254 || !/^[^\s@]+@[^\s@]+$/.test(address)) return refuse('is not an email address', 'email');
       pendingInvite.set(address, invite);
+      lastAsked = address;
+      lastNextAsked = next;
       // Said of the invite alone, never of the address: an answer that differs would say whether it has an account.
       const valid = invite !== null && invites.some((i) => i.code === invite && i.usedBy === null && now() < i.issuedAt + span(settings.inviteLifetime));
       if (invite === null || settings.registrationMode === 'open' || valid) return ok({ message: CODE_MESSAGE });
@@ -2906,13 +2927,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const digits = code.replace(/\s/g, '');
       if (!/^\d{6,10}$/.test(digits)) return refuse('is the digits from the email', 'code');
       if (digits !== TEST_CODE) return refuse('that code does not match, or it has expired: ask for a new one', 'code');
-      const address = email.trim().toLowerCase();
-      const known = byEmail.get(address);
-      if (known) { setSession({ email: address, account: known }); return ok({ account: true }); }
-      const opened = tryOpen(address, pendingInvite.get(address) ?? null);
-      if ('account' in opened) { setSession({ email: address, account: opened.account }); return ok({ account: true }); }
-      setSession({ email: address, account: null });
-      return ok({ account: false, why: `${opened.why}; ${opened.way}` });
+      return signInVerified(email.trim().toLowerCase());
+    },
+    verifyLink(tokenHash) {
+      if (tokenHash !== TEST_LINK || lastAsked === null) return refuse('that link does not work, or it has expired: ask for a new code', 'link');
+      return signInVerified(lastAsked);
     },
     openAccount(invite) {
       if (session.email === null) return refuse('sign in first');
@@ -4918,6 +4937,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       setSession({ email: a.email, account });
     },
     emailOf: (account: Id) => accounts.get(account)!.email,
+    lastNext: () => lastNextAsked,
     clock: { now, advance: (ms: number) => { offset += ms; } },
     broadcast: {
       log,

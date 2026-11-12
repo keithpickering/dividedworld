@@ -196,7 +196,7 @@ export function endsVeil(plays: Plays, posts: Iterable<Id>, veils: ReadonlySet<s
 export const VEIL_READ_GRACE_MS = 1_000;
 
 /** The soonest end still ahead among the live plays of veil cards on these posts, as an epoch, or null: when the page must be read again by itself. */
-export function nextVeilEnd(plays: Plays, posts: Iterable<Id>, veils: ReadonlySet<string>, now: number = Date.now()): number | null {
+export function nextVeilEnd(plays: Plays, posts: Iterable<Id>, veils: ReadonlySet<string>, now: number): number | null {
   let soonest: number | null = null;
   for (const post of posts) {
     for (const p of plays.get(post).plays) {

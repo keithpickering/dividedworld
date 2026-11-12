@@ -12,7 +12,12 @@ import { endsWords } from '../../../../engine/ui/cards/marks.ts';
 import { dayAndTime } from '../../../../engine/ui/characters/format.ts';
 import { NO_INK } from '../../../../engine/ui/cards/claims.ts';
 import { ThreadCtx, type ThreadContext } from '../../../../engine/ui/thread/context.ts';
+import { KayfaProvider, type Kayfa } from '../../../../engine/ui/context.tsx';
 import { WhodunnitEffect } from './Effect.tsx';
+
+/** The page's clock is the backend's (`api.now()`); a test's is its own fake one. */
+const kayfa = { api: { now: () => Date.now() } } as unknown as Kayfa;
+const inPage = (el: React.ReactElement) => <KayfaProvider value={kayfa}>{el}</KayfaProvider>;
 
 const NOW = Date.parse('2026-11-12T12:00:00Z');
 const post: Act = { id: 'p1', character: 'c1', kind: 'post', thread: 't1', targetActId: null, seq: 1, createdAt: '2026-11-08T12:00:00Z', payload: { body: 'hi' }, currentPayload: { body: 'hi' }, editedAt: null } as unknown as Act;
@@ -30,7 +35,7 @@ function setup(over: Partial<EffectProps> = {}, standIn: string | null = null) {
   };
   /* The thread knows which character is the veil's stand-in (office `anonymous`); `standIn` is that, the engine's answer for this page. */
   const ctx = { standIn: (c: string | null) => c === standIn } as unknown as ThreadContext;
-  const tree = (p: EffectProps) => <ThreadCtx.Provider value={ctx}><WhodunnitEffect {...p} /></ThreadCtx.Provider>;
+  const tree = (p: EffectProps) => inPage(<ThreadCtx.Provider value={ctx}><WhodunnitEffect {...p} /></ThreadCtx.Provider>);
   const out = render(tree(props));
   return { show, met, props, ...out, again: (next: Partial<EffectProps>) => out.rerender(tree({ ...props, ...next })) };
 }
