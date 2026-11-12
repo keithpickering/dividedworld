@@ -27,7 +27,7 @@
 import type { Block, Mail, MailTheme } from './types.ts';
 
 export interface RenderOptions {
-  /** Placeholders a button's href may be, exactly (for example `{{ .ConfirmationURL }}`). */
+  /** Placeholders a button's href may be, or begin with (for example `{{ .RedirectTo }}#token_hash={{ .TokenHash }}`). */
   readonly slots?: readonly string[];
   /**
    * Whether the output goes through Go's text/template (Supabase Auth's templates), where a stray `{{` breaks the email. True by default;
@@ -68,7 +68,7 @@ function checkTheme(t: MailTheme): void {
 }
 
 function checkHref(href: string, where: string, slots: readonly string[], goTemplate: boolean): string {
-  if (!/^(https:|mailto:)/.test(href) && !slots.includes(href)) throw new Error(`${where}: href ${JSON.stringify(href)} is not https:, mailto: or a declared slot`);
+  if (!/^(https:|mailto:)/.test(href) && !slots.some((s) => href.startsWith(s))) throw new Error(`${where}: href ${JSON.stringify(href)} is not https:, mailto: or a declared slot`);
   if (/[\u0000-\u001f\u007f]/.test(href)) throw new Error(`${where}: href holds a control character`);
   if (goTemplate) guard(href, where, slots);
   return esc(href);

@@ -17,7 +17,7 @@ afterEach(() => { cleanup(); });
 async function linked() {
   const fake = buildWorld({ registrationMode: 'invite' });
   fake.seed.account('known', { email: 'known@example.test' });
-  await fake.requestCode('linked@example.test', null);
+  await fake.requestCode('linked@example.test', null, null);
   await fake.verifyCode('linked@example.test', TEST_CODE);
   return fake;
 }

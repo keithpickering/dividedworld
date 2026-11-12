@@ -30,6 +30,7 @@
  * never in a URL, a header or a channel name.
  */
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import type { SignedIn } from '../../../engine/ui/data/api.ts';
 import { DEFAULT_PREFERENCES, LOST_ANSWER, NOT_SENT, ReadFailure, REPORT_LIMIT, SPUN_FROM_MAX } from '../../../engine/ui/data/api.ts';
 import { readLogPage, type LedgerRow, type LogRange, type LogRead, type ShareRow } from '../../../engine/ui/data/log-page.ts';
 import { buildMoveNotice, toDemand, toProgress } from '../../../engine/ui/data/moves.ts';
@@ -868,6 +869,19 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
 
   /* ----------------------------------------------------------------- session ---- */
 
+  /** What a sign-in answer from the account function comes to, for a code and a link alike: the session it carries installed, and whether an account opened. */
+  async function signedIn(a: Answer<Row>): Promise<Answer<SignedIn>> {
+    /* Auth refused the sign-in because the login is barred (the function's 403 with the barred hint), after a code or a link alike: its end is not known here, so the screen says no date. */
+    if (!a.ok && a.barred) { bannedByRefresh = false; return { ok: true, value: { account: false, barred: { until: undefined } } }; }
+    if (!a.ok) return a;
+    bannedByRefresh = false;
+    const s = a.value['session'] as Row | undefined;
+    if (!s || !str(s['access_token']) || !str(s['refresh_token'])) return refusal(NOT_DONE);
+    const set = await client.auth.setSession({ access_token: s['access_token'], refresh_token: s['refresh_token'] }).catch(() => null);
+    if (!set || set.error) return refusal(NOT_DONE);
+    const why = str(a.value['why']);
+    return { ok: true, value: { account: a.value['account'] === true, ...(why ? { why } : {}) } };
+  }
   async function currentSession(): Promise<Session> {
     const { data } = await client.auth.getSession();
     if (!data.session) return signedOutSession();
@@ -1188,23 +1202,12 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       if (a.ok) { await reloading; await reloadSession(); }
       return a.ok ? { ok: true, value: {} } : a;
     },
-    async requestCode(email, invite, conduct) {
-      const a = await edge('account', { action: 'requestCode', email, invite, ...(typeof conduct === 'number' ? { conduct } : {}) }, NOT_DONE);
+    async requestCode(email, invite, next, conduct) {
+      const a = await edge('account', { action: 'requestCode', email, invite, next, ...(typeof conduct === 'number' ? { conduct } : {}) }, NOT_DONE);
       return a.ok ? { ok: true, value: { message: String(a.value['message'] ?? ''), ...(str(a.value['invite']) ? { invite: a.value['invite'] } : {}) } } : a;
     },
-    async verifyCode(email, code) {
-      const a = await edge('account', { action: 'verifyCode', email, code }, NOT_DONE);
-      /* Auth refused the sign-in because the login is barred (the function's 403 with the barred hint): its end is not known here, so the screen says no date. */
-      if (!a.ok && a.barred) { bannedByRefresh = false; return { ok: true, value: { account: false, barred: { until: undefined } } }; }
-      if (!a.ok) return a;
-      bannedByRefresh = false;
-      const s = a.value['session'] as Row | undefined;
-      if (!s || !str(s['access_token']) || !str(s['refresh_token'])) return refusal(NOT_DONE);
-      const set = await client.auth.setSession({ access_token: s['access_token'], refresh_token: s['refresh_token'] }).catch(() => null);
-      if (!set || set.error) return refusal(NOT_DONE);
-      const why = str(a.value['why']);
-      return { ok: true, value: { account: a.value['account'] === true, ...(why ? { why } : {}) } };
-    },
+    verifyCode: async (email, code) => signedIn(await edge('account', { action: 'verifyCode', email, code }, NOT_DONE)),
+    verifyLink: async (tokenHash) => signedIn(await edge('account', { action: 'verifyLink', tokenHash }, NOT_DONE)),
     openAccount: (invite) => act({ action: 'openAccount', invite }, (r) => ({ opened: r['opened'] === true })),
     async signOut() {
       lastEstimate = null;

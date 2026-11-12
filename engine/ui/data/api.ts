@@ -1123,6 +1123,13 @@ export interface AdminQueue {
 
 /* ---------------------------------------------------------- the player's own ---- */
 
+/** What a successful code or link comes to: whether an account is open and, if not, why; or that Auth refused the sign-in because the login is barred (suspended or banned): nothing is signed in, and the screen says so plainly. `until` is the end of a suspension, null for a ban, undefined when the end is not known. */
+export interface SignedIn {
+  readonly account: boolean;
+  readonly why?: string;
+  readonly barred?: { readonly until: string | null | undefined };
+}
+
 export interface Session {
   readonly signedIn: boolean;
   /** The account, once one is open; null while signed in with none (an invite is needed). */
@@ -2395,11 +2402,11 @@ export interface KayfaApi {
   /* Signing in: passwordless, through the account function only, in the same words for every address. */
   session(): Promise<Session>;
   onSession(listener: (s: Session) => void): () => void;
-  /** `conduct` is the version of the code of conduct the register form's box agreed to; it rides with the login and the account records it when it opens. */
-  requestCode(email: string, invite: string | null, conduct?: number | null): Promise<Answer<{ readonly message: string; readonly invite?: string }>>;
-  verifyCode(email: string, code: string): Promise<Answer<{ readonly account: boolean; readonly why?: string;
-    /** Set when Auth refused the sign-in because the login is barred (suspended or banned): nothing is signed in, and the screen says so plainly. `until` is the end of a suspension, null for a ban, undefined when the end is not known. */
-    readonly barred?: { readonly until: string | null | undefined } }>>;
+  /** `next` is the path the player came from, which the emailed link carries back; the server drops one that is not a path on the site. `conduct` is the version of the code of conduct the register form's box agreed to; it rides with the login and the account records it when it opens. */
+  requestCode(email: string, invite: string | null, next: string | null, conduct?: number | null): Promise<Answer<{ readonly message: string; readonly invite?: string }>>;
+  verifyCode(email: string, code: string): Promise<Answer<SignedIn>>;
+  /** The link in the same email as the code: `tokenHash` is the `token_hash` the link carries, and a good one signs in exactly as the code does (the same `account`, the same `why`, the same `barred`); a link that does not work is refused with field `link`. */
+  verifyLink(tokenHash: string): Promise<Answer<SignedIn>>;
   openAccount(invite: string | null): Promise<Answer<{ readonly opened: boolean }>>;
   signOut(): Promise<void>;
   /** The signed-in account accepts the code of conduct at this version (accept_conduct). */
