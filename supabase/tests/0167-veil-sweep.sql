@@ -124,6 +124,7 @@ select 'relation', n, m, w from (values
   ('play_reach', 'no author', 'a play beyond a post: its target character, thread or board, which is public; a card on a character is played from one of its posts, so its Act points at that post and names its author: land_refusal refuses a veil on such a post, and none is played from a veiled one (the stand-in is no target), both held below and in 0166-post-veils.sql'),
   ('post_search', 'swept', 'granted every column but `character`; the search reads it through the projection'),
   ('reaction_kinds', 'no author', 'the instance''s reactions'),
+  ('post_reaction_kinds', 'no author', 'a post-local reaction (0402): the post, the key, the emoji, the quadrant and the card''s play, which a card Act states in public; the post''s author is on neither'),
   ('reaction_tallies', 'no author', 'counts of reactions to an Act: no character'),
   ('reading', 'no author', 'the caller''s own reading places (row security)'),
   ('screen_settings', 'no author', 'public settings'),

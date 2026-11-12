@@ -8,7 +8,7 @@ declare
   bad text := '';
   r record;
   -- What the API roles are granted, on purpose; a new grant joins this list with its migration.
-  readable text[] := array['class_kinds', 'reaction_kinds', 'card_kinds', 'boards', 'threads', 'acts',
+  readable text[] := array['class_kinds', 'reaction_kinds', 'post_reaction_kinds', 'card_kinds', 'boards', 'threads', 'acts',
                            'characters_public', 'acts_public', 'accounts', 'characters', 'class_history', 'reaction_tallies',
                            'seasons', 'season_results', 'seasons_finished', 'settlements', 'standings', 'ledger', 'wallets', 'wallet_events',
                            'card_ledger', 'my_cards', 'effect_state',

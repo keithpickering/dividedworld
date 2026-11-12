@@ -21,7 +21,7 @@ const root = path.resolve(import.meta.dirname, '../../..');
 const migrations = path.join(root, 'supabase/migrations');
 
 /** The tables that hold a row in the fixture, before the round trip and again after the import (an empty table would round-trip as well, and prove nothing). */
-const HELD = ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'season_results', 'apologies', 'card_texts', 'card_writes', 'card_write_refunds', 'scored_as', 'play_reach', 'post_veils', 'ledger', 'move_dependencies', 'condition_kinds', 'persona_arcs', 'arc_beat_events', 'handoffs', 'surfaces', 'surface_marks', 'surface_cuts', 'face_down_draws'];
+const HELD = ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'season_results', 'apologies', 'card_texts', 'card_writes', 'card_write_refunds', 'scored_as', 'play_reach', 'post_veils', 'post_reaction_kinds', 'ledger', 'move_dependencies', 'condition_kinds', 'persona_arcs', 'arc_beat_events', 'handoffs', 'surfaces', 'surface_marks', 'surface_cuts', 'face_down_draws'];
 
 const psqlOn = (url: string, text: string) =>
   execFileSync('psql', ['-v', 'ON_ERROR_STOP=1', '-qtAX', url, '-f', '-'], { input: text, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
@@ -216,6 +216,8 @@ test('an instance exported and imported into a fresh database is the same instan
         insert into play_reach (play, reach, character, ends_at) values (score_play, 'character', b, now() + interval '2 days');
         -- A veil that has ended (0400): the one row post_veils holds here, so the table round-trips; Part 3's own fixture (a live and an ended veil of each kind, the stand-in) is its Task 12's. Ended, so no view shows a stand-in.
         insert into post_veils (play, post, veil, author, caster_account, ends_at) values (score_play, p, 'author', a, null, now() - interval '1 day');
+        -- A post-local reaction (0402): the one row post_reaction_kinds holds here, so the table round-trips; Part 3's own fixture (an Overreaction played and given) is its Task 12's.
+        insert into post_reaction_kinds (post, key, emoji, quadrant, play) values (p, 'x-1f480', '💀', 'excitedNegative', score_play);
       end;
       -- A surface (0317): a play of a surface card on a post, a draw by Bob's mask and a wash by the post's own character (each an Act, with its cells in the payload), so the row that is derived from them is carried;
       -- and a surface card set face down with its draft, whose private row is carried too.
