@@ -20,10 +20,14 @@ begin
   return out;
 end $$;
 
--- The rows of a table this transaction has read so far, by any path: those a sequential or bitmap scan returned and those an index scan fetched. Counting only the first
--- would pass a probe that walks every group move in the index (a character cast to uuid, which the index's expression cannot serve).
+-- The rows of a table this transaction has read so far, by any path: those a sequential scan returned or a bitmap scan fetched on the table, and the entries returned by each of
+-- the table's indexes, because an index scan's rows are counted on the index and not on the table. Counting the table alone would pass a probe that walks every group move through
+-- the index; the index's entries returned catch it even when its rows are then filtered out. An index's rows fetched are left out: they are the same rows again (0135's reads()
+-- sums both and so counts an indexed row twice), and halving the count is what keeps the limit of 50 meaningful. A correct run reads 25 for five group_now calls, on open_moves
+-- and on acts alike (five each from the probe's index entries and open_moves_pkey, four each from acts_pkey), and 6 and 10 for bars_of and barred.
 create function pg_temp.rows_read(rel regclass) returns bigint language sql as $$
   select coalesce(pg_stat_get_xact_tuples_returned(rel), 0) + coalesce(pg_stat_get_xact_tuples_fetched(rel), 0)
+       + (select coalesce(sum(coalesce(pg_stat_get_xact_tuples_returned(i.indexrelid), 0)), 0) from pg_index i where i.indrelid = rel)
 $$;
 
 do $$
@@ -42,8 +46,8 @@ declare
 begin
   insert into boards (slug, name) values ('gp-board', 'Gp Board') returning id into board;
   insert into threads (board, title) values (board, 'Gp thread') returning id into thr;
-  -- 20,000 moves in force, as a busy instance has once lasting moves never expire (0318): every fiftieth confers a group, each on its own character, and the target's is
-  -- one of those 400; the rest are moves of another kind. The Acts are written with the triggers off (a move is a staff character's Act, and the
+  -- 20,000 moves in force, as a busy instance has once lasting moves never expire (0318): every fiftieth confers a group, each naming a different character, and the target's is
+  -- one of those 400, all written by one staff character; the rest are moves of another kind. The Acts are written with the triggers off (a move is a staff character's Act, and the
   -- staff machinery is not what is under test) and each is put in force by hand, as acts_track_moves would.
   set local session_replication_role = replica;
   insert into acts (character, kind, thread, payload, seq)
@@ -58,7 +62,7 @@ begin
   analyze open_moves;
 
   -- The functions are security definer and not inlined, so their plans are read as the transaction's own scan counters: each real call below must scan acts_group_moves and
-  -- never read more than a few rows of open_moves or acts by any path (a sequential scan would read 20,000 a call, a walk of the index's group moves 400).
+  -- never read more than a few rows of open_moves or acts by any path (a sequential scan would read 20,000 a call, a walk of the index's group moves 400 or more).
   perform pg_stat_force_next_flush();
   idx0 := coalesce(pg_stat_get_xact_numscans('acts_group_moves'::regclass), 0);
   om0 := pg_temp.rows_read('open_moves');
