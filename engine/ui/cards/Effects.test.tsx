@@ -13,10 +13,18 @@ import { KayfaProvider, type Kayfa } from '../context.tsx';
 import type { Act } from '../data/api.ts';
 import { PlayerProvider } from '../player.tsx';
 import { buildWorld, testGlass, testInstance } from '../test-world.tsx';
+import { createClaims } from './claims.ts';
 import { PostEffects, VersionEffects } from './Effects.tsx';
 import { PlayProvider, usePlay, type PlayTarget } from './play.tsx';
 import { createPlays, playOf } from './plays.ts';
 import type { CardUi, EffectProps, Written } from './types.ts';
+
+/* Every rank a post's registry hands an effect, as `claims.at(key, rank)` is called: the rank an effect really receives. */
+const handed = vi.hoisted(() => ({ ranks: new Map<string, number>() }));
+vi.mock('./claims.ts', async (original) => {
+  const real = await original<typeof import('./claims.ts')>();
+  return { ...real, createClaims: () => { const claims = real.createClaims(); return { at: (key: string, rank: number) => { handed.ranks.set(key, rank); return claims.at(key, rank); } }; } };
+});
 
 const rules = (key: string, extra: Partial<CardRules> = {}): CardRules => ({
   key, name: key, alignment: 'pepperoni', rarity: 'common', reaches: ['post'], playPrice: () => 0, validateConfig: (c: unknown) => ok(c),
@@ -152,10 +160,13 @@ describe('a card that writes nests innermost', () => {
       claimed[key] = ink;
       return tail ? <>{children}<span data-kb-tail={key} /></> : <div data-kb-wrap={key}>{children}</div>;
     };
-    /* From the innermost out the order is scribe, then the beneath card, then the rest. */
-    drawn([ui('one', { Effect: Claimer('one', false) }), ui('scribe', { Effect: Claimer('scribe', true) }), ui('two', { beneath: true, Effect: Claimer('two', false) })], ['one', 'scribe', 'two']);
+    handed.ranks.clear();
+    /* Played one, scribe, two, three; from the innermost out the order is scribe (it writes), two (beneath), one (plain), three (a takeover). */
+    drawn([ui('one', { Effect: Claimer('one', false) }), ui('scribe', { Effect: Claimer('scribe', true) }), ui('two', { beneath: true, Effect: Claimer('two', false) }), ui('three', { takeover: true, Effect: Claimer('three', false) })], ['one', 'scribe', 'two', 'three']);
+    /* The ranks each effect is given: consecutive from 0, ascending from the innermost out. */
+    expect(Object.fromEntries(handed.ranks)).toEqual({ 'post:scribe': 0, 'post:two': 1, 'post:one': 2, 'post:three': 3 });
     /* An all-claiming hit test is on top only for the outermost, whose rank is the highest. */
-    expect(Object.entries(claimed).filter(([, ink]) => ink.topAt(0, 0)).map(([key]) => key)).toEqual(['one']);
+    expect(Object.entries(claimed).filter(([, ink]) => ink.topAt(0, 0)).map(([key]) => key)).toEqual(['three']);
   });
 
   test('with a compose open on the post, the tail is inside the compose\'s body, next to the words, and the other cards are outside it', async () => {
