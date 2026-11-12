@@ -260,3 +260,94 @@ begin
     raise exception 'a draw row says nothing of an owner or a class';
   end if;
 end $$;
+
+-- ---- 7. What the views cost is their rows' own, never the payloads' ----
+-- One wall with 200 draws by one player and 2,000 washes by the wall's author, every payload ~50 KB of strokes that do not compress (so each sits in the TOAST table, as a real drawing does). The views read figures
+-- (cells, the cuts) and never a payload: a view that opens the payload of every draw, and of every later wash for every draw, costs a million buffers here and goes past the statement timeout; a view that reads its
+-- own narrow rows costs a few per row. The measure is the backend's shared buffers (hit or read) for one statement, from EXPLAIN (ANALYZE, BUFFERS), as supabase/tests/0058-progress-scale.sql takes it.
+create function pg_temp.buffers_of(call_sql text) returns bigint language plpgsql as $$
+declare plan jsonb;
+begin
+  execute call_sql;
+  execute 'explain (analyze, buffers, format json) ' || call_sql into plan;
+  raise notice '% ms: %', round((plan -> 0 ->> 'Execution Time')::numeric), call_sql;
+  return coalesce((plan -> 0 -> 'Plan' ->> 'Shared Hit Blocks')::bigint, 0) + coalesce((plan -> 0 -> 'Plan' ->> 'Shared Read Blocks')::bigint, 0);
+end $$;
+
+create temp table sl_big (ann uuid, dru uuid, a uuid, d uuid, play uuid, post uuid);
+do $$
+declare
+  ann uuid := tests.account('sl-big-ann'); dru uuid := tests.account('sl-big-dru');
+  a uuid := tests.character(ann, 'Sl Big Ann'); d uuid := tests.character(dru, 'Sl Big Dru');
+  pl uuid; po uuid; blob text; flag text; base timestamptz := clock_timestamp() - interval '1 hour'; one bit(10000) := pg_temp.cells(0, 1);
+begin
+  select w.post, w.play into po, pl from pg_temp.wall(a, tests.thread('Sl big')) w;
+  -- 50 KB that no compression shrinks, made once and reused: each row's datum is compressed on its own.
+  select string_agg(md5(i::text || 'sl'), '') into blob from generate_series(1, 1600) i;
+  flag := coalesce(current_setting('kayfabb.surface_writer', true), '');
+  perform set_config('kayfabb.surface_writer', 'on', true);
+  insert into acts (id, character, kind, thread, target_act_id, payload, created_at)
+  select gen_random_uuid(), d, 'draw', (select thread from acts where id = pl), pl, jsonb_build_object('strokes', jsonb_build_array(blob), 'cells', one::text), base + make_interval(secs => i)
+  from generate_series(1, 200) i;
+  -- Each wash cuts one of the 200 draws, in turn, and uncovers one cell.
+  insert into acts (id, character, kind, thread, target_act_id, payload, created_at)
+  select gen_random_uuid(), a, 'wash', (select thread from acts where id = pl), pl,
+         jsonb_build_object('strokes', jsonb_build_array(blob), 'cells', one::text, 'uncovered', 1, 'cut', jsonb_build_array(jsonb_build_object('draw', x.id, 'took', 1))), base + make_interval(secs => 1000 + i)
+  from generate_series(1, 2000) i join (select id, row_number() over (order by created_at) n from acts where target_act_id = pl and kind = 'draw') x on x.n = 1 + (i % 200);
+  perform set_config('kayfabb.surface_writer', flag, true);
+  insert into sl_big values (ann, dru, a, d, pl, po);
+end $$;
+grant select on sl_big to public;
+insert into surface_marks select m.* from surface_marks_of((select play from sl_big)) m;
+insert into surface_cuts select c.* from surface_cuts_of((select play from sl_big)) c;
+analyze acts;
+analyze surface_marks;
+analyze surface_cuts;
+
+do $$
+declare
+  g record; draws bigint; walls bigint; n_draws bigint; n_walls bigint; per constant integer := 10; slack constant integer := 2000;
+  b_draws bigint; b_walls bigint; b_page bigint;
+begin
+  select * into g from sl_big;
+  -- The rows, and what each reader should see: the drawer 200 draws and 2,000 cuts (one wash cut one of the draws each), the author 200 draws and 2,000 washes.
+  n_draws := pg_temp.as_val(g.dru, 'select count(*) from my_draws')::bigint;
+  n_walls := pg_temp.as_val(g.ann, 'select count(*) from my_walls_drawn_on')::bigint;
+  if n_draws is distinct from 2200 or n_walls is distinct from 2200 then raise exception 'the drawer reads 2,200 rows and the author 2,200: %, %', n_draws, n_walls; end if;
+  -- the drawer's cut rows say what each wash took
+  if pg_temp.as_val(g.dru, 'select sum(cells) from my_draws where kind = ''cut''')::integer is distinct from 2000 then raise exception 'the cut rows total 2,000 cells'; end if;
+  b_draws := pg_temp.as_val(g.dru, 'select pg_temp.buffers_of(''select count(*) from my_draws'')')::bigint;
+  b_walls := pg_temp.as_val(g.ann, 'select pg_temp.buffers_of(''select count(*) from my_walls_drawn_on'')')::bigint;
+  b_page := pg_temp.as_val(g.dru, 'select pg_temp.buffers_of(''select log_page(null)'')')::bigint;
+  raise notice 'sl-big buffers: my_draws %, my_walls_drawn_on %, log_page %', b_draws, b_walls, b_page;
+  if b_draws > per * n_draws + slack then raise exception 'my_draws touched % shared buffers for % rows (at most % each and % over): it opens payloads', b_draws, n_draws, per, slack; end if;
+  if b_walls > per * n_walls + slack then raise exception 'my_walls_drawn_on touched % shared buffers for % rows (at most % each and % over): it opens payloads', b_walls, n_walls, per, slack; end if;
+  if b_page > per * (n_draws + 1) + slack then raise exception 'the drawer''s log_page touched % shared buffers (at most % each over the % rows it reads and % over): it opens payloads', b_page, per, n_draws, slack; end if;
+end $$;
+
+-- ---- 8. The narrow rows are what the Acts say, and no player reads them ----
+-- The world's wall was written through surface_apply: its marks and cuts equal the ones computed from the Acts alone (what an import recomputes), in both directions.
+do $$
+declare
+  w record;
+  n integer;
+begin
+  select * into w from sl;
+  select count(*) into n from surface_marks where play = w.play;
+  if n is distinct from 8 then raise exception 'the world''s wall has four draws and four washes, each marked once: %', n; end if;
+  select count(*) into n from surface_cuts where play = w.play;
+  if n is distinct from 4 then raise exception 'the first wash cut two draws, the third one and the fourth one: %', n; end if;
+  if exists (select 1 from (select * from surface_marks where play = w.play except select * from surface_marks_of(w.play)) x)
+     or exists (select 1 from (select * from surface_marks_of(w.play) except select * from surface_marks where play = w.play) x) then
+    raise exception 'the marks surface_apply wrote are not the marks the Acts give';
+  end if;
+  if exists (select 1 from (select * from surface_cuts where play = w.play except select * from surface_cuts_of(w.play)) x)
+     or exists (select 1 from (select * from surface_cuts_of(w.play) except select * from surface_cuts where play = w.play) x) then
+    raise exception 'the cuts surface_apply wrote are not the cuts the Acts give';
+  end if;
+  -- No player, and no visitor, reads either table or recomputes them.
+  if pg_temp.as_val(w.bob, 'select count(*) from surface_marks') not like 'ERROR:%' or pg_temp.as_val(w.bob, 'select count(*) from surface_cuts') not like 'ERROR:%' then
+    raise exception 'a signed-in player reads the narrow rows';
+  end if;
+  if pg_temp.as_val(w.bob, format('select count(*) from surface_marks_of(%L)', w.play)) not like 'ERROR:%' then raise exception 'a player recomputes the marks'; end if;
+end $$;

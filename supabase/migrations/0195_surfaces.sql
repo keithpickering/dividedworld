@@ -37,8 +37,8 @@
 -- Privacy ("A response never proves a private fact"). Nothing here reads who owns a character except played_by (the caller's own mask) and the wash's author check, which compares characters, a public fact. A drawer is
 -- never refused for being the post's own player's other mask. The answer to a write is the Act's public projection, its covered count and its live ids. Every pass costs one lock and one walk of 10,000 cells.
 --
--- Export. surfaces and face_down_draws are tables in the public schema, so the export carries them as it carries every table (tools/instance-files.mjs); an imported surface is the stored row, which rebuild_surface
--- reproduces from the Acts. Broadcasts of a draw or a wash are the act function's (Task 3): every function here answers with the Act's projection for it to send.
+-- Export. surfaces, surface_marks, surface_cuts and face_down_draws are tables in the public schema, so the export carries them as it carries every table (tools/instance-files.mjs); an imported surface is the stored row, which rebuild_surface
+-- reproduces from the Acts, and the marks and cuts are the rows surface_marks_of and surface_cuts_of reproduce. Broadcasts of a draw or a wash are the act function's (Task 3): every function here answers with the Act's projection for it to send.
 
 -- ---------------------------------------------------------------------------------------------------------- 1. the kind ----
 
@@ -74,6 +74,39 @@ alter table surfaces enable row level security;
 revoke all on surfaces from public, anon, authenticated;
 grant select on surfaces to authenticated;
 create policy read on surfaces for select to authenticated using (true);
+
+-- The log's narrow rows (section 6): one mark for each draw and wash (how many cells it says, who made it, whose post it is on) and one cut for each draw a wash took cells from. They hold what an Act already says, written by
+-- surface_apply in the transaction of the Act they describe, so a view of the log reads a few columns and never opens a drawing's payload (a payload is up to 64 KiB; the views once opened every one, for every later wash).
+-- Nobody reads them directly: no grant and no policy, and the log's views, which run as their owner, hold the line that a caller sees the rows of their own characters alone. surface_marks_of and surface_cuts_of compute them from the Acts.
+create table surface_marks (
+  act uuid primary key references acts (id),
+  play uuid not null references acts (id),
+  post uuid not null references acts (id),
+  author uuid not null references characters (id),     -- the post's character
+  character uuid not null references characters (id),  -- the draw's or wash's
+  kind text not null check (kind in ('draw', 'wash')),
+  cells integer not null check (cells between 0 and 10000), -- a draw's cells; the cells a wash uncovered
+  at timestamptz not null
+);
+create index surface_marks_character on surface_marks (character, at);
+create index surface_marks_author on surface_marks (author, at);
+alter table surface_marks enable row level security;
+revoke all on surface_marks from public, anon, authenticated;
+
+create table surface_cuts (
+  wash uuid not null references acts (id),
+  draw uuid not null references acts (id),
+  took integer not null check (took > 0),
+  play uuid not null references acts (id),
+  post uuid not null references acts (id),
+  washer uuid not null references characters (id),
+  drawer uuid not null references characters (id),
+  at timestamptz not null,
+  primary key (wash, draw)
+);
+create index surface_cuts_drawer on surface_cuts (drawer, at);
+alter table surface_cuts enable row level security;
+revoke all on surface_cuts from public, anon, authenticated;
 
 -- A face-down surface card's draft: its first draw, kept private beside the back (face_down) and written into the wall when the back springs, then deleted. No player reads it; no policy and no grant.
 create table face_down_draws (
@@ -331,6 +364,7 @@ declare
   after_cells integer;
   wash_cut jsonb;
   wash_cells integer;
+  by_author uuid;
 begin
   select * into s from surfaces x where x.play = on_play for update;
   if not found then raise exception 'there is no wall on that post' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
@@ -366,6 +400,15 @@ begin
   values (written, by_character, in_kind, in_thread, on_play, (in_payload - 'cells' - 'uncovered' - 'cut') || jsonb_build_object('cells', in_cells::text)
     || case when in_kind = 'wash' then jsonb_build_object('uncovered', wash_cells, 'cut', wash_cut) else '{}'::jsonb end, at);
   perform set_config('kayfabb.surface_writer', flag, true);
+  -- The log's narrow rows, in the Act's own transaction (what surface_marks_of and surface_cuts_of recompute from the Acts).
+  select a.character into by_author from acts a where a.id = s.post;
+  insert into surface_marks (act, play, post, author, character, kind, cells, at)
+  values (written, on_play, s.post, by_author, by_character, in_kind, case when in_kind = 'draw' then bit_count(in_cells) else wash_cells end, at);
+  if in_kind = 'wash' then
+    insert into surface_cuts (wash, draw, took, play, post, washer, drawer, at)
+    select written, (e ->> 'draw')::uuid, (e ->> 'took')::integer, on_play, s.post, by_character, d.character, at
+    from jsonb_array_elements(wash_cut) e join acts d on d.id = (e ->> 'draw')::uuid;
+  end if;
   update surfaces set cover = st.cover, owners = st.owners, live = st.live, updated_at = at where play = on_play;
   return (act_projection(written) #- '{payload,cells}' #- '{current_payload,cells}') || jsonb_build_object('covered', bit_count(st.cover), 'live', to_jsonb(st.live));
 end $$;
@@ -676,6 +719,28 @@ begin
 end $$;
 revoke execute on function rebuild_surface(uuid) from public, anon, authenticated;
 grant execute on function rebuild_surface(uuid) to service_role;
+
+-- surface_marks_of(play) and surface_cuts_of(play): the log's narrow rows computed from the play's Acts alone, as surface_apply writes them. For the tests, and for a repair or an import that wants them from the Acts.
+create function surface_marks_of(play uuid) returns setof surface_marks
+language sql stable security definer set search_path = public, pg_temp as $$
+  select a.id, a.target_act_id, k.target_act_id, p.character, a.character, a.kind,
+         case when a.kind = 'draw' then bit_count((a.payload ->> 'cells')::bit(10000)) else coalesce((a.payload ->> 'uncovered')::integer, 0) end, a.created_at
+  from acts a join acts k on k.id = a.target_act_id join acts p on p.id = k.target_act_id
+  where a.target_act_id = surface_marks_of.play and a.kind in ('draw', 'wash')
+$$;
+revoke execute on function surface_marks_of(uuid) from public, anon, authenticated;
+grant execute on function surface_marks_of(uuid) to service_role;
+
+create function surface_cuts_of(play uuid) returns setof surface_cuts
+language sql stable security definer set search_path = public, pg_temp as $$
+  select w.id, d.id, (e ->> 'took')::integer, w.target_act_id, k.target_act_id, w.character, d.character, w.created_at
+  from acts w join acts k on k.id = w.target_act_id
+  cross join lateral jsonb_array_elements(w.payload -> 'cut') e
+  join acts d on d.id = (e ->> 'draw')::uuid
+  where w.target_act_id = surface_cuts_of.play and w.kind = 'wash'
+$$;
+revoke execute on function surface_cuts_of(uuid) from public, anon, authenticated;
+grant execute on function surface_cuts_of(uuid) to service_role;
 
 -- --------------------------------------------------------------------------------------------- 6. the redefined functions ----
 
@@ -1495,53 +1560,39 @@ end $$;
 -- Both name the Act, the play and post, the Act's character, the caller's own character the line is for (`mine`), when, and a count of cells; nothing of an owner, a class or a reaction. "Cut" is read from the wash's own payload, where
 -- surface_apply wrote it under the wall's lock from the owners it holds: `uncovered` (the cells the wash actually uncovered) and `cut` ([{draw, took}], the cells each draw owned that it took; `took` and not `cells`, which a payload keeps for its own bit string), so a cell counts for the draw
 -- that last inked it and a cell already bare counts for no one. Both are the server's (a payload that arrives with them loses them) and are left out of the drawer's 64 KiB. A third player's views are empty.
---
+-- The views do not read the payloads, though: surface_apply writes the same figures into the narrow rows of surface_marks (one for each draw and wash) and surface_cuts (one for each draw a wash cut), in the Act's own transaction.
+-- The views run as their owner over those two tables, which no player can read, and keep each caller to the rows of their own characters.
+
 -- The percent a line says is this count over the grid's 10,000 cells: a draw's own cells at the time it landed (what its strokes covered, whether or not it painted over something) and a wash's cells uncovered. Both are
 -- facts of the Acts and never change, so a line is as true next year as the day it was written.
 --
--- At a busy instance's scale: both views start from the caller's own characters (a post's author through surfaces.post, a drawer through acts_character) and read figures already in the Acts, so a row costs its own
--- payload and never a replay of the wall; a wash costs one pass over 10,000 cells, under the lock it already holds. log_page takes at most 200 rows of each, newest first, as it does of every source.
+-- At a busy instance's scale: both views start from the caller's own characters and read narrow rows by an index on the character (a drawer's marks and cuts by who drew, an author's marks by whose post), so a row costs
+-- its own few columns: never a payload (a drawing's is up to 64 KiB) and never a replay of the wall. A wash costs one pass over 10,000 cells, under the lock it already holds. log_page takes at most 200 rows of each, newest first,
+-- as it does of every source, after the view has produced them; supabase/tests/0166-surface-log.sql bounds the buffers one read touches over a wall of 200 draws and 2,000 washes.
 -- Ways out: reads only.
 
 create view my_draws as
-  select d.id as act, 'draw'::text as kind, d.target_act_id as play, s.post, d.character, c.id as mine, d.created_at as at,
-         bit_count((d.payload ->> 'cells')::bit(10000)) as cells
+  select m.act, 'draw'::text as kind, m.play, m.post, m.character, c.id as mine, m.at, m.cells
   from characters c
-  join acts d on d.character = c.id and d.kind = 'draw'
-  join surfaces s on s.play = d.target_act_id
+  join surface_marks m on m.character = c.id and m.kind = 'draw'
   where c.owner = auth.uid()
   union all
-  select w.id, 'cut'::text, w.target_act_id, s.post, w.character, d.character, w.created_at, sum((e ->> 'took')::integer)::integer
+  select u.wash, 'cut'::text, u.play, u.post, u.washer, c.id, u.at, sum(u.took)::integer
   from characters c
-  join acts d on d.character = c.id and d.kind = 'draw'
-  join surfaces s on s.play = d.target_act_id
-  join acts w on w.kind = 'wash' and w.target_act_id = d.target_act_id and (w.created_at, w.id) > (d.created_at, d.id)
-             and w.payload -> 'cut' @> jsonb_build_array(jsonb_build_object('draw', d.id))
-  cross join lateral jsonb_array_elements(w.payload -> 'cut') e
-  where c.owner = auth.uid() and e ->> 'draw' = d.id::text
-    and not exists (select 1 from characters x where x.id = w.character and x.owner = auth.uid())
-  group by w.id, w.target_act_id, s.post, w.character, d.character, w.created_at;
+  join surface_cuts u on u.drawer = c.id
+  where c.owner = auth.uid()
+    and not exists (select 1 from characters x where x.id = u.washer and x.owner = auth.uid())
+  group by u.wash, u.play, u.post, u.washer, c.id, u.at;
 
 revoke all on my_draws from anon, public;
 grant select on my_draws to authenticated;
 
 create view my_walls_drawn_on as
-  select d.id as act, 'draw'::text as kind, d.target_act_id as play, s.post, d.character, c.id as mine, d.created_at as at,
-         bit_count((d.payload ->> 'cells')::bit(10000)) as cells
+  select m.act, m.kind, m.play, m.post, m.character, c.id as mine, m.at, m.cells
   from characters c
-  join surfaces s on true
-  join acts p on p.id = s.post and p.character = c.id
-  join acts d on d.target_act_id = s.play and d.kind = 'draw'
+  join surface_marks m on m.author = c.id
   where c.owner = auth.uid()
-    and not exists (select 1 from characters x where x.id = d.character and x.owner = auth.uid())
-  union all
-  select w.id, 'wash'::text, w.target_act_id, s.post, w.character, c.id, w.created_at,
-         coalesce((w.payload ->> 'uncovered')::integer, 0)
-  from characters c
-  join surfaces s on true
-  join acts p on p.id = s.post and p.character = c.id
-  join acts w on w.target_act_id = s.play and w.kind = 'wash'
-  where c.owner = auth.uid();
+    and (m.kind = 'wash' or not exists (select 1 from characters x where x.id = m.character and x.owner = auth.uid()));
 
 revoke all on my_walls_drawn_on from anon, public;
 grant select on my_walls_drawn_on to authenticated;
