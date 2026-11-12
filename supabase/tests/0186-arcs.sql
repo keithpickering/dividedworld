@@ -41,7 +41,15 @@ declare
     jsonb_build_object('key', 'never', 'mini', false, 'repeatable', false, 'unlock', jsonb_build_array(jsonb_build_object('kind', 'beatLanded', 'beat', 'never'))),
     jsonb_build_object('key', 'g-once', 'mini', true, 'repeatable', false, 'unlock', jsonb_build_array(jsonb_build_object('kind', 'beatLanded', 'beat', 'never'))),
     jsonb_build_object('key', 'g-again', 'mini', true, 'repeatable', true, 'unlock', jsonb_build_array(jsonb_build_object('kind', 'beatLanded', 'beat', 'never'))),
-    jsonb_build_object('key', 'g-lapse', 'mini', true, 'repeatable', false, 'unlock', jsonb_build_array(jsonb_build_object('kind', 'beatLanded', 'beat', 'never'))));
+    jsonb_build_object('key', 'g-lapse', 'mini', true, 'repeatable', false, 'unlock', jsonb_build_array(jsonb_build_object('kind', 'beatLanded', 'beat', 'never'))),
+    -- Beats section 16b plays by hand to read beatLanded over every mix of a bundle's parts (#459); they never unlock by themselves.
+    jsonb_build_object('key', 'r-held', 'mini', true, 'repeatable', false, 'unlock', jsonb_build_array(jsonb_build_object('kind', 'beatLanded', 'beat', 'never'))),
+    jsonb_build_object('key', 'r-allheld', 'mini', true, 'repeatable', false, 'unlock', jsonb_build_array(jsonb_build_object('kind', 'beatLanded', 'beat', 'never'))),
+    jsonb_build_object('key', 'r-refused', 'mini', true, 'repeatable', false, 'unlock', jsonb_build_array(jsonb_build_object('kind', 'beatLanded', 'beat', 'never'))),
+    jsonb_build_object('key', 'r-failed', 'mini', true, 'repeatable', false, 'unlock', jsonb_build_array(jsonb_build_object('kind', 'beatLanded', 'beat', 'never'))),
+    jsonb_build_object('key', 'r-waiting', 'mini', true, 'repeatable', false, 'unlock', jsonb_build_array(jsonb_build_object('kind', 'beatLanded', 'beat', 'never'))),
+    jsonb_build_object('key', 'r-nobundle', 'mini', true, 'repeatable', false, 'unlock', jsonb_build_array(jsonb_build_object('kind', 'beatLanded', 'beat', 'never'))),
+    jsonb_build_object('key', 'r-again', 'mini', true, 'repeatable', true, 'unlock', jsonb_build_array(jsonb_build_object('kind', 'beatLanded', 'beat', 'never'))));
 begin
   seed := jsonb_build_object(
     'settings', jsonb_build_object('systemEnabled', true, 'structuralHoldHours', 24, 'seasonLength', jsonb_build_object('unit', 'day', 'count', 90),
@@ -152,7 +160,7 @@ declare
   said text;
 begin
   perform pg_temp.expect((select count(*) from persona_arcs) = 3, 'persona_arcs is not one row a persona: ' || (select count(*) from persona_arcs));
-  perform pg_temp.expect((select jsonb_array_length(beats) from persona_arcs where staff = 'ar-boss') = 14, 'the Boss''s beats were not seeded');
+  perform pg_temp.expect((select jsonb_array_length(beats) from persona_arcs where staff = 'ar-boss') = 21, 'the Boss''s beats were not seeded');
   perform pg_temp.expect((select beats -> 0 ->> 'key' from persona_arcs where staff = 'ar-boss') = 'split', 'the beats are not in the persona''s order');
   perform pg_temp.expect((select holds_back from persona_arcs where staff = 'ar-boss') = '[{"kind": "createBoard", "until": "split"}]'::jsonb, 'the held-back kinds were not seeded');
   perform pg_temp.expect((select phase_days from persona_arcs where staff = 'ar-other') = '{"honeymoon": 3}'::jsonb, 'the phase days were not seeded');
@@ -596,6 +604,92 @@ begin
   insert into arc_beat_events (season, staff, beat, event) values (s, 'ar-boss', 'g-again', 'unlocked');
   insert into arc_beat_events (season, staff, beat, event, bundle) values (s, 'ar-boss', 'g-again', 'played', b);
   perform pg_temp.expect(not pg_temp.holds('ar-boss', '{"kind": "beatLanded", "beat": "g-again"}'), 'a replay whose bundle waits was read as landed by an earlier play');
+end $$;
+
+-- The tick may already have unlocked a beat that waits on one played earlier in this file; the guard refuses a second `unlocked`, so unlock only a beat still locked.
+create function pg_temp.unlock(beat text) returns void language sql as $$
+  insert into arc_beat_events (season, staff, beat, event) select pg_temp.season(), 'ar-boss', unlock.beat, 'unlocked' where pg_temp.state(unlock.beat) is distinct from 'unlocked'
+$$;
+-- ---- 16b. beatLanded under the owner's rule (#459): played, every part not held or refused has landed, and at least one has ----
+do $$
+declare
+  s bigint := pg_temp.season();
+  adm uuid := (select id from auth.users where email = 'ar-admin@test.invalid');
+  b uuid;
+  q1 bigint;
+  q2 bigint;
+begin
+  -- One part held, one landed: landed.
+  b := gen_random_uuid();
+  q1 := pg_temp.part(b, 'Held one', 'one', 'createBoard', pg_temp.mkboard('Held One A'));
+  q2 := pg_temp.part(b, 'Held one', 'two', 'createBoard', pg_temp.mkboard('Held One B'));
+  update queued_moves set held_at = now(), held_by = adm where id = q1;
+  perform pg_temp.unlock('r-held');
+  insert into arc_beat_events (season, staff, beat, event, bundle) values (s, 'ar-boss', 'r-held', 'played', b);
+  perform pg_temp.expect(not pg_temp.holds('ar-boss', '{"kind": "beatLanded", "beat": "r-held"}'), 'a beat landed while its other part still waits');
+  perform system_tick();
+  perform pg_temp.expect((select landed_act is not null from queued_moves where id = q2) and (select landed_act is null from queued_moves where id = q1), 'the free part did not land, or the held one did');
+  perform pg_temp.expect(pg_temp.holds('ar-boss', '{"kind": "beatLanded", "beat": "r-held"}'), 'a beat with one part held and the other landed has not landed');
+
+  -- Every part held: not landed.
+  b := gen_random_uuid();
+  q1 := pg_temp.part(b, 'All held', 'one', 'createBoard', pg_temp.mkboard('All Held A'));
+  q2 := pg_temp.part(b, 'All held', 'two', 'createBoard', pg_temp.mkboard('All Held B'));
+  update queued_moves set held_at = now(), held_by = adm where bundle = b;
+  perform pg_temp.unlock('r-allheld');
+  insert into arc_beat_events (season, staff, beat, event, bundle) values (s, 'ar-boss', 'r-allheld', 'played', b);
+  perform system_tick();
+  perform pg_temp.expect(not pg_temp.holds('ar-boss', '{"kind": "beatLanded", "beat": "r-allheld"}'), 'a beat whose every part is held has landed');
+
+  -- One part refused, one landed: landed.
+  b := gen_random_uuid();
+  q1 := pg_temp.part(b, 'Refused one', 'one', 'createBoard', pg_temp.mkboard('Refused One A'));
+  q2 := pg_temp.part(b, 'Refused one', 'two', 'createBoard', pg_temp.mkboard('Refused One B'));
+  update queued_moves set refused_at = now(), failed_at = now(), failure = 'refused for the test' where id = q1;
+  perform pg_temp.unlock('r-refused');
+  insert into arc_beat_events (season, staff, beat, event, bundle) values (s, 'ar-boss', 'r-refused', 'played', b);
+  perform system_tick();
+  perform pg_temp.expect((select landed_act is not null from queued_moves where id = q2), 'the other part did not land');
+  perform pg_temp.expect(pg_temp.holds('ar-boss', '{"kind": "beatLanded", "beat": "r-refused"}'), 'a beat with one part refused and the other landed has not landed');
+
+  -- A failure the tick will retry is not a refusal: that part is still waiting.
+  b := gen_random_uuid();
+  q1 := pg_temp.part(b, 'Failed one', 'one', 'createBoard', pg_temp.mkboard('Failed One A'), interval '30 days');
+  q2 := pg_temp.part(b, 'Failed one', 'two', 'createBoard', pg_temp.mkboard('Failed One B'));
+  update queued_moves set failed_at = now(), failure = 'a failure the tick retries' where id = q1;
+  perform pg_temp.unlock('r-failed');
+  insert into arc_beat_events (season, staff, beat, event, bundle) values (s, 'ar-boss', 'r-failed', 'played', b);
+  perform system_tick();
+  perform pg_temp.expect(not pg_temp.holds('ar-boss', '{"kind": "beatLanded", "beat": "r-failed"}'), 'a part that failed and will be retried was read as refused');
+
+  -- One part waiting, one landed: not landed.
+  b := gen_random_uuid();
+  q1 := pg_temp.part(b, 'Waiting one', 'one', 'createBoard', pg_temp.mkboard('Waiting One A'), interval '30 days');
+  q2 := pg_temp.part(b, 'Waiting one', 'two', 'createBoard', pg_temp.mkboard('Waiting One B'));
+  perform pg_temp.unlock('r-waiting');
+  insert into arc_beat_events (season, staff, beat, event, bundle) values (s, 'ar-boss', 'r-waiting', 'played', b);
+  perform system_tick();
+  perform pg_temp.expect((select landed_act is not null from queued_moves where id = q2) and (select landed_act is null from queued_moves where id = q1), 'one part should have landed and one waited');
+  perform pg_temp.expect(not pg_temp.holds('ar-boss', '{"kind": "beatLanded", "beat": "r-waiting"}'), 'a beat with a part still waiting has landed');
+
+  -- A beat with no bundle, played: landed.
+  perform pg_temp.unlock('r-nobundle');
+  insert into arc_beat_events (season, staff, beat, event) values (s, 'ar-boss', 'r-nobundle', 'played');
+  perform pg_temp.expect(pg_temp.holds('ar-boss', '{"kind": "beatLanded", "beat": "r-nobundle"}'), 'a played beat with no bundle has not landed');
+
+  -- A repeatable beat is read at its latest play: a landed first play, then a replay whose only part is held.
+  b := gen_random_uuid();
+  q1 := pg_temp.part(b, 'Again one', 'one', 'createBoard', pg_temp.mkboard('Again One A'));
+  perform pg_temp.unlock('r-again');
+  insert into arc_beat_events (season, staff, beat, event, bundle) values (s, 'ar-boss', 'r-again', 'played', b);
+  perform system_tick();
+  perform pg_temp.expect(pg_temp.holds('ar-boss', '{"kind": "beatLanded", "beat": "r-again"}'), 'the first play did not land');
+  b := gen_random_uuid();
+  q1 := pg_temp.part(b, 'Again two', 'one', 'createBoard', pg_temp.mkboard('Again Two A'));
+  update queued_moves set held_at = now(), held_by = adm where id = q1;
+  perform pg_temp.unlock('r-again');
+  insert into arc_beat_events (season, staff, beat, event, bundle) values (s, 'ar-boss', 'r-again', 'played', b);
+  perform pg_temp.expect(not pg_temp.holds('ar-boss', '{"kind": "beatLanded", "beat": "r-again"}'), 'a replay whose only part is held was read as landed by the earlier play');
 end $$;
 
 -- ---- 17. The season's close: the lapses of its last days are written for the closed season's Boss, and only once ----

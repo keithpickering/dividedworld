@@ -14,7 +14,8 @@
 --                       in the persona's order, `due` meaning the beat has a due point and it has passed (the meeting says "must be played at this meeting"), and the kinds held back.
 --   arc_season_span     (0228) guards a persona's phase day that is null, no number or a fraction, and cuts one to the engine's caps as phaseAt does (1 to 42 days, PHASE_CAPS): a day that is no number
 --                       is the instance's. seed.ts makes the same cut before it seeds, so the two agree.
---   beat_condition_holds (0228) reads `beatLanded` at the beat's latest play only.
+--   beat_condition_holds (0228) reads `beatLanded` at the beat's latest play only, and, by the owner's answer to design question #459 (2026-11-12), counts a beat as landed when it has been played,
+--                       every part of its bundle not held or refused has landed, and at least one part has. A part still waiting keeps the beat unlanded; a landed part later reversed counts as landed.
 --
 -- A PHASE HAS BEGUN. The `phase` condition is true once the phase has begun, and stays true: the honeymoon has begun from the season's first instant, the reign once the honeymoon is over, the
 -- meltdown once its last days have come. `daysBeforeEnd` is true once the season is within that many days of its end. Both named, both must hold. A due point's `phase` is read the same way: it is
@@ -51,7 +52,7 @@ end $$;
 
 -- ------------------------------------------------------------------------------ beatLanded ----
 
--- beat_condition_holds (0228), `beatLanded` read at the beat's latest play. Everything else as 0228 wrote it.
+-- beat_condition_holds (0228), `beatLanded` read at the beat's latest play and by the owner's rule (#459). Everything else as 0228 wrote it.
 create or replace function beat_condition_holds(in_staff text, in_season bigint, cond jsonb) returns boolean
 language plpgsql stable security definer set search_path = public, pg_temp as $$
 declare
@@ -84,13 +85,15 @@ begin
       if cond ? 'daysBeforeEnd' and now() < sp.ends_at - make_interval(hours => (cond ->> 'daysBeforeEnd')::integer * 24) then return false; end if;
       return true;
     when 'beatLanded' then
-      -- Played, and its bundle (if it has one) landed in full: every part, so a part an admin held or that was refused leaves the beat unlanded.
-      -- Read at the beat's latest play only: a repeatable beat replayed with a bundle that waits is not landed because an earlier play's bundle was.
+      -- The rule from design question #459: a beat has landed when it has been played, every part of its bundle that was not held or refused has landed, and at least one part has landed.
+      -- A part is held (held_at) or refused (refused_at, a refusal at landing; a tick failure without refused_at is retried, so that part is still waiting) and so is left out; a part that
+      -- landed counts as landed even if it was reversed later, because it did land (the reversal is an Act beside it); a part still waiting means the beat has not landed yet.
+      -- A beat with no bundle has landed once played. Read at the beat's latest play only: a repeatable beat replayed with a bundle that has not landed is not landed because an earlier play's was.
       return exists (
         select 1 from (select e.bundle from arc_beat_events e
                        where e.season = in_season and e.staff = in_staff and e.beat = cond ->> 'beat' and e.event = 'played' order by e.id desc limit 1) l
-        where l.bundle is null or (exists (select 1 from queued_moves q where q.bundle = l.bundle)
-                                   and not exists (select 1 from queued_moves q where q.bundle = l.bundle and q.landed_act is null)));
+        where l.bundle is null or (exists (select 1 from queued_moves q where q.bundle = l.bundle and q.landed_act is not null)
+                                   and not exists (select 1 from queued_moves q where q.bundle = l.bundle and q.landed_act is null and q.held_at is null and q.refused_at is null)));
     when 'boardActivity' then
       days := (cond ->> 'days')::integer;
       if days is null or days not between 1 and 90 then raise exception 'boardActivity counts posts over 1 to 90 days' using errcode = '22023'; end if;
