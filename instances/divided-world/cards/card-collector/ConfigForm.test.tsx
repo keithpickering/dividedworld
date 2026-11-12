@@ -7,7 +7,7 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { describe, expect, test, vi } from 'vitest';
-import { castOnPost } from '../../../../engine/rules/cards.ts';
+import { atOrBelow, castOnPost } from '../../../../engine/rules/cards.ts';
 import { faceOf } from '../../../../engine/ui/cards/faces.ts';
 import type { ConfigFormProps } from '../../../../engine/ui/cards/types.ts';
 import type { Act } from '../../../../engine/ui/data/api.ts';
@@ -18,8 +18,8 @@ import { cardCollector } from '../card-collector.ts';
 import { ConfigForm } from './ConfigForm.tsx';
 
 const POST = { id: 'p' } as Act;
-// The Moves the form may name: Card Collector is uncommon, and it names nothing rarer than itself (Whodunnit? is the instance's first rare Move on a post).
-const castable = cards.filter(castOnPost).filter((r) => r.rarity === 'common' || r.rarity === 'uncommon').map((r) => faceOf(r, cardsUi.find((u) => u.key === r.key), instance.settings, { cast: 'Move', set: 'Gimmick', use: 'Ward' }));
+/* The cards it may wait for: cast on a post, and no rarer than Card Collector itself (uncommon). */
+const castable = cards.filter((c) => castOnPost(c) && atOrBelow(c.rarity, cardCollector.rarity)).map((r) => faceOf(r, cardsUi.find((u) => u.key === r.key), instance.settings, { cast: 'Move', set: 'Gimmick', use: 'Ward' }));
 
 /** Held in state as the play form holds it, so a choice shows. */
 function Held({ onChange, faces = castable }: { readonly onChange: (c: Record<string, unknown>) => void; readonly faces?: typeof castable }) {
@@ -37,9 +37,9 @@ describe('the card it waits for', () => {
     expect(screen.getByRole('radio', { name: 'Whoops! Move Common' })).toBeInTheDocument();
     const names = castable.map((f) => f.name);
     expect(radios.map((r, i) => r.closest('label')!.textContent)).toEqual(castable.map((f) => expect.stringContaining(f.name)));
-    expect(names).toEqual(cards.filter(castOnPost).filter((c) => c.name !== 'Whodunnit?').map((c) => c.name));
+    expect(names).toEqual(cards.filter((c) => castOnPost(c) && atOrBelow(c.rarity, cardCollector.rarity)).map((c) => c.name));
     expect(names).toEqual(expect.arrayContaining(['Whoops!', 'Stick Around', 'Autocorrect', "Feelin' Fab"]));
-    for (const not of ['Force Field', 'Card Collector', 'Hall Pass', 'Publicity Tour', 'Glitter Bomb', 'Main Event', 'Whodunnit?']) expect(names).not.toContain(not);
+    for (const not of ['Force Field', 'Card Collector', 'Hall Pass', 'Publicity Tour', 'Glitter Bomb', 'Main Event', 'Graffiti', 'Whodunnit?']) expect(names).not.toContain(not);
   });
 
   test('leaves out a card rarer than Card Collector itself, read from its rules', () => {

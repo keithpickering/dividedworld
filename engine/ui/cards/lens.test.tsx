@@ -9,6 +9,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import userEvent from '@testing-library/user-event';
 import { useEffect } from 'react';
 import { afterEach, beforeEach, describe, expect, onTestFinished, test, vi } from 'vitest';
+import { landsOn, ok, refuse, type CardRules } from '../../rules/cards.ts';
 import type { Id } from '../data/api.ts';
 import type { Fake } from '../data/fake.ts';
 import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
@@ -2062,5 +2063,105 @@ describe('taking a back back', () => {
     await openBack(4);
     await userEvent.click(takeButton()!);
     expect(await within(lens()).findByRole('alert')).toHaveTextContent('There is no face-down card to take back there.');
+  });
+});
+
+/**
+ * A surface play's tab (docs/plans/2026-11-11-graffiti-design.md, sections 3 and 8): below the play's own Who row, one row for each live draw and wash, oldest first, with who, when, what the card names of the
+ * draw and the share of the surface it still owns; and one line for the older draws that left the live list. The words are the card's, and the engine's own where it gives none.
+ */
+describe('a surface play\'s tab', () => {
+  const stroke = (y: number, width: number) => ({ width, aspect: 1, points: [[0, y], [1, y]] as [number, number][] });
+  const check = (input: unknown) => (typeof input === 'object' && input !== null && Array.isArray((input as { strokes?: unknown }).strokes)
+    ? ok({ strokes: (input as { strokes: never[] }).strokes, payload: { strokes: (input as { strokes: unknown[] }).strokes, colors: (input as { colors?: unknown }).colors } }) : refuse('strokes'));
+  const slab = { ...testInstance.cards[0]!, key: 'slab', name: 'Slab', stack: 1, reaches: ['post' as const], surface: { limitKey: 'slab.limit', mostLive: 48, validateDraw: check, validateWash: check } } as unknown as CardRules;
+  const surfaced = { ...testInstance, cards: [slab], settings: { ...testInstance.settings, cardSettings: { 'slab.limit': 40 } } };
+  const slabUi = (extra: Partial<CardUi> = {}) => [cardUi('slab', { describeDraw: (p) => (typeof p.colors === 'string' ? p.colors : ''), logDraw: { verb: 'tagged', noun: 'tag', nouns: 'tags', surface: 'the wall' }, ...extra })];
+
+  /* Spritey wrote post 2; Gloomba played the slab on it; the reader (Pipewrench) is a third party. */
+  async function wall(oldOnes = 0) {
+    const fake = buildWorld(undefined, surfaced);
+    const me = fake.seed.account('me'); const other = fake.seed.account('other'); const third = fake.seed.account('third');
+    fake.seed.character(me, 'Pipewrench', 'heel');
+    const spritey = fake.seed.character(other, 'Spritey', 'face');
+    const gloomba = fake.seed.character(third, 'Gloomba', 'heel');
+    const { thread } = fake.seed.thread('general', spritey, 'A thread', 'post 1');
+    const post = fake.seed.post(thread, spritey, 'post 2');
+    fake.clock.advance(60_000);
+    const play = fake.seed.card(gloomba, post, 'slab', { message: 'a wall' });
+    const as = async (account: Id, run: () => Promise<unknown>) => { fake.signInAs(account); fake.clock.advance(60_000); const a = await run() as { ok: boolean }; expect(a.ok).toBe(true); };
+    /* Old tags, painted over wholly by the next one at the same cells. */
+    for (let i = 0; i < oldOnes; i++) await as(third, () => fake.draw(play, gloomba, { strokes: [stroke(0.8, 0.02)], colors: 'black' }));
+    await as(other, () => fake.draw(play, spritey, { strokes: [stroke(0.8, 0.06)], colors: 'white' }));
+    await as(third, () => fake.draw(play, gloomba, { strokes: [stroke(0.2, 0.06)], colors: 'pink and lime' }));
+    await as(other, () => fake.wash(play, spritey, { strokes: [stroke(0.8, 0.02)] }));
+    fake.signInAs(me);
+    return { fake, thread, play };
+  }
+  const openSlab = async (w: { fake: Fake; thread: Id }, ui: readonly CardUi[] = slabUi()) => {
+    width(false);
+    renderIn(w.fake, <LoadedThread thread={w.thread} />, { path: `/t/${w.thread}`, instance: surfaced, cards: ui });
+    await userEvent.click(await within(await article(2)).findByRole('button', { name: /^Slab, 1 play/u }));
+    return lens();
+  };
+  const draws = (box: HTMLElement) => [...box.querySelectorAll<HTMLElement>('[data-kb-surface-act]')];
+  const said = (el: HTMLElement) => el.querySelector('.kb-lens-by')!.textContent!.replace(/\s+/g, ' ').trim();
+
+  test('lists each live draw and wash oldest first, with who, what the card names and the share of the wall each draw still owns', async () => {
+    const box = await openSlab(await wall());
+    await waitFor(() => expect(draws(box)).toHaveLength(3));
+    const [white, pink, washed] = draws(box).map(said);
+    /* Spritey's white tag covered 600 cells and the wash took 200 back: 400 are still its own. Gloomba's pink tag owns its 600. */
+    expect(white).toMatch(/^Spritey · .+ · white · 4% of the wall$/u);
+    expect(pink).toMatch(/^Gloomba · .+ · pink and lime · 6% of the wall$/u);
+    expect(washed).toMatch(/^Spritey · .+ · washed$/u);
+    expect(draws(box).map((r) => r.getAttribute('data-kb-surface-act'))).toHaveLength(3);
+    expect(within(box).getByRole('list', { name: 'Drawn and washed' })).toBeInTheDocument();
+    expect(box.querySelectorAll('[data-kb-surface-act] time')).toHaveLength(3);
+  });
+  test('sits below the Who row, which is still the play\'s own', async () => {
+    const box = await openSlab(await wall());
+    await waitFor(() => expect(draws(box)).toHaveLength(3));
+    const who = whoButton();
+    expect(who.compareDocumentPosition(draws(box)[0]!) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+    expect(rows()).toHaveLength(0);
+    await userEvent.click(who);
+    expect(rows()).toHaveLength(1);
+    expect(draws(box)).toHaveLength(3);
+  });
+  test('says how many older draws are no longer live, in the card\'s words', async () => {
+    const box = await openSlab(await wall(2));
+    await waitFor(() => expect(draws(box)).toHaveLength(3));
+    expect(within(box).getByText('and 2 older tags, washed or painted over')).toBeInTheDocument();
+  });
+  test('says one older draw in the singular, and nothing where none left the list', async () => {
+    const one = await openSlab(await wall(1));
+    await waitFor(() => expect(draws(one)).toHaveLength(3));
+    expect(within(one).getByText('and 1 older tag, washed or painted over')).toBeInTheDocument();
+  });
+  test('adds no older line where every draw is live', async () => {
+    const box = await openSlab(await wall(0));
+    await waitFor(() => expect(draws(box)).toHaveLength(3));
+    expect(box.textContent).not.toMatch(/older/u);
+  });
+  test('the engine\'s own words stand where the card gives none, and name no card\'s', async () => {
+    const box = await openSlab(await wall(2), [cardUi('slab')]);
+    await waitFor(() => expect(draws(box)).toHaveLength(3));
+    expect(draws(box).map(said).map((t) => t.replace(/^(\w+) · .+? · /u, '$1 · '))).toEqual(['Spritey · 4% of the surface', 'Gloomba · 6% of the surface', 'Spritey · washed']);
+    expect(within(box).getByText('and 2 older drawings, washed or painted over')).toBeInTheDocument();
+  });
+  test('a tab of a card with no surface has no such rows', async () => {
+    width(false);
+    const w = world();
+    w.play('k2');
+    open(w);
+    await userEvent.click(await markOf(2, 'Card 2'));
+    expect(lens().querySelectorAll('[data-kb-surface-act]')).toHaveLength(0);
+    expect(within(lens()).queryByRole('list', { name: 'Drawn and washed' })).toBeNull();
+  });
+  test('names no owner and no class: only the characters the Acts name', async () => {
+    const box = await openSlab(await wall());
+    await waitFor(() => expect(draws(box)).toHaveLength(3));
+    expect(draws(box).map(said).join(' ')).not.toMatch(/heel|face|owner|player|Pipewrench/u);
   });
 });

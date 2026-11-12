@@ -73,6 +73,18 @@ export const defaults: Settings = deepFreeze<Settings>({
   microEventDailyCalls: 20,
   /** A starting point: the Boss's digest holds the ten hottest threads. */
   digestThreads: 10,
+  /** A starting point: the digest lines thirty boards, and the busiest half and the quietest half when there are more, so a Boss can see a forum with five posts in it. */
+  digestBoards: 30,
+  /** A starting point: a board line counts its posts over the last three weeks. */
+  digestBoardDays: 21,
+  /** A thread moved off a board is listed on it for a week as a stub that says where it went, then the board forgets it. */
+  movedStubDays: 7,
+  /** The Boss writes its farewell and its handoff at its last meeting, within a day and a half of the season's end. */
+  farewellWindowHours: 36,
+  /** A bundle the Boss composes in a meeting holds at most four parts. */
+  bundleMostParts: 4,
+  /** A bundle an arc's beat authors holds at most eight: it costs nothing from the bank, so a writer's bundle is bounded here and not by the bank. */
+  bundleAuthoredMostParts: 8,
   /** A starting point: the digest quotes the eight top posts. */
   digestExcerpts: 8,
   /** A starting point: each quoted post is cut to 280 characters. */
@@ -172,9 +184,11 @@ export const defaults: Settings = deepFreeze<Settings>({
    * The numbers a card gives the screens: a Whoops! layer is washed clean at 95%, the last specks not being worth chasing across a phone.
    * Autocorrect's tape: `pace` is how fast a strip peels, in pixels a second; `pickMs` how long a finger holds before it picks at the
    * tape; `give` how far a drag goes before a strip lets go, in pixels; `peekStayMs` how long a peeled corner stays curled; `peekSettle`
-   * how fast it settles back, in pixels a second.
+   * how fast it settles back, in pixels a second. Graffiti's wall holds ink over at most `graffiti.limit` percent of its cells.
+   * Laugh Track's audience: `line` is where a reader's line sits in the viewport (percent from the top), `dwellMs` how long a cued place must stay on it,
+   * `reachRem` how far a cue reaches from the line, `murmurMost` how much of a hit a murmur is (percent) and `fadeMs` how long a sound fades.
    */
-  cardSettings: { 'whoops.clean': 95, 'autocorrect.pace': 90, 'autocorrect.pickMs': 450, 'autocorrect.give': 34, 'autocorrect.peekStayMs': 300, 'autocorrect.peekSettle': 300, 'youWereSaying.eraseCps': 6, 'youWereSaying.retypeMs': 2000, 'youWereSaying.typeCps': 40 },
+  cardSettings: { 'whoops.clean': 95, 'autocorrect.pace': 90, 'autocorrect.pickMs': 450, 'autocorrect.give': 34, 'autocorrect.peekStayMs': 300, 'autocorrect.peekSettle': 300, 'laughTrack.line': 40, 'laughTrack.dwellMs': 400, 'laughTrack.reachRem': 12, 'laughTrack.murmurMost': 35, 'laughTrack.fadeMs': 250, 'youWereSaying.eraseCps': 6, 'youWereSaying.retypeMs': 2000, 'youWereSaying.typeCps': 40, 'graffiti.limit': 40 },
   /** The classes' and cards' own numbers from the same table, each named for what reads it. */
   economy: {
     /** "Early" is among this many first players to react to a post. */
@@ -204,6 +218,10 @@ export const defaults: Settings = deepFreeze<Settings>({
     'autocorrect.perVolume': 25,
     'autocorrect.volumeStep': 50,
     'autocorrect.mostAdded': 200,
+    /** Laugh Track: playing it costs 0.05 for each cued place past the first five, at most 1.00 on top of its price at the machine. */
+    'laughTrack.perPlace': 5,
+    'laughTrack.freePlaces': 5,
+    'laughTrack.mostAdded': 100,
     /** You Were Saying?: a play writes 25 tokens and 25 more for each step, at most 200, and each step costs 0.25 on top of its price at the machine. */
     'youWereSaying.baseTokens': 25,
     'youWereSaying.stepTokens': 25,

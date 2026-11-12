@@ -8,6 +8,7 @@ import type { Act } from '../../../../engine/ui/data/api.ts';
 import type { CardPlay, CardView, EffectProps } from '../../../../engine/ui/cards/types.ts';
 import { viewProblems } from '../../../../engine/ui/cards/lens-words.ts';
 import { endsWords } from '../../../../engine/ui/cards/marks.ts';
+import { NO_INK } from '../../../../engine/ui/cards/claims.ts';
 import { BlindStudyEffect } from './Effect.tsx';
 
 const NOW = Date.parse('2026-11-12T12:00:00Z');
@@ -19,7 +20,7 @@ function setup(over: Partial<EffectProps> = {}) {
   const show = vi.fn<(view: CardView | null) => void>();
   const props: EffectProps = {
     post, plays: [play()], states: {}, released: new Set(), written: new Map(), reader: { author: false, caster: false }, place: 'thread', reach: 'post', still: false,
-    show, met: () => {}, holdScreen: () => {}, marks: null, save: async () => ({ ok: false, error: 'no' }), release: async () => ({ ok: false, error: 'no' }), nameOf: () => 'Spritey', give: async () => ({ ok: false, error: 'no' }), moreGifts: async () => {}, wallet: null,
+    show, met: () => {}, ink: NO_INK, holdScreen: () => {}, marks: null, save: async () => ({ ok: false, error: 'no' }), release: async () => ({ ok: false, error: 'no' }), nameOf: () => 'Spritey', give: async () => ({ ok: false, error: 'no' }), moreGifts: async () => {}, wallet: null,
     children: <p>The words of the post.</p>, ...over,
   };
   return { show, ...render(<BlindStudyEffect {...props} />) };

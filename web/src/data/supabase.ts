@@ -40,12 +40,14 @@ import { ALERT_KINDS, type AlertKind } from '../../../engine/rules/alerts.ts';
 import type { Piece } from '../../../engine/rules/cosmetics.ts';
 import { RARITIES } from '../../../engine/rules/cards.ts';
 import type { Career } from '../../../engine/system/career.ts';
+import type { HandoffFacts } from '../../../engine/system/meeting.ts';
 import type {
+  SurfaceAct, SurfaceNow, SurfaceWritten,
   AdminQueue, Apology, Bar, BoardName, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesLog, QueuedMove, StaffCardPlay, StaffProfile,
-  Act, ActKind, AdminAward, AdminKind, Answer, AvatarUpload, BeltCursor, BeltPage, BeltReign, RandomEvent, ShownTrophy, TrophyAwardFailure, TrophyItem, WardrobeItem, Board, Bought, Donated, DriveGift, DriveGifts, BoardSummary, CardEnded, ScoredAs, CardEvent, PackEvent, WrittenOnMine, CaughtPlay, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd,
+  Act, ActKind, AdminAward, AdminKind, Answer, AvatarUpload, BeltCursor, BeltPage, BeltReign, RandomEvent, ShownTrophy, TrophyAwardFailure, TrophyItem, WardrobeItem, Board, Bought, Donated, DriveGift, DriveGifts, BoardSummary, CardEnded, ScoredAs, CardEvent, PackEvent, SurfaceLogRow, WrittenOnMine, CaughtPlay, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd,
   Alert, ContactLink, EffectState, Tail, PostHit, SearchCursor, SearchPage, SearchQuery, Suggestions, ThreadHit, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, SeasonShown, TallyName, Update, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
   Tally, StandingPlace, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, TurnAsked, Wallet, WalletEvent,
-  Boot, BoardPage, IndexPage, Opened, AdminSlot, Slot, SlotMove, Presence, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, LogPage,
+  Boot, BoardPage, BoardRef, BoardStub, IndexPage, Opened, AdminSlot, Slot, SlotMove, Presence, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, LogPage,
   AppealResult, AppealVerdict, InterceptResult, MyBan, LogAppeal, LogBan, LogCosmetic, LogGroupMove, GroupMoveEndWhy, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitChallenge, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
 } from '../../../engine/ui/data/api.ts';
 
@@ -58,6 +60,8 @@ export interface SupabaseApiOptions {
   readonly fetch?: typeof fetch;
   /** For tests of the live channels: a client made elsewhere. */
   readonly client?: SupabaseClient;
+  /** Applied to every character the adapter reads, once, where it is made: the instance's pictures for its staff (engine/ui/data/staff-faces.ts). */
+  readonly face?: (character: Character) => Character;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -135,6 +139,20 @@ const beyond = (reach: string | undefined, fromPost: string | undefined): Record
 
 /** The characters a body puts words in the mouth of, as the act function reads them (engine/rules/actions.ts): nothing when there are none. */
 const framed = (framing: readonly string[] | undefined): Record<string, unknown> => (framing && framing.length > 0 ? { framing } : {});
+
+/** A draw or a wash as `surface_acts` carries it: the public Act, and a draw's `share`, the cells it owns now. */
+function toSurfaceAct(r: Row): SurfaceAct {
+  return { ...toAct(r), ...(typeof r['share'] === 'number' ? { share: r['share'] } : {}) };
+}
+/** What draw_on_surface and wash_surface answer: the Act's projection, the cells now covered and the live Acts' ids. */
+function toSurfaceWritten(r: Row): SurfaceWritten {
+  return { ...toSurfaceAct(r), covered: num(r['covered']), live: (Array.isArray(r['live']) ? r['live'] : []).filter((x): x is Id => typeof x === 'string') };
+}
+/** thread_page's `surfaces`: by surface play, its cells covered and its live Acts' ids. */
+function toSurfaces(v: unknown): Record<Id, SurfaceNow> {
+  if (!isObject(v)) return {};
+  return Object.fromEntries(Object.entries(v).filter(([, s]) => isObject(s)).map(([play, s]) => [play, { covered: num((s as Row)['covered']), live: ((s as Row)['live'] as unknown[] | undefined ?? []).filter((x): x is Id => typeof x === 'string') }]));
+}
 
 function toAct(r: Row): Act {
   return {
@@ -452,14 +470,39 @@ function toFrame(v: unknown): Frame | null {
   return [f['x'], f['y'], f['w'], f['h']].every((n) => typeof n === 'number' && Number.isFinite(n)) ? { x: f['x'], y: f['y'], w: f['w'], h: f['h'] } : null;
 }
 
+/** The numbers of an array the server sent; anything else is none. */
+const numberList = (v: unknown): number[] => (Array.isArray(v) ? v.filter((x): x is number => typeof x === 'number') : []);
 const orNull = (v: unknown): string | null => (typeof v === 'string' ? v : null);
 const params = (v: unknown): Readonly<Record<string, unknown>> => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
+
+/** The bundle a move is a part of, as admin_queue says it: all null where it is no part of one. */
+const bundleOf = (r: Row) => ({ bundle: orNull(r['bundle']), role: orNull(r['role']), bundleName: orNull(r['bundleName']) });
 
 function toQueued(r: Row): QueuedMove {
   return {
     id: num(r['id']), staff: String(r['staff'] ?? ''), boss: orNull(r['boss']), bossPronouns: pronounsOrDefault(r['bossPronouns']), kind: String(r['kind'] ?? ''), params: params(r['params']), demand: toDemand(r['demand']),
     why: String(r['why'] ?? ''), goLiveAt: String(r['goLiveAt'] ?? ''), expiresAt: orNull(r['expiresAt']), structural: r['structural'] === true, boardName: orNull(r['boardName']),
     failedAt: orNull(r['failedAt']), failure: orNull(r['failure']), replacedAt: orNull(r['replacedAt']), adminDescription: orNull(r['adminDescription']),
+    waitsFor: (Array.isArray(r['waitsFor']) ? r['waitsFor'] : []).filter((x): x is Row => !!x && typeof x === 'object').map((x) => ({ id: num(x['id']), role: orNull(x['role']), kind: String(x['kind'] ?? ''), name: orNull(x['name']) })),
+    ...bundleOf(r),
+  };
+}
+
+/** The facts of a season as admin_queue hands them (handoff_facts, 0337): each list read defensively, so a row the database could not make is an empty list and not a crash. */
+function toHandoffFacts(v: unknown): HandoffFacts {
+  const r = params(v) as Row;
+  const board = (x: Row) => ({ board: String(x['board'] ?? ''), name: String(x['name'] ?? '') });
+  const ranked = (x: Row) => ({ ...board(x), posts: num(x['posts']) });
+  return {
+    created: rowsOf(r['created']).map(board),
+    merged: rowsOf(r['merged']).map((x) => ({ ...board(x), into: String(x['into'] ?? ''), intoName: String(x['intoName'] ?? '') })),
+    closed: rowsOf(r['closed']).map(board),
+    beats: rowsOf(r['beats']).map((x) => ({ staff: String(x['staff'] ?? ''), beat: String(x['beat'] ?? ''), at: String(x['at'] ?? '') })),
+    moves: rowsOf(r['moves']).map((x) => ({
+      act: String(x['act'] ?? ''), kind: String(x['kind'] ?? ''), params: params(x['params']), landedAt: String(x['landedAt'] ?? ''), expiresAt: orNull(x['expiresAt']), by: String(x['by'] ?? ''), boardName: orNull(x['boardName']),
+    })),
+    busiest: rowsOf(r['busiest']).map(ranked),
+    quietest: rowsOf(r['quietest']).map(ranked),
   };
 }
 
@@ -467,6 +510,7 @@ function toTodo(r: Row): HandoverTodo {
   return {
     season: num(r['season']), boss: String(r['boss'] ?? ''), bossName: String(r['bossName'] ?? r['boss'] ?? ''), bossPronouns: pronounsOrDefault(r['bossPronouns']), bossWas: orNull(r['bossWas']), outgoing: orNull(r['outgoing']),
     outgoingName: orNull(r['outgoingName']), outgoingPronouns: pronounsOrDefault(r['outgoingPronouns']), outgoingOffice: orNull(r['outgoingOffice']), how: String(r['how'] ?? ''), landedAt: String(r['landedAt'] ?? ''),
+    note: orNull(r['note']), facts: toHandoffFacts(r['facts']),
   };
 }
 
@@ -474,6 +518,7 @@ function toInForce(r: Row): MoveInForce {
   return {
     act: r['act'], id: typeof r['id'] === 'number' ? r['id'] : null, staff: orNull(r['staff']), boss: orNull(r['boss']), bossPronouns: pronounsOrDefault(r['bossPronouns']), kind: String(r['kind'] ?? ''), params: params(r['params']),
     demand: toDemand(r['demand']), why: orNull(r['why']), landedAt: String(r['landedAt'] ?? ''), expiresAt: orNull(r['expiresAt']), progress: toProgress(r['progress']),
+    ...bundleOf(r),
   };
 }
 
@@ -483,6 +528,7 @@ function toEnded(r: Row): MoveEnded {
     how: how === 'met' || how === 'expired' || how === 'reversed' || how === 'superseded' || how === 'spent' || how === 'refused' ? how : 'held', by: orNull(r['by']), at: String(r['at'] ?? ''), act: orNull(r['act']),
     id: typeof r['id'] === 'number' ? r['id'] : null, staff: orNull(r['staff']), boss: orNull(r['boss']), bossPronouns: pronounsOrDefault(r['bossPronouns']), kind: String(r['kind'] ?? ''), params: params(r['params']),
     demand: toDemand(r['demand']), why: orNull(r['why']), landedAt: orNull(r['landedAt']), card: orNull(r['card']), reason: orNull(r['reason']),
+    ...bundleOf(r),
   };
 }
 
@@ -561,12 +607,14 @@ function toAdminQueue(v: unknown): AdminQueue {
 /** One of the roster rows `boss_roster_names` answers. */
 const toBosses = (v: unknown): { readonly staff: string; readonly name: string; readonly pronouns: PronounSet }[] => rowsOf(v).flatMap((x) => (typeof x['staff'] === 'string' ? [{ staff: x['staff'], name: String(x['name'] ?? x['staff']), pronouns: pronounsOrDefault(x['pronouns']) }] : []));
 
+/** A draw or a wash on a surface, as the log reads it (`my_draws`, `my_walls_drawn_on`, 0317): public facts and the reader's own character. */
+const surfaceLogRow = (r: Row): SurfaceLogRow => ({ act: r['act'], kind: r['kind'], play: r['play'], post: r['post'], character: r['character'], mine: r['mine'], at: r['at'], cells: num(r['cells']) });
 const COSMETIC_KINDS = ['found', 'granted', 'awarded', 'reversed', 'lost', 'beltBack'] as const;
 const COSMETIC_OUTCOMES = ['line', 'gear', 'card'] as const;
 const COSMETIC_BYS = ['season', 'boss', 'demand', 'admin'] as const;
 
 /** The log's rows as `readLogPage` reads them, from the rows of the player's views (`log`) or of `log_page`'s sources: both name their columns the same. */
-function toLogRead(src: Readonly<Record<'ledger' | 'wallet' | 'cards' | 'packs' | 'playsOnMine' | 'writes' | 'saves' | 'setEnds' | 'caught' | 'ended' | 'infractions' | 'bans' | 'groupMoves' | 'reports' | 'appeals' | 'cosmetics', Row[]>>, shareRows: Row[], backs: ReadonlyMap<string, Row> = new Map()): LogRead {
+function toLogRead(src: Readonly<Record<'ledger' | 'wallet' | 'cards' | 'packs' | 'playsOnMine' | 'writes' | 'draws' | 'wallsDrawn' | 'saves' | 'setEnds' | 'caught' | 'ended' | 'infractions' | 'bans' | 'groupMoves' | 'reports' | 'appeals' | 'cosmetics', Row[]>>, shareRows: Row[], backs: ReadonlyMap<string, Row> = new Map()): LogRead {
   const ledger = src['ledger'].map((r): LedgerRow => ({
     settlement: num(r['settlement']), startsAt: r['starts_at'], endsAt: r['ends_at'], sharesKept: r['shares_kept'] !== false,
     character: r['character'], reason: r['reason'], amount: num(r['amount']), ...((p) => (p ? { params: p } : {}))(numbers(r['params'])),
@@ -597,6 +645,8 @@ function toLogRead(src: Readonly<Record<'ledger' | 'wallet' | 'cards' | 'packs' 
     })),
     playsOnMine: src['playsOnMine'].map((r) => ({ play: r['play'], post: r['post'], at: r['at'], reach: r['reach'], targetName: r['target_name'] ?? null, targetCharacter: r['target_character'] ?? null })),
     writes: src['writes'].map((r): WrittenOnMine => ({ play: r['play'], post: r['post'], version: r['version'], failed: r['failed'] === true, opening: r['opening'] === true, over: r['over'] === true, at: r['at'] })),
+    draws: src['draws'].map(surfaceLogRow),
+    wallsDrawn: src['wallsDrawn'].map(surfaceLogRow),
     saves: src['saves'].map((r) => ({ play: r['play'], post: r['post'], savedAt: r['saved_at'] })),
     setEnds: src['setEnds'].map((r): FaceDownEnd => ({ play: r['play'], card: r['card'], post: r['post'], spring: r['spring'] ?? null, endedAt: r['ended_at'], endedBy: r['ended_by'] === 'taken back' || r['ended_by'] === 'sprung' || r['ended_by'] === 'time' ? r['ended_by'] : r['spring'] ? 'sprung' : 'time' })),
     caught: src['caught'].map((r): CaughtPlay => ({
@@ -658,6 +708,7 @@ type Res = { data: unknown; error: { message: string; hint?: string | null } | n
 
 export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
   const { url, publishableKey, settingsFallback } = options;
+  const face = options.face ?? ((c: Character) => c);
   const doFetch: typeof fetch = options.fetch ?? ((...a) => globalThis.fetch(...a));
   // supabase-js sends its key as the bearer where there is no session; a publishable key goes in apikey alone (Supabase's
   // migration guide, docs/plans/2026-11-02-api-keys-design.md), so a bearer that is the key itself is taken off. A session's
@@ -845,7 +896,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
      at all (a character made before an instance was seeded, 0124) nothing is stored to overwrite: it/its is what a read shows, unmarked, and set_profile makes the row. */
   const toCharacter = (c: Row, p: Row | undefined): Character => {
     const set = p?.['pronouns'];
-    return {
+    return face({
       id: c['id'],
       name: c['name'],
       title: p?.['title'] ?? '',
@@ -865,7 +916,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       ...(typeof c['banned_until'] === 'string' && Date.parse(c['banned_until']) > Date.now() ? { bannedUntil: c['banned_until'] } : {}),
       ...(typeof c['staff'] === 'string' ? { staff: c['staff'], ...(toOffice(c['office']) ? { office: toOffice(c['office'])! } : {}) } : {}),
       group: typeof c['group'] === 'string' ? c['group'] : '',
-    };
+    });
   };
 
   /** A character a document carries with its profile nested (`profile` null where it has none). */
@@ -1029,7 +1080,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       if (!('at' in range)) return list(() => page((range.before ? from().lte(column, range.before) : from()).order(column, { ascending: false })).limit(range.limit));
       return every((start, end) => whole.reduce((q: Q, c) => q.order(c, { ascending: true }), from().eq(column, range.at)).range(start, end));
     };
-    const [ledgerRows, walletRows, cardRows, packRows, playRows, writeRows, saveRows, endRows, caughtRows, endedRows, infractionRows, banRows, groupMoveRows, reportRows, appealRows, cosmeticRows] = await Promise.all([
+    const [ledgerRows, walletRows, cardRows, packRows, playRows, writeRows, drawRows, wallRows, saveRows, endRows, caughtRows, endedRows, infractionRows, banRows, groupMoveRows, reportRows, appealRows, cosmeticRows] = await Promise.all([
       rows(() => client.from('my_ledger').select('settlement,starts_at,ends_at,character,reason,amount,shares_kept,params'), 'ends_at',
         (q) => q.order('character', { ascending: true }).order('reason', { ascending: true }), ['settlement', 'character', 'reason']),
       rows(() => client.from('my_wallet_events').select('settlement,kind,change,overflow,floored,balance_after,ref,at'), 'at', (q) => q, ['settlement', 'kind', 'ref', 'change', 'overflow', 'floored', 'balance_after']),
@@ -1039,6 +1090,9 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       rows(() => client.from('my_posts_played_on').select('play,post,at,reach,target_name,target_character'), 'at', (q) => q, ['play']),
       /* The texts and failures of cards that write on the posts the player's characters wrote (0149): the rows are the author's alone, and public facts. */
       rows(() => client.from('my_posts_written_on').select('play,post,version,failed,opening,over,at'), 'at', (q) => q.order('play', { ascending: true }).order('version', { ascending: true }), ['play', 'version']),
+      /* What was drawn and washed on a surface (0317): the player's own draws and the washes that cut them, and what was drawn on and washed off the walls of their own posts; each reads the caller's own characters. */
+      rows(() => client.from('my_draws').select('act,kind,play,post,character,mine,at,cells'), 'at', (q) => q.order('act', { ascending: true }).order('mine', { ascending: true }), ['act', 'mine']),
+      rows(() => client.from('my_walls_drawn_on').select('act,kind,play,post,character,mine,at,cells'), 'at', (q) => q.order('act', { ascending: true }).order('mine', { ascending: true }), ['act', 'mine']),
       rows(() => client.from('my_posts_played_on').select('play,post,saved_at').not('saved_at', 'is', null), 'saved_at', (q) => q, ['play']),
       /* The player's own cards set face down, by when each sprang or ended (0054); one still live has no end yet. */
       rows(() => client.from('my_face_down').select('play,card,post,spring,ended_at,ended_by').not('ended_at', 'is', null), 'ended_at', (q) => q, ['play']),
@@ -1064,7 +1118,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     const shareRows = ids.length === 0 ? [] : await byChunks(ids, (part) => every((start, end) => client.from('my_ledger_shares').select('settlement,character,reason,card,act,quadrant,amount').in('settlement', part)
       .order('settlement', { ascending: false }).order('character', { ascending: true }).order('reason', { ascending: true }).order('card', { ascending: true }).order('act', { ascending: true }).order('quadrant', { ascending: true })
       .range(start, end)));
-    return toLogRead({ ledger: ledgerRows, wallet: walletRows, cards: cardRows, packs: packRows, playsOnMine: playRows, writes: writeRows, saves: saveRows, setEnds: endRows, caught: caughtRows, ended: endedRows, infractions: infractionRows, bans: banRows, groupMoves: groupMoveRows, reports: reportRows, appeals: appealRows, cosmetics: cosmeticRows }, shareRows, await readBacks(cardRows));
+    return toLogRead({ ledger: ledgerRows, wallet: walletRows, cards: cardRows, packs: packRows, playsOnMine: playRows, writes: writeRows, draws: drawRows, wallsDrawn: wallRows, saves: saveRows, setEnds: endRows, caught: caughtRows, ended: endedRows, infractions: infractionRows, bans: banRows, groupMoves: groupMoveRows, reports: reportRows, appeals: appealRows, cosmetics: cosmeticRows }, shareRows, await readBacks(cardRows));
   };
 
   const api: KayfaApi = {
@@ -1141,6 +1195,12 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const [now, own] = await Promise.all([list(() => client.from('boards_now').select('id,slug,name')), list(() => client.from('boards').select('id,name'))]);
       const was = new Map(own.map((b) => [b['id'] as string, String(b['name'])]));
       return now.map((b): BoardName => ({ id: b['id'], slug: b['slug'], name: b['name'], was: was.get(b['id']) ?? b['name'] }));
+    },
+    async moveThreadNames(items) {
+      const wanted = items.filter((i) => idOk(i.thread)).slice(0, 50);
+      if (wanted.length === 0) return {};
+      const d = (await read(() => client.rpc('move_thread_names', { items: wanted.map((i) => ({ thread: i.thread, act: i.act })) }))).data;
+      return Object.fromEntries(rowsOf(d).map((r) => [r['key'] as Id, { title: str(r['title']) ?? '', left: typeof r['left'] === 'string' ? r['left'] : null }]));
     },
     async moveNotice(id) {
       if (!idOk(id)) return null;
@@ -1251,7 +1311,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     },
     async holdMove(id) {
       const a = await rpcWrite(() => client.rpc('hold_move', { id }));
-      return a.ok ? { ok: true, value: { id: num(a.value['id']), heldAt: String(a.value['heldAt'] ?? '') } } : a;
+      return a.ok ? { ok: true, value: { id: num(a.value['id']), heldAt: String(a.value['heldAt'] ?? ''), heldAlso: numberList(a.value['heldAlso']) } } : a;
     },
     async replaceSuccessor(id, boss) {
       const a = await rpcWrite(() => client.rpc('replace_successor', { id, boss }));
@@ -1279,7 +1339,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     },
     async reverseMove(act) {
       const a = await rpcWrite(() => client.rpc('reverse_move', { move_act: act }));
-      return a.ok ? { ok: true, value: { act: a.value['act'], endedBy: a.value['endedBy'] } } : a;
+      return a.ok ? { ok: true, value: { act: a.value['act'], endedBy: a.value['endedBy'], alsoEnded: Array.isArray(a.value['alsoEnded']) ? a.value['alsoEnded'] : [], heldAlso: numberList(a.value['heldAlso']) } } : a;
     },
     /* An admin's end of a card goes through the act function, which owns the broadcasts (a layer comes off for everyone reading). */
     reverseCard: (play) => act({ action: 'reverseCard', play }, (r) => ({ act: r['id'], play: r['play'] })),
@@ -1426,8 +1486,8 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const d = isObject(r.data) ? r.data : {};
       return { gifts: toDriveGifts(d['gifts']), more: d['more'] === true };
     },
-    playCard: (card, character, target, config, message, reach, fromPost) => act({ action: 'playCard', card, character, target, config, message, ...beyond(reach, fromPost) }, toAct),
-    setCard: (card, character, target, config, when) => act({ action: 'setCard', card, character, target, config, ...(when ? { when } : {}) }, toAct),
+    playCard: (card, character, target, config, message, reach, fromPost, first) => act({ action: 'playCard', card, character, target, config, message, ...beyond(reach, fromPost), ...(first === undefined ? {} : { first }) }, toAct),
+    setCard: (card, character, target, config, when, first) => act({ action: 'setCard', card, character, target, config, ...(when ? { when } : {}), ...(first === undefined ? {} : { first }) }, toAct),
     takeBack: (character, set) => act({ action: 'takeBack', character, set }, toAct),
     useCard: (card, character, target, config, message, reach, fromPost) => act({ action: 'useCard', card, character, target, config, message, ...beyond(reach, fromPost) }, toAct),
     async myFaceDown(sets) {
@@ -1436,6 +1496,16 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       return Object.fromEntries(rows.map((r) => [r['play'], r['card']]));
     },
     saveEffect: (play, character, state) => act({ action: 'saveEffect', character, play, state }, (r) => ({ play: r['play'], savedAt: r['saved_at'] })),
+    /* A draw and a wash are written by the act function's `draw` and `wash` (draw_on_surface, wash_surface, 0154); the answer is the Act with the cells covered and the live ids. */
+    draw: (play, character, input) => act({ action: 'draw', character, play, input }, toSurfaceWritten),
+    wash: (play, character, input) => act({ action: 'wash', character, play, input }, toSurfaceWritten),
+    async surfaceActs(play) {
+      if (!idOk(play)) return null;
+      const r = await read(() => client.rpc('surface_acts', { play }));
+      const d = r.data as Row | null;
+      if (!isObject(d)) return null;
+      return { covered: num(d['covered']), acts: rowsOf(d['acts']).map(toSurfaceAct), older: num(d['older']) };
+    },
     characters,
     async characterCounts(id): Promise<CharacterCounts> {
       // One row of counters kept by a trigger (0030), never a count of the character's Acts; none for a character that has done nothing.
@@ -1637,8 +1707,14 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const marked = [...pins.map((p) => p.act.id), ...banner.map((p) => p.act.id)];
       const reading: Record<Id, number> = {};
       for (const r of rowsOf(d['reading'])) reading[r['thread']] = num(r['furthest_seq']);
+      const ref = (v: unknown): BoardRef | null => (isObject(v) && typeof v['id'] === 'string' ? { id: v['id'], slug: str(v['slug']) ?? '', name: str(v['name']) ?? '' } : null);
+      const stubs = rowsOf(d['stubs']).flatMap((s): BoardStub[] => {
+        const to = ref({ id: s['moved_to'], slug: s['moved_to_slug'], name: s['moved_to_name'] });
+        return to ? [{ thread: s['id'], title: str(s['title']) ?? '', movedTo: to, movedAt: str(s['moved_at']) ?? '' }] : [];
+      });
       return {
-        board: toBoard(d['board'] as Row), total: num(d['total']), page: num(d['page'], 1), threads, pins, banner,
+        board: toBoard(d['board'] as Row), closed: d['closed'] === true ? { mergedInto: ref(d['mergedInto']), fallback: ref(d['fallback']), goesTo: ref(d['goesTo']) } : null, stubs,
+        total: num(d['total']), page: num(d['page'], 1), threads, pins, banner,
         states: toStates(rowsOf(d['states'])), releases: rowsOf(d['releases']).map((r): Id => r['play']),
         tallies: toTallies(marked, rowsOf(d['tallies'])), mine: rowsOf(d['mine']).map(toMyReaction), reading,
         views: toViews([...pins.map((p) => p.thread.id), ...threads.map((t) => t.id)], rowsOf(d['views'])),
@@ -1664,7 +1740,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
           reveals: rowsOf(p['reveals']).map(toClassReveal), turns: rowsOf(p['turns']).map(toTurn),
         })),
         visits: rowsOf(d['visits']).map(toVisit),
-        plays, above, faces: Object.fromEntries(rowsOf(d['faces']).map((f) => [f['play'], f['card']])),
+        plays, surfaces: toSurfaces(d['surfaces']), above, faces: Object.fromEntries(rowsOf(d['faces']).map((f) => [f['play'], f['card']])),
         veiled: rowsOf(d['veiled']).map((v) => ({ post: v['post'] as Id, character: v['character'] as Id, play: v['play'] as Id, endsAt: String(v['ends_at']) })), states: toStates(rowsOf(d['states'])),
         releases: (Array.isArray(d['releases']) ? d['releases'] : []).filter((x): x is Id => typeof x === 'string'),
         tallies: toTallies(asked, rowsOf(d['tallies'])), mine: rowsOf(d['mine']).map(toMyReaction), spun: rowsOf(d['spun']).map(toThread), reading,
@@ -1937,7 +2013,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       if (!isObject(d)) throw new ReadFailure('server');
       const sources: Row = isObject(d['sources']) ? d['sources'] : {};
       const first = toLogRead({
-        ledger: rowsOf(sources['ledger']), wallet: rowsOf(sources['wallet']), cards: rowsOf(sources['cards']), packs: rowsOf(sources['packs']), playsOnMine: rowsOf(sources['playsOnMine']), writes: rowsOf(sources['writes']), saves: rowsOf(sources['saves']),
+        ledger: rowsOf(sources['ledger']), wallet: rowsOf(sources['wallet']), cards: rowsOf(sources['cards']), packs: rowsOf(sources['packs']), playsOnMine: rowsOf(sources['playsOnMine']), writes: rowsOf(sources['writes']), draws: rowsOf(sources['draws']), wallsDrawn: rowsOf(sources['wallsDrawn']), saves: rowsOf(sources['saves']),
         setEnds: rowsOf(sources['setEnds']), caught: rowsOf(sources['caught']), ended: rowsOf(sources['ended']),
         infractions: rowsOf(sources['infractions']), bans: rowsOf(sources['bans']), groupMoves: rowsOf(sources['groupMoves']), reports: rowsOf(sources['reports']), appeals: rowsOf(sources['appeals']), cosmetics: rowsOf(sources['cosmetics']),
       }, rowsOf(d['shares']), await readBacks(rowsOf(sources['cards'])));
@@ -2098,8 +2174,9 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     },
 
     subscribeThread(thread, l) {
-      return join(`thread:${thread}`, ['act', 'tally', 'effect', 'card_text'], (event, p) => {
+      return join(`thread:${thread}`, ['act', 'tally', 'effect', 'surface', 'card_text'], (event, p) => {
         if (event === 'act') l.onAct?.(toAct(p));
+        else if (event === 'surface') l.onSurface?.(p['play'], num(p['covered']));
         else if (event === 'tally') l.onTally?.(p['act'], (p['tally'] ?? {}) as Tally);
         else if (event === 'effect') l.onEffect?.(p['play'], p['saved_at']);
         else if (event === 'card_text') l.onText?.(p['play'], p['version']);

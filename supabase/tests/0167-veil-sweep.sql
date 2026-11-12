@@ -51,6 +51,8 @@ begin
     ('swuse', 'Sw Use', 'salty', 'uncommon', 'use', '{post}', interval '7 days', null, 1, '{"kind": "ward", "cards": ["swnothing"]}'),
     ('swchar', 'Sw Char', 'salty', 'uncommon', 'cast', '{character}', interval '1 day', null, 1, null)
   on conflict (key) do nothing;
+  -- A surface card (Graffiti's kind, 0317): a wall on a post that anyone may draw on and only the post's own character may wash.
+  insert into card_kinds (key, name, alignment, rarity, play, reaches, stack, surface) values ('swwall', 'Sw Wall', 'pepperoni', 'rare', 'cast', '{post}', 1, true) on conflict (key) do nothing;
 end $$;
 
 -- ---------------------------------------------------------------------------------------------------------------- the list ----
@@ -71,6 +73,9 @@ select 'relation', n, m, w from (values
   ('boards_now', 'no author', 'boards by their name now'),
   ('card_kinds', 'no author', 'the instance''s catalog'),
   ('card_ledger', 'no author', 'the caller''s own ledger (row security)'),
+  ('my_draws', 'swept', 'the caller''s own drawings and the washes that cut them: the washer of a drawing on a veiled post is its author, so the row shows the stand-in for it (shown_author)'),
+  ('my_walls_drawn_on', 'no author', 'the walls on the caller''s own posts, read by their author: the post''s character is the caller''s own, and the rows name who drew or washed, public Acts'),
+  ('surfaces', 'no author', 'a wall''s cover, the ids of its live Acts and its limit: no character'),
   ('character_post_counts', 'swept', 'a view over the stored counts (character_post_counts_base, granted to no one) that counts a veiled post, and the spins and cards its author made on it, for the stand-in and not for its author while the veil is live: A''s count equals what the profile can list, the stand-in''s includes P, and A''s is whole again at the end'),
   ('character_profiles', 'no author', 'a character''s public profile'),
   ('characters', 'no author', 'the caller''s own characters (row security)'),
@@ -171,6 +176,9 @@ select 'function', n, m, w from (values
   ('bbcode_walk', 'no author', 'a pure function of its arguments'),
   ('beat_mod_name', 'no author', 'a Mod Bot''s name for a board'),
   ('board_page', 'swept', 'a board''s page: its threads'' first and last posters'),
+  ('board_closed_to', 'no author', 'a closed board''s ways out: boards by name'),
+  ('board_stubs', 'no author', 'the threads that moved off a board: ids, titles and boards'),
+  ('move_thread_names', 'no author', 'the titles and boards of the threads a move names'),
   ('boot', 'swept', 'the app''s first read: the caller''s own characters and public settings'),
   ('boss_roster_names', 'no author', 'staff names'),
   ('card_ended', 'no author', 'whether a play has ended'),
@@ -284,6 +292,7 @@ select 'function', n, m, w from (values
   ('standings_season', 'no author', 'a season number'),
   ('start_thread', 'no author', 'a write: answers the Act it wrote through the projection, to its author'),
   ('suggest_characters', 'no author', 'characters by name prefix: all characters_public shows, the stand-in included'),
+  ('surface_acts', 'swept', 'a wall''s live draws and washes, through acts_public: a wash is the post''s own character''s, so on a veiled post it is the stand-in''s'),
   ('thread_page', 'swept', 'a thread''s page'),
   ('tip_keys_ok', 'no author', 'a pure function of its argument'),
   ('turn', 'no author', 'a write: the caller''s own character'),
@@ -374,7 +383,7 @@ declare
   general uuid := (select id from boards where slug = 'general');
   t uuid := tests.thread('Sw sweep thread'); t3 uuid := tests.thread('Sw elsewhere');
   stand uuid;
-  p uuid; p2 uuid; p4 uuid; edit uuid; used uuid; quoted uuid; ray_card uuid; vplay uuid; spun jsonb; on_a uuid; on_p4 uuid; counts0 jsonb;
+  p uuid; p2 uuid; p4 uuid; wall uuid; wash uuid; edit uuid; used uuid; quoted uuid; ray_card uuid; vplay uuid; spun jsonb; on_a uuid; on_p4 uuid; counts0 jsonb;
   veiled uuid[];
   probe record; res text; leaks boolean; found text[] := '{}'; missed text[] := '{}'; phase text;
 begin
@@ -411,7 +420,15 @@ begin
   perform tests.become(bob); spun := spin(p, b, 'Sw spun thread', 'A spin from the sweep post.'); perform tests.unbecome();
   insert into thread_follows (account, thread, follow) values (ray, t, true);
   perform write_alert(r, 'quote', null, p, null);
+  -- A wall on P: R's card, R's drawing on it, and the author's own wash of it (only the post's own character may wash, so a wash names the post's author wherever it is read).
+  insert into acts (character, kind, thread, target_act_id, payload) values (r, 'card', t, p, '{"card": "swwall", "message": "", "config": {}, "layer": 1}') returning id into wall;
+  perform open_surface(wall);
+  perform tests.become_service();
+  perform draw_on_surface(ray, r, wall, '{"strokes": [{"width": 0.01, "points": [[0.1, 0.1]]}]}', (repeat('1', 300) || repeat('0', 9700))::bit(10000), 4000);
+  wash := (wash_surface(ann, a, wall, '{"strokes": [{"width": 0.02, "points": [[0.1, 0.1]]}]}', (repeat('1', 100) || repeat('0', 9900))::bit(10000)) ->> 'id')::uuid;
+  perform tests.unbecome();
 
+  perform set_config('sweep.wall', wall::text, true);
   perform set_config('sweep.a', a::text, true); perform set_config('sweep.stand', stand::text, true); perform set_config('sweep.t', t::text, true);
   perform set_config('sweep.p', p::text, true); perform set_config('sweep.used', used::text, true); perform set_config('sweep.general', general::text, true);
 
@@ -443,6 +460,9 @@ begin
     ('boot', 'id', 'select boot()::text', false, false),
     ('presence_box', 'standname', 'select presence_box(''thread'', current_setting(''sweep.t'')::uuid)::text', false, false),
     ('character_post_counts', 'counts', 'select jsonb_build_object(''counts'', (select n.posts from character_post_counts n where n.character = current_setting(''sweep.a'')::uuid), ''listed'', (select count(*) from acts_public x where x.character = current_setting(''sweep.a'')::uuid and x.kind = ''post''), ''profile'', profile_page(current_setting(''sweep.a'')::uuid) -> ''counts'' -> ''posts'', ''stand'', coalesce((select n.posts from character_post_counts n where n.character = current_setting(''sweep.stand'')::uuid), 0), ''stand_listed'', (select count(*) from acts_public x where x.character = current_setting(''sweep.stand'')::uuid and x.kind = ''post''))::text', false, false),
+    ('surface_acts', 'id', 'select surface_acts(current_setting(''sweep.wall'')::uuid)::text', true, false),
+    ('my_draws', 'id', 'select coalesce(jsonb_agg(to_jsonb(d)), ''[]'')::text from my_draws d', true, false),
+    ('log_page draws', 'id', 'select (log_page(null) -> ''sources'' -> ''draws'')::text || (log_page(null) -> ''people'')::text', true, false),
     ('search_posts', 'id', 'select search_posts(''pie'', null, null, null, null, false, ''newest'', null, 20)::text', true, false),
     ('search_threads', 'id', 'select search_threads(''pie'', null, null, null, null, false, ''newest'', null, 20)::text', true, false),
     ('search_matches', 'id', 'select coalesce(jsonb_agg(to_jsonb(m)), ''[]'')::text from search_matches(''pie'', null, null, null, null, false, true, null, null, 20) m', true, false),
@@ -481,7 +501,7 @@ begin
   end $f$;
 
   -- The Acts that are veiled once the cast has landed: P, its edit, A's use card on it (its character is A's, its target is P). Set before the cast too, so the `absent` probes look for the same ids in both phases.
-  veiled := array[p, edit, used];
+  veiled := array[p, edit, used, wash];
   perform set_config('sweep.veiled', array_to_string(veiled, ','), true);
 
   -- ---- 1. The detector's poison: before the cast, every probe that can fire does, as R ----

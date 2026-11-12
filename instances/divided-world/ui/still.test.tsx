@@ -14,6 +14,7 @@ import type { Act } from '../../../engine/ui/data/api.ts';
 import { renderInWorld } from '../../../engine/ui/test-world.tsx';
 import { instance } from '../index.ts';
 import { instanceUi } from './index.ts';
+import { NO_INK } from '../../../engine/ui/cards/claims.ts';
 
 const POST = { id: 'p1', character: 'c1', kind: 'post', thread: 't1', targetActId: null, seq: 1, createdAt: '2026-11-03T12:00:00.000Z', payload: { body: 'hi' }, currentPayload: { body: 'hi' }, editedAt: null, shownEditedAt: null } as Act;
 
@@ -46,7 +47,7 @@ test.each(drawn.map((c) => [c.key, c] as const))('%s, drawn still, saves, releas
   const Effect = card.Effect!;
   const props: EffectProps = {
     post: POST, plays, states: {}, released: new Set(), written: new Map(), reader: { author: true, caster: true }, place: 'thread', reach: 'post', still: true,
-    show: () => {}, met, holdScreen, marks: null, save, release, nameOf: () => 'Spritey', give: async () => ({ ok: false, error: 'no' }), moreGifts: async () => {}, wallet: null, children: <p>hi</p>,
+    show: () => {}, met, holdScreen, ink: NO_INK, marks: null, save, release, nameOf: () => 'Spritey', give: async () => ({ ok: false, error: 'no' }), moreGifts: async () => {}, wallet: null, children: <p>hi</p>,
   };
   const { container } = renderInWorld(<Effect {...props} />, { settings: { cardSettings: { 'whoops.clean': 95 } } });
   act(() => { vi.advanceTimersByTime(100); });
@@ -76,7 +77,7 @@ test.each(['whodunnit', 'blind-study'])('%s, drawn still with an end behind the 
   const shown: string[] = [];
   const props: EffectProps = {
     post: POST, plays: [{ id: `${key}-1`, card: key, layer: 1, caster: 'c2', message: '', config: {}, playedAt: '2026-11-03T12:00:00.000Z', post: POST.id, ends: '2026-11-06T12:00:00.000Z' }], states: {}, released: new Set(), written: new Map(), reader: { author: false, caster: false }, place: 'thread', reach: 'post', still: true,
-    show: (view) => { if (view) shown.push(view.state); }, met: () => {}, holdScreen: () => {}, marks: null, save: async () => ({ ok: false, error: 'no' }), release: async () => ({ ok: false, error: 'no' }), nameOf: () => 'Spritey', give: async () => ({ ok: false, error: 'no' }), moreGifts: async () => {}, wallet: null, children: <p>hi</p>,
+    show: (view) => { if (view) shown.push(view.state); }, met: () => {}, ink: NO_INK, holdScreen: () => {}, marks: null, save: async () => ({ ok: false, error: 'no' }), release: async () => ({ ok: false, error: 'no' }), nameOf: () => 'Spritey', give: async () => ({ ok: false, error: 'no' }), moreGifts: async () => {}, wallet: null, children: <p>hi</p>,
   };
   vi.setSystemTime(Date.parse('2026-11-12T12:00:00.000Z'));
   const { container } = renderInWorld(<Effect {...props} />);

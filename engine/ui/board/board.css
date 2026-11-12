@@ -124,6 +124,28 @@
   height: 4px;
 }
 
+/* A stub: a row a thread's move left, in the third gray, one cell across the table. It is no thread, so it has no folder and no counts. */
+.kb-table .kb-thread-stub > td.kb-thread-stub-cell {
+  background: var(--kb-row-3);
+  padding: 6px 8px;
+}
+
+.kb-board-closed {
+  min-width: 0;
+}
+
+.kb-thread-stubs {
+  border-top: 1px solid var(--kb-grid);
+}
+
+.kb-thread-stub-where {
+  overflow-wrap: anywhere;
+}
+
+.kb-board-closed-line {
+  margin: 1em 0;
+}
+
 /* The legend: one row in the third gray, each folder beside its words. */
 .kb-thread-legend {
   margin-top: 0.8rem;
@@ -294,6 +316,10 @@
   /* A narrow phone wraps the mark under the title, where its tile would straddle into the starter's 24px target below (WCAG 2.5.8): it takes its own room there. */
   .kb-thread-main .kb-thread-pin-mark {
     margin-block: 0;
+  }
+
+  .kb-table.kb-thread-list .kb-thread-stub > td.kb-thread-stub-cell {
+    display: block;
   }
 
   .kb-thread-gap {

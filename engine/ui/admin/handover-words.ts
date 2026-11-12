@@ -5,6 +5,7 @@
  */
 import { lowerFirst } from '../copy-words.ts';
 import type { HandoverTodo } from '../data/api.ts';
+import { handoffFactsText } from '../../system/meeting.ts';
 
 /**
  * An office as a sentence names it. An office the log has no word for is left out rather than guessed. The top office is the instance's
@@ -44,4 +45,18 @@ export function todoFacts(t: HandoverTodo, role: string): string[] {
 /** What the form opens with: the title, and the facts as the words, a blank line between them, for the admin to replace. */
 export function todoDraft(t: HandoverTodo, role: string): { readonly title: string; readonly words: string } {
   return { title: todoTitle(t), words: todoFacts(t, role).join('\n\n') };
+}
+
+/**
+ * The outgoing Boss's handoff as an admin reads it (0337): who it was written by, that it is out of character and no player's, its note or that it left none, and the facts the code counted for its
+ * season. The note is the Boss's own words, kept apart from the glass's sentences; the facts are the code's and are true whatever the note says.
+ */
+export function todoHandoff(t: HandoverTodo): { readonly lead: string; readonly note: string | null; readonly none: string; readonly facts: readonly string[] } {
+  const by = t.outgoingName ?? 'The outgoing Boss';
+  return {
+    lead: `${by}'s handoff note, written out of character for the next Boss and for you. Players never see it.`,
+    note: t.note,
+    none: `${by} left no handoff note; its last meeting did not write one.`,
+    facts: handoffFactsText(t.facts),
+  };
 }

@@ -10,7 +10,7 @@
 --                          says 'anonymous'; stand_in() is its id. The staff lists that would take it for a Mod Bot's persona (the presence box, the pool's signals, the digest's `staff` flag) leave it out.
 --     3. post_veils        the table (insert-only, by its own append-only pair, read by no API role), post_veils_live (a veil is live while its time has not passed and no admin has ended its play), author_veiled,
 --                          author_veil_ends and shown_author.
---     4. acts_public       four selects over `acts` in one appendrel (the rows that are not veiled as they are, then the veiled rows each with the stand-in as `character`), with an ungranted view `acts_base` that is
+--     4. acts_public       five selects over `acts` in one appendrel (the rows that are not veiled as they are, then the veiled rows each with the stand-in as `character`), with an ungranted view `acts_base` that is
 --                          today's acts_public (the true character) to compare it with. No select asks who is reading: the projection is the same for every reader. `acts.character` is no longer granted to
 --                          `authenticated` (every other column is), so no read goes around the view; the readers the revoke broke are moved below.
 --     5. landing           land_refusal (what a card's landing refuses on a post, read for every back a quote meets, whatever the card) and land_rows (what a landed post play writes beside its Act), called by place_cast
@@ -19,8 +19,8 @@
 --     5b. the counts       character_post_counts is a view that counts a veiled post (and its author's spins and cards on it) for the stand-in and not for its author while the veil is live, for every reader; the stored
 --                          table is character_post_counts_base, written by the trigger as before and read by no API role. group_now (the groups' posts rung, The System's own scoring) reads the stored table; profile_page, record_page and my_characters_page are made again over the view.
 --     6. the reads         thread_open, my_cards_ended (now the caller's own rows, as my_reactions is), play_moment, card_target_reach, start_visit, open_report, thread_page (`veiled`),
---                          my_veiled_posts (the author's own rows), my_group_moves (a security-invoker view that read `acts.character`, which the revoke broke), presence_listed, pool_named, pool_signals
---                          and system_digest (the staff lists that would take the stand-in for a persona).
+--                          my_veiled_posts (the author's own rows), my_group_moves (a security-invoker view that read `acts.character`, which the revoke broke), presence_listed, pool_named, pool_signals,
+--                          my_draws (0317; the washer of a drawing on a veiled post, who is its author, shown as the stand-in) and system_digest (the staff lists that would take the stand-in for a persona).
 --
 -- Masks ("A response never proves a private fact"): every read of an Act answers from the post's public play (the veil play is on the post) and never from who owns a character; the stand-in is one character for every
 -- veiled post on the instance; every refusal reads public Acts (a staff post, a visit) and is the same for every caster. The author's own fact comes only from my_veiled_posts, the caller's own rows, as a setter's
@@ -229,8 +229,8 @@ language sql stable set search_path = public, pg_temp as $$
   ) p where why is not null
 $$;
 
--- seed_instance (0207_random_events), writing each card's `veil` and whether it adds a reaction (both the code's, so a re-seed that drops one clears it), and making the anonymous poster once, as it makes the developer.
--- Everything else as 0207 wrote it.
+-- seed_instance (0332_arcs), writing each card's `veil` and whether it adds a reaction (both the code's, so a re-seed that drops one clears it), and making the anonymous poster once, as it makes the developer.
+-- Everything else as 0332 wrote it.
 
 create or replace function seed_instance(payload jsonb) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
@@ -293,20 +293,20 @@ begin
   if unknown is not null then raise exception '%', unknown using errcode = '22023'; end if;
   -- A card's stack, whether it is seeded and the economy numbers its rules read are the code's, as its name is; so
   -- are its rarity, its play, its trap (with its match), its gimmick, how long a Use of it is up, where it reaches, whether it pins, whether it writes, its skim, whether it scores as a class, what it draws, its drive and the words it refuses a blank message with.
-  insert into card_kinds (key, name, alignment, stack, seeded, reads, rarity, play, trap, gimmick, lasts, reaches, pins, writes, skim, scores_as, draws, drive, needs_message, veil, adds_reaction)
+  insert into card_kinds (key, name, alignment, stack, seeded, reads, rarity, play, trap, gimmick, lasts, reaches, pins, writes, skim, scores_as, draws, drive, needs_message, veil, adds_reaction, surface)
   select e ->> 'key', e ->> 'name', e ->> 'alignment', coalesce((e ->> 'stack')::integer, 1), coalesce((e ->> 'seeded')::boolean, false),
     coalesce(array(select jsonb_array_elements_text(e -> 'reads')), '{}'),
     e ->> 'rarity', coalesce(e ->> 'play', 'cast'), nullif(e -> 'trap', 'null'), nullif(e -> 'gimmick', 'null'), span_interval(e -> 'lasts'),
     case when e ? 'reaches' then array(select jsonb_array_elements_text(e -> 'reaches')) else '{post}' end, coalesce((e ->> 'pins')::boolean, false), coalesce((e ->> 'writes')::boolean, false),
     nullif(e -> 'skim', 'null'), coalesce((e ->> 'scoresAs')::boolean, false),
     case when jsonb_typeof(e -> 'draws') = 'array' then array(select jsonb_array_elements_text(e -> 'draws')) end, nullif(e -> 'drive', 'null'), nullif(e ->> 'needsMessage', ''),
-    nullif(e ->> 'veil', ''), coalesce((e ->> 'addsReaction')::boolean, false)
+    nullif(e ->> 'veil', ''), coalesce((e ->> 'addsReaction')::boolean, false), coalesce((e ->> 'surface')::boolean, false)
   from jsonb_array_elements(payload -> 'cards') e
   on conflict (key) do update set name = excluded.name, alignment = excluded.alignment,
     stack = excluded.stack, seeded = excluded.seeded, reads = excluded.reads,
     rarity = excluded.rarity, play = excluded.play, trap = excluded.trap, gimmick = excluded.gimmick, lasts = excluded.lasts,
     reaches = excluded.reaches, pins = excluded.pins, writes = excluded.writes, skim = excluded.skim, scores_as = excluded.scores_as,
-    draws = excluded.draws, drive = excluded.drive, needs_message = excluded.needs_message, veil = excluded.veil, adds_reaction = excluded.adds_reaction;
+    draws = excluded.draws, drive = excluded.drive, needs_message = excluded.needs_message, veil = excluded.veil, adds_reaction = excluded.adds_reaction, surface = excluded.surface;
   -- The packs the instance sells (replaced each seed: their pulls are its code), then the slots it names that the database does not hold yet,
   -- at the end of the grid in the instance's order. A slot already holding the item is never touched: its place, availability and price are an
   -- admin's (0139). A pack or card a slot names must exist, and a missing one is a foreign key's refusal.
@@ -441,12 +441,12 @@ begin
   -- The catalogs (0046): the moves and demands the engine holds, as the engine lists them. A reseed upserts a move's flag and
   -- never removes a kind, since a landed move may name it. A missing flag is a seed's mistake (a move that reshapes a board
   -- must not be seeded as one that does not), so it is refused by the column.
-  insert into move_kinds (key, structural, shapes_board, offices, derived)
-  select e ->> 'key', (e ->> 'structural')::boolean, coalesce((e ->> 'shapesBoard')::boolean, false),
+  insert into move_kinds (key, structural, shapes_board, lasting, offices, derived)
+  select e ->> 'key', (e ->> 'structural')::boolean, coalesce((e ->> 'shapesBoard')::boolean, false), coalesce((e ->> 'lasting')::boolean, false),
          case when jsonb_typeof(e -> 'offices') = 'array' and jsonb_array_length(e -> 'offices') > 0 then array(select jsonb_array_elements_text(e -> 'offices')) else '{boss}' end,
          case when jsonb_typeof(e -> 'derived') = 'array' then array(select jsonb_array_elements_text(e -> 'derived')) else '{}' end
   from jsonb_array_elements(coalesce(payload -> 'system' -> 'moves', '[]')) e
-  on conflict (key) do update set structural = excluded.structural, shapes_board = excluded.shapes_board, offices = excluded.offices, derived = excluded.derived;
+  on conflict (key) do update set structural = excluded.structural, shapes_board = excluded.shapes_board, lasting = excluded.lasting, offices = excluded.offices, derived = excluded.derived;
   -- The rule predicates (0102), as the engine lists them (engine/rules/predicates.ts). A reseed upserts; a predicate is never removed,
   -- since a landed rule may name it.
   insert into rule_predicates (key, param_kind, least, most, tags, plain)
@@ -456,6 +456,19 @@ begin
   on conflict (key) do update set param_kind = excluded.param_kind, least = excluded.least, most = excluded.most, tags = excluded.tags, plain = excluded.plain;
   insert into demand_kinds (key) select e ->> 'key' from jsonb_array_elements(coalesce(payload -> 'system' -> 'demands', '[]')) e
   on conflict (key) do nothing;
+  -- The conditions that unlock a beat (0332), as the engine lists them (engine/system/conditions.ts). A reseed upserts; a condition is never removed, since a persona's arc may name it.
+  insert into condition_kinds (key, plain)
+  select e ->> 'key', e ->> 'plain' from jsonb_array_elements(coalesce(payload -> 'system' -> 'conditions', '[]')) e
+  on conflict (key) do update set plain = excluded.plain;
+  -- A persona's arc (0332): one row each, rewritten by a reseed. An arc naming a condition the catalog lacks is refused, naming it: the check that no beat waits on a condition nothing reads.
+  unknown := (select string_agg(distinct c ->> 'kind', ', ')
+              from jsonb_array_elements(coalesce(payload -> 'system' -> 'staff', '[]')) p, jsonb_array_elements(coalesce(p -> 'arc', '[]')) b, jsonb_array_elements(coalesce(b -> 'unlock', '[]')) c
+              where not exists (select 1 from condition_kinds k where k.key = c ->> 'kind'));
+  if unknown is not null then raise exception 'an arc names a condition the catalog lacks: %', unknown using errcode = '23514'; end if;
+  delete from persona_arcs where staff in (select e ->> 'key' from jsonb_array_elements(coalesce(payload -> 'system' -> 'staff', '[]')) e);
+  insert into persona_arcs (staff, beats, holds_back, phase_days)
+  select e ->> 'key', coalesce(e -> 'arc', '[]'), coalesce(e -> 'holdsBack', '[]'), coalesce(e -> 'phaseDays', '{}')
+  from jsonb_array_elements(coalesce(payload -> 'system' -> 'staff', '[]')) e;
   -- The roster's order (0051): the seed's personas, in the order it lists them, so the rotation has one to follow. A seed with no
   -- persona leaves the setting as it was.
   insert into settings (key, value)
@@ -596,11 +609,14 @@ language sql stable security definer set search_path = public, pg_temp as $$
 $$;
 
 -- ===================================================================================== 4. acts_public ====
--- acts_base is acts_public as 0156_back_ends wrote it, the true character: no API role reads it. acts_public is then four selects over `acts`, its columns, names and order as they were (so a function whose
+-- acts_base is acts_public as 0156_back_ends wrote it, the true character: no API role reads it. acts_public is then five selects over `acts`, its columns, names and order as they were (so a function whose
 -- `begin atomic` body holds it is not written again for it):
 --   1. every row that is not veiled: a live author veil is not on the row itself and not on the Act it targets with the veil's own author behind it (the post and every Act its author made on it).
 --   2. 3. 4. the veiled rows, each with the stand-in as `character`: the post itself (by its key), and the Acts its author made on it (a target in the live veils' posts, and that post's author behind it), any but an edit and
 --      an edit apart so that each has the index of its own (acts_target, acts_edits).
+--   5. the veiled rows of a wall (0317): a draw or a wash on a surface play that is on a veiled post, by the post's own author. A wash is the post's own character's alone, so it names the author wherever it is read (surface_acts, a
+--      broadcast, my_draws' cut rows); a draw is any character's, and the author's own is hidden with the rest of what the author made on the post. The play is the Act the draw targets, and its target the post: found through the
+--      cards on the live veils' posts (an index read of acts_target), so a read pays for it only while an author veil is up.
 -- Nothing here asks who is reading: the projection is the same for every reader, so an Act broadcast from act_projection in the author's own session carries the stand-in too. The stand-in is read by a subquery and not
 -- by stand_in(): the functions a view calls are run as its reader.
 --
@@ -640,7 +656,9 @@ create or replace view acts_public as
            case when a.kind = 'card' then exists (select 1 from card_write_refunds r where r.play = a.id) end as untaken,
            case when a.kind = 'set' then (select f.ends_at from face_down f where f.play = a.id) end as ends_at,
            true as g,
-           not exists (select 1 from post_veils_live v where v.veil = 'author' and v.post = a.id) and not exists (select 1 from post_veils_live v where v.veil = 'author' and v.post = a.target_act_id and v.author = a.character) as ok
+           not exists (select 1 from post_veils_live v where v.veil = 'author' and v.post = a.id) and not exists (select 1 from post_veils_live v where v.veil = 'author' and v.post = a.target_act_id and v.author = a.character)
+             and not (a.kind in ('draw', 'wash') and a.target_act_id = any (array(select c.id from acts c where c.kind = 'card' and c.target_act_id = any (array(select v.post from post_veils_live v where v.veil = 'author'))))
+                      and exists (select 1 from acts c join post_veils_live v on v.veil = 'author' and v.post = c.target_act_id and v.author = a.character where c.id = a.target_act_id)) as ok
     from acts a
     union all
     select a.id, (select k.id from characters k where k.staff_kind = 'anonymous') as "character", a.kind, a.thread, a.target_act_id, a.seq, a.created_at, a.payload,
@@ -674,6 +692,18 @@ create or replace view acts_public as
            case when a.kind = 'set' then (select f.ends_at from face_down f where f.play = a.id) end as ends_at,
            exists (select 1 from post_veils_live v where v.veil = 'author') as g,
            a.kind = 'edit' and a.target_act_id = any (array(select v.post from post_veils_live v where v.veil = 'author')) and exists (select 1 from post_veils_live v where v.veil = 'author' and v.post = a.target_act_id and v.author = a.character) as ok
+    from acts a
+    union all
+    select a.id, (select k.id from characters k where k.staff_kind = 'anonymous') as "character", a.kind, a.thread, a.target_act_id, a.seq, a.created_at, a.payload,
+           coalesce((select e.payload from acts e where e.kind = 'edit' and e.target_act_id = a.id and a.kind = 'post' order by e.created_at desc, e.id desc limit 1), a.payload) as current_payload,
+           (select e.created_at from acts e where e.kind = 'edit' and e.target_act_id = a.id and a.kind = 'post' order by e.created_at desc, e.id desc limit 1) as edited_at,
+           (select max(e.created_at) from acts e where e.kind = 'edit' and e.target_act_id = a.id and a.kind = 'post'
+              and e.created_at > a.created_at + coalesce(span_interval((select g.value from settings g where g.key = 'editGrace')), interval '0')) as shown_edited_at,
+           case when a.kind = 'card' then exists (select 1 from card_write_refunds r where r.play = a.id) end as untaken,
+           case when a.kind = 'set' then (select f.ends_at from face_down f where f.play = a.id) end as ends_at,
+           exists (select 1 from post_veils_live v where v.veil = 'author') as g,
+           a.kind in ('draw', 'wash') and a.target_act_id = any (array(select c.id from acts c where c.kind = 'card' and c.target_act_id = any (array(select v.post from post_veils_live v where v.veil = 'author'))))
+             and exists (select 1 from acts c join post_veils_live v on v.veil = 'author' and v.post = c.target_act_id and v.author = a.character where c.id = a.target_act_id) as ok
     from acts a
   ) u
   where u.g and u.ok;
@@ -834,8 +864,8 @@ begin
   return f;
 end $$;
 
--- spring_traps (0151_card_payouts): a Move on a post lands only when land_refusal has nothing to say of the post it would land on, as it lands only when its stack has room and no ward turns it away.
--- Everything else, the lock order included, as 0151 wrote it.
+-- spring_traps (0317_surfaces): a Move on a post lands only when land_refusal has nothing to say of the post it would land on, as it lands only when its stack has room and no ward turns it away.
+-- Everything else, the lock order included, as 0317 wrote it.
 
 create or replace function spring_traps(trigger text, post uuid, by_act uuid, incoming_card text default null, held uuid[] default null, actor uuid default null) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
@@ -889,6 +919,7 @@ begin
   values (f.setter_character, 'spring', fd.thread, fd.post, jsonb_strip_nulls(jsonb_build_object(
     'card', fd.card, 'trigger', trigger, 'did', did, 'set', fd.play::text, 'by', by_act::text,
     'caught', case when trigger = 'cast' and did = 'caught' then by_act::text end,
+    'drawn', case when back_trigger = 'quote' then surface_draft_fits(fd.play) end,
     'quadrant', case when did = 'rode' then fd.config ->> 'quadrant' end,
     'when', held_when,
     'for', case when trigger = 'quote' and fd.who is not null and not fd.who_except then f.by_character::text end))) returning id into sprung;
@@ -910,8 +941,8 @@ revoke execute on function spring_traps(text, uuid, uuid, text, uuid[], uuid) fr
 
 revoke execute on function spring_facts(face_down, text, uuid, text) from public, anon, authenticated, service_role;
 
--- lay_sprung (0151_card_payouts), writing `ends` on a play on a post whenever its card has a time up (a skim's alone before), and calling land_rows for a play on a post, as place_cast does.
--- Everything else as 0151 wrote it.
+-- lay_sprung (0317_surfaces), writing `ends` on a play on a post whenever its card has a time up (a skim's alone before), and calling land_rows for a play on a post, as place_cast does.
+-- Everything else as 0317 wrote it.
 
 create or replace function lay_sprung(setter uuid, card text, config jsonb, target uuid, reach text, spring uuid, from_post uuid) returns uuid
 language plpgsql security definer set search_path = public, pg_temp as $$
@@ -927,6 +958,7 @@ declare
   flag text;
   w_opens timestamptz;
   w_closes timestamptz;
+  draft face_down_draws%rowtype;
 begin
   select * into kind_of from card_kinds k where k.key = lay_sprung.card;
   select c.staff is not null into staff_setter from characters c where c.id = setter;
@@ -969,6 +1001,14 @@ begin
   if staff_setter then perform set_config('kayfabb.staff_writer', flag, true); end if;
   -- What a landed play on a post needs beside its Act (a veil's row): the same writer place_cast calls.
   if reach = 'post' then perform land_rows(written, kind_of, target, coalesce(config, '{}'), setter); end if;
+  if kind_of.surface and reach = 'post' then
+    select d.* into draft from face_down_draws d where d.play = (select (s.payload ->> 'set')::uuid from acts s where s.id = lay_sprung.spring);
+    perform open_surface(written, coalesce(draft.most_live, 48));
+    if draft.play is not null then
+      if bit_count(draft.cells) <= draft.most then perform surface_apply(written, setter, 'draw', draft.payload, draft.cells, draft.most); end if;
+      delete from face_down_draws d where d.play = draft.play;
+    end if;
+  end if;
   if reach <> 'post' then
     insert into play_reach (play, reach, character, thread, board, pins_board, ends_at)
     values (written, reach, case when reach = 'character' then target end, case when reach = 'thread' then target end,
@@ -980,9 +1020,9 @@ end $$;
 
 revoke execute on function lay_sprung(uuid, text, jsonb, uuid, text, uuid, uuid) from public, anon, authenticated, service_role;
 
--- place_cast (0316_card_notes_part_4), with four additions. (a) At post reach a cast card meets land_refusal (a staff post, a post a Mod Bot has been to) before anything is written, in the same words for every caster.
+-- place_cast (0317_surfaces), with four additions. (a) At post reach a cast card meets land_refusal (a staff post, a post a Mod Bot has been to) before anything is written, in the same words for every caster.
 -- (b) A post play of a card with a time up writes `ends` whatever the card is, where a use card's and a skim's alone did. (c) A card that lands on a post calls land_rows after its Act (a veil's row), except a play a back caught.
--- (d) At character reach the stand-in is no target. Everything else, the lock order included, as 0316 wrote it. Callable by no API role, as before.
+-- (d) At character reach the stand-in is no target. Everything else, the lock order included, as 0317 wrote it. Callable by no API role, as before.
 
 create or replace function place_cast(caster uuid, card text, target uuid, config jsonb, message text, reach text, from_post uuid, payer uuid, price integer, marker jsonb default '{}')
 returns jsonb
@@ -1102,6 +1142,7 @@ begin
         and (k.payload ->> 'ends' is null or (k.payload ->> 'ends')::timestamptz > now()) and not card_ended(k.id);
       if up >= 1 then raise exception 'this post already carries that card for that quadrant' using hint = 'kayfabb.refusal', errcode = '23505'; end if;
     elsif up >= kind_of.stack then
+      if kind_of.surface then raise exception 'This post is already a wall. Draw on it instead.' using hint = 'kayfabb.refusal', errcode = '23505'; end if;
       if kind_of.stack = 1 then raise exception 'this post already carries that card' using hint = 'kayfabb.refusal', errcode = '23505'; end if;
       raise exception 'this post already carries % of that card, the most it takes', kind_of.stack using hint = 'kayfabb.refusal', errcode = '23505';
     end if;
@@ -1206,6 +1247,7 @@ begin
   end;
   -- What a landed play on a post needs beside its Act (a veil's row): not for a play a back caught, which never lands.
   if reach = 'post' and (sprung is null or rode) then perform land_rows(written, kind_of, on_post, coalesce(config, '{}'), caster); end if;
+  if kind_of.surface and reach = 'post' and (sprung is null or rode) then perform open_surface(written); end if;
   if reach <> 'post' then
     insert into play_reach (play, reach, character, thread, board, pins_board, ends_at)
     values (written, reach, case when reach = 'character' then target end, case when reach = 'thread' then target end,
@@ -1833,7 +1875,7 @@ end $$;
 revoke execute on function open_report(uuid, uuid, text) from public, anon;
 grant execute on function open_report(uuid, uuid, text) to authenticated, service_role;
 
--- thread_page (0210_screen_cosmetics), also answering `veiled`: the caller's own veiled posts among the page's (my_veiled_posts), beside `faces`. Everything else as 0210 wrote it.
+-- thread_page (0317_surfaces), also answering `veiled`: the caller's own veiled posts among the page's (my_veiled_posts), beside `faces`. Everything else as 0317 wrote it.
 
 create or replace function thread_page(in_thread uuid, in_page integer, in_seq integer, per_page integer, effect_cards text[]) returns jsonb
 language sql stable security invoker set search_path = public, pg_temp
@@ -1950,6 +1992,8 @@ begin atomic
     'states', (select coalesce(jsonb_agg(jsonb_build_object('play', e.play, 'state', e.state, 'saved_at', e.saved_at)), '[]'::jsonb)
                from effect_state e where e.play in (select w.id from wanted_plays w)),
     'releases', (select coalesce(jsonb_agg(r.play), '[]'::jsonb) from effect_releases r where r.play in (select w.id from wanted_plays w)),
+    'surfaces', (select coalesce(jsonb_object_agg(sf.play::text, jsonb_build_object('covered', bit_count(sf.cover), 'live', to_jsonb(sf.live))), '{}'::jsonb)
+                 from surfaces sf where sf.play in (select o.id from on_posts o where o.kind = 'card')),
     'tallies', (select coalesce(jsonb_agg(jsonb_build_object('act', t.act, 'kind', t.kind, 'count', t.count)), '[]'::jsonb)
                 from reaction_tallies t where t.act in (select i.id from ids i)),
     'mine', (select coalesce(jsonb_agg(jsonb_build_object('act', m.act, 'kind', m.kind, 'character', m.character)), '[]'::jsonb)
@@ -2128,7 +2172,7 @@ begin
   return result;
 end $$;
 
--- system_digest (0127_pronouns_for_the_model), reporting the stand-in as the plain character it is shown as, not as staff. Everything else as 0127 wrote it (owner and grants kept).
+-- system_digest (0325_digest_boards), reporting the stand-in as the plain character it is shown as, not as staff. Everything else as 0325 wrote it (owner and grants kept).
 
 create or replace function system_digest(since timestamptz, until timestamptz) returns jsonb
 language plpgsql stable security definer set search_path = public, pg_temp as $$
@@ -2136,6 +2180,8 @@ declare
   threads_cap integer := (setting('digestThreads'))::integer;
   short_cap integer := (setting('digestExcerpts'))::integer;
   chars integer := (setting('digestExcerptChars'))::integer;
+  board_cap integer;
+  board_days integer;
   hours numeric;
   result jsonb;
   uuid_re constant text := '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
@@ -2144,6 +2190,9 @@ begin
   if since is null or until is null or until <= since then
     raise exception 'a digest covers a window that ends after it starts' using errcode = '22023';
   end if;
+  -- The board lines' two settings: an instance that has not set them (seeded before them) reads the defaults, as inheritance_due reads inheritanceGraceDays.
+  begin board_cap := (setting('digestBoards'))::integer; exception when no_data_found then board_cap := 30; end;
+  begin board_days := (setting('digestBoardDays'))::integer; exception when no_data_found then board_days := 21; end;
   hours := greatest(extract(epoch from (until - since)) / 3600.0, 1.0 / 60);
   with
   w as (
@@ -2348,6 +2397,27 @@ begin
     from (select x.act, x.character, row_number() over (partition by x.act order by x.weight, x.first_at, x.character) as rank from met_credit x) r
     where r.rank <= met_by_most
   ),
+  -- The board lines: each open board that is not The System's, with the posts on it over the `board_days` days before the window's end, on the board each thread is on now
+  -- (threads.board, which a move that landed has already changed). Public posts of public characters only, counted per board and read from nothing else: no owner,
+  -- account, class or reaction. The count is one range of the partial index acts_posts_by_time and one primary-key read per thread's post, grouped by board; the lines are the
+  -- number of boards, which a busy instance keeps small. When there are more than `board_cap`, the busiest half (the odd one too) and the quietest half; the numbering is over
+  -- the ordered whole, so the two halves cannot overlap, and a cap the boards do not reach keeps them all.
+  board_posts as (
+    select tl.board, count(*)::integer as n
+    from acts_public p join threads tl on tl.id = p.thread
+    where p.kind = 'post' and p.character is not null and p.created_at >= until - make_interval(days => board_days) and p.created_at < until
+    group by tl.board
+  ),
+  board_all as (
+    select bn.id, left(bn.name, 120) as name, left(bn.premise, 200) as premise, coalesce(bp.n, 0) as n,
+           row_number() over (order by coalesce(bp.n, 0) desc, bn.id) as rn, count(*) over () as total
+    from boards_now bn left join board_posts bp on bp.board = bn.id
+    where not bn.is_system and not bn.closed
+  ),
+  board_lines as (
+    select x.id, x.name, x.premise, x.n, x.rn from board_all x
+    where x.rn <= (board_cap + 1) / 2 or x.rn > x.total - board_cap / 2
+  ),
   named as (
     select q_from as id from quoted union select q_to from quoted union select character from stand union select character from excerpted
     union select character from met_top
@@ -2358,6 +2428,8 @@ begin
     'threads', coalesce((select jsonb_agg(jsonb_build_object('thread', h.thread, 'title', h.title, 'board', (select bn.name from boards_now bn where bn.id = h.board_id), 'posts', h.posts,
                           'heat', h.heat, 'controversy', h.controversy, 'length', h.length)
                          order by h.posts desc, h.controversy desc, h.thread) from hot h), '[]'::jsonb),
+    'boards', coalesce((select jsonb_agg(jsonb_build_object('id', l.id, 'name', l.name, 'premise', l.premise, 'posts', l.n) order by l.rn) from board_lines l), '[]'::jsonb),
+    'boardDays', board_days,
     'standings', coalesce((select jsonb_agg(jsonb_build_object('rank', s.rank, 'character', s.character, 'amount', s.amount) order by s.rank) from stand s), '[]'::jsonb),
     'moves', coalesce((select jsonb_agg(jsonb_build_object('act', m.act, 'kind', m.payload ->> 'kind', 'params', m.payload -> 'params',
                           'demand', m.payload -> 'demand', 'expiresAt', m.payload -> 'expires_at', 'landedAt', m.landed_at,
@@ -2377,6 +2449,22 @@ begin
   ) into result;
   return result;
 end $$;
+
+-- my_draws (0317_surfaces), naming the washer of a drawing as the post shows its author: a wash is the post's own character's alone, so on a post whose author is hidden the washer is the author, and the caller's log
+-- would say who it is. A cut row's `character` is what shown_author(post, washer) says, the stand-in while an author veil is live and the washer as before when none is, written out here (the functions a view calls are run as its reader, who may not run shown_author), against the list of live veils' posts read once, not a probe for each row. Everything else as 0317 wrote it (the caller's own drawings,
+-- the same columns, the same grants).
+create or replace view my_draws as
+  select m.act, 'draw'::text as kind, m.play, m.post, m.character, c.id as mine, m.at, m.cells
+  from characters c
+  join surface_marks m on m.character = c.id and m.kind = 'draw'
+  where c.owner = auth.uid()
+  union all
+  select u.wash, 'cut'::text, u.play, u.post, case when u.post = any (array(select v.post from post_veils_live v where v.veil = 'author')) then (select k.id from characters k where k.staff_kind = 'anonymous') else u.washer end, c.id, u.at, sum(u.took)::integer
+  from characters c
+  join surface_cuts u on u.drawer = c.id
+  where c.owner = auth.uid()
+    and not exists (select 1 from characters x where x.id = u.washer and x.owner = auth.uid())
+  group by u.wash, u.play, u.post, u.washer, c.id, u.at;
 
 -- my_group_moves (0157_plain_log_read), a security-invoker view that read `ru.*` of the appeal's ruling and so asked for `acts.character`, which a signed-in player is no longer granted: it reads the two columns it shows.
 -- Everything else as 0157 wrote it (the caller's own rows, security invoker).

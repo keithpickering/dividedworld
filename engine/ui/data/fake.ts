@@ -24,14 +24,16 @@ import { decide } from '../../rules/actions.ts';
 import { rollPack } from '../../rules/packs.ts';
 import { beltHolder, outfitProblems, PIECE_TURN_MOST, PIECE_WIDTH, type Piece } from '../../rules/cosmetics.ts';
 import { RARITIES, type Rarity } from '../../rules/cards.ts';
-import { atOrBelow, giftSplit, refusalTime, spanMs, OLD_VOICE_OFF, withheld, playOf as kindOfPlay, postTarget, casterMessage, decidePlay, decideSet, decideUse, effectsOnTarget, noQuoteWords, quoteStop, type BeyondPost, type CardEffect, type CardRules, type CardTarget, type EffectsAbove, type PostTarget, type Reach, type SetConditions } from '../../rules/cards.ts';
+import { atOrBelow, giftSplit, refusalTime, spanMs, OLD_VOICE_OFF, withheld, playOf as kindOfPlay, postTarget, casterMessage, decidePlay, decideSet, decideUse, decideDraw, decideWash, effectsOnTarget, noQuoteWords, quoteStop, type BeyondPost, type CardEffect, type CardRules, type CardTarget, type EffectsAbove, type PostTarget, type Reach, type SetConditions } from '../../rules/cards.ts';
 import { sameName } from '../../rules/names.ts';
+import { GRID, count, fromBits, minus, union, type Cells } from '../../rules/surface.ts';
 import { earnedGroup } from '../../rules/groups.ts';
 import { ALERT_KINDS, isWritten, type WrittenKind } from '../../rules/alerts.ts';
 import { ANONYMOUS_STAFF_KEY, DEFAULT_ANONYMOUS, DEFAULT_DEVELOPER } from '../../rules/instance.ts';
 import { emojiBase, emojiOfKey, localKey, localReaction, singleEmoji } from '../../rules/emoji.ts';
 import { normalizePronouns, pronounProblems, type PronounSet } from '../../rules/pronouns.ts';
 import type { Career } from '../../system/career.ts';
+import type { HandoffFacts } from '../../system/meeting.ts';
 import { ADMIN_AWARDS_PAGE, ALERTS_PAGE, ALERTS_UNREAD_BOUND, type FailureKind, CONTACT_HREF_MAX, CONTACT_LABEL_MAX, CONTACT_MOST, CONTACT_WS, DEFAULT_PREFERENCES, FOLLOWED_COUNT_CAP, LOST_ANSWER, MOVES_LOG_PAGE, NOT_SENT, ReadFailure, REIGNS_PAGE, TROPHIES_PAGE, TROPHY_FAILURES_PAGE, SEARCH_CARDS_MAX, SEARCH_COUNT_CAP, SEARCH_MATCHES_CAP, SEARCH_PER_PAGE, SEARCH_PER_PAGE_MAX, SEASON_NEWS_PAGE, SPUN_FROM_MAX, UPDATES_PAGE } from './api.ts';
 import { buildMoveNotice, toDemand, toProgress } from './moves.ts';
 import { TIP_KEYS, TOUR_KEYS } from '../tips/keys.ts';
@@ -43,10 +45,12 @@ import { PROFILE_ROWS, RECORD_PAGE, type RecordKind } from '../profile/record.ts
 import { actsFollowed, actsNamed } from '../log/lines.ts';
 import { micros, readLogPageNow, type LedgerRow, type ShareRow } from './log-page.ts';
 import type {
+  SurfaceLogRow,
   AdminQueue, BoardName, Demand, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesCursor, MovesLog, QueuedMove, StaffCardPlay, StaffProfile,
   Act, Apology, Bar, AccountListener, Tail, ActKind, Alert, ContactLink, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResult, SeasonResultRow, TallyName, SeasonShown, Update, UpdateChange, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, CardEvent, PackEvent, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, DebutLoudness, EffectState, PlayMoment,
   DebutTiming, Estimate, EstimateLine, FollowedThread, Frame, HeldCard, Id, KayfaApi, LogShare, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, PreferencesPatch, Refusal,
-  Boot, BoardPage, IndexPage, Opened, AdminSlot, Slot, SlotMove, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, LogPage,
+  Boot, BoardPage, BoardRef, BoardStub, IndexPage, Opened, AdminSlot, Slot, SlotMove, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, LogPage,
+  SurfaceActs, SurfaceNow, SurfaceWritten, SurfaceAct,
   AdminAward, AdminKind, BeltCursor, BeltPage, BeltReign, RandomEvent, ShownTrophy, TrophyAwardFailure, TrophyCursor, TrophyItem, TrophyPage, WardrobeItem,
   PostHit, ThreadHit, SearchCursor, SearchPage, SearchQuery, SearchSort, Suggestions,
   AppealResult, AppealVerdict, LogAppeal, LogBan, LogCosmetic, LogGroupMove, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
@@ -71,7 +75,7 @@ export const START = Date.UTC(2026, 9, 29, 12);
 
 export interface LiveEvent {
   readonly topic: string;
-  readonly event: 'act' | 'tally' | 'thread' | 'effect' | 'card_text' | 'alert' | 'news' | 'settled';
+  readonly event: 'act' | 'tally' | 'thread' | 'effect' | 'surface' | 'card_text' | 'alert' | 'news' | 'settled';
 }
 
 export interface Seed {
@@ -121,9 +125,9 @@ export interface Seed {
    * dated `at` (else now). Season news then holds the Boss's arrival and departure, quoting the first post each wrote in the announcements thread dated
    * at exactly `at` (`staffPost`), as the server finds it; a later remark is not its words. A change of Boss is also a to-do in the admin queue
    * (`how` rotation unless said, `bossWas` the new Boss's office before, `outgoingOffice` member unless said), until an update is seeded or posted
-   * after `at` or an admin dismisses it. The season is the next number: the first season is the seed's, and each handover opens the one after.
+   * after `at` or an admin dismisses it. The to-do carries the outgoing Boss's handoff `note` (null: none) and the season's `facts` (empty lists unless said), as admin_queue does (0337). The season is the next number: the first season is the seed's, and each handover opens the one after.
    */
-  handover(handover: { outgoing?: string | null; boss: string; at?: number; how?: 'nomination' | 'rotation'; bossWas?: string | null; outgoingOffice?: string | null }): void;
+  handover(handover: { outgoing?: string | null; boss: string; at?: number; how?: 'nomination' | 'rotation'; bossWas?: string | null; outgoingOffice?: string | null; note?: string | null; facts?: Partial<HandoffFacts> }): void;
   /**
    * An update by the developer persona (what `post_update` writes, 0062), dated `at` (else now): the developer character is made on its first
    * update, from the instance's persona (else the engine's plain one), and so is the updates thread on The System's board. Returns the Act.
@@ -207,13 +211,25 @@ export interface Seed {
    * A landed move: the Boss's `move` Act in a thread of The System's board (the first thread there is used, or one is made), as the
    * tick writes it. A rename takes the board's slug; the demand's board is the same board unless the demand names another.
    */
-  move(staff: string, move: SeedMove): Id;
+  move(staff: string, move: SeedMove & { lasting?: { readonly kind: string; readonly params: Readonly<Record<string, unknown>> }; bundle?: SeedBundle }): Id;
   /** A move's end, as end_move writes it: the board's old name returns. */
   endMove(act: Id, end: { why: 'met' | 'expired' | 'reversed' | 'superseded' | 'spent'; by?: string; at?: number }): Id;
   /** The new Boss keeps a move of an earlier Boss after a handover (a `move_keep` Act): the move's log row says who keeps it. */
   keepMove(act: Id, staff: string, options?: { at?: number }): Id;
   /** A move the Boss chose that waits in the admin queue; returns its queue id. */
-  queueMove(staff: string, move: SeedMove & { goLiveAt: number; why?: string; failure?: { at: number; text: string }; refusal?: { at: number; text: string } }): number;
+  queueMove(staff: string, move: SeedMove & { goLiveAt: number; why?: string; failure?: { at: number; text: string }; refusal?: { at: number; text: string };
+    /** A lasting move (`createBoard`, `moveThread`, `mergeBoard`) in place of a rename: its kind and params, a board or thread named by slug or id as the move's params name them. */
+    lasting?: { readonly kind: string; readonly params: Readonly<Record<string, unknown>> };
+    /** The move as a part of a bundle: the bundle's id and name (the same for every part) and the part's role, which another part's board param may name as `{role}`. */
+    bundle?: SeedBundle;
+    /** Queue ids of moves it builds on without naming them by role (a later move into a board one made): it waits for them. */
+    waitsOn?: readonly number[] }): number;
+  /** A board of the players beyond the instance's own, for a scene that moves threads between boards or closes one. */
+  board(slug: string, name: string, description?: string): void;
+  /** A thread moved to another board (a landed `moveThread`), dated `at` (default now): it is on the new board, and the board it left lists it as a stub until `movedStubDays` pass. */
+  moveThread(thread: Id, board: string, options?: { at?: number }): void;
+  /** A board closed: merged into another (its threads go there), or closed with its threads going to `fallback` (default: the first open board of the players). */
+  closeBoard(board: string, how: { mergedInto: string } | { fallback?: string }): void;
   /** A nomination of a successor waiting in the admin queue (`boss` is a roster key); returns its queue id. */
   queueSuccessor(staff: string, boss: string, options: { goLiveAt: number; why?: string }): number;
   /** An admin's hold on a queued move, dated `at`: it never lands. */
@@ -299,6 +315,13 @@ export interface SeedLine {
 }
 
 /** A rename a seed lands or queues: the board by slug, its new name, subject and description, and the demand it carries. */
+/** A part of a bundle (0329): the bundle's id and name, and the part's role in it. */
+export interface SeedBundle {
+  readonly id: string;
+  readonly name: string;
+  readonly role?: string;
+}
+
 export interface SeedMove {
   readonly board: string;
   readonly name: string;
@@ -394,7 +417,7 @@ interface ActRec {
   readonly at: number;
   readonly payload: Readonly<Record<string, unknown>>;
 }
-interface ThreadRec { readonly id: Id; readonly board: Id; readonly title: string; readonly origin: Id | null; readonly at: number; nextSeq: number }
+interface ThreadRec { readonly id: Id; board: Id; readonly title: string; readonly origin: Id | null; readonly at: number; nextSeq: number }
 interface AccountRec {
   readonly id: Id;
   readonly email: string;
@@ -423,7 +446,7 @@ const iso = (ms: number) => new Date(ms).toISOString();
 /** A `my_cosmetic_log` row with nothing said: each kind fills what it uses. */
 const NO_COSMETIC = { character: null, outcome: null, item: null, text: null, copies: null, trophy: null, name: null, by: null, byName: null, season: null, place: null, line: null, toName: null } as const;
 /** The kinds of Act that take no place in a thread (`acts_take_seq`, supabase/migrations/0109): an edit, a card's marks and the Mod Bots' meta acts. */
-const UNPLACED: ReadonlySet<ActKind> = new Set<ActKind>(['edit', 'card', 'set', 'take_back', 'spring', 'card_end', 'visit', 'visit_join', 'visit_end', 'report', 'report_verdict', 'intercept', 'infraction', 'ban', 'appeal', 'appeal_ruling', 'donation']);
+const UNPLACED: ReadonlySet<ActKind> = new Set<ActKind>(['edit', 'card', 'set', 'take_back', 'spring', 'card_end', 'visit', 'visit_join', 'visit_end', 'report', 'report_verdict', 'intercept', 'infraction', 'ban', 'appeal', 'appeal_ruling', 'donation', 'draw', 'wash']);
 
 /**
  * The api's writes: the one split `failNextRead` and `offline` share. Every method that answers an `Answer` is one, and `markRead` (a
@@ -436,7 +459,7 @@ const WRITES: ReadonlySet<string> = new Set(Object.keys({
   moveSlot: true, saveMachine: true, intercept: true, fileReport: true, fileAppeal: true, markRead: true, setPresenceHidden: true,
   setPreferences: true, meetCard: true, seeWelcome: true, seeTip: true, skipTips: true, resumeTips: true, restoreTips: true, replayTour: true,
   seeAlerts: true, donate: true, seeSettlement: true, follow: true, createInvite: true, reissueInvite: true, startThread: true, post: true, edit: true, spin: true,
-  apologize: true, buyCard: true, buyPack: true, playCard: true, setCard: true, takeBack: true, useCard: true, releaseEffect: true, saveEffect: true,
+  apologize: true, buyCard: true, buyPack: true, playCard: true, setCard: true, takeBack: true, useCard: true, releaseEffect: true, saveEffect: true, draw: true, wash: true,
   react: true, turn: true, withdrawTurn: true, unmask: true, createCharacter: true, setDebut: true, setProfile: true, setAvatar: true,
   wardrobe: true, setOutfit: true, beltLineage: true, showTrophies: true, randomEvent: true, grantGear: true, awardTrophy: true, reverseAward: true, makeTrophy: true,
   trophyAwardFailures: true, giveFailedAward: true, adminAwards: true, adminCharacterNamed: true,
@@ -451,7 +474,7 @@ type Sync<T> = { [K in keyof T]: T[K] extends (...a: infer A) => Promise<infer R
  * export and keeps a property of an object that is built.
  */
 export const FAKE_BACKEND_MARKER = 'KAYFA_FAKE_BACKEND';
-export function createFake(options: { instance: Instance; settings?: Partial<ScreenSettings>; now?: () => number }): Fake {
+export function createFake(options: { instance: Instance; settings?: Partial<ScreenSettings>; now?: () => number; /** Applied to every character the fake shows, as the adapter's `face` is (engine/ui/data/staff-faces.ts). */ face?: (character: Character) => Character }): Fake {
   /* A screen's economy (ScreenSettings.economy) is laid over the instance's, as economyNow does, never in place of it: a world given the
      web's fallback, which holds none, keeps the compiled numbers. */
   const settings: Settings = { ...options.instance.settings, ...options.settings, economy: { ...options.instance.settings.economy, ...options.settings?.economy } };
@@ -527,8 +550,43 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const moveEnds = new Map<Id, { why: 'met' | 'expired' | 'reversed' | 'superseded' | 'spent' | 'overturned'; by: string; at: number }>();
   const careers = new Map<string, Career>();
   const staffProfiles: { key: string; at: number; interests: string[]; favorites: Id[]; mood: string; signature: string }[] = [];
-  interface QueueRec { id: number; staff: string; successor?: string; move: SeedMove; why: string; goLiveAt: number; failure: { at: number; text: string } | null; refusal?: { at: number; text: string }; heldAt: number | null; landed: Id | null; replacedAt?: number; adminDescription?: string }
+  interface QueueRec { id: number; staff: string; successor?: string; lasting?: { kind: string; params: Readonly<Record<string, unknown>> }; bundle?: { id: string; name: string; role: string | null }; waitsOn?: readonly number[]; move: SeedMove; why: string; goLiveAt: number; failure: { at: number; text: string } | null; refusal?: { at: number; text: string }; heldAt: number | null; landed: Id | null; replacedAt?: number; adminDescription?: string }
   const queue: QueueRec[] = [];
+  /** A queued part's bundle, role and the bundle's name, as admin_queue says them (null for a move that is no part of one). */
+  const bundleOf = (q: QueueRec | undefined) => ({ bundle: q?.bundle?.id ?? null, role: q?.bundle?.role ?? null, bundleName: q?.bundle?.name ?? null });
+  /** The parts of the same bundle that build on `root`, breadth first: those whose board params name its role, and those that name theirs. */
+  const followers = (root: QueueRec): QueueRec[] => {
+    const found: QueueRec[] = [];
+    let frontier = [root];
+    while (frontier.length > 0) {
+      const next: QueueRec[] = [];
+      for (const r of frontier) {
+        const role = r.bundle?.role;
+        if (!role) continue;
+        for (const x of queue) {
+          if (x === root || found.includes(x) || x.bundle?.id !== r.bundle!.id) continue;
+          if (['board', 'into', 'fallback'].some((k) => (x.lasting?.params[k] as { role?: unknown } | undefined)?.role === role)) { found.push(x); next.push(x); }
+        }
+      }
+      frontier = next;
+    }
+    return found;
+  };
+  /** Where a landed `moveThread` took a thread from (thread_departures, 0326). */
+  const departures: { thread: Id; origin: Id; to: Id; at: number }[] = [];
+  /** A closed board: merged into another, or closed with where its threads went (boards_now.closed and merged_into, 0320). */
+  const closedBoards = new Map<Id, { mergedInto: Id | null; fallback: Id | null }>();
+  const isClosed = (b: Board): boolean => closedBoards.has(b.id);
+  /** The first open board a closed board's threads are in, following merges and fallbacks on. */
+  const openEnd = (id: Id): Id | null => {
+    let here: Id | null = id;
+    for (let hops = 0; hops < 50 && here !== null; hops++) {
+      const gone = closedBoards.get(here);
+      if (!gone) return here === id ? null : here;
+      here = gone.mergedInto ?? gone.fallback;
+    }
+    return null;
+  };
   /** The staff key of the Boss that keeps each move after a handover, by the move's Act. */
   const moveKeeps = new Map<Id, string>();
   const playersBoard = boards.find((b) => !b.isSystem);
@@ -667,7 +725,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   function shownAuthor(a: ActRec, deep = true): Id | null {
     if (a.character === null || veils.size === 0) return a.character;
     const veiled = liveVeils(a.id, 'author').length > 0 || (deep && a.target !== null && liveVeils(a.target, 'author').some((v) => v.author === a.character));
-    return veiled ? standIn().id : a.character;
+    /* A draw or a wash on a wall (0317): its target is the card's play and the play's the post, so the wash, which is the post's own character's alone, names the author too (acts_public's fifth select). */
+    const wall = deep && (a.kind === 'draw' || a.kind === 'wash') && a.target !== null ? acts.get(a.target) : undefined;
+    const walled = wall !== undefined && wall.kind === 'card' && wall.target !== null && liveVeils(wall.target, 'author').some((v) => v.author === a.character);
+    return veiled || walled ? standIn().id : a.character;
   }
   /** my_veiled_posts (0400): the caller's own live author veils among these posts, by post, for the player of the post's own character alone. */
   const myVeiled = (posts: readonly Id[]) => [...veils].filter(([play, v]) => v.veil === 'author' && v.author !== null && posts.includes(v.post) && veilLive(play, v) && characters.get(v.author)?.owner === me()?.id)
@@ -810,7 +871,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return latest;
   };
   function publicCharacter(c: CharRec): Character {
-    return {
+    return (options.face ?? ((x: Character) => x))({
       id: c.id, name: c.name, title: c.title, signature: c.signature, avatarSquare: c.square, avatarPortrait: c.portrait, squareFrame: c.squareFrame,
       portraitFrame: c.portraitFrame, portraitTallness: c.portraitTallness, outfit: c.outfit.map((o) => ({ ...o })), trophies: shelf(c.id), pipStyle: c.pipStyle, pronouns: c.pronouns,
       joined: `${iso(c.debutedAt!).slice(0, 7)}-01`,
@@ -818,7 +879,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       ...(bannedUntilOf(c.id) !== null ? { bannedUntil: iso(bannedUntilOf(c.id)!) } : {}),
       ...(c.staff ? { staff: c.staff.key, office: c.staff.office } : {}),
       group: groupOf(c),
-    };
+    });
   }
   /** The group a character is in: the highest rung it holds (a conferred group is the moves' business, not this fake's). */
   function groupOf(c: CharRec): string {
@@ -858,6 +919,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const moveParams = (m: SeedMove) => ({
     board: boards.find((b) => b.slug === m.board)?.id ?? m.board, name: m.name, premise: m.premise ?? `The subject of ${m.name}`, description: m.description ?? `About ${m.name}`,
   });
+  /** A lasting move's params as its Act carries them: a board named by slug becomes its id. */
+  const lastingParams = (p: Readonly<Record<string, unknown>>): Record<string, unknown> =>
+    Object.fromEntries(Object.entries(p).map(([k, v]) => [k, (k === 'board' || k === 'into' || k === 'fallback') && typeof v === 'string' ? boards.find((b) => b.slug === v)?.id ?? v : v]));
   const moveDemand = (m: SeedMove): Demand | null => {
     if (!m.demand) return null;
     const named = m.demand.params['board'];
@@ -991,7 +1055,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   }
   /* ------------------------------------------------------------------ season news ---- */
   /** The Boss changes the fake's seeds hold (`season_handovers`, 0051): who left, who arrived, and when. */
-  const handovers: { readonly outgoing: string | null; readonly boss: string; readonly at: number; readonly how: string; readonly bossWas: string | null; readonly outgoingOffice: string | null }[] = [];
+  const handovers: { readonly outgoing: string | null; readonly boss: string; readonly at: number; readonly how: string; readonly bossWas: string | null; readonly outgoingOffice: string | null; readonly note: string | null; readonly facts: HandoffFacts }[] = [];
   /** The seasons whose to-do an admin dismissed (`handover_dismissals`). */
   const dismissedTodos = new Set<number>();
   /** The to-dos the admin queue holds: each change of Boss with no update after it and no dismissal, newest first (admin_queue's `todos`). */
@@ -1003,7 +1067,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       return [{
         season, boss: h.boss, bossName: staffByKey(h.boss)?.name ?? h.boss, bossPronouns: staffByKey(h.boss)?.pronouns ?? settings.pronouns, bossWas: h.bossWas, outgoing: h.outgoing, outgoingName: h.outgoing === null ? null : staffByKey(h.outgoing)?.name ?? h.outgoing,
         outgoingPronouns: (h.outgoing === null ? undefined : staffByKey(h.outgoing)?.pronouns) ?? settings.pronouns,
-        outgoingOffice: h.outgoing === null ? null : h.outgoingOffice, how: h.how, landedAt: iso(h.at),
+        outgoingOffice: h.outgoing === null ? null : h.outgoingOffice, how: h.how, landedAt: iso(h.at), note: h.note, facts: h.facts,
       }];
     }).reverse();
   }
@@ -1237,6 +1301,13 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const board = boards.find((b) => b.slug === boardSlug);
     if (!board) return refuse('there is no such board');
     if (board.isSystem) return refuse(SYSTEM_BOARD);
+    const closed = closedBoards.get(board.id);
+    if (closed) {
+      const went = boards.find((b) => b.id === (closed.mergedInto ?? closed.fallback));
+      return refuse(closed.mergedInto !== null
+        ? `this board was merged into ${went ? boardNow(went).name : 'another board'}${openEnd(board.id) !== closed.mergedInto && openEnd(board.id) !== null ? `, which was closed too; its threads are in ${boardNow(boards.find((b) => b.id === openEnd(board.id))!).name}, so start your thread there instead` : ', and its threads are there; start your thread there instead'}`
+        : `this board was closed, and its threads are in ${boardNow(boards.find((b) => b.id === (openEnd(board.id) ?? closed.fallback))!).name}; start your thread there instead`);
+    }
     const stopped = stoppedQuote(null, null, body);
     if (stopped) return refuse(stopped);
     const t = openThread(board.id, title, null);
@@ -1395,6 +1466,149 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return [...plays, ...ends].map(publicAct);
   };
   const playOf = (id: Id) => { const a = acts.get(id); return a && a.kind === 'card' ? a : null; };
+
+  /* ------------------------------------------------------------------ surfaces (0317) ---- */
+  /** A surface as the database's `surfaces` row holds it: the cells covered, the live draw (1-based place in `live`, 0 for none) that last inked each, and the live list. */
+  interface SurfaceRec { cover: Cells; owners: Uint16Array; live: Id[]; readonly cells: Map<Id, Cells> }
+  const surfaceRecs = new Map<Id, SurfaceRec>();
+  const hasCell = (c: Cells, i: number): boolean => (c[i >> 3]! & (0x80 >> (i & 7))) !== 0;
+  const meets = (a: Cells, b: Cells): boolean => a.some((v, i) => (v & b[i]!) !== 0);
+  const inside = (a: Cells, b: Cells): boolean => a.every((v, i) => (v & ~b[i]! & 0xff) === 0);
+  /** The surface of a play of a card with one: opened with the play (open_surface), here the first time it is asked for. Null for any other Act. */
+  function surfaceOf(play: Id): SurfaceRec | null {
+    const p = playOf(play);
+    if (!p || p.target === null || typeof p.payload.card !== 'string' || instance.cards.find((c) => c.key === p.payload.card)?.surface === undefined) return null;
+    let s = surfaceRecs.get(play);
+    if (!s) { s = { cover: new Uint8Array(GRID * GRID / 8), owners: new Uint16Array(GRID * GRID), live: [], cells: new Map() }; surfaceRecs.set(play, s); }
+    return s;
+  }
+  /**
+   * surface_step (0317): the one transition. A draw covers its cells and owns each; a wash uncovers them and leaves them owned by no one; the Act joins the
+   * live list unless it is a wash that uncovered nothing; then the list is pruned (a draw that owns no cell, a wash that uncovers nothing a kept draw
+   * inked or that a later wash covers whole) and renumbered.
+   */
+  function surfaceStep(s: SurfaceRec, kind: 'draw' | 'wash', id: Id, cells: Cells): { cover: Cells; owners: Uint16Array; live: Id[] } {
+    const draw = kind === 'draw';
+    const index = s.live.length + 1;
+    const cover = draw ? union(s.cover, cells) : minus(s.cover, cells);
+    const owners = s.owners.map((o, i) => (!hasCell(cells, i) ? o : draw ? index : 0));
+    let live = draw || meets(s.cover, cells) ? [...s.live, id] : s.live;
+    const cellsOfLive = (at: Id): Cells => (at === id ? cells : s.cells.get(at)!);
+    const kindOf = (at: Id): 'draw' | 'wash' => (at === id ? kind : acts.get(at)!.kind as 'draw' | 'wash');
+    const owning = new Set(owners);
+    const kept = live.map((at, k) => {
+      const place = k + 1;
+      if (kindOf(at) === 'draw') return owning.has(place);
+      const mine = cellsOfLive(at);
+      const earlier = live.some((d, j) => j < k && kindOf(d) === 'draw' && owning.has(j + 1) && meets(cellsOfLive(d), mine));
+      const covered = live.some((w, j) => j > k && kindOf(w) === 'wash' && inside(mine, cellsOfLive(w)));
+      return earlier && !covered;
+    });
+    if (kept.some((k) => !k)) {
+      const remap = new Map<number, number>();
+      kept.forEach((k, j) => { if (k) remap.set(j + 1, remap.size + 1); });
+      for (let i = 0; i < owners.length; i++) if (owners[i] !== 0) owners[i] = remap.get(owners[i]!) ?? 0;
+      live = live.filter((_, j) => kept[j]);
+    }
+    return { cover, owners, live };
+  }
+  /** draw_on_surface and wash_surface (0317), in the order they refuse: the character, the wall, the lock, then the limits; a draw alone is held to them. */
+  function writeSurface(kind: 'draw' | 'wash', play: Id, character: Id, input: unknown): Answer<SurfaceWritten> {
+    const account = me();
+    if (!account) return refuse('sign in to act');
+    const p = playOf(play);
+    const rules = p && typeof p.payload.card === 'string' ? instance.cards.find((c) => c.key === p.payload.card) : undefined;
+    const author = p?.target == null ? undefined : acts.get(p.target)?.character;
+    if (kind === 'wash') {
+      /* The post's own player answers for the mask that wrote it, retired or not (0038); every other case is acting()'s. */
+      const mine = characters.get(character);
+      if (!(author === character && mine !== undefined && mine.owner === account.id && mine.debutedAt !== null)) {
+        const c = acting(character);
+        if (isRefusal(c)) return c;
+      }
+    } else {
+      const c = acting(character);
+      if (isRefusal(c)) return c;
+    }
+    const s = rules?.surface === undefined ? null : surfaceOf(play);
+    if (!p || !rules || !s || author === undefined) return refuse('there is no wall on that post');
+    if (kind === 'wash' && author !== character) return refuse('only the post\'s author washes what is on it');
+    if (reversedPlays.has(play)) return refuse('an admin ended that card');
+    if (untakenPlays.has(play)) return refuse(DID_NOT_TAKE);
+    const drawn = kind === 'draw' ? decideDraw(rules, settings, input) : null;
+    const decided = drawn ?? decideWash(rules, settings, input);
+    if (!decided.ok) return refuse(decided.why);
+    const cells = fromBits(decided.value.cells);
+    const written = uuid();
+    const next = surfaceStep(s, kind, written, cells);
+    if (drawn?.ok) {
+      const most = drawn.value.most;
+      const before = count(s.cover);
+      const after = count(next.cover);
+      if (after > most && after > before) {
+        return refuse(`this wall is ${Math.floor(before / 100)}% covered, and its limit is ${Math.floor(most / 100)}%; this tag would take it to ${Math.ceil(after / 100)}%`);
+      }
+      const mostLive = rules.surface!.mostLive;
+      if (new Set([...next.owners].filter((o) => o !== 0)).size > mostLive) return refuse(`this wall holds ${mostLive} tags; paint over one or wait for a wash`);
+    }
+    /* A wash records what it uncovered and the draws it cut, read from the owners before it (surface_apply, 0317): the server's own keys, which a payload that arrives with them loses. */
+    const cut = new Map<Id, number>();
+    if (kind === 'wash') for (let i = 0; i < s.owners.length; i++) if (s.owners[i] !== 0 && hasCell(cells, i)) { const d = s.live[s.owners[i]! - 1]!; cut.set(d, (cut.get(d) ?? 0) + 1); }
+    const { cut: _cut, uncovered: _uncovered, ...sent } = decided.value.payload as Record<string, unknown>;
+    const rec = write({ id: written, character, kind, thread: p.thread, target: play, payload: { ...sent, cells: decided.value.cells, ...(kind === 'wash' ? { uncovered: [...cut.values()].reduce((n, c) => n + c, 0), cut: [...cut].map(([draw, n]) => ({ draw, took: n })) } : {}) } });
+    s.cells.set(written, cells);
+    s.cover = next.cover; s.owners = next.owners; s.live = next.live;
+    const covered = count(next.cover);
+    send(`thread:${p.thread}`, 'surface', () => { for (const l of [...(threadListeners.get(p.thread) ?? [])]) l.onSurface?.(play, covered); });
+    return ok({ ...publicAct(rec), covered, live: [...next.live] });
+  }
+  /** surface_acts (0317): a play's live draws and washes, oldest first, each draw with the cells it owns now; null where the play has no surface. */
+  function surfaceActs(play: Id): SurfaceActs | null {
+    const s = surfaceOf(play);
+    if (!s) return null;
+    const owned = (place: number): number => { let n = 0; for (const o of s.owners) if (o === place) n++; return n; };
+    const shown = s.live.map((id, k): SurfaceAct => {
+      const a = publicAct(acts.get(id)!);
+      return a.kind === 'draw' ? { ...a, share: owned(k + 1) } : a;
+    });
+    const older = [...acts.values()].filter((a) => a.kind === 'draw' && a.target === play && !s.live.includes(a.id)).length;
+    return { covered: count(s.cover), acts: shown, older };
+  }
+  /**
+   * `my_draws` and `my_walls_drawn_on` (0317) for an account, as the views read them: the account's characters' draws and the washes that cut them (not by the account's own washer), and the draws and washes on
+   * walls on the account's own posts (not the account's own characters' draws). Newest first is the log's: the caller sorts.
+   */
+  function surfaceLog(account: Id): { readonly draws: { ms: number; order: number; r: SurfaceLogRow }[]; readonly walls: { ms: number; order: number; r: SurfaceLogRow }[] } {
+    const owns = (character: Id | null): boolean => character !== null && characters.get(character)?.owner === account;
+    /* A cut row's `character` is the washer as the post shows its author (my_draws, 0400): the stand-in while an author veil is up on the wall's post. */
+    const row = (a: ActRec, kind: SurfaceLogRow['kind'], play: Id, mine: Id, cells: number) => ({ ms: a.at, order: a.order, r: { act: a.id, kind, play, post: playOf(play)!.target!, character: (kind === 'cut' ? shownAuthor(a) : null) ?? a.character!, mine, at: iso(a.at), cells } satisfies SurfaceLogRow });
+    const onSurface = (a: ActRec): boolean => (a.kind === 'draw' || a.kind === 'wash') && a.target !== null && a.character !== null && surfaceRecs.has(a.target) && playOf(a.target) !== undefined;
+    const draws: { ms: number; order: number; r: SurfaceLogRow }[] = [];
+    const walls: { ms: number; order: number; r: SurfaceLogRow }[] = [];
+    const all = [...acts.values()].filter(onSurface);
+    for (const a of all) {
+      const play = a.target!;
+      const author = acts.get(playOf(play)!.target ?? '')?.character ?? null;
+      if (a.kind === 'draw') {
+        if (owns(a.character)) draws.push(row(a, 'draw', play, a.character!, count(fromBits(String(a.payload.cells)))));
+        else if (owns(author)) walls.push(row(a, 'draw', play, author!, count(fromBits(String(a.payload.cells)))));
+        continue;
+      }
+      if (owns(author)) walls.push(row(a, 'wash', play, author!, typeof a.payload.uncovered === 'number' ? a.payload.uncovered : 0));
+      if (owns(a.character)) continue;
+      /* One row for each of the account's characters whose draws it cut, with the cells of theirs it took. */
+      const cut = Array.isArray(a.payload.cut) ? a.payload.cut as { draw: Id; took: number }[] : [];
+      const by = new Map<Id, number>();
+      for (const c of cut) { const drawer = acts.get(c.draw)?.character; if (drawer && owns(drawer)) by.set(drawer, (by.get(drawer) ?? 0) + c.took); }
+      for (const [drawer, cells] of by) draws.push(row(a, 'cut', play, drawer, cells));
+    }
+    return { draws, walls };
+  }
+  /** thread_page's `surfaces`: for each surface play among the page's plays, its covered cells and its live Acts' ids, never a stroke or an owner. */
+  const surfacesOn = (plays: readonly Act[]): Readonly<Record<Id, SurfaceNow>> => Object.fromEntries(plays.flatMap((a): [Id, SurfaceNow][] => {
+    const s = a.kind === 'card' ? surfaceOf(a.id) : null;
+    return s ? [[a.id, { covered: count(s.cover), live: [...s.live] }]] : [];
+  }));
 
   /* The player's log: the settlements' ledger with its shares, every wallet event and the card ledger, each by account (0003, 0006, 0034). */
   interface SettlementRec { readonly id: number; readonly startsAt: number; readonly endsAt: number; readonly sharesKept: boolean; readonly lines: readonly (LedgerLine & { readonly account: Id })[] }
@@ -1611,8 +1825,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
    * The Edge Function's reading of a play, then `play_card` (0016_cards_screens.sql): the post is read and priced by its card's rules
    * (`decidePlay`), then the character, the card in hand and the layer are the database's, in that order.
    */
-  function playCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, message: string, reach: Reach = 'post', fromPost?: Id): Answer<Act> {
-    const bad = request({ action: 'playCard', card, character, target, config, message, ...(reach !== 'post' ? { reach, post: fromPost } : {}) });
+  function playCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, message: string, reach: Reach = 'post', fromPost?: Id, first?: unknown): Answer<Act> {
+    const bad = request({ action: 'playCard', card, character, target, config, message, ...(reach !== 'post' ? { reach, post: fromPost } : {}), ...(first === undefined ? {} : { first }) });
     if (bad) return bad;
     if (reach !== 'post') return playBeyond('cast', card, character, target, config, message, reach, fromPost);
     const on = acts.get(target);
@@ -1621,8 +1835,13 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const text = (publicAct(on).currentPayload as { body?: unknown }).body;
     const effects = effectsOn(target);
     // Decided and written in one step, with no gap for an edit to land in, so the fake checks no version (play_card does, 0070).
-    const decided = decidePlay(rules, settings, postTarget(on.id, on.kind as PostTarget['kind'], text), effects, config, message, { now: new Date(now()), nameOf: (k) => instance.cards.find((c) => c.key === k)?.name ?? k });
+    const decided = decidePlay(rules, settings, postTarget(on.id, on.kind as PostTarget['kind'], text), effects, config, message, { now: new Date(now()), nameOf: (k) => instance.cards.find((c) => c.key === k)?.name ?? k, first });
     if (!decided.ok) return refuse(decided.why, (message !== undefined && !casterMessage(message).ok) || decided.why === rules.needsMessage ? 'message' : 'config');
+    /* The one transaction of play_surface_card: a first draw past the wall's limit refuses the whole play, so none of it is written. */
+    if (decided.value.draw) {
+      const tag = count(fromBits(decided.value.draw.cells));
+      if (tag > decided.value.draw.most) return refuse(`this wall is 0% covered, and its limit is ${Math.floor(decided.value.draw.most / 100)}%; this tag would take it to ${Math.ceil(tag / 100)}%`, 'first');
+    }
     const c = acting(character);
     if (isRefusal(c)) return c;
     /* What the card's landing refuses on this post (land_refusal, 0400): public facts alone, the same for every caster, before anything is paid or written. */
@@ -1665,6 +1884,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     spend(account, decided.value.price, 'play', written.id);
     recordCard(account.id, written.at, { card, kind: 'played', act: written.id, price: decided.value.price });
     sendAct(written);
+    /* A surface card's play opens its wall with the caster's first draw (play_surface_card: play_card, then draw_on_surface as the caster); a caught play opens none. */
+    if (decided.value.draw !== undefined && !(catches && !rides)) writeSurface('draw', written.id, character, first);
     if (spring) {
       /* The caught card is the setter's (a ride takes none): one more in the hand, and a `caught` row in their own ledger (nothing is paid). */
       const setter = rides ? undefined : accounts.get(faceDown.get(trap!.set)!.account);
@@ -1888,14 +2109,14 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   }
 
   /** set_card (0142): a Move or another set card, decided by the card's rules (decideSet, whose catch and phrase the back keeps), then the author, the hand and the post's one back are the database's. */
-  function setCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, when?: SetConditions): Answer<Act> {
-    const bad = request({ action: 'setCard', card, character, target, config, ...(when ? { when } : {}) });
+  function setCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, when?: SetConditions, first?: unknown): Answer<Act> {
+    const bad = request({ action: 'setCard', card, character, target, config, ...(when ? { when } : {}), ...(first === undefined ? {} : { first }) });
     if (bad) return bad;
     const on = acts.get(target);
     if (!on) return refuse('there is no such post', 'target');
     const rules = instance.cards.find((c) => c.key === card)!;
     const text = (publicAct(on).currentPayload as { body?: unknown }).body;
-    const decided = decideSet(rules, settings, postTarget(on.id, on.kind as PostTarget['kind'], text), effectsOn(target), config, instance.cards, when ?? {}, new Date(now()));
+    const decided = decideSet(rules, settings, postTarget(on.id, on.kind as PostTarget['kind'], text), effectsOn(target), config, instance.cards, { ...(when ?? {}), first }, new Date(now()));
     if (!decided.ok) return refuse(decided.why, 'config');
     /* As set_card (0144) says it: a named id that is not a debuted character, one message for a missing and an undebuted one, by its place in the list. */
     const unknown = (decided.value.who?.characters ?? []).findIndex((id) => characters.get(id)?.debutedAt == null);
@@ -2716,7 +2937,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     setAdminContact: (links) => (me()?.admin ? writeContact(links) : refuse('only an admin sets how players reach the admins')),
     settings: () => screen,
 
-    boards: () => boards.map((b): BoardSummary => {
+    boards: () => boards.filter((b) => !isClosed(b)).map((b): BoardSummary => {
       const mine = [...threads.values()].filter((t) => t.board === b.id && listed(t)).map(summary);
       const latest = mine.sort((x, y) => Date.parse(y.lastAt) - Date.parse(x.lastAt) || y.id.localeCompare(x.id))[0];
       return { ...boardNow(b), threadCount: mine.length, lastAt: latest?.lastAt ?? null, lastCharacter: latest?.lastCharacter ?? null, lastThread: latest?.id ?? null, lastTitle: latest?.title ?? null };
@@ -2725,6 +2946,13 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const found = boards.find((b) => b.slug === slugOrId || b.id === slugOrId);
       return found ? boardNow(found) : null;
     },
+    moveThreadNames: (items) => Object.fromEntries(items.flatMap((i) => {
+      const t = threads.get(i.thread);
+      if (!t) return [];
+      /* A landed move left the board it was taken from (the latest departure of the thread); a waiting one leaves the board the thread is on. */
+      const left = i.act === null ? t.board : departures.filter((d) => d.thread === i.thread).at(-1)?.origin ?? null;
+      return [[i.act ?? i.thread, { title: t.title, left }] as const];
+    })),
     boardNames: () => boards.map((b): BoardName => ({ id: b.id, slug: b.slug, name: boardNow(b).name, was: b.name })),
     moveNotice(id) {
       const a = acts.get(id);
@@ -2817,11 +3045,14 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const demandFor = moveDemand;
       const waiting = queue.filter((q) => q.landed === null && q.heldAt === null && !q.refusal).sort((a, b) => a.goLiveAt - b.goLiveAt || a.id - b.id).map((q): QueuedMove => q.successor !== undefined ? ({
         id: q.id, staff: q.staff, boss: nameOf(q.staff), bossPronouns: pronounsOf(q.staff), kind: 'nameSuccessor', params: { boss: q.successor }, demand: null, why: q.why, goLiveAt: iso(q.goLiveAt),
-        expiresAt: null, structural: true, boardName: null, failedAt: null, failure: null, replacedAt: q.replacedAt === undefined ? null : iso(q.replacedAt), adminDescription: null,
+        expiresAt: null, structural: true, boardName: null, failedAt: null, failure: null, replacedAt: q.replacedAt === undefined ? null : iso(q.replacedAt), adminDescription: null, waitsFor: [], ...bundleOf(q),
       }) : ({
-        id: q.id, staff: q.staff, boss: nameOf(q.staff), bossPronouns: pronounsOf(q.staff), kind: 'renameBoard', params: paramsOf(q.move), demand: demandFor(q.move), why: q.why, goLiveAt: iso(q.goLiveAt),
-        expiresAt: q.move.expiresAt === undefined ? null : iso(q.move.expiresAt), structural: true, boardName: boards.find((b) => b.slug === q.move.board) ? boardNow(boards.find((b) => b.slug === q.move.board)!).name : null,
-        failedAt: q.failure ? iso(q.failure.at) : null, failure: q.failure?.text ?? null, replacedAt: null, adminDescription: q.adminDescription ?? null,
+        id: q.id, staff: q.staff, boss: nameOf(q.staff), bossPronouns: pronounsOf(q.staff), kind: q.lasting?.kind ?? 'renameBoard', params: q.lasting?.params ?? paramsOf(q.move), demand: q.lasting ? null : demandFor(q.move), why: q.why, goLiveAt: iso(q.goLiveAt),
+        expiresAt: q.lasting || q.move.expiresAt === undefined ? null : iso(q.move.expiresAt), structural: q.lasting?.kind !== 'moveThread', boardName: boards.find((b) => b.slug === q.move.board) ? boardNow(boards.find((b) => b.slug === q.move.board)!).name : null,
+        failedAt: q.failure ? iso(q.failure.at) : null, failure: q.failure?.text ?? null, replacedAt: null, adminDescription: q.adminDescription ?? null, ...bundleOf(q),
+        waitsFor: queue.filter((d) => d !== q && d.landed === null && d.heldAt === null && !d.refusal
+          && ((q.waitsOn?.includes(d.id) ?? false) || (q.bundle !== undefined && d.bundle?.id === q.bundle.id && !!d.bundle?.role && ['board', 'into', 'fallback'].some((k) => (q.lasting?.params[k] as { role?: unknown } | undefined)?.role === d.bundle!.role))))
+          .map((d) => ({ id: d.id, role: d.bundle?.role ?? null, kind: d.lasting?.kind ?? 'renameBoard', name: typeof d.lasting?.params['name'] === 'string' ? d.lasting.params['name'] : null })),
       }));
       const rowOf = (a: ActRec) => {
         const q = queue.find((x) => x.landed === a.id);
@@ -2832,7 +3063,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         const { q, staff, boss, bossPronouns } = rowOf(a);
         return {
           act: a.id, id: q?.id ?? null, staff, boss, bossPronouns, kind: String(a.payload['kind']), params: (a.payload['params'] ?? {}) as Record<string, unknown>, demand: demandOf(a.id),
-          why: q?.why ?? null, landedAt: iso(a.at), expiresAt: typeof a.payload['expires_at'] === 'string' ? a.payload['expires_at'] : null, progress: toProgress(progressOf(a)),
+          why: q?.why ?? null, landedAt: iso(a.at), expiresAt: typeof a.payload['expires_at'] === 'string' ? a.payload['expires_at'] : null, progress: toProgress(progressOf(a)), ...bundleOf(q),
         };
       });
       const since = now() - 30 * DAY;
@@ -2840,21 +3071,21 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         ...[...moveEnds.entries()].filter(([, e]) => e.at >= since).map(([id, e]): MoveEnded => {
           const a = acts.get(id)!;
           const { q, staff, boss, bossPronouns } = rowOf(a);
-          return { how: e.why, by: e.by, at: iso(e.at), act: id, id: q?.id ?? null, staff, boss, bossPronouns, kind: String(a.payload['kind']), params: (a.payload['params'] ?? {}) as Record<string, unknown>, demand: demandOf(id), why: q?.why ?? null, landedAt: iso(a.at) };
+          return { how: e.why, by: e.by, at: iso(e.at), act: id, id: q?.id ?? null, staff, boss, bossPronouns, kind: String(a.payload['kind']), params: (a.payload['params'] ?? {}) as Record<string, unknown>, demand: demandOf(id), why: q?.why ?? null, landedAt: iso(a.at), ...bundleOf(q) };
         }),
         ...[...acts.values()].filter((e) => e.kind === 'card_end' && e.target !== null && e.at >= since).map((e): MoveEnded => {
           const play = acts.get(e.target!)!;
           return {
             how: 'reversed', by: 'admin', at: iso(e.at), act: play.id, id: null, staff: play.character ? characters.get(play.character)?.staff?.key ?? null : null,
             boss: play.character ? characters.get(play.character)?.name ?? null : null, bossPronouns: (play.character ? characters.get(play.character)?.pronouns : undefined) ?? settings.pronouns, kind: 'card', params: {}, demand: null, why: null, landedAt: iso(play.at),
-            card: instance.cards.find((c) => c.key === play.payload.card)?.name ?? String(play.payload.card ?? ''),
+            card: instance.cards.find((c) => c.key === play.payload.card)?.name ?? String(play.payload.card ?? ''), ...bundleOf(undefined),
           };
         }),
         ...queue.filter((q) => q.refusal && q.heldAt === null && q.refusal.at >= since).map((q): MoveEnded => ({
-          how: 'refused', by: 'tick', at: iso(q.refusal!.at), act: null, id: q.id, staff: q.staff, boss: nameOf(q.staff), bossPronouns: pronounsOf(q.staff), kind: 'renameBoard', params: paramsOf(q.move), demand: demandFor(q.move), why: q.why, landedAt: null, reason: q.refusal!.text,
+          how: 'refused', by: 'tick', at: iso(q.refusal!.at), act: null, id: q.id, staff: q.staff, boss: nameOf(q.staff), bossPronouns: pronounsOf(q.staff), kind: 'renameBoard', params: paramsOf(q.move), demand: demandFor(q.move), why: q.why, landedAt: null, reason: q.refusal!.text, ...bundleOf(q),
         })),
         ...queue.filter((q) => q.heldAt !== null && q.heldAt >= since).map((q): MoveEnded => ({
-          how: 'held', by: 'admin', at: iso(q.heldAt!), act: null, id: q.id, staff: q.staff, boss: nameOf(q.staff), bossPronouns: pronounsOf(q.staff), kind: 'renameBoard', params: paramsOf(q.move), demand: demandFor(q.move), why: q.why, landedAt: null,
+          how: 'held', by: 'admin', at: iso(q.heldAt!), act: null, id: q.id, staff: q.staff, boss: nameOf(q.staff), bossPronouns: pronounsOf(q.staff), kind: q.lasting?.kind ?? 'renameBoard', params: q.lasting?.params ?? paramsOf(q.move), demand: q.lasting ? null : demandFor(q.move), why: q.why, landedAt: null, ...bundleOf(q),
         })),
       ].sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
       /* The Mod Bots' cards in force: a face-up `card` Act of a staff character, from the last 30 days, not caught, not worn off, not ended. */
@@ -2888,7 +3119,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (q.landed !== null) return refuse('that move has already landed; reverse it instead');
       if (q.heldAt !== null) return refuse('that move is already held');
       q.heldAt = now();
-      return ok({ id, heldAt: iso(q.heldAt) });
+      /* What builds on it is held with it, at the same instant; the parts it builds on are left. */
+      const also = followers(q).filter((f) => f.landed === null && f.heldAt === null && !f.refusal);
+      for (const f of also) f.heldAt = q.heldAt;
+      return ok({ id, heldAt: iso(q.heldAt), heldAlso: also.map((f) => f.id) });
     },
     replaceSuccessor(id, boss) {
       if (!me()?.admin) return refuse('only an admin replaces a successor');
@@ -2941,7 +3175,22 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (moveEnds.has(act)) return refuse('that move has already ended');
       moveEnds.set(act, { why: 'reversed', by: 'admin', at: now() });
       const end = write({ character: null, kind: 'move_end', thread: a.thread, target: act, payload: { why: 'reversed', by: 'admin' } });
-      return ok({ act, endedBy: end.id });
+      /* What builds on it follows: a landed part is reversed with an end of its own, and a part still waiting is held. */
+      const root = queue.find((x) => x.landed === act);
+      const alsoEnded: Id[] = [];
+      const heldAlso: number[] = [];
+      for (const f of root ? followers(root) : []) {
+        if (f.landed !== null && !moveEnds.has(f.landed)) {
+          const fa = acts.get(f.landed)!;
+          moveEnds.set(f.landed, { why: 'reversed', by: 'admin', at: now() });
+          write({ character: null, kind: 'move_end', thread: fa.thread, target: f.landed, payload: { why: 'reversed', by: 'admin' } });
+          alsoEnded.push(f.landed);
+        } else if (f.landed === null && f.heldAt === null && !f.refusal) {
+          f.heldAt = now();
+          heldAlso.push(f.id);
+        }
+      }
+      return ok({ act, endedBy: end.id, alsoEnded, heldAlso });
     },
     reverseCard(play) {
       if (!me()?.admin) return refuse('only an admin ends a card');
@@ -3195,6 +3444,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
           cards: newest([...cardLedger, ...endedLedger()].filter((e) => e.account === account && fits(e.ms))).map((e) => e.event),
           packs: newest(packLedger.filter((e) => e.account === account && fits(e.ms))).map((e) => e.event),
           playsOnMine: newest(onMine.filter((a) => fits(a.at)).map((a) => ({ ms: a.at, order: a.order, a }))).map(({ a }) => ({ play: a.id, post: a.target!, at: iso(a.at), reach: reachOf(a) as 'post' | 'character' | 'thread', targetName: targetName(a), targetCharacter: targetCharacter(a) })),
+          /* my_draws and my_walls_drawn_on (0317): what was drawn on surfaces by the player's characters and washed off them, and what was drawn on and washed off the player's own posts. */
+          ...((surfaces) => ({
+            draws: newest(surfaces.draws.filter((x) => fits(x.ms))).map(({ r }) => r),
+            wallsDrawn: newest(surfaces.walls.filter((x) => fits(x.ms))).map(({ r }) => r),
+          }))(account === undefined ? { draws: [], walls: [] } : surfaceLog(account)),
           /* my_posts_written_on (0149): each text or failure of a card that writes on a post one of the player's characters wrote, whoever played it. */
           writes: newest(texts.flatMap((t) => {
             const play = acts.get(t.play);
@@ -3243,6 +3497,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     myReleases: (plays) => plays.filter((play) => me() !== null && releases.has(`${me()!.id} ${play}`)),
     releaseEffect,
     saveEffect,
+    draw: (play, character, input) => writeSurface('draw', play, character, input),
+    wash: (play, character, input) => writeSurface('wash', play, character, input),
+    surfaceActs,
     buyCard: lossy(buyCard),
     buyPack: lossy(buyPack),
     machine: () => machine(),
@@ -3522,6 +3779,15 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     boardPage(slug, page, effectCards): BoardPage | null {
       const board = core.board(slug);
       if (!board) return null;
+      /* A closed board lists no thread and no stub, and says where its threads went (board_page, 0326). */
+      const gone = closedBoards.get(board.id);
+      if (gone) {
+        const ref = (id: Id | null): BoardRef | null => { const b = boards.find((x) => x.id === id); return b ? { id: b.id, slug: b.slug, name: boardNow(b).name } : null; };
+        return {
+          board, closed: { mergedInto: ref(gone.mergedInto), fallback: ref(gone.fallback), goesTo: ref(openEnd(board.id)) }, stubs: [], total: 0, page: 1, threads: [], pins: [], banner: [], states: {}, releases: [], tallies: {}, mine: [],
+          reading: {}, views: {}, characters: [], presence: presenceAt({ kind: 'board', board: board.id }), unread: core.alertsUnread(),
+        };
+      }
       const THREADS = 20; // THREADS_PER_PAGE (engine/ui/board/Board.tsx), which the SQL's board_page also holds.
       const want = Math.max(1, page);
       let listed = core.threads(board.id, { offset: (want - 1) * THREADS, limit: THREADS });
@@ -3534,8 +3800,17 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const threads = [...pins.map((p) => p.thread), ...listed.threads];
       const ids = [...new Set(threads.map((t) => t.id))];
       const people = [...new Set([...threads.flatMap((t) => [t.firstCharacter, t.lastCharacter]), ...marked.map((a) => a.character)].filter((c): c is Id => c !== null))];
+      /* The threads moved away within movedStubDays, newest move first, each once (the latest move of it away from here) and only if it is not back: the stub says where it is now. */
+      const since = now() - settings.movedStubDays * 86_400_000;
+      const stubs = shown !== 1 ? [] : [...departures].filter((d) => d.origin === board.id && d.at >= since).sort((x, y) => y.at - x.at)
+        .filter((d, i, all) => all.findIndex((e) => e.thread === d.thread) === i && core.thread(d.thread)!.board !== board.id)
+        .map((d): BoardStub => {
+          const moved = core.thread(d.thread)!;
+          const here = boards.find((b) => b.id === moved.board)!;
+          return { thread: d.thread, title: moved.title, movedTo: { id: here.id, slug: here.slug, name: boardNow(here).name }, movedAt: iso(d.at) };
+        });
       return {
-        board, total: listed.total, page: shown, threads: listed.threads, pins, banner, states: core.effectStates(wanted), releases: core.myReleases(wanted),
+        board, closed: null, stubs, total: listed.total, page: shown, threads: listed.threads, pins, banner, states: core.effectStates(wanted), releases: core.myReleases(wanted),
         tallies: core.tallies(marked.map((a) => a.id)), mine: core.myReactions(marked.map((a) => a.id)), reading: core.reading(ids), views: core.viewCounts(ids),
         characters: core.characters(people), presence: presenceAt({ kind: 'board', board: board.id }), unread: core.alertsUnread(),
       };
@@ -3566,7 +3841,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
           character, posts: stats[character.id]?.posts ?? 0, standing: standings[character.id] ?? 0,
           reveals: reveals.filter((r) => r.character === character.id), turns: turns.filter((t) => t.character === character.id),
         })),
-        plays, above, faces: core.myFaceDown(played.filter((a) => a.kind === 'set').map((a) => a.id)), veiled: myVeiled(posts.map((a) => a.id)),
+        plays, surfaces: surfacesOn(plays), above, faces: core.myFaceDown(played.filter((a) => a.kind === 'set').map((a) => a.id)), veiled: myVeiled(posts.map((a) => a.id)),
         states: core.effectStates(wanted), releases: core.myReleases(wanted),
         visits,
         tallies: core.tallies(ids), mine: core.myReactions(ids), spun: core.spunFromMany(ids, SPUN_FROM_MAX), reading: core.reading([thread]),
@@ -4246,7 +4521,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     handover(h) {
       if (h.outgoing !== null && h.outgoing !== undefined) staffId(h.outgoing);
       staffId(h.boss);
-      handovers.push({ outgoing: h.outgoing ?? null, boss: h.boss, at: h.at ?? now(), how: h.how ?? 'rotation', bossWas: h.bossWas ?? null, outgoingOffice: h.outgoingOffice ?? 'member' });
+      handovers.push({ outgoing: h.outgoing ?? null, boss: h.boss, at: h.at ?? now(), how: h.how ?? 'rotation', bossWas: h.bossWas ?? null, outgoingOffice: h.outgoingOffice ?? 'member',
+        note: h.note ?? null, facts: { created: [], merged: [], closed: [], beats: [], moves: [], busiest: [], quietest: [], ...h.facts } });
       /* A change of Boss is two items of news, as news_announce (0063) queues them: the one who left, where there was one, and the one who arrived. */
       const at = iso(h.at ?? now());
       if (h.outgoing != null && h.outgoing !== h.boss) {
@@ -4401,9 +4677,12 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const demand = moveDemand(m);
       const id = write({
         character: boss, kind: 'move', thread: announcements(),
-        payload: { kind: 'renameBoard', body: m.body ?? 'This board has a new name.', params: moveParams(m), ...(demand ? { demand } : {}), expires_at: iso(m.expiresAt ?? at + 3 * DAY) }, at,
+        payload: m.lasting
+          ? { kind: m.lasting.kind, body: m.body ?? 'It is done.', params: lastingParams(m.lasting.params) }
+          : { kind: 'renameBoard', body: m.body ?? 'This board has a new name.', params: moveParams(m), ...(demand ? { demand } : {}), expires_at: iso(m.expiresAt ?? at + 3 * DAY) }, at,
       }).id;
       if (m.uncounted) uncounted.add(id);
+      if (m.bundle) queue.push({ id: queue.length + 1, staff, ...(m.lasting ? { lasting: { kind: m.lasting.kind, params: lastingParams(m.lasting.params) } } : {}), bundle: { id: m.bundle.id, name: m.bundle.name, role: m.bundle.role ?? null }, move: m, why: 'it seemed time', goLiveAt: at, failure: null, heldAt: null, landed: id });
       return id;
     },
     endMove(act, end) {
@@ -4426,9 +4705,29 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       moveKeeps.set(act, staff);
       return write({ character: staffId(staff), kind: 'move_keep', thread: a.thread, target: act, payload: {}, at: o?.at }).id;
     },
+    board(slug, name, description = `About ${name}`) {
+      if (boards.some((x) => x.slug === slug)) throw new Error(`there is a board ${slug} already`);
+      boards.push({ id: uuid(), slug, name, description, isSystem: false, moveAct: null });
+    },
+    moveThread(thread, slug, o) {
+      const t = threads.get(thread);
+      const to = boards.find((b) => b.slug === slug || b.id === slug);
+      if (!t || !to) throw new Error(`cannot move ${thread} to ${slug}`);
+      departures.push({ thread, origin: t.board, to: to.id, at: o?.at ?? now() });
+      t.board = to.id;
+    },
+    closeBoard(slug, how) {
+      const b = boards.find((x) => x.slug === slug || x.id === slug);
+      if (!b) throw new Error(`no board ${slug}`);
+      const into = 'mergedInto' in how ? boards.find((x) => x.slug === how.mergedInto || x.id === how.mergedInto) : boards.find((x) => !x.isSystem && !isClosed(x) && x.id !== b.id && ('fallback' in how && how.fallback ? x.slug === how.fallback : true));
+      if (!into) throw new Error('no board for its threads to go to');
+      closedBoards.set(b.id, 'mergedInto' in how ? { mergedInto: into.id, fallback: null } : { mergedInto: null, fallback: into.id });
+      for (const t of threads.values()) if (t.board === b.id) t.board = into.id;
+    },
     queueMove(staff, m) {
       staffId(staff);
-      const rec: QueueRec = { id: queue.length + 1, staff, move: m, why: m.why ?? 'it seemed time', goLiveAt: m.goLiveAt, failure: m.failure ?? null, ...(m.refusal ? { refusal: m.refusal } : {}), heldAt: null, landed: null };
+      const lasting = m.lasting === undefined ? undefined : { kind: m.lasting.kind, params: lastingParams(m.lasting.params) };
+      const rec: QueueRec = { id: queue.length + 1, staff, ...(lasting ? { lasting } : {}), ...(m.bundle ? { bundle: { id: m.bundle.id, name: m.bundle.name, role: m.bundle.role ?? null } } : {}), ...(m.waitsOn ? { waitsOn: m.waitsOn } : {}), move: m, why: m.why ?? 'it seemed time', goLiveAt: m.goLiveAt, failure: m.failure ?? null, ...(m.refusal ? { refusal: m.refusal } : {}), heldAt: null, landed: null };
       queue.push(rec);
       return rec.id;
     },

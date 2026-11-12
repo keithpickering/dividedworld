@@ -44,7 +44,9 @@ test('the first enum, the first of anyOf or oneOf, a const, and a schema with no
 });
 
 test('the meeting\'s schema gives an answer its repair accepts or rejects by name', () => {
-  const schema = ruleSchema(MEETING_RULE);
+  // The whole answer's schema as the provider is asked for it: the parts' together.
+  const parts = MEETING_PARTS.map((p) => partSchema(p.key) as { properties: Record<string, unknown>; required: string[] });
+  const schema = { type: 'object', properties: Object.assign({}, ...parts.map((p) => p.properties)), required: parts.flatMap((p) => p.required), additionalProperties: false };
   const answer = leastAnswer(schema);
   settled(repair(answer, MEETING_RULE));
   const settings = { ...systemSettings, reactionCap: 3 };
@@ -63,7 +65,7 @@ test('each part of the meeting, answered by the stub from its own schema, passes
     bank: 5, now: NOW, boards: new Set([GAMES]), threads: new Set(), isPublic: () => false, successorAllowed: false, successors: new Set(), mods: new Set(), rules: [],
     groups: { conferred: new Map(), capped: new Set(), held: new Set() },
   };
-  assert.deepEqual(MEETING_PARTS.map((p) => p.key), ['moves', 'staff', 'self']);
+  assert.deepEqual(MEETING_PARTS.map((p) => p.key), ['moves', 'bundle', 'staff', 'self']);
   const keys = (a: unknown): string[] => Object.keys(a as object);
   for (const { key } of MEETING_PARTS) {
     const answer = leastAnswer(partSchema(key));
@@ -71,7 +73,7 @@ test('each part of the meeting, answered by the stub from its own schema, passes
     assert.ok(shaped.ok, `${key}: ${JSON.stringify(shaped)}`);
     const r = repairAnswer(answer, ctx);
     assert.ok(r.ok, `${key}: ${JSON.stringify(r)}`);
-    assert.deepEqual(keys(answer), key === 'moves' ? ['moves', 'inherited'] : key === 'staff' ? [] : ['memory', 'profile']);
+    assert.deepEqual(keys(answer), key === 'moves' ? ['moves', 'inherited'] : key === 'self' ? ['memory', 'profile'] : []);
     if (r.ok) assert.equal(r.memory !== undefined, key === 'self');
   }
 });

@@ -22,6 +22,7 @@ import type { Piece } from '../../rules/cosmetics.ts';
 import type { BeyondPost, Rarity, Reach, SetConditions } from '../../rules/cards.ts';
 import type { AlertKind } from '../../rules/alerts.ts';
 import type { Career } from '../../system/career.ts';
+import type { HandoffFacts } from '../../system/meeting.ts';
 import type { RecordKind } from '../profile/record.ts';
 
 export type Id = string;
@@ -312,7 +313,27 @@ export type ActKind = 'post' | 'spin' | 'card' | 'edit' | 'tally' | 'reveal' | '
   /* The Mod Bots' Acts (supabase/migrations/0104 to 0109): meta acts like a card play, none a place in the thread (`seq` null). */
   | 'visit' | 'visit_join' | 'visit_end' | 'report' | 'report_verdict' | 'intercept' | 'infraction' | 'ban' | 'appeal' | 'appeal_ruling'
   /* A gift to a drive (0153): an Act of the drive's thread on its opening play, no place in the thread (`seq` null). */
-  | 'donation';
+  | 'donation'
+  /* A surface's layer (0317): a draw adds strokes to a play, a wash by the post's character takes ink off. Acts of the play's thread on the play, no place in the thread (`seq` null), and no post to draw. */
+  | 'draw' | 'wash';
+
+/**
+ * A draw or a wash on a surface, as every reader sees it (`surface_acts`, 0317): the Act, whose payload holds its `strokes` and its `cells`
+ * (a 10,000-character bit string). A draw read from the surface carries `share`, the cells of the layer it owns now (what a wash has not
+ * taken and no later draw has painted over); a wash, and an Act just written, carry none.
+ */
+export interface SurfaceAct extends Act { readonly share?: number }
+/** A draw or a wash just written (`draw_on_surface`, `wash_surface`): the Act and how the surface stands with it. */
+export interface SurfaceWritten extends SurfaceAct {
+  /** The cells the layer covers now. */
+  readonly covered: number;
+  /** The ids of the live draws and washes, oldest first. */
+  readonly live: readonly Id[];
+}
+/** What a surface holds that a page's read gives without its strokes (`thread_page`'s `surfaces`): the cells covered and the live Acts' ids. */
+export interface SurfaceNow { readonly covered: number; readonly live: readonly Id[] }
+/** A surface's live Acts (`surface_acts`), oldest first, with the cells covered and how many older draws are no longer live. */
+export interface SurfaceActs { readonly covered: number; readonly acts: readonly SurfaceAct[]; readonly older: number }
 
 /**
  * One gift on a drive's wall: who gave (a character, never a player), how much (hundredths) and when. What the drive kept and what arrived are not shown.
@@ -942,6 +963,12 @@ export interface QueuedMove {
   readonly replacedAt: string | null;
   /** The words an admin has put in the place of the rename's description (`replace_queued_description`, 0101); null when none did. The Boss's own stay in `params`. */
   readonly adminDescription: string | null;
+  /** The queued moves it builds on that have not landed (admin_queue, 0331): it lands after them. Empty for a move that waits for none. */
+  readonly waitsFor: readonly { readonly id: number; readonly role: string | null; readonly kind: string; readonly name: string | null }[];
+  /** The bundle the move is a part of (admin_queue, 0329), the part's role in it and the bundle's name; all null for a move that is no part of a bundle. */
+  readonly bundle: Id | null;
+  readonly role: string | null;
+  readonly bundleName: string | null;
 }
 
 /** A landed move with no end yet (admin_queue). */
@@ -958,6 +985,10 @@ export interface MoveInForce {
   readonly landedAt: string;
   readonly expiresAt: string | null;
   readonly progress: DemandProgress;
+  /** The bundle the move is a part of (admin_queue, 0329), the part's role in it and the bundle's name; all null for a move that is no part of a bundle. */
+  readonly bundle: Id | null;
+  readonly role: string | null;
+  readonly bundleName: string | null;
 }
 
 /** A move that ended, or was held or refused and never landed, in the last 30 days (admin_queue). */
@@ -980,6 +1011,10 @@ export interface MoveEnded {
   readonly card?: string | null;
   /** For a rule refused when it came to land (`how: 'refused'`): the server's reason, in its words. */
   readonly reason?: string | null;
+  /** The bundle the move is a part of (admin_queue, 0329), the part's role in it and the bundle's name; all null for a move that is no part of a bundle. */
+  readonly bundle: Id | null;
+  readonly role: string | null;
+  readonly bundleName: string | null;
 }
 
 /** A face-up play of a staff character, still in force (admin_queue's `staffCards`), for an admin to end. */
@@ -1015,6 +1050,13 @@ export interface HandoverTodo {
   /** How the new Boss was chosen: `nomination` or `rotation`. */
   readonly how: string;
   readonly landedAt: string;
+  /**
+   * The outgoing Boss's handoff note (0337): out of character, written at its last meeting, for the next Boss and for admins; players never see it. Null where none stands (the last meeting failed).
+   * It is the Boss's own words, shown as its note and never as the glass's.
+   */
+  readonly note: string | null;
+  /** What the code knows of the season that ended (`handoff_facts`): boards made, merged and closed, beats played, moves in force, the busiest and quietest boards. True whatever the note says. */
+  readonly facts: HandoffFacts;
 }
 
 /** What the admin screen shows. Each group holds at most `cap` rows; `more` says a group was cut. */
@@ -1559,6 +1601,23 @@ export interface WrittenOnMine {
   readonly at: string;
 }
 
+/**
+ * A draw or a wash on a surface as the player's log reads it (`my_draws` and `my_walls_drawn_on`, 0317): the Act, the surface play and the post it is on, the Act's character, the player's own
+ * character the line is for (`mine`), when, and the cells it counts, of the grid's 10,000. `kind` is 'draw' (a draw: the cells its strokes cover, public in its payload), 'wash' (the post's own wash: the cells it
+ * uncovered, none for a wash over bare cells) or 'cut' (a wash that took cells of the player's own draw: the cells of theirs it took, the washer the post's character). Public facts and the reader's own character
+ * alone: nothing of an owner, a class or a reaction.
+ */
+export interface SurfaceLogRow {
+  readonly act: Id;
+  readonly kind: 'draw' | 'wash' | 'cut';
+  readonly play: Id;
+  readonly post: Id;
+  readonly character: Id;
+  readonly mine: Id;
+  readonly at: string;
+  readonly cells: number;
+}
+
 /** When the effect of a play on one of the player's posts was last saved: the post's author's save, which may wash it clean. */
 export interface EffectSaved {
   readonly play: Id;
@@ -1776,6 +1835,10 @@ export interface Log {
   readonly playsOnMine: readonly PlayOnMine[];
   /** The texts and failures of cards that write on the player's posts, by when each was made (`my_posts_written_on`). */
   readonly writes: readonly WrittenOnMine[];
+  /** The draws the player's characters made on surfaces, and the washes that cut them, by when each landed (`my_draws`). Absent from a payload older than the surface; read it as none. */
+  readonly draws?: readonly SurfaceLogRow[];
+  /** The draws on, and the washes of, the surfaces on the player's own posts, by when each landed (`my_walls_drawn_on`). Absent from a payload older than the surface; read it as none. */
+  readonly wallsDrawn?: readonly SurfaceLogRow[];
   readonly saves: readonly EffectSaved[];
   /** The player's cards set face down that sprang or ended, by when. */
   readonly setEnds: readonly FaceDownEnd[];
@@ -1856,6 +1919,8 @@ export interface ThreadListener {
   /** A tally that only grows: keep each kind's largest. */
   readonly onTally?: (act: Id, tally: Tally) => void;
   readonly onEffect?: (play: Id, savedAt: string) => void;
+  /** A draw or a wash landed on a surface: the play and the cells it now covers (the `surface` event). Read the play's live Acts again if they are drawn. */
+  readonly onSurface?: (play: Id, covered: number) => void;
   /** A writing play made a tail (`card_text`): the play and the version of its post and nothing else. Read the post's tails again. */
   readonly onText?: (play: Id, version: Id) => void;
   /**
@@ -1981,9 +2046,43 @@ export interface IndexPage {
   readonly unread: number;
 }
 
+/** A board named where a closed board's threads went, or where a thread moved to: enough to link it. */
+export interface BoardRef {
+  readonly id: Id;
+  readonly slug: string;
+  readonly name: string;
+}
+
+/**
+ * A thread that was moved away from the board whose page lists it, within the instance's `movedStubDays` (board_page, 0326): a row that links to the thread
+ * and names the board it is on now. It is a fact of the move, public as the move is.
+ */
+export interface BoardStub {
+  readonly thread: Id;
+  readonly title: string;
+  readonly movedTo: BoardRef;
+  /** When the move landed. */
+  readonly movedAt: string;
+}
+
+/**
+ * A board that is closed (board_page, 0326): merged into another (`mergedInto`), or made by a move that was reversed (`fallback`, where its threads went). Exactly one is set.
+ * Its page lists no threads and no stubs.
+ */
+export interface BoardClosed {
+  readonly mergedInto: BoardRef | null;
+  readonly fallback: BoardRef | null;
+  /** The first open board its threads are in, following merges and fallbacks on (the board above may itself be closed since); null when none can be named. */
+  readonly goesTo: BoardRef | null;
+}
+
 /** A board's page (board_page, 0095). `page` is the page shown, clamped to the board's last. */
 export interface BoardPage {
   readonly board: Board;
+  /** Null for an open board. */
+  readonly closed: BoardClosed | null;
+  /** The threads moved away from this board within `movedStubDays`, newest move first: drawn below the board's own threads, taking none of the page's slots. */
+  readonly stubs: readonly BoardStub[];
   readonly total: number;
   readonly page: number;
   readonly threads: readonly ThreadSummary[];
@@ -2023,6 +2122,8 @@ export interface ThreadPage {
   readonly people: readonly ThreadPerson[];
   /** The plays on the page's posts (`cardsOnMany`). */
   readonly plays: Awaited<ReturnType<KayfaApi['cardsOnMany']>>;
+  /** Each surface play among them: the cells it covers and its live Acts' ids, never a stroke (`surfaces` in thread_page, 0317). */
+  readonly surfaces: Readonly<Record<Id, SurfaceNow>>;
   readonly above: Awaited<ReturnType<KayfaApi['effectsAbove']>>;
   readonly faces: Awaited<ReturnType<KayfaApi['myFaceDown']>>;
   /**
@@ -2203,9 +2304,9 @@ export interface KayfaApi {
    */
   setAdminContact(links: readonly ContactLink[]): Promise<Answer<readonly ContactLink[]>>;
   /** Holds a move that is waiting: it never lands. An admin's alone, and it cannot be taken back. */
-  holdMove(id: number): Promise<Answer<{ readonly id: number; readonly heldAt: string }>>;
+  holdMove(id: number): Promise<Answer<{ readonly id: number; readonly heldAt: string; /** The queued moves held with it, which build on it. */ readonly heldAlso: readonly number[] }>>;
   /** Ends a move in force now as reversed by an admin; the old name returns at once. An admin's alone. */
-  reverseMove(act: Id): Promise<Answer<{ readonly act: Id; readonly endedBy: Id }>>;
+  reverseMove(act: Id): Promise<Answer<{ readonly act: Id; readonly endedBy: Id; /** The moves in force that built on it, ended with it. */ readonly alsoEnded: readonly Id[]; /** The queued moves held with it. */ readonly heldAlso: readonly number[] }>>;
   /**
    * Ends a card play as reversed by an admin (`reverse_card`, 0092): a `card_end` Act of no character is written beside the play, the
    * layer comes off and the card stops counting; the original play is never changed. An admin's alone; a caught play, one that has
@@ -2240,6 +2341,11 @@ export interface KayfaApi {
   board(slugOrId: string): Promise<Board | null>;
   /** Every board's name now and the name it had before any move: a handful of rows, for the words that name a board (the moderation log, the admin queue). */
   boardNames(): Promise<readonly BoardName[]>;
+  /**
+   * The words that name the threads a `moveThread` moves (move_thread_names, 0327): each thread's title now and the board it left (`left`), keyed by the move's Act when it has landed, else by
+   * the thread (a waiting move leaves the board the thread is on now). A thread that cannot be read is left out, and the sentence says "a thread".
+   */
+  moveThreadNames(items: readonly { readonly thread: Id; readonly act: Id | null }[]): Promise<Readonly<Record<Id, { readonly title: string; readonly left: Id | null }>>>;
   /**
    * A move in force, as its board shows it, or null when the Act is no move (or none the reader may see). The progress is
    * `move_progress`, a public read: it counts characters, posts and public tallies and never players.
@@ -2559,9 +2665,10 @@ export interface KayfaApi {
    * Play a card the player holds on a post, as one of their characters: the card's own settings (`config`), the caster's message (plain
    * text, at most 200 characters, may be empty), the price its rules decide from the post as it stands. The card's Act comes back.
    * Beyond a post (`reach`), `target` is the character, the thread or the board, and a character play names the post whose postbit
-   * took it (`fromPost`); the Act comes back with its reach, its target and its end in its payload (0055_card_reach.sql).
+   * took it (`fromPost`); the Act comes back with its reach, its target and its end in its payload (0055_card_reach.sql). A surface card's play carries
+   * its first draw (`first`, the card's own shape): a play without one is refused ("draw your tag first"), the refusal on the field `first`.
    */
-  playCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, message: string, reach?: Reach, fromPost?: Id): Promise<Answer<Act>>;
+  playCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, message: string, reach?: Reach, fromPost?: Id, first?: unknown): Promise<Answer<Act>>;
   /**
    * Give `amount` (hundredths, one the drive offers) to a drive, as one of the player's characters: the gift's Act and the giver's balance after.
    * A closed drive, an amount not offered, a short wallet, a banned character and a thing that is no drive are refused in the database's words.
@@ -2574,9 +2681,9 @@ export interface KayfaApi {
   /**
    * Set a card the player holds face down on a post of the character's own (the card mechanic's design, section 3): its Act, a card
    * back, comes back naming no card. A trap that strikes carries the struck card's settings (`config`), which that card's rules check.
-   * A Move may be set with `when`, its conditions (quote-conditions design, section 1): sent only when one is set, and never for a set card.
+   * A Move may be set with `when`, its conditions (quote-conditions design, section 1): sent only when one is set, and never for a set card. A surface card is set with its first draw (`first`).
    */
-  setCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, when?: SetConditions): Promise<Answer<Act>>;
+  setCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, when?: SetConditions, first?: unknown): Promise<Answer<Act>>;
   /**
    * Take a card the player set face down back into the hand, before it springs and before its time ends (`take_back`): the setter's own back on a post
    * of the character's, free, and its Act (a take-back, naming the set) comes back. A back that is not the player's, or that has ended, is refused in the same words.
@@ -2590,6 +2697,15 @@ export interface KayfaApi {
   releaseEffect(play: Id): Promise<Answer<{ readonly play: Id; readonly releasedAt: string }>>;
   /** Save the state of a play's effect, as the character that wrote the post it landed on (no one else may); the card's rules bound what it holds. */
   saveEffect(play: Id, character: Id, state: Readonly<Record<string, unknown>>): Promise<Answer<{ readonly play: Id; readonly savedAt: string }>>;
+  /**
+   * Add a drawing to a surface play (a play of a card with `CardRules.surface`), as one of the player's characters: the card's rules check its shape
+   * and the database holds the limits (its refusal comes back in its words). The Act comes back with the cells covered and the live list.
+   */
+  draw(play: Id, character: Id, input: unknown): Promise<Answer<SurfaceWritten>>;
+  /** Take ink off a surface play, as the character that wrote the post (any other is refused); the same answer as a draw. */
+  wash(play: Id, character: Id, input: unknown): Promise<Answer<SurfaceWritten>>;
+  /** A surface play's live draws and washes, oldest first (`surface_acts`); null where the play has no surface. */
+  surfaceActs(play: Id): Promise<SurfaceActs | null>;
   /** Leave a reaction: an instance's kind, or a post-local one (key `x-…`) its post offers. The tally is null where the post's totals are hidden (a blind post), for everyone alike. */
   react(act: Id, character: Id, kind: string): Promise<Answer<{ readonly act: Id; readonly tally: Tally | null }>>;
   turn(character: Id, to: string, loudness: 'silent' | 'announced', showFrom: boolean, showTo: boolean): Promise<Answer<TurnAsked>>;

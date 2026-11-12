@@ -11,6 +11,7 @@ import type { CardPlay, Drive, EffectProps } from '../../../../engine/ui/cards/t
 import { renderInWorld } from '../../../../engine/ui/test-world.tsx';
 import { PLATES } from '../../ui/jimmy-wails/plates.ts';
 import { ADVANCE_MS, JimmyWailsEffect } from './Effect.tsx';
+import { NO_INK } from '../../../../engine/ui/cards/claims.ts';
 
 const post = { id: 'post-1', character: 'author', kind: 'post', thread: 't', payload: { body: 'Hello' }, currentPayload: { body: 'Hello' }, targetActId: null, seq: 3, createdAt: '2026-11-03T09:00:00.000Z', editedAt: null, shownEditedAt: null } as unknown as Act;
 const names: Record<string, string> = { author: 'Pipewrench', c1: 'Spritey', c2: 'Gloomba', c3: 'Toad' };
@@ -32,7 +33,7 @@ function mount(o: Options = {}) {
     return (
       <JimmyWailsEffect
         post={post} plays={drives.flatMap((d) => d.plays)} states={{}} released={new Set()} written={new Map()} reader={{ author: o.author ?? false, caster: false }} place={o.place ?? 'thread'}
-        reach="post" still={o.still ?? false} save={async () => ({ ok: false, error: 'no' })} release={async () => ({ ok: false, error: 'no' })} show={() => {}} met={() => {}} holdScreen={() => {}} marks={null}
+        reach="post" still={o.still ?? false} save={async () => ({ ok: false, error: 'no' })} release={async () => ({ ok: false, error: 'no' })} show={() => {}} met={() => {}} ink={NO_INK} holdScreen={() => {}} marks={null}
         nameOf={(id) => (id === null ? 'Somebody' : names[id] ?? id)} drives={drives} give={gives} moreGifts={async () => {}} wallet={'wallet' in o ? o.wallet! : { balance: 500, cap: 1000 }}
       >
         <p>Hello, this is the post.</p>

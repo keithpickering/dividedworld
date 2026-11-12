@@ -6,7 +6,10 @@
  */
 import { describe, expect, test, vi } from 'vitest';
 import type { Instance, Settings } from '../../rules/types.ts';
-import { landsOn, quadrantFree, type CardEffect, type CardRules, type CardTarget } from '../../rules/cards.ts';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { landsOn, ok, quadrantFree, refuse, type CardEffect, type CardRules, type CardTarget } from '../../rules/cards.ts';
+import { cellsOf, count } from '../../rules/surface.ts';
 import { momentParts } from '../cards/Effects.tsx';
 import type { CardUi } from '../cards/types.ts';
 import { failureKind, NOT_SENT, ReadFailure } from './api.ts';
@@ -1788,7 +1791,7 @@ describe('the player\'s own log: the ledger with its shares, the wallet\'s event
     validateConfig: (c: unknown) => ({ ok: true as const, value: c ?? {} }),
   };
   const shop: Instance = { ...instance, cards: [splat], machine: [{ item: { card: splat.key }, availability: 'onSale' as const, price: 100 }], settings: { ...settings, economy: {} } };
-  const empty = { infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], settlements: [], wallet: [], cards: [], packs: [], playsOnMine: [], writes: [], saves: [], setEnds: [], caught: [], ended: [], cosmetics: [], before: null };
+  const empty = { infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], settlements: [], wallet: [], cards: [], packs: [], playsOnMine: [], writes: [], draws: [], wallsDrawn: [], saves: [], setEnds: [], caught: [], ended: [], cosmetics: [], before: null };
 
   function logWorld() {
     const fake = createFake({ instance: shop });
@@ -3395,6 +3398,16 @@ describe('a card that writes: its tails, as post_tails and the worker leave them
   });
 });
 
+describe('the fake gives every character it shows the instance\'s face for it', () => {
+  test('a staff character is shown through `face`, and a player is shown as it is', async () => {
+    const fake = createFake({ instance, face: (c) => (c.staff === 'pictured' ? { ...c, avatarSquare: '/pictured.webp' } : c) });
+    const staffId = fake.seed.staff('pictured', 'Pictured', 'boss');
+    const plain = fake.seed.staff('plain', 'Plain', 'mod');
+    expect((await fake.characters([staffId]))[0]?.avatarSquare).toBe('/pictured.webp');
+    expect((await fake.characters([plain]))[0]?.avatarSquare).toBeNull();
+  });
+});
+
 /* ---- gear, trophies and Random Events (cosmetics Task 6): the fake holds what set_outfit, show_trophies, trophies_of and random_event hold, in their words ---- */
 describe('gear, trophies and Random Events', () => {
   const dressed: Instance = {
@@ -3975,6 +3988,243 @@ describe('the log\'s scored-as rows (card notes, Part 6, Task 6)', () => {
     const full = { ...empty, scoredAs: rows };
     expect(cutLog(full, 3).scoredAs).toEqual(rows);
     expect(cutLog({ ...full, ledger: [{ settlement: 2, startsAt: rows[1]!.startsAt, endsAt: rows[1]!.endsAt, sharesKept: true, character: 'c1', reason: 'r', amount: 1 }, { settlement: 2, startsAt: rows[1]!.startsAt, endsAt: rows[1]!.endsAt, sharesKept: true, character: 'c2', reason: 'r', amount: 1 }] }, 2).scoredAs).toEqual([rows[0]]);
+  });
+});
+
+/* ---------------------------------------------------------------------------------- a surface ---- */
+describe('a surface, as the server keeps it', () => {
+  const sql = readFileSync(resolve(process.cwd(), 'supabase/migrations/0317_surfaces.sql'), 'utf8');
+  /** The sentence the SQL raises, found in its text: `format('...')` or the literal, with each `%` and `%s` in place. */
+  const sayings = {
+    limit: /format\('(this wall is [^']*)'/.exec(sql)![1]!,
+    live: /exception '(this wall holds [^']*)'/.exec(sql)![1]!,
+    author: /exception '(only the post''s author washes what is on it)'/.exec(sql)![1]!.replace(/''/g, '\''),
+  };
+  const said = (template: string, ...values: (number | string)[]) => { const v = [...values]; return template.replace(/%%/g, '\u0000').replace(/%s?/g, () => String(v.shift())).replace(/\u0000/g, '%'); };
+
+  const stroke = (y: number, width: number, aspect = 1) => ({ width, aspect, points: [[0, y], [1, y]] as [number, number][] });
+  const dab = (x: number, y = 0.5, width = 0.04) => ({ width, aspect: 1, points: [[x, y]] as [number, number][] });
+  const slab: CardRules<unknown> = {
+    key: 'slab', name: 'Slab', alignment: 'salty', rarity: 'common', stack: 1, reaches: ['post'], playPrice: () => 0,
+    canApply: (target, effects, _config, now) => landsOn({ key: 'slab', reaches: ['post'] }, target, effects, now),
+    validateConfig: (c) => ok(c),
+    surface: {
+      limitKey: 'slab.limit', mostLive: 2,
+      validateDraw: (input) => (typeof input === 'object' && input !== null && Array.isArray((input as { strokes?: unknown }).strokes) ? ok({ strokes: (input as { strokes: never[] }).strokes, payload: { strokes: (input as { strokes: unknown[] }).strokes } }) : refuse('a drawing holds its strokes as a list')),
+      validateWash: (input) => (typeof input === 'object' && input !== null && Array.isArray((input as { strokes?: unknown }).strokes) ? ok({ strokes: (input as { strokes: never[] }).strokes, payload: { strokes: (input as { strokes: unknown[] }).strokes } }) : refuse('a drawing holds its strokes as a list')),
+    },
+  };
+  const surfaced: Instance = { ...instance, cards: [slab as unknown as CardRules], settings: { ...settings, cardSettings: { 'slab.limit': 40 } } };
+  function wall() {
+    const fake = createFake({ instance: surfaced });
+    const ana = fake.seed.account('ana');
+    const bo = fake.seed.account('bo');
+    const anaFace = fake.seed.character(ana, 'Ana Face', 'face');
+    const anaHeel = fake.seed.character(ana, 'Ana Heel', 'heel');
+    const boFace = fake.seed.character(bo, 'Bo Face', 'face');
+    const { thread } = fake.seed.thread('general', boFace, 'Hello', 'First post');
+    const post = fake.seed.post(thread, anaFace, 'a post of Ana\'s');
+    const play = fake.seed.card(boFace, post, 'slab');
+    fake.signInAs(ana);
+    return { fake, ana, bo, anaFace, anaHeel, boFace, thread, post, play };
+  }
+
+  describe('a surface card played with its first draw (play_surface_card)', () => {
+    const tag = { strokes: [stroke(0.5, 0.1)] };
+    test('playCard opens the wall with that draw, by the caster, and the wall reads it back', async () => {
+      const { fake, ana, anaFace, thread } = wall();
+      const post = fake.seed.post(thread, anaFace, 'a clean post');
+      fake.seed.cards(ana, { slab: 2 });
+      const played = await fake.playCard('slab', anaFace, post, {}, '', undefined, undefined, tag);
+      expect(played).toMatchObject({ ok: true });
+      const play = (played as { value: { id: string } }).value.id;
+      const held = (await fake.surfaceActs(play))!;
+      expect(held.acts).toHaveLength(1);
+      expect(held.acts[0]).toMatchObject({ kind: 'draw', character: anaFace });
+      expect(held.covered).toBe(count(cellsOf(tag.strokes)));
+    });
+    test('without a first draw it is refused on `first`, and a first draw past the limit refuses the whole play (the card stays in the hand)', async () => {
+      const { fake, ana, anaFace, thread } = wall();
+      const post = fake.seed.post(thread, anaFace, 'a clean post');
+      fake.seed.cards(ana, { slab: 2 });
+      expect(await fake.playCard('slab', anaFace, post, {}, '')).toMatchObject({ ok: false, error: 'draw your tag first', field: 'first' });
+      const huge = { strokes: [stroke(0.5, 0.9), stroke(0.1, 0.9)] };
+      expect(await fake.playCard('slab', anaFace, post, {}, '', undefined, undefined, huge)).toMatchObject({ ok: false, field: 'first' });
+      expect(await fake.myCards()).toEqual(expect.arrayContaining([{ card: 'slab', held: 2 }]));
+      expect(await fake.cardsOn(post, 10)).toHaveLength(0);
+    });
+    test('setCard on one\'s own post takes the draft with it: a back, and no wall until it springs (the fake lays no card from a spring, so the draft is checked and not kept)', async () => {
+      const { fake, ana, anaFace, thread } = wall();
+      const post = fake.seed.post(thread, anaFace, 'a clean post');
+      fake.seed.cards(ana, { slab: 2 });
+      expect(await fake.setCard('slab', anaFace, post, {})).toMatchObject({ ok: false, field: 'first' });
+      expect(await fake.setCard('slab', anaFace, post, {}, undefined, { strokes: 'no' })).toMatchObject({ ok: false });
+      expect(await fake.setCard('slab', anaFace, post, {}, undefined, tag)).toMatchObject({ ok: true, value: { kind: 'set' } });
+    });
+  });
+
+  test('the limit\'s refusal says what the database says, with the same numbers', async () => {
+    const { fake, anaHeel, play } = wall();
+    const first = [stroke(0.5, 0.25)];
+    const before = count(cellsOf(first));
+    expect(await fake.draw(play, anaHeel, { strokes: first })).toMatchObject({ ok: true });
+    const second = [stroke(0.1, 0.25)];
+    const together = count(cellsOf([...first, ...second]));
+    expect(together).toBeGreaterThan(4000);
+    const refusal = await fake.draw(play, anaHeel, { strokes: second });
+    expect(refusal).toEqual(refused(said(sayings.limit, Math.floor(before / 100), 40, Math.ceil(together / 100))));
+    expect(sayings.limit).toBe('this wall is %s%% covered, and its limit is %s%%; this tag would take it to %s%%');
+  });
+
+  test('a limit that is not a whole percent is shown rounded down, as the database shows it (4060 cells say 40%), and the figure after the tag is rounded up', async () => {
+    const fake = createFake({ instance: { ...surfaced, settings: { ...settings, cardSettings: { 'slab.limit': 40.6 } } } });
+    const ana = fake.seed.account('ana');
+    const face = fake.seed.character(ana, 'Ana Face', 'face');
+    const { thread } = fake.seed.thread('general', face, 'Hello', 'First post');
+    const play = fake.seed.card(face, fake.seed.post(thread, face, 'a post'), 'slab');
+    fake.signInAs(ana);
+    const first = [stroke(0.5, 0.25)];
+    const before = count(cellsOf(first));
+    expect(await fake.draw(play, face, { strokes: first })).toMatchObject({ ok: true });
+    const second = [stroke(0.1, 0.25)];
+    const together = count(cellsOf([...first, ...second]));
+    expect(together).toBeGreaterThan(4060);
+    expect(await fake.draw(play, face, { strokes: second })).toEqual(refused(said(sayings.limit, Math.floor(before / 100), Math.floor(4060 / 100.0), Math.ceil(together / 100))));
+  });
+
+  test('the live count\'s refusal says what the database says, and painting over a tag is the way out', async () => {
+    const { fake, anaFace, anaHeel, play } = wall();
+    expect(await fake.draw(play, anaHeel, { strokes: [dab(0.1)] })).toMatchObject({ ok: true });
+    expect(await fake.draw(play, anaFace, { strokes: [dab(0.5)] })).toMatchObject({ ok: true });
+    expect(await fake.draw(play, anaFace, { strokes: [dab(0.9)] })).toEqual(refused(said(sayings.live, 2)));
+    /* A draw over the first tag leaves two tags live. */
+    expect(await fake.draw(play, anaFace, { strokes: [dab(0.1, 0.5, 0.2)] })).toMatchObject({ ok: true });
+    const held = (await fake.surfaceActs(play))!;
+    expect(held.acts).toHaveLength(2);
+    expect(held.older).toBe(1);
+  });
+
+  test('a draw answers with the cells covered and the live list, and the surface reads them back, oldest first, with each draw\'s share', async () => {
+    const { fake, anaHeel, play, thread } = wall();
+    const written = must(await fake.draw(play, anaHeel, { strokes: [dab(0.5)] }));
+    const cells = count(cellsOf([dab(0.5)]));
+    expect(cells).toBeGreaterThan(0);
+    expect(written).toMatchObject({ kind: 'draw', character: anaHeel, targetActId: play, covered: cells, live: [written.id] });
+    expect(written.seq).toBeNull();
+    const held = (await fake.surfaceActs(play))!;
+    expect(held.covered).toBe(cells);
+    expect(held.acts.map((a) => [a.id, a.kind, a.share])).toEqual([[written.id, 'draw', cells]]);
+    const page = (await fake.threadPage(thread, {}, null, []))!;
+    expect(page.surfaces).toEqual({ [play]: { covered: cells, live: [written.id] } });
+  });
+
+  test('a draw nobody draws over keeps its share, and one painted over wholly is no longer live', async () => {
+    const { fake, anaHeel, play } = wall();
+    const a = must(await fake.draw(play, anaHeel, { strokes: [dab(0.5)] }));
+    const b = must(await fake.draw(play, anaHeel, { strokes: [dab(0.5, 0.5, 0.1)] }));
+    expect(b.live).toEqual([b.id]);
+    expect((await fake.surfaceActs(play))!.older).toBe(1);
+    expect(a.id).not.toBe(b.id);
+  });
+
+  test('the log reads a surface as the views do: the drawer\'s draw and the wash that cut it, the author\'s walls and washes, and nothing for a third player', async () => {
+    const { fake, ana, bo, anaFace, anaHeel, boFace, play, post } = wall();
+    const cy = fake.seed.account('cy');
+    fake.seed.character(cy, 'Cy Face', 'face');
+    fake.signInAs(bo);
+    must(await fake.draw(play, boFace, { strokes: [dab(0.5)] }));
+    fake.signInAs(ana);
+    must(await fake.draw(play, anaHeel, { strokes: [dab(0.2)] }));
+    const washed = must(await fake.wash(play, anaFace, { strokes: [dab(0.5, 0.5, 0.02)] }));
+    must(await fake.wash(play, anaFace, { strokes: [dab(0.5, 0.5, 0.02)] }));
+    const whole = count(cellsOf([dab(0.5)]));
+    const took = count(cellsOf([dab(0.5, 0.5, 0.02)]));
+    const row = (act: string, kind: string, character: string, mine: string, cells: number) => expect.objectContaining({ act, kind, play, post, character, mine, cells });
+    /* The author: the other player's draw on their post, then their own two washes (the second over bare cells took none); their own other mask's draw is the drawer's line. */
+    const own = await fake.log();
+    expect(own.wallsDrawn!.map((r) => [r.kind, r.character, r.cells])).toEqual([['wash', anaFace, 0], ['wash', anaFace, took], ['draw', boFace, whole]]);
+    expect(own.wallsDrawn!.every((r) => r.mine === anaFace && r.post === post && r.play === play)).toBe(true);
+    expect(own.wallsDrawn![1]).toEqual(row(washed.id, 'wash', anaFace, anaFace, took));
+    expect(own.draws!.map((r) => [r.kind, r.mine, r.cells])).toEqual([['draw', anaHeel, count(cellsOf([dab(0.2)]))]]);
+    /* The drawer: the draw, and the wash that cut it (the author's own cut nothing of the draw's twice: the second wash took none). */
+    fake.signInAs(bo);
+    const drawer = await fake.log();
+    expect(drawer.draws!.map((r) => [r.kind, r.character, r.mine, r.cells])).toEqual([['cut', anaFace, boFace, took], ['draw', boFace, boFace, whole]]);
+    expect(drawer.wallsDrawn).toEqual([]);
+    fake.signInAs(cy);
+    const third = await fake.log();
+    expect([third.draws, third.wallsDrawn]).toEqual([[], []]);
+  });
+
+  test('only the post\'s own character washes, in the database\'s words; a wash takes cells off, and a full wash leaves nothing live', async () => {
+    const { fake, anaFace, anaHeel, boFace, play } = wall();
+    const ink = { strokes: [dab(0.5)] };
+    must(await fake.draw(play, anaHeel, ink));
+    expect(await fake.wash(play, anaHeel, ink)).toEqual(refused(sayings.author));
+    expect(await fake.wash(play, boFace, ink)).toEqual(refused('you do not play that character'));
+    expect(sayings.author).toBe('only the post\'s author washes what is on it');
+    const half = must(await fake.wash(play, anaFace, { strokes: [dab(0.5, 0.5, 0.02)] }));
+    expect(half).toMatchObject({ kind: 'wash', character: anaFace });
+    expect(half.covered).toBe(count(cellsOf([dab(0.5)])) - count(cellsOf([dab(0.5, 0.5, 0.02)])));
+    expect(half.live).toHaveLength(2);
+    const all = must(await fake.wash(play, anaFace, { strokes: [dab(0.5, 0.5, 0.1)] }));
+    expect(all.covered).toBe(0);
+    expect(all.live).toEqual([]);
+  });
+
+  /* Whodunnit? on a post with a wall (0400's acts_public, fifth select; my_draws' cut rows): a wash is the post's own character's alone, so it would name the author wherever it is read. */
+  test('a wash on a post under an author veil is the stand-in\'s, in the wall\'s Acts and in the drawer\'s log; the author\'s own line keeps the name', async () => {
+    const who = {
+      key: 'whodunnit', name: 'Whodunnit?', alignment: 'pepperoni' as const, rarity: 'rare' as const, reaches: ['post' as const], lasts: { unit: 'day' as const, count: 3 }, veil: 'author' as const,
+      playPrice: () => 0, validateConfig: (c: unknown) => ok(c ?? {}), canApply: (t: CardTarget, e: readonly CardEffect[], _c?: unknown, now?: Date) => landsOn({ key: 'whodunnit', reaches: ['post'] }, t, e, now),
+    };
+    const walled: Instance = { ...surfaced, cards: [slab as unknown as CardRules, who as unknown as CardRules], anonymous: { name: 'Nobody', tagline: '' } };
+    const fake = createFake({ instance: walled });
+    const ana = fake.seed.account('ana');
+    const bo = fake.seed.account('bo');
+    const anaFace = fake.seed.character(ana, 'Ana Face', 'face');
+    const boFace = fake.seed.character(bo, 'Bo Face', 'face');
+    const { thread } = fake.seed.thread('general', boFace, 'Hello', 'First post');
+    const post = fake.seed.post(thread, anaFace, 'a post of Ana\'s');
+    const play = fake.seed.card(boFace, post, 'slab');
+    fake.signInAs(bo);
+    must(await fake.draw(play, boFace, { strokes: [dab(0.5)] }));
+    fake.signInAs(ana);
+    const washed = must(await fake.wash(play, anaFace, { strokes: [dab(0.5, 0.5, 0.02)] }));
+    expect((await fake.surfaceActs(play))!.acts.find((a) => a.id === washed.id)).toMatchObject({ character: anaFace });
+    fake.seed.cards(bo, { whodunnit: 1 });
+    fake.signInAs(bo);
+    must(await fake.playCard('whodunnit', boFace, post, {}, ''));
+    const stand = (await fake.act(post))!.character!;
+    expect(stand).not.toBe(anaFace);
+    const held = (await fake.surfaceActs(play))!;
+    expect(held.acts.find((a) => a.id === washed.id)).toMatchObject({ kind: 'wash', character: stand });
+    expect(held.acts.find((a) => a.kind === 'draw')).toMatchObject({ character: boFace });
+    expect((await fake.log()).draws!.filter((r) => r.kind === 'cut').map((r) => r.character)).toEqual([stand]);
+    fake.signInAs(ana);
+    expect((await fake.log()).wallsDrawn!.filter((r) => r.kind === 'wash').map((r) => r.character)).toEqual([anaFace]);
+  });
+
+  test('a draw or a wash on a play that is no surface, or that an admin ended, is refused', async () => {
+    const { fake, anaHeel, post, thread } = wall();
+    expect(await fake.draw(post, anaHeel, { strokes: [dab(0.5)] })).toEqual(refused('there is no wall on that post'));
+    expect(await fake.surfaceActs(post)).toBeNull();
+    expect(thread).toBeTruthy();
+    const { play: other, fake: f2, anaHeel: h2, ana } = wall();
+    const admin = f2.seed.account('boss', { admin: true });
+    f2.signInAs(admin);
+    must(await f2.reverseCard(other));
+    f2.signInAs(ana);
+    expect(await f2.draw(other, h2, { strokes: [dab(0.5)] })).toEqual(refused('an admin ended that card'));
+  });
+
+  test('a surface\'s change is told on the thread\'s channel as the play and the cells it covers', async () => {
+    const { fake, anaHeel, play, thread } = wall();
+    const heard: [string, number][] = [];
+    fake.subscribeThread(thread, { onSurface: (p, covered) => heard.push([p, covered]) });
+    const written = must(await fake.draw(play, anaHeel, { strokes: [dab(0.5)] }));
+    await flush();
+    expect(heard).toEqual([[play, written.covered]]);
   });
 });
 

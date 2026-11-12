@@ -10,6 +10,7 @@ import type { CardPlay, CardView, EffectProps } from '../../../../engine/ui/card
 import { viewProblems } from '../../../../engine/ui/cards/lens-words.ts';
 import { endsWords } from '../../../../engine/ui/cards/marks.ts';
 import { dayAndTime } from '../../../../engine/ui/characters/format.ts';
+import { NO_INK } from '../../../../engine/ui/cards/claims.ts';
 import { ThreadCtx, type ThreadContext } from '../../../../engine/ui/thread/context.ts';
 import { WhodunnitEffect } from './Effect.tsx';
 
@@ -24,7 +25,7 @@ function setup(over: Partial<EffectProps> = {}, standIn: string | null = null) {
   const met = vi.fn();
   const props: EffectProps = {
     post, plays: [play()], states: {}, released: new Set(), written: new Map(), reader: { author: false, caster: false }, place: 'thread', reach: 'post', still: false,
-    show, met, holdScreen: () => {}, marks: null, save: async () => ({ ok: false, error: 'no' }), release: async () => ({ ok: false, error: 'no' }), nameOf: (c) => (c === 'c1' ? 'Gloomba' : 'Spritey'), give: async () => ({ ok: false, error: 'no' }), moreGifts: async () => {}, wallet: null,
+    show, met, ink: NO_INK, holdScreen: () => {}, marks: null, save: async () => ({ ok: false, error: 'no' }), release: async () => ({ ok: false, error: 'no' }), nameOf: (c) => (c === 'c1' ? 'Gloomba' : 'Spritey'), give: async () => ({ ok: false, error: 'no' }), moreGifts: async () => {}, wallet: null,
     children: <p>The words of the post.</p>, ...over,
   };
   /* The thread knows which character is the veil's stand-in (office `anonymous`); `standIn` is that, the engine's answer for this page. */

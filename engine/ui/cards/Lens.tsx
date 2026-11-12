@@ -31,7 +31,7 @@ import {
 } from 'react';
 import { ENGINE_DEFAULT_PRONOUNS, type PronounSet } from '../../rules/pronouns.ts';
 import { useKayfa } from '../context.tsx';
-import type { Act, Id, PlayMoment, Visit, VisitEnd, VisitStory } from '../data/api.ts';
+import type { Act, Id, PlayMoment, SurfaceActs, Visit, VisitEnd, VisitStory } from '../data/api.ts';
 import { Avatar } from '../glass/Avatar.tsx';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { Float, type FloatPlace } from '../glass/Float.tsx';
@@ -48,6 +48,7 @@ import type { Tallies } from '../thread/tallies.ts';
 import { inkOf, useOnInk, useSheet, useUntil } from './Effects.tsx';
 import { plainRefusal, withCardEconomy } from './faces.ts';
 import { Kit } from './Kit.tsx';
+import { olderWords, surfaceShare, surfaceWords } from './lens-words.ts';
 import { backWords, CAUGHT_STATE, caughtWords, endedWords, gimmickWords, kindsOf, OVER_STATE, playsPhrase, sumOf, UNTAKEN_STATE, untakenWords } from './marks.ts';
 import { backOver, defaultView, inPlayOrder, isBack, markedPlays, shownPlays, useCardView, usePlays, type Plays } from './plays.ts';
 import type { CardPlay, CardView } from './types.ts';
@@ -573,6 +574,47 @@ function Who({ plays, nameOf, faceOf, inkOfPlay, card, unfolded, onToggle, ...ro
   );
 }
 
+/**
+ * A surface play's rows, below its Who: one for each live draw and wash, oldest first (`surface_acts`, 0317): who, when, what the card names of a draw (`CardUi.describeDraw`) and the share of the surface the
+ * draw owns now, counted from the cells it owns; a wash says it washed. Under them one line for the draws no longer live, in the card's words (`CardUi.logDraw`). It is read when the tab opens and again each
+ * time the page's live list for the play changes (a draw or a wash heard on the channel), so what shows is what the Acts say now. Who drew what is shown here and nowhere else (the design, section 8). A read that
+ * fails shows nothing: the rows are the Lens's account of the layer, and the layer itself is on the post.
+ */
+function SurfaceRows({ play, live, nameOf, faceOf, card }: { readonly play: Id; readonly live: string; readonly nameOf: (character: Id | null) => string; readonly faceOf: (character: Id | null) => string | null; readonly card: string }) {
+  const { api, ui } = useKayfa();
+  const [read, setRead] = useState<SurfaceActs | null>(null);
+  useEffect(() => {
+    let current = true;
+    void api.surfaceActs(play).then((r) => { if (current) setRead(r); }, () => { /* The rows are the Lens's own account; none is read, none is shown. */ });
+    return () => { current = false; };
+  }, [api, play, live]);
+  if (read === null || (read.acts.length === 0 && read.older === 0)) return null;
+  const cardUi = ui.cards.find((c) => c.key === card);
+  const words = surfaceWords(cardUi);
+  return (
+    <div className="kb-lens-section kb-lens-surface">
+      {read.acts.length > 0 && (
+        <ul className="kb-lens-draws" aria-label="Drawn and washed">
+          {read.acts.map((a) => {
+            const name = nameOf(a.character);
+            const colors = a.kind === 'draw' ? cardUi?.describeDraw?.(a.payload)?.trim() : undefined;
+            return (
+              <li key={a.id} className="kb-lens-draw" data-kb-surface-act={a.kind}>
+                <Avatar className="kb-lens-draw-avatar" src={faceOf(a.character)} name={name} />
+                <p className="kb-lens-by">
+                  <span className="kb-lens-who kb-glass-display">{name}</span> · <time dateTime={a.createdAt}>{when(a.createdAt)}</time>
+                  {a.kind === 'draw' ? <>{colors ? ` · ${colors}` : ''} · {surfaceShare(a.share ?? 0, words.surface)}</> : ` · ${words.washVerb}`}
+                </p>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {read.older > 0 && <p className="kb-lens-older">{olderWords(read.older, words)}</p>}
+    </div>
+  );
+}
+
 export interface LensProps {
   readonly open: LensOpen;
   /** What the marks are on, as the Lens is named for it: a post, or a character, a thread or a board. */
@@ -820,6 +862,9 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
           plays={rowPlays} inkOfPlay={(p) => inkOf(ui, p, [...ofKind].sort(inPlayOrder), onInk)} unfolded={unfolded} onToggle={() => setUnfolded((u) => !u)} nameOf={nameOf} faceOf={faceOf} card={name} view={view} tallies={tallies} mine={mine} compare={compare} to={to} moments={moments} store={plays} admin={admin} now={now}
           onSpin={(play, spinName) => { store.close(); onSpin(play, spinName, open.opener); }}
         />}
+        {!onVisit && !onForm && rules?.surface !== undefined && rowPlays[0] !== undefined && (
+          <SurfaceRows play={rowPlays[0].id} live={here.surfaces[rowPlays[0].id]?.live.join(',') ?? ''} nameOf={nameOf} faceOf={faceOf} card={card} />
+        )}
       </div>
     </Float>
   );

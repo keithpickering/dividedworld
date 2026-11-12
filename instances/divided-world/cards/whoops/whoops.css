@@ -158,6 +158,13 @@
   height: 48px;
 }
 
+.kb-whoops-cursor[data-kb-cursor="can"] {
+  width: 28px;
+  height: 70px;
+  /* Tilted about its nozzle, the can swings out of its own box. */
+  overflow: visible;
+}
+
 .kb-whoops-cursor[hidden] {
   display: none;
 }

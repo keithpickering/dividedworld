@@ -27,6 +27,17 @@ export interface DigestThread {
   readonly length: number;
 }
 
+/**
+ * A board's line (supabase/migrations/0298_digest_boards.sql): an open board that is not The System's, with the posts on it over the last `Digest.boardDays` days.
+ * Public counts: nothing here says who posted, who owns a mask, a class or a reaction.
+ */
+export interface DigestBoard {
+  readonly id: string;
+  readonly name: string;
+  readonly premise: string;
+  readonly posts: number;
+}
+
 export interface DigestStanding {
   readonly rank: number;
   readonly character: string;
@@ -77,6 +88,10 @@ export interface Digest {
   readonly since: string;
   readonly until: string;
   readonly threads: readonly DigestThread[];
+  /** The open boards with their posts over `boardDays`: at most `digestBoards`, the busiest half and the quietest half when there are more, busiest first. */
+  readonly boards: readonly DigestBoard[];
+  /** The days each board line counts over (the setting `digestBoardDays`). */
+  readonly boardDays: number;
   /** Filled only when a settlement ended in the window. */
   readonly standings: readonly DigestStanding[];
   readonly moves: readonly DigestMove[];
@@ -99,17 +114,18 @@ export function withPronouns(raw: RawDigest, fallback: PronounSet): Digest {
 }
 
 /**
- * The ceilings on what a digest holds, for every instance: the settings digestThreads, digestExcerpts and
- * digestExcerptChars may not exceed the first three (engine/rules/instance.ts), and the renderer slices to them
+ * The ceilings on what a digest holds, for every instance: the settings digestThreads, digestBoards, digestBoardDays, digestExcerpts and
+ * digestExcerptChars may not exceed their ceilings (engine/rules/instance.ts), and the renderer slices to them
  * whatever it is handed. `feed` is the outside feed's items, which the caller caps but the renderer does not trust.
  * `metBy` is the most characters a met move credits (SQL caps its `metBy` list at the same number).
  */
-export const DIGEST_MOST = { threads: 25, excerpts: 20, excerptChars: 1000, feed: 30, metBy: 8 } as const;
+export const DIGEST_MOST = { threads: 25, boards: 30, boardDays: 365, excerpts: 20, excerptChars: 1000, feed: 30, metBy: 8 } as const;
 
 /** The clips on strings the digest and the feed carry. Thread titles are at most 120 in SQL. */
 export const CLIPS = {
   title: 120,
   board: 60,
+  premise: 200,
   name: 64,
   kind: 32,
   /** Reaction kinds shown on one of the Boss's posts, most reacted first. */
@@ -167,7 +183,7 @@ function memoryText(memory: Memory | null, names: (id: string) => string): strin
  * `feed` is the outside feed's item titles, already capped by the caller.
  */
 export function renderDigest(digest: Digest, memory: Memory | null, feed: readonly string[]): string {
-  const { threads: T, excerpts: E, excerptChars: C, feed: F } = DIGEST_MOST;
+  const { threads: T, boards: B, excerpts: E, excerptChars: C, feed: F } = DIGEST_MOST;
   const known = new Map(digest.characters.slice(0, (4 + DIGEST_MOST.metBy) * E).map((c) => [c.id, taggedName(clip(line(c.name), CLIPS.name), c.pronouns)]));
   const name = (id: string): string => known.get(id) ?? 'someone';
   const out: string[] = [];
@@ -186,6 +202,15 @@ export function renderDigest(digest: Digest, memory: Memory | null, feed: readon
         `${i + 1}. "${clip(line(t.title), CLIPS.title)}" on ${clip(line(t.board), CLIPS.board)}: ${t.posts} posts in the window (${t.heat} an hour), ${t.length} in all, controversy ${t.controversy}.`,
     ),
     'No thread was posted in.',
+  );
+  section(
+    'Boards',
+    digest.boards.slice(0, B).map((b) => {
+      const premise = clip(line(b.premise), CLIPS.premise);
+      const days = typeof digest.boardDays === 'number' && Number.isFinite(digest.boardDays) ? Math.max(1, Math.trunc(digest.boardDays)) : null;
+      return `${clip(line(b.name), CLIPS.board)}${premise === '' ? '' : ` (${premise})`}: ${b.posts} post${b.posts === 1 ? '' : 's'}${days === null ? '' : ` in ${days} day${days === 1 ? '' : 's'}`}.`;
+    }),
+    'No board is open.',
   );
   section(
     'Standings',

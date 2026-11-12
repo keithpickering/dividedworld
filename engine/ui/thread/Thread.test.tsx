@@ -2,14 +2,14 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { act, cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { useLayoutEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useState } from 'react';
 import { afterEach, beforeEach, describe, expect, onTestFinished, test, vi } from 'vitest';
 import type { CardUi } from '../cards/types.ts';
 import type { Act, Id, ThreadListener } from '../data/api.ts';
-import { landsOn } from '../../rules/cards.ts';
 import type { Instance } from '../../rules/types.ts';
 import type { Fake } from '../data/fake.ts';
 import { buildWorld, holdReads, renderIn, testInstance } from '../test-world.tsx';
+import { landsOn, ok, refuse, type CardRules } from '../../rules/cards.ts';
 import { pageOf, pageRange, threadHref } from './pages.ts';
 import { createTallies } from './tallies.ts';
 import { GAP_FILL_MS, GAP_RETRY_MAX_MS, READ_DEBOUNCE_MS, ThreadScreen } from './Thread.tsx';
@@ -102,7 +102,7 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 /* ---------------------------------------------------------------------------- the world ---- */
-function world(acts: number, settings: Parameters<typeof buildWorld>[0] = undefined, instance?: Parameters<typeof buildWorld>[1]) {
+function world(acts: number, settings: Parameters<typeof buildWorld>[0] = undefined, instance: Instance = testInstance) {
   const fake = buildWorld(settings, instance);
   const me = fake.seed.account('me');
   const other = fake.seed.account('other');
@@ -2290,6 +2290,76 @@ describe('a post under an author veil', () => {
     await act(async () => { w.fake.clock.advance(10 * MIN + 1_000); await vi.advanceTimersByTimeAsync(10 * MIN + 2_000); });
     expect(await screen.findByRole('article', { name: /^Post 1 by Spritey$/u })).toBeInTheDocument();
     expect(read.mock.calls.length).toBeGreaterThan(armed);
+  });
+});
+
+/* A surface on a post (0317): the page carries each surface's cells and live ids; its live Acts are read where a wall is near, and again, for that wall alone, when the channel says it changed. */
+describe('a surface on a post', () => {
+  const strokes = (input: unknown) => (typeof input === 'object' && input !== null && Array.isArray((input as { strokes?: unknown }).strokes)
+    ? ok({ strokes: (input as { strokes: never[] }).strokes, payload: { strokes: (input as { strokes: unknown[] }).strokes } }) : refuse('a drawing holds its strokes as a list'));
+  const slab: CardRules<unknown> = {
+    key: 'slab', name: 'Slab', alignment: 'salty', rarity: 'common', stack: 1, reaches: ['post'], playPrice: () => 0,
+    canApply: (target, effects, _config, now) => landsOn({ key: 'slab', reaches: ['post'] }, target, effects, now),
+    validateConfig: (c) => ok(c), surface: { limitKey: 'slab.limit', mostLive: 48, validateDraw: strokes, validateWash: strokes },
+  };
+  const surfaced: Instance = { ...testInstance, cards: [...testInstance.cards, slab as unknown as CardRules], settings: { ...testInstance.settings, cardSettings: { ...testInstance.settings.cardSettings, 'slab.limit': 40 } } };
+  const near = new Set<Id>();
+  const wallUi = (): CardUi => ({
+    key: 'slab', art: { color: '#000000', ink: '#ffffff', canvas: '', mark: '', credit: 'Test' }, describe: () => 'slab',
+    Effect: ({ plays, surface, children }) => {
+      const play = plays[0]!.id;
+      useEffect(() => { if (near.has(play)) surface?.near(); }, [play, surface]);
+      return <div data-testid={`wall-${play}`} data-covered={surface?.covered} data-most={surface?.most} data-acts={surface?.acts === null ? 'unread' : surface?.acts?.map((a) => a.kind).join(',')}>{children}</div>;
+    },
+  });
+  const dab = (x: number) => ({ strokes: [{ width: 0.04, aspect: 1, points: [[x, 0.5]] }] });
+  function walls() {
+    const w = world(4, undefined, surfaced);
+    const a = w.fake.seed.card(w.spritey, w.ids[1]!, 'slab');
+    const b = w.fake.seed.card(w.spritey, w.ids[2]!, 'slab');
+    const c = w.fake.seed.card(w.spritey, w.ids[3]!, 'slab');
+    near.clear();
+    near.add(a); near.add(b);
+    return { ...w, a, b, c };
+  }
+  const openWalls = (w: { fake: Fake; thread: Id }) => renderIn(w.fake, <LoadedThread thread={w.thread} />, { path: `/t/${w.thread}`, cards: [wallUi()], instance: surfaced });
+
+  test('the page\'s surfaces are in its document: a wall far from the viewport is read for its cells and nothing more, and the limit is the card\'s in cells', async () => {
+    const w = walls();
+    const reads = vi.spyOn(w.fake, 'surfaceActs');
+    await w.fake.draw(w.c, w.pipe, dab(0.5));
+    openWalls(w);
+    const far = await screen.findByTestId(`wall-${w.c}`);
+    await waitFor(() => expect(Number(far.getAttribute('data-covered'))).toBeGreaterThan(0));
+    expect(far).toHaveAttribute('data-most', '4000');
+    expect(far).toHaveAttribute('data-acts', 'unread');
+    await waitFor(() => expect(screen.getByTestId(`wall-${w.a}`)).toHaveAttribute('data-acts', ''));
+    expect(reads.mock.calls.map((c) => c[0]).sort()).toEqual([w.a, w.b].sort());
+  });
+
+  test('a surface broadcast reads that play\'s acts again and no other\'s', async () => {
+    const w = walls();
+    openWalls(w);
+    await waitFor(() => expect(screen.getByTestId(`wall-${w.a}`)).toHaveAttribute('data-acts', ''));
+    await waitFor(() => expect(screen.getByTestId(`wall-${w.b}`)).toHaveAttribute('data-acts', ''));
+    const reads = vi.spyOn(w.fake, 'surfaceActs');
+    reads.mockClear();
+    await act(async () => { expect((await w.fake.draw(w.a, w.pipe, dab(0.5))).ok).toBe(true); });
+    await waitFor(() => expect(screen.getByTestId(`wall-${w.a}`)).toHaveAttribute('data-acts', 'draw'));
+    expect(reads.mock.calls.map((c) => c[0])).toEqual([w.a]);
+    expect(screen.getByTestId(`wall-${w.b}`)).toHaveAttribute('data-acts', '');
+  });
+
+  test('a surface broadcast for a wall nobody asked to read moves its cells and reads nothing', async () => {
+    const w = walls();
+    openWalls(w);
+    await waitFor(() => expect(screen.getByTestId(`wall-${w.a}`)).toHaveAttribute('data-acts', ''));
+    const reads = vi.spyOn(w.fake, 'surfaceActs');
+    reads.mockClear();
+    await act(async () => { expect((await w.fake.draw(w.c, w.pipe, dab(0.5))).ok).toBe(true); });
+    await waitFor(() => expect(Number(screen.getByTestId(`wall-${w.c}`).getAttribute('data-covered'))).toBeGreaterThan(0));
+    expect(reads).not.toHaveBeenCalled();
+    expect(screen.getByTestId(`wall-${w.c}`)).toHaveAttribute('data-acts', 'unread');
   });
 });
 

@@ -61,6 +61,7 @@ Weighed: authored signature bundles alone; free composition alone.
   facts only:
   - `phase`: a phase has begun, or the season is within N days of its end;
   - `beatLanded`: an earlier beat's bundle has landed;
+    **Amended 2026-11-12, the owner's answer to design question #459:** a beat counts as landed when it has been played, every part of its bundle that was not held or refused has landed, and at least one part has landed; a beat with no bundle has landed once it is played.
   - `boardActivity`: a board's posts over the last N days are above or below a number, or above or below another
     board's; a board an earlier bundle made is named by its role ("the fangame board");
   - `moveReversed`: an admin reversed one of this Boss's moves;
