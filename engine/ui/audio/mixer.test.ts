@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it, mock } from 'node:test';
-import { createMixer } from './mixer.ts';
+import { createMixer, EDGE_MS } from './mixer.ts';
 import type { SoundSlot } from './types.ts';
 
 class FakeParam {
@@ -118,10 +118,10 @@ describe('mixer', () => {
     const src = ctx.sources[ctx.sources.length - 1]!;
     assert.equal(src.loop, true);
     m.setBus('game', { on: false, volume: 40 });
-    assert.equal(busGain.gain.value, 0);
+    assert.equal(busGain.gain.targets.at(-1)![0], 0);
     assert.notEqual(src.stoppedAt, undefined);
     m.setBus('game', { on: true, volume: 100 });
-    assert.equal(busGain.gain.value, 1);
+    assert.equal(busGain.gain.targets.at(-1)![0], 1);
   });
 
   it('5. a sound in a group fades the group current out; other groups and none overlap', async () => {
@@ -183,7 +183,7 @@ describe('mixer', () => {
     assert.ok(cancel > 1, 'cancelled after the fade-in was scheduled');
     assert.ok(log.indexOf('ramp 0 12.5') > cancel, 'fade-out ramps after the cancel');
     const newVoice = ctx.gains[2]!;
-    assert.deepEqual(newVoice.gain.log, ['set 0 10.5', 'ramp 1 12.5']);
+    assert.deepEqual(newVoice.gain.log.slice(0, 2), ['set 0 10.5', 'ramp 1 12.5']);
   });
 
   it('6b. a loop starts at gain 0, so it is silent until its owner raises it', async () => {
@@ -241,8 +241,8 @@ describe('mixer', () => {
     const v1 = ctx.gains[1]!;
     l1.stop(0);
     await m.play(boo, { group: 'g', fadeMs: 100 });
-    assert.equal(ctx.sources[0]!.stoppedAt, 10, 'the stopped loop is not stopped again by the group');
-    assert.equal(v1.gain.log.filter((l) => l.startsWith('ramp')).length, 1);
+    assert.ok(Math.abs(ctx.sources[0]!.stoppedAt! - 10.008) < 1e-9, 'the stopped loop is not stopped again by the group');
+    assert.equal(v1.gain.log.filter((l) => l.startsWith('ramp')).length, 1, 'a loop has no ramp in, so its one ramp is the ramp out');
     const l2 = (await m.loop(slot('build2', { loop: true }), { group: 'g' }))!;
     const v2 = ctx.gains[3]!;
     await m.play(cheer, { group: 'g', fadeMs: 100 });
@@ -276,5 +276,119 @@ describe('mixer', () => {
     c.stop(0);
     c.stop(0);
     assert.deepEqual(stops, ['a:bus', 'b:replaced', 'c:stopped']);
+  });
+
+  const near = (a: number, b: number) => Math.abs(a - b) < 1e-9;
+  /** The `[value, time]` pairs a param was told with `set` (setValueAtTime) and `ramp` (linearRampToValueAtTime). */
+  const marks = (g: FakeGain, kind: 'set' | 'ramp'): Array<[number, number]> => g.gain.log
+    .filter((l) => l.startsWith(`${kind} `)).map((l) => l.split(' ').slice(1).map(Number) as [number, number]);
+  const longer = (seconds: number) => { ctx.decodeAudioData = (async () => ({ duration: seconds })) as never; };
+  const EDGE = EDGE_MS / 1000;
+
+  it('14. a play in no group starts its voice at 0 and ramps to its level over EDGE_MS, never setting a level at the start', async () => {
+    const m = make();
+    await m.unlock();
+    m.setBus('game', { on: true, volume: 100 });
+    await m.play(boo);
+    const voice = ctx.gains[1]!;
+    assert.equal(EDGE_MS, 8);
+    assert.deepEqual(marks(voice, 'set')[0], [0, 10]);
+    const rampIn = marks(voice, 'ramp')[0]!;
+    assert.equal(rampIn[0], 1);
+    assert.ok(near(rampIn[1], 10 + EDGE));
+    assert.deepEqual(marks(voice, 'set').filter(([v, t]) => t === 10 && v !== 0), []);
+  });
+
+  it('15. a play with fadeMs 0 in a group ramps in over EDGE_MS, and the voice it replaces ramps out over EDGE_MS', async () => {
+    const m = make();
+    await m.unlock();
+    m.setBus('game', { on: true, volume: 100 });
+    await m.play(boo, { group: 'g', fadeMs: 0 });
+    const oldVoice = ctx.gains[1]!;
+    await m.play(cheer, { group: 'g', fadeMs: 0 });
+    const newVoice = ctx.gains[2]!;
+    assert.ok(near(marks(newVoice, 'ramp')[0]![1], 10 + EDGE), 'the new voice ramps in');
+    assert.ok(near(marks(oldVoice, 'ramp').at(-1)![1], 10 + EDGE), 'the old voice ramps out');
+    assert.equal(marks(oldVoice, 'ramp').at(-1)![0], 0);
+    assert.ok(near(ctx.sources[0]!.stoppedAt!, 10 + EDGE), 'and its source stops after the ramp, not at once');
+  });
+
+  it('16. a tail of 250ms of a 2-second buffer holds the level to 1.75s and ramps to 0 at 2s; a long, short or no tail is bounded', async () => {
+    const m = make();
+    await m.unlock();
+    m.setBus('game', { on: true, volume: 100 });
+    longer(2);
+    await m.play(boo, { tailMs: 250 });
+    const v1 = ctx.gains[1]!;
+    assert.ok(near(marks(v1, 'set').at(-1)![1], 11.75) && marks(v1, 'set').at(-1)![0] === 1);
+    assert.deepEqual(marks(v1, 'ramp').at(-1), [0, 12]);
+    await m.play(boo, { tailMs: 5000 });
+    const v2 = ctx.gains[2]!;
+    assert.ok(near(marks(v2, 'set').at(-1)![1], 10), 'a tail longer than the buffer starts at 0');
+    assert.deepEqual(marks(v2, 'ramp').at(-1), [0, 12]);
+    await m.play(boo, { tailMs: 2 });
+    await m.play(boo);
+    for (const v of [ctx.gains[3]!, ctx.gains[4]!]) {
+      assert.ok(near(marks(v, 'set').at(-1)![1], 12 - EDGE), 'a tail under EDGE_MS, or none, ramps over the last EDGE_MS');
+      assert.deepEqual(marks(v, 'ramp').at(-1), [0, 12]);
+    }
+  });
+
+  it('17. a voice replaced during its tail has the tail\'s ramp cancelled before its fade-out', async () => {
+    const m = make();
+    await m.unlock();
+    m.setBus('game', { on: true, volume: 100 });
+    await m.play(boo, { group: 'g', fadeMs: 100, tailMs: 500 });
+    const oldVoice = ctx.gains[1]!;
+    ctx.currentTime = 11.2;
+    await m.play(cheer, { group: 'g', fadeMs: 100 });
+    const log = oldVoice.gain.log;
+    const tailRamp = log.indexOf('ramp 0 11.5');
+    const cancel = log.indexOf('cancel 11.2');
+    assert.ok(tailRamp > -1 && cancel > tailRamp, 'cancelled after the tail was scheduled');
+    assert.ok(log.findIndex((l, i) => i > cancel && l.startsWith('ramp 0 ') && Math.abs(Number(l.split(' ')[2]) - 11.3) < 1e-9) > cancel, 'the fade-out ramps after the cancel');
+  });
+
+  it('18. a slot\'s gain multiplies its level, and a loop\'s setGain clamps the caller\'s 0 to 1 before it multiplies', async () => {
+    const m = make();
+    await m.unlock();
+    m.setBus('game', { on: true, volume: 100 });
+    await m.play(slot('quiet', { gain: 0.5 }));
+    assert.equal(marks(ctx.gains[1]!, 'ramp')[0]![0], 0.5);
+    const h = (await m.loop(slot('build', { loop: true, gain: 0.5 })))!;
+    h.setGain(0.4);
+    assert.ok(near(ctx.gains[2]!.gain.targets.at(-1)![0], 0.2));
+    const h4 = (await m.loop(slot('loud', { loop: true, gain: 4 })))!;
+    h4.setGain(1);
+    assert.equal(ctx.gains[3]!.gain.targets.at(-1)![0], 4);
+    h4.setGain(7);
+    assert.equal(ctx.gains[3]!.gain.targets.at(-1)![0], 4, 'the clamp is on the caller\'s value');
+  });
+
+  it('19. setBus on a bus whose node exists moves its gain with setTargetAtTime, never by setting value; the first busNode sets value', async () => {
+    const m = make();
+    await m.unlock();
+    m.setBus('game', { on: true, volume: 40 });
+    await m.play(boo);
+    const bus = ctx.gains[0]!;
+    assert.ok(near(bus.gain.value, 0.4), 'the first busNode sets value');
+    m.setBus('game', { on: true, volume: 80 });
+    assert.ok(near(bus.gain.value, 0.4), 'value is not set again');
+    assert.deepEqual(bus.gain.log.slice(-3), ['cancel 10', 'set 0.4 10', 'target 0.8 10']);
+    assert.equal(bus.gain.targets.at(-1)![2], 0.015);
+    m.setBus('game', { on: false, volume: 80 });
+    assert.equal(bus.gain.targets.at(-1)![0], 0);
+  });
+
+  it('20. a slot with no gain is gain 1, and a gain that is not a finite number above 0 is read as 1', async () => {
+    const m = make();
+    await m.unlock();
+    m.setBus('game', { on: true, volume: 100 });
+    let i = 1;
+    for (const g of [undefined, 0, -2, Number.NaN, Number.POSITIVE_INFINITY, '0.5' as unknown as number]) {
+      await m.play(slot(`s${i}`, g === undefined ? {} : { gain: g }));
+      assert.equal(marks(ctx.gains[i]!, 'ramp')[0]![0], 1, `gain ${String(g)}`);
+      i += 1;
+    }
   });
 });
