@@ -6,6 +6,9 @@ import type { Plays } from '../cards/plays.ts';
 import type { Mine } from '../reactions/mine.ts';
 import type { Tallies } from './tallies.ts';
 
+/** A reply a play in force draws under a post: the play and the reply as an Act. */
+export interface Under { readonly play: Id; readonly act: Act }
+
 export interface ThreadContext {
   readonly thread: Id;
   readonly perPage: number;
@@ -15,6 +18,8 @@ export interface ThreadContext {
   readonly mine: Mine;
   /** The card plays on the posts on screen, with what their effects keep (engine/ui/cards/plays.ts). */
   readonly plays: Plays;
+  /** The post a reply is drawn under, by the reply's id, or undefined for a post of the thread's own: what a card that replies reads to leave itself off a reply. Stable; a reply is drawn only after it is known. A thread drawn with none has no replies. */
+  readonly underOf?: (act: Id) => Id | undefined;
   /** Each post's latest visit, by the post's id, as the pages read carried it. */
   readonly visits?: ReadonlyMap<Id, Visit>;
   /** A character's name as the thread knows it, for a card tag's caster: "A character" where it could not be read, The System's for none. */
