@@ -561,9 +561,13 @@ describe('the plays on a post: their tallies, own reactions and spins, read with
   test('a live reaction that makes a later play the most drawn leaves the order as it was, and a reread of the page reorders it', async () => {
     const w = played(25);
     const tapped = tap(w.fake);
+    const page = vi.spyOn(w.fake, 'threadPage');
     open(w);
     await waitFor(() => expect(billed(2)).toHaveLength(2));
     expect(billed(2)).toEqual(['whoops:2', 'stick-around:1']);
+    /* The catch-up's read of the page bills the post again, so it is taken in before the reactions land: on a slow machine it came after them and read them. */
+    await waitFor(() => expect(page).toHaveBeenCalledTimes(2));
+    await act(async () => { await page.mock.results[1]!.value; });
     w.fake.seed.react(w.other, w.spritey, w.second, 'fire');
     w.fake.seed.react(w.other, w.spritey, w.second, 'tea');
     deliver(() => tapped().onTally?.(w.second, { fire: 1, tea: 1 }));
@@ -2290,5 +2294,8 @@ describe('where glitter lands in a thread', () => {
     const z = /z-index:\s*(\d+)/u.exec(rule![2]!);
     expect(z, 'with a z-index').not.toBeNull();
     expect(Number(z![1])).toBeGreaterThan(0);
+    /* Over the body's own level, which the body takes so a moment's glow covers the actions (and the postbit's gear is under it). */
+    const main = [...css.matchAll(/(?:^|\})\s*\.kb-act-main\s*\{([^}]*)\}/gu)].map((m) => /z-index:\s*(-?\d+)/u.exec(m[1]!)?.[1]).find((v) => v !== undefined);
+    expect(Number(z![1])).toBeGreaterThan(Number(main ?? 0));
   });
 });

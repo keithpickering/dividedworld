@@ -32,7 +32,7 @@ import { careerText, type Career } from './career.ts';
 import { MEETING_DEMAND_KINDS, demandKind, demandProblems } from './demands.ts';
 import { MEMORY_RULE, noteMost, recentNotes, repairMemory, type Memory } from './memory.ts';
 import { PREDICATES, readParam, ruleConflict, type RuleInForce } from '../rules/predicates.ts';
-import { ASKABLE_MOVE_KINDS, UUID, machineLimits, moveKind, moveParamsProblems, type MachineLimits } from './moves.ts';
+import { ASKABLE_MOVE_KINDS, UUID, machineLimits, moveKind, moveParamsProblems, type MachineLimits, type TrophyFacts } from './moves.ts';
 import type { PhaseAt } from './phases.ts';
 import { repair, type Repaired, type Rule, type Trim } from './validate.ts';
 
@@ -326,6 +326,10 @@ export function meetingSystemPrompt(f: PromptFacts): string {
       ...demands,
       `Use only the ids you are given below for boards, threads and characters. A count is a whole number of at least 1. A reaction threshold (a quadrant's count, a crossQuote's reactions) is at least ${s.reactionCap + 1}.`,
     ].join('\n'),
+    [
+      'Trophies. Your awardTrophy move gives one character one of the trophies listed under "Trophies you may give" below, by its key, to a character by id. A trophy stays with the character; an admin can take it back.',
+      'It is a favor: it carries no demand (give the demand an empty kind; one with a kind is dropped). A trophy that is not a belt goes to a character at most once a season. A belt has one holder at a time and passes from the holder to the one you name, never to its holder. Never to a staff character or a retired one. A move you make this way costs one from your bank like any other.',
+    ].join('\n'),
     ...groupsText(f.groups?.conferred ?? []),
     `Board names. ${f.system.nameStyleBrief} A renameBoard name is at most ${s.boardNameMaxLength} characters; its premise is a sentence saying what the board is now for. A name that is not in the style is dropped, not corrected. A renameBoard description is your own words, in character: the board's subtitle under its new name, a sentence or two.`,
     [
@@ -463,10 +467,12 @@ export interface ReferenceIds {
   readonly characters: readonly { readonly id: string; readonly name: string; readonly pronouns: PronounSet; /** The name of the group it is in now (`character_groups`), when known. */ readonly group?: string }[];
   /** The machine's slots, in grid order; left out where the database does not hold a machine. */
   readonly machine?: readonly MachineSlotFacts[];
+  /** The Boss's trophies (`boss_trophies()`), each belt with its holder now; left out where the database holds none. */
+  readonly trophies?: TrophyFacts;
 }
 
 /** How many of each id the meeting hands the model: the lists are bounded here, whatever the instance holds. */
-export const REFERENCE_MOST = { boards: 50, threads: 25, characters: 80, machine: 60 } as const;
+export const REFERENCE_MOST = { boards: 50, threads: 25, characters: 80, machine: 60, trophies: 40 } as const;
 
 const orbs = (hundredths: number): string => (hundredths / 100).toFixed(2);
 const AVAILABILITY_WORDS = { onSale: 'on sale', soldOut: 'sold out', hidden: 'hidden' } as const;
@@ -489,6 +495,14 @@ export function referenceText(ids: ReferenceIds): string {
           ...ids.machine.slice(0, REFERENCE_MOST.machine).map(
             (x) => `- ${oneLine(x.card ?? x.pack ?? 'a slot', 64)} (${x.card === null ? 'pack' : 'card'}), ${orbs(x.price)}, ${AVAILABILITY_WORDS[x.availability]}${x.pullable ? ', can be pulled' : ''}${x.move ? `, your ${oneLine(x.move.kind, 20)} in force` : ''}: ${x.id}`,
           ),
+        ]
+      : []),
+    ...(ids.trophies && ids.trophies.boss.length
+      ? [
+          '',
+          '## Trophies you may give',
+          'By key, with its name. A belt is held by one character at a time; giving it takes it from the holder.',
+          ...ids.trophies.boss.slice(0, REFERENCE_MOST.trophies).map((t) => `- ${oneLine(t.key, 60)}: ${oneLine(t.name, 60)}${t.belt ? ` (a belt, ${t.holderName ? `held by ${oneLine(t.holderName, 64)}` : 'held by no one'})` : ''}`),
         ]
       : []),
   ].join('\n');
@@ -569,6 +583,8 @@ export interface RepairContext {
   readonly inheritable?: ReadonlySet<string>;
   /** The machine's slots (`meeting_context().machine`). Omitted, no slot can be named, so a machine move is dropped. */
   readonly machine?: readonly MachineSlotFacts[];
+  /** The Boss's trophies and what stands (`boss_trophies()`, `trophy_award_facts`). Omitted, no trophy is on a list, so an award is dropped. */
+  readonly trophies?: TrophyFacts;
 }
 
 /** An order to one Mod, repaired: boards that are boards and its own, an allowance within what it may hold and the bank pays. */
@@ -630,7 +646,7 @@ export function namedCharacters(raw: unknown): string[] {
       for (const [name, role] of Object.entries(DEMAND_ID_ROLES)) if (role === 'character' && typeof params[name] === 'string') ids.add(params[name] as string);
       // A group move's character is checked as public too.
       const named = record(record(m)['params'])['character'];
-      if (record(m)['kind'] === 'conferGroup' && typeof named === 'string') ids.add(named);
+      if ((record(m)['kind'] === 'conferGroup' || record(m)['kind'] === 'awardTrophy') && typeof named === 'string') ids.add(named);
     }
   }
   return [...ids].filter((id) => UUID.test(id)).map((id) => id.toLowerCase());
@@ -739,6 +755,9 @@ export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
   const moved = new Set((c.machine ?? []).filter((x) => x.move !== null).map((x) => x.id));
   let pulls = (c.machine ?? []).filter((x) => x.move?.kind === 'pullSlot').length;
   let flashing = (c.machine ?? []).some((x) => x.move?.kind === 'flashSale');
+  // The Boss's trophies: what stands, and what this answer has already given, so one answer never gives a trophy twice or a belt to its holder.
+  const heldNow = new Map((c.trophies?.boss ?? []).map((t) => [t.key, t.holder]));
+  const givenNow = new Set(c.trophies?.given ?? []);
   const kept: PlannedMove[] = [];
   const grouped = new Set<string>();
   ((a['moves'] ?? []) as Record<string, unknown>[]).forEach((m, i) => {
@@ -779,7 +798,10 @@ export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
       const read = readParam(offered['predicate'], record(m['params'])['param']);
       if (read.trim) { offered['param'] = read.value; clamps.push(read.trim); }
     }
-    const params = moveParamsProblems(kind.key, blank ? { ...offered, description: '-' } : offered, limits);
+    const trophyLimits: MachineLimits = c.trophies
+      ? { ...limits, trophies: { ...c.trophies, boss: c.trophies.boss.map((t) => ({ ...t, holder: heldNow.get(t.key) ?? null })), given: givenNow } }
+      : limits;
+    const params = moveParamsProblems(kind.key, blank ? { ...offered, description: '-' } : offered, trophyLimits);
     const given = params.ok ? { ...(params.value as Record<string, unknown>) } : {};
     if (blank) delete given['description'];
     // A slot id in capitals is the same slot (moveParamsProblems lowercases it, as Postgres writes uuids): the lookup uses the lowercase, and the change is recorded.
@@ -835,6 +857,8 @@ export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
       if (bad) return drop(`${path}.demand.params.${name}`, bad);
     }
     if (!params.ok) return drop(`${path}.params.${params.path}`, params.predicate);
+    // A trophy goes to a character that is public now. The list, the season and the holder were held by the params above.
+    if (kind.key === 'awardTrophy' && !c.isPublic(String(given['character']))) return drop(`${path}.params.character`, 'publicCharacter');
     if (kind.key === 'renameBoard') {
       const name = String(given['name']);
       const style = c.system.nameStyle(name);
@@ -892,6 +916,11 @@ export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
       }
     }
     if (kind.key === 'conferGroup') grouped.add(String(given['character']));
+    if (kind.key === 'awardTrophy') {
+      const key = String(given['trophy']);
+      if (c.trophies?.boss.find((t) => t.key === key)?.belt) heldNow.set(key, String(given['character']));
+      else givenNow.add(`${key}:${String(given['character'])}`);
+    }
     if (machineKind) {
       moved.add(String(given['slot']));
       if (kind.key === 'pullSlot') pulls++;

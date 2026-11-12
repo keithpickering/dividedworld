@@ -14,6 +14,7 @@ import { quadrantLabels } from './quadrant-labels.ts';
 import { cards as instanceCards } from '../cards/index.ts';
 import { packsUi } from './packs.ts';
 import { sounds } from './sounds.ts';
+import { gearUi, trophiesUi } from './cosmetics.ts';
 import theme from './theme.css?url';
 import themePreview from './theme.css?preview';
 import blueSteel from './themes/blue-steel.css?url';
@@ -183,6 +184,8 @@ export const instanceUi: InstanceUi = Object.freeze({
   packs: packsUi,
   /* The laugh track: the audience's sounds, each with its caption (sounds.ts). */
   sounds,
+  gear: gearUi,
+  trophies: trophiesUi,
   /* The back of a card wears the favicon's coin (the owner's word, 2026-11-07). */
   /* The back's picture holds the coin, raised and glowing; the mark is still given, for a back drawn without it. */
   cardBack: { mark: coinUrl, canvas: cardBackCanvas },

@@ -1,0 +1,250 @@
+/*
+ * The trophies admin page (Trophies.tsx; board 05 of docs/research/2026-11-04-cosmetics/): the lead, the admin pages' strip, then the sections in two columns on a wide
+ * page and one on a phone. Every color is a glass token; sizes are the glass's own.
+ */
+.kb-trophies {
+  padding-top: 32px;
+  padding-bottom: 40px;
+}
+
+.kb-trophies-lead {
+  max-width: 900px;
+  margin: 8px 0 0;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-trophies-note {
+  margin: 8px 0 0;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-trophies-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 28px;
+  margin-top: 34px;
+  align-items: start;
+}
+
+.kb-trophies-wide {
+  grid-column: 1 / -1;
+}
+
+.kb-trophies-panel {
+  min-width: 0;
+}
+
+/* Two columns, as the board draws them: Award and Grant down the left, Make and Recent down the right, each column its own height. */
+.kb-trophies-col {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  min-width: 0;
+}
+
+.kb-trophies-head {
+  margin: 0 0 14px;
+  /* The board's base sets every h2 in its mono (engine/ui/base.css); a glass heading names the glass's family, as the queue's do. */
+  font-family: var(--kb-glass-font-body);
+  font-size: var(--kb-glass-size-body);
+  font-weight: 800;
+  letter-spacing: 2.5px;
+  text-transform: uppercase;
+  color: var(--kb-glass-neon-text);
+}
+
+.kb-trophies-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 14px;
+}
+
+/* Grant gear's item, character and copies stand in one row, as the board draws them. */
+.kb-trophies-grant {
+  grid-template-columns: 2fr 2fr 1fr;
+}
+
+.kb-trophies-pair {
+  min-width: 0;
+}
+
+.kb-trophies-label {
+  display: block;
+  margin: 12px 0 6px;
+  font-size: var(--kb-glass-size-label);
+  font-weight: 800;
+  letter-spacing: 2px;
+  color: var(--kb-glass-text);
+}
+
+.kb-trophies-field {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 52px;
+  padding: 0 14px;
+  border: 1px solid var(--kb-glass-neon);
+  background: var(--kb-glass-field);
+  color: var(--kb-glass-text-hi);
+  font-family: var(--kb-glass-font-body);
+  font-size: var(--kb-glass-size-body);
+  font-weight: 700;
+}
+
+input[type='file'].kb-trophies-field {
+  padding-block: 12px;
+}
+
+.kb-trophies-field:focus-visible {
+  outline: 3px solid var(--kb-glass-text-hi);
+  outline-offset: 2px;
+}
+
+.kb-trophies-short {
+  width: 100%;
+  text-align: left;
+}
+
+.kb-trophies-panel .kb-button-row {
+  margin-top: 18px;
+}
+
+.kb-trophies-status:not(:empty),
+.kb-trophies-problem {
+  margin: 14px 0 0;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 600;
+  color: var(--kb-glass-text);
+}
+
+.kb-trophies-problem {
+  padding-left: 14px;
+  border-left: 3px solid var(--kb-glass-loss);
+}
+
+.kb-trophies-table {
+  width: 100%;
+  border-collapse: collapse;
+  color: var(--kb-glass-text);
+}
+
+.kb-trophies-table thead th {
+  padding-bottom: 12px;
+  text-align: left;
+  font-size: var(--kb-glass-size-label);
+  font-weight: 800;
+  letter-spacing: 2.5px;
+  text-transform: uppercase;
+  color: var(--kb-glass-neon-text);
+}
+
+.kb-trophies-table tbody tr {
+  border-top: 1px solid color-mix(in srgb, var(--kb-glass-text) 14%, transparent);
+}
+
+.kb-trophies-table td,
+.kb-trophies-table tbody th {
+  padding: 8px 12px 8px 0;
+  text-align: left;
+  vertical-align: middle;
+  font-size: var(--kb-glass-size-body);
+}
+
+.kb-trophies-table tbody th {
+  font-weight: 700;
+}
+
+.kb-trophies-art {
+  width: 3.5rem;
+}
+
+.kb-trophies-art img {
+  display: block;
+  max-width: 3rem;
+  max-height: 3rem;
+  image-rendering: pixelated;
+}
+
+.kb-trophies-sub {
+  display: block;
+  font-size: var(--kb-glass-size-label);
+  font-weight: 500;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-trophies-taken {
+  font-style: italic;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-trophies-taken:focus {
+  outline: none;
+}
+
+.kb-trophies-hide {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.kb-trophies-failures {
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.kb-trophies-failures li {
+  padding: 12px 0;
+  border-top: 1px solid color-mix(in srgb, var(--kb-glass-text) 14%, transparent);
+}
+
+.kb-trophies-what {
+  margin: 0;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 700;
+  color: var(--kb-glass-text);
+}
+
+/* A phone: one column, and each award is a plate of its own. */
+:where(:root[data-kb-layout='phone']) .kb-trophies-row {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-trophies-grid,
+:where(:root[data-kb-layout='phone']) .kb-trophies-col {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-trophies-table thead {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-trophies-table,
+:where(:root[data-kb-layout='phone']) .kb-trophies-table tbody {
+  display: block;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-trophies-table tbody tr {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  align-items: center;
+  padding: 10px 0;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-trophies-table td,
+:where(:root[data-kb-layout='phone']) .kb-trophies-table tbody th {
+  padding: 0;
+}

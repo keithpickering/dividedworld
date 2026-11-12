@@ -25,7 +25,12 @@ afterEach(() => { vi.restoreAllMocks(); });
 
 const at = (day: number, hour = 12) => Date.UTC(2026, 9, day, hour);
 
-function world() {
+/**
+ * `places` gives Season 1's four places in the order Spritey, Gloomba, Mrs. Hooligan, Pipewrench; by default 1, 2, 3, 4. A null place is a mask that
+ * finished at 0 or below, unplaced (#492), and stands at 0 (Pipewrench at -50).
+ */
+function world(places: readonly [number | null, number | null, number | null, number | null] = [1, 2, 3, 4]) {
+  const unplacedAt = (i: number, standing: number) => (places[i] === null ? (i === 3 ? -50 : 0) : standing);
   const fake = buildWorld();
   const { seed } = fake;
   const me = seed.account('me');
@@ -44,10 +49,10 @@ function world() {
   seed.season({ number: 1, startsAt: new Date(at(1)).toISOString(), endsAt: new Date(at(28)).toISOString() });
   /* Season 1's results are rows, not Acts: the final table as it stood. */
   seed.seasonResults(1, [
-    { character: spritey, place: 1, standing: 985, shown: [{ kind: 'reveal', act: said.act, at: new Date(at(3, 13)).toISOString(), class: 'face', was: null }] },
-    { character: gloomba, place: 2, standing: 840 },
-    { character: mrs, place: 3, standing: 795 },
-    { character: pipe, place: 4, standing: 100 },
+    { character: spritey, place: places[0], standing: unplacedAt(0, 985), shown: [{ kind: 'reveal', act: said.act, at: new Date(at(3, 13)).toISOString(), class: 'face', was: null }] },
+    { character: gloomba, place: places[1], standing: unplacedAt(1, places[1] === places[0] ? 985 : 840) },
+    { character: mrs, place: places[2], standing: unplacedAt(2, 795) },
+    { character: pipe, place: places[3], standing: unplacedAt(3, 100) },
   ], { at: at(28) });
   /* Season 1's Promos: a debut, then a Turn announced with its old class. */
   seed.announce(thwomp, 'debut', { at: at(26, 8) });
@@ -265,6 +270,35 @@ describe('the News tab', () => {
     expect(within(item).queryByText('Pipewrench')).toBeNull();
     expect(within(podium[0]!).getByRole('link', { name: 'Spritey' })).toHaveAttribute('href', `/c/${w.spritey}`);
     expect(within(item).getByRole('link', { name: 'All 4 characters and their standings' })).toHaveAttribute('href', '/season?tab=rankings&season=1');
+  });
+
+  test('each of the top three is named by its place, so a tie at first is two Firsts and the next a Second (dense places, #453)', async () => {
+    const w = world([1, 1, 2, 3]);
+    show(w.fake);
+    const item = await waitFor(() => itemOf('Season 1 results'));
+    const places = within(item).getAllByRole('listitem').map((li) => li.querySelector('.kb-season-place')?.textContent);
+    expect(places).toEqual(['First', 'First', 'Second']);
+  });
+
+  test('the podium is the placed masks alone: one above zero and the rest at 0 or below is one First and nothing more (#492)', async () => {
+    const w = world([1, null, null, null]);
+    show(w.fake);
+    const item = await waitFor(() => itemOf('Season 1 results'));
+    const podium = within(item).getAllByRole('listitem');
+    expect(podium).toHaveLength(1);
+    expect(podium[0]).toHaveTextContent('First');
+    expect(podium[0]).toHaveTextContent('Spritey');
+    expect(within(item).queryByText('Gloomba')).toBeNull();
+    expect(within(item).queryByText(/Second|Third/u)).toBeNull();
+    expect(within(item).getByRole('link', { name: 'All 4 characters and their standings' })).toBeInTheDocument();
+  });
+
+  test('a season where no mask finished above 0 says that none took a place, and draws no podium (#492)', async () => {
+    const w = world([null, null, null, null]);
+    show(w.fake);
+    const item = await waitFor(() => itemOf('Season 1 results'));
+    expect(within(item).queryAllByRole('listitem')).toHaveLength(0);
+    expect(within(item).getByText('No character finished above 0 Aura, so none took a place.')).toBeInTheDocument();
   });
 
   test('the player\'s own characters are marked yours, by the screen, in the results and in the Turns', async () => {

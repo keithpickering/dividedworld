@@ -25,7 +25,10 @@ jobs:
   build:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # A limit that ends a hang, with room over a slow runner's build. At 15 minutes a build of 14 in which every test
+    # passed was cancelled (issue #495): the runner's four CPUs do about two CPUs' work, and npm run test:ui is most of
+    # the build. The same limit as the e2e shards (web.yml).
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with: { ref: '${{ inputs.ref }}' }

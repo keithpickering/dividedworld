@@ -44,6 +44,7 @@ import { useBoot } from '../boot.tsx';
 import { isSignedOutDoc, type ScreenDoc } from '../screen-docs.ts';
 import { FrontDoor } from '../front-door/FrontDoor.tsx';
 import { motionReduced } from '../appearance.ts';
+import { RandomEvent } from '../events/RandomEvent.tsx';
 import { usePlayer } from '../player.tsx';
 import { landPage } from '../shine/landing.ts';
 import { PresenceBox } from '../presence/PresenceBox.tsx';
@@ -757,6 +758,7 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
 
   return (
     <div className="kb-thread" data-kb-thread={thread} data-kb-known={feed.knownLast} aria-busy={busy || undefined}>
+      <RandomEvent />
       <p className="kb-crumb"><Link to="/">Index</Link> › {crumbBoard && <><Link to={`/b/${crumbBoard.slug}`}>{crumbBoard.name}</Link> › </>}{summary.title}</p>
       <ActIndex.Provider value={index}>
         <ThreadCtx.Provider value={context}>
