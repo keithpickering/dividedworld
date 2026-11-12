@@ -234,3 +234,11 @@ test('a session the database does not take is refused at whoami(), with nothing 
     assert.deepEqual(w.order.filter((o) => o.startsWith('put') || (o.startsWith('remove') && o !== 'remove ')), [], `${name}: the bucket is not touched`);
   }
 });
+
+test('a barred account is answered 403 with the hint, and the files its upload stored are removed first, so no orphan is left', async () => {
+  const w = world({ whoami: me, set_avatar: new DatabaseError('set_avatar: this account is banned', '28000', 401, 'this account is banned', 'kayfabb.barred') });
+  const out = await runAvatar(w.dbs, w.storage, request(), w.name);
+  assert.deepEqual(out, { status: 403, body: { error: 'this account is banned', hint: 'kayfabb.barred' } });
+  assert.equal(w.stored.size, 0, 'the stored files are removed before the barred answer');
+  assert.ok(w.order.some((o) => o.startsWith('remove ')), 'removal ran');
+});

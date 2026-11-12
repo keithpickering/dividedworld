@@ -21,10 +21,12 @@ type Props = {
   readonly registering: boolean;
   readonly onAside: () => void;
   readonly onRefused: (sentence: string) => void;
+  /** Auth refused the link because the login is barred: the screen shows the bar, plainly, as it does after a code. */
+  readonly onBarred: (bar: { readonly until: string | null | undefined }) => void;
 };
 type Phase = 'ready' | 'done';
 
-export function LinkPanel({ tokenHash, signedIn = false, registering, onAside, onRefused }: Props) {
+export function LinkPanel({ tokenHash, signedIn = false, registering, onAside, onRefused, onBarred }: Props) {
   const { api } = useKayfa();
   const session = useSession();
   const hand = useLinkHand();
@@ -63,6 +65,7 @@ export function LinkPanel({ tokenHash, signedIn = false, registering, onAside, o
     try {
       const r = await api.verifyLink(tokenHash);
       if (!r.ok) { markPressed(false); onRefused(r.error); return; }
+      if (r.value.barred) { markPressed(false); onBarred(r.value.barred); return; }
       if (!r.value.account) { markPressed(false); setWhy(r.value.why ?? null); onAside(); return; }
       setAddress(null);
       setUnread(false);

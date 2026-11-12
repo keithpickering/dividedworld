@@ -739,6 +739,24 @@ insert into poisons (key, value) values
   ('apology', '[]'),
   ('apology', 'null'),
   ('apology', '{}'),
+  ('conduct', '{"openReportsMost": 0, "adminAddress": null}'),
+  ('conduct', '{"openReportsMost": 1.5, "adminAddress": null}'),
+  ('conduct', '{"openReportsMost": "3", "adminAddress": null}'),
+  ('conduct', '{"openReportsMost": null, "adminAddress": null}'),
+  ('conduct', '{"openReportsMost": true, "adminAddress": null}'),
+  ('conduct', '{"openReportsMost": -1, "adminAddress": null}'),
+  ('conduct', '{"openReportsMost": 9007199254740992, "adminAddress": null}'),
+  ('conduct', '{"adminAddress": null}'),
+  ('conduct', '{"openReportsMost": 3, "adminAddress": ""}'),
+  ('conduct', '{"openReportsMost": 3, "adminAddress": "admin"}'),
+  ('conduct', '{"openReportsMost": 3, "adminAddress": 3}'),
+  ('conduct', '{"openReportsMost": 3, "adminAddress": true}'),
+  ('conduct', '{"openReportsMost": 3}'),
+  ('conduct', '{"openReportsMost": 3, "adminAddress": null, "other": 1}'),
+  ('conduct', '"x"'),
+  ('conduct', '[]'),
+  ('conduct', 'null'),
+  ('conduct', '{}'),
   ('cosmetics', '{"gear": {"wornMost": 0, "reach": 0.4}, "trophies": {"shownMost": 3}, "events": {"windowMinutes": 15, "dayMost": 4, "outcomes": {"line": 70, "gear": 20, "card": 10}, "gearRarity": {"common": 80, "uncommon": 17, "rare": 3}, "cardRarity": {"common": 80, "uncommon": 17, "rare": 3}}}'),
   ('cosmetics', '{"gear": {"wornMost": 1.5, "reach": 0.4}, "trophies": {"shownMost": 3}, "events": {"windowMinutes": 15, "dayMost": 4, "outcomes": {"line": 70, "gear": 20, "card": 10}, "gearRarity": {"common": 80, "uncommon": 17, "rare": 3}, "cardRarity": {"common": 80, "uncommon": 17, "rare": 3}}}'),
   ('cosmetics', '{"gear": {"wornMost": "12", "reach": 0.4}, "trophies": {"shownMost": 3}, "events": {"windowMinutes": 15, "dayMost": 4, "outcomes": {"line": 70, "gear": 20, "card": 10}, "gearRarity": {"common": 80, "uncommon": 17, "rare": 3}, "cardRarity": {"common": 80, "uncommon": 17, "rare": 3}}}'),
@@ -957,6 +975,9 @@ insert into goods (key, value) values
   ('apology', '{"apologyEveryHours": 24, "apologyJudgeBatch": 10, "apologyRulingMaxWords": 80}'),
   ('apology', '{"apologyEveryHours": 1, "apologyJudgeBatch": 1, "apologyRulingMaxWords": 1}'),
   ('apology', '{"apologyEveryHours": 9007199254740991, "apologyJudgeBatch": 10, "apologyRulingMaxWords": 80}'),
+  ('conduct', '{"openReportsMost": 3, "adminAddress": null}'),
+  ('conduct', '{"openReportsMost": 1, "adminAddress": "admins@dw.gripe"}'),
+  ('conduct', '{"openReportsMost": 9007199254740991, "adminAddress": "@"}'),
   ('cosmetics', '{"gear": {"wornMost": 12, "reach": 0.4}, "trophies": {"shownMost": 3}, "events": {"windowMinutes": 15, "dayMost": 4, "outcomes": {"line": 70, "gear": 20, "card": 10}, "gearRarity": {"common": 80, "uncommon": 17, "rare": 3}, "cardRarity": {"common": 80, "uncommon": 17, "rare": 3}}}'),
   ('cosmetics', '{"gear": {"wornMost": 1, "reach": 0}, "trophies": {"shownMost": 1}, "events": {"windowMinutes": 1, "dayMost": 1, "outcomes": {"line": 1, "gear": 1, "card": 1}, "gearRarity": {"legendary": 1}, "cardRarity": {"legendary": 1}}}'),
   ('cosmetics', '{"gear": {"wornMost": 12, "reach": 2}, "trophies": {"shownMost": 3}, "events": {"windowMinutes": 1440, "dayMost": 4, "outcomes": {"line": 9007199254740991, "gear": 1, "card": 1, "none": 0}, "gearRarity": {"common": 1, "uncommon": 1, "rare": 1, "legendary": 1}, "cardRarity": {"common": 80, "uncommon": 17, "rare": 3}}}'),
@@ -1012,6 +1033,26 @@ begin
     raise exception 'an insert of presenceNames = 0 was not refused';
   exception when check_violation then null;
   end;
+
+  -- The two settings the seed writes beside `conduct` (0340) are outside SETTINGS and held all the same: engine/rules/settings-held.test.ts reads only
+  -- the two lists above, so theirs are here.
+  for r in select * from (values ('conductVersion', '1'), ('conductVersion', '3'), ('conductSections', '[]'), ('conductSections', '["mask", "hate"]')) g(key, value) loop
+    insert into settings (key, value) values (r.key, r.value::jsonb) on conflict (key) do update set value = excluded.value;
+  end loop;
+  for r in select * from (values
+    ('conductVersion', '0'), ('conductVersion', '1.5'), ('conductVersion', '"1"'), ('conductVersion', 'null'), ('conductVersion', 'true'), ('conductVersion', '-1'),
+    ('conductVersion', '9007199254740992'),
+    ('conductSections', '"mask"'), ('conductSections', 'null'), ('conductSections', '{}'), ('conductSections', '[1]'), ('conductSections', '[""]'),
+    ('conductSections', '[" "]'), ('conductSections', '["a", null]'), ('conductSections', '[["a"]]')) p(key, value) loop
+    refused := false;
+    begin
+      update settings set value = r.value::jsonb where key = r.key;
+    exception when check_violation then
+      refused := true;
+      if sqlerrm not like r.key || '%' then raise exception '% = % was refused without naming its key: %', r.key, r.value, sqlerrm; end if;
+    end;
+    if not refused then raise exception '% = % was not refused with 23514', r.key, r.value; end if;
+  end loop;
 
   -- A key outside SETTINGS is no business of the hold, whatever it holds.
   insert into settings (key, value) values ('notASetting', 'null');

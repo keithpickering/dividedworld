@@ -20,6 +20,12 @@ function world(mode: 'open' | 'invite' | 'closed' = 'invite') {
 const open = (w: ReturnType<typeof world>, mode: 'sign-in' | 'register', path = mode === 'register' ? '/register' : '/sign-in', registrationMode?: 'open' | 'invite' | 'closed') =>
   renderIn(w.fake, <SignInScreen mode={mode} />, { path, settings: registrationMode ? { registrationMode } : undefined });
 
+/** Checks both boxes Register asks for: that the player is 18 or older, and that they agree to the code of conduct. */
+const agree = async () => {
+  await userEvent.click(await screen.findByRole('checkbox', { name: /18 or older/u }));
+  await userEvent.click(screen.getByRole('checkbox', { name: /agree to the code of conduct/u }));
+};
+
 const ask = async (email: string) => {
   await userEvent.type(await screen.findByLabelText('Email address'), email);
   await userEvent.click(screen.getByRole('button', { name: 'Send a code' }));
@@ -256,7 +262,7 @@ describe('Sign in', () => {
     const w = world();
     w.fake.requestCode = async () => ({ ok: false, error: 'is too long', field: 'invite' });
     open(w, 'register', '/register?invite=x');
-    await userEvent.click(await screen.findByRole('checkbox', { name: /18 or older/u }));
+    await agree();
     await ask('new@example.test');
     const alert = await screen.findByRole('alert');
     const invite = screen.getByLabelText('Invite');
@@ -333,7 +339,7 @@ describe('Register, the same for every address', () => {
     const run = async (email: string) => {
       const w = world();
       const r = open(w, 'register', '/register?invite=wrong');
-      await userEvent.click(await screen.findByRole('checkbox', { name: /18 or older/u }));
+      await agree();
       await ask(email);
       await userEvent.type(await screen.findByLabelText('Code from the email'), '000000{Enter}');
       await screen.findByRole('alert');
@@ -358,7 +364,59 @@ describe('Register', () => {
     expect(screen.queryByLabelText('Code from the email')).toBeNull();
     await userEvent.click(box);
     await userEvent.click(screen.getByRole('button', { name: 'Send a code' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Check the box to agree to the code of conduct; then ask for a code.');
+    expect(screen.queryByLabelText('Code from the email')).toBeNull();
+    await userEvent.click(screen.getByRole('checkbox', { name: /agree to the code of conduct/u }));
+    await userEvent.click(screen.getByRole('button', { name: 'Send a code' }));
     expect(await screen.findByLabelText('Code from the email')).toBeInTheDocument();
+  });
+
+  test('the code of conduct is a box of its own, linked to /conduct, and its refusal is tied to it', async () => {
+    const w = world();
+    const requested = vi.spyOn(w.fake, 'requestCode');
+    open(w, 'register', '/register?invite=abc123');
+    const box = await screen.findByRole('checkbox', { name: "I've read and agree to the code of conduct." });
+    expect(box).not.toBeChecked();
+    const link = screen.getByRole('link', { name: 'code of conduct' });
+    expect(link).toHaveAttribute('href', '/conduct');
+    expect(box.closest('label')).toContainElement(link);
+    /* With the 18+ box checked and this one not, the account cannot be asked for. */
+    await userEvent.click(screen.getByRole('checkbox', { name: /18 or older/u }));
+    await ask('new@example.test');
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Check the box to agree to the code of conduct; then ask for a code.');
+    expect(box).toHaveAttribute('aria-invalid', 'true');
+    expect(box.getAttribute('aria-describedby')).toBe(alert.id);
+    expect(requested).not.toHaveBeenCalled();
+    /* With it checked, it can. */
+    await userEvent.click(box);
+    await userEvent.click(screen.getByRole('button', { name: 'Send a code' }));
+    expect(await screen.findByLabelText('Code from the email')).toBeInTheDocument();
+    expect(requested).toHaveBeenCalledTimes(1);
+  });
+
+  test('registering sends the version of the code the box agreed to; signing in sends none', async () => {
+    const w = world();
+    const requested = vi.spyOn(w.fake, 'requestCode');
+    open(w, 'register', '/register?invite=abc123');
+    await agree();
+    await ask('new@example.test');
+    await screen.findByLabelText('Code from the email');
+    expect(requested).toHaveBeenCalledTimes(1);
+    expect(requested.mock.calls[0]![3]).toBeGreaterThanOrEqual(1);
+    cleanup();
+    const w2 = world();
+    const signing = vi.spyOn(w2.fake, 'requestCode');
+    open(w2, 'sign-in');
+    await ask('someone@example.test');
+    await screen.findByLabelText('Code from the email');
+    expect(signing.mock.calls[0]![3] ?? null).toBeNull();
+  });
+
+  test('Sign in asks for no agreement: the code of conduct box is Register\'s alone', async () => {
+    open(world(), 'sign-in', '/sign-in');
+    await screen.findByLabelText('Email address');
+    expect(screen.queryByRole('checkbox', { name: /code of conduct/u })).toBeNull();
   });
 
   test('has no invite field while registration is open', async () => {
@@ -372,7 +430,7 @@ describe('Register', () => {
     const code = (await (async () => { w.fake.signInAs(w.known); const r = await w.fake.createInvite(); w.fake.signInAs(null); return r; })());
     if (!code.ok) throw new Error('seed');
     open(w, 'register', `/register?invite=${code.value.code}`);
-    await userEvent.click(await screen.findByRole('checkbox', { name: /18 or older/u }));
+    await agree();
     await ask('new@example.test');
     await userEvent.type(await screen.findByLabelText('Code from the email'), `${TEST_CODE}{Enter}`);
     await waitFor(async () => expect((await w.fake.session()).account).not.toBeNull());
@@ -382,7 +440,7 @@ describe('Register', () => {
   test('an invite that opens nothing is said plainly, and the way on is another invite after the code', async () => {
     const w = world();
     open(w, 'register', '/register?invite=wrong');
-    await userEvent.click(await screen.findByRole('checkbox', { name: /18 or older/u }));
+    await agree();
     await ask('new@example.test');
     expect(await screen.findByText("that invite opens nothing, so no new login is made with it")).toBeInTheDocument();
     await userEvent.type(await screen.findByLabelText('Code from the email'), `${TEST_CODE}{Enter}`);
@@ -423,9 +481,29 @@ describe('Register', () => {
     await w.fake.requestCode('linked@example.test', null, null);
     await w.fake.verifyCode('linked@example.test', TEST_CODE);
     expect((await w.fake.session()).account).toBeNull();
+    const opening = vi.spyOn(w.fake, 'openAccount');
     open(w, 'sign-in');
     await userEvent.type(await screen.findByLabelText('Invite'), `${made.value.code}{Enter}`);
     await waitFor(async () => expect((await w.fake.session()).account).not.toBeNull());
+    /* This path shows no code of conduct, so it agrees to none: only the invite is sent, and the Accept gate asks the player. */
+    expect(opening.mock.calls[0]).toEqual([made.value.code]);
+  });
+});
+
+describe('A barred login that gives the right code', () => {
+  test('is told plainly it is barred, while signed out, with the way to reach a person; the screen asked for a code the same as for any address', async () => {
+    const w = world();
+    w.fake.seed.bar(w.known, Date.parse('2099-11-12T23:30:00Z'));
+    open(w, 'sign-in');
+    await ask('known@example.test');
+    await userEvent.type(await screen.findByLabelText('Code from the email'), `${TEST_CODE}{Enter}`);
+    expect(await screen.findByRole('heading', { name: 'This account is suspended' })).toBeInTheDocument();
+    expect(screen.getByText('This account is suspended until November 12, 2099 at 23:30 UTC. An admin may have emailed you the details. To appeal, reply to that email, or reach a person through Contact.')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Reach a person' })).toHaveAttribute('href', '/contact');
+    expect(screen.queryByText(/try again/iu)).toBeNull();
+    expect((await w.fake.session()).signedIn).toBe(false);
+    await userEvent.click(screen.getByRole('button', { name: 'Use another address' }));
+    expect(await screen.findByLabelText('Email address')).toBeInTheDocument();
   });
 });
 
@@ -445,6 +523,17 @@ describe('The emailed link', () => {
     }
     return urls;
   };
+
+  test('a barred login pressing its link lands on the barred answer, signed out, never "try again"', async () => {
+    const w = await linked();
+    w.fake.seed.bar(w.known, Date.parse('2099-11-12T23:30:00Z'));
+    open(w, 'sign-in', `/sign-in${FRAGMENT}`);
+    await userEvent.click(await screen.findByRole('button', { name: 'Sign in' }));
+    expect(await screen.findByRole('heading', { name: 'This account is suspended' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Reach a person' })).toHaveAttribute('href', '/contact');
+    expect(screen.queryByText(/try again|link does not work/iu)).toBeNull();
+    expect((await w.fake.session()).signedIn).toBe(false);
+  });
 
   test('shows the panel and no email field, has asked nothing yet, and leaves no fragment in the address', async () => {
     const w = await linked();

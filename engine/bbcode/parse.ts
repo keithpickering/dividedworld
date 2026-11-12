@@ -227,6 +227,9 @@ interface Frame {
   /** Where this frame's content goes now. */
   out: Out;
   build?: (children: Out) => BbNode;
+  /** For a real quote: the Act it names, and where its contents begin in the input (the first character after its opener). */
+  quoteAct?: string;
+  contentFrom?: number;
   ordered?: boolean;
   items?: Out[];
   lead?: Out;
@@ -423,7 +426,18 @@ function isBlank(nodes: readonly BbNode[]): boolean {
   return nodes.every((n) => n.type === 'text' && n.text.trim() === '');
 }
 
-export function parse(input: string): BbNode[] {
+/** Where the contents of a real quote lie in the input as written: `input.slice(from, to)`, between its opener and its closer (or where the quote was closed without one). */
+export interface QuoteSpan {
+  readonly act: string;
+  readonly from: number;
+  readonly to: number;
+}
+
+/**
+ * `spans`, when given, is filled with one entry for each real quote the parse builds, in the order they close, by the offsets the parser itself worked at, so a caller
+ * can change the input without re-serializing the tree (engine/bbcode/conceal.ts). It changes nothing about the tree.
+ */
+export function parse(input: string, spans?: QuoteSpan[]): BbNode[] {
   const root: Frame = { kind: 'root', name: '', raw: '', home: null as never, parent: null, depth: 0, out: [] };
   root.home = root;
   const stack: Frame[] = [root];
@@ -434,8 +448,11 @@ export function parse(input: string): BbNode[] {
   /* Finish a frame that is not literal and place its node in its parent. `closer` is the
      closing tag as written, or null when the frame was closed by the end of input or by an
      outer closer. */
+  /** Where the tag being handled begins, which is where a frame it closes ends; the end of the input once the loop is over. */
+  let tagAt = 0;
   const finish = (f: Frame, closer: string | null): void => {
     const into = (f.parent ?? root).out;
+    if (spans && f.quoteAct !== undefined && f.contentFrom !== undefined) spans.push({ act: f.quoteAct, from: f.contentFrom, to: tagAt });
     if (f.kind === 'simple' && f.build) {
       into.push(f.build(f.out));
     } else if (f.kind === 'list') {
@@ -573,6 +590,7 @@ export function parse(input: string): BbNode[] {
     pushText(top().home.out, input.slice(textStart, i));
     textStart = close + 1;
     pos = close + 1;
+    tagAt = i;
 
     if (openISpoilers > 0 && name !== '*' && (BLOCK.has(name) || name === 'url' || (name === 'ispoiler' && !isCloser))) {
       /* Opener or closer, a block tag, a link or a nested spoiler inside an inline spoiler is the words as written
@@ -664,7 +682,7 @@ export function parse(input: string): BbNode[] {
       if (head === null) literalOpen(name, raw);
       else if (head.kind === 'real') {
         const act = head.act;
-        openReal(name, raw, 'simple', { build: (children) => ({ type: 'quote', act, children }) });
+        openReal(name, raw, 'simple', { build: (children) => ({ type: 'quote', act, children }), quoteAct: act, contentFrom: close + 1 });
       } else {
         const { name: typed, user } = head;
         openReal(name, raw, 'simple', { build: (children) => ({ type: 'counterfeit', name: typed, user, children }) });
@@ -711,6 +729,7 @@ export function parse(input: string): BbNode[] {
   }
 
   pushText(top().home.out, input.slice(textStart));
+  tagAt = input.length;
   while (stack.length > 1) {
     const f = pop();
     if (f.kind !== 'literal') finish(f, null);

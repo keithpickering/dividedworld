@@ -6,12 +6,17 @@
  *
  * The check's line is set in the regular weight where the board draws 700 (the backfill design, section 2: "its line regular weight"), so its type is
  * not compared; the box, the 30px check and the note under it are.
+ *
+ * The build's second check, "I've read and agree to the code of conduct" (the conduct plan, Task 5), is a row the board does not draw under the 18+ check's note:
+ * Send a code stands 74px lower under it (`SEND`).
  */
 import type { BoardManifest } from '../../board-match.ts';
 
 const UP = { y: -40 } as const;
 const BUTTON = { y: -40, height: -6 } as const;
 const AFTER = { y: -46 } as const;
+/** The BUTTON shift and the conduct check's row (the conduct plan, Task 5), which the board does not draw: Send a code stands 74px lower. */
+const SEND = { y: -40 + 74, height: -6 } as const;
 
 const manifest: BoardManifest = {
   board: '2026-11-05-backfill/15-register',
@@ -31,7 +36,7 @@ const manifest: BoardManifest = {
     { id: 'ack', role: 'checkbox', name: 'I am 18 or older.', type: false, buildShift: UP },
     { id: 'ack-line', role: 'text', name: 'I am 18 or older.', type: false, buildShift: UP },
     { id: 'ack-note', role: 'text', name: 'An acknowledgement, nothing legally binding.', buildShift: UP },
-    { id: 'send', role: 'button', name: 'SEND A CODE', box: 'height', buildShift: BUTTON },
+    { id: 'send', role: 'button', name: 'SEND A CODE', box: 'height', buildShift: SEND },
     { id: 'aside', role: 'complementary', name: 'Other ways in', type: false, box: 'across' },
     { id: 'back-heading', role: 'heading', name: 'ALREADY PLAYING?', within: 'aside', buildShift: UP },
     { id: 'back-text', role: 'text', name: 'Sign in with the email you registered.', within: 'aside', buildShift: UP },

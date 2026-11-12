@@ -12,6 +12,8 @@ import { PLAYS_PER_POST, createPlays, livePlays, type Plays } from '../cards/pla
 import type { CardPlay } from '../cards/types.ts';
 import { resolveWritten } from '../cards/written.ts';
 import { Debuts, RevealPost, TallyPost } from '../reveal/Reveal.tsx';
+import { ConcealingNote, HiddenNote } from '../conduct/Hidden.tsx';
+import { ReportLink } from '../conduct/Report.tsx';
 
 import { sameYear } from '../postbit/dates.ts';
 import { Link } from '../router.tsx';
@@ -60,6 +62,14 @@ export function QuoteHead({ of }: { readonly of: QuoteOf }) {
 }
 export const quoteHead = (q: QuoteOf): ReactNode => <QuoteHead of={q} />;
 
+/** What names a post to a reader who reports one of its versions: its number and its author's name, as the post's own head says them. */
+export interface PostAbout { readonly seq: number | null; readonly name: string }
+
+/** Whether a History row's version is hidden by an admin: `payloadHidden`, the row's own version (a post's original, an edit's own words), never read from its words, which are null for a version that is only waiting for its layer too. */
+const versionHidden = (v: Act): boolean => v.payloadHidden === true;
+/** Whether a History row's words are withheld for a moment, not hidden: the version quotes a post an admin hid and the conceal job has not written its layer (`payloadConcealing`, of the row's own version). */
+const versionConcealing = (v: Act): boolean => v.payloadConcealing === true && v.payloadHidden !== true;
+
 /**
  * What History needs of a post's writing plays: the live plays of cards that write on it and every row of their tails, read once when History
  * is open. In a thread the plays are the ones the page already holds (`known`), so a post with no writing play costs no request at all; where
@@ -91,8 +101,8 @@ function useTailsOf(post: Id, wanted: boolean, known: Plays | null): { readonly 
   return read;
 }
 
-/** Every version of a post, the original first, for anyone who asks, each with the tails its writing plays made for it, drawn still (design section 7: a tail shows in full, whatever was cleared). */
-function Versions({ post }: { readonly post: Id }) {
+/** Every version of a post, the original first, for anyone who asks. A hidden version is the one-line note and offers no report; any other offers Report to admins. Each shows with the tails its writing plays made for it, drawn still (design section 7: a tail shows in full, whatever was cleared). */
+function Versions({ post, about }: { readonly post: Id; readonly about: PostAbout | undefined }) {
   const { api, instance, ui } = useKayfa();
   const nameOf = useContext(ThreadCtx)?.nameOf;
   const [versions, setVersions] = useState<readonly Act[] | null | 'failed'>(null);
@@ -107,18 +117,31 @@ function Versions({ post }: { readonly post: Id }) {
   if (versions === 'failed') return <p className="kb-notice" data-kb-tone="refusal">The history could not be loaded. Close it and try again.</p>;
   if (versions === null) return <p className="kb-muted kb-small" aria-busy="true">Loading the history…</p>;
   if (versions.length < 2) return <p className="kb-muted kb-small">This post has not been edited.</p>;
+  const named = about === undefined ? 'This post' : `Post${about.seq === null ? '' : ` #${about.seq}`} by ${about.name}`;
   return (
     <ol className="kb-post-history" data-kb-quotable="hidden" aria-label="Versions of this post, oldest first">
       {versions.map((v, i) => {
+        const last = i === versions.length - 1;
+        const which = i === 0 ? 'Original' : `Edit ${i}`;
+        const hidden = versionHidden(v);
         const words = <BbCode text={text(v.payload.body)} quoteHead={quoteHead} />;
         /* Only the version's own rows are drawn: a version with none for a play draws none for it. */
         const written = tails ? resolveWritten(tails.rows, ids, v.id, 'version') : null;
         return (
           <li key={v.id}>
-            <span className="kb-small kb-muted">{i === 0 ? 'Original' : `Edit ${i}`}, {when(v.createdAt)}{i === versions.length - 1 ? ' · Current' : ''}</span>
-            {tails && written && written.size > 0
-              ? <VersionEffects post={versions[0]!} version={v.id} plays={tails.plays} written={written} {...(nameOf ? { nameOf } : {})}>{words}</VersionEffects>
-              : words}
+            <span className="kb-small kb-muted">{which}, {when(v.createdAt)}{last ? ' · Current' : ''}</span>
+            {versionConcealing(v)
+              ? <ConcealingNote />
+              : hidden
+              ? <HiddenNote />
+              : (
+                <>
+                  <ReportLink post={post} version={v.id} kicker={`${named}, ${last ? 'current version' : which.toLowerCase()}`} className="kb-report-row-link kb-small" ariaLabel={`Report to admins: ${about?.seq == null ? '' : `post #${about.seq}, `}${which.toLowerCase()}`} />
+                  {tails && written && written.size > 0
+                    ? <VersionEffects post={versions[0]!} version={v.id} plays={tails.plays} written={written} {...(nameOf ? { nameOf } : {})}>{words}</VersionEffects>
+                    : words}
+                </>
+              )}
           </li>
         );
       })}
@@ -126,13 +149,13 @@ function Versions({ post }: { readonly post: Id }) {
   );
 }
 
-/** The History button of a post and the panel it opens; the panel goes where `panel` puts it. */
-export function useHistory(post: Id): { readonly button: ReactNode; readonly panel: ReactNode } {
+/** The History button of a post and the panel it opens; the panel goes where `panel` puts it. `about` names the post for a report made from one of its versions. */
+export function useHistory(post: Id, about?: PostAbout): { readonly button: ReactNode; readonly panel: ReactNode } {
   const [open, setOpen] = useState(false);
   const id = `history-${post}`;
   return {
     button: <button type="button" className="kb-button" data-kb-size="small" aria-expanded={open} aria-controls={id} onClick={() => setOpen(!open)}>History</button>,
-    panel: <div id={id}>{open && <Versions post={post} />}</div>,
+    panel: <div id={id}>{open && <Versions post={post} about={about} />}</div>,
   };
 }
 

@@ -38,6 +38,14 @@ describe('Divided World\'s developer persona', () => {
   });
 });
 
+describe('Divided World\'s code of conduct', () => {
+  test('is version 1 with the design\'s seven sections, and passes the engine\'s check', () => {
+    expect(instanceUi.conduct.version).toBe(1);
+    expect(instanceUi.conduct.sections.map((s) => s.key)).toEqual(['person', 'hate', 'harassment', 'stop', 'onBoard', 'reportAbuse', 'outing']);
+    expect(instanceUiProblems(instanceUi, instance).filter((p) => /conduct/u.test(p))).toEqual([]);
+  });
+});
+
 describe('Divided World\'s onboarding words', () => {
   test('fill the engine\'s tips exactly, and the check is run against the real instance', () => {
     expect(instanceUiProblems(instanceUi, instance)).toEqual([]);
@@ -140,10 +148,11 @@ describe('Divided World\'s Gimmick cards in plain words', () => {
       const f = faces.find((x) => x.key === key)!;
       return `${f.describe} ${f.summary}`;
     };
-    for (const key of ['publicity-tour', 'heat-magnet', 'hype-up']) expect(say(key), key).toMatch(/36 hours[\s\S]*earns from[\s\S]*10% higher/u);
+    for (const key of ['publicity-tour', 'heat-magnet', 'hype-up']) expect(say(key), key).toMatch(/3 days[\s\S]*earns from[\s\S]*20% higher/u);
     expect(say('sugar-coat')).toMatch(/a week[\s\S]*Salty or Pepperoni/u);
     expect(say('last-word')).toMatch(/a week[\s\S]*refused before it is written/u);
-    expect(say('class-clown')).toMatch(/36 hours[\s\S]*earns from[\s\S]*50% higher/u);
+    expect(say('class-clown')).toMatch(/3 days[\s\S]*earns from[\s\S]*is doubled/u);
+    expect(say('class-clown')).not.toContain('100%');
     expect(say('good-vibes')).toMatch(/3 days[\s\S]*costs 0\.25 more/u);
   });
 });
@@ -676,12 +685,12 @@ describe('Sugar Coat, Hype-Up and Last Word in plain words (card notes Part 4, T
       expect(typeof ui(key).status === 'string' ? (ui(key).status as string).split(' ').length : 0, key).toBeLessThanOrEqual(6);
     }
     expect(ui('sugar-coat').summary).toBe('Used on your post. Turns away Salty and Pepperoni cards for a week.');
-    expect(ui('hype-up').summary).toBe('Cast on a character. For 36 hours, what it earns from positive reactions is 10% higher. A loss is never made worse.');
+    expect(ui('hype-up').summary).toBe('Cast on a character. For 3 days, what it earns from positive reactions is 20% higher. A loss is never made worse.');
     expect(ui('last-word').summary).toBe('Used on your post. Nobody can quote it for a week.');
     const sugarWords = ui('sugar-coat').describe!({} as never);
     expect(sugarWords).toContain('It does not stop a card from being set face down there.');
     expect(sugarWords).not.toContain('It never stops a card set face down.');
-    expect(ui('hype-up').logPlay!({}, {})).toBe('What that character earns from positive reactions is 10% higher until it ends.');
+    expect(ui('hype-up').logPlay!({}, {})).toBe('What that character earns from positive reactions is 20% higher until it ends.');
     expect(ui('last-word').logPlay!({}, {})).toBe('Nobody can quote that post until it ends.');
   });
 });

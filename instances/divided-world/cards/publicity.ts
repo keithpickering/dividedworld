@@ -5,5 +5,5 @@ import type { GimmickEffect } from '../../../engine/rules/cards.ts';
 import type { Span } from '../../../engine/rules/types.ts';
 
 /** The push Publicity Tour gives its own character and Hype-Up gives another's. One group: the two do not add, and the larger applies. */
-export const PUBLICITY: GimmickEffect = { kind: 'earn', quadrants: ['excitedPositive', 'calmPositive'], by: 0.1, group: 'publicity' };
-export const PUBLICITY_LASTS: Span = { unit: 'hour', count: 36 };
+export const PUBLICITY: GimmickEffect = { kind: 'earn', quadrants: ['excitedPositive', 'calmPositive'], by: 0.2, group: 'publicity' };
+export const PUBLICITY_LASTS: Span = { unit: 'day', count: 3 };

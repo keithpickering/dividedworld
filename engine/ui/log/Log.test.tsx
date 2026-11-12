@@ -548,6 +548,22 @@ describe('My log is its document', () => {
     await waitFor(() => expect(cells(bodyRows()[0]!)[2]).toMatch(/^A Hype reaction on your post #3\./u));
   }, 10_000);
 
+  test('the log says plainly when an admin hid a post and when it ended, in order with the other lines, naming no reporter', async () => {
+    const { fake, me, pipe, p2 } = world();
+    fake.seed.conductDecision({ account: me, outcome: 'hide', version: p2, at: at(29, 20) });
+    fake.seed.conductDecision({ account: me, outcome: 'unhide', version: p2, at: at(30, 9) });
+    await open(fake, me, pipe);
+    await waitFor(() => expect(bodyRows().some((r) => /brought back your post/u.test(r.textContent ?? ''))).toBe(true));
+    const said = bodyRows().map((r) => cells(r)[2] ?? '');
+    const hidden = said.findIndex((t) => t.startsWith('An admin hid your post in a thread (code of conduct). An admin may have emailed you the details.'));
+    const back = said.findIndex((t) => t === 'An admin brought back your post in a thread.');
+    expect(hidden).toBeGreaterThan(-1);
+    expect(back).toBeGreaterThan(-1);
+    expect(back).toBeLessThan(hidden);
+    expect(said.filter((t) => /An admin hid your post/u.test(t))).toHaveLength(1);
+    expect(said.join(' ')).not.toMatch(/report(ed|er)/iu);
+  });
+
   test('a hover on the Log tab makes one log_page, and writes nothing: no see_* call, no mark read', async () => {
     const { fake, me, pipe } = world();
     localStorage.setItem(hudKey(me), pipe);

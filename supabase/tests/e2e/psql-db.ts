@@ -8,6 +8,7 @@
 import { execFileSync } from 'node:child_process';
 import { DatabaseError, type Db } from '../../functions/_shared/rpc.ts';
 import { instanceSeed } from '../../functions/_shared/seed.ts';
+import { conduct } from '../../../instances/divided-world/ui/conduct.ts';
 import type { Instance } from '../../../engine/rules/types.ts';
 
 export function scratchUrl(): string {
@@ -35,7 +36,7 @@ export function sql(text: string, vars: Record<string, string> = {}): string {
  * wins and the held one is left out.
  */
 export function scratchSeed(instance: Instance): ReturnType<typeof instanceSeed> {
-  const seed = instanceSeed(instance);
+  const seed = instanceSeed(instance, conduct);
   const held = JSON.parse(sql(`select coalesce(jsonb_agg(jsonb_build_object('key', key, 'emoji', emoji, 'quadrant', quadrant) order by key), '[]') from reaction_kinds`)) as typeof seed.reactions;
   const keys = new Set(seed.reactions.map((r) => r.key));
   const emoji = new Set(seed.reactions.map((r) => r.emoji));

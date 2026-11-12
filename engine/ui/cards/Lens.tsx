@@ -54,6 +54,7 @@ import { backOver, defaultView, inPlayOrder, isBack, markedPlays, shownPlays, us
 import type { CardPlay, CardView } from './types.ts';
 import { VisitPanel, readVisit } from './Visit.tsx';
 import { useCaughtFate, useSprungWords } from './sprung.ts';
+import { ReportLink, type ReportTo } from '../conduct/Report.tsx';
 import { APPEAL_KIND, AppealForm, REPORT_KIND, ReportForm, formTabName, useAppealRead, useReportRead, type LensForm } from './Forms.tsx';
 import { PREPARED_FAILED, usePrepared, useRest } from '../glass/prepared.ts';
 import { Spinner } from '../glass/Spinner.tsx';
@@ -646,6 +647,8 @@ export interface LensProps {
   readonly modPronouns?: PronounSet | undefined;
   /** A form the panel is open on (Forms.tsx): a post's report or an appeal. It is the panel's one tab while it is open, and the cards' and the visit's are not offered with it. */
   readonly form?: LensForm | undefined;
+  /** The post's Report to admins: a plain link at the very foot of the panel, under every tab, for a post whose current version is not hidden (a hidden one offers none). Absent for a character, a thread or a board. */
+  readonly reportTo?: ReportTo | undefined;
 }
 
 /** One tab of the Lens. A tab that reads before it shows is busy while its read is out, and a rest or focus on it starts the read early. */
@@ -663,7 +666,7 @@ const PreparedTab = forwardRef<HTMLButtonElement, {
   );
 });
 
-export function Lens({ open, store, post, plays, tallies, mine, compare, to, nameOf, faceOf, strip, onSpin, where = 'post', moments = true, visit, modPronouns = ENGINE_DEFAULT_PRONOUNS, form }: LensProps) {
+export function Lens({ open, store, post, plays, tallies, mine, compare, to, nameOf, faceOf, strip, onSpin, where = 'post', moments = true, visit, modPronouns = ENGINE_DEFAULT_PRONOUNS, form, reportTo }: LensProps) {
   const { api, instance, ui } = useKayfa();
   const here = usePlays(plays, post);
   const narrow = useSheet();
@@ -863,6 +866,7 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
           plays={rowPlays} inkOfPlay={(p) => inkOf(ui, p, [...ofKind].sort(inPlayOrder), onInk)} unfolded={unfolded} onToggle={() => setUnfolded((u) => !u)} nameOf={nameOf} faceOf={faceOf} card={name} view={view} tallies={tallies} mine={mine} compare={compare} to={to} moments={moments} store={plays} admin={admin} now={now}
           onSpin={(play, spinName) => { store.close(); onSpin(play, spinName, open.opener); }}
         />}
+        {reportTo && <p className="kb-report-foot"><ReportLink post={reportTo.post} version={reportTo.version} kicker={reportTo.kicker} className="kb-report-link" /></p>}
         {!onVisit && !onForm && rules?.surface !== undefined && rowPlays[0] !== undefined && (
           <SurfaceRows play={rowPlays[0].id} live={here.surfaces[rowPlays[0].id]?.live.join(',') ?? ''} nameOf={nameOf} faceOf={faceOf} card={card} />
         )}

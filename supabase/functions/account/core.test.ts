@@ -23,11 +23,12 @@ function world(options: { mode?: 'open' | 'invite' | 'closed' } = {}) {
   let now = 0;
   const clock = { now: () => now, sleep: async (ms: number) => { now += ms; } };
   const calls: string[] = [];
+  let override: Partial<Session['user']> = {};
   const work = (email: string) => { now += email === KNOWN ? 90 : 5; };
   const auth: Auth = {
     requestCode: async (email, o) => { work(email); calls.push(`requestCode:${email}:${JSON.stringify(o)}`); },
-    verifyCode: async (email, code) => { work(email); calls.push(`verifyCode:${email}`); return email === KNOWN && code === CODE ? { session } : { refused: 'code' }; },
-    verifyLink: async (hash) => { now += 90; calls.push('verifyLink'); return hash === LINK ? { session } : { refused: 'link' }; },
+    verifyCode: async (email, code) => { work(email); calls.push(`verifyCode:${email}`); return email === KNOWN && code === CODE ? { session: { ...session, user: { ...session.user, ...override } } } : { refused: 'code' }; },
+    verifyLink: async (hash) => { now += 90; calls.push('verifyLink'); return hash === LINK ? { session: { ...session, user: { ...session.user, ...override } } } : { refused: 'link' }; },
   };
   const mode = options.mode ?? 'invite';
   const service: Db = { rpc: async <T>(fn: string, args: Record<string, unknown>) => { calls.push(`service:${fn}:${JSON.stringify(args)}`); return (fn === 'invite_open' ? (mode === 'closed' ? 'closed' : mode === 'open' || args.code === INVITE ? 'opens' : 'nothing') : null) as T; } };
@@ -37,7 +38,7 @@ function world(options: { mode?: 'open' | 'invite' | 'closed' } = {}) {
     const out = await runAccount({ auth, service, player, clock, site: SITE }, request);
     return { ...out, took: now - start };
   };
-  return { answer, calls, clock };
+  return { answer, calls, clock, answerWith: (user: Partial<Session['user']>) => { override = user; } };
 }
 
 test('asking for a code answers the same, in the same time, for an address with an account and one without, and asks Auth only after', async () => {
@@ -131,6 +132,28 @@ test('the right code signs in, opens the login\'s account with the invite it ask
   assert.equal(out.took % ANSWER_FLOOR_MS, 0);
 });
 
+test('the version of the code the register form agreed to rides with the login, and open_account is given it; a request without one is given none', async () => {
+  const w = world({ mode: 'open' });
+  await (await w.answer({ action: 'requestCode', email: UNKNOWN, conduct: 3 })).later?.();
+  await (await w.answer({ action: 'requestCode', email: UNKNOWN })).later?.();
+  for (const bad of [0, 1.5, '3', null, true, -1]) await (await w.answer({ action: 'requestCode', email: UNKNOWN, conduct: bad })).later?.();
+  const asked = w.calls.filter((c) => c.startsWith('requestCode'));
+  assert.equal(asked[0], `requestCode:${UNKNOWN}:${JSON.stringify({ create: true, invite: null, redirect: `${SITE}/register`, conduct: 3 })}`);
+  assert.ok(asked.slice(1).every((c) => c === `requestCode:${UNKNOWN}:${JSON.stringify({ create: true, invite: null, redirect: `${SITE}/register` })}`), 'only a positive whole number is carried');
+  // And at verification: the metadata's version goes to open_account as conduct_version, and nothing is passed where there is none.
+  const withVersion = world();
+  withVersion.answerWith({ user_metadata: { invite: INVITE, conduct: 3 } });
+  await withVersion.answer({ action: 'verifyCode', email: KNOWN, code: CODE });
+  assert.ok(withVersion.calls.includes(`player(tok):open_account:${JSON.stringify({ code: INVITE, conduct_version: 3 })}`));
+  const viaLink = world();
+  viaLink.answerWith({ user_metadata: { invite: INVITE, conduct: 3 } });
+  await viaLink.answer({ action: 'verifyLink', tokenHash: LINK });
+  assert.ok(viaLink.calls.includes(`player(tok):open_account:${JSON.stringify({ code: INVITE, conduct_version: 3 })}`), 'the link opens the account with the version too');
+  const without = world();
+  await without.answer({ action: 'verifyCode', email: KNOWN, code: CODE });
+  assert.ok(without.calls.includes(`player(tok):open_account:${JSON.stringify({ code: INVITE })}`), 'no version, none passed');
+});
+
 test('no path takes a password', async () => {
   const w = world();
   for (const action of ['signUp', 'signIn', 'reset', 'resend']) {
@@ -222,6 +245,47 @@ test('Auth failing to answer a code is a plain retry-later, in the same time', a
   const down: Auth = { ...noAuth, verifyCode: async () => { throw new Error('upstream 503'); } };
   const out = await runAccount({ auth: down, service: { rpc: async () => null as never }, player: () => ({ rpc: async () => null as never }), clock, site: SITE }, { action: 'verifyCode', email: KNOWN, code: CODE });
   assert.deepEqual([out.status, out.body, now], [503, { error: 'signing in is not working right now; try again' }, ANSWER_FLOOR_MS]);
+});
+
+test('a banned login that gives the right code is told plainly it is barred (403 with the barred hint), never "try again"; asking for its code answers like any other', async () => {
+  let now = 0;
+  const clock = { now: () => now, sleep: async (ms: number) => { now += ms; } };
+  const banned: Auth = { requestCode: async () => {}, verifyCode: async () => ({ refused: 'barred' }), verifyLink: async () => ({ refused: 'barred' }) };
+  const service: Db = { rpc: async <T>() => null as T };
+  const player = (): Db => ({ rpc: async <T>() => null as T });
+  const out = await runAccount({ auth: banned, service, player, clock, site: SITE }, { action: 'verifyCode', email: KNOWN, code: CODE });
+  assert.equal(out.status, 403);
+  assert.equal((out.body as { hint?: string }).hint, 'kayfabb.barred');
+  assert.match((out.body as { error: string }).error, /locked/);
+  assert.doesNotMatch((out.body as { error: string }).error, /try again/);
+  // The emailed link of a banned login lands on the same bar, never on "that link does not work".
+  const viaLink = await runAccount({ auth: banned, service, player, clock, site: SITE }, { action: 'verifyLink', tokenHash: LINK });
+  assert.equal(viaLink.status, 403);
+  assert.equal((viaLink.body as { hint?: string }).hint, 'kayfabb.barred');
+  assert.doesNotMatch((viaLink.body as { error: string }).error, /try again|link does not work/);
+  // Asking for a code is answered the same for the banned address as for one with no login.
+  const a = await runAccount({ auth: banned, service, player, clock, site: SITE }, { action: 'requestCode', email: KNOWN });
+  const b = await runAccount({ auth: banned, service, player, clock, site: SITE }, { action: 'requestCode', email: UNKNOWN });
+  assert.deepEqual([a.status, a.body], [b.status, b.body]);
+});
+
+test('asking for a code for a banned account\'s address answers as for any other address: same status, body, time and request to Auth (the owner: a refusal that proves nothing about who has an account)', async () => {
+  const seen: { email: string; options: unknown }[] = [];
+  const run = async (email: string) => {
+    let now = 0;
+    const clock = { now: () => now, sleep: async (ms: number) => { now += ms; } };
+    // Auth bans the known address's login: it says so only to a correct code, never to a request for one.
+    const auth: Auth = { requestCode: async (e, options) => { seen.push({ email: e, options }); }, verifyCode: async (e) => (e === KNOWN ? { refused: 'barred' } : { refused: 'code' }), verifyLink: async () => ({ refused: 'link' }) };
+    const service: Db = { rpc: async <T>() => 'opens' as T };
+    const out = await runAccount({ auth, service, player: () => ({ rpc: async <T>() => null as T }), clock, site: SITE }, { action: 'requestCode', email });
+    await out.later?.();
+    return { status: out.status, body: out.body, took: now };
+  };
+  const banned = await run(KNOWN);
+  const other = await run(UNKNOWN);
+  assert.deepEqual(banned, other);
+  assert.deepEqual(seen[0]?.options, seen[1]?.options);
+  assert.equal(banned.status, 202);
 });
 
 test('a link\'s hash Auth accepts signs in, opens the login\'s account with the invite it asked with, and answers with the session', async () => {
