@@ -736,4 +736,6 @@ test('fallsOn: a live play falls on any post, a kept one on the posts written wh
   assert.equal(fallsOn(play, at('2026-11-04T00:00:00.000Z'), false, after), false, 'an ended play that does not keep falls on none');
   assert.equal(fallsOn(play, at('not a time'), true, after), false, 'a date that is no time reads as not kept');
   assert.equal(fallsOn({ at: 'nope', ends: play.ends }, at('2026-11-04T00:00:00.000Z'), true, after), false);
+  assert.equal(fallsOn({ at: play.at, ends: 'never' }, at('2026-11-04T00:00:00.000Z'), true, after), false, 'an end that is no time is neither up nor kept');
+  assert.equal(fallsOn({ at: play.at, ends: 'never' }, at('2026-11-04T00:00:00.000Z'), false, after), false);
 });

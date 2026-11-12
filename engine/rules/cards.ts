@@ -615,20 +615,21 @@ export function giftSplit(amount: Hundredths, overheadPercent: number): { readon
 /** The reaches a card lists, a post unless it says. */
 export const reachesOf = (rules: Pick<CardRules, 'reaches'>): readonly Reach[] => rules.reaches ?? ['post'];
 
-/** Whether a card is cast on a post: the cards a cast trap may name, since a caught card is one a caster played there. */
 /**
  * Whether a play beyond a post falls on a post: it is up now, or its card keeps and the post was written while it was up. Dates only: nothing is read from
- * the post but when it was written, and a date that is no time reads as not kept.
+ * the post but when it was written, and a date that is no time reads as not kept (an end that is no time is neither up nor kept).
  */
 export function fallsOn(play: { readonly at: string; readonly ends?: string }, post: { readonly at: string }, keeps: boolean, now: Date = new Date()): boolean {
-  if (isLive(play, now)) return true;
+  if (play.ends === undefined) return true;
+  const to = Date.parse(play.ends);
+  if (to > now.getTime()) return true;
   if (!keeps) return false;
   const from = Date.parse(play.at);
-  const to = Date.parse(play.ends!);
   const written = Date.parse(post.at);
   return from <= written && written < to;
 }
 
+/** Whether a card is cast on a post: the cards a cast trap may name, since a caught card is one a caster played there. */
 export const castOnPost = (rules: Pick<CardRules, 'play' | 'reaches'>): boolean => playOf(rules) === 'cast' && reachesOf(rules).includes('post');
 
 /** The live effects on each target above a post: its board's, its thread's and its author's (effects_above, 0055_card_reach.sql). */
