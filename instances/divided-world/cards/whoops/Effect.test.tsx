@@ -5,7 +5,7 @@
  * attributes it publishes; the pure rules behind them are scrub.test.ts's, and the pixels are the board
  * match's and e2e/whoops.spec.ts's.
  */
-import { act, fireEvent, screen, within } from '@testing-library/react';
+import { act, createEvent, fireEvent, screen, within } from '@testing-library/react';
 import { useState, type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { CardPlay, CardView, EffectProps, KitControl } from '../../../../engine/ui/cards/types.ts';
@@ -15,12 +15,14 @@ import { Kit } from '../../../../engine/ui/cards/Kit.tsx';
 import { renderInWorld } from '../../../../engine/ui/test-world.tsx';
 import { STROKES, whoops } from '../whoops.ts';
 import { LOST_ANSWER } from '../../../../engine/ui/data/api.ts';
-import { Effect, MAX_SAVE_RETRIES, RETRY_AFTER_MS, SAVE_AFTER_MS, percentWashed, savedOf } from './Effect.tsx';
+import { DROPS_SPEED, Effect, MAX_SAVE_RETRIES, RETRY_AFTER_MS, SAVE_AFTER_MS, dropsOf, percentWashed, savedOf } from './Effect.tsx';
+import { buildLayer, layerKey, type BuildInput } from './build.ts';
+import type { BuildClient } from './buildClient.ts';
 import { viewProblems } from '../../../../engine/ui/cards/lens-words.ts';
 import { cursor } from './cursor.ts';
 import { paint, paintStandIn, type PaintLayer } from './paint.ts';
 import { decodePoints, packStroke } from './points.ts';
-import { BRUSH_PX, LayerInk, PEN_PX, ROW_PX, brushOf, coveredLines, type Pt, type Stroke } from './scrub.ts';
+import { BRUSH_PX, LayerInk, PEN_PX, ROW_PX, brushOf, coveredLines, fits, type Pt, type Stroke } from './scrub.ts';
 import { DESIGN, makeSplat, type Box } from './splat.ts';
 import * as suds from './suds.ts';
 import { createClaims } from '../../../../engine/ui/cards/claims.ts';
@@ -28,6 +30,16 @@ import { createClaims } from '../../../../engine/ui/cards/claims.ts';
 /* The suds and the drawn cursor are their own modules' (suds.test.ts, cursor.test.tsx): here the effect is seen to call them. */
 vi.mock('./suds.ts', () => ({ register: vi.fn(), unregister: vi.fn(), wash: vi.fn(), puff: vi.fn() }));
 vi.mock('./cursor.ts', () => ({ cursor: { over: vi.fn(), press: vi.fn(), leave: vi.fn() } }));
+
+/*
+ * The page's build client is the test's to hold: by default the real one with no worker (a light layer is built on the spot, as in the
+ * game), and a test that sets `seam.client` sees every request and decides when each is answered.
+ */
+const seam = vi.hoisted(() => ({ client: null as null | BuildClient, real: null as null | BuildClient }));
+vi.mock('./buildClient.ts', async (importOriginal) => {
+  const real = await importOriginal<typeof import('./buildClient.ts')>();
+  return { ...real, buildClient: () => seam.client ?? (seam.real ??= real.createBuildClient({ makeWorker: null })) };
+});
 
 /* Every ink grid the component builds is counted, so a test can tell a rebuild from a kept grid. Tests that count do not build their own. */
 const built = vi.hoisted(() => ({ grids: 0 }));
@@ -70,6 +82,7 @@ beforeEach(() => {
   boxHeight = null;
   frameBox = null;
   vi.clearAllMocks();
+  seam.client = null;
   /* The body's box (the cell in the thread, the frame in the ORIGIN box); jsdom lays nothing out, so every rect is at 0, 0 and the frame sits at the cell's corner. */
   Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get(this: HTMLElement) { return this.classList?.contains('kb-whoops-frame') && frameBox ? frameBox.w : isBox(this) ? boxNow().w : 0; } });
   Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, get(this: HTMLElement) { return this.classList?.contains('kb-whoops-frame') && frameBox ? frameBox.h : isBox(this) ? boxNow().h : 0; } });
@@ -276,6 +289,18 @@ const nameOfLine = (line: number) => `L${String(line).padStart(2, '0')} alpha be
 
 describe('a saved state, read defensively', () => {
   const ink = (points: Pt[], extra: object = {}) => ({ tool: 'ink', color: 'red', width: 0.1, aspect: 2, points: packStroke({ tool: 'ink', color: 'red', width: 0.1, aspect: 2, points }).points, ...extra });
+  test('a piece that carries drops is a line\'s last: a continued piece after it is not joined (the card refuses a line that goes on past its drops)', () => {
+    const last = ink([[0.1, 0.1], [0.2, 0.2]], { drops: 1 });
+    const after = ink([[0.2, 0.2], [0.3, 0.3]], { continues: true });
+    const read = savedOf({ strokes: [last, after] }).strokes;
+    expect(read).toHaveLength(2);
+    expect(read[0]!.tool === 'ink' && read[0]!.drops).toBe(1);
+    expect(read[1]!.continues).toBeUndefined();
+    /* Drops of 0 are drops all the same, and a piece before them with none is joined as ever. */
+    expect(savedOf({ strokes: [ink([[0.1, 0.1], [0.2, 0.2]], { drops: 0 }), after] }).strokes[1]!.continues).toBeUndefined();
+    expect(savedOf({ strokes: [ink([[0.1, 0.1], [0.2, 0.2]]), after] }).strokes[1]!.continues).toBe(true);
+  });
+
   test('a continued stroke after a dropped one is not joined to whatever now precedes it', () => {
     const good = ink([[0.1, 0.1], [0.2, 0.2]]);
     const bad = ink([[0.2, 0.2], [0.3, 0.3]], { points: 'not+base64url' });
@@ -1891,5 +1916,337 @@ describe('the canvas, with the frame offset in the cell', () => {
     expect(drawn.length).toBeGreaterThan(0);
     for (const [, x, y] of drawn) expect([x, y]).toEqual([0, 0]);
     for (const m of moved) expect([m[4], m[5]]).toEqual([0, 0]);
+  });
+});
+
+/* ------------------------------------------------------------ the ink field: what is drawn ---- */
+
+describe('the ink field: the picture a layer is drawn from', () => {
+  const clock = () => vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'requestAnimationFrame', 'cancelAnimationFrame', 'performance'] });
+  const frames = () => act(() => { vi.advanceTimersByTime(60); });
+
+  interface Fake { w: number; h: number; surface: Uint8ClampedArray; puts: { sx: number; sy: number; sw: number; sh: number }[]; draws: HTMLCanvasElement[]; strokes: number }
+  /** 2D contexts that keep what is put on them, so a test reads a canvas's pixels (jsdom has none), and log what is drawn onto it. */
+  function fakeCanvases() {
+    const fakes = new Map<HTMLCanvasElement, Fake>();
+    const of = (c: HTMLCanvasElement): Fake => {
+      let f = fakes.get(c);
+      if (!f) { f = { w: -1, h: -1, surface: new Uint8ClampedArray(0), puts: [], draws: [], strokes: 0 }; fakes.set(c, f); }
+      if (f.w !== c.width || f.h !== c.height) { f.w = c.width; f.h = c.height; f.surface = new Uint8ClampedArray(f.w * f.h * 4); }
+      return f;
+    };
+    vi.stubGlobal('ImageData', class { constructor(readonly data: Uint8ClampedArray, readonly width: number, readonly height: number) {} });
+    (globalThis as { Path2D?: unknown }).Path2D ??= class {};
+    HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement) {
+      const f = of(this);
+      const state: Record<string, unknown> = {};
+      return new Proxy({}, {
+        get: (_t, key: string) => {
+          if (key in state) return state[key];
+          if (key === 'canvas') return this;
+          if (key === 'createImageData') return (w: number, h: number) => ({ width: w, height: h, data: new Uint8ClampedArray(w * h * 4) });
+          if (key === 'putImageData') {
+            return (img: { width: number; height: number; data: Uint8ClampedArray }, dx: number, dy: number, sx = 0, sy = 0, sw = img.width, sh = img.height) => {
+              f.puts.push({ sx: dx + sx, sy: dy + sy, sw, sh });
+              for (let y = sy; y < sy + sh; y++) for (let x = sx; x < sx + sw; x++) for (let c = 0; c < 4; c++) f.surface[((dy + y) * f.w + dx + x) * 4 + c] = img.data[(y * img.width + x) * 4 + c]!;
+            };
+          }
+          if (key === 'drawImage') return (src: HTMLCanvasElement) => { f.draws.push(src); };
+          if (key === 'stroke') return () => { f.strokes++; };
+          if (key === 'createRadialGradient' || key === 'createLinearGradient') return () => ({ addColorStop() {} });
+          return () => undefined;
+        },
+        set: (_t, key: string, value) => { state[key] = value; return true; },
+      });
+    } as unknown as HTMLCanvasElement['getContext'];
+    return { of };
+  }
+
+  /** A client that holds every build until told (or answers at once), and records what was asked and dropped. */
+  function heldClient(holding = true) {
+    const asks = new Map<string, { input: BuildInput; onDone: (b: ReturnType<typeof buildLayer>) => void }>();
+    const requested: string[] = [], cancelled: string[] = [];
+    let hold = holding;
+    const client: BuildClient = {
+      requestBuild(key, input, onDone) {
+        requested.push(key);
+        if (hold) asks.set(key, { input, onDone }); else onDone(buildLayer(input));
+      },
+      cancel(key) { cancelled.push(key); asks.delete(key); },
+      active: () => false,
+    };
+    seam.client = client;
+    return {
+      requested, cancelled, asks,
+      release: () => act(() => { hold = false; for (const [k, a] of [...asks]) { asks.delete(k); a.onDone(buildLayer(a.input)); } }),
+    };
+  }
+
+  /** A pointer event with a time of its own (jsdom stamps every event within a millisecond of the last). */
+  function at(el: HTMLElement, type: 'pointerDown' | 'pointerMove' | 'pointerUp', [x, y]: readonly [number, number], t: number) {
+    const [cx, cy] = px(x, y);
+    const ev = createEvent[type](el, { clientX: cx, clientY: cy, pointerId: 1, button: 0, pointerType: 'mouse' });
+    Object.defineProperty(ev, 'timeStamp', { value: t });
+    act(() => { fireEvent(el, ev); });
+  }
+  /** A drag whose moves are `ms` apart and that lifts `rest` ms after the last. */
+  function dragTimed(frame: HTMLElement, points: readonly (readonly [number, number])[], ms: number, rest = 1) {
+    let t = 1000;
+    at(frame, 'pointerDown', points[0]!, t);
+    for (const p of points.slice(1)) at(frame, 'pointerMove', p, (t += ms));
+    at(frame, 'pointerUp', points.at(-1)!, t + rest);
+  }
+  const writeInk = () => fireEvent.click(screen.getByRole('button', { name: 'Write in ink' }));
+  /** A line along bare paper (no layer-0 splat reaches it), in 49px steps: slow enough at 100ms a move to throw nothing. */
+  const BARE: [number, number][] = [[0.03, 0.985], [0.08, 0.985], [0.13, 0.985]];
+  const penOn = (points: readonly Pt[], drops?: 0 | 1 | 2 | 3): Stroke => ({ tool: 'ink', color: COLORS[0]!, ...pen(), points, ...(drops !== undefined ? { drops } : null) });
+  const referenceOf = (strokes: readonly Stroke[], layer = 0) => buildLayer({ seed: SEEDS[layer]!, color: COLORS[layer]!, box: boxNow(), density: 1, strokes }).image.data;
+  const inkCanvas = (root: HTMLElement) => root.querySelector<HTMLCanvasElement>('canvas[data-kb-effect-ink]')!;
+  /** What `paint` last drew on the ink canvas: the layer's picture, and whether it is a build's (put on) or the stand-in's (drawn). */
+  const lastPicture = (fk: ReturnType<typeof fakeCanvases>, root: HTMLElement) => {
+    const src = fk.of(inkCanvas(root)).draws.at(-1)!;
+    return { src, build: fk.of(src).puts.length > 0 };
+  };
+  const maxDiff = (a: Uint8ClampedArray, b: Uint8ClampedArray) => { let m = 0; for (let i = 0; i < a.length; i++) m = Math.max(m, Math.abs(a[i]! - b[i]!)); return m; };
+
+  test('the premise: the line below is on bare paper on layer 0', () => {
+    const ink = inkOf(0);
+    for (let x = 0; x <= 0.15; x += 0.01) for (let y = 0.96; y <= 1; y += 0.01) expect(ink.valueAt(x, y), `${x},${y}`).toBe(0);
+  });
+
+  test('a pen stroke on a light layer changes the picture inside its rectangle and nowhere else', () => {
+    clock();
+    const fk = fakeCanvases();
+    const { frame, root } = mount({ author: true });
+    writeInk();
+    frames();
+    const first = lastPicture(fk, root);
+    expect(first.build, 'a light layer is built before its first frame').toBe(true);
+    const picture = fk.of(first.src);
+    const before = Uint8ClampedArray.from(picture.surface);
+    const puts = picture.puts.length;
+    dragTimed(frame, BARE, 100);
+    frames();
+    expect(lastPicture(fk, root).src, 'the same canvas is updated in place').toBe(first.src);
+    /* The stroke's reach: 2r = 16px each side of the line, and a pixel of shading around that. */
+    const b = boxNow();
+    /* The line's reach is 2r = 16px, and the bulb at its end (1.35r, reaching twice that) a little further: 26 all round. */
+    const [x0, x1, y0, y1] = [0.03 * b.w - 26, 0.13 * b.w + 26, 0.985 * b.h - 26, 0.985 * b.h + 26];
+    let changed = 0;
+    for (let y = 0; y < picture.h; y++) for (let x = 0; x < picture.w; x++) {
+      const i = (y * picture.w + x) * 4;
+      if (before[i]! === picture.surface[i]! && before[i + 1]! === picture.surface[i + 1]! && before[i + 2]! === picture.surface[i + 2]! && before[i + 3]! === picture.surface[i + 3]!) continue;
+      changed++;
+      expect(x >= x0 && x <= x1 && y >= y0 && y <= y1, `pixel ${x},${y} changed outside the stroke's rectangle`).toBe(true);
+    }
+    expect(changed).toBeGreaterThan(500);
+    /* Only that rectangle was put on the canvas. */
+    const newPuts = picture.puts.slice(puts);
+    expect(newPuts.length).toBeGreaterThan(0);
+    for (const r of newPuts) expect([r.sx >= x0 - 2, r.sx + r.sw <= x1 + 2, r.sy >= y0 - 2, r.sy + r.sh <= y1 + 2], `put ${JSON.stringify(r)}`).toEqual([true, true, true, true]);
+  });
+
+  test('the stand-in, then the build: a stroke made between is in both, once', () => {
+    clock();
+    const fk = fakeCanvases();
+    const held = heldClient();
+    const { frame, root } = mount({ author: true });
+    writeInk();
+    frames();
+    const stand = lastPicture(fk, root);
+    expect(stand.build, 'held back, the layer is drawn by the stand-in').toBe(false);
+    const flat = fk.of(stand.src).strokes;
+    dragTimed(frame, BARE, 100);
+    frames();
+    expect(lastPicture(fk, root).build).toBe(false);
+    expect(fk.of(lastPicture(fk, root).src).strokes, 'the stroke is drawn flat by the stand-in').toBeGreaterThan(flat);
+    held.release();
+    frames();
+    const done = lastPicture(fk, root);
+    expect(done.build, 'released, the build').toBe(true);
+    const line = penOn(BARE, 0);
+    const got = fk.of(done.src).surface;
+    expect(maxDiff(got, referenceOf([line])), 'the stroke is in the build, as if it had been in it from the first').toBeLessThanOrEqual(4);
+    expect(maxDiff(got, referenceOf([line, line])), 'and it is in once: twice would be a wider line').toBeGreaterThan(8);
+  });
+
+  test('a stroke still open when the build arrives goes on to the grid that arrived, and is in it once', () => {
+    clock();
+    const fk = fakeCanvases();
+    const held = heldClient();
+    const { frame, root } = mount({ author: true });
+    writeInk();
+    frames();
+    at(frame, 'pointerDown', BARE[0]!, 1000);
+    at(frame, 'pointerMove', BARE[1]!, 1100);
+    held.release();
+    frames();
+    at(frame, 'pointerMove', BARE[2]!, 1200);
+    at(frame, 'pointerUp', BARE[2]!, 1201);
+    frames();
+    const done = lastPicture(fk, root);
+    expect(done.build).toBe(true);
+    const line = penOn(BARE, 0);
+    expect(maxDiff(fk.of(done.src).surface, referenceOf([line]))).toBeLessThanOrEqual(4);
+  });
+
+  test('a build that already holds the stroke is not given it again, and the one it replaced is dropped', () => {
+    clock();
+    const fk = fakeCanvases();
+    const held = heldClient();
+    const { frame, root, hear } = mount({ author: true });
+    writeInk();
+    frames();
+    dragTimed(frame, BARE, 100);
+    frames();
+    const first = [...held.asks.keys()];
+    expect(first).toHaveLength(1);
+    /* Another device saves a dab: the layer is built again, from its strokes, this one in them. The first request is let go. */
+    const dab: Stroke = { tool: 'wash', ...brush(), points: [[0.5, 0.2]] };
+    hear({ 'play-1': { state: { strokes: [packStroke(dab)] }, savedAt: SAVED_AT } });
+    frames();
+    expect(held.cancelled).toContain(first[0]);
+    expect(held.asks.size).toBe(1);
+    expect([...held.asks.keys()][0]).not.toBe(first[0]);
+    /* The new request holds what the other device saved, and the stroke as it is kept (simplified, its drops on it). */
+    const asked = [...held.asks.values()][0]!.input.strokes;
+    expect(asked.map((s) => s.tool)).toEqual(['wash', 'ink']);
+    held.release();
+    frames();
+    const done = lastPicture(fk, root);
+    expect(done.build).toBe(true);
+    const kept = asked[1]!;
+    expect(maxDiff(fk.of(done.src).surface, referenceOf([dab, kept])), 'the stroke is in it, once').toBeLessThanOrEqual(4);
+    expect(maxDiff(fk.of(done.src).surface, referenceOf([dab, kept, kept]))).toBeGreaterThan(8);
+  });
+
+  test('a rebuild of the model in the middle of a stroke does not leave the rest of it on a dead model', () => {
+    const { frame, root, replay } = mount();
+    const [x, y] = inkSpot(inkOf(0));
+    const path: Pt[] = [[x, y], [x + 0.01, y], [x + 0.02, y], [x + 0.03, y], [x + 0.04, y], [x + 0.05, y]];
+    const px2 = (p: Pt) => px(p[0], p[1]);
+    act(() => { fireEvent.pointerDown(frame, { clientX: px2(path[0]!)[0], clientY: px2(path[0]!)[1], pointerId: 1, button: 0, pointerType: 'mouse' }); });
+    for (const p of path.slice(1, 3)) act(() => { fireEvent.pointerMove(frame, { clientX: px2(p)[0], clientY: px2(p)[1], pointerId: 1, pointerType: 'mouse' }); });
+    replay();
+    for (const p of path.slice(3)) act(() => { fireEvent.pointerMove(frame, { clientX: px2(p)[0], clientY: px2(p)[1], pointerId: 1, pointerType: 'mouse' }); });
+    act(() => { fireEvent.pointerUp(frame, { clientX: px2(path.at(-1)!)[0], clientY: px2(path.at(-1)!)[1], pointerId: 1, pointerType: 'mouse' }); });
+    const whole = inkOf(0, [{ tool: 'wash', ...brush(), points: path }]);
+    expect(whole.washed).toBeGreaterThan(0);
+    expect(washed(root)[0], 'the current model washed the whole stroke').toBeCloseTo(whole.washed, 3);
+  });
+
+  test('pointer speed over the last 50ms is the drops: floor(speed / DROPS_SPEED), at most 3, none for a tap or a pause', () => {
+    expect(DROPS_SPEED).toBe(900);
+    const line = (ms: number, step: number, count: number, rest = 0) => {
+      const trail = Array.from({ length: count }, (_, i) => ({ x: i * step, y: 0, t: i * ms }));
+      return dropsOf(trail, trail.at(-1)!.t + rest);
+    };
+    expect(line(10, 4, 20), '400 px/s').toBe(0);
+    expect(line(10, 9, 20), '900 px/s').toBe(1);
+    expect(line(10, 19, 20), '1900 px/s').toBe(2);
+    expect(line(10, 28, 20), '2800 px/s').toBe(3);
+    expect(line(10, 500, 20), 'far faster is still 3').toBe(3);
+    expect(line(10, 28, 20, 60), 'held still for 60ms before lifting').toBe(0);
+    expect(dropsOf([{ x: 5, y: 5, t: 100 }], 100), 'a tap').toBe(0);
+    expect(dropsOf([], 100)).toBe(0);
+    /* A drag that is all inside the window counts its own span: 90px in 50ms is 1800 px/s. */
+    expect(dropsOf([{ x: 0, y: 0, t: 0 }, { x: 90, y: 0, t: 50 }], 50)).toBe(2);
+    /* A segment half in the window counts half its length. */
+    expect(dropsOf([{ x: 0, y: 0, t: 0 }, { x: 180, y: 0, t: 100 }], 100)).toBe(2);
+  });
+
+  test('a fast lift saves drops above 0 with the stroke, and a slow one saves 0', async () => {
+    authorClock();
+    const fast = mount({ author: true });
+    writeInk();
+    dragTimed(fast.frame, BARE, 5);
+    await settle(SAVE_AFTER_MS);
+    const saved = (fast.save.mock.calls.at(-1)![1] as { strokes: { tool: string; drops?: number }[] }).strokes.at(-1)!;
+    expect(saved.tool).toBe('ink');
+    expect(saved.drops).toBe(3);
+    fast.unmount();
+    const slow = mount({ author: true });
+    writeInk();
+    dragTimed(slow.frame, BARE, 100);
+    await settle(SAVE_AFTER_MS);
+    expect((slow.save.mock.calls.at(-1)![1] as { strokes: { drops?: number }[] }).strokes.at(-1)!.drops).toBe(0);
+  });
+
+  test('what is saved is encoded, simplified and within fits, and what is kept is the same', async () => {
+    authorClock();
+    const { frame, save } = mount({ author: true });
+    writeInk();
+    /* 700 moves along one straight line: a hand reports far more than a line needs. */
+    const many = Array.from({ length: 700 }, (_, i): [number, number] => [0.02 + (0.9 * i) / 699, 0.985]);
+    dragTimed(frame, many, 100);
+    await settle(SAVE_AFTER_MS);
+    const state = save.mock.calls.at(-1)![1] as { strokes: { points: unknown; continues?: true; drops?: number }[] };
+    expect(state.strokes.every((s) => typeof s.points === 'string'), 'the points are packed').toBe(true);
+    const kept = savedOf(state).strokes;
+    expect(kept).toHaveLength(state.strokes.length);
+    const points = kept.reduce((n, s) => n + s.points.length, 0);
+    expect(points, 'simplified: a straight line is its two ends').toBeLessThan(10);
+    expect(fits(kept)).toBe(true);
+    expect(whoops.validateState!(state).ok).toBe(true);
+    expect(state.strokes.slice(1).every((s) => s.continues === true), 'pieces of one line continue it').toBe(true);
+  });
+
+  test('a post that leaves lets its pictures go, and builds again when it returns', () => {
+    clock();
+    fakeCanvases();
+    const watchers: ((entries: { isIntersecting: boolean }[]) => void)[] = [];
+    vi.stubGlobal('IntersectionObserver', class {
+      constructor(watch: (entries: { isIntersecting: boolean }[]) => void) { watchers.push(watch); }
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    });
+    const see = (isIntersecting: boolean) => act(() => { watchers.forEach((w) => w([{ isIntersecting }])); });
+    const held = heldClient(false);
+    const { root } = mount();
+    see(true);
+    frames();
+    expect(root.dataset.kbPictures, 'built for the post that is near').toBe('1');
+    expect(held.requested).toHaveLength(1);
+    see(false);
+    frames();
+    expect(root.dataset.kbPictures, 'the cache is empty').toBe('0');
+    see(true);
+    frames();
+    expect(root.dataset.kbPictures).toBe('1');
+    expect(held.requested, 'and built again').toHaveLength(2);
+  });
+
+  test('a build still out when the post leaves is dropped, and its answer is not used', () => {
+    clock();
+    fakeCanvases();
+    const watchers: ((entries: { isIntersecting: boolean }[]) => void)[] = [];
+    vi.stubGlobal('IntersectionObserver', class {
+      constructor(watch: (entries: { isIntersecting: boolean }[]) => void) { watchers.push(watch); }
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    });
+    const see = (isIntersecting: boolean) => act(() => { watchers.forEach((w) => w([{ isIntersecting }])); });
+    const held = heldClient();
+    const { root } = mount();
+    see(true);
+    frames();
+    const [key] = [...held.asks.keys()];
+    expect(key).toBeDefined();
+    see(false);
+    expect(held.cancelled).toContain(key);
+    held.release();
+    frames();
+    expect(root.dataset.kbPictures).toBe('0');
+  });
+
+  test('a layer is asked for with the key of its strokes, so a stroke changes it', () => {
+    clock();
+    fakeCanvases();
+    const held = heldClient(false);
+    mount({ states: { 'play-1': { state: { strokes: [packStroke({ tool: 'wash', ...brush(), points: [[0.5, 0.5], [0.6, 0.5]] })] }, savedAt: SAVED_AT } } });
+    frames();
+    expect(held.requested).toEqual([layerKey('play-1', boxNow(), 1, [{ tool: 'wash', ...brush(), points: [[0.5, 0.5], [0.6, 0.5]] }])]);
   });
 });
