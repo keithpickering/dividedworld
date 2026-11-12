@@ -139,7 +139,11 @@ In the dashboard, under **Authentication**:
    sender name `Divided World`.
 4. **Emails > Templates**: set **Magic Link** to the subject `Your Divided World sign-in code` and the body of
    `supabase/templates/sign-in.html`, and **Confirm signup** to `Your Divided World sign-up code` and the body of
-   `supabase/templates/sign-up.html`. Both must keep `{{ .Token }}`: the `account` function signs in with the code.
+   `supabase/templates/sign-up.html`. Both must keep `{{ .Token }}`: the `account` function signs in with the code. The button's link must keep
+   `{{ .RedirectTo }}` and `{{ .TokenHash }}`: the page opens with the hash, and the player's `next` rides on the
+   redirect. Paste the files again whenever they change. Auth takes a redirect only on its Site URL or its allow list,
+   and otherwise puts the Site URL in the link, so **Authentication > URL Configuration > Site URL** must be the
+   instance's own site (scheme, host and port).
 5. **Rate Limits**: with custom SMTP on, raise the emails-per-hour limit to what a sign-up evening needs; a few
    dozen an hour is plenty for a small circle.
 

@@ -92,7 +92,11 @@ test('hrefs are https, mailto or a declared slot; others throw naming the block'
   assert.throws(bad('javascript:alert(1)'), /button block 3: href/);
   assert.throws(bad('{{ .ConfirmationURL }}'), /button block 3/); // undeclared slot
   assert.throws(bad('http://example.test'), /button block 3/);
-  assert.throws(bad('{{ .ConfirmationURL }} x', slots), /button block 3/); // not exactly a slot
+  assert.throws(bad(' {{ .ConfirmationURL }}', slots), /button block 3/); // a slot must be first
+  bad('{{ .RedirectTo }}#token_hash={{ .TokenHash }}', ['{{ .RedirectTo }}', '{{ .TokenHash }}'])(); // begins with a declared slot
+  assert.throws(bad('{{ .RedirectTo }}#token_hash={{ .TokenHash }}', ['{{ .TokenHash }}']), /button block 3/); // begins with an undeclared one
+  assert.throws(bad('{{ .RedirectTo }}#t={{ .Other }}', ['{{ .RedirectTo }}']), /button block 3: holds "\{\{"/); // slot start, undeclared action after
+  assert.throws(bad('x{{ .RedirectTo }}', ['{{ .RedirectTo }}']), /button block 3/); // a slot not at the start
   bad('mailto:a@b.test')();
   bad('https://x.test/?a=1&b="2"')();
   // an href that starts https: may still not carry a template action of its own (Supabase's Go template)
