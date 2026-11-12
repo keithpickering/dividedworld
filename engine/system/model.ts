@@ -39,7 +39,7 @@ export interface ChatRequest extends CallContext {
   /** The bounds a provider's schema cannot express; the answer is repaired against them (validate.ts) and the trims recorded. */
   readonly rules?: Rule;
   readonly maxTokens: number;
-  /** The system prompt and the first message are the same in the calls that follow (a meeting's three parts): a provider that caches marks them. One without caching ignores it. */
+  /** The system prompt and the first message are the same in the calls that follow (a meeting's parts): a provider that caches marks them. One without caching ignores it. */
   readonly cachePrefix?: boolean;
 }
 

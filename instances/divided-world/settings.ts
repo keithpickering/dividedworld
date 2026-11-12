@@ -73,6 +73,18 @@ export const defaults: Settings = deepFreeze<Settings>({
   microEventDailyCalls: 20,
   /** A starting point: the Boss's digest holds the ten hottest threads. */
   digestThreads: 10,
+  /** A starting point: the digest lines thirty boards, and the busiest half and the quietest half when there are more, so a Boss can see a forum with five posts in it. */
+  digestBoards: 30,
+  /** A starting point: a board line counts its posts over the last three weeks. */
+  digestBoardDays: 21,
+  /** A thread moved off a board is listed on it for a week as a stub that says where it went, then the board forgets it. */
+  movedStubDays: 7,
+  /** The Boss writes its farewell and its handoff at its last meeting, within a day and a half of the season's end. */
+  farewellWindowHours: 36,
+  /** A bundle the Boss composes in a meeting holds at most four parts. */
+  bundleMostParts: 4,
+  /** A bundle an arc's beat authors holds at most eight: it costs nothing from the bank, so a writer's bundle is bounded here and not by the bank. */
+  bundleAuthoredMostParts: 8,
   /** A starting point: the digest quotes the eight top posts. */
   digestExcerpts: 8,
   /** A starting point: each quoted post is cut to 280 characters. */

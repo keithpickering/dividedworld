@@ -16,7 +16,10 @@
  * is not production, `?latency=<ms>` delays every promise the fake answers (withLatency), and `?fail=<rpc>` fails the first call of
  * the named rpc (withFailure).
  */
-import type { KayfaApi } from '../../../engine/ui/data/api.ts';
+import type { Character, KayfaApi } from '../../../engine/ui/data/api.ts';
+import { withStaffFace } from '../../../engine/ui/data/staff-faces.ts';
+import { instance } from '../../../instances/divided-world/index.ts';
+import { instanceUi } from '../../../instances/divided-world/ui/index.ts';
 import { createSupabaseApi } from './supabase.ts';
 import { fallbackSettings } from './settings.ts';
 
@@ -70,6 +73,9 @@ export function withFailure(api: KayfaApi, params: URLSearchParams | null): Kayf
   });
 }
 
+/** Staff characters wear the instance's pictures where they enter the screens' data (engine/ui/data/staff-faces.ts). */
+const face = (c: Character) => withStaffFace(c, instanceUi, instance.developer?.avatar);
+
 export async function createBackend(): Promise<KayfaApi> {
   const url = import.meta.env.VITE_SUPABASE_URL as string | undefined;
   const publishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined;
@@ -78,7 +84,7 @@ export async function createBackend(): Promise<KayfaApi> {
   if (!e2e && publishableKey?.startsWith('eyJ')) {
     throw new Error('VITE_SUPABASE_PUBLISHABLE_KEY is a legacy JWT key; KayfaBB takes the publishable and secret keys (sb_publishable_…, sb_secret_…)');
   }
-  if (!e2e && url && publishableKey) return createSupabaseApi({ url, publishableKey, settingsFallback: fallbackSettings });
+  if (!e2e && url && publishableKey) return createSupabaseApi({ url, publishableKey, settingsFallback: fallbackSettings, face });
   if (import.meta.env.PROD && !e2e) {
     throw new Error('This build names no Supabase project: set VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY when building.');
   }
@@ -99,12 +105,11 @@ export async function createBackend(): Promise<KayfaApi> {
     recordAvatarUploads(fake);
     return withFailure(withLatency(fake, timing), timing);
   }
-  const [{ createFake }, { instance }, { seedDemo, recordAvatarUploads, exposeFake }] = await Promise.all([
+  const [{ createFake }, { seedDemo, recordAvatarUploads, exposeFake }] = await Promise.all([
     import('../../../engine/ui/data/fake.ts'),
-    import('../../../instances/divided-world/index.ts'),
     import('../demo.ts'),
   ]);
-  const fake = createFake({ instance, settings: fallbackSettings });
+  const fake = createFake({ instance, settings: fallbackSettings, face });
   const demo = seedDemo(fake);
   if (e2e) {
     recordAvatarUploads(fake);

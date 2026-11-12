@@ -20,13 +20,14 @@
  * **The window.** The digest runs from where the previous meeting's window ended (its slot) to this slot, so no play falls
  * between two meetings: the previous meeting's finish time would skip what happened between its slot and its close.
  *
- * **Cost does not grow with the instance.** Three strong-tier calls per meeting (moves, staff, self; one cached prefix), a digest bounded by the settings' ceilings
+ * **Cost does not grow with the instance.** One strong-tier call per part of the meeting (moves, bundle, staff, self; one cached prefix), a digest bounded by the settings' ceilings
  * (engine/system/digest.ts), a memory bounded by its caps, and one fetch per configured feed with a short timeout. Nothing here reads a row per player, character or Act.
  *
  * Nothing private reaches the model: the digest is built by a role that reads public relations only, and the characters the
  * model names are checked against `characters_public`.
  */
 import type { Instance } from '../../../engine/rules/types.ts';
+import { shownBeats, type ArcRead } from '../../../engine/system/beats.ts';
 import type { Career } from '../../../engine/system/career.ts';
 import { DIGEST_MOST, renderDigest, withPronouns, type RawDigest } from '../../../engine/system/digest.ts';
 import { ENGINE_DEFAULT_PRONOUNS, pronounsOr, taggedName } from '../../../engine/rules/pronouns.ts';
@@ -37,13 +38,17 @@ import {
   MEETING_PARTS,
   REFERENCE_MOST,
   SUCCESSOR_WINDOW_MS,
+  farewellFactsText,
+  inFarewellWindow,
   inheritedText,
   meetingSystemPrompt,
   namedCharacters,
+  predecessorText,
   referenceText,
   partRule,
   partSchema,
   repairAnswer,
+  type HandoffFacts,
   type InheritedMove,
   type MachineSlotFacts,
   type ModFacts,
@@ -74,6 +79,8 @@ export type MeetingOutcome =
     readonly boss: string;
     readonly phase: string;
     readonly queued: number;
+    /** The beats the database played (a bundle it skipped is not among them). */
+    readonly beatsPlayed: readonly string[];
     /** Every bound the meeting cut or move it dropped, beside the model-level trims the call's ledger row holds. */
     readonly trims: readonly Trim[];
     /** Things the run did that a reader of the result should know (a stock description stood in). */
@@ -104,6 +111,15 @@ interface Context {
    * move in force on each. Nothing about a purchase or a buyer. Absent from an older database, where the Boss has no machine to move.
    */
   readonly machine?: readonly MachineSlotFacts[];
+  /** The Boss's arc as the database reads it (0334, over arc_for_meeting): the beats unlocked and not yet played, with whether each is due, and the kinds held back. Absent from an older database, which holds nothing back. */
+  readonly arc?: ArcRead;
+  /**
+   * What the code knows of the open season (0337), handed over only to a meeting within farewellWindowHours of the season's end, to write its handoff from; null or absent otherwise, and from an
+   * older database, which keeps no handoff.
+   */
+  readonly handoffFacts?: HandoffFacts | null;
+  /** What a new Boss is handed for inheritanceGraceDays after the handover (0337): the outgoing Boss, the facts of the season it led and its note (null where its last meeting failed). Null or absent otherwise. */
+  readonly predecessor?: { readonly staff: string; readonly season: number; readonly note: string | null; readonly facts: HandoffFacts } | null;
   /**
    * The groups (0131): the conferred catalog, and the characters no move may name now (capped at the punishment cap, or held by a group move in force or queued), each with the
    * group it is in now. Absent from an older database, which confers none.
@@ -139,7 +155,7 @@ type PartResult = { part: string; outcome: 'ok' } | { part: string; outcome: 're
 const said = (e: unknown): string => clip(e instanceof Error ? e.message : String(e), 500);
 
 /** The most tokens each part of the meeting may answer with, by the part's key (the moves are the long one). */
-const PART_TOKENS = { moves: 6_000, staff: 3_000, self: 3_000 } as const;
+const PART_TOKENS = { moves: 6_000, bundle: 4_000, staff: 3_000, self: 4_500 } as const;
 
 /** Errors that are facts about the database or the ledger, never about the model: thrown at once, after the row is closed failed. */
 const isInfrastructure = (e: unknown): boolean => e instanceof DatabaseError || e instanceof TransportError || e instanceof LedgerWriteFailed;
@@ -256,8 +272,14 @@ export async function runMeeting(
 
     const { titles, skipped } = await readFeeds(tuned.system.feeds, fetchFeed);
 
+    // Only the beats the database calls unlocked and unplayed reach the prompt, found in the Boss's own file; the kinds it holds back are listed nowhere.
+    const beats = shownBeats(boss, context.arc);
+    const heldBack = context.arc?.heldBack ?? [];
     const due = context.inheritanceDue ?? [];
     const successorAllowed = phase.phase === 'meltdown' && now >= context.season.endsAt - SUCCESSOR_WINDOW_MS;
+    // A meeting within farewellWindowHours of the season's end is told to write a farewell (in character) and a handoff (out of character) and shown the facts to write it from. The window is the clock's
+    // and the database's both: a database that handed over no facts (an older one, or one whose clock says otherwise) leaves the meeting outside it, and the apply holds the same line.
+    const farewell = context.handoffFacts && inFarewellWindow(context.season.endsAt, now, settings.farewellWindowHours) ? { postMaxLength: settings.postMaxLength } : undefined;
     const system = meetingSystemPrompt({
       boss,
       bossPronouns: personaSet(boss.pronouns),
@@ -270,6 +292,9 @@ export async function runMeeting(
       characterName: (id) => { const c = digest.characters.find((x) => x.id === id); return c ? taggedName(c.name.slice(0, 60), c.pronouns) : 'someone'; },
       successorAllowed,
       groups: { conferred: context.groups?.conferred ?? [] },
+      beats,
+      heldBack,
+      ...(farewell ? { farewell } : {}),
       career,
       notes: bossNotes,
       roster: tuned.system.roster.filter((b) => successors.has(b.key)).map((b) => ({ key: b.key, name: b.name, pronouns: personaSet(b.pronouns) })),
@@ -287,6 +312,8 @@ export async function runMeeting(
     const message = [
       renderDigest(digest, memory, titles),
       ...(due.length ? ['', ...inheritedText(due, settings.inheritanceGraceDays)] : []),
+      ...(context.predecessor ? ['', ...predecessorText(context.predecessor)] : []),
+      ...(farewell && context.handoffFacts ? ['', ...farewellFactsText(context.handoffFacts)] : []),
       ...(notes.length ? ['', ...notes] : []),
       '',
       referenceText({
@@ -295,13 +322,13 @@ export async function runMeeting(
         characters: shown.map((c) => ({ id: c.id, name: c.name, pronouns: c.pronouns, group: groupOf.get(c.id.toLowerCase()) })),
         machine: context.machine,
         trophies: { boss: bossList, barred: new Set(), given: new Set() },
-      }),
+      }, heldBack),
       '',
-      // The first part's ask closes the message, so the message is the same in all three calls and is the cached prefix.
+      // The first part's ask closes the message, so the message is the same in every call and is the cached prefix.
       MEETING_PARTS[0].ask,
     ].join('\n');
 
-    // Three calls in order, each shown the earlier answers as prior turns; a part that fails is recorded and the next still runs, shown that it was not kept.
+    // One call for each part, in order, each shown the earlier answers as prior turns; a part that fails is recorded and the next still runs, shown that it was not kept.
     const messages: { role: 'user' | 'assistant'; content: string }[] = [{ role: 'user', content: message }];
     const merged: Record<string, unknown> = {};
     for (const [i, p] of MEETING_PARTS.entries()) {
@@ -380,6 +407,9 @@ export async function runMeeting(
       inheritable: context.inheritanceDue ? new Set(due.map((m) => m.act.toLowerCase())) : undefined,
       // Only the slots the model was shown (the reference list is bounded) can be named, as with the threads.
       machine: context.machine?.slice(0, REFERENCE_MOST.machine),
+      beats,
+      heldBack: new Set(heldBack),
+      ...(farewell ? { farewell } : {}),
       trophies: { ...trophies, boss: bossList.slice(0, REFERENCE_MOST.trophies) },
     });
     if (!repaired.ok) {
@@ -401,10 +431,12 @@ export async function runMeeting(
       successor: repaired.successor,
       // The patrols the Boss scheduled for the Mods: kept on the record for the patrol run (Task 11).
       patrols: repaired.patrols,
+      // The due beats the answer left out, played with their defaults.
+      beatsDefaulted: repaired.defaulted,
       // Each part's outcome: a part that was not kept left its fields out of the answer.
       parts,
     };
-    const applied = await db.rpc<{ status: 'applied' | 'already applied'; queued?: number; bank_before?: number; bank_after?: number }>('apply_meeting', {
+    const applied = await db.rpc<{ status: 'applied' | 'already applied'; queued?: number; beats_played?: string[]; bank_before?: number; bank_after?: number }>('apply_meeting', {
       meeting,
       payload: {
         boss: bossKey,
@@ -420,9 +452,26 @@ export async function runMeeting(
           expires_in_hours: m.expiresInHours,
           why: m.why,
         })),
+        // The bundles: a beat's (authored: named by its beat, at no cost, played with the bundle) and the Boss's own (at one move a part). Parts are in dependency order; a role names an earlier part.
+        bundles: repaired.bundles.map((b) => ({
+          name: b.name,
+          beat: b.beat,
+          parts: b.parts.map((p) => ({
+            role: p.role,
+            kind: p.kind,
+            params: p.params,
+            ...(p.demand ? { demand: p.demand } : {}),
+            go_live_at: new Date(p.goLiveAt).toISOString(),
+            expires_in_hours: p.expiresInHours,
+            why: p.why,
+          })),
+        })),
         // The handover's two answers (the database acts on them: a nomination is queued, each inherited move kept or ended, none at the bank's cost).
         successor: repaired.successor,
         inherited: repaired.inherited,
+        // The Boss's last words, in character, and its note out of character (0337): present only from a meeting within the farewell window, trimmed, and stored as a row of their own.
+        ...(repaired.farewell !== null ? { farewell: repaired.farewell } : {}),
+        ...(repaired.handoff !== null ? { handoff: repaired.handoff } : {}),
         // The Mods' orders: each with its beat, its line, its allowance (out of the Boss's bank, which the database charges) and its new memory.
         orders: repaired.orders.map((o) => ({ mod: o.mod, boards: o.boards, order: o.order, allowance: o.allowance, ...(o.memory ? { memory: o.memory } : {}) })),
         // The database computes the bank itself, in the transaction, from these numbers, so a delayed apply debits the true balance.
@@ -437,7 +486,9 @@ export async function runMeeting(
       meeting,
       boss: bossKey,
       phase: phase.phase,
-      queued: moves.length,
+      // What the database queued and played, not what the answer meant to: it skips a bundle its guard refuses, and the record it wrote says so.
+      queued: applied.queued ?? moves.length + repaired.bundles.reduce((n, b) => n + b.parts.length, 0),
+      beatsPlayed: applied.beats_played ?? repaired.bundles.flatMap((b) => (b.beat === null ? [] : [b.beat])),
       trims,
       notes,
       feedsSkipped: skipped,

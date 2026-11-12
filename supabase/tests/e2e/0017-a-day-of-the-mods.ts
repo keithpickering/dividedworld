@@ -17,6 +17,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { firstMessageOf, partOf, partAnswer } from './meeting-fake.ts';
+import { MEETING_PARTS } from '../../../engine/system/meeting.ts';
 import { psqlDb, sql, scratchSeed } from './psql-db.ts';
 import { runMeeting } from '../../functions/meet/core.ts';
 import { runFilings } from '../../functions/staff/core.ts';
@@ -329,9 +330,9 @@ test('a meeting orders two Mods; visits are drawn, intercepted, reported and fil
   const key = (x: Record<string, any>) => `${x.duty}:${x.staff}`;
   assert.deepEqual(ledger.map(key).sort(), log.map(key).sort(), 'one ledger row for each call the fake model answered');
   const counts = (duty: string) => ledger.filter((l) => l.duty === duty).length;
-  assert.deepEqual(['meeting', 'filing', 'reportJudge', 'appeal', 'patrolJudge'].map(counts), [6, 4, 1, 2, 1]);
+  assert.deepEqual(['meeting', 'filing', 'reportJudge', 'appeal', 'patrolJudge'].map(counts), [2 * MEETING_PARTS.length, 4, 1, 2, 1]);
   assert.deepEqual(ledger.filter((l) => l.duty === 'appeal').map((l) => l.staff).sort(), [BOSS, HYPE].sort(), 'the Boss heard the ban and the Mod the infraction');
   assert.equal(ledger.find((l) => l.duty === 'meeting')!.model, tiers.strong);
   assert.ok(ledger.filter((l) => l.duty !== 'meeting').every((l) => l.model === tiers.light));
-  assert.equal(sql(`select count(*) from model_calls where meeting = ${meeting1} and duty = 'meeting'`), '3', 'the meeting\'s three rows name its meeting');
+  assert.equal(sql(`select count(*) from model_calls where meeting = ${meeting1} and duty = 'meeting'`), String(MEETING_PARTS.length), 'the meeting\'s rows, one for each part, name its meeting');
 });

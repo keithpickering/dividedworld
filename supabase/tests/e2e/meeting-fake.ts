@@ -1,5 +1,5 @@
 /**
- * What the e2e files' fake model needs to read a request the way the real adapter writes it, and to answer the meeting's three calls
+ * What the e2e files' fake model needs to read a request the way the real adapter writes it, and to answer the meeting's calls
  * (MEETING_PARTS in engine/system/meeting.ts). The Anthropic adapter sends `system` and the first message as blocks of text when the
  * request has a `cachePrefix`, so a fake that reads either as a string reads "[object Object]"; `textOf` reads both forms. The meeting is
  * answered one part at a time: `partOf` says which part a request asks for (the last message ends with that part's `ask`), and

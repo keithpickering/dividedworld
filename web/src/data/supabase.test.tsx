@@ -2274,14 +2274,19 @@ describe('the moves a board shows, a staff profile and the admin queue', () => {
       roster: [{ staff: 'the-clerk', name: 'The Clerk', pronouns: PRONOUN_PRESETS.he }, { staff: 7, name: 'bad' }],
       todos: [{ season: 3, boss: 'the-clerk', bossName: 'The Clerk', bossPronouns: PRONOUN_PRESETS.he, bossWas: 'mod', outgoing: 'director', outgoingName: 'The Director', outgoingPronouns: null, outgoingOffice: 'member', how: 'rotation', landedAt: '2026-11-01T00:00:00+00:00' }],
     };
+    /* A part of a bundle says its bundle, role and the bundle's name (0329); a move that is none says null for each. */
+    queue.waiting[0] = { ...queue.waiting[0]!, bundle: C, role: 'minus', bundleName: 'The Split', waitsFor: [{ id: 3, role: 'minus', kind: 'createBoard', name: 'World -1' }, 'junk'] } as (typeof queue.waiting)[0];
     const h = harness((r) => {
       if (r.url.pathname.endsWith('/rpc/admin_queue')) return json(queue);
-      if (r.url.pathname.endsWith('/rpc/hold_move')) return json({ id: 4, heldAt: '2026-10-31T15:00:00+00:00' });
-      if (r.url.pathname.endsWith('/rpc/reverse_move')) return json({ act: A, endedBy: B });
+      if (r.url.pathname.endsWith('/rpc/hold_move')) return json({ id: 4, heldAt: '2026-10-31T15:00:00+00:00', heldAlso: [5, 6] });
+      if (r.url.pathname.endsWith('/rpc/reverse_move')) return json({ act: A, endedBy: B, alsoEnded: [C], heldAlso: [7] });
       return json({}, 404);
     });
     const q = await h.api.adminQueue();
     expect(q.waiting[0]).toMatchObject({ id: 4, boss: 'The Director', boardName: 'General', failure: 'it did not land', failedAt: '2026-10-31T14:11:00+00:00', demand: { kind: 'postsOnBoard' } });
+    expect(q.waiting[0]).toMatchObject({ bundle: C, role: 'minus', bundleName: 'The Split' });
+    expect(q.waiting[0]?.waitsFor).toEqual([{ id: 3, role: 'minus', kind: 'createBoard', name: 'World -1' }]);
+    expect([q.inForce[0], q.ended[0]]).toMatchObject([{ bundle: null, role: null, bundleName: null }, { bundle: null, role: null, bundleName: null }]);
     expect(q.inForce[0]?.progress).toEqual({ done: 2, of: 5, met: false, checkedAt: '2026-11-01T14:05:00+00:00' });
     expect(q.ended.map((e) => e.how)).toEqual(['held', 'met']);
     expect(q.more).toEqual({ waiting: false, inForce: false, staffCards: false, ended: true });
@@ -2292,9 +2297,9 @@ describe('the moves a board shows, a staff profile and the admin queue', () => {
     expect(q.ended[1]?.bossPronouns).toEqual(ENGINE_DEFAULT_PRONOUNS);
     expect(q.todos[0]).toMatchObject({ bossPronouns: PRONOUN_PRESETS.he, outgoingPronouns: ENGINE_DEFAULT_PRONOUNS });
     expect(q.waiting[0]?.replacedAt).toBeNull();
-    expect(await h.api.holdMove(4)).toEqual({ ok: true, value: { id: 4, heldAt: '2026-10-31T15:00:00+00:00' } });
+    expect(await h.api.holdMove(4)).toEqual({ ok: true, value: { id: 4, heldAt: '2026-10-31T15:00:00+00:00', heldAlso: [5, 6] } });
     expect(h.to('rpc/hold_move')[0]?.body).toEqual({ id: 4 });
-    expect(await h.api.reverseMove(A)).toEqual({ ok: true, value: { act: A, endedBy: B } });
+    expect(await h.api.reverseMove(A)).toEqual({ ok: true, value: { act: A, endedBy: B, alsoEnded: [C], heldAlso: [7] } });
     expect(h.to('rpc/reverse_move')[0]?.body).toEqual({ move_act: A });
   });
 
@@ -2465,6 +2470,29 @@ describe('a screen in one call', () => {
     expect(page?.mine).toEqual([{ act: SET, kind: 'fire', character: B }]);
     expect(page?.characters).toEqual([{ ...BEA, title: '', signature: '', avatarSquare: null, squareFrame: null, pipStyle: 'default', pronouns: ENGINE_DEFAULT_PRONOUNS }]);
     expect(await once('board_page', null).api.boardPage('nowhere', 1, [])).toBeNull();
+  });
+
+  it('board_page: maps the stubs of moved threads, and a closed board\'s merge or fallback; an open board is not closed', async () => {
+    const rest = { board: BOARD_ROW, total: 0, page: 1, threads: [], pins: [], banner: [], states: [], releases: [], tallies: [], mine: [], reading: [], views: [], characters: [], presence: PRESENCE, unread: 0 };
+    const open = await once('board_page', { ...rest, closed: false, mergedInto: null, fallback: null, stubs: [{ id: T, title: 'Best bread', moved_to: C, moved_to_slug: 'off-topic', moved_to_name: 'Off Topic', moved_at: '2026-10-01T10:00:00+00:00' }] }).api.boardPage('general', 1, []);
+    expect(open?.closed).toBeNull();
+    expect(open?.stubs).toEqual([{ thread: T, title: 'Best bread', movedTo: { id: C, slug: 'off-topic', name: 'Off Topic' }, movedAt: '2026-10-01T10:00:00+00:00' }]);
+    const merged = await once('board_page', { ...rest, closed: true, mergedInto: { id: C, slug: 'general', name: 'General' }, goesTo: { id: B, slug: 'open', name: 'Open' }, fallback: null, stubs: [], presence: null }).api.boardPage('minus', 1, []);
+    expect(merged?.closed).toEqual({ mergedInto: { id: C, slug: 'general', name: 'General' }, fallback: null, goesTo: { id: B, slug: 'open', name: 'Open' } });
+    expect(merged?.threads).toEqual([]);
+    const made = await once('board_page', { ...rest, closed: true, mergedInto: null, fallback: { id: C, slug: 'general', name: 'General' }, stubs: [], presence: null }).api.boardPage('short', 1, []);
+    expect(made?.closed).toEqual({ mergedInto: null, fallback: { id: C, slug: 'general', name: 'General' }, goesTo: null });
+    /* A page from before the stubs (no keys) is an open board with none. */
+    const older = await once('board_page', rest).api.boardPage('general', 1, []);
+    expect(older?.closed).toBeNull();
+    expect(older?.stubs).toEqual([]);
+  });
+
+  it('move_thread_names: sends the thread and move of each item, and maps the titles and the boards left by key; a bad id is not sent', async () => {
+    const h = once('move_thread_names', [{ key: A, title: 'Best bread', left: C }, { key: T, title: 'Waiting', left: null }]);
+    const got = await h.api.moveThreadNames([{ thread: T, act: A }, { thread: T, act: null }, { thread: 'nope', act: null }]);
+    expect(only(h, 'move_thread_names')).toEqual({ items: [{ thread: T, act: A }, { thread: T, act: null }] });
+    expect(got).toEqual({ [A]: { title: 'Best bread', left: C }, [T]: { title: 'Waiting', left: null } });
   });
 
   it('search_posts and search_threads: send the filters by their column names and the cursor as given, and map the page to camelCase', async () => {

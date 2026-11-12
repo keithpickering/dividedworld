@@ -30,6 +30,8 @@ import cardBackCanvas from './card-back/art.webp?url';
 import pipFull from './pips/default-full.svg?url';
 import pipEmpty from './pips/default-empty.svg?url';
 import gabe from './avatars/gabe.png?url';
+import fangameSquare from './avatars/fangame-square.webp?url';
+import fangamePortrait from './avatars/fangame-portrait.webp?url';
 import { hintWords } from './hint-words.ts';
 import { trapStruckWords } from './trap-words.ts';
 import { onboarding } from './onboarding.ts';
@@ -179,6 +181,8 @@ export const instanceUi: InstanceUi = Object.freeze({
   pips: Object.freeze({ default: { full: pipFull, empty: pipEmpty } }),
   /* The developer persona's picture, by the key the instance's rules name (index.ts, `developer`). */
   avatars: Object.freeze({ gabe }),
+  /* The staff personas' pictures, by roster key (FanGaME, the first Boss). */
+  staffAvatars: Object.freeze({ fangame: Object.freeze({ square: fangameSquare, portrait: fangamePortrait }) }),
   glass,
   cards: cardsUi,
   packs: packsUi,
