@@ -16,8 +16,8 @@
  * came back short has nothing older, and limits nothing.
  *
  * So a page holds whole settlements: a settlement whose lines ran past a full read is left for the
- * next page, whole. A settlement has at most a line per character and reason (the ledger's unique
- * index, 0034), a few dozen for a player, far under `LOG_ROWS`.
+ * next page, whole. A settlement has at most a line per character, reason and card (the ledger's unique
+ * index, 0034, and 0150), a few dozen for a player, far under `LOG_ROWS`.
  *
  * A source that does hold `LOG_ROWS` rows at one instant would cut the page exactly where it was read from
  * and hand back the same cursor, and Show older lines would read that page forever (#89 F4). Of the two
@@ -25,11 +25,12 @@
  * and moves the cursor to the microsecond before it (`readLogPage`); it does not fail, since a failure
  * would leave the older lines out of reach, a dead end of its own. Weighed at a busy instance: the views
  * are the caller's own, so the second read holds one player's rows at one instant. A settlement writes
- * at most a line per character and reason (with 6 characters and a class's handful of reasons, some 30)
+ * at most a line per character, reason and card (with 6 characters and a class's handful of reasons, some 30)
  * and one wallet event; an action writes a row or two. So it is tens of rows, read only on a page that
  * would not move. It reaches `LOG_ROWS` only where rows were written in bulk at one time (a backfill),
  * and even then it is that player's own rows at that instant, never more than their whole history.
  */
+import { lineKey } from '../../rules/settle.ts';
 import type { CardEnded, CardEvent, CaughtPlay, EffectSaved, FaceDownEnd, Log, LogAppeal, LogBan, LogGroupMove, LogInfraction, LogLine, LogReport, LogSettlement, LogShare, PackEvent, PlayOnMine, ScoredAs, WalletEvent, WrittenOnMine } from './api.ts';
 
 /** The most rows a page reads from each source. */
@@ -48,11 +49,12 @@ export interface LedgerRow {
   readonly params?: Readonly<Record<string, number | string>>;
 }
 
-/** A share as `my_ledger_shares` reads it, named by its line's settlement, character and reason. */
+/** A share as `my_ledger_shares` reads it, named by its line's settlement, character, reason and card (null where the entry names none). */
 export interface ShareRow extends LogShare {
   readonly settlement: number;
   readonly character: string;
   readonly reason: string;
+  readonly card: string | null;
 }
 
 /** What one page's reads returned, each source newest first and at most `limit` rows; the shares whole for the settlements read. */
@@ -118,20 +120,22 @@ export function cutLog(read: LogRead, limit: number = LOG_ROWS): Log {
     if (!keep(row.endsAt)) continue;
     const s = settlements.get(row.settlement) ?? { row, lines: new Map<string, LogShare[]>(), order: [] };
     settlements.set(row.settlement, s);
-    s.lines.set(`${row.character}\u0000${row.reason}`, []);
+    s.lines.set(lineKey(row.character, row.reason, row.params?.card), []);
     s.order.push(row);
   }
   for (const share of read.shares) {
-    const line = settlements.get(share.settlement)?.lines.get(`${share.character}\u0000${share.reason}`);
+    const line = settlements.get(share.settlement)?.lines.get(lineKey(share.character, share.reason, share.card));
     line?.push({ act: share.act, quadrant: share.quadrant, amount: share.amount });
   }
   const byShare = (a: LogShare, b: LogShare) => Math.abs(b.amount) - Math.abs(a.amount) || (a.act < b.act ? -1 : a.act > b.act ? 1 : 0) || String(a.quadrant).localeCompare(String(b.quadrant));
+  const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+  const cardOf = (l: LedgerRow) => (typeof l.params?.card === 'string' ? l.params.card : '');
   const out: LogSettlement[] = [...settlements.values()]
     .sort((a, b) => micros(b.row.endsAt) - micros(a.row.endsAt))
     .map(({ row, lines, order }) => ({
       id: row.settlement, startsAt: row.startsAt, endsAt: row.endsAt, sharesKept: row.sharesKept,
-      /* By character, then reason, as the adapter's read orders them, so both backends hand the screens one order. */
-      lines: [...order].sort((a, b) => (a.character < b.character ? -1 : a.character > b.character ? 1 : a.reason < b.reason ? -1 : a.reason > b.reason ? 1 : 0)).map((l): LogLine => ({ character: l.character, reason: l.reason, amount: l.amount, ...(l.params ? { params: l.params } : {}), shares: [...lines.get(`${l.character}\u0000${l.reason}`)!].sort(byShare) })),
+      /* By character, then reason, then card (none first), as the adapter's read orders them, so both backends hand the screens one order. */
+      lines: [...order].sort((a, b) => cmp(a.character, b.character) || cmp(a.reason, b.reason) || cmp(cardOf(a), cardOf(b))).map((l): LogLine => ({ character: l.character, reason: l.reason, amount: l.amount, ...(l.params ? { params: l.params } : {}), shares: [...lines.get(lineKey(l.character, l.reason, l.params?.card))!].sort(byShare) })),
     }));
   return {
     settlements: out,

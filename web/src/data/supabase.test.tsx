@@ -1912,6 +1912,22 @@ describe('reads by many ids', () => {
     expect(log.settlements.every((s) => s.lines[0]?.shares.length === 1)).toBe(true);
   });
 
+  it('reads the log\'s shares with their card, ordered by it between reason and act, and files each card\'s shares under its own line', async () => {
+    const ledger = (card: string | null, amount: number) => ({ settlement: 9, starts_at: 'a', ends_at: '2026-10-01T00:00:00Z', character: B, reason: 'card.ride', amount, shares_kept: true, params: card === null ? null : { card } });
+    const share = (card: string | null, amount: number) => ({ settlement: 9, character: B, reason: 'card.ride', card, act: A, quadrant: 'excitedPositive', amount });
+    const h = harness((r) => {
+      const name = r.url.pathname.replace(`${REST}/`, '');
+      if (name === 'my_ledger') return rows([ledger('x', 3), ledger('y', 7)]);
+      if (name === 'my_ledger_shares') return rows([share('x', 3), share('y', 7)]);
+      return rows([]);
+    });
+    const log = await h.api.log();
+    const [req] = h.to('my_ledger_shares');
+    expect(req?.url.searchParams.get('select')).toBe('settlement,character,reason,card,act,quadrant,amount');
+    expect(req?.url.searchParams.get('order')).toBe('settlement.desc,character.asc,reason.asc,card.asc,act.asc,quadrant.asc');
+    expect(log.settlements[0]!.lines.map((l) => [l.params?.['card'], l.shares.map((s) => s.amount)])).toEqual([['x', [3]], ['y', [7]]]);
+  });
+
   /** A table of rows the harness answers as one PostgREST query would: filtered by the request's `in.(…)`, ordered by `order`, cut at `limit`. */
   const asOneQuery = (table: readonly Row[], column: string, order: (a: Row, b: Row) => number) => (r: Rec) => {
     const asked = new Set(askedIn(r));

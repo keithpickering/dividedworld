@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { applyCap, estimateForOwner, settle, shareEntries, type LedgerEntry } from './settle.ts';
+import { applyCap, entryKey, estimateForOwner, lineKey, settle, shareEntries, type LedgerEntry } from './settle.ts';
 import type { ClassInput, ClassRules, Earning, Instance, InputAct, InputReaction, SettlementInput } from './types.ts';
 import { systemSettings, testSystem, testGroups } from './test-system.ts';
 
@@ -1638,4 +1638,12 @@ test('card payouts are in no class\'s total, the log adds up to the entries, and
   for (const e of r.entries) assert.equal(r.details.filter((d) => d.character === e.character && d.reason === e.reason && d.params?.card === e.params?.card).reduce((s, d) => s + d.amount, 0), e.amount, `${e.character} ${e.reason}`);
   const shuffled: SettlementInput = { ...input, characters: [...input.characters].reverse(), acts: [...input.acts].reverse(), reactions: [...input.reactions].reverse() };
   assert.deepEqual(settle(shuffled, payWorld), r);
+});
+
+test('entryKey is the player and the line key, and the line key tells two cards, and a card and none, apart', () => {
+  assert.equal(entryKey({ player: 'u', character: 'c', reason: 'card.ride', params: { card: 'x' } }), `u\u0000${lineKey('c', 'card.ride', 'x')}`);
+  assert.equal(entryKey({ player: 'u', character: 'c', reason: 'face.cheered' }), `u\u0000${lineKey('c', 'face.cheered', null)}`);
+  assert.equal(entryKey({ player: 'u', character: 'c', reason: 'card.ride', params: { card: 'x' } }), 'u\u0000c\u0000card.ride\u0000x');
+  assert.notEqual(lineKey('c', 'card.ride', 'x'), lineKey('c', 'card.ride', 'y'));
+  assert.notEqual(lineKey('c', 'card.ride', 'x'), lineKey('c', 'card.ride', null));
 });

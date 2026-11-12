@@ -112,7 +112,7 @@ export function Summary({ data, tab, onTab }: { readonly data: LogData; readonly
                 <h2 className="kb-settled-why-head" id="kb-settled-why">{why}</h2>
                 <ul className="kb-settled-lines" aria-labelledby="kb-settled-why">
                   {lines.map((l) => (
-                    <li key={l.reason} className="kb-settled-line">
+                    <li key={`${l.reason}:${l.params?.['card'] ?? ''}`} className="kb-settled-line">
                       <span data-kb-reason="">{ui.reasonWords(l.reason, paramsOf(l, words.economy))}</span>
                       <span className="kb-settled-amount" data-kb-amount="" data-kb-sign={Math.sign(l.amount)}>{signed(l.amount)}</span>
                     </li>
