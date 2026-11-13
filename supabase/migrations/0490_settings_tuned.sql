@@ -15,8 +15,12 @@
 --
 -- The only other writer of settings in the running instance is set_admin_contact (0081), an admin's own choice, so it marks adminContact tuned as any admin's write does.
 --
--- seed_instance (0348), with every settings write through seed_setting. Everything else as 0348 wrote it. (The one addition beside that: it sets `kayfabb.seeding` back to 'off' as it
--- returns, since the setting lasts the transaction and a write made later in the one that called it is not the seed's.)
+-- seed_instance (0348), with every settings write through seed_setting. Everything else as 0348 wrote it. (The one addition beside that: it sets `kayfabb.seeding` back to the value it
+-- found as it returns, 'off' where there was none, since the setting lasts the transaction and a write made later in the one that called it is not the seed's, while a caller that
+-- had the flag on keeps it.)
+--
+-- An instance that already holds settings rows when this applies: every row starts with tuned_at null (untuned), so the first seed after it writes the code's values as seeds did
+-- before. A row counts as tuned only from the first write by anything other than the seed after this migration.
 --
 -- Ways out. A tuned row is a state a settings row can be in, and its way out is an admin's: set tuned_at to null in the SQL editor, and the next seed writes the code's value.
 -- Masks. A settings row holds the instance's numbers; nothing here is computed from a private fact.
@@ -80,6 +84,7 @@ declare
   unknown text;
   sys uuid;
   opened uuid;
+  was text := current_setting('kayfabb.seeding', true);
 begin
   -- Two seeds at once would each find no office row and both write one into the append-only office log. An advisory
   -- transaction lock serializes seeds without locking any table a player reads, and lets go at commit.
@@ -365,8 +370,9 @@ begin
        where board = sys and shard = coalesce((select c.shard from board_thread_counts c where c.board = sys order by c.shard for update skip locked limit 1), 0);
     end if;
   end if;
-  -- Seeding ends here: a write later in a transaction that called this (a test file's, one session's) is not the seed's.
-  perform set_config('kayfabb.seeding', 'off', true);
+  -- Seeding ends here: a write later in a transaction that called this (a test file's, one session's) is not the seed's. The flag goes back to the value this found. A custom
+  -- setting cannot be truly unset inside a transaction, so one that was unset (null) or empty goes back to 'off', which the trigger reads the same.
+  perform set_config('kayfabb.seeding', coalesce(nullif(was, ''), 'off'), true);
   return jsonb_build_object('settings', (select count(*) from settings), 'classes', (select count(*) from class_kinds),
     'reactions', (select count(*) from reaction_kinds), 'groups', (select count(*) from group_kinds), 'cards', (select count(*) from card_kinds), 'boards', (select count(*) from boards));
 end $function$;

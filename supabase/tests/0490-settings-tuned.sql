@@ -41,6 +41,18 @@ begin
   if (select tuned_at from settings where key = 'economy') is null then raise exception 'a seed took the mark off the economy it kept'; end if;
 end $$;
 
+-- ---- 3b. A tuned row keeps a value nested inside an object it holds and gains a nested key beside it, through a seed (a shallow fill would lose the nested key) ----
+-- brandDeepKey is a key no settings validator constrains, so it can hold an object nested inside an object.
+do $$
+begin
+  insert into settings (key, value) values ('brandDeepKey', '{"a": {"y": 2}}');
+  if (select tuned_at from settings where key = 'brandDeepKey') is null then raise exception 'writing a row did not mark it tuned'; end if;
+  perform pg_temp.seed('{"brandDeepKey": {"a": {"x": 1, "y": 9}}}');
+  if (select value #>> '{a,y}' from settings where key = 'brandDeepKey') is distinct from '2' then raise exception 'a seed took a tuned nested value away: %', (select value from settings where key = 'brandDeepKey'); end if;
+  if (select value #>> '{a,x}' from settings where key = 'brandDeepKey') is distinct from '1' then raise exception 'a seed did not add a key the code added inside a nested object of a tuned row: %', (select value from settings where key = 'brandDeepKey'); end if;
+  if (select tuned_at from settings where key = 'brandDeepKey') is null then raise exception 'a seed took the mark off a nested row it kept'; end if;
+end $$;
+
 -- ---- 4. An untuned economy takes the code's numbers and keeps a key the code dropped ----
 do $$
 begin
@@ -103,4 +115,20 @@ begin
   if jsonb_fill('[1, 2]', '[3, 4, 5]') is distinct from '[1, 2]'::jsonb then raise exception 'an array base was not returned as it was'; end if;
   if jsonb_fill('{"a": [1]}', '{"a": [2, 3]}') is distinct from '{"a": [1]}'::jsonb then raise exception 'an array inside an object was merged'; end if;
   if has_function_privilege('authenticated', 'jsonb_fill(jsonb, jsonb)', 'execute') or has_function_privilege('anon', 'seed_setting(text, jsonb)', 'execute') then raise exception 'an API role may run the seed''s helpers'; end if;
+end $$;
+
+-- ---- 9. The seed restores the seeding flag it found, and writes after it in the same transaction are still an admin's ----
+do $$
+begin
+  -- A custom setting cannot be truly unset inside a transaction, so "unset" is read back as '' or 'off'; neither is 'on'.
+  perform set_config('kayfabb.seeding', 'off', true);
+  update settings set tuned_at = null where key = 'registrationMode';
+  perform pg_temp.seed('{"registrationMode": "open"}');
+  update settings set value = '"closed"' where key = 'registrationMode';
+  if (select tuned_at from settings where key = 'registrationMode') is null then raise exception 'a write after a seed in the same transaction was not marked tuned'; end if;
+  -- A caller that had the flag on (an import, a later caller) still has it on after the seed returns.
+  perform set_config('kayfabb.seeding', 'on', true);
+  perform pg_temp.seed('{"registrationMode": "open"}');
+  if current_setting('kayfabb.seeding', true) is distinct from 'on' then raise exception 'the seed did not restore the seeding flag it found: %', current_setting('kayfabb.seeding', true); end if;
+  perform set_config('kayfabb.seeding', 'off', true);
 end $$;
