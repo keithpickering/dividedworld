@@ -17,13 +17,16 @@
  * claimed (never finished as a failure it was not, which would refund a play for our fault), and the run goes on. The claim counts each
  * take in `attempts`, so a job that keeps crashing is finished `unreachable` past its third, without a call, and the chain behind it moves.
  *
- * **Re-rolls** (docs/plans/2026-11-12-old-voice-window-design.md, section 5). A tail well short of the length it asked for is rolled again. Each try
- * is a `scrubbedComplete` of the same request, so each writes its own ledger rows and the short one is dropped, never continued. A try's length
- * is the instance's counter on the text kept after the cut; it is short under `cardWriteFullShare` of `maxTokens`. The first try that is not
- * short ends the loop, else after `cardWriteTopUps` more the longest stands, the earliest on a tie. A rejection or a transport failure on the
- * first try finishes the job as an error; on a later one it ends the loop and the best so far is finished as the text. A database error or an
- * unwritten ledger row stops the run on any try. No try starts after `REROLL_DEADLINE_MS`. No reader sees a try: the text is stored once.
- * Before every model call after the job's first (each re-roll, and the second call a scrub hit makes inside a try) the job's claim is renewed
+ * **Top-ups** (docs/plans/2026-11-13-you-were-saying-voice-design.md, section 3). A tail short of what was paid for is continued from where it ended. The first
+ * call asks for the play's `maxTokens` with nothing so far; while the instance's counter on the tail is under `cardWriteFullShare` of `maxTokens`, fewer than
+ * `cardWriteTopUps` top-ups have run, and `TOP_UP_DEADLINE_MS` has not passed since the first call, the frame is built again with the tail so far (`sofar`)
+ * and the budget less the tokens still owed, and the next call asks for those tokens. The tail becomes the tail so far, a paragraph break and the call's
+ * text (the frame writes the same break into the prompt). Each call is its own `scrubbedComplete`, so each writes its own ledger rows and scrub. A
+ * rejection or a transport failure on the first call finishes the job as an error; on a top-up it ends the loop and the tail so far is finished as the
+ * text. A database error or an unwritten ledger row stops the run on any call. No reader sees a call: the text is stored once.
+ * The request carries the card's sampling, its ban as GPT-2 token ids (none for a tokenizer without ids), `ignoreEos` (the length is bought, so the
+ * model never ends it by choice) and the frame's `stopPattern`.
+ * Before every model call after the job's first (each top-up, and the second call a scrub hit makes inside a call) the job's claim is renewed
  * (`renew_card_write`, 0354; issue #584), so each of those calls starts on a fresh five minutes. A renewal that says the claim is no longer this run's (it ran
  * out and the job was claimed again, or an edit queued it afresh) ends this run's work on the job without a finish or a count: the claim that holds it finishes
  * it, and `finish_card_write` keeps the first finish either way, so nothing is lost and nothing is written twice. A database error from a renewal stops the
@@ -38,7 +41,7 @@
 import { parse } from '../../../engine/bbcode/parse.ts';
 import { visibleText } from '../../../engine/bbcode/visible.ts';
 import { writeTokensMost } from '../../../engine/rules/cards.ts';
-import { tokenCounter } from '../../../engine/system/tokens.ts';
+import { tokenCounter, tokenId } from '../../../engine/system/tokens.ts';
 import type { Instance, Settings } from '../../../engine/rules/types.ts';
 import type { Models } from '../../../engine/system/model.ts';
 import { ClaimLost, scrubbedComplete } from '../../../engine/system/scrub.ts';
@@ -53,11 +56,11 @@ export const CONCURRENCY = 4;
 /** No new round is claimed after this long; a claim lasts five minutes (a model call may take four) and the function's limit is longer. */
 export const BUDGET_MS = 90_000;
 /**
- * No re-roll starts this long after the job's first call: how long one play may keep rolling, a bound on the work and not on the claim. Every model call
+ * No top-up starts this long after the job's first call: how long one play may keep topping up, a bound on the work and not on the claim. Every model call
  * after the first starts on a freshly renewed five-minute claim, and one call is at most about 242 s (four attempts at 60 s), so a job does not outlive
  * its claim; were one to, `finish_card_write` keeps the first finish, so the caster is charged once and refunded at most once.
  */
-export const REROLL_DEADLINE_MS = 120_000;
+export const TOP_UP_DEADLINE_MS = 120_000;
 /** A stored text is at most this many characters (card_texts). */
 const MOST_CHARS = 4_000;
 /** The characters a token is allowed, as models.complete counts them when no bound is given. */
@@ -119,46 +122,57 @@ export async function runWrites(db: Db, models: Models, instance: Instance, sett
       // At most what the window leaves room for (design section 4): a play bought before the window shrank is made shorter, never refused.
       const maxTokens = Math.min(job.tokens, writeTokensMost(settings));
       const count = tokenCounter(settings.oldVoiceTokenizer);
-      const { prompt, stop: stopAt } = writes.frame({
-        post: { name: job.author, text: own },
-        before: job.before.map((b) => ({ name: b.name, text: visible(b.body) })),
-        title: job.title,
-        tails: job.earlier.map((e) => e.text),
-        settings,
-        budget: settings.oldVoiceWindow - maxTokens,
-        count,
-        sofar: '',
-      });
-      const request = {
-        duty: 'cardText' as const, play: job.play, lines: 'many' as const, maxTokens, maxChars: Math.min(MOST_CHARS, maxTokens * CHARS_A_TOKEN),
-        temperature: 0.9, topP: 0.95, prompt, stop: stopAt,
+      const { sampling } = writes;
+      const ban = (sampling.ban ?? []).map((t) => tokenId(settings.oldVoiceTokenizer, t)).filter((id): id is number => id !== null);
+      // The tail so far and the tokens still owed make the frame and the request; the first call has nothing so far and is owed the whole.
+      const ask = (sofar: string, owed: number, maxChars: number) => {
+        const { prompt, stop: stopAt, stopPattern } = writes.frame({
+          post: { name: job.author, text: own },
+          before: job.before.map((b) => ({ name: b.name, text: visible(b.body) })),
+          title: job.title,
+          tails: job.earlier.map((e) => e.text),
+          settings,
+          budget: settings.oldVoiceWindow - owed,
+          count,
+          sofar,
+        });
+        return {
+          duty: 'cardText' as const, play: job.play, lines: 'many' as const, maxTokens: owed, maxChars,
+          temperature: sampling.temperature, topP: sampling.topP,
+          ...(sampling.topK === undefined ? {} : { topK: sampling.topK }),
+          ...(sampling.minP === undefined ? {} : { minP: sampling.minP }),
+          ...(sampling.repeatPenalty === undefined ? {} : { repeatPenalty: sampling.repeatPenalty }),
+          ...(sampling.repeatLastN === undefined ? {} : { repeatLastN: sampling.repeatLastN }),
+          ...(ban.length === 0 ? {} : { ban }),
+          ignoreEos: true, prompt, stop: stopAt,
+          ...(stopPattern === undefined ? {} : { stopPattern }),
+        };
       };
-      const shortUnder = Math.ceil(Math.round(settings.cardWriteFullShare * maxTokens * 1e9) / 1e9); // rounded first: 0.07 * 100 is 7.000000000000001
+      const fullUnder = Math.ceil(Math.round(settings.cardWriteFullShare * maxTokens * 1e9) / 1e9); // rounded first: 0.07 * 100 is 7.000000000000001
       const firstCall = now();
       // Renews this claim; false when it is no longer this run's (it ran out and was taken again, or an edit queued the job afresh). A database error throws.
       const renew = async (): Promise<boolean> => (await db.rpc<boolean>('renew_card_write', { play: job.play, version: job.version, attempts: job.attempts })) === true;
-      let best: { text: string; length: number } | null = null;
-      for (let attempt = 0; attempt <= settings.cardWriteTopUps; attempt++) {
-        if (attempt > 0 && now() - firstCall >= REROLL_DEADLINE_MS) break;
-        // Renewed before every re-roll, never before the first try (the claim is fresh); the scrub's second call renews through the same hook.
+      // The first call: its failure is the job's.
+      let tail = (await scrubbedComplete(models, ask('', maxTokens, Math.min(MOST_CHARS, maxTokens * CHARS_A_TOKEN)), instance.system.scrubWords, renew)).value;
+      for (let topUps = 0; topUps < settings.cardWriteTopUps && count(tail) < fullUnder && now() - firstCall < TOP_UP_DEADLINE_MS; topUps++) {
+        const owed = Math.max(1, maxTokens - count(tail));
+        const room = MOST_CHARS - tail.length - 2; // the two characters of the break
+        if (room < 1) break;
+        // Renewed before every top-up, never before the first call (the claim is fresh); the scrub's second call renews through the same hook.
         // Not this run's claim any more: the claim that holds the job finishes it. Finishing here with a text the other claim may be making would race
-        // it; finish_card_write keeps the first finish either way, so nothing is lost and nothing is written twice. The run stops quietly (ClaimLost below).
-        if (attempt > 0 && !(await renew())) return;
-        let got: string;
+        // it; finish_card_write keeps the first finish either way, so nothing is lost and nothing is written twice. The run stops quietly.
+        if (!(await renew())) return;
         try {
-          got = (await scrubbedComplete(models, request, instance.system.scrubWords, renew)).value;
+          tail += '\n\n' + (await scrubbedComplete(models, ask(tail, owed, Math.min(owed * CHARS_A_TOKEN, room)), instance.system.scrubWords, renew)).value;
         } catch (e) {
-          // Past the first try the best so far stands; a database or ledger failure is never softened.
-          if (best !== null && (e instanceof AnswerRejected || e instanceof TransportFailure)) break;
+          // The tail so far stands; a database or ledger failure, or a lost claim, is never softened.
+          if (e instanceof AnswerRejected || e instanceof TransportFailure) break;
           throw e;
         }
-        const length = count(got);
-        if (best === null || length > best.length) best = { text: got, length };
-        if (length >= shortUnder) break;
       }
-      text = best!.text;
+      text = tail;
     } catch (e) {
-      // The scrub's renewal said the claim is no longer this run's: stop quietly, as a false renewal before a re-roll does (no finish, no count).
+      // The scrub's renewal said the claim is no longer this run's: stop quietly, as a false renewal before a top-up does (no finish, no count).
       if (e instanceof ClaimLost) return;
       if (e instanceof AnswerRejected) return finish(job, null, e.predicate);
       if (e instanceof TransportFailure) return finish(job, null, 'unreachable');
