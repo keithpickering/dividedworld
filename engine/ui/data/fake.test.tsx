@@ -4652,9 +4652,17 @@ describe('a card that replies, and a play that keeps (0348_post_under.sql and th
         expect((await wholePage(w)).kept).toEqual([]);
       });
 
-      test('a live play is above and not kept; an admin-ended one is in neither; a card that does not keep is in neither', async () => {
-        const live = await wholePage(charWorld([5], [], [1, -1]));
+      test('a live play is above and not kept; one an admin ended, during its time or after it, is in neither; a card that does not keep is in neither', async () => {
+        const up = charWorld([5], [], [1, -1]);
+        const live = await wholePage(up);
+        expect(live.above.map((a) => [a.play, a.reach])).toEqual([[up.play, 'character']]);
         expect(live.kept).toEqual([]);
+        // Ended by an admin during its time, then after it: neither leaves anything.
+        up.fake.signInAs(up.root);
+        must(await up.fake.reverseCard(up.play));
+        const cut = await wholePage(up);
+        expect(cut.above).toEqual([]);
+        expect(cut.kept).toEqual([]);
         const ended = charWorld([5], [], [10, 3]);
         ended.fake.signInAs(ended.root);
         must(await ended.fake.reverseCard(ended.play));
