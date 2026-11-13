@@ -7,7 +7,7 @@ import { describe, expect, test, vi } from 'vitest';
 import type { Act } from '../data/api.ts';
 import type { ActKind } from '../data/api.ts';
 import { backoff, REPEAT_TRIES } from './tails.ts';
-import { CARD_BACK, createPlays, defaultView, effectCards, holdsEffects, hydrate, readSurface, rereadSurfaces, inPlayOrder, isBack, livePlays, markedPlays, playOf, playsFallingOn, shownPlays } from './plays.ts';
+import { CARD_BACK, createPlays, defaultView, effectCards, holdsEffects, hydrate, readSurface, rereadSurfaces, inPlayOrder, isBack, livePlays, stackPlays, markedPlays, playOf, playsFallingOn, shownPlays } from './plays.ts';
 import type { CardView } from './types.ts';
 
 const POST = '11111111-0000-4000-8000-000000000001';
@@ -714,6 +714,18 @@ describe('the discipline plays', () => {
     expect(got.find((p) => p.id === waiting.id)).not.toHaveProperty('spent');
     expect(livePlays(got, NOW).map((p) => p.id)).toEqual([waiting.id]);
     expect(markedPlays(got, NOW).map((p) => p.id)).toEqual([fall.id, waiting.id]);
+  });
+
+  test('a spent fall holds its place in the stack, as the server counts it, and an ended fall or an instant play holds none', () => {
+    const plays = createPlays();
+    const fall = card({ payload: { card: 'fall', layer: 1, message: '', config: {} } });
+    const ended = card({ payload: { card: 'fall', layer: 2, message: '', config: {} } });
+    const instant = heart();
+    plays.add([fall, ended, instant, card({ kind: 'card_end', targetActId: ended.id, payload: { why: 'reversed', by: 'admin' } })]);
+    plays.setSpent([fall.id, ended.id]);
+    const got = plays.get(POST).plays;
+    expect(stackPlays(got, NOW).map((p) => p.id)).toEqual([fall.id]);
+    expect(livePlays(got, NOW)).toEqual([]);
   });
 
   test('a spent mark that is learned before its play arrives is kept for when it does, and a page that carries it hydrates it', () => {

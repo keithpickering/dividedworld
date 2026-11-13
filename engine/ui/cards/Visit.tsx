@@ -182,7 +182,9 @@ export interface VisitPanelProps {
   /** The story the tab read before it showed (`readVisit`). */
   readonly first: VisitStory;
   /** A fall waiting on the post (a live play of a card whose rules are a `fall`, no filing has spent): its caster, whose warn bar the visit's filing lands on in place of the author's. Null with none. */
-  readonly fall?: { readonly caster: Id } | null;
+  readonly fall?: { readonly id: Id; readonly caster: Id } | null;
+  /** Told once when this panel learns that the visit filed and the filing landed on the fall's caster: the fall is spent, so the page marks it so without a read. */
+  readonly onFallSpent?: (fall: Id) => void;
 }
 
 /** What the tab says is "a try": a quiz's answers, a bribe's price or a distraction's word, and the result in a status region. */
@@ -229,7 +231,7 @@ function Challenge({ visit, mod, mask, spent: tried, picked, onTry, busy }: {
   );
 }
 
-export function VisitPanel({ visit, thread, author, nameOf, modPronouns, tallies, mine, onSpin, onEnded, first, fall = null }: VisitPanelProps) {
+export function VisitPanel({ visit, thread, author, nameOf, modPronouns, tallies, mine, onSpin, onEnded, onFallSpent, first, fall = null }: VisitPanelProps) {
   const { api, instance, ui } = useKayfa();
   const player = usePlayer();
   const know = useContext(ThreadCtx)?.know;
@@ -249,6 +251,8 @@ export function VisitPanel({ visit, thread, author, nameOf, modPronouns, tallies
   useEffect(() => { live.current = true; return () => { live.current = false; }; }, []);
   const ended = useRef(onEnded);
   ended.current = onEnded;
+  const spentFall = useRef(onFallSpent);
+  spentFall.current = onFallSpent;
 
   /* What follows a read of the story: the names it brings are read and drawn, and the visit's end is told to the strip. */
   const settle = useCallback((s: VisitStory) => {
@@ -257,7 +261,9 @@ export function VisitPanel({ visit, thread, author, nameOf, modPronouns, tallies
     if (know) void know(people).then(() => { if (live.current) setNames((n) => n + 1); }).catch(() => undefined);
     /* Told once: a visit that already carries its end has told the strip. */
     if (s.end && !visit.end) ended.current(s.end);
-  }, [visit.mod, visit.end, know, fall?.caster]);
+    /* A filing that landed on the waiting fall's caster spent it; a visit talked down, trapped or dropped did not. */
+    if (s.end?.outcome === 'filed' && fall && s.infraction?.character === fall.caster) spentFall.current?.(fall.id);
+  }, [visit.mod, visit.end, know, fall?.caster, fall?.id]);
   useEffect(() => { settle(first); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* The reread after a try. */

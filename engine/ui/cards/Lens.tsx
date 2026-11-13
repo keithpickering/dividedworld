@@ -871,7 +871,7 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
         {onForm && form.kind === APPEAL_KIND && appealP.data && <AppealForm infraction={form.infraction} visit={form.visit} nameOf={nameOf} modPronouns={modPronouns} facts={appealP.data} />}
         {onVisit && visitP.data && (
           <VisitPanel first={visitP.data}
-            visit={visit.visit} thread={visit.thread} author={visit.author} nameOf={nameOf} modPronouns={modPronouns} tallies={tallies} mine={mine} onEnded={visit.onEnded} fall={fall === null ? null : { caster: fall.caster! }}
+            visit={visit.visit} thread={visit.thread} author={visit.author} nameOf={nameOf} modPronouns={modPronouns} tallies={tallies} mine={mine} onEnded={visit.onEnded} fall={fall === null ? null : { id: fall.id, caster: fall.caster! }} onFallSpent={(id) => { plays.setSpent([id]); }}
             onSpin={(act, label) => { store.close(); visit.onSpinAct?.(act, label, open.opener); }}
           />
         )}

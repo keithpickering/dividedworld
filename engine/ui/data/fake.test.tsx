@@ -4672,14 +4672,19 @@ describe('discipline cards: hearts, the Unban and Take the Fall', () => {
   });
 
   test('a heart takes the oldest live points first, least(what is left, what is wanted), and its play is over at once', async () => {
-    const { fake, bo, anaFace, boFace, opener, file, warn } = world();
+    const { fake, ana, bo, anaFace, boFace, opener, file, warn } = world();
     const four = file(4, 2 * DAY);
-    file(2, DAY);
+    const newer = file(2, DAY);
     expect(await warn(boFace)).toBe(6);
     const played = must(await fake.playCard('t-heart', anaFace, boFace, {}, '', 'character', opener));
     expect(played.payload).toMatchObject({ reach: 'character', character: boFace, instant: true, took: 2 });
     expect(played.payload.ends).toBeUndefined();
     expect(await warn(boFace)).toBe(4);
+    /* Oldest first: the first heart took its 2 from the older filing and none from the newer. */
+    fake.signInAs(bo);
+    const reliefs = async () => Object.fromEntries((await fake.log()).infractions.map((i) => [i.infraction, i.cardRelief]));
+    expect(await reliefs()).toEqual({ [four]: 2, [newer]: 0 });
+    fake.signInAs(ana);
     must(await fake.playCard('t-heart', anaFace, boFace, {}, '', 'character', opener));
     expect(await warn(boFace)).toBe(2);
     must(await fake.playCard('t-heart', anaFace, boFace, {}, '', 'character', opener));
@@ -4722,6 +4727,38 @@ describe('discipline cards: hearts, the Unban and Take the Fall', () => {
     fake.seed.ban(boFace, now + DAY, { infraction: inf });
     fake.seed.ban(anaFace, now + DAY, { infraction: inf });
     expect(await fake.playCard('t-ultra', anaFace, boFace, {}, '', 'character', opener)).toMatchObject({ ok: false, error: expect.stringMatching(/is banned until/) });
+  });
+
+  test('a fall an admin ended or a trap caught takes no filing: it lands on the author', async () => {
+    const { fake, anaFace, boFace, opener, file, warn, now } = world();
+    const ended = must(await fake.playCard('t-fall', anaFace, opener, {}, ''));
+    fake.signInAs(fake.seed.account('boss', { admin: true }));
+    must(await fake.reverseCard(ended.id));
+    file(2, 1000);
+    expect(await warn(boFace)).toBe(2);
+    expect(await warn(anaFace)).toBe(0);
+    const caught = world();
+    caught.fake.seed.card(caught.anaFace, caught.opener, 't-fall', { caught: caught.opener, at: now });
+    caught.file(3, 1000);
+    expect(await caught.warn(caught.boFace)).toBe(3);
+    expect(await caught.warn(caught.anaFace)).toBe(0);
+  });
+
+  test('an Unban an admin ended lifts nothing: the ban runs to its own end again', async () => {
+    const { fake, anaFace, boFace, opener, file, bannedUntil, now } = world();
+    fake.seed.ban(boFace, now + 3 * DAY, { infraction: file(7, DAY), days: 3 });
+    const played = must(await fake.playCard('t-ultra', anaFace, boFace, {}, '', 'character', opener));
+    expect(await bannedUntil(boFace)).toBeNull();
+    fake.signInAs(fake.seed.account('boss', { admin: true }));
+    must(await fake.reverseCard(played.id));
+    expect(await bannedUntil(boFace)).toBe(new Date(now + 3 * DAY).toISOString());
+  });
+
+  test('a post whose fall a filing spent takes no second fall, for good: it carries that card', async () => {
+    const { fake, anaFace, anaOther, opener, mod, now } = world();
+    must(await fake.playCard('t-fall', anaFace, opener, {}, ''));
+    fake.seed.infraction(fake.seed.visit(mod, opener, { at: now - 1000 }), { points: 2, at: now - 1000 });
+    expect(await fake.playCard('t-fall', anaOther, opener, {}, '')).toEqual(refused('this post already carries that card', 'config'));
   });
 
   test('a filing on a post with a live fall lands on the fall\'s caster and spends it; the next lands on the author', async () => {

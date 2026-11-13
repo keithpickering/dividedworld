@@ -107,6 +107,16 @@ export function livePlays(plays: readonly CardPlay[], now: number): readonly Car
 }
 
 /**
+ * The plays that hold a place in a target's stack, which is what the form and the ghost marks ask the rules whether another card lands on: `livePlays`, and also a fall a filing has spent, as the
+ * server counts it (`place_cast`, 0420: a spent fall holds its place unless an admin ended it, which `reversed` says). An instant play holds none. A spent fall is never drawn from this list; it is a mark, and
+ * `livePlays` is what draws.
+ */
+export function stackPlays(plays: readonly CardPlay[], now: number): readonly CardPlay[] {
+  const held = plays.filter((p) => !p.reversed && !p.untaken && !p.instant && !(p.reach && p.ends !== undefined && Date.parse(p.ends) <= now));
+  return held.length === plays.length ? plays : held;
+}
+
+/**
  * The plays the marks and the Lens draw: `livePlays`, but a play on a post that an admin ended, or that did not take, is kept, as a caught
  * play is, so its mark and its Lens row can say "Ended by an admin" or "Didn't take". Its layer is off all the same (`livePlays`,
  * `effectsOf`, the post's effects); the marks do not count it. A play beyond a post whose time is up is dropped too, unless its card keeps (`keeps`: the keys of

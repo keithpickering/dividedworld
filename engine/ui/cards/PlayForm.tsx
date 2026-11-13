@@ -41,7 +41,7 @@ import { faceOf, orbs, plainRefusal, withCardEconomy } from './faces.ts';
 import { caughtWords } from './marks.ts';
 import { endsWords, landing, landingOn, landsWords, lengthOf, springWords, targetOf } from './land.ts';
 import type { CardPlay } from './types.ts';
-import { effectCards, livePlays, PLAYS_PER_POST, readEffects, usePlays } from './plays.ts';
+import { effectCards, livePlays, PLAYS_PER_POST, readEffects, stackPlays, usePlays } from './plays.ts';
 import type { PlayTarget } from './play.tsx';
 import { conditionWords, countOf, fieldOfRefusal, noConditions, SetConditions, whenOf, type ConditionsDraft, type Field, type Problems } from './SetConditions.tsx';
 import './play.css';
@@ -154,7 +154,8 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
   const wallet = player.wallet;
 
   /* Read on every render: a play landing on the post meanwhile (live) changes what it can take. */
-  const carried = livePlays(usePlays(target.plays, home).plays, api.now());
+  /* The plays that hold a place in the stack, as the server counts it: a spent fall holds its place, though it draws no layer. */
+  const carried = stackPlays(usePlays(target.plays, home).plays, api.now());
   const context = { cards: instance.cards, ...(beyond?.above ? { above: beyond.above } : {}), ...(setting ? { faceDown: true as const } : {}) };
   const lands = !rules || !goal ? { ok: false as const, why: 'there is no such card' }
     : beyond ? landingOn(rules, goal, carried, context) : landing(rules, post!, carried, context);

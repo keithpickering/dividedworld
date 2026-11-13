@@ -2441,6 +2441,36 @@ describe('the discipline cards\' Lens', () => {
       expect(within(l).queryByRole('button', { name: /^Appeal/u })).toBeNull();
     });
 
+    test('a visit read as filed, on a page read before it filed, marks the waiting fall spent at once, so it stops saying it waits', async () => {
+      width(false);
+      const w = await visitedWithFall();
+      openIt(w);
+      await article(2);
+      /* The page was read with the visit open; the tick files it before the tab is pressed. */
+      file(w);
+      const l = await press();
+      await within(l).findByText(/Pipewrench took the fall for Spritey\./u);
+      await userEvent.keyboard('{Escape}');
+      const fall = await lensOf(2, 'T Fall');
+      expect(heading()).toBe('Took the fall');
+      expect(fall).toHaveTextContent('A visit to this post filed, and its warn points landed on Pipewrench.');
+      expect(fall).not.toHaveTextContent('If a Mod Bot');
+    });
+
+    test('a visit talked down leaves the fall waiting', async () => {
+      width(false);
+      const w = await visitedWithFall();
+      openIt(w);
+      await article(2);
+      w.fake.seed.visitEnd(w.visit, { outcome: 'intercepted', line: 'Talked down.' });
+      const l = await press();
+      await within(l).findByText(/Nothing landed on Spritey/u);
+      await userEvent.keyboard('{Escape}');
+      const fall = await lensOf(2, 'T Fall');
+      expect(heading()).toBe('Waiting to take the fall');
+      expect(fall).toHaveTextContent("If a Mod Bot's visit to this post files");
+    });
+
     test('axe passes on the filed tab of a fall', async () => {
       width(false);
       const w = await visitedWithFall();

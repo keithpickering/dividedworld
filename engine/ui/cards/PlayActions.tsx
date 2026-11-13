@@ -22,7 +22,7 @@ import { landing, landingOn } from './land.ts';
 import { playOf, reachesOf, type BeyondPost, type CardRules, type CardTarget, type Play } from '../../rules/cards.ts';
 import { useRest } from '../glass/prepared.ts';
 import { usePlay, type PlayTarget } from './play.tsx';
-import { livePlays, usePlays, type Plays } from './plays.ts';
+import { livePlays, stackPlays, usePlays, type Plays } from './plays.ts';
 import type { Id } from '../data/api.ts';
 import { lowerFirst } from '../copy-words.ts';
 
@@ -42,7 +42,7 @@ export function ghostName(card: string, play: Play, seq: number): string {
 export function GhostMark({ act }: { readonly act: Act }) {
   const play = usePlay();
   const { hudCharacter, actingCharacters } = usePlayer();
-  const { instance, settings, ui } = useKayfa();
+  const { api, instance, settings, ui } = useKayfa();
   const { plays, underOf } = useThread();
   const here = usePlays(plays, act.id);
   const target = useTarget(act);
@@ -60,8 +60,9 @@ export function GhostMark({ act }: { readonly act: Act }) {
   const under = underOf?.(act.id);
   const context = { cards: instance.cards, ...(under === undefined ? {} : { under }) };
   /* A Move on one's own post may also be set face down (a ward never blocks that): the mark is offered where either lands, and named for the choice the form keeps. */
-  const casts = landing(rules, act, here.plays, context).ok;
-  const sets = how === 'cast' && own && landing(rules, act, here.plays, { ...context, faceDown: true }).ok;
+  const held = stackPlays(here.plays, api.now());
+  const casts = landing(rules, act, held, context).ok;
+  const sets = how === 'cast' && own && landing(rules, act, held, { ...context, faceDown: true }).ok;
   if (!casts && !sets) return null;
   const down = sets && (play.faceDown || !casts);
   const cardUi = ui.cards.find((c) => c.key === rules.key);
@@ -158,7 +159,7 @@ export function ReachGhost({ at }: { readonly at: ReachAt }) {
     ...(at.board ? { board: livePlays(onBoard.plays, api.now()).filter((p) => p.reach === 'board').map(effect) } : {}),
   };
   const goal = { reach: at.reach, [at.reach]: at.target } as unknown as CardTarget;
-  if (!landingOn(rules, goal, livePlays(here.plays, api.now()), { cards: instance.cards, above }).ok) return null;
+  if (!landingOn(rules, goal, stackPlays(here.plays, api.now()), { cards: instance.cards, above }).ok) return null;
   const face = faceOf(rules, ui.cards.find((c) => c.key === rules.key), withCardEconomy(instance.settings, settings.cardEconomy), ui.copy.cardKinds);
   const target: PlayTarget = { post: at.fromPost, reach: { reach: at.reach, target: at.target, name: at.name, ...(at.pronouns ? { pronouns: at.pronouns } : {}), above }, title: at.title, author: at.name, to: at.to, plays: at.plays, know: at.know, focusBack: at.focusBack };
   return (
