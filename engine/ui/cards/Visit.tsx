@@ -345,7 +345,7 @@ export function VisitPanel({ visit, thread, author, nameOf, modPronouns, tallies
             {timeIsUp
               ? `The time is up, so it files at the next check unless it is talked down first. If it files, ${liableName}'s warn bar gains ${pointsWords(topPoints)} and this post is marked as breaking ${marked}.`
               : `If nobody talks it down by ${dayAndTime(visit.endsAt)}, ${liableName}'s warn bar gains ${pointsWords(topPoints)} and this post is marked as breaking ${marked}.`}
-            {fall !== null && ` ${liableName} took the fall for this post.`}
+            {fall !== null && ` ${liableName} has offered to take the fall for this post.`}
           </p>
         )}
         {state === 'filed' && (

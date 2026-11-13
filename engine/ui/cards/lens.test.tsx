@@ -2395,7 +2395,7 @@ describe('the discipline cards\' Lens', () => {
       return w.fake.seed.infraction(w.visit, { points: 2 });
     };
 
-    test('open, it names the fall\'s caster where it names the author, and says the caster took the fall', async () => {
+    test('open, it names the fall\'s caster where it names the author, and says the caster has offered to take it', async () => {
       width(false);
       const w = await visitedWithFall();
       openIt(w);

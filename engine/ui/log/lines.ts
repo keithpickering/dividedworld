@@ -637,7 +637,7 @@ function modRows(data: LogData, words: Words): LogRow[] {
   for (const i of data.log.infractions) {
     const drops = Date.parse(i.expiresAt);
     const cards = i.cardRelief ?? 0;
-    const left = Math.max(0, i.points - i.relief - cards);
+    const left = i.points - i.relief - cards;
     const tail: string[] = [];
     if (i.relief > 0) tail.push(` An appeal took ${plural(i.relief, 'point', 'points')} off.`);
     if (cards > 0) tail.push(` Cards took ${plural(cards, 'point', 'points')} off.`);
@@ -657,8 +657,8 @@ function modRows(data: LogData, words: Words): LogRow[] {
       : b.ruling === 'reduced' ? `An appeal shortened the ban: it ${over ? 'ended' : 'ends'} ${utcWhen(b.until)} UTC.`
       : b.ruling === 'increased' ? `An appeal lengthened the ban: it ${over ? 'ended' : 'ends by itself'} ${utcWhen(b.until)} UTC.`
       : `The ban ${over ? 'ended by itself' : 'ends by itself'} ${utcWhen(b.until)} UTC.`;
-    /* An Unban ended it (`my_bans.lifted_at`, 0420): said by the card that did, in place of "ended by itself", unless an appeal overturned the ban, which stands as said. */
-    const lifted = b.liftedAt != null && b.ruling !== 'overturned';
+    /* An Unban ended it (`my_bans.lifted_at`, 0420): said by the card that did, in place of "ended by itself". A live lift is always the ban's first end, so an appeal ruled after it changes nothing here. */
+    const lifted = b.liftedAt != null;
     const how = lifted ? `The ban ended ${utcWhen(b.liftedAt!)} UTC, when ${words.instance.cards.find((c) => c.key === b.liftedCard)?.name ?? 'a card'} was played on ${nameOf(b.character)}.` : ends;
     rows.push({
       key: `ban:${b.ban}`, kind: 'ban', at: b.at, what: `${nameOf(b.character)} was banned`,
