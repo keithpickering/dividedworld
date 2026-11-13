@@ -31,13 +31,14 @@ const job = (over: Record<string, unknown> = {}) => ({
   body: 'Hello [b]there[/b] [code]hidden[/code] friend', title: 'A title', before: [{ name: 'Ann', body: '[i]first[/i]' }], earlier: [], ...over,
 });
 
-function fakeDb(rounds: unknown[][], o: { failOn?: string } = {}) {
+function fakeDb(rounds: unknown[][], o: { failOn?: string; renew?: boolean } = {}) {
   const calls: { fn: string; args: Record<string, unknown> }[] = [];
   const queue = [...rounds];
   const db: Db = { rpc: async <T>(fn: string, args: Record<string, unknown>) => {
     calls.push({ fn, args });
     if (o.failOn === fn) throw new DatabaseError('boom', '57014', 500);
     if (fn === 'claim_card_writes') return (queue.shift() ?? []) as T;
+    if (fn === 'renew_card_write') return (o.renew ?? true) as T;
     return { written: true, refund: null } as T;
   } };
   return { db, calls };
@@ -273,6 +274,19 @@ test('a play that bought more than the window leaves room for is asked for the m
   assert.equal(typeof frame.count, 'function');
 });
 
+test('a window at or below the floor asks for one token and frames with the rest: the job does not throw (#582)', async () => {
+  frames.length = 0;
+  const settings = { ...instance.settings, oldVoiceWindow: 64, oldVoicePromptFloor: 256 };
+  assert.equal(writeTokensMost(settings), 1);
+  const { db, calls } = fakeDb([[job({ tokens: 25 })]]);
+  const { models, requests } = fakeModels(() => 'x');
+  const out = await runWrites(db, models, instance, settings, 8);
+  assert.equal(requests[0]!.maxTokens, 1);
+  assert.equal((frames[0] as { budget: number }).budget, 63);
+  assert.equal(out.errored, 0);
+  assert.equal(finishes(calls).length, 1);
+});
+
 test('the frame is handed the counter of the settings\' tokenizer: bytes counts a byte each, gpt2 counts tokens', async () => {
   for (const [kind, expected] of [['bytes', 5], ['gpt2', 1]] as const) {
     frames.length = 0;
@@ -391,4 +405,51 @@ test('a try that would start just under the deadline still runs: a second call i
   await runWrites(db, models, instance, bytes, 8, undefined, { now: () => t, budgetMs: 10_000_000 });
   assert.equal(requests.length, 2);
   assert.deepEqual(finishes(calls), [{ play: P1, version: V, text: x(150), failed: null }]);
+});
+
+/* The claim is renewed before each re-roll (issue #584; supabase/migrations/0471_card_write_claim_renewal.sql). */
+const renewals = (calls: { fn: string; args: Record<string, unknown> }[]) => calls.filter((c) => c.fn === 'renew_card_write');
+
+test('a short first try then a second: the claim is renewed once, before the second call, and not before the first', async () => {
+  const { db, calls } = fakeDb([[job({ tokens: 200 })]]);
+  const order: string[] = [];
+  const inner = db.rpc;
+  const logged: Db = { rpc: async <T>(fn: string, args: Record<string, unknown>) => { order.push(fn); return inner<T>(fn, args); } };
+  const { models } = scripted(['?', x(150)]);
+  const models2 = { complete: async (r: CompletionRequest) => { order.push('call'); return models.complete(r); } } as unknown as Models;
+  await runWrites(logged, models2, instance, bytes, 8);
+  assert.deepEqual(renewals(calls).map((c) => c.args), [{ play: P1, version: V, attempts: 1 }]);
+  assert.deepEqual(order, ['claim_card_writes', 'call', 'renew_card_write', 'call', 'finish_card_write', 'claim_card_writes']);
+});
+
+test('four short tries renew three times', async () => {
+  const { db, calls } = fakeDb([[job({ tokens: 200 })]]);
+  const { models, requests } = scripted([x(3), x(4), x(5), x(6)]);
+  await runWrites(db, models, instance, bytes, 8);
+  assert.equal(requests.length, 4);
+  assert.equal(renewals(calls).length, 3);
+});
+
+test('a long first try never renews', async () => {
+  const { db, calls } = fakeDb([[job({ tokens: 200 })]]);
+  await runWrites(db, scripted([x(100)]).models, instance, bytes, 8);
+  assert.equal(renewals(calls).length, 0);
+});
+
+test('a renewal that says the claim is no longer this run\'s ends the job quietly: no second call, no finish', async () => {
+  const { db, calls } = fakeDb([[job({ tokens: 200 })]], { renew: false });
+  const { models, requests } = scripted(['?', x(150)]);
+  const out = await runWrites(db, models, instance, bytes, 8);
+  assert.equal(requests.length, 1);
+  assert.equal(renewals(calls).length, 1);
+  assert.deepEqual(finishes(calls), []);
+  assert.deepEqual(out, { claimed: 1, written: 0, failed: 0, errored: 0 });
+});
+
+test('a database error from the renewal stops the run', async () => {
+  const { db, calls } = fakeDb([[job({ tokens: 200 })]], { failOn: 'renew_card_write' });
+  const { models, requests } = scripted(['?', x(150)]);
+  await assert.rejects(runWrites(db, models, instance, bytes, 8), DatabaseError);
+  assert.equal(requests.length, 1);
+  assert.deepEqual(finishes(calls), []);
 });
