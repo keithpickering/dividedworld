@@ -10,7 +10,7 @@
 -- execute revoked from every API role, as spring_facts and lay_sprung are: its callers are security definer.
 --
 -- The four callers are written whole, each with only its lookup changed: spring_facts as 0340 wrote it (its read stays unconditional, the same for every back, and now reads the same single
--- entry; nothing it reads is an owner, a class or a reactor), place_cast and lay_sprung as 0317 wrote them, seed_instance as 0348 wrote it (the last migration to define it). `create or replace` keeps each one's owner and grants.
+-- entry; nothing it reads is an owner, a class or a reactor), place_cast and lay_sprung as 0317 wrote them, seed_instance as 0355 wrote it (the last migration to define it). `create or replace` keeps each one's owner and grants.
 
 create function setting_thread(in_key text) returns uuid
 language sql stable security definer set search_path = public, pg_temp as $$
@@ -20,9 +20,13 @@ language sql stable security definer set search_path = public, pg_temp as $$
 $$;
 revoke execute on function setting_thread(text) from public, anon, authenticated, service_role;
 
--- spring_facts (0340), finding the announcements thread by its key.
-create or replace function spring_facts(fd face_down, trigger text, by_act uuid, incoming_card text) returns spring_facts
-language plpgsql security definer set search_path = public, pg_temp as $$
+-- spring_facts (0340), as main defines it, with only its lookup of a thread a setting names changed to setting_thread.
+CREATE OR REPLACE FUNCTION public.spring_facts(fd face_down, trigger text, by_act uuid, incoming_card text)
+ RETURNS spring_facts
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
 declare
   f spring_facts;
   k card_kinds%rowtype;
@@ -105,12 +109,15 @@ begin
   f.passage_hit := coalesce(phrase_probe(walked_excerpt, fd.passage, fd.play::text || 'p'), false);
   f.who_hit := coalesce(f.by_character = any (coalesce(fd.who, '{}')), false);
   return f;
-end $$;
+end $function$;
 
--- place_cast (0317), finding the announcements thread by its key.
-create or replace function place_cast(caster uuid, card text, target uuid, config jsonb, message text, reach text, from_post uuid, payer uuid, price integer, marker jsonb default '{}')
-returns jsonb
-language plpgsql security definer set search_path = public, pg_temp as $$
+-- place_cast (0317), as main defines it, with only its lookup of a thread a setting names changed to setting_thread.
+CREATE OR REPLACE FUNCTION public.place_cast(caster uuid, card text, target uuid, config jsonb, message text, reach text, from_post uuid, payer uuid, price integer, marker jsonb DEFAULT '{}'::jsonb)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
 declare
   target_kind text;
   author uuid;
@@ -339,11 +346,15 @@ begin
     perform write_alert(caster, 'trapStruck', null, written, (select f.account from face_down f where f.play = (sprung -> 'payload' ->> 'set')::uuid));
   end if;
   return act_projection(written) || case when sprung is not null then jsonb_build_object('sprung', sprung) else '{}'::jsonb end;
-end $$;
+end $function$;
 
--- lay_sprung (0317), finding the announcements thread by its key.
-create or replace function lay_sprung(setter uuid, card text, config jsonb, target uuid, reach text, spring uuid, from_post uuid) returns uuid
-language plpgsql security definer set search_path = public, pg_temp as $$
+-- lay_sprung (0317), as main defines it, with only its lookup of a thread a setting names changed to setting_thread.
+CREATE OR REPLACE FUNCTION public.lay_sprung(setter uuid, card text, config jsonb, target uuid, reach text, spring uuid, from_post uuid)
+ RETURNS uuid
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
 declare
   kind_of card_kinds%rowtype;
   staff_setter boolean;
@@ -411,10 +422,10 @@ begin
             case when reach = 'thread' and kind_of.pins then (select t.board from threads t where t.id = target) end, ends);
   end if;
   return written;
-end $$;
+end $function$;
 
--- seed_instance (0348's), finding each thread a setting names by its key.
-create or replace function public.seed_instance(payload jsonb)
+-- seed_instance (0355), as main defines it, with only its lookup of a thread a setting names changed to setting_thread.
+CREATE OR REPLACE FUNCTION public.seed_instance(payload jsonb)
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
@@ -426,16 +437,18 @@ declare
   unknown text;
   sys uuid;
   opened uuid;
+  was text := current_setting('kayfabb.seeding', true);
 begin
   -- Two seeds at once would each find no office row and both write one into the append-only office log. An advisory
   -- transaction lock serializes seeds without locking any table a player reads, and lets go at commit.
   perform pg_advisory_xact_lock(hashtext('kayfabb.seed_instance'));
+  -- The settings trigger (settings_tuned) marks a row tuned for any write but a seed's: this transaction is the seed's, so its writes leave no mark.
+  perform set_config('kayfabb.seeding', 'on', true);
   select count(*), min(e ->> 'slug') into flags, flagged
   from jsonb_array_elements(coalesce(payload -> 'boards', '[]')) e where coalesce((e ->> 'system')::boolean, false);
   if flags > 1 then raise exception 'a seed flags one board as The System''s, not %', flags using errcode = '22023'; end if;
   -- The economy is merged, number by number: a card kind is never removed, so the numbers its rules read stay in the row with it.
-  insert into settings (key, value) select key, value from jsonb_each(payload -> 'settings')
-  on conflict (key) do update set value = case when settings.key = 'economy' then settings.value || excluded.value else excluded.value end;
+  perform seed_setting(e.key, e.value) from jsonb_each(payload -> 'settings') e;
   insert into class_kinds (key, name) select e ->> 'key', e ->> 'name' from jsonb_array_elements(payload -> 'classes') e
   on conflict (key) do update set name = excluded.name;
   -- Reaction kinds are the one vocabulary a seed removes. Classes and cards never are: a card must outlive its slot and its pulls
@@ -657,11 +670,10 @@ begin
   from jsonb_array_elements(coalesce(payload -> 'system' -> 'staff', '[]')) e;
   -- The roster's order (0051): the seed's personas, in the order it lists them, so the rotation has one to follow. A seed with no
   -- persona leaves the setting as it was.
-  insert into settings (key, value)
-  select 'bossRoster', jsonb_agg(e.value ->> 'key' order by e.ord)
-  from jsonb_array_elements(coalesce(payload -> 'system' -> 'staff', '[]')) with ordinality e(value, ord)
-  having count(*) > 0
-  on conflict (key) do update set value = excluded.value;
+  perform seed_setting('bossRoster', r.roster)
+  from (select jsonb_agg(e.value ->> 'key' order by e.ord) as roster
+        from jsonb_array_elements(coalesce(payload -> 'system' -> 'staff', '[]')) with ordinality e(value, ord)
+        having count(*) > 0) r;
   if not exists (select 1 from seasons) then insert into seasons (number, starts_at) values (1, now()); end if;
   -- The open season's Boss (0043's seasons.boss) is the seed's firstBoss when it has none: a season opened before a Boss
   -- existed, or by this seed. A season that already has a Boss keeps it.
@@ -675,11 +687,8 @@ begin
   -- so no seed writes it over.
   if nullif(payload -> 'system' ->> 'announcementsTitle', '') is not null
      and setting_thread('systemAnnouncements') is null then
-    with made as (
-      insert into threads (board, title) values (system_board(), payload -> 'system' ->> 'announcementsTitle') returning id
-    )
-    insert into settings (key, value) select 'systemAnnouncements', to_jsonb(made.id::text) from made
-    on conflict (key) do update set value = excluded.value;
+    insert into threads (board, title) values (system_board(), payload -> 'system' ->> 'announcementsTitle') returning id into opened;
+    perform seed_setting('systemAnnouncements', to_jsonb(opened::text));
   end if;
   -- The developer persona and its thread (0062): a seed with a `developer` entry ({ name, title, avatar }) makes the one developer, once,
   -- as it makes a persona: debuted at seed time, with the tagline as its profile title, cut to what a profile holds. What an admin wrote is
@@ -704,17 +713,19 @@ begin
     from characters c
     where payload -> 'developer' ? 'pronouns' and c.staff = 'developer' and p.character = c.id and p.pronouns is distinct from pronouns_lowered(payload -> 'developer' -> 'pronouns');
     if nullif(payload -> 'developer' ->> 'avatar', '') is not null then
-      insert into settings (key, value) values ('developerAvatar', to_jsonb(payload -> 'developer' ->> 'avatar'))
-      on conflict (key) do update set value = excluded.value;
+      perform seed_setting('developerAvatar', to_jsonb(payload -> 'developer' ->> 'avatar'));
     end if;
     if setting_thread('updatesThread') is null then
       sys := system_board();
       insert into threads (board, title) values (sys, 'Updates') returning id into opened;
-      insert into settings (key, value) values ('updatesThread', to_jsonb(opened::text)) on conflict (key) do update set value = excluded.value;
+      perform seed_setting('updatesThread', to_jsonb(opened::text));
       update board_thread_counts set threads = threads - 1
        where board = sys and shard = coalesce((select c.shard from board_thread_counts c where c.board = sys order by c.shard for update skip locked limit 1), 0);
     end if;
   end if;
+  -- Seeding ends here: a write later in a transaction that called this (a test file's, one session's) is not the seed's. The flag goes back to the value this found. A custom
+  -- setting cannot be truly unset inside a transaction, so one that was unset (null) or empty goes back to 'off', which the trigger reads the same.
+  perform set_config('kayfabb.seeding', coalesce(nullif(was, ''), 'off'), true);
   return jsonb_build_object('settings', (select count(*) from settings), 'classes', (select count(*) from class_kinds),
     'reactions', (select count(*) from reaction_kinds), 'groups', (select count(*) from group_kinds), 'cards', (select count(*) from card_kinds), 'boards', (select count(*) from boards));
 end $function$;

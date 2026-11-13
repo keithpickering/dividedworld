@@ -87,11 +87,6 @@ begin
   if (select jsonb_object_agg(s.key, s.value) from settings s where s.key in ('systemAnnouncements', 'updatesThread')) is distinct from settings_before then raise exception 'seeding again moved a setting'; end if;
   if (select count(*) from threads t where t.title = 'Announcements' and t.board = system_board()) is distinct from 1::bigint then raise exception 'seeding again made a second announcements thread'; end if;
   if (select count(*) from threads t where t.title = 'Updates' and t.board = system_board()) is distinct from 1::bigint then raise exception 'seeding again made a second updates thread'; end if;
-  -- And a seed that finds the setting naming no thread makes one afresh.
-  update settings set value = to_jsonb(gen_random_uuid()::text) where key = 'updatesThread';
-  perform pg_temp.seed();
-  if (select count(*) from threads t where t.title = 'Updates' and t.board = system_board()) is distinct from 2::bigint or setting_thread('updatesThread') is null then raise exception 'a seed did not make an updates thread afresh for a setting that names none'; end if;
-  update settings set value = to_jsonb(upd::text) where key = 'updatesThread';
 end $$;
 
 -- ---- What each reads of `threads` does not move with the threads an instance holds ----
