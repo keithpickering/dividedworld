@@ -533,6 +533,40 @@ describe('the shine loop', () => {
     unregister(a); unregister(b);
   });
 
+  describe('a near host', () => {
+    /* A fine pointer at client (x, y) over a 200 by 300 host whose box is at (400, 350); the window is 1000 by 800 (jsdom's own is 1024 by 768, so set). */
+    const setup = (nearOption: boolean | undefined) => {
+      shimmer();
+      window.matchMedia = ((q: string) => ({ matches: q.includes('hover: hover'), media: q, addEventListener: () => {}, removeEventListener: () => {} })) as unknown as typeof window.matchMedia;
+      Object.defineProperty(window, 'innerWidth', { value: 1000, configurable: true });
+      Object.defineProperty(window, 'innerHeight', { value: 800, configurable: true });
+      const host = {}, c = canvas(), seen: ShineFrame[] = [];
+      const rect = { top: 350, height: 300, left: 400, width: 200 };
+      c.getBoundingClientRect = () => ({ ...rect, bottom: 650, right: 600, x: 400, y: 350, toJSON: () => ({}) });
+      register(host, c, BOX, 1, (f) => { seen.push(f); return false; }, { phase: 0, ...(nearOption === undefined ? {} : { near: nearOption }) });
+      see(c, true);
+      const e = new Event('pointermove');
+      Object.assign(e, { pointerType: 'mouse', clientX: 590, clientY: 640 });
+      window.dispatchEvent(e);
+      flush(16);
+      return { seen, rect, host };
+    };
+    it('is handed the pointer\'s place over its own box: its first light is lightAt with near', () => {
+      const { seen, rect } = setup(true);
+      expect(seen).toHaveLength(1);
+      const want = lightAt(light.input(), rect, { height: 800, width: 1000 }, 16, 0, true);
+      expect(seen[0]!.light).toEqual(want);
+      expect(want, 'the near term moved it').not.toEqual(lightAt(light.input(), rect, { height: 800, width: 1000 }, 16, 0, false));
+    });
+    it('a host without `near`, or with near false, is lit as before', () => {
+      for (const option of [undefined, false] as const) {
+        probe.reset(); light.reset(); queue.clear();
+        const { seen, rect } = setup(option);
+        expect(seen[0]!.light).toEqual(lightAt(light.input(), rect, { height: 800, width: 1000 }, 16, 0, false));
+      }
+    });
+  });
+
   it('a quiet host is drawn but never named as the shiny post in view', () => {
     const q = {}, o = {}, cq = canvas(), co = canvas();
     const heard: (HTMLCanvasElement | null)[] = [];

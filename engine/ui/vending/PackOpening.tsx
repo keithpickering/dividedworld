@@ -43,7 +43,7 @@ import { createPortal, flushSync } from 'react-dom';
 import { animate, motion, useInstantTransition, usePresence } from 'motion/react';
 import { PostcardBack, Postcard } from '../cards/Postcard.tsx';
 import { rarityName, type CardFace } from '../cards/faces.ts';
-import type { CardArt } from '../cards/types.ts';
+import type { PackArtLook } from '../cards/types.ts';
 import { useKayfa } from '../context.tsx';
 import { withArticle } from '../characters/format.ts';
 import { GlassButton } from '../glass/Button.tsx';
@@ -57,7 +57,7 @@ import './opening.css';
 export interface PackOpeningProps {
   /** The pack's name, as the instance gave it ("Booster"). */
   readonly name: string;
-  readonly art?: Pick<CardArt, 'color' | 'ink'> & Partial<Pick<CardArt, 'canvas' | 'mark'>>;
+  readonly art?: Pick<PackArtLook, 'color' | 'ink'> & Partial<Pick<PackArtLook, 'canvas' | 'mark' | 'picture' | 'relief'>>;
   /** The cards the purchase's answer gave, in pull order; the last is the hit's. */
   readonly cards: readonly CardFace[];
   /** A plain sentence about the hit after all are turned ("Main Event isn't sold on its own; this is one of the ways to get it."), or none. */
