@@ -116,6 +116,23 @@ describe('the hand on the Phone board', () => {
     expect(screen.getByRole('button', { name: 'Stick Around, Sweet, Cast, common postcard' }).closest('li')).not.toHaveTextContent('×');
   });
 
+  test('each card says which side of the middle it stands on, so its count can stand on the side no neighbor covers; the Main board says none', async () => {
+    const restore = stubLayout(104);
+    try {
+      const a = move('a', 'Move A');
+      const b = move('b', 'Move B');
+      const c = move('c', 'Move C');
+      hand([{ card: 'a', held: 2 }, { card: 'b', held: 2 }, { card: 'c', held: 2 }], { faces: [a, b, c] });
+      const sides = () => [...document.querySelectorAll('li.kb-hand-card')].map((li) => li.getAttribute('data-kb-side'));
+      expect(sides()).toEqual([null, 'right', 'right']);
+      const ul = document.querySelector<HTMLElement>('ul.kb-hand-cards')!;
+      ul.scrollLeft = 66;
+      fireEvent.scroll(ul);
+      await vi.waitFor(() => expect(document.querySelector('li[data-kb-middle]')).toHaveAttribute('data-kb-card', 'b'));
+      expect(sides()).toEqual(['left', null, 'right']);
+    } finally { restore(); }
+  });
+
   test('a Gimmick listed first in the faces stands after a Move, and the first of its group is marked', () => {
     const g = gimmick('g', 'Gimmick G');
     const m = move('m', 'Move M');

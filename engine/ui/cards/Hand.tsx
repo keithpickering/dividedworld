@@ -245,6 +245,7 @@ export function Hand({ held, faces, armed = null, playing = null, onPick, onClos
                 data-kb-row={main ? slot.row : undefined}
                 data-kb-group-start={!main && i > 0 && group !== arc[i - 1]!.group ? '' : undefined}
                 data-kb-middle={isMiddle ? '' : undefined}
+                data-kb-side={main ? undefined : i < middleAt ? 'left' : i > middleAt ? 'right' : undefined}
                 data-armed={isArmed ? '' : undefined}
                 style={style}
               >

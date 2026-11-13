@@ -197,3 +197,48 @@ test('a deal stopped by a close leaves no inline transform on any card once thin
   const left = await page.locator(CARDS).evaluateAll((items) => items.map((li) => (li as HTMLElement).style.transform).filter(Boolean));
   expect(left, 'inline transforms left on cards').toEqual([]);
 });
+
+/*
+ * A count a player cannot see is a count they cannot read: with a card of every kind standing in the middle in turn, each ×N the row draws is the topmost thing at its own center (its
+ * own badge or inside it), on the middle card, on the cards left of it (whose right part the next card covers) and on the cards right of it. The moment's hand holds two kinds, so the
+ * check widens it through the page's own Vending Machine, buying one kind twice and another twice so more than one kind carries a count, on both sides of the middle.
+ * The badge ignores the pointer, so the hit test looks through it: `elementsFromPoint` is read with the badges' pointer events on.
+ */
+test('every ×N the row draws is uncovered, whichever card stands in the middle', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto(MOMENT);
+  const hand = page.getByRole('dialog', { name: 'Your hand' });
+  const button = page.getByRole('button', { name: BUTTON });
+  if (!(await hand.isVisible())) await button.click();
+  await page.getByRole('link', { name: 'Vending Machine' }).click();
+  await expect(page).toHaveURL(/vending/u);
+  for (const kind of ['Feelin. Fab', 'Feelin. Fab', 'Autocorrect', 'Autocorrect']) {
+    await page.getByRole('button', { name: new RegExp(`^Buy ${kind}, `, 'u') }).click();
+    await page.locator('.kb-vending-buy').click();
+    await expect(page.getByText(new RegExp(`^${kind} is in your hand`, 'u'))).toBeAttached();
+  }
+  await page.goBack();
+  if (!(await hand.isVisible())) await button.click();
+  await expect(hand).toBeVisible();
+  await expect(hand).not.toHaveAttribute('data-kb-dealing', '', { timeout: 10_000 });
+  await page.addStyleTag({ content: '.kb-hand-times { pointer-events: auto !important; }' });
+  const total = await page.locator(CARDS).count();
+  expect(total, 'kinds in the hand').toBe(4);
+  const counted = new Set<string>();
+  for (let at = 0; at < total; at++) {
+    await page.locator(`${CARDS} > button`).nth(at).focus();
+    await expect.poll(async () => (await page.locator(CARDS).nth(at).getAttribute('data-kb-middle')) !== null).toBe(true);
+    const seen = await page.locator(CARDS).evaluateAll((items) => items.flatMap((li) => {
+      const badge = li.querySelector<HTMLElement>('.kb-hand-times');
+      if (!badge) return [];
+      const r = badge.getBoundingClientRect();
+      /* A badge outside the window is not drawn to anyone. */
+      if (r.right > innerWidth || r.left < 0) return [];
+      const top = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+      return [{ key: li.getAttribute('data-kb-card'), covered: !(top && badge.contains(top)), by: top?.className ?? null }];
+    }));
+    for (const s of seen) counted.add(s.key!);
+    expect(seen.filter((s) => s.covered), `badges covered with card ${at} in the middle`).toEqual([]);
+  }
+  expect(counted.size, 'kinds whose count was drawn and checked').toBeGreaterThanOrEqual(3);
+});

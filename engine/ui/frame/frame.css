@@ -1476,6 +1476,16 @@ button.kb-hud-secret:focus-visible {
 
 :where(:root[data-kb-layout='phone']) .kb-hand-times {
   font-size: var(--kb-glass-size-phone-small);
+  /* Under the corner's gem (the Postcard's rarity diamond, drawn over a 104px card's top 20px at its right) and the alignment tags (to 17px at its left), which stand over the art in the card's color: the count's plate is as dark as ink and stands clear of both. */
+  top: 26px;
+  /* A card turns as far as 18deg, and a turned line's box reaches past the plate's top and foot by half its width times sin 18 (3px for a two-digit count): the plate stands that far taller than the line, so the line's box lies on it whole. */
+  padding-block: 4px;
+}
+
+/* The next card is above this one's right part (38px of it, the overlap) where this card is left of the middle, and the middle card above its own left part where it is right of it: the count stands on the side that is never covered. */
+:where(:root[data-kb-layout='phone']) .kb-hand-card[data-kb-side='left'] > .kb-hand-times {
+  right: auto;
+  left: 8px;
 }
 
 :where(:root[data-kb-layout='phone']) .kb-hand-empty {
