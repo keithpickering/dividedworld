@@ -70,19 +70,25 @@ const HALF = (() => { const n = Math.hypot(LIGHT[0], LIGHT[1], LIGHT[2] + 1); re
  * distance, meniscus, rim, glint) with the broad gloss and the darker underside computed in the same loop, where
  * `paintSplat` once laid them on with `source-atop`. A point a wash has lowered (`washed[i] === 1`) is thinned, so
  * a scrubbed core is see-through before it is gone. `density` is the grid's points per CSS px. Pure: no DOM.
+ *
+ * A grid that holds a band of the post's lattice (`grid.row0`, field.ts) is shaded as the whole post is: the gloss's
+ * center and radius and the underside are placed from `whole`, the whole lattice's size in points (the grid's own size
+ * where left out), and a pixel's row is `grid.row0 + y`. The gradient reads one point each way inside the grid, so a
+ * band's edge row is exact only where the grid holds the row beyond it (a band's apron).
  */
-export function shadeField(grid: Grid, washed: Uint8Array, color: string, density: number, rect: Rect, out: PixelsOut): void {
-  const { cols: w, rows: h, values: f } = grid, px = out.data, q = density, T = THRESHOLD;
+export function shadeField(grid: Grid, washed: Uint8Array, color: string, density: number, rect: Rect, out: PixelsOut, whole?: { readonly cols: number; readonly rows: number }): void {
+  const { cols: w, rows: h, values: f, row0 } = grid, px = out.data, q = density, T = THRESHOLD;
+  const W = whole?.cols ?? w, H = whole?.rows ?? h;
   const [ir, ig, ib] = rgbOf(color), L = luminance(color);
   const [lx, ly, lz] = LIGHT, [hx, hy, hz] = HALF;
   const men = 3.5 * q, rimW = 1.6 * q, specK = 0.55 + 0.45 * (1 - L);
-  const gcx = w * 0.32, gcy = h * 0.28, grad = Math.max(w, h) * 0.7, gA = 0.2 * (1 - L) + 0.04;
-  const uA = 0.06 + 0.12 * L, uTop = h * 0.35, uSpan = h * 0.65;
+  const gcx = W * 0.32, gcy = H * 0.28, grad = Math.max(W, H) * 0.7, gA = 0.2 * (1 - L) + 0.04;
+  const uA = 0.06 + 0.12 * L, uTop = H * 0.35, uSpan = H * 0.65;
   const x0 = Math.max(0, rect.x0 - 1), y0 = Math.max(0, rect.y0 - 1), x1 = Math.min(w, rect.x1 + 1), y1 = Math.min(h, rect.y1 + 1);
   if (rect.x1 <= rect.x0 || rect.y1 <= rect.y0) return;
   for (let y = y0; y < y1; y++) {
     const up = y > 0 ? -w : 0, dn = y < h - 1 ? w : 0;
-    const ua = y + 0.5 > uTop ? (uA * (y + 0.5 - uTop)) / uSpan : 0;
+    const Y = row0 + y, ua = Y + 0.5 > uTop ? (uA * (Y + 0.5 - uTop)) / uSpan : 0;
     for (let x = x0; x < x1; x++) {
       const i = y * w + x, v = f[i]!, o = i * 4;
       if (v < T * 0.4) { px[o + 3] = 0; continue; }
@@ -98,7 +104,7 @@ export function shadeField(grid: Grid, washed: Uint8Array, color: string, densit
       const spec = Math.max(0, nx * hx + ny * hy + nz * hz) ** 60 * specK;
       const rim = L * 0.5 * Math.exp(-Math.max(0, sd) / rimW);
       const k = Math.max(0, shade * (1 - rim));
-      const gd = Math.hypot(x + 0.5 - gcx, y + 0.5 - gcy) / grad, ga = gd < 1 ? gA * (1 - gd) : 0;
+      const gd = Math.hypot(x + 0.5 - gcx, Y + 0.5 - gcy) / grad, ga = gd < 1 ? gA * (1 - gd) : 0;
       const r = Math.min(255, ir * k + 255 * spec), g = Math.min(255, ig * k + 255 * spec), b = Math.min(255, ib * k + 255 * spec);
       const thin = washed[i] === 1 ? Math.min(1, Math.max(0, THIN_FLOOR + ((1 - THIN_FLOOR) * (v - T)) / THIN_SPAN)) : 1;
       px[o] = (r * (1 - ga) + 255 * ga) * (1 - ua);

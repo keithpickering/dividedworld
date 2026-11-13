@@ -6,9 +6,10 @@
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import { covers, fieldAt, fieldGrid, makeSplat, THRESHOLD, type Box } from './splat.ts';
 import { MAX_CANVAS_PX, STAND_IN_WASH, THIN_FLOOR, THIN_SPAN, holdStandIns, paint, paintSplat, paintStandIn, shadeField, type PaintLayer, type StandIn } from './paint.ts';
-import { denseGrid, makeGrid, splatInto, type Grid, type Rect } from './field.ts';
+import { denseGrid, makeGrid, splatInto, strokesInto, type Grid, type Rect } from './field.ts';
+import { buildLayer } from './build.ts';
 import fixtureJson from './paint.fixture.json';
-import { type Stroke } from './scrub.ts';
+import { brushOf, type Stroke } from './scrub.ts';
 
 const realGetContext = HTMLCanvasElement.prototype.getContext;
 afterEach(() => { HTMLCanvasElement.prototype.getContext = realGetContext; });
@@ -330,5 +331,53 @@ describe('paintSplat', () => {
     for (let i = 0; i < box.w * box.h; i++) if (img.data[i * 4 + 3]! > 0) { brightest = Math.max(brightest, lum(i)); darkest = Math.min(darkest, lum(i)); }
     expect(brightest).toBeGreaterThan(0x20 + 20);
     expect(darkest).toBeLessThan(0x20);
+  });
+});
+
+describe('bands shade as the whole does', () => {
+  const box: Box = { w: 390, h: 1400 };
+  const SEED = 11, COLOR = '#2a6df4';
+  const pen = (points: [number, number][], extra: object = {}): Stroke => ({ tool: 'ink', color: '#101010', ...brushOf(14, box), points, ...extra });
+  const wash = (points: [number, number][]): Stroke => ({ tool: 'wash', ...brushOf(26, box), points });
+  /* Lines that cross each band's edge (512 and 1,024 CSS px, which are shares 0.3657 and 0.7314 of the box), a dab on one, and a wash over the pen. */
+  const strokes: Stroke[] = [
+    pen([[0.2, 0.34], [0.5, 0.39], [0.7, 0.37]], { drops: 2 }),
+    wash([[0.1, 0.36], [0.45, 0.375], [0.8, 0.36]]),
+    pen([[0.3, 0.7], [0.4, 0.76]], { drops: 3 }),
+    wash([[0.35, 0.7314]]),
+    wash([[0.3, 0.72], [0.45, 0.74]]),
+    pen([[0.6, 0.1], [0.6, 0.98]]),
+  ];
+  const wholePicture = () => {
+    const grid = denseGrid(box, 1);
+    const pixels = (g: Grid) => ({ width: g.cols, height: g.rows, data: new Uint8ClampedArray(g.cols * g.rows * 4) });
+    const whole = (g: Grid): Rect => ({ x0: 0, y0: 0, x1: g.cols, y1: g.rows });
+    splatInto(grid, makeSplat(SEED), box);
+    strokesInto(grid, box, strokes);
+    const out = pixels(grid);
+    shadeField(grid, grid.washed, COLOR, 1, whole(grid), out);
+    return out.data;
+  };
+
+  test('the image bytes of bands of 512, laid together, equal the whole post\'s picture exactly', () => {
+    const want = wholePicture();
+    const cols = 390, lattice = 1400;
+    const got = new Uint8ClampedArray(want.length);
+    let at = 0;
+    for (let row0 = 0; row0 < lattice; row0 += 512) {
+      const rows = Math.min(512, lattice - row0);
+      const built = buildLayer({ seed: SEED, color: COLOR, box, density: 1, strokes, band: { row0, rows } });
+      expect([built.image.width, built.image.height], `band at ${row0}`).toEqual([cols, rows]);
+      got.set(built.image.data, at);
+      at += built.image.data.length;
+    }
+    expect(at).toBe(want.length);
+    let first = -1;
+    for (let i = 0; i < want.length; i++) if (got[i] !== want[i]) { first = i; break; }
+    const pixel = Math.floor(first / 4);
+    expect(first < 0 ? 'equal' : `first difference at byte ${first} (row ${Math.floor(pixel / cols)}, column ${pixel % cols}, channel ${first % 4}): ${got[first]} vs ${want[first]}`).toBe('equal');
+    let ink = 0;
+    for (let i = 3; i < want.length; i += 4) if (want[i]! > 0) ink++;
+    expect(ink, 'the picture has ink in it').toBeGreaterThan(5000);
   });
 });
