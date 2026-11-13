@@ -19,19 +19,21 @@
  *   E1  every function has a `[functions.<name>]` table whose `verify_jwt` is `false`.
  *   E2  every `[functions.<name>]` table names a function (a removed or renamed one leaves its table behind).
  *   E3  every job's function exists.
- *   E4  every job's command sends `apikey` and no `Authorization` header: the functions take the jobs
- *       key in `apikey` alone (`fromTheService`, supabase/functions/_shared/serve.ts).
+ *   E4  every job's command sends `'apikey'` as a header key and no `Authorization` header: the
+ *       functions take the jobs key in `apikey` alone (`fromTheService`, supabase/functions/_shared/serve.ts).
  *   E5  every job's function calls `fromTheService(` in a non-test `.ts` of its own folder. With the
  *       platform's check off, a function a job calls and that never asks for the key runs for any caller.
  * A `files` with no config.toml, or with no function, is a complaint too: a check over nothing has
  * nothing wrong in it.
  *
- * A job is a `cron.schedule('<job>', ...)` in a migration whose command posts to `/functions/v1/<name>`.
- * The migrations are read in file-name order, the last schedule of a job name is the job (0071
- * rescheduled 0004's and 0047's commands), and a later `cron.unschedule('<job>')` ends it. A schedule
- * whose command names no function (`kayfabb-system-tick`) is not held to E3 to E5. There is no TOML
- * package, so the tables are read by line, as tools/check-release-workflows.mjs reads netlify.toml:
- * a line that starts with `#` is not a setting, and a key belongs to the latest table header.
+ * A job is a `cron.schedule('<job>', ...)` (any letter case) in a migration whose command, in any
+ * `$tag$` dollar quote or a plain string, posts to `/functions/v1/<name>`; a command that names several
+ * functions is held for each. `--` and block comments are not read. The migrations are read in
+ * file-name order, the last schedule of a job name is the job (0071 rescheduled 0004's and 0047's
+ * commands), and a later `cron.unschedule('<job>')` ends it. A schedule whose command names no
+ * function (`kayfabb-system-tick`) is not held to E3 to E5. There is no TOML package, so the tables are read by line, as tools/check-release-workflows.mjs reads netlify.toml:
+ * a line that starts with `#` is not a setting, and a key belongs to the latest table header. E5 reads a
+ * function's `.ts` with comments removed and strings emptied, so a call named in either is no call.
  *
  * `problems(files)` is pure: `files` maps a repository path to its text (`supabase/config.toml`, every
  * `.ts` under `supabase/functions/` and every `supabase/migrations/*.sql`), and it returns one string
@@ -67,7 +69,7 @@ function functionTables(toml) {
   const tables = new Map();
   let current = null;
   for (const line of toml.split('\n')) {
-    if (/^\s*#/.test(line)) continue;
+    // A `#` line matches neither pattern below: both are anchored on the line's first character that is not a space.
     const head = line.match(/^\s*\[\[?\s*([^\]]+?)\s*\]\]?\s*(#.*)?$/);
     if (head) {
       const fn = head[1].match(/^functions\.(?:"([^"]+)"|([\w-]+))$/);
@@ -91,23 +93,25 @@ export function jobsOf(files) {
   const scheduled = new Map();
   const paths = Object.keys(files).filter((p) => /^supabase\/migrations\/[^/]+\.sql$/.test(p)).sort();
   for (const path of paths) {
-    // A `--` comment may name a job it does not schedule; the bodies here hold no `--` of their own.
-    const sql = files[path].replace(/(^|\s)--.*$/gm, '$1');
+    // A `--` or block comment may name a job it does not schedule; the bodies here hold no `--` of their own.
+    const sql = files[path].replace(/(^|\s)--[^\n]*|\/\*[\s\S]*?\*\//g, '$1');
     const events = [];
-    for (const m of sql.matchAll(/cron\.schedule\(\s*'([^']+)'/g)) {
+    for (const m of sql.matchAll(/cron\.schedule\(\s*'([^']+)'/gi)) {
       const rest = sql.slice(m.index + m[0].length);
-      const dollar = rest.indexOf('$job$');
-      const close = rest.indexOf(');');
+      // A command in any `$tag$` dollar quote runs to the matching tag, so an inner `);` does not end it.
+      const quoted = rest.match(/^\s*,\s*'[^']*'\s*,\s*(\$\w*\$)/);
       let command;
-      if (dollar >= 0 && (close < 0 || dollar < close)) {
-        const end = rest.indexOf('$job$', dollar + 5);
-        command = rest.slice(dollar + 5, end < 0 ? undefined : end);
+      if (quoted) {
+        const start = quoted[0].length;
+        const end = rest.indexOf(quoted[1], start);
+        command = rest.slice(start, end < 0 ? undefined : end);
       } else {
+        const close = rest.indexOf(');');
         command = rest.slice(0, close < 0 ? undefined : close);
       }
       events.push({ at: m.index, job: m[1], command });
     }
-    for (const m of sql.matchAll(/cron\.unschedule\(\s*'([^']+)'\s*\)/g)) events.push({ at: m.index, job: m[1], command: null });
+    for (const m of sql.matchAll(/cron\.unschedule\(\s*'([^']+)'\s*\)/gi)) events.push({ at: m.index, job: m[1], command: null });
     events.sort((a, b) => a.at - b.at);
     for (const e of events) {
       if (e.command === null) scheduled.delete(e.job);
@@ -116,10 +120,17 @@ export function jobsOf(files) {
   }
   const jobs = [];
   for (const [job, command] of scheduled) {
-    const m = command.match(/\/functions\/v1\/([\w-]+)/);
-    if (m) jobs.push({ job, fn: m[1], command });
+    for (const fn of new Set([...command.matchAll(/\/functions\/v1\/([\w-]+)/g)].map((m) => m[1]))) jobs.push({ job, fn, command });
   }
   return jobs;
+}
+
+/**
+ * A TypeScript text with its comments gone and its strings emptied, in one pass so that a `/*` inside a
+ * string and a quote inside a comment mislead nothing. (A template literal's `${}` goes with it.)
+ */
+function bare(ts) {
+  return ts.replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*|"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`/g, (m) => (/^[/]/.test(m) ? '' : m[0] + m[0]));
 }
 
 /** Whether a function's own non-test `.ts` files call `fromTheService(` (an import line alone does not). */
@@ -127,7 +138,7 @@ function asksForTheKey(files, fn) {
   const prefix = `${FUNCTIONS}/${fn}/`;
   return Object.keys(files)
     .filter((p) => p.startsWith(prefix) && p.endsWith('.ts') && !p.endsWith('.test.ts'))
-    .some((p) => /\bfromTheService\(/.test(files[p].replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')));
+    .some((p) => /\bfromTheService\(/.test(bare(files[p])));
 }
 
 /** @param {Record<string,string>} files @returns {string[]} */
@@ -150,13 +161,16 @@ export function problems(files) {
     }
   }
 
+  const sendChecked = new Set(); // a command naming two functions is one command: E4 speaks once
   for (const { job, fn, command } of jobsOf(files)) {
     if (!fns.includes(fn)) {
       out.push(`${MIGRATIONS}: E3 job ${job} posts to /functions/v1/${fn}, which is not a function; fix the name or add the function`);
       continue;
     }
-    if (!/\bapikey\b/.test(command)) out.push(`${MIGRATIONS}: E4 job ${job} does not send the jobs key in apikey; send it there, as the other jobs do`);
-    if (/authorization/i.test(command)) out.push(`${MIGRATIONS}: E4 job ${job} sends an Authorization header; the functions take the jobs key in apikey alone`);
+    const first = !sendChecked.has(job);
+    sendChecked.add(job);
+    if (first && !/'apikey'\s*,/.test(command)) out.push(`${MIGRATIONS}: E4 job ${job} does not send the jobs key in apikey; send it there, as the other jobs do`);
+    if (first && /authorization/i.test(command)) out.push(`${MIGRATIONS}: E4 job ${job} sends an Authorization header; the functions take the jobs key in apikey alone`);
     if (!asksForTheKey(files, fn)) {
       out.push(`${FUNCTIONS}/${fn}: E5 job ${job} calls this function, which never calls fromTheService( outside a test; with the platform's check off it would run for any caller`);
     }

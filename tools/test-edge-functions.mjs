@@ -30,15 +30,15 @@ const without = (path) => {
   delete copy[path];
   return copy;
 };
-/** A migration after every real one that schedules `job` posting to `fn`, with one header. */
-const schedule = (job, fn, header = `'apikey', s.secret`) => `
+/** A migration after every real one that schedules `job` posting to `fn`, with one header and a body. */
+const schedule = (job, fn, header = `'apikey', s.secret`, body = `'{}'::jsonb`) => `
 create function schedule_${job.replace(/\W/g, '_')}() returns bigint language plpgsql as $$
 begin
   return cron.schedule('${job}', '* * * * *', $job$
     select net.http_post(
       url := s.base || '/functions/v1/${fn}',
       headers := jsonb_build_object('Content-Type', 'application/json', ${header}),
-      body := '{}'::jsonb
+      body := ${body}
     )
     from (select 'x' as base, 'y' as secret) s
   $job$);
@@ -73,22 +73,47 @@ function quiet(name, files) {
 }
 
 /* ---- E1: every function is deployed with verify_jwt = false ---- */
-red('settle has no table', change(CONFIG, (t) => t.replace('[functions.settle]\nverify_jwt = false\n', '')), /E1.*settle/);
-red('settle says verify_jwt = true', change(CONFIG, (t) => t.replace('[functions.settle]\nverify_jwt = false', '[functions.settle]\nverify_jwt = true')), /E1.*settle/);
-red('settle has verify_jwt only in a comment', change(CONFIG, (t) => t.replace('[functions.settle]\nverify_jwt = false', '[functions.settle]\n# verify_jwt = false')), /E1.*settle/);
+red('settle has no table', change(CONFIG, (t) => t.replace('[functions.settle]\nverify_jwt = false\n', '')), /E1 function settle has no \[functions\.settle\] table/);
+red('settle says verify_jwt = true', change(CONFIG, (t) => t.replace('[functions.settle]\nverify_jwt = false', '[functions.settle]\nverify_jwt = true')), /E1 function settle has verify_jwt = true/);
+red('settle has verify_jwt only in a comment', change(CONFIG, (t) => t.replace('[functions.settle]\nverify_jwt = false', '[functions.settle]\n# verify_jwt = false')), /E1 function settle's table has no verify_jwt setting/);
+red('settle\'s verify_jwt sits under a later, unrelated header', change(CONFIG, (t) => t.replace('[functions.settle]\nverify_jwt = false', '[functions.settle]\n[auth.extra]\nverify_jwt = false')), /E1 function settle's table has no verify_jwt setting/);
 red('a new function folder has no table', { ...BASE, 'supabase/functions/later/index.ts': 'export {};\n' }, /E1.*later/);
+quiet('a commented-out table is no table', change(CONFIG, (t) => `${t}\n# [functions.zzz]\n# verify_jwt = false\n`));
+quiet('_shared is not a function', { ...BASE, 'supabase/functions/_shared/index.ts': 'export {};\n' });
 
 /* ---- E2: every table names a function ---- */
 red('a table for a function that is gone', change(CONFIG, (t) => `${t}\n[functions.gone]\nverify_jwt = false\n`), /E2.*gone/);
 
 /* ---- E3: every job's function exists ---- */
 red('a job posts to a function that is not there', { ...BASE, [LATER]: schedule('kayfabb-ghost', 'ghost') }, /E3.*ghost/);
+red('a job unscheduled and then scheduled again in one file is a job', { ...BASE, [LATER]: `select cron.unschedule('kayfabb-ghost');\n${schedule('kayfabb-ghost', 'ghost')}` }, /E3.*ghost/);
+red('a job whose body is in another dollar tag, with an inner );', {
+  ...BASE,
+  [LATER]: `select cron.schedule('kayfabb-ghost', '* * * * *', $body$ select foo(1); select net.http_post(url := s.base || '/functions/v1/ghost', headers := jsonb_build_object('apikey', s.secret)) $body$);\n`,
+}, /E3.*ghost/);
+red('a job scheduled in upper case', { ...BASE, [LATER]: schedule('kayfabb-ghost', 'ghost').replace('cron.schedule', 'CRON.SCHEDULE') }, /E3.*ghost/);
+red('a job whose one command posts to two functions', {
+  ...BASE,
+  [LATER]: schedule('kayfabb-two', 'settle', undefined, `jsonb_build_object('then', s.base || '/functions/v1/ghost')`),
+}, /E3.*ghost/);
 
 /* ---- E4: a job sends apikey and no Authorization ---- */
-red('conceal is rescheduled with an Authorization header', {
+red('conceal is rescheduled with an Authorization header and no apikey', {
   ...BASE,
   [LATER]: schedule('kayfabb-conceal', 'conceal', `'Authorization', 'Bearer ' || s.secret`),
-}, /E4.*kayfabb-conceal/);
+}, /E4.*kayfabb-conceal.*does not send the jobs key/);
+red('conceal is rescheduled with neither header', {
+  ...BASE,
+  [LATER]: schedule('kayfabb-conceal', 'conceal', `'X-Other', 'y'`),
+}, /E4.*kayfabb-conceal.*does not send the jobs key/);
+red('conceal is rescheduled with apikey only in its body', {
+  ...BASE,
+  [LATER]: schedule('kayfabb-conceal', 'conceal', `'X-Other', 'y'`, `'{"apikey":1}'::jsonb`),
+}, /E4.*kayfabb-conceal.*does not send the jobs key/);
+red('conceal is rescheduled with both headers', {
+  ...BASE,
+  [LATER]: schedule('kayfabb-conceal', 'conceal', `'apikey', s.secret, 'Authorization', 'Bearer ' || s.secret`),
+}, /E4.*kayfabb-conceal.*Authorization header/);
 
 /* ---- E5: a job's function asks for the jobs key ---- */
 red('mail no longer calls fromTheService', change('supabase/functions/mail/index.ts', (t) => t.replaceAll('fromTheService', 'fromSomeone')), /E5.*mail/);
@@ -96,6 +121,17 @@ red('mail calls fromTheService only in a test', {
   ...change('supabase/functions/mail/index.ts', (t) => t.replaceAll('fromTheService', 'fromSomeone')),
   'supabase/functions/mail/core.test.ts': 'if (!fromTheService(request, key)) throw new Error();\n',
 }, /E5.*mail/);
+
+const MAIL = 'supabase/functions/mail/index.ts';
+const noCall = (t) => t.replaceAll('fromTheService', 'fromSomeone');
+red('mail names the call only in a trailing line comment', change(MAIL, (t) => `${noCall(t)}\nconst a = 1; // fromTheService(request, env.jobs)\n`), /E5.*mail/);
+red('mail names the call only in a block comment', change(MAIL, (t) => `${noCall(t)}\n/* fromTheService(request, env.jobs) */\n`), /E5.*mail/);
+red('mail names the call only in a string', change(MAIL, (t) => `${noCall(t)}\nconst a = "fromTheService(";\n`), /E5.*mail/);
+quiet('a /* inside a string does not hide mail\'s real call', change(MAIL, (t) => {
+  if (!/^.*Deno\.serve/m.test(t)) throw new Error('mail/index.ts has no Deno.serve line');
+  // The `*/` in the trailing line comment is what an old block-comment strip would run to.
+  return `${t.replace(/^(.*Deno\.serve)/m, 'const g = "a/*";\n$1')}\n// done */\n`;
+}));
 
 /* ---- a check over nothing ---- */
 red('config.toml is missing', without(CONFIG), /config\.toml/);
@@ -113,6 +149,9 @@ quiet('a job scheduled and then unscheduled is no job', {
   [LATER]: schedule('kayfabb-ghost', 'ghost'),
   [LATEST]: `select cron.unschedule('kayfabb-ghost');\n`,
 });
+quiet('a job named only in a -- comment is no job', { ...BASE, [LATER]: `-- ${schedule('kayfabb-ghost', 'ghost').trim().replaceAll('\n', ' ')}\n` });
+quiet('a job named only in a block comment is no job', { ...BASE, [LATER]: `/*${schedule('kayfabb-ghost', 'ghost')}*/\n` });
+quiet('a job scheduled and then unscheduled in one file is no job', { ...BASE, [LATER]: `${schedule('kayfabb-ghost', 'ghost')}\nselect cron.unschedule('kayfabb-ghost');\n` });
 quiet('a job whose command names no function is not held to anything', { ...BASE, [LATER]: `select cron.schedule('kayfabb-nothing', '* * * * *', 'select 1');\n` });
 
 /* ---- the real files hold the shape ---- */
