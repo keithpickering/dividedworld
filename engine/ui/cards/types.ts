@@ -278,6 +278,12 @@ export interface ConfigFormProps {
   readonly id: string;
   /** Every card of the instance that is cast on a post, as its face draws it (not only the player's hand), for a setting that names one (a set card that waits for a card). */
   readonly castable?: readonly CardFace[];
+  /**
+   * Whether this play is a set face down: `'will'` when it is, `'can'` when the player may still choose it (the play now is chosen), `'no'`
+   * when the card cannot be set on this post. Undefined where the host does not say, which a form reads as it did before. For a note that
+   * speaks of a back (Laugh Track's "waits for this phrase"), which is said only where a back can happen.
+   */
+  readonly faceDown?: 'no' | 'can' | 'will';
 }
 
 /**

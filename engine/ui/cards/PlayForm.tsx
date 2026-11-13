@@ -26,7 +26,7 @@
  */
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react';
 import { ENGINE_DEFAULT_PRONOUNS, words } from '../../rules/pronouns.ts';
-import { casterMessage, castOnPost, decideSet, faceUpOnly, MESSAGE_MOST, playOf, withheld, type CardEffect, type CardTarget } from '../../rules/cards.ts';
+import { casterMessage, castOnPost, decideSet, MESSAGE_MOST, playOf, withheld, type CardEffect, type CardTarget } from '../../rules/cards.ts';
 import { useKayfa } from '../context.tsx';
 import type { Act, Id } from '../data/api.ts';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
@@ -36,7 +36,7 @@ import { usePlayer } from '../player.tsx';
 import { Link } from '../router.tsx';
 import { newer } from '../thread/feed.ts';
 import { faceOf, orbs, plainRefusal, withCardEconomy } from './faces.ts';
-import { endsWords, landing, landingOn, landsWords, lengthOf, springWords, targetOf } from './land.ts';
+import { endsWords, landing, landingOn, landsWords, lengthOf, springWords, targetOf, waysOn } from './land.ts';
 import type { CardPlay } from './types.ts';
 import { effectCards, livePlays, PLAYS_PER_POST, readEffects, usePlays } from './plays.ts';
 import type { PlayTarget } from './play.tsx';
@@ -128,10 +128,13 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
   const cardUi = ui.cards.find((c) => c.key === card);
   /* How the card is played (the card mechanic's design, section 1; the face-down Moves design, section 8). */
   const how = rules ? playOf(rules) : 'cast';
-  /* The post is one of the player's own characters': a cast card on it may be set face down, but for one that is faceUpOnly (it writes, needs a message, draws or runs a drive), which is only cast face up (decideSet); a remembered Set face down never opens one as a set, since `setting` follows `choosing`; a set card is set there alone. */
+  /* Read on every render: a play landing on the post meanwhile (live) changes what it can take. */
+  const carried = livePlays(usePlays(target.plays, home).plays, api.now());
+  /* The post is one of the player's own characters'. Which ways a cast card lands there is `waysOn`, the answer the post's mark reads too, asked without the card's settings so the choice never comes or goes as the player types: both, and the pair is asked; only one, and that one is the play, with no choice (a card that reaches a character is only ever set on a post; one that is faceUpOnly (it writes, needs a message, draws or runs a drive) is only cast face up, by decideSet). A remembered Set face down never opens a card as a set that cannot be one, since `setting` follows `ways`; a set card is set there alone. */
   const ownPost = !beyond && post !== null && player.actingCharacters.some((c) => c.id === post.character);
-  const choosing = how === 'cast' && ownPost && (rules === undefined || !faceUpOnly(rules));
-  const setting = how === 'set' || (choosing && down);
+  const ways = rules && post && !beyond && how === 'cast' ? waysOn(rules, post, carried, { cards: instance.cards, own: ownPost }) : { cast: !beyond, set: false };
+  const choosing = how === 'cast' && ownPost && ways.cast && ways.set;
+  const setting = how === 'set' || (how === 'cast' && ownPost && ways.set && (!ways.cast || down));
   /* A Set is the post author's own: the character that wrote it sets it, which is the HUD's unless the post is another mask's. */
   const setter = (setting && post ? player.actingCharacters.find((c) => c.id === post.character) : undefined) ?? player.hudCharacter;
   const castable = useMemo(() => instance.cards.filter((r) => castOnPost(r) && !withheld(r, instance.settings)).map((r) => faceOf(r, ui.cards.find((c) => c.key === r.key), priced, ui.copy.cardKinds)), [instance.cards, instance.settings, ui.cards, priced, ui.copy.cardKinds]);
@@ -139,8 +142,6 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
   const hud = player.hudCharacter;
   const wallet = player.wallet;
 
-  /* Read on every render: a play landing on the post meanwhile (live) changes what it can take. */
-  const carried = livePlays(usePlays(target.plays, home).plays, api.now());
   const context = { cards: instance.cards, ...(beyond?.above ? { above: beyond.above } : {}), ...(setting ? { faceDown: true as const } : {}) };
   const lands = !rules || !goal ? { ok: false as const, why: 'there is no such card' }
     : beyond ? landingOn(rules, goal, carried, context) : landing(rules, post!, carried, context);
@@ -338,7 +339,7 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
           </p>
           {ownBoth && !setting && <p className="kb-play-both">You play both. It costs the same; your log will say so.</p>}
           {setting && <p className="kb-play-sets" data-kb-sets>{springs}</p>}
-          {Config && post && <div><Config config={config} onChange={setConfig} post={post} id={id} castable={castable} /></div>}
+          {Config && post && <div><Config config={config} onChange={setConfig} post={post} id={id} castable={castable} faceDown={setting ? 'will' : choosing ? 'can' : 'no'} /></div>}
           {conditional && post && (
             <SetConditions id={id} open={whenOpen} onToggle={() => setWhenOpen((o) => !o)} draft={draft} onChange={(next) => { setPlaced(null); setDraft(next); }} lockedSays={lockedSays} words={watched!.text} count={countOf(when)} problems={shown} />
           )}

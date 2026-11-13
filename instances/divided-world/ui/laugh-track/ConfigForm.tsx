@@ -70,7 +70,7 @@ function wholeWords(selected: string, text: string): string {
 
 type Row = { key: number; cue: Cue };
 
-export function ConfigForm({ config, onChange, post, id }: ConfigFormProps) {
+export function ConfigForm({ config, onChange, post, id, faceDown }: ConfigFormProps) {
   const serial = useRef(0);
   const nextKey = () => serial.current++;
   const [rows, setRows] = useState<Row[]>(() => cuesOf(config).map((cue) => ({ key: nextKey(), cue })));
@@ -168,7 +168,8 @@ export function ConfigForm({ config, onChange, post, id }: ConfigFormProps) {
         const bound = cue.phrase.trim() ? boundOf(cue.phrase) : undefined;
         const line = !cue.phrase.trim() ? `At least ${PHRASE.least} letters or digits, matched as whole words in any case`
           : bound ? undefined : counts[i] ? `Cues ${places(counts[i]!)} in this post` : occurrences(text, cue.phrase).length ? 'Only inside a link here, and a Laugh Track never cues a link' : 'Not in this post\'s own words';
-        const hint = i === 0
+        /* The note about a back is said only where a back can happen (the host says `no` where this post cannot hold one). */
+        const hint = i === 0 && faceDown !== 'no'
           ? `${line === undefined ? '' : `${line}. `}A face-down Laugh Track waits for this phrase.`
           : line;
         return (

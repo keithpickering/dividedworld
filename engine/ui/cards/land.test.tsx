@@ -7,7 +7,7 @@ import { describe, expect, test } from 'vitest';
 import { economyOf, landsOn, quadrantFree, type CardRules } from '../../rules/cards.ts';
 import { QUADRANTS, type Quadrant } from '../../rules/types.ts';
 import type { Act } from '../data/api.ts';
-import { effectsOf, landing, landingOn, lengthOf } from './land.ts';
+import { effectsOf, landing, landingOn, lengthOf, waysOn } from './land.ts';
 import type { CardPlay } from './types.ts';
 
 const rules = (key: string, stack?: number): Pick<CardRules, 'key' | 'stack' | 'canApply'> => {
@@ -195,5 +195,30 @@ describe('a play an admin ended, as the rules see the post', () => {
     const three = [play('whoops', 1), play('whoops', 2), ended(3)];
     expect(landing(rules('whoops', 3), post('hi'), three).ok).toBe(true);
     expect(landing(rules('whoops', 3), post('hi'), [...three.slice(0, 2), play('whoops', 3)]).ok).toBe(false);
+  });
+});
+
+/* Which ways a card lands on a post, the one answer the mark and the play form's "How to play it" pair share. */
+describe('the ways a card lands on a post', () => {
+  const base: CardRules = { key: 'base', name: 'Base', alignment: 'salty', rarity: 'common', playPrice: () => 0, validateConfig: (c) => ({ ok: true, value: c }), canApply: (t, e, _config, now) => landsOn({ key: 'base' }, t, e, now) };
+  const blot: CardRules = { ...base, key: 'blot', name: 'Blot' };
+  const spark: CardRules = { ...base, key: 'spark', name: 'Spark', reaches: ['character'], canApply: (t, e, _config, now) => landsOn({ key: 'spark', reaches: ['character'] }, t, e, now) };
+  const scribe: CardRules = { ...base, key: 'scribe', name: 'Scribe', writes: { tokens: () => 40, frame: () => ({ prompt: '', stop: [] }) } };
+  const plea: CardRules = { ...base, key: 'plea', name: 'Plea', needsMessage: 'say why' };
+  const cards = [blot, spark, scribe, plea];
+
+  test('a card that reaches a post lands both ways on one\'s own post, and only cast on another\'s', () => {
+    expect(waysOn(blot, post('hi'), [], { cards, own: true })).toEqual({ cast: true, set: true });
+    expect(waysOn(blot, post('hi'), [], { cards, own: false })).toEqual({ cast: true, set: false });
+  });
+
+  test('a card that reaches a character lands only set, on one\'s own post, and nowhere on another\'s', () => {
+    expect(waysOn(spark, post('hi'), [], { cards, own: true })).toEqual({ cast: false, set: true });
+    expect(waysOn(spark, post('hi'), [], { cards, own: false })).toEqual({ cast: false, set: false });
+  });
+
+  test('a card that is only cast face up lands only cast, even on one\'s own post', () => {
+    expect(waysOn(scribe, post('hi'), [], { cards, own: true })).toEqual({ cast: true, set: false });
+    expect(waysOn(plea, post('hi'), [], { cards, own: true })).toEqual({ cast: true, set: false });
   });
 });

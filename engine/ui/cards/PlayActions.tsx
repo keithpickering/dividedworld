@@ -18,7 +18,7 @@ import { usePlayer } from '../player.tsx';
 import { useThread } from '../thread/context.ts';
 import { pageOf, threadHref } from '../thread/pages.ts';
 import { faceOf, withCardEconomy } from './faces.ts';
-import { landing, landingOn } from './land.ts';
+import { landingOn, waysOn } from './land.ts';
 import { playOf, reachesOf, type BeyondPost, type CardRules, type CardTarget, type Play } from '../../rules/cards.ts';
 import { useRest } from '../glass/prepared.ts';
 import { usePlay, type PlayTarget } from './play.tsx';
@@ -56,10 +56,8 @@ export function GhostMark({ act }: { readonly act: Act }) {
   const how = playOf(rules);
   const own = actingCharacters.some((c) => c.id === act.character);
   if ((how === 'set' || how === 'use') && !own) return null;
-  const context = { cards: instance.cards };
-  /* A Move on one's own post may also be set face down (a ward never blocks that): the mark is offered where either lands, and named for the choice the form keeps. */
-  const casts = landing(rules, act, here.plays, context).ok;
-  const sets = how === 'cast' && own && landing(rules, act, here.plays, { ...context, faceDown: true }).ok;
+  /* A Move on one's own post may also be set face down (a ward never blocks that): the mark is offered where either lands, and named for the choice the form keeps. The play form reads the same answer (waysOn). */
+  const { cast: casts, set: sets } = waysOn(rules, act, here.plays, { cards: instance.cards, own });
   if (!casts && !sets) return null;
   const down = sets && (play.faceDown || !casts);
   const cardUi = ui.cards.find((c) => c.key === rules.key);
