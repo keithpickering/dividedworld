@@ -211,6 +211,10 @@ export interface ScreenSettings {
   readonly settlementLength: Span;
   /** How long a card set face down lasts from when it is set (`setLasts`, in `screen_settings` from 0156): the line for a card about to be set says when it would end. A back already set ends when its own `endsAt` says. */
   readonly setLasts: Span;
+  /** The old voice's window in tokens (`oldVoiceWindow`, in `screen_settings` from 0353): the most a play may buy is the smaller of its own most and the window less `oldVoicePromptFloor`, so the length slider offers only lengths that fit. */
+  readonly oldVoiceWindow: number;
+  /** The least prompt, in tokens, a play leaves room for (`oldVoicePromptFloor`, in `screen_settings` from 0353). */
+  readonly oldVoicePromptFloor: number;
   /** How often a page polls who is browsing it, in seconds; each poll is also the viewer's heartbeat. */
   readonly presencePollSeconds: number;
   /** How long after its last poll a mask stays listed: what "Who is online" says it counts. */

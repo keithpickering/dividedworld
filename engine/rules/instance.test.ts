@@ -38,6 +38,11 @@ const settings: Settings = {
   systemEnabled: false,
   oldVoice: true,
   cardWriteSettleSeconds: 30,
+  oldVoiceWindow: 1024,
+  oldVoiceTokenizer: 'gpt2',
+  oldVoicePromptFloor: 256,
+  cardWriteShortShare: 0.5,
+  cardWriteRerolls: 3,
   pronouns: PRONOUN_PRESETS.it,
   meetingCron: '23 9 * * *',
   phases: {
@@ -1327,6 +1332,29 @@ test('needsMessage is a sentence for a cast or a use, and nothing for a set', ()
   assert.match(say({ needsMessage: true }), /card "splat" needsMessage true; it is the sentence a blank message is refused with/);
   assert.match(say({ needsMessage: 'x'.repeat(201) }), /card "splat" needsMessage is longer than 200 characters/);
   assert.match(say({ play: 'set', trap: { trigger: { on: 'cast' } }, needsMessage: 'say something' }), /card "splat" needs a message, and only a cast or a use carries one/);
+});
+
+test('the old voice window settings each refuse a value outside their bounds, in their own words', () => {
+  const bad = (k: string, v: unknown) => settingsProblems({ ...settings, [k]: v } as unknown as Settings).join('\n');
+  for (const v of [63, 1_000_001, 100.5]) assert.match(bad('oldVoiceWindow', v), /setting "oldVoiceWindow" is .*; it must be a whole number of tokens from 64 to 1,000,000/, String(v));
+  assert.match(bad('oldVoiceTokenizer', 'llama'), /setting "oldVoiceTokenizer" is "llama"; it must be "gpt2" or "bytes"/);
+  assert.match(bad('oldVoicePromptFloor', 0), /setting "oldVoicePromptFloor" is 0; it must be a whole number of tokens, at least 1/);
+  assert.match(bad('cardWriteShortShare', 1.5), /setting "cardWriteShortShare" is 1.5; it must be a number from 0 to 1/);
+  for (const v of [6, 2.5, -1]) assert.match(bad('cardWriteRerolls', v), /setting "cardWriteRerolls" is .*; it must be a whole number from 0 to 5/, String(v));
+  for (const [k, v] of [['oldVoiceWindow', 64], ['oldVoiceWindow', 1_000_000], ['oldVoiceTokenizer', 'bytes'], ['cardWriteShortShare', 0], ['cardWriteShortShare', 1], ['cardWriteRerolls', 0], ['cardWriteRerolls', 5]] as const) {
+    assert.deepEqual(settingsProblems({ ...settings, [k]: v, ...(k === 'oldVoiceWindow' ? { oldVoicePromptFloor: 1 } : {}) } as unknown as Settings), [], `${k} = ${v}`);
+  }
+});
+
+test('a prompt floor at or above the window is held: each row keeps its own bounds and no pair is refused (design section 4)', () => {
+  const said = (window: number, floor: number) => settingsProblems({ ...settings, oldVoiceWindow: window, oldVoicePromptFloor: floor });
+  for (const [w, f] of [[1024, 1024], [1024, 2000], [64, 256], [64, 1]] as const) assert.deepEqual(said(w, f), [], `${w} / ${f}`);
+  assert.deepEqual(said(1024, 1023), []);
+  const tuned = { ...good, settings: { ...good.settings, oldVoiceWindow: 64, oldVoicePromptFloor: 256 } } as Instance;
+  assert.deepEqual(instanceProblems(tuned), [], 'the instance with such tuned values is whole');
+  // Each side still has its own sentence.
+  assert.equal(said(63, 256).length, 1);
+  assert.equal(said(1024, 0).length, 1);
 });
 
 test('a card that replies is a cast card that reaches a post alone, stack 1, and never writes; a card that keeps is a cast card on one thread with a time up', () => {

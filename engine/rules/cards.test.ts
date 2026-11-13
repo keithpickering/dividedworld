@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { RARITIES, quadrantFree, faceUpOnly, instant, DISCIPLINE_KINDS, openDrive, giftSplit, wardTurnsAway, SET_PHRASE_MOST, atOrBelow, drawnInMoment, refusalTime, spanMs, decidePlay, decideSet, decideDraw, decideWash, decideUse, effectsOnTarget, landsOn, noQuoteWords, quoteStop, ok, staffConfigOf, staffDrawOf, staffOffers, fallsOn, castOnPost, postTarget, refuse, type CardEffect, type CardRules, type CardTarget } from './cards.ts';
+import { RARITIES, quadrantFree, faceUpOnly, instant, DISCIPLINE_KINDS, openDrive, giftSplit, wardTurnsAway, SET_PHRASE_MOST, atOrBelow, drawnInMoment, refusalTime, spanMs, decidePlay, decideSet, decideDraw, decideWash, decideUse, effectsOnTarget, landsOn, noQuoteWords, quoteStop, ok, staffConfigOf, staffDrawOf, staffOffers, fallsOn, castOnPost, postTarget, refuse, writeTokensMost, WRITE_TOKENS_MOST, type CardEffect, type CardRules, type CardTarget } from './cards.ts';
 import type { Settings } from './types.ts';
 
 // The engine's own test cards: no instance's names (the engine/instance boundary).
@@ -699,6 +699,15 @@ test('a card is not set face down on a post with a live no-quote, and is once it
   assert.deepEqual(decideSet(watcher, settings, post, [stop], {}, [hush]), { ok: false, why }, 'a Reversal that springs on a visit too');
   assert.equal(decideSet(snare, settings, post, [{ ...stop, ends: gone }], { card: 'inky' }, [inky, hush]).ok, true);
   assert.match((decideSet(watcher, settings, post, [stop], {}, []) as { why: string }).why, /this post's hush stops quotes until/, 'the key where the card is not found');
+});
+
+test('the most a play may buy is the smaller of the card bound and the window less the floor (design section 4)', () => {
+  const held = (oldVoiceWindow: number, oldVoicePromptFloor: number) => ({ oldVoiceWindow, oldVoicePromptFloor }) as Settings;
+  assert.equal(writeTokensMost(held(1024, 256)), 768);
+  assert.equal(writeTokensMost(held(100_000, 256)), WRITE_TOKENS_MOST);
+  assert.equal(writeTokensMost(held(400, 256)), 144);
+  assert.equal(writeTokensMost(held(64, 256)), 1, 'a window under the floor still leaves one token');
+  assert.equal(writeTokensMost(held(256, 256)), 1, 'a window equal to the floor too');
 });
 
 test('a card that carries a reply lands on a plain post, and not on a reply drawn under one', () => {

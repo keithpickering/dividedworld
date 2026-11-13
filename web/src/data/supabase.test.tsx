@@ -11,6 +11,7 @@ import { failureKind, NOT_RUN, NOT_SENT } from '../../../engine/ui/data/api.ts';
 import type { Act, KayfaApi, ScreenSettings, ThreadSummary } from '../../../engine/ui/data/api.ts';
 import { ENGINE_DEFAULT_PRONOUNS, PRONOUN_PRESETS } from '../../../engine/rules/pronouns.ts';
 import { createSupabaseApi } from './supabase.ts';
+import { fallbackSettings } from './settings.ts';
 
 /* Built in pieces on purpose: the web-reads guard refuses a path it cannot read to its end. */
 const REST = ['', 'rest', 'v1'].join('/');
@@ -34,6 +35,8 @@ const FALLBACK: ScreenSettings = {
   registrationMode: 'invite',
   settlementLength: { unit: 'day', count: 1 },
   setLasts: { unit: 'day', count: 7 },
+  oldVoiceWindow: 1024,
+  oldVoicePromptFloor: 256,
   cardSettings: { 'whoops.clean': 95 },
   presencePollSeconds: 30,
   presenceWindow: { unit: 'minute', count: 5 },
@@ -765,6 +768,15 @@ describe('reads and their rows', () => {
     expect(await harness(() => rows([{ balance: 250, cap: 500 }])).api.wallet()).toEqual({ balance: 250, cap: 500 });
     const h = harness((r) => (r.url.pathname.endsWith('/screen_settings') ? rows([{ settings: { walletCap: 700 } }]) : rows([])));
     expect(await h.api.wallet()).toEqual({ balance: 0, cap: 700 });
+  });
+
+  it('reads the old voice window and floor from screen_settings, and the compiled defaults when it lacks them', async () => {
+    // The compiled defaults the web lays a missing key over are Divided World's own.
+    expect(fallbackSettings).toMatchObject({ oldVoiceWindow: 1024, oldVoicePromptFloor: 256 });
+    const without = harness((r) => (r.url.pathname.endsWith('/screen_settings') ? rows([{ settings: { walletCap: 700 } }]) : rows([])));
+    expect(await without.api.settings()).toMatchObject({ oldVoiceWindow: 1024, oldVoicePromptFloor: 256 });
+    const held = harness((r) => (r.url.pathname.endsWith('/screen_settings') ? rows([{ settings: { oldVoiceWindow: 4096, oldVoicePromptFloor: 512 } }]) : rows([])));
+    expect(await held.api.settings()).toMatchObject({ oldVoiceWindow: 4096, oldVoicePromptFloor: 512 });
   });
 
   it('maps the tilt both ways, and keeps it off when a row lacks it', async () => {

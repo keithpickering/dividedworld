@@ -191,7 +191,7 @@ test('a fall lands on the caster, hearts take points and a ban off, a tattle wei
     log.push({ duty, staff: who });
     return new Response(JSON.stringify({ model: body.model, stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify(reply) }], usage: { input_tokens: 1500, output_tokens: 80, service_tier: 'standard' } }), { status: 200 });
   }) as unknown as typeof fetch;
-  const real = models((name) => ({ ANTHROPIC_API_KEY: 'test-key' } as Record<string, string>)[name], ledgerWriter(db), { tiers, fetch: fake });
+  const real = models((name) => ({ ANTHROPIC_API_KEY: 'test-key' } as Record<string, string>)[name], ledgerWriter(db), { tiers, oldVoice: { window: 1024, count: (t: string) => t.length }, fetch: fake });
 
   // ---- The act path as the edge wires it, and the same play asked of the database directly. ----
   const act = (n: Who, body: Record<string, unknown>) => handleAction({ dbs: { player: as(n), service: db }, instance, body, send: async () => undefined, drain: async () => undefined, after: () => undefined });

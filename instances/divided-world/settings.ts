@@ -49,6 +49,16 @@ export const defaults: Settings = deepFreeze<Settings>({
   oldVoice: true,
   /** An edit makes a card that writes wait half a minute for the editing to stop before it writes again. */
   cardWriteSettleSeconds: 30,
+  /** The old voice's model holds 1024 tokens, the prompt and the text together. */
+  oldVoiceWindow: 1024,
+  /** The model is GPT-2's family, so the counter is exact. */
+  oldVoiceTokenizer: 'gpt2',
+  /** A play leaves room for at least 256 tokens of prompt, so a play may buy at most 768. */
+  oldVoicePromptFloor: 256,
+  /** A text under half the tokens it asked for is rolled again. */
+  cardWriteShortShare: 0.5,
+  /** Up to three more rolls after the first. */
+  cardWriteRerolls: 3,
   /** A character a player makes starts with it/its, as every character did before pronouns; its player changes it on the character's page. */
   pronouns: PRONOUN_PRESETS.it,
   /** Daily, at 09:23 UTC, an hour after the settlement, so the Boss's digest holds the newest standings. */

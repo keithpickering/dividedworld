@@ -299,6 +299,11 @@ const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | nul
   systemEnabled: (v) => (typeof v === 'boolean' ? null : 'true or false'),
   oldVoice: (v) => (typeof v === 'boolean' ? null : 'true or false'),
   cardWriteSettleSeconds: whole(0, 'seconds', 600),
+  oldVoiceWindow: (v) => (isWhole(v, 64) && v <= 1_000_000 ? null : 'a whole number of tokens from 64 to 1,000,000'),
+  oldVoiceTokenizer: (v) => (v === 'gpt2' || v === 'bytes' ? null : '"gpt2" or "bytes"'),
+  oldVoicePromptFloor: whole(1, 'tokens'),
+  cardWriteShortShare: (v) => (typeof v === 'number' && v >= 0 && v <= 1 ? null : 'a number from 0 to 1'),
+  cardWriteRerolls: (v) => (isWhole(v, 0) && v <= 5 ? null : 'a whole number from 0 to 5'),
   pronouns: (v) => { const p = pronounProblems(v); return p.length ? p.join('; ') : null; },
   meetingCron: (v) => (isCron(v) ? null : 'a five-field cron expression, each field inside its range'),
   phases: phasesRule,
@@ -351,6 +356,8 @@ export function settingsProblems(settings: Settings): string[] {
     const why = rule(settings[key]);
     if (why) out.push(`setting "${key}" is ${JSON.stringify(settings[key])}; it must be ${why}`);
   }
+  // No sentence relates the window to the floor: SQL's settings_held checks each row alone, and writeTokensMost computes the most from the pair, never
+  // below 1, so no pair of valid rows stops the instance (design section 4; the owner's answer on #582).
   return out;
 }
 

@@ -258,6 +258,29 @@ export interface Settings {
    * A player sees the typing cursor for about this long after an edit. 0 makes it at once. A starting point.
    */
   readonly cardWriteSettleSeconds: number;
+  /**
+   * The old voice's context window in tokens, the prompt and the generated text together. A card that writes may buy no more than this less
+   * `oldVoicePromptFloor` (`writeTokensMost`, design section 4 of docs/plans/2026-11-12-old-voice-window-design.md), so a length a player is offered
+   * always fits. A whole number from 64 to 1,000,000. Divided World's model has 1024. A starting point.
+   */
+  readonly oldVoiceWindow: number;
+  /**
+   * The counter the instance's model takes (design section 2): `gpt2` for GPT-2, GPT-Neo, GPT-J and any model sharing GPT-2's byte-level BPE, which
+   * counts exactly; `bytes` for any other model, which counts one token for each UTF-8 byte, a bound a byte-level BPE never exceeds but a conservative one.
+   */
+  readonly oldVoiceTokenizer: 'gpt2' | 'bytes';
+  /**
+   * The least prompt a play leaves room for, in tokens, so a long play never starves the post it continues. A whole number, at least 1. Keep it below
+   * `oldVoiceWindow`: a floor at or above it leaves plays one token long (`writeTokensMost`). A starting point.
+   */
+  readonly oldVoicePromptFloor: number;
+  /**
+   * Under this share of the tokens a generation asks for, a card's text counts as short and is rolled again (design section 5). A number from 0 to 1;
+   * 0 never re-rolls. A starting point.
+   */
+  readonly cardWriteShortShare: number;
+  /** The most rolls after the first when a text is short: a whole number from 0 to 5, and 0 rolls once. A starting point. */
+  readonly cardWriteRerolls: number;
   /** The pronouns a staff character has when its persona file names none, and the ones a new character starts with. */
   readonly pronouns: PronounSet;
   /** When the Boss's meeting runs, as a five-field cron expression in UTC: daily by default, an hour after the settlement so the digest holds the newest standings. */
