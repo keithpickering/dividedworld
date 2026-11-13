@@ -387,6 +387,7 @@ declare
   reads_idle jsonb;
   reads_hook jsonb;
   before jsonb;
+  mode text;
 begin
   perform pg_temp.cards();
   perform pg_temp.hand(ann, 'snare', 'idle', 'hook');
@@ -411,14 +412,30 @@ begin
   end loop;
   if exists (select 1 from acts where kind = 'spring' and target_act_id in (p_low, p_idle, p_hook, p_old)) then raise exception 'something sprang'; end if;
   perform tests.unbecome();
-  -- The same reads for an Idle as for a Move: each table read the same number of times, the same way.
-  before := (select jsonb_object_agg(relname, jsonb_build_array(seq_scan, idx_scan)) from pg_stat_xact_user_tables where relname in ('face_down', 'card_kinds', 'acts'));
-  perform spring_traps('cast', p_idle, gen_random_uuid(), 'sweetie');
-  reads_idle := (select jsonb_object_agg(relname, jsonb_build_array(seq_scan - (before -> relname ->> 0)::bigint, idx_scan - (before -> relname ->> 1)::bigint)) from pg_stat_xact_user_tables where relname in ('face_down', 'card_kinds', 'acts'));
-  before := (select jsonb_object_agg(relname, jsonb_build_array(seq_scan, idx_scan)) from pg_stat_xact_user_tables where relname in ('face_down', 'card_kinds', 'acts'));
-  perform spring_traps('cast', p_hook, gen_random_uuid(), 'sweetie');
-  reads_hook := (select jsonb_object_agg(relname, jsonb_build_array(seq_scan - (before -> relname ->> 0)::bigint, idx_scan - (before -> relname ->> 1)::bigint)) from pg_stat_xact_user_tables where relname in ('face_down', 'card_kinds', 'acts'));
-  if reads_idle is distinct from reads_hook then raise exception 'an Idle and a Move read differently: % / %', reads_idle, reads_hook; end if;
+  -- The same reads for an Idle as for a Move: each table read the same number of times, the same way. Measured twice, with the plan cache pinned each way and warmed, so both calls
+  -- are planned alike. Left to itself the cache plans a statement for its values the first five times a session runs it and may keep one generic plan from the sixth, and the two
+  -- differ in what they read: by_act is no written Act here, so its thread is null, and the first post of a null thread is no read at all when planned for the value and a scan
+  -- that finds nothing when planned generically; and the planner itself reads an index's end to make an estimate, in the call that builds a plan and in no later one. Which call is
+  -- the session's sixth turns on the casts above and on the planner's costs, never on the back, so unpinned the counts differed by the order of the two calls. Pinned generic, a
+  -- difference is the function taking another path for one kind; pinned custom, it is also a plan chosen from the back's values.
+  foreach mode in array array['force_generic_plan', 'force_custom_plan'] loop
+    perform set_config('plan_cache_mode', mode, true);
+    -- One call for each back first, not counted: whatever plan this mode keeps is built before the count starts.
+    perform spring_traps('cast', p_idle, gen_random_uuid(), 'sweetie');
+    perform spring_traps('cast', p_hook, gen_random_uuid(), 'sweetie');
+    before := (select jsonb_object_agg(relname, jsonb_build_array(seq_scan, idx_scan)) from pg_stat_xact_user_tables where relname in ('face_down', 'card_kinds', 'acts'));
+    perform spring_traps('cast', p_idle, gen_random_uuid(), 'sweetie');
+    reads_idle := (select jsonb_object_agg(relname, jsonb_build_array(seq_scan - (before -> relname ->> 0)::bigint, idx_scan - (before -> relname ->> 1)::bigint)) from pg_stat_xact_user_tables where relname in ('face_down', 'card_kinds', 'acts'));
+    before := (select jsonb_object_agg(relname, jsonb_build_array(seq_scan, idx_scan)) from pg_stat_xact_user_tables where relname in ('face_down', 'card_kinds', 'acts'));
+    perform spring_traps('cast', p_hook, gen_random_uuid(), 'sweetie');
+    reads_hook := (select jsonb_object_agg(relname, jsonb_build_array(seq_scan - (before -> relname ->> 0)::bigint, idx_scan - (before -> relname ->> 1)::bigint)) from pg_stat_xact_user_tables where relname in ('face_down', 'card_kinds', 'acts'));
+    if reads_idle is distinct from reads_hook then raise exception 'an Idle and a Move read differently (%): % / %', mode, reads_idle, reads_hook; end if;
+    -- A count of nothing would agree with itself: each call read every table counted.
+    if exists (select 1 from jsonb_each(reads_idle) r where (r.value ->> 0)::bigint + (r.value ->> 1)::bigint < 1) or (select count(*) from jsonb_object_keys(reads_idle)) is distinct from 3 then
+      raise exception 'a spring''s reads were not counted (%): %', mode, reads_idle;
+    end if;
+  end loop;
+  perform set_config('plan_cache_mode', 'auto', true);
 end $$;
 
 -- ---- Each trigger springs its back once, and only once, and never refuses the write ----

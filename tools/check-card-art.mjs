@@ -47,6 +47,12 @@
  * (rules 2, 5, 6 and 7), and `art.json` to rule 4. Any other file in a back folder, as in a card's, is not read. A
  * repository with no such folder passes.
  *
+ * A pack's art is one folder too, `ui/packs/<key>/` (docs/plans/2026-11-12-booster-pack-render-design.md, section 5),
+ * read where it exists, with the same key pattern. It is held to all a card's folder is (rules 1 to 7, with its own
+ * sentence for what it holds: art.svg or art.webp, mark.svg and art.json, and it may hold relief.webp beside art.webp),
+ * and then to `relief.webp` where there is one: at most 200 KB, a still WebP of exactly 540 by 840 (rule 7's header
+ * reading, at half a card's raster), and only beside an `art.webp`, since the relief is the relief of a rendered pack.
+ *
  * `cardArtFaults` is exported and reads only the root it is handed, so tools/test-card-art.mjs
  * drives it red over scratch folders. A repository with no card folder passes: there is nothing
  * to check, and no instance is named here.
@@ -58,9 +64,10 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 const KB = 1024;
-const CAPS = { 'art.svg': 200 * KB, 'art.webp': 400 * KB, 'mark.svg': 20 * KB, 'art.json': 2 * KB };
+const CAPS = { 'art.svg': 200 * KB, 'art.webp': 400 * KB, 'relief.webp': 200 * KB, 'mark.svg': 20 * KB, 'art.json': 2 * KB };
 const CANVAS = [0, 0, 540, 840];
 const RASTER = [1080, 1680];
+const RELIEF = [540, 840];
 
 /** The file at a path, or null when there is none. */
 function read(file) {
@@ -134,8 +141,8 @@ function safetyFaults(name, text) {
   return out;
 }
 
-/** Faults of a WebP read by its header alone, decoding nothing: [] when it is a still 1080 by 1680 image. */
-function webpFaults(name, bytes) {
+/** Faults of a WebP read by its header alone, decoding nothing: [] when it is a still image of `size` (1080 by 1680 unless said). */
+function webpFaults(name, bytes, size = RASTER) {
   if (bytes.length < 30 || bytes.toString('latin1', 0, 4) !== 'RIFF' || bytes.toString('latin1', 8, 12) !== 'WEBP') return [`${name}: is not a WebP image`];
   const unreadable = [`${name}: is not a WebP image this guard can read`];
   const tag = bytes.toString('latin1', 12, 16);
@@ -155,7 +162,7 @@ function webpFaults(name, bytes) {
     height = bytes.readUIntLE(27, 3) + 1;
   } else return unreadable;
   const out = [];
-  if (width !== RASTER[0] || height !== RASTER[1]) out.push(`${name}: is ${width} by ${height}; a raster canvas is exactly ${RASTER[0]} by ${RASTER[1]}`);
+  if (width !== size[0] || height !== size[1]) out.push(`${name}: is ${width} by ${height}; a raster canvas is exactly ${size[0]} by ${size[1]}`);
   if (tag === 'VP8X' && (bytes[20] & 2) !== 0) out.push(`${name}: is animated; a card's art is a still image`);
   return out;
 }
@@ -209,18 +216,35 @@ function manifestFaults(dir, holds) {
 const CARD_HOLDS = "a card's art folder holds art.svg or art.webp, mark.svg and art.json";
 const BACK_HOLDS = "a card back's folder holds art.svg or art.webp and art.json";
 
-/** The faults of one card folder. */
-function folderFaults(dir) {
-  const out = canvasFaults(dir, CARD_HOLDS);
+const PACK_HOLDS = "a pack's art folder holds art.svg or art.webp, mark.svg and art.json, and may hold relief.webp beside art.webp";
+
+/** The faults of one card folder, or (with `holds` a pack's sentence) the part of a pack folder that is a card's. */
+function folderFaults(dir, holds = CARD_HOLDS) {
+  const out = canvasFaults(dir, holds);
   const mark = read(path.join(dir, 'mark.svg'));
-  if (mark === null) out.push(`${path.join(dir, 'mark.svg')}: missing; ${CARD_HOLDS}`);
+  if (mark === null) out.push(`${path.join(dir, 'mark.svg')}: missing; ${holds}`);
   else {
     if (mark.length > CAPS['mark.svg']) out.push(`${path.join(dir, 'mark.svg')}: is ${mark.length} bytes; it may be at most ${CAPS['mark.svg'] / KB} KB`);
     const text = mark.toString('utf8');
     out.push(...rootFaults(path.join(dir, 'mark.svg'), text, 'the mark must be square', (b) => b[2] > 0 && b[2] === b[3]));
     out.push(...safetyFaults(path.join(dir, 'mark.svg'), text));
   }
-  out.push(...manifestFaults(dir, CARD_HOLDS));
+  out.push(...manifestFaults(dir, holds));
+  return out;
+}
+
+/**
+ * The faults of one pack folder: all a card's folder is held to, and `relief.webp` where it exists, which is the
+ * relief of a rendered pack: at most 200 KB, a still WebP of 540 by 840, and only beside an `art.webp`.
+ */
+function packFaults(dir) {
+  const out = folderFaults(dir, PACK_HOLDS);
+  const p = path.join(dir, 'relief.webp');
+  const relief = read(p);
+  if (relief === null) return out;
+  if (relief.length > CAPS['relief.webp']) out.push(`${p}: is ${relief.length} bytes; it may be at most ${CAPS['relief.webp'] / KB} KB`);
+  out.push(...webpFaults(p, relief, RELIEF));
+  if (read(path.join(dir, 'art.webp')) === null) out.push(`${p}: relief.webp is the relief of a rendered pack; this folder has no art.webp`);
   return out;
 }
 
@@ -236,16 +260,21 @@ const CARD_KEY = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/u;
  * Every `instances/*\/ui/cards/<key>/` directory under a root. A folder whose name could not be a card's key is a
  * tool's leavings (Python's `__pycache__` when a scene is run, a dot-folder) and is not read (the owner, 2026-11-11).
  */
-function cardFolders(root) {
+function cardFolders(root, kind = 'cards') {
   const inst = path.join(root, 'instances');
   if (!fs.existsSync(inst)) return [];
   const out = [];
   for (const i of fs.readdirSync(inst, { withFileTypes: true })) {
-    const cards = path.join(inst, i.name, 'ui', 'cards');
+    const cards = path.join(inst, i.name, 'ui', kind);
     if (!i.isDirectory() || !fs.existsSync(cards)) continue;
     for (const c of fs.readdirSync(cards, { withFileTypes: true })) if (c.isDirectory() && CARD_KEY.test(c.name)) out.push(path.join(cards, c.name));
   }
   return out.sort();
+}
+
+/** Every `instances/*\/ui/packs/<key>/` directory under a root, a pack's key being named as a card's is. */
+function packFolders(root) {
+  return cardFolders(root, 'packs');
 }
 
 /** Every `instances/*\/ui/card-back/` directory under a root, where it exists. */
@@ -266,7 +295,7 @@ function backFolders(root) {
  * @param {string} root
  */
 export function cardArtFaults(root) {
-  return [...cardFolders(root).flatMap(folderFaults), ...backFolders(root).flatMap(backFaults)];
+  return [...cardFolders(root).map((d) => folderFaults(d)).flat(), ...packFolders(root).flatMap(packFaults), ...backFolders(root).flatMap(backFaults)];
 }
 
 function main() {
@@ -279,7 +308,7 @@ function main() {
     for (const f of faults) console.error(`    ${rel(f)}`);
     process.exit(1);
   }
-  console.log(`  card art: ${cardFolders(root).length} card folder(s) and ${backFolders(root).length} card back folder(s) hold a canvas and a manifest, on the right canvas, running nothing`);
+  console.log(`  card art: ${cardFolders(root).length} card folder(s), ${packFolders(root).length} pack folder(s) and ${backFolders(root).length} card back folder(s) hold a canvas and a manifest, on the right canvas, running nothing`);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

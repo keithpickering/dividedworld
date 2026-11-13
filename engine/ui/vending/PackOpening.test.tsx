@@ -313,6 +313,14 @@ describe('the reveal\'s motion', () => {
   const dialog = () => screen.getByRole('dialog');
   const card = (i: number) => document.querySelector(`[data-kb-pull="${i}"]`);
 
+  test('a pack whose art has a picture is two parts that each hold the picture', () => {
+    const view = renderIn(buildWorld(), <Layers><PackOpening name="Booster" art={{ color: '#ffd93d', ink: '#1a1403', picture: '/booster.webp' }} cards={pulled} note={null} onClose={vi.fn()} /></Layers>);
+    cleanupOpen = () => view.unmount();
+    for (const part of ['opened', 'top']) {
+      expect(document.querySelector(`.kb-opening-pack .kb-pack[data-part="${part}"] img.kb-pack-picture`)).toHaveAttribute('src', '/booster.webp');
+    }
+  });
+
   test('the pack is two pieces from the instance\'s pack art, the body below the tear and the crimped top above, and only the body under Off', () => {
     open();
     expect(document.querySelectorAll('.kb-opening-pack .kb-pack')).toHaveLength(2);

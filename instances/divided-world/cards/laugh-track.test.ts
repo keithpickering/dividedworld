@@ -145,9 +145,10 @@ test('the overlap pass stops at five clear cues and the rest are counted as drop
   ]);
 });
 
-test('screenReads holds the line, dwell, reach, murmur, fade, band, airtime and hold, each whole and bounded', () => {
+test('screenReads holds the line, reach, murmur, fade and mark, each whole and bounded, and no dwell, band, airtime or hold', () => {
   const by = Object.fromEntries((laughTrack.screenReads as readonly { key: string; min?: number; max?: number }[]).map((r) => [r.key, r]));
-  assert.deepEqual(by['laughTrack.band'], { key: 'laughTrack.band', whole: true, min: 5, max: 90 });
-  assert.deepEqual(by['laughTrack.airMs'], { key: 'laughTrack.airMs', whole: true, min: 0, max: 5000 });
-  assert.deepEqual(by['laughTrack.holdMs'], { key: 'laughTrack.holdMs', whole: true, min: 0, max: 20000 });
+  assert.deepEqual(by['laughTrack.markMost'], { key: 'laughTrack.markMost', whole: true, min: 0, max: 100 });
+  for (const key of ['laughTrack.line', 'laughTrack.reachRem', 'laughTrack.murmurMost', 'laughTrack.fadeMs']) assert.ok(by[key] && (by[key] as { whole?: boolean }).whole, key);
+  for (const key of ['laughTrack.dwellMs', 'laughTrack.band', 'laughTrack.airMs', 'laughTrack.holdMs']) assert.equal(by[key], undefined, key);
+  assert.equal(Object.keys(by).length, 5);
 });

@@ -50,7 +50,7 @@ beside the folders, is what the scenes share. To make a card's picture again, fr
 
 ```
 python3 -m venv .venv
-.venv/bin/pip install bpy==5.3.0 scipy
+.venv/bin/pip install bpy==5.3.0 scipy fonttools brotli
 cd instances/divided-world/ui/cards/whoops
 ../../../../../.venv/bin/python scene.py art.webp
 ```
@@ -86,6 +86,26 @@ python scene.py art.webp
 A pack's hit pull has the same back as every other card.
 
 The small tile of a face-down card on a post is not this picture: it keeps the stylesheet's smoke, in the same colors.
+
+## A pack's picture
+
+A pack has a folder of its own, `instances/divided-world/ui/packs/booster/`, with `art.webp`, `relief.webp`, `mark.svg`,
+`art.json` and the scene both pictures come from. The picture is the whole pack, 1080 by 1680 on a transparent ground,
+lit evenly: its outline is the pack's edge, and the engine prints only the count on it. The relief is the same scene at
+540 by 840, colored by which way each bit of film faces, and the engine draws the pack's moving highlight from it. The
+scene takes the name's face from `instances/divided-world/ui/fonts/` and unpacks it to a TTF Blender can read, which is
+what `fonttools brotli` in the install line are for. From that folder:
+
+```
+python scene.py art.webp
+PASS=relief python scene.py relief.webp
+```
+
+The engine prints the count from 74% to 82% of the picture's height, so the scene keeps that band quiet: no pleat, no
+ray's edge and no lettering there.
+
+**Render the relief again whenever the picture is.** Nothing compares the two files, and a relief from another run of
+the scene puts the highlight where the film is not.
 
 ## The mark and the manifest
 
