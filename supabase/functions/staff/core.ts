@@ -38,7 +38,9 @@
  * `filingLinesPerDay` calls a day. A Mod's standing, career, memory and notes are read once for all its visits in a run, and a board's rules once.
  */
 import { ENGINE_DEFAULT_PRONOUNS, pronounsOr, taggedName, type PronounSet } from '../../../engine/rules/pronouns.ts';
+import { writeTokensMost } from '../../../engine/rules/cards.ts';
 import type { Instance, Persona } from '../../../engine/rules/types.ts';
+import { tokenCounter } from '../../../engine/system/tokens.ts';
 import type { Career } from '../../../engine/system/career.ts';
 import { DUTY_SPECS } from '../../../engine/system/duties.ts';
 import {
@@ -69,6 +71,9 @@ export const FILINGS_PER_RUN = 20;
 /** A report with no verdict this many minutes after it was paid is refunded by the run (the report function refunds its own failures at once; this is for one that died). */
 export const STALE_REPORT_MINUTES = 10;
 export const STALE_REPORTS_PER_RUN = 100;
+
+/** The most tokens an old voice's filing line may take, before the window's own bound (`writeTokensMost`). */
+const OLD_VOICE_LINE_TOKENS = 160;
 /** An appeal is paid before it is judged, as a report is: one with no ruling this many minutes after it was paid is refunded by the run. */
 export const STALE_APPEAL_MINUTES = 10;
 export const STALE_APPEALS_PER_RUN = 100;
@@ -316,9 +321,11 @@ export async function runFilings(db: Db, models: Models, instance: Instance, slo
       // The call. A transport failure was retried inside models(); what comes back is an answer, a rejection, or a failure.
       try {
         if (persona.voice === 'oldVoice') {
-          const frame = filingCompletion({ name: persona.name, board: v.board.name, thread: input().thread, post: input().post, charges, limits: input().limits });
+          // The window's room for the line, then the prompt fitted to what is left (design section 3); a prompt that still does not fit is refused by `models.complete` as a rejection, and the filing takes its stock line.
+          const maxTokens = Math.min(OLD_VOICE_LINE_TOKENS, writeTokensMost(settings));
+          const frame = filingCompletion({ name: persona.name, board: v.board.name, thread: input().thread, post: input().post, charges, limits: input().limits, fit: { budget: settings.oldVoiceWindow - maxTokens, count: tokenCounter(settings.oldVoiceTokenizer) } });
           used++; calls++;
-          const out = await models.complete({ duty: 'filing', staff: v.staff, prompt: frame.prompt, temperature: 0.9, topP: 0.95, stop: frame.stop, maxTokens: 160, maxChars: FILING_LINE_MOST });
+          const out = await models.complete({ duty: 'filing', staff: v.staff, prompt: frame.prompt, temperature: 0.9, topP: 0.95, stop: frame.stop, maxTokens, maxChars: FILING_LINE_MOST });
           const repaired = repairFiling({ words: out.value }, moveContext());
           line = repaired.line;
           trims.push(...repaired.trims);

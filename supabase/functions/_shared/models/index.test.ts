@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { AnswerRejected, SchemaRefused, models as modelsFor } from './index.ts';
+import { AnswerRejected, PromptTooLong, SchemaRefused, models as modelsFor } from './index.ts';
 import type { ModelOptions } from './index.ts';
 import { PRICES } from './prices.ts';
 import { ProviderRefusal, TransportFailure } from './transport.ts';
@@ -29,7 +29,7 @@ const env = (name: string) => secrets[name];
 const noRecord = async () => {};
 /** The tiers the instance's `modelTiers` setting would hand over. */
 const tiers = { strong: 'claude-opus-5-5', light: 'claude-haiku-5-5' };
-const models = (e: typeof env, record: Parameters<typeof modelsFor>[1], options: Partial<ModelOptions> = {}) => modelsFor(e, record, { tiers, ...options });
+const models = (e: typeof env, record: Parameters<typeof modelsFor>[1], options: Partial<ModelOptions> = {}) => modelsFor(e, record, { tiers, oldVoice: { window: 100_000, count: (text: string) => text.length }, ...options });
 const chat = { duty: 'microEvent', tier: 'light', system: 'You are the Director.', messages: [{ role: 'user', content: 'Go.' }], schema: { type: 'object', additionalProperties: false }, maxTokens: 300 } as const;
 
 test('chat asks the Messages API for structured output, with the key in a header and no sampling parameters', async () => {
@@ -348,4 +348,62 @@ test('a schema the provider would refuse is never sent: SchemaRefused, one faile
   await models(env, k.record, { fetch: ok.fetch, sleep: async () => {} }).chat(asked);
   assert.equal(ok.calls.length, 1);
   assert.equal(k.rows[0]?.outcome, 'ok');
+});
+
+const completion = { duty: 'cardText', temperature: 1, topP: 1, stop: [], maxTokens: 40 } as const;
+const answered = () => json({ choices: [{ text: ' ok' }], usage: { prompt_tokens: 1, completion_tokens: 1 } });
+
+test('a prompt one token over the budget is refused before sending, as a failed row naming promptTooLong; one exactly at it is sent', async () => {
+  const oldVoice = { window: 100, count: (text: string) => text.length };
+  const f = fake([answered()]);
+  const l = ledger();
+  const m = models(env, l.record, { fetch: f.fetch, sleep: async () => {}, oldVoice });
+  await assert.rejects(m.complete({ ...completion, prompt: 'x'.repeat(61) }), (e: unknown) => e instanceof PromptTooLong && e instanceof AnswerRejected && e.predicate === 'promptTooLong');
+  assert.equal(f.calls.length, 0, 'nothing was sent');
+  assert.equal(l.rows.length, 1);
+  assert.equal(l.rows[0]?.outcome, 'failed');
+  assert.equal(l.rows[0]?.predicate, 'promptTooLong');
+  assert.equal(l.rows[0]?.costMicrodollars, 0);
+  for (const k of ['inputTokens', 'outputTokens', 'gpuSeconds'] as const) assert.equal(l.rows[0]?.[k], null, `${k}: no usage`);
+  const g = fake([answered()]);
+  const k = ledger();
+  const r = await models(env, k.record, { fetch: g.fetch, sleep: async () => {}, oldVoice, now: () => 0 }).complete({ ...completion, prompt: 'x'.repeat(60) });
+  assert.equal(g.calls.length, 1);
+  assert.equal(r.value, 'ok');
+  assert.equal(k.rows[0]?.outcome, 'ok');
+});
+
+test('a completion endpoint\'s 400 is a rejection refused:400 after one fetch, not retried; a 503 is still retried', async () => {
+  const f = fake([json({ error: 'too long' }, 400)]);
+  const l = ledger();
+  await assert.rejects(models(env, l.record, { fetch: f.fetch, sleep: async () => {} }).complete({ ...completion, prompt: 'x' }), (e: unknown) => e instanceof AnswerRejected && e.predicate === 'refused:400');
+  assert.equal(f.calls.length, 1);
+  assert.equal(l.rows[0]?.outcome, 'rejected');
+  assert.equal(l.rows[0]?.predicate, 'refused:400');
+  const g = fake([json({}, 503), answered()]);
+  const r = await models(env, noRecord, { fetch: g.fetch, sleep: async () => {}, now: () => 0 }).complete({ ...completion, prompt: 'x' });
+  assert.equal(g.calls.length, 2);
+  assert.equal(r.retries, 1);
+});
+
+test('a completion endpoint\'s 413 and 422 are rejections refused:<status> with rejected rows, after one fetch each', async () => {
+  for (const status of [413, 422]) {
+    const f = fake([json({ error: 'no' }, status)]);
+    const l = ledger();
+    await assert.rejects(models(env, l.record, { fetch: f.fetch, sleep: async () => {} }).complete({ ...completion, prompt: 'x' }), (e: unknown) => e instanceof AnswerRejected && e.predicate === `refused:${status}`);
+    assert.equal(f.calls.length, 1);
+    assert.equal(l.rows[0]?.outcome, 'rejected');
+    assert.equal(l.rows[0]?.predicate, `refused:${status}`);
+  }
+});
+
+test('a completion endpoint\'s 401, 403 and 404 stay a ProviderRefusal (a bad key or a wrong address is the instance\'s configuration), one fetch, a failed row (#583)', async () => {
+  for (const status of [401, 403, 404]) {
+    const f = fake([json({ error: 'no' }, status)]);
+    const l = ledger();
+    await assert.rejects(models(env, l.record, { fetch: f.fetch, sleep: async () => {} }).complete({ ...completion, prompt: 'x' }), (e: unknown) => e instanceof ProviderRefusal && !(e instanceof AnswerRejected) && e.status === status);
+    assert.equal(f.calls.length, 1);
+    assert.equal(l.rows[0]?.outcome, 'failed');
+    assert.equal(l.rows[0]?.predicate, null);
+  }
 });

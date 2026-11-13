@@ -116,6 +116,14 @@ test('the new settings validate, in the defaults and the playtest, and reject wh
   assert.match(settingsProblems({ ...defaults, modelTiers: { strong: '', light: 'x' } }).join(), /modelTiers/);
 });
 
+test('Divided World holds the five old voice window settings', () => {
+  assert.equal(defaults.oldVoiceWindow, 1024);
+  assert.equal(defaults.oldVoiceTokenizer, 'gpt2');
+  assert.equal(defaults.oldVoicePromptFloor, 256);
+  assert.equal(defaults.cardWriteShortShare, 0.5);
+  assert.equal(defaults.cardWriteRerolls, 3);
+});
+
 test('Divided World\'s whole instance has no problems', () => {
   assert.deepEqual(instanceProblems(instance), []);
   assert.deepEqual(instanceProblems(playtestInstance), []);

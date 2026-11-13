@@ -41,7 +41,7 @@ function fakeLive(behavior: { reject?: boolean } = {}) {
 function setup(mode: Mode, d: string, live = fakeLive(), dollars = 5) {
   const rows: ModelCallRow[] = [];
   const made = rehearsalModels({ mode, dir: d, cap: { dollars }, live: live.factory });
-  const m = made(() => undefined, async (row) => { rows.push(row); }, { tiers: TIERS });
+  const m = made(() => undefined, async (row) => { rows.push(row); }, { tiers: TIERS, oldVoice: { window: 1024, count: (t: string) => t.length } });
   return { made, m, rows, live };
 }
 
@@ -184,7 +184,7 @@ test('record mode: two different live chats on one simulated day each reach the 
   const feeds = rehearsalFetch('record', d, { day: () => '2027-01-31', live: (async () => { throw new Error('a model call reached the feed cassette'); }) as unknown as typeof fetch });
   const m = rehearsalModels({ mode: 'record', dir: d, cap: { dollars: 5 }, transport: provider });
   const env = (k: string) => (k === 'ANTHROPIC_API_KEY' ? 'placeholder' : undefined);
-  const models = m(env, async () => {}, { tiers: { strong: 'claude-opus-5-5', light: 'claude-haiku-5-5' }, fetch: feeds });
+  const models = m(env, async () => {}, { tiers: { strong: 'claude-opus-5-5', light: 'claude-haiku-5-5' }, oldVoice: { window: 1024, count: (t: string) => t.length }, fetch: feeds });
   const base = { duty: 'microEvent', tier: 'light', messages: [{ role: 'user', content: 'Go.' }], schema: { type: 'object', additionalProperties: false }, maxTokens: 300 } as const;
   const a = await models.chat({ ...base, system: 'first prompt' } as never);
   const b = await models.chat({ ...base, system: 'second prompt' } as never);

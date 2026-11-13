@@ -58,7 +58,7 @@ test('a meeting with a fake model queues a rename, writes memory and profile ver
     return new Response(JSON.stringify({ choices: [{ text: ' ur board is now about pirates!!!\nBoard: next' }], usage: { prompt_tokens: 300, completion_tokens: 12 } }), { status: 200 });
   }) as unknown as typeof fetch;
   const env = (name: string) => ({ ANTHROPIC_API_KEY: 'test-key', SYSTEM_COMPLETIONS_URL: 'https://completions.test' } as Record<string, string>)[name];
-  const real = models(env, ledgerWriter(db), { tiers, fetch: fake });
+  const real = models(env, ledgerWriter(db), { tiers, oldVoice: { window: 1024, count: (t: string) => t.length }, fetch: fake });
 
   const slot = new Date(Math.floor(Date.now() / 60_000) * 60_000).toISOString();
   const first = await runMeeting(db, real, quiet, slot, Date.now, fake);
@@ -104,7 +104,7 @@ test('a meeting with a fake model queues a rename, writes memory and profile ver
   assert.equal(before('meetings') - meetings!, 1);
 
   // A later slot whose model fails closes failed, writes nothing else, and leaves the bank where it was.
-  const broken = models(env, ledgerWriter(db), { tiers, fetch: (async () => new Response('{"error": "bad"}', { status: 400 })) as unknown as typeof fetch });
+  const broken = models(env, ledgerWriter(db), { tiers, oldVoice: { window: 1024, count: (t: string) => t.length }, fetch: (async () => new Response('{"error": "bad"}', { status: 400 })) as unknown as typeof fetch });
   const later = new Date(Date.parse(slot) + 24 * 3_600_000).toISOString();
   const failed = await runMeeting(db, broken, quiet, later, Date.now, fake);
   assert.equal(failed.status, 'failed', JSON.stringify(failed));

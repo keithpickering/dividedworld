@@ -19,6 +19,7 @@ import { sendWaiting } from '../_shared/outbox.ts';
 import { models } from '../_shared/models/index.ts';
 import { ledgerWriter } from '../_shared/models/ledger.ts';
 import { withDatabaseSettings } from '../_shared/settings.ts';
+import { tokenCounter } from '../../../engine/system/tokens.ts';
 import { runWrites } from '../write/core.ts';
 
 /** A post at its longest is 20,000 characters of up to four bytes; a Whoops! save is bounded at 256 KB. */
@@ -51,7 +52,7 @@ Deno.serve(async (request) => {
     // The kick for a post's card texts (core.ts, postThatMayWrite): the same work as the write function's sweep, for one post.
     write: async (post) => {
       const tuned = await withDatabaseSettings(instance, dbs.service);
-      return runWrites(dbs.service, models((name) => Deno.env.get(name), ledgerWriter(dbs.service), { tiers: tuned.settings.modelTiers }), tuned, tuned.settings, 4, post);
+      return runWrites(dbs.service, models((name) => Deno.env.get(name), ledgerWriter(dbs.service), { tiers: tuned.settings.modelTiers, oldVoice: { window: tuned.settings.oldVoiceWindow, count: tokenCounter(tuned.settings.oldVoiceTokenizer) } }), tuned, tuned.settings, 4, post);
     },
     send: live.send,
     drain: (drainOutbox ??= coalesced(() => sendWaiting(dbs.service, live.deliver))),

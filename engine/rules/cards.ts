@@ -193,6 +193,10 @@ export interface WriteFrameInput {
   readonly title: string;
   readonly tails: readonly string[];
   readonly settings: Settings;
+  /** The prompt's most tokens: the old voice's window less the tokens the answer may take. A frame drops its oldest material to fit it. */
+  readonly budget: number;
+  /** How many tokens a text is, by the instance's tokenizer. */
+  readonly count: (text: string) => number;
 }
 
 /**
@@ -342,6 +346,22 @@ export interface CardRules<Config = unknown> {
  * refused by the settings' validation and never by the database in a play.
  */
 export const WRITE_TOKENS_MOST = 2000;
+
+/**
+ * How long a thread's title is clipped to, in characters, when a frame for the old voice is over its budget and has dropped every earlier post it can
+ * (design section 3, docs/plans/2026-11-12-old-voice-window-design.md); past it the title is emptied. Every such frame clips to this one length, so none can drift.
+ */
+export const FIT_TITLE_CHARS = 40;
+
+/**
+ * The most tokens a play of a card that writes may buy in this instance: the smaller of `WRITE_TOKENS_MOST` and the old voice's window less the least
+ * prompt a play leaves room for (design section 4, docs/plans/2026-11-12-old-voice-window-design.md), and never below 1. It is computed wherever the most is
+ * read, so no pair of settings can be wrong: a window at or below the floor makes plays one token long, and no row can stop the instance, which a refusal
+ * of the pair would (the owner's answer on #582). A card's recorded tokens are capped by it too (you-were-saying.ts).
+ */
+export function writeTokensMost(settings: Settings): number {
+  return Math.max(1, Math.min(WRITE_TOKENS_MOST, settings.oldVoiceWindow - settings.oldVoicePromptFloor));
+}
 
 /** The largest whole number Postgres's integer holds, which a price is read as there (0006_cards.sql). */
 export const INT4_MAX = 2_147_483_647;

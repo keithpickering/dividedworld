@@ -4,7 +4,9 @@ import { runChatter } from './core.ts';
 import { DatabaseError, type Db } from '../_shared/rpc.ts';
 import { instance as realInstance } from '../_shared/instance.ts';
 import { placeholderWorld } from '../../../instances/divided-world/system/fixtures/index.ts';
-import { AnswerRejected, LedgerWriteFailed, models as realModels } from '../_shared/models/index.ts';
+import { AnswerRejected, LedgerWriteFailed, PromptTooLong, models as realModels } from '../_shared/models/index.ts';
+import { ProviderRefusal } from '../_shared/models/transport.ts';
+import { tokenCounter } from '../../../engine/system/tokens.ts';
 import type { ModelCallRow } from '../_shared/models/ledger.ts';
 import type { ChatRequest, CompletionRequest, ModelResult, Models } from '../../../engine/system/model.ts';
 import type { Instance } from '../../../engine/rules/types.ts';
@@ -48,6 +50,8 @@ interface World {
   targetBody?: string;
   /** The open walls pool_thread reports on every thread (`{ play, card, about }`). */
   walls?: { play: string; card: string; about: string }[];
+  /** When set, pool_thread reports this many long posts (Poster0 oldest) instead of the one short one. */
+  longThread?: number;
 }
 type Spend = { day: string; staff: string; trigger: string; post_act: string; card_act: string | null; started_thread: boolean; record: any };
 
@@ -88,6 +92,7 @@ function fakeDb(w: World = {}) {
         case 'character_faces': return {} as T;
         case 'pool_thread': {
           const at = threads.indexOf(args.in_thread as string);
+          if (w.longThread) return { title: `Thread ${at}`, posts: Array.from({ length: w.longThread }, (_, i) => ({ act: quotes[at] ?? 'none', name: `Poster${i}`, pronouns: null, body: `post ${i} ${'the quick brown fox jumps over a lazy dog '.repeat(8)}` })) } as T;
           return { title: `Thread ${at}`, posts: [{ act: quotes[at] ?? 'none', name: 'Ann', pronouns: { subject: 'she', object: 'her', determiner: 'her', possessive: 'hers', reflexive: 'herself', plural: false }, body: 'Hello there.' }], ...(w.walls ? { walls: w.walls } : {}) } as T;
         }
         case 'pool_orphans': {
@@ -480,6 +485,65 @@ test('a persona on the old voice writes its words in raw completion and gives no
   assert.equal(d.count('write_staff_note') + d.count('staff_play_card') + d.count('staff_set_card'), 0);
 });
 
+const oldSigh = (settings: Partial<Instance['settings']> = {}): Instance => ({
+  ...dividedWorld, settings: { ...dividedWorld.settings, ...settings },
+  system: { ...dividedWorld.system, roster: dividedWorld.system.roster.map((p) => (p.key === SIGH ? { ...p, voice: 'oldVoice' as const } : p)) },
+});
+
+test('an old voice\'s pool post asks for the most the window leaves, and its frame fits what the window leaves for the prompt', async () => {
+  const room = async (settings: Partial<Instance['settings']>) => {
+    const d = fakeDb({ pool: { threadsWeekly: 0 }, named: [SIGH] });
+    const m = fakeModels(() => ({ words: 'chat' }), 'a post');
+    const world = oldSigh(settings);
+    await run(d, m, world);
+    return { req: m.completions[0]!, count: tokenCounter(world.settings.oldVoiceTokenizer), window: world.settings.oldVoiceWindow };
+  };
+  const roomy = await room({});
+  assert.equal(roomy.req.maxTokens, 400, 'Divided World\'s window leaves 768, so the 400 stands');
+  const tight = await room({ oldVoiceWindow: 400, oldVoicePromptFloor: 256 });
+  assert.equal(tight.req.maxTokens, 144, 'a window of 400 with a floor of 256 leaves 144');
+  assert.ok(tight.count(tight.req.prompt) <= tight.window - 144, 'the prompt fits the budget');
+  const bare = await room({ oldVoiceWindow: 64, oldVoicePromptFloor: 8 });
+  assert.equal(bare.req.maxTokens, 56);
+  assert.ok(bare.req.prompt.endsWith(`${dividedWorld.system.roster.find((p) => p.key === SIGH)!.name}:`), 'the persona\'s own line is never removed');
+});
+
+test('an old voice\'s pool post drops the thread\'s oldest posts when the thread overflows the window less its answer', async () => {
+  const world = oldSigh({ oldVoiceWindow: 400, oldVoicePromptFloor: 256, digestExcerptChars: 300, pool: { ...dividedWorld.settings.pool, chatterThreadPosts: 8 } });
+  const d = fakeDb({ pool: { threadsWeekly: 0 }, named: [SIGH], longThread: 8 });
+  const m = fakeModels(() => ({ words: 'chat' }), 'a post');
+  await run(d, m, world);
+  const req = m.completions[0]!;
+  const count = tokenCounter(world.settings.oldVoiceTokenizer);
+  const budget = world.settings.oldVoiceWindow - req.maxTokens!;
+  assert.equal(req.maxTokens, 144);
+  assert.ok(count(req.prompt) <= budget, `${count(req.prompt)} tokens against a budget of ${budget}`);
+  assert.ok(!req.prompt.includes('Poster0:') && req.prompt.includes('Poster7:'), 'the oldest posts went and the newest stayed');
+  assert.ok(req.prompt.endsWith(`${dividedWorld.system.roster.find((p) => p.key === SIGH)!.name}:`));
+});
+
+test('an old voice\'s pool post that the window refuses (promptTooLong, or a server\'s own 4xx) is a rejected pick that writes nothing', async () => {
+  for (const refusal of [new PromptTooLong(900, 600), new AnswerRejected('the server refused', 'refused:400')]) {
+    const d = fakeDb({ pool: { threadsWeekly: 0 }, named: [SIGH] });
+    const m = fakeModels(() => ({ words: 'chat' }), refusal);
+    const out = await run(d, m, oldSigh());
+    assert.ok(out.status === 'ok');
+    assert.equal(m.completions.length, 1, 'asked once and not again');
+    assert.equal(out.picks[0]!.status, 'rejected');
+    assert.equal(d.count('write_staff_act'), 0);
+  }
+});
+
+test('an old voice\'s pool post whose server answers 401 (a bad key stays a ProviderRefusal, #583) is a failed pick that writes nothing', async () => {
+  const d = fakeDb({ pool: { threadsWeekly: 0 }, named: [SIGH] });
+  const m = fakeModels(() => ({ words: 'chat' }), new ProviderRefusal('HTTP 401 bad key', 401));
+  const out = await run(d, m, oldSigh());
+  assert.ok(out.status === 'ok');
+  assert.equal(m.completions.length, 1, 'asked once and not again');
+  assert.equal(out.picks[0]!.status, 'failed');
+  assert.equal(d.count('write_staff_act'), 0);
+});
+
 test('an old-voice answer that hits the scrubber twice files a rejected pick and writes nothing; one hit is retried', async () => {
   const withWords = (scrubWords: string[]): Instance => ({ ...dividedWorld, system: { ...dividedWorld.system, scrubWords, roster: dividedWorld.system.roster.map((p) => (p.key === SIGH ? { ...p, voice: 'oldVoice' as const } : p)) } });
   const d = fakeDb({ pool: { threadsWeekly: 0 }, named: [SIGH] });
@@ -523,7 +587,7 @@ test('through the real model layer: a transport failure is retried once on the r
     return reply(JSON.stringify({ words: 'Back from a bad connection.', note: 'It took two tries.' }));
   }) as unknown as typeof globalThis.fetch;
   const models = realModels((n) => ({ ANTHROPIC_API_KEY: 'sk-test' } as Record<string, string>)[n], async (row) => { rows.push(row); }, {
-    tiers: { strong: 'claude-opus-5-5', light: 'claude-haiku-5-5' }, fetch, sleep: async () => {},
+    tiers: { strong: 'claude-opus-5-5', light: 'claude-haiku-5-5' }, oldVoice: { window: 1024, count: (t: string) => t.length }, fetch, sleep: async () => {},
   });
   const out = await runChatter(d.db, models, dividedWorld, SLOT);
   assert.ok(out.status === 'ok');

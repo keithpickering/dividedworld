@@ -26,6 +26,8 @@ export const fallbackSettings: ScreenSettings = Object.freeze({
   registrationMode: defaults.registrationMode,
   settlementLength: defaults.settlementLength,
   setLasts: defaults.setLasts,
+  oldVoiceWindow: defaults.oldVoiceWindow,
+  oldVoicePromptFloor: defaults.oldVoicePromptFloor,
   cardSettings: defaults.cardSettings,
   presencePollSeconds: defaults.presencePollSeconds,
   presenceWindow: defaults.presenceWindow,
