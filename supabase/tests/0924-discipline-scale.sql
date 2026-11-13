@@ -19,13 +19,13 @@ create function pg_temp.fall_infraction(in_thread uuid, taker uuid, post uuid, p
           'about_act', post, 'visit_act', visit, 'staff', 'sc-mod', 'expires_at', now() + interval '1 day', 'fall_play', play, 'fall_for', author), null)
 $$;
 
--- ---- 1. thread_page: one probe of acts_fall_spent for each fall play on the page ----
+-- ---- 1. thread_page's spent: one probe of acts_fall_spent (fall_spent) for each fall play on the page ----
 do $$
 declare
   t uuid := tests.thread('Scale page');
   author uuid := tests.character(tests.account('sc-author'), 'Sc Author');
   taker uuid := tests.character(tests.account('sc-taker'), 'Sc Taker');
-  p uuid; v uuid; play uuid; before bigint; after bigint; page jsonb;
+  p uuid; v uuid; play uuid; before bigint; after bigint; page jsonb; probe boolean; rdr uuid;
 begin
   insert into card_kinds (key, name, alignment, rarity, play, reaches, discipline) values ('t-fscale', 'Test Fall Scale', 'sweet', 'uncommon', 'cast', '{post}', '{"kind": "fall"}');
   p := tests.act(author, 'post', t, '{"body": "A post with a fall on it."}');
@@ -42,21 +42,40 @@ begin
   from generate_series(1, 5000);
   alter table acts enable trigger user;
   analyze acts;
-  perform tests.become(tests.account('sc-reader'));
-  before := pg_temp.acts_read();
+  rdr := tests.account('sc-reader');
+  perform tests.become(rdr);
   page := thread_page(t, 1, null, 50, array['t-fscale']);
-  after := pg_temp.acts_read();
   perform tests.unbecome();
   if page -> 'spent' is distinct from '[]'::jsonb then raise exception 'no filing took this fall: spent is %', page -> 'spent'; end if;
-  if after - before > 400 then
-    raise exception 'thread_page read % rows of acts for a page of one post and one fall play, with 5,000 fall infractions on the instance: spent must be a probe for each fall play, not the instance''s falls', after - before;
+  -- What the page as a whole reads is not what is held here: in a database that holds other threads (the suite's, which earlier files left rows in) thread_page's `spun` reads every thread through thread_list, whatever
+  -- the page holds, and that read grows with the instance's acts. So the probe `spent` is made of is measured by itself, which is what it was written to keep small: one call of fall_spent for the page's one fall play.
+  perform tests.become(rdr);
+  before := pg_temp.acts_read();
+  probe := fall_spent(play);
+  after := pg_temp.acts_read();
+  perform tests.unbecome();
+  if probe then raise exception 'no filing took this fall: fall_spent says it is spent'; end if;
+  if after - before > 20 then
+    raise exception 'fall_spent read % rows of acts for one fall play, with 5,000 fall infractions on the instance: it must be one probe of acts_fall_spent, not the instance''s falls', after - before;
   end if;
-  raise notice 'thread_page read % rows of acts with 5,000 fall infractions about', after - before;
+  raise notice 'fall_spent read % rows of acts with 5,000 fall infractions about', after - before;
+  -- The meter sees a read through acts_public (the shape `spent` was first written in: the concealing layer hides the key from acts_fall_spent, so every infraction is read), so a pass above is a probe and not a blind meter.
+  perform tests.become(rdr);
+  before := pg_temp.acts_read();
+  probe := exists (select 1 from acts_public i where i.kind = 'infraction' and i.payload ->> 'fall_play' = play::text);
+  after := pg_temp.acts_read();
+  perform tests.unbecome();
+  if after - before < 2000 then raise exception 'the meter reads % rows of acts for a read through acts_public that hashes the 5,000 infractions: it does not see the cost it guards', after - before; end if;
+  -- thread_page's spent is that probe and no other read: its text calls fall_spent for the page's plays and does not read the infractions itself.
+  if position('fall_spent(o.id)' in pg_get_functiondef('thread_page(uuid, integer, integer, integer, text[])'::regprocedure)) = 0
+     or position('payload ->> ''fall_play''' in pg_get_functiondef('thread_page(uuid, integer, integer, integer, text[])'::regprocedure)) > 0 then
+    raise exception 'thread_page.spent must be one call of fall_spent for each fall play on the page, and read no infraction of its own';
+  end if;
   -- And it still names the play once an infraction does.
   alter table acts disable trigger user;
   perform pg_temp.fall_infraction(t, taker, p, play, author, v);
   alter table acts enable trigger user;
-  perform tests.become((select id from accounts a join auth.users u using (id) where u.email = 'sc-reader@test.invalid'));
+  perform tests.become(rdr);
   page := thread_page(t, 1, null, 50, array['t-fscale']);
   perform tests.unbecome();
   if page -> 'spent' is distinct from jsonb_build_array(play) then raise exception 'thread_page.spent names the spent play: %', page -> 'spent'; end if;
