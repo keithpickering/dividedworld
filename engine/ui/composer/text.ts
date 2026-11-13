@@ -129,3 +129,15 @@ export function diffRange(before: string, after: string): { readonly start: numb
   while (tail < after.length && (surrogate(before, end) || surrogate(after, tail))) { end += 1; tail += 1; }
   return { start, end, insert: after.slice(start, tail) };
 }
+
+/** Whether a tree holds a `cut` (a real quote nested past the parser's cap) at any depth. Walks with its own stack, so no tree is deep enough to matter. */
+export function hasCut(tree: readonly BbNode[]): boolean {
+  const stack: BbNode[] = [...tree];
+  while (stack.length > 0) {
+    const n = stack.pop()!;
+    if (n.type === 'cut') return true;
+    if ('children' in n) stack.push(...n.children);
+    else if (n.type === 'list') for (const item of n.items) stack.push(...item);
+  }
+  return false;
+}

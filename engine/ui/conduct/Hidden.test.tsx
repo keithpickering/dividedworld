@@ -6,13 +6,16 @@
  * The poison: a hidden post whose words reach the DOM for a non-author. The thread is handed an Act that says it is hidden and still carries the words (a server that forgot to empty
  * them), and the page must draw the note and never the words, since a version's words are drawn by its `hidden` flag and not by whether a body happens to be there.
  */
-import { act, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { axeViolations, describeViolations } from '../a11y.ts';
 import type { Act } from '../data/api.ts';
 import { LoadedThread } from '../loaded.tsx';
 import { buildWorld, renderIn, tapThread } from '../test-world.tsx';
+import { MAX_DEPTH } from '../../bbcode/parse.ts';
+import { BbCode } from '../bbcode/render.tsx';
+import { RouterProvider } from '../router.tsx';
 
 const NOTE = 'Hidden by an admin: it broke the code of conduct.';
 const WORDS = 'the words that must reach no one else';
@@ -23,8 +26,8 @@ beforeEach(() => {
 });
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
-function world() {
-  const fake = buildWorld();
+function world(settings?: Parameters<typeof buildWorld>[0]) {
+  const fake = buildWorld(settings);
   const me = fake.seed.account('me');
   const other = fake.seed.account('other');
   const pipe = fake.seed.character(me, 'Pipewrench', 'heel');
@@ -380,3 +383,43 @@ describe('Edit on a hidden post of the reader\'s own', () => {
   });
 });
 
+/*
+ * A hidden post's words are in no document at any depth of quoting ("A quote past the cap is cut, never text", docs/plans/2026-11-13-quote-cut-plan.md; #567). Each depth is written from
+ * the parser's MAX_DEPTH, so these follow the cap; a quote of the hidden post, at any depth, shows none of its words.
+ */
+describe('a post that quotes a hidden post, nested at any depth', () => {
+  const DEEP = 'zqxjkvdeepwords';
+  /** `around` quotes of a visible post, each holding the next, and innermost the quote of the hidden post. */
+  const pyramid = (w: World, wrap: string, around: number) => `${wrap.repeat(around)}[quote=${w.theirs}]${DEEP}[/quote]I answer that.${'[/quote]'.repeat(around)}`;
+  /** What the article must hold besides the absence: the author's own words after the quote where they stand outside any cut, the cut's note where the hidden quote is cut. */
+  const shapes: [string, (w: World) => string, 'words' | 'note'][] = [
+    ['1', (w) => pyramid(w, `[quote=${w.first}]`, 0), 'words'],
+    ['MAX_DEPTH', (w) => pyramid(w, `[quote=${w.first}]`, MAX_DEPTH - 1), 'words'],
+    ['MAX_DEPTH + 1', (w) => pyramid(w, `[quote=${w.first}]`, MAX_DEPTH), 'note'],
+    ['MAX_DEPTH + 8', (w) => pyramid(w, `[quote=${w.first}]`, MAX_DEPTH + 7), 'note'],
+    ['200', (w) => pyramid(w, `[quote=${w.first}]`, 199), 'note'],
+    ['MAX_DEPTH levels of [b], then the quote of the hidden post', (w) => `${'[b]'.repeat(MAX_DEPTH)}[quote=${w.theirs}]${DEEP}[/quote]${'[/b]'.repeat(MAX_DEPTH)}I answer that.`, 'words'],
+  ];
+  for (const [label, body, holds] of shapes) {
+    test(`depth ${label}: a non-author's document holds none of the hidden words`, async () => {
+      // The fake's default postMaxLength is 200; the real instance's limit is 20,000 (instances/divided-world/settings.ts), and a pyramid 200 deep is about 10,000 characters.
+      const w = world({ postMaxLength: 20_000 });
+      w.fake.seed.hide(w.theirs, 'hide');
+      w.fake.seed.post(w.thread, w.pipe, body(w));
+      open(w);
+      const art = await article(4);
+      if (holds === 'words') await waitFor(() => expect(art).toHaveTextContent('I answer that.'));
+      else await waitFor(() => expect(within(art).getAllByRole('note').some((n) => n.textContent === 'Quotes nested this deep are not shown.')).toBe(true));
+      expect(art.textContent).not.toContain(DEEP);
+      expect(document.body.textContent).not.toContain(DEEP);
+    });
+  }
+
+  test('the renderer alone, given the raw body with no layer made: the words past the cap are not in the document', async () => {
+    const id = '11111111-1111-4111-8111-111111111111';
+    const raw = `[quote=${id}]`.repeat(MAX_DEPTH + 3) + DEEP + '[/quote]'.repeat(MAX_DEPTH + 3);
+    const { container } = render(<RouterProvider><BbCode text={raw} /></RouterProvider>);
+    expect(container.textContent).not.toContain(DEEP);
+    expect(within(container).getByRole('note')).toHaveTextContent('Quotes nested this deep are not shown.');
+  });
+});
