@@ -723,6 +723,23 @@ test('Laugh Track cues none of which are in the post are refused in the card\'s 
   assert.equal(d.count('staff_play_card'), 0);
 });
 
+test('a persona\'s Laugh Track set on its own post keeps its cues though they are not in that post', async () => {
+  // The real Laugh Track is a cast card, which a persona lands on a reply only; so this offers its rules (its validation and its repair) as a set (play `set`, a trap that springs on a cast and names a catch, and no set phrase, which only a cast card has).
+  const { setPhrase: _waits, ...rules } = laughTrackRules;
+  const settable = { ...rules, play: 'set' as const, trap: { trigger: { on: 'cast' as const } }, catches: () => 'whoops' };
+  const tuned: Instance = { ...dividedWorld, cards: dividedWorld.cards.map((c) => (c.key === 'laugh-track' ? settable : c)) };
+  const d = fakeDb({ pool: { threadsWeekly: 0, cardRarityMost: 'uncommon' } });
+  const m = fakeModels((r) => ({ words: 'Pizza time, everyone.', card: { key: 'laugh-track', on: 'own', config: { 'laugh-track': { cues: [{ phrase: 'Luigi', sound: 'boo' }, { phrase: 'pizza', sound: 'cheer' }] } } }, note: `Replied, ${r.staff}.` }));
+  const out = await run(d, m, tuned);
+  assert.ok(out.status === 'ok');
+  const set = d.of('staff_set_card')[0]!;
+  assert.ok(set, 'the Laugh Track was set: ' + JSON.stringify(out.picks));
+  assert.equal(set.card, 'laugh-track');
+  assert.deepEqual((set.config as { cues: { phrase: string }[] }).cues.map((c) => c.phrase), ['Luigi', 'pizza'], 'both cues, in order');
+  const pick = out.picks.find((x) => x.card)!;
+  assert.deepEqual(pick.trims.filter((t) => t.path === 'card.config.laugh-track.cues'), [], 'no trim');
+});
+
 test('the card\'s repair trims are on the record even when the decision then refuses', async () => {
   const trim = { path: 'card.config.laugh-track.cues', predicate: 'mostFiveCues', before: 9, after: 0 };
   const repairing = { ...laughTrackRules, repairStaff: () => ({ config: { cues: [] }, trims: [trim] }) };

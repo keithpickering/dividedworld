@@ -11,7 +11,7 @@ const WORDS = ['alpha', 'bravo', 'charlie', 'delta', 'echoes', 'foxtrot', 'golfi
 const target = (text: string) => postTarget('p1', 'post', text);
 const cue = (phrase: string, sound: Cue['sound'] = 'laugh'): Cue => ({ phrase, sound });
 const PATH = 'card.config.laugh-track.cues';
-const repair = (cues: unknown, text = WORDS.join(' ')) => laughTrack.repairStaff!({ cues }, target(text));
+const repair = (cues: unknown, text = WORDS.join(' ')) => laughTrack.repairStaff!({ cues }, target(text), 'cast');
 
 test('cueShape drops a cue that is not a phrase and a known sound', () => {
   const out = repair([cue('alpha'), { phrase: 'bravo', sound: 'gasp' }, { phrase: 7, sound: 'boo' }, null, 'charlie', cue('delta', 'cheer')]);
@@ -48,15 +48,15 @@ test('mostThirtyPlaces drops cues from the end while the places pass thirty, and
 
 test('a clean list is returned as it is with no trim, and the other fields are kept', () => {
   const config = { cues: [cue('alpha'), cue('bravo')], seed: 4 };
-  const out = laughTrack.repairStaff!(config, target(WORDS.join(' ')));
+  const out = laughTrack.repairStaff!(config, target(WORDS.join(' ')), 'cast');
   assert.deepEqual(out, { config, trims: [] });
 });
 
 test('with no cue left the options come back unchanged and no cue is invented', () => {
   const config = { cues: [cue('banana split'), { phrase: 'alpha', sound: 'gasp' }] };
-  assert.deepEqual(laughTrack.repairStaff!(config, target(WORDS.join(' '))), { config, trims: [] });
-  assert.deepEqual(laughTrack.repairStaff!({ cues: 'alpha' }, target('alpha')), { config: { cues: 'alpha' }, trims: [] });
-  assert.deepEqual(laughTrack.repairStaff!(undefined, target('alpha')), { config: undefined, trims: [] });
+  assert.deepEqual(laughTrack.repairStaff!(config, target(WORDS.join(' ')), 'cast'), { config, trims: [] });
+  assert.deepEqual(laughTrack.repairStaff!({ cues: 'alpha' }, target('alpha'), 'cast'), { config: { cues: 'alpha' }, trims: [] });
+  assert.deepEqual(laughTrack.repairStaff!(undefined, target('alpha'), 'cast'), { config: undefined, trims: [] });
   const decided = decidePlay(laughTrack, settings, target(WORDS.join(' ')), [], config, '');
   assert.equal(decided.ok, false);
 });
@@ -121,14 +121,14 @@ test('the repaired cue carries the trimmed phrase, the one validation decides', 
 test('repairStaff never throws and never invents a cue on hostile input', () => {
   const text = WORDS.join(' ');
   for (const config of [null, undefined, 'cues', 7, [], { cues: null }, { cues: 'alpha' }, { cues: {} }]) {
-    assert.deepEqual(laughTrack.repairStaff!(config, target(text)), { config, trims: [] });
+    assert.deepEqual(laughTrack.repairStaff!(config, target(text), 'cast'), { config, trims: [] });
   }
-  const hostile = laughTrack.repairStaff!({ cues: [null, 3, [cue('alpha')], undefined, { phrase: cue('alpha'), sound: 'laugh' }, cue('bravo')] }, target(text));
+  const hostile = laughTrack.repairStaff!({ cues: [null, 3, [cue('alpha')], undefined, { phrase: cue('alpha'), sound: 'laugh' }, cue('bravo')] }, target(text), 'cast');
   assert.deepEqual(hostile.config, { cues: [cue('bravo')] });
-  const huge = laughTrack.repairStaff!({ cues: [cue('a'.repeat(100000)), cue('alpha')] }, target(text));
+  const huge = laughTrack.repairStaff!({ cues: [cue('a'.repeat(100000)), cue('alpha')] }, target(text), 'cast');
   assert.deepEqual(huge.config, { cues: [cue('alpha')] });
   const onlyHuge = { cues: [cue('a'.repeat(100000))] };
-  assert.deepEqual(laughTrack.repairStaff!(onlyHuge, target(text)), { config: onlyHuge, trims: [] });
+  assert.deepEqual(laughTrack.repairStaff!(onlyHuge, target(text), 'cast'), { config: onlyHuge, trims: [] });
 });
 
 test('the overlap pass stops at five clear cues and the rest are counted as dropped by mostFiveCues', () => {
@@ -151,4 +151,23 @@ test('screenReads holds the line, reach, murmur, fade and mark, each whole and b
   for (const key of ['laughTrack.line', 'laughTrack.reachRem', 'laughTrack.murmurMost', 'laughTrack.fadeMs']) assert.ok(by[key] && (by[key] as { whole?: boolean }).whole, key);
   for (const key of ['laughTrack.dwellMs', 'laughTrack.band', 'laughTrack.airMs', 'laughTrack.holdMs']) assert.equal(by[key], undefined, key);
   assert.equal(Object.keys(by).length, 5);
+});
+
+test('a set\'s cues are not held to the post: cues not in it, overlapping or past thirty places are kept, while cueShape and mostFiveCues still apply', () => {
+  const set = (cues: unknown, text: string) => laughTrack.repairStaff!({ cues }, target(text), 'set');
+  const notIn = set([cue('Luigi'), cue('pizza')], 'Pizza time, everyone.');
+  assert.deepEqual(notIn, { config: { cues: [cue('Luigi'), cue('pizza')] }, trims: [] });
+  const overlap = set([cue('alpha bravo'), cue('bravo charlie'), cue('alpha bravo')], 'alpha bravo charlie');
+  assert.deepEqual(overlap.trims, []);
+  assert.equal((overlap.config as { cues: unknown[] }).cues.length, 3);
+  const many = set([cue('zing'), cue('zaps')], `${'zing '.repeat(PLACES.most)}${'zaps '.repeat(3)}`);
+  assert.deepEqual(many, { config: { cues: [cue('zing'), cue('zaps')] }, trims: [] });
+  const shape = set([cue('alpha'), { phrase: 'bravo', sound: 'gasp' }, { phrase: 7, sound: 'boo' }, cue('banana')], 'alpha');
+  assert.deepEqual(shape.config, { cues: [cue('alpha'), cue('banana')] });
+  assert.deepEqual(shape.trims, [{ path: PATH, predicate: 'cueShape', before: 4, after: 2 }]);
+  const six = set(['alpha', 'bravo', 'charlie', 'delta', 'echoes', 'foxtrot'].map((p) => cue(p)), 'nothing here');
+  assert.equal((six.config as { cues: unknown[] }).cues.length, CUES.most);
+  assert.deepEqual(six.trims, [{ path: PATH, predicate: 'mostFiveCues', before: 6, after: CUES.most }]);
+  const cast = laughTrack.repairStaff!({ cues: [cue('Luigi'), cue('alpha')] }, target('alpha'), 'cast');
+  assert.deepEqual(cast.config, { cues: [cue('alpha')] }, 'a cast is repaired as before');
 });

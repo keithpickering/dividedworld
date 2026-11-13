@@ -77,9 +77,11 @@ type RepairTrim = { readonly path: string; readonly predicate: string; readonly 
  * `phraseNotInPost` one whose phrase is not in the post, `overlapsEarlierCue` one that repeats an earlier kept cue's words or covers
  * words an earlier kept cue covers, `mostFiveCues` keeps the first five and `mostThirtyPlaces` drops cues from the end while the places
  * pass thirty. Each predicate that drops anything is one trim, with the cue counts before and after. It never invents a cue; with none left
- * (or no list of cues at all) the options are returned unchanged, so the decision refuses in the card's own words.
+ * (or no list of cues at all) the options are returned unchanged, so the decision refuses in the card's own words. A set's cues are not held to the
+ * post it is set on (the back waits for a quote that says the first cue's phrase, in any post), so a set skips the three predicates that read the post
+ * and keeps `cueShape` and `mostFiveCues`.
  */
-function repairCues(config: unknown, target: PostTarget): { readonly config: unknown; readonly trims: readonly RepairTrim[] } {
+function repairCues(config: unknown, target: PostTarget, play: 'cast' | 'set'): { readonly config: unknown; readonly trims: readonly RepairTrim[] } {
   const raw = typeof config === 'object' && config !== null ? (config as { cues?: unknown }).cues : undefined;
   if (!Array.isArray(raw)) return { config, trims: [] };
   const trims: RepairTrim[] = [];
@@ -102,7 +104,7 @@ function repairCues(config: unknown, target: PostTarget): { readonly config: unk
   const clear: Cue[] = [];
   let examined = 0;
   let notInPost = 0;
-  for (const c of shaped) {
+  for (const c of play === 'set' ? [] : shaped) {
     if (clear.length >= CUES.most) break;
     examined++;
     const mine = occurrences(target.text, c.phrase);
@@ -110,6 +112,7 @@ function repairCues(config: unknown, target: PostTarget): { readonly config: unk
     else if (!clear.some((o) => sameWords(o.phrase, c.phrase)) && !crosses(mine.map((o) => ({ start: o.from, end: o.to })), placesOf(target.text, clear))) clear.push(c);
   }
   const unexamined = shaped.slice(examined);
+  const reading = play === 'cast';
   const path = 'card.config.laugh-track.cues';
   const inPost = shaped.length - notInPost;
   if (notInPost > 0) trims.push({ path, predicate: 'phraseNotInPost', before: shaped.length, after: inPost });
@@ -118,7 +121,7 @@ function repairCues(config: unknown, target: PostTarget): { readonly config: unk
   kept = [...clear, ...unexamined];
   drop('mostFiveCues', kept.slice(0, CUES.most));
   let fewer = kept as Cue[];
-  while (fewer.length > 1 && placesOf(target.text, fewer).length > PLACES.most) fewer = fewer.slice(0, -1);
+  while (reading && fewer.length > 1 && placesOf(target.text, fewer).length > PLACES.most) fewer = fewer.slice(0, -1);
   drop('mostThirtyPlaces', fewer);
   return kept.length === 0 ? { config, trims: [] } : { config: { ...(config as object), cues: kept }, trims };
 }
