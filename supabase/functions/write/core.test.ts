@@ -308,7 +308,7 @@ test('a play that bought less than the cap is asked for what it bought, and fram
 });
 
 /* Re-rolling a short tail (docs/plans/2026-11-12-old-voice-window-design.md, section 5). The bytes tokenizer counts a character each, so a text's length is its own. */
-const bytes = { ...instance.settings, oldVoiceTokenizer: 'bytes' as const, cardWriteShortShare: 0.5, cardWriteRerolls: 3 };
+const bytes = { ...instance.settings, oldVoiceTokenizer: 'bytes' as const, cardWriteFullShare: 0.5, cardWriteTopUps: 3 };
 const scripted = (answers: (string | Error)[]) => fakeModels((_r, n) => answers[n - 1] ?? 'z'.repeat(500));
 const x = (n: number) => 'x'.repeat(n);
 
@@ -338,7 +338,7 @@ test('a first answer that is long enough is the only call', async () => {
 });
 
 test('no re-rolls, or a short share of zero, is one call whatever the length', async () => {
-  for (const over of [{ cardWriteRerolls: 0 }, { cardWriteShortShare: 0 }]) {
+  for (const over of [{ cardWriteTopUps: 0 }, { cardWriteFullShare: 0 }]) {
     const { db, calls } = fakeDb([[job({ tokens: 200 })]]);
     const { models, requests } = scripted(['?']);
     await runWrites(db, models, instance, { ...bytes, ...over }, 8);
@@ -392,7 +392,7 @@ test('a regeneration after an edit, and a play whose tokens come from the play, 
 test('a share of 0.07 of a 100-token play is 7 tokens, not 8: a 7-token answer is not short, one call', async () => {
   const { db, calls } = fakeDb([[job({ tokens: 100 })]]);
   const { models, requests } = scripted([x(7)]);
-  await runWrites(db, models, instance, { ...bytes, cardWriteShortShare: 0.07 }, 8);
+  await runWrites(db, models, instance, { ...bytes, cardWriteFullShare: 0.07 }, 8);
   assert.equal(requests.length, 1);
   assert.deepEqual(finishes(calls), [{ play: P1, version: V, text: x(7), failed: null }]);
 });

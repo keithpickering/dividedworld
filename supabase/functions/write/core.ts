@@ -19,8 +19,8 @@
  *
  * **Re-rolls** (docs/plans/2026-11-12-old-voice-window-design.md, section 5). A tail well short of the length it asked for is rolled again. Each try
  * is a `scrubbedComplete` of the same request, so each writes its own ledger rows and the short one is dropped, never continued. A try's length
- * is the instance's counter on the text kept after the cut; it is short under `cardWriteShortShare` of `maxTokens`. The first try that is not
- * short ends the loop, else after `cardWriteRerolls` more the longest stands, the earliest on a tie. A rejection or a transport failure on the
+ * is the instance's counter on the text kept after the cut; it is short under `cardWriteFullShare` of `maxTokens`. The first try that is not
+ * short ends the loop, else after `cardWriteTopUps` more the longest stands, the earliest on a tie. A rejection or a transport failure on the
  * first try finishes the job as an error; on a later one it ends the loop and the best so far is finished as the text. A database error or an
  * unwritten ledger row stops the run on any try. No try starts after `REROLL_DEADLINE_MS`. No reader sees a try: the text is stored once.
  * Before every model call after the job's first (each re-roll, and the second call a scrub hit makes inside a try) the job's claim is renewed
@@ -132,12 +132,12 @@ export async function runWrites(db: Db, models: Models, instance: Instance, sett
         duty: 'cardText' as const, play: job.play, lines: 'many' as const, maxTokens, maxChars: Math.min(MOST_CHARS, maxTokens * CHARS_A_TOKEN),
         temperature: 0.9, topP: 0.95, prompt, stop: stopAt,
       };
-      const shortUnder = Math.ceil(Math.round(settings.cardWriteShortShare * maxTokens * 1e9) / 1e9); // rounded first: 0.07 * 100 is 7.000000000000001
+      const shortUnder = Math.ceil(Math.round(settings.cardWriteFullShare * maxTokens * 1e9) / 1e9); // rounded first: 0.07 * 100 is 7.000000000000001
       const firstCall = now();
       // Renews this claim; false when it is no longer this run's (it ran out and was taken again, or an edit queued the job afresh). A database error throws.
       const renew = async (): Promise<boolean> => (await db.rpc<boolean>('renew_card_write', { play: job.play, version: job.version, attempts: job.attempts })) === true;
       let best: { text: string; length: number } | null = null;
-      for (let attempt = 0; attempt <= settings.cardWriteRerolls; attempt++) {
+      for (let attempt = 0; attempt <= settings.cardWriteTopUps; attempt++) {
         if (attempt > 0 && now() - firstCall >= REROLL_DEADLINE_MS) break;
         // Renewed before every re-roll, never before the first try (the claim is fresh); the scrub's second call renews through the same hook.
         // Not this run's claim any more: the claim that holds the job finishes it. Finishing here with a text the other claim may be making would race

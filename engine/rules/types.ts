@@ -273,12 +273,12 @@ export interface Settings {
    */
   readonly oldVoicePromptFloor: number;
   /**
-   * Under this share of the tokens a generation asks for, a card's text counts as short and is rolled again (design section 5). A number from 0 to 1;
-   * 0 never re-rolls. A starting point.
+   * A tail under this share of the tokens the play bought is topped up: the next call continues it (docs/plans/2026-11-13-you-were-saying-voice-design.md §3).
+   * A number from 0 to 1; 0 never tops up. A starting point.
    */
-  readonly cardWriteShortShare: number;
-  /** The most rolls after the first when a text is short: a whole number from 0 to 5, and 0 rolls once. A starting point. */
-  readonly cardWriteRerolls: number;
+  readonly cardWriteFullShare: number;
+  /** The most calls after the first, each continuing a tail that came back short: a whole number from 0 to 5, and 0 makes one call. A starting point. */
+  readonly cardWriteTopUps: number;
   /** The pronouns a staff character has when its persona file names none, and the ones a new character starts with. */
   readonly pronouns: PronounSet;
   /** When the Boss's meeting runs, as a five-field cron expression in UTC: daily by default, an hour after the settlement so the digest holds the newest standings. */

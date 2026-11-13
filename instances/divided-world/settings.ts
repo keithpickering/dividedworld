@@ -55,10 +55,10 @@ export const defaults: Settings = deepFreeze<Settings>({
   oldVoiceTokenizer: 'gpt2',
   /** A play leaves room for at least 256 tokens of prompt, so a play may buy at most 768. */
   oldVoicePromptFloor: 256,
-  /** A text under half the tokens it asked for is rolled again. */
-  cardWriteShortShare: 0.5,
-  /** Up to three more rolls after the first. */
-  cardWriteRerolls: 3,
+  /** A tail under nine tenths of the tokens it bought is topped up. */
+  cardWriteFullShare: 0.9,
+  /** Up to three more calls after the first, each continuing a tail that came back short. */
+  cardWriteTopUps: 3,
   /** A character a player makes starts with it/its, as every character did before pronouns; its player changes it on the character's page. */
   pronouns: PRONOUN_PRESETS.it,
   /** Daily, at 09:23 UTC, an hour after the settlement, so the Boss's digest holds the newest standings. */
