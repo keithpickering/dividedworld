@@ -15,13 +15,13 @@ statements in four functions find that thread with `settings s join threads t on
 | `spring_facts(face_down, text, uuid, text)` | `supabase/migrations/0340_conduct.sql` | `f.announce_thread`, read before every face-down back's decision |
 | `place_cast(uuid, text, uuid, jsonb, text, text, uuid, uuid, integer, jsonb)` | `supabase/migrations/0317_surfaces.sql` | `in_thread` for a board card |
 | `lay_sprung(uuid, text, jsonb, uuid, text, uuid, uuid)` | `supabase/migrations/0317_surfaces.sql` | `in_thread` for a sprung board card |
-| `seed_instance(jsonb)` | `supabase/migrations/0332_arcs.sql` | two `not exists`, one for each setting |
+| `seed_instance(jsonb)` | `supabase/migrations/0355_settings_tuned.sql` | two `not exists`, one for each setting |
 
 A comparison on the id written as text cannot use `threads_pkey`, so each reads a whole index of `threads`. The count
 of entries read moves with dead entries, which makes `supabase/tests/0135-face-down-moves.sql`'s equal-reads assertion
 flaky, and it grows with every thread an instance holds ("Weigh a design at the scale of a busy instance").
 
-Verified on main `6ec5a27c` by replaying every migration into a local database and reading `pg_proc`: these four are the
+Verified on main `6ec5a27c`, and again on `9aabd87c` after `0355` redefined `seed_instance`, by replaying every migration into a local database and reading `pg_proc`: these four are the
 only live functions with the statement, and the migrations named above hold each one's live body.
 
 ## The form it keeps
