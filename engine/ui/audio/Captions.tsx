@@ -9,6 +9,9 @@
  *
  * It fades over 150ms and, under reduced motion, appears and goes with no motion. It lets every press through. While a caption shows it measures
  * itself and sets `--kb-captions-measured` (its height and the gap under it) on the root, so the toasts stand above it; cleared otherwise.
+ * Over a dialog (`.kb-glass-overlay`, whose scrim is above the bar's layer) the bar is raised above the scrim, and where its resting place meets the
+ * dialog's box (always, for a phone's sheet) it is lifted to rest above the box (`--kb-captions-lift`); where no room is left above the box it stays
+ * under the scrim, announced all the same (place-over.ts). `--kb-captions-measured` is the bar's resting place either way, so the toasts do not move.
  * A caption names its way out (captions.ts): a say ends by itself, a hold at its release.
  *
  * The app shell mounts `<Captions />` once, at the page root (web/src/App.tsx's Shell), outside both worlds; a host of the engine's Frame that wants
@@ -16,8 +19,23 @@
  */
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { motionReduced } from '../appearance.ts';
+import { placeOver } from './place-over.ts';
 import { captions, type Caption, type Captions as Store } from './captions.ts';
 import './captions.css';
+
+/** Watches a changing set of boxes with one ResizeObserver, where the browser has one: `watch` replaces what is watched. */
+class ResizeObserverOf {
+  private readonly observer: ResizeObserver | null;
+  private seen = new Set<Element>();
+  constructor(onResize: () => void) { this.observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(onResize); }
+  watch(boxes: readonly Element[]) {
+    if (!this.observer) return;
+    for (const b of this.seen) if (!boxes.includes(b)) this.observer.unobserve(b);
+    for (const b of boxes) if (!this.seen.has(b)) this.observer.observe(b);
+    this.seen = new Set(boxes);
+  }
+  stop() { this.observer?.disconnect(); this.seen.clear(); }
+}
 
 /** The fade, and how long an announcement stays in the live region. */
 export const FADE_MS = 150;
@@ -64,9 +82,43 @@ export function Captions({ store = captions }: { readonly store?: Store }) {
     const root = document.documentElement;
     const measure = () => root.style.setProperty('--kb-captions-measured', `${Math.ceil(el.getBoundingClientRect().height) + GAP}px`);
     measure();
-    const watch = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
+
+    /* Over a dialog: measured from the bar's resting place (what the lift moved it from is added back), against every open dialog's box. */
+    let lift = 0;
+    let frames: number | null = null;
+    const boxes = () => [...document.querySelectorAll<HTMLElement>('.kb-glass-overlay .kb-glass-dialog[role="dialog"]')];
+    const sees = new ResizeObserverOf(() => place());
+    const place = () => {
+      const open = boxes();
+      const r = el.getBoundingClientRect();
+      const rest = { left: r.left, right: r.right, top: r.top + lift, bottom: r.bottom + lift };
+      const over = placeOver(rest, open.map((b) => b.getBoundingClientRect()), { width: window.innerWidth, height: window.innerHeight });
+      lift = over?.lift ?? 0;
+      if (over) { el.setAttribute('data-over-scrim', 'true'); el.style.setProperty('--kb-captions-lift', `${over.lift}px`); }
+      else { el.removeAttribute('data-over-scrim'); el.style.removeProperty('--kb-captions-lift'); }
+      sees.watch(open);
+    };
+    /* A dialog's box grows into place (it animates open), so after any change the box is read again each frame for a little under a second. */
+    const settle = () => {
+      place();
+      let left = 45;
+      if (frames !== null) cancelAnimationFrame(frames);
+      const step = () => { place(); frames = --left > 0 ? requestAnimationFrame(step) : null; };
+      frames = requestAnimationFrame(step);
+    };
+    settle();
+    const mutations = typeof MutationObserver === 'undefined' ? null : new MutationObserver(settle);
+    mutations?.observe(document.body, { childList: true });
+    window.addEventListener('resize', settle);
+
+    const watch = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => { measure(); place(); });
     watch?.observe(el);
-    return () => { watch?.disconnect(); root.style.removeProperty('--kb-captions-measured'); };
+    return () => {
+      watch?.disconnect(); mutations?.disconnect(); sees.stop();
+      window.removeEventListener('resize', settle);
+      if (frames !== null) cancelAnimationFrame(frames);
+      root.style.removeProperty('--kb-captions-measured');
+    };
   }, [shown !== null]);
 
   return (

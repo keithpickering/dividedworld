@@ -167,23 +167,41 @@ async function barIsOnTop(page: Page) {
 
 const say = (page: Page) => page.evaluate(() => (globalThis as unknown as { __kbCaptions: { say(w: { text: string; ms: number }): void } }).__kbCaptions.say({ text: 'Crowd laughs', ms: 60_000 }));
 
-/* Whether a caption should show above a modal's scrim is a design question, in the PR's Design questions. */
-test('a caption said with a dialog open on a board stands clear of the dialog', async ({ page }) => {
-  await page.setViewportSize(MAIN);
-  await page.goto('/b/general');
-  await page.getByRole('link', { name: 'Who keeps reacting with a thumbs up?', exact: true }).click();
-  const react = page.locator('#post-3').getByRole('button', { name: 'React' });
-  await expect(react).toBeVisible();
-  await react.click();
-  const picker = page.getByRole('dialog', { name: /^React to / });
-  await expect(picker).toBeVisible();
-  await say(page);
-  await expect(page.locator('.kb-captions-bar')).toBeVisible();
-  const [bar, dialog] = [await page.locator('.kb-captions-bar').boundingBox(), await picker.boundingBox()];
-  if (!bar || !dialog) throw new Error('no box');
-  const apart = bar.y >= dialog.y + dialog.height || bar.y + bar.height <= dialog.y || bar.x >= dialog.x + dialog.width || bar.x + bar.width <= dialog.x;
-  expect(apart).toBe(true);
-});
+/* A caption shows above a dialog's scrim and never over the dialog's own box (the owner's answer on #518; Captions.tsx). The bar lets every press through, and
+   `elementsFromPoint` skips what does, and what is `inert` (the page under an open dialog), so the test makes the bar take presses and lifts the inert mark: the list at
+   the bar's center then runs from the top of the stack down, and the bar must come before the dialog's scrim in it. */
+for (const [size, name] of [[MAIN, 'the main window'], [PHONE, 'a phone']] as const) {
+  test(`a caption said with a dialog open on a board stands above the scrim and clear of the dialog, on ${name}`, async ({ page }) => {
+    await page.setViewportSize(size);
+    await page.goto('/b/general');
+    await page.getByRole('link', { name: 'Who keeps reacting with a thumbs up?', exact: true }).click();
+    const react = page.locator('#post-3').getByRole('button', { name: 'React' });
+    await expect(react).toBeVisible();
+    await react.click();
+    const picker = page.getByRole('dialog', { name: /^React to / });
+    await expect(picker).toBeVisible();
+    await say(page);
+    await expect(page.locator('.kb-captions-bar')).toBeVisible();
+    await page.addStyleTag({ content: '.kb-captions-bar { pointer-events: auto !important; }' });
+    /* The dialog's entrance and the bar's measuring settle together: the bar's place is read once it stops moving. */
+    await expect.poll(async () => {
+      const [bar, dialog] = [await page.locator('.kb-captions-bar').boundingBox(), await picker.boundingBox()];
+      if (!bar || !dialog) return false;
+      return bar.y >= dialog.y + dialog.height || bar.y + bar.height <= dialog.y || bar.x >= dialog.x + dialog.width || bar.x + bar.width <= dialog.x;
+    }, { message: 'the bar stands clear of the dialog\'s box' }).toBe(true);
+    const bar = await page.locator('.kb-captions-bar').boundingBox();
+    if (!bar) throw new Error('no box');
+    expect(bar.y).toBeGreaterThanOrEqual(0);
+    expect(bar.y + bar.height).toBeLessThanOrEqual(size.height);
+    const stack = await page.evaluate(({ x, y }) => {
+      /* The page under an open dialog is `inert`, which hides the bar from a hit test whatever its layer; the test lifts that, as it lifts the bar's pass-through, to read the layers. */
+      document.querySelectorAll('[inert]').forEach((el) => el.removeAttribute('inert'));
+      return document.elementsFromPoint(x, y).map((el) => (el.closest('.kb-captions-bar') ? 'bar' : el.classList.contains('kb-glass-overlay') ? 'scrim' : ''));
+    }, { x: bar.x + bar.width / 2, y: bar.y + bar.height / 2 });
+    expect(stack.indexOf('bar')).toBeGreaterThanOrEqual(0);
+    expect(stack.indexOf('scrim')).toBeGreaterThan(stack.indexOf('bar'));
+  });
+}
 
 test('a caption said on the sound settings page is visible and not covered', async ({ page }) => {
   await page.setViewportSize(MAIN);
