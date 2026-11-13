@@ -78,6 +78,8 @@ test('Glitter Bomb drawn from a spin\'s moment is the still form: the flakes at 
     currentPayload: {}, editedAt: null, shownEditedAt: null,
   };
   const moment: PlayMoment = { version: POST, layers: [{ act: origin, state: null }], above: [], recorded: true, at: spunAt };
+  /* A live glitter registers with the shine loop, which asks for frames; a still one is painted once at rest and asks for none. */
+  const frames = vi.spyOn(window, 'requestAnimationFrame');
   const { container } = renderInWorld(
     <MomentEffects moment={moment} place="origin" nameOf={() => 'Spritey'} onWords={() => {}}><p>hi</p></MomentEffects>,
     { instance, cards: instanceUi.cards },
@@ -89,4 +91,5 @@ test('Glitter Bomb drawn from a spin\'s moment is the still form: the flakes at 
   expect(box.querySelectorAll('canvas')).toHaveLength(3);
   expect((box.querySelector('canvas.dw-glitter-over') as HTMLCanvasElement).width).toBe(0);
   expect(container.querySelectorAll('[data-kb-glitter]')).toHaveLength(1);
+  expect(frames).not.toHaveBeenCalled();
 });

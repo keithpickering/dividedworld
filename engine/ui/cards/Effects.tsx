@@ -420,7 +420,8 @@ export interface MomentParts {
  */
 export function momentParts(moment: PlayMoment, rules: readonly CardRules[], ui: readonly CardUi[], nameOf: (character: Id | null) => string): MomentParts {
   /* The moment's own time: a play's is its own date, a spin's is the spin's, and every play is judged live or over at it. */
-  const at = Date.parse(moment.at);
+  const stated = Date.parse(moment.at);
+  const at = Number.isNaN(stated) ? Date.parse(moment.layers[0]!.act.createdAt) : stated;
   const cardName = (key: string) => rules.find((c) => c.key === key)?.name ?? key;
   const springs = moment.layers.map((l) => l.act).filter((a) => a.kind === 'spring');
   /* A play an admin had ended by then: its card_end rides among the layers, and counts only when it came before the moment. */

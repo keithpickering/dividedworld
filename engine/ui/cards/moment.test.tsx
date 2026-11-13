@@ -4,7 +4,7 @@
  * the order PostEffects wraps them; every other play on the post then, and every play above it, named in words. The cards are the
  * engine's own test cards, never an instance's.
  */
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { useEffect } from 'react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { landsOn, ok, type CardRules } from '../../rules/cards.ts';
@@ -13,6 +13,9 @@ import { KayfaProvider, type Kayfa } from '../context.tsx';
 import type { Act, EffectState, PlayMoment } from '../data/api.ts';
 import { buildWorld, testInstance } from '../test-world.tsx';
 import { CalloutProvider } from './Callout.tsx';
+import { MomentView } from './Moment.tsx';
+import { when } from '../thread/lines.tsx';
+import type { CardPlay } from './types.ts';
 import { MomentEffects, momentParts } from './Effects.tsx';
 import type { CardUi, EffectProps } from './types.ts';
 
@@ -290,5 +293,54 @@ describe('a character play is the moment\'s own play when it is the first layer'
     expect(spun.drawn.map((p) => p.id)).toEqual(['u2']);
     expect(spun.named).toEqual([]);
     expect(spun.above?.id).toBe('k1');
+  });
+});
+
+describe('MomentView with a spin as its source', () => {
+  const play: CardPlay = { id: 'k1', card: 'sparkly', layer: 1, caster: 'c-caster', message: '', config: {}, playedAt: at(5), post: 'p1', reach: 'character', on: 'c-author', ends: at(60) };
+  const spunMoment = moment([{ act: card('k1', 'sparkly', 5, { reach: 'character', character: 'c-author', ends: at(60) }), state: null }], [], at(30));
+  const view = (spin: string, api: ReturnType<typeof buildWorld>, back?: () => void) => {
+    const kayfa = { api, instance, ui: { cards, glass: {} }, settings: {} } as unknown as Kayfa;
+    return render(<KayfaProvider value={kayfa}><CalloutProvider met={[]}><MomentView play={play} place={back ? 'thread' : 'origin'} source={{ spin }} nameOf={() => ''} bodyOf={() => <span>then</span>} back={back} now={<span>now</span>} /></CalloutProvider></KayfaProvider>);
+  };
+
+  test('reads the spin\'s moment, not the play\'s; names no time until it lands (never the play\'s), then the moment\'s', async () => {
+    const api = buildWorld({}, instance);
+    let land!: (m: PlayMoment) => void;
+    const spin = vi.spyOn(api, 'spinMoment').mockReturnValue(new Promise((r) => { land = r; }));
+    const played = vi.spyOn(api, 'playMoment');
+    view('spin-a', api);
+    expect(screen.getByRole('group', { name: 'As it was spun' })).toBeInTheDocument();
+    expect(spin).toHaveBeenCalledWith('spin-a');
+    land(spunMoment);
+    await screen.findByRole('group', { name: `As it was spun, ${when(at(30))}` });
+    expect(played).not.toHaveBeenCalled();
+  });
+
+  test('the label reaches the tag over a live post', async () => {
+    const api = buildWorld({}, instance);
+    vi.spyOn(api, 'spinMoment').mockResolvedValue(spunMoment);
+    view('spin-b', api, () => {});
+    await screen.findByRole('group', { name: /^As it was spun, / });
+    expect(document.querySelector('.kb-moment-tag')!.textContent).toContain('As it was spun');
+    expect(document.querySelector('.kb-moment-tag')!.textContent).not.toContain('As it landed');
+  });
+
+  test('Try again after a failed spin read reads the spin again', async () => {
+    const api = buildWorld({}, instance);
+    const spin = vi.spyOn(api, 'spinMoment').mockRejectedValueOnce(new Error('down')).mockResolvedValue(spunMoment);
+    view('spin-c', api);
+    fireEvent.click(await screen.findByRole('button', { name: 'Try again' }));
+    await waitFor(() => expect(spin).toHaveBeenCalledTimes(2));
+    await screen.findByRole('group', { name: /^As it was spun, / });
+  });
+});
+
+describe('a moment whose time cannot be read', () => {
+  test('is judged at the first layer\'s time: the origin play is still drawn and its ended Use is still left out', () => {
+    const m = moment([{ act: act('k1', 'card', { card: 'sparkly', message: '', config: {}, layer: 1, reach: 'character', character: 'c-author', ends: at(60) }, 5), state: null }, { act: card('u1', 'shieldy', 1, { ends: at(2) }), state: null }], [], 'not a time');
+    const parts = momentParts(m, instance.cards, cards, () => '');
+    expect(parts.above?.id).toBe('k1');
+    expect(parts.drawn.map((p) => p.id)).toEqual([]);
   });
 });

@@ -63,10 +63,12 @@ export function useMomentRead(key: Id, load: () => Promise<PlayMoment | null>): 
  */
 export function MomentFrame({ play, place, at, read, back, label = 'As it landed', own = null, named, words, unrecorded, frame, children }: {
   /** `none`: the read answered that the play is no play on a post, which a play on a post never is. */
-  readonly play: CardPlay; readonly place: EffectPlace; readonly at: string; readonly read: MomentRead['status'] | 'none';
+  readonly play: CardPlay; readonly place: EffectPlace; readonly read: MomentRead['status'] | 'none';
   readonly back?: (() => void) | undefined;
   /** What the frame calls the moment: "As it landed" for a play's, "As it was spun" for a spin's. */
   readonly label?: string;
+  /** The moment's time; none while it is not known (a spin's moment before it is read), and then the frame names none. */
+  readonly at?: string | undefined;
   readonly own?: string | null; readonly named: readonly string[]; readonly words: readonly string[]; readonly unrecorded: boolean;
   /** The frame's element, for a control inside it to give focus to (Try again's answer). */
   readonly frame?: RefObject<HTMLDivElement | null>;
@@ -83,7 +85,7 @@ export function MomentFrame({ play, place, at, read, back, label = 'As it landed
   const status = read === 'read' ? null : read === 'loading' ? 'Loading the moment…' : read === 'failed' ? 'The moment did not load.' : 'This play has no moment to show.';
   const said = content && status !== null;
   return (
-    <div ref={(el) => { ring.host.current = el; if (frame) frame.current = el; }} tabIndex={-1} className="kb-moment" role="group" aria-label={`${label}, ${when(at)}`} data-kb-alignment={rules?.alignment} data-kb-content={content ? '' : undefined} style={ink ? ({ '--kb-moment-ink': ink } as CSSProperties) : undefined}>
+    <div ref={(el) => { ring.host.current = el; if (frame) frame.current = el; }} tabIndex={-1} className="kb-moment" role="group" aria-label={at === undefined ? label : `${label}, ${when(at)}`} data-kb-alignment={rules?.alignment} data-kb-content={content ? '' : undefined} style={ink ? ({ '--kb-moment-ink': ink } as CSSProperties) : undefined}>
       {said && <p className="kb-moment-status kb-small kb-muted">{status}</p>}
       <div className="kb-moment-body" data-kb-quotable="hidden">{children}</div>
       {!content && <div ref={ring.ring} className="kb-moment-ring" aria-hidden="true" />}
@@ -220,7 +222,7 @@ export function MomentView({ play, place, nameOf, bodyOf, back, now, source }: {
   }, []);
   if (read.status !== 'read' || read.moment === null) {
     return (
-      <MomentFrame frame={frame} play={play} place={place} at={play.playedAt} label={label} read={read.status === 'read' ? 'none' : read.status} back={back} named={[]} words={[]} unrecorded={false}>
+      <MomentFrame frame={frame} play={play} place={place} at={source ? undefined : play.playedAt} label={label} read={read.status === 'read' ? 'none' : read.status} back={back} named={[]} words={[]} unrecorded={false}>
         {now}
         {read.status === 'failed' && <button type="button" className="kb-moment-retry" onClick={() => { frame.current?.focus(); read.retry(); }}>Try again</button>}
       </MomentFrame>
