@@ -364,12 +364,12 @@ begin
   if plan not like '%post_under_parent%' then raise exception 'the nested read is not a lateral probe of post_under_parent: %', plan; end if;
   plan := '';
   -- The kept read is bounded at both ends: a replica of kept_reach's thread probe, the plays whose window can hold a post of the page (`tstzrange(started_at, ends_at) && [lo, hi]`).
-  -- The line naming the index must be followed by an Index Cond that carries the key column (`thread =`): a probe with only the range in its Index Cond would still name the index and avoid a
+  -- The line naming the index (an Index Scan or a Bitmap Index Scan alike) must be followed by an Index Cond that carries the key column (`thread =`, with or without an alias): a probe with only the range in its Index Cond would still name the index and avoid a
   -- Seq Scan, but would walk the whole GiST while the counted tests see only the matches.
   for ln in execute format($q$explain select x.play from play_reach x where x.thread = %L and tstzrange(x.started_at, x.ends_at) && tstzrange(%L::timestamptz, %L::timestamptz, '[]') and x.ends_at <= now()$q$,
                            t, now() - interval '30 days', now() - interval '29 days') loop plan := plan || E'\n' || ln."QUERY PLAN"; end loop;
   if plan not like '%play_reach_thread_window%' then raise exception 'the kept read is not from play_reach_thread_window: %', plan; end if;
   if plan like '%Seq Scan on play_reach%' then raise exception 'the kept read scans play_reach: %', plan; end if;
-  if plan !~ E'play_reach_thread_window on [^\\n]*\\n +Index Cond: \\(+thread = ' then raise exception 'the kept read does not probe play_reach_thread_window on the thread: %', plan; end if;
+  if plan !~ E'play_reach_thread_window[^\\n]*\\n +Index Cond: \\(+([a-z_]+\\.)?thread = ' then raise exception 'the kept read does not probe play_reach_thread_window on the thread: %', plan; end if;
   set local enable_seqscan = on;
 end $$;
