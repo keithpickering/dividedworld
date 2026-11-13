@@ -71,13 +71,14 @@ for (const mode of ['light', 'dark'] as const) {
 
     test('at a phone\'s width the nested reply stays inside the page', async ({ page }) => {
       await open(page, mode, 360);
-      /* The page's own sideways scroll is held for every screen by e2e/a11y.spec.ts; here it is the reply's own: the article and everything in it. */
+      /* The page itself does not scroll sideways, and the reply's own edges: the article and everything in it. */
       const m = await page.evaluate(() => {
         const nested = document.querySelector('article[data-kb-under]')!;
         const r = nested.getBoundingClientRect(), W = document.documentElement.clientWidth;
         const past = Array.from(nested.querySelectorAll('*')).filter((e) => { const b = e.getBoundingClientRect(); return b.width > 0 && (b.right > W + 0.5 || b.left < -0.5); }).map((e) => `${e.tagName}.${e.className}`);
-        return { left: r.left, right: r.right, width: W, past };
+        return { left: r.left, right: r.right, width: W, past, scroll: document.documentElement.scrollWidth };
       });
+      expect(m.scroll).toBeLessThanOrEqual(m.width);
       expect(m.left).toBeGreaterThanOrEqual(0);
       expect(m.right).toBeLessThanOrEqual(m.width);
       expect(m.past).toEqual([]);
