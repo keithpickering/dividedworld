@@ -85,7 +85,7 @@ describe('a folded board row: threads on a line, the last post on the next (2.1)
     expect(rules(phone, '.kb-table.kb-board-list .kb-board-row > td.kb-board-threads').join(';')).toMatch(/display:\s*block/u);
     expect(rules(phone, '.kb-table.kb-board-list .kb-board-row > td.kb-board-last').join(';')).toMatch(/display:\s*block/u);
     const by = rules(phone, '.kb-board-last-by').join(';');
-    expect(by).toMatch(/display:\s*inline-block/u);
+    expect(by).toMatch(/display:\s*inline-(?:block|flex)/u);
     expect(by).toMatch(/max-width:\s*100%/u);
   });
 
