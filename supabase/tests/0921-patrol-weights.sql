@@ -220,3 +220,75 @@ begin
   end if;
   if has_schema_privilege('kayfabb_digest', 'public', 'create') then raise exception 'the owner change left the digest role able to create in public'; end if;
 end $$;
+
+-- ---- 6. The view and card_ended agree, play by play ----
+-- watched_characters repeats card_ended's two tests (an admin's card_end, a refunded write) because the digest role may not call the function, and a function a view calls runs with the reader's
+-- privileges. Nothing else holds the two together, so this does: for every play at character reach in this file's world, the view names its character exactly when the play's card is a watch,
+-- is not over by time, and card_ended says it is not over. One character for each case, so membership in the view is that play's alone. If card_ended gains a test and the view does not, a case here goes red.
+do $$
+declare
+  caster uuid := (select id from characters where name = 'Pw 3');
+  t uuid := (select id from threads where title = 'Pw thread 3');
+  p uuid := (select id from acts where kind = 'post' and payload ->> 'body' = 'Post 3');
+  admin_acc uuid := (select id from auth.users where email = 'pw-admin@test.invalid');
+  c_live uuid := (select id from characters where name = 'Pw 11');
+  c_time uuid := (select id from characters where name = 'Pw 12');
+  c_admin uuid := (select id from characters where name = 'Pw 13');
+  c_refund uuid := (select id from characters where name = 'Pw 14');
+  c_plain uuid := (select id from characters where name = 'Pw 15');
+  pl uuid;
+  r record;
+  kinds text[] := '{}';
+  k text;
+  expected boolean;
+  actual boolean;
+begin
+  create temp table pw_case (play uuid primary key, kind text not null) on commit drop;
+  -- live watch
+  pl := tests.act(caster, 'card', t, jsonb_build_object('card', 't-watch', 'reach', 'character', 'character', c_live, 'ends', now() + interval '7 days'), p);
+  insert into play_reach (play, reach, character, ends_at) values (pl, 'character', c_live, now() + interval '7 days');
+  insert into pw_case values (pl, 'live watch');
+  -- watch over by time
+  pl := tests.act(caster, 'card', t, jsonb_build_object('card', 't-watch', 'reach', 'character', 'character', c_time, 'ends', now() - interval '1 hour'), p);
+  insert into play_reach (play, reach, character, ends_at) values (pl, 'character', c_time, now() - interval '1 hour');
+  insert into pw_case values (pl, 'watch over by time');
+  -- watch an admin ended
+  pl := tests.act(caster, 'card', t, jsonb_build_object('card', 't-watch', 'reach', 'character', 'character', c_admin, 'ends', now() + interval '7 days'), p);
+  insert into play_reach (play, reach, character, ends_at) values (pl, 'character', c_admin, now() + interval '7 days');
+  insert into pw_case values (pl, 'admin-ended watch');
+  perform tests.become(admin_acc);
+  perform reverse_card(pl);
+  perform tests.unbecome();
+  -- watch whose write was refunded (a card_write_refunds row, one for each play, as a failed first generation leaves it; no payer, so no amount)
+  pl := tests.act(caster, 'card', t, jsonb_build_object('card', 't-watch', 'reach', 'character', 'character', c_refund, 'ends', now() + interval '7 days'), p);
+  insert into play_reach (play, reach, character, ends_at) values (pl, 'character', c_refund, now() + interval '7 days');
+  insert into card_write_refunds (play, amount) values (pl, null);
+  insert into pw_case values (pl, 'refunded watch');
+  -- a character play that is no watch
+  pl := tests.act(caster, 'card', t, jsonb_build_object('card', 't-not-watch', 'reach', 'character', 'character', c_plain, 'ends', now() + interval '7 days'), p);
+  insert into play_reach (play, reach, character, ends_at) values (pl, 'character', c_plain, now() + interval '7 days');
+  insert into pw_case values (pl, 'non-watch character play');
+
+  for r in
+    select pr.play, pr.character, pr.ends_at, coalesce(pc.kind, 'earlier play in this file') as kind,
+           coalesce(k.discipline ->> 'kind' = 'watch', false) as is_watch
+    from play_reach pr
+    join acts a on a.id = pr.play
+    join card_kinds k on k.key = a.payload ->> 'card'
+    left join pw_case pc on pc.play = pr.play
+    where pr.reach = 'character' and pr.character in (select id from characters where name like 'Pw %')
+  loop
+    expected := r.is_watch and r.ends_at > now() and not card_ended(r.play);
+    actual := exists (select 1 from watched_characters w where w.character = r.character);
+    if actual is distinct from expected then
+      raise exception 'watched_characters and card_ended disagree on the % (play %): the view says %, the card is a watch that is up says %', r.kind, r.play, actual, expected;
+    end if;
+    kinds := kinds || r.kind;
+  end loop;
+  foreach k in array array['live watch', 'watch over by time', 'admin-ended watch', 'refunded watch', 'non-watch character play'] loop
+    if not (k = any (kinds)) then raise exception 'the guard has no % to compare', k; end if;
+  end loop;
+  if not exists (select 1 from pg_temp.pw_watch where character = c_live) or exists (select 1 from pg_temp.pw_watch where character in (c_time, c_admin, c_refund, c_plain)) then
+    raise exception 'the guard''s own cases are not the one live watch and four that are not: %', (select jsonb_agg(to_jsonb(w)) from pg_temp.pw_watch w);
+  end if;
+end $$;
