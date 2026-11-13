@@ -343,9 +343,9 @@ test('Whodunnit? and Blind Study are Pepperoni Moves on a post for three days, t
   const named = cards.find((c) => c.key === 'card-collector')!.staffOptions!.schema as { properties: { card: { enum: string[] } } };
   assert.ok(named.properties.card.enum.includes('blind-study') && !named.properties.card.enum.includes('whodunnit'), 'Card Collector may name the uncommon, not the rare');
   assert.ok(named.properties.card.enum.includes('overreaction'), 'Card Collector may name the common');
-  // New slots end their run, so the Vending Machine's rows above them never move: the on-sale ones after Last Word, the hidden one last.
+  // New slots end their run, so the Vending Machine's rows above them never move: the on-sale ones after Last Word, the hidden one (after Part 2's two) last.
   const slotCards = instance.machine.map((m) => ('card' in m.item ? m.item.card : 'pack'));
-  assert.deepEqual(slotCards.slice(slotCards.indexOf('last-word')), ['last-word', 'laugh-track', 'overreaction', 'blind-study', 'main-event', 'off-day', 'sugar-coat', 'graffiti', 'whodunnit']);
+  assert.deepEqual(slotCards.slice(slotCards.indexOf('last-word')), ['last-word', 'laugh-track', 'overreaction', 'blind-study', 'main-event', 'off-day', 'sugar-coat', 'graffiti', 'line-cutter', 'feelin-glam', 'whodunnit']);
 });
 
 test('Overreaction is a common Pepperoni Move on a post, three to a post, that adds a reaction of its own and does not end', async () => {
@@ -1057,8 +1057,8 @@ test("Line Cutter and Feelin' Glam are rares in the instance, hidden at 300 afte
     ['feelin-glam', 'rare', 'cast', 'sweet', ['thread'], 1, 'hidden', 300],
   ]);
   assert.deepEqual([by('line-cutter').replies, by('line-cutter').lasts, by('feelin-glam').keeps, by('feelin-glam').lasts], [true, undefined, true, { unit: 'day', count: 7 }]);
-  // The boards hold slots by place: a hidden slot is never among the on-sale run, and these two are the machine's last.
-  assert.deepEqual([at('line-cutter'), at('feelin-glam')], [instance.machine.length - 2, instance.machine.length - 1]);
+  // The boards hold slots by place: a hidden slot is never among the on-sale run, and these two are the machine's last but Whodunnit? (card notes Part 3), which comes after them.
+  assert.deepEqual([at('line-cutter'), at('feelin-glam'), at('whodunnit')], [instance.machine.length - 3, instance.machine.length - 2, instance.machine.length - 1]);
   assert.deepEqual(settings.reachLasts.thread, { unit: 'day', count: 7 }, "a thread's effect lasts at most a week, Feelin' Glam's");
   assert.deepEqual(instanceProblems(instance), []);
 });

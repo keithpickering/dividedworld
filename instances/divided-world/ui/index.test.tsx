@@ -129,7 +129,7 @@ describe('Divided World\'s cards in the guide, in the glass\'s words about setti
     const ui = instanceUi.cards.find((c) => c.key === 'line-cutter')!;
     expect(ui.Effect).toBeUndefined();
     expect(ui.art.tagline).toBe('Reply right under a post.');
-    expect([ui.art.color, ui.art.ink]).toEqual(['#d24a2c', '#1a0602']);
+    expect([ui.art.color, ui.art.ink]).toEqual(['#d24a2c', '#0d0301']);
     expect(t.summary).toBe('Posts your reply right under a post, where it stays however long the thread grows.');
     expect(ui.status).toBe('A reply cut in under it');
     expect(ui.hint).toBe('A Line Cutter: the reply under this post was written later and cut in line.');
