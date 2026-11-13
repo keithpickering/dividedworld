@@ -236,7 +236,7 @@ const lastPosts = (page: Page): Promise<LastRow[]> => page.evaluate(() => {
   });
 });
 
-/** The ring's room (2px outline and 2px offset): the comma's box ends at least this far left of the date, and the clip is at that gap. */
+/** The ring's room (2px outline and 2px offset): the comma's box ends at least this far left of the date; the clip itself is at the box's own gap (0.5em, 6px at the least), clear of the ring. */
 const RING = 4;
 
 /** What a row's comma does against case 6b: painted between the name and the date on their line, or not painted (wholly left of the unit's clip) where the date has a line of its own. */
@@ -250,6 +250,32 @@ const commaFaults = (rows: LastRow[]): string[] => rows.flatMap((r) => {
   if (Math.abs(r.date.left - r.unit.left) > 1) out.push(`${r.title}: the date's link starts ${r.date.left - r.unit.left}px from the unit's left edge`);
   return out;
 });
+
+/**
+ * What is painted where the comma's box is, for the rows where the date has a line of its own: the strip the comma's last box occupies is screenshotted as it is and again with the
+ * comma made invisible (layout unchanged); a comma that paints there makes the two differ. Whatever else legitimately paints in the strip (a cell's border) is in both.
+ */
+const paintedCommas = async (page: Page): Promise<string[]> => {
+  const rows = await lastPosts(page);
+  const out: string[] = [];
+  for (const [i, r] of rows.entries()) {
+    if (r.sharesLine || r.sep === null) continue;
+    const row = page.locator('.kb-thread-row').nth(i);
+    await row.locator('.kb-thread-last-link').evaluate((e) => e.scrollIntoView({ block: 'center' }));
+    const strip = await row.evaluate((rowEl) => {
+      const rects = [...rowEl.querySelector('.kb-thread-last .kb-thread-sep')!.getClientRects()];
+      const b = rects[rects.length - 1]!;
+      return { x: Math.floor(b.left), y: Math.floor(b.top), width: Math.ceil(b.right) - Math.floor(b.left), height: Math.ceil(b.bottom) - Math.floor(b.top) };
+    });
+    const clip = { x: Math.max(0, strip.x), y: strip.y, width: strip.width + Math.min(0, strip.x), height: strip.height };
+    const shown = await page.screenshot({ clip });
+    await row.locator('.kb-thread-last .kb-thread-sep').evaluate((e) => { (e as HTMLElement).style.visibility = 'hidden'; });
+    const hidden = await page.screenshot({ clip });
+    await row.locator('.kb-thread-last .kb-thread-sep').evaluate((e) => { (e as HTMLElement).style.visibility = ''; });
+    if (!shown.equals(hidden)) out.push(`${r.title}: the comma paints left of the date, which starts a line`);
+  }
+  return out;
+};
 
 /** Case 6c: the name and the date on one line (middles within 12px), where the unit's parts fit the row's width. */
 const wholeFaults = (rows: LastRow[]): string[] => rows.flatMap((r) => (
@@ -269,6 +295,7 @@ for (const [story, label] of [[BOARD, 'the thread list'], [SPUN, 'the spun list'
         const rows = await lastPosts(page);
         expect(rows.length).toBeGreaterThan(2);
         expect(commaFaults(rows)).toEqual([]);
+        expect(await paintedCommas(page)).toEqual([]);
         const s = await scrolls(page);
         expect(s.list).toBeLessThanOrEqual(0);
         expect(s.page).toBeLessThanOrEqual(0);
@@ -324,6 +351,7 @@ for (const text of ['125', '200'] as const) {
     const rows = await lastPosts(page);
     const starts = rows.map((r, i) => (r.sharesLine ? -1 : i)).filter((i) => i >= 0);
     const chosen = [...new Set([0, ...starts.slice(0, 3)])];
+    expect(starts.length, `a row whose date starts a line at ${text}%, tested`).toBeGreaterThan(0);
     expect(chosen.length).toBeGreaterThan(0);
     for (const i of chosen) {
       const row = page.locator('.kb-thread-row').nth(i);
@@ -332,7 +360,6 @@ for (const text of ['125', '200'] as const) {
         expect(sides, `${what}'s ring in row ${i}`).toEqual({ left: true, right: true, top: true, bottom: true });
       }
     }
-    if (text === '200') expect(starts.length, 'a date starts a line at 200%').toBeGreaterThan(0);
   });
 }
 
@@ -388,4 +415,17 @@ test('poison: a last-post unit that goes back inline is named as a comma ending 
   await setTextSize(page, '200');
   const at200 = await lastPosts(page);
   expect(wholeFaults(at125).length + commaFaults(at125).length + commaFaults(at200).length).toBeGreaterThan(0);
+});
+
+test('poison: a unit with no clip is named as a comma painted left of the date (case 6b)', async ({ page }) => {
+  await page.addInitScript(() => {
+    document.addEventListener('DOMContentLoaded', () => {
+      const style = document.createElement('style');
+      style.textContent = '.kb-thread-last-by { clip-path: none !important }';
+      document.head.append(style);
+    });
+  });
+  await open(page, SPUN, '.kb-thread-row', { width: 360, height: 800 });
+  await setTextSize(page, '200');
+  expect((await paintedCommas(page)).length).toBeGreaterThan(0);
 });
