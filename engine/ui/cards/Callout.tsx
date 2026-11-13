@@ -165,18 +165,21 @@ export function useCallout(kind: string, hint: string | undefined, el: RefObject
 
 /**
  * On a phone (marks.css's `max-width: 40em`, the post's own stacked layout) a callout on a post's date row takes its own room between that row and
- * the words, so it covers none of what a card makes tappable and the engine learns nothing of any card. It stays where it is in the DOM, after its
+ * the words, and one on a postbit's mark takes it between the postbit and the date row, so it covers none of what a card makes tappable and the engine learns nothing of any card. It stays where it is in the DOM, after its
  * mark, so reading and focus order do not change; what moves is its box. Here it is only measured: the row's width and the callout's place from
  * its strip (`--kb-callout-left`, `--kb-callout-top`, `--kb-callout-width` on the callout) and the height the row gives up under itself
  * (`--kb-callout-room` on the row, marked `data-kb-callout-row`), which marks.css uses below the breakpoint alone, so a wider screen is as before.
- * A callout on anything but a `header` row (a thread's head, a postbit's corner) is not measured and keeps its hung place.
+ * A callout on any other strip (a thread's head, a board's banner) is not measured and keeps its hung place.
  */
 function useRoomOnAPhone(box: RefObject<HTMLElement | null>): void {
   useLayoutEffect(() => {
     const el = box.current;
     const strip = el?.parentElement;
-    const row = strip?.closest('.kb-marks-anchor')?.parentElement;
-    if (!el || !strip || !row || row.tagName !== 'HEADER') return;
+    const anchor = strip?.closest('.kb-marks-anchor');
+    const cell = anchor?.parentElement;
+    /* The line a post's strip hangs from (a `header`), or the postbit a character's strip is laid over the corner of. */
+    const row = cell?.classList.contains('kb-postbit-marks') ? cell.closest<HTMLElement>('.kb-postbit') : cell?.tagName === 'HEADER' ? cell : null;
+    if (!el || !strip || !row) return;
     el.dataset.kbCalloutFlow = '';
     row.dataset.kbCalloutRow = '';
     const fit = () => {
@@ -192,6 +195,8 @@ function useRoomOnAPhone(box: RefObject<HTMLElement | null>): void {
     const watch = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(fit);
     watch?.observe(el);
     watch?.observe(row);
+    /* A mark gained or lost moves the strip's left without resizing the callout or the row, so the strip itself is watched. */
+    watch?.observe(strip);
     window.addEventListener('resize', fit);
     return () => {
       watch?.disconnect();
