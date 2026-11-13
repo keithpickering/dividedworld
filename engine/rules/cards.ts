@@ -61,9 +61,9 @@ export type CardTarget =
 export type PostTarget = Extract<CardTarget, { reach: 'post' }>;
 
 /** A post as a card's rules see it, from its current body: its length in characters and its visible text, and its version where the server read one. */
-export function postTarget(act: string, kind: PostTarget['kind'], body: unknown, version?: string, under?: string): PostTarget {
+export function postTarget(act: string, kind: PostTarget['kind'], body: unknown, version?: string, under?: string, author?: string): PostTarget {
   const words = typeof body === 'string' ? body : '';
-  return { reach: 'post', act, kind, length: [...words].length, text: visibleText(parse(words)), ...(version ? { version } : {}), ...(under ? { under } : {}) };
+  return { reach: 'post', act, kind, length: [...words].length, text: visibleText(parse(words)), ...(version ? { version } : {}), ...(under ? { under } : {}), ...(author ? { author } : {}) };
 }
 
 /**

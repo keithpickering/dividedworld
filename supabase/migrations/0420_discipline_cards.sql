@@ -13,7 +13,7 @@
 --                                  seed_instance writes the column.
 --   2. face_down_never_writes      widened (as 0153 and 0343 widened it): a card with a discipline is cast face up and never set face down, in the words the engine's decideSet gives. place_cast refuses a staff caster.
 --   3. warn_reliefs, ban_lifts     the rows, append-only, nobody's to read or write (row-level security on, no grant), written only by place_cast.
---   4. card_relief, warn_points, ban_ends, banned_until, my_bans, punishment_running   the reads: a bar counts each infraction less its relief and its cards' relief; a ban ends at the least of its own end (an appeal's
+--   4. card_relief, live_infractions, warn_points, ban_ends, banned_until, my_bans, punishment_running   the reads: a bar counts each infraction less its relief and its cards' relief; a ban ends at the least of its own end (an appeal's
 --                                  ruling read in place of it) and the time of the first live lift. An admin's end of the play (card_ended) takes it out of both, computed. infract's ladder count is not changed:
 --                                  a lifted ban still counts toward the next.
 --   5. card_target_reach           the character branch also carries the character's bar and ban, public facts the engine's disciplineRefusal reads (warnPoints, bannedUntil).
@@ -26,7 +26,7 @@
 -- is never set face down (nothing to take back).
 -- Privacy: a refusal reads the target's public bar and bans (both are on every postbit) and its public staff flag, so it is the same words, price and timing whoever owns the caster or the target; the relief rows name
 -- public Acts and are read by nobody.
--- Cost at a busy instance's scale: warn_points gains one probe of warn_reliefs (by infraction) for each live infraction, and a character's bar holds a handful of them; banned_until gains one probe of ban_lifts for each ban
+-- Cost at a busy instance's scale: warn_points (through live_infractions, which it inlines) gains one probe of warn_reliefs (by infraction) for each live infraction, and a character's bar holds a handful of them; banned_until gains one probe of ban_lifts for each ban
 -- of the character. A heart reads the character's infractions through acts_infractions and writes at most as many rows as it has live infractions; an unban writes one row for each running ban.
 
 -- -------------------------------------------------------------------------------------------------------- the catalog ----
@@ -659,14 +659,24 @@ $$;
 revoke execute on function card_relief(uuid) from public, anon;
 grant execute on function card_relief(uuid) to authenticated, service_role;
 
--- warn_points (0104), each infraction counting what is left of it after an appeal (infraction_relief) and after the cards' relief (card_relief), never below zero; everything else as 0104 wrote it.
-create or replace function warn_points(who uuid) returns integer
-language sql stable security definer set search_path = public, pg_temp as $$
-  select coalesce(sum(greatest(0, (i.payload ->> 'points')::integer - infraction_relief(i.id) - card_relief(i.id))), 0)::integer
-  from acts i
+-- The infractions a character's bar counts now, each with what is left of it after an appeal (infraction_relief) and after the cards' relief (card_relief), never below zero: not expired, and landed after the character's last
+-- ban. warn_points sums it and a heart's walk in place_cast takes from it, oldest first, so the two read one predicate and cannot drift apart. A plain SQL function with no `set` clause, so a caller inlines it and
+-- warn_points' plan is the one it had (acts_infractions by the character, then acts_bans for its last ban); it is the owner's alone to call (revoked below), and it runs with its caller's privileges and search_path.
+create function live_infractions(who uuid) returns table (id uuid, created_at timestamptz, points integer, left_over integer)
+language sql stable as $$
+  select i.id, i.created_at, (i.payload ->> 'points')::integer,
+         greatest(0, (i.payload ->> 'points')::integer - public.infraction_relief(i.id) - public.card_relief(i.id))
+  from public.acts i
   where i.kind = 'infraction' and i.payload ->> 'character' = who::text
     and (i.payload ->> 'expires_at')::timestamptz > now()
-    and i.created_at > coalesce((select max(b.created_at) from acts b where b.kind = 'ban' and b.payload ->> 'character' = who::text), '-infinity'::timestamptz)
+    and i.created_at > coalesce((select max(b.created_at) from public.acts b where b.kind = 'ban' and b.payload ->> 'character' = who::text), '-infinity'::timestamptz)
+$$;
+revoke execute on function live_infractions(uuid) from public, anon, authenticated, service_role;
+
+-- warn_points (0104), the sum of what is left of each live infraction (live_infractions); everything else as 0104 wrote it.
+create or replace function warn_points(who uuid) returns integer
+language sql stable security definer set search_path = public, pg_temp as $$
+  select coalesce(sum(l.left_over), 0)::integer from live_infractions(who) l
 $$;
 
 -- When a ban ends: its own end, an appeal's ruling on it read in place of that (the newest ruling that names an end; overturned: it ended when the ruling landed, reduced or increased: the end the ruling names),
@@ -801,11 +811,10 @@ declare
   rode boolean := false;
   is_instant boolean;
   is_relief boolean;
-  total integer;
+  lightest integer;
   took integer;
-  remaining integer;
+  relief_rows jsonb;
   lifts jsonb;
-  inf record;
 begin
   select c.staff is not null into staff_caster from characters c where c.id = caster;
   if staff_caster is null then raise exception 'there is no such character' using errcode = 'P0002'; end if;
@@ -971,10 +980,18 @@ begin
     -- A relief or an unban reads the character's public bar or bans with its row held (the lock infract takes, so a filing and a heart on one character go one after the other), and is
     -- refused before anything is spent or written, in the same words for every caller (a bar and a ban are public: warn_points and banned_until are on every postbit).
     if is_relief then
-      total := warn_points(target);
-      if total = 0 then raise exception 'this character''s warn bar is empty' using hint = 'kayfabb.refusal', errcode = '55000'; end if;
-      -- The lightest band is the least of the three band values the settings hold; a bar with fewer points than the card takes gives what it has.
-      took := least(case when kind_of.discipline ->> 'points' = 'all' then total else (select min(v::integer) from jsonb_each_text(setting('warnBar') -> 'bands') b(k, v)) end, total);
+      -- The lightest band is the least of the three band values the settings hold; a bar with fewer points than the card takes gives what it has. The walk is read once, in one statement: the live infractions
+      -- (live_infractions, the predicate warn_points sums), oldest first, each giving what is left on it until the card has taken what it says. `took` is the sum of those rows and the rows are what is
+      -- written below, so the Act's words and its relief rows cannot disagree (an appeal's ruling takes no lock on the character and may land between two reads).
+      lightest := (select min(v::integer) from jsonb_each_text(setting('warnBar') -> 'bands') b(k, v));
+      select jsonb_agg(jsonb_build_object('infraction', w.id, 'points', w.pts) order by w.created_at, w.id), coalesce(sum(w.pts), 0)::integer into relief_rows, took
+      from (
+        select l.id, l.created_at,
+               least(l.left_over, greatest(0, least(case when kind_of.discipline ->> 'points' = 'all' then sum(l.left_over) over () else lightest end, sum(l.left_over) over ())
+                                                    - (sum(l.left_over) over (order by l.created_at, l.id) - l.left_over))) as pts
+        from live_infractions(target) l where l.left_over > 0
+      ) w where w.pts > 0;
+      if took = 0 then raise exception 'this character''s warn bar is empty' using hint = 'kayfabb.refusal', errcode = '55000'; end if;
     elsif is_instant then
       -- Every ban running on the character, by the end each has now: a late filing can lay a second.
       select jsonb_agg(jsonb_build_object('ban', x.id, 'until', x.ends) order by x.created_at, x.id) into lifts
@@ -1027,22 +1044,9 @@ begin
             case when reach = 'board' then target end,
             case when reach = 'thread' and kind_of.pins then (select t.board from threads t where t.id = target) end, ends);
   end if;
-  -- What a relief took, and what an unban lifted, as rows beside the play (the play's own Act is never changed): a relief walks the character's live infractions (not expired, after its last ban, the ones
-  -- warn_points counts), oldest first, and takes from each what is left on it until it has taken what it said; an unban lifts each ban it found. The character's row is held, so nothing moved since the read above.
+  -- What a relief took, and what an unban lifted, as rows beside the play (the play's own Act is never changed): the rows the walk above gave, the ones `took` is the sum of; an unban lifts each ban it found.
   if is_relief then
-    remaining := took;
-    for inf in
-      select i.id, greatest(0, (i.payload ->> 'points')::integer - infraction_relief(i.id) - card_relief(i.id)) as left_over from acts i
-      where i.kind = 'infraction' and i.payload ->> 'character' = target::text and (i.payload ->> 'expires_at')::timestamptz > now()
-        and i.created_at > coalesce((select max(b.created_at) from acts b where b.kind = 'ban' and b.payload ->> 'character' = target::text), '-infinity'::timestamptz)
-      order by i.created_at, i.id
-    loop
-      exit when remaining <= 0;
-      if inf.left_over > 0 then
-        insert into warn_reliefs (play, infraction, points) values (written, inf.id, least(inf.left_over, remaining));
-        remaining := remaining - least(inf.left_over, remaining);
-      end if;
-    end loop;
+    insert into warn_reliefs (play, infraction, points) select written, (e ->> 'infraction')::uuid, (e ->> 'points')::integer from jsonb_array_elements(relief_rows) e;
   elsif is_instant then
     insert into ban_lifts (play, ban) select written, (e ->> 'ban')::uuid from jsonb_array_elements(lifts) e;
   end if;
@@ -1066,7 +1070,8 @@ end $function$;
 --   my_bans          gains lifted_at and lifted_card: when the first lift of it whose play an admin has not ended landed, and the key of that card; null where no card acted (the same play ban_ends reads).
 --   log_page         carries the four, whole from 0340 (its inf and bn reads list their columns, so the new ones are named); nothing else in it changes.
 -- Both views stay the caller's own characters' (c.owner = auth.uid()): the rows add nothing about anyone else, and the card's key and time are on its public play. The grants stay as they were.
--- Ways out: reads only, nothing to leave. Cost: one probe of ban_lifts by ban for each ban a page shows (at most 200), and card_relief's one probe of warn_reliefs for each infraction (at most 200).
+-- Ways out: reads only, nothing to leave. Cost: the lift lateral in my_bans runs once for each ban the caller owns, before the sort and the limit (a player's bans are few), each one probe of ban_lifts by ban; card_relief's
+-- one probe of warn_reliefs runs once for each infraction the caller owns, likewise (a bar holds a handful, and a player's infractions across seasons are few).
 
 -- my_infractions (0111), whole from its latest definition with card_relief and fall_play last.
 create or replace view my_infractions as

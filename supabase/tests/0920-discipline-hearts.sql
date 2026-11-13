@@ -24,7 +24,7 @@ declare
   ua uuid := gen_random_uuid(); uc uuid := gen_random_uuid();
   caster uuid := gen_random_uuid(); target uuid := gen_random_uuid(); t uuid := gen_random_uuid();
   p1 uuid := gen_random_uuid(); p2 uuid := gen_random_uuid();
-  said text[];
+  said text[]; held text; why text;
 begin
   perform tests.commit(format($sql$
     insert into settings (key, value) values ('warnBar', '{"size": 10, "bands": {"minor": 2, "moderate": 4, "severe": 7}, "decay": {"unit": "day", "count": 14}, "banDays": [1, 3, 7]}') on conflict (key) do nothing;
@@ -52,6 +52,24 @@ begin
   if (select coalesce(sum(points), 0) from warn_reliefs where infraction in (select id from acts where kind = 'infraction' and payload ->> 'character' = target::text)) is distinct from 2::bigint then
     raise exception 'the heart took 2 once';
   end if;
+  -- The lock itself, deterministically: another session holds the target's row (as infract does), and a heart waits on it rather than reading the bar past it. 55P03 is the lock timeout.
+  insert into card_ledger (account, card, kind, price) values (ua, 't-relief-one', 'bought', 0);
+  held := current_setting('lock_timeout');
+  perform extensions.dblink_connect('dh_holder', current_setting('kayfabb.scratch_url'));
+  begin
+    perform extensions.dblink_exec('dh_holder', 'begin');
+    perform extensions.dblink_exec('dh_holder', format('do $h$ begin perform 1 from characters where id = %L for no key update; end $h$', target));
+    perform set_config('lock_timeout', '200ms', true);
+    why := pg_temp.refusal(format('select play_card(%L, %L, %L, %L, %L, 0, %L, %L, %L)', ua, 't-relief-one', caster, target, '{}', '', 'character', p1));
+    perform set_config('lock_timeout', held, true);
+    perform extensions.dblink_exec('dh_holder', 'rollback');
+  exception when others then
+    perform extensions.dblink_disconnect('dh_holder');
+    raise;
+  end;
+  perform extensions.dblink_disconnect('dh_holder');
+  if why is null or why not like '55P03:%' then raise exception 'a heart waits on the target''s row lock, said %', why; end if;
+  if warn_points(target) is distinct from 4 then raise exception 'the timed-out heart took nothing: bar %', warn_points(target); end if;
 end $$;
 
 -- ---- Fixtures for the rest: the bar's numbers, a staff character, and helpers ----
@@ -305,6 +323,27 @@ begin
   if card_relief(is_) is distinct from 3 or card_relief(im) is distinct from 2 or warn_points(c) is distinct from 0 or (pl -> 'payload' ->> 'took')::integer is distinct from 3 then
     raise exception 'an infraction gives only what is left, and the bar is never below zero: %, %, bar %', card_relief(is_), card_relief(im), warn_points(c);
   end if;
+end $$;
+
+-- A ruling that lands after a heart took everything from an infraction: the infraction's left-over is 0 and the ruling would take 4 more; the bar clamps at zero and never goes below it
+-- (a severe 7, t-relief-all takes 7, then an appeal reduces it by 4: 7 - 4 - 7 is -4 for that infraction, and the bar says 0).
+do $$
+declare
+  t uuid := tests.thread('Dh clamp');
+  caster uuid := pg_temp.player('r5-caster');
+  c uuid := pg_temp.player('r5-target');
+  sev jsonb := pg_temp.inf(c, t, 'severe'); mnr jsonb := pg_temp.inf(c, t, 'minor');
+  is_ uuid := (sev ->> 'infraction')::uuid;
+  pl jsonb;
+begin
+  perform pg_temp.hand(caster, 't-relief-all', 1);
+  pl := pg_temp.heart(caster, 't-relief-all', c);
+  if warn_points(c) is distinct from 0 or card_relief(is_) is distinct from 7 then raise exception 'the heart took all 9: bar %, relief %', warn_points(c), card_relief(is_); end if;
+  perform pg_temp.ruled(is_, c, 'reduced', -4);
+  if warn_points(c) is distinct from 0 then raise exception 'an infraction a heart emptied counts zero, not 7 - 4 - 7: %', warn_points(c); end if;
+  -- Another infraction after it still counts in full: the clamp is per infraction, not on the sum.
+  perform pg_temp.inf(c, t, 'minor');
+  if warn_points(c) is distinct from 2 then raise exception 'the clamp is per infraction: a later minor counts 2, got %', warn_points(c); end if;
 end $$;
 
 do $$
@@ -572,4 +611,19 @@ begin
   why := pg_temp.refusal('select count(*) from ban_lifts');
   if why is null then raise exception 'a player reads ban_lifts'; end if;
   perform tests.unbecome();
+end $$;
+
+-- ---- 9. A heart's words and its rows are one read: payload `took` is the sum of its warn_reliefs rows, for every relief play this file made (the race's, the splits, the empties, the ended) ----
+do $$
+declare
+  n integer; bad text;
+begin
+  select count(*), string_agg(a.id::text, ', ') filter (where (a.payload ->> 'took')::integer is distinct from coalesce((select sum(w.points) from warn_reliefs w where w.play = a.id), 0)) into n, bad
+  from acts a where a.kind = 'card' and a.payload ? 'took';
+  if n < 8 then raise exception 'the world holds the relief plays this check reads: %', n; end if;
+  if bad is not null then raise exception 'a heart''s took is not the sum of its relief rows: %', bad; end if;
+  -- And the walk's predicate is warn_points': for every character of this file, the bar is what live_infractions leaves.
+  select string_agg(c.id::text, ', ') into bad from characters c
+  where warn_points(c.id) is distinct from (select coalesce(sum(l.left_over), 0)::integer from live_infractions(c.id) l);
+  if bad is not null then raise exception 'warn_points and the walk read different infractions: %', bad; end if;
 end $$;

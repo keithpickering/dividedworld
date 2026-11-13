@@ -3,7 +3,8 @@
 -- 1. my_infractions gains card_relief (what the cards took off an infraction, 0 where none) and fall_play (the play that took a fall, null until section 3 writes one), as its last columns.
 -- 2. my_bans gains lifted_at and lifted_card (when and by which card the first live lift ended the ban; both null where no card acted, and where an admin has ended the play).
 -- 3. log_page carries the four, for the caller's own characters only: a second player's page holds none of the first's rows.
--- The cards are this file's own (t-relief-one, t-unban), never an instance's.
+-- 4. An admin's end of the lifting play (reverse_card) takes the lift out again: lifted_at and lifted_card null, until the ban's own end; a second Unban shows the second play.
+-- The cards are this file's own (t-relief-one, t-unban, t-unban-2), never an instance's.
 
 create function pg_temp.refusal(stmt text) returns text language plpgsql as $$
 begin
@@ -17,7 +18,8 @@ insert into settings (key, value) values ('warnBar', '{"size": 10, "bands": {"mi
 insert into characters (name, staff, staff_kind, debuted_at) values ('Dr Mod', 'dr-mod', 'persona', now()) on conflict do nothing;
 insert into card_kinds (key, name, alignment, rarity, play, reaches, discipline) values
   ('t-relief-one', 'Test Relief One', 'sweet', 'uncommon', 'cast', '{character}', '{"kind": "relief", "points": "lightestBand"}'),
-  ('t-unban', 'Test Unban', 'sweet', 'legendary', 'cast', '{character}', '{"kind": "unban"}')
+  ('t-unban', 'Test Unban', 'sweet', 'legendary', 'cast', '{character}', '{"kind": "unban"}'),
+  ('t-unban-2', 'Test Unban Two', 'sweet', 'legendary', 'cast', '{character}', '{"kind": "unban"}')
   on conflict (key) do nothing;
 
 create function pg_temp.owner(c uuid) returns uuid language sql as $$ select owner from characters where id = c $$;
@@ -52,7 +54,7 @@ declare
   stranger uuid := pg_temp.player('stranger');
   p1 uuid := pg_temp.say(c, t, 'First post.');
   p2 uuid := pg_temp.say(c, t, 'Second post.');
-  ia uuid; ib uuid; the_ban uuid; pl1 uuid; pl2 uuid; unbanned uuid; row jsonb; page jsonb; hit jsonb;
+  ia uuid; ib uuid; the_ban uuid; pl1 uuid; pl2 uuid; unbanned uuid; unbanned2 uuid; admin_acc uuid; row jsonb; page jsonb; hit jsonb;
 begin
   perform pg_temp.hand(caster, 't-relief-one', 2);
   ia := (infract(c, 'moderate', p1, 'dr-mod') ->> 'infraction')::uuid;
@@ -92,6 +94,29 @@ begin
   page := log_page(null);
   select x into row from jsonb_array_elements(page -> 'sources' -> 'bans') x where x ->> 'ban' = the_ban::text;
   if (row ->> 'lifted_at')::timestamptz is distinct from (select created_at from acts where id = unbanned) or row ->> 'lifted_card' is distinct from 't-unban' then raise exception 'log_page carries the lift: %', row; end if;
+  perform tests.unbecome();
+
+  -- ---- 2b. An admin's end of the lifting play: the ban is not lifted again (both lift columns null, until is the ban's own end); a second Unban shows the second play ----
+  admin_acc := tests.account('dr-admin');
+  insert into admins (account) values (admin_acc);
+  perform tests.become(admin_acc);
+  perform reverse_card(unbanned);
+  perform tests.unbecome();
+  perform tests.become(pg_temp.owner(c));
+  select to_jsonb(b) into row from my_bans b where b.ban = the_ban;
+  if row -> 'lifted_at' is distinct from 'null'::jsonb or row -> 'lifted_card' is distinct from 'null'::jsonb then raise exception 'an admin''s end of the Unban leaves no lift on the ban: %', row; end if;
+  if (row ->> 'until')::timestamptz is distinct from (row ->> 'own_until')::timestamptz or (row ->> 'until')::timestamptz <= now() then raise exception 'the ban ends at its own end again: %', row; end if;
+  page := log_page(null);
+  select x into row from jsonb_array_elements(page -> 'sources' -> 'bans') x where x ->> 'ban' = the_ban::text;
+  if row -> 'lifted_at' is distinct from 'null'::jsonb or row -> 'lifted_card' is distinct from 'null'::jsonb then raise exception 'log_page carries no lift after the admin''s end: %', row; end if;
+  perform tests.unbecome();
+  -- A second Unban (another card, so the two plays can be told apart in one transaction) is the lift the ban shows now.
+  perform pg_temp.hand(caster, 't-unban-2', 1);
+  unbanned2 := (pg_temp.heart(caster, 't-unban-2', c) ->> 'id')::uuid;
+  perform tests.become(pg_temp.owner(c));
+  select to_jsonb(b) into row from my_bans b where b.ban = the_ban;
+  if row ->> 'lifted_card' is distinct from 't-unban-2' or (row ->> 'lifted_at')::timestamptz is distinct from (select created_at from acts where id = unbanned2)
+     or (row ->> 'until')::timestamptz is distinct from (select created_at from acts where id = unbanned2) then raise exception 'the second Unban is the lift the ban shows: %', row; end if;
   perform tests.unbecome();
 
   -- ---- 3. A second player's page holds none of it ----
