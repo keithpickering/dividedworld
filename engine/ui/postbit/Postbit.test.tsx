@@ -598,3 +598,37 @@ describe('trophies on the postbit', () => {
     expect(bad, describeViolations(bad)).toEqual([]);
   });
 });
+
+describe('the side by side postbit, in the stylesheet: rank under the avatar, the group under the rank, a small rank, a bare image frame', () => {
+  const css = readFileSync('engine/ui/postbit/postbit.css', 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '');
+  const wide = css.slice(css.indexOf('@media not all and (max-width: 40em)'), css.indexOf('@media (max-width: 40em)'));
+  /* The `order` of the first rule in `block` whose selector ends with `selector`, or NaN. */
+  const orderIn = (block: string, selector: string) => {
+    const hit = [...block.matchAll(/([^{}]+)\{([^{}]*)\}/gu)].find((m) => m[1]!.split(',').some((x) => x.trim().endsWith(selector)));
+    return Number(/order:\s*(-?\d+)/u.exec(hit?.[2] ?? '')?.[1] ?? 'NaN');
+  };
+  const avatar = orderIn(css, '.kb-postbit[data-kb-postbit="side"] .kb-postbit-avatar');
+
+  test('the rank sits directly under the avatar, then the group directly under the rank', () => {
+    expect(avatar).toBe(1);
+    expect(orderIn(wide, '.kb-postbit[data-kb-postbit="side"] .kb-postbit-rank')).toBe(avatar + 1);
+    expect(orderIn(wide, '.kb-postbit[data-kb-postbit="side"] .kb-postbit-group')).toBe(avatar + 2);
+  });
+
+  test('the warn meter, the counts and the revealed class follow the group', () => {
+    for (const sel of ['.kb-postbit-warn', '.kb-postbit-counts', '.kb-postbit-class']) {
+      expect(orderIn(css, `.kb-postbit[data-kb-postbit="side"] ${sel}`), sel).toBeGreaterThan(avatar + 2);
+    }
+  });
+
+  test('the rank name is set in the small size', () => {
+    const rank = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/gu)].filter((m) => m[1]!.split(',').some((x) => x.trim() === '.kb-postbit-rank')).map((m) => m[2]!).join('');
+    expect(rank).toMatch(/font-size:\s*var\(--kb-size-small\)\s*;/u);
+  });
+
+  test('an image in the avatar slot draws no frame, and a placeholder keeps the frame', () => {
+    const frameless = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/gu)].filter((m) => m[1]!.includes('.kb-postbit-avatar:has(')).map((m) => m[2]!).join('');
+    expect(frameless).toMatch(/border:\s*(?:0|none)\s*;/u);
+    expect(css).toMatch(/\.kb-postbit-avatar\s*\{[^}]*border:\s*1px solid var\(--kb-rule\)/u);
+  });
+});
