@@ -169,14 +169,31 @@ describe('the hand on the Phone board', () => {
     } finally { restore(); }
   });
 
-  test.each(['pointerCancel', 'pointerLeave'] as const)('a press that ends in %s leaves nothing behind: a later click with detail 1 and no pointerdown is judged by the current middle', async (ending) => {
+  test('a tap keeps its press through pointerleave: a touch pointer leaves the card when the finger lifts, before the click, and the side card is still not armed', async () => {
     const restore = stubLayout(104);
     try {
       const onPick = vi.fn();
       hand([{ card: 'stick', held: 1 }, { card: 'whoops', held: 1 }], { onPick });
       const ul = document.querySelector<HTMLElement>('ul.kb-hand-cards')!;
       fireEvent.pointerDown(button('whoops'));
-      fireEvent[ending](button('whoops'));
+      fireEvent.pointerUp(button('whoops'));
+      fireEvent.pointerLeave(button('whoops'));
+      ul.scrollLeft = 66;
+      fireEvent.scroll(ul);
+      await vi.waitFor(() => expect(document.querySelector('li[data-kb-middle]')).toHaveAttribute('data-kb-card', 'whoops'));
+      fireEvent.click(button('whoops'), { detail: 1 });
+      expect(onPick).not.toHaveBeenCalled();
+    } finally { restore(); }
+  });
+
+  test('a press that is canceled leaves nothing behind: a later click with detail 1 and no pointerdown is judged by the current middle', async () => {
+    const restore = stubLayout(104);
+    try {
+      const onPick = vi.fn();
+      hand([{ card: 'stick', held: 1 }, { card: 'whoops', held: 1 }], { onPick });
+      const ul = document.querySelector<HTMLElement>('ul.kb-hand-cards')!;
+      fireEvent.pointerDown(button('whoops'));
+      fireEvent.pointerCancel(button('whoops'));
       ul.scrollLeft = 66;
       fireEvent.scroll(ul);
       await vi.waitFor(() => expect(document.querySelector('li[data-kb-middle]')).toHaveAttribute('data-kb-card', 'whoops'));

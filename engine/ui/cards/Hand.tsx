@@ -249,9 +249,8 @@ export function Hand({ held, faces, armed = null, playing = null, onPick, onClos
                   aria-pressed={onPick ? isArmed : undefined}
                   onFocus={main ? undefined : () => center(face.key)}
                   onPointerDown={main ? undefined : () => { pressedMiddle.current = middleKey ?? null; }}
-                  /* A press that is cancelled or leaves the card has no click of its own to clear this; a later click then reads the current middle. */
+                  /* A canceled press (a swipe takes it) has no click of its own to clear this. A pointer leaving the card must not clear it: a touch pointer leaves when the finger lifts, before the tap's click. */
                   onPointerCancel={main ? undefined : () => { pressedMiddle.current = null; }}
-                  onPointerLeave={main ? undefined : () => { pressedMiddle.current = null; }}
                   onClick={(e) => {
                     /* On the phone a pointer press on a side card only brings it to the middle, judged by what stood in the middle when the press began (its focus moves the row before the click); a keyboard's or a reader's click (no pointer) acts. */
                     if (!main && e.detail !== 0) {
