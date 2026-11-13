@@ -28,7 +28,9 @@
  * reader, whose focus has already brought the card there), is the caller's to answer, as on the Main board. Every
  * card's rules in plain words (`CardUi.describe`) are its button's description, and the one in the middle is also
  * written, in a sentence (`CardUi.summary`), in the sheet's line. Left and Right focus the neighbor, Home and End the
- * ends, none wrapping; Tab is the dialog's (Hud.tsx).
+ * ends, none wrapping; Tab is the dialog's (Hud.tsx). The HUD keeps the Hand mounted while its drawer is hidden, where nothing has a
+ * layout, so the row is measured, the opening card (`opening`, the armed one, else the first) put in the middle at once and the pose
+ * written each time `open` becomes true, in a layout effect of the commit that takes `hidden` off; while it is closed nothing is measured.
  *
  * A card is a button, and pressing it is the caller's to answer (engine/ui/cards/play.tsx): `armed` is
  * the key of the card that waits to be played, and `onPick` is what pressing a card does. An armed
@@ -84,11 +86,13 @@ export interface HandProps {
   readonly vendingHref: string;
   /** On the Phone board: true under Off, where bringing a card to the middle is at once. */
   readonly instant?: boolean;
-  /** On the Phone board: the key of the card to stand in the middle when the sheet opens (the armed one); none is the first card. */
+  /** On the Phone board: the key of the card to stand in the middle when the sheet opens (the armed one); none is the first card. Read at the moment `open` becomes true. */
   readonly opening?: string | null;
+  /** Whether the sheet is shown. The HUD keeps the Hand mounted while its drawer is hidden, where nothing has a layout, so the phone measures, centers and poses when this becomes true. A Hand rendered alone is open. */
+  readonly open?: boolean;
 }
 
-export function Hand({ held, faces, armed = null, playing = null, onPick, onClose, vendingHref, instant = false, opening = null }: HandProps) {
+export function Hand({ held, faces, armed = null, playing = null, onPick, onClose, vendingHref, instant = false, opening = null, open = true }: HandProps) {
   const idBase = useId();
   /* The Main board's layout stands full-size cards on the arc; the Phone board's sheet holds smaller ones in a row. */
   const { board } = useBoard();
@@ -108,8 +112,8 @@ export function Hand({ held, faces, armed = null, playing = null, onPick, onClos
   const middleKey = arc[middleAt]?.face.key;
   const inView = faces.find((f) => f.key === (main ? armed ?? viewed ?? arc[0]?.face.key : middleKey));
 
-  /* The phone's pose. `centers` is each card's center in the row's own coordinates, measured on mount, on resize and when
-     the cards change (never from a transformed box); `posed` is the range of cards that has a live pose. */
+  /* The phone's pose. `centers` is each card's center in the row's own coordinates, measured when the sheet opens, on resize and when
+     the cards change while it is open (never from a transformed box, and never while it is hidden, where every box is 0); `posed` is the range of cards that has a live pose. */
   const centers = useRef<readonly number[]>([]);
   const posed = useRef<{ lo: number; hi: number } | null>(null);
   const frame = useRef(0);
@@ -162,21 +166,27 @@ export function Hand({ held, faces, armed = null, playing = null, onPick, onClos
     ul.scrollTo({ left: li.offsetLeft + li.offsetWidth / 2 - ul.clientWidth / 2, behavior: now || instant ? 'instant' : 'smooth' });
   };
   const cardsSignature = arc.map((c) => c.face.key).join('|');
-  /* Measure and pose when the sheet mounts and whenever the cards change. */
+  /* Measure and pose when the cards change while the sheet is open (closed, it has no layout; the opening below does it). */
   useLayoutEffect(() => {
-    if (main || shown === 0) return;
+    if (main || !open || shown === 0) return;
     posed.current = null;
     measure();
     pose();
   }, [main, cardsSignature]);
-  /* The opening card stands in the middle once, when the sheet mounts open; putting it back later leaves the row where it is. */
+  /* Each time the sheet opens, with the layout the same commit's removal of `hidden` gave it: measure, put the opening card (read now; none is the first card)
+     in the middle at once, then pose. A change of the opening or of the cards while it stays open leaves the row where it is. */
   useLayoutEffect(() => {
-    if (main || shown === 0) return;
-    if (opening && cardsOf().some((li) => li.dataset.kbCard === opening)) { center(opening, true); pose(); }
-    // Mount only: the opening is read once.
-  }, []);
+    if (main || !open || shown === 0) return;
+    posed.current = null;
+    measure();
+    const key = opening && arc.some((c) => c.face.key === opening) ? opening : arc[0]!.face.key;
+    center(key, true);
+    pose();
+    // The opening and the cards are read at the open, not followed.
+  }, [main, open]);
+  /* The row is measured again when the window resizes while the sheet is open. */
   useLayoutEffect(() => {
-    if (main) return;
+    if (main || !open) return;
     const onResize = () => { measure(); posed.current = null; queue(); };
     window.addEventListener('resize', onResize);
     return () => {
@@ -184,7 +194,7 @@ export function Hand({ held, faces, armed = null, playing = null, onPick, onClos
       if (frame.current) (globalThis.cancelAnimationFrame ?? globalThis.clearTimeout)(frame.current);
       frame.current = 0;
     };
-  }, [main]);
+  }, [main, open]);
 
   /* The keys: arrows and Home/End move along the cards and stop at the ends. On the Main board Tab and Shift+Tab wrap at the ends;
      on the phone they are the dialog's own. */

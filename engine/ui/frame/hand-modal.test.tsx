@@ -1,7 +1,8 @@
 /**
  * The hand on the Main board is a modal (the hand-arc design, sections 2 to 4): while it is open the rest of the HUD is
  * inert and faded, a press outside the cards closes it and acts on nothing beneath, opening puts the keyboard on a card,
- * arming a card closes it and leaves the card's peek over the hand button. The Phone board's sheet is none of that.
+ * arming a card closes it and leaves the card's peek over the hand button. The Phone board's sheet is the same modal, with no peek (a post's + mark and the
+ * hand button's words say what is armed there), and the Phone board's tests below hold it to it.
  * The Frame here is the real one over a fake API, as Frame.test.tsx draws it.
  */
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -25,8 +26,8 @@ vi.mock('motion/react', async (importOriginal) => ({
   animate: (el: HTMLElement, frames: Record<string, unknown[]>) => {
     let settle: () => void = () => {};
     const p = new Promise<void>((r) => { settle = r; });
-    /* Motion's stop() commits the pose the run had reached; a mid-gather card is part way to the hand button and part way faded. */
-    const run = { el, frames, settle, stop: vi.fn(() => { el.style.opacity = '0.4'; el.style.transform = 'translateX(30px) translateY(-20px) scale(0.8)'; }) };
+    /* Motion's stop() commits the pose the run had reached; a mid-gather card is part way to the hand button and part way faded, and a sheet is part way blurred or cut. */
+    const run = { el, frames, settle, stop: vi.fn(() => { el.style.opacity = '0.4'; el.style.transform = 'translateX(30px) translateY(-20px) scale(0.8)'; el.style.filter = 'blur(6px)'; el.style.clipPath = 'inset(0 0 40% 0)'; }) };
     runs.push(run);
     return Object.assign(p, { stop: run.stop });
   },
@@ -375,16 +376,66 @@ describe('the hand on the Phone board', () => {
   /* A press with no pointer, as a keyboard or a reader makes it: it acts on the card whether or not it is in the middle. */
   const activate = (el: HTMLElement) => fireEvent.click(el, { detail: 0 });
 
-  test('is a modal: a dialog with the HUD marked, the plate, the aura, Alerts and Menu inert, the hand button not, and the backdrop there', async () => {
+  test('is a modal dialog: named Your hand, aria-modal, the HUD marked, and the backdrop there', async () => {
     phone();
     setup();
     await userEvent.click(await handButton());
     expect(dialog()).toHaveAttribute('aria-modal', 'true');
+    expect(document.querySelector('.kb-hud')).toHaveAttribute('data-kb-hand-open');
+    expect(document.querySelector('.kb-hand-backdrop')).not.toBeNull();
+  });
+
+  test('the plate, the aura, Alerts and Menu are inert while it is open, and the hand button is not', async () => {
+    phone();
+    setup();
+    await userEvent.click(await handButton());
     const hud = document.querySelector('.kb-hud')!;
-    expect(hud).toHaveAttribute('data-kb-hand-open');
     for (const sel of ['.kb-hud-plate', '.kb-hud-aura', '.kb-hud-menu', '.kb-hud-alerts']) expect(hud.querySelector(sel), sel).toHaveAttribute('inert');
     expect(hud.querySelector('.kb-hud-hand')).not.toHaveAttribute('inert');
-    expect(document.querySelector('.kb-hand-backdrop')).not.toBeNull();
+  });
+
+  test('a press on one of the HUD\'s faded parts closes the hand through the same dismissal, focuses the hand button, and nothing stays inert', async () => {
+    const under = vi.fn();
+    phone();
+    setup(<button type="button" onClick={under}>beneath</button>);
+    const hand = await handButton();
+    await userEvent.click(hand);
+    fireEvent.pointerDown(document.querySelector('.kb-hud-plate')!, { button: 0 });
+    expect(hand).toHaveAttribute('aria-expanded', 'false');
+    expect(hand).toHaveFocus();
+    expect(document.querySelector('[inert]')).toBeNull();
+    expect(document.querySelector('.kb-hud')).not.toHaveAttribute('data-kb-hand-open');
+    /* The press's own click is swallowed once, as on a backdrop press. */
+    fireEvent.click(screen.getByRole('button', { name: 'beneath' }));
+    expect(under).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'beneath' }));
+    expect(under).toHaveBeenCalledTimes(1);
+  });
+
+  test('a close interrupted by a reopen leaves the dialog shown with the first card focused, and a last close leaves nothing inert and the focus on the hand button', async () => {
+    document.documentElement.setAttribute('data-kb-motion', 'full');
+    phone();
+    setup();
+    const hand = await handButton();
+    const drawer = document.querySelector<HTMLElement>('.kb-hand-drawer')!;
+    await userEvent.click(hand);
+    await act(async () => { for (const r of runs) r.settle(); });
+    runs.length = 0;
+    await userEvent.click(hand);
+    expect(drawer.hidden).toBe(false);
+    expect(drawer).toHaveAttribute('inert');
+    const closing = [...runs];
+    await userEvent.click(hand);
+    for (const r of closing) expect(r.stop).toHaveBeenCalledTimes(1);
+    expect(dialog()).toBeVisible();
+    expect(drawer).not.toHaveAttribute('inert');
+    expect(document.activeElement).toBe(dialog().querySelector('li.kb-hand-card > button'));
+    await userEvent.click(hand);
+    await act(async () => { for (const r of runs) r.settle(); });
+    await waitFor(() => expect(drawer.hidden).toBe(true));
+    expect(document.querySelector('[inert]')).toBeNull();
+    expect(document.querySelector('.kb-hud')).not.toHaveAttribute('data-kb-hand-open');
+    expect(hand).toHaveFocus();
   });
 
   test('a pointer press on the backdrop closes the hand and focuses the hand button, and nothing stays inert', async () => {
@@ -487,6 +538,41 @@ describe('the hand on the Phone board', () => {
     }
     expect(drawer).not.toHaveAttribute('data-kb-dealing');
     expect(drawer.hidden).toBe(true);
+  });
+
+  test('a sheet entrance stopped by motion going Off, then a close and a reopen, leaves no inline opacity, transform, filter or clip-path on the drawer', async () => {
+    document.documentElement.setAttribute('data-kb-motion', 'full');
+    phone();
+    setup();
+    const hand = await handButton();
+    const drawer = document.querySelector<HTMLElement>('.kb-hand-drawer')!;
+    await userEvent.click(hand);
+    const sheet = runs.find((r) => r.el === drawer)!;
+    expect(sheet).toBeDefined();
+    const bare = (when: string) => { for (const p of ['opacity', 'transform', 'filter', 'clip-path']) expect(drawer.style.getPropertyValue(p), `${p} ${when}`).toBe(''); };
+    /* Motion goes Off mid-entrance and the hand is closed: the stop committed the pose it had reached, and none of it is left. */
+    await act(async () => { document.documentElement.setAttribute('data-kb-motion', 'reduce'); });
+    await userEvent.click(hand);
+    expect(sheet.stop).toHaveBeenCalledTimes(1);
+    bare('after the close');
+    await userEvent.click(hand);
+    bare('after the reopen');
+  });
+
+  test('a reopen during the sheet\'s exit starts clean: nothing the stopped exit committed is left on the drawer', async () => {
+    document.documentElement.setAttribute('data-kb-motion', 'full');
+    phone();
+    setup();
+    const hand = await handButton();
+    const drawer = document.querySelector<HTMLElement>('.kb-hand-drawer')!;
+    await userEvent.click(hand);
+    await act(async () => { for (const r of runs) r.settle(); });
+    runs.length = 0;
+    await userEvent.click(hand);
+    const exit = runs.find((r) => r.el === drawer)!;
+    await userEvent.click(hand);
+    expect(exit.stop).toHaveBeenCalledTimes(1);
+    for (const p of ['opacity', 'transform', 'filter', 'clip-path']) expect(drawer.style.getPropertyValue(p), p).toBe('');
   });
 
   test('while a compose is open the hand button says Playing, and pressing it puts the card back', async () => {

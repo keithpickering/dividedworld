@@ -160,7 +160,8 @@ test('a mouse click on a side card brings it to the middle and arms nothing', as
   const sideKey = (await page.locator(CARDS).nth(1).getAttribute('data-kb-card'))!;
   const at = await centerOf(page, 1);
   await page.mouse.move(at.x, at.y);
-  await page.mouse.click(at.x, at.y, { delay: 150 });
+  /* No delay between the press and its release: a slower click has its card eased away from under the pointer by the focus the press gave it, and the click then lands on the row and never reaches the card's own handler. */
+  await page.mouse.click(at.x, at.y);
   await page.waitForTimeout(300);
   await expect(hand, 'the hand after a click on a side card').toBeVisible();
   expect(await page.locator(`${CARDS}[data-armed]`).count(), 'cards armed by the side click').toBe(0);

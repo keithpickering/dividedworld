@@ -202,19 +202,48 @@ describe('the hand on the Phone board', () => {
     } finally { restore(); }
   });
 
-  test('the opening card is centered once, when the hand mounts open; a change of cards, or of the opening, does not center it again', () => {
-    let set: (n: { held: readonly { card: string; held: number }[]; opening: string | null }) => void = () => {};
-    const Harness = () => {
-      const [s, setS] = useState<{ held: readonly { card: string; held: number }[]; opening: string | null }>({ held: [{ card: 'stick', held: 1 }, { card: 'whoops', held: 1 }], opening: 'whoops' });
-      set = setS;
-      return <Hand held={s.held} faces={[stick, whoops, face('extra', 'Extra', 'sweet')]} vendingHref="/vending" onClose={() => {}} opening={s.opening} />;
-    };
-    renderIn(buildWorld(), <Harness />);
-    expect(scrollTo.mock.calls.filter(([a]) => a.behavior === 'instant')).toHaveLength(1);
-    scrollTo.mockClear();
-    act(() => set({ held: [{ card: 'stick', held: 1 }, { card: 'whoops', held: 1 }, { card: 'extra', held: 1 }], opening: 'whoops' }));
-    act(() => set({ held: [{ card: 'extra', held: 1 }, { card: 'stick', held: 1 }, { card: 'whoops', held: 1 }], opening: null }));
-    expect(scrollTo).not.toHaveBeenCalled();
+  test('mounted closed nothing is centered; on open the opening card is centered at once and is the middle; a change of cards or of the opening while open centers nothing; a close and reopen centers the then-current opening', () => {
+    const restore = stubLayout(104);
+    scrollTo.mockImplementation(function (this: HTMLElement, o: { left: number }) { this.scrollLeft = o.left; });
+    try {
+      type S = { open: boolean; held: readonly { card: string; held: number }[]; opening: string | null };
+      let set: (n: (s: S) => S) => void = () => {};
+      const two = [{ card: 'stick', held: 1 }, { card: 'whoops', held: 1 }];
+      const Harness = () => {
+        const [s, setS] = useState<S>({ open: false, held: two, opening: null });
+        set = setS;
+        return <Hand held={s.held} faces={[stick, whoops, face('extra', 'Extra', 'sweet')]} vendingHref="/vending" onClose={() => {}} open={s.open} opening={s.opening} />;
+      };
+      renderIn(buildWorld(), <Harness />);
+      const ul = () => document.querySelector<HTMLElement>('ul.kb-hand-cards')!;
+      const middleKey = () => document.querySelector('li[data-kb-middle]')?.getAttribute('data-kb-card');
+      const instantCalls = () => scrollTo.mock.calls.filter(([a]) => a.behavior === 'instant');
+      /* Closed: the sheet is hidden, so nothing can be measured or centered, and no pose is written. */
+      act(() => set((s) => ({ ...s, opening: 'whoops' })));
+      expect(scrollTo).not.toHaveBeenCalled();
+      expect(ul().querySelector('[style*="--kb-swipe-y"]')).toBeNull();
+      /* Open: the opening read now, centered instantly, and the middle is right. */
+      act(() => set((s) => ({ ...s, open: true })));
+      expect(instantCalls()).toHaveLength(1);
+      expect(scrollTo).toHaveBeenCalledTimes(1);
+      expect(scrollTo.mock.calls[0]![0].left).toBe(66);
+      expect(middleKey()).toBe('whoops');
+      expect(ul().querySelector('li[data-kb-card="stick"]')!.getAttribute('style')).toContain('--kb-swipe-y');
+      /* Open: a change of cards, or of the opening, does not center again. */
+      scrollTo.mockClear();
+      act(() => set((s) => ({ ...s, held: [...two, { card: 'extra', held: 1 }] })));
+      act(() => set((s) => ({ ...s, opening: null })));
+      expect(scrollTo).not.toHaveBeenCalled();
+      /* Closed and open again: the opening of that moment. */
+      act(() => set((s) => ({ ...s, open: false })));
+      act(() => set((s) => ({ ...s, opening: 'extra' })));
+      expect(scrollTo).not.toHaveBeenCalled();
+      act(() => set((s) => ({ ...s, open: true })));
+      const at = [...ul().children].findIndex((li) => li.getAttribute('data-kb-card') === 'extra');
+      expect(instantCalls()).toHaveLength(1);
+      expect(scrollTo.mock.calls[0]![0].left).toBe(at * 66);
+      expect(middleKey()).toBe('extra');
+    } finally { scrollTo.mockReset(); restore(); }
   });
 
   test('under Off the card comes to the middle at once', () => {

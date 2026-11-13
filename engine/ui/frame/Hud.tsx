@@ -44,6 +44,9 @@
  * draws no peek, since a post's + mark stands there, and its hand button carries the armed card's name instead. Pressing
  * the armed card in the hand puts it back and leaves the hand open, on both.
  *
+ * The Hand stays mounted while the drawer is hidden (`hidden` is the drawer's own, and nothing in it has a layout), so the drawer passes it `open`: the Phone board's
+ * row is measured, centered on the armed card and posed in a layout effect of the commit that takes `hidden` off, which is when the drawer first has a layout.
+ *
  * The hand opens calmly (the phone-hand design, section 1): a card lifts for a keyboard's focus, a hover or the arming, and never for the focus the
  * script gives the first card after a mouse press (frame.css, the lift). Hover lifts nothing from the opening until the pointer moves more than 4px
  * from the press that opened the hand (the drawer carries data-kb-hover-waits), since the last card lands under that pointer; and nothing lifts while
@@ -98,6 +101,10 @@ const TAB = 24;
 const TAB_OUT = 20;
 /** The room the picker's own chevron takes at the name's right, in the phone's px (the name is drawn by the HUD, and stops short of it). */
 const PICKER_CHEVRON = 16;
+
+/** Everything the sheet's `overlay` preset (glass/motion.ts) can write inline on the drawer, fade, scale, blur or the Skew feel's mask and clip, and its origin: a stopped run leaves them where they stood. */
+const SHEET_INLINE = ['opacity', 'transform', 'transform-origin', 'filter', 'clip-path', 'mask-image', '-webkit-mask-image'] as const;
+const unposeSheet = (el: HTMLElement) => { for (const p of SHEET_INLINE) el.style.removeProperty(p); };
 
 /** The count as the HUD says it: nothing at none, the number to 9, "9+" at the bound. */
 export const unreadText = (n: number | null): string | null => (n === null || n <= 0 ? null : n >= ALERTS_UNREAD_BOUND ? `${ALERTS_UNREAD_BOUND - 1}+` : String(n));
@@ -391,6 +398,8 @@ export function Hud() {
     drawerRun.current = null;
     const el = drawer.current;
     el?.removeAttribute('data-kb-dealing');
+    /* Every run starts from the stylesheet: a stopped run leaves what it had written, and Motion going Off ends the runs here without a new one. */
+    if (el && !wide) unposeSheet(el);
     if (!el || !feel) { setDrawerLeaving(false); return; }
     const a = handButton.current?.getBoundingClientRect();
     const place = () => {
@@ -400,7 +409,6 @@ export function Hud() {
     /* A run that was just stopped (a reopen during the gather, or the reverse) leaves the pose it had reached written on the card, and a stopped run clears nothing: put each card back on its slot's stylesheet before measuring from it. Only `transform` and `opacity` are the deal's: the phone's pose is in `translate`, `rotate` and `scale`, which stay. */
     const all = [...el.querySelectorAll<HTMLElement>('li.kb-hand-card')];
     for (const li of all) { li.style.transition = 'none'; li.style.removeProperty('transform'); li.style.removeProperty('opacity'); }
-    if (!wide) { el.style.removeProperty('transform'); el.style.removeProperty('opacity'); }
     /* The Main board's cards all deal. The phone's row is as long as the kinds held, so only the cards within its visible width deal and the rest stay at rest: a long row deals as fast as a short one. */
     const row = !wide ? el.querySelector<HTMLElement>('ul.kb-hand-cards')?.getBoundingClientRect() : undefined;
     const cards = row && row.width > 0 ? all.filter((li) => { const r = li.getBoundingClientRect(); return r.right > row.left && r.left < row.right; }) : all;
@@ -438,8 +446,9 @@ export function Hud() {
       runs.push(() => { stop(); rest(); unpose(); });
     });
     if (!wide) {
-      if (handOpen) runs.push(playIn(el, overlayPreset(feel, place())));
-      else runs.push(playOut(el, overlayPreset(feel, place()), gone));
+      /* The sheet's own stop, like each card's, gives the committed pose back to the stylesheet. */
+      const stop = handOpen ? playIn(el, overlayPreset(feel, place())) : playOut(el, overlayPreset(feel, place()), gone);
+      runs.push(() => { stop(); unposeSheet(el); });
     }
     drawerRun.current = () => { for (const stop of runs) stop(); el.removeAttribute('data-kb-dealing'); };
   }, [handOpen, feel]);
@@ -512,6 +521,7 @@ export function Hud() {
               playing={playing}
               instant={!feel}
               opening={armed}
+              open={handOpen}
               onPick={hud ? pick : undefined}
               onClose={() => { setHandOpen(false); handButton.current?.focus(); }}
             />
