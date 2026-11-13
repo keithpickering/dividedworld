@@ -85,6 +85,8 @@ export function ConfigForm({ config, onChange, post, id, faceDown }: ConfigFormP
   const { text, links } = useMemo(() => visibleWalk(parse(body)), [body]);
   const all = useMemo(() => placesOf(text, cues, links), [text, links, cues]);
   const counts = useMemo(() => cues.map((_, i) => all.filter((p) => p.cue === i).length), [all, cues]);
+  /* A cue with no places that still occurs in the text can only be inside a link: said per cue here, not searched again on every render. */
+  const onlyInLink = useMemo(() => cues.map((cue, i) => !counts[i] && !!cue.phrase.trim() && occurrences(text, cue.phrase).length > 0), [cues, counts, text]);
 
   /* The rows as the last change left them, so two selections before a draw each see the other's work. */
   const current = useRef(rows);
@@ -167,7 +169,7 @@ export function ConfigForm({ config, onChange, post, id, faceDown }: ConfigFormP
       {rows.map(({ key, cue }, i) => {
         const bound = cue.phrase.trim() ? boundOf(cue.phrase) : undefined;
         const line = !cue.phrase.trim() ? `At least ${PHRASE.least} letters or digits, matched as whole words in any case`
-          : bound ? undefined : counts[i] ? `Cues ${places(counts[i]!)} in this post` : occurrences(text, cue.phrase).length ? 'Only inside a link here, and a Laugh Track never cues a link' : 'Not in this post\'s own words';
+          : bound ? undefined : counts[i] ? `Cues ${places(counts[i]!)} in this post` : onlyInLink[i] ? 'Only inside a link here, and a Laugh Track never cues a link' : 'Not in this post\'s own words';
         /* The note about a back is said only where a back can happen (the host says `no` where this post cannot hold one). */
         const hint = i === 0 && faceDown !== 'no'
           ? `${line === undefined ? '' : `${line}. `}A face-down Laugh Track waits for this phrase.`

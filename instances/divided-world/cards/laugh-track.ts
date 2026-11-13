@@ -16,6 +16,7 @@
  */
 import { economyOf, isLive, landsOn, ok, refuse, type CardRules, type PostTarget } from '../../../engine/rules/cards.ts';
 import { occurrences, sameWords } from '../../../engine/bbcode/phrase.ts';
+import type { Stretch } from '../../../engine/bbcode/visible.ts';
 import { PHRASE } from './autocorrect.ts';
 
 export type Sound = 'laugh' | 'cheer' | 'boo';
@@ -32,11 +33,8 @@ const characters = (s: string) => [...s].length;
 /** A cued place: where a cue's phrase is in the text, with the cue's index. */
 export interface Place { readonly start: number; readonly end: number; readonly cue: number }
 
-/** A stretch of the text that is a bare address (`PostTarget.links`): sorted, never overlapping. */
-type Link = { readonly start: number; readonly end: number };
-
 /** Whether any of the sorted, disjoint `links` touches the span, by a binary search for the first link that ends after the span starts. */
-function touchesLink(links: readonly Link[], start: number, end: number): boolean {
+function touchesLink(links: readonly Stretch[], start: number, end: number): boolean {
   let lo = 0;
   let hi = links.length;
   while (lo < hi) {
@@ -48,10 +46,10 @@ function touchesLink(links: readonly Link[], start: number, end: number): boolea
 
 /**
  * Every occurrence of each cue in the text, in the order of the text, with its cue's index; overlaps are not dropped. A place that touches a link
- * (a bare address, `links`) is: a Laugh Track never cues a link, so such a place is not counted, priced, drawn or played (#602). The matcher fuses the
+ * (a bare address, `links`) is dropped: a Laugh Track never cues a link, so such a place is not counted, priced, drawn or played (#602). The matcher fuses the
  * punctuation between letters, so only a phrase that reads the whole address, or words around it, can land on one.
  */
-export function placesOf(text: string, cues: readonly Pick<Cue, 'phrase'>[], links: readonly Link[]): Place[] {
+export function placesOf(text: string, cues: readonly Pick<Cue, 'phrase'>[], links: readonly Stretch[]): Place[] {
   const places = cues.flatMap((c, cue) => occurrences(text, c.phrase).map((o) => ({ start: o.from, end: o.to, cue }))).filter((p) => !touchesLink(links, p.start, p.end));
   return places.sort((a, b) => a.start - b.start || a.end - b.end || a.cue - b.cue);
 }

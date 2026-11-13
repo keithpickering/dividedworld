@@ -520,7 +520,7 @@ describe('Laugh Track: no cue is drawn inside a link (#602)', () => {
     expect(document.body.textContent).toContain(`Visit ${URL} and Luigi is great.`);
   });
 
-  test('the other place is a button that plays on a click, a tap and Enter, and the Lens counts one', () => {
+  test('the other place is a button that plays on a click and Enter, and the Lens counts one', () => {
     const m = mount({ body: LINKED, plays: [playOf(LINK_CUES)] });
     expect(lastView(m).state).toBe('0 of 1 cues heard');
     expect(buttons()).toHaveLength(1);

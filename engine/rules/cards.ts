@@ -11,7 +11,7 @@
 import type { ActKind, Alignment, EconomyRead, Hundredths, Quadrant, Settings, Span } from './types.ts';
 import { QUADRANTS } from './types.ts';
 import { parse, safeColor } from '../bbcode/parse.ts';
-import { visibleWalk } from '../bbcode/visible.ts';
+import { visibleWalk, type Stretch } from '../bbcode/visible.ts';
 import { phraseIn } from '../bbcode/phrase.ts';
 import { GRID, cellsOf, toBits, type SurfaceStroke } from './surface.ts';
 
@@ -39,7 +39,7 @@ export type CardTarget =
      */
     readonly text: string;
     /** The stretches of `text` that are a bare address, in its offsets (engine/bbcode/visible.ts): a card that must not touch a link leaves them alone. */
-    readonly links: readonly { readonly start: number; readonly end: number }[];
+    readonly links: readonly Stretch[];
     /**
      * Which version of the post this is (card_target, 0070): its latest edit's id, or the post's own before any edit. The server
      * reads it with the post and hands it back to play_card, which refuses a play decided against an older one. A screen's
