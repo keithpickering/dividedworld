@@ -487,3 +487,59 @@ test('two requesters with identical inputs each hear their own onDone, and one\'
   w.answer(2); w.answer(3);
   assert.deepEqual(calls, ['b'], 'a left; b is still built and heard');
 });
+
+/** A worker clock that makes each build it does take `ratio` times `input`'s estimate. */
+function workerTakes(input: BuildInput, ratio: number) {
+  const ms = (ratio * estimateWork(input.box, input.density, input.strokes, input.band)) / 1e6;
+  let reads = 0;
+  FakeWorker.now = () => (reads++ % 2 === 0 ? 0 : ms);
+}
+
+test('a failed reply from the worker does not move the pace', () => {
+  reset();
+  const c = clientWith();
+  const errors = mock.method(console, 'error', () => {});
+  c.requestBuild('k', BIG, () => {});
+  FakeWorker.made[0]!.emit('message', { data: { kind: 'failed', id: 1, message: 'boom' } });
+  assert.equal(c.pace!(), 1, 'a failure measured nothing');
+  errors.mock.restore();
+});
+
+test('a build cancelled while out at the worker does not move the pace when its answer arrives', () => {
+  reset();
+  workerTakes(BIG, 3);
+  const c = clientWith();
+  c.requestBuild('k', BIG, () => {});
+  c.cancel('k');
+  FakeWorker.made[0]!.answer(0);
+  assert.equal(c.pace!(), 1, 'nobody is waiting on it, so it teaches nothing');
+});
+
+test('a stale answer, its ask replaced by a newer one for the key, does not move the pace', () => {
+  reset();
+  workerTakes(BIG, 3);
+  const c = clientWith();
+  c.requestBuild('k', BIG, () => {});
+  c.requestBuild('k', { ...SMALL }, () => {});
+  const before = c.pace!();
+  FakeWorker.made[0]!.answer(0);
+  assert.equal(c.pace!(), before, 'the one out was let go when the newer, light request was built at once');
+});
+
+test('cancelling one requester leaves another whose key the first\'s key begins, build out and heard', () => {
+  reset();
+  const c = clientWith();
+  const a = c.requester!(); let b = a;
+  while (b < 10) b = c.requester!();
+  assert.equal(a, 1);
+  assert.equal(b, 10);
+  const keyOf = (who: number) => layerKey('p1', BIG.box, 1, BIG.strokes, 0, who);
+  assert.ok(keyOf(b).startsWith(keyOf(a)), 'the keys are prefix-related, so a cancel by prefix would take both');
+  const calls: string[] = [];
+  c.requestBuild(keyOf(a), BIG, () => calls.push('a'));
+  c.requestBuild(keyOf(b), BIG, () => calls.push('b'));
+  c.cancel(keyOf(a));
+  const w = FakeWorker.made[0]!;
+  w.answer(0); w.answer(1);
+  assert.deepEqual(calls, ['b'], 'only a left');
+});
