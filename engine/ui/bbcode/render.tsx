@@ -183,6 +183,7 @@ function node(n: BbNode, key: number, quoteHead: BbCodeProps['quoteHead'], layer
           <div className="kb-quote-body">{concealed(n.children) ? <EmptyQuote act={n.act} /> : nodes(n.children, quoteHead)}</div>
         </blockquote>
       );
+    case 'cut': return null; // Task 4 of docs/plans/2026-11-13-quote-cut-plan.md draws the note; until then a cut draws nothing
     case 'counterfeit':
       return (
         <blockquote key={key} className="kb-quote" data-kb-counterfeit="">

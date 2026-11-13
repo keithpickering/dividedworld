@@ -24,6 +24,12 @@ function emptied(nodes: readonly BbNode[], hidden: ReadonlySet<string> = HIDE): 
   });
 }
 
+test('the past-the-cap cases of the corpus were written for the cap of 16: change MAX_DEPTH and write them again', () => {
+  // supabase/tests/data/conduct-quote-corpus.json, the cases named "past the cap", spell out sixteen levels; bbcode_walk in SQL carries the same cap
+  assert.equal(MAX_DEPTH, 16);
+  assert.ok(corpus.filter((c) => c.name.startsWith('past the cap:')).length >= 10);
+});
+
 test('the corpus is not empty and holds both cases that change and cases that do not', () => {
   assert.ok(corpus.length >= 78);
   const changed = corpus.filter((c) => c.expect !== c.body);
@@ -64,6 +70,41 @@ function bodies(count: number): string[] {
 }
 const SECRET = 'zqxjkv';
 const withSecret = (b: string) => b.replaceAll('secret words', SECRET);
+
+/** The tree with each cut's Acts left out, and the Acts of every cut in document order (a cut's Acts are not in the tree beyond the node: what a hidden quote inside it held is gone once emptied). */
+function cutsOf(nodes: readonly BbNode[]): { tree: BbNode[]; acts: string[][] } {
+  const acts: string[][] = [];
+  const walk = (list: readonly BbNode[]): BbNode[] => list.map((n): BbNode => {
+    if (n.type === 'cut') { acts.push([...n.acts]); return { type: 'cut', acts: [] }; }
+    if (n.type === 'list') return { ...n, items: n.items.map(walk) };
+    return 'children' in n ? ({ ...n, children: walk(n.children) } as BbNode) : n;
+  });
+  const tree = walk(nodes);
+  return { tree, acts };
+}
+const subsequence = (small: readonly string[], big: readonly string[]) => { let at = 0; for (const x of big) if (at < small.length && small[at] === x) at++; return at === small.length; };
+
+test('property: the same holds for bodies nested past the cap, where a cut stands in the tree and keeps what is left of its Acts', () => {
+  const rnd = lcg(41);
+  const OPEN = [`[quote=${SHOWN}]`, `[quote=${SHOWN}]`, `[quote=${SHOWN}]`, `[quote=${SHOWN}]`, '[quote=Bob]', '[b]', `[quote=${HIDDEN}]`];
+  let cuts = 0;
+  let cutBefore = 0;
+  for (let k = 0; k < 1500; k++) {
+    const levels = Array.from({ length: Math.floor(rnd() * (MAX_DEPTH + 8)) }, () => OPEN[Math.floor(rnd() * OPEN.length)]).join('');
+    const tail = () => Array.from({ length: 1 + Math.floor(rnd() * 8) }, () => PIECES[Math.floor(rnd() * PIECES.length)]).join('');
+    const body = withSecret(levels + tail() + (rnd() < 0.5 ? '[/quote]'.repeat(Math.floor(rnd() * 6)) : '') + tail());
+    const once = concealQuotes(body, HIDE);
+    assert.equal(concealQuotes(once, HIDE), once, `idempotent: ${JSON.stringify(body)}`);
+    const before = cutsOf(emptied(parse(body)));
+    const after = cutsOf(parse(once));
+    assert.deepEqual(after.tree, before.tree, `tree: ${JSON.stringify(body)}`);
+    assert.equal(after.acts.length, before.acts.length);
+    after.acts.forEach((a, i) => assert.ok(subsequence(a, before.acts[i]!), `a cut's Acts only lose what was inside an emptied quote: ${JSON.stringify(body)}`));
+    cuts += after.acts.length;
+    cutBefore += cutsOf(parse(body)).acts.length;
+  }
+  assert.ok(cutBefore > 300 && cuts > 30, `${cutBefore} cuts before, ${cuts} after`);
+});
 
 test('property: idempotent, parses to the input tree with hidden quotes emptied, and no byte moves outside an emptied span', () => {
   for (const raw of bodies(4000)) {

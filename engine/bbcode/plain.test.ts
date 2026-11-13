@@ -9,8 +9,13 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { collapse, PLAIN_FIXTURES } from './plain.fixtures.ts';
-import { parse } from './parse.ts';
+import { MAX_DEPTH, parse } from './parse.ts';
 import { excerptText, quotedActs, visibleText } from './visible.ts';
+
+test('the fixtures that spell out the nesting cap were written for the cap of 16', () => {
+  // plain.fixtures.ts is JSON (tools/bbcode-plain.mjs reads it without a loader), so a body past the cap spells out its levels: change MAX_DEPTH and write them again
+  assert.equal(MAX_DEPTH, 16);
+});
 
 test('there are fixtures, each named once', () => {
   assert.ok(PLAIN_FIXTURES.length >= 20);

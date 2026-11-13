@@ -8,7 +8,7 @@
  * What counts. The text inside bold, italic, underline, strike, color, size, alignment, sub and superscript, a font, a marquee, glow, shadow, rainbow and highlight, list items and a
  * counterfeit quote, a spoiler and an inline spoiler (a name typed by hand or an id, not an Act) is the
  * post's own. A real quote holds another post's words, code holds text that is not prose, a link's words
- * are its target's name and an image or a video has none, and a rule (`[hr]`) has none either: each leaves one `\n` in its place and none of its
+ * are its target's name and an image or a video has none, and a rule (`[hr]`) has none either, and a cut (real quotes nested past the parser's cap, not shown) has none: each leaves one `\n` in its place and none of its
  * words, so no word is joined across it. Each list item starts with a `\n`, and a list ends with one,
  * so its items are kept apart from each other and from the words around it.
  *
@@ -52,7 +52,7 @@ export function visibleWalk(nodes: readonly BbNode[]): { text: string; offsets: 
       case 'hr':
         text += SEPARATOR;
         break;
-      case 'quote': case 'code': case 'url': case 'img': case 'video':
+      case 'quote': case 'cut': case 'code': case 'url': case 'img': case 'video':
         text += SEPARATOR;
         break;
     }
@@ -67,7 +67,8 @@ export const visibleText = (nodes: readonly BbNode[]): string => visibleWalk(nod
  * The excerpt of an Act in a post: the visible text of the children of every real quote of that Act that no other real quote encloses,
  * joined with `SEPARATOR` (an empty quote still takes its place). A quote of the Act inside a quote of another Act is that other Act's
  * words and does not count, a quote of the Act inside its own is cut back to a separator as `visibleText` cuts any quote, and nothing is
- * found where `visibleWalk` does not look: not in a link, code, or a quote. The database's `bbcode_walk` (supabase/migrations/0144_quote_conditions.sql)
+ * found where `visibleWalk` does not look: not in a link, code, or a quote. A `cut` (real quotes nested past the parser's cap, not shown) gives
+ * nothing: what is not shown is not excerpted. The database's `bbcode_walk` (supabase/migrations/0144_quote_conditions.sql)
  * gives the same words, held to the same fixtures (plain.fixtures.ts). Written as `visibleWalk` is, with its own stack.
  */
 export function excerptText(nodes: readonly BbNode[], act: string): string {
@@ -102,8 +103,9 @@ export function excerptText(nodes: readonly BbNode[], act: string): string {
 /**
  * The Act of every real quote in a post, at any depth, in the order they open, each once (lowercase, as `parse` gives them). Where
  * `excerptText` finds only the quotes of one Act that no other real quote encloses, this is every quote the parser built: inside a
- * quote, a link, a list item or formatting, and an unclosed one that closed at the end. Nothing is found where the parser built no quote:
- * in code, in noparse, or past its nesting cap. The database's `bbcode_walk` gives the same list, held to the same fixtures
+ * quote, a link, a list item or formatting, and an unclosed one that closed at the end, and the Acts of a `cut` (real quotes past the parser's
+ * nesting cap, which the parser reads and does not show), in the order their openers stand. Nothing is found where the parser read no quote:
+ * in code, in noparse, or behind a bad opener. The database's `bbcode_walk` gives the same list, held to the same fixtures
  * (plain.fixtures.ts). Written as `visibleWalk` is, with its own stack.
  */
 export function quotedActs(nodes: readonly BbNode[]): string[] {
@@ -118,6 +120,9 @@ export function quotedActs(nodes: readonly BbNode[]): string[] {
       case 'quote':
         if (!seen.has(n.act)) { seen.add(n.act); acts.push(n.act); }
         pushAll(n.children);
+        break;
+      case 'cut':
+        for (const a of n.acts) if (!seen.has(a)) { seen.add(a); acts.push(a); }
         break;
       case 'bold': case 'italic': case 'underline': case 'strike': case 'color': case 'size': case 'counterfeit': case 'spoiler': case 'ispoiler':
       case 'align': case 'sub': case 'sup': case 'font': case 'marquee': case 'glow': case 'shadow': case 'rainbow': case 'highlight': case 'url':

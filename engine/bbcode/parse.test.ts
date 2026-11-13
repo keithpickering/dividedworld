@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { BBCODE_TAGS, MAX_DEPTH, MAX_TAG, MAX_URL_LENGTH, parse, safeHref, safeImageSrc } from './parse.ts';
-import type { BbNode } from './parse.ts';
+import type { BbNode, QuoteSpan } from './parse.ts';
 import { visibleText } from './visible.ts';
 
 const text = (t: string): BbNode => ({ type: 'text', text: t });
@@ -32,6 +32,7 @@ function depthOf(nodes: readonly BbNode[]): number {
   for (const n of nodes) {
     let d = 0;
     if ('children' in n) d = 1 + depthOf(n.children);
+    else if (n.type === 'cut') d = 1;
     else if (n.type === 'list') d = 1 + n.items.reduce((m, item) => Math.max(m, depthOf(item)), 0);
     max = Math.max(max, d);
   }
@@ -890,5 +891,141 @@ test('tag-shaped scans stay linear', () => {
     parse(unit.repeat(100000));
     const ms = performance.now() - started;
     assert.ok(ms < 3000, `${unit} took ${ms}ms`);
+  }
+});
+
+/*
+ * A real quote past the cap is cut, never text ("A quote past the cap is cut, never text", docs/plans/2026-11-13-quote-cut-plan.md, Decisions 1 to 4). Every depth is written from MAX_DEPTH.
+ */
+const ids = (n: number, from = 0): string[] => Array.from({ length: n }, (_, i) => `00000000-0000-4000-8000-${String(from + i).padStart(12, '0')}`);
+const cutOf = (...acts: string[]): BbNode => ({ type: 'cut', acts });
+/** `n` real quotes nested, each of its own id, around `core`, all closed. */
+const pyramidOf = (n: number, core = 'core'): string => ids(n).map((id) => `[quote=${id}]`).join('') + core + '[/quote]'.repeat(n);
+/** The tree's real quotes down the single path from the root, and what stands where the next one would. */
+function spine(nodes: readonly BbNode[]): { quotes: number; end: BbNode[] } {
+  let quotes = 0;
+  let cur: readonly BbNode[] = nodes;
+  for (;;) {
+    const q = cur.find((n) => n.type === 'quote');
+    if (!q || q.type !== 'quote') return { quotes, end: [...cur] };
+    quotes++;
+    cur = q.children;
+  }
+}
+
+test('a pyramid of MAX_DEPTH + 5 real quotes is MAX_DEPTH quotes and one cut holding the other five Acts, outermost first', () => {
+  const all = ids(MAX_DEPTH + 5);
+  const spans: QuoteSpan[] = [];
+  const tree = parse(pyramidOf(MAX_DEPTH + 5), spans);
+  const { quotes, end } = spine(tree);
+  assert.equal(quotes, MAX_DEPTH);
+  assert.deepEqual(end, [cutOf(...all.slice(MAX_DEPTH))]);
+  assert.ok(depthOf(tree) <= MAX_DEPTH + 1);
+  assert.equal(spans.length, MAX_DEPTH + 5, 'every quote is reported, past the cap too');
+  assert.deepEqual(new Set(spans.map((s) => s.act)), new Set(all));
+  // in the order they close: the innermost first
+  assert.deepEqual(spans.map((s) => s.act), [...all].reverse());
+});
+
+test('nothing inside a cut is kept, and what follows it is', () => {
+  const [a, b] = ids(2, 9000) as [string, string];
+  const deep = ids(MAX_DEPTH).map((id) => `[quote=${id}]`).join('');
+  const tree = parse(`${deep}x[quote=${a}]secret [b]bold[/b] [url=https://e.com/]l[/url] [quote=Bob]fake[/quote][quote=${b}]more[/quote][/quote]y${'[/quote]'.repeat(MAX_DEPTH)}z`);
+  const { quotes, end } = spine(tree);
+  assert.equal(quotes, MAX_DEPTH);
+  assert.deepEqual(end, [text('x'), cutOf(a, b), text('y')]);
+  assert.equal(allText(tree).includes('secret'), false);
+  assert.equal(JSON.stringify(tree).includes('fake'), false);
+  assert.deepEqual(tree.at(-1), text('z'));
+});
+
+test('a cut is closed by its closer, by an outer closer, or by the end of the input, as a quote is', () => {
+  const deep = ids(MAX_DEPTH).map((id) => `[quote=${id}]`).join('');
+  const [a, b] = ids(2, 9000) as [string, string];
+  const spans: QuoteSpan[] = [];
+  parse(`${deep}[quote=${a}]x`, spans);
+  const unclosed = spans.find((s) => s.act === a)!;
+  assert.equal(unclosed.to, `${deep}[quote=${a}]x`.length, 'closed by the end of input');
+  const outer: QuoteSpan[] = [];
+  const body = `${deep}[quote=${a}]x[quote=${b}]y[/quote]z${'[/quote]'.repeat(MAX_DEPTH + 1)}`;
+  const tree = parse(body, outer);
+  assert.deepEqual(outer.slice(0, 2).map((s) => s.act), [b, a]);
+  assert.equal(body.slice(outer[0]!.from, outer[0]!.to), 'y');
+  assert.equal(body.slice(outer[1]!.from, outer[1]!.to), `x[quote=${b}]y[/quote]z`);
+  assert.equal(spine(tree).quotes, MAX_DEPTH);
+  // an outer closer closes the cuts inside it too, and the rest of the post is the post's
+  const closed = parse(`${deep}[quote=${a}]x[quote=${b}]y${'[/quote]'.repeat(MAX_DEPTH + 2)}tail`);
+  assert.deepEqual(closed, parse(`${deep}[quote=${a}]x[quote=${b}]y[/quote][/quote]${'[/quote]'.repeat(MAX_DEPTH)}tail`));
+  assert.deepEqual(closed.at(-1), text('tail'));
+});
+
+test('counterfeits past the cap are text, and a real quote inside them is cut', () => {
+  const [a] = ids(1, 9000) as [string];
+  const fakes = '[quote=A]'.repeat(MAX_DEPTH + 3);
+  const tree = parse(`${'[quote=A]'.repeat(MAX_DEPTH)}${fakes}core[quote=${a}]secret[/quote]${'[/quote]'.repeat(MAX_DEPTH + 3)}`);
+  assert.ok(depthOf(tree) <= MAX_DEPTH + 1);
+  const t = allText(tree);
+  assert.ok(t.includes('core'));
+  assert.equal(t.includes('secret'), false);
+  assert.equal(t.split('[quote=A]').length - 1, MAX_DEPTH + 3);
+  assert.ok(JSON.stringify(tree).includes(`"type":"cut","acts":["${a}"]`));
+});
+
+test('other tags past the cap are text beside a cut, and code, noparse and a bad opener behave in a cut as outside it', () => {
+  const [a, b] = ids(2, 9000) as [string, string];
+  const deep = ids(MAX_DEPTH).map((id) => `[quote=${id}]`).join('') + `[quote=${a}]`;
+  const spans: QuoteSpan[] = [];
+  parse(`${deep}[code][quote=${b}]x[/quote][/code][noparse][quote=${b}][/noparse][quote=Bob][quote=${b}]y[/quote][/quote][quote=${b} user=nope]z`, spans);
+  // the quote inside [code] and [noparse] is no quote, a counterfeit is none and so is a bad opener; the one inside the counterfeit is
+  assert.equal(spans.filter((s) => s.act === b).length, 1);
+  const inCode = parse(`${deep}[code]x[/code]${'[/quote]'.repeat(MAX_DEPTH + 1)}`);
+  assert.deepEqual(spine(inCode).end, [cutOf(a)]);
+});
+
+test('10,000 nested real quotes parse in time that grows with their length alone, and the tree is no deeper than a pyramid of the cap', () => {
+  const time = (n: number) => {
+    const body = pyramidOf(n);
+    const spans: QuoteSpan[] = [];
+    const t = performance.now();
+    const tree = parse(body, spans);
+    const ms = performance.now() - t;
+    assert.ok(depthOf(tree) <= MAX_DEPTH + 1, `depth ${depthOf(tree)}`);
+    assert.equal(spans.length, n);
+    assert.equal(allText(tree).includes('core'), false);
+    return ms;
+  };
+  time(1000);
+  const small = Math.min(time(2500), time(2500), time(2500));
+  const big = Math.min(time(10_000), time(10_000), time(10_000));
+  assert.ok(big < Math.max(small * 12, 200), `${small} ms at 2,500, ${big} ms at 10,000`);
+  assert.ok(big < 2000, `took ${big}ms`);
+  const unclosed = ids(1, 9000)[0]!;
+  const t = performance.now();
+  const tree = parse(`[quote=${unclosed}]`.repeat(10_000) + 'x');
+  assert.ok(performance.now() - t < 2000);
+  assert.equal(spine(tree).quotes, MAX_DEPTH);
+});
+
+test('quotes nested past the cap inside formatting tags count against the one cap', () => {
+  const [a] = ids(1, 9000) as [string];
+  const tree = parse('[b]'.repeat(MAX_DEPTH) + `[quote=${a}]secret[/quote]` + '[/b]'.repeat(MAX_DEPTH));
+  assert.equal(allText(tree).includes('secret'), false);
+  assert.ok(JSON.stringify(tree).includes(`"type":"cut","acts":["${a}"]`));
+});
+
+test('the megabyte shapes hold with real quotes', () => {
+  const a = ids(1, 9000)[0]!;
+  const shapes: Record<string, string> = {
+    openers: `[quote=${a}]`.repeat(30_000),
+    pyramid: `[quote=${a}]x`.repeat(30_000) + '[/quote]'.repeat(30_000),
+    closers: `[quote=${a}]`.repeat(MAX_DEPTH + 1) + '[/quote]'.repeat(250_000),
+    hostile: `[quote=${a}]` + '[quote=zz][b]'.repeat(40_000),
+  };
+  for (const [name, input] of Object.entries(shapes)) {
+    const started = performance.now();
+    const tree = parse(input, []);
+    const ms = performance.now() - started;
+    assert.ok(ms < 3000, `${name} took ${ms}ms`);
+    assert.ok(depthOf(tree) <= MAX_DEPTH + 1, `${name} too deep`);
   }
 });

@@ -57,7 +57,12 @@
  * The work is bounded, because the input is any player's post (design, "Weigh a design at the
  * scale of a busy instance"). The parser is one pass with an explicit stack, never recursion,
  * so 10,000 nested tags cannot blow the stack. Nesting is capped at `MAX_DEPTH`: past it a
- * tag is text, so a tree is shallow enough for a renderer to recurse over. A tag longer than
+ * tag is text, so a tree is shallow enough for a renderer to recurse over, except a real quote, which is cut: the
+ * tree gets one `cut` node where the outermost such quote stood, holding the Acts of every real quote read inside it, and
+ * nothing written inside is kept. The parser still follows those quotes (frames with no tree, on the same stack) and
+ * reports each one's span, so "every real quote" holds at any depth and the words of a hidden post, quoted anywhere, can be
+ * emptied (engine/bbcode/conceal.ts). A counterfeit quote and every other tag past the cap stay text, as written; a real
+ * quote inside one is past the cap too, and is cut. A tag longer than
  * `MAX_TAG` characters is text, the next `]` is looked up once for many `[`, and a missing
  * `[/code]` or `[/img]` is looked up once and remembered, so no input makes it quadratic.
  */
@@ -74,6 +79,8 @@ export type BbNode =
   | { readonly type: 'img'; readonly src: string }
   | { readonly type: 'video'; readonly video: Video }
   | { readonly type: 'quote'; readonly act: string; readonly children: readonly BbNode[] }
+  /** Real quotes nested past `MAX_DEPTH`, not shown: the Acts they quote, the outermost first, in the order their openers stand. Nothing inside is kept. */
+  | { readonly type: 'cut'; readonly acts: readonly string[] }
   | { readonly type: 'counterfeit'; readonly name: string | null; readonly user: string | null; readonly children: readonly BbNode[] }
   | { readonly type: 'spoiler'; readonly title: string; readonly children: readonly BbNode[] }
   | { readonly type: 'ispoiler'; readonly children: readonly BbNode[] }
@@ -95,8 +102,12 @@ export const MAX_SPOILER_TITLE = 80;
 /** The title of a spoiler that was given none. */
 export const DEFAULT_SPOILER_TITLE = 'Spoiler';
 
-/** Deepest nesting of tags; past it a tag is text. Deep enough for quotes of quotes, shallow enough to render by recursion. */
-export const MAX_DEPTH = 32;
+/**
+ * Deepest nesting of tags, one number for every tag; past it a tag is text, except a real quote, which is cut (a `cut` node, its words not kept). Deep enough
+ * for quotes of quotes, shallow enough to render by recursion (and for a phone's column: at 16 the innermost quote is still 144px wide at a 360px viewport).
+ * The parse costs the same at any value (a tag past the cap is still a token and a frame); `bbcode_walk` in SQL carries the same number.
+ */
+export const MAX_DEPTH = 16;
 /** Longest address accepted. */
 export const MAX_URL_LENGTH = 2048;
 /** Longest tag, brackets excluded; a longer one is text. Room for an address at its limit, with quotes and the tag name. */
@@ -214,7 +225,7 @@ export function safeImageSrc(raw: string): string | null {
 type Out = BbNode[];
 
 interface Frame {
-  readonly kind: 'root' | 'simple' | 'list' | 'bareurl' | 'literal';
+  readonly kind: 'root' | 'simple' | 'list' | 'bareurl' | 'literal' | 'cut';
   /** Lowercase tag name, which a closer matches. */
   readonly name: string;
   /** The opening tag as written. */
@@ -230,6 +241,9 @@ interface Frame {
   /** For a real quote: the Act it names, and where its contents begin in the input (the first character after its opener). */
   quoteAct?: string;
   contentFrom?: number;
+  /** For a cut frame: the outermost cut frame it is inside (itself when it is the outermost), which holds the Acts of them all and puts the one node in the tree. */
+  cutRoot?: Frame;
+  acts?: string[];
   ordered?: boolean;
   items?: Out[];
   lead?: Out;
@@ -453,7 +467,10 @@ export function parse(input: string, spans?: QuoteSpan[]): BbNode[] {
   const finish = (f: Frame, closer: string | null): void => {
     const into = (f.parent ?? root).out;
     if (spans && f.quoteAct !== undefined && f.contentFrom !== undefined) spans.push({ act: f.quoteAct, from: f.contentFrom, to: tagAt });
-    if (f.kind === 'simple' && f.build) {
+    if (f.kind === 'cut') {
+      /* Only the outermost cut puts a node in the tree; a cut inside one has told it its Act when it opened. */
+      if (f.cutRoot === f) into.push({ type: 'cut', acts: f.acts ?? [] });
+    } else if (f.kind === 'simple' && f.build) {
       into.push(f.build(f.out));
     } else if (f.kind === 'list') {
       const items = f.items ?? [];
@@ -495,6 +512,22 @@ export function parse(input: string, spans?: QuoteSpan[]): BbNode[] {
     const home = top().home;
     pushText(home.out, raw);
     push({ kind: 'literal', name, raw, home, parent: null, depth: home.depth, out: home.out });
+  };
+
+  /** A real quote at the cap: not shown, but followed, so its closer, its span and its Act are read as a quote's are. What is written inside goes to its own `out`, which no tree holds. */
+  const openCut = (raw: string, act: string, contentFrom: number): void => {
+    const home = top().home;
+    const f: Frame = { kind: 'cut', name: 'quote', raw, home: null as never, parent: home, depth: home.depth + 1, out: [], quoteAct: act, contentFrom };
+    f.home = f;
+    if (home.kind === 'cut') {
+      const root = home.cutRoot as Frame;
+      f.cutRoot = root;
+      (root.acts as string[]).push(act);
+    } else {
+      f.cutRoot = f;
+      f.acts = [act];
+    }
+    push(f);
   };
 
   const openReal = (name: string, raw: string, kind: Frame['kind'], extra: Partial<Frame>): void => {
@@ -682,7 +715,8 @@ export function parse(input: string, spans?: QuoteSpan[]): BbNode[] {
       if (head === null) literalOpen(name, raw);
       else if (head.kind === 'real') {
         const act = head.act;
-        openReal(name, raw, 'simple', { build: (children) => ({ type: 'quote', act, children }), quoteAct: act, contentFrom: close + 1 });
+        if (top().home.depth >= MAX_DEPTH) openCut(raw, act, close + 1);
+        else openReal(name, raw, 'simple', { build: (children) => ({ type: 'quote', act, children }), quoteAct: act, contentFrom: close + 1 });
       } else {
         const { name: typed, user } = head;
         openReal(name, raw, 'simple', { build: (children) => ({ type: 'counterfeit', name: typed, user, children }) });
