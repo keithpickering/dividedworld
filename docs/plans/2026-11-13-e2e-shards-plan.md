@@ -106,7 +106,9 @@ counts add up to the whole suite's, and each ends well inside the limit. The PR 
 ## Design questions
 
 1. The check runs' names change from `e2e (1/3)`… to `e2e (1/6)`…. If the repository's branch protection names the
-   old three as required, it has to name the new six; a session cannot read or change that setting.
+   old three as required, it has to name the new six; a session cannot read or change that setting. Answered on
+   2026-11-13 by the session that merges PRs, from GitHub's branches API: `main` is not protected and names no
+   required check, so the new names break nothing.
 
 ## Review focus
 

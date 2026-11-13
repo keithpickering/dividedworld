@@ -26,7 +26,7 @@ jobs:
     # six shards by count. Every shard runs to its end (fail-fast off), so one failure never hides another.
     # Measured on 2026-11-13: the suite was 4,306 tests, an hour of work on the two workers a runner gives, and growing.
     # The last of three shards took 24:51 on a middling runner and 32 on a slow one, because the slow specs
-    # (glass-layout, glass-text) come late in the alphabet; three shards were cancelled at the limit with no test failed.
+    # (glass-layout, glass-text) come late in the alphabet; two shards were cancelled at the limit with no test failed.
     # By count, six shards put the slowest at about 15 minutes, and 20 on a slow runner, so the 30-minute limit is
     # twice the one and still ends a hang. The total comes from strategy.job-total, so the matrix is the one list: to
     # add a shard, add a number to it. tools/check-release-workflows.mjs holds that shape (issue #605).
