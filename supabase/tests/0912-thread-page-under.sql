@@ -167,6 +167,105 @@ begin
   perform tests.unbecome();
 end $$;
 
+-- ---- Where a reply's number falls, and what is drawn from it ----
+create function pg_temp.drawn_under(parent uuid, by_character uuid, body text) returns uuid[] language plpgsql as $$
+declare th uuid := (select a.thread from acts a where a.id = parent); reply uuid; play uuid;
+begin
+  reply := tests.post(by_character, th, body);
+  play := tests.act(by_character, 'card', th, jsonb_build_object('card', 'tucut', 'reach', 'post', 'reply', reply), parent);
+  insert into post_under (play, parent, reply, thread) values (play, parent, reply, th);
+  return array[play, reply];
+end $$;
+
+-- A reply whose number falls on its parent's own page is drawn once: in `under`, not in `acts`, in `cut`. When its play is ended it holds its number there again, and `under` is empty.
+do $$
+declare
+  ann uuid := tests.account('to-ann'); admin_acc uuid := tests.account('to-admin'); a1 uuid := tests.character(ann, 'To One');
+  t uuid := tests.thread('To own page'); posts uuid[] := '{}'; made uuid[]; doc jsonb;
+begin
+  insert into admins (account) values (admin_acc);
+  for i in 1..5 loop posts := posts || tests.post(a1, t, 'Post ' || i); end loop;
+  made := pg_temp.drawn_under(posts[3], a1, 'On its parent''s page.');
+  perform tests.become(ann); doc := thread_page(t, 1, null, 20, '{}'); perform tests.unbecome();
+  if pg_temp.seqs(doc) is distinct from array[1, 2, 3, 4, 5] then raise exception 'the reply (number 6) is not among page 1''s Acts: %', pg_temp.seqs(doc); end if;
+  if jsonb_array_length(doc -> 'under') is distinct from 1 or doc #>> '{under,0,act,id}' is distinct from made[2]::text or (doc #>> '{under,0,act,seq}')::integer is distinct from 6 or doc #>> '{under,0,parent}' is distinct from posts[3]::text then
+    raise exception 'the reply is under post 3, once: %', doc -> 'under'; end if;
+  if doc -> 'cut' is distinct from jsonb_build_array(jsonb_build_object('seq', 6, 'parent_seq', 3)) then raise exception 'cut names number 6 on its parent''s own page: %', doc -> 'cut'; end if;
+  -- Its play ended, the reply is at its number on the parent's page and nothing is drawn under.
+  perform tests.become(admin_acc); perform reverse_card(made[1]); perform tests.unbecome();
+  perform tests.become(ann); doc := thread_page(t, 1, null, 20, '{}'); perform tests.unbecome();
+  if pg_temp.seqs(doc) is distinct from array[1, 2, 3, 4, 5, 6] then raise exception 'an ended play puts the reply back at its number, on its parent''s page: %', pg_temp.seqs(doc); end if;
+  if doc -> 'under' is distinct from '[]'::jsonb or doc -> 'cut' is distinct from '[]'::jsonb then raise exception 'an ended play draws nothing under and cuts nothing: % %', doc -> 'under', doc -> 'cut'; end if;
+end $$;
+
+-- A page whose every number is drawn elsewhere (the thread's last page): no Acts, a `cut` for each number, no error, and nothing under.
+do $$
+declare
+  ann uuid := tests.account('te-ann'); a1 uuid := tests.character(ann, 'Te One');
+  t uuid := tests.thread('Te all cut'); posts uuid[] := '{}'; doc jsonb;
+begin
+  for i in 1..3 loop posts := posts || tests.post(a1, t, 'Post ' || i); end loop;
+  perform pg_temp.drawn_under(posts[1], a1, 'Under one.');
+  perform pg_temp.drawn_under(posts[2], a1, 'Under two.');
+  perform tests.become(ann); doc := thread_page(t, 2, null, 3, '{}'); perform tests.unbecome();
+  if (doc ->> 'page')::integer is distinct from 2 or (doc #>> '{summary,last_seq}')::integer is distinct from 5 then raise exception 'page 2 is the last page of five numbers at three a page: %', doc -> 'summary'; end if;
+  if doc -> 'acts' is distinct from '[]'::jsonb then raise exception 'every number of page 2 is drawn elsewhere, so it holds no Act: %', doc -> 'acts'; end if;
+  if doc -> 'cut' is distinct from jsonb_build_array(jsonb_build_object('seq', 4, 'parent_seq', 1), jsonb_build_object('seq', 5, 'parent_seq', 2)) then raise exception 'cut names each number: %', doc -> 'cut'; end if;
+  if doc -> 'under' is distinct from '[]'::jsonb or doc -> 'kept' is distinct from '[]'::jsonb then raise exception 'the parents are on page 1: nothing under here: %', doc; end if;
+  perform tests.become(ann); doc := thread_page(t, 1, null, 3, '{}'); perform tests.unbecome();
+  if pg_temp.seqs(doc) is distinct from array[1, 2, 3] or jsonb_array_length(doc -> 'under') is distinct from 2 or doc -> 'cut' is distinct from '[]'::jsonb then raise exception 'page 1 draws both replies under their posts: %', doc; end if;
+end $$;
+
+-- A concealed reply and a hidden parent: the layer holds for a drawn reply as for a page's own post, and neither is dropped.
+do $$
+declare
+  ann uuid := tests.account('th-ann'); admin_acc uuid := tests.account('th-admin'); a1 uuid := tests.character(ann, 'Th One');
+  t uuid := tests.thread('Th hidden'); posts uuid[] := '{}'; secret uuid[]; open_reply uuid[]; doc jsonb; own jsonb; under_act jsonb;
+begin
+  insert into admins (account) values (admin_acc);
+  for i in 1..4 loop posts := posts || tests.post(a1, t, case i when 4 then 'Sekrit page words.' else 'Post ' || i end); end loop;
+  secret := pg_temp.drawn_under(posts[2], a1, 'Sekrit reply words.');
+  open_reply := pg_temp.drawn_under(posts[3], a1, 'Plain reply words.');
+  perform tests.become(admin_acc);
+  perform decide(null, secret[2], 'hide', null, 'the reply');
+  perform decide(null, posts[4], 'hide', null, 'a page post, for comparison');
+  perform decide(null, posts[3], 'hide', null, 'a parent');
+  perform tests.unbecome();
+  perform tests.become(ann); doc := thread_page(t, 1, null, 20, '{}'); perform tests.unbecome();
+  if jsonb_array_length(doc -> 'under') is distinct from 2 then raise exception 'a concealed reply and a reply under a hidden parent are both still drawn: %', doc -> 'under'; end if;
+  under_act := (select x -> 'act' from jsonb_array_elements(doc -> 'under') x where x ->> 'play' = secret[1]::text);
+  own := (select x from jsonb_array_elements(doc -> 'acts') x where x ->> 'id' = posts[4]::text);
+  if under_act ->> 'id' is distinct from secret[2]::text then raise exception 'the concealed reply is under its parent: %', doc -> 'under'; end if;
+  perform tests.become(ann);
+  if under_act is distinct from (select to_jsonb(a) from acts_public a where a.id = secret[2]) then raise exception 'a concealed reply carries the projection a reader gets from acts_public: %', under_act; end if;
+  perform tests.unbecome();
+  if under_act -> 'hidden' is distinct from 'true'::jsonb or (under_act -> 'payload') is distinct from (own -> 'payload') or (under_act -> 'payload_hidden') is distinct from (own -> 'payload_hidden') then
+    raise exception 'a concealed reply is masked as a concealed post on the page is: % vs %', under_act, own; end if;
+  if doc::text like '%Sekrit%' then raise exception 'a hidden word reaches the document'; end if;
+  -- A hidden parent still draws its visible reply under it, and its number stays cut.
+  if not exists (select 1 from jsonb_array_elements(doc -> 'under') x where x ->> 'play' = open_reply[1]::text and x ->> 'parent' = posts[3]::text and x #>> '{act,payload,body}' = 'Plain reply words.') then
+    raise exception 'a visible reply under a hidden parent is drawn: %', doc -> 'under'; end if;
+  if (select array_agg((x ->> 'seq')::integer order by (x ->> 'seq')::integer) from jsonb_array_elements(doc -> 'cut') x) is distinct from array[5, 6] then raise exception 'both numbers are cut: %', doc -> 'cut'; end if;
+  if pg_temp.seqs(doc) is distinct from array[1, 2, 3, 4] then raise exception 'the page holds its four posts, the hidden one among them: %', pg_temp.seqs(doc); end if;
+end $$;
+
+-- A live play of the kind that keeps, over a thread that also has a worn-off one, is in `above`; the worn-off one is in `kept`; neither is in the other.
+do $$
+declare
+  ann uuid := tests.account('tl-ann'); a1 uuid := tests.character(ann, 'Tl One');
+  t uuid := tests.thread('Tl live and worn');
+  p uuid := tests.post(a1, t, 'In both windows.', now() - interval '5 days');
+  worn uuid; live uuid; doc jsonb;
+begin
+  worn := tests.act(a1, 'card', t, '{"card": "tukeep", "reach": "thread"}', p, now() - interval '10 days');
+  insert into play_reach (play, reach, thread, ends_at) values (worn, 'thread', t, now() - interval '3 days');
+  live := tests.act(a1, 'card', t, '{"card": "tukeep", "reach": "thread"}', p, now() - interval '9 days');
+  insert into play_reach (play, reach, thread, ends_at) values (live, 'thread', t, now() + interval '2 days');
+  perform tests.become(ann); doc := thread_page(t, 1, null, 20, '{}'); perform tests.unbecome();
+  if (select array_agg(x ->> 'play') from jsonb_array_elements(doc -> 'above') x) is distinct from array[live::text] then raise exception 'the live play is in above: %', doc -> 'above'; end if;
+  if (select array_agg(x ->> 'play') from jsonb_array_elements(doc -> 'kept') x) is distinct from array[worn::text] then raise exception 'the worn-off play is in kept, the live one is not: %', doc -> 'kept'; end if;
+end $$;
+
 -- ---- The probes are index-backed (read line by line, as 0034's are) ----
 do $$
 declare
@@ -179,6 +278,13 @@ begin
   plan := '';
   for ln in execute format('explain select 1 from post_under x where x.parent = any (%L)', array(select id from acts where thread = u and kind = 'post' and seq <= 20)) loop plan := plan || E'\n' || ln."QUERY PLAN"; end loop;
   if plan not like '%post_under_parent%' then raise exception 'the nested read is not from post_under_parent: %', plan; end if;
+  -- The statement's own shape: a probe of the reply index for each number of the range, and of the parent index for each post of the page.
+  plan := '';
+  for ln in execute format('explain select r.id from acts r cross join lateral (select x.play from post_under x where x.reply = r.id) u where r.thread = %L and r.seq between 1 and 20', u) loop plan := plan || E'\n' || ln."QUERY PLAN"; end loop;
+  if plan not like '%post_under_reply_key%' then raise exception 'the range''s probe is not a lateral probe of the unique index on reply: %', plan; end if;
+  plan := '';
+  for ln in execute format('explain select x.reply from acts p cross join lateral (select y.reply from post_under y where y.parent = p.id) x where p.thread = %L and p.seq <= 20', u) loop plan := plan || E'\n' || ln."QUERY PLAN"; end loop;
+  if plan not like '%post_under_parent%' then raise exception 'the nested read is not a lateral probe of post_under_parent: %', plan; end if;
   plan := '';
   for ln in execute format('explain select x.play from play_reach x where x.thread = %L and x.ends_at <= now() and x.ends_at > %L', t, now() - interval '30 days') loop plan := plan || E'\n' || ln."QUERY PLAN"; end loop;
   if plan not like '%play_reach_thread%' then raise exception 'the kept read is not from play_reach_thread: %', plan; end if;

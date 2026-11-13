@@ -4,12 +4,16 @@
 -- latest text left it (thread_page as 0340 wrote it, reverse_card as 0149 did), with the changes below and nothing else.
 --
 -- thread_page
---   page_acts   leaves out an Act that is the reply of a post_under row in force: it is drawn under its parent, not at its number. One probe of the unique index on `reply` for each
---               Act in the page's range (at most 100). `in_seq` is not redirected: a page is still the range its number falls in, so the gap read keeps working, and the screen follows `cut`.
---   nested      the replies drawn under the page's posts (post_under_parent), read through acts_public as the page's own Acts are, so the conduct layer's concealment holds for them.
+--   range_acts  the range's numbers, read through acts_public once: the page's Acts and the numbers drawn elsewhere both come from this one pass.
+--   drawn       the range's numbers whose Act is the reply of a post_under row in force: a lateral probe of the unique index on `reply` for each of them (at most 100), so the planner
+--               cannot turn it into a hash over the table. `not card_ended` is the one in-force rule, here and in `nested`. page_acts is the range minus these, read through acts_public.
+--               `in_seq` is not redirected: a page is still the range its number falls in, so the gap read keeps working, and the screen follows `cut`.
+--   nested      the replies drawn under the page's posts, a lateral probe of post_under_parent for each post, read through acts_public as the page's own Acts are, so the conduct
+--               layer's concealment holds for them.
 --   posts       the page's posts (page_posts, the old `posts` with their dates) and the nested replies together, which the plays, visits, tallies, people and spun threads read for.
---   kept        the plays of a kind that keeps, at thread reach on this thread, that wore off by time and were not ended by an admin, whose window holds the date of one of `posts`
---               (play_reach_thread, from the page's earliest post date, at most 100, oldest first). Their ids and casters join `played`, so `ids` and `who`.
+--   kept        the plays of a kind that keeps, at thread reach on this thread, that wore off by time and were not ended by an admin, whose window holds the date of one of `posts`.
+--               A range of play_reach_thread (ended, after the page's earliest post), the Act by primary key through acts_public (dated no later than the page's latest post, then the
+--               window), and only for the survivors the kind (`keeps`); at most 100, oldest first. Their ids and casters join `played`, so `ids` and `who`.
 --   The document gains three keys, each a public projection, the same for every caller (nothing here reads who owns a character, a hand or a reaction):
 --     'under'   [{ parent, play, act }]            the reply as `acts` holds an Act
 --     'cut'     [{ seq, parent_seq }]              each number in the page's range whose Act is drawn under a post elsewhere
@@ -17,8 +21,14 @@
 -- reverse_card   does not raise "that card has already worn off" for a play whose kind keeps, so an admin can end a kept level after its week. effects_above and reach_effects are
 --               not changed: an ended play prices, wards and blocks nothing.
 --
--- Ways out: an admin's end of the play drops a reply back to its number and takes a kept level off every post. Cost at a busy instance's scale: a page's read gains the probes above
--- and no scan of a thread: at most twice a page of posts, and a kept read of a range of play_reach_thread that a thread with a Glam every week meets once a week of its age.
+-- Ways out: an admin's end of the play drops a reply back to its number and takes a kept level off every post.
+-- Cost, measured 2026-11-13 on a scratch Postgres with a ten-year thread (5,000 posts, 500 replies drawn under posts, a worn-off keeping play every week, 521 in all) among 250,000 Acts
+-- of other threads, 24,000 post_under rows on other threads and 2,500 play_reach rows, analyzed, a page of 20: the earlier text of this function took about 12 s a page (a hash
+-- anti-join over all of post_under, seq scans of acts, acts_public run again over the range and over each play back to the page's first post); this one 50 ms for page 1, 43 ms for page
+-- 138 and 44 ms for page 275 (the last), the same document. Plans of the main statement, no seq scan on acts, post_under or play_reach: the reply index probed once for each number of
+-- the range (20 loops), post_under_parent once for each post (18), play_reach_thread read as a range (521 rows on page 1, 262 in the middle, 2 on the last: a page meets the plays ended
+-- after its first post, so an early page of a thread with a keeping play every week pays a primary-key probe of `acts` for each week of the thread's age, never the conceal layer),
+-- and the conceal layer run for `kept` only for the 2 plays whose window holds a post of the page, and for `cut` once for each parent read.
 -- Masks: every new piece is read from public Acts, post_under and play_reach, so no caller can tell anything from it. Grants are as they were (create or replace keeps them).
 
 create or replace function thread_page(in_thread uuid, in_page integer, in_seq integer, per_page integer, effect_cards text[]) returns jsonb
@@ -45,19 +55,31 @@ begin atomic
   rng as materialized (
     select pg.*, (pg.page - 1) * (select pp.n from pp) + 1 as first_seq, pg.page * (select pp.n from pp) as end_seq from pg
   ),
-  page_acts as materialized (
+  -- The range's numbers, read through acts_public once: the page's Acts and the numbers drawn elsewhere both come from this one pass (a screen function may read no relation below the
+  -- public projections, tools/check-web-reads.mjs).
+  range_acts as materialized (
     select a.* from acts_public a, rng
     where a.thread = rng.id and a.seq between rng.first_seq and rng.end_seq and a.kind not in ('edit', 'card')
-      -- A reply a play in force draws under its parent is read by `nested`, not at its number: one probe of the unique index on post_under's reply for each Act of the range.
-      and not exists (select 1 from post_under u where u.reply = a.id and not card_ended(u.play))
+  ),
+  -- A range number whose Act is the reply of a post_under row in force: drawn under its parent, not at its number. A lateral probe of the unique index on `reply`, one for each
+  -- number of the range and so no more than 100: the planner cannot turn it into a hash over the whole table. `not card_ended` is the one in-force rule, here and in `nested`.
+  drawn as materialized (
+    select r.id, r.seq, r.kind, u.play, u.parent
+    from range_acts r cross join lateral (select x.play, x.parent from post_under x where x.reply = r.id) u
+    where not card_ended(u.play)
+  ),
+  page_acts as materialized (
+    select r.* from range_acts r
+    where not exists (select 1 from drawn d where d.id = r.id)
   ),
   page_posts as materialized (select a.id, a.character, a.created_at from page_acts a where a.kind = 'post'),
   -- The replies drawn under the page's posts (post_under_parent), each read through acts_public as the page's own Acts are, so the conduct layer's concealment holds for a nested
   -- reply as for any post. A reply takes none under it, so one level, and at most one under each post (stack 1). `act` is the Act as `acts` holds one.
   nested as materialized (
-    select u.play, u.parent, a.id, a.character, a.created_at, to_jsonb(a) as act
-    from post_under u join acts_public a on a.id = u.reply
-    where u.parent in (select p.id from page_posts p) and not card_ended(u.play)
+    select u.play, p.id as parent, a.id, a.character, a.created_at, to_jsonb(a) as act
+    from page_posts p
+    cross join lateral (select x.play, x.reply from post_under x where x.parent = p.id and not card_ended(x.play)) u
+    join acts_public a on a.id = u.reply
   ),
   -- What the plays, visits, tallies, people and spun threads are read for: the page's posts and the replies drawn under them.
   posts as materialized (
@@ -82,21 +104,28 @@ begin atomic
     from effects_above(array(select distinct p.character from posts p where p.character is not null), (select rng.id from rng), (select rng.board from rng)) x
   ),
   -- The plays of a kind that keeps, at thread reach on this thread, that wore off by time (not one an admin ended), whose window (the play's date to its end) holds the date of one of
-  -- the page's posts: they still count on those posts, so the page carries them beside `above`, in its shape. play_reach_thread from the page's earliest post date, at most 100, oldest first.
-  -- A later reach adds its own select to the union in `r`; the rest reads whatever rows it gives.
+  -- the page's posts: they still count on those posts, so the page carries them beside `above`, in its shape. The range of play_reach_thread (ended, and ended after the
+  -- page's earliest post), the Act by primary key through acts_public (dated no later than the page's latest post, then the window), and only for what survives that the kind (`keeps`). At most 100, oldest first.
+  kept_span as materialized (select min(p.created_at) as lo, max(p.created_at) as hi from posts p),
+  -- The reach-specific part, and the one place a later reach adds to: a character reach's rows (play_reach_character) join here with a `union all` of a second select of this shape;
+  -- everything below reads whatever rows it gives.
+  kept_reach as materialized (
+    select x.play, x.reach, coalesce(x.character, x.thread, x.board) as target, x.ends_at
+    from play_reach x, kept_span s
+    where x.thread = (select rng.id from rng) and x.ends_at <= now() and x.ends_at > s.lo
+  ),
+  kept_window as materialized (
+    select r.play, r.reach, r.target, r.ends_at, a.created_at as started, to_jsonb(a) as act, a.payload ->> 'card' as card
+    from kept_reach r join acts_public a on a.id = r.play, kept_span s
+    where a.created_at <= s.hi
+      and exists (select 1 from posts p where a.created_at <= p.created_at and p.created_at < r.ends_at)
+  ),
   kept as materialized (
-    select k.play, k.reach, k.target, k.ends_at, k.act from (
-      select r.play, r.reach, coalesce(r.character, r.thread, r.board) as target, r.ends_at, to_jsonb(a) as act, a.created_at as started
-      from (
-        select x.* from play_reach x
-        where x.thread = (select rng.id from rng) and x.ends_at <= now() and x.ends_at > (select min(p.created_at) from posts p)
-      ) r
-      join acts_public a on a.id = r.play
-      join card_kinds ck on ck.key = a.payload ->> 'card' and ck.keeps
-      where not card_ended(r.play)
-        and exists (select 1 from posts p where a.created_at <= p.created_at and p.created_at < r.ends_at)
-    ) k
-    order by k.started, k.play limit 100
+    select w.play, w.reach, w.target, w.ends_at, w.act
+    from kept_window w
+    join card_kinds ck on ck.key = w.card and ck.keeps
+    where not card_ended(w.play)
+    order by w.started, w.play limit 100
   ),
   -- Every play the page draws, on a post or above: by id, with its caster.
   played as materialized (
@@ -153,11 +182,7 @@ begin atomic
                 order by (x.act ->> 'created_at')::timestamptz, x.play), '[]'::jsonb) from kept x),
     -- The replies drawn under the page's posts, and the numbers of this page's range whose Act is drawn under a post elsewhere. Public projections: the same for every caller.
     'under', (select coalesce(jsonb_agg(jsonb_build_object('parent', n.parent, 'play', n.play, 'act', n.act) order by (n.act ->> 'seq')::integer, n.id), '[]'::jsonb) from nested n),
-    'cut', (select coalesce(jsonb_agg(jsonb_build_object('seq', c.seq, 'parent_seq', c.parent_seq) order by c.seq), '[]'::jsonb) from (
-              select a.seq, pa.seq as parent_seq
-              from acts_public a join post_under u on u.reply = a.id join acts_public pa on pa.id = u.parent, rng
-              where a.thread = rng.id and a.seq between rng.first_seq and rng.end_seq and a.kind = 'post' and not card_ended(u.play)
-            ) c),
+    'cut', (select coalesce(jsonb_agg(jsonb_build_object('seq', d.seq, 'parent_seq', (select pa.seq from acts_public pa where pa.id = d.parent)) order by d.seq), '[]'::jsonb) from drawn d where d.kind = 'post'),
     'visits', (select coalesce(jsonb_agg(jsonb_build_object(
         'visit', v.id, 'post', v.post, 'mod', v.character, 'at', v.created_at, 'ends_at', v.payload -> 'ends_at', 'line', v.payload -> 'line',
         'charges', (v.payload -> 'charges') || coalesce((select jsonb_agg(j.payload -> 'charge' order by j.created_at, j.id) from acts_public j where j.kind = 'visit_join' and j.target_act_id = v.id), '[]'::jsonb),
