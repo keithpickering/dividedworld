@@ -1094,6 +1094,10 @@ test('each refusal of a skim, a ride and a scored-as play comes back as a plain 
     const sent = JSON.parse(calls.find((c) => c.startsWith('service:play_surface_card:'))!.slice('service:play_surface_card:'.length));
     assert.deepEqual({ card: sent.card, first: sent.first, most: sent.most, most_live: sent.most_live, who: sent.who }, { card: 'wall', first: { strokes: dab.strokes }, most: 3000, most_live: 7, who: whoami });
     assert.equal(sent.first_cells.length, 10000);
+    // play_surface_card has no default for `tokens` (a defaulted argument cannot sit before the ones after it), so a card that writes nothing
+    // still sends it, null: left off, PostgREST finds no function of that signature and the play is a 500.
+    assert.equal('tokens' in sent, true);
+    assert.equal(sent.tokens, null);
     assert.ok(!calls.some((c) => c.includes('service:play_card:')));
     // The play is heard as a play, without the drawing in it; the wall's own count follows, and never its strokes.
     assert.deepEqual(out.broadcasts, [
