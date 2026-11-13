@@ -233,10 +233,11 @@ test('the instance sells Card Collector, Force Field and the new Gimmicks, each 
 });
 
 test('Publicity Tour, Heat Magnet, Class Clown and Good Vibes are Gimmicks with the effects the design names', () => {
-  const hours36 = { unit: 'hour', count: 36 };
-  assert.deepEqual([by('publicity-tour').reaches, by('publicity-tour').lasts, by('publicity-tour').gimmick], [['character'], hours36, { kind: 'earn', quadrants: ['excitedPositive', 'calmPositive'], by: 0.1, group: 'publicity' }]);
-  assert.deepEqual([by('heat-magnet').reaches, by('heat-magnet').lasts, by('heat-magnet').gimmick], [['character'], hours36, { kind: 'earn', quadrants: ['excitedNegative', 'boredNegative'], by: 0.1 }]);
-  assert.deepEqual([by('class-clown').reaches, by('class-clown').lasts, by('class-clown').gimmick], [['character'], hours36, { kind: 'earn', reactions: ['laughing', 'eye-roll'], by: 0.5 }]);
+  const days3 = { unit: 'day', count: 3 };
+  assert.deepEqual([by('publicity-tour').reaches, by('publicity-tour').lasts, by('publicity-tour').gimmick], [['character'], days3, { kind: 'earn', quadrants: ['excitedPositive', 'calmPositive'], by: 0.2, group: 'publicity' }]);
+  assert.deepEqual([by('hype-up').reaches, by('hype-up').lasts, by('hype-up').gimmick], [['character'], days3, { kind: 'earn', quadrants: ['excitedPositive', 'calmPositive'], by: 0.2, group: 'publicity' }]);
+  assert.deepEqual([by('heat-magnet').reaches, by('heat-magnet').lasts, by('heat-magnet').gimmick], [['character'], days3, { kind: 'earn', quadrants: ['excitedNegative', 'boredNegative'], by: 0.2 }]);
+  assert.deepEqual([by('class-clown').reaches, by('class-clown').lasts, by('class-clown').gimmick], [['character'], days3, { kind: 'earn', reactions: ['laughing', 'eye-roll'], by: 1 }]);
   assert.deepEqual([by('good-vibes').reaches, by('good-vibes').lasts, by('good-vibes').gimmick], [['thread'], { unit: 'day', count: 3 }, { kind: 'price', flavors: ['salty'], add: 25 }]);
   for (const key of ['laughing', 'eye-roll']) assert.ok(instance.reactions.some((r) => r.key === key), key);
 });
@@ -772,7 +773,7 @@ test('Jimmy Wails is a Sweet uncommon Cast on a post, sold for 2.00, with a driv
   assert.deepEqual(j.reaches ?? ['post'], ['post']);
   assert.equal(priceOf('jimmy-wails'), 200, 'the machine slot, onSale');
   assert.equal(instance.machine.find((m) => 'card' in m.item && m.item.card === 'jimmy-wails')!.availability, 'onSale');
-  assert.deepEqual(j.draws, ['blue-shirt', 'close-up', 'dark-logo']);
+  assert.deepEqual(j.draws, ['blue-shirt', 'close-up', 'dark-logo', 'black-shirt', 'gray-jacket', 'looking-away', 'red-wall', 'full-length', 'pinstripe']);
   assert.deepEqual(j.drive, { lasts: { unit: 'day', count: 7 }, gifts: ['jimmyWails.gift1', 'jimmyWails.gift2', 'jimmyWails.gift3', 'jimmyWails.gift4'], overhead: 'jimmyWails.overhead' });
   assert.deepEqual(['jimmyWails.gift1', 'jimmyWails.gift2', 'jimmyWails.gift3', 'jimmyWails.gift4', 'jimmyWails.overhead'].map((k) => settings.economy[k]), [10, 25, 50, 100, 25]);
   assert.equal(giftSplit(10, settings.economy['jimmyWails.overhead']!).overhead, 3, 'a 0.10 gift keeps 0.03 of overhead');

@@ -2,7 +2,7 @@
  * Graffiti's toolbar (docs/plans/2026-11-11-graffiti-design.md, sections 8, 9 and 11; plan Task 10): the glass's dock with its cyan seam, in
  * the owner's style D of the mockup (docs/research/2026-11-11-graffiti/01-tool-styles.html) with the design's changes. From the top: the meter
  * (the can's name, and the wall with this drawing, as a figure and over a thin skewed bar), two tabs, **Spray** (fourteen drawn cans, three
- * caps, Undo) and **Stencils** (six stencils, the cans, and nine spots), then Cancel and Tag it (Set it, face down), with the reason Tag it
+ * caps, Undo) and **Stencils** (six stencils, the cans, and nine spots), then Cancel and Tag it, with the reason Tag it
  * waits under it in plain words.
  *
  * It keeps nothing: DrawMode (Compose.tsx) holds the drawing and the choices and gives them here, so this is the view and every control
@@ -11,7 +11,7 @@
  * screen reader reaches and reads its reason from. Everything it draws is `data-kb-over-ink`: a press on it is the toolbar's and starts no
  * stroke, on this card or any other that is scrubbed.
  */
-import { createElement, useEffect, useId, useLayoutEffect, useRef, type KeyboardEvent, type ReactNode } from 'react';
+import { createElement, useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { CANS, CAPS, type Can, type Cap } from '../graffiti.ts';
 import { CAN_VIEWBOX, canShapes } from './can.svg.ts';
 import { overWords, percent, type Meter } from './draft.ts';
@@ -21,8 +21,6 @@ import { CAN_NAMES, CAP_NAMES, SPOT_NAMES, STENCIL_NAMES } from './words.ts';
 export type ToolbarTab = 'spray' | 'stencils';
 
 export interface ToolbarProps {
-  /** Cast now (Tag it), or set face down on the player's own post (Set it). */
-  readonly mode: 'cast' | 'set';
   readonly can: Can;
   readonly onCan: (can: Can) => void;
   readonly cap: Cap;
@@ -125,6 +123,12 @@ const STENCIL_CHOICES = STENCIL_KEYS.map((k): Choice<StencilKey> => ({ value: k,
 const SPOT_CHOICES = SPOT_NAMES.map((name, i): Choice<number> => ({ value: i, name, className: 'kb-graffiti-spot' }));
 const TABS: readonly { readonly key: ToolbarTab; readonly name: string }[] = [{ key: 'spray', name: 'Spray' }, { key: 'stencils', name: 'Stencils' }];
 
+/**
+ * Where the dock is mounted for the post a card is played on: the posts' table (`.kb-acts`), else the post. A post is isolated (thread.css), so a dock fixed inside it has its
+ * z-index trapped in that post and every post after it paints over the dock; in the table it lies over all of them. The dock's controls come after the posts in the tab order.
+ */
+export const dockHostOf = (el: Element | null): HTMLElement | null => el?.closest<HTMLElement>('.kb-acts') ?? el?.closest<HTMLElement>('.kb-act') ?? null;
+
 export function Toolbar(p: ToolbarProps) {
   const id = useId();
   const dock = useRef<HTMLDivElement>(null);
@@ -132,6 +136,8 @@ export function Toolbar(p: ToolbarProps) {
   const stay = useRef<HTMLButtonElement>(null);
   const cancel = useRef<HTMLButtonElement>(null);
   const wasAsking = useRef(false);
+  /* Open each time draw mode opens (the toolbar mounts with it); the tools are hidden when closed, never unmounted, so the choices stay. */
+  const [open, setOpen] = useState(true);
 
   useEffect(() => { if (p.focusOnMount) first.current?.focus({ preventScroll: true }); }, [p.focusOnMount]);
   useEffect(() => {
@@ -140,20 +146,62 @@ export function Toolbar(p: ToolbarProps) {
     wasAsking.current = p.asking !== null;
   }, [p.asking]);
 
-  /* On a phone the dock is fixed to the foot of the window and would hide the last of the page: the page keeps its height clear (graffiti.css). */
+  /* The dock is fixed to the foot of the window at every width and would hide the last of the page: the page keeps its height clear (graffiti.css). Wide, it lines up with the
+     thread's column, which the page does not name in a variable, so the toolbar measures the column's edges (the posts' table, else the page's column) beside its own height. */
   useLayoutEffect(() => {
     const el = dock.current;
     if (!el) return undefined;
     const root = document.documentElement;
-    const size = () => root.style.setProperty('--kb-graffiti-dock-h', `${el.offsetHeight}px`);
+    const column = el.closest<HTMLElement>('.kb-acts') ?? el.closest<HTMLElement>('.kb-page');
+    const watched = new Set<Element>();
+    let resize: ResizeObserver | null = null;
+    const size = () => {
+      root.style.setProperty('--kb-graffiti-dock-h', `${el.offsetHeight}px`);
+      /* The HUD's peek hangs over the dock's right end on a wide screen and takes no pointer: the played card over the dock's lower rows, and its "Playing · post #N" tag, wider than the
+         card, over the header's buttons. The dock keeps clear of what is measured: its body of the card's left edge, the header's buttons of the tag's, whatever the window's width or the tag's words. */
+      const own = el.getBoundingClientRect();
+      const right = own.right;
+      const leftOf = (sel: string) => {
+        /* The hand and the HUD each keep a copy of the tag, one of them hidden (no box): every copy with a box is measured, and only those that lie over the dock's rows count. */
+        const seen = [...document.querySelectorAll<HTMLElement>(sel)].filter((e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; });
+        for (const e of seen) if (!watched.has(e)) { watched.add(e); resize?.observe(e); }
+        for (const e of watched) if (!e.isConnected) { watched.delete(e); resize?.unobserve(e); }
+        const rects = seen.map((e) => e.getBoundingClientRect()).filter((r) => r.left < right && r.right > right - 400 && r.top < own.bottom && r.bottom > own.top);
+        return rects.length > 0 ? Math.min(...rects.map((r) => r.left)) : null;
+      };
+      const card = leftOf('.kb-hand-peek-card'), tag = leftOf('.kb-hand-armed');
+      const cardGap = card === null ? 0 : Math.ceil(right - card) + 12;
+      const tagGap = tag === null ? 0 : Math.ceil(right - tag) + 12;
+      if (cardGap > 0) root.style.setProperty('--kb-graffiti-dock-peek', `${cardGap}px`); else root.style.removeProperty('--kb-graffiti-dock-peek');
+      if (tagGap > cardGap) root.style.setProperty('--kb-graffiti-dock-tag', `${tagGap - cardGap}px`); else root.style.removeProperty('--kb-graffiti-dock-tag');
+      if (!column) return;
+      const at = column.getBoundingClientRect();
+      root.style.setProperty('--kb-graffiti-dock-left', `${Math.max(0, Math.round(at.left))}px`);
+      root.style.setProperty('--kb-graffiti-dock-right', `${Math.max(0, Math.round(root.clientWidth - at.right))}px`);
+    };
     root.setAttribute('data-kb-graffiti-dock', '');
+    resize = typeof ResizeObserver === 'function' ? new ResizeObserver(size) : null;
+    resize?.observe(el);
+    if (column) resize?.observe(column);
     size();
-    const watch = typeof ResizeObserver === 'function' ? new ResizeObserver(size) : null;
-    watch?.observe(el);
-    return () => { watch?.disconnect(); root.removeAttribute('data-kb-graffiti-dock'); root.style.removeProperty('--kb-graffiti-dock-h'); };
+    window.addEventListener('resize', size);
+    /* The peek and the tags come and go with the hand (opened, put away, a card armed or played), and move when the HUD's classes change: one watch on the HUD's parent for what is added, removed, hidden or reclassed,
+       measured once a frame at most, and never on a style change, so it costs no layout while the page animates. */
+    let frame = 0;
+    const later = () => { if (!frame) frame = requestAnimationFrame(() => { frame = 0; size(); }); };
+    const hud = document.querySelector('[aria-label="Game HUD"]')?.parentElement ?? document.body;
+    const mutations = typeof MutationObserver === 'function' ? new MutationObserver(later) : null;
+    mutations?.observe(hud, { childList: true, subtree: true, attributes: true, attributeFilter: ['hidden', 'class'] });
+    return () => {
+      resize?.disconnect();
+      mutations?.disconnect();
+      if (frame) cancelAnimationFrame(frame);
+      window.removeEventListener('resize', size);
+      root.removeAttribute('data-kb-graffiti-dock');
+      for (const v of ['--kb-graffiti-dock-h', '--kb-graffiti-dock-left', '--kb-graffiti-dock-right', '--kb-graffiti-dock-peek', '--kb-graffiti-dock-tag']) root.style.removeProperty(v);
+    };
   }, []);
 
-  const set = p.mode === 'set';
   const ready = p.hasDraft && !p.meter.over && !p.busy;
   const reason = p.busy ? null : !p.hasDraft ? (p.tab === 'stencils' ? 'Choose a stencil first' : 'Draw something first') : p.meter.over ? overWords(p.meter) : null;
   const reasonId = `${id}-reason`;
@@ -179,31 +227,36 @@ export function Toolbar(p: ToolbarProps) {
         <i className="kb-graffiti-meter-wall" style={{ width: `${fill}%` }} />
         <i className="kb-graffiti-meter-add" style={{ left: `${fill}%`, width: `${Math.max(0, reach - fill)}%` }} />
       </div>
+      <button type="button" className="kb-graffiti-btn kb-graffiti-fold" aria-expanded={open} aria-controls={`${id}-tools`} onClick={() => setOpen((o) => !o)}>
+        <span>{open ? 'Hide tools' : 'Show tools'}</span>
+      </button>
 
-      <div role="tablist" aria-label="Tools" className="kb-graffiti-tabs" onKeyDown={tabKey}>
-        {TABS.map((t, i) => (
-          <button
-            key={t.key} ref={i === 0 ? first : undefined} type="button" role="tab" id={`${id}-tab-${t.key}`} aria-selected={p.tab === t.key} aria-controls={`${id}-panel`}
-            tabIndex={p.tab === t.key ? 0 : -1} className="kb-graffiti-btn" onClick={() => p.onTab(t.key)}
-          >
-            <span>{t.name}</span>
-          </button>
-        ))}
-      </div>
+      <div id={`${id}-tools`} className="kb-graffiti-tools" data-tab={p.tab} hidden={!open}>
+        <div role="tablist" aria-label="Tools" className="kb-graffiti-tabs" onKeyDown={tabKey}>
+          {TABS.map((t, i) => (
+            <button
+              key={t.key} ref={i === 0 ? first : undefined} type="button" role="tab" id={`${id}-tab-${t.key}`} aria-selected={p.tab === t.key} aria-controls={`${id}-panel`}
+              tabIndex={p.tab === t.key ? 0 : -1} className="kb-graffiti-btn" onClick={() => p.onTab(t.key)}
+            >
+              <span>{t.name}</span>
+            </button>
+          ))}
+        </div>
 
-      <div role="tabpanel" id={`${id}-panel`} aria-labelledby={`${id}-tab-${p.tab}`} className="kb-graffiti-panel">
-        {p.tab === 'stencils' && (
-          <Radios label="Stencil" className="kb-graffiti-stencils" choices={STENCIL_CHOICES} value={p.stencil} onChange={p.onStencil} />
-        )}
-        <Radios label="Can" className="kb-graffiti-cans" choices={CAN_CHOICES} value={p.can} onChange={p.onCan} />
-        {p.tab === 'spray' ? (
-          <div className="kb-graffiti-row">
-            <Radios label="Cap" className="kb-graffiti-caps" choices={CAP_CHOICES} value={p.cap} onChange={p.onCap} />
-            <button type="button" className="kb-graffiti-btn" disabled={!p.canUndo} onClick={p.onUndo}><span>Undo</span></button>
-          </div>
-        ) : (
-          <Radios label="Spot" className="kb-graffiti-spots" choices={SPOT_CHOICES} value={p.spot} onChange={p.onSpot} cols={3} />
-        )}
+        <div role="tabpanel" id={`${id}-panel`} aria-labelledby={`${id}-tab-${p.tab}`} className="kb-graffiti-panel">
+          {p.tab === 'stencils' && (
+            <Radios label="Stencil" className="kb-graffiti-stencils" choices={STENCIL_CHOICES} value={p.stencil} onChange={p.onStencil} />
+          )}
+          <Radios label="Can" className="kb-graffiti-cans" choices={CAN_CHOICES} value={p.can} onChange={p.onCan} />
+          {p.tab === 'spray' ? (
+            <div className="kb-graffiti-row">
+              <Radios label="Cap" className="kb-graffiti-caps" choices={CAP_CHOICES} value={p.cap} onChange={p.onCap} />
+              <button type="button" className="kb-graffiti-btn" disabled={!p.canUndo} onClick={p.onUndo}><span>Undo</span></button>
+            </div>
+          ) : (
+            <Radios label="Spot" className="kb-graffiti-spots" choices={SPOT_CHOICES} value={p.spot} onChange={p.onSpot} cols={3} />
+          )}
+        </div>
       </div>
 
       {p.notice !== null && <p className="kb-graffiti-notice" role="status">{p.notice}</p>}
@@ -219,13 +272,13 @@ export function Toolbar(p: ToolbarProps) {
         </div>
       ) : (
         <>
-          <div className="kb-graffiti-row">
+          <div className="kb-graffiti-row kb-graffiti-actions">
             <button ref={cancel} type="button" className="kb-graffiti-btn" disabled={p.busy} onClick={p.onCancel}><span>Cancel</span></button>
             <button
               type="button" className="kb-graffiti-btn kb-graffiti-go" aria-disabled={!ready} aria-busy={p.busy || undefined} aria-describedby={reason !== null ? reasonId : undefined}
               onClick={() => { if (ready) p.onSubmit(); }}
             >
-              <span>{set ? 'Set it' : 'Tag it'}</span>
+              <span>Tag it</span>
             </button>
           </div>
           {reason !== null && <p id={reasonId} className="kb-graffiti-reason">{reason}</p>}

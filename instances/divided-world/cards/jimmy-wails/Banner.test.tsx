@@ -53,6 +53,24 @@ describe('the plate', () => {
   });
 });
 
+describe('the credit', () => {
+  test('is under the banner, outside its picture: the photographer linked to the photograph, the license linked to its deed, and that it was edited', () => {
+    for (const p of PLATES) {
+      const { container, unmount } = render(<Banner play={play({ drawn: p.key })} caster="Spritey" />);
+      const credit = container.querySelector('.dw-jw-credit')!;
+      expect(credit.textContent, p.key).toBe(`Photo: ${p.credit.author}, ${p.credit.license}, edited`);
+      expect(container.querySelector('figure')!.contains(credit), p.key).toBe(false);
+      const [who, license] = [...credit.querySelectorAll('a')];
+      expect(who!.textContent, p.key).toBe(p.credit.author);
+      expect(who!.getAttribute('href'), p.key).toBe(p.credit.source);
+      expect(license!.textContent, p.key).toBe(p.credit.license);
+      expect(license!.getAttribute('href'), p.key).toBe(p.credit.licenseUrl);
+      for (const a of [who!, license!]) expect(a.getAttribute('rel'), p.key).toBe('noopener noreferrer');
+      unmount();
+    }
+  });
+});
+
 describe('the fit', () => {
   /** Words that take `perChar` pixels across and wrap into lines of the box's width, each `size * 1.2` high. */
   const measurer = (text: string, box: { w: number; h: number }) => (size: number) => {

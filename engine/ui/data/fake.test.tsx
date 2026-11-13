@@ -4081,13 +4081,11 @@ describe('a surface, as the server keeps it', () => {
       expect(await fake.myCards()).toEqual(expect.arrayContaining([{ card: 'slab', held: 2 }]));
       expect(await fake.cardsOn(post, 10)).toHaveLength(0);
     });
-    test('setCard on one\'s own post takes the draft with it: a back, and no wall until it springs (the fake lays no card from a spring, so the draft is checked and not kept)', async () => {
+    test('setCard on a surface card is refused: it is cast face up and never set', async () => {
       const { fake, ana, anaFace, thread } = wall();
       const post = fake.seed.post(thread, anaFace, 'a clean post');
       fake.seed.cards(ana, { slab: 2 });
-      expect(await fake.setCard('slab', anaFace, post, {})).toMatchObject({ ok: false, field: 'first' });
-      expect(await fake.setCard('slab', anaFace, post, {}, undefined, { strokes: 'no' })).toMatchObject({ ok: false });
-      expect(await fake.setCard('slab', anaFace, post, {}, undefined, tag)).toMatchObject({ ok: true, value: { kind: 'set' } });
+      expect(await fake.setCard('slab', anaFace, post, {})).toMatchObject({ ok: false, error: expect.stringContaining('never set face down') });
     });
   });
 

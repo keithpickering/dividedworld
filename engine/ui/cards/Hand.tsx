@@ -41,6 +41,10 @@ import { arcSlots, handOrder } from './arc.ts';
 /** The most faces drawn for one kind of card. */
 const COPIES_SHOWN = 2;
 
+/** An armed card's tag, and the end of its name: while it is being played they say where. */
+const tagOf = (playing: { readonly seq: number } | null): string => (playing ? `Playing · post #${playing.seq}` : 'Armed · pick a post');
+const nameEnd = (playing: { readonly seq: number } | null): string => (playing ? `, playing on post ${playing.seq}` : ', armed: pick a post');
+
 /** One drawn face: the card, which copy it is, and how many of the kind are in the hand if it is the last drawn. */
 interface Drawn {
   readonly face: CardFace;
@@ -62,6 +66,8 @@ export interface HandProps {
   readonly faces: readonly CardFace[];
   /** The key of the card that is armed, if any. */
   readonly armed?: string | null;
+  /** The post the armed card is being played on, while a compose is open on one: its tag and its name say so in place of "pick a post". */
+  readonly playing?: { readonly seq: number } | null;
   /** What pressing a card does; with none, it shows the card's rules. */
   readonly onPick?: (face: CardFace) => void;
   readonly onClose: () => void;
@@ -69,7 +75,7 @@ export interface HandProps {
   readonly vendingHref: string;
 }
 
-export function Hand({ held, faces, armed = null, onPick, onClose, vendingHref }: HandProps) {
+export function Hand({ held, faces, armed = null, playing = null, onPick, onClose, vendingHref }: HandProps) {
   const idBase = useId();
   /* The Main board's layout stands full-size cards on the arc; the Phone board's sheet holds smaller ones in a row. */
   const { board } = useBoard();
@@ -134,13 +140,13 @@ export function Hand({ held, faces, armed = null, onPick, onClose, vendingHref }
                   face={face}
                   size="fan"
                   armed={isArmed}
-                  aria-label={`${cardLabel(face, 'fan')}${n > 1 ? `, ${n} in hand` : ''}${isArmed ? ', armed: pick a post' : ''}`}
+                  aria-label={`${cardLabel(face, 'fan')}${n > 1 ? `, ${n} in hand` : ''}${isArmed ? nameEnd(playing) : ''}`}
                   aria-describedby={says}
                   aria-pressed={onPick ? isArmed : undefined}
                   onClick={() => { setViewed(face.key); onPick?.(face); }}
                 />
                 {n > 1 && <span className="kb-hand-times kb-num" aria-hidden="true">×{n}</span>}
-                {isArmed && <span className="kb-hand-armed kb-glass-skew-tag" aria-hidden="true"><span className="kb-glass-upright">Armed · pick a post</span></span>}
+                {isArmed && <span className="kb-hand-armed kb-glass-skew-tag" aria-hidden="true"><span className="kb-glass-upright">{tagOf(playing)}</span></span>}
                 <span id={says} className="kb-visually-hidden">{face.describe}</span>
               </li>
             );
@@ -165,13 +171,13 @@ export function Hand({ held, faces, armed = null, onPick, onClose, vendingHref }
                   face={face}
                   size="phone"
                   armed={isArmed}
-                  aria-label={`${cardLabel(face, 'phone')}${total ? `, ${total} in hand` : ''}${isArmed ? ', armed: pick a post' : ''}`}
+                  aria-label={`${cardLabel(face, 'phone')}${total ? `, ${total} in hand` : ''}${isArmed ? nameEnd(playing) : ''}`}
                   aria-describedby={says}
                   aria-pressed={onPick ? isArmed : undefined}
                   onClick={() => { setViewed(face.key); onPick?.(face); }}
                 />
                 {total && <span className="kb-hand-times kb-num" aria-hidden="true">×{total}</span>}
-                {isArmed && <span className="kb-hand-armed kb-glass-skew-tag" aria-hidden="true"><span className="kb-glass-upright">Armed · pick a post</span></span>}
+                {isArmed && <span className="kb-hand-armed kb-glass-skew-tag" aria-hidden="true"><span className="kb-glass-upright">{tagOf(playing)}</span></span>}
                 <span id={says} className="kb-visually-hidden">{face.describe}</span>
               </li>
             );

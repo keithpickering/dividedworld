@@ -317,15 +317,14 @@ test('a draw and a wash name the character, the play and the drawing, and are th
   }
 });
 
-test('a surface card is played and set with its first draw, and refused before SQL without one; a card with no surface carries none', () => {
+test('a surface card is played with its first draw, and refused before SQL without one; a set and a card with no surface carry none', () => {
   const play = { action: 'playCard', card: 'wall', character: id, target: other };
   assert.equal(refusal2(play, walled), 'first: draw your tag first');
-  assert.equal(refusal2({ action: 'setCard', card: 'wall', character: id, target: other }, walled), 'first: draw your tag first');
   const cast = decide({ ...play, first: dab }, walled);
   assert.ok(cast.ok && cast.rpc === 'play_card' && cast.needsTarget === true);
   assert.deepEqual(cast.ok && cast.args.first, dab);
   const set = decide({ action: 'setCard', card: 'wall', character: id, target: other, first: dab }, walled);
-  assert.deepEqual(set.ok && set.args.first, dab);
+  assert.ok(set.ok && !('first' in set.args), 'a set carries no drawing: a surface card is never set, which decideSet refuses');
   const plain = decide({ action: 'playCard', card: 'splat', character: id, target: other, first: dab }, walled);
   assert.ok(plain.ok && !('first' in plain.args), 'a card with no surface is sent no drawing');
 });

@@ -14,6 +14,7 @@ import { RouterProvider } from '../router.tsx';
 import { testGlass } from '../test-world.tsx';
 import { forgetBoard } from '../glass/back.ts';
 import { Frame } from './Frame.tsx';
+import { usePlay } from '../cards/play.tsx';
 import { ENGINE_DEFAULT_PRONOUNS } from '../../rules/pronouns.ts';
 
 /* jsdom has no WAAPI: Motion's `animate`, which glass/play.ts runs the cards' deal and gather with, is a stub that holds each run until a test settles it. */
@@ -201,6 +202,28 @@ describe('the hand on the Main board is a modal', () => {
   });
 });
 
+/* A button that opens a compose on post 7 as a post's ghost mark would; the compose's own draw is the card's, so none is mounted here. */
+function OpenCompose() {
+  const play = usePlay()!;
+  const target = { post: { id: 'p7', seq: 7 }, title: 't', author: 'Gloomba', to: '/t/x', plays: {}, know: async () => {} } as unknown as Parameters<typeof play.openCompose>[1];
+  return <button type="button" onClick={() => play.openCompose('stick-around', target)}>Open compose</button>;
+}
+
+describe('the peek while a compose is open', () => {
+  test('says Playing · post #N while one is open, and Armed · pick a post after Esc', async () => {
+    setup(<OpenCompose />);
+    const hand = await handButton();
+    await userEvent.click(hand);
+    await userEvent.click(card(STICK));
+    expect(document.querySelector('.kb-hand-peek')).toHaveTextContent('Armed · pick a post');
+    await userEvent.click(screen.getByRole('button', { name: 'Open compose' }));
+    expect(document.querySelector('.kb-hand-peek')).toHaveTextContent('Playing · post #7');
+    expect(document.querySelector('.kb-hand-peek')).not.toHaveTextContent('Armed');
+    await userEvent.keyboard('{Escape}');
+    expect(document.querySelector('.kb-hand-peek')).toHaveTextContent('Armed · pick a post');
+  });
+});
+
 describe('the hand on the Main board, reopened while it gathers', () => {
   test('the cards play in again, and when the last gather ends the drawer is hidden, nothing is inert and the hand button has focus', async () => {
     document.documentElement.setAttribute('data-kb-motion', 'full');
@@ -273,5 +296,18 @@ describe('the hand on the Phone board', () => {
     expect(document.querySelector('.kb-hud')).not.toHaveAttribute('data-kb-hand-open');
     expect(document.querySelector('[inert]')).toBeNull();
     expect(document.querySelector('.kb-hand-backdrop')).toBeNull();
+  });
+
+  test('while a compose is open the hand button says Playing, and pressing it puts the card back', async () => {
+    phone();
+    setup(<OpenCompose />);
+    await userEvent.click(await handButton());
+    await userEvent.click(within(screen.getByRole('region', { name: 'Your hand' })).getByRole('button', { name: STICK }));
+    expect(screen.getByRole('button', { name: 'Armed · Stick Around, press to put it back' })).toHaveTextContent('Armed · Stick Around');
+    await userEvent.click(screen.getByRole('button', { name: 'Open compose' }));
+    const playing = screen.getByRole('button', { name: 'Playing · Stick Around, press to put it back' });
+    expect(playing).toHaveTextContent('Playing · Stick Around');
+    await userEvent.click(playing);
+    expect(await handButton()).toBeInTheDocument();
   });
 });

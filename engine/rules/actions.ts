@@ -133,7 +133,7 @@ const played = (r: Fields, instance: Instance, play: 'cast' | 'use'): Fields => 
 };
 
 /**
- * A surface card's first draw (the card's own `surface.validateDraw` reads it in decidePlay and decideSet, which hold what it must be): carried as `first`,
+ * A surface card's first draw (the card's own `surface.validateDraw` reads it in decidePlay, which holds what it must be): carried as `first`,
  * and refused here, before anything is read, when a surface card is played without one. Any other card carries none, so a request that names one is not read.
  */
 const firstDraw = (r: Fields, instance: Instance, key: string): { first?: unknown } => {
@@ -163,11 +163,11 @@ const conditions = (r: Fields): SetConditions | undefined => {
   return Object.keys(out).length === 0 ? undefined : out;
 };
 
-/** A Set's arguments: the card, the character and the post, with no message, and the conditions if it names any; refused for any reach but a post's. */
+/** A Set's arguments: the card, the character and the post, with no message, and the conditions if it names any. It carries no first draw, since a surface card is never set (faceUpOnly); refused for any reach but a post's. */
 const setArgs = (r: Fields, instance: Instance): Fields => {
   const key = card(r, instance);
   const when = conditions(r);
-  const args = { card: key, through: id(r, 'character'), target: id(r, 'target'), config: r.config ?? {}, ...(when ? { conditions: when } : {}), ...firstDraw(r, instance, key) };
+  const args = { card: key, through: id(r, 'character'), target: id(r, 'target'), config: r.config ?? {}, ...(when ? { conditions: when } : {}) };
   reached(r, instance, key, 'set');
   return args;
 };

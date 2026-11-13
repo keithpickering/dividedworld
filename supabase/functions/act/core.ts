@@ -104,7 +104,6 @@ const BROADCASTS: Record<string, (answer: Row, args: Row) => Broadcast[]> = {
   wash_surface: (a, args) => surfaceHeard(args.play, a, a.thread),
   // A card back: the set Act names no card, so neither does what is sent.
   set_card: (a) => act(a),
-  set_surface_card: (a) => act(a),
   // A take-back is an Act of the back's post's author, on that post, naming the set and no card.
   take_back: (a) => act(a),
   start_thread: (a) => [...thread(a.thread), ...act(a.act)],
@@ -199,16 +198,11 @@ export async function runAction(dbs: { player: Db; service: Db }, instance: Inst
       }
       if (decision.play === 'set') {
         // The card's own rules decide the configuration, the card a catching set card names and the phrase a Move waits for; none of them is read from the request but the configuration.
-        const { conditions, first, ...rest } = args as { conditions?: SetConditions; first?: unknown };
-        // A surface card's first draw is read with the conditions (decideSet); the draft is its first draw, kept private beside the back (set_surface_card).
-        const set = decideSet(rules, tuned.settings, target, effects, decision.args.config, tuned.cards, first === undefined ? conditions : { ...conditions, first });
+        const { conditions, ...rest } = args as { conditions?: SetConditions };
+        const set = decideSet(rules, tuned.settings, target, effects, decision.args.config, tuned.cards, conditions);
         if (!set.ok) return refused('config', set.why);
         // The ids a Who names go as `named`, since `who` is already the account on this call (set_card's first argument).
         args = { ...rest, config: set.value.config, price: set.value.price, catches: set.value.catches ?? null, phrase: set.value.phrase ?? null, passage: set.value.passage ?? null, named: set.value.who?.characters ?? null, who_except: set.value.who?.except ?? null };
-        if (set.value.draw) {
-          rpc = 'set_surface_card';
-          args = { ...args, draft: set.value.draw.payload, draft_cells: set.value.draw.cells, most: set.value.draw.most, most_live: rules.surface!.mostLive };
-        }
       } else {
         const said = casterMessage(decision.args.message);
         if (!said.ok) return refused('message', said.why);
