@@ -37,8 +37,10 @@ export function useSpinDrafts(): { readonly get: (origin: Id) => SpinDraft | und
  * `label` names the origin as the form says it: "post 41" for a post, "Mrs. Hooligan's Whoops!" for a card play
  * (the plays-on-a-post design, section 3); null for an Act with no such name ("this Act").
  */
-export function SpinForm({ origin, label: named, onClose, draft, onDraft, apology }: {
+export function SpinForm({ origin, label: named, at, onClose, draft, onDraft, apology }: {
   readonly origin: Id; readonly label: string | null; readonly onClose: () => void;
+  /** The post this was pressed on (a card on a character's mark on its postbit): sent with the spin, which records it. Absent, the spin names no post. */
+  readonly at?: Id;
   /**
    * Set, the form writes an apology: the origin is the move that bars the character, and sending goes through `apologize` (the spin of that move, with the bar the one
    * thing skipped) instead of `spin`. `to` names whom it is written to as the form says it ("the Boss", "a Mod").
@@ -103,7 +105,10 @@ export function SpinForm({ origin, label: named, onClose, draft, onDraft, apolog
     setRefusal(null);
     try {
       let answer;
-      try { answer = await (apology ? api.apologize(origin, character, title, body, ...framingArgs(body)) : api.spin(origin, character, title, body, ...framingArgs(body))); } catch { await look(null, character); return; }
+      try {
+        answer = await (apology ? api.apologize(origin, character, title, body, ...framingArgs(body))
+          : at === undefined ? api.spin(origin, character, title, body, ...framingArgs(body)) : api.spin(origin, character, title, body, framingArgs(body)[0], at));
+      } catch { await look(null, character); return; }
       if (answer.ok) went(answer.value.thread.id);
       else if (answer.uncertain) await look(answer.error, character);
       else setRefusal(`${fieldWords(answer.field)}${answer.error}`);
