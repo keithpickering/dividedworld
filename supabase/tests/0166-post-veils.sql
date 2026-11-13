@@ -120,7 +120,7 @@ do $$
 declare
   u uuid := gen_random_uuid(); u2 uuid := gen_random_uuid(); a uuid := gen_random_uuid(); a2 uuid := gen_random_uuid(); c uuid := gen_random_uuid(); m uuid := gen_random_uuid(); t uuid := gen_random_uuid();
   p1 uuid := gen_random_uuid(); p2 uuid := gen_random_uuid(); p3 uuid := gen_random_uuid(); p4 uuid := gen_random_uuid(); p5 uuid := gen_random_uuid(); p6 uuid := gen_random_uuid();
-  glint uuid; spun jsonb;
+  glint uuid; spun jsonb; u3 uuid; d uuid; pf1 uuid; pf2 uuid;
   url text := current_setting('kayfabb.scratch_url');
   board uuid; charge jsonb; seen text; got text; res jsonb; vis uuid; named uuid;
 begin
@@ -224,8 +224,96 @@ begin
   if seen is distinct from 'waiting' then raise exception 'a spin pressed at the post did not wait for a cast holding it (it %)', seen; end if;
   if spun -> 'act' ->> 'id' is null then raise exception 'the spin that waited was not made once the post was free: %', spun; end if;
 
+  -- (f) A quote that springs the author's back on the post, and a veil cast on that post (F1's record, the delta review's D1): the quote takes the post `for share` before its face-down rows when it meets a live back
+  -- (post, then face_down, as place_set takes them), so the two are laid one at a time. Quote first: the cast waits on the post and is then refused, since the back has sprung. Cast first: the quote waits, and the card the
+  -- back lays on it is shown under the stand-in (its post_veil_cards row). A third account quotes, so no character's row is shared with the cast.
+  u3 := gen_random_uuid(); d := gen_random_uuid(); pf1 := gen_random_uuid(); pf2 := gen_random_uuid();
+  perform tests.commit(format($sql$
+    insert into auth.users (id, email) values (%1$L, 'vv-quoter@test.invalid');
+    insert into accounts (id) values (%1$L);
+    insert into characters (id, owner, name, created_at, debuted_at) values (%2$L, %1$L, 'Vv Quoter', now(), now());
+    insert into class_history (character, class_key, started_at) values (%2$L, 'alpha', now());
+    insert into acts (id, character, kind, thread, payload) values (%3$L, %4$L, 'post', %5$L, '{"body": "A post with a back, quoted first."}'), (%6$L, %4$L, 'post', %5$L, '{"body": "A post with a back, veiled first."}');
+    -- The back's card stays in the table after (its ledger rows are append-only), under a key of its own.
+    insert into card_kinds (key, name, alignment, rarity, play, reaches, lasts, veil, stack) values ('vvmove', 'Vv Move', 'sweet', 'common', 'cast', '{post}', null, null, 1);
+    insert into card_ledger (account, card, kind, price) values (%7$L, 'vvmove', 'bought', 0), (%7$L, 'vvmove', 'bought', 0);
+    -- A veil that is not refused needs the stand-in (this section runs before section 0, which makes it; it is removed again below, with the veils these races land ended first).
+    insert into characters (name, staff, staff_kind, debuted_at) values ('Anonymous', 'anonymous', 'anonymous', now());
+    insert into character_profiles (character, title, signature) select c.id, 'Could be anyone.', '' from characters c where c.staff_kind = 'anonymous';
+  $sql$, u3, d, pf1, a, t, pf2, u));
+  perform * from extensions.dblink('vv_h', format('select place_set(%L, ''vvmove'', %L, ''{}'', %L, 0)', a, pf1, u)) as x(r jsonb);
+  perform * from extensions.dblink('vv_h', format('select place_set(%L, ''vvmove'', %L, ''{}'', %L, 0)', a, pf2, u)) as x(r jsonb);
+
+  -- Quote first, not committed; the cast waits for it and is refused once it commits.
+  perform extensions.dblink_exec('vv_h', 'begin');
+  perform * from extensions.dblink('vv_h', format('select tests.become(%L)', u3)) as x(r text);
+  perform * from extensions.dblink('vv_h', format('select post(%L, %L, ''Quoting the post with a back.'', %L)', t, d, pf1)) as x(r jsonb);
+  perform extensions.dblink_send_query('vv_v', format('select /* vv_f1 */ place_cast(%L, ''vvveil'', %L, ''{}'', '''', ''post'', null, %L, 0)', c, pf1, u2));
+  seen := pg_temp.parked('vv_f1', 'vv_v');
+  perform extensions.dblink_exec('vv_h', 'commit');
+  begin perform * from extensions.dblink_get_result('vv_v') as x(r jsonb); got := null; exception when others then got := sqlstate || ' ' || sqlerrm; end;
+  perform * from extensions.dblink_get_result('vv_v') as x(r jsonb);
+  if seen is distinct from 'waiting' then raise exception 'a veil cast did not wait for a quote springing a back on the post (it %)', seen; end if;
+  if got is distinct from '42501 a card set on this post has sprung, so its author is on the record' then raise exception 'the veil cast after a quote sprang the post''s back: %', got; end if;
+  if exists (select 1 from post_veils v where v.post = pf1) then raise exception 'a veil landed on a post whose back sprang while the veil was cast'; end if;
+
+  -- Cast first, not committed; the quote waits for it, and the card the back lays is shown under the stand-in once both are in.
+  perform extensions.dblink_exec('vv_h', 'begin');
+  perform * from extensions.dblink('vv_h', format('select place_cast(%L, ''vvveil'', %L, ''{}'', '''', ''post'', null, %L, 0)', c, pf2, u2)) as x(r jsonb);
+  perform extensions.dblink_exec('vv_v', 'begin');
+  perform * from extensions.dblink('vv_v', format('select tests.become(%L)', u3)) as x(r text);
+  perform extensions.dblink_send_query('vv_v', format('select /* vv_f2 */ post(%L, %L, ''Quoting the veiled post with a back.'', %L)', t, d, pf2));
+  seen := pg_temp.parked('vv_f2', 'vv_v');
+  perform extensions.dblink_exec('vv_h', 'commit');
+  select r into res from extensions.dblink_get_result('vv_v') as x(r jsonb);
+  perform * from extensions.dblink_get_result('vv_v') as x(r jsonb);
+  perform extensions.dblink_exec('vv_v', 'commit');
+  if seen is distinct from 'waiting' then raise exception 'a quote springing a back did not wait for a veil cast holding the post (it %)', seen; end if;
+  named := (select k.id from acts k join acts sp on sp.id = (k.payload ->> 'spring')::uuid where k.kind = 'card' and k.target_act_id = (res ->> 'id')::uuid and sp.target_act_id = pf2);
+  if named is null then raise exception 'the back on the veiled post laid no card on the quote: %', res; end if;
+  if not exists (select 1 from post_veil_cards v where v.card = named and v.post = pf2) then raise exception 'the card a back laid on a quote while the post was veiled has no post_veil_cards row'; end if;
+  if (select x.character from acts_public x where x.id = named) is distinct from (select k.id from characters k where k.staff_kind = 'anonymous') then raise exception 'the card a back laid while the post was veiled is not shown under the stand-in'; end if;
+
+  -- (g) A spin pressed at the post and a veil cast on it, each after waiting for the other (N2 of the delta review): spin first, the cast is refused for it; cast first, the spin is refused in the one sentence.
+  pf1 := gen_random_uuid(); pf2 := gen_random_uuid();
+  perform tests.commit(format($sql$
+    insert into acts (id, character, kind, thread, payload) values (%1$L, %2$L, 'post', %3$L, '{"body": "Spun at first."}'), (%4$L, %2$L, 'post', %3$L, '{"body": "Veiled first."}');
+  $sql$, pf1, a, t, pf2));
+  perform extensions.dblink_exec('vv_h', 'begin');
+  perform * from extensions.dblink('vv_h', format('select tests.become(%L)', u2)) as x(r text);
+  perform * from extensions.dblink('vv_h', format('select spin(origin => %L, through => %L, title => ''Vv spun first'', body => ''Discuss.'', at_post => %L)', glint, c, pf1)) as x(r jsonb);
+  perform extensions.dblink_send_query('vv_v', format('select /* vv_g1 */ place_cast(%L, ''vvveil'', %L, ''{}'', '''', ''post'', null, %L, 0)', c, pf1, u2));
+  seen := pg_temp.parked('vv_g1', 'vv_v');
+  perform extensions.dblink_exec('vv_h', 'commit');
+  begin perform * from extensions.dblink_get_result('vv_v') as x(r jsonb); got := null; exception when others then got := sqlstate || ' ' || sqlerrm; end;
+  perform * from extensions.dblink_get_result('vv_v') as x(r jsonb);
+  if seen is distinct from 'waiting' then raise exception 'a veil cast did not wait for a spin pressed at the post (it %)', seen; end if;
+  if got is distinct from '42501 a spin was pressed at this post, so its author is on the record' then raise exception 'the veil cast after a spin was pressed at the post: %', got; end if;
+
+  perform extensions.dblink_exec('vv_h', 'begin');
+  perform * from extensions.dblink('vv_h', format('select place_cast(%L, ''vvveil'', %L, ''{}'', '''', ''post'', null, %L, 0)', c, pf2, u2)) as x(r jsonb);
+  perform extensions.dblink_exec('vv_v', 'begin');
+  perform * from extensions.dblink('vv_v', format('select tests.become(%L)', u2)) as x(r text);
+  perform extensions.dblink_send_query('vv_v', format('select /* vv_g2 */ spin(origin => %L, through => %L, title => ''Vv spun second'', body => ''Discuss.'', at_post => %L)', glint, c, pf2));
+  seen := pg_temp.parked('vv_g2', 'vv_v');
+  perform extensions.dblink_exec('vv_h', 'commit');
+  begin perform * from extensions.dblink_get_result('vv_v') as x(r jsonb); got := null; exception when others then got := sqlstate || ' ' || sqlerrm; end;
+  perform * from extensions.dblink_get_result('vv_v') as x(r jsonb);
+  perform extensions.dblink_exec('vv_v', 'rollback');
+  if seen is distinct from 'waiting' then raise exception 'a spin pressed at the post did not wait for a veil cast holding it (it %)', seen; end if;
+  if got is distinct from 'P0002 that card is not on that post' then raise exception 'the spin pressed at the post after a veil was cast on it: %', got; end if;
+
   perform extensions.dblink_disconnect('vv_h');
   perform extensions.dblink_disconnect('vv_v');
+  -- The veils (f) and (g) landed are ended as an admin's end writes it (0092), and the stand-in goes, so section 0 meets a forum with none.
+  perform tests.commit($sql$
+    select set_config('kayfabb.card_end_writer', 'on', true);
+    insert into acts (character, kind, thread, target_act_id, payload)
+    select null, 'card_end', k.thread, v.play, '{"why": "reversed", "by": "admin"}' from post_veils v join acts k on k.id = v.play where k.payload ->> 'card' = 'vvveil';
+    select set_config('kayfabb.card_end_writer', '', true);
+    delete from character_profiles where character in (select c.id from characters c where c.staff_kind = 'anonymous');
+    delete from characters where staff_kind = 'anonymous';
+  $sql$);
   perform tests.commit($sql$ delete from card_kinds where key in ('vvveil', 'vvname', 'vvglint'); delete from settings where key = 'warnBar' $sql$);
 end $$;
 
@@ -372,13 +460,13 @@ begin
   if (v.post, v.veil, v.author, v.caster_account) is distinct from (p, 'author'::text, a, bob) then raise exception 'the veil row is wrong: %', to_jsonb(v); end if;
   if v.ends_at is distinct from now() + interval '3 days' then raise exception 'a veil ends in three days, not %', v.ends_at; end if;
   if (select (k.payload ->> 'ends')::timestamptz from acts k where k.id = vp) is distinct from v.ends_at then raise exception 'the play''s own ends and the veil''s differ'; end if;
-  if (select count(*) from post_veils) is distinct from 1 then raise exception 'one veil, one row'; end if;
+  if (select count(*) from post_veils x where x.post = p) is distinct from 1 then raise exception 'one veil, one row'; end if;
   -- It is the post's: a second is refused while it is up, in the stack's words.
   perform tests.become_service();
   got := pg_temp.coded(format('select play_card(%L, %L, %L, %L, %L, 0, %L)', bob, 'vlauthor', b, p, '{}', ''));
   if got is distinct from '23505 this post already carries that card' then raise exception 'a second veil while one is up: %', got; end if;
   perform tests.unbecome();
-  if (select count(*) from post_veils) is distinct from 1 then raise exception 'a refused second veil wrote a row'; end if;
+  if (select count(*) from post_veils x where x.post = p) is distinct from 1 then raise exception 'a refused second veil wrote a row'; end if;
   -- A card with no time up writes no veil row, and its play carries no ends.
   perform tests.become_service();
   again := (play_card(bob, 'vlmove', b, p3, '{}', 0, '') ->> 'id')::uuid;

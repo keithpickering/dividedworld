@@ -38,7 +38,8 @@
 -- Lock order, for the post, the visits and the character: POST, THEN visits_open, THEN CHARACTER, in every function that takes more than one (a visit's filing takes the post's row, then visits_open, then in infract the post's author's
 -- character). place_cast's character branch is the one this migration moves to it: the post a card on a character is played from is taken `for share` before the target character's row, where it was taken after (0317), so a card cast
 -- from post P onto its author and a filing on P meet at the post and never hold one row each and wait on the other (supabase/tests/0166-post-veils.sql, section 13 (d), holds a third session getting the character's row while the card waits).
--- spin is the other: the post a spin is pressed at is taken `for share` before not_banned takes the spinner's character (section 13 (e) holds the same of it).
+-- spin is the second: the post a spin is pressed at is taken `for share` before not_banned takes the spinner's character (section 13 (e) and (g)). lock_for_quote is the third: a quote that meets a live back takes the
+-- quoted post `for share` before its face-down rows and the characters (post, then face_down, as place_set takes them), so a back springing on it and a veil cast on it are laid one at a time (section 13 (f)).
 
 
 -- ===================================================================================== 1. the catalog ====
@@ -1469,6 +1470,10 @@ begin
                 and not exists (select 1 from acts s where s.kind = 'spring' and (s.payload ->> 'set') = f.play::text)
                 and not exists (select 1 from acts tb where tb.kind = 'take_back' and (tb.payload ->> 'set') = f.play::text));
   if cardinality(seen) > 0 then
+    -- The quoted post first, `for share`, when a live back may spring on it (the lock order: post, then face_down, as place_set takes them; then the characters): a veil cast on the post takes its row `for no key update`
+    -- and then asks land_refusal whether a back of it has sprung, and lay_sprung asks whether the post is veiled when it lays the back's card. Held here, the two are laid one at a time, and whichever is second sees the
+    -- first: the cast is refused for the spring, or the card is shown under the stand-in (post_veil_cards). 0166-post-veils.sql, race 13 (f).
+    perform 1 from acts a where a.id = quoting for share;
     select t.board into on_board from threads t where t.id = in_thread;
     perform 1 from characters c where c.id = poster for no key update;
     perform 1 from boards b where b.id = on_board for no key update;
