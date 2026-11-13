@@ -1,6 +1,7 @@
-import { fireEvent, screen, within } from '@testing-library/react';
+import { act, fireEvent, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { useState } from 'react';
 import { buildWorld, renderIn } from '../test-world.tsx';
 import { Hand } from './Hand.tsx';
 import { handOrder } from './arc.ts';
@@ -124,6 +125,50 @@ describe('the hand on the Phone board', () => {
     hand([{ card: 'stick', held: 1 }, { card: 'whoops', held: 1 }], { onPick });
     fireEvent.click(button('stick'), { detail: 1 });
     expect(onPick).toHaveBeenCalledWith(stick);
+  });
+
+  test('a press that began on a side card does not arm it, though the press made it the middle before the click', () => {
+    const proto = HTMLElement.prototype;
+    const restore = ['offsetLeft', 'offsetWidth', 'clientWidth'].map((k) => [k, Object.getOwnPropertyDescriptor(proto, k)] as const);
+    Object.defineProperty(proto, 'offsetLeft', { configurable: true, get(this: HTMLElement) { return this.matches('li.kb-hand-card') ? [...this.parentElement!.children].indexOf(this) * 66 : 0; } });
+    Object.defineProperty(proto, 'offsetWidth', { configurable: true, get() { return 104; } });
+    Object.defineProperty(proto, 'clientWidth', { configurable: true, get(this: HTMLElement) { return this.matches('ul.kb-hand-cards') ? 104 : 0; } });
+    try {
+      const onPick = vi.fn();
+      hand([{ card: 'stick', held: 1 }, { card: 'whoops', held: 1 }], { onPick });
+      const ul = document.querySelector<HTMLElement>('ul.kb-hand-cards')!;
+      fireEvent.pointerDown(button('whoops'));
+      ul.scrollLeft = 66;
+      fireEvent.scroll(ul);
+      return vi.waitFor(() => expect(document.querySelector('li[data-kb-middle]')).toHaveAttribute('data-kb-card', 'whoops')).then(() => {
+        fireEvent.click(button('whoops'), { detail: 1 });
+        expect(onPick).not.toHaveBeenCalled();
+        /* A press that began on the middle card still acts. */
+        fireEvent.pointerDown(button('whoops'));
+        fireEvent.click(button('whoops'), { detail: 1 });
+        expect(onPick).toHaveBeenCalledWith(whoops);
+      }).finally(() => {
+        for (const [k, d] of restore) { if (d) Object.defineProperty(proto, k, d); else delete (proto as unknown as Record<string, unknown>)[k]; }
+      });
+    } catch (e) {
+      for (const [k, d] of restore) { if (d) Object.defineProperty(proto, k, d); else delete (proto as unknown as Record<string, unknown>)[k]; }
+      throw e;
+    }
+  });
+
+  test('the opening card is centered once, when the hand mounts open; a change of cards, or of the opening, does not center it again', () => {
+    let set: (n: { held: readonly { card: string; held: number }[]; opening: string | null }) => void = () => {};
+    const Harness = () => {
+      const [s, setS] = useState<{ held: readonly { card: string; held: number }[]; opening: string | null }>({ held: [{ card: 'stick', held: 1 }, { card: 'whoops', held: 1 }], opening: 'whoops' });
+      set = setS;
+      return <Hand held={s.held} faces={[stick, whoops, face('extra', 'Extra', 'sweet')]} vendingHref="/vending" onClose={() => {}} opening={s.opening} />;
+    };
+    renderIn(buildWorld(), <Harness />);
+    expect(scrollTo.mock.calls.filter(([a]) => a.behavior === 'instant')).toHaveLength(1);
+    scrollTo.mockClear();
+    act(() => set({ held: [{ card: 'stick', held: 1 }, { card: 'whoops', held: 1 }, { card: 'extra', held: 1 }], opening: 'whoops' }));
+    act(() => set({ held: [{ card: 'extra', held: 1 }, { card: 'stick', held: 1 }, { card: 'whoops', held: 1 }], opening: null }));
+    expect(scrollTo).not.toHaveBeenCalled();
   });
 
   test('under Off the card comes to the middle at once', () => {

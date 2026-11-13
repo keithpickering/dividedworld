@@ -113,6 +113,8 @@ export function Hand({ held, faces, armed = null, playing = null, onPick, onClos
   const centers = useRef<readonly number[]>([]);
   const posed = useRef<{ lo: number; hi: number } | null>(null);
   const frame = useRef(0);
+  /* The key of the card that was the middle when the pointer press began, for the click that ends it. */
+  const pressedMiddle = useRef<string | null>(null);
   const cardsOf = () => [...(list.current?.querySelectorAll<HTMLLIElement>('li.kb-hand-card') ?? [])];
   const measure = useCallback(() => {
     centers.current = cardsOf().map((li) => li.offsetLeft + li.offsetWidth / 2);
@@ -157,14 +159,19 @@ export function Hand({ held, faces, armed = null, playing = null, onPick, onClos
     ul.scrollTo({ left: li.offsetLeft + li.offsetWidth / 2 - ul.clientWidth / 2, behavior: now || instant ? 'instant' : 'smooth' });
   };
   const cardsSignature = arc.map((c) => c.face.key).join('|');
+  /* Measure and pose when the sheet mounts and whenever the cards change. */
   useLayoutEffect(() => {
     if (main || shown === 0) return;
     posed.current = null;
     measure();
-    if (opening && cardsOf().some((li) => li.dataset.kbCard === opening)) center(opening, true);
     pose();
-    // The opening is read when the sheet mounts open, and the cards when they change.
   }, [main, cardsSignature]);
+  /* The opening card stands in the middle once, when the sheet mounts open; putting it back later leaves the row where it is. */
+  useLayoutEffect(() => {
+    if (main || shown === 0) return;
+    if (opening && cardsOf().some((li) => li.dataset.kbCard === opening)) { center(opening, true); pose(); }
+    // Mount only: the opening is read once.
+  }, []);
   useLayoutEffect(() => {
     if (main) return;
     const onResize = () => { measure(); posed.current = null; queue(); };
@@ -237,9 +244,14 @@ export function Hand({ held, faces, armed = null, playing = null, onPick, onClos
                   aria-describedby={says}
                   aria-pressed={onPick ? isArmed : undefined}
                   onFocus={main ? undefined : () => center(face.key)}
+                  onPointerDown={main ? undefined : () => { pressedMiddle.current = middleKey ?? null; }}
                   onClick={(e) => {
-                    /* On the phone a pointer press on a side card only brings it to the middle; a keyboard's or a reader's click (no pointer) acts. */
-                    if (!main && e.detail !== 0 && !isMiddle) { center(face.key); return; }
+                    /* On the phone a pointer press on a side card only brings it to the middle, judged by what stood in the middle when the press began (its focus moves the row before the click); a keyboard's or a reader's click (no pointer) acts. */
+                    if (!main && e.detail !== 0) {
+                      const was = pressedMiddle.current ?? middleKey;
+                      pressedMiddle.current = null;
+                      if (was !== face.key) { center(face.key); return; }
+                    }
                     setViewed(face.key);
                     onPick?.(face);
                   }}
