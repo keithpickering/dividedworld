@@ -364,10 +364,15 @@ function ThreadRow({ t, loaded, perPage, hot, mark = null }: { readonly t: Threa
       <td role="cell" className="kb-thread-views kb-num"><span className="kb-thread-sep" aria-hidden="true"> · </span><span className="kb-num">{views[t.id] ?? 0}</span><span className="kb-thread-unit">{(views[t.id] ?? 0) === 1 ? ' view' : ' views'}</span></td>
       <td role="cell" className="kb-thread-last kb-small">
         <span className="kb-thread-last-label">last: </span>
-        <Byline character={t.lastCharacter ? characters.get(t.lastCharacter) : undefined} id={t.lastCharacter} name={last ?? undefined} link />
-        <span className="kb-thread-sep" aria-hidden="true">, </span>
-        <br />
-        <Link to={threadHref(t.id, pagesInThread, t.lastSeq)} className="kb-thread-last-link kb-muted"><Ago at={t.lastAt} /><span className="kb-visually-hidden"> — latest post in {t.title}</span></Link>
+        {/* The name, the comma and the date are one unit (board.css): the fold moves them whole, and hangs the comma where the date takes a line of its own. */}
+        <span className="kb-thread-last-by">
+          <Byline character={t.lastCharacter ? characters.get(t.lastCharacter) : undefined} id={t.lastCharacter} name={last ?? undefined} link />
+          <span className="kb-thread-last-when">
+            <span className="kb-thread-sep" aria-hidden="true">, </span>
+            <br />
+            <Link to={threadHref(t.id, pagesInThread, t.lastSeq)} className="kb-thread-last-link kb-muted"><Ago at={t.lastAt} /><span className="kb-visually-hidden"> — latest post in {t.title}</span></Link>
+          </span>
+        </span>
       </td>
     </tr>
   );
