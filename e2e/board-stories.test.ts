@@ -59,3 +59,10 @@ test('the caption bar\'s stories are listed, short, long and held on the Main an
 test('Laugh Track\'s stories are listed, the thread on the Main and the Phone board, before and after a cue fires', () => {
   expect(boardStoryIds()).toEqual(expect.arrayContaining(['main', 'phone', 'on-the-line-main', 'on-the-line-phone'].map((n) => `boards-21-laugh-track--${n}`)));
 });
+
+test('the reply cut in under its post and Feelin\' Glam\'s stories are listed, each on the light board and the dark', () => {
+  expect(boardStoryIds()).toEqual(expect.arrayContaining([
+    'boards-22-reply-cut-in--under-light', 'boards-22-reply-cut-in--under-dark',
+    'boards-10-feelin-fab--glam-live-light', 'boards-10-feelin-fab--glam-live-dark', 'boards-10-feelin-fab--glam-over-light', 'boards-10-feelin-fab--glam-over-dark',
+  ]));
+});
