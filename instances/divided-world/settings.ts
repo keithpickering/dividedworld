@@ -241,7 +241,7 @@ export const defaults: Settings = deepFreeze<Settings>({
     'laughTrack.perPlace': 5,
     'laughTrack.freePlaces': 5,
     'laughTrack.mostAdded': 100,
-    /** You Were Saying?: a play writes 25 tokens and 25 more for each step, at most 200, and each step costs 0.25 on top of its price at the machine. */
+    /** You Were Saying?: a play writes 50 tokens and 50 more for each step, at most 300, and each step costs 0.25 on top of its price at the machine. */
     'youWereSaying.baseTokens': 50,
     'youWereSaying.stepTokens': 50,
     'youWereSaying.stepPrice': 25,

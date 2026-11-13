@@ -22,10 +22,11 @@ const WORDS_BY_TOKENS: readonly (readonly [number, string])[] = [
   [200, 'a long paragraph'],
   [150, 'a paragraph and a half'],
   [100, 'a paragraph'],
-  [0, 'a short paragraph'],
+  [50, 'a short paragraph'],
+  [0, 'about a sentence'],
 ];
 
-const wordsOf = (tokens: number) => WORDS_BY_TOKENS.find(([least]) => tokens >= least)?.[1] ?? 'a short paragraph';
+const wordsOf = (tokens: number) => WORDS_BY_TOKENS.find(([least]) => tokens >= least)?.[1] ?? 'about a sentence';
 const orbWord = (hundredths: number) => (hundredths === 100 ? 'orb' : 'orbs');
 
 export function ConfigForm({ config, onChange, post, id }: ConfigFormProps) {

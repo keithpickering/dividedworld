@@ -111,6 +111,8 @@ describe("You Were Saying?'s play form", () => {
     expect(form({ steps: 0 }, economy).slider).toHaveAttribute('aria-valuetext', expect.stringContaining('a short paragraph'));
     expect(form({ steps: 2 }, economy).slider).toHaveAttribute('aria-valuetext', expect.stringContaining('a paragraph'));
     expect(form({ steps: 5 }, economy).slider).toHaveAttribute('aria-valuetext', expect.stringContaining('a paragraph and a half'));
+    // A base under 50 tokens is a sentence, not a paragraph.
+    expect(form({ steps: 0 }, { 'youWereSaying.baseTokens': 25, 'youWereSaying.stepTokens': 25 }).slider).toHaveAttribute('aria-valuetext', 'about a sentence, free to play');
   });
 
   test('every step has its own words', () => {
