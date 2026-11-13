@@ -53,6 +53,12 @@
 }
 
 .kb-who-link > .kb-who-name {
+  /* The link's baseline is the name's: a flex container takes its baseline from its first item that aligns to baseline, which without this is the avatar (the unit's baseline rule above). */
+  align-self: baseline;
+  /* The name is the 24px target, its text centered in it, as the link's text was before the avatar moved in: the rows' baselines and heights are the same. */
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.5rem;
   text-decoration: underline;
   text-underline-offset: 0.15em;
 }
