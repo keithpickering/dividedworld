@@ -349,7 +349,7 @@ test('with glitter landed on its cells, a post\'s marks, callout and dialogs are
  * A kept post (docs/plans/2026-11-12-glitter-keeps-plan.md, Task 6; the design's section 4): the Kept story's Glitter Bomb wore off
  * three days ago, and #41's character wrote a post four days ago, inside the bomb's week, and one a day ago, after it. #41 itself
  * (October 29) and the posts around it are from before the week. The post written inside shows its glitter settled and never bursts; the
- * posts outside show none; the mark the card puts on a post is on the first alone, and its Lens says the bomb ended and that posts written
+ * posts outside show none; the mark the card puts on a postbit is on the first alone, and its Lens says the bomb ended and that posts written
  * while it was up keep it. A live post's burst is the one thing a kept post never does: its over-canvas (`.dw-glitter-over`) is given a
  * backing store while the burst is in the air, so the Light story is the control that it does, and the kept post's stays 0 by 0.
  */
