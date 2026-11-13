@@ -79,6 +79,7 @@
   flex-direction: column;
   align-items: flex-start;
   gap: 0.2em;
+  font-size: var(--kb-size-small);
 }
 
 .kb-pips {
@@ -120,6 +121,12 @@
   object-fit: cover;
 }
 
+/* An image fills the slot to its edge, so it draws no frame; a placeholder (the initial, no image) keeps the frame. */
+.kb-postbit-avatar:has(> img),
+.kb-postbit-avatar:has(> picture) {
+  border: 0;
+}
+
 .kb-postbit-none {
   display: flex;
   align-items: center;
@@ -135,7 +142,7 @@
 
 .kb-postbit[data-kb-postbit="side"] .kb-postbit-counts,
 .kb-postbit[data-kb-postbit="side"] .kb-postbit-class {
-  order: 2;
+  order: 4;
 }
 
 .kb-postbit[data-kb-postbit="side"] .kb-postbit-avatar {
@@ -179,6 +186,18 @@
  * nothing. The phone shows the square instead (the picture's source, below), so it keeps its own rule.
  */
 @media not all and (max-width: 40em) {
+  /*
+   * Side by side, the rank sits above the avatar (order 0, ahead of it), the group directly under the avatar, and the warn meter, counts
+   * and revealed class follow the group (order 4, above). Wide windows only: a phone keeps its own order.
+   */
+  .kb-postbit[data-kb-postbit="side"] .kb-postbit-rank {
+    order: 0;
+  }
+
+  .kb-postbit[data-kb-postbit="side"] .kb-postbit-group {
+    order: 3;
+  }
+
   /*
    * Gear may reach past the tall slot (a cap above it), drawn under the text: the name, title, rank, trophies and counts are each on a layer
    * above the slot, every run on the post's own ground, so no piece is ever behind letters that are read over it (the cosmetics board 01).
@@ -390,7 +409,7 @@
 }
 
 .kb-postbit[data-kb-postbit="side"] .kb-postbit-warn {
-  order: 2;
+  order: 4;
 }
 
 /* BANNED on the title line: bold, in the board's own foreground, so it reads whatever the title's muted ink. */
