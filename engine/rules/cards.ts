@@ -486,8 +486,6 @@ export interface SetConditions {
   readonly says?: string;
   readonly passage?: string;
   readonly who?: { readonly except: boolean; readonly characters: readonly string[] };
-  /** A surface card's first draw, as the caster made it; a surface card is refused without one. */
-  readonly first?: unknown;
 }
 
 const hasWord = (s: string): boolean => /[\p{L}\p{N}]/u.test(s);
@@ -495,19 +493,20 @@ const hasWord = (s: string): boolean => /[\p{L}\p{N}]/u.test(s);
 /**
  * Whether a card can only be cast now and face up, never set face down (the owner's answer to issue #446): it writes, needs a message, draws or runs a
  * drive. Each of those is done at the cast, on the post the caster chose (the tail is bought, the message is said, the draw is made, the drive opens), and a
- * back that sprang later on a quote would land with none of it. decideSet refuses such a card, the play form leaves out its Set face down switch, and the
+ * back that sprang later on a quote would land with none of it. A surface card is one too (docs/plans/2026-11-12-graffiti-face-up-design.md, section 1):
+ * its first tag is drawn on the post the caster chose, and a back would carry it blind to a quoting post's box nobody drew for. decideSet refuses such a card, the play form leaves out its Set face down switch, and the
  * server holds the same on face_down (supabase/migrations/0153_drives.sql, face_down_never_writes).
  */
-export const faceUpOnly = (rules: Pick<CardRules, 'writes' | 'needsMessage' | 'draws' | 'drive'>): boolean =>
-  rules.writes !== undefined || rules.needsMessage !== undefined || rules.draws !== undefined || rules.drive !== undefined;
+export const faceUpOnly = (rules: Pick<CardRules, 'writes' | 'needsMessage' | 'draws' | 'drive' | 'surface'>): boolean =>
+  rules.writes !== undefined || rules.needsMessage !== undefined || rules.draws !== undefined || rules.drive !== undefined || rules.surface !== undefined;
 
-export function decideSet(rules: CardRules, settings: Settings, target: CardTarget, effects: readonly CardEffect[], config: unknown, cards: readonly CardRules[], conditions: SetConditions = {}, now: Date = new Date()): Verdict<{ price: Hundredths; config: unknown; catches?: string; phrase?: string; passage?: string; who?: { except: boolean; characters: readonly string[] }; draw?: DecidedDraw }> {
+export function decideSet(rules: CardRules, settings: Settings, target: CardTarget, effects: readonly CardEffect[], config: unknown, cards: readonly CardRules[], conditions: SetConditions = {}, now: Date = new Date()): Verdict<{ price: Hundredths; config: unknown; catches?: string; phrase?: string; passage?: string; who?: { except: boolean; characters: readonly string[] } }> {
   const play = playOf(rules);
   if (play !== 'cast' && play !== 'set') return wrongPlay(rules);
   if (withheld(rules, settings)) return refuse(OLD_VOICE_OFF);
   // A card that writes is cast face up and never set face down: its tail is bought at the cast, on the post the caster chose.
   if (rules.writes !== undefined) return refuse(`${rules.name} writes, so it is cast face up and never set face down`);
-  // So is one that needs a message, draws or runs a drive: faceUpOnly says which, and one sentence covers them.
+  // So is one that needs a message, draws, runs a drive or is drawn on (a surface card): faceUpOnly says which, and one sentence covers them.
   if (faceUpOnly(rules)) return refuse(`${rules.name} is cast face up and never set face down`);
   if (target.reach !== 'post' || target.kind !== 'post') return refuse('a card is set face down on a post');
   if (effects.some((e) => e.faceDown && isLive(e, now))) return refuse('this post already holds a card face down');
@@ -556,9 +555,7 @@ export function decideSet(rules: CardRules, settings: Settings, target: CardTarg
       if (new Set(who.characters.map((c) => c.toLowerCase())).size !== who.characters.length) return refuse('name each character once');
     }
   }
-  const first = firstDraw(rules, settings, conditions.first);
-  if (!first.ok) return first;
-  return ok({ price: 0, config: checked.value, ...(first.value === undefined ? {} : { draw: first.value }), ...(catches === undefined ? {} : { catches }), ...(phrase === undefined ? {} : { phrase }), ...(passage === undefined ? {} : { passage }), ...(who === undefined ? {} : { who: { except: who.except, characters: [...who.characters] } }) });
+  return ok({ price: 0, config: checked.value, ...(catches === undefined ? {} : { catches }), ...(phrase === undefined ? {} : { phrase }), ...(passage === undefined ? {} : { passage }), ...(who === undefined ? {} : { who: { except: who.except, characters: [...who.characters] } }) });
 }
 
 /** The longest a caster's message may be, in characters; play_card (supabase/migrations/0016_cards_screens.sql) holds it again. */

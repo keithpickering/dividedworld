@@ -1,8 +1,7 @@
 /**
  * Drawing on the post (docs/plans/2026-11-11-graffiti-design.md, sections 6, 8 and 11; plan Task 10): the one component that draws a tag, used two ways.
  *
- * - **`Compose`** is the card's `CardUi.Compose`. The engine mounts it as the outermost thing on the post when the card is played (or set face
- *   down) there, with the post's words, inside every card's layer, as `children`, and the element around the words as `under`. It portals the
+ * - **`Compose`** is the card's `CardUi.Compose`. The engine mounts it as the outermost thing on the post when the card is played there, with the post's words, inside every card's layer, as `children`, and the element around the words as `under`. It portals the
  *   drawing and the surface it is drawn on into `under`, beneath every layer (so a splat covers what is drawn), and lands the play through
  *   `submit({}, first)`: the configuration is empty and the drawing is the play's first draw. The engine owns the ways out and the question
  *   before them; this tells it whether work is held (`hold`).
@@ -33,7 +32,7 @@ import { HOLD_MS, swipeKind } from '../wiping.ts';
 import { addPoint, inputOf, lastCan, meterOf, paintAct, rememberCan, undo, wallCells, type Draft, type Pt, type Stroke } from './draft.ts';
 import { paintWall, wallDensity, type Box, type WallAct } from './spray.ts';
 import type { StencilKey } from './stencils.ts';
-import { Toolbar, type ToolbarTab } from './Toolbar.tsx';
+import { dockHostOf, Toolbar, type ToolbarTab } from './Toolbar.tsx';
 import './graffiti.css';
 
 /** The question put before a drawing is left, in the card's own words. */
@@ -52,8 +51,6 @@ const FULL: Record<'strokes' | 'points', string> = {
 };
 
 export interface DrawModeProps {
-  /** Cast now, or set face down on the player's own post. */
-  readonly mode: 'cast' | 'set';
   /** The post body's box (px): what a stroke's shares are of, and its aspect. Nothing is drawn before it is known. */
   readonly box: Box | null;
   /** The wall's live Acts, oldest first, whose cells the drawing is added to; null where they are not read yet. */
@@ -64,6 +61,8 @@ export interface DrawModeProps {
   readonly most: number;
   /** Where the toolbar is drawn (a portal), or null to draw it beside the surface. */
   readonly dockHost: HTMLElement | null;
+  /** The host is not resolved yet: the toolbar waits, so it mounts once, where it stays. */
+  readonly dockPending?: boolean;
   /** Ask the question before leaving here (a host that is no engine compose); false where the engine asks (`hold`, `cancel`). */
   readonly asks: boolean;
   /** Land the drawing: `{ strokes }` or `{ stencil, can, spot }`. The answer is the server's, or its refusal in its words. */
@@ -324,7 +323,7 @@ export function DrawMode(p: DrawModeProps) {
 
   const dock = (
     <Toolbar
-      mode={p.mode} can={can} onCan={(c) => { setCan(c); rememberCan(account, c); }} cap={cap} onCap={setCap} tab={tab} onTab={(t) => { setTab(t); setRefusal(null); }}
+      can={can} onCan={(c) => { setCan(c); rememberCan(account, c); }} cap={cap} onCap={setCap} tab={tab} onTab={(t) => { setTab(t); setRefusal(null); }}
       stencil={stencil} onStencil={(s) => { setStencil(s); setRefusal(null); }} spot={spot} onSpot={(s) => { setSpot(s); setRefusal(null); }}
       meter={meter} hasDraft={draft !== null} canUndo={strokes.current.length > 0 && !busy} onUndo={takeBack} onCancel={cancel} onSubmit={() => { void send(); }}
       busy={busy} refusal={refusal} notice={notice} asking={asking} onLeave={() => { setAsking(null); p.cancel(); }} onStay={() => setAsking(null)} focusOnMount
@@ -339,16 +338,13 @@ export function DrawMode(p: DrawModeProps) {
   return (
     <>
       {p.overlayHost ? createPortal(surface, p.overlayHost) : surface}
-      {p.dockHost ? createPortal(dock, p.dockHost) : dock}
+      {p.dockPending ? null : p.dockHost ? createPortal(dock, p.dockHost) : dock}
     </>
   );
 }
 
-/** The engine's post, which the dock is drawn under so the post body's box never changes with it. */
-const postOf = (el: Element | null): HTMLElement | null => el?.closest<HTMLElement>('.kb-act') ?? null;
-
 /** The card's `CardUi.Compose`: the drawing beneath every layer of the post, and the toolbar under the post. */
-export function Compose({ mode, box, under, submit, cancel, hold, children }: ComposeProps) {
+export function Compose({ box, under, submit, cancel, hold, ready, children }: ComposeProps) {
   const { settings } = useKayfa();
   const most = (settings.cardSettings['graffiti.limit'] ?? DEFAULT_LIMIT) * 100;
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -364,7 +360,11 @@ export function Compose({ mode, box, under, submit, cancel, hold, children }: Co
     if (getComputedStyle(under).position === 'static') under.style.position = 'relative';
     return () => { under.style.position = was; };
   }, [under]);
-  useLayoutEffect(() => { setDockHost(postOf(under) ?? fallback); }, [under, fallback]);
+  useLayoutEffect(() => { setDockHost(dockHostOf(under) ?? fallback); }, [under, fallback]);
+  /* This component is a lazy chunk, so it mounts after the commit that opened the compose, which the engine measured the post in before any dock covered it. The dock
+     mounts once its host resolves (the layout effect above sets it, in the same commit pass), and its own layout effect (Toolbar.tsx) sets the root's scroll padding as it
+     mounts; that is in place by the time the engine's frame, which this tells to measure again, runs. */
+  useEffect(() => { ready(); }, [ready]);
 
   /* The box is the post body's (`.kb-act-main`), the one the wall paints in and Whoops! measures, and not the words' element, which on a one-line post is a strip:
      strokes are shares of the same box before and after Tag it. The words' element sits inside it, so the drawing is offset by where the body begins. */
@@ -401,7 +401,7 @@ export function Compose({ mode, box, under, submit, cancel, hold, children }: Co
       {children}
       {under && size && createPortal(<canvas ref={canvasRef} className="kb-graffiti-ink" data-kb-effect-ink aria-hidden="true" style={onBox} />, under)}
       <DrawMode
-        mode={mode} box={size} wall={NO_ACTS} covered={0} most={most} dockHost={dockHost} asks={false}
+        box={size} wall={NO_ACTS} covered={0} most={most} dockHost={dockHost} dockPending={dockHost === null} asks={false}
         submit={(first) => submit({}, first)} cancel={cancel} hold={hold} onDraft={setDraft} overlayStyle={onBox} overlayHost={under}
       />
       <div ref={setFallback} className="kb-graffiti-dockhost" />
