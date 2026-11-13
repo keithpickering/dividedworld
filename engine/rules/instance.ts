@@ -621,7 +621,7 @@ function playProblems(c: CardRules, reactionKeys: ReadonlySet<string> = new Set(
   }
   if (c.keeps !== undefined) {
     if (c.keeps !== true) out.push(`${who} keeps ${JSON.stringify(c.keeps)}; keeps is true or left out`);
-    // A thread's play or a character's (docs/plans/2026-11-12-glitter-keeps-plan.md); `seed_instance` mirrors this list.
+    // A thread's play or a character's (docs/plans/2026-11-12-glitter-keeps-plan.md). SQL mirrors none of this (0348_post_under.sql).
     else if (!(play === 'cast' && Array.isArray(c.reaches) && c.reaches.length === 1 && ['thread', 'character'].includes(c.reaches[0] as string) && c.lasts !== undefined)) out.push(`${who} keeps, and only a cast card that reaches one thread or one character, with a time up, does`);
   }
   if (c.setPhrase !== undefined && typeof c.setPhrase !== 'function') out.push(`${who} has a set phrase that is not a function`);
