@@ -36,6 +36,8 @@ body { background: #6b6b6b; padding: 22px; }
 .this.sticker { background: var(--this-paper); border: 2px solid var(--this-ink); padding: 5px 9px 6px; width: 168px; transform: rotate(-5deg); box-shadow: 2px 3px 0 rgb(0 0 0 / 0.35); }
 .this.sticker b { font-size: 26px; transform: none; }
 .this.sticker span { font-size: 15px; }
+/* the words in the board's own type, for the look question */
+.plain .this span { font: bold 15px/1.3 Verdana, Geneva, "DejaVu Sans", sans-serif; padding-top: 9px; }
 svg.swoop { position: absolute; left: 0; top: 0; width: 1px; height: 1px; overflow: visible; pointer-events: none; z-index: 4; }
 svg.swoop path { fill: none; stroke: var(--this-ink); stroke-width: 3.5; stroke-linecap: round; stroke-linejoin: round; }
 .phone .reacts { flex-wrap: wrap; }
@@ -101,7 +103,7 @@ const deskScreen = (kind) => `<div class="screen desk" style="width:1440px"><div
       <tr><td class="foot">${acts}</td></tr>
     </tbody></table></div></div>`;
 
-const phoneScreen = (kind, mode, notes) => `<div class="screen phone" ${mode ? 'data-kb-mode="dark"' : ''} style="width:390px;height:760px"><div class="col">
+const phoneScreen = (kind, mode, notes, extra = '') => `<div class="screen phone ${extra}" ${mode ? 'data-kb-mode="dark"' : ''} style="width:390px;height:760px"><div class="col">
   <p class="crumb"><a href="#">Index</a> › <a href="#">General</a> › the engine was never the problem</p>
   <table class="t posts"><tbody>
       <tr><td class="pbit"><div class="bitrow"><div class="ava">S</div><div><a class="pname" href="#">Spritey</a><div class="prank">Main Eventer</div><span class="pips"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></span></div></div></td></tr>
@@ -114,7 +116,11 @@ const page = (title, body) => `<!doctype html><html lang="en"><head><meta charse
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Barlow+Condensed:wght@600;700&family=Permanent+Marker&family=Silkscreen&display=swap">
 ${style}${dark}${mine}</head><body>${body}${place}</body></html>`;
 
+const long = 'is exactly what I said in March and got warned for';
 const pages = {
+  '03-look': page('THIS: the words in marker, or in the board\'s own type', `<div class="sheet">
+    <div><p class="label">Marker words<small>All of the note is handwriting. The second note is 50 characters.</small></p>${phoneScreen('wedge', false, note('wedge', 1, agree) + note('wedge', 2, long))}</div>
+    <div><p class="label">Board-type words<small>THIS is handwriting; the caster's words are the board's own type.</small></p>${phoneScreen('wedge', false, note('wedge', 1, agree) + note('wedge', 2, long), 'plain')}</div></div>`),
   '01-phone': page('THIS on the phone: the wedge, the sticker, and the wedge in dark', `<div class="sheet">
     <div><p class="label">A. The wedge<small>The line opens; the note sits under the words it points at.</small></p>${phoneScreen('wedge', false, note('wedge', 1, agree) + note('wedge', 2, disagree))}</div>
     <div><p class="label">C. The sticker<small>Slapped over the words; a reader presses it to peel it aside.</small></p>${phoneScreen('sticker', false, note('sticker', 1, agree) + note('sticker', 2, disagree))}</div>
@@ -131,9 +137,9 @@ const pages = {
     await p.goto('file://' + path.join(__dirname, name + '.html'));
     await p.evaluate(() => document.fonts.ready);
     await p.waitForTimeout(500);
-    const el = await p.$(name === '01-phone' ? '.sheet' : 'body');
+    const el = await p.$(name !== '02-desk' ? '.sheet' : 'body');
     const box = await el.boundingBox();
-    await p.screenshot({ path: path.join(__dirname, name + '.png'), fullPage: true, clip: name === '01-phone' ? { x: 0, y: 0, width: box.width + 44, height: box.height + 44 } : undefined });
+    await p.screenshot({ path: path.join(__dirname, name + '.png'), fullPage: true, clip: name !== '02-desk' ? { x: 0, y: 0, width: box.width + 44, height: box.height + 44 } : undefined });
     await p.close();
   }
   await b.close();
