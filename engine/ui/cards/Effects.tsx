@@ -200,12 +200,12 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
   const now = useUntil(above.flatMap((l) => l.drawn));
 
   /*
-   * A play a trap caught does nothing, and a card back draws no effect: neither wraps the post (the card mechanic's design, section 4). The thread's plays are
+   * A play a trap caught does nothing, and a card back draws no effect: neither wraps the post (the card mechanic's design, section 4). The thread's and the author's plays are
    * those that fall on this post (`playsFallingOn`): up now, or of a card that keeps and written while the post was up, so a week-long play still lights a post written inside it.
    */
   const keeping = useMemo(() => keepingKeys(instance.cards), [instance.cards]);
   const layers = [
-    ...above.map((l) => ({ reach: l.reach as Reach, acting: l.reach === 'thread' ? playsFallingOn(l.drawn, post, keeping, now) : livePlays(l.drawn, now), of: l.of })),
+    ...above.map((l) => ({ reach: l.reach as Reach, acting: l.reach === 'thread' || l.reach === 'character' ? playsFallingOn(l.drawn, post, keeping, now) : livePlays(l.drawn, now), of: l.of })),
     { reach: 'post' as Reach, acting: here.plays.filter((p) => !p.caught && !p.reversed && !p.untaken && !p.faceDown && !p.reach), of: here },
   ];
   /*
@@ -236,11 +236,13 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
       const card = ui.cards.find((c) => c.key === key);
       if (!card?.Effect) continue;
       const Effect = card.Effect;
+      /* Every play here is beyond the post and over: the effect draws what the post keeps of it (`kept`), not a live effect. */
+      const kept = mine.length > 0 && mine.every((p) => p.reach !== undefined && p.ends !== undefined && Date.parse(p.ends) <= now);
       wrapped = (
         <BoundEffect
           key={`${reach}:${key}`} Effect={Effect} store={plays} reach={reach} cardKey={key}
           post={post} plays={mine} states={of.states} released={of.released} place={place} marks={card.takeover ? marks : null}
-          written={writtenOf(written, mine, writing)} {...(drawn !== null && reach === 'post' ? { version: drawn } : {})}
+          {...(kept ? { kept: true as const } : {})} written={writtenOf(written, mine, writing)} {...(drawn !== null && reach === 'post' ? { version: drawn } : {})}
           save={reach === 'post' ? save : beyondSave} release={release} nameOf={nameOf}
           give={give} moreGifts={moreGifts} wallet={wallet}
           {...(reach === 'post' && driving.has(key) ? { drives: drivesOf(played, key, gifts, at) } : {})}

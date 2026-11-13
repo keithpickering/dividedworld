@@ -58,8 +58,8 @@ const read = (p: string) => fs.readFileSync(path.resolve(here, p), 'utf8');
 
 const post: Act = { id: 'p1', character: 'c1', kind: 'post', thread: 't1', targetActId: null, seq: 1, createdAt: '2026-11-01T12:00:00Z', payload: { body: 'hi' }, currentPayload: { body: 'hi' }, editedAt: null, shownEditedAt: null };
 const play: CardPlay = { id: 'g1', card: 'glitter-bomb', layer: 1, caster: 'c2', message: '', config: {}, playedAt: '2026-11-01T12:00:00Z', post: 'p1', reach: 'character', on: 'c1', ends: '2099-01-01T00:00:00Z' };
-const props = (still = false): EffectProps => ({
-  post, plays: [play], states: {}, released: new Set(), written: new Map(), reader: { author: false, caster: false }, place: 'thread', reach: 'character', still,
+const props = (still = false, kept = false): EffectProps => ({
+  post, plays: [play], states: {}, released: new Set(), written: new Map(), reader: { author: false, caster: false }, place: 'thread', reach: 'character', still, ...(kept ? { kept: true as const } : {}),
   show: () => {}, met: () => {}, ink: NO_INK, holdScreen: () => {}, marks: null, save: async () => ({ ok: false, error: 'no' }), release: async () => ({ ok: false, error: 'no' }), nameOf: () => 'Spritey', give: async () => ({ ok: false, error: 'no' }), moreGifts: async () => {}, wallet: null,
   children: <p data-kb-words>Hello there.</p>,
 });
@@ -248,6 +248,39 @@ describe('Glitter Bomb', () => {
     expect(f.settled.length).toBe(f.total);
     expect(drawBurst).not.toHaveBeenCalled();
     expect(flakesModule.burstProbe.inFlight()).toBe(0);
+  });
+
+  test('a kept post (written in the play\'s week, loaded after it) is settled at once: no burst point watched, nothing over the words, while cling and the loop run as for any live post', () => {
+    render(<GlitterBombEffect {...props(false, true)} />);
+    see(1);
+    frames(3);
+    const f = lastFlakes();
+    expect(f.flying).toBe(0);
+    expect(f.settled.length).toBe(f.total);
+    expect(landAll).toHaveBeenCalledWith(f);
+    expect(burst).not.toHaveBeenCalled();
+    expect(drawBurst).not.toHaveBeenCalled();
+    expect(flakesModule.burstProbe.inFlight()).toBe(0);
+    /* No burst point is watched (the loop's own observer is the only one). */
+    expect(observers.some((o) => o.opts?.rootMargin === '-20% 0px -20% 0px')).toBe(false);
+    /* It still catches the cursor, and the loop draws the lit flakes. */
+    expect(spies.clingRegister).toHaveBeenCalled();
+    expect(spies.clingRegister.mock.calls.at(-1)![0]).toBe(box().querySelector('.dw-glitter-surface'));
+    expect(probe.draws(box())).toBeGreaterThan(0);
+    expect(over().width).toBe(0);
+  });
+
+  test('a rerender that sets kept on a mounted post builds nothing again and keeps its seed (the week ended while it was on screen)', () => {
+    const r = render(<GlitterBombEffect {...props()} />);
+    see(1);
+    frames(2);
+    const built = makeFlakes.mock.calls.length;
+    const seed = makeFlakes.mock.calls[0]![0].seed;
+    r.rerender(<GlitterBombEffect {...props(false, true)} />);
+    frames(2, 100);
+    expect(makeFlakes).toHaveBeenCalledTimes(built);
+    expect(makeFlakes.mock.calls.at(-1)![0].seed).toBe(seed);
+    expect(release).not.toHaveBeenCalled();
   });
 
   test('a play\'s moment (still) draws every flake landed at rest, with no burst and no cling, and registers nothing that moves', () => {
@@ -638,7 +671,8 @@ describe('the board stories', () => {
     expect(src).toMatch(/export const Light: Story = \{[^}]*mode: 'light'/u);
     expect(src).toMatch(/export const Dark: Story = \{[^}]*mode: 'dark'/u);
     expect(src).toMatch(/export const Still: Story = \{[^}]*reduced: true/u);
+    expect(src).toMatch(/export const Kept: Story = \{[^}]*kept: true/u);
     expect(src).toMatch(/data-kb-glitter/u);
-    expect(boardStoryIds()).toEqual(expect.arrayContaining(['boards-09-glitter-bomb--light', 'boards-09-glitter-bomb--dark', 'boards-09-glitter-bomb--still']));
+    expect(boardStoryIds()).toEqual(expect.arrayContaining(['boards-09-glitter-bomb--light', 'boards-09-glitter-bomb--dark', 'boards-09-glitter-bomb--still', 'boards-09-glitter-bomb--kept']));
   });
 });

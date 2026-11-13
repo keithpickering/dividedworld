@@ -41,11 +41,13 @@ content_path = "./supabase/templates/sign-up.html"
 # Every function turns the platform's JWT check off and authorizes in its own code
 # (docs/plans/2026-11-02-api-keys-design.md, section 2). That check takes the legacy keys only,
 # and Supabase's signing-keys guide says it breaks under the asymmetric session JWTs new projects
-# use. settle, meet, chatter, write and seed accept only the secret key named kayfabb_jobs, in apikey
+# use. settle, meet, chatter, write, mail, conceal and seed accept only the secret key named kayfabb_jobs, in apikey
 # (fromTheService, supabase/functions/_shared/serve.ts); staff runs the filing run for that key alone and takes a player's
 # report only after open_report, called with the player's own session, has taken it; act, avatar and estimate do nothing as
 # the service before whoami(), read with the caller's session, names an account (wardrobe the same; trophy-art, before is_admin(), read the same way, says it is an admin's); account calls
 # Auth with the publishable key, as any visitor may.
+# tools/check-edge-functions.mjs holds this list to the folders under supabase/functions/ and to the jobs that call
+# them: a function with no table here deploys with the platform's check on, and its job is refused (issue #646).
 [functions.account]
 verify_jwt = false
 
@@ -83,4 +85,7 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.mail]
+verify_jwt = false
+
+[functions.conceal]
 verify_jwt = false

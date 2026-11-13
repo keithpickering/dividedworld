@@ -226,6 +226,115 @@ red('the shard list is one number, not a list', shards((d) => { e2eJob(d).strate
 red('the job has no matrix', shards((d) => { delete e2eJob(d).strategy.matrix; }), /R9.*only key.*no matrix/);
 red('no job runs the e2e suite', shards((d) => { e2eStep(d).run = 'echo skipped'; }), /R9.*no job runs/);
 
+/* ---- R1 again: the backend jobs sit between web and promote ---- */
+red('seed is dropped from the jobs', edit(RELEASE, (d) => { delete d.jobs.seed; }), /R1.*seed/);
+red('promote needs web, skipping the backend', edit(RELEASE, (d) => { d.jobs.promote.needs = ['candidate', 'web']; }), /R1.*promote does not need seed/);
+red('schema does not need web', edit(RELEASE, (d) => { d.jobs.schema.needs = ['candidate']; }), /R1.*schema does not need web/);
+red('functions does not need schema', edit(RELEASE, (d) => { d.jobs.functions.needs = ['candidate']; }), /R1.*functions does not need schema/);
+red('seed does not need functions', edit(RELEASE, (d) => { d.jobs.seed.needs = ['candidate']; }), /R1.*seed does not need functions/);
+
+/* ---- R10: only the three backend jobs name the production Environment, and each does ---- */
+red('functions has no environment', edit(RELEASE, (d) => { delete d.jobs.functions.environment; }), /R10.*functions/);
+red('seed names another environment', edit(RELEASE, (d) => { d.jobs.seed.environment = 'staging'; }), /R10.*seed/);
+red('build.yml has a job with environment production', edit(BUILD, (d) => {
+  Object.values(d.jobs)[0].environment = 'production';
+}), /build\.yml.*R10/);
+red('report names environment production', edit(RELEASE, (d) => { d.jobs.report.environment = 'production'; }), /R10.*report/);
+
+/* ---- R11: the secrets are named by the three backend jobs only, and only through env ---- */
+const backendStep = (d, job) => d.jobs[job].steps.find((s) => s.env && Object.keys(s.env).some((k) => /SUPABASE|KAYFABB/.test(k)));
+red('web.yml names secrets.SUPABASE_DB_URL', edit(WEB, (d) => {
+  Object.values(d.jobs)[0].steps.push({ env: { X: '${{ secrets.SUPABASE_DB_URL }}' }, run: 'echo hi' });
+}), /web\.yml.*R11/);
+red('promote gets KAYFABB_JOBS_KEY in its env', edit(RELEASE, (d) => {
+  d.jobs.promote.steps[1].env = { KAYFABB_JOBS_KEY: '${{ secrets.KAYFABB_JOBS_KEY }}' };
+}), /R11.*promote/);
+red('schema interpolates a secret inside its run line', edit(RELEASE, (d) => {
+  d.jobs.schema.steps.push({ run: 'echo ${{ secrets.SUPABASE_DB_URL }}' });
+}), /R11.*schema.*run line/);
+red('seed passes its key from a literal, not a secret', edit(RELEASE, (d) => {
+  backendStep(d, 'seed').env.KAYFABB_JOBS_KEY = 'abc';
+}), /R11.*seed/);
+
+/* ---- R12: no destructive or secret-printing command ---- */
+const schemaRun = (d, fn) => { const s = d.jobs.schema.steps.find((x) => /db push/.test(x.run ?? '')); s.run = fn(s.run); };
+red('schema runs supabase db push --include-all', edit(RELEASE, (d) => {
+  schemaRun(d, (r) => r.replace(/db push/, 'db push --include-all'));
+}), /R12.*include-all/);
+red('a backend job runs supabase db reset', edit(RELEASE, (d) => {
+  d.jobs.schema.steps.push({ run: 'npx supabase db reset --linked' });
+}), /R12.*db reset/);
+red('functions runs supabase functions delete', edit(RELEASE, (d) => {
+  d.jobs.functions.steps.push({ run: 'npx supabase functions delete seed' });
+}), /R12.*functions delete/);
+red('build.yml runs --include-all', edit(BUILD, (d) => {
+  Object.values(d.jobs)[0].steps.push({ run: 'npx supabase db push --include-all' });
+}), /build\.yml.*R12/);
+red('a backend job traces its shell with set -x', edit(RELEASE, (d) => {
+  d.jobs.seed.steps.push({ run: 'set -x\necho go' });
+}), /R12.*traces/);
+red('a backend job traces its shell with set -euxo', edit(RELEASE, (d) => {
+  d.jobs.functions.steps.push({ run: 'set -euxo pipefail\necho go' });
+}), /R12.*traces/);
+
+const shellStep = (d, job, fn) => { const st = d.jobs[job].steps.find((x) => /curl|supabase/.test(x.run ?? '')); fn(st); return st; };
+red('a backend step sets its shell to bash -x', edit(RELEASE, (d) => { shellStep(d, 'functions', (st) => { st.shell = 'bash -x {0}'; }); }), /R12.*traces/);
+red('a backend job defaults its shell to bash -x', edit(RELEASE, (d) => { d.jobs.seed.defaults = { run: { shell: 'bash -ex {0}' } }; }), /R12.*traces/);
+red('a backend step traces through a later flag group', edit(RELEASE, (d) => { shellStep(d, 'schema', (st) => { st.shell = 'bash --noprofile --norc -e -x {0}'; }); }), /R12.*traces/);
+red('a backend step traces with sh -x', edit(RELEASE, (d) => { shellStep(d, 'seed', (st) => { st.shell = 'sh -x {0}'; }); }), /R12.*traces/);
+red('the workflow defaults its shell to bash -x', edit(RELEASE, (d) => { d.defaults = { run: { shell: 'bash -x {0}' } }; }), /R12.*traces/);
+red('a backend job runs db push --debug', edit(RELEASE, (d) => {
+  schemaRun(d, (r) => r.replace(/db push/, 'db push --debug'));
+}), /R12.*--debug/);
+red('--include-all split across a line continuation', edit(RELEASE, (d) => {
+  schemaRun(d, (r) => r.replace(/db push --yes/, 'db push --yes \\\n  --include-all'));
+}), /R12.*include-all \(.*db push --yes\s+--include-all/);
+
+/* ---- R11 again: release.yml's own top level ---- */
+red('release.yml names a secret in a workflow-level env', edit(RELEASE, (d) => { d.env = { DB: '${{ secrets.SUPABASE_DB_URL }}' }; }), /release\.yml.*R11.*outside a job/);
+
+/* ---- R10 again: the object form of environment ---- */
+red('a non-backend job names environment in its object form', edit(RELEASE, (d) => { d.jobs.report.environment = { name: 'production' }; }), /R10.*report/);
+
+/* ---- R14: the seed goes red on anything but a 200 ---- */
+const seedStep = (d) => d.jobs.seed.steps.find((x) => /curl/.test(x.run ?? ''));
+red('the seed step is the old --fail-with-body form with no status comparison', edit(RELEASE, (d) => {
+  seedStep(d).run = 'set -o pipefail\ncurl -sS --fail-with-body --retry 3 -X POST "https://${SUPABASE_PROJECT_REF}.supabase.co/functions/v1/seed" -H "apikey: ${KAYFABB_JOBS_KEY}" | tee -a "$GITHUB_STEP_SUMMARY"';
+}), /R14.*--fail/);
+red('the seed step no longer compares the status to 200', edit(RELEASE, (d) => {
+  const st = seedStep(d);
+  st.run = st.run.split('\n').filter((l) => !/= 200/.test(l)).join('\n');
+}), /R14.*200/);
+red('the seed step has no curl at all', edit(RELEASE, (d) => { seedStep(d).run = 'echo seeded'; }), /R14.*curl/);
+
+/* ---- R13: schema's order, and the candidate's checkout ---- */
+red('schema runs --after before the push', edit(RELEASE, (d) => {
+  const steps = d.jobs.schema.steps;
+  const iPush = steps.findIndex((x) => /db push/.test(x.run ?? ''));
+  const iAfter = steps.findIndex((x) => /--after/.test(x.run ?? ''));
+  if (iPush === iAfter) {
+    // One step holds all three lines: reorder the lines inside it.
+    const lines = steps[iPush].run.split('\n');
+    const a = lines.findIndex((l) => /--after/.test(l));
+    const p = lines.findIndex((l) => /db push/.test(l));
+    [lines[a], lines[p]] = [lines[p], lines[a]];
+    steps[iPush].run = lines.join('\n');
+  } else [steps[iPush], steps[iAfter]] = [steps[iAfter], steps[iPush]];
+}), /R13.*order/);
+red('schema has no --before check', edit(RELEASE, (d) => {
+  for (const s of d.jobs.schema.steps) if (s.run) s.run = s.run.split('\n').filter((l) => !/--before/.test(l)).join('\n');
+  d.jobs.schema.steps = d.jobs.schema.steps.filter((s) => !s.run || s.run.trim());
+}), /R13.*--before/);
+red('schema has no --after check', edit(RELEASE, (d) => {
+  for (const s of d.jobs.schema.steps) if (s.run) s.run = s.run.split('\n').filter((l) => !/--after/.test(l)).join('\n');
+}), /R13.*--after/);
+red('seed does not check out the candidate', edit(RELEASE, (d) => {
+  for (const s of d.jobs.seed.steps) if (String(s.uses ?? '').startsWith('actions/checkout')) delete s.with;
+}), /R13.*seed.*check out/);
+red('functions checks out main', edit(RELEASE, (d) => {
+  for (const s of d.jobs.functions.steps) if (String(s.uses ?? '').startsWith('actions/checkout')) s.with = { ref: 'main' };
+}), /R13.*functions.*check out/);
+
 /* ---- a file that does not parse ---- */
 red('a workflow that does not parse is named', { ...REAL, [BUILD]: 'on: [unclosed\n  - : :' }, /build\.yml/);
 

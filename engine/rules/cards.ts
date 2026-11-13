@@ -265,7 +265,10 @@ export interface CardRules<Config = unknown> {
    * alone, stack 1, cast face up and never set face down, never offered to a staff persona.
    */
   readonly replies?: true;
-  /** A thread play of it stays on every post written in the thread while it was up, after its time (`fallsOn`); only a cast card whose one reach is a thread, with a time up. */
+  /**
+   * A thread or character play of it stays on every post written in its target while it was up, after its time (`fallsOn`); only a cast card whose one
+   * reach is a thread or a character, with a time up.
+   */
   readonly keeps?: true;
   /** The economy numbers its rules read. */
   readonly reads?: readonly EconomyRead[];

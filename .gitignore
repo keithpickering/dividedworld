@@ -19,3 +19,5 @@ e2e/report/
 __pycache__/
 # Blender writes this 24 MB noise tile into the working folder when it simulates fire (Heat Magnet's scene).
 waveletNoiseTile.bin
+# The Supabase CLI (a devDependency since the release deploys the backend) writes its scratch files here.
+supabase/.temp/
