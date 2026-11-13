@@ -9,9 +9,9 @@ import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useEffect } from 'react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import type { Id, ThreadListener } from '../data/api.ts';
+import type { Id } from '../data/api.ts';
 import type { Fake } from '../data/fake.ts';
-import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
+import { buildWorld, renderIn, tapThread, testInstance } from '../test-world.tsx';
 import { ThreadScreen } from '../thread/Thread.tsx';
 import type { CardUi, CardView, EffectProps } from './types.ts';
 import { LoadedThread } from '../loaded.tsx';
@@ -58,13 +58,6 @@ const article = (seq: number) => screen.findByRole('article', { name: new RegExp
 /** The marks a reader can reach on a post, in the order they are drawn. */
 const marks = (post: HTMLElement) => within(post).queryAllByRole('button', { name: /Opens the cards on this post\.|cards played on this post$/u });
 const names = (post: HTMLElement) => marks(post).map((m) => m.getAttribute('aria-label') ?? m.textContent);
-
-function tap(fake: Fake) {
-  let listener: ThreadListener | undefined;
-  const real = fake.subscribeThread.bind(fake);
-  fake.subscribeThread = (t, l) => { listener = l; return real(t, l); };
-  return () => listener!;
-}
 
 describe('one mark per kind', () => {
   test('three plays of one card are one mark, "×3", named by the card, the count and the card\'s state', async () => {
@@ -144,7 +137,7 @@ describe('order never moves while the page is read', () => {
     width(false);
     const w = world();
     const first = w.play('k1'); w.play('k2'); w.play('k3');
-    const tapped = tap(w.fake);
+    const tapped = tapThread(w.fake);
     open(w);
     const post = await article(2);
     await waitFor(() => expect(marks(post)).toHaveLength(3));
@@ -164,7 +157,7 @@ describe('the corner sign', () => {
   test('appears when a play of the kind has more public reactions than its post, and goes when the post catches up', async () => {
     const w = world();
     const p = w.play('k1');
-    const tapped = tap(w.fake);
+    const tapped = tapThread(w.fake);
     open(w);
     const post = await article(2);
     await waitFor(() => expect(marks(post)).toHaveLength(1));
@@ -183,7 +176,7 @@ describe('the corner sign', () => {
     const w = world();
     w.play('k1');
     const other = w.play('k2');
-    const tapped = tap(w.fake);
+    const tapped = tapThread(w.fake);
     open(w);
     const post = await article(2);
     await waitFor(() => expect(marks(post)).toHaveLength(2));
@@ -237,7 +230,7 @@ describe('what a mark shows of the card\'s view', () => {
   test('the corner sign and the notch both add to the name, in that order', async () => {
     const w = world();
     const p = w.play('k1', w.mineToo);
-    const tapped = tap(w.fake);
+    const tapped = tapThread(w.fake);
     open(w, [cardUi('k1', { Effect: saying((pr) => ({ ...base, yours: pr.reader.author })) }), ...cards.slice(1)]);
     const mine = await article(3);
     await waitFor(() => expect(mine.querySelector('[data-kb-notch]')).not.toBeNull());
@@ -251,7 +244,7 @@ describe('what a reaction redraws', () => {
     const w = world();
     w.play('k1');
     const second = w.play('k2');
-    const tapped = tap(w.fake);
+    const tapped = tapThread(w.fake);
     /* A mark asks its card for the ink on every draw it makes, so the calls count the draws. */
     const draws = { k1: 0, k2: 0 };
     const counting = (key: 'k1' | 'k2') => cardUi(key, { tag: () => { draws[key]++; return undefined; } });
