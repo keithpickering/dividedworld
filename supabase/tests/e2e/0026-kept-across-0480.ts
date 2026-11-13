@@ -29,7 +29,8 @@ test('plays held before the migration carry their Act\'s date as their start aft
     const all = fs.readdirSync(migrations).filter((f) => f.endsWith('.sql')).sort();
     const found = all.filter((f) => f.endsWith('_kept_character.sql'));
     assert.equal(found.length, 1, 'exactly one migration is named for the kept character');
-    const before = all.filter((f) => f < found[0]);
+    const kept = found[0]!;
+    const before = all.filter((f) => f < kept);
     assert.ok(before.length > 0 && before.includes('0055_card_reach.sql'), 'the migrations before it include the one that made play_reach');
     psqlOn(db.toString(), fs.readFileSync(path.join(root, 'supabase/tests/setup/auth-shim.sql'), 'utf8'));
     for (const m of before) psqlOn(db.toString(), fs.readFileSync(path.join(migrations, m), 'utf8'));
@@ -65,7 +66,7 @@ test('plays held before the migration carry their Act\'s date as their start aft
         ('00000000-0000-4000-8000-0000000000a3', 'thread', null, '${pin}', null, '${general}', now() - interval '19 days'),
         ('00000000-0000-4000-8000-0000000000a4', 'board', null, null, '${general}', null, now() - interval '9 days');`);
     assert.equal(psqlOn(db.toString(), `select count(*) from play_reach`), '4', 'the old schema wrote four rows, one at each reach and one that pins');
-    for (const m of all.filter((f) => f >= found[0])) psqlOn(db.toString(), fs.readFileSync(path.join(migrations, m), 'utf8'));
+    for (const m of all.filter((f) => f >= kept)) psqlOn(db.toString(), fs.readFileSync(path.join(migrations, m), 'utf8'));
 
     assert.equal(psqlOn(db.toString(), `select count(*) from play_reach r join acts a on a.id = r.play where r.started_at = a.created_at`), '4', 'each row\'s start is its Act\'s date');
     assert.equal(psqlOn(db.toString(), `select count(*) from play_reach where pins_board is not null`), '1', 'the pinning row was carried');
