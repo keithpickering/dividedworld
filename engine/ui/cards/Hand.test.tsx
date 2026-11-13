@@ -43,6 +43,8 @@ describe('the hand on the Main board', () => {
     const three = screen.getByRole('button', { name: 'Card c, Sweet, Cast, common postcard, 3 in hand' });
     expect(three.closest('li')).toHaveTextContent('×3');
     expect(three.closest('li')).toHaveAttribute('data-kb-row');
+    /* The side of the middle is the phone's row's: no card says one here. */
+    expect(document.querySelectorAll('li.kb-hand-card[data-kb-side]')).toHaveLength(0);
   });
 
   test('the buttons stand in the order handOrder gives', () => {
@@ -116,7 +118,7 @@ describe('the hand on the Phone board', () => {
     expect(screen.getByRole('button', { name: 'Stick Around, Sweet, Cast, common postcard' }).closest('li')).not.toHaveTextContent('×');
   });
 
-  test('each card says which side of the middle it stands on, so its count can stand on the side no neighbor covers; the Main board says none', async () => {
+  test('each card says which side of the middle it stands on, so its count can stand on the side no neighbor covers', async () => {
     const restore = stubLayout(104);
     try {
       const a = move('a', 'Move A');

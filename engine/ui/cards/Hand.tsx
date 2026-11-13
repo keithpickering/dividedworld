@@ -20,7 +20,9 @@
  * swipes sideways, a card standing 66px from the next (`SWIPE_STEP`) so each overlaps its neighbor, half a step more
  * where a group changes (`data-kb-group-start`). The card nearest the row's middle (`data-kb-middle`) is the one being
  * read: it stands up, larger and above the rest, and the others turn and drop the further they stand from it
- * (`swipePose`). The row snaps a card to the middle when a swipe ends, and every card can come to it, the first and the
+ * (`swipePose`). A card left of the middle says so (`data-kb-side="left"`, and "right" on the other side), because the
+ * next card covers its right edge: its count stands at its left there, and at the right on every other card (frame.css).
+ * The row snaps a card to the middle when a swipe ends, and every card can come to it, the first and the
  * last included. The pose follows the scroll continuously, written as custom properties on the cards within the row's
  * width and two steps beyond it, at most once a frame (`Hand`'s `pose`); a card that leaves that range gets the edge pose
  * once, so the cost of a scroll does not grow with the hand. A pointer press on a card that is not in the middle
