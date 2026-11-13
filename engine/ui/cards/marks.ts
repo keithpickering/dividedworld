@@ -111,6 +111,9 @@ export function gimmickWords(effect: GimmickEffect, ends: string | undefined, no
 /** When a play beyond a post ends, as its Lens line says it: on its timer, in the reader's zone ("Ends Nov 7, 9:14 PM"). */
 export const endsWords = (ends: string): string => `Ends ${dayAndTime(ends)}`;
 
+/** The way out of a card that keeps, once its time is up: the posts written while it was up keep what it did (`CardRules.keeps`), in the reader's zone. */
+export const keptEndedWords = (ends: string): string => `Ended ${dayAndTime(ends)}. Posts written while it was up keep it.`;
+
 /**
  * A caught play's note: what caught it, where the trap has been revealed (it always is, once it caught something). The card is spent unless the spring says
  * a player took it (`fate.taken`, the setter's character): a play caught before the face-down Moves, and one a staff catching set card caught, were spent.

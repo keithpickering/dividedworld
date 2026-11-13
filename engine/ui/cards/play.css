@@ -646,3 +646,16 @@
   position: relative;
   min-width: 0;
 }
+
+/* ---- A card that replies: the engine's editor, in the glass's field and text ---- */
+
+.kb-play-reply .kb-editor-box {
+  background: var(--kb-glass-field);
+  border-color: color-mix(in srgb, var(--kb-glass-salty-text) 60%, transparent);
+  color: var(--kb-glass-text);
+}
+
+.kb-play-reply .kb-editor-foot,
+.kb-play-reply .kb-editor-count {
+  color: var(--kb-glass-text-2);
+}

@@ -143,6 +143,22 @@ describe("Feelin' Fab", () => {
     expect(made[0]!.opts.pattern).toBe('prism');
   });
 
+  test("given two of its own plays and one lent thread play it draws level 3, and given one lent play alone, level 1", () => {
+    const lent: CardPlay = { id: 'g1', card: 'feelin-glam', layer: 1, caster: 'c3', message: '', config: {}, playedAt: '2026-11-02T12:00:00Z', post: 't1', reach: 'thread' };
+    const level = (plays: CardPlay[]) => {
+      made.length = 0;
+      const r = render(<FeelinFabEffect {...props(0)} plays={plays} />);
+      const l = box().getAttribute('data-kb-level');
+      void see(canvas(), true);
+      frames(2);
+      const pattern = made[0]!.opts.pattern;
+      r.unmount();
+      return [l, pattern];
+    };
+    expect(level([playOf(1), playOf(2), lent])).toEqual(['3', 'prism']);
+    expect(level([lent])).toEqual(['1', 'pearl']);
+  });
+
   test('the seed is public ids only: the post and the plays, so every reader sees the same foil', () => {
     const seedOf = (p: EffectProps) => {
       made.length = 0;
