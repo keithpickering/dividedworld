@@ -41,7 +41,7 @@ export function CharacterLink({ id, character, name, avatar = true }: { readonly
     <span className="kb-who">
       <Link to={`/c/${encodeURIComponent(id)}`} className="kb-who-link">
         {avatar && <Mini character={character} name={name} />}
-        {name}
+        <span className="kb-who-name">{name}</span>
       </Link>
     </span>
   );
