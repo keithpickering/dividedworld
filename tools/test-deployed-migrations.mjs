@@ -97,7 +97,8 @@ await retryCase('7a. a connection failure is retried, then succeeds', async () =
 await retryCase('7b. three connection failures fail, after three attempts', async () => {
   let calls = 0;
   let err = null;
-  try { await retrying(() => { calls++; throw connectionDown(); }, { sleep: noSleep }); } catch (e) { err = e; }
+  // The fake gives up by itself past the cap, so a retry with no cap fails here by name and never hangs the build.
+  try { await retrying(() => { calls++; if (calls > 5) throw new Error('retried past the cap'); throw connectionDown(); }, { sleep: noSleep }); } catch (e) { err = e; }
   check('7b. three connection failures fail, after three attempts', err && calls === 3 && /Connection refused/.test(err.message), `${calls} calls, ${err?.message}`);
 });
 await retryCase('7c. a query error is thrown on the first attempt, never retried', async () => {
