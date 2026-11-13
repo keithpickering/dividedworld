@@ -59,7 +59,7 @@ test('the outgoing Boss names a successor, the season rolls over, and the new Bo
     return new Response(JSON.stringify({ choices: [{ text: ' ur board is now about pirates!!!\nBoard: next' }], usage: { prompt_tokens: 300, completion_tokens: 12 } }), { status: 200 });
   }) as unknown as typeof fetch;
   const env = (name: string) => ({ ANTHROPIC_API_KEY: 'test-key', SYSTEM_COMPLETIONS_URL: 'https://completions.test' } as Record<string, string>)[name];
-  const real = models(env, ledgerWriter(db), { tiers, fetch: fake });
+  const real = models(env, ledgerWriter(db), { tiers, oldVoice: { window: 1024, count: (t: string) => t.length }, fetch: fake });
   const memory = { hobby: { name: 'tag team matches', since: 'today', from: 'a board' }, opinions: [], grudges: [], wheelhouse: [], realWorld: [], marks: [] };
   const profile = { interests: ['tag teams'], favorites: [], mood: 'smug', signature: 'It is decided.' };
   /* The first meeting is held a day before the open season's end, whatever the seasons other files left, so it is the meltdown's last week. */

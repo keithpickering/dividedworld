@@ -216,11 +216,94 @@ test('the prompt says no card is on offer when none is, and asks for a title onl
 });
 
 test('the oldVoice completion is one document that ends where the persona\'s words begin, and stops at the line end', () => {
-  const c = chatterCompletion({ name: 'Old Timer', thread: base.thread, limits: base.limits });
+  const c = chatterCompletion({ name: 'Old Timer', thread: base.thread, limits: base.limits, fit: ROOMY });
   assert.ok(c.prompt.endsWith('Old Timer:'));
   assert.ok(c.prompt.includes('Ann: Pineapple is fine.'), 'the frame carries no pronoun tag');
   assert.ok(!/\(she\/her\)|\(they\/them\)/.test(c.prompt));
   assert.ok(c.stop.includes('\n'));
+});
+
+/* The old voice's window (design section 3): the frame drops thread posts oldest first, then clips the title, and keeps the persona's own line. */
+const ROOMY = { budget: 1_000_000, count: (t: string) => t.length };
+const fitPosts = Array.from({ length: 6 }, (_, i) => ({ name: `P${i}`, pronouns: they, body: `post number ${i} ${'y'.repeat(30)}` }));
+const fitLimits = { threadPosts: 8, excerptChars: 25, postMaxLength: 200, titleMaxLength: 100 };
+const LONG_TITLE = 'A long thread title about pineapples and more';
+const fitFrame = (budget: number, over: Partial<Parameters<typeof chatterCompletion>[0]> = {}) =>
+  chatterCompletion({ name: 'Old Timer', thread: { title: LONG_TITLE, posts: fitPosts }, limits: fitLimits, fit: { budget, count: (t) => t.length }, ...over });
+
+test('the pool post frame under budget is the prompt it was before the window, byte for byte', () => {
+  const whole = 'Welcome to the Message Boards - Thread View\nThread: A long thread title about pineapples and more\n\nP0: post number 0 yyyyyyyyyyy…\nP1: post number 1 yyyyyyyyyyy…\nP2: post number 2 yyyyyyyyyyy…\nP3: post number 3 yyyyyyyyyyy…\nP4: post number 4 yyyyyyyyyyy…\nP5: post number 5 yyyyyyyyyyy…\nOld Timer:';
+  assert.equal(fitFrame(whole.length).prompt, whole, 'a budget that just holds it');
+  assert.equal(fitFrame(1_000_000).prompt, whole);
+  assert.deepEqual(fitFrame(1_000_000).stop, ['\n']);
+});
+
+test('over budget the pool post frame drops the oldest thread posts first, and still ends with the persona\'s own line', () => {
+  const whole = fitFrame(1_000_000).prompt;
+  const one = fitFrame(whole.length - 1).prompt;
+  assert.ok(!one.includes('P0:') && one.includes('P1:') && one.includes('P5:'), one);
+  assert.ok(one.includes(`Thread: ${LONG_TITLE}`), 'the title is untouched while a post can go');
+  const three = fitFrame(whole.length - 3 * 'P0: post number 0 yyyyyyyyyyy…\n'.length).prompt;
+  assert.ok(!three.includes('P2:') && three.includes('P3:') && three.includes('P5:'), three);
+  for (const budget of [whole.length - 1, 150, 90, 1]) assert.ok(fitFrame(budget).prompt.endsWith('\nOld Timer:'));
+  const bare = fitFrame(1_000_000, { thread: { title: LONG_TITLE, posts: [] } }).prompt.length;
+  const last = fitFrame(bare + 'P5: post number 5 yyyyyyyyyyy…\n'.length).prompt;
+  assert.ok(last.includes('P5:') && !last.includes('P4:'), 'the newest post is the last to go');
+});
+
+test('with no post left the pool post frame clips its title to 40 characters, then to none', () => {
+  const bare = (title: string) => `Welcome to the Message Boards - Thread View\nThread:${title}\n\nOld Timer:`;
+  const noPosts = bare('').length;
+  const longTitle = { title: 'T'.repeat(80), posts: [] };
+  const clipped = fitFrame(bare(` ${'T'.repeat(40)}…`).length, { thread: longTitle }).prompt;
+  assert.equal(clipped, bare(` ${'T'.repeat(40)}…`), 'one character under the whole title: the 40-character clip');
+  const gone = fitFrame(noPosts, { thread: longTitle }).prompt;
+  assert.equal(gone, 'Welcome to the Message Boards - Thread View\nThread:\n\nOld Timer:');
+  const smallest = fitFrame(1, { thread: { title: LONG_TITLE, posts: fitPosts } }).prompt;
+  assert.equal(smallest, 'Welcome to the Message Boards - Thread View\nThread:\n\nOld Timer:', 'a budget nothing meets returns the smallest prompt and never throws');
+});
+
+test('an over-budget frame for a new thread (no title) does not throw, and has nothing to drop or clip', () => {
+  const c = fitFrame(1, { thread: null });
+  assert.equal(c.prompt, 'Welcome to the Message Boards - Thread View\nThread: (new)\n\nOld Timer:');
+});
+
+test('with every post dropped and the whole title still fitting, the title is kept whole', () => {
+  const bare = fitFrame(1_000_000, { thread: { title: LONG_TITLE, posts: [] } }).prompt;
+  const c = fitFrame(bare.length, { thread: { title: LONG_TITLE, posts: fitPosts } });
+  assert.equal(c.prompt, bare, 'every post went, and the title was not touched');
+});
+
+test('a title bound below 40 is the clip that is used, and no clip is longer than the bound', () => {
+  const limits = { ...fitLimits, titleMaxLength: 20 };
+  const thread = { title: 'T'.repeat(80), posts: fitPosts };
+  const at = (title: string) => `Welcome to the Message Boards - Thread View\nThread:${title}\n\nOld Timer:`;
+  const whole = fitFrame(at(` ${'T'.repeat(20)}…`).length, { thread, limits }).prompt;
+  assert.equal(whole, at(` ${'T'.repeat(20)}…`), 'the bound\'s clip, not a 40-character one');
+  assert.equal(fitFrame(at(` ${'T'.repeat(20)}…`).length - 1, { thread, limits }).prompt, at(''), 'a hair under it, no title');
+});
+
+test('a long thread is fitted in about log2 of its posts in counts, and keeps the most posts that fit, newest kept', () => {
+  const posts = Array.from({ length: 200 }, (_, i) => ({ name: `P${String(i).padStart(3, '0')}`, pronouns: they, body: 'z'.repeat(60) }));
+  const limits = { threadPosts: 200, excerptChars: 100, postMaxLength: 200, titleMaxLength: 100 };
+  const lineLen = `P000: ${'z'.repeat(60)}\n`.length;
+  const bare = chatterCompletion({ name: 'Old Timer', thread: { title: 'Long', posts: [] }, limits, fit: ROOMY }).prompt.length;
+  let calls = 0;
+  const count = (t: string): number => { calls++; return t.length; };
+  const c = chatterCompletion({ name: 'Old Timer', thread: { title: 'Long', posts }, limits, fit: { budget: bare + 73 * lineLen - 1, count } });
+  assert.ok(calls <= 12, `${calls} counts`);
+  const kept = c.prompt.split('\n').filter((l) => /^P\d{3}:/.test(l));
+  assert.equal(kept.length, 72, 'the most posts that fit');
+  assert.equal(kept[0]!.slice(0, 4), 'P128');
+  assert.equal(kept[71]!.slice(0, 4), 'P199', 'the newest is kept');
+});
+
+test('a title clip does not split a surrogate pair', () => {
+  const title = `${'a'.repeat(39)}😀${'b'.repeat(20)}`;
+  const c = fitFrame(1_000_000, { thread: { title, posts: [] }, limits: { ...fitLimits, titleMaxLength: 100 } });
+  assert.equal(c.prompt.includes(title), true);
+  const tight = chatterCompletion({ name: 'Old Timer', thread: { title, posts: [] }, limits: fitLimits, fit: { budget: 'Welcome to the Message Boards - Thread View\nThread: \n\nOld Timer:'.length + 40, count: (t) => t.length } }).prompt;
+  assert.ok(!/[\ud800-\udbff](?![\udc00-\udfff])/.test(tight), 'no lone high surrogate');
 });
 
 /* A test card with options (the engine knows no instance's cards): one string field, as Whoops!'s ink is. */

@@ -106,7 +106,7 @@ test('the Boss is named and a mod quoted, the season is handed over, and the poo
     return new Response(JSON.stringify({ model: tiers.light, stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify(reply) }], usage: { input_tokens: 1200, output_tokens: 60, service_tier: 'standard' } }), { status: 200 });
   }) as unknown as typeof fetch;
   const env = (name: string) => ({ ANTHROPIC_API_KEY: 'test-key', SYSTEM_COMPLETIONS_URL: 'https://completions.test' } as Record<string, string>)[name];
-  const real = models(env, ledgerWriter(db), { tiers, fetch: fake });
+  const real = models(env, ledgerWriter(db), { tiers, oldVoice: { window: 1024, count: (t: string) => t.length }, fetch: fake });
 
   // ---- The pool runs. ----
   const slot = new Date(Math.floor(Date.now() / 60_000) * 60_000 + 36 * 3_600_000).toISOString();
