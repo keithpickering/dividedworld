@@ -169,6 +169,8 @@ test('what an action wrote is broadcast as its public projection, on its thread\
     [{ action: 'playCard', card: 'whoops', character: id, target: id, config: { color: 'red' } },
       { whoami: id, card_target_reach: { act: id, kind: 'post', length: 10, body: 'x'.repeat(10), effects: [] }, play_card: { id: 'c', thread } }, [{ topic: `thread:${thread}`, event: 'act', payload: { id: 'c', thread } }]],
     [{ action: 'react', act: id, character: id, kind: 'fire' }, { react: { act: id, thread: null, tally: {} } }, []],
+    // A reaction to a blind post: its totals are hidden, so the answer's tally is null and nothing is sent.
+    [{ action: 'react', act: id, character: id, kind: 'fire' }, { react: { act: id, thread, tally: null } }, []],
     // A drop announced is The System's tally of one, sent now, with the Turns thread it opened; a
     // waiting or silent character is its player's alone.
     [{ action: 'createCharacter', name: 'Dropped', class: 'heel', timing: 'now', loudness: 'announced' },

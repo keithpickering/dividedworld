@@ -9,6 +9,7 @@
  * Below the Fold, Salty's bar over a post (docs/plans/2026-11-11-card-notes-design.md, section 2).
  * Part 6 (docs/plans/2026-11-11-card-notes-part-6-plan.md): Mooch, Toll and 4D Chess pay a share of a vote, and Off Day scores a character as a class.
  * Part 4 (docs/plans/2026-11-11-card-notes-part-4-plan.md): Sugar Coat turns away Salty and Pepperoni cards, Hype-Up is Publicity Tour's push on another's mask, and Last Word stops quotes of a post.
+ * Part 3 (docs/plans/2026-11-11-card-notes-part-3-plan.md): Whodunnit? veils a post's author, Blind Study its reaction totals, and Overreaction adds a reaction to one post's picker.
  * Jimmy Wails, the first card with a drive: an appeal cast on a post that anyone may give to (docs/plans/2026-11-03-jimmy-wails-design.md).
  * Laugh Track, an audience that laughs, cheers or boos at the cued words of a post as a reader points at or taps them (docs/plans/2026-11-11-laugh-track-design.md).
  * Graffiti, the first surface: a wall on a post any character may draw on (docs/plans/2026-11-11-graffiti-design.md).
@@ -18,6 +19,7 @@ import { QUADRANTS } from '../../../engine/rules/types.ts';
 import { atOrBelow, castOnPost, type CardRules } from '../../../engine/rules/cards.ts';
 import { fourDChess as fourDChessBase } from './4d-chess.ts';
 import { autocorrect } from './autocorrect.ts';
+import { blindStudy } from './blind-study.ts';
 import { belowTheFold } from './below-the-fold.ts';
 import { cardCollector as cardCollectorBase } from './card-collector.ts';
 import { classClown } from './class-clown.ts';
@@ -37,14 +39,16 @@ import { lineCutter } from './line-cutter.ts';
 import { mainEvent } from './main-event.ts';
 import { mooch } from './mooch.ts';
 import { offDay } from './off-day.ts';
+import { overreaction } from './overreaction.ts';
 import { publicityTour } from './publicity-tour.ts';
 import { toll } from './toll.ts';
 import { stickAround } from './stick-around.ts';
 import { sugarCoat } from './sugar-coat.ts';
+import { whodunnit } from './whodunnit.ts';
 import { whoops } from './whoops.ts';
 import { youWereSaying } from './you-were-saying.ts';
 
-const listed: readonly CardRules[] = [stickAround as CardRules, whoops as CardRules, cardCollectorBase as CardRules, hallPass as CardRules, forceField as CardRules, publicityTour as CardRules, heatMagnet as CardRules, classClown as CardRules, goodVibes as CardRules, glitterBomb as CardRules, mainEvent as CardRules, feelinFab as CardRules, autocorrect as CardRules, youWereSaying as CardRules, belowTheFold as CardRules, mooch as CardRules, toll as CardRules, fourDChessBase as CardRules, offDay as CardRules, jimmyWails as CardRules, sugarCoat as CardRules, hypeUp as CardRules, lastWord as CardRules, laughTrack as CardRules, graffiti as CardRules, lineCutter as CardRules, feelinGlam as CardRules];
+const listed: readonly CardRules[] = [stickAround as CardRules, whoops as CardRules, cardCollectorBase as CardRules, hallPass as CardRules, forceField as CardRules, publicityTour as CardRules, heatMagnet as CardRules, classClown as CardRules, goodVibes as CardRules, glitterBomb as CardRules, mainEvent as CardRules, feelinFab as CardRules, autocorrect as CardRules, youWereSaying as CardRules, belowTheFold as CardRules, mooch as CardRules, toll as CardRules, fourDChessBase as CardRules, offDay as CardRules, jimmyWails as CardRules, sugarCoat as CardRules, hypeUp as CardRules, lastWord as CardRules, laughTrack as CardRules, graffiti as CardRules, lineCutter as CardRules, feelinGlam as CardRules, whodunnit as CardRules, blindStudy as CardRules, overreaction as CardRules];
 
 /**
  * Card Collector, with the card a persona may name as an enum of the instance's cards cast on a post at or below its own rarity (the only

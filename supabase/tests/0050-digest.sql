@@ -65,6 +65,8 @@ begin
       'setting(text)', 'span_interval(jsonb)', 'standings_season()', 'current_boss()', 'demand_progress(uuid)', 'demand_progress_or_error(uuid)',
       -- Who a met demand credits (0206), reading the same public Acts and their public tallies; never `reactions`.
       'demand_contributors(uuid)',
+      -- The quadrant of a reaction kind, an instance's or a post's own (0359): demand_progress, demand_contributors and system_digest count by it; it reads two public tables as its owner and says nothing of who reacted.
+      'reaction_quadrant(uuid,text)',
       'system_digest(timestamp with time zone,timestamp with time zone)', 'staff_career(text)',
       -- The pool's signals (0088): the two functions it owns, and the folds it matches names with.
       'pool_signals(timestamp with time zone,timestamp with time zone)', 'pool_named(timestamp with time zone,timestamp with time zone)', 'name_skeleton(text)',

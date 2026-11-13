@@ -19,6 +19,7 @@ import { CUES, PLACES, laughTrack, placesOf, type Cue } from './laugh-track.ts';
 import { decide } from '../../../engine/rules/actions.ts';
 import { instanceProblems, withOverrides } from '../../../engine/rules/instance.ts';
 import { defaults as settings } from '../settings.ts';
+import { reactions } from '../reactions.ts';
 import { QUADRANTS } from '../../../engine/rules/types.ts';
 import type { CardTarget } from '../../../engine/rules/cards.ts';
 
@@ -28,7 +29,7 @@ const priceOf = (key: string): number => instance.machine.find((m) => 'card' in 
 const post = (length: number): CardTarget => ({ reach: 'post', act: 'p1', kind: 'post', length, text: '', links: [] });
 
 test('the instance sells its cards at their prices', () => {
-  assert.deepEqual(cards.map((c) => [c.key, c.alignment, priceOf(c.key)]), [['stick-around', 'sweet', 100], ['whoops', 'salty', 100], ['card-collector', 'salty', 150], ['hall-pass', 'sweet', 150], ['force-field', 'sweet', 150], ['publicity-tour', 'sweet', 150], ['heat-magnet', 'salty', 150], ['class-clown', 'pepperoni', 150], ['good-vibes', 'sweet', 150], ['glitter-bomb', 'pepperoni', 150], ['main-event', 'sweet', 300], ['feelin-fab', 'sweet', 20], ['autocorrect', 'pepperoni', 100], ['you-were-saying', 'pepperoni', 100], ['below-the-fold', 'salty', 100], ['mooch', 'salty', 150], ['toll', 'pepperoni', 150], ['4d-chess', 'salty', 150], ['off-day', 'salty', 500], ['jimmy-wails', 'sweet', 200], ['sugar-coat', 'sweet', 300], ['hype-up', 'sweet', 150], ['last-word', 'salty', 150], ['laugh-track', 'pepperoni', 150], ['graffiti', 'pepperoni', 300], ['line-cutter', 'pepperoni', 300], ['feelin-glam', 'sweet', 300]]);
+  assert.deepEqual(cards.map((c) => [c.key, c.alignment, priceOf(c.key)]), [['stick-around', 'sweet', 100], ['whoops', 'salty', 100], ['card-collector', 'salty', 150], ['hall-pass', 'sweet', 150], ['force-field', 'sweet', 150], ['publicity-tour', 'sweet', 150], ['heat-magnet', 'salty', 150], ['class-clown', 'pepperoni', 150], ['good-vibes', 'sweet', 150], ['glitter-bomb', 'pepperoni', 150], ['main-event', 'sweet', 300], ['feelin-fab', 'sweet', 20], ['autocorrect', 'pepperoni', 100], ['you-were-saying', 'pepperoni', 100], ['below-the-fold', 'salty', 100], ['mooch', 'salty', 150], ['toll', 'pepperoni', 150], ['4d-chess', 'salty', 150], ['off-day', 'salty', 500], ['jimmy-wails', 'sweet', 200], ['sugar-coat', 'sweet', 300], ['hype-up', 'sweet', 150], ['last-word', 'salty', 150], ['laugh-track', 'pepperoni', 150], ['graffiti', 'pepperoni', 300], ['line-cutter', 'pepperoni', 300], ['feelin-glam', 'sweet', 300], ['whodunnit', 'pepperoni', 300], ['blind-study', 'pepperoni', 150], ['overreaction', 'pepperoni', 100]]);
   assert.deepEqual(instanceProblems(instance), []);
   assert.deepEqual(instance.cards, cards);
 });
@@ -322,6 +323,55 @@ test('Below the Fold lands on a post with no fold, and a second is refused in pl
   assert.deepEqual(belowTheFold.canApply({ reach: 'character', character: 'c1' }, []), { ok: false, why: 'this card lands on a post' });
 });
 
+/* Card notes, Part 3 (docs/plans/2026-11-11-card-notes-part-3-plan.md, Task 9): Whodunnit?, Blind Study and Overreaction. */
+test('Whodunnit? and Blind Study are Pepperoni Moves on a post for three days, that veil the author and the totals', async () => {
+  const { whodunnit } = await import('./whodunnit.ts');
+  const { blindStudy } = await import('./blind-study.ts');
+  assert.deepEqual([whodunnit.key, whodunnit.name, whodunnit.alignment, whodunnit.rarity, whodunnit.play ?? 'cast', whodunnit.reaches, whodunnit.stack, whodunnit.lasts, whodunnit.veil], ['whodunnit', 'Whodunnit?', 'pepperoni', 'rare', 'cast', undefined, undefined, { unit: 'day', count: 3 }, 'author']);
+  assert.deepEqual([blindStudy.key, blindStudy.name, blindStudy.alignment, blindStudy.rarity, blindStudy.play ?? 'cast', blindStudy.reaches, blindStudy.stack, blindStudy.lasts, blindStudy.veil], ['blind-study', 'Blind Study', 'pepperoni', 'uncommon', 'cast', undefined, undefined, { unit: 'day', count: 3 }, 'totals']);
+  assert.deepEqual([priceOf('blind-study'), priceOf('overreaction')], [150, 100]);
+  const whodunnitSlot = instance.machine.find((m) => 'card' in m.item && m.item.card === 'whodunnit')!;
+  assert.deepEqual([whodunnitSlot.availability, whodunnitSlot.price], ['hidden', 300]);
+  for (const c of [whodunnit, blindStudy]) {
+    assert.equal(c.playPrice(settings, post(6000), {}), 0);
+    assert.equal(c.playPrice(settings, post(10), {}), 0);
+    assert.deepEqual(c.validateConfig({ anything: 1 }), { ok: true, value: {} });
+    assert.equal(c.canApply(post(10), []).ok, true);
+    assert.deepEqual(c.canApply(post(10), [{ card: c.key, act: 'v1', reach: 'post' as const }]), { ok: false, why: 'this post already carries that card' });
+    assert.deepEqual(c.canApply({ reach: 'character', character: 'c1' }, []), { ok: false, why: 'this card lands on a post' });
+    const listed = cards.find((l) => l.key === c.key);
+    assert.ok(listed, 'it is in the instance\'s cards');
+    assert.ok(castOnPost(listed), 'a Cast on a post');
+  }
+  const named = cards.find((c) => c.key === 'card-collector')!.staffOptions!.schema as { properties: { card: { enum: string[] } } };
+  assert.ok(named.properties.card.enum.includes('blind-study') && !named.properties.card.enum.includes('whodunnit'), 'Card Collector may name the uncommon, not the rare');
+  assert.ok(named.properties.card.enum.includes('overreaction'), 'Card Collector may name the common');
+  // New slots end their run, so the Vending Machine's rows above them never move: the on-sale ones after Last Word, the hidden one (after Part 2's two) last.
+  const slotCards = instance.machine.map((m) => ('card' in m.item ? m.item.card : 'pack'));
+  assert.deepEqual(slotCards.slice(slotCards.indexOf('last-word')), ['last-word', 'laugh-track', 'overreaction', 'blind-study', 'main-event', 'off-day', 'sugar-coat', 'graffiti', 'line-cutter', 'feelin-glam', 'whodunnit']);
+});
+
+test('Overreaction is a common Pepperoni Move on a post, three to a post, that adds a reaction of its own and does not end', async () => {
+  const { overreaction } = await import('./overreaction.ts');
+  assert.deepEqual([overreaction.key, overreaction.name, overreaction.alignment, overreaction.rarity, overreaction.play ?? 'cast', overreaction.reaches, overreaction.stack, overreaction.lasts, overreaction.reaction, overreaction.veil], ['overreaction', 'Overreaction', 'pepperoni', 'common', 'cast', undefined, 3, undefined, true, undefined]);
+  assert.equal(overreaction.playPrice(settings, post(6000), { emoji: '🦀', quadrant: 'calmPositive' }), 0);
+  const up = (n: number) => Array.from({ length: n }, (_, i) => ({ card: 'overreaction', act: `o${i}`, reach: 'post' as const }));
+  assert.equal(overreaction.canApply(post(10), up(2)).ok, true);
+  assert.deepEqual(overreaction.canApply(post(10), up(3)), { ok: false, why: 'this post already carries 3 of that card, the most it takes' });
+  assert.deepEqual(overreaction.canApply({ reach: 'thread', thread: 't1' }, []), { ok: false, why: 'this card lands on a post' });
+  assert.ok(castOnPost(cards.find((c) => c.key === 'overreaction')!), 'a Cast on a post');
+  assert.deepEqual(overreaction.validateConfig({ emoji: '🦀', quadrant: 'calmPositive', extra: 1 }), { ok: true, value: { emoji: '🦀', quadrant: 'calmPositive' } });
+  assert.deepEqual(overreaction.validateConfig({ emoji: '🦀', quadrant: 'sideways' }), { ok: false, why: 'choose the quadrant it scores in' });
+  assert.deepEqual(overreaction.validateConfig({ emoji: 'crab', quadrant: 'calmPositive' }), { ok: false, why: 'choose one emoji' });
+  assert.deepEqual(overreaction.validateConfig({ emoji: '🦀🐙', quadrant: 'calmPositive' }), { ok: false, why: 'that is more than one emoji' });
+  assert.equal(reactions.length, 16);
+  for (const r of reactions) assert.deepEqual(overreaction.validateConfig({ emoji: r.emoji, quadrant: r.quadrant }), { ok: false, why: 'this forum already has that reaction' }, r.key);
+});
+
+test('the anonymous poster stands in for a withheld author, with no picture of its own yet', () => {
+  assert.deepEqual(instance.anonymous, { name: 'Anonymous', tagline: 'Could be anyone.' });
+});
+
 /* ---- Autocorrect (docs/plans/2026-11-03-autocorrect-plan.md, Task 5) ---- */
 const on = (body: string): CardTarget => postTarget('p1', 'post', body);
 const config = (phrase: unknown, replacement: unknown = 'Luigi') => autocorrect.validateConfig({ phrase, replacement });
@@ -559,19 +609,15 @@ test('the Booster\'s hit pull gives uncommon 74, rare 24 and legendary 2, shared
   assert.deepEqual(booster.pulls.at(-1)!.weights, { uncommon: 74, rare: 24, legendary: 2 });
   const hit = packOdds(booster, cards, instance.settings).at(-1)!;
   const chance = new Map(hit.flatMap((r) => r.cards.map((c) => [c.card, c.chance] as const)));
-  // The Gimmicks, Part 6, Jimmy Wails, Part 4 and Laugh Track joined the Booster by their rarity, as a new card does, with nothing listed in packs.ts: fifteen uncommons share the 74 (You Were Saying? and Below the Fold are commons, and the hit pull takes none).
-  // Sugar Coat, Graffiti, Line Cutter and Feelin' Glam are the rares that share the 24 with Main Event: five, at 0.048 each.
-  assert.equal(cards.length, 27);
-  assert.ok(Math.abs(chance.get('main-event')! - 0.048) < 1e-9, `Main Event at ${chance.get('main-event')}`);
-  assert.ok(Math.abs(chance.get('sugar-coat')! - 0.048) < 1e-9, `Sugar Coat at ${chance.get('sugar-coat')}`);
-  assert.ok(Math.abs(chance.get('graffiti')! - 0.048) < 1e-9, `Graffiti at ${chance.get('graffiti')}`);
-  assert.ok(Math.abs(chance.get('line-cutter')! - 0.048) < 1e-9, `Line Cutter at ${chance.get('line-cutter')}`);
-  assert.ok(Math.abs(chance.get('feelin-glam')! - 0.048) < 1e-9, `Feelin' Glam at ${chance.get('feelin-glam')}`);
+  // The Gimmicks, Part 6, Jimmy Wails, Part 4, Laugh Track, card notes Part 2 and card notes Part 3 joined the Booster by their rarity, as a new card does, with nothing listed in packs.ts: the sixteen uncommons share the 74 (You Were Saying?, Below the Fold and Overreaction are commons, and the hit pull takes none).
+  // Sugar Coat, Graffiti, Line Cutter, Feelin' Glam and Whodunnit? are the rares that share the 24 with Main Event: six, at 0.04 each.
+  assert.equal(cards.length, 30);
+  for (const rare of ['main-event', 'sugar-coat', 'graffiti', 'line-cutter', 'feelin-glam', 'whodunnit']) assert.ok(Math.abs(chance.get(rare)! - 0.04) < 1e-9, `${rare} at ${chance.get(rare)}`);
   assert.ok(Math.abs(chance.get('off-day')! - 0.02) < 1e-9, `Off Day at ${chance.get('off-day')}`);
   const uncommons = cards.filter((c) => c.rarity === 'uncommon');
-  assert.equal(uncommons.length, 15);
-  for (const c of uncommons) assert.ok(Math.abs(chance.get(c.key)! - 0.74 / 15) < 1e-9, `${c.key} at ${chance.get(c.key)}`);
-  assert.equal(chance.size, uncommons.length + 6);
+  assert.equal(uncommons.length, 16);
+  for (const c of uncommons) assert.ok(Math.abs(chance.get(c.key)! - 0.74 / 16) < 1e-9, `${c.key} at ${chance.get(c.key)}`);
+  assert.equal(chance.size, uncommons.length + 7);
 });
 
 /* Card notes, Part 6 (docs/plans/2026-11-11-card-notes-part-6-plan.md, Task 7): Mooch, Toll, 4D Chess and Off Day. */
@@ -1014,8 +1060,8 @@ test("Line Cutter and Feelin' Glam are rares in the instance, hidden at 300 afte
     ['feelin-glam', 'rare', 'cast', 'sweet', ['thread'], 1, 'hidden', 300],
   ]);
   assert.deepEqual([by('line-cutter').replies, by('line-cutter').lasts, by('feelin-glam').keeps, by('feelin-glam').lasts], [true, undefined, true, { unit: 'day', count: 7 }]);
-  // The boards hold slots by place: a hidden slot is never among the on-sale run, and these two are the machine's last.
-  assert.deepEqual([at('line-cutter'), at('feelin-glam')], [instance.machine.length - 2, instance.machine.length - 1]);
+  // The boards hold slots by place: a hidden slot is never among the on-sale run, and these two are the machine's last but Whodunnit? (card notes Part 3), which comes after them.
+  assert.deepEqual([at('line-cutter'), at('feelin-glam'), at('whodunnit')], [instance.machine.length - 3, instance.machine.length - 2, instance.machine.length - 1]);
   assert.deepEqual(settings.reachLasts.thread, { unit: 'day', count: 7 }, "a thread's effect lasts at most a week, Feelin' Glam's");
   assert.deepEqual(instanceProblems(instance), []);
 });

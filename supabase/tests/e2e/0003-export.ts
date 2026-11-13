@@ -21,7 +21,7 @@ const root = path.resolve(import.meta.dirname, '../../..');
 const migrations = path.join(root, 'supabase/migrations');
 
 /** The tables that hold a row in the fixture, before the round trip and again after the import (an empty table would round-trip as well, and prove nothing). */
-const HELD = ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'season_results', 'apologies', 'card_texts', 'card_writes', 'card_write_refunds', 'scored_as', 'play_reach', 'ledger', 'move_dependencies', 'condition_kinds', 'persona_arcs', 'arc_beat_events', 'handoffs', 'surfaces', 'surface_marks', 'surface_cuts', 'face_down_draws', 'post_under'];
+const HELD = ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'season_results', 'apologies', 'card_texts', 'card_writes', 'card_write_refunds', 'scored_as', 'play_reach', 'post_veils', 'post_veil_cards', 'post_reaction_kinds', 'ledger', 'move_dependencies', 'condition_kinds', 'persona_arcs', 'arc_beat_events', 'handoffs', 'surfaces', 'surface_marks', 'surface_cuts', 'face_down_draws', 'post_under'];
 
 const psqlOn = (url: string, text: string) =>
   execFileSync('psql', ['-v', 'ON_ERROR_STOP=1', '-qtAX', url, '-f', '-'], { input: text, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
@@ -215,6 +215,36 @@ test('an instance exported and imported into a fresh database is the same instan
             'starts', to_char(now() + interval '1 day', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'), 'ends', to_char(now() + interval '2 days', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'))) returning id into score_play;
         insert into play_reach (play, reach, character, ends_at) values (score_play, 'character', b, now() + interval '2 days');
       end;
+      -- The stand-in (0357) is made as the seed makes it, before a veil can land: one staff character of its own kind, no owner, with a profile and the avatar setting.
+      perform seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
+        'anonymous', jsonb_build_object('name', 'Exported Anonymous', 'title', 'Nobody in particular.', 'avatar', 'exp-anon')));
+      -- Part 3's cards (0357, 0359): a card kind with each flag (a veil of the author, a veil of the totals, a reaction), a live veil of each kind played, an ended one of each (a time passed; the Act as place_cast
+      -- writes it, with its veil row), and an Overreaction played with a reaction given of its kind, and the tally of it.
+      insert into card_kinds (key, name, alignment, rarity, play, reaches, lasts, veil, stack, adds_reaction) values
+        ('expveil', 'Exported Whodunnit', 'pepperoni', 'rare', 'cast', '{post}', interval '3 days', 'author', 1, false),
+        ('expblind', 'Exported Blind Study', 'pepperoni', 'uncommon', 'cast', '{post}', interval '3 days', 'totals', 1, false),
+        ('expreact', 'Exported Overreaction', 'pepperoni', 'common', 'cast', '{post}', null, null, 3, true);
+      insert into card_ledger (account, card, kind, price) values (bob, 'expveil', 'bought', 0), (bob, 'expblind', 'bought', 0), (bob, 'expreact', 'bought', 0);
+      declare veil_post uuid; blind_post uuid; over_post uuid; old_veil uuid; old_blind uuid; old_ended uuid;
+      begin
+        veil_post := tests.post(a, t, 'Veiled, and carried across.');
+        perform play_card(bob, 'expveil', b, veil_post, '{}', 0, '');
+        blind_post := tests.post(a, t, 'Blind, and carried across.');
+        perform play_card(bob, 'expblind', b, blind_post, '{}', 0, '');
+        over_post := tests.post(a, t, 'Overreacted to, and carried across.');
+        perform play_card(bob, 'expreact', b, over_post, '{"emoji": "💀", "quadrant": "excitedNegative"}', 0, '');
+        insert into reactions (act, reactor_account, reactor_character, kind, slot) values (over_post, bob, b, 'x-1f480', 1);
+        insert into reaction_tallies (act, kind, count) values (over_post, 'x-1f480', 1);
+        old_veil := tests.post(a, t, 'Veiled, and the veil wore off.');
+        old_blind := tests.post(a, t, 'Blind, and the veil wore off.');
+        insert into acts (character, kind, thread, target_act_id, payload) values (b, 'card', t, old_veil, jsonb_build_object('card', 'expveil', 'message', '', 'config', '{}'::jsonb, 'layer', 1, 'ends', to_char(now() - interval '1 day', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'))) returning id into old_ended;
+        insert into post_veils (play, post, veil, author, caster_account, ends_at) values (old_ended, old_veil, 'author', a, bob, now() - interval '1 day');
+        -- The card a veiled post's own back laid on a quote (0357's post_veil_cards): the row names the card, the post whose author set the back and that author; the fixture needs one to carry.
+        insert into post_veil_cards (card, post, author) values (old_ended, old_veil, a);
+        insert into acts (character, kind, thread, target_act_id, payload) values (b, 'card', t, old_blind, jsonb_build_object('card', 'expblind', 'message', '', 'config', '{}'::jsonb, 'layer', 1, 'ends', to_char(now() - interval '1 day', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'))) returning id into old_ended;
+        insert into post_veils (play, post, veil, author, caster_account, ends_at) values (old_ended, old_blind, 'totals', a, bob, now() - interval '1 day');
+      end;
+
       -- A spin pressed at a post (0351): a play on Bob's character cast from one post, a layer on another post by him, and Ann's spin from the play naming that post. The spin's at,
       -- its moment and the layer it holds are carried as written; the import, a replica's write, takes none of its own.
       insert into card_kinds (key, name, alignment, rarity, play, reaches, lasts) values ('expspinat', 'Exported Spin At', 'pepperoni', 'common', 'cast', '{character}', interval '7 days');
@@ -519,6 +549,14 @@ test('an instance exported and imported into a fresh database is the same instan
     (select count(*) from (select * from surface_cuts except select c.* from surfaces s cross join lateral surface_cuts_of(s.play) c) x) || '|' ||
     (select count(*) from (select c.* from surfaces s cross join lateral surface_cuts_of(s.play) c except select * from surface_cuts) x)`);
   assert.equal(narrowRows(from), '2|1|0|0|0|0', 'the fixture\'s wall holds a mark for its draw and its wash and a cut for the one draw the wash took from, and the rows equal those the Acts give');
+  // Part 3's rows (0357, 0359), each asserted by what it holds, not by being there: a veil of each kind live and ended (the fixture's own posts, since the end-to-end files before this one leave rows in the same database), a card kind with each flag, the stand-in, and a post-local reaction with a reaction and a tally of its kind.
+  const part3 = (url: string) => psqlOn(url, `select
+    (select string_agg(v.veil || ':' || (v.ends_at > now())::text, ',' order by v.veil, v.ends_at > now()) from post_veils v join acts a on a.id = v.post and (a.payload ->> 'body' like 'Veiled, %' or a.payload ->> 'body' like 'Blind, %')) || '|' ||
+    (select string_agg(key || ':' || coalesce(veil, '-') || ':' || adds_reaction::text, ',' order by key) from card_kinds where key in ('expveil', 'expblind', 'expreact')) || '|' ||
+    (select count(*) from characters where staff_kind = 'anonymous' and staff = 'anonymous' and owner is null and stand_in() = id) || '|' ||
+    (select string_agg(k.key || ':' || k.emoji || ':' || k.quadrant || ':' || (select count(*) from reactions r where r.act = k.post and r.kind = k.key) || ':' || (select coalesce(sum(t.count), 0) from reaction_tallies t where t.act = k.post and t.kind = k.key), ',') from post_reaction_kinds k join acts a on a.id = k.post and a.payload ->> 'body' like 'Overreacted to, %')`);
+  const part3Held = 'author:false,author:true,totals:false,totals:true|expblind:totals:false,expreact:-:true,expveil:author:false|1|x-1f480:💀:excitedNegative:1:1';
+  assert.equal(part3(from), part3Held, 'the fixture holds a live and an ended veil of each kind, a card kind with each flag, the stand-in, and a post-local reaction with a reaction and a tally of its kind');
   assert.equal(payouts(from), '1|1|1|1', 'the fixture holds the skim ledger row, the scored-as row, the play\'s starts and the rode spring\'s quadrant');
   // The cast's own set, its spring and the card it caught, by their ids, so the round trip is shown to carry a trap's rows
   // whatever else this database holds (#136 F1).
@@ -705,6 +743,25 @@ test('an instance exported and imported into a fresh database is the same instan
     assert.match((await run('import-instance.mjs', ['--from', short, '--to', fresh.toString(), '--storage', newStore.url])).stderr, /names no release of the name folds/);
     fs.copyFileSync(path.join(dir, 'manifest.json'), path.join(short, 'manifest.json'));
     fs.writeFileSync(path.join(short, 'public.characters.jsonl'), characters.join('\n') + '\n');
+    // A reaction or a tally of a kind that is neither the instance's nor one a card added to that post (0359 dropped the foreign key that held it) is refused, each of the three ways it can be wrong: a kind that is nowhere,
+    // and a post-local kind carried onto a post that never had it.
+    const kindRows = (file: string) => fs.readFileSync(path.join(dir, file), 'utf8').split('\n').filter(Boolean);
+    const local = (rows: string[]) => rows.findIndex((r) => JSON.parse(r).kind === 'x-1f480');
+    for (const file of ['public.reactions.jsonl', 'public.reaction_tallies.jsonl']) {
+      const rows = kindRows(file);
+      const at = local(rows);
+      assert.ok(at >= 0, `${file} holds the post-local kind's row`);
+      const reacted = new Set(rows.map((r) => JSON.parse(r).act));
+      const elsewhere = kindRows('public.acts.jsonl').map((r) => JSON.parse(r)).find((a) => a.kind === 'post' && !reacted.has(a.id))!.id;
+      for (const [why, poison] of [['a kind nowhere', { kind: 'x-dead' }], ['a local kind on another post', { act: elsewhere }]] as const) {
+        const forged = rows.map((r, i) => (i === at ? JSON.stringify({ ...JSON.parse(r), ...poison }) : r));
+        fs.writeFileSync(path.join(short, file), forged.join('\n') + '\n');
+        const refused = await run('import-instance.mjs', ['--from', short, '--to', fresh.toString(), '--storage', newStore.url]);
+        assert.notEqual(refused.status, 0, `${file}, ${why}`);
+        assert.match(refused.stderr, new RegExp(`public\\.${file.split('.')[1]} \\(kind\\) names a reaction kind`), `${file}, ${why}`);
+      }
+      fs.copyFileSync(path.join(dir, file), path.join(short, file));
+    }
     fs.rmSync(short, { recursive: true, force: true });
     assert.equal(psqlOn(fresh.toString(), 'select count(*) from public.accounts'), '0', 'a refused import left rows behind');
 
@@ -740,6 +797,7 @@ test('an instance exported and imported into a fresh database is the same instan
     for (const t of HELD) { const rows = after.get(`public.${t}`); assert.ok(rows !== undefined && rows !== '[]', `${t} is in the imported instance (got ${rows === undefined ? 'no such table' : rows})`); }
     assert.equal(surfaceRows(fresh.toString()), '1|0', 'an imported surface is the row its Acts rebuild');
     assert.equal(narrowRows(fresh.toString()), '2|1|0|0|0|0', 'the imported marks and cuts are the rows the Acts give');
+    assert.equal(part3(fresh.toString()), part3Held, 'the veils, the flagged card kinds, the stand-in and the post-local reaction are in the imported instance as they were');
     assert.equal(payouts(fresh.toString()), payouts(from), 'the payout cards\' ledger row, scored_as row, starts and rode quadrant are in the imported instance');
     // The post that quotes the No quote's post (Task 8) is in the imported instance: the quote was written before the No quote was played, and the import writes it as a replica.
     const quoting = `select count(*) from acts q join acts n on n.kind = 'post' and n.payload ->> 'body' = 'Under No quote, and quoted before it.'

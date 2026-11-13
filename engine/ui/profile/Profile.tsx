@@ -33,6 +33,9 @@ import { PROFILE_ROWS, actRow, mergeWindow, newest, playLinksFrom, revealRow, se
 import { recordHref } from './Record.tsx';
 import './profile.css';
 
+/** What the glass says under the stand-in's name (the one voice here that is neither the character's nor The System's). */
+export const STAND_IN_LINE = 'This is a stand-in. It is shown in place of a post\'s author while a card hides them.';
+
 interface Loaded {
   readonly counts: CharacterCounts;
   readonly standing: StandingPlace | null;
@@ -46,8 +49,8 @@ interface Loaded {
 /** The profile draws its document (the forum-load plan, Task 13): whole on the first frame. A character not shown is the router's "cannot find"; signed out, the marker is the front door. */
 export function ProfileScreen({ id: _id, doc }: { readonly id: Id; readonly doc: ScreenDoc<ProfilePage> }) {
   if (isSignedOutDoc(doc)) return <FrontDoor />;
-  /* A Boss or a Mod Bot is a profile of its own kind: no standing, no class, no season record; its moderation log instead. */
-  return doc.character.staff ? <StaffProfile character={doc.character} /> : <Profile character={doc.character} doc={doc} />;
+  /* A Boss or a Mod Bot is a profile of its own kind: no standing, no class, no season record; its moderation log instead. The stand-in a card's veil shows holds no office and has no log: it is the plain profile, with its line. */
+  return doc.character.staff && doc.character.office !== 'anonymous' ? <StaffProfile character={doc.character} /> : <Profile character={doc.character} doc={doc} />;
 }
 
 interface Fact { readonly key: string; readonly label: string; readonly lead?: boolean; readonly value: ReactNode }
@@ -111,6 +114,8 @@ function Profile({ character: c, doc }: { readonly character: Character; readonl
     <div className="kb-profile">
       <p className="kb-crumb"><Link to="/">Index</Link> › {c.name}</p>
       <h1 className="kb-heading kb-profile-name">{c.name}</h1>
+      {/* The glass says what the stand-in is, plainly and never in character: the one line it adds. */}
+      {c.office === 'anonymous' && <p className="kb-profile-stand-in">{STAND_IN_LINE}</p>}
       <section className="kb-profile-card">
         <table className="kb-table kb-about" role="table" aria-labelledby={band} data-kb-lead={lead} style={{ '--kb-about-lead': Math.max(1, lead) } as CSSProperties}>
           <thead role="rowgroup"><tr role="row"><th id={band} role="columnheader" scope="col" colSpan={3}>About {c.name}</th></tr></thead>

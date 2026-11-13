@@ -638,8 +638,8 @@ export interface Character {
   readonly bannedUntil?: string;
 }
 
-/** An office a staff character holds (0082). `waiting` is never shown on a character (a persona that has not debuted is in no public list); `developer` is the developer persona's, which holds no office. */
-export type Office = 'boss' | 'mod' | 'member' | 'benched' | 'waiting' | 'developer';
+/** An office a staff character holds (0082). `waiting` is never shown on a character (a persona that has not debuted is in no public list); `developer` is the developer persona's, which holds no office; `anonymous` is the stand-in's, shown for a post whose author a card has hidden, and holds no badge either. */
+export type Office = 'boss' | 'mod' | 'member' | 'benched' | 'waiting' | 'developer' | 'anonymous';
 
 /**
  * One standing award as a screen shows it. `trophy` is the kind's key: an instance's own kind draws its art from the instance's UI by it, and `art` is the URL of a
@@ -2218,6 +2218,11 @@ export interface ThreadPage {
   /** The plays at thread reach that keep their level on this page's posts after they wore off (a `keeps` card, a play that ended by time and not by an admin), in the shape of `above`. */
   readonly kept: readonly PlayAbove[];
   readonly faces: Awaited<ReturnType<KayfaApi['myFaceDown']>>;
+  /**
+   * The caller's own veiled posts among the page's (`my_veiled_posts`): a post whose author an author veil hides is shown under the stand-in to every reader, and only its author's player
+   * is told here that it is theirs, which of their characters wrote it, the veil's play and when it ends. Empty for everyone else.
+   */
+  readonly veiled: readonly { readonly post: Id; readonly character: Id; readonly play: Id; readonly endsAt: string }[];
   readonly states: Awaited<ReturnType<KayfaApi['effectStates']>>;
   readonly releases: Awaited<ReturnType<KayfaApi['myReleases']>>;
   readonly tallies: Awaited<ReturnType<KayfaApi['tallies']>>;
@@ -2890,7 +2895,8 @@ export interface KayfaApi {
   wash(play: Id, character: Id, input: unknown): Promise<Answer<SurfaceWritten>>;
   /** A surface play's live draws and washes, oldest first (`surface_acts`); null where the play has no surface. */
   surfaceActs(play: Id): Promise<SurfaceActs | null>;
-  react(act: Id, character: Id, kind: string): Promise<Answer<{ readonly act: Id; readonly tally: Tally }>>;
+  /** Leave a reaction: an instance's kind, or a post-local one (key `x-…`) its post offers. The tally is null where the post's totals are hidden (a blind post), for everyone alike. */
+  react(act: Id, character: Id, kind: string): Promise<Answer<{ readonly act: Id; readonly tally: Tally | null }>>;
   turn(character: Id, to: string, loudness: 'silent' | 'announced', showFrom: boolean, showTo: boolean): Promise<Answer<TurnAsked>>;
   withdrawTurn(character: Id): Promise<Answer<{ readonly withdrawn: true }>>;
   unmask(character: Id, thread: Id, message: string): Promise<Answer<Act>>;
