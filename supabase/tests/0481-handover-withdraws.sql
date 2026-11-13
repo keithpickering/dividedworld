@@ -1,4 +1,4 @@
--- The handover withdraws the outgoing Boss's waiting moves (supabase/migrations/0358_handover_withdraws.sql; docs/plans/2026-11-13-rehearsal-patch-design.md, section 6).
+-- The handover withdraws the outgoing Boss's waiting moves (supabase/migrations/0481_handover_withdraws.sql; docs/plans/2026-11-13-rehearsal-patch-design.md, section 6).
 --
 -- A move that waits in the admin queue for structuralHoldHours can land after its Boss has left the chair, and a board move is never inherited, so the new Boss could not review it. hand_over refuses
 -- for good every move of the outgoing Boss that is still waiting (not landed, not held, not refused), with the reason the admin queue shows, and posts nothing for it.
