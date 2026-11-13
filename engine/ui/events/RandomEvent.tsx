@@ -70,7 +70,6 @@ function Dialog({ event, onClose }: { readonly event: Event; readonly onClose: (
         <div className="kb-event-words">
           <p className="kb-event-line">{line}</p>
           {item !== null && event.rarity !== null && <p className="kb-small">{event.rarity} {event.outcome}, now in your {event.outcome === 'gear' ? 'wardrobe' : 'hand'}.</p>}
-          {item === null && <p className="kb-small kb-muted">Nothing was given. Most events are only this.</p>}
           <p className="kb-small kb-muted">It happened to {mask}. Only you see this.</p>
         </div>
       </div>
