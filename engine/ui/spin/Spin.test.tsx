@@ -1,8 +1,13 @@
-import { act, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useEffect } from 'react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { CARD_NOT_ON_POST } from './SpinForm.tsx';
 import { Swapper, openThread, threadWorld } from '../composer/support.tsx';
+import { landsOn, ok, type CardRules } from '../../rules/cards.ts';
+import type { Instance } from '../../rules/types.ts';
+import { createFake } from '../data/fake.ts';
+import { pageOf, threadHref } from '../thread/pages.ts';
 import { useLocation } from '../router.tsx';
 import type { Act, ThreadListener } from '../data/api.ts';
 import { renderIn, testInstance } from '../test-world.tsx';
@@ -263,7 +268,7 @@ describe('the ORIGIN box', () => {
     const real = w.fake.threadPage.bind(w.fake);
     vi.spyOn(w.fake, 'threadPage').mockImplementation(async (id, ...rest) => {
       const got = await real(id, ...rest);
-      return id === spun && got ? { ...got, thread: { ...got.thread, origin: { kind: 'play', card: 'whoops', on: null } } } : got;
+      return id === spun && got ? { ...got, thread: { ...got.thread, origin: { kind: 'play', card: 'whoops', on: null, from: null, at: null } } } : got;
     });
     openSpun(w, spun);
     const box = await origin();
@@ -661,9 +666,9 @@ describe('the ORIGIN box of a play-spun thread', () => {
     expect(read).toHaveBeenCalledTimes(2);
   });
 
-  test('a thread spun from a play beyond a post keeps today\'s box, with no moment read or drawn', async () => {
+  test('a thread spun from a play on a thread keeps today\'s box: no mark, with no moment read or drawn and no second head line', async () => {
     const w = threadWorld(3);
-    const glint = w.fake.seed.reach(w.spritey, 'character', w.pipe, 'whoops', { post: w.ids[1]!, ends: Date.now() + 86_400_000 });
+    const glint = w.fake.seed.reach(w.spritey, 'thread', w.thread, 'whoops', { ends: Date.now() + 86_400_000 });
     const read = vi.spyOn(w.fake, 'playMoment');
     const spun = await spinFrom(w, glint, 'About that glint');
     openWith(w, spun);
@@ -671,6 +676,10 @@ describe('the ORIGIN box of a play-spun thread', () => {
     /* Today's box: the play's Act read, and no moment drawn or read for it. */
     await waitFor(() => expect(box.querySelector('[aria-busy="true"]')).toBeNull());
     expect(within(box).queryByRole('group', { name: /^As it landed/u })).toBeNull();
+    expect(within(box).queryByText(/Cast from/u)).toBeNull();
+    /* As on main: a thread's play draws no mark of its own in the box. */
+    expect(marks(box)).toEqual([]);
+    expect(box.querySelector('.kb-origin-head-text')!.textContent).not.toMatch(/as it (landed|was spun)/u);
     expect(read).not.toHaveBeenCalled();
   });
 
@@ -801,5 +810,200 @@ describe('Spun into', () => {
     await waitFor(() => expect(within(line).getAllByRole('link')).toHaveLength(7));
     expect(one).toHaveBeenCalledTimes(1);
     expect(within(line).queryByRole('button')).toBeNull();
+  });
+});
+
+/*
+ * A thread spun from a card on a character (docs/plans/2026-11-12-spin-at-post-design.md): the spin is pressed from the card's mark on a
+ * postbit and records that post; the box shows it as it was when spun, with the card's effect still, under a head with two links.
+ * The card is the test's own, which reaches a character; the engine names no instance's.
+ */
+describe('a thread spun from a card on a character', () => {
+  const glint: CardRules = {
+    playPrice: () => 0, validateConfig: (c: unknown) => ok(c), key: 'glint', name: 'Glint', alignment: 'pepperoni', rarity: 'uncommon', reaches: ['character'],
+    lasts: { unit: 'day', count: 7 }, canApply: (t, e, _config, now) => landsOn({ key: 'glint', reaches: ['character'] }, t, e, now),
+  };
+  const glitterInstance: Instance = { ...testInstance, cards: [glint] };
+  const Glitter = ({ children, still }: EffectProps) => <div data-kb-glint={still ? 'still' : 'live'}>{children}</div>;
+  const glitterCards: CardUi[] = [{ key: 'glint', art: { color: '#ffd23f', ink: '#1a1300', canvas: '', mark: '', credit: 'Test' }, describe: () => 'Glitter.', Effect: Glitter }];
+
+  /* Zed's first post (in "Kart tier list") is where Spritey's Glint was cast from; the post a reader presses it on is Zed's second in "Why are my posts shiny". */
+  function world() {
+    const fake = createFake({ instance: glitterInstance, now: () => Date.now() });
+    const me = fake.seed.account('me');
+    const other = fake.seed.account('other');
+    const pipe = fake.seed.character(me, 'Pipewrench', 'heel');
+    const zed = fake.seed.character(me, 'Zed', 'face');
+    const spritey = fake.seed.character(other, 'Spritey', 'face');
+    const cast = fake.seed.thread('general', zed, 'Kart tier list', 'cast-from words');
+    const shiny = fake.seed.thread('general', spritey, 'Why are my posts shiny', 'hello');
+    const pressed = fake.seed.post(shiny.thread, zed, 'pressed words');
+    fake.seed.post(shiny.thread, zed, 'later words');
+    const play = fake.seed.reach(spritey, 'character', zed, 'glint', { post: cast.act, ends: Date.now() + 86_400_000, message: 'Shine.' });
+    fake.signInAs(me);
+    return { fake, pipe, zed, spritey, cast, shiny, pressed, play };
+  }
+  type World = ReturnType<typeof world>;
+  const open = (w: World, thread: string) => renderIn(w.fake, <LoadedThread thread={thread} />, { path: `/t/${thread}`, instance: glitterInstance, cards: glitterCards });
+  async function spun(w: World, at: string | undefined, title = 'Spun at') {
+    const made = await w.fake.spin(w.play, w.pipe, title, 'about it', undefined, at);
+    if (!made.ok) throw new Error(made.error);
+    return made.value.thread.id;
+  }
+  /* The head's words; an avatar with no picture draws its initial as text, which is no word of the head. */
+  const headText = (box: HTMLElement) => {
+    const head = box.querySelector('.kb-origin-head')!.cloneNode(true) as HTMLElement;
+    head.querySelectorAll('.kb-mini').forEach((el) => el.remove());
+    return head.textContent!;
+  };
+  const href = (thread: string, seq: number) => threadHref(thread, pageOf(seq, 20), seq);
+
+  test('pressing Spin thread on the mark on a postbit sends the post it was pressed on', async () => {
+    const w = world();
+    const send = vi.spyOn(w.fake, 'spin');
+    open(w, w.shiny.thread);
+    const bit = (await screen.findByRole('article', { name: /^Post 2 /u })).querySelector('.kb-postbit') as HTMLElement;
+    await userEvent.click(await within(bit).findByRole('button', { name: /^Glint, 1 play\b.*Opens the cards on this character\./u }));
+    const lens = screen.getByRole('dialog', { name: 'Cards on this character' });
+    await userEvent.click(await within(lens).findByRole('button', { name: /^1 play · Spritey/u }));
+    await userEvent.click(within(lens).getByRole('button', { name: 'Spin thread' }));
+    const form = screen.getByRole('form', { name: 'Spin a thread from Spritey\'s Glint' });
+    await userEvent.type(within(form).getByLabelText('Thread title'), 'About the shine');
+    await userEvent.click(within(form).getByRole('button', { name: 'Spin thread' }));
+    await waitFor(() => expect(send).toHaveBeenCalledWith(w.play, w.pipe, 'About the shine', '', undefined, w.pressed));
+  });
+
+  test('the box shows the pressed post as it was spun: its words, the glitter still, the two head links and the Cast from line', async () => {
+    const w = world();
+    const thread = await spun(w, w.pressed);
+    open(w, thread);
+    const box = await origin();
+    const frame = await within(box).findByRole('group', { name: /^As it was spun/u });
+    expect(await within(frame).findByText('pressed words')).toBeInTheDocument();
+    await waitFor(() => expect(frame.querySelector('[data-kb-glint]')).toHaveAttribute('data-kb-glint', 'still'));
+    expect(headText(box)).toMatch(/^ORIGIN · Spun from Glint on Zed, at #2 in Why are my posts shiny · as it was spunCast from #1 in Kart tier list/u);
+    expect(within(box).getAllByRole('link', { name: 'Zed' }).map((a) => a.getAttribute('href'))).toEqual([`/c/${w.zed}`, `/c/${w.zed}`]);
+    expect(within(box).getByRole('link', { name: '#2 in Why are my posts shiny' })).toHaveAttribute('href', href(w.shiny.thread, 2));
+    expect(within(box).getByRole('link', { name: '#1 in Kart tier list' })).toHaveAttribute('href', href(w.cast.thread, 1));
+    /* The byline: the author's avatar and name, linked to the profile, and the version's date. */
+    await waitFor(() => expect(box.querySelector('p time')).toBeInTheDocument());
+    expect(box.querySelectorAll('a.kb-who-link .kb-mini')).toHaveLength(2);
+    expect(within(box).queryByText(/As it landed/u)).toBeNull();
+    /* The card's mark is drawn, with its Go to post. */
+    expect(marks(box)).toEqual(['glint:1']);
+  });
+
+  test('an edit made to the pressed post afterwards leaves the box as it was', async () => {
+    const w = world();
+    const thread = await spun(w, w.pressed);
+    const edited = await w.fake.edit(w.pressed, w.zed, 'Changed words.');
+    expect(edited.ok).toBe(true);
+    open(w, thread);
+    const frame = await within(await origin()).findByRole('group', { name: /^As it was spun/u });
+    expect(await within(frame).findByText('pressed words')).toBeInTheDocument();
+    expect(within(frame).queryByText('Changed words.')).toBeNull();
+  });
+
+  test('its mark\'s Go to post leads to the pressed post, and a spin with no pressed post leads to the cast-from post', async () => {
+    const w = world();
+    const first = await spun(w, w.pressed, 'Pressed');
+    const second = await spun(w, undefined, 'Not pressed');
+    const goes = async (thread: string) => {
+      cleanup();
+      open(w, thread);
+      const box = await origin();
+      await userEvent.click(await within(box).findByRole('button', { name: /^Glint, 1 play/u }));
+      const lens = screen.getByRole('dialog');
+      await userEvent.click(await within(lens).findByRole('button', { name: /^1 play · Spritey/u }));
+      return within(lens).findByRole('link', { name: 'Go to post' });
+    };
+    expect(await goes(first)).toHaveAttribute('href', href(w.shiny.thread, 2));
+    expect(await goes(second)).toHaveAttribute('href', href(w.cast.thread, 1));
+  });
+
+  test('a spin that named no post shows the cast-from post as it landed, on one line, with no Cast from line', async () => {
+    const w = world();
+    const thread = await spun(w, undefined);
+    open(w, thread);
+    const box = await origin();
+    const frame = await within(box).findByRole('group', { name: /^As it landed/u });
+    expect(await within(frame).findByText('cast-from words')).toBeInTheDocument();
+    await waitFor(() => expect(frame.querySelector('[data-kb-glint]')).toHaveAttribute('data-kb-glint', 'still'));
+    expect(headText(box)).toMatch(/^ORIGIN · Spun from Glint on Zed, cast from #1 in Kart tier list · as it landed$/u);
+    expect(within(box).queryByText(/Cast from/u)).toBeNull();
+    expect(within(box).queryByText(/as it was spun/u)).toBeNull();
+  });
+
+  test('a play from before the snapshot reads as the cast-from post as it landed, and says what was not recorded; never an empty box', async () => {
+    const w = world();
+    const old = w.fake.seed.reach(w.spritey, 'character', w.zed, 'glint', { post: w.cast.act, ends: Date.now() + 86_400_000, unrecorded: true });
+    const made = await w.fake.spin(old, w.pipe, 'Spun from an old one', 'about it');
+    if (!made.ok) throw new Error(made.error);
+    open(w, made.value.thread.id);
+    const frame = await within(await origin()).findByRole('group', { name: /^As it landed/u });
+    expect(await within(frame).findByText('cast-from words')).toBeInTheDocument();
+    await waitFor(() => expect(frame).toHaveTextContent(/wasn.t recorded/u));
+  });
+
+  test('a spin refused for its post says so and the next press spins from the card without the post, keeping what was typed', async () => {
+    const w = world();
+    const send = vi.spyOn(w.fake, 'spin').mockResolvedValueOnce({ ok: false, error: CARD_NOT_ON_POST });
+    open(w, w.shiny.thread);
+    const bit = (await screen.findByRole('article', { name: /^Post 2 /u })).querySelector('.kb-postbit') as HTMLElement;
+    await userEvent.click(await within(bit).findByRole('button', { name: /^Glint, 1 play\b.*Opens the cards on this character\./u }));
+    const lens = screen.getByRole('dialog', { name: 'Cards on this character' });
+    await userEvent.click(await within(lens).findByRole('button', { name: /^1 play · Spritey/u }));
+    await userEvent.click(within(lens).getByRole('button', { name: 'Spin thread' }));
+    const form = screen.getByRole('form', { name: 'Spin a thread from Spritey\'s Glint' });
+    await userEvent.type(within(form).getByLabelText('Thread title'), 'About the shine');
+    await userEvent.type(within(form).getByLabelText('Your opening post (optional)'), 'Some words.');
+    await userEvent.click(within(form).getByRole('button', { name: 'Spin thread' }));
+    expect(await within(form).findByRole('alert')).toHaveTextContent('That card is no longer on that post. Spin thread again to spin from the card without the post.');
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0]![5]).toBe(w.pressed);
+    expect(within(form).getByLabelText('Thread title')).toHaveValue('About the shine');
+    expect(within(form).getByLabelText('Your opening post (optional)')).toHaveValue('Some words.');
+    await userEvent.click(within(form).getByRole('button', { name: 'Spin thread' }));
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(2));
+    expect(send).toHaveBeenLastCalledWith(w.play, w.pipe, 'About the shine', 'Some words.');
+    await waitFor(() => expect(window.location.pathname).not.toBe(`/t/${w.shiny.thread}`));
+    const made = await w.fake.spunFrom(w.play);
+    expect(made.map((t) => t.title)).toEqual(['About the shine']);
+    cleanup();
+    open(w, made[0]!.id);
+    const box = await origin();
+    await within(box).findByRole('group', { name: /^As it landed/u });
+    expect(headText(box)).toMatch(/cast from #1 in Kart tier list · as it landed$/u);
+  });
+
+  test('any other refusal of a spin pressed on a post is shown as it was, and the next press still sends the post', async () => {
+    const w = world();
+    const send = vi.spyOn(w.fake, 'spin').mockResolvedValue({ ok: false, error: 'a title is at most 40 characters' });
+    open(w, w.shiny.thread);
+    const bit = (await screen.findByRole('article', { name: /^Post 2 /u })).querySelector('.kb-postbit') as HTMLElement;
+    await userEvent.click(await within(bit).findByRole('button', { name: /^Glint, 1 play\b/u }));
+    const lens = screen.getByRole('dialog', { name: 'Cards on this character' });
+    await userEvent.click(await within(lens).findByRole('button', { name: /^1 play · Spritey/u }));
+    await userEvent.click(within(lens).getByRole('button', { name: 'Spin thread' }));
+    const form = screen.getByRole('form', { name: 'Spin a thread from Spritey\'s Glint' });
+    await userEvent.type(within(form).getByLabelText('Thread title'), 'x');
+    await userEvent.click(within(form).getByRole('button', { name: 'Spin thread' }));
+    expect(await within(form).findByRole('alert')).toHaveTextContent('a title is at most 40 characters');
+    await userEvent.click(within(form).getByRole('button', { name: 'Spin thread' }));
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(2));
+    expect(send.mock.calls[1]![5]).toBe(w.pressed);
+  });
+
+  test('a place that has a pressed post but a row with no first Act reads as the cast-from post as it landed, in the head and in the frame alike', async () => {
+    const w = world();
+    const thread = await spun(w, w.pressed);
+    const page = (await w.fake.threadPage(thread, { page: 1 }, 20, []))!;
+    vi.spyOn(w.fake, 'threadPage').mockResolvedValue({ ...page, thread: { ...page.thread, firstAct: null } });
+    open(w, thread);
+    const box = await origin();
+    await within(box).findByRole('group', { name: /^As it landed/u });
+    expect(headText(box)).toMatch(/ · as it landed$/u);
+    expect(within(box).queryByText(/Cast from/u)).toBeNull();
+    expect(within(box).queryByRole('group', { name: /^As it was spun/u })).toBeNull();
   });
 });

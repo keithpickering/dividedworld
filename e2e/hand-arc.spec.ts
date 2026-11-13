@@ -148,3 +148,103 @@ test('at 1300 wide the board\'s three cards stand where they do at 1440, and the
   });
   expect(Math.abs(gap + 10), 'the peek\'s center from where a card at x 0 stands over the hand button').toBeLessThan(4);
 });
+
+/**
+ * The hand opens calmly (the phone-hand design, section 1), with motion on: a card lifts for a keyboard's focus, a hover that has moved, or the arming, and
+ * never for the focus the script gives the first card after a mouse press, nor for a card that lands under a still pointer, and the deal's end is not
+ * followed by a second movement.
+ */
+test.describe('the hand opens calmly with motion on', () => {
+  test.use({ reducedMotion: 'no-preference' });
+
+  async function load(page: Page) {
+    await page.goto(MOMENT);
+    const button = page.getByRole('button', { name: BUTTON });
+    await expect(button).toBeVisible({ timeout: 10_000 });
+    await page.evaluate(() => { document.documentElement.setAttribute('data-kb-motion', 'full'); document.documentElement.setAttribute('data-kb-motion-feel', 'smooth'); });
+    return button;
+  }
+
+  /** The lift's matrix is upright at 1.25 and 110px up (frame.css); a card at rest, in its fan, is not. */
+  const lifted = (page: Page) => page.evaluate(() => [...document.querySelectorAll<HTMLElement>('li.kb-hand-card')].map((li) => {
+    const m = getComputedStyle(li).transform.match(/matrix\(([^)]+)\)/)?.[1]?.split(',').map(Number);
+    return { key: li.dataset.kbCard!, lifted: !!m && Math.abs(m[0]! - 1.25) < 0.01 && Math.abs(m[5]! + 110) < 1 };
+  }));
+  const cardAt = (page: Page, x: number, y: number) => page.evaluate(([px, py]) => document.elementFromPoint(px!, py!)?.closest<HTMLElement>('li.kb-hand-card')?.dataset.kbCard ?? null, [x, y] as const);
+
+  test('opened with a mouse press that does not move, no card lifts; once the pointer moves onto a card it lifts', async ({ page }) => {
+    const button = await load(page);
+    await button.click();
+    await expect(page.getByRole('dialog', { name: 'Your hand' })).toBeVisible();
+    await page.waitForTimeout(2000);
+    /* The first card holds the focus the opening gave it, and stands in its slot. */
+    expect((await lifted(page)).filter((c) => c.lifted), 'no card is lifted').toEqual([]);
+    const at = await page.evaluate(() => {
+      const r = document.querySelector<HTMLElement>('li.kb-hand-card:last-child')!.getBoundingClientRect();
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2, key: document.querySelector<HTMLElement>('li.kb-hand-card:last-child')!.dataset.kbCard! };
+    });
+    await page.mouse.move(at.x, at.y);
+    await page.waitForTimeout(1200);
+    expect((await lifted(page)).find((c) => c.key === at.key)!.lifted).toBe(true);
+  });
+
+  test('a card that lands under a pointer parked there and still does not lift; once the pointer moves it does', async ({ page }) => {
+    const button = await load(page);
+    /* The board's fixture holds two kinds, so no card lands over the hand button's own press: the pointer is parked where the last card will land, and the hand opened with the keyboard. */
+    await page.mouse.move(1400, 700);
+    await button.focus();
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('dialog', { name: 'Your hand' })).toBeVisible();
+    await page.waitForTimeout(2000);
+    const key = await cardAt(page, 1400, 700);
+    expect(key, 'a card has landed under the parked pointer').not.toBeNull();
+    expect((await lifted(page)).find((c) => c.key === key)!.lifted, 'the card under the still pointer').toBe(false);
+    await page.mouse.move(1405, 700);
+    await page.waitForTimeout(1200);
+    expect((await lifted(page)).find((c) => c.key === key)!.lifted, 'the card once the pointer has moved').toBe(true);
+  });
+
+  test('opened with the keyboard, the first card is lifted once the deal ends', async ({ page }) => {
+    const button = await load(page);
+    await button.focus();
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('dialog', { name: 'Your hand' })).toBeVisible();
+    await page.waitForTimeout(2000);
+    const cards = await lifted(page);
+    expect(cards[0]!.lifted, 'the first card').toBe(true);
+    expect(cards.filter((c) => c.lifted)).toHaveLength(1);
+  });
+
+  test('no card moves up the screen once its deal has landed: the lift does not play after the deal', async ({ page }) => {
+    const button = await load(page);
+    /* Every frame, each card's top, and whether a play still holds its transform inline (glass/play.ts clears it when the card lands, which is when it stands at its slot). */
+    await page.evaluate(() => {
+      const w = window as unknown as { __tops: Record<string, { top: number; playing: boolean }[]>; __go: boolean };
+      w.__tops = {};
+      w.__go = true;
+      const tick = () => {
+        for (const li of document.querySelectorAll<HTMLElement>('li.kb-hand-card')) {
+          /* A card in the hidden drawer has no box yet. */
+          const r = li.getBoundingClientRect();
+          if (r.width > 0) (w.__tops[li.dataset.kbCard!] ??= []).push({ top: r.top, playing: li.style.transform !== '' });
+        }
+        if (w.__go) requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
+    await button.click();
+    await page.waitForTimeout(2500);
+    const tops = await page.evaluate(() => { (window as unknown as { __go: boolean }).__go = false; return (window as unknown as { __tops: Record<string, { top: number; playing: boolean }[]> }).__tops; });
+    const keys = Object.keys(tops);
+    expect(keys.length).toBeGreaterThan(1);
+    for (const key of keys) {
+      const t = tops[key]!;
+      const played = t.findIndex((f) => f.playing);
+      expect(played, `${key} is dealt`).toBeGreaterThanOrEqual(0);
+      const landed = t.findIndex((f, i) => i > played && !f.playing);
+      expect(landed, `${key} lands`).toBeGreaterThan(played);
+      const rest = t[landed]!.top;
+      expect(Math.min(...t.slice(landed).map((f) => f.top)), `${key} never moves up past the top ${rest} it landed at`).toBeGreaterThanOrEqual(rest - 2);
+    }
+  });
+});

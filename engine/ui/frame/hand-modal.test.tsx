@@ -1,7 +1,8 @@
 /**
  * The hand on the Main board is a modal (the hand-arc design, sections 2 to 4): while it is open the rest of the HUD is
  * inert and faded, a press outside the cards closes it and acts on nothing beneath, opening puts the keyboard on a card,
- * arming a card closes it and leaves the card's peek over the hand button. The Phone board's sheet is none of that.
+ * arming a card closes it and leaves the card's peek over the hand button. The Phone board's sheet is the same modal, with no peek (a post's + mark and the
+ * hand button's words say what is armed there), and the Phone board's tests below hold it to it.
  * The Frame here is the real one over a fake API, as Frame.test.tsx draws it.
  */
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -18,15 +19,15 @@ import { usePlay } from '../cards/play.tsx';
 import { ENGINE_DEFAULT_PRONOUNS } from '../../rules/pronouns.ts';
 
 /* jsdom has no WAAPI: Motion's `animate`, which glass/play.ts runs the cards' deal and gather with, is a stub that holds each run until a test settles it. */
-interface Run { readonly el: HTMLElement; readonly frames: Record<string, unknown[]>; settle: () => void; readonly stop: ReturnType<typeof vi.fn> }
+interface Run { readonly el: HTMLElement; readonly frames: Record<string, unknown[]>; readonly transition: { readonly duration?: number; readonly delay?: number } | undefined; settle: () => void; readonly stop: ReturnType<typeof vi.fn> }
 const runs: Run[] = [];
 vi.mock('motion/react', async (importOriginal) => ({
   ...(await importOriginal<typeof import('motion/react')>()),
-  animate: (el: HTMLElement, frames: Record<string, unknown[]>) => {
+  animate: (el: HTMLElement, frames: Record<string, unknown[]>, transition?: Run['transition']) => {
     let settle: () => void = () => {};
     const p = new Promise<void>((r) => { settle = r; });
-    /* Motion's stop() commits the pose the run had reached; a mid-gather card is part way to the hand button and part way faded. */
-    const run = { el, frames, settle, stop: vi.fn(() => { el.style.opacity = '0.4'; el.style.transform = 'translateX(30px) translateY(-20px) scale(0.8)'; }) };
+    /* Motion's stop() commits the pose the run had reached; a mid-gather card is part way to the hand button and part way faded, and a sheet is part way blurred or cut. */
+    const run = { el, frames, transition, settle, stop: vi.fn(() => { el.style.opacity = '0.4'; el.style.transform = 'translateX(30px) translateY(-20px) scale(0.8)'; el.style.filter = 'blur(6px)'; el.style.clipPath = 'inset(0 0 40% 0)'; }) };
     runs.push(run);
     return Object.assign(p, { stop: run.stop });
   },
@@ -270,6 +271,82 @@ describe('the hand on the Main board, reopened while it gathers', () => {
   });
 });
 
+describe('the hand on the Main board opens calmly (the phone-hand design, section 1)', () => {
+  /* A pointer move on the window at a client point, as the browser's pointermove carries it. */
+  const moveTo = (x: number, y: number) => act(() => { window.dispatchEvent(new MouseEvent('pointermove', { clientX: x, clientY: y, bubbles: true })); });
+
+  test('the drawer waits for the pointer to move more than 4px from the press that opened the hand', async () => {
+    setup();
+    const hand = await handButton();
+    fireEvent.pointerDown(hand, { button: 0, clientX: 100, clientY: 100 });
+    fireEvent.click(hand);
+    const drawer = document.querySelector<HTMLElement>('.kb-hand-drawer')!;
+    await waitFor(() => expect(hand).toHaveAttribute('aria-expanded', 'true'));
+    expect(drawer).toHaveAttribute('data-kb-hover-waits');
+    await moveTo(102, 100);
+    expect(drawer).toHaveAttribute('data-kb-hover-waits');
+    await moveTo(120, 100);
+    expect(drawer).not.toHaveAttribute('data-kb-hover-waits');
+  });
+
+  test('a hand opened with no press (a key) loses the wait at the first pointer move, and a close and reopen waits again', async () => {
+    setup();
+    const hand = await handButton();
+    fireEvent.click(hand);
+    const drawer = document.querySelector<HTMLElement>('.kb-hand-drawer')!;
+    await waitFor(() => expect(drawer).toHaveAttribute('data-kb-hover-waits'));
+    await moveTo(1, 1);
+    expect(drawer).not.toHaveAttribute('data-kb-hover-waits');
+    fireEvent.click(hand);
+    fireEvent.click(hand);
+    await waitFor(() => expect(drawer).toHaveAttribute('data-kb-hover-waits'));
+  });
+
+  test('under a feel the drawer carries data-kb-dealing until the last deal ends, and again until the last gather ends', async () => {
+    document.documentElement.setAttribute('data-kb-motion', 'full');
+    setup();
+    const hand = await handButton();
+    const drawer = document.querySelector<HTMLElement>('.kb-hand-drawer')!;
+    await userEvent.click(hand);
+    expect(runs).toHaveLength(2);
+    expect(drawer).toHaveAttribute('data-kb-dealing');
+    await act(async () => { runs[0]!.settle(); });
+    expect(drawer).toHaveAttribute('data-kb-dealing');
+    await act(async () => { runs[1]!.settle(); });
+    await waitFor(() => expect(drawer).not.toHaveAttribute('data-kb-dealing'));
+    runs.length = 0;
+    await userEvent.click(hand);
+    expect(runs).toHaveLength(2);
+    expect(drawer).toHaveAttribute('data-kb-dealing');
+    await act(async () => { for (const r of runs) r.settle(); });
+    await waitFor(() => expect(drawer).not.toHaveAttribute('data-kb-dealing'));
+  });
+
+  test('a deal that is stopped leaves no mark: the stop itself clears data-kb-dealing, with no play having ended', async () => {
+    document.documentElement.setAttribute('data-kb-motion', 'full');
+    setup();
+    const hand = await handButton();
+    const drawer = document.querySelector<HTMLElement>('.kb-hand-drawer')!;
+    await userEvent.click(hand);
+    expect(runs).toHaveLength(2);
+    expect(drawer).toHaveAttribute('data-kb-dealing');
+    /* Unmount mid-deal: the drawer's run is stopped, and no fake play has ended, so no card's landing can have cleared the mark. */
+    cleanup();
+    for (const r of runs) expect(r.stop).toHaveBeenCalledTimes(1);
+    expect(drawer).not.toHaveAttribute('data-kb-dealing');
+  });
+
+  test('under Off the drawer never carries data-kb-dealing', async () => {
+    setup();
+    const hand = await handButton();
+    const drawer = document.querySelector<HTMLElement>('.kb-hand-drawer')!;
+    await userEvent.click(hand);
+    expect(drawer).not.toHaveAttribute('data-kb-dealing');
+    await userEvent.click(hand);
+    expect(drawer).not.toHaveAttribute('data-kb-dealing');
+  });
+});
+
 describe('the hand on the Main board, a gather stopped by switching motion Off', () => {
   test('the stopped gather gives each card its stylesheet transition back', async () => {
     document.documentElement.setAttribute('data-kb-motion', 'full');
@@ -286,23 +363,261 @@ describe('the hand on the Main board, a gather stopped by switching motion Off',
   });
 });
 
+/* Arms a card and opens the hand with it armed, as a keyboard's Esc-less return can: the phone's hand button puts an armed card back, so no press reaches the open hand with a card armed. */
+function ArmAndOpen({ card: key }: { readonly card: string }) {
+  const play = usePlay()!;
+  return <button type="button" onClick={() => { play.arm(key); play.setHandOpen(true); }}>Arm and open</button>;
+}
+
 describe('the hand on the Phone board', () => {
-  test('stays a region, with nothing inert and no backdrop', async () => {
+  const dialog = () => screen.getByRole('dialog', { name: 'Your hand' });
+  const handCard = (name: RegExp) => within(dialog()).getByRole('button', { name });
+  const WHOOPS = /^Whoops!, /u;
+  /* A press with no pointer, as a keyboard or a reader makes it: it acts on the card whether or not it is in the middle. */
+  const activate = (el: HTMLElement) => fireEvent.click(el, { detail: 0 });
+
+  test('is a modal dialog: named Your hand, aria-modal, the HUD marked, and the backdrop there', async () => {
     phone();
     setup();
     await userEvent.click(await handButton());
-    const sheet = screen.getByRole('region', { name: 'Your hand' });
-    expect(sheet).not.toHaveAttribute('aria-modal');
-    expect(document.querySelector('.kb-hud')).not.toHaveAttribute('data-kb-hand-open');
+    expect(dialog()).toHaveAttribute('aria-modal', 'true');
+    expect(document.querySelector('.kb-hud')).toHaveAttribute('data-kb-hand-open');
+    expect(document.querySelector('.kb-hand-backdrop')).not.toBeNull();
+  });
+
+  test('the plate, the aura, Alerts and Menu are inert while it is open, and the hand button is not', async () => {
+    phone();
+    setup();
+    await userEvent.click(await handButton());
+    const hud = document.querySelector('.kb-hud')!;
+    for (const sel of ['.kb-hud-plate', '.kb-hud-aura', '.kb-hud-menu', '.kb-hud-alerts']) expect(hud.querySelector(sel), sel).toHaveAttribute('inert');
+    expect(hud.querySelector('.kb-hud-hand')).not.toHaveAttribute('inert');
+  });
+
+  test('a press on one of the HUD\'s faded parts closes the hand through the same dismissal, focuses the hand button, and nothing stays inert', async () => {
+    const under = vi.fn();
+    phone();
+    setup(<button type="button" onClick={under}>beneath</button>);
+    const hand = await handButton();
+    await userEvent.click(hand);
+    fireEvent.pointerDown(document.querySelector('.kb-hud-plate')!, { button: 0 });
+    expect(hand).toHaveAttribute('aria-expanded', 'false');
+    expect(hand).toHaveFocus();
     expect(document.querySelector('[inert]')).toBeNull();
+    expect(document.querySelector('.kb-hud')).not.toHaveAttribute('data-kb-hand-open');
+    /* The press's own click is swallowed once, as on a backdrop press. */
+    fireEvent.click(screen.getByRole('button', { name: 'beneath' }));
+    expect(under).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'beneath' }));
+    expect(under).toHaveBeenCalledTimes(1);
+  });
+
+  test('a close interrupted by a reopen leaves the dialog shown with the first card focused, and a last close leaves nothing inert and the focus on the hand button', async () => {
+    document.documentElement.setAttribute('data-kb-motion', 'full');
+    phone();
+    setup();
+    const hand = await handButton();
+    const drawer = document.querySelector<HTMLElement>('.kb-hand-drawer')!;
+    await userEvent.click(hand);
+    await act(async () => { for (const r of runs) r.settle(); });
+    runs.length = 0;
+    await userEvent.click(hand);
+    expect(drawer.hidden).toBe(false);
+    expect(drawer).toHaveAttribute('inert');
+    const closing = [...runs];
+    await userEvent.click(hand);
+    for (const r of closing) expect(r.stop).toHaveBeenCalledTimes(1);
+    expect(dialog()).toBeVisible();
+    expect(drawer).not.toHaveAttribute('inert');
+    expect(document.activeElement).toBe(dialog().querySelector('li.kb-hand-card > button'));
+    await userEvent.click(hand);
+    await act(async () => { for (const r of runs) r.settle(); });
+    await waitFor(() => expect(drawer.hidden).toBe(true));
+    expect(document.querySelector('[inert]')).toBeNull();
+    expect(document.querySelector('.kb-hud')).not.toHaveAttribute('data-kb-hand-open');
+    expect(hand).toHaveFocus();
+  });
+
+  test('a pointer press on the backdrop closes the hand and focuses the hand button, and nothing stays inert', async () => {
+    phone();
+    setup();
+    const hand = await handButton();
+    await userEvent.click(hand);
+    fireEvent.pointerDown(document.querySelector('.kb-hand-backdrop')!, { button: 0 });
+    expect(hand).toHaveAttribute('aria-expanded', 'false');
+    expect(hand).toHaveFocus();
     expect(document.querySelector('.kb-hand-backdrop')).toBeNull();
+    expect(document.querySelector('[inert]')).toBeNull();
+    expect(document.querySelector('.kb-hud')).not.toHaveAttribute('data-kb-hand-open');
+  });
+
+  test('Esc closes it and focuses the hand button', async () => {
+    phone();
+    setup();
+    const hand = await handButton();
+    await userEvent.click(hand);
+    await userEvent.keyboard('{Escape}');
+    expect(hand).toHaveAttribute('aria-expanded', 'false');
+    expect(hand).toHaveFocus();
+    expect(document.querySelector('[inert]')).toBeNull();
+  });
+
+  test('opening takes focus to the first card, and with Whoops! armed to the Whoops! card', async () => {
+    phone();
+    setup();
+    const hand = await handButton();
+    await userEvent.click(hand);
+    expect(document.activeElement).toBe(dialog().querySelector('li.kb-hand-card > button'));
+    await userEvent.click(within(dialog()).getByRole('button', { name: 'Close the hand' }));
+    cleanup();
+    setup(<ArmAndOpen card="stick-around" />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Arm and open' }));
+    expect(document.activeElement).toBe(handCard(/^Stick Around, /u));
+    cleanup();
+    setup(<ArmAndOpen card="whoops" />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Arm and open' }));
+    expect(document.activeElement).toBe(handCard(WHOOPS));
+  });
+
+  test('pressing the armed card puts it back and leaves the dialog open; pressing another card arms it, closes the dialog and the hand button says Armed', async () => {
+    phone();
+    setup(<ArmAndOpen card="whoops" />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Arm and open' }));
+    activate(handCard(WHOOPS));
+    expect(dialog()).toBeVisible();
+    expect(handCard(WHOOPS)).toHaveAttribute('aria-pressed', 'false');
+    activate(handCard(STICK));
+    expect(screen.queryByRole('dialog', { name: 'Your hand' })).toBeNull();
+    const hand = screen.getByRole('button', { name: 'Armed · Stick Around, press to put it back' });
+    expect(hand).toHaveTextContent('Armed · Stick Around');
+    expect(hand).toHaveFocus();
+    expect(document.querySelector('[inert]')).toBeNull();
+    expect(document.querySelector('.kb-hand-peek')).toBeNull();
+  });
+
+  test('Tab wraps inside the dialog: from the Vending Machine button to the first part, and Shift+Tab back', async () => {
+    phone();
+    setup();
+    await userEvent.click(await handButton());
+    const close = within(dialog()).getByRole('button', { name: 'Close the hand' });
+    const vending = within(dialog()).getByRole('link', { name: 'Vending Machine' });
+    vending.focus();
+    await userEvent.tab();
+    expect(document.activeElement).toBe(close);
+    await userEvent.tab({ shift: true });
+    expect(document.activeElement).toBe(vending);
+  });
+
+  test('under a feel the sheet plays and only the cards in the row\'s width are dealt; a stopped deal leaves no inline transform', async () => {
+    document.documentElement.setAttribute('data-kb-motion', 'full');
+    phone();
+    /* jsdom lays nothing out: the row is 300px wide, the Whoops! card stands in it and the Stick Around card beyond it. */
+    const at = (left: number, width: number) => ({ left, right: left + width, top: 0, bottom: 100, width, height: 100, x: left, y: 0, toJSON: () => ({}) }) as DOMRect;
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+      if (this.matches('ul.kb-hand-cards')) return at(0, 300);
+      if (this.matches('[data-kb-card="whoops"]')) return at(100, 104);
+      if (this.matches('[data-kb-card="stick-around"]')) return at(500, 104);
+      return at(0, 100);
+    });
+    setup();
+    const hand = await handButton();
+    await userEvent.click(hand);
+    const drawer = document.querySelector<HTMLElement>('.kb-hand-drawer')!;
+    const cards = runs.filter((r) => r.el.matches('li.kb-hand-card'));
+    expect(cards.map((r) => r.el.dataset.kbCard)).toEqual(['whoops']);
+    expect(runs.some((r) => r.el === drawer)).toBe(true);
+    /* The deal's turn is 0: the pose's rotation is the card's own `rotate`. */
+    expect(cards[0]!.frames.rotate).toEqual([0, 0]);
+    expect(drawer).toHaveAttribute('data-kb-dealing');
+    /* Motion goes Off mid-deal: the run is stopped, its committed pose is not left on any card, and the mark is gone. */
+    await act(async () => { document.documentElement.setAttribute('data-kb-motion', 'reduce'); });
+    await userEvent.click(hand);
+    for (const li of drawer.querySelectorAll<HTMLElement>('li.kb-hand-card')) {
+      expect(li.style.transform).toBe('');
+      expect(li.style.opacity).toBe('');
+    }
+    expect(drawer).not.toHaveAttribute('data-kb-dealing');
+    expect(drawer.hidden).toBe(true);
+  });
+
+  test('a sheet entrance stopped by motion going Off, then a close and a reopen, leaves no inline opacity, transform, filter or clip-path on the drawer', async () => {
+    document.documentElement.setAttribute('data-kb-motion', 'full');
+    phone();
+    setup();
+    const hand = await handButton();
+    const drawer = document.querySelector<HTMLElement>('.kb-hand-drawer')!;
+    await userEvent.click(hand);
+    const sheet = runs.find((r) => r.el === drawer)!;
+    expect(sheet).toBeDefined();
+    const bare = (when: string) => { for (const p of ['opacity', 'transform', 'filter', 'clip-path']) expect(drawer.style.getPropertyValue(p), `${p} ${when}`).toBe(''); };
+    /* Motion goes Off mid-entrance and the hand is closed: the stop committed the pose it had reached, and none of it is left. */
+    await act(async () => { document.documentElement.setAttribute('data-kb-motion', 'reduce'); });
+    await userEvent.click(hand);
+    expect(sheet.stop).toHaveBeenCalledTimes(1);
+    bare('after the close');
+    await userEvent.click(hand);
+    bare('after the reopen');
+  });
+
+  test('a reopen during the sheet\'s exit starts clean: nothing the stopped exit committed is left on the drawer', async () => {
+    document.documentElement.setAttribute('data-kb-motion', 'full');
+    phone();
+    setup();
+    const hand = await handButton();
+    const drawer = document.querySelector<HTMLElement>('.kb-hand-drawer')!;
+    await userEvent.click(hand);
+    await act(async () => { for (const r of runs) r.settle(); });
+    runs.length = 0;
+    await userEvent.click(hand);
+    const exit = runs.find((r) => r.el === drawer)!;
+    await userEvent.click(hand);
+    expect(exit.stop).toHaveBeenCalledTimes(1);
+    for (const p of ['opacity', 'transform', 'filter', 'clip-path']) expect(drawer.style.getPropertyValue(p), p).toBe('');
+  });
+
+  test('a close with two visible cards: the sheet\'s exit ends no sooner than the last card\'s gather, so the sheet is never back at full opacity while a card is still landing', async () => {
+    document.documentElement.setAttribute('data-kb-motion', 'full');
+    phone();
+    const at = (left: number, width: number) => ({ left, right: left + width, top: 0, bottom: 100, width, height: 100, x: left, y: 0, toJSON: () => ({}) }) as DOMRect;
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+      if (this.matches('ul.kb-hand-cards')) return at(0, 400);
+      if (this.matches('[data-kb-card="whoops"]')) return at(20, 104);
+      if (this.matches('[data-kb-card="stick-around"]')) return at(200, 104);
+      return at(0, 100);
+    });
+    setup();
+    const hand = await handButton();
+    const drawer = document.querySelector<HTMLElement>('.kb-hand-drawer')!;
+    await userEvent.click(hand);
+    await act(async () => { for (const r of runs) r.settle(); });
+    runs.length = 0;
+    await userEvent.click(hand);
+    const sheet = runs.find((r) => r.el === drawer)!;
+    const gathers = runs.filter((r) => r.el.matches('li.kb-hand-card'));
+    expect(gathers).toHaveLength(2);
+    const ends = (r: Run) => (r.transition?.delay ?? 0) + (r.transition?.duration ?? 0);
+    const lastCard = Math.max(...gathers.map(ends));
+    /* The staggered gather really is longer than one exit, or this proves nothing. */
+    expect(lastCard).toBeGreaterThan(sheet.transition?.duration ?? 0);
+    /* The sheet leaves with the last card: it holds until the cards are on their way, then ends when the last lands. */
+    expect(ends(sheet)).toBeCloseTo(lastCard, 6);
+    /* The cards land first, the sheet's exit ends with them: the drawer stays shown, inert and exiting until both are done, never as an open sheet. */
+    expect(drawer).toHaveAttribute('data-kb-exiting');
+    await act(async () => { for (const r of gathers) r.settle(); sheet.settle(); });
+    await waitFor(() => expect(drawer.hidden).toBe(true));
+    /* A reopen in the window shows the sheet normally, with nothing the stopped exit left. */
+    await userEvent.click(hand);
+    expect(drawer.hidden).toBe(false);
+    expect(drawer).not.toHaveAttribute('data-kb-exiting');
+    for (const p of ['opacity', 'transform', 'filter', 'clip-path']) expect(drawer.style.getPropertyValue(p), p).toBe('');
   });
 
   test('while a compose is open the hand button says Playing, and pressing it puts the card back', async () => {
     phone();
     setup(<OpenCompose />);
     await userEvent.click(await handButton());
-    await userEvent.click(within(screen.getByRole('region', { name: 'Your hand' })).getByRole('button', { name: STICK }));
+    /* A pointer press on a card that is not in the middle only brings it there; the press with no pointer acts on it. */
+    activate(handCard(STICK));
     expect(screen.getByRole('button', { name: 'Armed · Stick Around, press to put it back' })).toHaveTextContent('Armed · Stick Around');
     await userEvent.click(screen.getByRole('button', { name: 'Open compose' }));
     const playing = screen.getByRole('button', { name: 'Playing · Stick Around, press to put it back' });

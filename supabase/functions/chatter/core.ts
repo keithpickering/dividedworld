@@ -509,7 +509,7 @@ async function decideOptions(db: Db, tuned: Instance, rules: Instance['cards'][n
   // A repair that throws is no repair: the options are decided as given, and the throw is named like a trim, so a card's bug never costs the answer.
   let repaired: { readonly config: unknown; readonly trims: readonly Trim[] } = { config, trims: [] };
   try {
-    repaired = rules.repairStaff?.(config, t) ?? repaired;
+    repaired = rules.repairStaff?.(config, t, on === 'own' ? 'set' : 'cast') ?? repaired;
   } catch (e) {
     repaired = { config, trims: [{ path: `card.config.${rules.key}`, predicate: 'repairThrew', before: 1, after: 1 }] };
   }

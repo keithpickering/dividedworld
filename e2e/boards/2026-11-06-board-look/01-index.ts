@@ -13,6 +13,8 @@
  *    about 12px taller than the board's line height draws it; what follows is within the match's tolerance.
  *  - A board's last post also names the thread it points at, in a link of its own above the poster's name, which the board does not draw: the table stands
  *    25.6px taller for it, the poster's name +18.4 and the time +19.6, and everything under the table (the second row, Who is online, the footer) about +21 to +26.
+ *  - A linked name is one link holding the character's avatar and the name (the avatar is the link's too, so the link's accessible name is the name alone), where the board draws the
+ *    avatar beside a link of the name: the link starts at the avatar, 1.62em (the avatar, 1.27em, and the gap, 0.35em: 24.3px at this row's 15px text) left of the name, which stands where it stood; the shift holds the link to the x the board draws its name's link at.
  *  - A time is a link named by its words and where it goes ("Oct 6, 2026 — latest post in General"), the board's by the words alone.
  */
 import type { BoardManifest } from '../../board-match.ts';
@@ -37,7 +39,7 @@ const manifest: BoardManifest = {
     { id: 'general-about', role: 'text', name: 'Anything and everything. The staff are watching.', within: 'boards', box: 'position' },
     { id: 'system', role: 'link', name: 'Staff Announcements', within: 'boards', box: 'height', type: false, buildShift: { y: 21.81 } },
     { id: 'system-tag', role: 'text', name: 'Staff post here; you react and spin', within: 'boards', box: 'none', type: false },
-    { id: 'last-who', role: 'link', name: 'Mrs. Hooligan', within: 'boards', box: 'position', buildShift: { y: 18.38 } },
+    { id: 'last-who', role: 'link', name: 'Mrs. Hooligan', within: 'boards', box: 'position', buildShift: { x: -22.77, y: 18.38 } },
     { id: 'last-time', role: 'link', name: 'Oct 6, 2026', buildName: 'Oct 6, 2026 — latest post in General', within: 'boards', box: 'position', buildShift: { y: 19.63 } },
     { id: 'none-yet', role: 'text', name: 'None yet', within: 'boards', box: 'none' },
     { id: 'online', role: 'heading', name: 'Who is online', buildShift: { y: 21.05 } },

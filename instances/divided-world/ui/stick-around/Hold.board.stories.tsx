@@ -13,6 +13,7 @@
 import { ENGINE_DEFAULT_PRONOUNS } from '../../../../engine/rules/pronouns.ts';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useEffect, useMemo, useState } from 'react';
+import { CalloutProvider } from '../../../../engine/ui/cards/Callout.tsx';
 import { createPlays, effectCards, readPlays } from '../../../../engine/ui/cards/plays.ts';
 import { useKayfa } from '../../../../engine/ui/context.tsx';
 import type { Act } from '../../../../engine/ui/data/api.ts';
@@ -38,7 +39,7 @@ const LONG_CHANGELOG = [
 interface Read { readonly context: ThreadContext; readonly act: Act; readonly person: PostbitPerson | undefined }
 
 /** The post the moment's address names, read and drawn as the thread does, with its card plays read as the thread reads them. */
-function HeldPost({ stage, long = false, inked = false }: { readonly stage: HoldStageValue; readonly long?: boolean; readonly inked?: boolean }) {
+function HeldPost({ stage, long = false, inked = false, first = false }: { readonly stage: HoldStageValue; readonly long?: boolean; readonly inked?: boolean; readonly first?: boolean }) {
   const { api, settings, ui } = useKayfa();
   const loc = useLocation();
   const thread = /^\/t\/([^/]+)$/u.exec(loc.path)?.[1] ?? null;
@@ -77,11 +78,14 @@ function HeldPost({ stage, long = false, inked = false }: { readonly stage: Hold
   if (!read) return <div aria-busy="true" />;
   return (
     <div style={{ minHeight: '100vh', boxSizing: 'border-box', padding: stage.mode === 'live' ? '55vh 32px 150vh' : '24px 32px', background: 'var(--kb-bg)', color: 'var(--kb-fg)' }}>
-      <HoldStage.Provider value={stage}>
-        <ThreadCtx.Provider value={read.context}>
-          <ActArticle act={read.act} person={read.person} layout="side" slid={false} />
-        </ThreadCtx.Provider>
-      </HoldStage.Provider>
+      {/* `first`: no card met, so a mark with a hint carries its first-time callout, which the story's own page would otherwise not offer. */}
+      <CalloutProvider met={first ? [] : null}>
+        <HoldStage.Provider value={stage}>
+          <ThreadCtx.Provider value={read.context}>
+            <ActArticle act={read.act} person={read.person} layout="side" slid={false} />
+          </ThreadCtx.Provider>
+        </HoldStage.Provider>
+      </CalloutProvider>
     </div>
   );
 }
@@ -121,3 +125,6 @@ export const WhoopsUnderHold: Story = { args: { stage: { mode: 'thread' }, inked
 
 /** The page itself with Whoops!'s ink under the hold: a reader's unsaved scrubbing must survive the lift into the view and the release back (e2e/hold.spec.ts reads it so). */
 export const LiveInked: Story = { args: { stage: { mode: 'live' }, inked: true } };
+
+/** The page itself with Whoops!'s ink under the hold and no card met: the held post's mark carries its first-time callout inside the view (e2e/hold.spec.ts reads it on a phone). */
+export const LiveInkedFirstTime: Story = { args: { stage: { mode: 'live' }, inked: true, first: true } };

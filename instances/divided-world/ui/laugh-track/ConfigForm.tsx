@@ -20,7 +20,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { occurrences } from '../../../../engine/bbcode/phrase.ts';
 import { parse } from '../../../../engine/bbcode/parse.ts';
-import { visibleText } from '../../../../engine/bbcode/visible.ts';
+import { visibleWalk } from '../../../../engine/bbcode/visible.ts';
 import { ConfigChoice } from '../../../../engine/ui/cards/config/ConfigChoice.tsx';
 import { ConfigField } from '../../../../engine/ui/cards/config/ConfigField.tsx';
 import { ConfigHint } from '../../../../engine/ui/cards/config/ConfigHint.tsx';
@@ -70,7 +70,7 @@ function wholeWords(selected: string, text: string): string {
 
 type Row = { key: number; cue: Cue };
 
-export function ConfigForm({ config, onChange, post, id }: ConfigFormProps) {
+export function ConfigForm({ config, onChange, post, id, faceDown }: ConfigFormProps) {
   const serial = useRef(0);
   const nextKey = () => serial.current++;
   const [rows, setRows] = useState<Row[]>(() => cuesOf(config).map((cue) => ({ key: nextKey(), cue })));
@@ -82,9 +82,11 @@ export function ConfigForm({ config, onChange, post, id }: ConfigFormProps) {
   const refocus = useRef<number | null>(null);
   const form = useRef<HTMLFieldSetElement>(null);
   const body = typeof post.currentPayload?.body === 'string' ? post.currentPayload.body : '';
-  const text = useMemo(() => visibleText(parse(body)), [body]);
-  const all = useMemo(() => placesOf(text, cues), [text, cues]);
+  const { text, links } = useMemo(() => visibleWalk(parse(body)), [body]);
+  const all = useMemo(() => placesOf(text, cues, links), [text, links, cues]);
   const counts = useMemo(() => cues.map((_, i) => all.filter((p) => p.cue === i).length), [all, cues]);
+  /* A cue with no places that still occurs in the text can only be inside a link: said per cue here, not searched again on every render. */
+  const onlyInLink = useMemo(() => cues.map((cue, i) => !counts[i] && !!cue.phrase.trim() && occurrences(text, cue.phrase).length > 0), [cues, counts, text]);
 
   /* The rows as the last change left them, so two selections before a draw each see the other's work. */
   const current = useRef(rows);
@@ -167,8 +169,9 @@ export function ConfigForm({ config, onChange, post, id }: ConfigFormProps) {
       {rows.map(({ key, cue }, i) => {
         const bound = cue.phrase.trim() ? boundOf(cue.phrase) : undefined;
         const line = !cue.phrase.trim() ? `At least ${PHRASE.least} letters or digits, matched as whole words in any case`
-          : bound ? undefined : counts[i] ? `Cues ${places(counts[i]!)} in this post` : 'Not in this post\'s own words';
-        const hint = i === 0
+          : bound ? undefined : counts[i] ? `Cues ${places(counts[i]!)} in this post` : onlyInLink[i] ? 'Only inside a link here, and a Laugh Track never cues a link' : 'Not in this post\'s own words';
+        /* The note about a back is said only once the play is a set: when the host says `will` ("Set face down" is selected, or the play can only be a set). Not while "Play it now" is selected (`can`) and not where this post cannot hold a back (`no`). */
+        const hint = i === 0 && faceDown === 'will'
           ? `${line === undefined ? '' : `${line}. `}A face-down Laugh Track waits for this phrase.`
           : line;
         return (
