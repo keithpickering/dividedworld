@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { parse } from './parse.ts';
+import { parse, MAX_DEPTH } from './parse.ts';
 import type { BbNode } from './parse.ts';
 import { concealQuotes } from './conceal.ts';
 
@@ -96,4 +96,71 @@ test('property: a body of a hidden quote of 40,000 characters is read in time th
   const small = Math.min(time(10000), time(10000));
   const big = Math.min(time(40000), time(40000));
   assert.ok(big < Math.max(small * 12, 50), `${small} ms at 10k, ${big} ms at 40k`);
+});
+
+/*
+ * A hidden post's words are absent at any depth ("A quote past the cap is cut, never text", docs/plans/2026-11-13-quote-cut-plan.md, Task 1). Every depth is written from MAX_DEPTH, never as a
+ * number, so these follow the cap. Where a body's quote of the hidden post is nested past the cap, the parser's tree has no quote there (today it is text), so the words stay in the layer.
+ */
+const WORDS = 'zqxjkvdeepwords';
+const levels = (n: number, id: string) => Array.from({ length: n }, (_, i) => `[quote=${id.replace(/.$/u, String(i % 10))}]`);
+/** `n` real quotes of visible posts around one real quote of the hidden post, which holds the words: the hidden quote is level `n + 1`. */
+function pyramid(n: number, words = WORDS): string {
+  return levels(n, SHOWN).join('') + `[quote=${HIDDEN}]${words}[/quote]` + '[/quote]'.repeat(n);
+}
+const DEPTHS: [string, number][] = [['1', 1], ['MAX_DEPTH', MAX_DEPTH], ['MAX_DEPTH + 1', MAX_DEPTH + 1], ['MAX_DEPTH + 8', MAX_DEPTH + 8], ['200', 200]];
+
+for (const [label, depth] of DEPTHS) {
+  test(`a hidden post's words are absent when its quote is the innermost of a pyramid ${label} deep`, () => {
+    const body = `before ${pyramid(depth - 1)} after`;
+    const out = concealQuotes(body, HIDE);
+    assert.equal(out.includes(WORDS), false, `the words survive at depth ${depth}`);
+    assert.ok(out.includes(`[quote=${HIDDEN}]`), 'the quote\'s id is kept');
+  });
+}
+
+test(`a hidden post's words are absent when the first MAX_DEPTH levels are [b] and its quote is the next tag`, () => {
+  const body = '[b]'.repeat(MAX_DEPTH) + `[quote=${HIDDEN}]${WORDS}[/quote]` + '[/b]'.repeat(MAX_DEPTH);
+  assert.equal(concealQuotes(body, HIDE).includes(WORDS), false);
+});
+
+test('a hidden post\'s words are absent when level MAX_DEPTH + 1 quotes a visible post and level MAX_DEPTH + 3 quotes the hidden one', () => {
+  const open = (n: number) => `[quote=${SHOWN}]`.repeat(n);
+  const inner = `[quote=${HIDDEN}]${WORDS}[/quote]`;
+  // MAX_DEPTH levels of visible quotes, then level MAX_DEPTH + 1 and + 2 (visible), and + 3 (hidden)
+  const body = open(MAX_DEPTH + 2) + inner + '[/quote]'.repeat(MAX_DEPTH + 2);
+  assert.equal(concealQuotes(body, HIDE).includes(WORDS), false);
+});
+
+test('property: a hidden quote\'s words never survive in a quote of the hidden post outside code, noparse and ispoiler, at any depth', () => {
+  const rnd = lcg(23);
+  const WRAP: [string, string, boolean][] = [
+    [`[quote=${SHOWN}]`, '[/quote]', false], ['[quote=Bob]', '[/quote]', false], ['[b]', '[/b]', false], ['[i]', '[/i]', false],
+    ['[code]', '[/code]', true], ['[noparse]', '[/noparse]', true], ['[ispoiler]', '[/ispoiler]', true],
+  ];
+  let counted = 0;
+  let deep = 0;
+  for (let k = 0; k < 2000; k++) {
+    const inner = `${SECRET}${k}end`;
+    // (no wrapper is a quote of the hidden post itself: that would empty the words by its own, shallow quote)
+    // a depth from 0 to 2 * MAX_DEPTH + 8, and from time to time a pyramid far deeper
+    const n = rnd() < 0.1 ? 100 + Math.floor(rnd() * 150) : Math.floor(rnd() * (2 * MAX_DEPTH + 8));
+    const exemptAt = rnd() < 0.3 ? Math.floor(rnd() * n) : -1; // one level that is code, noparse or ispoiler
+    let open = '';
+    let close = '';
+    let exempt = false;
+    for (let i = 0; i < n; i++) {
+      const w = i === exemptAt ? WRAP[4 + Math.floor(rnd() * 3)]! : WRAP[Math.floor(rnd() * 4)]!;
+      if (w[2]) exempt = true;
+      open += w[0];
+      close = w[1] + close;
+    }
+    const body = `${open}[quote=${HIDDEN}]${inner}[/quote]${close}`;
+    const out = concealQuotes(body, HIDE);
+    if (exempt) continue; // the words are the post's own there, and stay or not as the parser reads them
+    counted++;
+    if (n > MAX_DEPTH) deep++;
+    assert.equal(out.includes(inner), false, `leak at depth ${n}: ${JSON.stringify(body).slice(0, 300)}`);
+  }
+  assert.ok(counted > 1000 && deep > 400, `${counted} counted, ${deep} deep`);
 });
