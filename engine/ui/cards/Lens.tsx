@@ -473,7 +473,7 @@ function TakeBack({ play, store }: { readonly play: CardPlay; readonly store: Pl
 }
 
 /** Whether a play is face up and still in force, so an admin can end it: not a back (`faceDown` is set for exactly the card backs, sprung or not), not caught, not ended by an admin, not over because it did not take, not worn off, unless its card keeps (`keeps`): the level it left stays on posts until an admin ends the play, which takes it off every post. */
-const endable = (play: CardPlay, now: number, keeps: boolean): boolean =>
+export const endable = (play: CardPlay, now: number, keeps: boolean): boolean =>
   !play.faceDown && play.caught === undefined && !play.reversed && !play.untaken && (keeps || !(play.ends !== undefined && Date.parse(play.ends) <= now));
 
 function PlayRow({ play, caster, face, ink, card, view, tallies, mine, compare, to, moments, onSpin, store, admin, now }: RowProps) {

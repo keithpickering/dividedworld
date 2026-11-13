@@ -11,6 +11,7 @@ import type { Instance } from '../../rules/types.ts';
 import { buildWorld, renderIn, testInstance, testKeeper } from '../test-world.tsx';
 import { LoadedThread } from '../loaded.tsx';
 import type { CardUi } from './types.ts';
+import { endable } from './Lens.tsx';
 
 const DAY = 24 * 60 * 60 * 1000;
 const plain: CardRules = { key: 'plain', name: 'Plain', alignment: 'sweet', rarity: 'rare', reaches: ['thread'], lasts: { unit: 'day', count: 7 }, playPrice: () => 0, validateConfig: (c: unknown) => ok(c), canApply: (t, e, _c, now) => landsOn({ key: 'plain', reaches: ['thread'] }, t, e, now) };
@@ -117,5 +118,16 @@ describe('End this card on a play whose week is over', () => {
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'End this card?' })).toBeNull());
     /* The play is over for everyone: its mark leaves the thread head. */
     await waitFor(() => expect(screen.queryByRole('button', { name: /^Keeper, 1 play/u })).toBeNull());
+  });
+});
+
+describe('endable, the rule the End control is offered by', () => {
+  const now = Date.parse('2026-11-20T00:00:00.000Z');
+  const worn = { id: 'k1', card: 'plain', ends: '2026-11-10T00:00:00.000Z' } as Parameters<typeof endable>[0];
+  test('a worn-off play can be ended only where its card keeps; one still up can be ended either way; an ended one never', () => {
+    expect(endable(worn, now, false)).toBe(false);
+    expect(endable(worn, now, true)).toBe(true);
+    expect(endable({ ...worn, ends: '2026-11-25T00:00:00.000Z' }, now, false)).toBe(true);
+    expect(endable({ ...worn, reversed: true }, now, true)).toBe(false);
   });
 });
