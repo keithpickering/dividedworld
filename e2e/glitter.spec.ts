@@ -344,3 +344,67 @@ test('with glitter landed on its cells, a post\'s marks, callout and dialogs are
     await page.mouse.move(2, 2);
   }
 });
+
+/**
+ * A kept post (docs/plans/2026-11-12-glitter-keeps-plan.md, Task 6; the design's section 4): the Kept story's Glitter Bomb wore off
+ * three days ago, and #41's character wrote a post four days ago, inside the bomb's week, and one a day ago, after it. #41 itself
+ * (October 29) and the posts around it are from before the week. The post written inside shows its glitter settled and never bursts; the
+ * posts outside show none; the mark the card puts on a post is on the first alone, and its Lens says the bomb ended and that posts written
+ * while it was up keep it. A live post's burst is the one thing a kept post never does: its over-canvas (`.dw-glitter-over`) is given a
+ * backing store while the burst is in the air, so the Light story is the control that it does, and the kept post's stays 0 by 0.
+ */
+test('a post written inside a worn-off Glitter Bomb\'s week keeps its glitter settled, with its mark and ended words; the posts outside have none', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1120 });
+  const post = (text: string) => page.locator('article', { hasText: text });
+  const inside = post('Written in the Glitter Bomb\'s week');
+  const after = post('Written after the week');
+  const before = page.locator('#post-41');
+  const canvases = (host: Locator) => host.locator(HOST).evaluate((h) => {
+    const size = (c: string) => { const cv = h.querySelector<HTMLCanvasElement>(`canvas.${c}`); return cv ? `${cv.width}x${cv.height}` : 'none'; };
+    return { under: size('dw-glitter-under'), flash: size('dw-glitter-flash'), over: size('dw-glitter-over') };
+  });
+
+  await page.goto(STORY('kept'));
+  await expect(inside).toHaveCount(1);
+  await inside.scrollIntoViewIfNeeded();
+  /* Settled: drawn once in view, and its canvases are sized. */
+  await expect.poll(() => page.evaluate(() => window.__kbShineDraws?.(0) ?? -1)).toBeGreaterThan(0);
+  await expect(inside.locator(HOST)).toHaveCount(1);
+  await expect.poll(() => painted(page)).toBeGreaterThan(0);
+  expect((await canvases(inside)).under).not.toBe('0x0');
+  /* No burst: the burst fires once its point has stayed mid-view for 300 ms; wait past that and a few frames more, then the burst canvas still has no backing store. */
+  for (let i = 0; i < 12; i++) {
+    await page.waitForTimeout(250);
+    expect((await canvases(inside)).over, 'a kept post bursts').toBe('0x0');
+  }
+  /* The posts outside the week have no glitter at all, nor does anything else on the page. */
+  await expect(after.locator(HOST)).toHaveCount(0);
+  await expect(before.locator(HOST)).toHaveCount(0);
+  await expect(page.locator(HOST)).toHaveCount(1);
+
+  /* The card's mark is on the post inside and on neither outside; its Lens says the bomb ended and what that means for this post. */
+  const markOn = (host: Locator) => host.locator('.kb-mark[data-kb-card="glitter-bomb"]');
+  await expect(markOn(inside)).toHaveCount(1);
+  await expect(markOn(after)).toHaveCount(0);
+  await expect(markOn(before)).toHaveCount(0);
+  await markOn(inside).click();
+  const lens = page.getByRole('dialog').filter({ hasText: 'Glitter Bomb' }).first();
+  await expect(lens).toBeVisible();
+  await expect(lens.getByText(/^Ended .*\. Posts written while it was up keep it\.$/u)).toBeVisible();
+  await expect(lens.getByText(/^Ends /u)).toHaveCount(0);
+  await page.keyboard.press('Escape');
+
+  /* The control: a live bomb on the same post does burst, so the zero above is the keeping and not an over-canvas that never wakes. */
+  await page.goto(STORY('light'));
+  await expect.poll(() => page.locator(HOST).count()).toBeGreaterThan(0);
+  const live = page.locator('article', { has: page.locator(HOST) }).first();
+  await live.scrollIntoViewIfNeeded();
+  /* The burst's air time is short, so the over-canvas is watched every frame from the moment the post is in view. */
+  const burst = await live.locator(HOST).evaluate((h) => new Promise<boolean>((done) => {
+    const over = h.querySelector<HTMLCanvasElement>('canvas.dw-glitter-over')!;
+    const end = performance.now() + 6000;
+    const tick = () => { if (over.width > 0 && over.height > 0) done(true); else if (performance.now() > end) done(false); else requestAnimationFrame(tick); };
+    tick();
+  }));
+  expect(burst, 'a live post bursts').toBe(true);
+});
