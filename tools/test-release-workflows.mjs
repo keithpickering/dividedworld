@@ -186,12 +186,14 @@ red('netlify.toml gives deploy previews their own command', {
 const pgImage = (doc, image) => {
   for (const job of Object.values(doc.jobs)) if (job.services?.postgres) job.services.postgres.image = image;
 };
-red('sql.yml is back on the postgres:17 tag', edit(SQL, (d) => pgImage(d, 'postgres:17')), /R8/);
+/** R8's two complaints, told apart: an image not written by version and digest, and two images that differ. */
+const UNPINNED = /R8 job \S+ service \S+ image .* is not postgres:<version>@sha256/;
+red('sql.yml is back on the postgres:17 tag', edit(SQL, (d) => pgImage(d, 'postgres:17')), UNPINNED);
 red('rehearsal.yml names a different digest than sql.yml', edit(REHEARSAL, (d) => {
   pgImage(d, `postgres:17.11@sha256:${'0'.repeat(64)}`);
-}), /R8/);
-red('a postgres image with a tag and no digest', edit(SQL, (d) => pgImage(d, 'postgres:17.11')), /R8/);
-red('a registry-prefixed postgres image is held to the rule too', edit(SQL, (d) => pgImage(d, 'docker.io/library/postgres:17')), /R8/);
+}), /R8 the Postgres images differ/);
+red('a postgres image with a tag and no digest', edit(SQL, (d) => pgImage(d, 'postgres:17.11')), UNPINNED);
+red('a registry-prefixed postgres image is held to the rule too', edit(SQL, (d) => pgImage(d, 'docker.io/library/postgres:17')), UNPINNED);
 quiet('another publisher\'s image named postgres is not the official one, and is not held to R8', edit(SQL, (d) => pgImage(d, 'supabase/postgres:15.1.0.147')));
 quiet('a service that is not a postgres image is not held to R8', edit(SQL, (d) => {
   for (const job of Object.values(d.jobs)) if (job.services) job.services.cache = { image: 'redis:7' };

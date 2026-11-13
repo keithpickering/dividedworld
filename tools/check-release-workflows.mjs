@@ -39,7 +39,7 @@ const REF = '${{ inputs.ref }}';
  */
 const GIT_PUSH = /\bgit(?:\s+(?:-[Cc]\s+\S+|--?[\w-]+(?:=\S+)?))*\s+push\b/;
 
-/** A Postgres image: repository name `postgres` under any registry or namespace. */
+/** A Postgres image: Docker's official one, under any of its three names. */
 const POSTGRES_IMAGE = /^(?:(?:docker\.io\/)?library\/)?postgres(?:[:@]|$)/;
 /** The one accepted spelling: a version tag and the digest Docker actually pulls by. */
 const PINNED_POSTGRES = /^(?:(?:docker\.io\/)?library\/)?postgres:[0-9][\w.-]*@sha256:[0-9a-f]{64}$/;
