@@ -73,4 +73,10 @@ export const scenarios: readonly Scenario[] = [
     costCapDollars: 5,
     bossMemory: meltdownMemory,
   },
+  // Season snapshots for the owner's persona review (local preview only, not committed).
+  { key: 'arc-1-honeymoon', seed: 4101, players: 8, charactersPerPlayer: { least: 2, most: 3 }, startThreads: 8, backstoryDays: 2, dayOfSeason: 1, days: 7, postsPerDay: { least: 10, most: 22 }, reactionsPerPost: { least: 0, most: 3 }, costCapDollars: 5 },
+  { key: 'arc-2-split', seed: 4202, players: 8, charactersPerPlayer: { least: 2, most: 3 }, startThreads: 10, backstoryDays: 3, dayOfSeason: 18, days: 7, postsPerDay: { least: 10, most: 25 }, reactionsPerPost: { least: 0, most: 3 }, costCapDollars: 5 },
+  { key: 'arc-3-reign', seed: 4303, players: 8, charactersPerPlayer: { least: 2, most: 3 }, startThreads: 12, backstoryDays: 3, dayOfSeason: 45, days: 7, postsPerDay: { least: 12, most: 25 }, reactionsPerPost: { least: 0, most: 3 }, costCapDollars: 5 },
+  { key: 'arc-4-meltdown', seed: 4404, players: 8, charactersPerPlayer: { least: 2, most: 3 }, startThreads: 12, backstoryDays: 3, dayOfSeason: 72, days: 7, postsPerDay: { least: 12, most: 30 }, reactionsPerPost: { least: 0, most: 4 }, costCapDollars: 5, bossMemory: meltdownMemory },
+  { key: 'arc-5-handover', seed: 4505, players: 8, charactersPerPlayer: { least: 2, most: 3 }, startThreads: 12, backstoryDays: 3, dayOfSeason: 86, days: 7, postsPerDay: { least: 12, most: 30 }, reactionsPerPost: { least: 0, most: 4 }, costCapDollars: 5, bossMemory: meltdownMemory },
 ];

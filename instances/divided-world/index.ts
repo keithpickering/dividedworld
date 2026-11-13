@@ -20,6 +20,11 @@ import { system } from './system/index.ts';
 
 const boards = deepFreeze([
   { slug: 'general', name: 'General', description: 'Anything and everything. The staff are watching.' },
+  { slug: 'video-games', name: 'Video Games', description: "Talk about the games you're playing." },
+  { slug: 'movies-tv', name: 'Movies & TV', description: "What you watched, what you're watching, and what you wish you hadn't." },
+  { slug: 'arts-crafts', name: 'Arts & Crafts', description: 'Show off what you made: sprites, drawings, music, writing, anything.' },
+  { slug: 'help', name: 'Help', description: 'Stuck on something? Ask here.' },
+  { slug: 'pointless-post-palace', name: 'Pointless Post Palace', description: 'Post about nothing. The more pointless, the better.' },
   // Only the staff and the game post here: the Boss's arrivals and farewells, the characters' Promos (the board look design, section 7).
   { slug: 'announcements', name: 'Staff Announcements', description: 'Where the staff post. Reply by spinning a thread.', system: true },
 ]);

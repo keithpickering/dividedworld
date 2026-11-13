@@ -75,6 +75,41 @@ const openers: RehearsalCorpus['openers'] = {
     { title: 'Rate my sprite, be kind', body: 'Sixteen by sixteen, four colors, took all evening. The hat is the hard part.' },
     { title: 'Remember when everyone had a custom avatar?', body: 'Now it is all the same circle. Show me your oldest avatar and I will show you mine.' },
   ],
+  'video-games': [
+    { title: 'What are you playing this week?', body: 'Finally started that farming game everyone swore would fix my life. Day three, the crops are fine and I am not.' },
+    { title: 'Hardest boss you ever beat', body: 'Took me forty tries and a new controller. Name yours and how many tries.' },
+    { title: 'Is a fangame a video game? Asking for this board', body: 'My platformer has nine levels and a title screen. Does it belong here or somewhere else?' },
+    { title: 'Backlog confessions', body: 'I own sixty games I have never opened. I bought another one yesterday. Tell me your number.' },
+    { title: 'Best soundtrack of the generation', body: 'I will not be taking questions. Post the one you would defend.' },
+  ],
+  'movies-tv': [
+    { title: 'Watched the new monster movie last night', body: 'Too long, not enough monster. The monster was great though. Thoughts?' },
+    { title: 'Shows you quit after one episode', body: 'Mine is the one about the lawyers on a boat. I could not do it.' },
+    { title: 'The video game movie thread', body: 'Are any of them good yet? Be honest. I liked the plumber one more than I should.' },
+    { title: 'Fangame trailers are cinema', body: 'Hear me out: the two-minute trailer for a fangame that never came out is the best film genre.' },
+    { title: 'Comfort rewatch', body: 'What do you put on when the week has been bad? Mine is a cooking show from ages ago.' },
+  ],
+  'arts-crafts': [
+    { title: 'Pixel art WIP, feedback welcome', body: 'A castle tileset, 16x16, eight colors. The bricks look like waffles and I do not know how to fix it.' },
+    { title: 'Knitted a Goomba', body: 'It took three weekends. It is lopsided. I love him. His name is Gerald.' },
+    { title: 'Share a song you wrote', body: 'Even the bad ones. Especially the bad ones. Here is a chiptune I made at 2am.' },
+    { title: 'Sprite sheet for my fangame (credit inside)', body: 'Edited from rips with permission. Credits in the corner. Tell me if the walk cycle is stiff.' },
+    { title: 'Drawing every day this month', body: 'Day 4: a frog. Day 5: also a frog. I am going to keep posting them here.' },
+  ],
+  help: [
+    { title: 'My game crashes when the player jumps', body: 'Only on the second jump. The first one is fine. I am losing my mind.' },
+    { title: 'How do I change my signature?', body: 'I found the setting once and now I cannot find it again.' },
+    { title: 'Collision detection keeps failing on slopes', body: 'The player sinks into the ground on any slope steeper than 45 degrees. Any ideas?' },
+    { title: 'Forgot my password, then remembered it', body: 'No question really. Just wanted someone to know.' },
+    { title: 'Which board should my tutorial go on?', body: 'It is a tutorial about making fangames. Is that Help, Arts & Crafts or Video Games?' },
+  ],
+  'pointless-post-palace': [
+    { title: 'a', body: 'b' },
+    { title: 'I am eating a sandwich', body: 'It is a normal sandwich. Nothing to report.' },
+    { title: 'count to 1000 one post at a time', body: '1' },
+    { title: 'This thread has a point', body: 'Just kidding. Or am I. (I am.)' },
+    { title: 'Describe your day in one word', body: 'Tuesday.' },
+  ],
 };
 
 const replies: readonly string[] = [
