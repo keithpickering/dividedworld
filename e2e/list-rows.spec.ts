@@ -71,7 +71,7 @@ const rectOf = (page: Page, row: string, part: string): Promise<(Rect | null)[]>
   return { top: b.top, bottom: b.bottom, left: b.left, right: b.right };
 }), [row, part] as const);
 
-/** The index's last post with a title cut to leave the unit part of a line (see below): where the byline's "·", name and date stand against the title's last line, and whether the list scrolls sideways. An inline byline lets them flow on after the title and break apart; an inline-block one moves whole. */
+/** The index's last post with a title cut to leave the unit part of a line (see below): where the byline's "·", name and date stand against the title's last line, and whether the list scrolls sideways. An inline byline lets them flow on after the title and break apart; a unit that is one box moves whole. */
 const byline = (page: Page) => page.evaluate(() => {
   const by = document.querySelector('.kb-board-last-by')!;
   const title = document.querySelector('.kb-board-last-title') as HTMLElement;
