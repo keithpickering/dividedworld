@@ -142,7 +142,7 @@ declare
 begin
   perform pg_temp.cards();
   ed := tests.act(b, 'edit', t, '{"body": "Before the play."}', p, now() - interval '3 hours');
-  -- Written as an import writes a row, so the trigger takes no moment, as a play made before this migration has none; its `started_at` is named, as the play_reach trigger of 0480 does not fire here: the Act's date.
+  -- Written as an import writes a row, so the trigger takes no moment, as a play made before this migration has none; its `started_at` is named, as the play_reach trigger of 0356 does not fire here: the Act's date.
   set local session_replication_role = replica;
   insert into acts (id, character, kind, thread, target_act_id, payload, created_at) values
     (k, a, 'card', t, p, jsonb_build_object('card', 'glint', 'reach', 'character', 'character', b), now() - interval '2 hours'),

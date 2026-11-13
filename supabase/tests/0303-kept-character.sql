@@ -1,5 +1,5 @@
 -- A worn-off play of a kind that keeps, at character reach, is read by the posts its target wrote while it was up (thread_page's `kept`, written again by
--- supabase/migrations/0480_kept_character.sql). A play whose target is character A falls on A's posts dated inside its window and on no other author's post, on the same page or
+-- supabase/migrations/0356_kept_character.sql). A play whose target is character A falls on A's posts dated inside its window and on no other author's post, on the same page or
 -- another; an admin can end it after its week (reverse_card, not changed); the document is a public projection, the same for every caller. The cards are this file's own (tg...).
 
 create function pg_temp.coded(stmt text) returns text language plpgsql as $$

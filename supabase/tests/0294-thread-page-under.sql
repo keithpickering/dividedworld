@@ -266,7 +266,7 @@ begin
   if (select array_agg(x ->> 'play') from jsonb_array_elements(doc -> 'kept') x) is distinct from array[worn::text] then raise exception 'the worn-off play is in kept, the live one is not: %', doc -> 'kept'; end if;
 end $$;
 
--- ---- Rows read do not grow with history (docs/plans/2026-11-13-glitter-keeps-bound-plan.md, Task 2): the thread's plays, as 0480's test holds the authors' ----
+-- ---- Rows read do not grow with history (docs/plans/2026-11-13-glitter-keeps-bound-plan.md, Task 2): the thread's plays, as 0303's test holds the authors' ----
 -- One post long ago, the one play that holds it, then N later worn-off thread plays of a keeping kind; one real thread_page call, one post a page, counted: the tuples the transaction read of
 -- play_reach and of each of its indexes (pg_stat_get_xact_tuples_returned, summed before and after the call). enable_seqscan is off around the call, as a toy table would otherwise be
 -- seq-scanned for `spun` whatever `kept` does. A btree counts only the entries that pass its index conditions, so the plan block below holds the index's name.
