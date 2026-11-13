@@ -8,7 +8,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { systemOf, firstMessageOf, partOf, partAnswer } from './meeting-fake.ts';
 import { MEETING_PARTS } from '../../../engine/system/meeting.ts';
-import { psqlDb, sql, scratchSeed } from './psql-db.ts';
+import { psqlDb, sql, scratchSeed, openSeasonAhead } from './psql-db.ts';
 import { runMeeting } from '../../functions/meet/core.ts';
 import { instance } from '../../functions/_shared/instance.ts';
 import { models } from '../../functions/_shared/models/index.ts';
@@ -20,12 +20,14 @@ const BOSS = instance.system.firstBoss;
 const FAKE_BOSS_DESCRIPTION = 'Puns, plunder and the occasional parrot.';
 const tiers = { strong: 'claude-opus-5-5', light: 'claude-haiku-5-5' };
 
-test('a meeting with a fake model queues a rename, writes memory and profile versions and debits the bank, once', async () => {
+test('a meeting with a fake model queues a rename, writes memory and profile versions and debits the bank, once', async (t) => {
   const db = psqlDb();
   await db.rpc('seed_instance', { payload: scratchSeed(instance) });
   sql(`update settings set value = 'true' where key = 'systemEnabled'`);
   // Other end-to-end files may have named a Boss of their own on the open season; this one is the instance's first.
   sql(`update seasons set boss = '${BOSS}' where ends_at is null`);
+  // A move that would land after the season ends is dropped, so the season is one with its end ahead (the fixture's season started in 2000).
+  t.after(openSeasonAhead());
   sql(`insert into move_bank (staff, balance, as_of) values ('${BOSS}', 3, now()) on conflict (staff) do update set balance = 3, as_of = now()`);
   const board = sql(`select id from boards where not is_system order by slug limit 1`);
   const before = (table: string) => Number(sql(`select count(*) from ${table}`));

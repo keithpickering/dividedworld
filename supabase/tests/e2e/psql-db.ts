@@ -28,6 +28,18 @@ export function sql(text: string, vars: Record<string, string> = {}): string {
 }
 
 /**
+ * Makes the open season end far ahead, and returns what puts its length back. A move that would land after the season ends is dropped,
+ * and an earlier file's seasons start long ago (the fixture's first starts in 2000), so a meeting held now would be in the farewell
+ * window of a season long over, and its moves would be dropped. Only the length moves, never a season's start, so the settlements an
+ * earlier file left and their windows are untouched; the season's end is its start plus this length.
+ */
+export function openSeasonAhead(): () => void {
+  const length = sql(`select value::text from settings where key = 'seasonLength'`);
+  sql(`update settings set value = '{"unit": "month", "count": 1000}' where key = 'seasonLength'`);
+  return () => { sql(`update settings set value = '${length}' where key = 'seasonLength'`); };
+}
+
+/**
  * The instance's seed, for this scratch database. The database is shared with the SQL suite's own test
  * instance (supabase/tests/setup/fixtures.sql), whose race files commit reactions on its kinds, and
  * seed_instance takes a payload's reactions as the instance's whole set and refuses to drop a kind that

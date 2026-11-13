@@ -227,7 +227,8 @@ test('a season of FanGaME: the Split, picking it apart, the consolidation, every
   noDrift('the consolidation');
 
   // ---- The last week: Everything is World -1 is due; the answer leaves it out, so it is played with its defaults; the fangame board merges into World -1. ----
-  endsInDays(1);
+  // Thirty hours left: inside the 36-hour farewell window, and a nomination made now (held a day) still lands before the season ends, which one made with a day left would not.
+  endsInDays(1.25);
   await tick();
   assert.deepEqual(arcRead().beats.filter((b) => !b.mini), [{ key: 'everything', mini: false, due: true }]);
   const lastNote = 'One board now. He believes it is all fangames; do not tell him otherwise before the demo.';
