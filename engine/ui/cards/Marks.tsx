@@ -191,6 +191,8 @@ export interface MarkStripProps {
   readonly reachAt?: ReachAt;
   /** What the marks are on, as a screen reader hears it: the reach's (`reachAt`) unless said, else a post. */
   readonly where?: string;
+  /** When the post the strip is on was written, where it is a character's postbit (`reachAt.reach` is 'character'): an ended play of a card that keeps is marked only for a post written while it was up. */
+  readonly postAt?: string;
   /** Compare the plays' reactions with the post's for the corner sign; false where the post's tally is not read here (a card play's ORIGIN box, whose post is in another thread). */
   readonly compare?: boolean;
   /** A character's name, for a card back's (who set it). */
@@ -200,7 +202,7 @@ export interface MarkStripProps {
 }
 
 /** One mark per kind of card played on the post, "+N" for the kinds past the strip's room, and the ghost mark while an armed card can land here. */
-export function MarkStrip({ post, plays, tallies, onOpen, open = null, ghost, reachAt, where = reachAt?.reach ?? 'post', compare = true, nameOf, visit }: MarkStripProps) {
+export function MarkStrip({ post, plays, tallies, onOpen, open = null, ghost, reachAt, where = reachAt?.reach ?? 'post', postAt, compare = true, nameOf, visit }: MarkStripProps) {
   const here = usePlays(plays, post);
   const narrow = useNarrow();
   /* A strip a takeover hosts (Stick Around's view) offers no ghost mark: its play form would open under the view. */
@@ -227,7 +229,7 @@ export function MarkStrip({ post, plays, tallies, onOpen, open = null, ghost, re
   const { api, instance } = useKayfa();
   /* A play beyond a post goes at its end, by itself: no reread (its way out). */
   const now = useUntil(here.billed);
-  const billed = useMemo(() => markedPlays(shownPlays(here.billed, api.now()), now, keepingKeys(instance.cards)), [here.billed, now, api, instance.cards]);
+  const billed = useMemo(() => markedPlays(shownPlays(here.billed, api.now()), now, keepingKeys(instance.cards), postAt), [here.billed, now, api, instance.cards, postAt]);
   const byKind = useKindPlays(billed);
   /* `onOpen` may be a new function every render of the post; the marks are given one that is not. */
   const latest = useRef(onOpen);
@@ -256,8 +258,8 @@ export function MarkStrip({ post, plays, tallies, onOpen, open = null, ghost, re
  * first kind it hides, and the same mark again closes it. One Lens is open on a page, so a strip subscribes to whether it is
  * the one and is redrawn for its own opening and closing alone.
  */
-export function PostMarks({ post, plays, to, nameOf, faceOf, tallies, mine, ghost, reachAt, where = reachAt?.reach ?? 'post', compare = true, moments = true, onSpin, visit, modPronouns = ENGINE_DEFAULT_PRONOUNS, author = null, thread, onSpinAct, ask = null, reportTo }: {
-  readonly post: Id; readonly ghost?: Act; readonly reachAt?: ReachAt; readonly where?: string; readonly compare?: boolean; readonly plays: Plays; readonly to: string | null; readonly nameOf: (character: Id | null) => string;
+export function PostMarks({ post, plays, to, nameOf, faceOf, tallies, mine, ghost, reachAt, where = reachAt?.reach ?? 'post', postAt, compare = true, moments = true, onSpin, visit, modPronouns = ENGINE_DEFAULT_PRONOUNS, author = null, thread, onSpinAct, ask = null, reportTo }: {
+  readonly post: Id; readonly ghost?: Act; readonly reachAt?: ReachAt; readonly where?: string; readonly postAt?: string; readonly compare?: boolean; readonly plays: Plays; readonly to: string | null; readonly nameOf: (character: Id | null) => string;
   /** A character's picture URL, or null for none: the Lens draws it by the name. */
   readonly faceOf: (character: Id | null) => string | null;
   /** Whether a play's Lens row offers As it landed: not in an ORIGIN box that already draws the play's moment. */
@@ -298,7 +300,7 @@ export function PostMarks({ post, plays, to, nameOf, faceOf, tallies, mine, ghos
   const form = ask !== null && open?.card === ask.form.kind ? ask.form : undefined;
   return (
     <span className="kb-marks-anchor" ref={anchor}>
-      <MarkStrip post={post} plays={plays} tallies={tallies} ghost={ghost} reachAt={reachAt} where={where} compare={compare} open={open?.card ?? null} onOpen={onOpen} nameOf={nameOf} visit={current ? { visit: current, mod: nameOf(current.mod), pronouns: modPronouns } : undefined} />
+      <MarkStrip post={post} plays={plays} tallies={tallies} ghost={ghost} reachAt={reachAt} where={where} postAt={postAt} compare={compare} open={open?.card ?? null} onOpen={onOpen} nameOf={nameOf} visit={current ? { visit: current, mod: nameOf(current.mod), pronouns: modPronouns } : undefined} />
       <Layers>
       {open && <Lens open={open} store={store} post={post} plays={plays} tallies={tallies} mine={mine} compare={compare} to={to} nameOf={nameOf} faceOf={faceOf} modPronouns={modPronouns} strip={strip} onSpin={onSpin} where={where} moments={moments} visit={current && thread ? { visit: current, thread, author, onSpinAct, onEnded: setSeen } : undefined} form={form} reportTo={reportTo} />}
       </Layers>

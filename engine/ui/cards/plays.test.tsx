@@ -657,6 +657,20 @@ describe('a play of a card that keeps, once its time is up', () => {
     expect(ids(inside, [{ ...kept, reversed: true as const }], AFTER)).toEqual([]);
   });
 
+  test('markedPlays, given the post\'s date, marks an ended keeping character play only on a post written inside its window; a live one on every post', () => {
+    const kept = { ...playOf(act('m1', 'card', { card: 'keeper', reach: 'character', character: 'c1', ends: ENDS }, null))!, playedAt: '2026-11-01T12:00:00.000Z' };
+    const plain = { ...playOf(act('m2', 'card', { card: 'sparkly', reach: 'character', character: 'c1', ends: ENDS }, null))!, playedAt: '2026-11-01T12:00:00.000Z' };
+    const inside = '2026-11-03T00:00:00.000Z';
+    const outside = ['2026-10-31T00:00:00.000Z', '2026-11-08T12:00:01.000Z'];
+    expect(markedPlays([kept, plain], AFTER, keeps, inside).map((p) => p.id)).toEqual(['m1']);
+    for (const at of outside) expect(markedPlays([kept], AFTER, keeps, at)).toEqual([]);
+    const live = Date.parse('2026-11-05T00:00:00.000Z');
+    for (const at of [inside, ...outside]) expect(markedPlays([kept, plain], live, keeps, at).map((p) => p.id)).toEqual(['m1', 'm2']);
+    expect(markedPlays([{ ...kept, reversed: true as const }], AFTER, keeps, inside)).toEqual([]);
+    /* A thread play has no post to be asked of: its mark is the thread head's, whatever date is given. */
+    expect(markedPlays([thread('k1', 'keeper')], AFTER, keeps, outside[0]).map((p) => p.id)).toEqual(['k1']);
+  });
+
   test('the Lens says how an ended keeping play ends, in the words of a live one\'s end', () => {
     const live = defaultView({ name: 'Keeper', keeps: true }, undefined, undefined, ENDS).ends!;
     expect(live).toMatch(/^Ends /u);
