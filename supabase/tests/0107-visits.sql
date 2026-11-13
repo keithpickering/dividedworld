@@ -595,24 +595,186 @@ begin
   if exists (select 1 from acts where kind = 'visit_end' and target_act_id = v) or not exists (select 1 from visits_open where visit_act = v) then raise exception 'the forged end landed'; end if;
 end $$;
 
--- ---- 17. The repeat-charge lookup is read by index: the post's visits by acts_visits_by_post, their joins by acts_visit_joins ----
+-- ---- 17. The repeat-charge lookup reads only the Acts on its post, and its visits' joins and ends, by their indexes, on a busy instance, whenever the statistics were gathered ----
+-- A handful of Acts fits one page, where the planner's choice of index says nothing, so the lookup is planned on a busy instance's Acts: 60,000 posts, 22,000 visits
+-- (one post in three has one; one in thirty a second, its first ended reversed or dropped), 13,200 joins and 16,500 ends, and beside them 3,000 card plays, 1,001 reports and
+-- 1,000 edits on the same posts. They are written to a table of their own (vs_scale.acts, with every index Acts has, made before a row is written), so that the plan turns on
+-- this fixture's statistics alone and not on the few dozen Acts the sections above left, and the lookup's own text is planned on it, its `public.acts` read as that table. It is
+-- planned under six states of the statistics, each one an instance's Acts are really in between two runs of ANALYZE: gathered before a row was written, when the instance held
+-- its first 100 Acts, with posts only, with visits and ends but no joins, after everything, and none at all. A planner that trusts "no join" reads every join first.
+-- The post's visits are read by acts_target, and not by acts_visits_by_post, which is keyed for them: a read that says `kind = 'visit'` may use any index with that predicate,
+-- and acts_visits_by_thread has it too, with no key the lookup can use. A planner that trusts "no visit in the instance" (statistics from before a row, or from the first 100
+-- Acts) prices the two alike and has read acts_visits_by_thread whole, every visit in the instance, with and without an ORDER BY written to favor the other. So the lookup asks
+-- for the post's Acts other than edits, which only acts_target answers, and keeps the visits among them. In each state every scan of the table is one of the three indexes
+-- with an Index Cond, and the Acts read are no more than the Acts on the post that are not edits (its visits, and the card plays and reports on it), and its visits' joins and ends.
+
+-- The bitmap scans under a Bitmap Heap Scan carry its Index Cond, so the heap scan is read through them: the rows it fetched are counted once, on its first index.
+create function pg_temp.bitmap_leaves(node jsonb) returns setof jsonb language sql as $$
+  select node where node ->> 'Node Type' = 'Bitmap Index Scan'
+  union all
+  select l from jsonb_array_elements(coalesce(node -> 'Plans', '[]'::jsonb)) k, pg_temp.bitmap_leaves(k) l
+$$;
+
+-- Every scan of the scale table in a plan: the index it reads (null for a scan of the table), its Index Cond (null for a scan with none), and the rows it read (returned or
+-- thrown away by a filter or a recheck, times its loops).
+create function pg_temp.acts_scans(node jsonb) returns table (index_name text, index_cond text, read numeric) language sql as $$
+  with heap as (
+    select ((node ->> 'Actual Rows')::numeric + coalesce((node ->> 'Rows Removed by Filter')::numeric, 0) + coalesce((node ->> 'Rows Removed by Index Recheck')::numeric, 0))
+             * (node ->> 'Actual Loops')::numeric as rows_read
+    where node ->> 'Relation Name' = 'acts' and node ->> 'Node Type' = 'Bitmap Heap Scan')
+  select b.leaf ->> 'Index Name', b.leaf ->> 'Index Cond', case when b.n = 1 then (select rows_read from heap) else 0 end
+    from (select leaf, row_number() over () as n from pg_temp.bitmap_leaves(node) as l(leaf)) b where exists (select 1 from heap)
+  union all
+  select null, null, rows_read from heap where not exists (select 1 from pg_temp.bitmap_leaves(node))
+  union all
+  select node ->> 'Index Name', node ->> 'Index Cond',
+         ((node ->> 'Actual Rows')::numeric + coalesce((node ->> 'Rows Removed by Filter')::numeric, 0) + coalesce((node ->> 'Rows Removed by Index Recheck')::numeric, 0)) * (node ->> 'Actual Loops')::numeric
+  where (node ->> 'Relation Name' = 'acts' or node ->> 'Index Name' like 'acts%') and node ->> 'Node Type' <> 'Bitmap Heap Scan'
+  union all
+  select s.* from jsonb_array_elements(coalesce(node -> 'Plans', '[]'::jsonb)) k, pg_temp.acts_scans(k) s
+  where not exists (select 1 from heap)
+$$;
+
+-- The planner's whole view of the scale table is its pg_statistic rows and the page and row counts of the table and its indexes. A state is kept under another relation's oid, the
+-- attribute number moved up by a thousand a state, and put back by deleting what is there and moving it down.
+create temp table scale_stats_holder (x integer);
+create temp table scale_stats_class (state integer, rel oid, relpages integer, reltuples real, relallvisible integer);
+create function pg_temp.keep_stats(state integer) returns void language plpgsql as $$
+declare cols text := (select string_agg(quote_ident(a.attname), ', ' order by a.attnum) from pg_attribute a where a.attrelid = 'pg_statistic'::regclass and a.attnum > 0 and a.attname not in ('starelid', 'staattnum'));
+begin
+  execute format('insert into pg_statistic (starelid, staattnum, %1$s) select %2$L::regclass, staattnum + %3$s, %1$s from pg_statistic where starelid = %4$L::regclass', cols, 'pg_temp.scale_stats_holder', state * 1000, 'vs_scale.acts');
+  insert into pg_temp.scale_stats_class select state, c.oid, c.relpages, c.reltuples, c.relallvisible from pg_class c
+    where c.oid = 'vs_scale.acts'::regclass or c.oid in (select i.indexrelid from pg_index i where i.indrelid = 'vs_scale.acts'::regclass);
+end $$;
+create function pg_temp.put_stats(state integer) returns void language plpgsql as $$
+declare cols text := (select string_agg(quote_ident(a.attname), ', ' order by a.attnum) from pg_attribute a where a.attrelid = 'pg_statistic'::regclass and a.attnum > 0 and a.attname not in ('starelid', 'staattnum'));
+begin
+  delete from pg_statistic where starelid = 'vs_scale.acts'::regclass;
+  execute format('insert into pg_statistic (starelid, staattnum, %1$s) select %2$L::regclass, staattnum - %3$s, %1$s from pg_statistic where starelid = %4$L::regclass and staattnum > %3$s and staattnum <= %3$s + 1000',
+                 cols, 'vs_scale.acts', state * 1000, 'pg_temp.scale_stats_holder');
+  update pg_class c set relpages = k.relpages, reltuples = k.reltuples, relallvisible = k.relallvisible from pg_temp.scale_stats_class k where k.state = put_stats.state and k.rel = c.oid;
+end $$;
+
 do $$
 declare
-  plan text := '';
-  ln record;
-  p uuid := (select a.id from acts a where a.kind = 'post' limit 1);
+  base timestamptz := now() - interval '300 days';
+  scale_board uuid := '00000000-0000-4107-9000-000000000001';
+  author uuid := '00000000-0000-4107-9000-000000000002';
+  mod uuid := '00000000-0000-4107-9000-000000000003';
+  states text[] := array['gathered before a row was written', 'gathered when the instance held 100 Acts', 'gathered with posts only', 'gathered before the joins', 'fresh', 'none'];
+  ix record;
+  stats integer;
+  probe record;
+  plan jsonb;
+  own bigint;
+  named text[];
+  loose text;
+  read numeric;
+  body text := (select prosrc from pg_proc where proname = 'visit_charge_matches');
 begin
-  -- The function pins its search_path, which keeps EXPLAIN from seeing inside it; its own body, without the pin, is what is explained.
-  execute format('create function pg_temp.matches(post uuid, ch jsonb) returns setof integer language sql stable as %L', (select prosrc from pg_proc where proname = 'visit_charge_matches'));
   if not exists (select 1 from pg_proc where proname = 'visit_charge_matches' and proconfig @> array['search_path=public, pg_temp']) then raise exception 'visit_charge_matches does not pin its search_path'; end if;
-  set local enable_seqscan = off;
-  for ln in execute format('explain select * from pg_temp.matches(%L, %L::jsonb)', p, '{"cause": "rule", "rule_number": 1, "board": "x"}') loop
-    plan := plan || E'\n' || ln."QUERY PLAN";
+  if body not like '%public.acts%' or body like '%vs_scale%' then raise exception 'visit_charge_matches no longer reads public.acts, and the fixture cannot stand in for it'; end if;
+  -- The scale table has Acts' columns and every one of its indexes, in the order they were made (the order is the planner's tie-break between two of the same cost).
+  create schema vs_scale;
+  create table vs_scale.acts (like public.acts including defaults);
+  for ix in select pg_get_indexdef(i.indexrelid) as def from pg_index i where i.indrelid = 'public.acts'::regclass order by i.indexrelid loop
+    execute replace(ix.def, ' ON public.acts ', ' ON vs_scale.acts ');
   end loop;
-  set local enable_seqscan = on;
-  if plan not like '%acts_visits_by_post%' or plan not like '%acts_visit_joins%' or plan not like '%acts_one_visit_end%' or plan not like '%Index Cond%' then
-    raise exception 'the repeat-charge lookup is not read by the visit, join and end indexes: %', plan;
-  end if;
+  -- The function pins its search_path, which keeps EXPLAIN from seeing inside it; its own body, without the pin and read from the scale table, is what is explained. A SQL
+  -- function's statement is planned without its arguments' values, so the copy is planned the same way: as a prepared statement's generic plan.
+  execute format('create function pg_temp.matches(post uuid, ch jsonb) returns setof integer language sql stable as %L', replace(body, 'public.acts', 'vs_scale.acts'));
+  set local plan_cache_mode = force_generic_plan;
+
+  analyze vs_scale.acts;
+  perform pg_temp.keep_stats(1);
+  insert into vs_scale.acts (id, character, kind, thread, payload, seq, created_at)
+  select ('00000000-0000-4107-a000-' || lpad(g::text, 12, '0'))::uuid, author, 'post', ('00000000-0000-4107-8000-' || lpad((g % 400 + 1)::text, 12, '0'))::uuid,
+         jsonb_build_object('body', 'Scale post ' || g), (g - 1) / 400 + 1, base + g * interval '1 second'
+  from generate_series(1, 100) g;
+  -- Statistics gathered now are a young instance's: 100 Acts on a page or two, every one a post. Everything after them is loaded with no ANALYZE between.
+  analyze vs_scale.acts;
+  perform pg_temp.keep_stats(2);
+  insert into vs_scale.acts (id, character, kind, thread, payload, seq, created_at)
+  select ('00000000-0000-4107-a000-' || lpad(g::text, 12, '0'))::uuid, author, 'post', ('00000000-0000-4107-8000-' || lpad((g % 400 + 1)::text, 12, '0'))::uuid,
+         jsonb_build_object('body', 'Scale post ' || g), (g - 1) / 400 + 1, base + g * interval '1 second'
+  from generate_series(101, 60000) g;
+  -- Statistics gathered now know of no visit, no join and no end among the 60,000 posts.
+  analyze vs_scale.acts;
+  perform pg_temp.keep_stats(3);
+  -- Other Acts on the posts: a card play on post 20n (3,000 of them), a report on post 3n (1,000) and one on post 61, which has no visit, and an edit of post 2n (1,000).
+  insert into vs_scale.acts (character, kind, thread, target_act_id, payload, created_at)
+  select author, x.kind, ('00000000-0000-4107-8000-' || lpad((x.post_n % 400 + 1)::text, 12, '0'))::uuid, ('00000000-0000-4107-a000-' || lpad(x.post_n::text, 12, '0'))::uuid,
+         x.payload, base + interval '12 hours' + x.post_n * interval '1 second'
+  from (select 'card' as kind, 20 * n as post_n, jsonb_build_object('card', 'whoops', 'layer', 1) as payload from generate_series(1, 3000) n
+        union all select 'report', 3 * n, jsonb_build_object('reason', 'Scale report') from generate_series(1, 1000) n
+        union all select 'report', 61, jsonb_build_object('reason', 'Scale report')
+        union all select 'edit', 2 * n, jsonb_build_object('body', 'Scale edit') from generate_series(1, 1000) n) x;
+  -- Visit n (1 to 20,000) is on post 3n; visit 20,000 + m (1 to 2,000) is a second visit on post 30m, whose first visit is n = 10m. Each charges rule 1, 2 or 3.
+  insert into vs_scale.acts (id, character, kind, thread, target_act_id, payload, created_at)
+  select ('00000000-0000-4107-b000-' || lpad(x.n::text, 12, '0'))::uuid, mod, 'visit', ('00000000-0000-4107-8000-' || lpad((x.post_n % 400 + 1)::text, 12, '0'))::uuid,
+         ('00000000-0000-4107-a000-' || lpad(x.post_n::text, 12, '0'))::uuid,
+         jsonb_build_object('charges', jsonb_build_array(jsonb_build_object('rule_number', 1 + x.n % 3, 'board', scale_board, 'band', 'minor', 'cause', 'rule',
+             'about_act', '00000000-0000-4107-a000-' || lpad(x.post_n::text, 12, '0'))),
+           'ends_at', base + interval '2 days', 'challenge', jsonb_build_object('kind', 'distraction'), 'line', 'Looking.'),
+         base + interval '1 day' + x.n * interval '1 second'
+  from (select n, case when n <= 20000 then 3 * n else 30 * (n - 20000) end as post_n from generate_series(1, 22000) n) x;
+  -- Three visits in four have ended; every first visit of a post with two ended reversed or dropped.
+  insert into vs_scale.acts (character, kind, thread, target_act_id, payload, created_at)
+  select null, 'visit_end', v.thread, v.id,
+         jsonb_build_object('visit_act', v.id, 'line', 'Done.',
+           'outcome', case when v.n <= 20000 and v.n % 20 = 0 then 'reversed' when v.n <= 20000 and v.n % 10 = 0 then 'dropped' when v.n % 3 = 0 then 'intercepted' else 'filed' end),
+         v.created_at + interval '1 hour'
+  from (select a.id, a.thread, a.created_at, right(a.id::text, 12)::integer as n from vs_scale.acts a where a.kind = 'visit') v
+  where v.n % 4 <> 1 or (v.n <= 20000 and v.n % 10 = 0);
+  -- Statistics gathered now know of no join, among 98,500 Acts.
+  analyze vs_scale.acts;
+  perform pg_temp.keep_stats(4);
+  -- Every other visit has a join (rule 5), and every tenth a second (rule 6).
+  insert into vs_scale.acts (character, kind, thread, target_act_id, payload, created_at)
+  select mod, 'visit_join', v.thread, v.id,
+         jsonb_build_object('band', 'moderate', 'charge', jsonb_build_object('rule_number', 4 + k, 'board', scale_board, 'band', 'moderate', 'cause', 'rule', 'about_act', v.target_act_id)),
+         v.created_at + k * interval '1 second'
+  from (select a.id, a.thread, a.target_act_id, a.created_at, right(a.id::text, 12)::integer as n from vs_scale.acts a where a.kind = 'visit') v
+  cross join generate_series(1, 2) k
+  where v.n % 2 = 0 and (k = 1 or v.n % 10 = 0);
+  analyze vs_scale.acts;
+  perform pg_temp.keep_stats(5);
+  -- A table nothing has analyzed: no statistics, and the page and row counts a new table has.
+  delete from pg_statistic where starelid = 'vs_scale.acts'::regclass;
+  update pg_class set relpages = 0, reltuples = -1, relallvisible = 0 where oid = 'vs_scale.acts'::regclass or oid in (select i.indexrelid from pg_index i where i.indrelid = 'vs_scale.acts'::regclass);
+  perform pg_temp.keep_stats(6);
+
+  foreach stats in array array[1, 2, 3, 4, 5, 6] loop
+    perform pg_temp.put_stats(stats);
+    if exists (select 1 from pg_prepared_statements where name = 'vs_matches') then deallocate vs_matches; end if;
+    prepare vs_matches(uuid, jsonb) as select * from pg_temp.matches($1, $2);
+    -- Post 60: two visits (the first reversed), three joins, two ends, and a card play, a report and an edit; rule 5 is on a join to its second visit. Post 6: one visit, one
+    -- join, one end, and a report and an edit; rule 3 is its visit's own charge. Post 600: two visits (the first reversed, charging rule 3), four joins, two ends, and a card play, a
+    -- report and an edit; rule 3 is on the reversed visit alone, so it is no repeat. Post 61: no visit, and a report.
+    for probe in select * from (values (60, 5, true, 9), (6, 3, true, 4), (600, 3, false, 10), (61, 1, false, 1)) as x(post_n, rule_number, repeats, own) loop
+      execute format('explain (analyze, format json) execute vs_matches(%L, %L)', ('00000000-0000-4107-a000-' || lpad(probe.post_n::text, 12, '0'))::uuid,
+        jsonb_build_object('cause', 'rule', 'rule_number', probe.rule_number, 'board', scale_board)) into plan;
+      -- What the lookup may read: every Act on the post that is not an edit, and for each of them that is a visit, its joins and ends.
+      select count(distinct v.id) + count(x.id) into own from vs_scale.acts v
+        left join vs_scale.acts x on v.kind = 'visit' and x.target_act_id = v.id and x.kind in ('visit_join', 'visit_end')
+        where v.kind <> 'edit' and v.target_act_id = ('00000000-0000-4107-a000-' || lpad(probe.post_n::text, 12, '0'))::uuid;
+      if own is distinct from probe.own then raise exception 'the fixture gives post % % Acts to read, not %', probe.post_n, own, probe.own; end if;
+      select array_agg(distinct s.index_name order by s.index_name), string_agg(coalesce(s.index_name, 'the table'), ', ') filter (where s.index_cond is null), coalesce(sum(s.read), 0)
+        into named, loose, read from pg_temp.acts_scans(plan -> 0 -> 'Plan') s;
+      if named is distinct from array['acts_one_visit_end', 'acts_target', 'acts_visit_joins'] or loose is not null then
+        raise exception 'with statistics %, the repeat-charge lookup for post % is not read by acts_target and the join and end indexes, each by an Index Cond (it reads %, and with no Index Cond %): %', states[stats], probe.post_n, named, coalesce(loose, 'nothing'), plan;
+      end if;
+      if read > own then
+        raise exception 'with statistics %, the repeat-charge lookup for post % read % Acts, and the Acts on the post that are not edits, with its visits'' joins and ends, are %: %', states[stats], probe.post_n, read, own, plan;
+      end if;
+      if (plan -> 0 -> 'Plan' ->> 'Actual Rows')::integer > 0 is distinct from probe.repeats then
+        raise exception 'with statistics %, the repeat-charge lookup for post % and rule % found % rows', states[stats], probe.post_n, probe.rule_number, plan -> 0 -> 'Plan' ->> 'Actual Rows';
+      end if;
+    end loop;
+  end loop;
+  set local plan_cache_mode = auto;
+  deallocate vs_matches;
+  delete from pg_statistic where starelid = 'pg_temp.scale_stats_holder'::regclass;
 end $$;
 
 -- ---- 18. thread_page drops anything but kind, question index and price from a challenge ----

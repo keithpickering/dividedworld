@@ -190,8 +190,9 @@ test('a Random Event finds a card rarely: about one in thirty', () => {
   assert.deepEqual(defaults.cosmetics.events.outcomes, { line: 70, gear: 20, card: 3 });
 });
 
-test('Laugh Track\'s band, airtime and hold are set, inside their bounds', () => {
+test('Laugh Track\'s mark is set, the dropped numbers are gone, and every held number is inside its bounds', () => {
   const held = defaults.cardSettings;
-  assert.deepEqual([held['laughTrack.band'], held['laughTrack.airMs'], held['laughTrack.holdMs']], [34, 1200, 18000]);
+  assert.equal(held['laughTrack.markMost'], 100);
+  for (const key of ['laughTrack.dwellMs', 'laughTrack.band', 'laughTrack.airMs', 'laughTrack.holdMs']) assert.equal(key in held, false, key);
   for (const r of laughTrack.screenReads as readonly { key: string; min: number; max: number }[]) assert.ok(held[r.key]! >= r.min && held[r.key]! <= r.max, r.key);
 });

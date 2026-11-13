@@ -187,6 +187,9 @@ declare
     -- A trigger function that indexes an Act as it is written, which only the table's trigger runs; acts_search_hidden and conduct_decisions_search (0340) take a hidden version's
     -- words out of the index and keep them out.
     'acts_search()',
+    -- 0350's one-time rewrite of post_search.words for every post whose body can read differently under the new cap (a quote, or more than 16 open brackets), from each post's current raw body through search_words (the words the insert and edit triggers write, bbcode_plain, which cuts every quote out). It skips
+    -- every post whose current version is hidden (version_hidden), so a hidden version's words are never indexed, and returns only a count. No grant to a client role; the migration calls it once.
+    'search_reindex_past_cap()',
     -- Read a post's body through acts_public (card_target) or public_payload with version_hidden (claim_card_writes, which the check no longer sees in that form); the
     -- other reads of `acts` in them are card plays and sets, whose payloads hold a card key and no words.
     'card_target(uuid)', 'claim_card_writes(integer,uuid)',

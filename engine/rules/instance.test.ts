@@ -1362,3 +1362,25 @@ test('the floor-below-window sentence stays silent when one side is itself inval
     assert.equal(out.length, 1, `${String(w)} / ${String(f)} holds only the individual sentence`);
   }
 });
+
+test('a card that replies is a cast card that reaches a post alone, stack 1, and never writes; a card that keeps is a cast card on one thread with a time up', () => {
+  const day = { unit: 'day', count: 1 };
+  const writes = { tokens: () => 40, frame: () => ({ prompt: '', stop: [] as string[] }) };
+  const bad = (over: Record<string, unknown>) => instanceProblems(withCards({ rarity: 'rare', ...over })).join('\n');
+  assert.equal(bad({ replies: true }), '', 'a well-formed card that replies');
+  assert.equal(bad({ replies: true, reaches: ['post'], stack: 1 }), '');
+  assert.match(bad({ replies: 'yes' }), /card "splat" replies "yes"; replies is true or left out/);
+  assert.match(bad({ replies: false }), /card "splat" replies false; replies is true or left out/);
+  assert.match(bad({ replies: true, play: 'use', gimmick: { kind: 'ward', flavors: ['salty'] }, lasts: day }), /card "splat" replies, and only a cast card does/);
+  assert.match(bad({ replies: true, reaches: ['post', 'thread'], lasts: day }), /card "splat" replies, and a card that replies reaches a post alone/);
+  assert.match(bad({ replies: true, reaches: ['thread'], lasts: day }), /card "splat" replies, and a card that replies reaches a post alone/);
+  assert.match(bad({ replies: true, stack: 2 }), /card "splat" replies, and a card that replies has a stack of 1/);
+  assert.match(bad({ replies: true, writes }), /card "splat" replies and writes; a card that replies does not write/);
+  assert.equal(bad({ keeps: true, reaches: ['thread'], lasts: day }), '', 'a well-formed card that keeps');
+  assert.match(bad({ keeps: 'yes', reaches: ['thread'], lasts: day }), /card "splat" keeps "yes"; keeps is true or left out/);
+  assert.match(bad({ keeps: true }), /card "splat" keeps, and only a cast card that reaches one thread, with a time up, does/, 'a post');
+  assert.match(bad({ keeps: true, reaches: ['thread', 'board'], lasts: day, rarity: 'legendary' }), /card "splat" keeps, and only a cast card that reaches one thread, with a time up, does/, 'two reaches');
+  assert.match(bad({ keeps: true, reaches: ['character'], lasts: day }), /card "splat" keeps, and only a cast card that reaches one thread, with a time up, does/, 'a character');
+  assert.match(bad({ keeps: true, reaches: ['thread'] }), /card "splat" keeps, and only a cast card that reaches one thread, with a time up, does/, 'no time up');
+  assert.match(bad({ keeps: true, reaches: ['thread'], lasts: day, play: 'use', gimmick: { kind: 'ward', flavors: ['salty'] } }), /card "splat" keeps, and only a cast card that reaches one thread, with a time up, does/, 'a use card');
+});

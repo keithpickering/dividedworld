@@ -12,10 +12,10 @@
 import { useSyncExternalStore } from 'react';
 import type { Act, ActKind, EffectState, Id, KayfaApi, SurfaceAct, SurfaceNow } from '../data/api.ts';
 import type { InstanceUi } from '../types.ts';
-import { BEYOND_POST, type BeyondPost, type CardRules } from '../../rules/cards.ts';
+import { BEYOND_POST, fallsOn, type BeyondPost, type CardRules } from '../../rules/cards.ts';
 import type { Settings, Span } from '../../rules/types.ts';
 import type { CardPlay, CardUi, CardView, KitControl } from './types.ts';
-import { endsWords } from './marks.ts';
+import { endsWords, keptEndedWords } from './marks.ts';
 import { backoff, REPEAT_TRIES } from './tails.ts';
 
 /** More than any card stacks on one post; a page of posts asks for this many plays per post at most. */
@@ -101,11 +101,28 @@ export function livePlays(plays: readonly CardPlay[], now: number): readonly Car
 /**
  * The plays the marks and the Lens draw: `livePlays`, but a play on a post that an admin ended, or that did not take, is kept, as a caught
  * play is, so its mark and its Lens row can say "Ended by an admin" or "Didn't take". Its layer is off all the same (`livePlays`,
- * `effectsOf`, the post's effects); the marks do not count it.
+ * `effectsOf`, the post's effects); the marks do not count it. A play beyond a post whose time is up is dropped too, unless its card keeps (`keeps`: the keys of
+ * the cards whose rules `keeps`) and it was not ended by an admin: it stays on the pages that hold a post it falls on, the only ended plays a page is given.
  */
-export function markedPlays(plays: readonly CardPlay[], now: number): readonly CardPlay[] {
-  const marked = plays.filter((p) => !(p.reach && (p.reversed || (p.ends !== undefined && Date.parse(p.ends) <= now))));
+export function markedPlays(plays: readonly CardPlay[], now: number, keeps: ReadonlySet<string> = NO_KEYS): readonly CardPlay[] {
+  const marked = plays.filter((p) => !(p.reach && (p.reversed || (p.ends !== undefined && Date.parse(p.ends) <= now && !keeps.has(p.card)))));
   return marked.length === plays.length ? plays : marked;
+}
+
+const NO_KEYS: ReadonlySet<string> = new Set();
+
+/** The keys of the cards whose rules keep (`CardRules.keeps`): what `markedPlays` and `playsFallingOn` are given. */
+export const keepingKeys = (cards: readonly Pick<CardRules, 'key' | 'keeps'>[]): ReadonlySet<string> => new Set(cards.filter((c) => c.keeps === true).map((c) => c.key));
+
+/**
+ * Which of a target's plays beyond a post fall on this post (`fallsOn`, engine/rules/cards.ts, which the database reads by the same dates): all but a play an admin
+ * ended or that did not take, then the plays that are up now, and those of a card that keeps (`keeps` holds the keys of the cards whose rules `keeps`) written while the
+ * post was up. Dates alone: nothing is read from the post but when it was written. The thread layer asks it of the thread's plays.
+ */
+export function playsFallingOn(plays: readonly CardPlay[], post: { readonly createdAt: string }, keeps: ReadonlySet<string>, now: number): readonly CardPlay[] {
+  const at = new Date(now);
+  const falling = plays.filter((p) => !p.reversed && !p.untaken && fallsOn({ at: p.playedAt, ...(p.ends !== undefined ? { ends: p.ends } : {}) }, { at: post.createdAt }, keeps.has(p.card), at));
+  return falling.length === plays.length ? plays : falling;
 }
 
 /** The soonest end still ahead among plays beyond a post, as an epoch, or null: when what is drawn changes next by itself. */
@@ -189,12 +206,12 @@ export function sameView(a: CardView, b: CardView): boolean {
  * The engine's view for a card with no effect, or before its effect has said anything: its State is the card's `status`,
  * else its `summary`, else the first sentence of what `describe` says under `settings`, else (no settings to describe under)
  * its name; no edge, no notch, no controls. A play that ends on a timer (`endsAt`, a Use's `ends`) gives the view its way out,
- * "Ends Nov 7, 9:14 PM", in the reader's zone. A status that is a function is given the card's `plays` on the post.
+ * "Ends Nov 7, 9:14 PM", in the reader's zone; a card that keeps (`rules.keeps`) whose end has passed at `now` says "Ended Nov 7, 9:14 PM. Posts written while it was up keep it." A status that is a function is given the card's `plays` on the post.
  */
-export function defaultView(rules: Pick<CardRules, 'name'>, ui: Pick<CardUi, 'status' | 'summary' | 'describe'> | undefined, settings?: Settings, endsAt?: string, plays: readonly CardPlay[] = []): CardView {
+export function defaultView(rules: Pick<CardRules, 'name' | 'keeps'>, ui: Pick<CardUi, 'status' | 'summary' | 'describe'> | undefined, settings?: Settings, endsAt?: string, plays: readonly CardPlay[] = [], now?: number): CardView {
   const described = ui && settings ? ui.describe(settings) : '';
   const first = /^.*?[.!?](?=\s|$)/s.exec(described.trim())?.[0] ?? described.trim();
-  return { progress: null, state: (typeof ui?.status === 'function' ? ui.status(plays) : ui?.status) ?? ui?.summary ?? (first || rules.name), ...(endsAt !== undefined ? { ends: endsWords(endsAt) } : {}), yours: false, controls: [], notes: {} };
+  return { progress: null, state: (typeof ui?.status === 'function' ? ui.status(plays) : ui?.status) ?? ui?.summary ?? (first || rules.name), ...(endsAt !== undefined ? { ends: rules.keeps === true && now !== undefined && Date.parse(endsAt) <= now ? keptEndedWords(endsAt) : endsWords(endsAt) } : {}), yours: false, controls: [], notes: {} };
 }
 
 export interface Plays {

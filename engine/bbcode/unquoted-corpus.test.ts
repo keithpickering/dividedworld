@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { concealQuotes } from './conceal.ts';
+import { MAX_DEPTH } from './parse.ts';
 
 /*
  * The corpus that holds bbcode_walk's `unquoted` (supabase/migrations/0340_conduct.sql) to the one parser's reading of a quote
@@ -64,6 +65,25 @@ const STRUCTURED = [
   '[url]https://e.com/[/url][quote=H]W',
 ];
 
+/* Real quotes nested past the parser's cap are cut, not text: the words in them are removed all the same, and the corpus holds the database to that at the cap and past it. Written from MAX_DEPTH. */
+const rep = (tag: string, close: string) => ({ open: tag.repeat(MAX_DEPTH), close: close.repeat(MAX_DEPTH) });
+const SQ = rep('[quote=S]', '[/quote]');
+const BB = rep('[b]', '[/b]');
+const CQ = rep('[quote=zz]', '[/quote]');
+const PAST_CAP: [string, string][] = [
+  ['a hidden quote at the first level past the cap', `W ${SQ.open}W [quote=H]W[/quote] W${SQ.close}W`],
+  ['an unclosed hidden quote past the cap', `${SQ.open}W [quote=H]W`],
+  ['formatting to the cap, then a quote', `${BB.open}[quote=H]W[/quote]W${BB.close}W`],
+  ['formatting to the cap, then nested quotes', `${BB.open}W[quote=H]W [quote=S]W[/quote] W[/quote] W${BB.close}`],
+  ['counterfeits to the cap are words, a real quote inside them is cut', `${CQ.open}W[quote=H]W[/quote]W${CQ.close}`],
+  ['code inside a cut holds a quote opener as words', `${SQ.open}[quote=S]W[code][quote=H]W[/quote][/code]W${SQ.close}`],
+  ['noparse inside a cut holds a quote opener as words', `${SQ.open}[quote=S]W[noparse][quote=H]W[/noparse]W[/quote]W`],
+  ['a cut closed by an outer closer, then more of the post', `${SQ.open}[quote=H]W [b]W[/quote] W [quote=H]W`],
+  ['a counterfeit inside a cut', `${SQ.open}[quote=zz]W [quote=H]W[/quote] W[/quote] W${SQ.close}`],
+  ['the last real level holds the quote', `${'[b]'.repeat(MAX_DEPTH - 1)}[quote=H]W[/quote]W`],
+  ['a quote of a shown post nested past the cap holds words that are not the author\'s', `${SQ.open}W[quote=S]W[quote=S]W[/quote]W[/quote]W${SQ.close}W`],
+];
+
 const PIECES = [
   '[quote=H]', '[quote=S]', '[quote=zz]', '[quote]', '[/quote]', '[b]', '[/b]', '[i]', '[/i]', '[url=https://e.com/]', '[/url]', '[code]', '[/code]', '[noparse]', '[/noparse]',
   '[ispoiler]', '[/ispoiler]', '[list]', '[*]', '[/list]', 'W', 'W', 'W', ' ', '[', ']',
@@ -82,6 +102,7 @@ export function generate(): { name: string; body: string; removed: string[] }[] 
     out.push({ name, body, removed: markers.filter((m) => !kept.includes(m)) });
   };
   STRUCTURED.forEach((t, i) => add(`structured ${i + 1}: ${t}`, t));
+  PAST_CAP.forEach(([label, t], i) => add(`past the cap ${i + 1}: ${label}`, t));
   const rnd = lcg(31);
   for (let k = 0; k < 600; k++) {
     const n = 2 + Math.floor(rnd() * 14);
@@ -98,6 +119,10 @@ test('the corpus holds bodies whose quotes hide words, closed or not, inside oth
   assert.ok(removes('structured 3:') && removes('structured 4:') && removes('structured 8:'), 'unclosed, inside another tag and nested quotes remove words');
   assert.equal(c.find((x) => x.name.startsWith('structured 16:'))?.removed.length, 0, 'a counterfeit quote removes nothing');
   assert.equal(new Set(c.map((x) => x.name)).size, c.length);
+  const past = c.filter((x) => x.name.startsWith('past the cap'));
+  assert.equal(past.length, PAST_CAP.length);
+  assert.ok(past.filter((x) => x.removed.length > 0).length >= 9, 'quotes past the cap remove their words');
+  assert.ok(past.every((x) => x.body.length > 100), 'the bodies reach the cap');
 });
 
 test('supabase/tests/data/unquoted-corpus.json is what the generator makes now', () => {

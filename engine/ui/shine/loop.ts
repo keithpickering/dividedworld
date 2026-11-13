@@ -27,6 +27,9 @@
  * (light.ts), `box` is the host's CSS px size, `density` is canvas px per CSS px, capped at `MAX_DENSITY`, a share is in (0, 1],
  * and a span is CSS px from the canvas's top.
  *
+ * A near host (`Options.near`) is handed the pointer's place over its own box as well as the window's: the loop gives `lightAt` the host's
+ * rect (with its `left` and `width`) and the window's width, and `lightAt` adds the near term (light.ts).
+ *
  * Engine code: it names no card and no instance.
  */
 import { motionReduced, subscribeMotion } from '../appearance.ts';
@@ -96,11 +99,16 @@ export interface Options {
    * not foil or glitter, such as a card's residue, rides the loop without bringing up the tilt tip.
    */
   readonly quiet?: boolean;
+  /**
+   * A near host's light also follows the pointer's place over its own box: a pack, which a player points at, where a post is read
+   * (light.ts). Every host's light answers the pointer's place in the window; that moves a small host's light too little to see.
+   */
+  readonly near?: boolean;
 }
 
 interface Reg {
   canvas: HTMLCanvasElement; box: { w: number; h: number }; density: number;
-  draw: (frame: ShineFrame) => boolean; hidden: (() => void) | undefined; quiet: boolean; phase: number; share: number; credit: number; since: number;
+  draw: (frame: ShineFrame) => boolean; hidden: (() => void) | undefined; quiet: boolean; near: boolean; phase: number; share: number; credit: number; since: number;
   inView: boolean; fresh: boolean; busy: boolean; settling: boolean;
   cur: Light | null; drawn: Light | null; draws: number; stop: () => void;
 }
@@ -160,7 +168,7 @@ function step(t: number): void {
     if (hosts.get(host) !== r || !r.inView) continue;
     try {
       const rect = r.canvas.getBoundingClientRect();
-      const target = lightAt(light.input(), rect, { height: window.innerHeight }, t, r.phase);
+      const target = lightAt(light.input(), rect, { height: window.innerHeight, width: window.innerWidth }, t, r.phase, r.near);
       /* A host's first light is its target; after that it eases. */
       r.cur = r.cur ? { x: ease(r.cur.x, target.x, dt), y: ease(r.cur.y, target.y, dt) } : target;
       r.settling = sum(r.cur, target) > SETTLED;
@@ -235,7 +243,7 @@ export function register(
   const capped = Math.min(MAX_DENSITY, Math.max(0, density));
   const share = options.share !== undefined && options.share > 0 && options.share <= 1 ? options.share : 1;
   const reg: Reg = {
-    canvas, box, density: capped, draw, hidden: options.hidden, quiet: options.quiet === true, phase: options.phase ?? old?.phase ?? made++ * PHASE_STEP,
+    canvas, box, density: capped, draw, hidden: options.hidden, quiet: options.quiet === true, near: options.near === true, phase: options.phase ?? old?.phase ?? made++ * PHASE_STEP,
     share, credit: old?.credit ?? ((spread++ * SPREAD) % 1) * IDLE_COST, since: 0,
     inView: false, fresh: true, busy: false, settling: false, cur: old?.cur ?? null, drawn: null, draws: old?.draws ?? 0, stop: () => {},
   };

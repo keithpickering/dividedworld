@@ -5,6 +5,7 @@
  * bottom layer washed clean; two with the top layer written on and scrubbed through (the ink field's look). Each story opens the Lens from #41's Whoops! mark: its state line names the top layer,
  * its caster and its ink in words, with its own share washed, its Who row has a line for each layer, and its meter is the
  * mark's edge. No board draws these.
+ * One more, `ThreeLayersTall`, is a post about 12,000px tall with three layers, left unopened at its top: the banded ink's story, which e2e/whoops.spec.ts scrolls to its end and scrubs.
  * Open each at 1440 by 1120, and its `Phone` twin at 390 by 844.
  *
  * The layers are handed to the fake through its seed before the thread is read, and a wash is saved as #41's author
@@ -26,6 +27,13 @@ const CYAN = '#19e3ff';
 
 type Layers = 1 | 2 | 3;
 type Washed = 'none' | 'partly' | 'bottom-clean' | 'written';
+
+/*
+ * A post about 12,000px tall (the banded ink design, docs/plans/2026-11-12-whoops-followups-design.md): #41's words are replaced by an edit of
+ * its author's, 270 short paragraphs of plain filler (a body is held to 20,000 characters, so the height is in the breaks), so its height comes from its text as any long post's does. Its ink is a canvas for each
+ * band of 512px near the viewport and each layer, so at its top the first bands are drawn and at its end the last.
+ */
+const TALL_BODY = Array.from({ length: 270 }, (_, i) => `Line ${i + 1} of the changelog.`).join('\n\n');
 
 /* Strokes across the top band of a 988x330 body, in shares with its aspect, a brush apart: enough to wash part of a splat, never all of it. */
 const BOX = { w: 988, h: 330 };
@@ -55,11 +63,11 @@ const written = (color: string): Stroke[] => {
 };
 
 /** Hand #41 its layers and their washes, then say it is ready to be read. */
-function useSeeded(thread: string | null, layers: Layers, washed: Washed): boolean {
+function useSeeded(thread: string | null, layers: Layers, washed: Washed, tall: boolean): boolean {
   const { api } = useKayfa();
-  const [ready, setReady] = useState(layers === 1 && washed === 'none');
+  const [ready, setReady] = useState(layers === 1 && washed === 'none' && !tall);
   useEffect(() => {
-    if (thread === null || (layers === 1 && washed === 'none')) return;
+    if (thread === null || (layers === 1 && washed === 'none' && !tall)) return;
     let live = true;
     void (async () => {
       const fake = api as Fake;
@@ -71,6 +79,7 @@ function useSeeded(thread: string | null, layers: Layers, washed: Washed): boole
       const gloomba = by(45);
       if (!target || !bottom || !spritey || !gloomba) throw new Error('the boards fixture has no #41 with its play, or no #45');
       let top = bottom.id;
+      if (tall) fake.seed.edit(target.id, spritey, TALL_BODY);
       if (layers === 3) {
         fake.clock.advance(MINUTE);
         top = fake.seed.card(gloomba, target.id, 'whoops', { layer: 2, config: { color: CYAN, seed: 202 }, message: 'cyan, obviously' });
@@ -88,32 +97,33 @@ function useSeeded(thread: string | null, layers: Layers, washed: Washed): boole
       /* A seed or a wash refused leaves the story loading (aria-busy), and says why, rather than drawing a state its name does not. */
     })().catch((e: unknown) => { console.error('the Whoops! layers story could not be seeded', e); });
     return () => { live = false; };
-  }, [api, thread, layers, washed]);
+  }, [api, thread, layers, washed, tall]);
   return ready;
 }
 
-/** Scrolls #41 into view once its mark is drawn, and opens the Lens from the mark, as a player would. */
-function Look() {
+/** Scrolls #41 into view once its mark is drawn, and opens the Lens from the mark, as a player would; a tall post is scrolled to its top and left unopened. */
+function Look({ tall }: { readonly tall: boolean }) {
   useEffect(() => {
     const timer = setInterval(() => {
       const el = document.querySelector<HTMLElement>('#post-41 .kb-mark[data-kb-card="whoops"]');
       if (!el) return;
       clearInterval(timer);
+      if (tall) { document.querySelector('#post-41')?.scrollIntoView?.({ block: 'start' }); return; }
       el.scrollIntoView?.({ block: 'center' });
       el.click();
     }, 100);
     return () => clearInterval(timer);
-  }, []);
+  }, [tall]);
   return null;
 }
 
-function Layered({ layers, washed }: { readonly layers: Layers; readonly washed: Washed }) {
+function Layered({ layers, washed, tall = false }: { readonly layers: Layers; readonly washed: Washed; readonly tall?: boolean }) {
   /* The thread the moment opens on (`/t/<thread>`). */
   const thread = /^\/t\/([^/]+)/u.exec(useLocation().path)?.[1] ?? null;
-  const ready = useSeeded(thread, layers, washed);
+  const ready = useSeeded(thread, layers, washed, tall);
   return (
     <Frame>
-      <Look />
+      <Look tall={tall} />
       {thread && ready ? <LoadedThread thread={thread} /> : <div aria-busy="true" />}
     </Frame>
   );
@@ -144,3 +154,5 @@ export const TwoLayersPhone: Story = { args: { layers: 2, washed: 'none' }, ...p
 export const ThreeLayersPhone: Story = { args: { layers: 3, washed: 'none' }, ...phone };
 export const ThreeLayersPartlyWashedPhone: Story = { args: { layers: 3, washed: 'partly' }, ...phone };
 export const ThreeLayersOneCleanPhone: Story = { args: { layers: 3, washed: 'bottom-clean' }, ...phone };
+/** A post about 12,000px tall with three layers, at its top and open to scroll: its ink is banded, so only the bands near the viewport are drawn (e2e/whoops.spec.ts scrubs it at its far end). */
+export const ThreeLayersTall: Story = { args: { layers: 3, washed: 'none', tall: true } };

@@ -619,6 +619,20 @@ function playProblems(c: CardRules, reactionKeys: ReadonlySet<string> = new Set(
   else if (c.writes !== undefined && Array.isArray(c.reaches) && c.reaches.some((r) => r !== 'post')) out.push(`${who} writes, and a card that writes reaches a post alone`);
   // A card that writes is a cast card, cast face up: never a set card, which springs later, nor a use card; and decideSet refuses to set it face down.
   if (c.writes !== undefined && play !== 'cast') out.push(`${who} writes, and only a cast card does: it is cast face up, never set face down`);
+  if (c.replies !== undefined) {
+    if (c.replies !== true) out.push(`${who} replies ${JSON.stringify(c.replies)}; replies is true or left out`);
+    else {
+      if (play !== 'cast') out.push(`${who} replies, and only a cast card does`);
+      if (!(c.reaches === undefined || (Array.isArray(c.reaches) && c.reaches.length === 1 && c.reaches[0] === 'post'))) out.push(`${who} replies, and a card that replies reaches a post alone`);
+      if (c.stack !== undefined && c.stack !== 1) out.push(`${who} replies, and a card that replies has a stack of 1`);
+      if (c.writes !== undefined) out.push(`${who} replies and writes; a card that replies does not write`);
+    }
+  }
+  if (c.keeps !== undefined) {
+    if (c.keeps !== true) out.push(`${who} keeps ${JSON.stringify(c.keeps)}; keeps is true or left out`);
+    // Widening to a character's play is this list gaining 'character' (docs/plans/2026-11-12-glitter-keeps-plan.md).
+    else if (!(play === 'cast' && Array.isArray(c.reaches) && c.reaches.length === 1 && ['thread'].includes(c.reaches[0] as string) && c.lasts !== undefined)) out.push(`${who} keeps, and only a cast card that reaches one thread, with a time up, does`);
+  }
   if (c.setPhrase !== undefined && typeof c.setPhrase !== 'function') out.push(`${who} has a set phrase that is not a function`);
   else if (c.setPhrase !== undefined && play !== 'cast') out.push(`${who} has a set phrase, and only a cast card has one`);
   return out;

@@ -1,16 +1,16 @@
 /**
- * The writing box the quick reply and an edit share: the toolbar, the text box, its count against
+ * The writing box the quick reply, a new thread's first post and an edit share: the toolbar, the text box, its count against
  * the longest post, and an in-place preview drawn by the same renderer the thread draws a post
  * with (so the preview is the post), with the same quote links.
  */
-import { useEffect, useId, useLayoutEffect, useImperativeHandle, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode, type Ref } from 'react';
+import { useEffect, useId, useLayoutEffect, useImperativeHandle, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode, type Ref } from 'react';
 import { BbCode } from '../bbcode/render.tsx';
 import { quoteHead } from '../thread/lines.tsx';
 import { Toolbar } from './Toolbar.tsx';
 import { videoOf } from '../../bbcode/video.ts';
-import { safeImageSrc } from '../../bbcode/parse.ts';
+import { parse, safeImageSrc } from '../../bbcode/parse.ts';
 import { QuoteSomeone } from './QuoteSomeone.tsx';
-import { applyTool, diffRange, quoteSomeone, type Tool } from './text.ts';
+import { applyTool, diffRange, hasCut, quoteSomeone, type Tool } from './text.ts';
 import './composer.css';
 
 export interface EditorHandle {
@@ -196,6 +196,8 @@ export function Editor({ label, value, onChange, max, onQuote, onSubmit, describ
     if (onSubmit && e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); onSubmit(); }
   };
 
+  /* One parse per change of the text; every place a post's draft is written shows the notice, and saving is never refused for it. */
+  const cut = useMemo(() => hasCut(parse(value)), [value]);
   const n = count(value);
   const over = n - max;
   return (
@@ -228,6 +230,9 @@ export function Editor({ label, value, onChange, max, onQuote, onSubmit, describ
         <span className="kb-editor-note kb-small" role="status">{note}</span>
         <button type="button" className="kb-button" data-kb-size="small" aria-pressed={preview} aria-controls={previewId} onClick={() => setPreview(!preview)}>Preview</button>
         {children}
+      </div>
+      <div role="status">
+        {cut && <p className="kb-notice">Some quotes in this post are nested too deep to show. A note will take their place.</p>}
       </div>
       {someone && <QuoteSomeone onChoose={closeSomeone} onClose={() => closeSomeone(null)} returnFocusTo={() => box.current} />}
       <div id={previewId}>

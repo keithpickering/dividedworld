@@ -182,8 +182,11 @@ export const defaults: Settings = deepFreeze<Settings>({
   setLasts: { unit: 'day', count: 7 },
   /** A card reaches a character from uncommon, a thread from uncommon (Good Vibes; Main Event is rare) and a board only as a legendary (the card mechanic's design, section 7). */
   reachRarity: { character: 'uncommon', thread: 'uncommon', board: 'legendary' },
-  /** A character effect lasts at most a week; a thread's at most three days (Good Vibes); a board's at most a day. */
-  reachLasts: { character: { unit: 'day', count: 7 }, thread: { unit: 'day', count: 3 }, board: { unit: 'day', count: 1 } },
+  /**
+   * A character effect lasts at most a week; a thread's at most a week too (Feelin' Glam; the owner's answer 5 in docs/plans/2026-11-11-card-notes-design.md:
+   * a thread is no stronger than a character). Good Vibes and Main Event keep their own shorter times. A board's lasts at most a day.
+   */
+  reachLasts: { character: { unit: 'day', count: 7 }, thread: { unit: 'day', count: 7 }, board: { unit: 'day', count: 1 } },
   /**
    * Hints (the alerts design's section 5): a pattern needs a crowd (eight reactions in the window, so one stray reaction is never a trend),
    * a clear lead (six in ten in one quadrant), and a real split (three in ten on each side to be divisive), counted over six hours.
@@ -200,10 +203,11 @@ export const defaults: Settings = deepFreeze<Settings>({
    * Autocorrect's tape: `pace` is how fast a strip peels, in pixels a second; `pickMs` how long a finger holds before it picks at the
    * tape; `give` how far a drag goes before a strip lets go, in pixels; `peekStayMs` how long a peeled corner stays curled; `peekSettle`
    * how fast it settles back, in pixels a second. Graffiti's wall holds ink over at most `graffiti.limit` percent of its cells.
-   * Laugh Track's audience: `line` is where a reader's line sits in the viewport (percent from the top), `dwellMs` how long a cued place must stay on it,
-   * `reachRem` how far a cue reaches from the line, `murmurMost` how much of a hit a murmur is (percent) and `fadeMs` how long a sound fades.
+   * Laugh Track's audience: `line` is where a reader's line sits in the viewport (percent from the top),
+   * `reachRem` how far a cue reaches from the line, `murmurMost` how much of a hit a murmur is (percent), `fadeMs` how long a sound fades
+   * and `markMost` how much of its underline a cued place shows at its nearest (percent).
    */
-  cardSettings: { 'whoops.clean': 95, 'autocorrect.pace': 90, 'autocorrect.pickMs': 450, 'autocorrect.give': 34, 'autocorrect.peekStayMs': 300, 'autocorrect.peekSettle': 300, 'laughTrack.line': 40, 'laughTrack.dwellMs': 400, 'laughTrack.reachRem': 12, 'laughTrack.murmurMost': 35, 'laughTrack.fadeMs': 250, 'laughTrack.band': 34, 'laughTrack.airMs': 1200, 'laughTrack.holdMs': 18000, 'youWereSaying.eraseCps': 6, 'youWereSaying.retypeMs': 2000, 'youWereSaying.typeCps': 40, 'graffiti.limit': 40 },
+  cardSettings: { 'whoops.clean': 95, 'autocorrect.pace': 90, 'autocorrect.pickMs': 450, 'autocorrect.give': 34, 'autocorrect.peekStayMs': 300, 'autocorrect.peekSettle': 300, 'laughTrack.line': 40, 'laughTrack.reachRem': 12, 'laughTrack.murmurMost': 35, 'laughTrack.fadeMs': 250, 'laughTrack.markMost': 100, 'youWereSaying.eraseCps': 6, 'youWereSaying.retypeMs': 2000, 'youWereSaying.typeCps': 40, 'graffiti.limit': 40 },
   /** The classes' and cards' own numbers from the same table, each named for what reads it. */
   economy: {
     /** "Early" is among this many first players to react to a post. */

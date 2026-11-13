@@ -14,7 +14,7 @@ import type { Fake } from '../../../../engine/ui/data/fake.ts';
 import { useLocation } from '../../../../engine/ui/router.tsx';
 import { LoadedThread } from '../../../../engine/ui/loaded.tsx';
 
-type Case = 'one' | 'chain' | 'waiting';
+type Case = 'one' | 'chain' | 'waiting' | 'tapedFirst' | 'tapedLast';
 
 interface Args {
   readonly shown: Case;
@@ -22,13 +22,20 @@ interface Args {
   readonly reduced: boolean;
 }
 
+/* The taped cases (docs/plans/2026-11-12-tail-innermost-plan.md, Task 1): words that wrap to three lines or more at the board's width, and a phrase Autocorrect covers once, well away from the last line. */
+const TAPED_BODY = 'Honestly the Mushroom Kingdom tileset is the best thing in this release, and I would put that tileset in every game I make if I could. The music is also very good, the level design is better than anyone had a right to expect from a demo, and the secret exits are hidden just well enough that nobody will ever find all of them, which is exactly how it should be.';
+const TAPED_PHRASE = { phrase: 'the Mushroom Kingdom tileset', replacement: 'Ohio' };
 const BODY = 'The best thing about the Mushroom Kingdom is that nobody there ever has to';
 /* Each play's words, as the old voice would run on: the first starts where the author stopped, the next where the one before stopped. */
 const TAILS: Record<Case, readonly (string | null)[]> = {
   one: [' worry about taxes, because the coins grow on bricks and the bricks are free.'],
   chain: [' worry about taxes, because the coins grow on bricks', ' and the bricks are free. The princess has been saying so for years', ', and the plumbers agree with her, mostly.'],
   waiting: [' worry about taxes, because the coins grow on bricks and the bricks are free.', null],
+  tapedFirst: [' And the princess agrees, mostly.'],
+  tapedLast: [' And the princess agrees, mostly.'],
 };
+/* Which card is played first (the lower layer): in tapedFirst Autocorrect, in tapedLast You Were Saying?. */
+const TAPED_LAYERS = { tapedFirst: { ac: 1, yws: 2 }, tapedLast: { ac: 2, yws: 1 } } as const;
 
 function Tailed({ shown, mode, reduced }: Args) {
   const { api } = useKayfa();
@@ -48,9 +55,11 @@ function Tailed({ shown, mode, reduced }: Args) {
       const [[author], [caster]] = await Promise.all([api.acts(thread, 41, 41), api.acts(thread, 42, 42)]);
       if (!author?.character || !caster?.character) return;
       const fake = api as Fake;
-      const post = fake.seed.post(thread, author.character, BODY);
+      const taped = shown === 'tapedFirst' || shown === 'tapedLast' ? TAPED_LAYERS[shown] : null;
+      const post = fake.seed.post(thread, author.character, taped ? TAPED_BODY : BODY);
+      if (taped) fake.seed.card(caster.character!, post, 'autocorrect', { layer: taped.ac, live: true, config: TAPED_PHRASE, message: '' });
       TAILS[shown].forEach((words, i) => {
-        const play = fake.seed.card(caster.character!, post, 'you-were-saying', { layer: i + 1, live: true, config: { steps: 0 }, message: '' });
+        const play = fake.seed.card(caster.character!, post, 'you-were-saying', { layer: taped ? taped.yws : i + 1, live: true, config: { steps: 0 }, message: '' });
         if (words !== null) fake.seed.text(play, post, { text: words }, { quiet: true });
       });
       if (live) setSeeded(thread);
@@ -76,3 +85,6 @@ export const ChainLight: Story = { args: { shown: 'chain', mode: 'light' } };
 export const ChainDark: Story = { args: { shown: 'chain', mode: 'dark' } };
 export const WaitingLight: Story = { args: { shown: 'waiting', mode: 'light' } };
 export const StillLight: Story = { args: { shown: 'chain', reduced: true } };
+/* Autocorrect and You Were Saying? on one post, in each order of play, under reduced motion: the tail stands next to the words either way. */
+export const TapedFirst: Story = { args: { shown: 'tapedFirst', reduced: true } };
+export const TapedLast: Story = { args: { shown: 'tapedLast', reduced: true } };

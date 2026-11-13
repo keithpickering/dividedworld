@@ -4,6 +4,7 @@ import { BbCode, type QuoteOf } from './render.tsx';
 import { TextLayer, type TextRun } from './layers.tsx';
 import { axeViolations, describeViolations } from '../a11y.ts';
 import { RouterProvider } from '../router.tsx';
+import { MAX_DEPTH } from '../../bbcode/parse.ts';
 
 const show = (text: string, quoteHead?: (q: QuoteOf) => React.ReactNode) =>
   render(<RouterProvider><div data-testid="out"><BbCode text={text} quoteHead={quoteHead} /></div></RouterProvider>);
@@ -442,5 +443,42 @@ describe('layout and effects', () => {
   test('all of them are axe clean', async () => {
     show('[center]a[/center][hr][sub]b[/sub][sup]c[/sup][font=Georgia]d[/font][marquee]e[/marquee][glow=red]f[/glow][shadow]g[/shadow][rainbow]h[/rainbow][highlight]i[/highlight][noparse][b]j[/b][/noparse]');
     expect(describeViolations(await axeViolations(out()))).toBe('');
+  });
+});
+
+describe('a quote nested past the cap', () => {
+  const NOTE = 'Quotes nested this deep are not shown.';
+  const id = (n: number) => `${String(n).padStart(8, '0')}-1111-4111-8111-111111111111`;
+  const nested = (count: number, inner: string) =>
+    Array.from({ length: count }, (_, i) => `[quote=${id(i + 1)}]`).join('') + inner + '[/quote]'.repeat(count);
+  const head = (q: QuoteOf) => (q.kind === 'real' ? `head ${q.act.slice(0, 8)}` : 'counterfeit');
+
+  test('MAX_DEPTH + 3 nested quotes draw MAX_DEPTH quotes and one note, once, and none of the words past the cap', () => {
+    show(nested(MAX_DEPTH + 3, 'WORDS PAST THE CAP'), head);
+    const quotes = [...out().querySelectorAll('blockquote.kb-quote')];
+    expect(quotes.filter((q) => !q.hasAttribute('data-kb-cut'))).toHaveLength(MAX_DEPTH);
+    expect(quotes.filter((q) => q.hasAttribute('data-kb-cut'))).toHaveLength(1);
+    expect(within(out()).getAllByRole('note')).toHaveLength(1);
+    expect(within(out()).getByRole('note')).toHaveTextContent(NOTE);
+    expect(out().textContent).not.toContain('WORDS PAST THE CAP');
+  });
+
+  test('the cut\'s head is the head of the first Act cut', () => {
+    show(nested(MAX_DEPTH + 3, 'x'), head);
+    const cut = out().querySelector('blockquote[data-kb-cut]')!;
+    expect(cut.querySelector('cite')).toHaveTextContent(`head ${id(MAX_DEPTH + 1).slice(0, 8)}`);
+  });
+
+  test('a cut under formatting tags only draws the note', () => {
+    show(`${'[b]'.repeat(MAX_DEPTH)}[quote=${id(1)}]deep words[/quote]${'[/b]'.repeat(MAX_DEPTH)}`);
+    expect(within(out()).getByRole('note')).toHaveTextContent(NOTE);
+    expect(out().textContent).not.toContain('deep words');
+  });
+
+  test('a post with no cut draws no note', () => {
+    show(nested(MAX_DEPTH, 'fits'));
+    expect(within(out()).queryByRole('note')).toBeNull();
+    expect(out().querySelector('[data-kb-cut]')).toBeNull();
+    expect(out().textContent).toContain('fits');
   });
 });

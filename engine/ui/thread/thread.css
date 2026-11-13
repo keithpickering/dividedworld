@@ -507,3 +507,68 @@
   z-index: 30;
   white-space: nowrap;
 }
+
+/*
+ * A reply a play in force draws under its post (a card that replies): an article of its own right after the post's, drawn by the same rules, indented under it with
+ * a rail down its left edge. The rail is the only color: its card's flavor token, set on the article by the post (`--kb-rail`), and the board's muted ink where the
+ * card is not known. It is a mark beside the words and never carries one, so no text lies on it. The post's own spacer row stays between the two; the indent takes the
+ * place of the table's first column's width at most, and shrinks on a phone, where nothing may scroll sideways.
+ */
+.kb-act[data-kb-under] {
+  margin-inline-start: 1.5rem;
+  border-inline-start: 0.3rem solid var(--kb-rail, var(--kb-muted));
+}
+
+/* The one plain line above the date row: what it is, for a reader who is not following the indent. A band of the post's color, ruled from the next as the others are. */
+.kb-act-cutline {
+  grid-area: cut;
+  margin: 0 0 1px;
+  padding: 0.25em 1%;
+  color: var(--kb-muted);
+  overflow-wrap: anywhere;
+}
+
+.kb-act[data-kb-under][data-kb-postbit] {
+  grid-template-columns: var(--kb-postbit-column) minmax(0, 1fr);
+  grid-template-areas:
+    "cut cut"
+    "bit meta"
+    "bit main"
+    "bit foot"
+    "bit panels";
+  grid-template-rows: auto auto 1fr auto auto;
+}
+
+.kb-act[data-kb-under][data-kb-postbit="stacked"] {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    "cut"
+    "bit"
+    "meta"
+    "main"
+    "foot"
+    "panels";
+  grid-template-rows: none;
+}
+
+@media (max-width: 40em) {
+  .kb-act[data-kb-under] {
+    margin-inline-start: 0.6rem;
+  }
+
+  .kb-act[data-kb-under][data-kb-postbit] {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "cut"
+      "bit"
+      "meta"
+      "main"
+      "foot"
+      "panels";
+    grid-template-rows: none;
+  }
+
+  .kb-act-cutline {
+    padding-inline: 3%;
+  }
+}

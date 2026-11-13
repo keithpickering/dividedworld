@@ -211,9 +211,9 @@ export interface ScreenSettings {
   readonly settlementLength: Span;
   /** How long a card set face down lasts from when it is set (`setLasts`, in `screen_settings` from 0156): the line for a card about to be set says when it would end. A back already set ends when its own `endsAt` says. */
   readonly setLasts: Span;
-  /** The old voice's window in tokens (`oldVoiceWindow`, in `screen_settings` from 0344): the most a play may buy is the smaller of its own most and the window less `oldVoicePromptFloor`, so the length slider offers only lengths that fit. */
+  /** The old voice's window in tokens (`oldVoiceWindow`, in `screen_settings` from 0470): the most a play may buy is the smaller of its own most and the window less `oldVoicePromptFloor`, so the length slider offers only lengths that fit. */
   readonly oldVoiceWindow: number;
-  /** The least prompt, in tokens, a play leaves room for (`oldVoicePromptFloor`, in `screen_settings` from 0344). */
+  /** The least prompt, in tokens, a play leaves room for (`oldVoicePromptFloor`, in `screen_settings` from 0470). */
   readonly oldVoicePromptFloor: number;
   /** How often a page polls who is browsing it, in seconds; each poll is also the viewer's heartbeat. */
   readonly presencePollSeconds: number;
@@ -1989,6 +1989,11 @@ export interface ThreadListener {
   /** A writing play made a tail (`card_text`): the play and the version of its post and nothing else. Read the post's tails again. */
   readonly onText?: (play: Id, version: Id) => void;
   /**
+   * A play of a card that replies landed its reply under `parent`: the card's play and the reply as an Act (the `under` event). The reply is never heard as an
+   * `onAct`, so no screen draws it at the thread's tail first; it takes a number of its own that is left empty where the thread is paged. May come twice: key by id.
+   */
+  readonly onUnder?: (parent: Id, play: Id, act: Act) => void;
+  /**
    * The channel is joined and events are heard from now on. Called again each time the channel rejoins after a drop. A screen drawn from a
    * document read before this has missed whatever landed until now, and so has one whose connection dropped: what landed while the
    * channel was not joined is the listener's to read.
@@ -2190,6 +2195,12 @@ export interface ThreadPage {
   /** Each surface play among them: the cells it covers and its live Acts' ids, never a stroke (`surfaces` in thread_page, 0317). */
   readonly surfaces: Readonly<Record<Id, SurfaceNow>>;
   readonly above: Awaited<ReturnType<KayfaApi['effectsAbove']>>;
+  /** Each reply a play in force draws under one of the page's posts (`post_under`, 0348): the parent, the play and the reply as an Act. One for each post at most, one level deep. */
+  readonly under: readonly { readonly parent: Id; readonly play: Id; readonly act: Act }[];
+  /** Each number in the page's range whose Act is drawn under a post elsewhere (its parent's number): the page leaves it empty, and a screen following that number goes to the parent. */
+  readonly cut: readonly { readonly seq: number; readonly parentSeq: number }[];
+  /** The plays at thread reach that keep their level on this page's posts after they wore off (a `keeps` card, a play that ended by time and not by an admin), in the shape of `above`. */
+  readonly kept: readonly PlayAbove[];
   readonly faces: Awaited<ReturnType<KayfaApi['myFaceDown']>>;
   readonly states: Awaited<ReturnType<KayfaApi['effectStates']>>;
   readonly releases: Awaited<ReturnType<KayfaApi['myReleases']>>;
@@ -2821,8 +2832,9 @@ export interface KayfaApi {
    * Beyond a post (`reach`), `target` is the character, the thread or the board, and a character play names the post whose postbit
    * took it (`fromPost`); the Act comes back with its reach, its target and its end in its payload (0055_card_reach.sql). A surface card's play carries
    * its first draw (`first`, the card's own shape): a play without one is refused ("draw your tag first"), the refusal on the field `first`.
+   * A card that replies carries `reply`, the caster's post written with the play: it lands under the target while the play is in force, and a play without one is refused ("write the reply this card carries"). A cast that is caught writes none.
    */
-  playCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, message: string, reach?: Reach, fromPost?: Id, first?: unknown): Promise<Answer<Act>>;
+  playCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, message: string, reach?: Reach, fromPost?: Id, first?: unknown, reply?: { readonly body: string; readonly framing?: readonly Id[] }): Promise<Answer<Act>>;
   /**
    * Give `amount` (hundredths, one the drive offers) to a drive, as one of the player's characters: the gift's Act and the giver's balance after.
    * A closed drive, an amount not offered, a short wallet, a banned character and a thing that is no drive are refused in the database's words.
