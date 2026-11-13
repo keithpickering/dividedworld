@@ -10,11 +10,16 @@
  * down to three called workflows and a push that must never force, and a quiet edit to any one
  * of them (a dropped job, a `--force`, a second workflow that also pushes, a production-only
  * build command) leaves the site deploying something the tests never saw. This check fails the
- * build on each; its rules R1 to R7 are the design's section 4. R8 is not the release's: the
- * Postgres every workflow's service starts is named by version and digest, and is one string
- * across all of them. The `postgres:17` tag moved from 17.11 to 17.12 on 2026-11-12 and every
- * SQL run failed (issue #596), and two workflows that must name one image are two lists that
- * must agree, which a workflow file cannot check of another.
+ * build on each; its rules R1 to R7 are the design's section 4. R8 and R9 are not the release's.
+ * R8: the Postgres every workflow's service starts is named by version and digest, and is one
+ * string across all of them. The `postgres:17` tag moved from 17.11 to 17.12 on 2026-11-12 and
+ * every SQL run failed (issue #596), and two workflows that must name one image are two lists
+ * that must agree, which a workflow file cannot check of another. R9 holds the e2e shards in
+ * web.yml: the job that runs `npm run test:e2e` has a matrix whose only key is `shard`, a list
+ * that is exactly 1 to n in order, and a command whose total is `${{ strategy.job-total }}`, so
+ * the matrix is the one list. A list with a gap, or a command whose total is larger than the
+ * list, runs fewer tests and stays green (issue #605), and a second matrix key would multiply
+ * `job-total`.
  *
  * Carried from currents' check of the same name, cut down: its state paths, ignore script,
  * alive check and cockpit reference stay behind.
@@ -211,6 +216,33 @@ export function problems(files) {
   if (new Set(pinned.values()).size > 1) {
     const by = [...pinned].map(([where, image]) => `${where} is ${image}`);
     out.push(`${WORKFLOWS}: R8 the Postgres images differ: ${by.join('; ')}`);
+  }
+
+  // R9: web.yml's e2e shards are one list, and the command takes its total from it.
+  const web = docs[`${WORKFLOWS}/web.yml`];
+  if (web) {
+    const path = `${WORKFLOWS}/web.yml`;
+    const isE2e = (s) => /npm run test:e2e/.test(String(s?.run ?? ''));
+    const jobs = Object.values(isObj(web.jobs) ? web.jobs : {}).filter((j) => list(j?.steps).some(isE2e));
+    if (!jobs.length) out.push(`${path}: R9 no job runs npm run test:e2e; the release would run no e2e`);
+    for (const job of jobs) {
+      const matrix = job.strategy?.matrix;
+      const bad9 = [];
+      const keys = isObj(matrix) ? Object.keys(matrix) : [];
+      if (keys.length !== 1 || keys[0] !== 'shard') bad9.push(`its matrix's only key must be shard (it has ${keys.join(', ') || 'no matrix'})`);
+      const shard = isObj(matrix) ? matrix.shard : undefined;
+      if (keys.includes('shard') && !(Array.isArray(shard) && shard.length >= 1 && shard.every((v, i) => v === i + 1))) {
+        bad9.push(`the shard list must be the integers 1 to n in order, with no gap or repeat (it is ${JSON.stringify(shard)})`);
+      }
+      for (const step of list(job.steps).filter(isE2e)) {
+        // The whole command, not a part of it: a digit after the total, a second --shard, or the
+        // flag behind a `#` would each run fewer tests and stay green.
+        if (String(step.run).trim() !== 'npm run test:e2e -- --shard=${{ matrix.shard }}/${{ strategy.job-total }}') {
+          bad9.push('the command must be exactly npm run test:e2e -- --shard=${{ matrix.shard }}/${{ strategy.job-total }}');
+        }
+      }
+      if (bad9.length) out.push(`${path}: R9 the e2e job: ${bad9.join('; ')}`);
+    }
   }
   return out;
 }
