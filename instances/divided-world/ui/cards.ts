@@ -571,7 +571,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
     status: 'Ended a ban',
     hint: "An Ultra Happy Heart ended a character's ban.",
     describe: () =>
-      `A Sweet card, ${ultraHappyHeart.rarity}, cast from any post by a banned character. It ends that character's ban at once: the character can post, react and play cards again from that moment. The ban stays on the record and still counts toward how long that character's next ban is this season, and the warn bar stays as the ban left it, empty. If the character is not banned the play is refused and you keep the card. A banned character cannot play cards, so another character plays it: anyone's, one of your own included. It is always cast face up. It costs nothing more to play.`,
+      `A Sweet card, ${ultraHappyHeart.rarity}, cast from any post by a banned character. It ends that character's ban at once: the character can post, react and play cards again from that moment. The ban stays on the record and still counts toward how long that character's next ban is this season, and the warn bar is not touched. If the character is not banned the play is refused and you keep the card. A banned character cannot play cards, so another character plays it: anyone's, one of your own included. It is always cast face up. It costs nothing more to play.`,
   },
   {
     key: 'take-the-fall',
@@ -590,7 +590,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
     status: 'Told on to the Mod Bots',
     hint: 'A Tattle-Tale: someone told the Mod Bots to watch this character.',
     describe: (settings: Settings) =>
-      `A Salty card, ${tattleTale.rarity}, cast from any post by the character it lands on. For ${spanWords(tattleTale.lasts!)}, when a Mod Bot's patrol picks which recent posts to look at, that character's posts are ${likelier(tattleTale)} to be picked. It makes a look likelier, never a ruling: the Mod Bot still judges each post against the rules, and staff still cannot pick one character more than ${settings.modBots.cap.punishments} times in ${settings.modBots.cap.days} days. One fits on a character at a time, and it ends by itself. It is always cast face up. It costs nothing more to play.`,
+      `A Salty card, ${tattleTale.rarity}, cast from any post by the character it lands on. For ${spanWords(tattleTale.lasts!)}, when a Mod Bot's patrol picks which recent posts to look at, that character's posts are ${likelier(tattleTale)} to be picked. It makes a look likelier, never a ruling: the Mod Bot still judges each post against the rules, and a patrol still drops a finding against a character staff has already punished ${settings.modBots.cap.punishments} times in the last ${settings.modBots.cap.days} days. One fits on a character at a time, and it ends by itself. It is always cast face up. It costs nothing more to play.`,
   },
   /*
    * Hall Pass (docs/plans/2026-11-07-face-down-moves-design.md, section 4): Sweet's cyan, as Force Field is. A Gimmick, set face down
