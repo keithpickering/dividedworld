@@ -57,9 +57,10 @@ test.describe('on a phone', () => {
       m.style.cssText = 'display:inline-block;width:40px;height:10px';
       strip.insertBefore(m, strip.firstChild);
     });
-    await page.waitForTimeout(300);
-    const at = await callout.evaluate((c) => ({ c: c.getBoundingClientRect().left, r: c.closest('header')!.getBoundingClientRect().left }));
-    expect(Math.abs(at.c - at.r), 'the callout is at the row\'s left').toBeLessThan(2);
+    await expect.poll(
+      () => callout.evaluate((c) => Math.abs(c.getBoundingClientRect().left - c.closest('header')!.getBoundingClientRect().left)),
+      { message: 'the callout is at the row\'s left' },
+    ).toBeLessThan(2);
   });
 
   test('a callout on a postbit mark keeps its place when the strip gains a mark', async ({ page }) => {
@@ -72,11 +73,62 @@ test.describe('on a phone', () => {
       m.style.cssText = 'display:inline-block;width:40px;height:10px';
       strip.insertBefore(m, strip.firstChild);
     });
-    await page.waitForTimeout(300);
-    const left = await page.evaluate(() => {
-      const c = document.querySelector('.kb-callout') as HTMLElement;
-      return { c: c.getBoundingClientRect().left, r: c.closest('.kb-postbit')!.getBoundingClientRect().left };
-    });
-    expect(Math.abs(left.c - left.r), 'the callout is at the postbit\'s left').toBeLessThan(2);
+    await expect.poll(
+      () => page.evaluate(() => {
+        const c = document.querySelector('.kb-callout') as HTMLElement;
+        return Math.abs(c.getBoundingClientRect().left - c.closest('.kb-postbit')!.getBoundingClientRect().left);
+      }),
+      { message: 'the callout is at the postbit\'s left' },
+    ).toBeLessThan(2);
+  });
+});
+
+/** What the phone layout leaves on the row the callout hangs from: its marker and its reserved room. */
+const row = (page: Page) => page.evaluate(() => {
+  const r = document.querySelector('.kb-postbit') as HTMLElement;
+  return { marked: r.hasAttribute('data-kb-callout-row'), room: r.style.getPropertyValue('--kb-callout-room') };
+});
+const DESKTOP = { width: 1280, height: 800 };
+/* The post's date row sits right under the postbit, so it moves by the room the postbit holds (the page's next callout hangs from the date row itself,
+   so the words below would not move on this page). */
+const dateRowTop = (page: Page) => page.evaluate(() => document.querySelector('.kb-postbit')!.closest('article')!.querySelector('.kb-act-meta')!.getBoundingClientRect().top + window.scrollY);
+
+test.describe('the room is measured only on a phone', () => {
+  test('on a desktop the row carries no marker and no room', async ({ page }) => {
+    await page.setViewportSize(DESKTOP);
+    await page.goto(FIRST);
+    await expect(page.locator('.kb-postbit .kb-callout .kb-callout-panel')).toBeVisible({ timeout: 6000 });
+    const r = await row(page);
+    expect(r.marked, 'the row is not marked above the breakpoint').toBe(false);
+    expect(r.room, 'the row holds no room above the breakpoint').toBe('');
+  });
+
+  test('resizing between a phone and a desktop removes and gives the room', async ({ page }) => {
+    await page.setViewportSize(PHONE);
+    await page.goto(FIRST);
+    await expect(page.locator('.kb-postbit .kb-callout .kb-callout-panel')).toBeVisible({ timeout: 6000 });
+    await expect.poll(async () => (await row(page)).marked).toBe(true);
+    await page.setViewportSize(DESKTOP);
+    await expect.poll(() => row(page)).toEqual({ marked: false, room: '' });
+    await expect(page.locator('.kb-callout[data-kb-callout-flow]')).toHaveCount(0);
+    await page.setViewportSize(PHONE);
+    await expect.poll(async () => (await row(page)).marked).toBe(true);
+    await page.locator('.kb-postbit .kb-callout-panel').scrollIntoViewIfNeeded();
+    await expect.poll(() => meets(page).then((m) => [m.date, m.body])).toEqual([0, false]);
+  });
+
+  test('pressing Got it on a phone gives the room back', async ({ page }) => {
+    await page.setViewportSize(PHONE);
+    await page.goto(FIRST);
+    await expect(page.locator('.kb-postbit .kb-callout .kb-callout-panel')).toBeVisible({ timeout: 6000 });
+    await expect.poll(async () => (await row(page)).marked).toBe(true);
+    const before = await dateRowTop(page);
+    await page.locator('.kb-postbit .kb-callout').getByRole('button', { name: 'Got it' }).click();
+    await expect(page.locator('.kb-postbit .kb-callout')).toHaveCount(0);
+    await expect.poll(() => page.evaluate(() => {
+      const r = document.querySelector('.kb-postbit') as HTMLElement;
+      return r.hasAttribute('data-kb-callout-row') || r.style.getPropertyValue('--kb-callout-room') !== '';
+    })).toBe(false);
+    await expect.poll(() => dateRowTop(page), { message: 'the date row moves back up' }).toBeLessThan(before - 50);
   });
 });
