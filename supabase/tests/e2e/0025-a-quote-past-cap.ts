@@ -1,5 +1,5 @@
 /**
- * End to end: a hidden post's words reach no non-author at any depth of quoting ("A quote past the cap is cut, never text", docs/plans/2026-11-13-quote-cut-plan.md, Task 1), against
+ * End to end: a hidden post's words reach no non-author at any depth of quoting ("A quote past the cap is cut, never text", docs/plans/2026-11-13-quote-cut-plan.md; #567), against
  * the real migrations on the scratch database and the conceal job's own core (supabase/functions/conceal/core.ts) with the engine's real concealQuotes.
  *
  * An admin hides a post. Then, for each depth, a post quotes it with the quote nested that deep (every depth is written from the parser's MAX_DEPTH, never as a number, so the file follows

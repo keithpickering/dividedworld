@@ -152,8 +152,8 @@ begin
 end $$;
 
 -- ---- bbcode_walk stays linear on real quotes nested past the cap (each one is a frame that is cut) ----
--- 20,000 and 40,000 characters of `[quote=<uuid>]` repeated, the same questions, timed: a linear walk takes about twice as long at twice the length, a quadratic one four times. Ratios, not a clock;
--- the floor on the small run keeps timer noise out of a ratio of tiny times.
+-- 10,000 and 40,000 characters of `[quote=<uuid>]` repeated, the same questions, timed, as 0118-bbcode-plain-scale.sql does: a linear walk takes about four times as long at four times the length, a quadratic
+-- one sixteen, and the bound between them is 8x. Ratios, not a clock; the floor on the small run keeps timer noise out of a ratio of tiny times.
 do $$
 declare
   unit constant text := '[quote=11111111-1111-4111-8111-111111111111]';
@@ -163,13 +163,13 @@ declare
   w record;
 begin
   t0 := clock_timestamp();
-  select * into w from bbcode_walk(left(repeat(unit, 20000 / length(unit) + 1), 20000), null);
+  select * into w from bbcode_walk(left(repeat(unit, 10000 / length(unit) + 1), 10000), null);
   t_small := greatest(extract(epoch from clock_timestamp() - t0), 0.02);
   t0 := clock_timestamp();
   select * into w from bbcode_walk(left(repeat(unit, 40000 / length(unit) + 1), 40000), null);
   t_big := extract(epoch from clock_timestamp() - t0);
   if w.quotes is distinct from array['11111111-1111-4111-8111-111111111111'] then raise exception 'the nested quotes past the cap are not read: %', w.quotes; end if;
   if t_big > t_small * 8 then
-    raise exception 'bbcode_walk is not linear on nested real quotes past the cap: 20,000 characters took % s, 40,000 took % s (more than 8x)', round(t_small::numeric, 3), round(t_big::numeric, 3);
+    raise exception 'bbcode_walk is not linear on nested real quotes past the cap: 10,000 characters took % s, 40,000 took % s (more than 8x)', round(t_small::numeric, 3), round(t_big::numeric, 3);
   end if;
 end $$;

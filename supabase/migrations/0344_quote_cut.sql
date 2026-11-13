@@ -1,4 +1,4 @@
--- A real quote past the cap is cut, never text (docs/plans/2026-11-13-quote-cut-plan.md, Task 3; #567). engine/bbcode/parse.ts now reads a real quote nested past MAX_DEPTH as a quote that is not
+-- A real quote past the cap is cut, never text (docs/plans/2026-11-13-quote-cut-plan.md; #567). engine/bbcode/parse.ts now reads a real quote nested past MAX_DEPTH as a quote that is not
 -- shown (a `cut` node) and still follows it, so every real quote is read at any depth. bbcode_walk, its port in SQL, did not: past its cap of 32 a real quote was text, so the words of a hidden post
 -- quoted that deep were in `plain` (search, Says) and `unquoted` (own_words, rule_breaks, spring_facts), and its Act was not in `quotes` (No-quote did not see it).
 --
@@ -18,13 +18,17 @@
 -- layer, with the hidden words, stayed the one served. It now reuses the latest layer for the same set only when no request is open or the body is the one recorded; a different body answering an open request is a new layer beside the old (append-only, as
 -- before), and a job that runs again (same body, or nothing open) still writes nothing, which supabase/tests/0168-conduct-concealing.sql pins. Everything else in it (the per-Act lock, the stale-set refusal, `upto`, the answers, grants) is as 0340 wrote it.
 --
--- search_reindex_quoters(): post_search.words is written from a post's raw body by the insert and edit triggers (0117), so a row written before this migration holds the words of a hidden post quoted past the old
--- cap, and a player who is not the author finds the post by them. The function rewrites the row of every post whose current body holds `[quote` to what the triggers write now: search_words of the current
--- version's raw body (the latest edit's, else the post's own) and the thread's title for a first post. It does not read through acts_public, whose payload for a quoter is its layer (stale until the job
--- re-runs) or null while a layer is awaited. A post whose current version is hidden is left as conduct leaves it (conduct_decisions_search, 0340: title only), and a row already current is not written (words is
--- GIN-indexed, no update is HOT). Only bodies holding `[quote` are walked: a body without one reads the same under every cap. Cost: one walk of each such body (about 6 ms per 20,000 characters, linear), once.
--- Locks: as 0118's search_reindex it takes SHARE ROW EXCLUSIVE on acts and post_search, so posting and editing wait for the commit while readers do not, and a post written by the old walk before the commit is
--- not missed. At a busy instance that is the one transaction this migration is. The migration calls it once; no client may.
+-- search_reindex_past_cap(): post_search.words is written from a post's raw body by the insert and edit triggers (0117), so a row written before this migration holds what the old cap of 32 read: the words of a hidden post
+-- quoted past it, and, for a body of 17 to 32 nested tags with no quote, the words of tags that are now text. A player who is not the author finds the post by the first kind. The function rewrites the row of
+-- every post whose current body can read differently under the new cap, which is a body holding `[quote` (any case) or more than 16 `[` characters (a body cannot nest 17 tags with fewer), to what the triggers write
+-- now: search_words of the current version's raw body (the latest edit's, else the post's own) and the thread's title for a first post. It does not read through acts_public, whose payload for a quoter is its layer
+-- (stale until the job re-runs) or null while a layer is awaited. A post whose current version is hidden is left as conduct leaves it (conduct_decisions_search, 0340: title only), and a row already current is not
+-- written (words is GIN-indexed, no update is HOT), so only a row whose words change is written. A quoter that had a conduct decision on itself while its layer was pending therefore gets the raw-body words the insert
+-- trigger would write, not the layer's. Every other body reads the same under every cap and is never walked. Cost: one walk of each body that matches (about 6 ms per 20,000 characters, linear), once, and a scan of
+-- post_search joined to acts and threads for the filter. Locks: as 0118's search_reindex it takes SHARE ROW EXCLUSIVE on acts and post_search, so posting and editing wait for the commit while readers do not, and a
+-- post written by the old walk before the commit is not missed. At a busy instance that is the one transaction this migration is. The migration calls it once; no client may.
+-- Deploy order: the `conceal` function with the new parser is deployed before this migration is applied. If the old one answered the requests instead (it recomputes the old body, which equals the latest layer, so the layer
+-- is kept and the request answered), deploy the new one and run `select conceal_request_hidden_quoters();` again: it asks anew, and the new body becomes a new layer.
 -- Ways out: a post waiting on its layer shows the plain note and the job ends it by itself within a minute (0340). Security: definer, search_path ending in pg_temp, no grant to a client role.
 -- Privacy: nothing here reads who owns a character; the requests are internal and no client reads them.
 
@@ -429,7 +433,7 @@ begin
 end $$;
 revoke execute on function conceal_request_hidden_quoters() from public, anon, authenticated;
 
-create function search_reindex_quoters() returns bigint
+create function search_reindex_past_cap() returns bigint
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare n bigint;
 begin
@@ -444,14 +448,14 @@ begin
       select x.id, x.payload from acts x where x.kind = 'edit' and x.target_act_id = a.id and a.kind = 'post' order by x.created_at desc, x.id desc limit 1
     ) e on true
     cross join lateral (select coalesce(e.payload, a.payload) ->> 'body' as body) cur
-    where cur.body ilike '%[quote%'
+    where (cur.body ilike '%[quote%' or length(cur.body) - length(replace(cur.body, '[', '')) > 16)
       and not (case when e.id is null then a.kind = 'post' and version_hidden(a.id, a.id) else version_hidden(e.id, a.id) end)
   ) w
   where p.act = w.act and p.words is distinct from w.new_words;
   get diagnostics n = row_count;
   return n;
 end $$;
-revoke execute on function search_reindex_quoters() from public, anon, authenticated;
+revoke execute on function search_reindex_past_cap() from public, anon, authenticated;
 
 select conceal_request_hidden_quoters();
-select search_reindex_quoters();
+select search_reindex_past_cap();

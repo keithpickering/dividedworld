@@ -140,7 +140,7 @@ test('property: a body of a hidden quote of 40,000 characters is read in time th
 });
 
 /*
- * A hidden post's words are absent at any depth ("A quote past the cap is cut, never text", docs/plans/2026-11-13-quote-cut-plan.md, Task 1). Every depth is written from MAX_DEPTH, never as a
+ * A hidden post's words are absent at any depth ("A quote past the cap is cut, never text", docs/plans/2026-11-13-quote-cut-plan.md; #567). Every depth is written from MAX_DEPTH, never as a
  * number, so these follow the cap. A real quote of the hidden post past the cap is a `cut`: the parser still reports its span, and its words are emptied at any depth.
  */
 const WORDS = 'zqxjkvdeepwords';

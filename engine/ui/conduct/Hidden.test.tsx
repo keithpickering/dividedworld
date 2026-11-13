@@ -395,7 +395,7 @@ describe('Edit on a hidden post of the reader\'s own', () => {
 });
 
 /*
- * A hidden post's words are in no document at any depth of quoting ("A quote past the cap is cut, never text", docs/plans/2026-11-13-quote-cut-plan.md, Task 1). Each depth is written from
+ * A hidden post's words are in no document at any depth of quoting ("A quote past the cap is cut, never text", docs/plans/2026-11-13-quote-cut-plan.md; #567). Each depth is written from
  * the parser's MAX_DEPTH, so these follow the cap; a quote of the hidden post, at any depth, shows none of its words.
  */
 describe('a post that quotes a hidden post, nested at any depth', () => {
