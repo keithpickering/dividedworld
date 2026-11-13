@@ -115,15 +115,18 @@ export function Hand({ held, faces, armed = null, playing = null, onPick, onClos
   const frame = useRef(0);
   /* The key of the card that was the middle when the pointer press began, for the click that ends it. */
   const pressedMiddle = useRef<string | null>(null);
+  /* The cards' elements, listed with the centers (`measure`), so a scroll frame does not query or build a list of the whole hand. */
+  const items = useRef<readonly HTMLLIElement[]>([]);
   const cardsOf = () => [...(list.current?.querySelectorAll<HTMLLIElement>('li.kb-hand-card') ?? [])];
   const measure = useCallback(() => {
-    centers.current = cardsOf().map((li) => li.offsetLeft + li.offsetWidth / 2);
+    items.current = cardsOf();
+    centers.current = items.current.map((li) => li.offsetLeft + li.offsetWidth / 2);
   }, []);
   const pose = useCallback(() => {
     const ul = list.current;
     const xs = centers.current;
     if (!ul || xs.length === 0) return;
-    const lis = cardsOf();
+    const lis = items.current;
     const mid = ul.scrollLeft + ul.clientWidth / 2;
     const reach = 2 * SWIPE_STEP;
     /* The visible cards and two steps beyond, found by search, so a scroll costs the cards in view and not the hand. */
@@ -200,7 +203,8 @@ export function Hand({ held, faces, armed = null, playing = null, onPick, onClos
       : -1;
     if (to < 0) return;
     e.preventDefault();
-    buttons[to]!.focus({ preventScroll: true });
+    /* On the phone `center()` scrolls the row; on the Main board the browser brings an off-screen card into view. */
+    if (main) buttons[to]!.focus(); else buttons[to]!.focus({ preventScroll: true });
   };
   return (
     <>
@@ -245,6 +249,9 @@ export function Hand({ held, faces, armed = null, playing = null, onPick, onClos
                   aria-pressed={onPick ? isArmed : undefined}
                   onFocus={main ? undefined : () => center(face.key)}
                   onPointerDown={main ? undefined : () => { pressedMiddle.current = middleKey ?? null; }}
+                  /* A press that is cancelled or leaves the card has no click of its own to clear this; a later click then reads the current middle. */
+                  onPointerCancel={main ? undefined : () => { pressedMiddle.current = null; }}
+                  onPointerLeave={main ? undefined : () => { pressedMiddle.current = null; }}
                   onClick={(e) => {
                     /* On the phone a pointer press on a side card only brings it to the middle, judged by what stood in the middle when the press began (its focus moves the row before the click); a keyboard's or a reader's click (no pointer) acts. */
                     if (!main && e.detail !== 0) {

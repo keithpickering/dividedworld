@@ -1440,7 +1440,7 @@ button.kb-hud-secret:focus-visible {
   margin: 0;
   /* Half the row's width less half a card (104 / 2), so the first and the last card can stand in the middle; the top holds the lifted card: 14px and the 18% growth of 156px, rounded up. */
   padding: 43px calc(50% - 52px) 56px;
-  /* The bottom holds the arc: a card drops up to 40px (SWIPE_DROP_MAX) and turns 18deg (SWIPE_TURN_MAX), and a 104 by 156px card turned that far reaches 78 cos 18 + 52 sin 18 = 90.3px below its center, 12.3px past its own edge; 40 + 12.3 rounds up to 56 with the offset of the first row's rounding, so overflow-y can stay hidden and no card is cut. */
+  /* The bottom holds the arc: a card drops up to 40px (SWIPE_DROP_MAX) and turns 18deg (SWIPE_TURN_MAX), and a 104 by 156px card turned that far reaches 78 cos 18 + 52 sin 18 = 90.3px below its center, 12.3px past its own edge; 40 + 12.3 is 52.3, rounded up to 56, so overflow-y can stay hidden and no card is cut. */
 }
 
 :where(:root[data-kb-layout='phone']) .kb-hand-cards::-webkit-scrollbar {

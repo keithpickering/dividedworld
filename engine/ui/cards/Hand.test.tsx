@@ -21,6 +21,16 @@ const hand = (held: readonly { card: string; held: number }[], props: Partial<Pa
 const phone = () => document.documentElement.setAttribute('data-kb-text-size', '150');
 afterEach(() => document.documentElement.removeAttribute('data-kb-text-size'));
 
+/** Stand the row's layout in jsdom (it has none): cards 66px apart and 104px wide in a row `rowWidth` wide. Returns the restore. */
+const stubLayout = (rowWidth: number): (() => void) => {
+  const proto = HTMLElement.prototype;
+  const saved = ['offsetLeft', 'offsetWidth', 'clientWidth'].map((k) => [k, Object.getOwnPropertyDescriptor(proto, k)] as const);
+  Object.defineProperty(proto, 'offsetLeft', { configurable: true, get(this: HTMLElement) { return this.matches('li.kb-hand-card') ? [...this.parentElement!.children].indexOf(this) * 66 : 0; } });
+  Object.defineProperty(proto, 'offsetWidth', { configurable: true, get() { return 104; } });
+  Object.defineProperty(proto, 'clientWidth', { configurable: true, get(this: HTMLElement) { return this.matches('ul.kb-hand-cards') ? rowWidth : 0; } });
+  return () => { for (const [k, d] of saved) { if (d) Object.defineProperty(proto, k, d); else delete (proto as unknown as Record<string, unknown>)[k]; } };
+};
+
 describe('the hand on the Main board', () => {
   const five = ['a', 'b', 'c', 'd', 'e'].map((k) => face(k, `Card ${k}`, 'sweet'));
   const holding = [{ card: 'a', held: 1 }, { card: 'b', held: 1 }, { card: 'c', held: 3 }, { card: 'd', held: 1 }, { card: 'e', held: 1 }];
@@ -59,6 +69,19 @@ describe('the hand on the Main board', () => {
     expect(focused()).toBe('a');
     fireEvent.keyDown(at('a'), { key: 'ArrowLeft' });
     expect(focused()).toBe('a');
+  });
+
+  test('an arrow key moves focus without preventScroll, so the browser scrolls a far card into view', () => {
+    arcHand();
+    const focus = vi.spyOn(HTMLElement.prototype, 'focus');
+    try {
+      const a = document.querySelector<HTMLElement>('li[data-kb-card="a"] > button')!;
+      a.focus();
+      focus.mockClear();
+      fireEvent.keyDown(a, { key: 'ArrowRight' });
+      expect(focus).toHaveBeenCalledTimes(1);
+      expect(focus.mock.calls[0]![0]?.preventScroll).toBeFalsy();
+    } finally { focus.mockRestore(); }
   });
 
   test('each card\'s button is reachable by Tab, in order', async () => {
@@ -127,12 +150,8 @@ describe('the hand on the Phone board', () => {
     expect(onPick).toHaveBeenCalledWith(stick);
   });
 
-  test('a press that began on a side card does not arm it, though the press made it the middle before the click', () => {
-    const proto = HTMLElement.prototype;
-    const restore = ['offsetLeft', 'offsetWidth', 'clientWidth'].map((k) => [k, Object.getOwnPropertyDescriptor(proto, k)] as const);
-    Object.defineProperty(proto, 'offsetLeft', { configurable: true, get(this: HTMLElement) { return this.matches('li.kb-hand-card') ? [...this.parentElement!.children].indexOf(this) * 66 : 0; } });
-    Object.defineProperty(proto, 'offsetWidth', { configurable: true, get() { return 104; } });
-    Object.defineProperty(proto, 'clientWidth', { configurable: true, get(this: HTMLElement) { return this.matches('ul.kb-hand-cards') ? 104 : 0; } });
+  test('a press that began on a side card does not arm it, though the press made it the middle before the click', async () => {
+    const restore = stubLayout(104);
     try {
       const onPick = vi.fn();
       hand([{ card: 'stick', held: 1 }, { card: 'whoops', held: 1 }], { onPick });
@@ -140,20 +159,30 @@ describe('the hand on the Phone board', () => {
       fireEvent.pointerDown(button('whoops'));
       ul.scrollLeft = 66;
       fireEvent.scroll(ul);
-      return vi.waitFor(() => expect(document.querySelector('li[data-kb-middle]')).toHaveAttribute('data-kb-card', 'whoops')).then(() => {
-        fireEvent.click(button('whoops'), { detail: 1 });
-        expect(onPick).not.toHaveBeenCalled();
-        /* A press that began on the middle card still acts. */
-        fireEvent.pointerDown(button('whoops'));
-        fireEvent.click(button('whoops'), { detail: 1 });
-        expect(onPick).toHaveBeenCalledWith(whoops);
-      }).finally(() => {
-        for (const [k, d] of restore) { if (d) Object.defineProperty(proto, k, d); else delete (proto as unknown as Record<string, unknown>)[k]; }
-      });
-    } catch (e) {
-      for (const [k, d] of restore) { if (d) Object.defineProperty(proto, k, d); else delete (proto as unknown as Record<string, unknown>)[k]; }
-      throw e;
-    }
+      await vi.waitFor(() => expect(document.querySelector('li[data-kb-middle]')).toHaveAttribute('data-kb-card', 'whoops'));
+      fireEvent.click(button('whoops'), { detail: 1 });
+      expect(onPick).not.toHaveBeenCalled();
+      /* A press that began on the middle card still acts. */
+      fireEvent.pointerDown(button('whoops'));
+      fireEvent.click(button('whoops'), { detail: 1 });
+      expect(onPick).toHaveBeenCalledWith(whoops);
+    } finally { restore(); }
+  });
+
+  test.each(['pointerCancel', 'pointerLeave'] as const)('a press that ends in %s leaves nothing behind: a later click with detail 1 and no pointerdown is judged by the current middle', async (ending) => {
+    const restore = stubLayout(104);
+    try {
+      const onPick = vi.fn();
+      hand([{ card: 'stick', held: 1 }, { card: 'whoops', held: 1 }], { onPick });
+      const ul = document.querySelector<HTMLElement>('ul.kb-hand-cards')!;
+      fireEvent.pointerDown(button('whoops'));
+      fireEvent[ending](button('whoops'));
+      ul.scrollLeft = 66;
+      fireEvent.scroll(ul);
+      await vi.waitFor(() => expect(document.querySelector('li[data-kb-middle]')).toHaveAttribute('data-kb-card', 'whoops'));
+      fireEvent.click(button('whoops'), { detail: 1 });
+      expect(onPick).toHaveBeenCalledWith(whoops);
+    } finally { restore(); }
   });
 
   test('the opening card is centered once, when the hand mounts open; a change of cards, or of the opening, does not center it again', () => {
@@ -195,11 +224,7 @@ describe('the hand on the Phone board', () => {
   });
 
   test('the pose is written for the cards in view and two steps beyond, and a card that leaves them gets the edge pose', async () => {
-    const proto = HTMLElement.prototype;
-    const restore = ['offsetLeft', 'offsetWidth', 'clientWidth'].map((k) => [k, Object.getOwnPropertyDescriptor(proto, k)] as const);
-    Object.defineProperty(proto, 'offsetLeft', { configurable: true, get(this: HTMLElement) { return this.matches('li.kb-hand-card') ? [...this.parentElement!.children].indexOf(this) * 66 : 0; } });
-    Object.defineProperty(proto, 'offsetWidth', { configurable: true, get() { return 104; } });
-    Object.defineProperty(proto, 'clientWidth', { configurable: true, get(this: HTMLElement) { return this.matches('ul.kb-hand-cards') ? 390 : 0; } });
+    const restore = stubLayout(390);
     try {
       const many = Array.from({ length: 100 }, (_, i) => face(`k${i}`, `Card ${i}`, 'sweet'));
       hand(many.map((f) => ({ card: f.key, held: 1 })), { faces: many });
@@ -214,9 +239,18 @@ describe('the hand on the Phone board', () => {
       expect(y(2)).toBe('40px');
       expect(ul.children[2]!.getAttribute('style')).toContain('--kb-swipe-turn: -18deg');
       expect(y(52)).not.toBe('40px');
-    } finally {
-      for (const [k, d] of restore) { if (d) Object.defineProperty(proto, k, d); else delete (proto as unknown as Record<string, unknown>)[k]; }
-    }
+    } finally { restore(); }
+  });
+
+  test('an arrow key moves focus with preventScroll, since the row centers the card itself', () => {
+    hand([{ card: 'stick', held: 1 }, { card: 'whoops', held: 1 }]);
+    const focus = vi.spyOn(HTMLElement.prototype, 'focus');
+    try {
+      button('stick').focus();
+      focus.mockClear();
+      fireEvent.keyDown(button('stick'), { key: 'ArrowRight' });
+      expect(focus.mock.calls[0]![0]).toMatchObject({ preventScroll: true });
+    } finally { focus.mockRestore(); }
   });
 
   test('Right and Left move focus to the neighbor and stop at the ends; Tab is left to the dialog', () => {
