@@ -81,4 +81,13 @@ begin
   -- Every one gone: null again.
   perform end_move((select landed_act from queued_moves where id = q1), 'reversed', 'admin');
   perform pg_temp.expect(jsonb_typeof(pg_temp.nomination()) = 'null', 'with all of them gone the nomination is null: ' || coalesce(pg_temp.nomination()::text, 'null'));
+  -- Another staff member's waiting nomination is no one's but its own: it is not the Boss's standing one.
+  perform pg_temp.expect((select count(*) from queued_moves where staff = 'su-b') = 0, 'the world has no other staff queue yet');
+  -- The queue's guard lets only the Boss queue one, so the row is written past its triggers: what is under test is meeting_context's filter, for the day a former Boss's row is still in the table.
+  set local session_replication_role = replica;
+  insert into queued_moves (meeting, staff, kind, params, demand, why, go_live_at, expires_at, structural)
+  values ((select id from meetings order by id desc limit 1), 'su-b', 'nameSuccessor', jsonb_build_object('boss', 'su-c'), null, 'because', now() + interval '30 days', null, true);
+  set local session_replication_role = origin;
+  perform pg_temp.expect((select count(*) from queued_moves where staff = 'su-b' and kind = 'nameSuccessor') = 1, 'the other staff member''s row is there');
+  perform pg_temp.expect(jsonb_typeof(pg_temp.nomination()) = 'null', 'another staff member''s nomination is not the Boss''s: ' || coalesce(pg_temp.nomination()::text, 'null'));
 end $$;
