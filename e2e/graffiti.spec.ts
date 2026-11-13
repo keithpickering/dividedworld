@@ -536,31 +536,39 @@ function expectClear(r: { top: number; bottom: number; clearTop: number; dockTop
   }
 }
 const AFTER_MOVE_FRAMES = 30;
-const NEVER_MOVED_FRAMES = 240;
+const NEVER_MOVED_SECONDS = 8;
 /**
  * The body's top on every animation frame of the page itself from now: until it has changed by more than half a pixel, then AFTER_MOVE_FRAMES more. Started before
- * the press, so the first frame of the scroll is not missed, and not on a fixed budget, so a scroll that begins late is still seen; NEVER_MOVED_FRAMES without a
- * change ends it as "never moved", which the caller fails on.
+ * the press, so the first frame of the scroll is not missed, and not on a frame budget, so a scroll that begins late is still seen; NEVER_MOVED_SECONDS of wall-clock
+ * time (not frames: a slow runner or a throttled rAF must not decide it) without a change ends it as "never moved", which the caller fails on. A post absent from the
+ * page ends it at once with a `missing` reason, which the caller reports.
  */
-const startRecording = (page: Page) => page.evaluate(([n, after, cap]) => {
-  const w = window as unknown as { __rec: { tops: number[]; moved: boolean; done: boolean } };
-  const rec = { tops: [] as number[], moved: false, done: false };
+const startRecording = (page: Page) => page.evaluate(([n, after, capMs]) => {
+  const w = window as unknown as { __rec: { tops: number[]; moved: boolean; done: boolean; missing: string | null } };
+  const rec = { tops: [] as number[], moved: false, done: false, missing: null as string | null };
   w.__rec = rec;
   let left = after;
+  const started = performance.now();
   const tick = () => {
-    const top = document.querySelector(`#post-${n} .kb-act-main`)!.getBoundingClientRect().top;
+    const el = document.querySelector(`#post-${n} .kb-act-main`);
+    if (!el) {
+      rec.missing = 'the post is not in the page';
+      rec.done = true;
+      return;
+    }
+    const top = el.getBoundingClientRect().top;
     const prev = rec.tops[rec.tops.length - 1];
     rec.tops.push(top);
     if (prev !== undefined && Math.abs(top - prev) > 0.5) rec.moved = true;
     if (rec.moved) left--;
-    if (left <= 0 || rec.tops.length >= cap) rec.done = true;
+    if (left <= 0 || performance.now() - started >= capMs) rec.done = true;
     else requestAnimationFrame(tick);
   };
   requestAnimationFrame(tick);
-}, [POST, AFTER_MOVE_FRAMES, NEVER_MOVED_FRAMES] as const);
+}, [POST, AFTER_MOVE_FRAMES, NEVER_MOVED_SECONDS * 1000] as const);
 const recorded = async (page: Page) => {
   await page.waitForFunction(() => (window as unknown as { __rec: { done: boolean } }).__rec.done);
-  return page.evaluate(() => (window as unknown as { __rec: { tops: number[]; moved: boolean } }).__rec);
+  return page.evaluate(() => (window as unknown as { __rec: { tops: number[]; moved: boolean; missing: string | null } }).__rec);
 };
 /** The post scrolled so its top lies at `share` of the window's height, below where the dock will be, then the card armed (the ghost) ready to press. */
 async function placeLow(page: Page, share: number, tile: boolean): Promise<void> {
@@ -588,8 +596,9 @@ async function expectJump(page: Page, share: number, tile: boolean, how: string)
   await placeLow(page, share, tile);
   await startRecording(page);
   await press(page, tile);
-  const { tops, moved } = await recorded(page);
-  expect(moved, `${how}: the post never moved over ${tops.length} frames`).toBe(true);
+  const { tops, moved, missing } = await recorded(page);
+  expect(missing, `${how}: the recording ended early: ${missing}`).toBeNull();
+  expect(moved, `${how}: the post never moved in ${NEVER_MOVED_SECONDS} seconds (${tops.length} frames seen)`).toBe(true);
   let moves = 0;
   for (let i = 1; i < tops.length; i++) if (Math.abs(tops[i]! - tops[i - 1]!) > 0.5) moves++;
   expect(moves, `${how}: the body's top changed ${moves} times (once is a jump): ${tops.map(Math.round).join(', ')}`).toBe(1);
