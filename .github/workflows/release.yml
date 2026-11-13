@@ -110,7 +110,7 @@ jobs:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
         run: |
-          for i in 1 2 3; do npx supabase functions deploy --use-api --project-ref "$SUPABASE_PROJECT_REF" && exit 0; sleep $((i * 20)); done; exit 1
+          for i in 1 2 3; do npx supabase functions deploy --use-api --project-ref "$SUPABASE_PROJECT_REF" && exit 0; [ "$i" = 3 ] || sleep $((i * 20)); done; exit 1
   seed:
     needs: [candidate, functions]
     if: needs.candidate.outputs.same != 'true'
@@ -126,23 +126,28 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: npm }
       - run: npm ci --no-audit --no-fund
-      # curl retries only a timeout, a refused connection, 408, 429 and 5xx, so the seed's 422 stops
-      # at once. --fail-with-body prints the body on a 4xx or 5xx too, and the pipe keeps curl's exit
-      # status, so the summary shows the problems and the step still goes red.
+      # Only a 200 is green: curl's own --fail passes any 2xx or 3xx, and a 302 from the gateway
+      # would seed nothing and let promote move the site. curl retries a timeout, a refused
+      # connection, 408, 429 and 5xx by itself (D8), so the seed's 422 stops at once. The body (a
+      # 422's problems) goes to the summary; curl's own errors stay in the log, which is masked.
+      # `: > "$body"` because curl does not truncate the file on a transport failure.
       - env:
           SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
           KAYFABB_JOBS_KEY: ${{ secrets.KAYFABB_JOBS_KEY }}
         run: |
-          set -o pipefail
+          set -e
+          body="${RUNNER_TEMP}/seed-body"
+          : > "$body"
+          code=$(curl -sS --retry 3 --retry-connrefused --max-time 120 -o "$body" -w '%{http_code}' -X POST "https://${SUPABASE_PROJECT_REF}.supabase.co/functions/v1/seed" -H "apikey: ${KAYFABB_JOBS_KEY}") || code=000
           {
             echo "## Seed"
+            echo "The seed answered ${code}."
             echo '```'
-            status=0
-            curl -sS --fail-with-body --retry 3 --retry-connrefused --max-time 120 -X POST "https://${SUPABASE_PROJECT_REF}.supabase.co/functions/v1/seed" -H "apikey: ${KAYFABB_JOBS_KEY}" || status=$?
+            cat "$body"
             echo
             echo '```'
-            exit $status
-          } 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+          } >> "$GITHUB_STEP_SUMMARY"
+          [ "$code" = 200 ] || { echo "the seed answered ${code}, not 200"; exit 1; }
   promote:
     needs: [candidate, seed]
     if: needs.candidate.outputs.same != 'true'

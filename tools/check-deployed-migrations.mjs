@@ -134,6 +134,7 @@ export function parseArgs(argv) {
     else if (argv[i] === '--after') modes.push('after');
     else return { refusal: `unknown argument ${argv[i]}; the arguments are --db <postgres URL> and --before or --after` };
   }
+  if (db === '') return { refusal: '--db is empty: the release\'s SUPABASE_DB_URL secret is not set in the production environment, or, in a hand run, the variable passed to --db is unset' };
   if (!db) return { refusal: 'no --db: name the database to read, explicitly; there is no default' };
   if (modes.length !== 1) return { refusal: 'give exactly one of --before and --after' };
   let u;

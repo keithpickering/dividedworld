@@ -277,6 +277,34 @@ red('a backend job traces its shell with set -euxo', edit(RELEASE, (d) => {
   d.jobs.functions.steps.push({ run: 'set -euxo pipefail\necho go' });
 }), /R12.*traces/);
 
+const shellStep = (d, job, fn) => { const st = d.jobs[job].steps.find((x) => /curl|supabase/.test(x.run ?? '')); fn(st); return st; };
+red('a backend step sets its shell to bash -x', edit(RELEASE, (d) => { shellStep(d, 'functions', (st) => { st.shell = 'bash -x {0}'; }); }), /R12.*traces/);
+red('a backend job defaults its shell to bash -x', edit(RELEASE, (d) => { d.jobs.seed.defaults = { run: { shell: 'bash -ex {0}' } }; }), /R12.*traces/);
+red('the workflow defaults its shell to bash -x', edit(RELEASE, (d) => { d.defaults = { run: { shell: 'bash -x {0}' } }; }), /R12.*traces/);
+red('a backend job runs db push --debug', edit(RELEASE, (d) => {
+  schemaRun(d, (r) => r.replace(/db push/, 'db push --debug'));
+}), /R12.*--debug/);
+red('--include-all split across a line continuation', edit(RELEASE, (d) => {
+  schemaRun(d, (r) => r.replace(/db push --yes/, 'db push --yes \\\n  --include-all'));
+}), /R12.*include-all \(.*db push --yes\s+--include-all/);
+
+/* ---- R11 again: release.yml's own top level ---- */
+red('release.yml names a secret in a workflow-level env', edit(RELEASE, (d) => { d.env = { DB: '${{ secrets.SUPABASE_DB_URL }}' }; }), /release\.yml.*R11.*outside a job/);
+
+/* ---- R10 again: the object form of environment ---- */
+red('a non-backend job names environment in its object form', edit(RELEASE, (d) => { d.jobs.report.environment = { name: 'production' }; }), /R10.*report/);
+
+/* ---- R14: the seed goes red on anything but a 200 ---- */
+const seedStep = (d) => d.jobs.seed.steps.find((x) => /curl/.test(x.run ?? ''));
+red('the seed step is the old --fail-with-body form with no status comparison', edit(RELEASE, (d) => {
+  seedStep(d).run = 'set -o pipefail\ncurl -sS --fail-with-body --retry 3 -X POST "https://${SUPABASE_PROJECT_REF}.supabase.co/functions/v1/seed" -H "apikey: ${KAYFABB_JOBS_KEY}" | tee -a "$GITHUB_STEP_SUMMARY"';
+}), /R14.*--fail/);
+red('the seed step no longer compares the status to 200', edit(RELEASE, (d) => {
+  const st = seedStep(d);
+  st.run = st.run.split('\n').filter((l) => !/= 200/.test(l)).join('\n');
+}), /R14.*200/);
+red('the seed step has no curl at all', edit(RELEASE, (d) => { seedStep(d).run = 'echo seeded'; }), /R14.*curl/);
+
 /* ---- R13: schema's order, and the candidate's checkout ---- */
 red('schema runs --after before the push', edit(RELEASE, (d) => {
   const steps = d.jobs.schema.steps;

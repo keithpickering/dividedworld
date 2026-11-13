@@ -30,7 +30,12 @@
  * inside a `run:` line. R12: no workflow runs `--include-all`, `db reset` or `functions delete`,
  * and no backend job traces its shell (`set -x`), which would print a secret. R13: `schema` runs
  * check-deployed-migrations --before, then `db push`, then the check --after, in that order, and
- * each backend job checks out the candidate.
+ * each backend job checks out the candidate. R11 also reads everything outside the jobs, release.yml's
+ * top level included; R12 also reads a `bash -x` shell named by a step, a job's or the workflow's
+ * `defaults.run.shell` and `--debug` in a backend job. R14 (the design's D8): the seed job goes red on
+ * anything but a 200, so its curl writes the status (`-w '%{http_code}'`), the step compares it to 200,
+ * and `--fail`, `--fail-with-body` and `-f` never decide, since they pass any 2xx or 3xx and a 302 would
+ * seed nothing and let `promote` move the site.
  *
  * Carried from currents' check of the same name, cut down: its state paths, ignore script,
  * alive check and cockpit reference stay behind.
@@ -292,10 +297,8 @@ export function problems(files) {
         if (SECRET_NAME.test(text({ ...job, steps: undefined })) ) found.add(`job ${jobName} names a secret outside a step's env`);
       }
     }
-    if (path !== RELEASE) {
-      const rest = text({ ...doc, jobs: undefined });
-      if (SECRET_NAME.test(rest)) found.add('names a secret outside a job');
-    }
+    // Everything outside the jobs, release.yml's own top level included.
+    if (SECRET_NAME.test(text({ ...doc, jobs: undefined }))) found.add('names a secret outside a job');
     if (found.size) out.push(`${path}: R11 ${[...found].join('; ')}`);
   }
 
@@ -304,8 +307,14 @@ export function problems(files) {
     const bad12 = new Set();
     for (const [jobName, job] of Object.entries(isObj(doc.jobs) ? doc.jobs : {})) {
       const isBackend = path === RELEASE && BACKEND.includes(jobName);
+      if (isBackend) {
+        // A shell named with the x flag traces every command, whether a step, the job or the workflow names it.
+        const shells = [doc.defaults?.run?.shell, job?.defaults?.run?.shell, ...list(job?.steps).map((st) => st?.shell)];
+        for (const sh of shells) if (typeof sh === 'string' && /\bbash\s+-[a-z]*x/.test(sh)) bad12.add(`job ${jobName} traces its shell, which would print a secret (shell: ${sh})`);
+      }
       for (const step of list(job?.steps)) {
         for (const l of shellLines(step)) {
+          if (isBackend && /(^|\s)--debug\b/.test(l)) bad12.add(`job ${jobName} runs --debug, which would print a secret (${l.trim()})`);
           if (/--include-all\b/.test(l)) bad12.add(`job ${jobName} runs --include-all (${l.trim()})`);
           if (/\bdb\s+reset\b/.test(l)) bad12.add(`job ${jobName} runs db reset (${l.trim()})`);
           if (/\bfunctions\s+delete\b/.test(l)) bad12.add(`job ${jobName} runs functions delete (${l.trim()})`);
@@ -338,6 +347,18 @@ export function problems(files) {
       if (before >= 0 && push >= 0 && after >= 0 && !(before < push && push < after)) bad13.push('schema must run --before, then db push, then --after, in that order');
     }
     if (bad13.length) out.push(`${RELEASE}: R13 ${bad13.join('; ')}`);
+  }
+
+  // R14: the seed job is green only on a 200.
+  if (rel13 && isObj(rel13.jobs) && isObj(rel13.jobs.seed)) {
+    const lines = list(rel13.jobs.seed.steps).flatMap(shellLines);
+    const bad14 = [];
+    const curls = lines.filter((l) => /\bcurl\b/.test(l));
+    if (!curls.length) bad14.push('has no curl step');
+    if (curls.some((l) => /(^|\s)(--fail(-with-body)?|-[A-Za-z]*f[A-Za-z]*)(\s|$)/.test(l))) bad14.push('its curl uses --fail, --fail-with-body or -f, which passes any 2xx or 3xx');
+    if (curls.length && !lines.some((l) => /=\s*"?200"?\s*\]/.test(l) && /\$\{?code\b/.test(l))) bad14.push('never compares the status to 200 ([ "$code" = 200 ])');
+    if (curls.length && !curls.some((l) => /-w\s+'%\{http_code\}'/.test(l))) bad14.push('its curl does not write the status (-w \'%{http_code}\')');
+    if (bad14.length) out.push(`${RELEASE}: R14 seed ${bad14.join('; ')}`);
   }
   return out;
 }

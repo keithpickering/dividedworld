@@ -67,6 +67,7 @@ const refuses = (name, argv, want) => {
   check(name, c.status === 2 && want.test(c.stderr) && !/secretpw/.test(c.stdout + c.stderr) && !/reading supabase_migrations/.test(c.stdout), `${c.status} ${c.stdout}${c.stderr}`);
 };
 refuses('5a. no --db exits 2', ['--before'], /--db/);
+refuses('5a2. an empty --db exits 2 and says it is empty', ['--db', '', '--before'], /--db is empty/);
 refuses('5b. no mode exits 2', ['--db', 'postgres://u:secretpw@db.example.com:5432/postgres'], /--before|--after/);
 refuses('5c. both modes exit 2', ['--db', 'postgres://u:secretpw@db.example.com:5432/postgres', '--before', '--after'], /--before|--after/);
 for (const host of ['localhost', '127.0.0.1', '[::1]', 'LOCALHOST', '0.0.0.0', '127.0.0.2']) {
