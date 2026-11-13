@@ -21,8 +21,8 @@ export interface DisciplineNames {
 /** "1 warn point", "2 warn points". */
 export const warnPoints = (n: number): string => `${n} warn point${n === 1 ? '' : 's'}`;
 
-/** "twice", or "3 times": how many times as likely a watch makes a patrol to look. */
-export const timesWords = (weight: number): string => (weight === 2 ? 'twice' : `${weight} times`);
+/** "double", or "3 times over": how heavily a watch weighs a character's posts in a patrol's draw. */
+export const weightWords = (weight: number): string => (weight === 2 ? 'double' : `${weight} times over`);
 
 /**
  * The note a discipline play's Lens row carries, or null where the play does not say enough to speak (a relief with no `took`, a watch with no end). A fall says whether a filing
@@ -40,7 +40,7 @@ export function disciplineNote(effect: DisciplineEffect, play: CardPlay, names: 
         : `If a Mod Bot's visit to this post files, its warn points land on ${names.caster}, not on ${names.author}. The post keeps its notice.`;
     case 'watch':
       if (play.ends === undefined) return null;
-      if (Date.parse(play.ends) <= now) return `Mod Bot patrols were ${timesWords(effect.weight)} as likely to look at ${names.target}'s posts until ${dayAndTime(play.ends)}.`;
-      return `Mod Bot patrols are ${timesWords(effect.weight)} as likely to look at ${names.target}'s posts until ${dayAndTime(play.ends)}. A patrol still judges each post against the rules.`;
+      if (Date.parse(play.ends) <= now) return `Mod Bot patrols weighed ${names.target}'s posts ${weightWords(effect.weight)} until ${dayAndTime(play.ends)}.`;
+      return `Mod Bot patrols weigh ${names.target}'s posts ${weightWords(effect.weight)} until ${dayAndTime(play.ends)}. A patrol still judges each post against the rules.`;
   }
 }

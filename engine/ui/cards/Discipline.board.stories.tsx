@@ -2,7 +2,7 @@
  * The discipline cards' Lens (docs/plans/2026-11-11-card-notes-part-5-plan.md, Task 7), one story for each state, on the boards fixture's player, whose HUD is on a mask the
  * story finds: `AHeart` (the heart's mark on the post it was played from: what it took off the warn bar and when), `AFallWaiting` (a fall on the fixture's #41: whom a filing
  * would land on, whom it spares, and how it ends), `AFallTaken` (the same fall after a Mod's visit filed: "Took the fall" and where the points landed) and `ToldOn` (a watch on the
- * reader's own character: how much likelier a patrol is to look at its posts, and until when). Each opens the Lens from the card's mark with Who unfolded, as a reader would.
+ * reader's own character: how heavily a patrol weighs its posts, and until when). Each opens the Lens from the card's mark with Who unfolded, as a reader would.
  * Each card is found by its rules (`discipline.kind`), naming no card and no instance, and the mask the reader acts as is the one the player loads (player.tsx).
  */
 import type { Meta, StoryObj } from '@storybook/react-vite';
@@ -120,5 +120,5 @@ export const AHeart: S = { args: { scene: 'heart' } };
 export const AFallWaiting: S = { args: { scene: 'fallWaiting' } };
 /** The same fall after a visit to #41 filed: "Took the fall", and where the warn points landed. */
 export const AFallTaken: S = { args: { scene: 'fallTaken' } };
-/** A watch on the reader's own character: how much likelier a patrol is to look at its posts, and until when. */
+/** A watch on the reader's own character: how heavily a patrol weighs its posts, and until when. */
 export const ToldOn: S = { args: { scene: 'toldOn' } };

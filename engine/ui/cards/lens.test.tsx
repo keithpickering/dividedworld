@@ -2324,7 +2324,7 @@ describe('the discipline cards\' Lens', () => {
     expect(l).toHaveTextContent('Ended by an admin');
   });
 
-  test('a watch is a play on its character with a time up: twice, or N times, and the date it ends', async () => {
+  test('a watch is a play on its character with a time up: double, or N times over, and the date it ends', async () => {
     width(false);
     const w = disciplined();
     const two = await w.play(w.third, 't-watch', w.gloomba, w.spritey);
@@ -2336,10 +2336,10 @@ describe('the discipline cards\' Lens', () => {
     const l = await unfold();
     expect(l).toHaveAccessibleName('Cards on this character');
     expect(heading()).toBe('Told on');
-    expect(l).toHaveTextContent(`Mod Bot patrols are twice as likely to look at Spritey's posts until ${dayAndTime(two.payload.ends as string)}. A patrol still judges each post against the rules.`);
+    expect(l).toHaveTextContent(`Mod Bot patrols weigh Spritey's posts double until ${dayAndTime(two.payload.ends as string)}. A patrol still judges each post against the rules.`);
     await userEvent.click(within(l).getByRole('tab', { name: 'T Watch Three' }));
     await unfold();
-    expect(l).toHaveTextContent(`Mod Bot patrols are 3 times as likely to look at Spritey's posts until ${dayAndTime(three.payload.ends as string)}.`);
+    expect(l).toHaveTextContent(`Mod Bot patrols weigh Spritey's posts 3 times over until ${dayAndTime(three.payload.ends as string)}.`);
   });
 
   test('every heading and view passes the Lens\'s own checks, and no sentence names an owner or a class', async () => {

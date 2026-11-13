@@ -160,10 +160,10 @@ const setMoveWords = (lands: string) => `You can also set it face down on one of
 /** A span in words: "a week", "3 days". */
 export const spanWords = (s: { readonly unit: string; readonly count: number }) => (s.unit === 'day' && s.count === 7 ? 'a week' : s.count === 1 ? `${s.unit === 'hour' ? 'an' : 'a'} ${s.unit}` : `${s.count} ${s.unit}s`);
 
-/** How much likelier a watch makes a pick, from the rules' weight and never restated: "twice" only while the weight is 2. */
-function likelier(rules: { readonly discipline?: { readonly kind: string; readonly weight?: number } }): string {
+/** How heavily a watch weighs a pick, from the rules' weight and never restated: "double" only while the weight is 2. */
+function weighted(rules: { readonly discipline?: { readonly kind: string; readonly weight?: number } }): string {
   const weight = rules.discipline?.weight ?? 1;
-  return weight === 2 ? 'twice as likely' : `${weight} times as likely`;
+  return weight === 2 ? 'double' : `${weight} times over`;
 }
 
 /** What an Earn Gimmick adds to a reaction's count, as the end of a sentence, read from the card's own rules: "20% higher", or "doubled" at exactly 1. */
@@ -587,11 +587,11 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
   {
     key: 'tattle-tale',
     art: { color: '#ff3d7f', ink: '#14030a', canvas: tattleTaleCanvas, mark: tattleTaleMark, credit: tattleTaleArt.credit, tagline: 'Point the Mod Bots at someone.' },
-    summary: `Cast on a character. Mod Bot patrols are ${likelier(tattleTale)} to look at that character's posts for ${spanWords(tattleTale.lasts!)}.`,
+    summary: `Cast on a character. For ${spanWords(tattleTale.lasts!)}, Mod Bot patrols weigh that character's posts ${weighted(tattleTale)} when picking what to look at.`,
     status: 'Told on to the Mod Bots',
-    hint: 'A Tattle-Tale: someone told the Mod Bots to watch this character.',
+    hint: `A Tattle-Tale: Mod Bot patrols weigh this character's posts ${weighted(tattleTale)}.`,
     describe: (settings: Settings) =>
-      `A Salty card, ${tattleTale.rarity}, cast from any post by the character it lands on. For ${spanWords(tattleTale.lasts!)}, when a Mod Bot's patrol picks which recent posts to look at, that character's posts are ${likelier(tattleTale)} to be picked. It makes a look likelier, never a ruling: the Mod Bot still judges each post against the rules, and a patrol still drops a finding against a character staff has already punished ${settings.modBots.cap.punishments} times in the last ${settings.modBots.cap.days} days. One fits on a character at a time, and it ends by itself. It is always cast face up. It costs nothing more to play.`,
+      `A Salty card, ${tattleTale.rarity}, cast from any post by the character it lands on. For ${spanWords(tattleTale.lasts!)}, when a Mod Bot's patrol picks which recent posts to look at, that character's posts count ${weighted(tattleTale)} in the draw, so they are more likely to be picked. It makes a look likelier, never a ruling: the Mod Bot still judges each post against the rules, and a patrol still drops a finding against a character staff has already punished ${settings.modBots.cap.punishments} times in the last ${settings.modBots.cap.days} days. One fits on a character at a time, and it ends by itself. It is always cast face up. It costs nothing more to play.`,
   },
   /*
    * Hall Pass (docs/plans/2026-11-07-face-down-moves-design.md, section 4): Sweet's cyan, as Force Field is. A Gimmick, set face down

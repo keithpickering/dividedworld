@@ -756,7 +756,7 @@ describe('the Happy Hearts, Take the Fall and Tattle-Tale in plain words (card n
       ['super-happy-heart', '#2ee6ff', '#03141a', 'Empty a warn bar.', "A Super Happy Heart emptied a character's warn bar."],
       ['ultra-happy-heart', '#2ee6ff', '#03141a', 'End a ban on the spot.', "An Ultra Happy Heart ended a character's ban."],
       ['take-the-fall', '#2ee6ff', '#03141a', 'Take the blame for a post.', 'Someone has offered to take the fall for this post.'],
-      ['tattle-tale', '#ff3d7f', '#14030a', 'Point the Mod Bots at someone.', "A Tattle-Tale: someone told the Mod Bots to watch this character."],
+      ['tattle-tale', '#ff3d7f', '#14030a', 'Point the Mod Bots at someone.', "A Tattle-Tale: Mod Bot patrols weigh this character's posts double."],
     ]);
     for (const k of KEYS) {
       expect(ui(k)?.art.canvas, k).toMatch(/\.webp$/u);
@@ -773,7 +773,7 @@ describe('the Happy Hearts, Take the Fall and Tattle-Tale in plain words (card n
       "Cast on a character. Empties that character's warn bar.",
       'Cast on a banned character. Ends the ban at once.',
       "Cast on another character's post. The next Mod Bot filing on it lands on your character instead.",
-      "Cast on a character. Mod Bot patrols are twice as likely to look at that character's posts for a week.",
+      "Cast on a character. For a week, Mod Bot patrols weigh that character's posts double when picking what to look at.",
     ]);
     expect(['happy-heart', 'super-happy-heart', 'ultra-happy-heart', 'tattle-tale'].map((k) => ui(k)?.status)).toEqual(['Took points off a warn bar', 'Emptied a warn bar', 'Ended a ban', 'Told on to the Mod Bots']);
     const fall = ui('take-the-fall')?.status;
@@ -785,13 +785,14 @@ describe('the Happy Hearts, Take the Fall and Tattle-Tale in plain words (card n
     expect(instanceUiProblems(instanceUi, instance)).toEqual([]);
   });
 
-  test('"twice" is said only while the rules\' weight is 2', () => {
+  test('"double" is said only while the rules\' weight is 2', () => {
     expect(tattleTale.discipline).toEqual({ kind: 'watch', weight: 2 });
-    expect(ui('tattle-tale')?.summary).toContain('twice as likely');
-    expect(ui('tattle-tale')?.describe(instance.settings)).toContain("that character's posts are twice as likely to be picked");
+    expect(ui('tattle-tale')?.summary).toContain('weigh that character\'s posts double when picking');
+    expect(ui('tattle-tale')?.describe(instance.settings)).toContain("that character's posts count double in the draw, so they are more likely to be picked");
     retuned(tattleTale, 'discipline', { kind: 'watch', weight: 3 }, () => {
-      expect(ui('tattle-tale')?.describe(instance.settings)).toContain("that character's posts are 3 times as likely to be picked");
-      expect(ui('tattle-tale')?.describe(instance.settings)).not.toContain('twice');
+      expect(ui('tattle-tale')?.describe(instance.settings)).toContain("that character's posts count 3 times over in the draw, so they are more likely to be picked");
+      expect(ui('tattle-tale')?.describe(instance.settings)).not.toContain('double');
+      expect(ui('tattle-tale')?.describe(instance.settings)).not.toContain('as likely');
     });
   });
 
@@ -801,7 +802,7 @@ describe('the Happy Hearts, Take the Fall and Tattle-Tale in plain words (card n
     expect(say('super-happy-heart')).toBe(`A Sweet card, ${rules('super-happy-heart').rarity}, cast from any post by the character it lands on. It takes every point off that character's warn bar at once. The filings stay on the record; the card is a new entry beside them. If the bar is empty the play is refused and you keep the card. Any character can play it on any player's character, one of your own included. It is always cast face up. It costs nothing more to play.`);
     expect(say('ultra-happy-heart')).toBe(`A Sweet card, ${rules('ultra-happy-heart').rarity}, cast from any post by a banned character. It ends that character's ban at once: the character can post, react and play cards again from that moment. The ban stays on the record and still counts toward how long that character's next ban is this season, and the warn bar is not touched. If the character is not banned the play is refused and you keep the card. A banned character cannot play cards, so another character plays it: anyone's, one of your own included. It is always cast face up. It costs nothing more to play.`);
     expect(say('take-the-fall')).toBe(`A Sweet card, ${rules('take-the-fall').rarity}, cast face up on a post by another character. The next time a Mod Bot's visit to that post files, its warn points land on the character that played this card instead of the post's author, and a ban they bring is that character's too. Only the points and the ban move: the post keeps its notice. One fits on a post. It waits until a visit files, the first filing uses it up, and it can be played while a visit is open. The character that took the fall can appeal the filing. It costs nothing more to play.`);
-    expect(say('tattle-tale')).toBe(`A Salty card, ${tattleTale.rarity}, cast from any post by the character it lands on. For a week, when a Mod Bot's patrol picks which recent posts to look at, that character's posts are twice as likely to be picked. It makes a look likelier, never a ruling: the Mod Bot still judges each post against the rules, and a patrol still drops a finding against a character staff has already punished 3 times in the last 7 days. One fits on a character at a time, and it ends by itself. It is always cast face up. It costs nothing more to play.`);
+    expect(say('tattle-tale')).toBe(`A Salty card, ${tattleTale.rarity}, cast from any post by the character it lands on. For a week, when a Mod Bot's patrol picks which recent posts to look at, that character's posts count double in the draw, so they are more likely to be picked. It makes a look likelier, never a ruling: the Mod Bot still judges each post against the rules, and a patrol still drops a finding against a character staff has already punished 3 times in the last 7 days. One fits on a character at a time, and it ends by itself. It is always cast face up. It costs nothing more to play.`);
     // The lightest band is the least of the three, in whatever order the settings hold them; one point is "1 warn point".
     expect(say('happy-heart', bands(5, 3, 9))).toContain('the oldest 3 warn points off');
     expect(say('happy-heart', bands(1, 3, 9))).toContain('the oldest 1 warn point off');

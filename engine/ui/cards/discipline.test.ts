@@ -4,7 +4,7 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { dayAndTime } from '../characters/format.ts';
-import { disciplineNote, FALL_ENDS, timesWords, warnPoints } from './discipline.ts';
+import { disciplineNote, FALL_ENDS, weightWords, warnPoints } from './discipline.ts';
 import type { CardPlay } from './types.ts';
 
 const play = (over: Partial<CardPlay> = {}): CardPlay => ({ id: 'k1', card: 'x', layer: 1, caster: 'q', message: '', config: {}, playedAt: '2026-10-30T12:00:00.000Z', post: 'p', ...over });
@@ -27,16 +27,16 @@ describe('a discipline play\'s words', () => {
     assert.equal(disciplineNote({ kind: 'fall' }, play({ spent: true }), names, NOW), 'A visit to this post filed, and its warn points landed on Pipewrench.');
     assert.equal(FALL_ENDS, 'Ends when a visit to this post files, or when an admin ends it.');
   });
-  test('a watch says twice, or N times, and until when; one with no end says nothing', () => {
-    assert.equal(timesWords(2), 'twice');
-    assert.equal(timesWords(3), '3 times');
+  test('a watch says double, or N times over, and until when; one with no end says nothing', () => {
+    assert.equal(weightWords(2), 'double');
+    assert.equal(weightWords(3), '3 times over');
     const ends = '2026-11-06T12:00:00.000Z';
-    assert.equal(disciplineNote({ kind: 'watch', weight: 2 }, play({ ends }), names, NOW), `Mod Bot patrols are twice as likely to look at Spritey's posts until ${dayAndTime(ends)}. A patrol still judges each post against the rules.`);
-    assert.ok(disciplineNote({ kind: 'watch', weight: 5 }, play({ ends }), names, NOW)!.includes('are 5 times as likely'));
+    assert.equal(disciplineNote({ kind: 'watch', weight: 2 }, play({ ends }), names, NOW), `Mod Bot patrols weigh Spritey's posts double until ${dayAndTime(ends)}. A patrol still judges each post against the rules.`);
+    assert.ok(disciplineNote({ kind: 'watch', weight: 5 }, play({ ends }), names, NOW)!.includes('weigh Spritey\'s posts 5 times over until'));
     assert.equal(disciplineNote({ kind: 'watch', weight: 2 }, play(), names, NOW), null);
     /* Once its time has passed it says so in the past tense, with no second sentence. */
     const after = Date.parse(ends);
-    assert.equal(disciplineNote({ kind: 'watch', weight: 2 }, play({ ends }), names, after), `Mod Bot patrols were twice as likely to look at Spritey's posts until ${dayAndTime(ends)}.`);
-    assert.equal(disciplineNote({ kind: 'watch', weight: 3 }, play({ ends }), names, after + 1), `Mod Bot patrols were 3 times as likely to look at Spritey's posts until ${dayAndTime(ends)}.`);
+    assert.equal(disciplineNote({ kind: 'watch', weight: 2 }, play({ ends }), names, after), `Mod Bot patrols weighed Spritey's posts double until ${dayAndTime(ends)}.`);
+    assert.equal(disciplineNote({ kind: 'watch', weight: 3 }, play({ ends }), names, after + 1), `Mod Bot patrols weighed Spritey's posts 3 times over until ${dayAndTime(ends)}.`);
   });
 });
