@@ -330,7 +330,8 @@ test('a first answer at the full length is the only call, and its frame is asked
 test('a short first answer then a long one: two calls, the second continues the first after a break, asks for the tokens owed, and the two are stored joined by a break', async () => {
   frames.length = 0;
   const { db, calls } = fakeDb([[job({ tokens: 200 })]]);
-  const { models, requests } = scripted([' ab', x(150)]);
+  // The top-up's own leading space is dropped: it opens a paragraph, after the break.
+  const { models, requests } = scripted([' ab', ` ${x(150)}`]);
   await runWrites(db, models, writingInstance, bytes, 8);
   assert.equal(requests.length, 2);
   assert.equal(requests[1]!.prompt, 'P| ab\n\n');

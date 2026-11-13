@@ -21,7 +21,7 @@
  * call asks for the play's `maxTokens` with nothing so far; while the instance's counter on the tail is under `cardWriteFullShare` of `maxTokens`, fewer than
  * `cardWriteTopUps` top-ups have run, and `TOP_UP_DEADLINE_MS` has not passed since the first call, the frame is built again with the tail so far (`sofar`)
  * and the budget less the tokens still owed, and the next call asks for those tokens. The tail becomes the tail so far, a paragraph break and the call's
- * text (the frame writes the same break into the prompt). Each call is its own `scrubbedComplete`, so each writes its own ledger rows and scrub. A
+ * text without its leading space, since it opens a paragraph (the frame writes the same break into the prompt). Each call is its own `scrubbedComplete`, so each writes its own ledger rows and scrub. A
  * rejection or a transport failure on the first call finishes the job as an error; on a top-up it ends the loop and the tail so far is finished as the
  * text. A database error or an unwritten ledger row stops the run on any call. No reader sees a call: the text is stored once.
  * The request carries the card's sampling, its ban as GPT-2 token ids (none for a tokenizer without ids), `ignoreEos` (the length is bought, so the
@@ -163,7 +163,7 @@ export async function runWrites(db: Db, models: Models, instance: Instance, sett
         // it; finish_card_write keeps the first finish either way, so nothing is lost and nothing is written twice. The run stops quietly.
         if (!(await renew())) return;
         try {
-          tail += '\n\n' + (await scrubbedComplete(models, ask(tail, owed, Math.min(owed * CHARS_A_TOKEN, room)), instance.system.scrubWords, renew)).value;
+          tail += '\n\n' + (await scrubbedComplete(models, ask(tail, owed, Math.min(owed * CHARS_A_TOKEN, room)), instance.system.scrubWords, renew)).value.trimStart();
         } catch (e) {
           // The tail so far stands; a database or ledger failure, or a lost claim, is never softened.
           if (e instanceof AnswerRejected || e instanceof TransportFailure) break;
