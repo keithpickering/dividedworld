@@ -322,11 +322,13 @@ export function PackOpening({ name, art, cards, note, onClose, returnFocusTo, ha
       setStage('ready');
     });
     play(r, async () => {
-      const t = { x: heroAt.x, y: heroAt.y, scale: heroAt.scale };
-      /* E1 is the dim, the layer's own (`backdrop`). E2: the pack rises from its slot to the middle, blurring in under Smooth. */
+      /* E1 is the dim, the layer's own (`backdrop`). E2: the pack rises from its slot to the middle, blurring in under Smooth. The rise names where it starts:
+         an instant `animate` (above) lands only on Motion's next frame, and a rise started now would already have read where the pack stood (parked, past the top
+         edge), so the pack came down from there and its slot's pose flashed for a frame or never showed. */
+      const t = { x: [slotAt.x, heroAt.x], y: [slotAt.y, heroAt.y], scale: [slotAt.scale, heroAt.scale] };
       await Promise.all([
         go(r, pack, t, landing(f, f.screen) as Beat),
-        go(r, packIn, { filter: 'blur(0px)' }, eased(f, f.screen) as Beat),
+        go(r, packIn, { filter: [`blur(${f.blur}px)`, 'blur(0px)'] }, eased(f, f.screen) as Beat),
       ]);
       /* E3: the crimped top rips away along the tear, up and to the side, and is gone for good. The cards wait inside. */
       cardNodes.forEach((c) => { if (c) animate(c, { opacity: 1 }, NOW); });
