@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { RARITIES, quadrantFree, faceUpOnly, openDrive, giftSplit, wardTurnsAway, SET_PHRASE_MOST, atOrBelow, drawnInMoment, refusalTime, spanMs, decidePlay, decideSet, decideDraw, decideWash, decideUse, effectsOnTarget, landsOn, noQuoteWords, quoteStop, ok, staffConfigOf, staffDrawOf, staffOffers, fallsOn, castOnPost, postTarget, refuse, type CardEffect, type CardRules, type CardTarget } from './cards.ts';
+import { RARITIES, quadrantFree, faceUpOnly, instant, DISCIPLINE_KINDS, openDrive, giftSplit, wardTurnsAway, SET_PHRASE_MOST, atOrBelow, drawnInMoment, refusalTime, spanMs, decidePlay, decideSet, decideDraw, decideWash, decideUse, effectsOnTarget, landsOn, noQuoteWords, quoteStop, ok, staffConfigOf, staffDrawOf, staffOffers, fallsOn, castOnPost, postTarget, refuse, type CardEffect, type CardRules, type CardTarget } from './cards.ts';
 import type { Settings } from './types.ts';
 
 // The engine's own test cards: no instance's names (the engine/instance boundary).
@@ -739,4 +739,62 @@ test('fallsOn: a live play falls on any post, a kept one on the posts written wh
   assert.equal(fallsOn({ at: 'nope', ends: play.ends }, at('2026-11-04T00:00:00.000Z'), true, after), false);
   assert.equal(fallsOn({ at: play.at, ends: 'never' }, at('2026-11-04T00:00:00.000Z'), true, after), false, 'an end that is no time is neither up nor kept');
   assert.equal(fallsOn({ at: play.at, ends: 'never' }, at('2026-11-04T00:00:00.000Z'), false, after), false);
+});
+
+// The discipline effects (card notes, Part 5): the engine's own test cards, in test-world words. A heart does its work at once, so it leaves no effect and takes no place.
+const discipline = (key: string, effect: NonNullable<CardRules['discipline']>, reaches: CardRules['reaches']): CardRules => ({
+  ...cast(key, 'rare'), discipline: effect, reaches, canApply: (t, e, _config, now) => landsOn({ key, reaches, discipline: effect }, t, e, now),
+});
+const relief = discipline('relief', { kind: 'relief', points: 'all' }, ['character']);
+const unban = discipline('unban', { kind: 'unban' }, ['character']);
+const fall = discipline('fall', { kind: 'fall' }, ['post']);
+const watch: CardRules = { ...discipline('watch', { kind: 'watch', weight: 2 }, ['character']), lasts: { unit: 'day', count: 7 } };
+const mask = { reach: 'character', character: 'c1' } as const satisfies CardTarget;
+
+test('the discipline kinds are four, and only a relief or an unban is over the moment it lands', () => {
+  assert.deepEqual([...DISCIPLINE_KINDS], ['relief', 'unban', 'fall', 'watch']);
+  assert.deepEqual([relief, unban, fall, watch, plain].map(instant), [true, true, false, false, false]);
+});
+
+test('a relief is refused on a character whose warn bar is empty, and an unban on one that is not banned, in the same words for every caster', () => {
+  assert.deepEqual(decidePlay(relief, settings, { ...mask, warnPoints: 0 }, [], {}, ''), { ok: false, why: "this character's warn bar is empty" });
+  assert.equal(decidePlay(relief, settings, { ...mask, warnPoints: 3 }, [], {}, '').ok, true);
+  assert.equal(decidePlay(relief, settings, mask, [], {}, '').ok, true, 'a fact left undefined refuses nothing; the server decides again');
+  const refused = { ok: false, why: 'this character is not banned' };
+  assert.deepEqual(decidePlay(unban, settings, { ...mask, bannedUntil: null }, [], {}, ''), refused);
+  assert.deepEqual(decidePlay(unban, settings, { ...mask, bannedUntil: gone }, [], {}, ''), refused, 'a ban that has ended is no ban');
+  assert.equal(decidePlay(unban, settings, { ...mask, bannedUntil: soon }, [], {}, '').ok, true);
+  assert.equal(decidePlay(unban, settings, mask, [], {}, '').ok, true, 'a fact left undefined refuses nothing');
+});
+
+test('a fall is refused on the caster\'s own post, by character and never by account, and passes with a fact undefined', () => {
+  assert.deepEqual(decidePlay(fall, settings, { ...post, author: 'c1' }, [], {}, '', { caster: 'c1' }), { ok: false, why: "Test fall is played on another character's post" });
+  assert.equal(decidePlay(fall, settings, { ...post, author: 'c2' }, [], {}, '', { caster: 'c1' }).ok, true);
+  assert.equal(decidePlay(fall, settings, { ...post, author: 'c1' }, [], {}, '').ok, true, 'no caster known');
+  assert.equal(decidePlay(fall, settings, post, [], {}, '', { caster: 'c1' }).ok, true, 'no author known');
+});
+
+test('a watch refuses nothing of its own', () => {
+  assert.equal(decidePlay(watch, settings, { ...mask, warnPoints: 0, bannedUntil: null }, [], {}, '').ok, true);
+});
+
+test('decideSet refuses each discipline kind face down, in words that say why', () => {
+  for (const card of [relief, unban, fall, watch]) {
+    assert.deepEqual(decideSet(card, settings, post, [], {}, [card]), { ok: false, why: `${card.name} acts the moment it lands, so it is cast face up and never set face down` }, card.key);
+    assert.equal(faceUpOnly(card), true, `${card.key} is face up only, so the play form offers it no Set face down switch`);
+  }
+});
+
+test('a second instant play lands where a first was, and a fall or a watch still takes its stack', () => {
+  const here = (card: CardRules, target: CardTarget): CardEffect[] => [{ card: card.key, act: 'x', reach: target.reach, ends: soon }];
+  assert.equal(landsOn(relief, mask, here(relief, mask)).ok, true, 'a relief leaves no effect, but a stale one counts for nothing');
+  assert.equal(landsOn(unban, mask, [...here(unban, mask), ...here(unban, mask)]).ok, true);
+  assert.equal(landsOn(fall, post, here(fall, post)).ok, false, 'one fall waits on a post');
+  assert.equal(landsOn(watch, mask, here(watch, mask)).ok, false, 'one watch is live on a character');
+  assert.deepEqual(landsOn(relief, post, []), { ok: false, why: 'this card lands on a character' }, 'the reach check stays');
+});
+
+test('a persona is never offered a discipline card', () => {
+  for (const card of [relief, unban, fall, watch]) assert.equal(staffOffers(card), false, card.key);
+  assert.equal(staffOffers(plain), true);
 });
