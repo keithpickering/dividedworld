@@ -24,12 +24,13 @@ import { decide } from '../../rules/actions.ts';
 import { rollPack } from '../../rules/packs.ts';
 import { beltHolder, outfitProblems, PIECE_TURN_MOST, PIECE_WIDTH, type Piece } from '../../rules/cosmetics.ts';
 import { fallsOn, instant, RARITIES, type Rarity } from '../../rules/cards.ts';
-import { atOrBelow, giftSplit, spanMs, OLD_VOICE_OFF, withheld, playOf as kindOfPlay, postTarget, casterMessage, decidePlay, decideSet, decideUse, decideDraw, decideWash, effectsOnTarget, noQuoteWords, quoteStop, type BeyondPost, type CardEffect, type CardRules, type CardTarget, type EffectsAbove, type PostTarget, type Reach, type SetConditions } from '../../rules/cards.ts';
+import { atOrBelow, giftSplit, refusalTime, spanMs, OLD_VOICE_OFF, withheld, playOf as kindOfPlay, postTarget, casterMessage, decidePlay, decideSet, decideUse, decideDraw, decideWash, effectsOnTarget, noQuoteWords, quoteStop, type BeyondPost, type CardEffect, type CardRules, type CardTarget, type EffectsAbove, type PostTarget, type Reach, type SetConditions } from '../../rules/cards.ts';
 import { sameName } from '../../rules/names.ts';
 import { GRID, count, fromBits, minus, union, type Cells } from '../../rules/surface.ts';
 import { earnedGroup } from '../../rules/groups.ts';
 import { ALERT_KINDS, isWritten, type WrittenKind } from '../../rules/alerts.ts';
-import { DEFAULT_DEVELOPER } from '../../rules/instance.ts';
+import { ANONYMOUS_STAFF_KEY, DEFAULT_ANONYMOUS, DEFAULT_DEVELOPER } from '../../rules/instance.ts';
+import { emojiBase, emojiOfKey, localKey, localReaction, singleEmoji } from '../../rules/emoji.ts';
 import { normalizePronouns, pronounProblems, type PronounSet } from '../../rules/pronouns.ts';
 import type { Career } from '../../system/career.ts';
 import type { HandoffFacts } from '../../system/meeting.ts';
@@ -300,9 +301,9 @@ export interface Seed {
   /** A character's appeal of an infraction or of a group move on it (`open_appeal`), and the staff member's ruling on it (`until`: the end a ruling sets, as on a ban). */
   appeal(character: Id, infraction: Id, plea: string, options?: { at?: number }): Id;
   ruling(appeal: Id, mod: Id, verdict: 'overturned' | 'upheld' | 'reduced' | 'increased', options?: { line?: string; at?: number; until?: number }): Id;
-  /** The points a heart's play took off an infraction (`warn_reliefs`, 0420): the play is a `card` Act the seed has written. Counted while that play is not ended. */
+  /** The points a heart's play took off an infraction (`warn_reliefs`, 0361): the play is a `card` Act the seed has written. Counted while that play is not ended. */
   relief(play: Id, infraction: Id, points: number): void;
-  /** A ban a heart's play lifted (`ban_lifts`, 0420): the ban ends at the play's time while that play is not ended. */
+  /** A ban a heart's play lifted (`ban_lifts`, 0361): the ban ends at the play's time while that play is not ended. */
   lift(play: Id, ban: Id): void;
   /** The ban a full bar writes (`infract`): the character is banned until `until` (an Act of no character, as the server writes it), and its bar is emptied. */
   ban(character: Id, until: number, options?: { days?: number; infraction?: Id; at?: number }): Id;
@@ -567,6 +568,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const uncounted = new Set<Id>();
   const threads = new Map<Id, ThreadRec>();
   const reactions: { act: Id; account: Id; character: Id; kind: string }[] = [];
+  /** post_veils (0357): a veil card's play, the post it is on, the post's own character (which never changes), the caster's account and when it ends. Insert-only. */
+  const veils = new Map<Id, { readonly post: Id; readonly veil: 'author' | 'totals'; readonly author: Id | null; readonly casterAccount: Id | null; readonly endsAt: number }>();
+  /** post_reaction_kinds (Task 5): the reaction kinds a post holds from a reaction card's play, by post and key. Insert-only; an ended play's kind stays, no longer offered. */
+  const postKinds = new Map<string, { readonly post: Id; readonly key: string; readonly emoji: string; readonly quadrant: Quadrant; readonly play: Id }>();
+  const postKindKey = (post: Id, key: string) => `${post} ${key}`;
   const invites: InviteRec[] = [];
   const pendingInvite = new Map<string, string | null>();
   /** The address the last code was asked for, which `TEST_LINK` signs in. */
@@ -747,6 +753,54 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   /* ---------------------------------------------------------------- projections ---- */
   const edits = (post: ActRec) => [...acts.values()].filter((a) => a.kind === 'edit' && a.target === post.id).sort((a, b) => a.at - b.at || a.order - b.order);
 
+  /** The anonymous poster's character, made when it is first needed (seed_instance, 0357): the instance's persona, else the engine's plain one. It is no map entry: no roster of staff holds it. */
+  let standInRec: CharRec | null = null;
+  function standIn(): CharRec {
+    if (standInRec !== null) return standInRec;
+    const persona = options.instance.anonymous ?? DEFAULT_ANONYMOUS;
+    const at = now();
+    standInRec = {
+      id: uuid(), owner: '', name: persona.name, createdAt: at, debutedAt: at, retiredAt: null, loudness: 'silent', history: [{ cls: '', at }], pending: null, presenceHidden: false,
+      title: (persona.tagline ?? '').slice(0, 40), signature: '', pipStyle: options.instance.pipStyles[0]?.key ?? 'default',
+      pronouns: persona.pronouns ?? settings.pronouns,
+      square: null, portrait: null, squareFrame: null, portraitFrame: null, portraitTallness: null, outfit: [], shown: [], staff: { key: ANONYMOUS_STAFF_KEY, office: 'anonymous' },
+    };
+    return standInRec;
+  }
+  /** A character by id, the stand-in included. */
+  const charOf = (id: Id): CharRec | undefined => (standInRec !== null && id === standInRec.id ? standInRec : characters.get(id));
+  /** Whether a veil is live: before its end and its play not ended by an admin (post_veils_live). */
+  const veilLive = (play: Id, v: { readonly endsAt: number }): boolean => v.endsAt > now() && !over(play);
+  const liveVeils = (post: Id, kind: 'author' | 'totals') => [...veils].filter(([play, v]) => v.post === post && v.veil === kind && veilLive(play, v)).map(([, v]) => v);
+  /**
+   * The character an Act is shown under (acts_public, 0357): the stand-in while an author veil is live on the post, and on what its own author did to it that is no content of its own (`deep`: an edit, a set,
+   * a card, a take-back, a spring), never on the author's own post or spin that targets it (a quote of it, a spin from it: a veil cast on one of those hides that one); `shown_author` (the thread list, the
+   * search) reads the post itself alone.
+   */
+  function shownAuthor(a: ActRec, deep = true): Id | null {
+    if (a.character === null || veils.size === 0) return a.character;
+    const veiled = liveVeils(a.id, 'author').length > 0
+      || (deep && a.kind !== 'post' && a.kind !== 'spin' && a.target !== null && liveVeils(a.target, 'author').some((v) => v.author === a.character));
+    /* A draw or a wash on a wall (0317): its target is the card's play and the play's the post, so the wash, which is the post's own character's alone, names the author too (acts_public's fifth select). */
+    const wall = deep && (a.kind === 'draw' || a.kind === 'wash') && a.target !== null ? acts.get(a.target) : undefined;
+    const walled = wall !== undefined && wall.kind === 'card' && wall.target !== null && liveVeils(wall.target, 'author').some((v) => v.author === a.character);
+    /* The card a back of the post's own author laid on a quote (lay_sprung, 0357): the card is the setter's and its payload names the spring, which targets the post the back was set on, so while an author veil is live on that
+       post it is shown under the stand-in as the spring is (post_veil_cards). The fake does not play a Move from a quote, so such a card is seeded (`seed.card` with `spring`, after `seed.spring`). */
+    const sprung = deep && a.kind === 'card' && typeof a.payload.spring === 'string' && (() => {
+      const spring = acts.get(a.payload.spring as string);
+      return spring !== undefined && spring.kind === 'spring' && spring.target !== null && liveVeils(spring.target, 'author').some((v) => v.author === a.character);
+    })();
+    return veiled || walled || sprung ? standIn().id : a.character;
+  }
+  /** my_veiled_posts (0357): the caller's own live author veils among these posts, by post, for the player of the post's own character alone. */
+  const myVeiled = (posts: readonly Id[]) => [...veils].filter(([play, v]) => v.veil === 'author' && v.author !== null && posts.includes(v.post) && veilLive(play, v) && characters.get(v.author)?.owner === me()?.id)
+    .sort(([, x], [, y]) => (x.post < y.post ? -1 : x.post > y.post ? 1 : 0)).map(([play, v]) => ({ post: v.post, character: v.author!, play, endsAt: iso(v.endsAt) }));
+  /** totals_withheld (0357): a live totals veil is on the Act and the account neither owns its author nor cast a live totals veil on it. */
+  function totalsWithheld(act: Id, account: Id | undefined): boolean {
+    const live = liveVeils(act, 'totals');
+    if (live.length === 0) return false;
+    return !live.some((v) => v.casterAccount === account || (v.author !== null && characters.get(v.author)?.owner === account && account !== undefined));
+  }
   /** The versions hidden from players (hide, hideUntilEdited, and an edit that waits for an admin), as acts_public's `hidden` and `public_payload` serve them. */
   const hiddenVersions = new Map<Id, 'hide' | 'hideUntilEdited' | 'waiting'>();
   /** The quoting versions whose layer the job has not written yet (seeded): their bodies are withheld and `concealing` is true, as acts_public serves them (0340). */
@@ -762,7 +816,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const own = hiddenVersions.has(a.id);
     const cur = latest === undefined ? own : hiddenVersions.has(latest.id);
     return {
-      id: a.id, character: a.character, kind: a.kind, thread: a.thread, targetActId: a.target, seq: a.seq, createdAt: iso(a.at), payload: publicPayload(a.payload, own, a.id),
+      id: a.id, character: shownAuthor(a), kind: a.kind, thread: a.thread, targetActId: a.target, seq: a.seq, createdAt: iso(a.at), payload: publicPayload(a.payload, own, a.id),
       currentPayload: publicPayload(latest?.payload ?? a.payload, cur, latest?.id ?? a.id),
       editedAt: latest ? iso(latest.at) : null,
       shownEditedAt: latest && latest.at > a.at + span(settings.editGrace) ? iso(latest.at) : null,
@@ -869,7 +923,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return {
       id: t.id, board: t.board, title: t.title, originActId: t.origin, createdAt: iso(t.at), lastAt: iso(all.length ? Math.max(...all.map((a) => a.at)) : t.at), lastSeq: t.nextSeq - 1,
       replies: all.filter((a) => a.kind === 'post' && a.seq! > 1).length,
-      firstAct: first?.id ?? null, firstCharacter: first?.character ?? null, lastAct: last?.id ?? null, lastCharacter: last?.character ?? null,
+      firstAct: first?.id ?? null, firstCharacter: first ? shownAuthor(first, false) : null, lastAct: last?.id ?? null, lastCharacter: last ? shownAuthor(last, false) : null,
       // Capped at the hotReplies threshold, as thread_list counts it: a screen only compares it with that.
       repliesThisWeek: Math.min(settings.hotReplies, all.filter((a) => a.kind === 'post' && a.seq! > 1 && a.at > week && a.at <= now()).length),
       originThread: origin?.thread ?? null, origin: origin ? originPlace(origin, first) : null,
@@ -885,7 +939,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   };
   const takesEffectAt = () => (nextSettlement === null ? null : iso(nextSettlement));
 
-  /** What the hearts took off an infraction and the bans they lifted (`warn_reliefs`, `ban_lifts`, 0420): rows of their own beside the Acts, each counting only while its play is not ended (`card_ended`). */
+  /** What the hearts took off an infraction and the bans they lifted (`warn_reliefs`, `ban_lifts`, 0361): rows of their own beside the Acts, each counting only while its play is not ended (`card_ended`). */
   const warnReliefs: { readonly play: Id; readonly infraction: Id; readonly points: number }[] = [];
   const banLifts: { readonly play: Id; readonly ban: Id }[] = [];
   /** The points an appeal's ruling took off an infraction (`infraction_relief`): the negative `points_delta` of the ruling on an appeal of it. */
@@ -904,16 +958,16 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return [...acts.values()].filter((a) => a.kind === 'infraction' && a.payload.character === id && Date.parse(a.payload.expires_at as string) > now() && a.at > last)
       .sort((x, y) => x.at - y.at || x.order - y.order);
   };
-  /** The fall plays an infraction names as its `fall_play`: spent (`acts_fall_spent`, 0420). */
+  /** The fall plays an infraction names as its `fall_play`: spent (`acts_fall_spent`, 0361). */
   const spentPlays = (): Set<Id> => new Set([...acts.values()].flatMap((a) => (a.kind === 'infraction' && typeof a.payload.fall_play === 'string' ? [a.payload.fall_play] : [])));
-  /** The points of a character's infractions that have not dropped off or been taken off (`warn_points`, 0420). */
+  /** The points of a character's infractions that have not dropped off or been taken off (`warn_points`, 0361). */
   const warnOf = (id: Id): number => liveInfractions(id).reduce((n, a) => n + pointsLeft(a), 0);
   /** When a ban ends by its own Act or its appeal's ruling, before any heart lifts it (`ban_ends` without `ban_lifts`, 0109). */
   const banEndWithoutLift = (a: ActRec): number => {
     const ruling = [...acts.values()].find((r) => r.kind === 'appeal_ruling' && typeof r.payload.until === 'string' && acts.get(r.target ?? '')?.target === a.id);
     return Date.parse((ruling?.payload.until ?? a.payload.until) as string);
   };
-  /** When a ban ends now (`ban_ends`, 0420): the least of its end and the earliest lift of it whose play is still on. */
+  /** When a ban ends now (`ban_ends`, 0361): the least of its end and the earliest lift of it whose play is still on. */
   const banEnd = (a: ActRec): number => {
     const lifted = banLifts.filter((l) => l.ban === a.id && !over(l.play)).map((l) => acts.get(l.play)!.at);
     return Math.min(banEndWithoutLift(a), ...lifted);
@@ -939,9 +993,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       group: groupOf(c),
     });
   }
-  /** The group a character is in: the highest rung it holds (a conferred group is the moves' business, not this fake's). */
+  /** The group a character is in: the highest rung it holds (a conferred group is the moves' business, not this fake's), from the posts as the projection shows them, as the count a player reads is (group_now, 0357). */
   function groupOf(c: CharRec): string {
-    const posts = [...acts.values()].filter((a) => a.kind === 'post' && a.character === c.id).length;
+    /* The stand-in a veil shows is no scored character and holds no rung, and is no Mod Bot either: no group (group_now answers it null, 0357), so no screen draws a bar or a staff badge for it. */
+    if (c.staff?.office === 'anonymous') return '';
+    const posts = [...acts.values()].filter((a) => a.kind === 'post' && shownAuthor(a) === c.id).length;
     return earnedGroup(instance.groups.ladder, { posts, seasons: 0, staff: c.staff !== undefined && c.staff !== null });
   }
 
@@ -1011,7 +1067,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const demand = toDemand(move.payload['demand']);
     if (!demand) return { done: 0, of: 0, met: false };
     const p = demand.params;
-    const after = [...acts.values()].filter((a) => a.kind === 'post' && a.at > move.at && a.character !== null && !characters.get(a.character)?.staff);
+    /* By the character a post is shown under, as demand_progress reads acts_public: a post under a live author veil is the stand-in's, which holds the anonymous staff office, so it drops out of the count while the veil is up (0359). */
+    const after = [...acts.values()].filter((a) => {
+      const shown = a.kind === 'post' && a.at > move.at ? shownAuthor(a, false) : null;
+      return shown !== null && shown !== standInRec?.id && !characters.get(shown)?.staff;
+    });
     const onBoard = (a: ActRec) => threads.get(a.thread)?.board === p['board'];
     const count = (n: number) => Math.max(1, Math.trunc(Number(n)));
     switch (demand.kind) {
@@ -1019,7 +1079,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       case 'distinctCharactersOnBoard': { const of = count(p['count'] as number); const have = new Set(after.filter(onBoard).map((a) => a.character)).size; return { done: Math.min(have, of), of, met: have >= of }; }
       case 'quadrantOnBoard': {
         const of = count(p['count'] as number);
-        const have = after.filter(onBoard).reduce((sum, a) => sum + Object.entries(tallyOf(a.id)).reduce((n, [kind, c]) => n + (instance.reactions.find((r) => r.key === kind)?.quadrant === p['quadrant'] ? c : 0), 0), 0);
+        const have = after.filter(onBoard).filter((a) => liveVeils(a.id, 'totals').length === 0).reduce((sum, a) => sum + Object.entries(tallyOf(a.id)).reduce((n, [kind, c]) => n + (instance.reactions.find((r) => r.key === kind)?.quadrant === p['quadrant'] ? c : 0), 0), 0);
         return { done: Math.min(have, of), of, met: have >= of };
       }
       case 'characterPostsInThread': { const have = after.some((a) => a.thread === p['thread'] && a.character === p['character']) ? 1 : 0; return { done: have, of: 1, met: have === 1 }; }
@@ -1417,11 +1477,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (!from || from.kind === 'edit') return refuse('there is no such Act to spin from');
     const home = boards.find((b) => b.id === threads.get(from.thread)!.board)!;
     const board = home.isSystem ? playersBoard! : home;
-    /* spin_written (0351): a spin names a post only from a live character play, on a post of the character the play is on. Nothing here reads who owns either. */
+    /* spin_written (0351, 0357): a spin names a post only from a live character play, on a post of the character the play is on as the post shows its author (a veiled post is the stand-in's). Nothing here reads who owns either. */
     if (at !== undefined) {
       const reach = reachPlays.get(origin);
       const post = acts.get(at);
-      const there = from.kind === 'card' && from.payload.caught === undefined && reach?.reach === 'character' && post?.kind === 'post' && post.character === reach.target
+      const there = from.kind === 'card' && from.payload.caught === undefined && reach?.reach === 'character' && post?.kind === 'post' && shownAuthor(post, false) === reach.target
         && reach.endsAt > now() && !reversedPlays.has(origin);
       if (!there) return refuse('that card is not on that post');
     }
@@ -1435,7 +1495,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return ok({ thread: summary(t), act: publicAct(written) });
   }
 
-  function react(act: Id, character: Id, kind: string): Answer<{ act: Id; tally: Tally }> {
+  function react(act: Id, character: Id, kind: string): Answer<{ act: Id; tally: Tally | null }> {
+    /* A post-local kind (a card added it to one post, key `x-…`) passes the rules by its shape; the post's own kinds are read below, as `react` reads them. */
+    const local = emojiOfKey(kind) !== null;
     const bad = request({ action: 'react', act, character, kind });
     if (bad) return bad;
     const c = acting(character);
@@ -1446,10 +1508,17 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const account = me()!;
     const author = target.character === null ? null : characters.get(target.character);
     if (author && author.owner === account.id) return refuse('your characters cannot react to each other');
+    if (local) {
+      const held = postKinds.get(postKindKey(act, kind));
+      if (!held) return refuse(`there is no reaction ${JSON.stringify(kind)}`, 'kind');
+      if (over(held.play)) return refuse('that reaction is no longer offered on this post');
+    }
     const mine = reactions.filter((r) => r.act === act && r.account === account.id);
     if (mine.some((r) => r.kind === kind)) return refuse('you have already left that reaction here');
     if (mine.length >= settings.reactionCap) return refuse(`you have left ${settings.reactionCap} reactions here, the most there are`);
     reactions.push({ act, account: account.id, character, kind });
+    /* A blind post answers no tally to anyone, and none is broadcast: a broadcast is the same for the whole channel (react, 0357). */
+    if (liveVeils(act, 'totals').length > 0) return ok({ act, tally: null });
     const tally = tallyOf(act);
     send(`thread:${target.thread}`, 'tally', () => { for (const l of [...(threadListeners.get(target.thread) ?? [])]) l.onTally?.(act, tally); });
     return ok({ act, tally });
@@ -1537,7 +1606,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
           .sort(byLanding).map((a) => ({ act: publicAct(a), state: null })),
       ],
       above: [...reachPlays].filter(([p, r]) => p !== first.id && r.endsAt > time && !endedBy(p) && acts.get(p)!.at < time
-          && (r.reach === 'character' ? r.target === post.character : r.reach === 'thread' ? r.target === post.thread : r.target === board))
+          && (r.reach === 'character' ? r.target === shownAuthor(post, false) : r.reach === 'thread' ? r.target === post.thread : r.target === board))
         .sort(([a], [b]) => byLanding(acts.get(a)!, acts.get(b)!))
         .map(([p, r]) => ({ play: p, reach: r.reach, target: r.target, endsAt: iso(r.endsAt), act: publicAct(acts.get(p)!) })),
       recorded,
@@ -1699,7 +1768,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
    */
   function surfaceLog(account: Id): { readonly draws: { ms: number; order: number; r: SurfaceLogRow }[]; readonly walls: { ms: number; order: number; r: SurfaceLogRow }[] } {
     const owns = (character: Id | null): boolean => character !== null && characters.get(character)?.owner === account;
-    const row = (a: ActRec, kind: SurfaceLogRow['kind'], play: Id, mine: Id, cells: number) => ({ ms: a.at, order: a.order, r: { act: a.id, kind, play, post: playOf(play)!.target!, character: a.character!, mine, at: iso(a.at), cells } satisfies SurfaceLogRow });
+    /* A cut row's `character` is the washer as the post shows its author (my_draws, 0357): the stand-in while an author veil is up on the wall's post. */
+    const row = (a: ActRec, kind: SurfaceLogRow['kind'], play: Id, mine: Id, cells: number) => ({ ms: a.at, order: a.order, r: { act: a.id, kind, play, post: playOf(play)!.target!, character: (kind === 'cut' ? shownAuthor(a) : null) ?? a.character!, mine, at: iso(a.at), cells } satisfies SurfaceLogRow });
     const onSurface = (a: ActRec): boolean => (a.kind === 'draw' || a.kind === 'wash') && a.target !== null && a.character !== null && surfaceRecs.has(a.target) && playOf(a.target) !== undefined;
     const draws: { ms: number; order: number; r: SurfaceLogRow }[] = [];
     const walls: { ms: number; order: number; r: SurfaceLogRow }[] = [];
@@ -1915,6 +1985,48 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return ok({ pack: made, contents, balance: left });
   }
 
+  /** land_refusal (0357): what a card's landing on a post refuses, in plain words, or null; the same reads whatever the card is. */
+  function landRefusal(rules: CardRules, on: ActRec, config: unknown): Refusal | null {
+    const byStaff = on.character === null || characters.get(on.character)?.staff !== undefined;
+    const visited = [...acts.values()].some((v) => v.kind === 'visit' && v.target === on.id);
+    /* A reply a card that replies cut in under a post is named by that play's Act, which says whose it is; and where the post's own author cut one in under it, the derived veil would tell the author from the rest (0357). */
+    const cutIn = [...underPlays.values()].some((u) => u.reply === on.id);
+    const cutOwn = [...underPlays.values()].some((u) => u.parent === on.id && acts.get(u.reply)?.character === on.character);
+    /* A card at character reach is stored with its Act on the post it was played from, and its payload names that post's author: a public Act that names the author (land_refusal's `played`, 0357). */
+    const played = [...acts.values()].some((k) => k.kind === 'card' && k.target === on.id && k.payload.reach === 'character');
+    /* A back of the post's own author that sprang on a quote laid a card of the author's there, which names the spring (land_refusal, 0357): a spring that landed a card, on this post. */
+    const sprungBack = [...acts.values()].some((s) => s.kind === 'spring' && s.target === on.id && s.payload.did === 'landed');
+    /* A spin pressed at the post (0351's `at`): its thread shows the play's character and the post, which spin_written let through only for a post of that character (0357). */
+    const pressed = [...acts.values()].some((s) => s.kind === 'spin' && s.payload.at === on.id);
+    if (rules.replies === true) {
+      const hidden = liveVeils(on.id, 'author');
+      if (hidden.length > 0) return refuse(`this post's author is hidden until ${refusalTime(iso(Math.max(...hidden.map((v) => v.endsAt))))}; no reply is cut in under it before then`);
+    }
+    if (rules.veil === 'author') {
+      if (byStaff) return refuse('a post by the staff keeps its name');
+      if (visited) return refuse('a Mod Bot has been to this post, so its author is on the record');
+      if (played) return refuse('a card played from this post names its author, so the author is on the record');
+      if (sprungBack) return refuse('a card set on this post has sprung, so its author is on the record');
+      if (cutIn) return refuse('a card cut this post in under another, so its author is on the record');
+      if (cutOwn) return refuse('its author cut a reply in under this post, so the author is on the record');
+      if (pressed) return refuse('a spin was pressed at this post, so its author is on the record');
+    }
+    if (rules.reaction === true) {
+      const named = localReaction(config, instance.reactions);
+      if (!named.ok) return refuse(named.why, 'config');
+      if (postKinds.has(postKindKey(on.id, localKey(named.value.emoji)))) return refuse('this post already has that reaction', 'config');
+    }
+    return null;
+  }
+  /** land_rows (0357): a veil card's post_veils row, a reaction card's post_reaction_kinds row. */
+  function landRows(rules: CardRules, play: ActRec, on: ActRec, config: unknown, caster: Id, at: number) {
+    if (rules.veil !== undefined && rules.lasts) veils.set(play.id, { post: on.id, veil: rules.veil, author: on.character, casterAccount: caster, endsAt: at + span(rules.lasts) });
+    if (rules.reaction === true) {
+      const named = localReaction(config, instance.reactions);
+      if (named.ok) postKinds.set(postKindKey(on.id, localKey(named.value.emoji)), { post: on.id, key: localKey(named.value.emoji), emoji: named.value.emoji, quadrant: named.value.quadrant, play: play.id });
+    }
+  }
+
   /**
    * The Edge Function's reading of a play, then `play_card` (0016_cards_screens.sql): the post is read and priced by its card's rules
    * (`decidePlay`), then the character, the card in hand and the layer are the database's, in that order.
@@ -1931,7 +2043,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const text = (publicAct(on).currentPayload as { body?: unknown }).body;
     const effects = effectsOn(target);
     // Decided and written in one step, with no gap for an edit to land in, so the fake checks no version (play_card does, 0070).
-    const decided = decidePlay(rules, settings, postTarget(on.id, on.kind as PostTarget['kind'], text, undefined, drawnBy(on.id)?.parent, on.character ?? undefined), effects, config, message, { now: new Date(now()), nameOf: (k) => instance.cards.find((c) => c.key === k)?.name ?? k, first, caster: character });
+    const decided = decidePlay(rules, settings, postTarget(on.id, on.kind as PostTarget['kind'], text, undefined, drawnBy(on.id)?.parent, shownAuthor(on, false) ?? undefined), effects, config, message, { now: new Date(now()), nameOf: (k) => instance.cards.find((c) => c.key === k)?.name ?? k, first, caster: character });
     if (!decided.ok) return refuse(decided.why, (message !== undefined && !casterMessage(message).ok) || decided.why === rules.needsMessage ? 'message' : 'config');
     /* The one transaction of play_surface_card: a first draw past the wall's limit refuses the whole play, so none of it is written. */
     if (decided.value.draw) {
@@ -1940,12 +2052,18 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     }
     const c = acting(character);
     if (isRefusal(c)) return c;
-    /* A fall is played on a player's post, never a staff character's (place_cast, 0420); a banned caster plays no discipline card (not_banned). */
+    /* A fall is played on a player's post, never a staff character's (place_cast, 0361); a banned caster plays no discipline card (not_banned). */
     if (rules.discipline !== undefined) {
+      /* Not on a post whose author is hidden, for every caster alike (place_cast, 0361): the author's own masks would otherwise meet the own-post words alone. */
+      const hidden = rules.discipline.kind === 'fall' ? liveVeils(on.id, 'author') : [];
+      if (hidden.length > 0) return refuse(`this post's author is hidden until ${refusalTime(iso(Math.max(...hidden.map((v) => v.endsAt))))}; nobody takes the fall for it before then`);
       if (on.character !== null && characters.get(on.character)?.staff) return refuse(`${rules.name} is played on a player's post`);
       const banned = bannedUntilOf(character);
       if (banned !== null) return refuse(`this character is banned until ${iso(banned)}; the ban ends by itself then`);
     }
+    /* What the card's landing refuses on this post (land_refusal, 0357): public facts alone, the same for every caster, before anything is paid or written. */
+    const landing = landRefusal(rules, on, decided.value.config);
+    if (landing) return landing;
     /* play_card's order: the character is the player's, then not banned (every play meets not_banned there; the fake holds it for a card that replies), then a reply with a letter or a digit in it, and any other card is given none. */
     if (carries) {
       const banned = bannedUntilOf(character);
@@ -1986,7 +2104,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     }
     /* A caught play joins no drive; a play a ride back let land is a play like any other (drive_plays leaves a caught play out, 0153). */
     const drive = catches && !rides ? undefined : driveOf(rules, target, playId);
-    const written = write({ id: playId, character, kind: 'card', thread: on.thread, target, payload: { card, message: decided.value.message, config: decided.value.config, ...(decided.value.tokens === undefined ? {} : { tokens: decided.value.tokens }), ...(catches && !rides ? { caught: trap!.set } : { layer }), ...(rides ? { rode: trap!.set } : {}), ...(replyId === undefined ? {} : { reply: replyId }), ...(rules.skim && rules.lasts ? { ends: iso(at + span(rules.lasts)) } : {}), ...(drive === undefined ? {} : { drive }) } });
+    const written = write({ id: playId, character, kind: 'card', thread: on.thread, target, payload: { card, message: decided.value.message, config: decided.value.config, ...(decided.value.tokens === undefined ? {} : { tokens: decided.value.tokens }), ...(catches && !rides ? { caught: trap!.set } : { layer }), ...(rides ? { rode: trap!.set } : {}), ...(replyId === undefined ? {} : { reply: replyId }), ...(rules.lasts ? { ends: iso(at + span(rules.lasts)) } : {}), ...(drive === undefined ? {} : { drive }) } });
+    /* What a landed play on a post writes beside its Act (land_rows, 0357): not for a caught one. */
+    if (!(catches && !rides)) landRows(rules, written, on, decided.value.config, account.id, at);
     /* A cast that landed (a ride lets it) writes its reply, a post of the thread with a number of its own, and remembers it under its parent; a caught one writes none, and the id its Act names is no post's. */
     const replied = replyId !== undefined && reply !== undefined && !(catches && !rides)
       ? write({ id: replyId, character, kind: 'post', thread: on.thread, payload: { body: reply.body } }) : null;
@@ -2138,7 +2258,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     });
   const boardOf = (thread: Id): Id => threads.get(thread)!.board;
   /**
-   * A relief or unban play, as `place_cast` writes it (0420): the Act, then the rows that do the work. A relief walks the target's live infractions oldest first and takes
+   * A relief or unban play, as `place_cast` writes it (0361): the Act, then the rows that do the work. A relief walks the target's live infractions oldest first and takes
    * `least(what is left, what is still wanted)` from each; an unban lifts every running ban. Neither leaves a time up or a `play_reach` row.
    */
   function landInstant(rules: CardRules, account: AccountRec, price: number, message: string, config: unknown, character: Id, target: Id, from: ActRec, at: number): Answer<Act> {
@@ -2185,9 +2305,14 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     /* A use card never goes on a board, before the board is looked for (place_cast, 0148). */
     if (play === 'use' && reach === 'board') return refuse(`${rules.name} is never used on a board`);
     if (reach === 'character') {
+      /* The stand-in is shown in place of an author, so a card on it would be a card on whoever it stands for (place_cast, 0357). */
+      if (standInRec !== null && target === standInRec.id) return refuse('no card is played on a stand-in');
       if (!characters.has(target)) return refuse('there is no such character', 'target');
       from = fromPost ? acts.get(fromPost) : undefined;
-      if (!from || from.kind !== 'post' || from.character !== target) return refuse('a card on a character is played from one of its posts');
+      /* The post is read as it is shown (acts_public): a post under a live author veil is the stand-in's, so a card on its real author is a card on the stand-in, in the same words (place_cast, 0359). */
+      const shown = from?.kind === 'post' ? shownAuthor(from, false) : null;
+      if (standInRec !== null && shown === standInRec.id) return refuse('no card is played on a stand-in');
+      if (!from || from.kind !== 'post' || shown !== target) return refuse('a card on a character is played from one of its posts');
       thread = from.thread;
       on = from.id;
       above = { thread: reachEffects('thread', thread), board: reachEffects('board', boardOf(thread)) };
@@ -2206,7 +2331,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       above = {};
     }
     const at = stamp ?? now();
-    /* A character's warn points and running ban are public (the postbit shows both), so the target carries them to a discipline card's rules (card_target_reach, 0420). */
+    /* A character's warn points and running ban are public (the postbit shows both), so the target carries them to a discipline card's rules (card_target_reach, 0361). */
     const warned = reach === 'character' && rules.discipline !== undefined ? { warnPoints: warnOf(target), bannedUntil: ((u) => (u === null ? null : iso(u)))(bannedUntilOf(target)) } : {};
     const goal = { reach, [reach]: target, ...warned } as unknown as CardTarget;
     const effects = effectsOnTarget(goal, reachEffects(reach, target), above, new Date(at));
@@ -2239,7 +2364,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       window = w;
     }
     account.cards[card]! -= 1;
-    /* A heart does its work the moment it lands: no time up, no `play_reach` row, and the Act says what it did (place_cast, 0420). */
+    /* A heart does its work the moment it lands: no time up, no `play_reach` row, and the Act says what it did (place_cast, 0361). */
     if (instant(rules) && reach === 'character') return landInstant(rules, account, decided.value.price, decided.value.message, decided.value.config, character, target, from!, at);
     const bound = span(settings.reachLasts[reach]);
     /* A scored-as play lasts until its window closes, not a time from now, and names where the window starts. */
@@ -2514,7 +2639,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   };
   /** `trophy_shelf`: the awards a character shows in its order, then every belt it holds that is not among them. */
   function shelf(character: Id): ShownTrophy[] {
-    const c = characters.get(character)!;
+    const c = charOf(character)!;
     const shown = c.shown.map((id) => awards.find((a) => a.id === id)).filter((a): a is (typeof awards)[number] => a !== undefined && !a.reversed).map(shownOf);
     const belts = awards.filter((a) => a.character === character && !a.reversed && kindOf(a.trophy)?.belt && !c.shown.includes(a.id) && heldNow(a)).sort((x, y) => y.at - x.at).map(shownOf);
     return [...shown, ...belts];
@@ -2846,7 +2971,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
           ...((l) => (l ? { liftedAt: iso(acts.get(l.play)!.at), liftedCard: String(acts.get(l.play)!.payload.card) } : { liftedAt: null, liftedCard: null }))(
             banLifts.filter((x) => x.ban === b.id && !over(x.play)).sort((x, y) => acts.get(x.play)!.at - acts.get(y.play)!.at)[0]),
         })),
-      /* my_falls_taken (0420): a filing that landed on a character that took the fall for a post of the account's own; the taker is named by its public name. */
+      /* my_falls_taken (0361): a filing that landed on a character that took the fall for a post of the account's own; the taker is named by its public name. */
       falls: newest(all.filter((i) => i.kind === 'infraction' && typeof i.payload.fall_play === 'string' && fits(i.at) && owned(acts.get(String(i.payload.about_act))?.character)).map((i) => ({ ms: i.at, order: i.order, i })))
         .map(({ i }): LogFall => ({
           infraction: i.id, character: acts.get(String(i.payload.about_act))!.character!, at: iso(i.at), post: i.payload.about_act as Id, postSeq: seqOf(i.payload.about_act), thread: i.thread,
@@ -2928,7 +3053,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const from = q.fromAt === null ? -Infinity : Date.parse(q.fromAt);
     const to = q.toAt === null ? Infinity : Date.parse(q.toAt);
     /* Who may be found: a character that has debuted. One that has not, and one that is no character, find nothing: the same empty answer. */
-    const author = q.author === null ? null : characters.get(q.author);
+    const author = q.author === null ? null : charOf(q.author);
     if (q.author !== null && (author == null || author.debutedAt === null)) return { rows: [], words: include, sort, perPage };
     const latest = new Map<Id, ActRec>();
     for (const a of acts.values()) if (a.kind === 'edit' && a.target !== null && (!latest.has(a.target) || latest.get(a.target)!.at <= a.at)) latest.set(a.target, a);
@@ -2938,7 +3063,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const thread = threads.get(a.thread);
       if (!thread || thread.id === updatesThreadId) continue;
       if (q.board !== null && thread.board !== q.board) continue;
-      if (q.author !== null && a.character !== q.author) continue;
+      if (q.author !== null && shownAuthor(a, false) !== q.author) continue;
       /* A post by a character that has not debuted is kept, its name null (the SQL left-joins characters_public). */
       if (a.at < from || a.at >= to) continue;
       if (q.titlesOnly && a.seq !== 1) continue;
@@ -3029,10 +3154,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   }
   function searchHit(row: SearchRow, words: readonly string[]): PostHit {
     const board = boards.find((b) => b.id === row.thread.board)!;
-    const who = row.rec.character === null ? undefined : characters.get(row.rec.character);
+    const shown = shownAuthor(row.rec, false);
+    const who = shown === null ? undefined : charOf(shown);
     return {
       act: row.act, thread: row.thread.id, title: row.thread.title, board: board.id, boardSlug: board.slug, boardName: board.name, seq: row.seq,
-      page: pageOf(row.seq, settings.postsPerPage), character: row.rec.character, name: who?.debutedAt != null ? who.name : null, createdAt: iso(row.at),
+      page: pageOf(row.seq, settings.postsPerPage), character: shown, name: who?.debutedAt != null ? who.name : null, createdAt: iso(row.at),
       snippet: searchSnippet(row, words),
       /* card and spring plays that reach the post and have no card_end, oldest first (the SQL's `cards`). */
       cards: [...acts.values()].filter((a) => (a.kind === 'card' || a.kind === 'spring') && a.target === row.act && (a.payload.reach ?? 'post') === 'post' && typeof a.payload.card === 'string'
@@ -3458,6 +3584,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (characters.get(p.character ?? '')?.staff) return refuse('a post by the staff is not reported');
       const mod = [...characters.values()].find((c) => c.staff?.office === 'mod' && c.debutedAt !== null && c.retiredAt === null);
       if (!mod) return refuse('there is no one on duty to hear a report right now');
+      /* A report asks a Mod Bot to visit, which names the author: refused while the author is hidden, before anything is paid (open_report, 0357). */
+      const hidden = liveVeils(post, 'author');
+      if (hidden.length > 0) return refuse(`this post's author is hidden until ${refusalTime(iso(Math.max(...hidden.map((v) => v.endsAt))))}; report it after`);
       if (reportsLeftNow(through) <= 0) return refuse(`this character has made its ${settings.modBots.reportsPerDay} reports for today`);
       const account = me()!;
       const short = covers(account, settings.modBots.reportPrice);
@@ -3572,7 +3701,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const original = acts.get(id);
       if (!original || original.kind !== 'post') return [];
       const versions = edits(original).map((e): Act => ({
-        id: e.id, character: e.character, kind: 'edit', thread: e.thread, targetActId: id, seq: null, createdAt: iso(e.at), payload: publicPayload(e.payload, hiddenVersions.has(e.id), e.id),
+        id: e.id, character: shownAuthor(e), kind: 'edit', thread: e.thread, targetActId: id, seq: null, createdAt: iso(e.at), payload: publicPayload(e.payload, hiddenVersions.has(e.id), e.id),
         currentPayload: publicPayload(e.payload, hiddenVersions.has(e.id), e.id), editedAt: null, shownEditedAt: null, hidden: hiddenVersions.has(e.id),
         ...(concealingActs.has(e.id) && !hiddenVersions.has(e.id) ? { concealing: true, payloadConcealing: true } : {}),
         ...(hiddenVersions.has(e.id) ? { payloadHidden: true } : {}),
@@ -3671,12 +3800,14 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
             /* A play beyond a post without its play_reach row is in no one's view (the view joins it); a board is only ever the caster's. */
             if (reach !== 'post' && !reachPlays.has(play.id)) return [];
             if (!cast && reach === 'board') return [];
-            const targetAuthor = reach === 'post' ? acts.get(play.target ?? '')?.character : undefined;
+            const targetPost = reach === 'post' ? acts.get(play.target ?? '') : undefined;
+            const targetAuthor = targetPost ? shownAuthor(targetPost, false) : undefined;
             return [{ ms: e.at, order: e.order, e: {
               cardEnd: e.id, play: play.id, card: String(play.payload.card), at: iso(e.at), side: cast ? 'cast' as const : 'onMine' as const, reach,
               targetName: reach === 'board' ? boards.find((b) => b.id === play.payload.board)?.name ?? null : targetName(play),
-              postAuthorName: targetAuthor == null ? null : characters.get(targetAuthor)?.name ?? null,
-              casterName: characters.get(play.character ?? '')?.name ?? null,
+              postAuthorName: targetAuthor == null ? null : charOf(targetAuthor)?.name ?? null,
+              /* The caller's own play keeps its own character; one on the caller's post is named as acts_public shows it (the stand-in for a card a veiled post's own back laid, while the veil is up). */
+              casterName: cast ? characters.get(play.character ?? '')?.name ?? null : charOf(shownAuthor(play) ?? '')?.name ?? null,
               character: (cast ? play.character : targetCharacter(play)) as Id,
             } }];
           })).map(({ e }) => e),
@@ -3782,13 +3913,13 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         .sort((a, b) => acts.get(a.play)!.at - acts.get(b.play)!.at || acts.get(a.play)!.order - acts.get(b.play)!.order);
     },
     cardsOn: (act, limit) => withEnds([...acts.values()].filter((a) => (a.kind === 'card' || a.kind === 'set' || a.kind === 'spring') && a.target === act).sort((a, b) => a.at - b.at || a.order - b.order).slice(0, limit)),
-    characters: (ids) => ids.map((id) => characters.get(id)).filter((c): c is CharRec => c !== undefined && c.debutedAt !== null).map(publicCharacter),
+    characters: (ids) => ids.map(charOf).filter((c): c is CharRec => c !== undefined && c.debutedAt !== null).map(publicCharacter),
     characterCounts(id) {
-      const c = characters.get(id);
+      const c = charOf(id);
       const counts: { posts: number; spins: number; cards: number } = { posts: 0, spins: 0, cards: 0 };
       if (!c || c.debutedAt === null) return counts;
       for (const a of acts.values()) {
-        if (a.character !== id) continue;
+        if (shownAuthor(a) !== id) continue;
         if (a.kind === 'post') counts.posts++;
         else if (a.kind === 'spin') counts.spins++;
         else if (a.kind === 'card') counts.cards++;
@@ -3798,16 +3929,17 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     characterStats(ids) {
       const out: Record<Id, { posts: number }> = Object.fromEntries(ids.map((id) => [id, { posts: 0 }]));
       for (const a of acts.values()) {
-        if (a.kind !== 'post' || a.character === null || characters.get(a.character)?.debutedAt == null) continue;
-        const counted = out[a.character];
+        const shown = a.kind === 'post' ? shownAuthor(a, false) : null;
+        if (shown === null || charOf(shown)?.debutedAt == null) continue;
+        const counted = out[shown];
         if (counted) counted.posts++;
       }
       return out;
     },
     characterActs(id, kinds, page) {
-      const c = characters.get(id);
+      const c = charOf(id);
       const all = c && c.debutedAt !== null
-        ? [...acts.values()].filter((a) => a.character === id && kinds.includes(a.kind)).sort((x, y) => y.at - x.at || y.order - x.order)
+        ? [...acts.values()].filter((a) => shownAuthor(a) === id && kinds.includes(a.kind)).sort((x, y) => y.at - x.at || y.order - x.order)
         : [];
       return all.slice(page.offset, page.offset + page.limit).map(publicAct);
     },
@@ -3820,7 +3952,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const index = resultOrder(results.get(season)?.rows ?? []).findIndex((r) => r.character === character);
       return index < 0 ? null : index;
     },
-    tallies: (ids) => Object.fromEntries(ids.map((id) => [id, tallyOf(id)])),
+    /* A blind post's totals are its author's player's and its caster's alone (reaction_tallies' policy, 0357). */
+    tallies: (ids) => Object.fromEntries(ids.map((id) => [id, totalsWithheld(id, me()?.id) ? {} : tallyOf(id)])),
     viewCounts: (ids) => Object.fromEntries(ids.map((id) => [id, views.get(id) ?? 0])),
     /* The open season, else the one that started last: standings_season()'s rule, never the highest number. */
     season: () => seasons.find((s) => s.endsAt === null) ?? [...seasons].sort((a, b) => Date.parse(b.startsAt) - Date.parse(a.startsAt))[0] ?? null,
@@ -4036,9 +4169,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const plays = posts.length ? core.cardsOnMany(posts.map((a) => a.id), posts.length * PLAYS_PER_POST) : [];
       const above = core.effectsAbove([...new Set(posts.flatMap((a) => (a.character === null ? [] : [a.character])))], thread, summary.board);
       /* The plays at thread reach that wore off by time (not an admin's end) and keep their level on a post written while they were up: the page's posts' dates, nested replies' too, oldest play first, at most 100. */
+      /* Plays at character reach too (docs/plans/2026-11-12-glitter-keeps-plan.md, Task 2): each held to the posts its own character wrote, never another author's in the same window. */
       const kept: PlayAbove[] = [...reachPlays]
-        .filter(([play, r]) => r.reach === 'thread' && r.target === thread && r.endsAt <= now() && !over(play) && instance.cards.find((c) => c.key === acts.get(play)!.payload.card)?.keeps === true
-          && posts.some((p) => fallsOn({ at: iso(acts.get(play)!.at), ends: iso(r.endsAt) }, { at: p.createdAt }, true, new Date(now()))))
+        .filter(([play, r]) => (r.reach === 'thread' ? r.target === thread : r.reach === 'character') && r.endsAt <= now() && !over(play) && instance.cards.find((c) => c.key === acts.get(play)!.payload.card)?.keeps === true
+          && posts.some((p) => (r.reach === 'thread' || p.character === r.target) && fallsOn({ at: iso(acts.get(play)!.at), ends: iso(r.endsAt) }, { at: p.createdAt }, true, new Date(now()))))
         .sort(([a], [b]) => acts.get(a)!.at - acts.get(b)!.at || acts.get(a)!.order - acts.get(b)!.order).slice(0, 100)
         .map(([play, r]) => ({ play, reach: r.reach, target: r.target, endsAt: iso(r.endsAt), act: publicAct(acts.get(play)!) }));
       const played = [...plays, ...above.map((p) => p.act), ...kept.map((p) => p.act)];
@@ -4054,7 +4188,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
           character, posts: stats[character.id]?.posts ?? 0, standing: standings[character.id] ?? 0,
           reveals: reveals.filter((r) => r.character === character.id), turns: turns.filter((t) => t.character === character.id),
         })),
-        plays, surfaces: surfacesOn(plays), above, under, cut, kept, faces: core.myFaceDown(played.filter((a) => a.kind === 'set').map((a) => a.id)), states: core.effectStates(wanted), releases: core.myReleases(wanted), spent: plays.filter((a) => spentPlays().has(a.id)).map((a) => a.id),
+        plays, surfaces: surfacesOn(plays), above, under, cut, kept, faces: core.myFaceDown(played.filter((a) => a.kind === 'set').map((a) => a.id)), veiled: myVeiled(posts.map((a) => a.id)),
+        states: core.effectStates(wanted), releases: core.myReleases(wanted), spent: plays.filter((a) => spentPlays().has(a.id)).map((a) => a.id),
         visits,
         tallies: core.tallies(ids), mine: core.myReactions(ids), spun: core.spunFromMany(ids, SPUN_FROM_MAX), reading: core.reading([thread]),
         board: core.board(summary.board), following: core.following(thread), presence: presenceAt({ kind: 'thread', thread }), unread: core.alertsUnread(),
@@ -5185,7 +5320,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (!v || v.kind !== 'visit' || !post) throw new Error(`no such visit ${visit}`);
       /* Filed by its visit, so dated by the visit's own clock: a visit seeded on any clock keeps its infraction's two weeks on that same clock. */
       const at = o?.at ?? v.at;
-      /* file_visit (0420): the oldest live fall on the post, not caught or ended, that no infraction names yet; the filing is the fall caster's. */
+      /* file_visit (0361): the oldest live fall on the post, not caught or ended, that no infraction names yet; the filing is the fall caster's. */
       const fall = [...acts.values()].filter((a) => a.kind === 'card' && a.target === post.id && a.payload.caught === undefined && onPost(a) && !over(a.id)
         && instance.cards.find((c) => c.key === a.payload.card)?.discipline?.kind === 'fall' && !spentPlays().has(a.id)).sort((x, y) => x.at - y.at || x.order - y.order)[0];
       return write({

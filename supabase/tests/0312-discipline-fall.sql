@@ -1,8 +1,9 @@
--- Taking the fall (supabase/migrations/0420_discipline_cards.sql, section 3; docs/plans/2026-11-11-card-notes-part-5-plan.md, Task 4; the design docs/plans/2026-11-11-card-notes-design.md, "Take the Fall").
+-- Taking the fall (supabase/migrations/0361_discipline_cards.sql, section 3; docs/plans/2026-11-11-card-notes-part-5-plan.md, Task 4; the design docs/plans/2026-11-11-card-notes-design.md, "Take the Fall").
 --
 -- A card with a discipline of kind `fall`, cast on another character's post, waits there; the first filing of a visit to that post lands its infraction on the character that cast it, not on the post's author.
 --
 -- 0. The locks (first: committed rows must not meet this file's own locks): file_visit and a fall cast both take the post's row, so a cast racing a filing either takes it or stays unspent, never both.
+-- 0b. The lock order (0357's: post, then visits_open, then character): a heart cast from a post onto its author and a filing on that post meet at the post, with and without a fall on it, in both orders and at once.
 -- 1. A filing with a fall: the points on the caster's bar and none on the author's; the infraction names the author's post, the visit and the play; the visit's end and the post's notice are as without a fall.
 -- 2. A severe filing bans the caster, and the author is not banned; a caster banned after casting takes the points all the same.
 -- 3. The first filing spends it: the second visit files on the author; a second fall on the post is refused with the stack's words; a visit talked down or trapped spends nothing; a fall cast while a visit is open takes
@@ -143,6 +144,123 @@ begin
     end if;
   end loop;
   raise notice 'the eight races: % went to the fall and % to the author', falls, elses;
+end $$;
+
+-- ---- 0b. The lock order a heart keeps against a filing ----
+-- A heart is a card at character reach played from a post: place_cast takes that post `for share`, then the target character's row `for no key update`, and reads the bar. A visit's filing takes the post's row
+-- (`for no key update`), then visits_open, then in infract the character the infraction lands on (the post's author, or the taker of a fall on the post). So a heart cast from post P onto P's author T and a filing
+-- of a visit on P meet at P first: whichever holds P goes on, the other waits on P and holds nothing, and both finish. Were the heart to take T before P, a filing holding P and waiting on T and a heart holding T
+-- and waiting on P would be a deadlock, which this section was driven red with (a scratch copy of place_cast with the two locks swapped: the filing-first race below failed with 40P01).
+--
+-- Each race: another session holds P's row (as place_cast holds it for a cast on P), the first statement is sent and seen waiting on a lock, then the second, and the holder lets go; the lock queue is first come,
+-- first served. Both orders, without a fall on P (the filing lands on T, the heart's own target) and with one (the filing lands on the taker), and then the two at once. Nothing may fail, and the bars add up.
+-- The rows are committed (a second session must read them), so this section runs before the world below, and makes its own cards (t-lo-...), never an instance's.
+
+-- Two statements sent to two sessions in a fixed order while a third holds the post's row: each is seen waiting on a lock before the next is sent, then the holder lets go. Returns what each said (null for none).
+create function pg_temp.ordered_lo(on_post uuid, first_stmt text, second_stmt text) returns text[] language plpgsql as $$
+declare
+  url text := current_setting('kayfabb.scratch_url');
+  out text[] := array[null, null]::text[]; tries integer; conn text; n integer := 0;
+begin
+  perform extensions.dblink_connect('lo_h', url);
+  perform extensions.dblink_connect('lo_1', url);
+  perform extensions.dblink_connect('lo_2', url);
+  begin
+    perform extensions.dblink_exec('lo_h', 'begin');
+    perform extensions.dblink_exec('lo_h', format('do $h$ begin perform 1 from acts where id = %L for no key update; end $h$', on_post));
+    foreach conn in array array['lo_1', 'lo_2'] loop
+      n := n + 1;
+      perform extensions.dblink_exec(conn, 'set lock_timeout = ''20s''');
+      perform extensions.dblink_send_query(conn, format('/* lo_wait_%s */ %s', n, case when n = 1 then first_stmt else second_stmt end));
+      tries := 0;
+      loop
+        -- The activity view is read once in a transaction unless the snapshot is cleared.
+        perform pg_stat_clear_snapshot();
+        exit when exists (select 1 from pg_stat_activity a where a.query like '%/* lo_wait_' || n || ' */%' and a.pid <> pg_backend_pid() and a.wait_event_type = 'Lock');
+        tries := tries + 1;
+        if tries > 400 then raise exception 'statement % never waited on a lock', n; end if;
+        perform pg_sleep(0.025);
+      end loop;
+    end loop;
+    perform extensions.dblink_exec('lo_h', 'commit');
+  exception when others then
+    perform extensions.dblink_disconnect('lo_h'); perform extensions.dblink_disconnect('lo_1'); perform extensions.dblink_disconnect('lo_2');
+    raise;
+  end;
+  foreach conn in array array['lo_1', 'lo_2'] loop
+    begin
+      perform * from extensions.dblink_get_result(conn) as x(r jsonb);
+    exception when others then
+      out[case when conn = 'lo_1' then 1 else 2 end] := sqlstate || ' ' || sqlerrm;
+    end;
+    begin perform * from extensions.dblink_get_result(conn) as x(r jsonb); exception when others then null; end;
+  end loop;
+  perform extensions.dblink_disconnect('lo_h'); perform extensions.dblink_disconnect('lo_1'); perform extensions.dblink_disconnect('lo_2');
+  return out;
+end $$;
+
+do $$
+declare
+  m uuid := gen_random_uuid(); t uuid := gen_random_uuid();
+  i integer; with_fall boolean; heart_first boolean; label text;
+  ua uuid; uc uuid; ux uuid; author uuid; healer uuid; taker uuid; p uuid; old uuid; v uuid;
+  heart text; filing text; said text[]; bar_a integer; bar_x integer; infs integer; spent integer;
+begin
+  perform tests.commit(format($sql$
+    insert into settings (key, value) values ('warnBar', '{"size": 10, "bands": {"minor": 2, "moderate": 4, "severe": 7}, "decay": {"unit": "day", "count": 14}, "banDays": [1, 3, 7]}') on conflict (key) do nothing;
+    insert into card_kinds (key, name, alignment, rarity, play, reaches, discipline) values
+      ('t-lo-heart', 'Test Lock Heart', 'sweet', 'uncommon', 'cast', '{character}', '{"kind": "relief", "points": "lightestBand"}'),
+      ('t-lo-fall', 'Test Lock Fall', 'sweet', 'uncommon', 'cast', '{post}', '{"kind": "fall"}')
+      on conflict (key) do nothing;
+    insert into characters (id, name, staff, staff_kind, debuted_at) values (%1$L, 'Lo Race Mod', 'lo-race-mod', 'persona', now());
+    insert into threads (id, board, title) select %2$L, b.id, 'Lo race' from boards b where b.slug = 'general';
+  $sql$, m, t));
+  -- 1..4: the four ordered races (filing first or heart first, with or without a fall); 5..6: the two at once, with and without a fall.
+  for i in 1..6 loop
+    with_fall := i in (2, 4, 6);
+    heart_first := i in (3, 4);
+    label := format('race %s (%s, %s)', i, case when i >= 5 then 'at once' when heart_first then 'heart first' else 'filing first' end, case when with_fall then 'a fall on the post' else 'no fall' end);
+    ua := gen_random_uuid(); uc := gen_random_uuid(); ux := gen_random_uuid(); author := gen_random_uuid(); healer := gen_random_uuid(); taker := gen_random_uuid();
+    p := gen_random_uuid(); old := gen_random_uuid(); v := gen_random_uuid();
+    -- The author T has 4 points from an older post, so a heart has something to take (the lightest band, 2). P is T's post, with a visit on it that is due to file (a moderate charge, 4).
+    perform tests.commit(format($sql$
+      insert into auth.users (id, email) values (%1$L, 'lo-a%10$s@test.invalid'), (%2$L, 'lo-c%10$s@test.invalid'), (%3$L, 'lo-x%10$s@test.invalid');
+      insert into accounts (id) values (%1$L), (%2$L), (%3$L);
+      insert into wallets (account, balance) values (%1$L, 100), (%2$L, 100), (%3$L, 100);
+      insert into characters (id, owner, name, created_at, debuted_at) values (%4$L, %1$L, 'Lo Author %10$s', now(), now()), (%5$L, %2$L, 'Lo Healer %10$s', now(), now()), (%6$L, %3$L, 'Lo Taker %10$s', now(), now());
+      insert into class_history (character, class_key, started_at) values (%4$L, 'alpha', now()), (%5$L, 'alpha', now()), (%6$L, 'alpha', now());
+      insert into card_ledger (account, card, kind, price) values (%2$L, 't-lo-heart', 'bought', 0), (%3$L, 't-lo-fall', 'bought', 0);
+      insert into acts (id, character, kind, thread, payload) values (%8$L, %4$L, 'post', %7$L, '{"body": "An older post."}'), (%9$L, %4$L, 'post', %7$L, '{"body": "A racing post."}');
+      do $d$ begin perform infract(%4$L, 'moderate', %8$L, 'lo-race-mod'); end $d$;
+      set kayfabb.staff_writer = 'on';
+      insert into acts (id, character, kind, thread, target_act_id, payload) values (%11$L, %12$L, 'visit', %7$L, %9$L, jsonb_build_object(
+        'charges', jsonb_build_array(jsonb_build_object('rule_number', 1, 'board', (select board from threads where id = %7$L), 'band', 'moderate', 'cause', 'patrol', 'about_act', %9$L::text)),
+        'ends_at', now() - interval '1 hour', 'challenge', jsonb_build_object('kind', 'distraction'), 'line', 'Looking.'));
+      reset kayfabb.staff_writer;
+    $sql$, ua, uc, ux, author, healer, taker, t, old, p, i, v, m));
+    if with_fall then
+      perform tests.commit(format($sql$ do $d$ begin perform play_card(%L, 't-lo-fall', %L, %L, '{}', 0, '', 'post'); end $d$ $sql$, ux, taker, p));
+    end if;
+    if warn_points(author) is distinct from 4 then raise exception '%: the author starts at 4, not %', label, warn_points(author); end if;
+    heart := format('select play_card(%L, %L, %L, %L, %L, 0, %L, %L, %L)', uc, 't-lo-heart', healer, author, '{}', '', 'character', p);
+    filing := format('select file_visit(%L, ''Filed.'')', v);
+    if i <= 4 then
+      said := pg_temp.ordered_lo(p, case when heart_first then heart else filing end, case when heart_first then filing else heart end);
+    else
+      said := tests.race_service(heart, filing);
+    end if;
+    if said[1] is not null or said[2] is not null then raise exception '%: a heart cast from the post onto its author and a filing on the post must both finish, said %', label, said; end if;
+    select count(*), count(*) filter (where payload ? 'fall_play') into infs, spent from acts where kind = 'infraction' and payload ->> 'visit_act' = v::text;
+    if infs is distinct from 1 then raise exception '%: the visit filed once, not % times', label, infs; end if;
+    if (select count(*) from acts k where k.kind = 'card' and k.character = healer and k.payload ->> 'card' = 't-lo-heart') is distinct from 1 then raise exception '%: the heart landed once', label; end if;
+    bar_a := warn_points(author); bar_x := warn_points(taker);
+    -- Whichever went first, the bars add up: the heart takes 2 off the author's oldest points; the filing's 4 land on the author, or on the taker where a fall was on the post.
+    if with_fall then
+      if spent is distinct from 1 or bar_a is distinct from 2 or bar_x is distinct from 4 then raise exception '%: author % (2), taker % (4), fall spent %', label, bar_a, bar_x, spent; end if;
+    else
+      if spent is distinct from 0 or bar_a is distinct from 6 or bar_x is distinct from 0 then raise exception '%: author % (6), taker % (0)', label, bar_a, bar_x; end if;
+    end if;
+  end loop;
 end $$;
 
 -- ---- The world: a Boss, a Mod on staff, the settings, players ----

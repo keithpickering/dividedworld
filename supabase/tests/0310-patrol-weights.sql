@@ -1,4 +1,4 @@
--- The patrol's weighted draw (supabase/migrations/0421_patrol_weights.sql; docs/plans/2026-11-11-card-notes-part-5-plan.md, Task 5 and Decided in planning 11 to 13).
+-- The patrol's weighted draw (supabase/migrations/0362_patrol_weights.sql; docs/plans/2026-11-11-card-notes-part-5-plan.md, Task 5 and Decided in planning 11 to 13).
 --
 -- 1. watched_characters is a view of two columns (character, weight): the live watches on characters (a play at character reach whose card's discipline is a watch, not over by time and not
 --    ended by an admin). The digest role reads it and nobody else does; a play that is no watch, or is not on a character, is not in it.
@@ -88,7 +88,7 @@ begin
   end if;
 
   -- A watch past its time, an admin-ended one, a card that is no watch, and a watch on a post are not in it.
-  worn := tests.act(caster, 'card', t, jsonb_build_object('card', 't-watch', 'reach', 'character', 'character', other, 'ends', now() - interval '1 hour'), p);
+  worn := tests.act(caster, 'card', t, jsonb_build_object('card', 't-watch', 'reach', 'character', 'character', other, 'ends', now() - interval '1 hour'), p, now() - interval '2 hours');
   insert into play_reach (play, reach, character, ends_at) values (worn, 'character', other, now() - interval '1 hour');
   not_watch := tests.act(caster, 'card', t, jsonb_build_object('card', 't-not-watch', 'reach', 'character', 'character', other, 'ends', now() + interval '7 days'), p);
   insert into play_reach (play, reach, character, ends_at) values (not_watch, 'character', other, now() + interval '7 days');
@@ -198,7 +198,7 @@ begin
   if coalesce(r, 99) >= 1.5 then raise exception 'an admin-ended watch still drew % times as often', round(r, 2); end if;
   -- One that runs out of time on its own.
   declare
-    worn uuid := tests.act(caster, 'card', t, jsonb_build_object('card', 't-watch', 'reach', 'character', 'character', watcher, 'ends', now() - interval '1 minute'), p);
+    worn uuid := tests.act(caster, 'card', t, jsonb_build_object('card', 't-watch', 'reach', 'character', 'character', watcher, 'ends', now() - interval '1 minute'), p, now() - interval '2 hours');
   begin
     insert into play_reach (play, reach, character, ends_at) values (worn, 'character', watcher, now() - interval '1 minute');
   end;
@@ -249,7 +249,7 @@ begin
   insert into play_reach (play, reach, character, ends_at) values (pl, 'character', c_live, now() + interval '7 days');
   insert into pw_case values (pl, 'live watch');
   -- watch over by time
-  pl := tests.act(caster, 'card', t, jsonb_build_object('card', 't-watch', 'reach', 'character', 'character', c_time, 'ends', now() - interval '1 hour'), p);
+  pl := tests.act(caster, 'card', t, jsonb_build_object('card', 't-watch', 'reach', 'character', 'character', c_time, 'ends', now() - interval '1 hour'), p, now() - interval '2 hours');
   insert into play_reach (play, reach, character, ends_at) values (pl, 'character', c_time, now() - interval '1 hour');
   insert into pw_case values (pl, 'watch over by time');
   -- watch an admin ended

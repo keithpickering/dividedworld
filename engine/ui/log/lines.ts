@@ -657,7 +657,7 @@ function modRows(data: LogData, words: Words): LogRow[] {
       : b.ruling === 'reduced' ? `An appeal shortened the ban: it ${over ? 'ended' : 'ends'} ${utcWhen(b.until)} UTC.`
       : b.ruling === 'increased' ? `An appeal lengthened the ban: it ${over ? 'ended' : 'ends by itself'} ${utcWhen(b.until)} UTC.`
       : `The ban ${over ? 'ended by itself' : 'ends by itself'} ${utcWhen(b.until)} UTC.`;
-    /* An Unban ended it (`my_bans.lifted_at`, 0420): said by the card that did, in place of "ended by itself". A live lift is always the ban's first end, so an appeal ruled after it changes nothing here. */
+    /* An Unban ended it (`my_bans.lifted_at`, 0361): said by the card that did, in place of "ended by itself". A live lift is always the ban's first end, so an appeal ruled after it changes nothing here. */
     const lifted = b.liftedAt != null;
     const how = lifted ? `The ban ended ${utcWhen(b.liftedAt!)} UTC, when ${words.instance.cards.find((c) => c.key === b.liftedCard)?.name ?? 'a card'} was played on ${nameOf(b.character)}.` : ends;
     rows.push({
@@ -893,7 +893,8 @@ function cardRows(data: LogData, words: Words): LogRow[] {
     if (ends && Date.parse(ends) <= words.now && !instance.cards.find((c) => c.key === e.card)?.scoresAs) {
       rows.push({
         key: `gimmickEnded:${e.act}`, kind: 'gimmickEnded', at: ends, what: `${cardName(e.card)}${place ? ` on ${place}` : ''} ended`,
-        details: [`${cardName(e.card)} on `, link ?? 'your post', ' ended.'],
+        /* A card that keeps (`CardRules.keeps`) says what it left: the posts written while it was up keep it. Not a play an admin ended (its `ended` entry, `my_cards_ended`): no post keeps that. */
+        details: [`${cardName(e.card)} on `, link ?? 'your post', instance.cards.find((c) => c.key === e.card)?.keeps === true && !data.log.ended.some((x) => x.play === e.act) ? ' ended. Posts written while it was up keep it.' : ' ended.'],
         aura: 0, wallet: null, characters: caster ? [caster] : [],
       });
     }

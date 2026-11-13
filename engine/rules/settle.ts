@@ -231,7 +231,7 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
     .filter((r) => r.at < window.to && !systemActs.has(r.act))
     .sort((a, b) => a.at - b.at || cmp(a.act, b.act) || cmp(a.player, b.player) || cmp(a.character, b.character) || cmp(a.kind, b.kind))
     .map((r) => {
-      const quadrant = quadrantOf.get(r.kind);
+      const quadrant = quadrantOf.get(r.kind) ?? r.quadrant;
       if (!quadrant) throw new Error(`settle: reaction kind "${r.kind}" is not one the instance has`);
       if (playerOf(r.character) !== r.player) throw new Error(`settle: reaction by ${r.character} names a player who does not own it`);
       return { ...r, quadrant };
@@ -778,7 +778,7 @@ export function estimateForOwner(input: SettlementInput, instance: Instance, pla
     // caller's nor the Act's author's, as settle counts them.
     const author = playerOf.get(authorOf.get(valuing.act) ?? '');
     const times = input.reactions
-      .filter((r) => r.act === valuing.act && quadrantOf.get(r.kind) === d.quadrant && inWindow(r.at) && r.at > valuing.from && r.player !== player && r.player !== author)
+      .filter((r) => r.act === valuing.act && (quadrantOf.get(r.kind) ?? r.quadrant) === d.quadrant && inWindow(r.at) && r.at > valuing.from && r.player !== player && r.player !== author)
       .map((r) => r.at).sort((x, y) => x - y);
     if (!times.length) { lines.push(line); continue; }
     // Whole hundredths that add up to the line: the remainder to the earliest.

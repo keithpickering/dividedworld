@@ -1,5 +1,5 @@
 -- The patrol's weighted draw, and `modBots.patrolPool` (docs/plans/2026-11-11-card-notes-part-5-plan.md, Task 5 and Decided in planning 11 to 13; the design is
--- docs/plans/2026-11-11-card-notes-design.md, section 2, "Tattle-Tale"). It follows 0420, which gave `card_kinds` its `discipline` column: a card whose discipline is a watch
+-- docs/plans/2026-11-11-card-notes-design.md, section 2, "Tattle-Tale"). It follows 0361, which gave `card_kinds` its `discipline` column: a card whose discipline is a watch
 -- multiplies its character's weight in a patrol's draw while it is up. Nothing in a patrol's pick had a weight until now, so this writes the draw.
 --
 -- watched_characters
@@ -14,6 +14,8 @@
 --   candidates  the newest `pool` eligible posts on the beat, read as the sample was: each board's newest `pool` threads (it was `most`), each thread's newest `most` posts (unchanged), and the
 --               outer limit at `pool` (it was `most`). With a pool no larger than the sample, every candidate is returned, whatever the weights.
 --   weight      the largest `watched_characters.weight` of the post's author, else 1.
+--               The author is the post's character as acts_public shows it: a post under a live author veil (0357) is the stand-in's, a staff character, so it is no candidate at all and its true author's
+--               watch never weighs it, as no Mod Bot visits a veiled post (supabase/tests/0314-discipline-veils.sql, section 5).
 --   the draw    each candidate draws `u`, a number in (0, 1) from hashtextextended(seed::text || ':' || the post's id, 0), and its key is -ln(u) / weight; the sample is the `most` smallest keys
 --               (a weighted draw without replacement). The same seed draws the same sample, so a patrol that runs again reads the posts it read. Ties break by id.
 --   the order   the sample is returned newest first, in the shape it has today, so its order says nothing of a weight; nobody is shown a patrol's sample.

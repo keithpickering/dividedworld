@@ -34,7 +34,7 @@ import { Reactions } from '../reactions/Reactions.tsx';
 import { ENGINE_DEFAULT_PRONOUNS } from '../../rules/pronouns.ts';
 import { lowerFirst } from '../copy-words.ts';
 import { useKayfa } from '../context.tsx';
-import { ThreadCtx, useThread, type ThreadContext, type Under } from './context.ts';
+import { ThreadCtx, useOwnerOf, useThread, type ThreadContext, type Under } from './context.ts';
 import { moveOffice } from '../board/move-words.ts';
 import { GroupMoveLine, RulingTag, rulingOf } from './GroupMove.tsx';
 import { ConcealingNote, HiddenNote, HiddenOwn, useMyHidden } from '../conduct/Hidden.tsx';
@@ -60,6 +60,7 @@ function Body({ act, name, spoken, person, editing, own, onEdit, onDone, marks, 
   /** What the post's own player may read of it while hidden: undefined while it is read, null for nothing more than the note. */
   readonly own: MyHiddenVersion | null | undefined; readonly marks: ReactNode; readonly visit: Visit | undefined; readonly act: Act; readonly name: string; readonly spoken: string; readonly person: PostbitPerson | undefined; readonly editing: boolean; readonly onEdit: () => void; readonly onDone: () => void }) {
   const { summary, tallies, mine, changed, plays, nameOf: casterName } = useThread();
+  const owner = useOwnerOf();
   /* A hidden post's words are never drawn from the Act: the note stands in their place. Its own player, and only that, reads their words back (Hidden.tsx, read by the article). */
   const hidden = act.hidden === true;
   switch (act.kind) {
@@ -101,13 +102,16 @@ function Body({ act, name, spoken, person, editing, own, onEdit, onDone, marks, 
       /* A post, and a spin's first Act, which is a post that opens on its origin. */
       const origin = act.kind === 'spin' && summary.originActId !== null && summary.originThread !== null;
       const ruling = rulingOf(act);
+      /* A veiled post is drawn under the stand-in, and it is still its author's player's: the edit form saves as the character that wrote it, and the row is theirs. */
+      const by = owner(act);
+      const editable = by === act.character ? act : { ...act, character: by };
       return (
         <>
           {ruling && <RulingTag ruling={ruling} />}
           {origin && <Origin summary={summary} />}
           {!editing && <ViolationNotice visit={visit} />}
           {editing
-            ? <EditPost key={own?.words ?? ''} act={act} seq={act.seq!} onDone={onDone} onSaved={changed} {...(own ? { start: own.words } : {})} />
+            ? <EditPost key={own?.words ?? ''} act={editable} seq={act.seq!} onDone={onDone} onSaved={changed} {...(own ? { start: own.words } : {})} />
             : act.concealing === true && !hidden
               ? <ConcealingNote />
               : hidden
@@ -119,7 +123,7 @@ function Body({ act, name, spoken, person, editing, own, onEdit, onDone, marks, 
               )
               : <PostEffects plays={plays} post={act} place="thread" marks={marks} nameOf={casterName} bodyOf={(version) => <BbCode text={text(version.currentPayload.body)} quoteHead={quoteHead} />}><BbCode text={text(act.currentPayload.body)} quoteHead={quoteHead} /></PostEffects>}
           <LastEdited act={act} />
-          <Reactions act={act.id} author={act.character} authorName={spoken} tallies={tallies} mine={mine} />
+          <Reactions act={act.id} author={by} authorName={spoken} tallies={tallies} mine={mine} plays={plays} />
           {person && <Signature text={person.character.signature} />}
         </>
       );
@@ -160,6 +164,7 @@ function Actions({ act, about, canEdit, editing, onEdit, editButton, spinOrigin,
   readonly spinOrigin: SpinOrigin | null; readonly setSpinOrigin: (o: SpinOrigin | null) => void;
 }) {
   const { quote, plays } = useThread();
+  const owner = useOwnerOf();
   const { instance } = useKayfa();
   const { actingCharacters } = usePlayer();
   const spinButton = useRef<HTMLButtonElement>(null);
@@ -169,7 +174,8 @@ function Actions({ act, about, canEdit, editing, onEdit, editButton, spinOrigin,
   const stopped = quoteStopped(usePlays(plays, act.id).plays, instance);
   /* A post under a no-quote has no Quote link: left out, not disabled, since its mark and Lens say why. */
   const quotable = (act.kind === 'post' || act.kind === 'spin') && quote !== null && !stopped;
-  const mine = act.kind === 'post' && act.character !== null && actingCharacters.some((c) => c.id === act.character);
+  const by = owner(act);
+  const mine = act.kind === 'post' && by !== null && actingCharacters.some((c) => c.id === by);
   /* The post's own Spin thread is pressed while its form is open for the post; a play's form is opened from its row in the Lens. */
   const spinning = spinOrigin?.id === act.id;
   return (
@@ -277,10 +283,12 @@ const PostArticle = memo(function PostArticle({ act, person, layout, slid, cut }
     : null;
   /* The character's own live plays, on its postbit, and the armed character card's ghost there (the card mechanic's design, section 7). */
   /* Drawn only where a play or an armed card concerns the character; memoized, so the memo on Postbit still skips a postbit whose character, post and page are unchanged. */
-  const shown = useReachShown(plays, act.kind === 'post' ? act.character : null, 'character');
+  /* The stand-in a veil shows takes no character card: no ghost of an armed one on its postbit. */
+  const standIn = person?.character.office === 'anonymous';
+  const shown = useReachShown(plays, act.kind === 'post' && !standIn ? act.character : null, 'character');
   const characterMarks = useMemo(() => (shown && act.kind === 'post' && act.character !== null
     ? <PostMarks
-        post={act.character} plays={plays} compare={false} to={href} nameOf={casterName} faceOf={faceOf} tallies={tallies} mine={mine}
+        post={act.character} postAt={act.createdAt} plays={plays} compare={false} to={href} nameOf={casterName} faceOf={faceOf} tallies={tallies} mine={mine}
         reachAt={{ reach: 'character', target: act.character, name, ...(person ? { pronouns: person.character.pronouns } : {}), fromPost: act, thread, board: summary.board, title: summary.title, to: href, plays, know: know ?? (async () => {}), focusBack: () => document.getElementById(`post-${seq}`) }}
         onSpin={(play, label, opener) => setSpinOrigin({ id: play.id, label, opener, at: act.id })}
       />

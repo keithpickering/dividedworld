@@ -1,4 +1,4 @@
--- What the fall's reads cost at a busy instance's scale (supabase/migrations/0420_discipline_cards.sql, Task 4 of docs/plans/2026-11-11-card-notes-part-5-plan.md).
+-- What the fall's reads cost at a busy instance's scale (supabase/migrations/0361_discipline_cards.sql, Task 4 of docs/plans/2026-11-11-card-notes-part-5-plan.md).
 --
 -- Two reads were found to be led by every fall infraction the instance holds: thread_page's `spent` (the plays an infraction names), which read the infractions through acts_public, whose concealing layer hides
 -- `fall_play` from acts_fall_spent and so hashed them all whenever a page held a fall play; and my_falls_taken (the author's log row), which began from the infractions and filtered to the caller's posts afterward.

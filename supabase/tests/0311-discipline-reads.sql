@@ -1,4 +1,4 @@
--- The discipline cards' reads for the log (supabase/migrations/0420_discipline_cards.sql, section 2; docs/plans/2026-11-11-card-notes-part-5-plan.md, Task 3).
+-- The discipline cards' reads for the log (supabase/migrations/0361_discipline_cards.sql, section 2; docs/plans/2026-11-11-card-notes-part-5-plan.md, Task 3).
 --
 -- 1. my_infractions gains card_relief (what the cards took off an infraction, 0 where none) and fall_play (the play that took a fall, null until section 3 writes one), as its last columns.
 -- 2. my_bans gains lifted_at and lifted_card (when and by which card the first live lift ended the ban; both null where no card acted, and where an admin has ended the play).

@@ -40,7 +40,7 @@ describe('which posts a card lands on', () => {
   });
 });
 
-/* A fall a filing spent holds its place in the stack for good unless an admin ended it, as the server counts it (place_cast, 0420); the form is given `stackPlays`, never `livePlays`, which draws no spent fall. */
+/* A fall a filing spent holds its place in the stack for good unless an admin ended it, as the server counts it (place_cast, 0361); the form is given `stackPlays`, never `livePlays`, which draws no spent fall. */
 describe('a post whose fall a filing spent', () => {
   const fall = { ...rules('fall', 1), discipline: { kind: 'fall' as const }, reaches: ['post' as const], key: 'fall' };
   const cards = [{ ...fall, name: 'Fall', rarity: 'uncommon' } as unknown as CardRules];

@@ -368,12 +368,13 @@ begin
     insert into acts (character, kind, thread, target_act_id, payload, created_at)
     select a, 'card', t, lone, jsonb_build_object('card', 'glint', 'reach', 'character', 'character', b), now() + make_interval(secs => i)
     from generate_series(1, 2000) i returning id, created_at)
-  insert into play_reach (play, reach, character, ends_at) select id, 'character', b, created_at + interval '7 days' from later;
+  insert into play_reach (play, reach, character, started_at, ends_at) select id, 'character', b, created_at, created_at + interval '7 days' from later;
   set local session_replication_role = origin;
   analyze play_reach;
   analyze acts;
   aged := pg_temp.buffers_of(format('select play_moment(%L)', one_play));
   raise notice 'play_moment touched % buffers for a play with 2,000 later plays on its author', aged;
   if aged > big + 25 then raise exception 'play_moment touches % buffers for a play and % once 2,000 plays began after it; it reads the plays live then', big, aged; end if;
-  if stacked > small + 55 then raise exception 'play_moment touches % buffers on a post with one layer and % with its stack full; it is a probe per layer', small, stacked; end if;
+  -- Each layer is a probe of acts_public, which since 0357 pays the two probes of post_veils_post a read of an Act pays (one for the row, one for the Act it targets): about 17 buffers a layer where it was 7.
+  if stacked > small + 90 then raise exception 'play_moment touches % buffers on a post with one layer and % with its stack full; it is a probe per layer', small, stacked; end if;
 end $$;

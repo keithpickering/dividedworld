@@ -32,13 +32,14 @@ import { MomentView, useShownMoment } from './Moment.tsx';
 import { backoff, REPEAT_TRIES, useTails } from './tails.ts';
 import { driveStore, drivesOfPlays, giftOf, useDriveGifts, type Gifts, type PlayedDrive } from './drives.ts';
 import { currentVersion, resolveWritten, versionAt, versionsOf } from './written.ts';
-import { createPlays, inPlayOrder, keepingKeys, livePlays, nextEnd, PLAYS_PER_POST, playOf, playsFallingOn, readSurface, shownPlays, usePlays, type Plays } from './plays.ts';
+import { createPlays, inPlayOrder, keepingKeys, livePlays, nextEnd, PLAYS_PER_POST, playOf, playsFallingOn, readSurface, shownPlays, TIMER_MOST, useAt, usePlays, type Plays } from './plays.ts';
 import { createClaims, NO_INK } from './claims.ts';
 import { drawnInMoment, surfaceMost, type CardRules, type Reach } from '../../rules/cards.ts';
 import type { Span } from '../../rules/types.ts';
 import type { PostPlays } from './plays.ts';
 import type { CardPlay, CardUi, CardView, Drive, EffectPlace, EffectProps, Written } from './types.ts';
 import { glassInk } from './ink.ts';
+import { useOwnerOf } from '../thread/context.ts';
 
 const NOT_AUTHOR = 'only the post\'s author saves what is on it';
 /** What a staged page's effect is answered with: it saves nothing and releases nothing, without asking anyone (staged.ts). */
@@ -119,9 +120,11 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
   const onAuthor = usePlays(plays, post.character ?? '');
   /*
    * The character of the reader's that wrote the post, if any: the only one a state is saved as. Retired or not, since the
-   * post's player answers for what is on it (#85); casting and releasing stay with the masks that can act.
+   * post's player answers for what is on it (#85); casting and releasing stay with the masks that can act. A post under an author veil is drawn
+   * under the stand-in, and its author's player alone is told it is theirs (`ownerOf`).
    */
-  const author = writingCharacters.find((c) => c.id === post.character) ?? null;
+  const owner = useOwnerOf();
+  const author = writingCharacters.find((c) => c.id === owner(post)) ?? null;
   const staged = useStaged();
   /* The post's ink registry, one for all its effects (claims.ts). */
   const claims = useMemo(createClaims, []);
@@ -200,12 +203,12 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
   const now = useUntil(above.flatMap((l) => l.drawn));
 
   /*
-   * A play a trap caught does nothing, and a card back draws no effect: neither wraps the post (the card mechanic's design, section 4). The thread's plays are
+   * A play a trap caught does nothing, and a card back draws no effect: neither wraps the post (the card mechanic's design, section 4). The thread's and the author's plays are
    * those that fall on this post (`playsFallingOn`): up now, or of a card that keeps and written while the post was up, so a week-long play still lights a post written inside it.
    */
   const keeping = useMemo(() => keepingKeys(instance.cards), [instance.cards]);
   const layers = [
-    ...above.map((l) => ({ reach: l.reach as Reach, acting: l.reach === 'thread' ? playsFallingOn(l.drawn, post, keeping, now) : livePlays(l.drawn, now), of: l.of })),
+    ...above.map((l) => ({ reach: l.reach as Reach, acting: l.reach === 'thread' || l.reach === 'character' ? playsFallingOn(l.drawn, post, keeping, now) : livePlays(l.drawn, now), of: l.of })),
     { reach: 'post' as Reach, acting: here.plays.filter((p) => !p.caught && !p.reversed && !p.untaken && !p.faceDown && !p.reach), of: here },
   ];
   /*
@@ -236,11 +239,13 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
       const card = ui.cards.find((c) => c.key === key);
       if (!card?.Effect) continue;
       const Effect = card.Effect;
+      /* Every play here is beyond the post and over: the effect draws what the post keeps of it (`kept`), not a live effect. */
+      const kept = mine.length > 0 && mine.every((p) => p.reach !== undefined && p.ends !== undefined && Date.parse(p.ends) <= now);
       wrapped = (
         <BoundEffect
           key={`${reach}:${key}`} Effect={Effect} store={plays} reach={reach} cardKey={key}
           post={post} plays={mine} states={of.states} released={of.released} place={place} marks={card.takeover ? marks : null}
-          written={writtenOf(written, mine, writing)} {...(drawn !== null && reach === 'post' ? { version: drawn } : {})}
+          {...(kept ? { kept: true as const } : {})} written={writtenOf(written, mine, writing)} {...(drawn !== null && reach === 'post' ? { version: drawn } : {})}
           save={reach === 'post' ? save : beyondSave} release={release} nameOf={nameOf}
           give={give} moreGifts={moreGifts} wallet={wallet}
           {...(reach === 'post' && driving.has(key) ? { drives: drivesOf(played, key, gifts, at) } : {})}
@@ -381,23 +386,6 @@ function drivesOf(played: readonly PlayedDrive[], card: string, gifts: ReadonlyM
   });
 }
 
-/**
- * The time, redrawn when the soonest of these ends passes, so a drive closes on the screen by itself (its way out) without a read. Nothing
- * is scheduled while none is ahead.
- */
-function useAt(ends: readonly number[]): number {
-  const { api } = useKayfa();
-  const [now, setNow] = useState(() => api.now());
-  const ahead = ends.filter((e) => e > now);
-  const next = ahead.length === 0 ? null : Math.min(...ahead);
-  useEffect(() => {
-    if (next === null) return;
-    const timer = setTimeout(() => setNow(api.now()), Math.min(TIMER_MOST, Math.max(0, next - api.now()) + 1));
-    return () => clearTimeout(timer);
-  }, [api, next, now]);
-  return now;
-}
-
 const NOTHING_WRITTEN: ReadonlyMap<Id, Written> = new Map();
 /** What an effect is given of the tails: those of its own plays that write, and none for a card that does not. */
 function writtenOf(all: ReadonlyMap<Id, Written>, mine: readonly CardPlay[], keys: ReadonlySet<string>): ReadonlyMap<Id, Written> {
@@ -412,7 +400,6 @@ const beyondSave: EffectProps['save'] = async () => ({ ok: false, error: 'a card
  * The time, redrawn when the soonest of these plays' ends passes, so a play beyond a post stops drawing at its end without a reread
  * (its way out). Nothing is scheduled while none ends ahead.
  */
-const TIMER_MOST = 2 ** 31 - 1;
 export function useUntil(plays: readonly CardPlay[]): number {
   const { api } = useKayfa();
   const [now, setNow] = useState(() => api.now());

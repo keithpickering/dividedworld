@@ -638,8 +638,8 @@ export interface Character {
   readonly bannedUntil?: string;
 }
 
-/** An office a staff character holds (0082). `waiting` is never shown on a character (a persona that has not debuted is in no public list); `developer` is the developer persona's, which holds no office. */
-export type Office = 'boss' | 'mod' | 'member' | 'benched' | 'waiting' | 'developer';
+/** An office a staff character holds (0082). `waiting` is never shown on a character (a persona that has not debuted is in no public list); `developer` is the developer persona's, which holds no office; `anonymous` is the stand-in's, shown for a post whose author a card has hidden, and holds no badge either. */
+export type Office = 'boss' | 'mod' | 'member' | 'benched' | 'waiting' | 'developer' | 'anonymous';
 
 /**
  * One standing award as a screen shows it. `trophy` is the kind's key: an instance's own kind draws its art from the instance's UI by it, and `art` is the URL of a
@@ -1790,14 +1790,14 @@ export interface LogInfraction {
   readonly relief: number;
   /** When a ban emptied the bar, so these points stopped counting before their time; null where none did. */
   readonly emptiedAt: string | null;
-  /** The points Happy Hearts took off (`my_infractions.card_relief`, 0420); 0 or absent where no card did (a payload older than 0420 has none). Counted beside `relief`, which is an appeal's. */
+  /** The points Happy Hearts took off (`my_infractions.card_relief`, 0361); 0 or absent where no card did (a payload older than 0361 has none). Counted beside `relief`, which is an appeal's. */
   readonly cardRelief: number;
   /** The Act of the Take the Fall play this infraction landed through, on the character that took the fall (`my_infractions.fall_play`); null for an ordinary filing. */
   readonly fallPlay: Id | null;
 }
 
 /**
- * A filing that landed on a character that took the fall for a post one of the player's characters wrote (`my_falls_taken`, 0420): the row
+ * A filing that landed on a character that took the fall for a post one of the player's characters wrote (`my_falls_taken`, 0361): the row
  * is the author's player's, and the points are the taker's, named by its public name. Nothing here says who owns the taker.
  */
 export interface LogFall {
@@ -1833,7 +1833,7 @@ export interface LogBan {
   readonly ruling: AppealVerdict | null;
   /** When the ban ends by its own Act, before any ruling. */
   readonly ownUntil: string;
-  /** When an Ultra Happy Heart lifted it (`my_bans.lifted_at`, 0420); null where none did. A lift ends the ban at that time, so `until` reads the same. */
+  /** When an Ultra Happy Heart lifted it (`my_bans.lifted_at`, 0361); null where none did. A lift ends the ban at that time, so `until` reads the same. */
   readonly liftedAt: string | null;
   /** The key of the card whose play lifted it; null where none did. */
   readonly liftedCard: string | null;
@@ -2250,6 +2250,11 @@ export interface ThreadPage {
   /** The plays at thread reach that keep their level on this page's posts after they wore off (a `keeps` card, a play that ended by time and not by an admin), in the shape of `above`. */
   readonly kept: readonly PlayAbove[];
   readonly faces: Awaited<ReturnType<KayfaApi['myFaceDown']>>;
+  /**
+   * The caller's own veiled posts among the page's (`my_veiled_posts`): a post whose author an author veil hides is shown under the stand-in to every reader, and only its author's player
+   * is told here that it is theirs, which of their characters wrote it, the veil's play and when it ends. Empty for everyone else.
+   */
+  readonly veiled: readonly { readonly post: Id; readonly character: Id; readonly play: Id; readonly endsAt: string }[];
   readonly states: Awaited<ReturnType<KayfaApi['effectStates']>>;
   readonly releases: Awaited<ReturnType<KayfaApi['myReleases']>>;
   /** The Take the Fall plays on the page that a filing has spent (an infraction names each as its `fall_play`), by the play's id; a payload older than the card leaves it out, and it reads as none. */
@@ -2924,7 +2929,8 @@ export interface KayfaApi {
   wash(play: Id, character: Id, input: unknown): Promise<Answer<SurfaceWritten>>;
   /** A surface play's live draws and washes, oldest first (`surface_acts`); null where the play has no surface. */
   surfaceActs(play: Id): Promise<SurfaceActs | null>;
-  react(act: Id, character: Id, kind: string): Promise<Answer<{ readonly act: Id; readonly tally: Tally }>>;
+  /** Leave a reaction: an instance's kind, or a post-local one (key `x-…`) its post offers. The tally is null where the post's totals are hidden (a blind post), for everyone alike. */
+  react(act: Id, character: Id, kind: string): Promise<Answer<{ readonly act: Id; readonly tally: Tally | null }>>;
   turn(character: Id, to: string, loudness: 'silent' | 'announced', showFrom: boolean, showTo: boolean): Promise<Answer<TurnAsked>>;
   withdrawTurn(character: Id): Promise<Answer<{ readonly withdrawn: true }>>;
   unmask(character: Id, thread: Id, message: string): Promise<Answer<Act>>;

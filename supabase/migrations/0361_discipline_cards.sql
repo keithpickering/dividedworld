@@ -3,7 +3,7 @@
 --
 -- A card with a `discipline` does something to the staff's discipline of its target, one of a fixed list of four kinds the code maps to an effect with limits (The System acts; it never destroys what a player wrote):
 --   relief  on a character: takes its oldest live points off its warn bar, the least band or all of them        unban  on a character: ends every ban running on it
---   fall    on another character's post: the next filing lands on the caster (section 3)                       watch  on a character: weights it up in a patrol's draw while it lasts (migration B)
+--   fall    on another character's post: the next filing lands on the caster (section 3)                       watch  on a character: weights it up in a patrol's draw while it lasts (0362_patrol_weights)
 -- A relief and an unban are over when they land: no time up, no stack, no play_reach row; they leave rows beside their play (warn_reliefs, ban_lifts) and the reads below subtract them. The Act is never changed.
 --
 -- ===================================================================================================== Section 1 (Task 2) ====
@@ -40,7 +40,7 @@ alter table card_kinds add constraint card_kinds_discipline check (
 alter table card_kinds drop constraint card_kinds_beyond_lasts;
 alter table card_kinds add constraint card_kinds_beyond_lasts check (reaches = '{post}' or lasts is not null or coalesce(discipline ->> 'kind' in ('relief', 'unban'), false));
 
--- card_kinds_problem (0316's), with the discipline rules in the engine's words, each naming the card; everything else as 0316 wrote it.
+-- card_kinds_problem (0357_post_veils's, which is 0316's with the veil's and the reaction's rules), with the discipline rules in the engine's words, each naming the card; everything else as 0357 wrote it.
 create or replace function public.card_kinds_problem(cards jsonb)
  RETURNS text
  LANGUAGE sql
@@ -52,6 +52,8 @@ AS $function$
       e #>> '{trap,trigger,on}' as trigger_on, e -> 'gimmick' as gimmick, e,
       case when jsonb_typeof(e -> 'reaches') = 'array' then exists (select 1 from jsonb_array_elements_text(e -> 'reaches') r where r <> 'post') else false end as beyond,
       coalesce(e -> 'reaches' = '["character"]'::jsonb, false) as character_alone,
+      -- A card has a veil when the key is there and is not a JSON null: seed_instance reads a null through nullif as no veil, and this agrees.
+      coalesce(e -> 'veil', 'null'::jsonb) <> 'null'::jsonb as has_veil,
       nullif(e -> 'discipline', 'null') as disc
     from jsonb_array_elements(coalesce(cards, '[]')) e
   ), dc as (
@@ -97,9 +99,9 @@ AS $function$
            then format('card "%s" is a use card and reaches %s; a use card reaches a post, a character or a thread', c.key,
              (select string_agg(case when r.v = 'board' then 'a board' else to_jsonb(r.v)::text end, ' and ' order by r.n)
               from jsonb_array_elements_text(c.e -> 'reaches') with ordinality r(v, n) where r.v not in ('post', 'character', 'thread'))) end,
-      -- A skim card's time up is its own (Part 6 of the card notes): it lasts though it reaches a post alone.
-      case when c.e ? 'lasts' and c.play <> 'use' and not c.beyond and not c.e ? 'skim'
-           then format('card "%s" has a time up (lasts), and only a Use card or a card reaching beyond a post does', c.key) end,
+      -- A cast on a post may end (a skim, a veil), so only a set card (or a keep) with a time up and no reach beyond a post is refused: instance.ts, playProblems.
+      case when c.e ? 'lasts' and c.play not in ('use', 'cast') and not c.beyond
+           then format('card "%s" has a time up (lasts), and only a use card, a cast card or a card reaching beyond a post does', c.key) end,
       -- The count is read as a number only once it is one: AND does not promise to read its sides in order.
       case when c.e ? 'lasts' and not coalesce(jsonb_typeof(c.e -> 'lasts') = 'object' and c.e #>> '{lasts,unit}' in ('hour', 'day', 'week', 'month')
              and case when jsonb_typeof(c.e #> '{lasts,count}') = 'number'
@@ -135,6 +137,17 @@ AS $function$
       case when jsonb_typeof(c.e -> 'skim') = 'object' and c.beyond then format('card "%s" has a skim, and a card with a skim reaches a post alone', c.key) end,
       case when jsonb_typeof(c.e -> 'skim') = 'object' and not c.e ? 'lasts' then format('card "%s" has a skim with no time up (lasts); a skim ends at its time', c.key) end,
       case when jsonb_typeof(c.e -> 'skim') = 'object' and coalesce((c.e ->> 'writes')::boolean, false) then format('card "%s" has a skim and writes; a card with a skim does not write', c.key) end,
+      -- Part 3 of the card notes (instance.ts: veilProblems), each in the engine's words. A veil or a reaction is a cast card on a post alone; a veil is author or totals and ends at its time (lasts); a
+      -- reaction neither writes nor is seeded; a card has one of the two. `addsReaction` is the flag the seed sends (the engine's `reaction`), a boolean.
+      case when c.has_veil and c.play <> 'cast' then format('card "%s" has a veil, and only a cast card does', c.key) end,
+      case when c.has_veil and c.e -> 'reaches' is not null and c.e -> 'reaches' is distinct from '["post"]'::jsonb then format('card "%s" has a veil, and a card with a veil reaches a post alone', c.key) end,
+      case when c.e -> 'addsReaction' = 'true'::jsonb and c.play <> 'cast' then format('card "%s" has a reaction, and only a cast card does', c.key) end,
+      case when c.e -> 'addsReaction' = 'true'::jsonb and c.e -> 'reaches' is not null and c.e -> 'reaches' is distinct from '["post"]'::jsonb then format('card "%s" has a reaction, and a card with a reaction reaches a post alone', c.key) end,
+      case when c.has_veil and coalesce(c.e ->> 'veil' not in ('author', 'totals'), true) then format('card "%s" has a veil of %s; a veil is author or totals', c.key, c.e -> 'veil') end,
+      case when c.has_veil and not c.e ? 'lasts' then format('card "%s" has a veil with no time up (lasts); a veil ends at its time', c.key) end,
+      case when c.e -> 'addsReaction' = 'true'::jsonb and coalesce((c.e ->> 'writes')::boolean, false) then format('card "%s" has a reaction and writes; a card with a reaction does not write', c.key) end,
+      case when c.e -> 'addsReaction' = 'true'::jsonb and coalesce((c.e ->> 'seeded')::boolean, false) then format('card "%s" has a reaction and is seeded; a card with a reaction is not', c.key) end,
+      case when c.has_veil and c.e -> 'addsReaction' = 'true'::jsonb then format('card "%s" has both a veil and a reaction; a card has one of the two', c.key) end,
       -- Scores as: true or left out, on a cast card that reaches a character alone.
       case when c.e ? 'scoresAs' and c.e -> 'scoresAs' is distinct from 'true'::jsonb then format('card "%s" has scoresAs %s; scoresAs is true or left out', c.key, c.e -> 'scoresAs') end,
       case when c.e -> 'scoresAs' = 'true'::jsonb and c.play <> 'cast' then format('card "%s" scores as a class, and only a cast card does', c.key) end,
@@ -285,7 +298,7 @@ AS $function$
   ) p where why is not null
 $function$;
 
--- seed_instance (0348's), with the column written from the payload beside `gimmick`; everything else as 0348 wrote it.
+-- seed_instance (0360_setting_thread's, which is 0357_post_veils's (0355_settings_tuned's with each card's veil and reaction and the anonymous poster) finding a setting's thread through setting_thread), with the column written from the payload beside `gimmick`; everything else as 0360 wrote it.
 create or replace function public.seed_instance(payload jsonb)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -298,16 +311,18 @@ declare
   unknown text;
   sys uuid;
   opened uuid;
+  was text := current_setting('kayfabb.seeding', true);
 begin
   -- Two seeds at once would each find no office row and both write one into the append-only office log. An advisory
   -- transaction lock serializes seeds without locking any table a player reads, and lets go at commit.
   perform pg_advisory_xact_lock(hashtext('kayfabb.seed_instance'));
+  -- The settings trigger (settings_tuned) marks a row tuned for any write but a seed's: this transaction is the seed's, so its writes leave no mark.
+  perform set_config('kayfabb.seeding', 'on', true);
   select count(*), min(e ->> 'slug') into flags, flagged
   from jsonb_array_elements(coalesce(payload -> 'boards', '[]')) e where coalesce((e ->> 'system')::boolean, false);
   if flags > 1 then raise exception 'a seed flags one board as The System''s, not %', flags using errcode = '22023'; end if;
   -- The economy is merged, number by number: a card kind is never removed, so the numbers its rules read stay in the row with it.
-  insert into settings (key, value) select key, value from jsonb_each(payload -> 'settings')
-  on conflict (key) do update set value = case when settings.key = 'economy' then settings.value || excluded.value else excluded.value end;
+  perform seed_setting(e.key, e.value) from jsonb_each(payload -> 'settings') e;
   insert into class_kinds (key, name) select e ->> 'key', e ->> 'name' from jsonb_array_elements(payload -> 'classes') e
   on conflict (key) do update set name = excluded.name;
   -- Reaction kinds are the one vocabulary a seed removes. Classes and cards never are: a card must outlive its slot and its pulls
@@ -351,20 +366,21 @@ begin
   if unknown is not null then raise exception '%', unknown using errcode = '22023'; end if;
   -- A card's stack, whether it is seeded and the economy numbers its rules read are the code's, as its name is; so
   -- are its rarity, its play, its trap (with its match), its gimmick, its discipline, how long a Use of it is up, where it reaches, whether it pins, whether it writes, whether it replies, whether it keeps, its skim, whether it scores as a class, what it draws, its drive and the words it refuses a blank message with.
-  insert into card_kinds (key, name, alignment, stack, seeded, reads, rarity, play, trap, gimmick, discipline, lasts, reaches, pins, writes, replies, keeps, skim, scores_as, draws, drive, needs_message, surface)
+  insert into card_kinds (key, name, alignment, stack, seeded, reads, rarity, play, trap, gimmick, discipline, lasts, reaches, pins, writes, replies, keeps, skim, scores_as, draws, drive, needs_message, veil, adds_reaction, surface)
   select e ->> 'key', e ->> 'name', e ->> 'alignment', coalesce((e ->> 'stack')::integer, 1), coalesce((e ->> 'seeded')::boolean, false),
     coalesce(array(select jsonb_array_elements_text(e -> 'reads')), '{}'),
     e ->> 'rarity', coalesce(e ->> 'play', 'cast'), nullif(e -> 'trap', 'null'), nullif(e -> 'gimmick', 'null'), nullif(e -> 'discipline', 'null'), span_interval(e -> 'lasts'),
     case when e ? 'reaches' then array(select jsonb_array_elements_text(e -> 'reaches')) else '{post}' end, coalesce((e ->> 'pins')::boolean, false), coalesce((e ->> 'writes')::boolean, false),
     coalesce((e ->> 'replies')::boolean, false), coalesce((e ->> 'keeps')::boolean, false),
     nullif(e -> 'skim', 'null'), coalesce((e ->> 'scoresAs')::boolean, false),
-    case when jsonb_typeof(e -> 'draws') = 'array' then array(select jsonb_array_elements_text(e -> 'draws')) end, nullif(e -> 'drive', 'null'), nullif(e ->> 'needsMessage', ''), coalesce((e ->> 'surface')::boolean, false)
+    case when jsonb_typeof(e -> 'draws') = 'array' then array(select jsonb_array_elements_text(e -> 'draws')) end, nullif(e -> 'drive', 'null'), nullif(e ->> 'needsMessage', ''),
+    nullif(e ->> 'veil', ''), coalesce((e ->> 'addsReaction')::boolean, false), coalesce((e ->> 'surface')::boolean, false)
   from jsonb_array_elements(payload -> 'cards') e
   on conflict (key) do update set name = excluded.name, alignment = excluded.alignment,
     stack = excluded.stack, seeded = excluded.seeded, reads = excluded.reads,
     rarity = excluded.rarity, play = excluded.play, trap = excluded.trap, gimmick = excluded.gimmick, discipline = excluded.discipline, lasts = excluded.lasts,
     reaches = excluded.reaches, pins = excluded.pins, writes = excluded.writes, replies = excluded.replies, keeps = excluded.keeps, skim = excluded.skim, scores_as = excluded.scores_as,
-    draws = excluded.draws, drive = excluded.drive, needs_message = excluded.needs_message, surface = excluded.surface;
+    draws = excluded.draws, drive = excluded.drive, needs_message = excluded.needs_message, veil = excluded.veil, adds_reaction = excluded.adds_reaction, surface = excluded.surface;
   -- The packs the instance sells (replaced each seed: their pulls are its code), then the slots it names that the database does not hold yet,
   -- at the end of the grid in the instance's order. A slot already holding the item is never touched: its place, availability and price are an
   -- admin's (0139). A pack or card a slot names must exist, and a missing one is a foreign key's refusal.
@@ -529,11 +545,10 @@ begin
   from jsonb_array_elements(coalesce(payload -> 'system' -> 'staff', '[]')) e;
   -- The roster's order (0051): the seed's personas, in the order it lists them, so the rotation has one to follow. A seed with no
   -- persona leaves the setting as it was.
-  insert into settings (key, value)
-  select 'bossRoster', jsonb_agg(e.value ->> 'key' order by e.ord)
-  from jsonb_array_elements(coalesce(payload -> 'system' -> 'staff', '[]')) with ordinality e(value, ord)
-  having count(*) > 0
-  on conflict (key) do update set value = excluded.value;
+  perform seed_setting('bossRoster', r.roster)
+  from (select jsonb_agg(e.value ->> 'key' order by e.ord) as roster
+        from jsonb_array_elements(coalesce(payload -> 'system' -> 'staff', '[]')) with ordinality e(value, ord)
+        having count(*) > 0) r;
   if not exists (select 1 from seasons) then insert into seasons (number, starts_at) values (1, now()); end if;
   -- The open season's Boss (0043's seasons.boss) is the seed's firstBoss when it has none: a season opened before a Boss
   -- existed, or by this seed. A season that already has a Boss keeps it.
@@ -546,12 +561,9 @@ begin
   -- the tick lands nothing (a board with nowhere to say a move is no board it can move). The setting is not in a seed's `settings`,
   -- so no seed writes it over.
   if nullif(payload -> 'system' ->> 'announcementsTitle', '') is not null
-     and not exists (select 1 from settings s join threads t on t.id::text = s.value #>> '{}' where s.key = 'systemAnnouncements') then
-    with made as (
-      insert into threads (board, title) values (system_board(), payload -> 'system' ->> 'announcementsTitle') returning id
-    )
-    insert into settings (key, value) select 'systemAnnouncements', to_jsonb(made.id::text) from made
-    on conflict (key) do update set value = excluded.value;
+     and setting_thread('systemAnnouncements') is null then
+    insert into threads (board, title) values (system_board(), payload -> 'system' ->> 'announcementsTitle') returning id into opened;
+    perform seed_setting('systemAnnouncements', to_jsonb(opened::text));
   end if;
   -- The developer persona and its thread (0062): a seed with a `developer` entry ({ name, title, avatar }) makes the one developer, once,
   -- as it makes a persona: debuted at seed time, with the tagline as its profile title, cut to what a profile holds. What an admin wrote is
@@ -576,17 +588,39 @@ begin
     from characters c
     where payload -> 'developer' ? 'pronouns' and c.staff = 'developer' and p.character = c.id and p.pronouns is distinct from pronouns_lowered(payload -> 'developer' -> 'pronouns');
     if nullif(payload -> 'developer' ->> 'avatar', '') is not null then
-      insert into settings (key, value) values ('developerAvatar', to_jsonb(payload -> 'developer' ->> 'avatar'))
-      on conflict (key) do update set value = excluded.value;
+      perform seed_setting('developerAvatar', to_jsonb(payload -> 'developer' ->> 'avatar'));
     end if;
-    if not exists (select 1 from settings s join threads t on t.id::text = s.value #>> '{}' where s.key = 'updatesThread') then
+    if setting_thread('updatesThread') is null then
       sys := system_board();
       insert into threads (board, title) values (sys, 'Updates') returning id into opened;
-      insert into settings (key, value) values ('updatesThread', to_jsonb(opened::text)) on conflict (key) do update set value = excluded.value;
+      perform seed_setting('updatesThread', to_jsonb(opened::text));
       update board_thread_counts set threads = threads - 1
        where board = sys and shard = coalesce((select c.shard from board_thread_counts c where c.board = sys order by c.shard for update skip locked limit 1), 0);
     end if;
   end if;
+  -- The anonymous poster (0357): a seed with an `anonymous` entry ({ name, title, avatar, pronouns }) makes the one stand-in, once, as it makes the developer: debuted at seed time, the tagline its profile title, the pronouns
+  -- rewritten on every seed when the seed names them, the avatar's asset key the instance's to change. What an admin wrote is never written over. A seed with none makes none, and stand_in() is then null (land_refusal
+  -- refuses a veil until one exists); seed.ts always sends one, the engine's own when the instance names none.
+  if jsonb_typeof(payload -> 'anonymous') = 'object' then
+    if payload -> 'anonymous' ? 'pronouns' and not pronouns_hold(pronouns_lowered(payload -> 'anonymous' -> 'pronouns')) then
+      raise exception 'the anonymous poster has pronouns that are not five words of 1 to 12 letters and a plural' using errcode = '22023';
+    end if;
+    with made as (
+      insert into characters (name, staff, staff_kind, debuted_at) values (payload -> 'anonymous' ->> 'name', 'anonymous', 'anonymous', now())
+      on conflict (staff) do nothing returning id
+    )
+    insert into character_profiles (character, title, signature, pronouns)
+    select m.id, left(coalesce(payload -> 'anonymous' ->> 'title', ''), 40), '', coalesce(pronouns_lowered(payload -> 'anonymous' -> 'pronouns'), new_pronouns()) from made m;
+    update character_profiles p set pronouns = pronouns_lowered(payload -> 'anonymous' -> 'pronouns')
+    from characters c
+    where payload -> 'anonymous' ? 'pronouns' and c.staff = 'anonymous' and p.character = c.id and p.pronouns is distinct from pronouns_lowered(payload -> 'anonymous' -> 'pronouns');
+    if nullif(payload -> 'anonymous' ->> 'avatar', '') is not null then
+      perform seed_setting('anonymousAvatar', to_jsonb(payload -> 'anonymous' ->> 'avatar'));
+    end if;
+  end if;
+  -- Seeding ends here: a write later in a transaction that called this (a test file's, one session's) is not the seed's. The flag goes back to the value this found. A custom
+  -- setting cannot be truly unset inside a transaction, so one that was unset (null) or empty goes back to 'off', which the trigger reads the same.
+  perform set_config('kayfabb.seeding', coalesce(nullif(was, ''), 'off'), true);
   return jsonb_build_object('settings', (select count(*) from settings), 'classes', (select count(*) from class_kinds),
     'reactions', (select count(*) from reaction_kinds), 'groups', (select count(*) from group_kinds), 'cards', (select count(*) from card_kinds), 'boards', (select count(*) from boards));
 end $function$;
@@ -733,8 +767,8 @@ language sql stable security definer set search_path = public, pg_temp as $$
     from acts p where p.id = punishment_running.punishment and p.kind in ('infraction', 'ban', 'move')), false)
 $$;
 
--- card_target_reach (0055's), a character target also answering its bar and its ban: warn_points and banned_until are public (on every postbit), and the engine's disciplineRefusal reads them before a
--- relief or an unban is sent; place_cast decides again. Everything else as 0055 wrote it.
+-- card_target_reach (0357_post_veils's), a character target also answering its bar and its ban: warn_points and banned_until are public (on every postbit), and the engine's disciplineRefusal reads them before a
+-- relief or an unban is sent; place_cast decides again. Everything else as 0357_post_veils wrote it (a post target's author as the projection shows it).
 create or replace function public.card_target_reach(reach text, target uuid, from_post uuid DEFAULT NULL::uuid)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -750,7 +784,7 @@ begin
   if reach = 'post' then
     got := card_target(target);
     if got is null then return null; end if;
-    select a.character, a.thread, th.board into t_character, t_thread, t_board from acts a join threads th on th.id = a.thread where a.id = target;
+    select shown_author(a.id, a.character), a.thread, th.board into t_character, t_thread, t_board from acts a join threads th on th.id = a.thread where a.id = target;
     return got || jsonb_build_object('above', jsonb_strip_nulls(jsonb_build_object(
       'character', case when t_character is not null then reach_effects('character', t_character) end,
       'thread', reach_effects('thread', t_thread), 'board', reach_effects('board', t_board))));
@@ -776,8 +810,8 @@ end $function$;
 
 -- ------------------------------------------------------------------------------------------------------- place_cast ----
 
--- place_cast (0317's), with the discipline cards: see the header, sections 1 and 3 (the fall's refusals, marked Task 4). A staff caster is refused in plain words (no refusal hint, 42501) as a staff caster of an earn is; a staff target, an empty bar and a character
--- not banned are refused with the refusal hint; a relief or an unban skips the stack, `ends` and the play_reach row. The ward test is unchanged and runs first. Everything else as 0317 wrote it.
+-- place_cast (0360_setting_thread's, which is 0359_post_reactions's finding the announcements thread through setting_thread; 0359's is 0357_post_veils's: land_refusal, a stand-in that is no target, the post before the character), with the discipline cards: see the header, sections 1 and 3 (the fall's refusals, marked Task 4). A staff caster is refused in plain words (no refusal hint, 42501) as a staff caster of an earn is; a staff target, an empty bar and a character
+-- not banned are refused with the refusal hint; a relief or an unban skips the stack, `ends` and the play_reach row. The ward test is unchanged and runs first. Everything else as 0360 wrote it, the lock order included (post, then character).
 create or replace function public.place_cast(caster uuid, card text, target uuid, config jsonb, message text, reach text, from_post uuid, payer uuid, price integer, marker jsonb DEFAULT '{}'::jsonb)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -815,6 +849,8 @@ declare
   took integer;
   relief_rows jsonb;
   lifts jsonb;
+  landing text;
+  shown uuid;
 begin
   select c.staff is not null into staff_caster from characters c where c.id = caster;
   if staff_caster is null then raise exception 'there is no such character' using errcode = 'P0002'; end if;
@@ -859,9 +895,15 @@ begin
     if kind_of.play = 'use' and author is distinct from caster then
       raise exception '% is used on your own post' , kind_of.name using hint = 'kayfabb.refusal', errcode = '42501';
     end if;
-    -- Task 4 (section 3), taking the fall: a fall is played on a player's post, and on another character's. Both read public facts of the post's author (a staff flag, a character: who wrote a post is public),
+    -- Task 4 (section 3), taking the fall: a fall is played on a post whose author is not hidden, on a player's post, and on another character's. Both read public facts of the post's author (a staff flag, a character: who wrote a post is public),
     -- and compare characters, never accounts, so a second mask of the author's account may take the fall and no refusal differs with who owns the caster or the author. The stack count below is as for any card.
     if kind_of.discipline ->> 'kind' = 'fall' then
+      -- A post under a live author veil (0357) is shown under the stand-in to everyone, and a fall is all about whose post it is: the refusals below compare the caster with the TRUE author, so the author's own
+      -- masks would meet the own-post words while every other caster's fall landed. So while the veil is up a fall is refused first, in one sentence and one code for every caster alike, before anything is
+      -- paid or written (no Mod Bot visits a veiled post, so a fall there could not be taken before the veil ends in any case). The time is the veil's own end, public as the veil is.
+      if author_veiled(target) then
+        raise exception 'this post''s author is hidden until %; nobody takes the fall for it before then', refusal_time(author_veil_ends(target)) using hint = 'kayfabb.refusal', errcode = '42501';
+      end if;
       if exists (select 1 from characters c where c.id = author and c.staff is not null) then
         raise exception '% is played on a player''s post', kind_of.name using hint = 'kayfabb.refusal', errcode = '22023';
       end if;
@@ -881,7 +923,12 @@ begin
     if kind_of.play = 'cast' then
       warded := ward_refusal('post', target, kind_of);
       if warded is not null then raise exception '%', warded using hint = 'kayfabb.refusal', errcode = '42501'; end if;
+      -- What the card's landing refuses on this post (land_refusal): public facts alone, the same words for every caster, and before anything is written.
+      landing := land_refusal(kind_of, target, coalesce(config, '{}'));
+      if landing is not null then raise exception '%', landing using hint = 'kayfabb.refusal', errcode = land_refusal_code(landing); end if;
     end if;
+    -- A card with a time up ends at it, whatever it holds (a skim, a veil, a use card): the stack below and the end both read the play's `ends`.
+    if kind_of.lasts is not null then ends := now() + kind_of.lasts; end if;
     -- The stack counts the plays still up: a caught play, an ended Use and a play beyond a post sitting here hold no place. The
     -- layer goes on from the last one taken, so no layer is taken twice (acts_card_layers); a play written before layers counts as
     -- one (0016).
@@ -930,11 +977,22 @@ begin
     -- The target's row is locked, so plays on one target are laid one at a time and each counts the last; two board cards on one
     -- board both wait here, and the second sees the first.
     if reach = 'character' then
+      -- The lock order is post, then visits_open, then character, everywhere (a visit's filing takes the post's row first and, in infract, its author's character after): the post the card is played from is held `for share`
+      -- before the target character's row, so a card on a character and a filing on that post never hold one each and wait on the other. (Before 0357 the character came first.)
+      perform 1 from acts a where a.id = from_post and a.kind = 'post' for share;
       perform 1 from characters c where c.id = target for no key update;
       if not found then raise exception 'there is no such character' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
       select c.name into target_name from characters c where c.id = target;
-      select a.thread into in_thread from acts_public a where a.id = from_post and a.kind = 'post' and a.character = target;
-      if in_thread is null then raise exception 'a card on a character is played from one of its posts' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+      -- The stand-in is shown in place of an author, so a card on it would be a card on whoever it stands for.
+      if target is not distinct from stand_in() then raise exception 'no card is played on a stand-in' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+      -- The post it is played from is held `for share` before it is read: a veil cast on that post (which takes the row `for no key update`) checks for a card played from it after taking it, so the card and the veil
+      -- are laid one at a time, and whichever is second reads what the first left (a veiled post is not its character's, so the card is refused; a post a card was played from takes no veil). The post's row is
+      -- held already (above, before the character's), and a veil cast holds the post's row and takes no character's row, so the order closes no cycle.
+      select a.thread, a.character into in_thread, shown from acts_public a where a.id = from_post and a.kind = 'post';
+      -- A post under a live author veil is shown under the stand-in to everyone, so a card on a character played from it is a card on the stand-in whoever the caster names, the post's author included: one refusal, in the
+      -- words and the code a third player meets naming the stand-in itself, and the same whoever owns the post. (A post that is not veiled is refused as it was, for a character that is not its own.)
+      if shown is not null and shown is not distinct from stand_in() then raise exception 'no card is played on a stand-in' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+      if in_thread is null or shown is distinct from target then raise exception 'a card on a character is played from one of its posts' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
       on_post := from_post;
       if kind_of.play = 'use' and target is distinct from caster then
         raise exception '% is used on your own character', kind_of.name using hint = 'kayfabb.refusal', errcode = '42501';
@@ -958,7 +1016,7 @@ begin
       perform 1 from boards b where b.id = target for no key update;
       if not found then raise exception 'there is no such board' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
       select b.name into target_name from boards_now b where b.id = target;
-      select t.id into in_thread from settings s join threads t on t.id::text = s.value #>> '{}' where s.key = 'systemAnnouncements';
+      in_thread := setting_thread('systemAnnouncements');
       if in_thread is null then
         raise exception 'there is no announcements thread to play a board card in yet' using hint = 'kayfabb.refusal', errcode = '55000';
       end if;
@@ -1041,12 +1099,14 @@ begin
       || case when kind_of.seeded then jsonb_build_object('seed', floor(random() * 2147483648)::bigint) else '{}'::jsonb end
       || case when kind_of.draws is not null then jsonb_build_object('drawn', kind_of.draws[1 + floor(random() * cardinality(kind_of.draws))::integer]) else '{}'::jsonb end
       || case when reach = 'post' and drive_id is not null then jsonb_build_object('drive', drive_id) else '{}'::jsonb end
-      || case when reach = 'post' and (kind_of.play = 'use' or kind_of.skim is not null) and kind_of.lasts is not null then jsonb_build_object('ends', now() + kind_of.lasts) else '{}'::jsonb end
+      || case when reach = 'post' and kind_of.lasts is not null then jsonb_build_object('ends', ends) else '{}'::jsonb end
       || coalesce(marker, '{}'::jsonb));
   exception when unique_violation then
     -- Only a writer that skipped the lock above could take the same layer.
     raise exception 'this post already carries that card' using hint = 'kayfabb.refusal', errcode = '23505';
   end;
+  -- What a landed play on a post needs beside its Act (a veil's row): not for a play a back caught, which never lands.
+  if reach = 'post' and (sprung is null or rode) then perform land_rows(written, kind_of, on_post, coalesce(config, '{}'), caster); end if;
   if kind_of.surface and reach = 'post' and (sprung is null or rode) then perform open_surface(written); end if;
   if reach <> 'post' and not is_instant then
     insert into play_reach (play, reach, character, thread, board, pins_board, ends_at)
@@ -1334,6 +1394,12 @@ end;
 -- they drop off by themselves, the ban ends by itself, the caster may appeal, an admin may end it.
 -- Privacy: nothing here reads who owns a character. The filing reads the post's plays (public Acts) and a staff flag (public); the refusals compare characters; the page's `spent` and card_target's `author` are public
 -- projections; my_falls_taken is the author's own and names the caster by its public name.
+-- The author's veil (0357, Whodunnit?): a post under a live author veil takes no fall, for every caster alike, in one sentence ("this post's author is hidden until ...; nobody takes the fall for it before then",
+-- 42501), checked before the own-post refusal, which compares the caster with the TRUE author and would tell the author's own masks from the rest. card_target's `author` reads acts_public, so the engine is
+-- handed the stand-in for a veiled post and never refuses on its own. A fall cast before a veil names its caster and the post, never the author, so a veil may land on it; while the veil is up no Mod Bot
+-- visits the post (start_visit, 0357), and a visit opened before the veil keeps the veil off (land_refusal), so a filing, its infraction's `fall_for`, my_falls_taken and the visit's "took the fall for" line
+-- never meet a veiled post. The cards at character reach (a heart, a Tattle-Tale) meet 0357's refusals in place_cast: none from a veiled post, and none on the stand-in.
+-- (supabase/tests/0314-discipline-veils.sql holds each case; 0312-discipline-fall.sql (section 0b) the lock order a heart keeps against a filing.)
 -- Cost: file_visit gains one read of the post's plays (acts_layers, 0072) and, for a fall play found, one probe of acts_fall_spent; thread_page one probe of acts_fall_spent (fall_spent) for each fall play on the page; my_falls_taken one probe of acts_fall_for for each of the caller's characters.
 
 -- acts_infraction_payload (0104's), with a `fall_play` key. A relaxation, so the rows already there pass it: added not valid, then validated (a lock that does not stop writes).
@@ -1713,7 +1779,7 @@ AS $function$
   from acts_public a where a.id = target
 $function$;
 
--- thread_page (0349's, whole), carrying `spent`: the page's fall plays a filing took. Everything else as 0349 wrote it.
+-- thread_page (0357_post_veils's, whole, which is 0349's with 0356's `kept` and 0357's `veiled`), carrying `spent`: the page's fall plays a filing took. Everything else as 0357 wrote it.
 create or replace function thread_page(in_thread uuid, in_page integer, in_seq integer, per_page integer, effect_cards text[]) returns jsonb
 language sql stable security invoker set search_path = public, pg_temp
 begin atomic
@@ -1787,21 +1853,28 @@ begin atomic
     from effects_above(array(select distinct p.character from posts p where p.character is not null), (select rng.id from rng), (select rng.board from rng)) x
   ),
   -- The plays of a kind that keeps, at thread reach on this thread, that wore off by time (not one an admin ended), whose window (the play's date to its end) holds the date of one of
-  -- the page's posts: they still count on those posts, so the page carries them beside `above`, in its shape. The range of play_reach_thread (ended, and ended after the
-  -- page's earliest post), the Act by primary key through acts_public (dated no later than the page's latest post, then the window), and only for what survives that the kind (`keeps`). At most 100, oldest first.
+  -- the page's posts: they still count on those posts, so the page carries them beside `above`, in its shape. The window probe of play_reach_thread_window (the window overlaps the page's span,
+  -- ended by time), the Act by primary key through acts_public (the window again, post by post), and only for what survives that the kind (`keeps`). At most 100, oldest first.
   kept_span as materialized (select min(p.created_at) as lo, max(p.created_at) as hi from posts p),
-  -- The reach-specific part, and the one place a later reach adds to: a character reach's rows (play_reach_character) join here with a `union all` of a second select of this shape;
-  -- everything below reads whatever rows it gives.
+  -- The reach-specific part: the thread's rows (play_reach_thread_window) and, for each distinct author among the page's posts, the plays at that character's reach
+  -- (play_reach_character_window, (character, window)): one probe for each author, the plays ended by time whose window overlaps the page's span (`started_at <= hi and ends_at > lo`), so it
+  -- meets only the plays that can hold a post of the page, at any age of the page. A page with no posts has no span (lo is null, and a range with no bounds meets every play): the thread's select reads none then (`s.lo is not null`), and the authors' has no author to probe for. Whether the author's own post falls in the window is kept_window's.
   kept_reach as materialized (
     select x.play, x.reach, coalesce(x.character, x.thread, x.board) as target, x.ends_at
     from play_reach x, kept_span s
-    where x.thread = (select rng.id from rng) and x.ends_at <= now() and x.ends_at > s.lo
+    where s.lo is not null and x.thread = (select rng.id from rng) and tstzrange(x.started_at, x.ends_at) && tstzrange(s.lo, s.hi, '[]') and x.ends_at <= now()
+    union all
+    select x.play, x.reach, x.character as target, x.ends_at
+    from (select distinct p.character from posts p where p.character is not null) au cross join kept_span s
+    cross join lateral (select r.play, r.reach, r.character, r.ends_at from play_reach r where r.character = au.character and tstzrange(r.started_at, r.ends_at) && tstzrange(s.lo, s.hi, '[]') and r.ends_at <= now()) x
   ),
+  -- A thread row is held by any post of the page inside its window; a character row only by a post of its own target (`p.character = r.target`), never another author's post in the same
+  -- window on the same page.
   kept_window as materialized (
     select r.play, r.reach, r.target, r.ends_at, a.created_at as started, to_jsonb(a) as act, a.payload ->> 'card' as card
     from kept_reach r join acts_public a on a.id = r.play, kept_span s
     where a.created_at <= s.hi
-      and exists (select 1 from posts p where a.created_at <= p.created_at and p.created_at < r.ends_at)
+      and exists (select 1 from posts p where a.created_at <= p.created_at and p.created_at < r.ends_at and (r.reach <> 'character' or p.character = r.target))
   ),
   kept as materialized (
     select w.play, w.reach, w.target, w.ends_at, w.act
@@ -1881,6 +1954,9 @@ begin atomic
       ) order by v.created_at, v.id), '[]'::jsonb) from vis v),
     'faces', (select coalesce(jsonb_agg(jsonb_build_object('play', f.play, 'card', f.card)), '[]'::jsonb)
               from my_face_down f where f.play in (select p.id from played p where p.kind = 'set')),
+    -- The caller's own veiled posts among the page's: the author's player learns that a post shown under the stand-in is theirs from here alone (my_veiled_posts, their own rows).
+    'veiled', (select coalesce(jsonb_agg(jsonb_build_object('post', v.post, 'character', v.character, 'play', v.play, 'ends_at', v.ends_at) order by v.post), '[]'::jsonb)
+               from my_veiled_posts v where v.post in (select p.id from posts p)),
     'states', (select coalesce(jsonb_agg(jsonb_build_object('play', e.play, 'state', e.state, 'saved_at', e.saved_at)), '[]'::jsonb)
                from effect_state e where e.play in (select w.id from wanted_plays w)),
     'releases', (select coalesce(jsonb_agg(r.play), '[]'::jsonb) from effect_releases r where r.play in (select w.id from wanted_plays w)),

@@ -2,7 +2,7 @@
 --
 -- 1. apply_meeting writes the answer's patrols (kept on the meeting record, Task 4) into the `patrols` table: a Mod not on staff and a time that is no time are skipped, a time is
 --    moved into today (now to a day on), and past `patrolsPerDay` they are cut from the end. A retried meeting ("already applied") writes nothing twice.
--- 2. patrol_sample(boards, most, pool, seed): a weighted draw of `most` from the newest `pool` posts on the Mod's beat boards by players, not under a visit (open or ended), bounded by `most` per thread and `pool` per board; the pool no larger than the sample reads the newest, the whole pool (0921-patrol-weights.sql holds the draw). It reads
+-- 2. patrol_sample(boards, most, pool, seed): a weighted draw of `most` from the newest `pool` posts on the Mod's beat boards by players, not under a visit (open or ended), bounded by `most` per thread and `pool` per board; the pool no larger than the sample reads the newest, the whole pool (0310-patrol-weights.sql holds the draw). It reads
 --    public play only (the digest role owns it) and answers no owner, class or reactor.
 -- 3. claim_patrol: a patrol that is due is claimed once (two sessions at once claim it once); one not yet due, or already claimed, is not.
 -- 4. patrol_record and record_patrol_call keep what a patrol sampled, dropped and spent, once per call; a patrol has no Act, so its call's record is keyed by the patrol.

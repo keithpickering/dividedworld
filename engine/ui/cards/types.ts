@@ -201,6 +201,11 @@ export interface EffectProps {
    */
   readonly reach: Reach;
   /**
+   * Every play handed has worn off, and falls on this post because the post was written while it was up (`CardRules.keeps`). An effect may draw what such a play left behind rather than
+   * the play going off. Absent for a live play, a play on the post itself and a moment.
+   */
+  readonly kept?: true;
+  /**
    * Say what this card's state is on this post, for its mark and the Lens, or clear it with null. Bound to this post and
    * this card by the engine; an effect says it as often as its state changes, and equal views cost nothing. The engine clears
    * it when the effect is gone.

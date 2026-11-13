@@ -1,4 +1,4 @@
--- The discipline cards' catalog, a play that is over at once, relief and the lift (supabase/migrations/0420_discipline_cards.sql, section 1; docs/plans/2026-11-11-card-notes-part-5-plan.md,
+-- The discipline cards' catalog, a play that is over at once, relief and the lift (supabase/migrations/0361_discipline_cards.sql, section 1; docs/plans/2026-11-11-card-notes-part-5-plan.md,
 -- Task 2; the design docs/plans/2026-11-11-card-notes-design.md, "Happy Heart, Super Happy Heart, Ultra Happy Heart").
 --
 -- 1. card_kinds holds `discipline`: null, or an object of one of four kinds on a cast card, with a time up only for a watch; card_kinds_problem and seed_instance say the same in the engine's words, and a

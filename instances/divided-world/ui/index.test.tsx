@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'vitest';
+import { ratio } from '../../../engine/ui/contrast.ts';
 import { glassVars } from '../../../engine/ui/glass/apply.ts';
 import { boardSwitch } from '../../../engine/ui/glass/board.ts';
 import { SURFACES } from '../../../tools/check-glass-contrast.mjs';
@@ -117,7 +118,7 @@ describe('Divided World\'s cards in the guide, in the glass\'s words about setti
     for (const text of [t.describe, t.summary]) expect(text).not.toMatch(/pays you|what it cost|wallet|what the caster paid/u);
   });
   test('each Move says what setting it does, landing at its own reach and no other', () => {
-    const lands = { whoops: 'the quoting post', 'stick-around': 'the quoting post', autocorrect: 'the quoting post', 'feelin-fab': 'the quoting post', 'below-the-fold': 'the quoting post', 'laugh-track': 'the quoting post', 'glitter-bomb': "the quoting post's character", 'hype-up': "the quoting post's character", 'main-event': "the quoting post's thread", 'feelin-glam': "the quoting post's thread" };
+    const lands = { whoops: 'the quoting post', 'stick-around': 'the quoting post', autocorrect: 'the quoting post', 'feelin-fab': 'the quoting post', 'below-the-fold': 'the quoting post', 'laugh-track': 'the quoting post', whodunnit: 'the quoting post', 'blind-study': 'the quoting post', overreaction: 'the quoting post', 'glitter-bomb': "the quoting post's character", 'hype-up': "the quoting post's character", 'main-event': "the quoting post's thread", 'feelin-glam': "the quoting post's thread" };
     for (const [key, reach] of Object.entries(lands)) {
       expect(face(key).describe, key).toContain(`You can also set it face down on one of your own posts: it springs on the next quote of that post and lands on ${reach} at no further cost, using up the card.`);
     }
@@ -128,7 +129,7 @@ describe('Divided World\'s cards in the guide, in the glass\'s words about setti
     const ui = instanceUi.cards.find((c) => c.key === 'line-cutter')!;
     expect(ui.Effect).toBeUndefined();
     expect(ui.art.tagline).toBe('Reply right under a post.');
-    expect([ui.art.color, ui.art.ink]).toEqual(['#d24a2c', '#1a0602']);
+    expect([ui.art.color, ui.art.ink]).toEqual(['#d24a2c', '#0d0301']);
     expect(t.summary).toBe('Posts your reply right under a post, where it stays however long the thread grows.');
     expect(ui.status).toBe('A reply cut in under it');
     expect(ui.hint).toBe('A Line Cutter: the reply under this post was written later and cut in line.');
@@ -157,6 +158,13 @@ describe('Divided World\'s cards in the guide, in the glass\'s words about setti
     expect(t.describe).toContain("It takes none of a post's three Feelin' Fab places. A post written in the thread during that time keeps its extra level after it; every other post loses it when the time is up. If an admin ends the card, every post loses the level. One fits on a thread at a time.");
     expect(ui.hint).toBe("A Feelin' Glam: every post in this thread glows one level more.");
     expect(typeof ui.status === 'function' && [ui.status([{} as never]), ui.status([])]).toEqual(['One more rainbow level here', 'Kept by posts from its week']);
+  });
+  test("Glitter Bomb's words say what the week leaves, and never promise more than an admin's end allows (issue #635)", () => {
+    const ui = instanceUi.cards.find((c) => c.key === 'glitter-bomb')!;
+    const described = typeof ui.describe === 'function' ? ui.describe(instance.settings) : ui.describe;
+    expect(described).toContain("For a week, every one of that character's posts sparkles, wherever it is. When the week is up, the posts written during it keep their sparkle after it ends, settled; every other post stops.");
+    expect(ui.logPlay!({}, {})).toBe('Posts that character writes before it ends keep their sparkle after it ends.');
+    expect(`${described} ${ui.logPlay!({}, {})}`).not.toMatch(/for good|where it landed/u);
   });
   test('the guide names the three kinds and says every card back looks the same, with no payout from a trap', () => {
     expect(guideMd).toMatch(/- \*\*Move, Reversal, Gimmick\.\*\*/u);
@@ -321,10 +329,30 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     expect(whoops.describe(instance.settings)).toContain('0.25 more for every 500 characters');
     expect(whoops.describe({ ...instance.settings, economy: { ...instance.settings.economy, 'whoops.perLength': 250 } })).toContain('2.50 more');
   });
+  /* postcard.css writes the play tag's words 8% toward white (color-mix in sRGB), which is rounded per channel here. */
+  const playTagInk = (hex: string) => `#${[1, 3, 5].map((i) => Math.round(parseInt(hex.slice(i, i + 2), 16) * 0.92 + 255 * 0.08).toString(16).padStart(2, '0')).join('')}`;
+  /* The small words on a face (the alignment tag in the card's ink on its color, the play's tag in its color on the card's ground) are 11px at the
+     fan's size, so each pair meets 4.5:1. A card armed and not yet played shows over the page with nothing masking it, and axe reads it there. */
+  test('every card face\'s tag and play tag meet 4.5:1 at the fan size', () => {
+    const grounds = Object.entries((instanceUi.glass as unknown as { keys: Record<string, Record<string, { value: string }>> }).keys)
+      .map(([key, tokens]) => [key, tokens['--kb-glass-card']?.value] as const);
+    expect(grounds.length).toBeGreaterThan(0);
+    const failures: string[] = [];
+    for (const c of instanceUi.cards) {
+      const inkOnColor = ratio(c.art.ink, c.art.color);
+      if (inkOnColor < 4.5) failures.push(`${c.key}: tag ink ${c.art.ink} on ${c.art.color} is ${inkOnColor.toFixed(2)}:1`);
+      for (const [key, ground] of grounds) {
+        if (!ground) { failures.push(`${key}: --kb-glass-card is not set`); continue; }
+        const colorOnGround = ratio(playTagInk(c.art.color), ground);
+        if (colorOnGround < 4.5) failures.push(`${c.key}: play tag ${c.art.color} on ${key}'s ${ground} is ${colorOnGround.toFixed(2)}:1`);
+      }
+    }
+    expect(failures).toEqual([]);
+  });
   test('Laugh Track has its face, its machine slot and its rules in words true to the card and the settings', () => {
     const ui = instanceUi.cards.find((c) => c.key === 'laugh-track')!;
     expect(ui.art.color).toBe('#d24a2c');
-    expect(ui.art.ink).toBe('#1a0602');
+    expect(ui.art.ink).toBe('#0d0301');
     expect(ui.art.tagline).toBe('Give a post a studio audience.');
     expect(ui.summary).toBe('Cues a studio audience to laugh, cheer or boo at the words you choose, wherever they appear in a post.');
     expect(ui.status).toBe('A studio audience on cue');
@@ -368,8 +396,8 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     expect(laughTrack.setPhrase!({ cues: [{ phrase: 'first one', sound: 'boo' }, { phrase: 'second', sound: 'cheer' }] })).toBe('first one');
     const at = instance.machine.findIndex((m) => 'card' in m.item && m.item.card === 'laugh-track');
     expect(instance.machine[at]).toEqual({ item: { card: 'laugh-track' }, availability: 'onSale', price: 150 });
-    // Card notes Part 5 ended the on-sale run with Happy Heart and Take the Fall, after Laugh Track; nothing else on sale follows it.
-    expect(instance.machine.slice(at + 1).filter((m) => m.availability === 'onSale').map((m) => ('card' in m.item ? m.item.card : 'pack'))).toEqual(['happy-heart', 'take-the-fall']);
+    // Laugh Track was the last on-sale slot; card notes Part 3's Overreaction and Blind Study follow it, then card notes Part 5's Happy Heart and Take the Fall, and nothing else on sale does.
+    expect(instance.machine.slice(at + 1).filter((m) => m.availability === 'onSale').map((m) => ('card' in m.item ? m.item.card : 'pack'))).toEqual(['overreaction', 'blind-study', 'happy-heart', 'take-the-fall']);
   });
   test('Whoops! draws its effect and its ink form, and each play\'s tag takes its own ink', () => {
     const whoops = instanceUi.cards.find((c) => c.key === 'whoops')!;
@@ -861,7 +889,7 @@ describe('Mooch, Toll, 4D Chess and Off Day in plain words (card notes Part 6, T
 
   test('each wears Salty\'s pink or Pepperoni\'s color with its ink, and says what it does in a tagline and a summary', () => {
     for (const [key, color, ink, tagline] of [
-      ['mooch', '#ff3d7f', '#14030a', 'Ride a post\'s reactions.'], ['toll', '#d24a2c', '#1a0602', 'Get paid when a Move lands here.'],
+      ['mooch', '#ff3d7f', '#14030a', 'Ride a post\'s reactions.'], ['toll', '#d24a2c', '#0d0301', 'Get paid when a Move lands here.'],
       ['4d-chess', '#ff3d7f', '#14030a', 'Get paid for the Move you saw coming.'], ['off-day', '#ff3d7f', '#14030a', 'Give a character somebody else\'s day.'],
     ] as const) {
       expect([ui(key).art.color, ui(key).art.ink, ui(key).art.tagline], key).toEqual([color, ink, tagline]);

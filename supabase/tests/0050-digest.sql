@@ -48,7 +48,7 @@ begin
   select string_agg(relname, ', ') into bad from pg_class
   where relnamespace = 'public'::regnamespace and relkind in ('v', 'r') and relname like 'my\_%' and has_table_privilege('kayfabb_digest', oid, 'select');
   if bad is not null then raise exception 'the digest role reads % ', bad; end if;
-  -- A patrol's watches (0421): the role reads the two-column view of the live watches, which is public plays only, and not the plays under it.
+  -- A patrol's watches (0362): the role reads the two-column view of the live watches, which is public plays only, and not the plays under it.
   select string_agg(attname, ', ' order by attname) into bad from pg_attribute
   where attrelid = 'watched_characters'::regclass and attnum > 0 and not attisdropped and has_column_privilege('kayfabb_digest', 'watched_characters', attname, 'select');
   if bad is distinct from 'character, weight' then raise exception 'the digest role reads these columns of watched_characters: %', bad; end if;
@@ -70,6 +70,8 @@ begin
       'setting(text)', 'span_interval(jsonb)', 'standings_season()', 'current_boss()', 'demand_progress(uuid)', 'demand_progress_or_error(uuid)',
       -- Who a met demand credits (0206), reading the same public Acts and their public tallies; never `reactions`.
       'demand_contributors(uuid)',
+      -- The quadrant of a reaction kind, an instance's or a post's own (0359): demand_progress, demand_contributors and system_digest count by it; it reads two public tables as its owner and says nothing of who reacted.
+      'reaction_quadrant(uuid,text)',
       'system_digest(timestamp with time zone,timestamp with time zone)', 'staff_career(text)',
       -- The pool's signals (0088): the two functions it owns, and the folds it matches names with.
       'pool_signals(timestamp with time zone,timestamp with time zone)', 'pool_named(timestamp with time zone,timestamp with time zone)', 'name_skeleton(text)',
@@ -126,7 +128,7 @@ begin
   denied := false;
   begin perform poison_patrol(); exception when insufficient_privilege then denied := true; end;
   if not denied then raise exception 'a function owned by the digest role read patrols, visits_open or staff_orders'; end if;
-  -- And one that reads the plays under a patrol's weights directly, not through the two-column view of them (0421).
+  -- And one that reads the plays under a patrol's weights directly, not through the two-column view of them (0362).
   create function poison_watch() returns bigint language plpgsql security definer set search_path = public, pg_temp as
     $f$ begin return (select count(*) from play_reach); end $f$;
   alter function poison_watch() owner to kayfabb_digest;

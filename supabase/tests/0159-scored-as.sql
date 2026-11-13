@@ -254,7 +254,7 @@ begin
   perform tests.unbecome();
   insert into settlements (starts_at, ends_at, season) values (opens, opens + interval '1 day', (select id from seasons where ends_at is null));
   alter table play_reach disable trigger play_reach_no_update;
-  update play_reach set ends_at = now() - interval '1 minute' where play = (first_ ->> 'id')::uuid;
+  update play_reach set ends_at = now() where play = (first_ ->> 'id')::uuid;
   alter table play_reach enable trigger play_reach_no_update;
   perform tests.become_service();
   third_ := play_card(bob, 'sfstk2', b, a2, '{"class": "beta"}', 0, '', 'character', p2);

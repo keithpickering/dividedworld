@@ -6,8 +6,9 @@
 import { describe, expect, test, vi } from 'vitest';
 import type { Act } from '../data/api.ts';
 import type { ActKind } from '../data/api.ts';
+import { localKey } from '../../rules/emoji.ts';
 import { backoff, REPEAT_TRIES } from './tails.ts';
-import { CARD_BACK, createPlays, defaultView, effectCards, holdsEffects, hydrate, readSurface, rereadSurfaces, inPlayOrder, isBack, livePlays, stackPlays, markedPlays, playOf, playsFallingOn, shownPlays } from './plays.ts';
+import { blindPlaysOf, CARD_BACK, createPlays, defaultView, effectCards, holdsEffects, hydrate, readSurface, rereadSurfaces, inPlayOrder, isBack, livePlays, localKindsOf, stackPlays, markedPlays, playOf, playsFallingOn, shownPlays } from './plays.ts';
 import type { CardView } from './types.ts';
 
 const POST = '11111111-0000-4000-8000-000000000001';
@@ -495,6 +496,41 @@ describe('a play that did not take', () => {
   });
 });
 
+describe('a cast on a post that has a time (card notes, Part 3)', () => {
+  const ended = card({ payload: { card: 'whodunnit', layer: 1, message: '', config: {}, ends: '2026-10-30T00:00:00.000Z' } });
+  const after = Date.parse('2026-10-31T00:00:00.000Z');
+
+  test('is kept once its time has passed, in force and marked, so its effect is still drawn and reads `ends`', () => {
+    const play = playOf(ended)!;
+    expect(play.ends).toBe('2026-10-30T00:00:00.000Z');
+    expect(livePlays([play], after)).toEqual([play]);
+    expect(markedPlays([play], after)).toEqual([play]);
+  });
+
+  const cards = [{ key: 'overreaction', reaction: true as const }, { key: 'blind-study', veil: 'totals' as const }, { key: 'whodunnit', veil: 'author' as const }, { key: 'whoops' }];
+  const skull = (over: Record<string, unknown> = {}) => playOf(card({ payload: { card: 'overreaction', layer: 1, message: '', config: { emoji: '\u{1F480}', quadrant: 'excitedPositive' }, ...over } }))!;
+
+  test('a reaction card\'s play adds its kind: the key from the emoji, the quadrant, and whether an admin ended it', () => {
+    expect(localKindsOf([skull()], cards)).toEqual([{ key: localKey('\u{1F480}'), emoji: '\u{1F480}', quadrant: 'excitedPositive', play: expect.any(String), ended: false }]);
+    expect(localKindsOf([{ ...skull(), reversed: true }], cards)[0]!.ended).toBe(true);
+  });
+
+  test('a play that was caught, did not take, holds no one emoji or no quadrant, or is of another card adds none; the same emoji twice is one kind', () => {
+    expect(localKindsOf([skull({ caught: 'set' }), { ...skull(), untaken: true }, skull({ config: { emoji: 'ab', quadrant: 'excitedPositive' } }), skull({ config: { emoji: '\u{1F480}', quadrant: 'sideways' } })], cards)).toEqual([]);
+    expect(localKindsOf([playOf(card())!], cards)).toEqual([]);
+    expect(localKindsOf([skull(), skull()], cards)).toHaveLength(1);
+  });
+
+  test('a totals veil hides the totals while its time is ahead and it stands; no other card does', () => {
+    const blind = playOf(card({ payload: { card: 'blind-study', layer: 1, message: '', config: {}, ends: '2026-10-30T00:00:00.000Z' } }))!;
+    const before = Date.parse('2026-10-29T22:00:00.000Z');
+    expect(blindPlaysOf([blind], cards, before)).toEqual([{ play: blind.id, caster: blind.caster, ends: '2026-10-30T00:00:00.000Z' }]);
+    expect(blindPlaysOf([blind], cards, after)).toEqual([]);
+    expect(blindPlaysOf([{ ...blind, reversed: true }], cards, before)).toEqual([]);
+    expect(blindPlaysOf([playOf(ended)!], cards, before)).toEqual([]);
+  });
+});
+
 /* A surface (0317): what the page's read carries of it is its covered cells and its live Acts' ids; the live Acts' own words are read where a wall is near. */
 describe('a surface, in the store', () => {
   const wall = 'k-wall';
@@ -655,6 +691,26 @@ describe('a play of a card that keeps, once its time is up', () => {
     /* An admin's end of a worn-off keeping play takes its level off the post written inside its window at once. */
     expect(ids(inside, [kept], AFTER)).toEqual(['k1']);
     expect(ids(inside, [{ ...kept, reversed: true as const }], AFTER)).toEqual([]);
+  });
+
+  test('markedPlays, given the post\'s date, marks an ended keeping character play only on a post written inside its window; a live one on every post', () => {
+    const kept = { ...playOf(act('m1', 'card', { card: 'keeper', reach: 'character', character: 'c1', ends: ENDS }, null))!, playedAt: '2026-11-01T12:00:00.000Z' };
+    const plain = { ...playOf(act('m2', 'card', { card: 'sparkly', reach: 'character', character: 'c1', ends: ENDS }, null))!, playedAt: '2026-11-01T12:00:00.000Z' };
+    const inside = '2026-11-03T00:00:00.000Z';
+    const outside = ['2026-10-31T00:00:00.000Z', '2026-11-08T12:00:01.000Z'];
+    expect(markedPlays([kept, plain], AFTER, keeps, inside).map((p) => p.id)).toEqual(['m1']);
+    for (const at of outside) expect(markedPlays([kept], AFTER, keeps, at)).toEqual([]);
+    const live = Date.parse('2026-11-05T00:00:00.000Z');
+    for (const at of [inside, ...outside]) expect(markedPlays([kept, plain], live, keeps, at).map((p) => p.id)).toEqual(['m1', 'm2']);
+    expect(markedPlays([{ ...kept, reversed: true as const }], AFTER, keeps, inside)).toEqual([]);
+    /* A thread play has no post to be asked of: its mark is the thread head's, whatever date is given. */
+    expect(markedPlays([thread('k1', 'keeper')], AFTER, keeps, outside[0]).map((p) => p.id)).toEqual(['k1']);
+  });
+
+  test('markedPlays marks a post dated exactly at the play\'s date, and not one dated exactly at its end', () => {
+    const kept = { ...playOf(act('m1', 'card', { card: 'keeper', reach: 'character', character: 'c1', ends: ENDS }, null))!, playedAt: '2026-11-01T12:00:00.000Z' };
+    expect(markedPlays([kept], AFTER, keeps, kept.playedAt).map((p) => p.id)).toEqual(['m1']);
+    expect(markedPlays([kept], AFTER, keeps, ENDS)).toEqual([]);
   });
 
   test('the Lens says how an ended keeping play ends, in the words of a live one\'s end', () => {

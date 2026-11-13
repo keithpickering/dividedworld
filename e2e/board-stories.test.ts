@@ -70,3 +70,11 @@ test('the reply cut in under its post and Feelin\' Glam\'s stories are listed, e
     'boards-10-feelin-fab--glam-live-light', 'boards-10-feelin-fab--glam-live-dark', 'boards-10-feelin-fab--glam-over-light', 'boards-10-feelin-fab--glam-over-dark',
   ]));
 });
+
+test('the veil cards\' stories are listed: the posts for their author, a third reader and the caster, the stand-in\'s profile, Overreaction\'s play form and the worn-off line', () => {
+  expect(boardStoryIds()).toEqual(expect.arrayContaining([
+    ...['veiled-and-blind', 'veiled-and-blind-phone', 'reader', 'caster', 'stand-in-profile'].map((n) => `boards-01-veiled-and-blind-posts--${n}`),
+    'boards-01-reaction-card-form--form', 'boards-01-reaction-card-form--form-phone',
+    'boards-22-whodunnit--wore-off-light', 'boards-22-whodunnit--wore-off-dark',
+  ]));
+});

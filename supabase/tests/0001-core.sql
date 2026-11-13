@@ -106,10 +106,12 @@ begin
       -- my_cards_ended (0092) reads the owner to keep each caller to the ended plays cast through, or landed on, their own characters;
       -- 0094-card-end.sql holds that it shows nobody else's and names no owner.
       and not (u.view_name = 'my_cards_ended' and (u.table_name, u.column_name) = ('characters', 'owner'))
+      -- my_veiled_posts (0357) reads the owner to keep each caller to the live author veils on their own characters' posts; 0304-post-veils.sql holds that it shows nobody else's and names no owner or account.
+      and not (u.view_name = 'my_veiled_posts' and (u.table_name, u.column_name) = ('characters', 'owner'))
       -- my_infractions, my_bans, my_reports and my_appeals (0111), and my_group_moves (0134, the same for the moves into groups), read the owner to keep each caller to the punishments, reports and appeals of their own
       -- characters; 0113-mod-screens.sql holds that each shows nobody else's and names no owner or account.
       and not (u.view_name in ('my_infractions', 'my_bans', 'my_reports', 'my_appeals', 'my_reports_left', 'my_group_moves') and (u.table_name, u.column_name) = ('characters', 'owner'))
-      -- my_falls_taken (0420) reads the owner to keep each caller to the falls taken for the posts of their own characters; 0923-discipline-fall.sql holds that it shows nobody else's and names the character that
+      -- my_falls_taken (0361) reads the owner to keep each caller to the falls taken for the posts of their own characters; 0312-discipline-fall.sql holds that it shows nobody else's and names the character that
       -- took it by its public name alone, never an owner or account.
       and not (u.view_name = 'my_falls_taken' and (u.table_name, u.column_name) = ('characters', 'owner'))
   loop
