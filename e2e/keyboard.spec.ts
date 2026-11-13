@@ -131,9 +131,10 @@ test.describe('on a phone', () => {
     const handButton = page.getByRole('button', { name: /^Hand, \d+ postcards?$/ });
     await tabTo(page, handButton);
     await page.keyboard.press('Enter');
-    const hand = page.getByRole('region', { name: 'Your hand' });
-    await expect(hand).toBeFocused();
+    /* The hand is a dialog on the phone too (docs/plans/2026-11-13-phone-hand-design.md, section 4), and opening it focuses its first card. */
+    const hand = page.getByRole('dialog', { name: 'Your hand' });
     const card = hand.getByRole('button', { name: /^Whoops!, Salty\b/ }).first();
+    await expect(hand.getByRole('button', { name: /^Stick Around, Sweet\b/ }).first()).toBeFocused();
     await tabTo(page, card);
     await page.keyboard.press('Enter');
     await expect(hand).toBeHidden();

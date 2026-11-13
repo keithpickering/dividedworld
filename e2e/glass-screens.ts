@@ -2,6 +2,7 @@ import { expect, type Page } from '@playwright/test';
 import type { Fake } from '../engine/ui/data/fake.ts';
 import type { Demo } from '../web/src/demo.ts';
 import { loadFaces } from './fonts.ts';
+import { armCard } from './focus.ts';
 
 /**
  * Every screen the glass is measured on, shared by the specs that visit them all
@@ -64,7 +65,7 @@ export const PAGES: readonly Screen[] = [
     path: '/b/general',
     then: async (page) => {
       await page.getByRole('button', { name: /^Hand, \d+ postcards?$/ }).click();
-      await page.getByRole('button', { name: /^Whoops!, Salty\b/ }).first().click();
+      await armCard(page, /^Whoops!, Salty\b/);
     },
   },
   { name: 'Settings', board: '11-settings', path: '/settings' },
@@ -178,7 +179,7 @@ export const FIXTURE_OVERLAYS: readonly Screen[] = [
     path: '/?fixture=boards&moment=05-cards',
     then: async (page) => {
       await page.getByRole('button', { name: /^Hand, \d+ postcards?$/ }).click();
-      await page.getByRole('button', { name: /^Whoops!, Salty\b/ }).first().click();
+      await armCard(page, /^Whoops!, Salty\b/);
       await page.getByRole('button', { name: /^Play Whoops! on post \d+$/u }).last().click();
       await expect(page.getByRole('dialog', { name: 'Whoops!' })).toBeVisible();
     },

@@ -13,6 +13,10 @@
  * TURN_FROM to TURN_TO along it. A step never exceeds ARC_STEP, and shrinks so the row fits ARC_SPAN. Where a row's
  * step would fall under ARC_FLOOR (cards too thin to tell apart), the hand takes more rows, each ROW_RISE above the
  * one in front, up to MAX_ROWS; only at MAX_ROWS may the step fall under the floor, since a hand must always fit.
+ *
+ * The phone's row is the same order (`handOrder`) on one row that the player swipes sideways, with the card nearest its
+ * middle read in the sheet's line. `swipePose` gives each card its lift, turn and size from its distance from that
+ * middle, and `swipeMiddle` finds the card there (docs/plans/2026-11-13-phone-hand-design.md, section 3).
  */
 import type { HeldCard } from '../data/api.ts';
 import type { CardFace } from './faces.ts';
@@ -125,4 +129,44 @@ export function arcSlots(groups: readonly number[]): readonly ArcSlot[] {
       };
     });
   });
+}
+
+/** The swipe step: the distance between two neighbors in the phone's row, and so the unit of a card's place in it. */
+export const SWIPE_STEP = 66;
+/** Degrees a card turns for each step it stands from the middle, up to SWIPE_TURN_MAX. */
+export const SWIPE_TURN = 6;
+export const SWIPE_TURN_MAX = 18;
+/** Pixels a card drops for each step squared, up to SWIPE_DROP_MAX. */
+export const SWIPE_DROP = 5;
+export const SWIPE_DROP_MAX = 40;
+/** How far the middle card lifts, in pixels, and how much bigger it stands. */
+export const SWIPE_LIFT = 14;
+export const SWIPE_SCALE = 0.18;
+
+/**
+ * The pose of one card in the phone's swiped row, from its signed distance `d` from the row's middle, in steps: the
+ * card's center's x less the middle's x, over SWIPE_STEP. The card in the middle stands up by SWIPE_LIFT and grows by
+ * SWIPE_SCALE; each step away it turns and drops further, up to the caps, and at a distance of a whole step or more it
+ * stands at its own size.
+ */
+export function swipePose(d: number): { readonly y: number; readonly deg: number; readonly scale: number } {
+  const w = Math.max(0, 1 - Math.abs(d));
+  const deg = Math.min(Math.max(SWIPE_TURN * d, -SWIPE_TURN_MAX), SWIPE_TURN_MAX);
+  const y = Math.min(SWIPE_DROP * d * d, SWIPE_DROP_MAX) * (1 - w) - SWIPE_LIFT * w;
+  const scale = 1 + SWIPE_SCALE * w;
+  return { y, deg, scale };
+}
+
+/** The index of the center nearest `middle`, the lower index on a tie; -1 when there are no centers. */
+export function swipeMiddle(centers: readonly number[], middle: number): number {
+  let best = -1;
+  let bestDistance = Infinity;
+  centers.forEach((center, i) => {
+    const distance = Math.abs(center - middle);
+    if (distance < bestDistance) {
+      best = i;
+      bestDistance = distance;
+    }
+  });
+  return best;
 }

@@ -4,6 +4,7 @@ import type { Fake } from '../engine/ui/data/fake.ts';
 import { boardSwitch, MAIN_BOARD_WIDTH } from '../engine/ui/glass/board.ts';
 import type { Demo } from '../web/src/demo.ts';
 import { pageViolations } from './axe.ts';
+import { armCard } from './focus.ts';
 import { boardStoryIds, routeStoryIds } from './board-stories.ts';
 import { settled } from './settled.ts';
 
@@ -221,7 +222,7 @@ for (const scheme of ['light', 'dark'] as const) {
         await page.getByRole('link', { name: 'Who keeps reacting with a thumbs up?', exact: true }).click();
         await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
         await page.getByRole('button', { name: /^Hand, \d+ postcards?$/ }).click();
-        await page.getByRole('button', { name: /^Whoops!, Salty\b/ }).first().click();
+        await armCard(page, /^Whoops!, Salty\b/);
         await expect(page.getByRole('button', { name: /^Play Whoops! on post \d+$/u }).first()).toBeVisible();
         await page.getByRole('button', { name: /^Play Whoops! on post \d+$/u }).first().click();
         await expect(page.getByRole('dialog', { name: 'Whoops!' })).toBeVisible();
