@@ -49,8 +49,10 @@ test('a card that carries a reply sends the reply and its framing with the play;
     { ok: true, rpc: 'play_card', args: { card: 'cutter', through: id, target: other, config: {}, message: '', reply: 'Cutting in.', framing: [other, id] }, asService: true, needsTarget: true, play: 'cast' });
   assert.deepEqual((decide(play('cutter', { body: 'Cutting in.' }), where) as unknown as { args: object }).args,
     { card: 'cutter', through: id, target: other, config: {}, message: '', reply: 'Cutting in.' }, 'no framing is no argument');
-  assert.equal(refusal2(play('cutter'), where), 'body: is not text', 'the post action\'s own words, as a post with no body reads');
-  assert.equal(refusal2(play('cutter', { body: '   ' }), where), 'body: is empty');
+  // A missing or blank reply is refused in the card's own plain words (the owner's answer on #594, 2026-11-13), the ones play_card says of one with no letter or digit.
+  assert.equal(refusal2(play('cutter'), where), 'body: write the reply this card carries');
+  assert.equal(refusal2(play('cutter', { body: '   ' }), where), 'body: write the reply this card carries');
+  assert.equal(refusal2(play('cutter', { body: 7 }), where), 'body: write the reply this card carries');
   assert.equal(refusal2(play('cutter', { body: 'x'.repeat(51) }), where), 'body: is longer than 50 characters');
   const other2 = decide(play('splat', { body: 'Ignored.', framing: [id] }), where) as unknown as { args: object };
   assert.deepEqual(other2.args, { card: 'splat', through: id, target: other, config: {}, message: '' }, 'a card without the flag sends neither');
