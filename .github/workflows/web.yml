@@ -22,14 +22,19 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     # The suite outgrew one runner: 2,073 tests took 28 of the 30 minutes on 2026-11-05 (a11y.spec.ts alone 18), and a slow
-    # setup ran one out. It is split by test (playwright.config.ts runs fully parallel, so a shard can split a spec), three
-    # ways, each about a third of the suite. Every shard runs to its end (fail-fast off), so one failure never hides another.
-    # Thirty minutes still ends a hang.
+    # setup ran one out. It is split by test (playwright.config.ts runs fully parallel, so a shard can split a spec) into
+    # six shards by count. Every shard runs to its end (fail-fast off), so one failure never hides another.
+    # Measured on 2026-11-13: the suite was 4,306 tests, an hour of work on the two workers a runner gives, and growing.
+    # The last of three shards took 24:51 on a middling runner and 32 on a slow one, because the slow specs
+    # (glass-layout, glass-text) come late in the alphabet; two shards were cancelled at the limit with no test failed.
+    # By count, six shards put the slowest at about 15 minutes, and 20 on a slow runner, so the 30-minute limit is
+    # twice the one and still ends a hang. The total comes from strategy.job-total, so the matrix is the one list: to
+    # add a shard, add a number to it. tools/check-release-workflows.mjs holds that shape (issue #605).
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
-    name: e2e (${{ matrix.shard }}/3)
+        shard: [1, 2, 3, 4, 5, 6]
+    name: e2e (${{ matrix.shard }}/${{ strategy.job-total }})
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -39,7 +44,7 @@ jobs:
       - run: npm ci --no-audit --no-fund
       # The runner has no browser of its own; CI is the one place one is downloaded.
       - run: npx playwright install --with-deps chromium
-      - run: npm run test:e2e -- --shard=${{ matrix.shard }}/3
+      - run: npm run test:e2e -- --shard=${{ matrix.shard }}/${{ strategy.job-total }}
         env: { CI: '1' }
       # The board match's side-by-side pictures and mismatch lists (e2e/boards.spec.ts), on a pass as well: each shard's
       # own, for the boards that shard ran.
