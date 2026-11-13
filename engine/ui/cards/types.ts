@@ -75,6 +75,8 @@ export interface CardPlay {
   readonly drawn?: string;
   /** A play that is over the moment it lands (a heart): it keeps no `ends` and no effect, and the Lens says what it did. From the play's own payload (`instant: true`). */
   readonly instant?: true;
+  /** The public name of the character a play on a character landed on, from its payload (`targetName`): what a discipline play's Lens words call its target. */
+  readonly targetName?: string;
   /** The warn points a relief play took off, from its payload (`took`). */
   readonly took?: number;
   /** How many running bans an unban play lifted, from its payload (`lifted`'s length). */
