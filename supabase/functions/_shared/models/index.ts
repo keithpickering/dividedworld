@@ -5,8 +5,9 @@
  *
  * "Three unrelated timeouts are not a poison pill": a transport failure (a 5xx, a 429, a fetch
  * that threw or never answered) is retried on the request itself, waiting longer each time, at
- * most three times; a 4xx other than 429 is thrown at once (a completions endpoint's 400, 413 and 422 as a rejection, any other as a ProviderRefusal). The
- * number of retries rides on the result.
+ * most three times; a 4xx other than 429 is thrown at once: a completions endpoint's 400, 413
+ * and 422 as a rejection, any other as a ProviderRefusal. The number of retries rides on the
+ * result.
  *
  * Every call, whatever its end, writes one ledger row (ledger.ts) in a `finally`: used (`ok`), an
  * answer that could not be used (`rejected`, with the predicate and the trims made before it), or
