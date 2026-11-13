@@ -15,47 +15,60 @@ if (!Number.isFinite(HOLD_MS)) throw new Error('HOLD_MS is not in instances/divi
 const SAVE_AFTER_MS = Number(/export const SAVE_AFTER_MS = (\d+)/.exec(readFileSync(new URL('../instances/divided-world/cards/whoops/Effect.tsx', import.meta.url), 'utf8'))?.[1]);
 if (!Number.isFinite(SAVE_AFTER_MS)) throw new Error('SAVE_AFTER_MS is not in instances/divided-world/cards/whoops/Effect.tsx');
 
+/* The keyboard sweep's pace and its line, read from the scrub rules' own source for the same reason: its time follows the pace, 400px a second on every box (the followups design). */
+const SCRUB_SOURCE = readFileSync(new URL('../instances/divided-world/cards/whoops/scrub.ts', import.meta.url), 'utf8');
+const SWEEP_PX_S = Number(/export const SWEEP_PX_S = (\d+)/.exec(SCRUB_SOURCE)?.[1]);
+const ROW_PX = Number(/export const ROW_PX = ([\d.]+)/.exec(SCRUB_SOURCE)?.[1]);
+if (!Number.isFinite(SWEEP_PX_S) || !Number.isFinite(ROW_PX)) throw new Error('SWEEP_PX_S or ROW_PX is not in instances/divided-world/cards/whoops/scrub.ts');
+
 /*
- * How much ink the canvas holds: the sum of its alpha, in whole pixels' worth. A wash takes some of the field each pass (the ink field
- * design), so a scrubbed core is thinned and see-through well before it is gone, and a count of pixels past a cutoff would not move until
- * the ink was gone; the sum falls with every pass.
+ * How much ink the post holds: the sum of the alpha of every ink canvas the selector names, in whole pixels' worth, each at its own pixel
+ * scale (a post's ink is a canvas for each band of 512px near the viewport and each layer that still has ink: the banded ink design,
+ * docs/plans/2026-11-12-whoops-followups-design.md). A wash takes some of the field each pass (the ink field design), so a scrubbed core is thinned and
+ * see-through well before it is gone, and a count of pixels past a cutoff would not move until the ink was gone; the sum falls with every pass.
  */
-const inked = (page: Page, selector = '#post-41 .kb-whoops-ink') => page.evaluate((sel) => {
-  const c = document.querySelector<HTMLCanvasElement>(sel);
-  if (!c) return 0;
-  const d = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
+const inked = (page: Page, selector = '#post-41 canvas.kb-whoops-ink') => page.evaluate((sel) => {
   let n = 0;
-  for (let i = 3; i < d.length; i += 4) n += d[i]! / 255;
+  for (const c of document.querySelectorAll<HTMLCanvasElement>(sel)) {
+    const d = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
+    for (let i = 3; i < d.length; i += 4) n += d[i]! / 255;
+  }
   return Math.round(n);
 }, selector);
 
 /**
  * The middle of the longest run of solid ink on a row between viewport heights `from` and `to`, clear of the tip card, the sticky
- * banner and what the engine lifts over the ink (`[data-kb-over-ink]`), and standing in the ink's own post body.
+ * banner and what the engine lifts over the ink (`[data-kb-over-ink]`), and standing in the ink's own post body. The ink is every canvas
+ * the selector names: a point is solid where any of them is, each read at its own place and scale, so a point in any band is found.
  */
 const solidInk = (page: Page, selector: string, from: number, to: number) => page.evaluate(([sel, top, bottom]) => {
-  const c = document.querySelector<HTMLCanvasElement>(sel as string)!;
-  const post = c.closest('.kb-act-main');
-  const r = c.getBoundingClientRect();
-  const d = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
-  const k = c.width / r.width;
+  const canvases = [...document.querySelectorAll<HTMLCanvasElement>(sel as string)].map((c) => {
+    const r = c.getBoundingClientRect();
+    return { c, r, k: c.width / r.width, d: c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data };
+  });
+  if (canvases.length === 0) return { x: 0, y: 0, len: 0 };
+  const post = canvases[0]!.c.closest('.kb-act-main');
+  const left = Math.min(...canvases.map((o) => o.r.left)), right = Math.max(...canvases.map((o) => o.r.right));
+  const first = Math.min(...canvases.map((o) => o.r.top)), last = Math.max(...canvases.map((o) => o.r.bottom));
+  const inkAt = (x: number, y: number) => canvases.some(({ c, r, k, d }) => {
+    if (x < r.left || x >= r.right || y < r.top || y >= r.bottom) return false;
+    const px = Math.floor((x - r.left) * k), py = Math.floor((y - r.top) * k);
+    return px >= 0 && py >= 0 && px < c.width && py < c.height && d[(py * c.width + px) * 4 + 3]! > 40;
+  });
   const solid = (x: number, y: number) => {
-    for (let dx = -12; dx <= 12; dx += 6) for (let dy = -12; dy <= 12; dy += 6) {
-      const px = Math.floor((x + dx) * k), py = Math.floor((y + dy) * k);
-      if (px < 0 || py < 0 || px >= c.width || py >= c.height || d[(py * c.width + px) * 4 + 3]! <= 40) return false;
-    }
-    const e = document.elementFromPoint(r.left + x, r.top + y);
+    for (let dx = -12; dx <= 12; dx += 6) for (let dy = -12; dy <= 12; dy += 6) if (!inkAt(x + dx, y + dy)) return false;
+    const e = document.elementFromPoint(x, y);
     return e !== null && e.closest('.kb-callout, [data-kb-over-ink]') === null && post !== null && post.contains(e);
   };
   let best = { len: 0, x: 0, y: 0 };
-  for (let y = Math.max(0, Math.ceil((top as number) - r.top)); y < Math.min(r.height, (bottom as number) - r.top); y += 6) {
+  for (let y = Math.max(first, top as number); y < Math.min(last, bottom as number); y += 6) {
     let run = 0;
-    for (let x = 0; x < r.width; x += 2) {
+    for (let x = left; x < right; x += 2) {
       run = solid(x, y) ? run + 2 : 0;
       if (run > best.len) best = { len: run, x: x - run / 2, y };
     }
   }
-  return { x: r.left + best.x, y: r.top + best.y, len: best.len };
+  return best;
 }, [selector, from, to] as const);
 
 test('the splat on #41 is drawn, scrubbed by a drag, and back after a reload', async ({ page }) => {
@@ -63,6 +76,7 @@ test('the splat on #41 is drawn, scrubbed by a drag, and back after a reload', a
   const canvas = page.locator('#post-41 .kb-whoops-ink');
   await expect(canvas).toBeVisible();
   await expect.poll(() => inked(page)).toBeGreaterThan(1000);
+  await built(page);
   const before = await inked(page);
   const box = (await canvas.boundingBox())!;
   const y = box.y + box.height / 2;
@@ -609,26 +623,33 @@ test('a reader scrubs the core: one pass leaves it see-through and not gone, and
 });
 
 test('"Hold to scrub" clears a splat, and goes over some line more than once', async ({ page }) => {
-  test.setTimeout(240_000);
   await page.goto('/?fixture=boards&moment=01-main');
   await expect(page.locator(SPOT)).toBeVisible();
   await expect.poll(() => inked(page)).toBeGreaterThan(1000);
   await built(page);
+  /* One pass down the body takes a line's width over the pace, for each line (the sweep's pace is SWEEP_PX_S on any box); the sweep is given six of them, at least a minute, and the test forty seconds more. */
+  const box = await page.locator('#post-41 .kb-act-main').boundingBox();
+  const PASS_S = (box!.height / ROW_PX) * (box!.width / SWEEP_PX_S);
+  const SWEEP_MS = Math.round(Math.max(60, 6 * PASS_S) * 1000);
+  test.setTimeout(SWEEP_MS + 40_000);
   await page.locator(MARK).click();
   const lens = page.getByRole('dialog', { name: 'Cards on this post' });
   const tile = lens.getByRole('button', { name: 'Hold to scrub' });
   await tile.focus();
   const whoops = page.locator('#post-41 .kb-whoops');
-  /* The ink in each band of the canvas, a band being the sweep's line (22.5px), sampled as the sweep runs. */
+  /* The ink in each band of the post, a band being the sweep's line (22.5px): every ink canvas summed at its own place and scale, and nothing where the layers are gone, so the rows stay as many as the body's. */
   const bands = () => page.evaluate(() => {
-    const c = document.querySelector<HTMLCanvasElement>('#post-41 .kb-whoops-ink')!;
-    const k = c.width / c.getBoundingClientRect().width, row = Math.max(1, Math.round(22.5 * k));
-    const d = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
-    const out: number[] = [];
-    for (let y0 = 0; y0 < c.height; y0 += row) {
-      let n = 0;
-      for (let y = y0; y < Math.min(c.height, y0 + row); y++) for (let x = 0; x < c.width; x += 2) n += d[(y * c.width + x) * 4 + 3]! / 255;
-      out.push(n);
+    const body = document.querySelector('#post-41 .kb-act-main')!.getBoundingClientRect();
+    const out: number[] = Array.from({ length: Math.ceil(body.height / 22.5) + 1 }, () => 0);
+    for (const c of document.querySelectorAll<HTMLCanvasElement>('#post-41 canvas.kb-whoops-ink')) {
+      const r = c.getBoundingClientRect(), k = c.width / r.width;
+      const d = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
+      for (let y = 0; y < c.height; y++) {
+        const row = Math.max(0, Math.floor((r.top - body.top + y / k) / 22.5));
+        let n = 0;
+        for (let x = 0; x < c.width; x += 2) n += d[(y * c.width + x) * 4 + 3]! / 255;
+        out[row] = (out[row] ?? 0) + n / k;
+      }
     }
     return out;
   });
@@ -636,7 +657,8 @@ test('"Hold to scrub" clears a splat, and goes over some line more than once', a
   const drops = start.map(() => 0);
   let last = start, plateau = start.map(() => 0);
   await page.keyboard.down('Space');
-  const until = Date.now() + 200_000;
+  const began = Date.now();
+  const until = began + SWEEP_MS;
   /* A band's ink falls while the sweep is on it, then holds while the sweep is elsewhere; a fall after a hold is another pass. */
   while (Date.now() < until && (await whoops.getAttribute('data-kb-layers')) !== 'clean') {
     await page.waitForTimeout(250);
@@ -647,7 +669,58 @@ test('"Hold to scrub" clears a splat, and goes over some line more than once', a
     last = now;
   }
   await page.keyboard.up('Space');
+  test.info().annotations.push({ type: 'sweep', description: `${Date.now() - began}ms of ${SWEEP_MS}ms (a pass down the body is ${PASS_S.toFixed(1)}s)` });
   await expect(whoops).toHaveAttribute('data-kb-layers', 'clean');
   await expect(whoops).toHaveAttribute('data-kb-washed', /^1\.000$|^0?\.9\d\d$/u);
   expect(Math.max(...drops), `passes seen over each band: ${drops.join(' ')}`).toBeGreaterThanOrEqual(2);
+});
+
+/*
+ * A tall post's ink is banded (docs/plans/2026-11-12-whoops-followups-design.md): a canvas for each band of 512px near the viewport and each
+ * layer that still has ink, so a post of 12,000px holds no more than a few, and the ones at its far end are there when the reader is.
+ */
+test('a tall post scrubs at its far end', async ({ page }) => {
+  await page.goto('/?fixture=boards&story=boards-01-whoops-layers--three-layers-tall');
+  const canvases = '#post-41 canvas.kb-whoops-ink';
+  /* Three layers, each over the bands near the viewport, are never more than this on the page, whatever the post's height. */
+  const CAP = 3 * 6;
+  const counted = async () => {
+    const n = await page.locator('canvas.kb-whoops-ink').count();
+    expect(n, `ink canvases on the page: ${n}`).toBeLessThanOrEqual(CAP);
+  };
+  const bandsOf = () => page.locator(canvases).evaluateAll((all) => [...new Set(all.map((c) => Number(c.getAttribute('data-kb-band'))))].sort((a, b) => a - b));
+  await expect(page.locator(canvases).first()).toBeAttached();
+  await expect.poll(() => inked(page, canvases)).toBeGreaterThan(1000);
+  await counted();
+  /* The post is tall: at least twenty bands of 512px. */
+  const height = await page.locator('#post-41 .kb-act-main').evaluate((el) => el.getBoundingClientRect().height);
+  expect(height).toBeGreaterThan(10_000);
+  const last = Math.floor((height - 1) / 512);
+  /* At load the post's top is in view: a band is held within half a screen of the viewport (BAND_NEAR), so none below the one that reaches a screen and a half down. */
+  const atLoad = await bandsOf();
+  const farthest = Math.ceil(1.5 * 1120 / 512) - 1;
+  expect(atLoad.length, `bands at load: ${atLoad.join(' ')}`).toBeGreaterThan(0);
+  expect(Math.max(...atLoad), `bands at load: ${atLoad.join(' ')}`).toBeLessThanOrEqual(farthest);
+  /* At its far end: the top bands' canvases are gone and the bottom ones are there. */
+  await page.evaluate(() => {
+    const body = document.querySelector('#post-41 .kb-act-main')!;
+    window.scrollTo(0, window.scrollY + body.getBoundingClientRect().bottom - innerHeight + 40);
+  });
+  await expect.poll(() => bandsOf(), { timeout: 20_000 }).toContain(last);
+  await counted();
+  await expect.poll(async () => Math.min(...await bandsOf()), { timeout: 20_000 }).toBeGreaterThan(last - 6);
+  await expect.poll(() => inked(page, canvases), { timeout: 20_000 }).toBeGreaterThan(1000);
+  await counted();
+  const bottom = await bandsOf();
+  expect(Math.min(...bottom), `bands at the far end: ${bottom.join(' ')}`).toBeGreaterThan(farthest);
+  /* A scrub there lowers the ink: back and forth over a stripe of solid ink in view. */
+  const at = await solidInk(page, canvases, 150, 900);
+  expect(at.len).toBeGreaterThan(100);
+  const before = await inked(page, canvases);
+  await page.mouse.move(at.x - 60, at.y);
+  await page.mouse.down();
+  for (let pass = 0; pass < 6; pass++) await page.mouse.move(at.x + (pass % 2 === 0 ? 60 : -60), at.y, { steps: 20 });
+  await page.mouse.up();
+  await expect.poll(() => inked(page, canvases)).toBeLessThan(before);
+  await counted();
 });
