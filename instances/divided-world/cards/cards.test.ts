@@ -25,7 +25,7 @@ import type { CardTarget } from '../../../engine/rules/cards.ts';
 /** What the machine sells a card for: its slot's price. */
 const priceOf = (key: string): number => instance.machine.find((m) => 'card' in m.item && m.item.card === key)!.price;
 
-const post = (length: number): CardTarget => ({ reach: 'post', act: 'p1', kind: 'post', length, text: '' });
+const post = (length: number): CardTarget => ({ reach: 'post', act: 'p1', kind: 'post', length, text: '', links: [] });
 
 test('the instance sells its cards at their prices', () => {
   assert.deepEqual(cards.map((c) => [c.key, c.alignment, priceOf(c.key)]), [['stick-around', 'sweet', 100], ['whoops', 'salty', 100], ['card-collector', 'salty', 150], ['hall-pass', 'sweet', 150], ['force-field', 'sweet', 150], ['publicity-tour', 'sweet', 150], ['heat-magnet', 'salty', 150], ['class-clown', 'pepperoni', 150], ['good-vibes', 'sweet', 150], ['glitter-bomb', 'pepperoni', 150], ['main-event', 'sweet', 300], ['feelin-fab', 'sweet', 20], ['autocorrect', 'pepperoni', 100], ['you-were-saying', 'pepperoni', 100], ['below-the-fold', 'salty', 100], ['mooch', 'salty', 150], ['toll', 'pepperoni', 150], ['4d-chess', 'salty', 150], ['off-day', 'salty', 500], ['jimmy-wails', 'sweet', 200], ['sugar-coat', 'sweet', 300], ['hype-up', 'sweet', 150], ['last-word', 'salty', 150], ['laugh-track', 'pepperoni', 150], ['graffiti', 'pepperoni', 300]]);
@@ -87,7 +87,7 @@ test('a card lands on a post up to its stack: Stick Around once, Whoops! three t
   assert.deepEqual(whoops.canApply(post(10), w(3)), { ok: false, why: 'this post already carries 3 of that card, the most it takes' });
   assert.equal(whoops.canApply(post(10), [...w(2), { card: 'stick-around', act: 's' }]).ok, true, 'another card is not counted');
   assert.deepEqual(stickAround.canApply(post(10), [{ card: 'stick-around', act: 's' }]), { ok: false, why: 'this post already carries that card' });
-  assert.equal(stickAround.canApply({ reach: 'post', act: 'p1', kind: 'edit', length: 10, text: '' }, []).ok, false);
+  assert.equal(stickAround.canApply({ reach: 'post', act: 'p1', kind: 'edit', length: 10, text: '', links: [] }, []).ok, false);
   assert.equal(whoops.stack, 3);
   assert.equal(whoops.seeded, true, 'each splat is drawn from a seed the server chooses');
   assert.equal(stickAround.stack ?? 1, 1);
@@ -243,7 +243,7 @@ test('Publicity Tour, Heat Magnet, Class Clown and Good Vibes are Gimmicks with 
 
 test('Card Collector names only cards cast on a post at or below its own rarity, and Hall Pass springs on a visit', () => {
   const collector = by('card-collector');
-  const target = { reach: 'post' as const, act: 'p', kind: 'post' as const, length: 10, text: '' };
+  const target = { reach: 'post' as const, act: 'p', kind: 'post' as const, length: 10, text: '', links: [] };
   assert.equal(decideSet(collector, settings, target, [], { card: 'whoops' }, cards).ok, true);
   assert.equal(decideSet(collector, settings, target, [], { card: 'glitter-bomb' }, cards).ok, false, 'a card beyond a post cannot be named');
   assert.deepEqual(by('hall-pass').trap, { trigger: { on: 'visit' } });
@@ -806,9 +806,9 @@ test('Laugh Track keeps the seed the server adds and no other key', () => {
 
 test('placesOf is every occurrence of each cue in the text\'s order, with its cue\'s index', () => {
   const text = 'Mario met Luigi, then Mario hit Luigi again';
-  const places = placesOf(text, [cue('Luigi'), cue('Mario', 'boo')]);
+  const places = placesOf(text, [cue('Luigi'), cue('Mario', 'boo')], []);
   assert.deepEqual(places.map((p) => [text.slice(p.start, p.end), p.cue]), [['Mario', 1], ['Luigi', 0], ['Mario', 1], ['Luigi', 0]]);
-  assert.deepEqual(placesOf('nothing here', [cue('Luigi')]), []);
+  assert.deepEqual(placesOf('nothing here', [cue('Luigi')], []), []);
 });
 
 test('Laugh Track lands with one cue and with five', () => {

@@ -8,7 +8,7 @@
  *
  * - **A cue** is a phrase, bounded as Autocorrect's is (4 to 100 characters, at least 4 letters or digits, one line), and a sound.
  *   Two cues with the same words are one cue too many.
- * - **It lands** only where every cue's phrase is in the post's own words, no two cued places overlap and at most `PLACES.most` places are
+ * - **It lands** only where every cue's phrase is in the post's own words and outside any link (a Laugh Track never cues a bare address), no two cued places overlap and at most `PLACES.most` places are
  *   cued, on a post with no audience yet: it stacks one deep.
  * - **Its price** is the base price at the machine, plus `perPlace` for each cued place past `freePlaces`, never more than `mostAdded`.
  * - **A persona's cues are repaired, a player's never** (`repairStaff`): what a model overshoots is trimmed and each trim named, so long as one cue remains.
@@ -32,9 +32,27 @@ const characters = (s: string) => [...s].length;
 /** A cued place: where a cue's phrase is in the text, with the cue's index. */
 export interface Place { readonly start: number; readonly end: number; readonly cue: number }
 
-/** Every occurrence of each cue in the text, in the order of the text, with its cue's index; none is dropped, overlaps included. */
-export function placesOf(text: string, cues: readonly Pick<Cue, 'phrase'>[]): Place[] {
-  const places = cues.flatMap((c, cue) => occurrences(text, c.phrase).map((o) => ({ start: o.from, end: o.to, cue })));
+/** A stretch of the text that is a bare address (`PostTarget.links`): sorted, never overlapping. */
+type Link = { readonly start: number; readonly end: number };
+
+/** Whether any of the sorted, disjoint `links` touches the span, by a binary search for the first link that ends after the span starts. */
+function touchesLink(links: readonly Link[], start: number, end: number): boolean {
+  let lo = 0;
+  let hi = links.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (links[mid]!.end > start) hi = mid; else lo = mid + 1;
+  }
+  return lo < links.length && links[lo]!.start < end;
+}
+
+/**
+ * Every occurrence of each cue in the text, in the order of the text, with its cue's index; overlaps are not dropped. A place that touches a link
+ * (a bare address, `links`) is: a Laugh Track never cues a link, so such a place is not counted, priced, drawn or played (#602). The matcher fuses the
+ * punctuation between letters, so only a phrase that reads the whole address, or words around it, can land on one.
+ */
+export function placesOf(text: string, cues: readonly Pick<Cue, 'phrase'>[], links: readonly Link[]): Place[] {
+  const places = cues.flatMap((c, cue) => occurrences(text, c.phrase).map((o) => ({ start: o.from, end: o.to, cue }))).filter((p) => !touchesLink(links, p.start, p.end));
   return places.sort((a, b) => a.start - b.start || a.end - b.end || a.cue - b.cue);
 }
 
@@ -107,9 +125,9 @@ function repairCues(config: unknown, target: PostTarget, play: 'cast' | 'set'): 
   for (const c of play === 'set' ? [] : shaped) {
     if (clear.length >= CUES.most) break;
     examined++;
-    const mine = occurrences(target.text, c.phrase);
+    const mine = placesOf(target.text, [c], target.links);
     if (mine.length === 0) notInPost++;
-    else if (!clear.some((o) => sameWords(o.phrase, c.phrase)) && !crosses(mine.map((o) => ({ start: o.from, end: o.to })), placesOf(target.text, clear))) clear.push(c);
+    else if (!clear.some((o) => sameWords(o.phrase, c.phrase)) && !crosses(mine, placesOf(target.text, clear, target.links))) clear.push(c);
   }
   const unexamined = shaped.slice(examined);
   const reading = play === 'cast';
@@ -121,7 +139,7 @@ function repairCues(config: unknown, target: PostTarget, play: 'cast' | 'set'): 
   kept = [...clear, ...unexamined];
   drop('mostFiveCues', kept.slice(0, CUES.most));
   let fewer = kept as Cue[];
-  while (reading && fewer.length > 1 && placesOf(target.text, fewer).length > PLACES.most) fewer = fewer.slice(0, -1);
+  while (reading && fewer.length > 1 && placesOf(target.text, fewer, target.links).length > PLACES.most) fewer = fewer.slice(0, -1);
   drop('mostThirtyPlaces', fewer);
   return kept.length === 0 ? { config, trims: [] } : { config: { ...(config as object), cues: kept }, trims };
 }
@@ -148,7 +166,7 @@ export const laughTrack: CardRules<LaughTrackConfig> = {
     // A face asks the most a play could add, before anyone has picked a cue (engine/ui/cards/faces.ts).
     const cues = cuesOf(config);
     if (!cues) return Math.max(0, room);
-    const places = placesOf(target.text, cues).length;
+    const places = placesOf(target.text, cues, target.links).length;
     return Math.max(0, Math.min(economyOf(settings, 'laughTrack.perPlace') * Math.max(0, places - economyOf(settings, 'laughTrack.freePlaces')), room));
   },
   canApply: (target, effects, config, now) => {
@@ -158,8 +176,11 @@ export const laughTrack: CardRules<LaughTrackConfig> = {
     const cues = cuesOf(config);
     // The screens ask with whatever the form holds, which before a cue is picked has none.
     if (!lands.ok || !cues || target.reach !== 'post') return lands;
-    for (const c of cues) if (!occurrences(target.text, c.phrase).length) return refuse(`“${c.phrase}” is not in this post's own words`);
-    const places = placesOf(target.text, cues);
+    for (const c of cues) {
+      if (placesOf(target.text, [c], target.links).length) continue;
+      return refuse(occurrences(target.text, c.phrase).length ? `“${c.phrase}” is only inside a link in this post; a Laugh Track never cues a link` : `“${c.phrase}” is not in this post's own words`);
+    }
+    const places = placesOf(target.text, cues, target.links);
     let to = -Infinity;
     for (const p of places) {
       if (p.start < to) return refuse('two cues cover the same words');

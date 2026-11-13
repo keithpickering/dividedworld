@@ -17,12 +17,8 @@
  * 4. The keyboard: every place's first piece is a button, named by its own visible words and then "Play the audience's reaction", or once heard "Replay: the
  * audience boos" (WCAG 2.5.3, Label in Name). One of a post's places is its tab stop; the arrows, Home and End move among them, and the focused place
  * is the stop. Focus pins the place's nearness at 1 (the mark shows in full and its chitter plays) and plays nothing; Enter or Space plays the reaction.
- * 5. A link stays a link (#576): a place any of whose pieces is drawn inside an `<a>` (a bare address is the one way a cue lands there) is not a button. It has no
- * role, no label, no tabindex and no focus pin, it is not the post's stop (the stop is the first place not in a link, and a post whose every place is in a link has none), and the
- * arrows, Home and End skip it. A click or a tap on it plays nothing and is not default-prevented, so the link is followed; Enter and Space are not handled. The mouse rule, the
- * mark, the chitter, the Lens count and `dw-lt-fired` all still apply, and its cursor is the link's own. Link ancestry is known only from the DOM, so `findFirsts` (which finds
- * each place's first piece, in a layout effect before the first paint and again after a redraw) also finds the places in a link and leaves them out of `first`, which is what
- * gives a button its role, so none is ever drawn as a button inside a link on first paint.
+ * 5. A Laugh Track never cues a link (#602): the places are found over the visible text with the stretches that are a bare address left out (`placesOf`), so no cue is drawn inside
+ * an `<a>`, and every place drawn is a button. The link is drawn as the post's own link, whole, and the words after it keep their offsets because both read one walk.
  * 6. A click plays only when the selection is collapsed (#577): a click that ends a text selection (selecting to quote) plays nothing and marks nothing. Enter, Space and the mouse
  * rule are unchanged.
  *
@@ -41,7 +37,7 @@
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { parse } from '../../../../engine/bbcode/parse.ts';
-import { visibleText } from '../../../../engine/bbcode/visible.ts';
+import { visibleWalk, type Stretch } from '../../../../engine/bbcode/visible.ts';
 import { TextLayer, type TextRun } from '../../../../engine/ui/bbcode/layers.tsx';
 import { useSound } from '../../../../engine/ui/audio/sound.ts';
 import { useGameSound } from '../../../../engine/ui/audio/useGameSound.ts';
@@ -85,11 +81,11 @@ interface Spot {
 const isCue = (c: unknown): c is Cue => typeof c === 'object' && c !== null && typeof (c as Cue).phrase === 'string' && ['laugh', 'cheer', 'boo'].includes((c as Cue).sound);
 
 /** The post's cued places, in the order of the text, for each of the card's plays: those a cue's phrase still finds. */
-function spotsOf(text: string, plays: readonly CardPlay[]): Spot[] {
+function spotsOf(text: string, links: readonly Stretch[], plays: readonly CardPlay[]): Spot[] {
   return plays.flatMap((play) => {
     const { cues, seed } = play.config as { cues?: unknown; seed?: unknown };
     if (play.caught || !Array.isArray(cues) || !cues.every(isCue)) return [];
-    return placesOf(text, cues).map((place, i): Spot => {
+    return placesOf(text, cues, links).map((place, i): Spot => {
       const sound = cues[place.cue]!.sound;
       const n = 1 + Math.floor(seeded(`${play.id}:${typeof seed === 'number' ? seed : 0}:${i}`)() * 3);
       return { key: `${play.id}:${i}`, start: place.start, end: place.end, sound, take: `laugh-track.${sound}-${n}` };
@@ -99,10 +95,10 @@ function spotsOf(text: string, plays: readonly CardPlay[]): Spot[] {
 
 function useSpots(post: EffectProps['post'], plays: readonly CardPlay[]) {
   const body = typeof post.currentPayload.body === 'string' ? post.currentPayload.body : '';
-  const text = useMemo(() => visibleText(parse(body)), [body]);
+  const { text, links } = useMemo(() => visibleWalk(parse(body)), [body]);
   /* The plays by content, so a new array of equal plays is not a new set of places. */
   const playsKey = JSON.stringify(plays.map((p) => [p.id, p.caught ?? null, p.config]));
-  const spots = useMemo(() => spotsOf(text, plays), [text, playsKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const spots = useMemo(() => spotsOf(text, links, plays), [text, links, playsKey]); // eslint-disable-line react-hooks/exhaustive-deps
   return spots;
 }
 
@@ -143,10 +139,6 @@ function Live({ post, plays, show, met, children }: EffectProps) {
   /* The places that have been heard this visit, and the first piece drawn of each place (its button): this screen's own state, never saved or sent. */
   const [fired, setFired] = useState<ReadonlySet<string>>(() => new Set());
   const [first, setFirst] = useState<Readonly<Record<string, string>>>({});
-  /* The places any of whose pieces is drawn inside a link (an `<a>`): known only from the DOM, so `findFirsts` finds them, in the layout effect before the first paint. */
-  const [linked, setLinked] = useState<ReadonlySet<string>>(() => new Set());
-  const linkedNow = useRef(linked);
-  linkedNow.current = linked;
   /* The post's one tab stop: the place last focused, or the first place when that one is gone. */
   const [stop, setStop] = useState<string | null>(null);
   const firedNow = useRef(fired);
@@ -243,20 +235,16 @@ function Live({ post, plays, show, met, children }: EffectProps) {
     return was.x !== e.clientX || was.y !== e.clientY;
   };
 
-  /* The first piece drawn of each place is its button, unless the place is in a link: a link stays a link, so such a place has no button and no stop. */
+  /* The first piece drawn of each place is its button. */
   const findFirsts = useCallback(() => {
     const el = root.current;
     if (!el) return;
     const found: Record<string, string> = {};
-    const inLink = new Set<string>();
     for (const e of el.querySelectorAll('[data-lt-place]')) {
       const place = e.getAttribute('data-lt-place')!;
-      if (e.closest('a')) inLink.add(place);
       if (!(place in found)) found[place] = e.getAttribute('data-lt-piece')!;
     }
-    for (const place of inLink) delete found[place];
     setFirst((was) => (JSON.stringify(was) === JSON.stringify(found) ? was : found));
-    setLinked((was) => (was.size === inLink.size && [...inLink].every((k) => was.has(k)) ? was : inLink));
   }, []);
   useLayoutEffect(() => { findFirsts(); }, [fired, spotsKey, findFirsts]);
   const firstNow = useRef(first);
@@ -287,7 +275,6 @@ function Live({ post, plays, show, met, children }: EffectProps) {
       render: ({ text, key }) => {
         const isFirst = first[spot.key] === key;
         const press = (e: KeyboardEvent) => {
-          if (linkedNow.current.has(spot.key)) return;
           if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fire(spot); }
           else if (isFirst && ['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp', 'Home', 'End'].includes(e.key)) { e.preventDefault(); goTo(spot.key, e.key); }
         };
@@ -300,9 +287,9 @@ function Live({ post, plays, show, met, children }: EffectProps) {
             if (into instanceof Element && into.closest(`[data-lt-place="${spot.key}"]`)) return;
             over.current.delete(spot.key);
           },
-          /* A click or tap in a link follows the link and plays nothing; a click that ends a text selection (selecting to quote) plays nothing either. */
+          /* A click that ends a text selection (selecting to quote) plays nothing. */
           onClick: () => {
-            if (linkedNow.current.has(spot.key) || window.getSelection()?.isCollapsed === false) return;
+            if (window.getSelection()?.isCollapsed === false) return;
             fire(spot);
           },
           onKeyDown: press,
@@ -316,7 +303,7 @@ function Live({ post, plays, show, met, children }: EffectProps) {
         });
       },
     };
-  }), [spots, fired, first, linked, stopKey, fire, goTo]);
+  }), [spots, fired, first, stopKey, fire, goTo]);
 
   /* The Lens's words: how many cues have been heard on this visit, and the toggle for Game sounds. */
   const heard = spots.filter((s) => fired.has(s.key)).length;

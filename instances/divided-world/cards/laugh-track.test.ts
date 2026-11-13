@@ -3,7 +3,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CUES, PLACES, laughTrack, type Cue } from './laugh-track.ts';
+import { CUES, PLACES, laughTrack, placesOf, type Cue } from './laugh-track.ts';
 import { decidePlay, postTarget } from '../../../engine/rules/cards.ts';
 import { defaults as settings } from '../settings.ts';
 
@@ -170,4 +170,41 @@ test('a set\'s cues are not held to the post: cues not in it, overlapping or pas
   assert.deepEqual(six.trims, [{ path: PATH, predicate: 'mostFiveCues', before: 6, after: CUES.most }]);
   const cast = laughTrack.repairStaff!({ cues: [cue('Luigi'), cue('alpha')] }, target('alpha'), 'cast');
   assert.deepEqual(cast.config, { cues: [cue('alpha')] }, 'a cast is repaired as before');
+});
+
+/* A Laugh Track never cues text inside a link (#602). The matcher fuses the punctuation between letters, so a cue lands in a bare address only as a phrase that reads the whole address. */
+const ADDRESS = 'https://example.com/Luigi';
+const LINKED = `Visit ${ADDRESS} and Luigi is great.`;
+const linkedTarget = (text = LINKED) => postTarget('p1', 'post', text);
+
+test('placesOf drops a place that touches a link: the address cue and a plain Luigi give one place, the plain one', () => {
+  const t = linkedTarget();
+  assert.deepEqual(placesOf(t.text, [cue(ADDRESS)], []).length, 1, 'the matcher alone finds the address');
+  const places = placesOf(t.text, [cue(ADDRESS), cue('Luigi')], t.links);
+  assert.deepEqual(places.map((p) => [t.text.slice(p.start, p.end), p.cue]), [['Luigi', 1]]);
+  assert.equal(places[0]!.start, t.text.lastIndexOf('Luigi'));
+});
+
+test('a phrase that starts outside a link and ends inside it has no place', () => {
+  const t = linkedTarget();
+  assert.equal(placesOf(t.text, [cue(`Visit ${ADDRESS}`)], []).length, 1);
+  assert.deepEqual(placesOf(t.text, [cue(`Visit ${ADDRESS}`)], t.links), []);
+});
+
+test('canApply refuses a cue found only inside a link, in the card\'s words, and prices only the places outside links', () => {
+  const refused = laughTrack.canApply(linkedTarget(), [], { cues: [cue(ADDRESS)] }, new Date());
+  assert.deepEqual(refused, { ok: false, why: `“${ADDRESS}” is only inside a link in this post; a Laugh Track never cues a link` });
+  assert.equal(laughTrack.canApply(linkedTarget(), [], { cues: [cue(ADDRESS), cue('Luigi')] }, new Date()).ok, false, 'one cue only in a link refuses the play');
+  assert.equal(laughTrack.canApply(linkedTarget(), [], { cues: [cue('Luigi')] }, new Date()).ok, true);
+  assert.deepEqual(laughTrack.canApply(linkedTarget('Visit https://example.com/Luigi now'), [], { cues: [cue('Luigi')] }, new Date()), { ok: false, why: '“Luigi” is not in this post\'s own words' });
+  const perPlace = { ...settings, economy: { ...settings.economy, 'laughTrack.perPlace': 100, 'laughTrack.freePlaces': 0, 'laughTrack.mostAdded': 10000 } };
+  const price = (text: string) => laughTrack.playPrice!(perPlace, linkedTarget(text), { cues: [cue(ADDRESS), cue('Luigi')] });
+  assert.equal(price(LINKED), price('Visit and Luigi is great.'), 'the link\'s place costs nothing: only the plain Luigi is priced');
+  assert.equal(price(LINKED), 100);
+});
+
+test('repairStaff (cast) trims a cue that is only inside a link as phraseNotInPost', () => {
+  const out = laughTrack.repairStaff!({ cues: [cue(ADDRESS), cue('great')] }, linkedTarget(), 'cast');
+  assert.deepEqual(out.config, { cues: [cue('great')] });
+  assert.deepEqual(out.trims, [{ path: PATH, predicate: 'phraseNotInPost', before: 2, after: 1 }]);
 });

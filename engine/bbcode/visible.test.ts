@@ -102,3 +102,11 @@ test('the excerpt is the words of the quotes of one Act, in order, joined by a s
   assert.equal(ex(`[quote=${ACT}]a[/quote]`, ACT.toUpperCase()), 'a');
   assert.equal(ex('no quotes'), '');
 });
+
+test('visibleWalk says where the bare addresses are, in the visible text\'s own offsets, and a [url]\'s label is not one', () => {
+  const body = 'See https://example.com/a and [url=https://b.example]label[/url] then [b]https://c.example/x[/b] end';
+  const { text, links } = visibleWalk(parse(body));
+  assert.equal(text, 'See https://example.com/a and \n then https://c.example/x end');
+  assert.deepEqual(links.map((l) => text.slice(l.start, l.end)), ['https://example.com/a', 'https://c.example/x']);
+  assert.deepEqual(visibleWalk(parse('no addresses [url=https://b.example]here[/url] at all')).links, []);
+});

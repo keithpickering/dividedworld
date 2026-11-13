@@ -104,7 +104,7 @@ const PLAIN: FaceArt = { color: 'var(--kb-glass-neon)', ink: 'var(--kb-glass-ink
 
 function extraOf(rules: CardRules, settings: Settings): number {
   try {
-    return Math.max(0, rules.playPrice(settings, { reach: 'post', act: '', kind: 'post', length: VERY_LONG, text: '' }, {}));
+    return Math.max(0, rules.playPrice(settings, { reach: 'post', act: '', kind: 'post', length: VERY_LONG, text: '', links: [] }, {}));
   } catch {
     return 0;
   }

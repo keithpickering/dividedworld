@@ -11,7 +11,7 @@
 import type { ActKind, Alignment, EconomyRead, Hundredths, Quadrant, Settings, Span } from './types.ts';
 import { QUADRANTS } from './types.ts';
 import { parse, safeColor } from '../bbcode/parse.ts';
-import { visibleText } from '../bbcode/visible.ts';
+import { visibleWalk } from '../bbcode/visible.ts';
 import { phraseIn } from '../bbcode/phrase.ts';
 import { GRID, cellsOf, toBits, type SurfaceStroke } from './surface.ts';
 
@@ -38,6 +38,8 @@ export type CardTarget =
      * an image stands. A card that works on a post's words reads these, at the offsets the renderer's text layers use.
      */
     readonly text: string;
+    /** The stretches of `text` that are a bare address, in its offsets (engine/bbcode/visible.ts): a card that must not touch a link leaves them alone. */
+    readonly links: readonly { readonly start: number; readonly end: number }[];
     /**
      * Which version of the post this is (card_target, 0070): its latest edit's id, or the post's own before any edit. The server
      * reads it with the post and hands it back to play_card, which refuses a play decided against an older one. A screen's
@@ -53,7 +55,8 @@ export type PostTarget = Extract<CardTarget, { reach: 'post' }>;
 /** A post as a card's rules see it, from its current body: its length in characters and its visible text, and its version where the server read one. */
 export function postTarget(act: string, kind: PostTarget['kind'], body: unknown, version?: string): PostTarget {
   const words = typeof body === 'string' ? body : '';
-  return { reach: 'post', act, kind, length: [...words].length, text: visibleText(parse(words)), ...(version ? { version } : {}) };
+  const { text, links } = visibleWalk(parse(words));
+  return { reach: 'post', act, kind, length: [...words].length, text, links, ...(version ? { version } : {}) };
 }
 
 /**

@@ -3,7 +3,7 @@
  * each counted through the card's own matcher, the play's total against its cap, and the post's words to select from, a selection filling
  * the first empty cue.
  */
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import type { Act } from '../../../../engine/ui/data/api.ts';
 import { RouterProvider } from '../../../../engine/ui/router.tsx';
@@ -85,6 +85,18 @@ describe('Laugh Track\'s play form', () => {
     expect(phrase(3)).toHaveAccessibleDescription(/^\s*Not in this post's own words\s*$/);
     expect(phrase(1)).toHaveAccessibleDescription(/^\s*Cues 3 places in this post\. A face-down Laugh Track waits for this phrase\.\s*$/);
     expect(screen.getByText('5 places in all (at most 30)')).toBeInTheDocument();
+  });
+
+  test('a phrase found only inside a link says so, and the counts are the places outside links (#602)', () => {
+    const address = 'https://example.com/Luigi';
+    form({ cues: [{ phrase: address, sound: 'laugh' }, { phrase: 'Luigi', sound: 'cheer' }] }, `See ${address} and Luigi, then [noparse]${address}[/noparse].`);
+    expect(phrase(1)).toHaveAccessibleDescription(/^\s*Cues 1 place in this post\. A face-down Laugh Track waits for this phrase\.\s*$/);
+    expect(phrase(2)).toHaveAccessibleDescription(/^\s*Cues 1 place in this post\s*$/);
+    expect(screen.getByText('2 places in all (at most 30)')).toBeInTheDocument();
+    cleanup();
+    form({ cues: [{ phrase: address, sound: 'laugh' }, { phrase: 'Luigi', sound: 'cheer' }] }, `See ${address} only.`);
+    expect(phrase(1)).toHaveAccessibleDescription(/^\s*Only inside a link here, and a Laugh Track never cues a link\. A face-down Laugh Track waits for this phrase\.\s*$/);
+    expect(phrase(2)).toHaveAccessibleDescription(/^\s*Not in this post's own words\s*$/);
   });
 
   test('one place says place', () => {

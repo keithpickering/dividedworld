@@ -209,7 +209,7 @@ const READER_PLACES = READER_PARAGRAPHS.join('\n\n').match(/fan game|forums|Mari
 const PLACES: readonly string[] = READER_PARAGRAPHS.join('\n\n').match(/fan game|forums|Mario/gu) ?? [];
 const NAME_UNHEARD = (words: string) => `${words}. Play the audience's reaction`;
 
-async function openReader(page: Page, size: { width: number; height: number }) {
+async function openReader(page: Page, size: { width: number; height: number }, paragraphs: readonly string[] = READER_PARAGRAPHS, cues: readonly { phrase: string; sound: string }[] = READER_CUES) {
   await page.setViewportSize(size);
   await page.addInitScript(() => { try { sessionStorage.setItem('kb-demo-preferences', JSON.stringify({ gameSound: 'off' })); } catch { /* not kept */ } });
   await page.goto('/b/general');
@@ -222,7 +222,7 @@ async function openReader(page: Page, size: { width: number; height: number }) {
     const last = w.__kbFake.seed.post(made.thread, characters.hooligan, paragraphs.join('\n\n'));
     w.__kbFake.seed.card(characters.spritey, last, 'laugh-track', { layer: 1, live: true, config: { cues, seed: 7 }, message: 'Laugh Track' });
     return made.thread;
-  }, { paragraphs: READER_PARAGRAPHS, cues: READER_CUES });
+  }, { paragraphs, cues });
   await page.evaluate((t) => { history.pushState(null, '', `/t/${t}`); window.dispatchEvent(new PopStateEvent('popstate')); }, thread);
   await expect(page.locator('.dw-lt-cue').first()).toBeAttached();
   await page.evaluate(() => document.fonts.ready);
@@ -372,5 +372,29 @@ test.describe('a reader', () => {
     expect(await page.evaluate(() => document.activeElement?.classList.contains('dw-lt-fired'))).toBe(true);
     await page.keyboard.press('Tab');
     expect(await page.evaluate(() => document.activeElement?.classList.contains('dw-lt-cue'))).toBe(false);
+  });
+
+  test('a cue phrase in a bare address and in plain words: the link holds no cue, and the keyboard reaches every place there is (#602)', async ({ page }) => {
+    const address = 'https://example.com/Mario';
+    await openReader(page, MAIN, [`Visit ${address} and Mario is a plumber. A fan game is great.`], [{ phrase: address, sound: 'boo' }, { phrase: 'Mario', sound: 'cheer' }, { phrase: 'fan game', sound: 'laugh' }]);
+    const link = page.locator('a', { hasText: address });
+    await expect(link).toHaveCount(1);
+    await expect(link.locator('.dw-lt-cue')).toHaveCount(0);
+    await expect(page.locator('.dw-lt-cue[role="button"]')).toHaveCount(2);
+    await page.evaluate(() => {
+      const cue = document.querySelector('.dw-lt-cue')!;
+      const before = Array.from(document.querySelectorAll<HTMLElement>('a[href], button, input, select, textarea, [tabindex]'))
+        .filter((e) => e.tabIndex >= 0 && !e.classList.contains('dw-lt-cue') && (cue.compareDocumentPosition(e) & Node.DOCUMENT_POSITION_PRECEDING) !== 0 && !e.contains(cue));
+      before.at(-1)!.focus();
+    });
+    const label = () => page.evaluate(() => document.activeElement?.getAttribute('aria-label') ?? '');
+    await page.keyboard.press('Tab');
+    expect(await label()).toBe(NAME_UNHEARD('Mario'));
+    await page.keyboard.press('Enter');
+    await page.keyboard.press('ArrowRight');
+    expect(await label()).toBe(NAME_UNHEARD('fan game'));
+    await page.keyboard.press('Enter');
+    expect(await heardPlaces(page)).toHaveLength(2);
+    await expect(page.getByRole('button', { name: /, 2 of 2 cues heard/u })).toBeVisible();
   });
 });

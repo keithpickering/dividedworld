@@ -19,7 +19,7 @@ const watcher: CardRules = { ...base, key: 'watcher', name: 'Test Watcher', rari
 
 const writer: CardRules = { ...cast('writer', 'rare'), writes: { tokens: () => 40, frame: ({ post }) => ({ prompt: post.text, stop: ['\n\n'] }) } };
 const settings = {} as Settings;
-const post = { reach: 'post', act: 'p', kind: 'post', length: 10, text: '' } as const satisfies CardTarget;
+const post = { reach: 'post', act: 'p', kind: 'post', length: 10, text: '', links: [] } as const satisfies CardTarget;
 const soon = new Date(Date.now() + 86_400_000).toISOString();
 const gone = new Date(Date.now() - 1000).toISOString();
 const names = (key: string) => ({ shield: 'Test Shield' } as Record<string, string>)[key] ?? key;
@@ -583,7 +583,7 @@ test('a card\'s repairStaff is the persona\'s alone: a player\'s play with the s
     validateConfig: (c) => ((c as { list?: unknown[] }).list?.length ?? 0) <= 2 ? ok(c) : refuse('a play holds at most two'),
     repairStaff: (c, target, play) => ({ config: { list: (c as { list: unknown[] }).list.slice(0, 2), seen: target.text, play }, trims: [trimmed] }),
   };
-  const target = { reach: 'post', act: 'p', kind: 'post', length: 3, text: 'abc' } as const satisfies CardTarget;
+  const target = { reach: 'post', act: 'p', kind: 'post', length: 3, text: 'abc', links: [] } as const satisfies CardTarget;
   const repaired = fixer.repairStaff!({ list: [1, 2, 3] }, target, 'cast');
   assert.deepEqual(repaired, { config: { list: [1, 2], seen: 'abc', play: 'cast' }, trims: [trimmed] });
   assert.equal(decidePlay(fixer, settings, target, [], { list: [1, 2, 3] }, '').ok, false, 'decidePlay never calls it');
