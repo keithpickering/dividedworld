@@ -321,7 +321,7 @@ describe('reads and their rows', () => {
       { kind: 'character', name: 'N' }, { kind: 'character', id: 5, name: 'N' }, { kind: 'character', id: B, name: 5 },
       { kind: 'thread', title: 'T' }, { kind: 'thread', id: 5, title: 'T' }, { kind: 'thread', id: T }, { kind: 'thread', id: T, title: 5 },
       { kind: 'board', name: 'N' }, { kind: 'board', slug: 5, name: 'N' }, { kind: 'board', slug: 'g', name: 5 },
-    ]) expect(await read({ kind: 'play', card: 'whoops', on }), JSON.stringify(on)).toEqual({ kind: 'play', card: 'whoops', on: null });
+    ]) expect(await read({ kind: 'play', card: 'whoops', on }), JSON.stringify(on)).toEqual({ kind: 'play', card: 'whoops', on: null, from: null, at: null });
   });
 
   it('reads a page of the season\'s news, newest first, and keeps only what the shape holds', async () => {
