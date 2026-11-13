@@ -88,6 +88,20 @@ begin
   if rw.attempts <> 0 or rw.claimed_until is not null then raise exception 'an edit did not queue the job afresh'; end if;
   if pg_temp.renew(wp, p, 2) is distinct from false or pg_temp.renew(wp, rw.version, 2) is distinct from false then raise exception 'a claim from before an edit was renewed'; end if;
 
+  -- A worker whose claim came before an edit is refused by the version alone, even when the attempts match: A claimed at version v1 (attempts 1), the
+  -- edit queued the job afresh (v2, attempts 0), and B claimed it (attempts 1, v2). A's renewal names (v1, 1): the same attempts as B's claim, a live claim.
+  update card_writes w set not_before = clock_timestamp() where w.play = wp;
+  got := pg_temp.claim(10, p);
+  if jsonb_array_length(got) <> 1 or (got -> 0 ->> 'attempts')::integer <> 1 then raise exception 'the edited job was not claimed afresh: %', got; end if;
+  select * into rw from card_writes w where w.play = wp;
+  if rw.version is not distinct from p or rw.attempts <> 1 or rw.claimed_until is null or rw.claimed_until < clock_timestamp() then
+    raise exception 'the claim after an edit is not at a new version with attempts 1: %', rw;
+  end if;
+  until1 := rw.claimed_until;
+  if pg_temp.renew(wp, p, 1) is distinct from false then raise exception 'a claim from an older version renewed a newer claim with the same attempts'; end if;
+  if (select w.claimed_until from card_writes w where w.play = wp) is distinct from until1 then raise exception 'a refused renewal by an older version moved claimed_until'; end if;
+  if pg_temp.renew(wp, rw.version, 1) is distinct from true then raise exception 'the claim after the edit was not renewed by its own version'; end if;
+
   -- A finished job is not renewed: its rw is gone.
   got := pg_temp.claim(10, p2);
   if jsonb_array_length(got) <> 1 then raise exception 'the second post''s job was not claimed: %', got; end if;
