@@ -17,15 +17,15 @@ test('the fixtures that spell out the nesting cap were written for the cap of 16
   assert.equal(MAX_DEPTH, 16);
 });
 
-test("the cap in SQL is parse.ts's MAX_DEPTH: bbcode_walk's max_depth and supabase/tests/0292-quote-past-cap.sql's cap()", () => {
+test("the cap in SQL is parse.ts's MAX_DEPTH: bbcode_walk's max_depth and supabase/tests/0295-quote-past-cap.sql's cap()", () => {
   const root = new URL('../../supabase/', import.meta.url);
   const migrations = readdirSync(new URL('migrations/', root)).filter((f) => f.endsWith('.sql')).sort();
   const newest = migrations.filter((f) => /create (or replace )?function bbcode_walk\(/i.test(readFileSync(new URL(`migrations/${f}`, root), 'utf8'))).pop();
   assert.ok(newest, 'no migration defines bbcode_walk');
   const walk = /max_depth constant int := (\d+);/.exec(readFileSync(new URL(`migrations/${newest}`, root), 'utf8'));
   assert.equal(Number(walk?.[1]), MAX_DEPTH, `${newest}: bbcode_walk's max_depth`);
-  const test0292 = /function pg_temp\.cap\(\)[^;]*select (\d+)/.exec(readFileSync(new URL('tests/0292-quote-past-cap.sql', root), 'utf8'));
-  assert.equal(Number(test0292?.[1]), MAX_DEPTH, "0292-quote-past-cap.sql's pg_temp.cap()");
+  const capTest = /function pg_temp\.cap\(\)[^;]*select (\d+)/.exec(readFileSync(new URL('tests/0295-quote-past-cap.sql', root), 'utf8'));
+  assert.equal(Number(capTest?.[1]), MAX_DEPTH, "0295-quote-past-cap.sql's pg_temp.cap()");
 });
 
 test('there are fixtures, each named once', () => {
