@@ -3904,10 +3904,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const plays = posts.length ? core.cardsOnMany(posts.map((a) => a.id), posts.length * PLAYS_PER_POST) : [];
       const above = core.effectsAbove([...new Set(posts.flatMap((a) => (a.character === null ? [] : [a.character])))], thread, summary.board);
       /* The plays at thread reach that wore off by time (not an admin's end) and keep their level on a post written while they were up: the page's posts' dates, nested replies' too, oldest play first, at most 100. */
-      /* Plays at character reach too (0349's second half): on a character with a post on the page, held to that character's own posts. */
-      const authors = new Set(posts.flatMap((a) => (a.character === null ? [] : [a.character])));
+      /* Plays at character reach too (docs/plans/2026-11-12-glitter-keeps-plan.md, Task 2): each held to the posts its own character wrote, never another author's in the same window. */
       const kept: PlayAbove[] = [...reachPlays]
-        .filter(([play, r]) => (r.reach === 'thread' ? r.target === thread : r.reach === 'character' && authors.has(r.target)) && r.endsAt <= now() && !over(play) && instance.cards.find((c) => c.key === acts.get(play)!.payload.card)?.keeps === true
+        .filter(([play, r]) => (r.reach === 'thread' ? r.target === thread : r.reach === 'character') && r.endsAt <= now() && !over(play) && instance.cards.find((c) => c.key === acts.get(play)!.payload.card)?.keeps === true
           && posts.some((p) => (r.reach === 'thread' || p.character === r.target) && fallsOn({ at: iso(acts.get(play)!.at), ends: iso(r.endsAt) }, { at: p.createdAt }, true, new Date(now()))))
         .sort(([a], [b]) => acts.get(a)!.at - acts.get(b)!.at || acts.get(a)!.order - acts.get(b)!.order).slice(0, 100)
         .map(([play, r]) => ({ play, reach: r.reach, target: r.target, endsAt: iso(r.endsAt), act: publicAct(acts.get(play)!) }));
