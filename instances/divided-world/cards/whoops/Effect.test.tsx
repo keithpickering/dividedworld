@@ -20,7 +20,7 @@ import { FIELD_SCALE, buildLayer, layerKey, type BuildInput } from './build.ts';
 import type { BuildClient } from './buildClient.ts';
 import { viewProblems } from '../../../../engine/ui/cards/lens-words.ts';
 import { cursor } from './cursor.ts';
-import { paintSplat } from './paint.ts';
+import { MAX_CANVAS_PX, paintSplat } from './paint.ts';
 import { decodePoints, packStroke } from './points.ts';
 import { BRUSH_PX, LayerInk, PEN_PX, ROW_PX, brushOf, coveredLines, fits, fitStroke, minStepOf, type Pt, type Stroke } from './scrub.ts';
 import { DESIGN, THRESHOLD, makeSplat, unitPx, type Box } from './splat.ts';
@@ -2620,15 +2620,22 @@ describe('the ink field: the picture a layer is drawn from', () => {
     const last = vi.mocked(suds.register).mock.calls.at(-1)!;
     expect([last[1], last[2], last[3], last[5]], 'the canvas, the whole box, the density and the span\'s offset').toEqual([sud(), boxNow(), 1, 3 * 512]);
     const host = last[0];
-    /* A wash at a point in band 4 is thrown at its place in the box; the canvas holds it at that less the span's top. */
+    /*
+     * The page-place chain, in CSS px of the box (the suds module is mocked, so nothing is drawn here and suds.test.ts holds the drawing half):
+     * the canvas's own CSS offset within the box (the box sits at 0, 0 here, so its `top` style), the `top` handed to `register` (which the module
+     * subtracts from a box position to draw), and the point handed to `wash` (the point's own box position). Offset + (point - top) is the page's point.
+     */
+    const canvasTop = parseFloat(sud().style.top), canvasHeight = parseFloat(sud().style.height);
+    expect(last[5], 'register is handed the canvas\'s own offset in the box, not the whole box\'s 0').toBe(canvasTop);
     const y = 2300 / 20_000;
     vi.mocked(suds.wash).mockClear();
     drag(frame, [[0.3, y], [0.4, y], [0.5, y]]);
     const [h, from] = vi.mocked(suds.wash).mock.calls[0]!;
     expect(h).toBe(host);
-    expect(from.y).toBeCloseTo(2300, 3);
-    expect(from.y - last[5]!, 'inside the canvas').toBeGreaterThan(0);
-    expect(from.y - last[5]!).toBeLessThan(sud().height);
+    expect(from.y, 'the point given to wash is the point\'s place in the box').toBeCloseTo(2300, 3);
+    expect(canvasTop + (from.y - last[5]!), 'canvas offset + drawn coordinate is the point on the page').toBeCloseTo(2300, 3);
+    expect(from.y - last[5]!, 'inside the canvas, in CSS px').toBeGreaterThan(0);
+    expect(from.y - last[5]!).toBeLessThan(canvasHeight);
     /* The near set moves: the suds are placed again, over its bands, for the same host (the module keeps what is in the air). */
     eyes.bands((i) => i >= 4 && i <= 7);
     frames();
@@ -2637,6 +2644,71 @@ describe('the ink field: the picture a layer is drawn from', () => {
     const moved = vi.mocked(suds.register).mock.calls.at(-1)!;
     expect([moved[0], moved[1], moved[5]]).toEqual([host, sud(), 4 * 512]);
     expect(vi.mocked(suds.unregister), 'not let go').not.toHaveBeenCalled();
+  }, 60_000);
+
+  test('the suds canvas holds its span at the screen\'s density on a tall box, as the whole box would be over the cap', () => {
+    clock();
+    fakeCanvases();
+    vi.stubGlobal('devicePixelRatio', 2);
+    sight({ bands: (i) => i >= 3 && i <= 6 });
+    heldClient(false);
+    boxWidth = 390;
+    boxHeight = 20_000;
+    expect(390 * 20_000 * 4, 'the whole box at density 2 is over the cap').toBeGreaterThan(MAX_CANVAS_PX);
+    expect(390 * 2048 * 4, 'its span at density 2 is under it').toBeLessThan(MAX_CANVAS_PX);
+    const { root } = mount({ layers: 1 });
+    frames();
+    const sud = root.querySelector<HTMLCanvasElement>('canvas.kb-whoops-suds')!;
+    expect([sud.width, sud.height], 'the span at density 2, not lowered').toEqual([780, 4096]);
+    expect(vi.mocked(suds.register).mock.calls.at(-1)![3]).toBe(2);
+    expect([sud.style.width, sud.style.height], 'still the span in CSS px').toEqual(['390px', '2048px']);
+  }, 60_000);
+
+  test('the suds canvas is lowered in density only when its own span is over the cap', () => {
+    clock();
+    fakeCanvases();
+    vi.stubGlobal('devicePixelRatio', 2);
+    sight({ bands: (i) => i >= 3 && i <= 6 });
+    heldClient(false);
+    boxWidth = 2000;
+    boxHeight = 20_000;
+    expect(2000 * 2048 * 4, 'the span at density 2 is over the cap').toBeGreaterThan(MAX_CANVAS_PX);
+    const { root } = mount({ layers: 1 });
+    frames();
+    const sud = root.querySelector<HTMLCanvasElement>('canvas.kb-whoops-suds')!;
+    const density = vi.mocked(suds.register).mock.calls.at(-1)![3];
+    expect(density, 'lowered').toBeLessThan(2);
+    expect(density, 'to fit the span, no further').toBeGreaterThan(0.9 * Math.sqrt(MAX_CANVAS_PX / (2000 * 2048)));
+    expect(sud.width * sud.height, 'held to the cap').toBeLessThanOrEqual(MAX_CANVAS_PX);
+    expect([sud.width, sud.height]).toEqual([Math.ceil(2000 * density), Math.ceil(2048 * density)]);
+  }, 60_000);
+
+  test('when the near set shifts by a band, the suds are placed and registered together, before paint', () => {
+    clock();
+    fakeCanvases();
+    const eyes = sight({ bands: (i) => i === 3 || i === 4 });
+    heldClient(false);
+    boxWidth = 390;
+    boxHeight = 20_000;
+    const { root } = mount({ layers: 1 });
+    frames();
+    const sud = () => root.querySelector<HTMLCanvasElement>('canvas.kb-whoops-suds')!;
+    expect(root.dataset.kbBands).toBe('3 4');
+    expect(vi.mocked(suds.register).mock.calls.at(-1)![5]).toBe(3 * 512);
+    /* Every register from here on is looked at where it is called from: the canvas must already be at the top it is handed, and it must be a layout effect's call (before paint), not a passive one's. */
+    const seen: { top: number; css: number; phase: string }[] = [];
+    vi.mocked(suds.register).mockImplementation((_h, canvas, _b, _d, _i, top) => {
+      const stack = new Error().stack ?? '';
+      seen.push({ top: top ?? 0, css: parseFloat(canvas.style.top), phase: /PassiveMount/.test(stack) ? 'passive' : /commitHookLayoutEffects|commitLayoutEffectOnFiber/.test(stack) ? 'layout' : 'other' });
+    });
+    eyes.bands((i) => i === 4 || i === 5);
+    frames();
+    expect(root.dataset.kbBands).toBe('4 5');
+    expect(sud().style.top).toBe(`${4 * 512}px`);
+    expect(seen.length, 'registered over the band that came near').toBeGreaterThanOrEqual(1);
+    for (const s of seen) expect(s, 'the top handed over is the canvas\'s own offset, and is handed before paint').toEqual({ top: 4 * 512, css: 4 * 512, phase: 'layout' });
+    expect(vi.mocked(suds.register).mock.calls.at(-1)![5], 'and the last top handed over is the canvas\'s').toBe(parseFloat(sud().style.top));
+    vi.mocked(suds.register).mockImplementation(() => {});
   }, 60_000);
 
   test('with no band near the suds canvas is not mounted, the suds are let go, and a brush throws them to nothing', () => {

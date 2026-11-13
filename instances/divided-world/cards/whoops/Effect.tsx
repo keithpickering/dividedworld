@@ -858,10 +858,14 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
 
   /* ------------------------------------------------------------------ the suds ---- */
 
-  /* The suds module draws on this post's own canvas while the post is near and a band is (the span's offset in the box, in px), and lets it go when the post leaves or goes, or when no band is near. */
+  /*
+   * The suds module draws on this post's own canvas while the post is near and a band is (the span's offset in the box, in px), and lets it go when the post leaves or goes, or when no band is near.
+   * The registration is a layout effect, after the sizing above: the canvas's place (its style, written at render) and the `top` the module subtracts from a box position are
+   * changed in one commit, before paint, so no frame draws suds with the old offset on a canvas already at the new one.
+   */
   const sudsLive = useRef(false);
   const topInk = layers.reduce((color, l, i) => (view?.clean[i] ? color : l.color), layers[0]?.color ?? FALLBACK_INK);
-  useEffect(() => {
+  useLayoutEffect(() => {
     const canvas = sudsRef.current;
     const host = sudsHost.current;
     if (!near || !built || !fixed) return;
