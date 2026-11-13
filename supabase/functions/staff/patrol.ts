@@ -9,7 +9,7 @@
  *   3. The day's judgment budget (`modBots.judgmentsPerDay`, the same instance-wide count a report is held to: `judgment_load_today`) is read before every claim; a spent day claims
  *      nothing, so the patrol waits for the next one rather than being skipped.
  *   4. A patrol whose Mod has left the staff, or has no beat, or whose beat has no post to look at, is skipped: recorded on the patrol's row, with no call.
- *   5. The sample (`patrol_sample`, owned by the digest role: public play only) is the newest `patrolSample` posts by players on the Mod's beat, not under a visit. One light-tier call
+ *   5. The sample (`patrol_sample`, owned by the digest role: public play only) is `patrolSample` posts drawn from the newest `patrolPool` posts by players on the Mod's beat, not under a visit: a weighted draw (a Tattle-Tale on a character multiplies its weight), seeded by the patrol's id so a patrol that runs again draws the same posts. One light-tier call
  *      (duty `patrolJudge`, with `staff` set so it is a ledger row) in the Mod's voice judges them against each board's premise and the rules in force there, and answers findings
  *      [{post, charge}] and, optionally, the Mod's one move.
  *   6. The answer is repaired (repairPatrol): a finding naming a post that is not in the sample is dropped and named; a charge naming no rule in force is the premise at the minor
@@ -27,7 +27,7 @@
  * call that failed or was rejected is recorded and the patrol is over (it is claimed; nothing is invented). A database error on one patrol is recorded and the run goes on; a
  * ledger row that could not be written, or a transport failure to the database, stops the run: an unrecorded call is not trusted.
  *
- * **Cost does not grow with the instance.** One light-tier call per patrol, at most `patrolsPerDay` patrols a day (the meeting cuts them), a sample of `patrolSample` posts read by
+ * **Cost does not grow with the instance.** One light-tier call per patrol, at most `patrolsPerDay` patrols a day (the meeting cuts them), a sample of `patrolSample` posts drawn from the newest `patrolPool` by
  * a bounded query, and the daily judgment budget above.
  */
 import type { Instance, Persona } from '../../../engine/rules/types.ts';
@@ -150,7 +150,7 @@ export async function runPatrols(db: Db, models: Models, instance: Instance, clo
 
     // An author with no profile row reads null pronouns; it takes the instance's default, else the engine's it-set.
     const fallback = instanceSet(settings);
-    const read = await db.rpc<(Omit<PatrolSamplePost, 'pronouns'> & { pronouns: PronounSet | null })[]>('patrol_sample', { boards: standing.beat.map((b) => b.id), most: settings.modBots.patrolSample });
+    const read = await db.rpc<(Omit<PatrolSamplePost, 'pronouns'> & { pronouns: PronounSet | null })[]>('patrol_sample', { boards: standing.beat.map((b) => b.id), most: settings.modBots.patrolSample, pool: settings.modBots.patrolPool, seed: p.id });
     const sample: PatrolSamplePost[] = read.map((x) => ({ ...x, pronouns: pronounsOr(x.pronouns, fallback) }));
     const ids = sample.map((s) => s.act);
     if (sample.length === 0) return skipped('there was nothing on the beat to patrol', ids);

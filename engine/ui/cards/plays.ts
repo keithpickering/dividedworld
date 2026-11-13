@@ -52,7 +52,9 @@ export function shownPlays(plays: readonly CardPlay[], now: number): readonly Ca
  * is no play of its own: `Plays.add` reveals the back it names.
  */
 export function playOf(act: Act): CardPlay | null {
-  const beyond = act.kind === 'card' && BEYOND_POST.includes(act.payload.reach as BeyondPost) ? act.payload.reach as BeyondPost : null;
+  /* A play that is over when it lands (a heart, an Unban) keeps no `ends` and no `play_reach` row: it is a mark on the post it was played from, whatever reach its payload names, so it is read before the beyond-a-post rule asks for a time up. */
+  const instant = act.kind === 'card' && act.payload.instant === true;
+  const beyond = act.kind === 'card' && !instant && BEYOND_POST.includes(act.payload.reach as BeyondPost) ? act.payload.reach as BeyondPost : null;
   const on = beyond ? act.payload[beyond] : undefined;
   if (beyond && (typeof on !== 'string' || typeof act.payload.ends !== 'string')) return null;
   if (act.targetActId === null && !beyond) return null;
@@ -80,6 +82,12 @@ export function playOf(act: Act): CardPlay | null {
     ...(act.untaken === true ? { untaken: true as const } : {}),
     ...(typeof act.payload.drive === 'string' ? { drive: act.payload.drive } : {}),
     ...(typeof act.payload.drawn === 'string' ? { drawn: act.payload.drawn } : {}),
+    ...(typeof act.payload.targetName === 'string' ? { targetName: act.payload.targetName } : {}),
+    ...(instant ? {
+      instant: true as const,
+      ...(typeof act.payload.took === 'number' && Number.isSafeInteger(act.payload.took) ? { took: act.payload.took } : {}),
+      ...(Array.isArray(act.payload.lifted) ? { lifted: act.payload.lifted.length } : {}),
+    } : {}),
   };
 }
 
@@ -92,12 +100,22 @@ export const homeOf = (play: Pick<CardPlay, 'post' | 'on'>): Id => play.on ?? pl
 
 /**
  * The plays in force: all but a play an admin ended (`reversed`: its layer is off), a play that did not take (`untaken`: its text never
- * arrived, and it was refunded) and a play beyond a post whose end has passed (it ends on its timer, its way out). A Use's end on a post is the Lens's to say ("has ended"), so it is kept. What counts layers, offers
+ * arrived, and it was refunded), a play that is over when it lands (`instant`: a heart, an Unban), a fall a filing has spent (`spent`) and a play beyond a post whose end has passed (it ends on its timer, its way out). A Use's end on a post is the Lens's to say ("has ended"), so it is kept. What counts layers, offers
  * a card or pins a thread reads this; the marks and the Lens read `markedPlays`, which keeps an ended play on a post to say so.
  */
 export function livePlays(plays: readonly CardPlay[], now: number): readonly CardPlay[] {
-  const live = plays.filter((p) => !p.reversed && !p.untaken && !(p.reach && p.ends !== undefined && Date.parse(p.ends) <= now));
+  const live = plays.filter((p) => !p.reversed && !p.untaken && !p.instant && !p.spent && !(p.reach && p.ends !== undefined && Date.parse(p.ends) <= now));
   return live.length === plays.length ? plays : live;
+}
+
+/**
+ * The plays that hold a place in a target's stack, which is what the form and the ghost marks ask the rules whether another card lands on: `livePlays`, and also a fall a filing has spent, as the
+ * server counts it (`place_cast`, 0361: a spent fall holds its place unless an admin ended it, which `reversed` says). An instant play holds none. A spent fall is never drawn from this list; it is a mark, and
+ * `livePlays` is what draws.
+ */
+export function stackPlays(plays: readonly CardPlay[], now: number): readonly CardPlay[] {
+  const held = plays.filter((p) => !p.reversed && !p.untaken && !p.instant && !(p.reach && p.ends !== undefined && Date.parse(p.ends) <= now));
+  return held.length === plays.length ? plays : held;
 }
 
 /**
@@ -287,6 +305,8 @@ export interface Plays {
   setStates(states: Readonly<Record<Id, EffectState>>): boolean;
   /** Mark each of these plays reversed in place, as its `card_end` would (one not held yet is remembered, as an early `card_end` is); true when a play was marked or newly remembered. */
   setEnded(plays: readonly Id[]): boolean;
+  /** A filing spent these Take the Fall plays (the thread page's `spent`): each is marked spent in place, stays a mark and is no longer live. One for a play not here is kept for when it is; true when any was new. */
+  setSpent(plays: readonly Id[]): boolean;
   /** The reader released themselves from these plays. */
   setReleased(plays: readonly Id[]): boolean;
   /** The reader's own card backs' cards, by set: drawn under the back on their screen alone, never sent. */
@@ -336,6 +356,8 @@ export function createPlays(): Plays {
   const takenBacks = new Map<Id, string>();
   /* The plays an admin ended: a `card_end` that arrived before its play is kept here for when the play does. */
   const ended = new Set<Id>();
+  /* The falls a filing spent: a mark that arrived before its play is kept here for when the play does. */
+  const spentPlays = new Set<Id>();
   /* Each post's billing order, by play id: set by a read of its page, with a play that arrives later appended. */
   const order = new Map<Id, readonly Id[]>();
   /* Each card's view on a post, by `viewKey`: kept apart from the snapshots, so setting one never moves a snapshot or another card's view. */
@@ -419,7 +441,8 @@ export function createPlays(): Plays {
         const withSpring = early ? { ...found, card: sprungKind(early.spring), revealed: { card: early.card, spring: early.spring, at: early.at, ...(early.quadrant !== undefined ? { quadrant: early.quadrant } : {}) } } : found;
         const takenAt = found.faceDown ? takenBacks.get(found.id) : undefined;
         const withTaken = takenAt ? { ...withSpring, takenBack: { at: takenAt } } : withSpring;
-        const play = ended.has(found.id) ? { ...withTaken, reversed: true as const } : withTaken;
+        const withEnd = ended.has(found.id) ? { ...withTaken, reversed: true as const } : withTaken;
+        const play = spentPlays.has(found.id) ? { ...withEnd, spent: true as const } : withEnd;
         const home = homeOf(play);
         const own = byPost.get(home) ?? new Map<Id, CardPlay>();
         /* A play already held is the same play, with one change it can learn: that it did not take (`untaken`, 0149), set in place so its place in the billing stays. */
@@ -464,6 +487,22 @@ export function createPlays(): Plays {
       }
       changed(touched);
       return remembered || touched.size > 0;
+    },
+    setSpent(next) {
+      const touched = new Set<Id>();
+      let learned = false;
+      for (const target of next) {
+        if (!spentPlays.has(target)) { spentPlays.add(target); learned = true; }
+        const home = postOf.get(target);
+        const own = home === undefined ? undefined : byPost.get(home);
+        const was = own?.get(target);
+        if (own && was && !was.spent) {
+          own.set(target, { ...was, spent: true });
+          touched.add(home!);
+        }
+      }
+      changed(touched);
+      return learned || touched.size > 0;
     },
     setReleased(plays) {
       const touched = new Set<Id>();
@@ -587,10 +626,11 @@ export async function readPlays(api: KayfaApi, plays: Plays, posts: readonly Id[
 /**
  * Take a screen document's plays, with their saved states and the reader's releases, into the store with no read (the forum-load plan,
  * Task 13): the document holds what `readPlays`, `readAbove` and `readEffects` would have asked for. `faces` are the reader's own card
- * backs' cards, by set. The states and releases are the document's for the cards the instance draws an effect for.
+ * backs' cards, by set; `spent` the Take the Fall plays a filing has spent. The states and releases are the document's for the cards the instance draws an effect for.
  */
-export function hydrate(plays: Plays, acts: readonly Act[], states: Readonly<Record<Id, EffectState>>, releases: readonly Id[], faces: Readonly<Record<Id, string>> = {}, surfaces: Readonly<Record<Id, SurfaceNow>> = {}): void {
+export function hydrate(plays: Plays, acts: readonly Act[], states: Readonly<Record<Id, EffectState>>, releases: readonly Id[], faces: Readonly<Record<Id, string>> = {}, surfaces: Readonly<Record<Id, SurfaceNow>> = {}, spent: readonly Id[] = []): void {
   plays.add(acts);
+  plays.setSpent(spent);
   plays.setStates(states);
   plays.setReleased(releases);
   plays.setFaces(faces);

@@ -1790,6 +1790,32 @@ export interface LogInfraction {
   readonly relief: number;
   /** When a ban emptied the bar, so these points stopped counting before their time; null where none did. */
   readonly emptiedAt: string | null;
+  /** The points Happy Hearts took off (`my_infractions.card_relief`, 0361); 0 or absent where no card did (a payload older than 0361 has none). Counted beside `relief`, which is an appeal's. */
+  readonly cardRelief: number;
+  /** The Act of the Take the Fall play this infraction landed through, on the character that took the fall (`my_infractions.fall_play`); null for an ordinary filing. */
+  readonly fallPlay: Id | null;
+}
+
+/**
+ * A filing that landed on a character that took the fall for a post one of the player's characters wrote (`my_falls_taken`, 0361): the row
+ * is the author's player's, and the points are the taker's, named by its public name. Nothing here says who owns the taker.
+ */
+export interface LogFall {
+  readonly infraction: Id;
+  /** The player's own character that wrote the post (the author). */
+  readonly character: Id;
+  readonly at: string;
+  readonly post: Id;
+  readonly postSeq: number | null;
+  readonly thread: Id;
+  /** The rule in the glass's words, as `LogInfraction.rule` is. */
+  readonly rule: string | null;
+  /** The points that landed on the taker. */
+  readonly points: number;
+  /** The Mod that filed it. */
+  readonly mod: string | null;
+  /** The public name of the character that took the fall. */
+  readonly takerName: string | null;
 }
 
 /** A ban on one of the player's characters. */
@@ -1807,6 +1833,10 @@ export interface LogBan {
   readonly ruling: AppealVerdict | null;
   /** When the ban ends by its own Act, before any ruling. */
   readonly ownUntil: string;
+  /** When an Ultra Happy Heart lifted it (`my_bans.lifted_at`, 0361); null where none did. A lift ends the ban at that time, so `until` reads the same. */
+  readonly liftedAt: string | null;
+  /** The key of the card whose play lifted it; null where none did. */
+  readonly liftedCard: string | null;
 }
 
 /** A ban running on one of the player's characters: its Act (what an appeal names), when it ends, how long it was and the rule that filled the bar. */
@@ -1899,6 +1929,8 @@ export interface Log {
   readonly infractions: readonly LogInfraction[];
   /** The bans laid on the player's characters, by when each began (`my_bans`). */
   readonly bans: readonly LogBan[];
+  /** The filings that landed on a character that took the fall for one of the player's posts, by when each landed (`my_falls_taken`). Absent from a payload older than the card; read it as none. */
+  readonly falls: readonly LogFall[];
   /** The staff moves of the player's characters into groups, by when each landed (`my_group_moves`). */
   readonly groupMoves: readonly LogGroupMove[];
   /** The reports the player's characters made, by when each was made (`my_reports`). */
@@ -2225,6 +2257,8 @@ export interface ThreadPage {
   readonly veiled: readonly { readonly post: Id; readonly character: Id; readonly play: Id; readonly endsAt: string }[];
   readonly states: Awaited<ReturnType<KayfaApi['effectStates']>>;
   readonly releases: Awaited<ReturnType<KayfaApi['myReleases']>>;
+  /** The Take the Fall plays on the page that a filing has spent (an infraction names each as its `fall_play`), by the play's id; a payload older than the card leaves it out, and it reads as none. */
+  readonly spent?: readonly Id[];
   readonly tallies: Awaited<ReturnType<KayfaApi['tallies']>>;
   readonly mine: Awaited<ReturnType<KayfaApi['myReactions']>>;
   readonly spun: Awaited<ReturnType<KayfaApi['spunFromMany']>>;

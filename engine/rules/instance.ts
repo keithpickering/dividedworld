@@ -15,7 +15,7 @@ import { PHASES, PHASE_CAPS, PHASE_KEYS } from '../system/phases.ts';
 import { POSTING_OFFICES, TRIGGERS as POOL_TRIGGERS } from '../system/pool.ts';
 import { PRONOUN_FORMS, STAFF_TOKENS, STOCK_LINE_KEYS, STOCK_LINE_TOKENS } from '../system/stock.ts';
 import { pronounProblems } from './pronouns.ts';
-import { BEYOND_POST, GIMMICK_KINDS, INT4_MAX, PLAYS, RARITIES, REACHES, TRIGGERS, atOrBelow, spanMs } from './cards.ts';
+import { BEYOND_POST, DISCIPLINE_KINDS, GIMMICK_KINDS, INT4_MAX, PLAYS, RARITIES, REACHES, TRIGGERS, atOrBelow, instant, spanMs } from './cards.ts';
 import type { CardRules } from './cards.ts';
 import type { Pull, SlotSeed } from './packs.ts';
 import type { EventLine } from './cosmetics.ts';
@@ -140,20 +140,23 @@ function poolRule(v: unknown): string | null {
 
 /**
  * The Mod Bots' settings (`Settings.modBots`): exactly the fields of ModBotSettings, each held as its own words say. Mirrors `setting_modbots`
- * in supabase/migrations/0103_orders.sql, and supabase/tests/0079-settings-held.sql lists its poisons and goods.
+ * in supabase/migrations/0103_orders.sql (as 0362_patrol_weights.sql wrote it again, with `patrolPool`), and supabase/tests/0079-settings-held.sql lists its poisons and goods.
  */
 const MOD_BOTS_WHOLE = { allowanceMost: 1, ruleDaysMost: 1, patrolsPerDay: 0, reportPrice: 0, reportsPerDay: 1, judgmentsPerDay: 1, filingLinesPerDay: 1, appealPrice: 0, tailHours: 1, filingGraceMinutes: 1 } as const;
 /** The most a patrol's judgment reads: a bounded read. */
 export const PATROL_SAMPLE_MOST = 25;
-const MOD_BOTS_KEYS = [...Object.keys(MOD_BOTS_WHOLE), 'patrolSample', 'visitHours', 'cap', 'filingCron'].sort();
+/** The most posts a patrol draws its sample from: a bounded read. */
+export const PATROL_POOL_MOST = 100;
+const MOD_BOTS_KEYS = [...Object.keys(MOD_BOTS_WHOLE), 'patrolSample', 'patrolPool', 'visitHours', 'cap', 'filingCron'].sort();
 function modBotsRule(v: unknown): string | null {
-  const shape = `an object giving allowanceMost, ruleDaysMost, reportsPerDay, judgmentsPerDay, filingLinesPerDay, tailHours and filingGraceMinutes (whole numbers, at least 1), patrolsPerDay, reportPrice and appealPrice (whole numbers, at least 0), patrolSample (a whole number from 1 to ${PATROL_SAMPLE_MOST}), visitHours (least and most, whole hours, at least 1, most not below least), cap (punishments and days, whole numbers, at least 1) and filingCron (a five-field cron expression, each field inside its range)`;
+  const shape = `an object giving allowanceMost, ruleDaysMost, reportsPerDay, judgmentsPerDay, filingLinesPerDay, tailHours and filingGraceMinutes (whole numbers, at least 1), patrolsPerDay, reportPrice and appealPrice (whole numbers, at least 0), patrolSample (a whole number from 1 to ${PATROL_SAMPLE_MOST}), patrolPool (a whole number from patrolSample to ${PATROL_POOL_MOST}), visitHours (least and most, whole hours, at least 1, most not below least), cap (punishments and days, whole numbers, at least 1) and filingCron (a five-field cron expression, each field inside its range)`;
   const object = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null && !Array.isArray(x);
   if (!object(v)) return shape;
   const extra = Object.keys(v).find((k) => !MOD_BOTS_KEYS.includes(k));
   if (extra !== undefined) return `${shape}; "${extra}" is not one of its fields`;
   for (const [k, least] of Object.entries(MOD_BOTS_WHOLE)) if (!isWhole(v[k], least)) return `${shape}; "${k}" is not`;
   if (!isWhole(v.patrolSample, 1) || (v.patrolSample as number) > PATROL_SAMPLE_MOST) return `${shape}; "patrolSample" is not`;
+  if (!isWhole(v.patrolPool, v.patrolSample as number) || (v.patrolPool as number) > PATROL_POOL_MOST) return `${shape}; "patrolPool" is not`;
   const pair = (name: 'visitHours' | 'cap', a: string, b: string): string | null => {
     const o = v[name];
     if (!object(o) || Object.keys(o).length !== 2 || !isWhole(o[a], 1) || !isWhole(o[b], 1)) return `${shape}; "${name}" is not`;
@@ -647,10 +650,59 @@ function playProblems(c: CardRules, reactionKeys: ReadonlySet<string> = new Set(
     // A thread's play or a character's (docs/plans/2026-11-12-glitter-keeps-plan.md). SQL mirrors none of this (0348_post_under.sql).
     else if (!(play === 'cast' && Array.isArray(c.reaches) && c.reaches.length === 1 && ['thread', 'character'].includes(c.reaches[0] as string) && c.lasts !== undefined)) out.push(`${who} keeps, and only a cast card that reaches one thread or one character, with a time up, does`);
   }
+  if (c.discipline !== undefined) out.push(...disciplineProblems(c, who, play));
   if (c.setPhrase !== undefined && typeof c.setPhrase !== 'function') out.push(`${who} has a set phrase that is not a function`);
   else if (c.setPhrase !== undefined && play !== 'cast') out.push(`${who} has a set phrase, and only a cast card has one`);
   return out;
 }
+
+/** The effects a discipline card holds apart from, as `who` names them (a card has a discipline, writes, replies and so on, never two of them). */
+const NOT_WITH_DISCIPLINE: readonly [keyof CardRules, string][] = [
+  ['writes', 'writes'], ['replies', 'replies'], ['keeps', 'keeps'], ['skim', 'a skim'], ['scoresAs', 'scoresAs'],
+  ['gimmick', 'a gimmick'], ['draws', 'draws'], ['drive', 'a drive'], ['needsMessage', 'needsMessage'], ['surface', 'a surface'],
+];
+
+/**
+ * A discipline (card notes, Part 5): one of four kinds on a cast card, with no other effect. A relief and an unban reach a character alone and are over when they land, so
+ * they have no time up, no stack and no pin; a fall reaches a post alone, with a stack of 1 and no time up (a filing ends it); a watch reaches a character alone, with a time up
+ * and a weight above 1 and at most 10. seed_instance holds the same.
+ */
+function disciplineProblems(c: CardRules, who: string, play: string): string[] {
+  const d = c.discipline as unknown;
+  if (typeof d !== 'object' || d === null) return [`${who} has a discipline that is not an object with a kind`];
+  const e = d as Record<string, unknown>;
+  if (!DISCIPLINE_KINDS.includes(e.kind as never)) return [`${who} has the discipline kind ${JSON.stringify(e.kind)}; a discipline is ${DISCIPLINE_KINDS.slice(0, -1).join(', ')} or ${DISCIPLINE_KINDS.at(-1)}`];
+  const kind = e.kind as string;
+  const a = `${kind === 'unban' ? 'an' : 'a'} ${kind}`;
+  const out: string[] = [];
+  if (play !== 'cast') out.push(`${who} has a discipline, and only a cast card does`);
+  for (const [field, said] of NOT_WITH_DISCIPLINE) if (c[field] !== undefined) out.push(`${who} has ${a} and ${said}; a card with a discipline has no other effect`);
+  const reaches: unknown = c.reaches;
+  const only = (reach: string): boolean => (reach === 'post' && reaches === undefined) || (Array.isArray(reaches) && reaches.length === 1 && reaches[0] === reach);
+  const reachWord = kind === 'fall' ? 'post' : 'character';
+  if (!only(reachWord)) out.push(`${who} has ${a}, and ${a} reaches a ${reachWord} alone`);
+  if (kind === 'relief') {
+    if (e.points !== 'lightestBand' && e.points !== 'all') out.push(`${who} has a relief of ${JSON.stringify(e.points)}; relief takes the lightestBand or all`);
+  }
+  if (kind === 'relief' || kind === 'unban') {
+    for (const [field, said] of [['lasts', 'a time up'], ['stack', 'a stack'], ['pins', 'pins']] as const) {
+      if (c[field] !== undefined) out.push(`${who} has ${a} and ${said}; ${a} is over when it lands and has none`);
+    }
+  }
+  if (kind === 'fall') {
+    if (c.stack !== undefined && c.stack !== 1) out.push(`${who} has a fall, and a fall has a stack of 1`);
+    if (c.lasts !== undefined) out.push(`${who} has a fall and a time up; a fall lasts until a filing spends it`);
+  }
+  if (kind === 'watch') {
+    if (c.lasts === undefined) out.push(`${who} has a watch with no time up (lasts); a watch ends at its time`);
+    const w = e.weight;
+    if (typeof w !== 'number' || !Number.isFinite(w) || !(w > 1 && w <= WATCH_WEIGHT_MOST)) out.push(`${who} has a watch of weight ${JSON.stringify(w) ?? 'none'}; weight is a number above 1 and at most ${WATCH_WEIGHT_MOST}`);
+  }
+  return out;
+}
+
+/** The most a watch may multiply a character's weight in a patrol's draw. */
+const WATCH_WEIGHT_MOST = 10;
 
 /** A ride's or a skim's share: a fraction of a vote, above 0 and at most 1. `said` is how the card's words name what holds it ("a ride", "an outcome of share"). */
 function shareProblem(e: Record<string, unknown>, who: string, what: string, said: string): string | null {
@@ -775,7 +827,7 @@ function reachProblems(c: CardRules, settings: Settings): string[] {
   const beyond = BEYOND_POST.filter((r) => c.reaches!.includes(r));
   if ((c.play ?? 'cast') === 'set' && beyond.length) out.push(`${who} is a set card, and a set card lands only on a post`);
   if (c.pins !== undefined && (c.pins !== true || !c.reaches.includes('thread'))) out.push(`${who} pins ${JSON.stringify(c.pins)}; only a card that reaches a thread pins, and pins is true or left out`);
-  if (beyond.length && c.lasts === undefined) out.push(`${who} reaches beyond a post with no time up (lasts); every effect beyond a post ends at its time`);
+  if (beyond.length && c.lasts === undefined && !instant(c)) out.push(`${who} reaches beyond a post with no time up (lasts); every effect beyond a post ends at its time`);
   const least = settings?.reachRarity;
   const longest = settings?.reachLasts;
   for (const r of beyond) {

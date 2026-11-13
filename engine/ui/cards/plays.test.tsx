@@ -8,7 +8,7 @@ import type { Act } from '../data/api.ts';
 import type { ActKind } from '../data/api.ts';
 import { localKey } from '../../rules/emoji.ts';
 import { backoff, REPEAT_TRIES } from './tails.ts';
-import { blindPlaysOf, CARD_BACK, createPlays, defaultView, effectCards, holdsEffects, hydrate, readSurface, rereadSurfaces, inPlayOrder, isBack, livePlays, localKindsOf, markedPlays, playOf, playsFallingOn, shownPlays } from './plays.ts';
+import { blindPlaysOf, CARD_BACK, createPlays, defaultView, effectCards, holdsEffects, hydrate, readSurface, rereadSurfaces, inPlayOrder, isBack, livePlays, localKindsOf, stackPlays, markedPlays, playOf, playsFallingOn, shownPlays } from './plays.ts';
 import type { CardView } from './types.ts';
 
 const POST = '11111111-0000-4000-8000-000000000001';
@@ -719,5 +719,98 @@ describe('a play of a card that keeps, once its time is up', () => {
     expect(defaultView({ name: 'Keeper', keeps: true }, undefined, undefined, ENDS, [], AFTER).ends).toBe(`${live.replace(/^Ends /u, 'Ended ')}. Posts written while it was up keep it.`);
     expect(defaultView({ name: 'Keeper', keeps: true }, undefined, undefined, ENDS, [], Date.parse('2026-11-02T00:00:00.000Z')).ends, 'still up: the live words').toBe(live);
     expect(defaultView({ name: 'Plain' }, undefined, undefined, ENDS, [], AFTER).ends, 'a card that does not keep says no such thing').toBe(live);
+  });
+});
+
+/* Card notes, part 5: a heart or an Unban is a play that is over when it lands, a fall is spent by a filing, a watch is an ordinary play on a character. */
+describe('the discipline plays', () => {
+  const NOW = Date.parse('2026-10-29T21:20:00.000Z');
+  const TARGET = '55555555-0000-4000-8000-000000000001';
+  const heart = (over: Record<string, unknown> = {}) => card({ payload: { card: 'heart', message: '', config: {}, reach: 'character', character: TARGET, targetName: 'Bo Face', instant: true, took: 2, ...over } });
+
+  test('an instant play is a play on the post it was played from, with no reach and no place beyond the post, and it says what it took', () => {
+    const act = heart();
+    const play = playOf(act)!;
+    expect(play).toMatchObject({ id: act.id, card: 'heart', post: POST, instant: true, took: 2, targetName: 'Bo Face' });
+    expect(play).not.toHaveProperty('reach');
+    expect(play).not.toHaveProperty('on');
+    expect(play).not.toHaveProperty('ends');
+  });
+
+  test('an unban play says how many bans it lifted', () => {
+    const play = playOf(heart({ took: undefined, lifted: [{ ban: 'b1', until: '2026-11-01T00:00:00.000Z' }, { ban: 'b2', until: '2026-11-02T00:00:00.000Z' }] }))!;
+    expect(play).toMatchObject({ instant: true, lifted: 2 });
+    expect(play).not.toHaveProperty('took');
+  });
+
+  test('an instant play with no post is no play, and a play that is not instant takes no took or lifted', () => {
+    expect(playOf(card({ targetActId: null, payload: { card: 'heart', reach: 'character', character: TARGET, instant: true, took: 1 } }))).toBeNull();
+    expect(playOf(card({ payload: { card: 'whoops', took: 3, lifted: [{}] } }))).not.toHaveProperty('took');
+  });
+
+  test('is marked and not live: the mark and the Lens row stay, and it draws no layer', () => {
+    const plays = createPlays();
+    const act = heart();
+    plays.add([act]);
+    const got = plays.get(POST).plays;
+    expect(got.map((p) => p.id)).toEqual([act.id]);
+    expect(livePlays(got, NOW)).toEqual([]);
+    expect(markedPlays(got, NOW).map((p) => p.id)).toEqual([act.id]);
+  });
+
+  test('a spent fall stays a mark and is left out of the live plays; one that was not spent stays live', () => {
+    const plays = createPlays();
+    const fall = card({ payload: { card: 'fall', layer: 1, message: '', config: {} } });
+    const waiting = card({ payload: { card: 'fall', layer: 2, message: '', config: {} } });
+    plays.add([fall, waiting]);
+    expect(plays.setSpent([fall.id])).toBe(true);
+    expect(plays.setSpent([fall.id])).toBe(false);
+    const got = plays.get(POST).plays;
+    expect(got.find((p) => p.id === fall.id)).toMatchObject({ spent: true });
+    expect(got.find((p) => p.id === waiting.id)).not.toHaveProperty('spent');
+    expect(livePlays(got, NOW).map((p) => p.id)).toEqual([waiting.id]);
+    expect(markedPlays(got, NOW).map((p) => p.id)).toEqual([fall.id, waiting.id]);
+  });
+
+  test('a spent fall holds its place in the stack, as the server counts it, and an ended fall or an instant play holds none', () => {
+    const plays = createPlays();
+    const fall = card({ payload: { card: 'fall', layer: 1, message: '', config: {} } });
+    const ended = card({ payload: { card: 'fall', layer: 2, message: '', config: {} } });
+    const instant = heart();
+    plays.add([fall, ended, instant, card({ kind: 'card_end', targetActId: ended.id, payload: { why: 'reversed', by: 'admin' } })]);
+    plays.setSpent([fall.id, ended.id]);
+    const got = plays.get(POST).plays;
+    expect(stackPlays(got, NOW).map((p) => p.id)).toEqual([fall.id]);
+    expect(livePlays(got, NOW)).toEqual([]);
+  });
+
+  test('a spent mark that is learned before its play arrives is kept for when it does, and a page that carries it hydrates it', () => {
+    const plays = createPlays();
+    const fall = card({ payload: { card: 'fall', layer: 1, message: '', config: {} } });
+    plays.setSpent([fall.id]);
+    hydrate(plays, [fall], {}, [], {}, {}, [fall.id]);
+    expect(plays.get(POST).plays[0]).toMatchObject({ spent: true });
+  });
+
+  test('an admin ending a fall is an ended play, not a spent one', () => {
+    const plays = createPlays();
+    const fall = card({ payload: { card: 'fall', layer: 1, message: '', config: {} } });
+    plays.add([fall, card({ kind: 'card_end', targetActId: fall.id, payload: { why: 'reversed', by: 'admin' } })]);
+    expect(plays.get(POST).plays[0]).toMatchObject({ reversed: true });
+    expect(plays.get(POST).plays[0]).not.toHaveProperty('spent');
+  });
+
+  test('a watch is a character play with a time up, as any is: drawn on its character until it ends, and gone after', () => {
+    const watch = card({ payload: { card: 'watch', message: '', config: {}, reach: 'character', character: TARGET, targetName: 'Bo Face', ends: '2026-10-30T21:16:00.000Z' } });
+    const play = playOf(watch)!;
+    expect(play).toMatchObject({ card: 'watch', reach: 'character', on: TARGET, ends: '2026-10-30T21:16:00.000Z', post: POST });
+    expect(play).not.toHaveProperty('instant');
+    expect(livePlays([play], NOW)).toHaveLength(1);
+    expect(markedPlays([play], NOW)).toHaveLength(1);
+    expect(livePlays([play], Date.parse('2026-10-31T00:00:00.000Z'))).toEqual([]);
+    expect(markedPlays([play], Date.parse('2026-10-31T00:00:00.000Z'))).toEqual([]);
+    const plays = createPlays();
+    plays.add([watch]);
+    expect(plays.get(TARGET).plays.map((p) => p.id)).toEqual([watch.id]);
   });
 });

@@ -11,7 +11,7 @@ import { around, mergeLogs } from './useLog.ts';
 import type { KayfaApi } from '../data/api.ts';
 import { ENGINE_DEFAULT_PRONOUNS, PRONOUN_PRESETS, type PronounSet } from '../../rules/pronouns.ts';
 
-const empty: Log = { infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], settlements: [], wallet: [], cards: [], packs: [], playsOnMine: [], writes: [], saves: [], setEnds: [], caught: [], ended: [], cosmetics: [], before: null };
+const empty: Log = { infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], settlements: [], wallet: [], cards: [], packs: [], playsOnMine: [], writes: [], saves: [], setEnds: [], caught: [], ended: [], cosmetics: [], falls: [], before: null };
 const settled = (id: number, endsAt: string, lines: LogSettlement['lines']): LogSettlement => ({ id, startsAt: new Date(Date.parse(endsAt) - 86_400_000).toISOString(), endsAt, sharesKept: true, lines });
 const char = (id: string, name: string, cls: string, classSince = '2026-10-01T00:00:00.000Z', pronouns: PronounSet = ENGINE_DEFAULT_PRONOUNS): MyCharacter =>
   ({ id, name, pronouns, class: cls, classSince, classShownAt: null, classDueAt: null, turnOpensAt: null, debutedAt: '2026-10-01T00:00:00.000Z', debutLoudness: 'announced', retiredAt: null, pendingTurn: null, presenceHidden: false });
@@ -816,7 +816,7 @@ describe('the Mod Bots\' lines', () => {
   const T = 'th1';
   const inf = (over: Partial<Log['infractions'][number]> = {}): Log['infractions'][number] => ({
     infraction: 'i1', character: 'p', at: '2099-10-30T12:14:00.000Z', band: 'minor', points: 2, ruleNumber: 2, rule: 'Rule 2: No double posting', mod: 'The Clerk', post: 'post41', postSeq: 41, thread: T,
-    expiresAt: '2099-11-13T12:14:00.000Z', relief: 0, emptiedAt: null, ...over,
+    expiresAt: '2099-11-13T12:14:00.000Z', relief: 0, emptiedAt: null, cardRelief: 0, fallPlay: null, ...over,
   });
   const rowsOf = (log: Partial<Log>, tab: string | null = null) => logRows(data({ log: { ...empty, ...log }, mine: mineBoth }), words, 600, tab);
   const said = (r: { readonly details: readonly (string | { readonly text: string })[] }) => r.details.map((d) => (typeof d === 'string' ? d : d.text)).join('');
@@ -836,18 +836,18 @@ describe('the Mod Bots\' lines', () => {
   });
 
   test('a ban says why, for how long, until when, that it ends by itself, and that the ban is on this character only', () => {
-    const [row] = rowsOf({ bans: [{ ban: 'b1', character: 'p', at: '2099-10-30T12:15:00.000Z', days: 3, until: '2099-11-02T12:15:00.000Z', infraction: 'i1', rule: 'Rule 2: No double posting', thread: T, ruling: null, ownUntil: '2099-11-02T12:15:00.000Z' }] });
+    const [row] = rowsOf({ bans: [{ ban: 'b1', character: 'p', at: '2099-10-30T12:15:00.000Z', days: 3, until: '2099-11-02T12:15:00.000Z', infraction: 'i1', rule: 'Rule 2: No double posting', thread: T, ruling: null, ownUntil: '2099-11-02T12:15:00.000Z', liftedAt: null, liftedCard: null }] });
     expect(row!.kind).toBe('ban');
     expect(said(row!)).toBe('Spritey\'s warn bar filled with Rule 2: No double posting, so they were banned for 3 days and the bar was emptied. They can read but not post, react or play cards. The ban ends by itself Nov 2 · 12:15 UTC. The ban is on Spritey only; each character has its own warn bar.');
   });
 
   test('a ban reads in the banned character\'s own pronouns: she/her, verbs agreeing', () => {
-    const [row] = rowsOf({ bans: [{ ban: 'b2', character: 'q', at: '2099-10-30T12:15:00.000Z', days: 3, until: '2099-11-02T12:15:00.000Z', infraction: 'i1', rule: null, thread: T, ruling: null, ownUntil: '2099-11-02T12:15:00.000Z' }] });
+    const [row] = rowsOf({ bans: [{ ban: 'b2', character: 'q', at: '2099-10-30T12:15:00.000Z', days: 3, until: '2099-11-02T12:15:00.000Z', infraction: 'i1', rule: null, thread: T, ruling: null, ownUntil: '2099-11-02T12:15:00.000Z', liftedAt: null, liftedCard: null }] });
     expect(said(row!)).toBe('Pipewrench\'s warn bar filled, so she was banned for 3 days and the bar was emptied. She can read but not post, react or play cards. The ban ends by itself Nov 2 · 12:15 UTC. The ban is on Pipewrench only; each character has its own warn bar.');
   });
 
   test('a running ban that no appeal names carries the ban for "Appeal to the Boss"; an ended one or an appealed one does not', () => {
-    const ban = { ban: 'b1', character: 'p', at: '2099-10-30T12:15:00.000Z', days: 3, until: '2099-11-02T12:15:00.000Z', infraction: 'i1', rule: null, thread: T, ruling: null, ownUntil: '2099-11-02T12:15:00.000Z' };
+    const ban = { ban: 'b1', character: 'p', at: '2099-10-30T12:15:00.000Z', days: 3, until: '2099-11-02T12:15:00.000Z', infraction: 'i1', rule: null, thread: T, ruling: null, ownUntil: '2099-11-02T12:15:00.000Z', liftedAt: null, liftedCard: null };
     expect(rowsOf({ bans: [ban] })[0]!.appealBan).toEqual({ ban: 'b1', character: 'p', until: ban.until, days: 3, rule: null });
     expect(rowsOf({ bans: [{ ...ban, until: '2000-01-02T00:00:00.000Z' }] })[0]!.appealBan).toBeUndefined();
     const appeal = { appeal: 'a1', character: 'p', at: '2099-10-30T13:00:00.000Z', punishment: 'b1', punishmentKind: 'ban', postSeq: 41, thread: T, verdict: null, ruledAt: null, pointsDelta: null, hearer: null, refund: null } as const;
@@ -858,7 +858,7 @@ describe('the Mod Bots\' lines', () => {
   });
 
   test('a ban says what an appeal did to it, running and ended, in the words the ruling earns', () => {
-    const ban = (ruling: Log['bans'][number]['ruling'], until: string) => ({ ban: 'b1', character: 'p', at: '2000-01-01T00:00:00.000Z', days: 4, until, infraction: 'i1', rule: null, thread: T, ruling, ownUntil: '2099-11-02T12:15:00.000Z' });
+    const ban = (ruling: Log['bans'][number]['ruling'], until: string) => ({ ban: 'b1', character: 'p', at: '2000-01-01T00:00:00.000Z', days: 4, until, infraction: 'i1', rule: null, thread: T, ruling, ownUntil: '2099-11-02T12:15:00.000Z', liftedAt: null, liftedCard: null });
     const tail = (b: Log['bans'][number]) => said(rowsOf({ bans: [b] })[0]!).replace(/^.*react or play cards\. /u, '');
     const side = ' The ban is on Spritey only; each character has its own warn bar.';
     const run = '2099-11-06T12:15:00.000Z';
@@ -874,8 +874,8 @@ describe('the Mod Bots\' lines', () => {
   });
 
   test('a ban on one character does not say the player\'s other character is free: the line speaks of the one it names', () => {
-    const both = [{ ban: 'b1', character: 'p', at: '2099-10-30T12:15:00.000Z', days: 3, until: '2099-11-02T12:15:00.000Z', infraction: 'i1', rule: null, thread: T, ruling: null, ownUntil: '2099-11-02T12:15:00.000Z' },
-      { ban: 'b2', character: 'q', at: '2099-10-30T12:16:00.000Z', days: 3, until: '2099-11-02T12:16:00.000Z', infraction: 'i2', rule: null, thread: T, ruling: null, ownUntil: '2099-11-02T12:16:00.000Z' }] as const;
+    const both = [{ ban: 'b1', character: 'p', at: '2099-10-30T12:15:00.000Z', days: 3, until: '2099-11-02T12:15:00.000Z', infraction: 'i1', rule: null, thread: T, ruling: null, ownUntil: '2099-11-02T12:15:00.000Z', liftedAt: null, liftedCard: null },
+      { ban: 'b2', character: 'q', at: '2099-10-30T12:16:00.000Z', days: 3, until: '2099-11-02T12:16:00.000Z', infraction: 'i2', rule: null, thread: T, ruling: null, ownUntil: '2099-11-02T12:16:00.000Z', liftedAt: null, liftedCard: null }] as const;
     for (const row of rowsOf({ bans: [...both] }).filter((x) => x.kind === 'ban')) {
       expect(said(row)).not.toMatch(/other characters/iu);
       expect(said(row)).toMatch(/each character has its own warn bar\.$/u);
@@ -883,7 +883,7 @@ describe('the Mod Bots\' lines', () => {
   });
 
   test('a ban that has ended says it ended by itself', () => {
-    const [row] = rowsOf({ bans: [{ ban: 'b1', character: 'p', at: '2000-01-01T00:00:00.000Z', days: 1, until: '2000-01-02T00:00:00.000Z', infraction: 'i1', rule: null, thread: T, ruling: null, ownUntil: '2099-11-02T12:15:00.000Z' }] });
+    const [row] = rowsOf({ bans: [{ ban: 'b1', character: 'p', at: '2000-01-01T00:00:00.000Z', days: 1, until: '2000-01-02T00:00:00.000Z', infraction: 'i1', rule: null, thread: T, ruling: null, ownUntil: '2099-11-02T12:15:00.000Z', liftedAt: null, liftedCard: null }] });
     expect(said(row!)).toContain('The ban ended by itself Jan 2 · 00:00 UTC.');
     expect(said(row!)).toContain('warn bar filled, so');
   });
@@ -1487,5 +1487,134 @@ describe('the log of a surface', () => {
     expect(ids).toEqual(expect.arrayContaining(['k4', 'post4', 'k3', 'post3']));
     expect(ids).not.toContain('d1');
     expect(ids).not.toContain('w1');
+  });
+});
+
+/**
+ * The discipline cards' lines (card notes, part 5, Task 7): what a heart took off or an Unban ended, said by the play's own Act on the caster's line and the target's; an infraction a
+ * heart took points off or that landed through a fall; a ban an Unban ended; and the fall taken for the author's post. Each is plain and true: which Act did what, to whom, how much.
+ * No line names an owner, a class or anyone who reacted.
+ */
+describe('the discipline cards\' lines', () => {
+  const T = 'th1';
+  const mineBoth = [char('p', 'Spritey', 'face', undefined, PRONOUN_PRESETS.they), char('q', 'Pipewrench', 'heel', undefined, PRONOUN_PRESETS.she)];
+  const cards = { ...words.ui, cards: [] };
+  const named = { ...words, instance: { ...testInstance, cards: [{ ...testInstance.cards[0]!, key: 'ultra', name: 'Ultra Happy Heart' }, { ...testInstance.cards[0]!, key: 'heart', name: 'Happy Heart' }] }, ui: cards };
+  const at = '2099-10-30T12:00:00.000Z';
+  const post = (id: string, character: string): Act => ({ id, character, kind: 'post', thread: T, targetActId: null, seq: 41, createdAt: at, payload: {}, currentPayload: {}, editedAt: null, shownEditedAt: null });
+  const played = (id: string, character: string, on: string, payload: Record<string, unknown>): Act => ({ id, character, kind: 'card', thread: T, targetActId: on, seq: null, createdAt: at, payload: { card: 'heart', message: '', config: {}, reach: 'character', instant: true, ...payload }, currentPayload: {}, editedAt: null, shownEditedAt: null });
+  const said = (r: { readonly details: readonly (string | { readonly text: string })[] }) => r.details.map((d) => (typeof d === 'string' ? d : d.text)).join('');
+  const inf = (over: Partial<Log['infractions'][number]> = {}): Log['infractions'][number] => ({
+    infraction: 'i1', character: 'p', at: '2099-10-30T12:14:00.000Z', band: 'minor', points: 4, ruleNumber: 2, rule: 'Rule 2: No double posting', mod: 'The Clerk', post: 'post41', postSeq: 41, thread: T,
+    expiresAt: '2099-11-13T12:14:00.000Z', relief: 0, emptiedAt: null, cardRelief: 0, fallPlay: null, ...over,
+  });
+  const ban = (over: Partial<Log['bans'][number]> = {}): Log['bans'][number] => ({ ban: 'b1', character: 'p', at: '2099-10-30T12:15:00.000Z', days: 3, until: '2099-11-02T12:15:00.000Z', infraction: 'i1', rule: null, thread: T, ruling: null, ownUntil: '2099-11-02T12:15:00.000Z', liftedAt: null, liftedCard: null, ...over });
+  const rowsOf = (log: Partial<Log>, acts: readonly Act[] = [], tab: string | null = null) => logRows(data({ log: { ...empty, ...log }, mine: mineBoth, acts: new Map(acts.map((a) => [a.id, a])) }), named, 600, tab);
+
+  test('the caster\'s line and the target\'s line say what a heart took off, "1 warn point" or "2 warn points", oldest first', () => {
+    const one = played('k1', 'q', 'post41', { took: 1, character: 'p', targetName: 'Spritey' });
+    const two = played('k2', 'q', 'post41', { took: 2, character: 'p', targetName: 'Spritey' });
+    const log = { cards: [{ card: 'heart', kind: 'played' as const, act: 'k1', at, price: 0 }, { card: 'heart', kind: 'played' as const, act: 'k2', at, price: 0 }], playsOnMine: [{ play: 'k1', post: 'post41', at, reach: 'character' as const, targetName: 'Spritey', targetCharacter: 'p' }, { play: 'k2', post: 'post41', at, reach: 'character' as const, targetName: 'Spritey', targetCharacter: 'p' }] };
+    const rows = rowsOf(log, [post('post41', 'p'), one, two]);
+    const played1 = rows.filter((r) => r.kind === 'played').map(said);
+    const onMine = rows.filter((r) => r.kind === 'onMine').map(said);
+    expect(played1.some((t) => t.endsWith(" It took 1 warn point off Spritey's warn bar, oldest first."))).toBe(true);
+    expect(played1.some((t) => t.endsWith(" It took 2 warn points off Spritey's warn bar, oldest first."))).toBe(true);
+    expect(onMine.some((t) => t.endsWith(" It took 1 warn point off Spritey's warn bar, oldest first."))).toBe(true);
+    expect(onMine.some((t) => t.endsWith(" It took 2 warn points off Spritey's warn bar, oldest first."))).toBe(true);
+  });
+
+  test('an Unban\'s line says it ended the ban, and when the ban was set to end; several bans say how many', () => {
+    const one = played('k1', 'q', 'post41', { character: 'p', targetName: 'Spritey', lifted: [{ ban: 'b1', until: '2099-11-02T12:15:00.000Z' }] });
+    const many = played('k2', 'q', 'post41', { character: 'p', targetName: 'Spritey', lifted: [{ ban: 'b1', until: '2099-11-02T12:15:00.000Z' }, { ban: 'b2', until: '2099-11-05T09:30:00.000Z' }] });
+    const log = { playsOnMine: [{ play: 'k1', post: 'post41', at, reach: 'character' as const, targetName: 'Spritey', targetCharacter: 'p' }, { play: 'k2', post: 'post41', at, reach: 'character' as const, targetName: 'Spritey', targetCharacter: 'p' }] };
+    const onMine = rowsOf(log, [post('post41', 'p'), one, many]).filter((r) => r.kind === 'onMine').map(said);
+    expect(onMine.some((t) => t.endsWith(" It ended Spritey's ban, which was set to end Nov 2 · 12:15 UTC."))).toBe(true);
+    expect(onMine.some((t) => t.endsWith(" It ended 2 of Spritey's bans, the longest of which was set to end Nov 5 · 09:30 UTC."))).toBe(true);
+  });
+
+  test('a play that is not instant, or says nothing of what it took, gets no extra sentence', () => {
+    const plain = { ...played('k1', 'q', 'post41', {}), payload: { card: 'heart', message: '', config: {}, reach: 'character', character: 'p', ends: '2099-11-02T00:00:00.000Z' } } as Act;
+    const rows = rowsOf({ playsOnMine: [{ play: 'k1', post: 'post41', at, reach: 'character' as const, targetName: 'Spritey', targetCharacter: 'p' }] }, [post('post41', 'p'), plain]);
+    expect(said(rows.find((r) => r.kind === 'onMine')!)).not.toContain('It took');
+    expect(said(rows.find((r) => r.kind === 'onMine')!)).not.toContain('It ended');
+  });
+
+  test('an infraction says what cards took off, and what is left is the points less both reliefs', () => {
+    const [row] = rowsOf({ infractions: [inf({ relief: 1, cardRelief: 2, expiresAt: '2000-01-01T00:00:00.000Z', emptiedAt: '1999-12-31T00:00:00.000Z' })] });
+    expect(said(row!)).toContain(' An appeal took 1 point off.');
+    expect(said(row!)).toContain(' Cards took 2 points off.');
+    /* 4 - 1 - 2 is 1: "this point". */
+    expect(said(row!)).toContain('so this point stopped counting then.');
+    const [empty_] = rowsOf({ infractions: [inf({ relief: 1, cardRelief: 3, emptiedAt: '1999-12-31T00:00:00.000Z' })] });
+    expect(said(empty_!)).toContain(' Cards took 3 points off.');
+    expect(said(rowsOf({ infractions: [inf({ cardRelief: 1 })] })[0]!)).toContain(' Cards took 1 point off.');
+    /* Cards took everything (4 - 1 - 3 is 0): the line says so, and speaks of the points in the plural as it does for an appeal's relief that took everything. */
+    expect(said(empty_!)).toContain('so these points stopped counting then.');
+    expect(said(rowsOf({ infractions: [inf({ cardRelief: 0 })] })[0]!)).not.toContain('Cards took');
+  });
+
+  test('an infraction that landed through a fall names the post without calling it "your post", and says who took the fall for that post', () => {
+    const [row] = rowsOf({ infractions: [inf({ character: 'q', points: 2, fallPlay: 'fall1', postSeq: 41, expiresAt: '2099-11-13T12:14:00.000Z' })] });
+    expect(said(row!)).toBe("The Clerk's visit to post #41 filed Rule 2: No double posting: 2 warn points for Pipewrench, who took the fall for that post, dropping off Nov 13.");
+    expect(row!.details[1]).toEqual({ text: 'post #41', href: '/t/th1?page=3#post-41' });
+    expect(row).toMatchObject({ kind: 'infraction', characters: ['q'], aura: 0 });
+    const [gone] = rowsOf({ infractions: [inf({ character: 'q', points: 2, fallPlay: 'fall1', postSeq: null, expiresAt: '2000-01-01T00:00:00.000Z' })] });
+    expect(said(gone!)).toBe("The Clerk's visit to a post filed Rule 2: No double posting: 2 warn points for Pipewrench, who took the fall for that post, dropped off Jan 1.");
+  });
+
+  test('a ban an Unban ended says when and by which card, in place of "ended by itself", and offers no appeal', () => {
+    const lifted = ban({ until: '2099-10-31T08:00:00.000Z', liftedAt: '2099-10-31T08:00:00.000Z', liftedCard: 'ultra' });
+    const [row] = rowsOf({ bans: [lifted] });
+    expect(said(row!)).toContain('The ban ended Oct 31 · 08:00 UTC, when Ultra Happy Heart was played on Spritey.');
+    expect(said(row!)).not.toContain('ended by itself');
+    expect(said(row!)).toContain('The ban is on Spritey only; each character has its own warn bar.');
+    expect(row!.appealBan).toBeUndefined();
+    /* An appeal ruled after the Unban changes nothing about how the ban first ended: a live lift is always its first end. */
+    for (const ruling of ['overturned', 'reduced', 'increased'] as const) {
+      const [r] = rowsOf({ bans: [{ ...lifted, ruling }] });
+      expect(said(r!)).toContain('The ban ended Oct 31 · 08:00 UTC, when Ultra Happy Heart was played on Spritey.');
+      expect(said(r!)).not.toContain('An appeal');
+      expect(r!.appealBan).toBeUndefined();
+    }
+    /* A running ban that was not lifted is as it was, appealable. */
+    const [still] = rowsOf({ bans: [ban()] });
+    expect(said(still!)).toContain('The ban ends by itself Nov 2 · 12:15 UTC.');
+    expect(still!.appealBan).toBeDefined();
+    /* A card the instance no longer has is said plainly. */
+    expect(said(rowsOf({ bans: [{ ...lifted, liftedCard: 'gone' }] })[0]!)).toContain('when a card was played on Spritey.');
+  });
+
+  test('a fall taken says whose visit, what it filed, who took the fall, where the points landed and that the post keeps its notice; it is the author\'s row', () => {
+    const fall = { infraction: 'i9', character: 'p', at: '2099-10-30T12:20:00.000Z', post: 'post41', postSeq: 41, thread: T, rule: 'Rule 2: No double posting', points: 2, mod: 'The Clerk', takerName: 'Gloomba' };
+    const rows = rowsOf({ falls: [fall] });
+    const row = rows.find((r) => r.kind === 'fallTaken')!;
+    expect(row).toMatchObject({ key: 'fallTaken:i9', what: 'A fall taken for your post', at: fall.at, aura: 0, wallet: null, characters: ['p'] });
+    expect(said(row)).toBe("The Clerk's visit to your post #41 filed Rule 2: No double posting. Gloomba took the fall, so the 2 warn points landed on Gloomba and none on Spritey. The post keeps its notice.");
+    expect(row.details[1]).toEqual({ text: 'your post #41', href: '/t/th1?page=3#post-41' });
+    /* It is in the author's tab, and in All, and in no other tab. */
+    expect(rowsOf({ falls: [fall] }, [], 'p').some((r) => r.kind === 'fallTaken')).toBe(true);
+    expect(rowsOf({ falls: [fall] }, [], 'q').some((r) => r.kind === 'fallTaken')).toBe(false);
+    /* Unknown parts are said plainly, and a point is singular. */
+    const bare = rowsOf({ falls: [{ ...fall, rule: null, mod: null, takerName: null, points: 1, postSeq: null }] }).find((r) => r.kind === 'fallTaken')!;
+    expect(said(bare)).toBe("A Mod's visit to your post filed a breach of the rules. Another character took the fall, so the 1 warn point landed on Another character and none on Spritey. The post keeps its notice.");
+  });
+
+  test('no line names an owner, an account, a class or who reacted, and each says which Act and how much', () => {
+    const fall = { infraction: 'i9', character: 'p', at: '2099-10-30T12:20:00.000Z', post: 'post41', postSeq: 41, thread: T, rule: 'Rule 2: No double posting', points: 2, mod: 'The Clerk', takerName: 'Gloomba' };
+    const one = played('k1', 'q', 'post41', { took: 2, character: 'p', targetName: 'Spritey' });
+    const rows = rowsOf({
+      falls: [fall], infractions: [inf({ cardRelief: 1 }), inf({ infraction: 'i2', character: 'q', fallPlay: 'f', points: 2 })], bans: [ban({ liftedAt: at, liftedCard: 'ultra' })],
+      playsOnMine: [{ play: 'k1', post: 'post41', at, reach: 'character' as const, targetName: 'Spritey', targetCharacter: 'p' }],
+    }, [post('post41', 'p'), one]);
+    const all = rows.map((r) => `${r.what} ${said(r)}`).join('\n');
+    expect(all).not.toMatch(/\b(account|owner|owned|heel|face|reacted)\b/iu);
+    expect(rows.filter((r) => ['infraction', 'ban', 'fallTaken', 'onMine'].includes(r.kind)).length).toBeGreaterThanOrEqual(5);
+  });
+
+  test('two pages merged keep the falls of both, newer first', () => {
+    const f = (id: string) => ({ infraction: id, character: 'p', at, post: 'post41', postSeq: 41, thread: T, rule: null, points: 2, mod: null, takerName: null });
+    expect(mergeLogs({ ...empty, falls: [f('a')] }, { ...empty, falls: [f('b')] }).falls?.map((x) => x.infraction)).toEqual(['a', 'b']);
+    expect(mergeLogs({ ...empty }, { ...empty, falls: [f('b')] }).falls?.map((x) => x.infraction)).toEqual(['b']);
   });
 });

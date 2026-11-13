@@ -975,6 +975,11 @@ begin
   if (select count(distinct r) from unnest(facts_reads) r) is distinct from 1::bigint then raise exception 'the backs make different reads before a quote''s decision: Idle, Trap Card, phrase, Bomb, retired, springing = %', facts_reads; end if;
   if (select count(distinct r) from unnest(cast_reads) r) is distinct from 1::bigint then raise exception 'the backs make different reads before a cast''s decision: %', cast_reads; end if;
   if (select sum(v) from unnest(facts_reads[1]::bigint[]) v) < 8 then raise exception 'the reads were not counted (%)', facts_reads[1]; end if;
+  -- The announcements thread is found by its key (setting_thread, migration 0360): `threads` (the seventh relation in name order) is read by one probe of its key however many threads an instance holds,
+  -- where the text comparison it replaced read a whole index of it, and the entries that read moved with every dead one.
+  if (facts_reads[1]::bigint[])[7] > 8 or (cast_reads[1]::bigint[])[7] > 8 then
+    raise exception 'a back''s decision reads % and % entries of threads, a whole index and not a key', (facts_reads[1]::bigint[])[7], (cast_reads[1]::bigint[])[7];
+  end if;
   -- The phrase's pattern is one fixed length for every back and its own for each (built around the back's id), a back with no phrase included.
   foreach one in array backs loop
     select * into fd from face_down f where f.post = one;
