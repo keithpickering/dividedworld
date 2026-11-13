@@ -402,8 +402,6 @@
    * When both do not fit one line the date takes a line of its own, and the comma is hung (the next rules) so that no line ends on a comma or starts with one.
    */
   .kb-thread-last-by {
-    --kb-comma: 0.4em;
-    --kb-comma-gap: 0.5em;
     display: inline-flex;
     flex-wrap: wrap;
     align-items: baseline;
