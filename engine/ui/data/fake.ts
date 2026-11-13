@@ -5151,7 +5151,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         && instance.cards.find((c) => c.key === a.payload.card)?.discipline?.kind === 'fall' && !spentPlays().has(a.id)).sort((x, y) => x.at - y.at || x.order - y.order)[0];
       return write({
         character: null, kind: 'infraction', thread: v.thread, at,
-        payload: { character: fall ? fall.character : post.character, ...(fall ? { fall_play: fall.id } : {}), band: o?.band ?? 'minor', points: o?.points ?? 2, rule_number: o?.ruleNumber === undefined ? 2 : o.ruleNumber, about_act: post.id, visit_act: visit, staff: (v.character ? characters.get(v.character)?.staff?.key : undefined) ?? 'seed', expires_at: iso(o?.expiresAt ?? at + 14 * 86_400_000) },
+        payload: { character: fall ? fall.character : post.character, ...(fall ? { fall_play: fall.id, fall_for: post.character } : {}), band: o?.band ?? 'minor', points: o?.points ?? 2, rule_number: o?.ruleNumber === undefined ? 2 : o.ruleNumber, about_act: post.id, visit_act: visit, staff: (v.character ? characters.get(v.character)?.staff?.key : undefined) ?? 'seed', expires_at: iso(o?.expiresAt ?? at + 14 * 86_400_000) },
       }).id;
     },
     appeal(character, infraction, plea, o) {
