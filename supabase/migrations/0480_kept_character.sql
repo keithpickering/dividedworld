@@ -16,8 +16,10 @@
 --
 -- Ways out: an admin's end of the play (reverse_card, after its week as before it) takes it off every post; otherwise a kept play is a layer over words that stay readable, and it falls on no post
 -- written after its week. Nothing is written for a post, at the week's end or ever.
--- Cost: one range scan of play_reach_character for each distinct author on the page (at most the page size, at most 100), lower-bounded by the page's earliest post, so a page read years later
--- reads old windows only; a character carries one play of a kind at a time, so each scan meets about one row for each week the page's posts span. The read returns at most 100.
+-- Cost: one range scan of play_reach_character for each distinct author on the page (at most the page size, at most 100), bounded below by the page's earliest post and not above, because
+-- play_reach holds no start date. A page of an old thread therefore reads, for each of its authors, every worn-off character play on that author from that date to now (of any kind; the
+-- kind is read only after the Act), each with a primary-key read of its Act, before the window filter and the cap of 100. 0349's thread branch has the same shape for one thread. Bounding
+-- it above needs the play's start in play_reach, which is not added here (raised with the owner as issue #634). The read returns at most 100.
 -- Masks: every piece is read from play_reach, public Acts and the posts' public dates and authors (the author a row is matched on is the post's character, which every reader sees); nothing
 -- reads who owns a character, a hand or a reaction, so the document is the same for every caller. Grants are as they were (create or replace keeps them).
 
@@ -98,8 +100,9 @@ begin atomic
   -- page's earliest post), the Act by primary key through acts_public (dated no later than the page's latest post, then the window), and only for what survives that the kind (`keeps`). At most 100, oldest first.
   kept_span as materialized (select min(p.created_at) as lo, max(p.created_at) as hi from posts p),
   -- The reach-specific part: the thread's rows (play_reach_thread) and, for each distinct author among the page's posts, the plays at that character's reach (play_reach_character,
-  -- (character, ends_at)): one range scan for each author, ended by time and ended after the page's earliest post, so an old page reads old windows only. A character carries one play
-  -- of a kind at a time, so a scan meets about one row for each week the page's posts span. Whether the author's own post falls in the window is kept_window's.
+  -- (character, ends_at)): one range scan for each author, ended by time and ended after the page's earliest post. A character carries one play
+  -- of a kind at a time, but nothing bounds a scan above (play_reach holds no start date), so it meets every worn-off play on that author since the page's earliest post, of any kind, each
+-- with a primary-key read of its Act. Whether the author's own post falls in the window is kept_window's.
   kept_reach as materialized (
     select x.play, x.reach, coalesce(x.character, x.thread, x.board) as target, x.ends_at
     from play_reach x, kept_span s

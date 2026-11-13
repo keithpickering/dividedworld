@@ -25,7 +25,7 @@ end $$;
 -- ---- A thread of A's posts and others': the play falls on A's own posts in its window and on nobody else's ----
 do $$
 declare
-  ann uuid := tests.account('tg-ann'); bob uuid := tests.account('tg-bob'); admin_acc uuid := tests.account('tg-admin');
+  ann uuid := tests.account('tg-ann'); bob uuid := tests.account('tg-bob');
   a uuid := tests.character(ann, 'Tg A'); b uuid := tests.character(ann, 'Tg B'); c uuid := tests.character(bob, 'Tg Caster');
   t uuid := tests.thread('Tg kept character');
   p_before uuid := tests.post(a, t, 'A, before the play.', now() - interval '20 days');
@@ -67,7 +67,7 @@ begin
   doc2 := thread_page(t, 1, null, 5, '{}');
   perform tests.unbecome();
   if pg_temp.kept_plays(doc2) is distinct from array[worn::text] then raise exception 'a page of every post lists the play once: %', doc2 -> 'kept'; end if;
-  -- A page of B's and the caster's posts only (the 2nd and 4th) is not a page here; the second page of two holds A's inside post and A's after post.
+  -- The second page of two posts each holds A's inside post and A's after post.
   perform tests.become(ann);
   doc2 := thread_page(t, 2, null, 2, '{}');
   perform tests.unbecome();
@@ -83,7 +83,28 @@ begin
   if doc2 -> 'kept' is distinct from doc -> 'kept' or doc2 -> 'above' is distinct from doc -> 'above' or doc2 -> 'people' is distinct from doc -> 'people' or doc2 -> 'acts' is distinct from doc -> 'acts'
      or doc2 -> 'under' is distinct from doc -> 'under' or doc2 -> 'cut' is distinct from doc -> 'cut' then
     raise exception 'kept, above, people, acts, under and cut differ between two callers'; end if;
-  insert into admins (account) values (admin_acc);
+end $$;
+
+-- ---- The author match: a page holding A's post outside the play's window and another author's post inside it ----
+-- Guards `p.character = r.target` in kept_window. A's play is read for the page because A wrote a post on it (the author probe), and the window holds B's and the caster's posts;
+-- without the match those posts would bring in A's play. Correct: nothing is kept, for a page that holds A's post outside the window, and for the same page without B.
+do $$
+declare
+  ann uuid := tests.account('tm-ann'); a uuid := tests.character(ann, 'Tm A'); b uuid := tests.character(ann, 'Tm B'); c uuid := tests.character(ann, 'Tm Caster');
+  t uuid := tests.thread('Tm mixed page');
+  p_before uuid := tests.post(a, t, 'A, before the play.', now() - interval '20 days');
+  p_b uuid := tests.post(b, t, 'B, inside the window.', now() - interval '11 days');
+  p_c uuid := tests.post(c, t, 'The caster, inside the window.', now() - interval '9 days');
+  worn uuid; doc jsonb;
+begin
+  worn := tests.act(c, 'card', t, '{"card": "tgkeep", "reach": "character"}', p_before, now() - interval '15 days');
+  insert into play_reach (play, reach, character, ends_at) values (worn, 'character', a, now() - interval '8 days');
+  perform tests.become(ann); doc := thread_page(t, 1, null, 3, '{}'); perform tests.unbecome();
+  if jsonb_array_length(doc -> 'acts') is distinct from 3 then raise exception 'the page holds all three posts: %', doc -> 'acts'; end if;
+  if pg_temp.kept_plays(doc) is distinct from '{}' then
+    raise exception 'A''s post outside the window and B''s and the caster''s inside it: A''s play falls on none of them: %', doc -> 'kept'; end if;
+  perform tests.become(ann); doc := thread_page(t, 1, null, 2, '{}'); perform tests.unbecome();
+  if pg_temp.kept_plays(doc) is distinct from '{}' then raise exception 'A''s post outside the window and B''s inside it: A''s play falls on neither: %', doc -> 'kept'; end if;
 end $$;
 
 -- ---- Live, ended and plain: a live play is above and not kept; an admin-ended one, ended during the week or after it, is in neither; a plain kind is in neither ----
@@ -168,7 +189,9 @@ begin
   if pg_temp.kept_plays(doc) is distinct from array[on_thread::text, on_b::text] then raise exception 'B''s post: the thread play and B''s play, not A''s: %', doc -> 'kept'; end if;
 end $$;
 
--- ---- The probe is a range of play_reach_character for each author, from the page's earliest post (read line by line, as 0034's are) ----
+-- ---- The cost guard: play_reach_character serves a per-author range probe of this shape ----
+-- This explains a replica of kept_reach's character probe, not thread_page itself, so it cannot catch a change to thread_page; it guards cost only: that the index
+-- play_reach_character (character, ends_at) serves a range probe for one author with 520 plays, and that it is not a sequential scan.
 do $$
 declare
   ann uuid := tests.account('te-ann'); a uuid := tests.character(ann, 'Te A'); c uuid := tests.character(ann, 'Te Caster');
@@ -189,7 +212,4 @@ begin
   set local enable_seqscan = on;
   if plan not like '%play_reach_character%' then raise exception 'a character''s kept read is not from play_reach_character: %', plan; end if;
   if plan like '%Seq Scan on play_reach%' then raise exception 'a character''s kept read scans play_reach: %', plan; end if;
-  -- The scan is bounded below by the page's earliest post: the old plays are not read.
-  if (select count(*) from play_reach r where r.character = a and r.ends_at <= now() and r.ends_at > now() - interval '30 days') is distinct from 5::bigint then
-    raise exception 'a page a month old meets only the five plays that ended in the last month, of 520: %', (select count(*) from play_reach r where r.character = a and r.ends_at <= now() and r.ends_at > now() - interval '30 days'); end if;
 end $$;
