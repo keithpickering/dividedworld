@@ -4,7 +4,7 @@
  * `instances/divided-world/ui/glitter-bomb/`, and the engine only knows it as a host that draws its own loose glitter). This file is
  * the first two, and how what lies there is drawn:
  *
- * - `landPost(article)` registers each of a post's cells (its element children but a visually hidden heading) as a landing place of
+ * - `landPost(article)` registers each of a post's cells (the element children of its inner `.kb-act-grid`; of the article itself where it has no grid, as a front-door post has none; a visually hidden heading is no cell) as a landing place of
  *   the `cell` rank, so a Glitter Bomb on the body wins the body (docs/plans/2026-11-11-shake-plan.md, task 1). Its way out lets go of
  *   them and drops their glitter and tiles.
  * - `landPage()` makes the thread screen's own page a landing place, in document px, wherever the ground under the point is the page's
@@ -244,7 +244,8 @@ function release(): void { if (--hooked === 0) { setLanding(null); marked.clear(
  */
 export function landPost(article: HTMLElement): () => void {
   const mine: Array<{ cell: HTMLElement; s: Surface; off: () => void }> = [];
-  for (const child of Array.from(article.children)) {
+  const cells = article.querySelector(':scope > .kb-act-grid') ?? article;
+  for (const child of Array.from(cells.children)) {
     if (!(child instanceof HTMLElement) || child.classList.contains('kb-visually-hidden')) continue;
     const s: Surface = { kind: 'cell', host: child, el: child, tiles: new Map() };
     surfaces.set(child, s);

@@ -66,6 +66,11 @@
 
 .kb-act {
   --kb-post-bg: var(--kb-row-1);
+  scroll-margin-top: 0.5em;
+}
+
+/* The post's cells, in one grid: the row moves as one sheet. The article holds the hidden heading, the cut line and this grid. */
+.kb-act-grid {
   display: grid;
   grid-template-columns: var(--kb-postbit-column) minmax(0, 1fr);
   grid-template-areas:
@@ -76,7 +81,6 @@
   grid-template-rows: auto 1fr auto auto;
   column-gap: 1px;
   background: var(--kb-grid);
-  scroll-margin-top: 0.5em;
 }
 
 /* By the post's seq, so a post keeps its color when earlier pages are prepended or a page holds an odd number of posts. */
@@ -84,7 +88,7 @@
   --kb-post-bg: var(--kb-row-2);
 }
 
-.kb-act > * {
+.kb-act-grid > * {
   background: var(--kb-post-bg);
 }
 
@@ -150,8 +154,8 @@
   margin-top: 1px;
 }
 
-.kb-act > .kb-postbit,
-.kb-act > .kb-postbit-system {
+.kb-act-grid > .kb-postbit,
+.kb-act-grid > .kb-postbit-system {
   grid-area: bit;
   padding: 0.5em 6%;
 }
@@ -166,17 +170,18 @@
  * what hangs out of it is trapped inside: the marks strip (`.kb-marks`, z-index 3, marks.css) hangs from the line above over the words'
  * first line and the first-time callout (z-index 4) hangs under it over the words, so the line above takes no level of its own and both
  * keep theirs in the post's stack, over the words. Rather than clip the reach, which would cut a cap the owner meant to stand out, the
- * postbit goes under; the post is isolated so that -1 is under its cells and never under the post's own grid or the page.
+ * postbit goes under; the post's inner grid (`.kb-act-grid`, which holds the cells and so is the stack this note is about) is isolated so that -1 is under
+ * its cells and never under the page. The article around it is no stacking context of its own.
  *
  * The words are at 1: a moment's ring and its glow (cards/moment.css) sit in the words' layer, drawn unclipped, so a glow that spills
  * past the words paints over the actions and the panels, landed or not, and its tag hung on the date bar covers the date. The marks, at
  * 3 and 4 in the post's stack, are above the words still.
  */
-.kb-act {
+.kb-act-grid {
   isolation: isolate;
 }
 
-.kb-act > .kb-postbit {
+.kb-act-grid > .kb-postbit {
   z-index: -1;
 }
 
@@ -198,16 +203,16 @@
  * is gear, which belongs under the other cells, the foot's buttons have no popovers, and the body is isolated already. The tiles
  * stay at -1 inside each cell, so none of this changes where glitter lies.
  */
-.kb-act > [data-kb-landed] {
+.kb-act-grid > [data-kb-landed] {
   position: relative;
   isolation: isolate;
 }
 
-.kb-act > .kb-act-meta[data-kb-landed] {
+.kb-act-grid > .kb-act-meta[data-kb-landed] {
   z-index: 2;
 }
 
-.kb-act > [data-kb-landed] > canvas[data-kb-landing] {
+.kb-act-grid > [data-kb-landed] > canvas[data-kb-landing] {
   z-index: -1;
 }
 
@@ -283,7 +288,7 @@
 }
 
 /* A line of the game's (an unmask): no postbit, the words across the whole width. */
-.kb-act[data-kb-kind="unmask"] {
+.kb-act[data-kb-kind="unmask"] > .kb-act-grid {
   grid-template-columns: minmax(0, 1fr);
   grid-template-areas:
     "meta"
@@ -298,7 +303,7 @@
 }
 
 /* Stacked, chosen by the reader or forced on a phone: a header band, then the words. */
-.kb-act[data-kb-postbit="stacked"] {
+.kb-act[data-kb-postbit="stacked"] > .kb-act-grid {
   grid-template-columns: minmax(0, 1fr);
   grid-template-areas:
     "bit"
@@ -309,8 +314,8 @@
   grid-template-rows: none;
 }
 
-.kb-act[data-kb-postbit="stacked"] > .kb-postbit,
-.kb-act[data-kb-postbit="stacked"] > .kb-postbit-system {
+.kb-act[data-kb-postbit="stacked"] > .kb-act-grid > .kb-postbit,
+.kb-act[data-kb-postbit="stacked"] > .kb-act-grid > .kb-postbit-system {
   margin-bottom: 1px;
 }
 
@@ -319,8 +324,8 @@
     display: none;
   }
 
-  .kb-act,
-  .kb-act[data-kb-postbit] {
+  .kb-act > .kb-act-grid,
+  .kb-act[data-kb-postbit] > .kb-act-grid {
     grid-template-columns: minmax(0, 1fr);
     grid-template-areas:
       "bit"
@@ -331,13 +336,13 @@
     grid-template-rows: none;
   }
 
-  .kb-act > .kb-postbit,
-  .kb-act > .kb-postbit-system {
+  .kb-act-grid > .kb-postbit,
+  .kb-act-grid > .kb-postbit-system {
     padding: 0.4em 3%;
     margin-bottom: 1px;
   }
 
-  .kb-act[data-kb-kind="unmask"] {
+  .kb-act[data-kb-kind="unmask"] > .kb-act-grid {
     grid-template-areas:
       "meta"
       "main"

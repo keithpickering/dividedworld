@@ -300,11 +300,23 @@ describe('the thread\'s crumb, post cells and bottom row (the board look, Task 6
     expect(within(crumb).getByRole('link', { name: general.name })).toHaveAttribute('href', `/b/${general.slug}`);
   });
 
+  test('a post\'s cells are the children of one inner grid, after the hidden heading, in reading order', async () => {
+    const w = world(3);
+    open(w);
+    const second = await screen.findByRole('article', { name: /^Post 2 /u });
+    expect(second.firstElementChild!.tagName).toBe('H2');
+    const grids = [...second.children].filter((c) => c.classList.contains('kb-act-grid'));
+    expect(grids).toHaveLength(1);
+    expect(second.querySelectorAll('.kb-act-grid')).toHaveLength(1);
+    const kinds = [...grids[0]!.children].map((c) => ['kb-postbit', 'kb-act-meta', 'kb-act-main', 'kb-act-foot', 'kb-act-panels'].find((k) => c.classList.contains(k)));
+    expect(kinds).toEqual(['kb-postbit', 'kb-act-meta', 'kb-act-main', 'kb-act-foot', 'kb-act-panels']);
+  });
+
   test('a post is three cells beside its postbit: the post line holds the time and permalink and none of the words, the words hold the words, the actions the buttons', async () => {
     const w = world(3);
     open(w);
     const second = await screen.findByRole('article', { name: /^Post 2 /u });
-    const cells = [...second.children].filter((c) => c.hasAttribute('data-kb-cell'));
+    const cells = [...second.querySelector('.kb-act-grid')!.children].filter((c) => c.hasAttribute('data-kb-cell'));
     expect(cells.map((c) => c.getAttribute('data-kb-cell'))).toEqual(['line', 'words', 'actions']);
     const [line, words, actions] = cells as HTMLElement[];
     expect(line).toContainElement(within(second).getByRole('link', { name: 'Permalink to post #2' }));
@@ -312,7 +324,7 @@ describe('the thread\'s crumb, post cells and bottom row (the board look, Task 6
     expect(line).not.toHaveTextContent('post 2');
     expect(words).toHaveTextContent('post 2');
     expect(within(actions!).getByRole('button', { name: 'Quote' })).toBeInTheDocument();
-    expect(second.querySelector('.kb-postbit')!.parentElement).toBe(second);
+    expect(second.querySelector('.kb-postbit')!.parentElement).toBe(second.querySelector('.kb-act-grid'));
   });
 
   test('a post\'s row color follows its seq, not its place on the page: an odd page opened at 41 starts on odd', async () => {
@@ -2489,8 +2501,8 @@ describe('where glitter lands in a thread', () => {
   /* Source-level guard: jsdom has no layout or stacking, so the stacking of a landed cell can only be asserted on the stylesheet's text. */
   test('thread.css (source-level guard): a landed meta cell keeps a positive stack level over the body, so its hung marks and callout are not trapped under it', () => {
     const css = readFileSync(join(process.cwd(), 'engine/ui/thread/thread.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '');
-    const rule = /(^|\})\s*\.kb-act\s*>\s*\.kb-act-meta\[data-kb-landed\]\s*\{([^}]*)\}/u.exec(css);
-    expect(rule, 'a rule for .kb-act > .kb-act-meta[data-kb-landed]').not.toBeNull();
+    const rule = /(^|\})\s*\.kb-act-grid\s*>\s*\.kb-act-meta\[data-kb-landed\]\s*\{([^}]*)\}/u.exec(css);
+    expect(rule, 'a rule for .kb-act-grid > .kb-act-meta[data-kb-landed]').not.toBeNull();
     const z = /z-index:\s*(\d+)/u.exec(rule![2]!);
     expect(z, 'with a z-index').not.toBeNull();
     expect(Number(z![1])).toBeGreaterThan(0);

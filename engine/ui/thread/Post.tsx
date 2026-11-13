@@ -311,20 +311,22 @@ const PostArticle = memo(function PostArticle({ act, person, layout, slid, cut }
     >
       <h2 id={`post-${seq}-title`} className="kb-visually-hidden">Post {seq} by {spoken}{cut && `, cut in under post ${cut.seq}`}</h2>
       {cut && <p className="kb-act-cutline kb-small">Cut in line under post {cut.seq}</p>}
-      {/* The author first, then the post's line: the order the board is read in, side by side or stacked. */}
-      {!plain && (person
-        ? <Postbit person={person} layout={layout} marks={characterMarks} />
-        : <div className="kb-postbit-system"><span className="kb-postbit-name">{name}</span></div>)}
-      <header className="kb-act-meta" data-kb-cell="line">
-        <time dateTime={act.createdAt} title={when(act.createdAt)}>{when(act.createdAt, narrow, api.now())}</time>
-        {marks}
-        <Link className="kb-act-number" to={href} aria-label={`Permalink to post #${seq}`}>#{seq}</Link>
-      </header>
-      <div className="kb-act-main" data-kb-cell="words">
-        <Body act={act} name={name} spoken={spoken} person={person} editing={editing} own={own} onEdit={() => setEditing(true)} onDone={() => setEditing(false)} marks={marks} visit={visit} />
-        <SpunInto act={act.id} />
+      <div className="kb-act-grid">
+        {/* The author first, then the post's line: the order the board is read in, side by side or stacked. */}
+        {!plain && (person
+          ? <Postbit person={person} layout={layout} marks={characterMarks} />
+          : <div className="kb-postbit-system"><span className="kb-postbit-name">{name}</span></div>)}
+        <header className="kb-act-meta" data-kb-cell="line">
+          <time dateTime={act.createdAt} title={when(act.createdAt)}>{when(act.createdAt, narrow, api.now())}</time>
+          {marks}
+          <Link className="kb-act-number" to={href} aria-label={`Permalink to post #${seq}`}>#{seq}</Link>
+        </header>
+        <div className="kb-act-main" data-kb-cell="words">
+          <Body act={act} name={name} spoken={spoken} person={person} editing={editing} own={own} onEdit={() => setEditing(true)} onDone={() => setEditing(false)} marks={marks} visit={visit} />
+          <SpunInto act={act.id} />
+        </div>
+        <Actions act={act} about={{ seq, name: spoken }} canEdit={canEdit} editing={editing} onEdit={() => setEditing(true)} editButton={editButton} spinOrigin={spinOrigin} setSpinOrigin={setSpinOrigin} onReport={reportable ? askReport : null} />
       </div>
-      <Actions act={act} about={{ seq, name: spoken }} canEdit={canEdit} editing={editing} onEdit={() => setEditing(true)} editButton={editButton} spinOrigin={spinOrigin} setSpinOrigin={setSpinOrigin} onReport={reportable ? askReport : null} />
     </article>
     </AppealCtx.Provider>
   );
