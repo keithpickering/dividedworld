@@ -3,7 +3,8 @@
 # supabase/tests/ (tools/test-sql.mjs). It cannot live in build:ci, which has no database; the
 # suite's refusal of any database but localhost is in the build (tools/test-sql-refusal.mjs).
 #
-# Postgres 17 here, as Supabase runs; a session's container runs its distribution's Postgres.
+# Postgres 17 here, as Supabase runs, pinned to one image (below); a session's container runs its
+# distribution's Postgres.
 # Same trigger shape as build.yml: a draft's push shows a skipped job, and a PR is run when it
 # is marked ready. Carried from currents (docs/plans/port-manifest.md).
 # The daily release calls it on its candidate (release.yml).
@@ -24,10 +25,24 @@ jobs:
   sql:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # A limit that ends a job that will never end, and the last of four: inside the suite a lock wait ends at 30s, a
+    # statement at 300s and a file at 10 minutes (tools/test-sql.mjs), so a hang is ended long before this.
+    # At 15 minutes, jobs in which no test failed were cancelled with a minute or less of the suite left
+    # (docs/plans/2026-11-12-sql-job-bound-plan.md). Measured on 2026-11-12: the suite runs one file after another
+    # and is all of the job; the same suite took 9 to 13.5 minutes by which runner it drew (issue #515: a slow
+    # runner's four CPUs do about two CPUs' work); with 197 migrations, 205 assertion files and 26 end-to-end files a
+    # slow runner needs about 16 minutes; and the suite had doubled in five days. 45 is a little over twice the 20
+    # minutes a slow runner is expected to need once PR #575's statistics step lands. Not the build's 30: that would
+    # leave 10 minutes, and the suite gained 7 minutes or more in those five days.
+    timeout-minutes: 45
     services:
       postgres:
-        image: postgres:17
+        # Named by digest, not by the `postgres:17` tag: that tag moved to 17.12 on 2026-11-12 and every run failed
+        # on plan-dependent files (issue #596). Docker pulls by the digest; the tag only says which version it is.
+        # tools/check-release-workflows.mjs (R8) holds this string identical in every workflow. To move it, a PR
+        # of its own changes the string in both sql.yml and rehearsal.yml, and its sql and rehearsal jobs then run
+        # on the new image.
+        image: postgres:17.11@sha256:ff87138949ad9a46f32ff23bd6852b52ce024a13dffe9b4087be98292cdd3b4f
         env: { POSTGRES_PASSWORD: pg }
         ports: ['5432:5432']
         options: >-
