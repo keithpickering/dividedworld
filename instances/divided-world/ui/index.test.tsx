@@ -162,8 +162,8 @@ describe('Divided World\'s cards in the guide, in the glass\'s words about setti
     const ui = instanceUi.cards.find((c) => c.key === 'glitter-bomb')!;
     const described = typeof ui.describe === 'function' ? ui.describe(instance.settings) : ui.describe;
     expect(described).toContain("For a week, every one of that character's posts sparkles, wherever it is. When the week is up, the posts written during it keep their sparkle after it ends, settled; every other post stops.");
-    expect(ui.logPlay!({} as never)).toBe('Posts that character writes before it ends keep their sparkle after it ends.');
-    expect(`${described} ${ui.logPlay!({} as never)}`).not.toMatch(/for good|where it landed/u);
+    expect(ui.logPlay!({}, {})).toBe('Posts that character writes before it ends keep their sparkle after it ends.');
+    expect(`${described} ${ui.logPlay!({}, {})}`).not.toMatch(/for good|where it landed/u);
   });
   test('the guide names the three kinds and says every card back looks the same, with no payout from a trap', () => {
     expect(guideMd).toMatch(/- \*\*Move, Reversal, Gimmick\.\*\*/u);
