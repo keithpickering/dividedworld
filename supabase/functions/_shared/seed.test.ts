@@ -46,7 +46,7 @@ test('the seed carries every setting, class, reaction, card and board of the ins
   // A discipline effect travels as the card wrote it (card_kinds.discipline); a card without one travels with none.
   const disciplined = instanceSeed({ ...instance, cards: [...instance.cards, { ...instance.cards[0]!, key: 'disciplined', discipline: { kind: 'watch', weight: 2 } }] }, conduct).cards;
   assert.deepEqual(disciplined.find((c) => c.key === 'disciplined')!.discipline, { kind: 'watch', weight: 2 }, 'the seed carries the discipline');
-  assert.equal(disciplined.filter((c) => c.discipline !== undefined).length, 1, 'no other card carries one');
+  assert.deepEqual(disciplined.filter((c) => c.discipline !== undefined).map((c) => c.key), [...instance.cards.filter((c) => c.discipline !== undefined).map((c) => c.key), 'disciplined'], 'a card without one travels with none');
   // The packs and the machine's slots (0139): the pulls as the instance writes them, a slot's item flattened to `card` or `pack`, in grid order.
   assert.deepEqual(seed.packs.map((p) => [p.key, p.pulls.length, p.leaves]), instance.packs.map((p) => [p.key, p.pulls.length, [...(p.leaves ?? [])]]));
   assert.deepEqual(seed.packs[0]!.pulls[4], { weights: { uncommon: 74, rare: 24, legendary: 2 } }, 'the hit pull reaches the SQL as written');
