@@ -11,6 +11,11 @@
  * transferred canvas: `window.__kbFabPixels(n)` gives the nth foil canvas's pixels as the worker holds them (or, where the browser
  * draws on the page, as the canvas does), with the size they have; `window.__kbFabSize(n)` is its size from `foilProbe.sizes`, which says
  * 0 by 0 for a freed canvas where there are no pixels to read; `window.__kbFabAdopted(n)` is whether it was handed to the worker.
+ *
+ * The Glam stories (docs/plans/2026-11-11-card-notes-part-2-plan.md, Task 9) put a Feelin' Glam on the thread. Live: it was cast a day ago and has six
+ * days left, so #41 with no Fab of its own is drawn at level 1 and #42, with two Fabs, at level 3 (two and one more, up to three). Over: its week
+ * ended three days ago; a post written in its week (#47, dated four days ago) keeps level 1 and a later one (#48, dated yesterday) is bare, as are the
+ * thread's other posts, which are older than the card. Each is on the light board and the dark.
  */
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useEffect, useState } from 'react';
@@ -39,9 +44,13 @@ interface Args {
   readonly reduced: boolean;
   /** Twenty posts carry Feelin' Fabs, at levels one to three in turn, instead of #41 alone. */
   readonly many?: boolean;
+  /** A Feelin' Glam on the thread, in its week or after it, in place of the Fabs on #41 alone. */
+  readonly glam?: 'live' | 'over';
 }
 
-function Fabbed({ level, mode, reduced, many = false }: Args) {
+const DAY = 86_400_000;
+
+function Fabbed({ level, mode, reduced, many = false, glam }: Args) {
   const { api } = useKayfa();
   /* The thread the moment opens on (`/t/<thread>`). */
   const thread = /^\/t\/([^/]+)/u.exec(useLocation().path)?.[1] ?? null;
@@ -78,7 +87,20 @@ function Fabbed({ level, mode, reduced, many = false }: Args) {
     void (async () => {
       const [[target], [caster]] = await Promise.all([api.acts(thread, 41, 41), api.acts(thread, 42, 42)]);
       if (!target || !caster?.character) return;
-      if (many) {
+      if (glam) {
+        const fake = api as Fake;
+        const now = api.now();
+        const from = target.character!;
+        if (glam === 'live') {
+          /* #41 has none of its own, #42 two: the Glam is one more level on each. */
+          fake.seed.reach(caster.character, 'thread', thread, 'feelin-glam', { at: now - DAY, ends: now + 6 * DAY, message: 'Everyone, shine.', live: true });
+          for (let layer = 1; layer <= 2; layer += 1) fake.seed.card(from, caster.id, 'feelin-fab', { layer, live: true, config: {}, message: `Fab ${layer}` });
+        } else {
+          fake.seed.reach(caster.character, 'thread', thread, 'feelin-glam', { at: now - 10 * DAY, ends: now - 3 * DAY, message: 'Everyone, shine.' });
+          fake.seed.post(thread, target.character!, 'Written in the Glam\'s week, so it keeps its level.', { at: now - 4 * DAY });
+          fake.seed.post(thread, caster.character!, 'Written after the week, so it is bare.', { at: now - DAY });
+        }
+      } else if (many) {
         const fake = api as Fake;
         /* One page of the thread, seq 41 to 60 (the page holds twenty): the fixture has #41 to #46, so 14 more posts of #41's author fill it. */
         for (let i = 0; i < 14; i += 1) fake.seed.post(thread, target.character!, `Post ${i + 47} of the scroll check. ${'The rainbow sits under these words, which must stay readable as it moves. '.repeat(1 + (i % 3))}`);
@@ -94,7 +116,7 @@ function Fabbed({ level, mode, reduced, many = false }: Args) {
       if (live) setSeeded(thread);
     })();
     return () => { live = false; };
-  }, [api, thread, level, many]);
+  }, [api, thread, level, many, glam]);
   return <Frame>{thread && seeded === thread ? <LoadedThread thread={thread} /> : <div aria-busy="true" />}</Frame>;
 }
 
@@ -119,3 +141,7 @@ export const TwoStill: Story = { args: { level: 2, reduced: true } };
 export const ThreeStill: Story = { args: { level: 3, reduced: true, mode: 'dark' } };
 export const TwentyLight: Story = { args: { many: true, mode: 'light' } };
 export const TwentyDark: Story = { args: { many: true, mode: 'dark' } };
+export const GlamLiveLight: Story = { args: { glam: 'live', mode: 'light' } };
+export const GlamLiveDark: Story = { args: { glam: 'live', mode: 'dark' } };
+export const GlamOverLight: Story = { args: { glam: 'over', mode: 'light' } };
+export const GlamOverDark: Story = { args: { glam: 'over', mode: 'dark' } };

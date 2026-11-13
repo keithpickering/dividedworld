@@ -27,11 +27,12 @@ const shieldy = rule('shieldy', 'Shieldy', { play: 'use', gimmick: { kind: 'ward
 const trappy = rule('trappy', 'Trappy', { play: 'set', trap: { trigger: { on: 'visit' } } });
 const sparkly = rule('sparkly', 'Sparkly', { rarity: 'uncommon', reaches: ['character'], lasts: { unit: 'day', count: 7 } });
 /* Lifty is a takeover that stacks: drawn in a moment, and outermost there as it is live. */
+const scribey = rule('scribey', 'Scribey', { stack: 2, writes: { tokens: () => 40, frame: () => ({ prompt: '', stop: [] }) } });
 const lifty = rule('lifty', 'Lifty', { stack: 2 });
 /* Slabby is a surface card (kept in a moment by its state, as a wall's washing is). */
 const strokesOk = (input: unknown) => ok({ strokes: [], payload: { input } });
 const slabby = rule('slabby', 'Slabby', { validateState: (s) => ok(s), surface: { limitKey: 'slabby.limit', mostLive: 48, validateDraw: strokesOk, validateWash: strokesOk } });
-const instance: Instance = { ...testInstance, cards: [smear, ripple, holdy, tagger, shieldy, trappy, sparkly, lifty, slabby], settings: { ...testInstance.settings, cardSettings: { 'slabby.limit': 40 }, setLasts: { unit: 'day', count: 7 } } };
+const instance: Instance = { ...testInstance, cards: [smear, ripple, holdy, tagger, shieldy, trappy, sparkly, lifty, slabby, scribey], settings: { ...testInstance.settings, cardSettings: { 'slabby.limit': 40 }, setLasts: { unit: 'day', count: 7 } } };
 
 /* Each drawn card wraps the words in a box naming it, saying whether it was drawn still and what it was given. */
 const seen: { card: string; still: boolean; states: Readonly<Record<string, EffectState>> }[] = [];
@@ -41,7 +42,7 @@ const Wrap = (key: string) => function Effect({ children, still, states, show, p
   return <div data-kb-wrap={key}>{children}</div>;
 };
 const ui = (key: string, extra: Partial<CardUi> = {}): CardUi => ({ key, art: { color: '#ffd23f', ink: '#1a1300', canvas: '', mark: '', credit: 'Test' }, describe: () => `${key}.`, Effect: Wrap(key), ...extra });
-const cards: CardUi[] = [ui('smear'), ui('ripple'), ui('holdy', { takeover: true }), ui('tagger'), ui('shieldy'), ui('sparkly'), ui('lifty', { takeover: true }), ui('slabby')];
+const cards: CardUi[] = [ui('smear'), ui('ripple'), ui('holdy', { takeover: true }), ui('tagger'), ui('shieldy'), ui('sparkly'), ui('lifty', { takeover: true }), ui('slabby'), ui('scribey', { Effect: ({ children }: EffectProps) => <>{children}<span data-kb-tail="scribey" /></> })];
 
 const at = (minutes: number) => new Date(Date.UTC(2026, 10, 3, 12, minutes)).toISOString();
 const act = (id: string, kind: Act['kind'], payload: Record<string, unknown>, minutes: number, extra: Partial<Act> = {}): Act => ({
@@ -152,6 +153,26 @@ describe('a moment draws still', () => {
 test('a takeover drawn in a moment wraps outermost, though it was played first', () => {
   draw(moment([{ act: card('k2', 'smear', 5), state: null }, { act: card('k1', 'lifty', 1), state: null }, { act: card('k3', 'ripple', 7), state: null }]));
   expect(chain()).toEqual(['smear', 'ripple', 'lifty']);
+});
+
+describe('a moment nests as a post does', () => {
+  test('a card that writes is innermost whatever the play order: its tail is next to the words', () => {
+    draw(moment([{ act: card('k2', 'scribey', 9), state: null }, { act: card('k1', 'smear', 1), state: null }]));
+    const words = document.querySelector('[data-kb-words]')!;
+    expect(words.nextElementSibling?.getAttribute('data-kb-tail')).toBe('scribey');
+    expect(chain()).toEqual(['smear']);
+  });
+
+  test('a beneath card is inside a card without it, though it was played later', () => {
+    const was = cards[1]!;
+    cards[1] = ui('ripple', { beneath: true });
+    try {
+      draw(moment([{ act: card('k1', 'smear', 1), state: null }, { act: card('k2', 'ripple', 5), state: null }]));
+      expect(chain()).toEqual(['ripple', 'smear']);
+    } finally {
+      cards[1] = was;
+    }
+  });
 });
 
 describe('a moment names what it does not draw', () => {

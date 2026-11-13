@@ -39,10 +39,10 @@ describe('bringClear', () => {
     expect(el.scrollIntoView).not.toHaveBeenCalled();
   });
 
-  test('an element whose bottom is behind the bottom padding is scrolled to the top of the clear area, smoothly', () => {
+  test('an element whose bottom is behind the bottom padding is scrolled to the top of the clear area, at once', () => {
     const el = at(300, 200);
     bringClear(el);
-    expect(el.scrollIntoView).toHaveBeenCalledWith({ block: 'start', behavior: 'smooth' });
+    expect(el.scrollIntoView).toHaveBeenCalledWith({ block: 'start', behavior: 'instant' });
   });
 
   test('an element above the clear area, or below the window, is scrolled', () => {
@@ -54,11 +54,11 @@ describe('bringClear', () => {
     expect(below.scrollIntoView).toHaveBeenCalledTimes(1);
   });
 
-  test('under reduced motion the scroll is instant', () => {
+  test('under reduced motion the scroll is instant too', () => {
     root.setAttribute('data-kb-motion', 'reduce');
     const el = at(300, 200);
     bringClear(el);
-    expect(el.scrollIntoView).toHaveBeenCalledWith({ block: 'start', behavior: 'auto' });
+    expect(el.scrollIntoView).toHaveBeenCalledWith({ block: 'start', behavior: 'instant' });
   });
 
   test('an element taller than the clear area is scrolled to its top, and not again once its top is there', () => {

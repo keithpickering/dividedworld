@@ -61,14 +61,19 @@ export function IndexScreen({ doc }: { readonly doc: ScreenDoc<IndexPage> }) {
                           <br />
                         </>
                       )}
+                      {/* The "·" and the name are one item, the comma and the date the other (index.css): the fold keeps the "·" at the head of the name's first line and hangs the comma where the date takes a line of its own. */}
                       <span className="kb-board-last-by">
-                        {b.lastThread && b.lastTitle && <span className="kb-board-sep" aria-hidden="true">· </span>}
-                        <Byline character={who} id={b.lastCharacter} name={who?.name} link avatar={false} />
-                        <span className="kb-board-sep" aria-hidden="true">, </span>
-                        <br />
-                        {b.lastThread
-                          ? <Link to={`/t/${b.lastThread}`} className="kb-muted"><Ago at={b.lastAt} /><span className="kb-visually-hidden"> — latest post in {b.name}</span></Link>
-                          : <span className="kb-muted"><Ago at={b.lastAt} /></span>}
+                        <span className="kb-board-last-who">
+                          {b.lastThread && b.lastTitle && <span className="kb-board-sep" aria-hidden="true">· </span>}
+                          <Byline character={who} id={b.lastCharacter} name={who?.name} link avatar={false} />
+                        </span>
+                        <span className="kb-board-last-when">
+                          <span className="kb-board-sep" aria-hidden="true">, </span>
+                          <br />
+                          {b.lastThread
+                            ? <Link to={`/t/${b.lastThread}`} className="kb-muted"><Ago at={b.lastAt} /><span className="kb-visually-hidden"> — latest post in {b.name}</span></Link>
+                            : <span className="kb-muted"><Ago at={b.lastAt} /></span>}
+                        </span>
                       </span>
                     </>
                   )}

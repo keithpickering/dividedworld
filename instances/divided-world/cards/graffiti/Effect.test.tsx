@@ -390,7 +390,7 @@ describe('opening draw mode brings the post clear of the dock', () => {
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Draw' })); });
     await frameOf();
     expect(scroll).toHaveBeenCalledTimes(1);
-    expect(scroll).toHaveBeenCalledWith({ block: 'start', behavior: 'smooth' });
+    expect(scroll).toHaveBeenCalledWith({ block: 'start', behavior: 'instant' });
   });
 
   test('a post wholly in the clear area is not scrolled, and nothing scrolls before draw mode opens', async () => {

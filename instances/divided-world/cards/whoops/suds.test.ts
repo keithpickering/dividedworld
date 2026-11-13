@@ -8,15 +8,25 @@ import { afterEach, beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { probe, puff, register, unregister, wash } from './suds.ts';
 
-interface Canvas { width: number; height: number; draws: number; clears: number; throwOnDraw: boolean; getContext(kind: string): unknown }
+interface Drawn { x: number; y: number; w: number; h: number }
+interface Canvas { width: number; height: number; draws: number; clears: number; throwOnDraw: boolean; tf: number[]; drawn: Drawn[]; moves: Array<{ x: number; y: number }>; getContext(kind: string): unknown }
 const canvas = (w = 400, h = 300): Canvas => {
   const cv: Canvas = {
-    width: w, height: h, draws: 0, clears: 0, throwOnDraw: false,
+    width: w, height: h, draws: 0, clears: 0, throwOnDraw: false, tf: [1, 0, 0, 1, 0, 0], drawn: [], moves: [],
     getContext() {
       const grad = { addColorStop() {} };
       return new Proxy({}, {
         get: (_t, name) => {
-          if (name === 'drawImage') return () => { if (cv.throwOnDraw) throw new Error('draw'); cv.draws++; };
+          if (name === 'drawImage') {
+            return (_img: unknown, x: number, y: number, w: number, h: number) => {
+              if (cv.throwOnDraw) throw new Error('draw');
+              cv.draws++;
+              /* Where it lands on the canvas, in canvas px: the transform set last applied to the destination's corner. */
+              cv.drawn.push({ x: cv.tf[4]! + cv.tf[0]! * x, y: cv.tf[5]! + cv.tf[3]! * y, w, h });
+            };
+          }
+          if (name === 'moveTo') return (x: number, y: number) => { cv.moves.push({ x: cv.tf[4]! + cv.tf[0]! * x, y: cv.tf[5]! + cv.tf[3]! * y }); };
+          if (name === 'setTransform') return (...a: number[]) => { cv.tf = a; };
           if (name === 'clearRect') return () => { cv.clears++; };
           if (name === 'createRadialGradient' || name === 'createLinearGradient' || name === 'createConicGradient') return () => grad;
           return () => {};
@@ -71,7 +81,7 @@ afterEach(() => {
 });
 
 const BOX = { w: 400, h: 300 };
-const mount = () => { const host = {}, cv = canvas(); register(host, asCanvas(cv), BOX, 2, '#cc2222'); return { host, cv }; };
+const mount = () => { const host = {}, cv = canvas(BOX.w * 2, BOX.h * 2); register(host, asCanvas(cv), BOX, 2, '#cc2222'); return { host, cv }; };
 const A = { x: 20, y: 100 };
 const B = { x: 180, y: 100 };
 
@@ -254,4 +264,213 @@ test('a very long move spawns no more than a 400px one does', () => {
   wash(again.host, { x: 0, y: 10 }, { x: 20000, y: 10 }, true);
   assert.ok(probe.size() <= 400 / 8 + 400 / 16 + 1 + 12, `${probe.size()} spawned`);
   assert.ok(ref > 0);
+});
+
+/** The sprites a canvas was drawn (not the wet sheen, which is the box's width). */
+const sprites = (c: Canvas) => c.drawn.filter((d) => d.w < 60);
+
+test('a host registered with a span offset draws each particle at its box position less that offset', () => {
+  const host = {}, cv = canvas(390 * 2, 2048 * 2);
+  register(host, asCanvas(cv), { w: 390, h: 20000 }, 2, '#cc2222', 1536);
+  wash(host, { x: 100, y: 1800 }, { x: 200, y: 1800 }, true);
+  tick(16);
+  const got = sprites(cv);
+  assert.ok(got.length > 0, 'something was drawn');
+  /* The wash is at box y 1800, which is 264 CSS px (528 canvas px) down the span; the spread of a brush's lather is under 60px. */
+  for (const d of got) assert.ok(d.y > (264 - 60) * 2 && d.y < (264 + 60) * 2, `drawn at canvas y ${d.y}`);
+});
+
+test('a particle outside the span is not drawn and throws nothing', () => {
+  const errors: unknown[] = [];
+  const realError = console.error;
+  console.error = (...a: unknown[]) => { errors.push(a); };
+  try {
+    const host = {}, cv = canvas(390 * 2, 2048 * 2);
+    register(host, asCanvas(cv), { w: 390, h: 20000 }, 2, '#cc2222', 1536);
+    wash(host, { x: 100, y: 100 }, { x: 200, y: 100 }, true);
+    wash(host, { x: 100, y: 9000 }, { x: 200, y: 9000 }, true);
+    assert.ok(probe.size() > 0, 'the particles exist');
+    tick(16);
+    tick(16);
+    assert.equal(sprites(cv).length, 0, 'nothing outside the span is drawn');
+    assert.deepEqual(errors, []);
+  } finally { console.error = realError; }
+});
+
+test('what is in the air survives a re-register with another offset, and is drawn at the new one', () => {
+  const host = {}, cv = canvas(390 * 2, 2048 * 2);
+  register(host, asCanvas(cv), { w: 390, h: 20000 }, 2, '#cc2222', 1536);
+  wash(host, { x: 100, y: 2300 }, { x: 200, y: 2300 }, true);
+  const n = probe.size();
+  assert.ok(n > 0);
+  register(host, asCanvas(cv), { w: 390, h: 20000 }, 2, '#cc2222', 2048);
+  assert.equal(probe.size(), n, 'the pool is kept');
+  cv.drawn.length = 0;
+  tick(16);
+  const got = sprites(cv);
+  assert.ok(got.length > 0);
+  for (const d of got) assert.ok(d.y > (252 - 60) * 2 && d.y < (252 + 60) * 2, `drawn at canvas y ${d.y}`);
+});
+
+/** A span of 2048 CSS px from box y 1536 at density 2, in a very tall box; the cull's margin is a little under 60px. */
+const TOP = 1536, SPAN = 2048;
+const spanned = () => { const host = {}, cv = canvas(390 * 2, SPAN * 2); register(host, asCanvas(cv), { w: 390, h: 20000 }, 2, '#cc2222', TOP); return { host, cv }; };
+const washAt = (y: number, ms = 16) => {
+  const { host, cv } = spanned();
+  wash(host, { x: 100, y }, { x: 200, y }, true);
+  tick(ms);
+  return sprites(cv).length;
+};
+
+test('a wash a little outside the span, above or below it, is still drawn, and one well outside is not', () => {
+  assert.ok(washAt(TOP - 30) > 0, 'just above the span (inside the margin)');
+  assert.ok(washAt(TOP + SPAN + 30) > 0, 'just below the span (inside the margin, at density 2)');
+  assert.equal(washAt(TOP - 100), 0, 'well above the span');
+  assert.equal(washAt(TOP + SPAN + 100), 0, 'well below the span: its canvas px would still be inside the canvas height');
+});
+
+test('a drip is drawn when any of its run is in the span, and not when all of it is outside', () => {
+  /* Math.random at 0 makes one drip (start `to.y + 5.25`, speed 8, pull 10) and, over a move this short, no lather or bubble. */
+  const realRandom = Math.random;
+  Math.random = () => 0;
+  try {
+    const y0 = (y: number) => y - 15 * 0.35;
+    const dripAt = (start: number, ms: number) => {
+      const { host, cv } = spanned();
+      wash(host, { x: 100, y: y0(start) }, { x: 100, y: y0(start) }, true);
+      assert.equal(probe.count('run'), 1, 'one drip');
+      tick(ms);
+      const n = sprites(cv).length;
+      probe.reset();
+      return n;
+    };
+    const lo = TOP - 48, hi = TOP + SPAN + 48;
+    /* y0 + 8*0.7 + 5*0.49 = y0 + 8.05 */
+    assert.ok(dripAt(lo - 6, 700) > 0, 'starts above the margin and runs into it');
+    assert.ok(dripAt(hi - 2, 700) > 0, 'starts inside the span and runs out of it');
+    assert.equal(dripAt(lo - 100, 700), 0, 'wholly above the span');
+    assert.equal(dripAt(hi + 100, 700), 0, 'wholly below the span, though inside the canvas height in canvas px');
+  } finally { Math.random = realRandom; }
+});
+
+/** The sheen's mark: where its canvas was moved to, in that canvas's px. */
+const markOf = (c: Canvas) => c.moves[0]!;
+
+test('the sheen is sized to the span, never the post: a 390x2048 span of a 390x20,000 box holds 780x4096 px at density 2', () => {
+  const { host } = spanned();
+  wash(host, { x: 100, y: 1800 }, { x: 200, y: 1800 }, true);
+  const [sheen] = sheens();
+  assert.ok(sheen, 'a sheen canvas was made');
+  assert.equal(sheen.width * sheen.height, 780 * 4096, `${sheen.width}x${sheen.height}`);
+  assert.ok(sheen.width * sheen.height * 1.2 < 4_000_000, 'far under what the whole box would take');
+  void host;
+});
+
+test('the wet mark is at the wash point\'s box position less the span\'s top, at the sheen\'s scale', () => {
+  const { host } = spanned();
+  wash(host, { x: 100, y: 1800 }, { x: 200, y: 1800 }, true);
+  const [sheen] = sheens();
+  const m = markOf(sheen!);
+  assert.equal(m.x, 100 * 2);
+  assert.equal(m.y, (1800 - TOP) * 2);
+  void host;
+});
+
+test('a wash outside the span makes no sheen mark and throws nothing', () => {
+  const errors: unknown[] = [];
+  const realError = console.error;
+  console.error = (...a: unknown[]) => { errors.push(a); };
+  try {
+    const { host } = spanned();
+    wash(host, { x: 100, y: 100 }, { x: 200, y: 100 }, true);
+    wash(host, { x: 100, y: 9000 }, { x: 200, y: 9000 }, true);
+    tick(16);
+    assert.equal(probe.sheens(), 0, 'no sheen canvas');
+    assert.equal(sheens().length, 0);
+    assert.deepEqual(errors, []);
+  } finally { console.error = realError; }
+});
+
+test('a span that moves while a sheen is held carries the sheen across at its page position, unstretched', () => {
+  const { host, cv } = spanned();
+  wash(host, { x: 100, y: 2300 }, { x: 200, y: 2300 }, true);
+  const old = sheens()[0]!;
+  const mark = markOf(old);
+  register(host, asCanvas(cv), { w: 390, h: 20000 }, 2, '#cc2222', TOP + 512);
+  assert.equal(probe.sheens(), 1, 'the sheen is kept');
+  const fresh = sheens().at(-1)!;
+  assert.notEqual(fresh, old, 'remade for the new span');
+  assert.equal(fresh.width, old.width);
+  assert.equal(fresh.height, old.height);
+  const carry = fresh.drawn[0]!;
+  assert.ok(carry, 'the old pixels were drawn across');
+  assert.equal(carry.w, old.width, 'not stretched');
+  assert.equal(carry.h, old.height, 'not stretched');
+  assert.equal(carry.x, 0);
+  /* The page position is the same: the mark's canvas y moved by exactly the span's shift (512 CSS px, 1024 canvas px up). */
+  assert.equal(mark.y + carry.y, (2300 - (TOP + 512)) * 2);
+});
+
+test('a host whose span is its whole box (Graffiti) holds the sheen it always did', () => {
+  const { host, cv } = mount();
+  wash(host, A, B, true);
+  const [sheen] = sheens();
+  assert.equal(sheen!.width, BOX.w * 2);
+  assert.equal(sheen!.height, BOX.h * 2);
+  assert.deepEqual(markOf(sheen!), { x: A.x * 2, y: A.y * 2 });
+  tick(16);
+  const whole = cv.drawn.find((d) => d.w === BOX.w)!;
+  assert.deepEqual([whole.x, whole.y, whole.h], [0, 0, BOX.h]);
+  register(host, asCanvas(cv), BOX, 2, '#cc2222', 0);
+  assert.equal(probe.sheens(), 1, 'the same span keeps it');
+});
+
+test('the sheen is drawn onto the suds canvas to cover it exactly: canvas y 0 and the span\'s height, with `top` applied once', () => {
+  const { host, cv } = spanned();
+  wash(host, { x: 100, y: 1800 }, { x: 200, y: 1800 }, true);
+  cv.drawn.length = 0;
+  tick(16);
+  /* The suds canvas is shifted by `-top * density`, so the sheen is drawn at box y `top` (canvas y 0 once shifted); the fake records
+     the shifted corner in canvas px and the size as given, in CSS px (the canvas's scale applies it). A `top` applied twice lands at 2 * top * density. */
+  const sheen = cv.drawn.filter((d) => d.w === 390);
+  assert.equal(sheen.length, 1, 'the sheen is drawn once');
+  assert.deepEqual(sheen[0], { x: 0, y: 0, w: 390, h: SPAN });
+  void host;
+});
+
+test('a remake of the sheen does not restart its fade: it is gone 3.5s after the wash, not after the remake', () => {
+  const { host, cv } = spanned();
+  wash(host, { x: 100, y: 2300 }, { x: 200, y: 2300 }, true);
+  tick(1500);
+  register(host, asCanvas(cv), { w: 390, h: 20000 }, 2, '#cc2222', TOP + 512);
+  assert.equal(probe.sheens(), 1, 'the remade sheen is held');
+  tick(1500);
+  assert.equal(probe.sheens(), 1, 'still held 3.0s after the wash');
+  /* 3.6s after the wash, but only 2.1s after the remake. */
+  cv.drawn.length = 0;
+  tick(600);
+  assert.equal(probe.sheens(), 0, 'let go');
+  assert.equal(cv.drawn.filter((d) => d.w === 390).length, 0, 'no longer drawn');
+});
+
+test('a re-register that changes the span\'s height carries the sheen at the ratio of the two scales: neither stretched nor squashed', () => {
+  const { host } = spanned();
+  wash(host, { x: 100, y: 2300 }, { x: 200, y: 2300 }, true);
+  const old = sheens()[0]!;
+  assert.equal(old.width, 780, 'the old sheen is at the screen\'s density, scale 2');
+  /* A 6000px span is 2.34M CSS px of sheen: past what `WET_PX` allows at density 2, so its scale is less than 2. */
+  const sc = Math.sqrt(4_000_000 / (390 * 6000));
+  assert.ok(sc < 2);
+  register(host, asCanvas(canvas(390 * 2, 6000 * 2)), { w: 390, h: 20000 }, 2, '#cc2222', TOP);
+  assert.equal(probe.sheens(), 1, 'the sheen is kept');
+  const fresh = sheens().at(-1)!;
+  assert.notEqual(fresh, old, 'remade for the new span');
+  assert.equal(fresh.width, Math.floor(390 * sc));
+  assert.equal(fresh.height, Math.floor(6000 * sc));
+  const carry = fresh.drawn[0]!;
+  assert.ok(carry, 'the old pixels were drawn across');
+  /* The old pixels are old px / 2 CSS px, times the new scale. */
+  assert.ok(Math.abs(carry.w - (old.width / 2) * sc) < 1e-6, `width ${carry.w}`);
+  assert.ok(Math.abs(carry.h - (old.height / 2) * sc) < 1e-6, `height ${carry.h}`);
+  assert.equal(carry.y, 0, 'the same top, so the same page position');
 });

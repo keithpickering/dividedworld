@@ -4,10 +4,11 @@
  * between them. An element not wholly inside it is scrolled so its top is at the clear area's top; one taller than the area gets the same, which is as
  * much of it as can be shown. One whose top is already there is left alone, so asking again does not jiggle the page.
  *
+ * The scroll is instant under every motion setting, and `'instant'` rather than `'auto'`, which would defer to a `scroll-behavior` the root might be given. A press
+ * while the page is still moving lands on whatever is under the pointer then, which may not be the post (owner's answer on issue #592, item 2).
+ *
  * Card-agnostic: a card's play on a post (play.tsx) and an instance's own draw mode both call it, once the screen that covers the edge is mounted.
  */
-import { motionReduced } from '../appearance.ts';
-
 /** How far from the clear area's top an element's top may be and still count as there, px. */
 const AT_TOP_PX = 2;
 
@@ -24,5 +25,5 @@ export function bringClear(el: Element): void {
   const rect = el.getBoundingClientRect();
   if (Math.abs(rect.top - top) <= AT_TOP_PX) return;
   if (rect.top >= top && rect.bottom <= bottom) return;
-  el.scrollIntoView({ block: 'start', behavior: motionReduced() ? 'auto' : 'smooth' });
+  el.scrollIntoView({ block: 'start', behavior: 'instant' });
 }

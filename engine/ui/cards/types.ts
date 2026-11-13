@@ -163,7 +163,11 @@ export type Written = { readonly text: string } | { readonly waiting: true } | {
 export interface EffectProps {
   /** The post, as every reader sees it now (its current words included). */
   readonly post: Act;
-  /** This card's plays on the post, ordered by layer, then by when they were played: one for most cards, up to the card's stack for the rest. */
+  /**
+   * This card's plays on the post, ordered by layer, then by when they were played: one for most cards, up to the card's stack for the rest. A card named by another's
+   * `CardUi.drawnBy` is also given that card's plays that fall on the post: they follow the card's own, and each carries its `reach` (a post's own plays carry none), which is how
+   * an effect tells a lent play from its own. Its saved state and its release are in `states` and `released` with the card's own plays'.
+   */
   readonly plays: readonly CardPlay[];
   /** What each play's effect has saved, by play: the post author's version, which every reader loads. A play that has saved none is absent. */
   readonly states: Readonly<Record<Id, EffectState>>;
@@ -303,17 +307,33 @@ export interface CardArt {
   readonly tagline?: string;
 }
 
+/** A pack's art: a card's, where the canvas is foil the engine crimps and prints on, or a picture of the whole pack on a transparent ground (specs/card-art.md). */
+export interface PackArtLook extends Omit<CardArt, 'canvas'> {
+  readonly canvas?: string;
+  /** The whole pack, 1080 by 1680 on a transparent ground: its outline is the pack's, and the engine prints only the count on it. */
+  readonly picture?: string;
+  /** The picture's relief, 540 by 840: which way the film faces, for the page's light. Only with `picture`. */
+  readonly relief?: string;
+}
+
 /**
  * A card whose play is made on the post itself (`CardUi.Compose`): mounted in the post's effect slot, innermost, where the card draws what it
  * plays. The engine knows nothing of what is drawn; it says when to open, lands the play and holds the ways out.
  */
 export interface ComposeProps {
   readonly post: Act;
-  /** The box of the post's words (`under`) as the slot measures it, in client px, with no layer's chrome in it; null before it is measured. A card whose drawing must match its effect's box (shares of the post body, which can be far taller than a one-line post's words) measures the post body itself (`under.closest('.kb-act-main')`) and takes this only as a fallback. */
+  /**
+   * The box of the post's words and any tail a card that writes draws after them (`under`) as the slot measures it, in client px,
+   * with no layer's chrome in it; null before it is measured. A card whose drawing must match its effect's box (shares of the
+   * post body, which can be far taller than a one-line post's words) measures the post body itself
+   * (`under.closest('.kb-act-main')`) and takes this only as a fallback.
+   */
   readonly box: { readonly w: number; readonly h: number } | null;
   /**
-   * The element directly around the post's words, inside every card's layer on the post: a card portals a preview into it to draw beneath the layers
-   * (a splat that will cover what is drawn). It is the same element for as long as the compose is open, whatever lands on the post; null where the page has no document.
+   * The element directly around the post's words and any tail a card that writes draws after them (that card's effect is drawn inside
+   * it), inside every other card's layer on the post: a card portals a preview into it to draw beneath the layers (a splat that will
+   * cover what is drawn). It is the same element for as long as the compose is open, whatever lands on the post; null where the page
+   * has no document.
    */
   readonly under: HTMLElement | null;
   /**
@@ -372,8 +392,17 @@ export interface CardUi {
   readonly summary?: string;
   /** The effect covers the post (the reader cannot read it as it stands), so the Lens leads with the card's controls. */
   readonly takeover?: boolean;
-  /** `PostEffects` nests this card's effect innermost, whatever its play order, under every card without it (a layer other cards' ink lies on); among several, play order holds. A takeover is still outermost. */
+  /**
+   * `nestOrder` nests this card's effect (a layer other cards' ink lies on) inside every card without it, whatever its play
+   * order, and outside only the cards that write (whose tail stays next to the words); among several, play order holds. A
+   * takeover is still outermost.
+   */
   readonly beneath?: true;
+  /**
+   * This card draws no effect of its own: its plays that fall on a post are handed to the named card's `Effect` on that post, after that card's own plays (`PostEffects`).
+   * The named card must have an `Effect`, this card must have none, and the named card must not itself name another (`instanceUiProblems`).
+   */
+  readonly drawnBy?: string;
   /** The card is played on the post itself: its ghost mark mounts this in the post's effect slot, innermost, instead of opening the play form. */
   readonly Compose?: ComponentType<ComposeProps>;
   /** One short line the Lens gives a reader who has not yet met the card's effect: the first-meet line. */

@@ -69,6 +69,10 @@ const announcement = (a: Row): Broadcast[] => {
   return told ? [...thread(told.thread), ...act(told.act)] : [];
 };
 
+/** A reply a play carried, on the play's thread: `{ parent, play, act }`, two ids and the reply's public projection. */
+const under = (card: Row, u: unknown): Broadcast[] =>
+  u && typeof u === 'object' && card.thread ? [{ topic: `thread:${card.thread}`, event: 'under', payload: u }] : [];
+
 /** The wall's count after a draw or a wash: `{ play, covered }` on its thread, never the strokes or who drew. */
 const surfaceHeard = (play: unknown, answer: Row | undefined, thread: unknown): Broadcast[] =>
   typeof play === 'string' && thread && answer && typeof answer.covered === 'number'
@@ -87,7 +91,9 @@ const surfaceHeard = (play: unknown, answer: Row | undefined, thread: unknown): 
 const BROADCASTS: Record<string, (answer: Row, args: Row) => Broadcast[]> = {
   post: (a) => withSprung(a, act(without(a, 'sprung'))),
   edit_post: (a) => act(a),
-  play_card: (a) => withSprung(a, [...act(without(a, 'sprung')), ...onReach(without(a, 'sprung'))]),
+  // A card that replies answers with its reply `under` its post (play_card, post_under): the card Act goes out without it, and the reply is heard as `under`,
+  // never as an `act` of its own, so no screen draws it at the thread's tail before it is drawn under its post.
+  play_card: (a) => { const card = without(without(a, 'sprung'), 'under'); return withSprung(a, [...act(card), ...onReach(card), ...under(card, a.under)]); },
   // An admin's end of a card: the card_end is an Act of the play's thread. For a play beyond a post the answer also names its `reach`
   // (reverse_card), and the end is heard on `reach` too, as the play was; neither the `play` nor the `reach` is sent on.
   reverse_card: (a) => {
@@ -186,8 +192,9 @@ export async function runAction(dbs: { player: Db; service: Db }, instance: Inst
       if (!read) return refused('target', `there is no such ${reach}`);
       const { effects: own, above = {}, ...said } = read;
       // A post is given to its card's rules with its visible words, read from its current body, and the version that body is.
-      const post = said as { act: string; kind: PostTarget['kind']; body?: unknown; version?: string };
-      const target = reach === 'post' ? postTarget(post.act, post.kind, post.body, post.version) : { ...said, reach } as CardTarget;
+      const post = said as { act: string; kind: PostTarget['kind']; body?: unknown; version?: string; under?: string };
+      // `under` is the post this one is drawn under, where it is a reply a play in force carried (card_target): a card that replies is refused there.
+      const target = reach === 'post' ? postTarget(post.act, post.kind, post.body, post.version, post.under) : { ...said, reach } as CardTarget;
       const effects = effectsOnTarget(target, own ?? [], above);
       const rules = instance.cards.find((c) => c.key === decision.args.card)!;
       // A surface card's first draw is the card's own to read; what it refuses is said on the drawing (`first`), not on the configuration.
