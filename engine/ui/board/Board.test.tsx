@@ -11,6 +11,7 @@ import { Frame } from '../frame/Frame.tsx';
 import { seedMoves } from './move-world.ts';
 import { testInstance } from '../test-world.tsx';
 import { LoadedBoard } from '../loaded.tsx';
+import { MAX_DEPTH } from '../../bbcode/parse.ts';
 
 const DAY = 86_400_000;
 const T0 = Date.UTC(2026, 9, 20, 12);
@@ -988,5 +989,33 @@ describe('a thread row\'s units and lines (list-rows plan, Task 1)', () => {
     expect(whens[0]!.querySelector('.kb-thread-sep')).not.toBeNull();
     expect(whens[0]!.querySelector('a.kb-thread-last-link')).not.toBeNull();
     expect(unit.querySelector('.kb-who')!.closest('.kb-thread-last-when')).toBeNull();
+  });
+});
+
+describe('the notice about quotes nested too deep, in the new-thread form', () => {
+  const NOTICE = 'Some quotes in this post are nested too deep to show. A note will take their place.';
+  const deep = (id: string) => `[quote=${id}]`.repeat(MAX_DEPTH + 1) + 'deep' + '[/quote]'.repeat(MAX_DEPTH + 1);
+
+  test('shows when the draft holds a cut, goes when it does not, and the thread still starts', async () => {
+    let spritey = '';
+    const { fake } = renderInWorld(<LoadedBoard slug="general" />, { settings: { postMaxLength: 2000 }, seed: (f) => { const w = world(f, { threads: 0 }); spritey = w.spritey; return w; } });
+    const form = await openForm();
+    await waitFor(() => expect(within(form).getByText('Pipewrench')).toBeInTheDocument());
+    const box = within(form).getByRole('textbox', { name: 'First post' });
+    await userEvent.type(within(form).getByRole('textbox', { name: 'Title' }), 'Deep');
+    expect(within(form).queryByText(NOTICE)).toBeNull();
+    await userEvent.click(box);
+    await userEvent.paste(deep(spritey));
+    const notice = await within(form).findByText(NOTICE);
+    expect(notice.closest('[role="status"]')).not.toBeNull();
+    await userEvent.clear(box);
+    await userEvent.paste('plain');
+    await waitFor(() => expect(within(form).queryByText(NOTICE)).toBeNull());
+    await userEvent.clear(box);
+    await userEvent.paste(deep(spritey));
+    await within(form).findByText(NOTICE);
+    const started = vi.spyOn(fake, 'startThread');
+    await userEvent.click(within(form).getByRole('button', { name: 'Start thread' }));
+    await waitFor(() => expect(started).toHaveBeenCalledTimes(1));
   });
 });

@@ -6,10 +6,11 @@
  */
 import { render } from '@testing-library/react';
 import type { ReactElement } from 'react';
+import { landsOn, ok, type CardRules } from '../rules/cards.ts';
 import type { Instance, Settings } from '../rules/types.ts';
 import { KayfaProvider, type Kayfa } from './context.tsx';
 import { createFake, type Fake } from './data/fake.ts';
-import type { Boot, ScreenSettings } from './data/api.ts';
+import type { Boot, ScreenSettings, ThreadListener } from './data/api.ts';
 import { BootProvider } from './boot.tsx';
 import { PlayerProvider } from './player.tsx';
 import { ACTION_TIPS, TIP_KEYS } from './tips/keys.ts';
@@ -58,6 +59,11 @@ export const testInstance: Instance = {
   pipStyles: [{ key: 'default', name: 'Default', full: 'f.svg', empty: 'e.svg' }],
   groups: testGroups,
 };
+
+/** A card that carries a reply (`CardRules.replies`): cast on a post, face up, with the words of a post written under it. Its key names no instance's. */
+export const testCutter: CardRules = { key: 'cutter', name: 'Cutter', alignment: 'pepperoni', rarity: 'rare', replies: true, playPrice: () => 0, validateConfig: (c) => ok(c ?? {}), canApply: (t, e, _c, now) => landsOn(testCutter, t, e, now) };
+/** A card that keeps (`CardRules.keeps`): one play on a thread for a week, which stays on every post written in the thread while it was up. Its key names no instance's. */
+export const testKeeper: CardRules = { key: 'keeper', name: 'Keeper', alignment: 'sweet', rarity: 'rare', reaches: ['thread'], lasts: { unit: 'day', count: 7 }, keeps: true, playPrice: () => 0, validateConfig: (c) => ok(c ?? {}), canApply: (t, e, _c, now) => landsOn(testKeeper, t, e, now) };
 
 /**
  * A glass with one plain recipe for every surface, so a screen that draws smoke (the HUD, a glass
@@ -167,6 +173,32 @@ export function buildWorld(settingsOverride?: Partial<ScreenSettings>, instance:
 }
 
 /** Render a screen on a backend made by `buildWorld`. */
+/**
+ * Captures the thread screen's live listener, so a test can deliver events as the server would, twice or out of order. The screen
+ * subscribes in a passive effect, which can run after the post a test waited for has already been committed (React defers a passive
+ * effect from a commit made outside `act`, as one made while `findBy…` polls is). So the listener it hands back is a stand-in: an
+ * event delivered before the screen has subscribed waits for it and is delivered then, never dropped and never thrown on. Each event
+ * goes to the latest listener subscribed.
+ */
+export function tapThread(fake: Fake): () => ThreadListener {
+  let listener: ThreadListener | undefined;
+  const waiting: ((l: ThreadListener) => void)[] = [];
+  const real = fake.subscribeThread.bind(fake);
+  fake.subscribeThread = (t, l) => {
+    listener = l;
+    const off = real(t, l);
+    for (const call of waiting.splice(0)) call(l);
+    return off;
+  };
+  const proxy: ThreadListener = {
+    onAct: (a) => (listener ? listener.onAct?.(a) : void waiting.push((l) => l.onAct?.(a))),
+    onTally: (act, t) => (listener ? listener.onTally?.(act, t) : void waiting.push((l) => l.onTally?.(act, t))),
+    onEffect: (p, at) => (listener ? listener.onEffect?.(p, at) : void waiting.push((l) => l.onEffect?.(p, at))),
+    onUnder: (parent, play, a) => (listener ? listener.onUnder?.(parent, play, a) : void waiting.push((l) => l.onUnder?.(parent, play, a))),
+  };
+  return () => proxy;
+}
+
 export function renderIn(fake: Fake, element: ReactElement, options: WorldOptions = {}) {
   window.history.replaceState(options.state ?? null, '', options.path ?? '/');
   const kayfa: Kayfa = { api: fake, instance: options.instance ?? testInstance, ui: options.glass || options.cards || options.packs || options.classLooks || options.avatars || options.guide || options.conduct || options.copy || options.cardBack || options.sounds ? { ...ui, ...(options.copy ? { copy: { ...ui.copy, ...options.copy } } : {}), ...(options.glass ? { glass: options.glass } : {}), ...(options.cards ? { cards: options.cards } : {}), ...(options.packs ? { packs: options.packs } : {}), ...(options.classLooks ? { classLooks: options.classLooks } : {}), ...(options.avatars ? { avatars: options.avatars } : {}), ...(options.guide ? { guide: options.guide } : {}), ...(options.conduct ? { conduct: options.conduct } : {}), ...(options.cardBack ? { cardBack: options.cardBack } : {}), ...(options.sounds ? { sounds: options.sounds } : {}) } : ui, settings: { ...settings, groups: screenGroups, ...options.settings } as unknown as ScreenSettings, ...(options.random ? { random: options.random } : {}) };

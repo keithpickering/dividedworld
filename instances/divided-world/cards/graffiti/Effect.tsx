@@ -54,6 +54,9 @@ const BATCH = { strokes: 120, points: 300, total: 3000 } as const;
 const MIN_STEP_PX = 5;
 /** Where along a line, and how many places, the line is tested for paint; and the probes of a band, in rows of height from its middle. */
 const SPAN_SAMPLES = 64;
+/** The wall's sweep keeps its pace as a share of the wall's width a second. Whoops!'s moved to a hand's pace in px
+ *  (docs/plans/2026-11-12-whoops-followups-design.md, section 4), which was weighed for a splat and not for a wall. */
+const SWEEP_SPEED = 0.55;
 
 const HOLD_HELP = 'Hold Space or Enter on this button to scrub the wall away line by line, at the pace of a hand, on your screen only. Let go to stop. It never clears the wall all at once.';
 const WASH_HELP = 'Hold Space or Enter on this button to wash the wall line by line, at the pace of a hand, for everyone. Let go to stop. It never clears the wall all at once.';
@@ -690,7 +693,7 @@ export function Effect({ plays, reader, surface, ink: registry, place, show, met
         }
         return lo <= hi ? [lo, hi] : null;
       };
-      const step = sweepStep(rows, run.sweep, dt, span);
+      const step = sweepStep(rows, run.sweep, dt, SWEEP_SPEED, span);
       if (step.idle) {
         stopSweep();
         return;

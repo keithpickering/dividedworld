@@ -83,9 +83,26 @@ export function instanceUiProblems(ui: Pick<InstanceUi, 'onboarding' | 'copy' | 
   out.push(...classLookProblems(ui.classLooks, instance));
   /* The Lens's heading for a card with no live view: a short status, never a sentence (cards/lens-words.ts). */
   for (const card of ui.cards ?? []) {
+    out.push(...drawnByProblems(card, ui.cards ?? []));
     if (card.status === undefined) out.push(`the card "${card.key}" has no status, so its Lens heading would be a sentence`);
     else for (const words of statusWords(card.status, instance.cards?.find((c) => c.key === card.key)?.stack ?? 1)) out.push(...wordsProblems('status', words).map((p) => `the card "${card.key}": ${p}`));
   }
+  return out;
+}
+
+/**
+ * A card that is drawn by another (`CardUi.drawnBy`) hands its plays to that card's `Effect`, so it names a card that has one, draws none of its own, and the
+ * card it names is not itself drawn by a third: three faults, each naming the card.
+ */
+function drawnByProblems(card: CardUi, cards: readonly CardUi[]): string[] {
+  if (card.drawnBy === undefined) return [];
+  const out: string[] = [];
+  const who = `the card "${card.key}"`;
+  if (card.Effect !== undefined) out.push(`${who} has both drawnBy and an Effect; a card is drawn by another or draws itself, never both`);
+  const named = cards.find((c) => c.key === card.drawnBy);
+  if (named === undefined) out.push(`${who} is drawnBy "${card.drawnBy}", which has no CardUi`);
+  else if (named.drawnBy !== undefined) out.push(`${who} is drawnBy "${card.drawnBy}", which is itself drawn by "${named.drawnBy}"; a chain is refused`);
+  else if (named.Effect === undefined) out.push(`${who} is drawnBy "${card.drawnBy}", which has no Effect to draw it`);
   return out;
 }
 

@@ -4532,3 +4532,311 @@ describe('a no-quote on a post, and a cast card that carries an earn', () => {
     expect(await fake.playCard('glow', anaFace, boFace, {}, '', 'character', theirs)).toEqual(refused('this character already carries that card', 'config'));
   });
 });
+
+describe('a card that replies, and a play that keeps (0348_post_under.sql and the thread page after it)', () => {
+  const base = { playPrice: () => 0, validateConfig: (c: unknown) => ok(c ?? {}) };
+  const cutter: CardRules = { ...base, key: 'line-cutter', name: 'Line Cutter', alignment: 'pepperoni', rarity: 'rare', replies: true, canApply: (t, e, _c, now) => landsOn(cutter, t, e, now) };
+  const glam: CardRules = { ...base, key: 'feelin-glam', name: "Feelin' Glam", alignment: 'sweet', rarity: 'rare', reaches: ['thread'], lasts: { unit: 'day', count: 7 }, keeps: true, canApply: (t, e, _c, now) => landsOn(glam, t, e, now) };
+  /** A thread card that does not keep: once it has worn off it is not asked of any post. */
+  const glint: CardRules = { ...base, key: 'glint', name: 'Glint', alignment: 'sweet', rarity: 'rare', reaches: ['thread'], lasts: { unit: 'day', count: 7 }, canApply: (t, e, _c, now) => landsOn(glint, t, e, now) };
+  const plain: CardRules = { ...base, key: 'plain', name: 'Plain', alignment: 'salty', rarity: 'common', canApply: (t, e, _c, now) => landsOn(plain, t, e, now) };
+  const snare: CardRules = { ...base, key: 'snare', name: 'Snare', alignment: 'salty', rarity: 'rare', play: 'set', trap: { trigger: { on: 'cast' } }, catches: () => 'line-cutter', canApply: () => ok(undefined) };
+  /** A back with an outcome rides: the cast it names lands as usual, and the spring says it rode (spring_traps, 0151). */
+  const rider: CardRules = { ...base, key: 'rider', name: 'Rider', alignment: 'salty', rarity: 'rare', play: 'set', trap: { trigger: { on: 'cast' }, outcome: { kind: 'ride', share: 1 } }, catches: () => 'line-cutter', validateConfig: (c: unknown) => ok(c ?? {}), canApply: () => ok(undefined) };
+  const replying: Instance = { ...instance, cards: [cutter, glam, glint, plain, snare, rider], settings: { ...settings, postMaxLength: 50, economy: {} } };
+
+  /** A thread of `count` posts by Bo and Ana in turn (the first is Bo's), Ana signed in with three Line Cutters, a Plain and a Glam; Bo holds a Snare; `root` is an admin. */
+  function replyWorld(count = 45) {
+    const fake = createFake({ instance: replying });
+    const ana = fake.seed.account('ana');
+    const bo = fake.seed.account('bo');
+    const root = fake.seed.account('root');
+    fake.seed.admin(root);
+    const anaFace = fake.seed.character(ana, 'Ana Face', 'face');
+    const boFace = fake.seed.character(bo, 'Bo Face', 'face');
+    const { thread, act: opener } = fake.seed.thread('general', boFace, 'Long', 'p1');
+    const ids = [opener];
+    for (let i = 2; i <= count; i++) ids.push(fake.seed.post(thread, i % 2 ? boFace : anaFace, `p${i}`));
+    fake.seed.cards(ana, { 'line-cutter': 3, plain: 2, 'feelin-glam': 1 });
+    fake.seed.cards(bo, { snare: 1, rider: 1 });
+    fake.signInAs(ana);
+    const reply = (parent: Id, body = 'Excuse me.', framing?: readonly Id[]) => fake.playCard('line-cutter', anaFace, parent, {}, '', undefined, undefined, undefined, { body, ...(framing ? { framing } : {}) });
+    return { fake, ana, bo, root, anaFace, boFace, thread, ids, reply };
+  }
+  type Id = string;
+  const seqs = (page: { acts: readonly Act[] } | null) => page!.acts.map((a) => a.seq);
+  const range = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, i) => from + i);
+
+  test('a play writes its reply with a number of its own, draws it under its parent on the parent\'s page, and leaves its number empty on its own', async () => {
+    const w = replyWorld();
+    const played = must(await w.reply(w.ids[2]!));
+    expect(played).toMatchObject({ kind: 'card', character: w.anaFace, targetActId: w.ids[2], seq: null, payload: { card: 'line-cutter', layer: 1, reply: expect.any(String) } });
+    const reply = (await w.fake.act(played.payload.reply as string))!;
+    expect(reply).toMatchObject({ kind: 'post', seq: 46, character: w.anaFace, targetActId: null, payload: { body: 'Excuse me.' } });
+    expect(await w.fake.thread(w.thread)).toMatchObject({ lastSeq: 46, replies: 45 });
+    expect(await w.fake.myCards()).toContainEqual({ card: 'line-cutter', held: 2 });
+    const first = (await w.fake.threadPage(w.thread, { page: 1 }, 20, []))!;
+    expect(seqs(first)).toEqual(range(1, 20));
+    expect(first.under).toEqual([{ parent: w.ids[2], play: played.id, act: reply }]);
+    expect(first.cut).toEqual([]);
+    /* The reply's own marks come with the page: its tally and its author. */
+    expect(Object.keys(first.tallies)).toContain(reply.id);
+    const last = (await w.fake.threadPage(w.thread, { page: 3 }, 20, []))!;
+    expect(seqs(last)).toEqual(range(41, 45));
+    expect(last.under).toEqual([]);
+    expect(last.cut).toEqual([{ seq: 46, parentSeq: 3 }]);
+    expect(last.page).toBe(3);
+    /* A number inside the gap reads the page its number falls on, as the database's does. */
+    const addressed = (await w.fake.threadPage(w.thread, { seq: 46 }, 20, []))!;
+    expect(addressed.page).toBe(3);
+    expect(addressed).toEqual(last);
+    /* The reply was not heard as an Act of the thread's tail: it is still read by its number (acts and act are not the page). */
+    expect((await w.fake.acts(w.thread, 46, 46)).map((a) => a.id)).toEqual([reply.id]);
+  });
+
+  test('a card of its own on a nested reply is among the page\'s plays', async () => {
+    const w = replyWorld();
+    const played = must(await w.reply(w.ids[2]!));
+    const reply = played.payload.reply as string;
+    const onReply = must(await w.fake.playCard('plain', w.anaFace, reply, {}, ''));
+    expect((await w.fake.threadPage(w.thread, { page: 1 }, 20, []))!.plays.map((p) => p.id)).toContain(onReply.id);
+  });
+
+  test('an admin\'s end of the play un-nests the reply: it is on its number again', async () => {
+    const w = replyWorld();
+    const played = must(await w.reply(w.ids[2]!));
+    w.fake.signInAs(w.root);
+    must(await w.fake.reverseCard(played.id));
+    const first = (await w.fake.threadPage(w.thread, { page: 1 }, 20, []))!;
+    expect(first.under).toEqual([]);
+    const last = (await w.fake.threadPage(w.thread, { page: 3 }, 20, []))!;
+    expect(seqs(last)).toEqual(range(41, 46));
+    expect(last.cut).toEqual([]);
+    /* The parent and the old reply take a play again: one fits under a post only while it is in force. */
+    w.fake.signInAs(w.ana);
+    const again = must(await w.reply(w.ids[2]!, 'Again.'));
+    expect(again.payload.layer).toBe(2);
+    const reply = again.payload.reply as string;
+    expect(await w.fake.playCard('line-cutter', w.anaFace, played.payload.reply as string, {}, '', undefined, undefined, undefined, { body: 'Under the old one.' })).toMatchObject({ ok: true });
+    expect(reply).not.toBe(played.payload.reply);
+  });
+
+  test('a refused play writes nothing and spends nothing, in the words of the database and the act function', async () => {
+    const w = replyWorld();
+    const held = async () => (await w.fake.myCards()).find((c) => c.card === 'line-cutter')?.held;
+    const before = { last: (await w.fake.thread(w.thread))!.lastSeq, held: await held(), wallet: await w.fake.wallet() };
+    const play = (body: string | undefined, card = 'line-cutter', target = w.ids[2]!) => w.fake.playCard(card, w.anaFace, target, {}, '', undefined, undefined, undefined, body === undefined ? undefined : { body });
+    /* A play with no reply is refused in the card's own words (e8cb9431). */
+    expect(await w.fake.playCard('line-cutter', w.anaFace, w.ids[2]!, {}, '')).toEqual(refused('write the reply this card carries', 'body'));
+    expect(await play('   ')).toEqual(refused('write the reply this card carries', 'body'));
+    expect(await play('!!!')).toEqual(refused('write the reply this card carries', 'body'));
+    expect(await play('x'.repeat(51))).toEqual(refused('is longer than 50 characters', 'body'));
+    expect(await play('Hi.', 'plain')).toEqual(refused('only a card that carries a reply takes one', 'body'));
+    expect(await w.fake.playCard('line-cutter', w.anaFace, w.ids[2]!, {}, '', 'thread', undefined, undefined, { body: 'Hi.' })).toEqual(refused('this card lands on a post', 'reach'));
+    expect(await w.fake.playCard('line-cutter', w.boFace, w.ids[2]!, {}, '', undefined, undefined, undefined, { body: 'Hi.' })).toEqual(refused('you do not play that character'));
+    const until = w.fake.clock.now() + 24 * 3_600_000;
+    w.fake.seed.ban(w.anaFace, until, { infraction: w.fake.seed.infraction(w.fake.seed.visit(w.fake.seed.staff('mod', 'Mod Bot', 'mod'), w.ids[0]!)) });
+    expect(await play('Hi.')).toEqual(refused(`this character is banned until ${new Date(until).toISOString()}; the ban ends by itself then`));
+    w.fake.clock.advance(2 * DAY);
+    const system = fake0System(w);
+    expect(await play('Hi.', 'line-cutter', system)).toEqual(refused('only the staff post here; spin a thread from what they said'));
+    expect({ last: (await w.fake.thread(w.thread))!.lastSeq, held: await held(), wallet: await w.fake.wallet() }).toEqual(before);
+    expect((await w.fake.act(w.ids[2]!))).not.toBeNull();
+    /* One fits under a post, and a reply in force takes none under it. */
+    const landed = must(await play('Hi.'));
+    expect(await play('Again.')).toEqual(refused('this post already carries that card', 'config'));
+    expect(await play('Under it.', 'line-cutter', (await w.fake.threadPage(w.thread, { page: 1 }, 20, []))!.under[0]!.act.id)).toEqual(refused('a reply drawn under a post takes no reply under it', 'config'));
+    expect(landed.payload.layer).toBe(1);
+    expect((await w.fake.thread(w.thread))!.lastSeq).toBe(before.last + 1);
+    expect(await held()).toBe(before.held! - 1);
+  });
+
+  test('a banned caster with a bad body is refused in the stack\'s order: the body\'s shape (act function), then the ban (play_card\'s not_banned), then the letter-or-digit refusal', async () => {
+    const w = replyWorld();
+    const until = w.fake.clock.now() + 24 * 3_600_000;
+    w.fake.seed.ban(w.anaFace, until, { infraction: w.fake.seed.infraction(w.fake.seed.visit(w.fake.seed.staff('mod', 'Mod Bot', 'mod'), w.ids[0]!)) });
+    const banned = refused(`this character is banned until ${new Date(until).toISOString()}; the ban ends by itself then`);
+    const play = (body: string) => w.fake.playCard('line-cutter', w.anaFace, w.ids[2]!, {}, '', undefined, undefined, undefined, { body });
+    /* A body that is not text, empty or too long is the act function's, before any database check. */
+    /* A play with no reply is refused in the card's own words (e8cb9431). */
+    expect(await w.fake.playCard('line-cutter', w.anaFace, w.ids[2]!, {}, '')).toEqual(refused('write the reply this card carries', 'body'));
+    expect(await play('   ')).toEqual(refused('write the reply this card carries', 'body'));
+    expect(await play('x'.repeat(51))).toEqual(refused('is longer than 50 characters', 'body'));
+    /* A body with no letter or digit is the database's, after the ban: the ban wins. */
+    expect(await play('!!!')).toEqual(banned);
+    expect(await play('Hi.')).toEqual(banned);
+  });
+
+  test('a cast that a ride back lets land writes its reply, nested, and hears it as `under`', async () => {
+    const w = replyWorld();
+    w.fake.signInAs(w.bo);
+    must(await w.fake.setCard('rider', w.boFace, w.ids[0]!, { quadrant: 'excitedPositive' }));
+    w.fake.signInAs(w.ana);
+    const heard: string[] = [];
+    /* The broadcast's own delivery is what is counted here; the answer's echo has its own test. */
+    w.fake.broadcast.echoAnswers(false);
+    w.fake.subscribeThread(w.thread, { onUnder: (parent, play) => heard.push(`under ${parent === w.ids[0]} ${play}`) });
+    const played = must(await w.reply(w.ids[0]!));
+    await flush();
+    expect(played.payload).toMatchObject({ rode: expect.any(String), reply: expect.any(String) });
+    expect(played.payload.caught).toBeUndefined();
+    const reply = (await w.fake.act(played.payload.reply as string))!;
+    expect(reply).toMatchObject({ kind: 'post', seq: 46, payload: { body: 'Excuse me.' } });
+    expect(heard).toEqual([`under true ${played.id}`]);
+    const page = (await w.fake.threadPage(w.thread, { page: 1 }, 20, []))!;
+    expect(page.under).toEqual([{ parent: w.ids[0], play: played.id, act: reply }]);
+    expect((await w.fake.threadPage(w.thread, { page: 3 }, 20, []))!.cut).toEqual([{ seq: 46, parentSeq: 1 }]);
+    /* A reply carried by a card that cannot write has no end of its own to fail: only an admin's end (above) or the play's reversal un-nests it, as an untaken play is a writing card's alone. */
+  });
+
+  /** A post of The System's own board: the announcements thread's, where no card's reply may be written. */
+  function fake0System(w: ReturnType<typeof replyWorld>): Id {
+    const made = w.fake.seed.thread('announcements', null, 'Promos', 'The System speaks.', { kind: 'post' });
+    return made.act;
+  }
+
+  test('a cast that is caught writes the caught card Act and no reply, and its payload still names the id no post has', async () => {
+    const w = replyWorld();
+    w.fake.signInAs(w.bo);
+    must(await w.fake.setCard('snare', w.boFace, w.ids[0]!, {}));
+    w.fake.signInAs(w.ana);
+    const played = must(await w.reply(w.ids[0]!));
+    expect(played.payload).toMatchObject({ caught: expect.any(String), reply: expect.any(String) });
+    expect(await w.fake.act(played.payload.reply as string)).toBeNull();
+    expect(await w.fake.thread(w.thread)).toMatchObject({ lastSeq: 45 });
+    const page = (await w.fake.threadPage(w.thread, { page: 1 }, 20, []))!;
+    expect(page.under).toEqual([]);
+    expect((await w.fake.threadPage(w.thread, { page: 3 }, 20, []))!.cut).toEqual([]);
+  });
+
+  test('the reply is heard as `under` on the thread, after its card and never as an act', async () => {
+    const w = replyWorld();
+    const heard: string[] = [];
+    let under: [string, string, Act] | null = null;
+    w.fake.broadcast.echoAnswers(false);
+    w.fake.subscribeThread(w.thread, {
+      onAct: (a) => heard.push(`act ${a.kind} ${a.seq}`),
+      onUnder: (parent, play, act) => { heard.push('under'); under = [parent, play, act]; },
+    });
+    const played = must(await w.reply(w.ids[2]!, 'Excuse me.', []));
+    await flush();
+    const reply = (await w.fake.act(played.payload.reply as string))!;
+    expect(heard).toEqual(['act card null', 'under']);
+    expect(under).toEqual([w.ids[2], played.id, reply]);
+    /* The card's alert goes to its owner on their own channel; the thread hears the card, then the reply as `under`, and no act of the reply. */
+    expect(w.fake.broadcast.log.filter((e) => e.topic.startsWith('thread:'))).toEqual([{ topic: `thread:${w.thread}`, event: 'act' }, { topic: `thread:${w.thread}`, event: 'under' }]);
+  });
+
+  test('the answer of a play that replied hands the reply to the thread\'s listeners itself: with the broadcast held it is still heard, once, and a lost answer hands nothing', async () => {
+    const w = replyWorld();
+    const heard: string[] = [];
+    w.fake.subscribeThread(w.thread, { onUnder: (parent, play) => heard.push(`${parent === w.ids[2]} ${play}`) });
+    w.fake.broadcast.hold();
+    const played = must(await w.reply(w.ids[2]!, 'Excuse me.', []));
+    await flush();
+    expect(heard).toEqual([`true ${played.id}`]);
+    /* The held broadcast then comes: the same reply again, which a screen ignores. */
+    w.fake.broadcast.flush();
+    await flush();
+    expect(heard).toEqual([`true ${played.id}`, `true ${played.id}`]);
+    heard.length = 0;
+    w.fake.broadcast.hold();
+    w.fake.seed.loseNextAnswer(true);
+    const lost = await w.reply(w.ids[3]!, 'Excuse me again.', []);
+    expect(lost.ok).toBe(false);
+    await flush();
+    expect(heard).toEqual([]);
+  });
+
+  describe('a play that keeps its level', () => {
+    const day = DAY;
+    /** A thread whose posts are dated by `days` ago, a Glam played from `from` to `to` days ago. */
+    function keptWorld(dates: readonly number[], window: readonly [number, number], card = 'feelin-glam') {
+      const fake = createFake({ instance: replying });
+      const ana = fake.seed.account('ana');
+      const root = fake.seed.account('root');
+      fake.seed.admin(root);
+      const anaFace = fake.seed.character(ana, 'Ana Face', 'face');
+      const now = fake.clock.now();
+      const opened = fake.seed.thread('general', anaFace, 'Dated', 'first', { at: now - dates[0]! * day });
+      const posts = [opened.act, ...dates.slice(1).map((d, i) => fake.seed.post(opened.thread, anaFace, `p${i + 2}`, { at: now - d * day }))];
+      const play = fake.seed.reach(anaFace, 'thread', opened.thread, card, { at: now - window[0] * day, ends: now - window[1] * day });
+      fake.signInAs(ana);
+      return { fake, ana, root, anaFace, thread: opened.thread, posts, play, now };
+    }
+    const pageOf = async (w: ReturnType<typeof keptWorld>, page: number) => (await w.fake.threadPage(w.thread, { page }, 1, []))!;
+
+    test('is listed on a page that holds a post written inside its window, and on none whose posts are all outside it', async () => {
+      /* Posts 20, 5 and 1 days old; the play ran from 10 to 3 days ago. */
+      const w = keptWorld([20, 5, 1], [10, 3]);
+      expect((await pageOf(w, 1)).kept).toEqual([]);
+      const inside = await pageOf(w, 2);
+      expect(inside.kept).toEqual([{ play: w.play, reach: 'thread', target: w.thread, endsAt: new Date(w.now - 3 * day).toISOString(), act: (await w.fake.act(w.play))! }]);
+      expect((await pageOf(w, 3)).kept).toEqual([]);
+      /* The play's own tally and caster come with the page. */
+      expect(Object.keys(inside.tallies)).toContain(w.play);
+      expect(inside.people.map((p) => p.character.id)).toContain(w.anaFace);
+      /* A page of all three holds one inside, and the date is the window's: its first moment is in, its end is out. */
+      expect((await w.fake.threadPage(w.thread, { page: 1 }, 3, []))!.kept.map((k) => k.play)).toEqual([w.play]);
+    });
+
+    test('a post dated exactly at the play\'s start is kept, and one dated exactly at its end is not', async () => {
+      const at = keptWorld([10], [10, 3]);
+      expect((await pageOf(at, 1)).kept.map((k) => k.play)).toEqual([at.play]);
+      const end = keptWorld([3], [10, 3]);
+      expect((await pageOf(end, 1)).kept).toEqual([]);
+    });
+
+    test('counts a nested reply\'s date, not only the numbered posts\'', async () => {
+      const fake = createFake({ instance: replying });
+      const ana = fake.seed.account('ana');
+      const anaFace = fake.seed.character(ana, 'Ana Face', 'face');
+      const now = fake.clock.now();
+      const opened = fake.seed.thread('general', anaFace, 'Nested', 'first', { at: now - 20 * day });
+      fake.seed.cards(ana, { 'line-cutter': 1 });
+      fake.signInAs(ana);
+      const played = must(await fake.playCard('line-cutter', anaFace, opened.act, {}, '', undefined, undefined, undefined, { body: 'In the window.' }));
+      expect(played.payload.reply).toEqual(expect.any(String));
+      const play = fake.seed.reach(anaFace, 'thread', opened.thread, 'feelin-glam', { at: now - day, ends: now + day });
+      fake.clock.advance(2 * day);
+      /* One post on the page (the opener, dated outside), and the reply nested under it dated inside the window. */
+      const page = (await fake.threadPage(opened.thread, { page: 1 }, 1, []))!;
+      expect(seqs(page)).toEqual([1]);
+      expect(page.under).toHaveLength(1);
+      expect(page.kept.map((k) => k.play)).toEqual([play]);
+    });
+
+    test('a live play is above the page and not kept; an admin-ended one is in neither', async () => {
+      const live = keptWorld([20, 5], [1, -1]);
+      const page = await pageOf(live, 2);
+      expect(page.above.map((a) => a.play)).toEqual([live.play]);
+      expect(page.kept).toEqual([]);
+      const ended = keptWorld([20, 5], [10, 3]);
+      ended.fake.signInAs(ended.root);
+      must(await ended.fake.reverseCard(ended.play));
+      const after = await pageOf(ended, 2);
+      expect(after.above).toEqual([]);
+      expect(after.kept).toEqual([]);
+    });
+
+    test('a worn-off play of a card that keeps can still be ended by an admin, and one of any other card is refused as it was', async () => {
+      const kept = keptWorld([5], [10, 3]);
+      expect(await kept.fake.reverseCard(kept.play)).toEqual(refused('only an admin ends a card'));
+      kept.fake.signInAs(kept.root);
+      expect(await kept.fake.reverseCard(kept.play)).toMatchObject({ ok: true });
+      expect(await kept.fake.reverseCard(kept.play)).toEqual(refused('an admin has already ended that card'));
+      const other = keptWorld([5], [10, 3], 'glint');
+      other.fake.signInAs(other.root);
+      expect(await other.fake.reverseCard(other.play)).toEqual(refused('that card has already worn off'));
+      expect((await pageOf(other, 1)).kept).toEqual([]);
+    });
+
+    test('lists at most 100 plays, oldest first', async () => {
+      const w = keptWorld([5], [10, 3]);
+      for (let i = 0; i < 100; i++) w.fake.seed.reach(w.anaFace, 'thread', w.thread, 'feelin-glam', { at: w.now - (9 - i / 100) * day, ends: w.now - 3 * day });
+      const kept = (await pageOf(w, 1)).kept;
+      expect(kept).toHaveLength(100);
+      expect(kept[0]!.play).toBe(w.play);
+    });
+  });
+});

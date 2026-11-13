@@ -7,7 +7,7 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { viewProblems, wordsProblems, sprungWords, shortQuote, readCaughtFate, STATUS_MAX_WORDS } from './lens-words.ts';
 import type { CardView } from './types.ts';
-import { caughtWords } from './marks.ts';
+import { caughtWords, endsWords, keptEndedWords } from './marks.ts';
 
 const view = (over: Partial<CardView> = {}): CardView => ({ progress: null, state: 'Holding you on this post', yours: false, controls: [], notes: {}, ...over });
 
@@ -126,5 +126,16 @@ describe('readCaughtFate: where a caught play\'s card went, for the Lens', () =>
   });
   test('a spring written before has no did: the card was spent', async () => {
     assert.deepEqual(await readCaughtFate(api(spring({ outcome: { do: 'payout' } }), false), 'sp'), {});
+  });
+});
+
+describe('the way out of a card that keeps, once its time is up', () => {
+  const ends = '2026-11-08T12:00:00.000Z';
+  test('says it ended, and that posts written while it was up keep it, with the date as a live end says it', () => {
+    assert.equal(keptEndedWords(ends), `${endsWords(ends).replace(/^Ends /u, 'Ended ')}. Posts written while it was up keep it.`);
+    assert.match(keptEndedWords(ends), /^Ended .+\. Posts written while it was up keep it\.$/u);
+  });
+  test('passes the Lens word rules as the ends of a view that covers the post, beside a short state', () => {
+    assert.deepEqual(viewProblems(view({ state: 'Lifting every post', ends: keptEndedWords(ends) }), { holds: false, covers: true }), []);
   });
 });
