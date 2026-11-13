@@ -35,7 +35,7 @@ import type { LensForm } from './Forms.tsx';
 import { VisitMark } from './Visit.tsx';
 import { VISIT_KIND } from './visit.ts';
 import { MARKS_NARROW, MARKS_WIDE, backWords, kindsOf, markName, moreName, sumOf } from './marks.ts';
-import { inPlayOrder, isBack, markedPlays, shownPlays, usePlays, type Plays } from './plays.ts';
+import { inPlayOrder, isBack, keepingKeys, markedPlays, shownPlays, usePlays, type Plays } from './plays.ts';
 import type { CardPlay } from './types.ts';
 import '../glass/meta-tile.css';
 /* The back's cloud is postcard.css's, which marks.css draws over, so it loads first. */
@@ -227,7 +227,7 @@ export function MarkStrip({ post, plays, tallies, onOpen, open = null, ghost, re
   const { api, instance } = useKayfa();
   /* A play beyond a post goes at its end, by itself: no reread (its way out). */
   const now = useUntil(here.billed);
-  const billed = useMemo(() => markedPlays(shownPlays(here.billed, api.now()), now), [here.billed, now, api]);
+  const billed = useMemo(() => markedPlays(shownPlays(here.billed, api.now()), now, keepingKeys(instance.cards)), [here.billed, now, api, instance.cards]);
   const byKind = useKindPlays(billed);
   /* `onOpen` may be a new function every render of the post; the marks are given one that is not. */
   const latest = useRef(onOpen);

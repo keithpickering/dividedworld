@@ -1,5 +1,6 @@
 /**
- * The build worker's entry (ink-field design, section 5): the page starts it with
+ * The build worker's entry (docs/plans/2026-11-12-whoops-ink-field-design.md, section 5, and
+ * docs/plans/2026-11-12-whoops-followups-design.md, section 2; a build is one band's): the page starts it with
  * `new Worker(new URL('./buildWorker.ts', import.meta.url), { type: 'module' })` (buildClient.ts) and Vite bundles it as a
  * same-origin script. It answers each `build` message with `buildLayer`'s result, its three buffers transferred.
  */
@@ -15,14 +16,14 @@ export interface BuildScope {
   postMessage(message: FromBuild, transfer?: Transferable[]): void;
 }
 
-/** Answer builds on `scope`. A build that throws is answered `failed`, so the page is never left waiting. */
-export function serveBuilds(scope: BuildScope): void {
+/** Answer builds on `scope`, each timed by `now` (`performance.now` by default). A build that throws is answered `failed`, so the page is never left waiting. */
+export function serveBuilds(scope: BuildScope, now?: () => number): void {
   scope.onmessage = (e) => {
     const m = e?.data as Partial<ToBuild> | null | undefined;
     const id = typeof m?.id === 'number' ? m.id : undefined;
     try {
       if (!m || m.kind !== 'build' || id === undefined || !m.input) throw new Error('a malformed build message');
-      const built = buildLayer(m.input);
+      const built = buildLayer(m.input, now);
       scope.postMessage({ kind: 'built', id, built }, [built.field.buffer, built.washed.buffer, built.image.data.buffer]);
     } catch (err) {
       /* A message with no id has nobody waiting on it: ignored. */

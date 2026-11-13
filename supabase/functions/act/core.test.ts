@@ -1153,3 +1153,49 @@ test('a Set is refused before SQL on a post whose read holds a live no-quote, in
   assert.match(String((out.body as { error: string }).error), /^this post's Test Hush stops quotes until .+, so no card is set face down here until then$/);
   assert.ok(!calls.some((c) => c.startsWith('service:set_card:')), calls.join('\n'));
 });
+
+/* Card notes, Part 2 (docs/plans/2026-11-11-card-notes-part-2-plan.md, Task 4): a card that replies. */
+test('a play of a card that replies sends its reply and framing to play_card, and is heard as the card Act and then the reply under its post, never as a post at the tail', async () => {
+  const framed = '44444444-4444-4444-8444-444444444444';
+  const reply = { id: 'r', kind: 'post', thread: 't', seq: 46 };
+  const { dbs, calls } = pair({ whoami, card_target_reach: { reach: 'post', act: target, kind: 'post', length: 10, body: 'x'.repeat(10), effects: [] },
+    play_card: { id: 'k', kind: 'card', thread: 't', under: { parent: target, play: 'k', act: reply } } });
+  const out = await runAction(dbs, instance, { action: 'playCard', card: 'line-cutter', character: id, target, config: {}, message: '', body: 'Cutting in.', framing: [framed] });
+  assert.equal(out.status, 200);
+  assert.deepEqual(calls.at(-1), `service:play_card:${JSON.stringify({ card: 'line-cutter', through: id, target, config: {}, message: '', reply: 'Cutting in.', framing: [framed], who: whoami, price: 0 })}`);
+  assert.deepEqual(out.broadcasts, [
+    { topic: 'thread:t', event: 'act', payload: { id: 'k', kind: 'card', thread: 't' } },
+    { topic: 'thread:t', event: 'under', payload: { parent: target, play: 'k', act: reply } },
+  ]);
+});
+
+test('a caught play of a card that replies is heard as a caught play is today: no reply was written, so none is sent', async () => {
+  const spring = { id: 's', kind: 'card_spring', thread: 't' };
+  const { dbs } = pair({ whoami, card_target_reach: { reach: 'post', act: target, kind: 'post', length: 10, body: 'x'.repeat(10), effects: [] },
+    play_card: { id: 'k', kind: 'card', thread: 't', sprung: spring } });
+  const out = await runAction(dbs, instance, { action: 'playCard', card: 'line-cutter', character: id, target, config: {}, message: '', body: 'Cutting in.' });
+  assert.deepEqual(out.broadcasts, [
+    { topic: 'thread:t', event: 'act', payload: { id: 'k', kind: 'card', thread: 't' } },
+    { topic: 'thread:t', event: 'act', payload: spring },
+  ]);
+});
+
+test('a card that replies is refused on a reply drawn under a post, before play_card is asked', async () => {
+  const { dbs, calls } = pair({ whoami, card_target_reach: { reach: 'post', act: target, kind: 'post', length: 10, body: 'x'.repeat(10), effects: [], under: id }, play_card: { id: 'k', kind: 'card' } });
+  const out = await runAction(dbs, instance, { action: 'playCard', card: 'line-cutter', character: id, target, config: {}, message: '', body: 'Cutting in.' });
+  assert.deepEqual({ status: out.status, body: out.body }, { status: 400, body: { error: 'a reply drawn under a post takes no reply under it', field: 'config' } });
+  assert.ok(!calls.some((c) => c.startsWith('service:play_card:')), calls.join('\n'));
+});
+
+test('a play of a card that replies, ridden by a back that lets it land, is heard as the card Act, the reply under its post, then the spring', async () => {
+  const spring = { id: 's', kind: 'card_spring', thread: 't' };
+  const reply = { id: 'r', kind: 'post', thread: 't', seq: 46 };
+  const { dbs } = pair({ whoami, card_target_reach: { reach: 'post', act: target, kind: 'post', length: 10, body: 'x'.repeat(10), effects: [] },
+    play_card: { id: 'k', kind: 'card', thread: 't', sprung: spring, under: { parent: target, play: 'k', act: reply } } });
+  const out = await runAction(dbs, instance, { action: 'playCard', card: 'line-cutter', character: id, target, config: {}, message: '', body: 'Cutting in.' });
+  assert.deepEqual(out.broadcasts, [
+    { topic: 'thread:t', event: 'act', payload: { id: 'k', kind: 'card', thread: 't' } },
+    { topic: 'thread:t', event: 'under', payload: { parent: target, play: 'k', act: reply } },
+    { topic: 'thread:t', event: 'act', payload: spring },
+  ]);
+});

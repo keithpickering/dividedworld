@@ -7,7 +7,7 @@ import { describe, expect, test } from 'vitest';
 import { economyOf, landsOn, quadrantFree, type CardRules } from '../../rules/cards.ts';
 import { QUADRANTS, type Quadrant } from '../../rules/types.ts';
 import type { Act } from '../data/api.ts';
-import { effectsOf, landing, landingOn, lengthOf, waysOn } from './land.ts';
+import { effectsOf, landing, landingOn, lengthOf, targetOf, waysOn } from './land.ts';
 import type { CardPlay } from './types.ts';
 
 const rules = (key: string, stack?: number): Pick<CardRules, 'key' | 'stack' | 'canApply'> => {
@@ -237,5 +237,22 @@ describe('the ways a card lands on a post', () => {
     /* It ends at 2999-01-01: before that it holds the card's one place, at it and after that it does not. */
     expect(ways('2999-01-01T00:00:00.000Z', new Date('2998-12-31T00:00:00.000Z'))).toEqual({ cast: false, set: false });
     expect(ways('2999-01-01T00:00:00.000Z', new Date('2999-01-01T00:00:00.000Z'))).toEqual({ cast: true, set: true });
+  });
+});
+
+/* A reply drawn under a post (a card that replies, 0348) takes no card that replies under it, so the screen offers none there. */
+describe('a card that replies, on a reply drawn under a post', () => {
+  const cutter: CardRules = { key: 'cutter', name: 'Cutter', alignment: 'pepperoni', rarity: 'rare', replies: true, playPrice: () => 0, validateConfig: (c) => ({ ok: true, value: c }), canApply: (t, e, _c, now) => landsOn(cutter, t, e, now) };
+  const cards = [cutter, { ...cutter, key: 'plain', name: 'Plain', replies: undefined, alignment: 'salty' } as CardRules];
+  test('is offered on a post, and not on the reply drawn under one, in the rules\' words', () => {
+    expect(landing(cutter, post('hi'), [], { cards }).ok).toBe(true);
+    expect(landing(cutter, post('hi'), [], { cards, under: 'p0' })).toEqual({ ok: false, why: 'a reply drawn under a post takes no reply under it' });
+  });
+  test('any other card is offered there as on any post', () => {
+    expect(landing(cards[1]!, post('hi'), [], { cards, under: 'p0' }).ok).toBe(true);
+  });
+  test('the post as the rules see it names the post it is under', () => {
+    expect(targetOf(post('hi'), 'p0')).toMatchObject({ reach: 'post', act: 'p1', under: 'p0' });
+    expect(targetOf(post('hi'))).not.toHaveProperty('under');
   });
 });

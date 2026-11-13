@@ -28,9 +28,9 @@ import { lowerFirst } from '../copy-words.ts';
 
 /** The post a play lands on, as the hand and the form name it. */
 function useTarget(act: Act): PlayTarget | null {
-  const { thread, perPage, summary, plays, nameOf, know } = useThread();
+  const { thread, perPage, summary, plays, nameOf, know, reread } = useThread();
   if (act.kind !== 'post' || act.seq === null) return null;
-  return { post: act, board: summary.board, title: summary.title, author: act.character === null ? lowerFirst(nameOf(null)) : nameOf(act.character), to: threadHref(thread, pageOf(act.seq, perPage), act.seq), plays, know: know ?? (async () => {}) };
+  return { post: act, board: summary.board, title: summary.title, author: act.character === null ? lowerFirst(nameOf(null)) : nameOf(act.character), to: threadHref(thread, pageOf(act.seq, perPage), act.seq), plays, know: know ?? (async () => {}), ...(reread ? { reread } : {}) };
 }
 
 /** What the ghost mark is named by its card's play: "Play Whoops! on post 41", "Set Card Collector face down on post 41", "Use Force Field on post 41". */
@@ -43,7 +43,7 @@ export function GhostMark({ act }: { readonly act: Act }) {
   const play = usePlay();
   const { hudCharacter, actingCharacters } = usePlayer();
   const { api, instance, settings, ui } = useKayfa();
-  const { plays } = useThread();
+  const { plays, underOf } = useThread();
   const here = usePlays(plays, act.id);
   const target = useTarget(act);
   const rules = play?.armed == null ? undefined : instance.cards.find((c) => c.key === play.armed);
@@ -56,8 +56,10 @@ export function GhostMark({ act }: { readonly act: Act }) {
   const how = playOf(rules);
   const own = actingCharacters.some((c) => c.id === act.character);
   if ((how === 'set' || how === 'use') && !own) return null;
+  /* A reply drawn under a post takes no card that replies: asked of the rules with the post it is under, so no ghost mark is drawn for one. */
+  const under = underOf?.(act.id);
   /* A Move on one's own post may also be set face down (a ward never blocks that): the mark is offered where either lands, and named for the choice the form keeps. The play form reads the same answer (waysOn). */
-  const { cast: casts, set: sets } = waysOn(rules, act, here.plays, { cards: instance.cards, own, now: api.now() });
+  const { cast: casts, set: sets } = waysOn(rules, act, here.plays, { cards: instance.cards, own, now: api.now(), ...(under === undefined ? {} : { under }) });
   if (!casts && !sets) return null;
   const down = sets && (play.faceDown || !casts);
   const cardUi = ui.cards.find((c) => c.key === rules.key);

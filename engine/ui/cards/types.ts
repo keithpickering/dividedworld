@@ -163,7 +163,11 @@ export type Written = { readonly text: string } | { readonly waiting: true } | {
 export interface EffectProps {
   /** The post, as every reader sees it now (its current words included). */
   readonly post: Act;
-  /** This card's plays on the post, ordered by layer, then by when they were played: one for most cards, up to the card's stack for the rest. */
+  /**
+   * This card's plays on the post, ordered by layer, then by when they were played: one for most cards, up to the card's stack for the rest. A card named by another's
+   * `CardUi.drawnBy` is also given that card's plays that fall on the post: they follow the card's own, and each carries its `reach` (a post's own plays carry none), which is how
+   * an effect tells a lent play from its own. Its saved state and its release are in `states` and `released` with the card's own plays'.
+   */
   readonly plays: readonly CardPlay[];
   /** What each play's effect has saved, by play: the post author's version, which every reader loads. A play that has saved none is absent. */
   readonly states: Readonly<Record<Id, EffectState>>;
@@ -400,6 +404,11 @@ export interface CardUi {
    * takeover is still outermost.
    */
   readonly beneath?: true;
+  /**
+   * This card draws no effect of its own: its plays that fall on a post are handed to the named card's `Effect` on that post, after that card's own plays (`PostEffects`).
+   * The named card must have an `Effect`, this card must have none, and the named card must not itself name another (`instanceUiProblems`).
+   */
+  readonly drawnBy?: string;
   /** The card is played on the post itself: its ghost mark mounts this in the post's effect slot, innermost, instead of opening the play form. */
   readonly Compose?: ComponentType<ComposeProps>;
   /** One short line the Lens gives a reader who has not yet met the card's effect: the first-meet line. */

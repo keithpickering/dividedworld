@@ -222,6 +222,61 @@ test.describe('the worker\'s frames reach the screen', () => {
   });
 });
 
+/**
+ * Feelin' Glam in a real page (docs/plans/2026-11-11-card-notes-part-2-plan.md, Task 10): the Glam lends one more level to the posts it reaches, so a
+ * post is lit (a foil canvas mounted) exactly where it has a level. Live, post 41 holds the Glam alone (level 1) and post 42 two Fabs and the Glam (level 3);
+ * after its week, post 47 was written in it and keeps its level, and 48 and the rest are bare.
+ */
+const lit = (page: Page) => page.evaluate(() => Array.from(document.querySelectorAll('article[data-kb-seq]')).map((a) => ({
+  seq: Number((a as HTMLElement).dataset.kbSeq),
+  canvases: a.querySelectorAll('canvas.dw-fab-foil').length,
+  level: a.querySelector('[data-kb-fab]')?.getAttribute('data-kb-level') ?? null,
+})));
+
+for (const mode of ['light', 'dark'] as const) {
+  test.describe(`Feelin' Glam on the ${mode} board`, () => {
+    test('live: every post of the thread has one foil canvas, post 41 at level 1 (the Glam alone) and 42 at level 3 (two Fabs and the Glam)', async ({ page }) => {
+      await open(page, `glam-live-${mode}`);
+      const posts = await lit(page);
+      const by = (n: number) => posts.find((p) => p.seq === n)!;
+      expect(by(41)).toMatchObject({ canvases: 1, level: '1' });
+      expect(by(42)).toMatchObject({ canvases: 1, level: '3' });
+      /* The Glam reaches the whole thread: each other post holds the Glam's one level, and none is left without a canvas. */
+      expect(posts.length).toBeGreaterThan(2);
+      expect(posts.filter((p) => p.canvases !== 1)).toEqual([]);
+      expect(posts.filter((p) => p.seq !== 42 && p.level !== '1')).toEqual([]);
+      expect(await page.locator('canvas.dw-fab-foil').count()).toBe(posts.length);
+    });
+
+    test('over: the post written in its week (47) has one foil canvas, 48 and the others none', async ({ page }) => {
+      await open(page, `glam-over-${mode}`);
+      const posts = await lit(page);
+      const by = (n: number) => posts.find((p) => p.seq === n)!;
+      expect(by(47)).toMatchObject({ canvases: 1 });
+      expect(by(48)).toMatchObject({ canvases: 0, level: null });
+      expect(posts.filter((p) => p.seq !== 47 && p.canvases > 0)).toEqual([]);
+      expect(await page.locator('canvas.dw-fab-foil').count()).toBe(1);
+    });
+  });
+}
+
+test.describe('Feelin\' Glam under reduced motion', () => {
+  test('the foil of each lit post is drawn once and then held still, on the live Glam', async ({ page }) => {
+    await open(page, 'glam-live-light');
+    /* The story sets full motion itself, so reduced motion is asked for on the page once it is up, as a player's setting does. */
+    await page.evaluate(() => document.documentElement.setAttribute('data-kb-motion', 'reduce'));
+    await settle(page);
+    await frames(page, 4);
+    const base = [await draws(page, 0), await draws(page, 1)];
+    expect(base[0]).toBeGreaterThanOrEqual(1);
+    expect(base[1]).toBeGreaterThanOrEqual(1);
+    await page.mouse.move(200, 200);
+    await page.mouse.move(500, 400);
+    await frames(page, 30);
+    expect([await draws(page, 0), await draws(page, 1)]).toEqual(base);
+  });
+});
+
 /*
  * The poisons: each defect the checks above exist to catch, planted by a style tag in a real page, and named by the check.
  * Each red run, with the check expecting no problem, is recorded in the PR that added this spec.
