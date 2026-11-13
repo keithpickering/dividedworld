@@ -507,8 +507,8 @@ test.describe('the dock folds, on a phone', () => {
 });
 
 /*
- * Draw mode opens with the post clear of the dock, and no dock control is under the HUD's peek. The post's body is read a second after the press, when a smooth
- * scroll has long finished; the post starts low in the window, where the dock is about to cover it.
+ * Draw mode opens with the post clear of the dock, and no dock control is under the HUD's peek. The scroll is instant (bringClear), so a press right after
+ * opening lands on the post, not on where it was; the post starts low in the window, where the dock is about to cover it.
  */
 const body = (page: Page) => page.locator(`#post-${POST} .kb-act-main`);
 const clear = (page: Page) => page.evaluate((n) => {
@@ -517,7 +517,7 @@ const clear = (page: Page) => page.evaluate((n) => {
   const d = document.querySelector('.kb-graffiti-dock')!.getBoundingClientRect();
   return { top: b.top, bottom: b.bottom, clearTop: top, dockTop: d.top };
 }, POST);
-/** The post is clear and has stopped moving: two polls in a row read the same top, so a smooth scroll still on its way is not taken for its end. */
+/** The post is clear and has stopped moving: two polls in a row read the same top, so a scroll still on its way is not taken for its end. */
 async function settledClear(page: Page): Promise<void> {
   let last: number | null = null;
   await expect.poll(async () => {
@@ -535,24 +535,50 @@ function expectClear(r: { top: number; bottom: number; clearTop: number; dockTop
     expect(r.bottom, `${how}: body bottom above the dock`).toBeLessThanOrEqual(r.dockTop + 1);
   }
 }
-/** The post scrolled so its top lies at `share` of the window's height, below where the dock will be, then the card armed and the ghost pressed. */
-async function lowThenPress(page: Page, share: number, tile: boolean): Promise<void> {
+const FRAMES = 40;
+/** The body's top on each of the next FRAMES animation frames of the page itself, started before the press so the first frame of the scroll is not missed. */
+const startRecording = (page: Page) => page.evaluate(([n, frames]) => {
+  const w = window as unknown as { __tops: number[]; __done: boolean };
+  w.__tops = [];
+  w.__done = false;
+  const tick = () => {
+    w.__tops.push(document.querySelector(`#post-${n} .kb-act-main`)!.getBoundingClientRect().top);
+    if (w.__tops.length < frames) requestAnimationFrame(tick);
+    else w.__done = true;
+  };
+  requestAnimationFrame(tick);
+}, [POST, FRAMES] as const);
+const recorded = async (page: Page): Promise<number[]> => {
+  await page.waitForFunction(() => (window as unknown as { __done: boolean }).__done);
+  return page.evaluate(() => (window as unknown as { __tops: number[] }).__tops);
+};
+/** The post scrolled so its top lies at `share` of the window's height, below where the dock will be, then the card armed and the ghost pressed. With `watch`, the body's top is recorded from just before the press and the frames are returned in place of waiting for it to settle. */
+async function lowThenPress(page: Page, share: number, tile: boolean, watch = false): Promise<number[]> {
   await world(page, tile ? SOME : null);
   await openThread(page);
   await page.evaluate(([n, s]) => {
     const r = document.querySelector(`#post-${n} .kb-act-main`)!.getBoundingClientRect();
     window.scrollBy({ top: r.top - window.innerHeight * s, behavior: 'instant' });
   }, [POST, share] as const);
+  if (!tile) await arm(page);
+  if (watch) await startRecording(page);
   if (tile) await post(page).getByRole('button', { name: 'Draw' }).click();
-  else {
-    await arm(page);
-    await post(page).getByRole('button', { name: /^Play Graffiti on post \d+$/ }).click();
-  }
+  else await post(page).getByRole('button', { name: /^Play Graffiti on post \d+$/ }).click();
   await expect(dock(page)).toBeVisible();
+  if (watch) return recorded(page);
   await settledClear(page);
+  return [];
+}
+/** The post jumps clear and stays: over the frames from the press its top changes by more than half a pixel at most once, and it rests clear of the dock. */
+async function expectJump(page: Page, tops: number[], how: string): Promise<void> {
+  let moves = 0;
+  for (let i = 1; i < tops.length; i++) if (Math.abs(tops[i] - tops[i - 1]) > 0.5) moves++;
+  expect(moves, `${how}: the body's top moved more than once over ${tops.length} frames (${tops.map(Math.round).join(', ')})`).toBeLessThanOrEqual(1);
+  await settledClear(page);
+  expectClear(await clear(page), how);
 }
 
-for (const [name, reduced] of [['smooth', 'no-preference'], ['reduced motion', 'reduce']] as const) {
+for (const [name, reduced] of [['motion not reduced', 'no-preference'], ['reduced motion', 'reduce']] as const) {
   test.describe(`the post is brought clear of the dock, wide, ${name}`, () => {
     test.use({ viewport: { width: 1280, height: 800 }, reducedMotion: reduced });
     test('pressing the ghost on a post low in the window', async ({ page }) => {
@@ -562,6 +588,21 @@ for (const [name, reduced] of [['smooth', 'no-preference'], ['reduced motion', '
     test('the Draw tile on a wall', async ({ page }) => {
       await lowThenPress(page, 0.75, true);
       expectClear(await clear(page), 'Draw tile');
+    });
+  });
+}
+
+/* Motion is not reduced, so a smooth scroll would show: the page does not glide, which a press a moment after opening would miss the post by. */
+for (const [where, viewport] of [['wide', { width: 1280, height: 800 }], ['on a phone', null]] as const) {
+  test.describe(`the post jumps clear of the dock at once, ${where}`, () => {
+    const { defaultBrowserType: _browser, ...pixel } = devices['Pixel 7'];
+    test.use(viewport ? { viewport, reducedMotion: 'no-preference' } : { ...pixel, reducedMotion: 'no-preference' });
+    const share = viewport ? 0.75 : 0.7;
+    test('pressing the ghost on a post low in the window', async ({ page }) => {
+      await expectJump(page, await lowThenPress(page, share, false, true), 'ghost');
+    });
+    test('the Draw tile on a wall', async ({ page }) => {
+      await expectJump(page, await lowThenPress(page, share, true, true), 'Draw tile');
     });
   });
 }
