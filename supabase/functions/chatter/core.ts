@@ -410,7 +410,8 @@ async function onePick(r: PickRun): Promise<PickRecord> {
             ? await db.rpc<{ id: string }>('staff_draw_on_surface', { staff_key: p.staff, play: wall, payload: { ...first.payload, pool: day }, cells: first.cells, most: first.most })
             : await db.rpc<{ id: string }>('staff_play_surface_card', {
               staff_key: p.staff, card: answer.card.key, target: p.quoting, config: {}, message: '', pool_day: day,
-              ...(rules.writes === undefined ? {} : { tokens: rules.writes.tokens({} as never, tuned.settings) }),
+              // `tokens` has no default in staff_play_surface_card, so it is always sent, null for a card that writes nothing.
+              tokens: rules.writes === undefined ? null : rules.writes.tokens({} as never, tuned.settings),
               first: first.payload, first_cells: first.cells, most: first.most, most_live: rules.surface.mostLive,
             });
           card = drawn.id;
