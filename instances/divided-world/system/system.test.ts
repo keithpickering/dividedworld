@@ -292,6 +292,7 @@ for (const [label, bot] of [['QC-1000', qualityControl], ['ONTOPIC 5.0', ontopic
     assert.equal(bot.weakness.kind, 'quiz');
     if (bot.weakness.kind === 'quiz') for (const q of bot.weakness.questions) assert.ok(q.choices.includes(q.answer), q.question);
     const slugs = [...instance.boards.map((b) => b.slug), ...LAUNCH_SLUGS];
+    assert.ok(bot.beats.length >= 1, `${bot.key}: a Mod Bot with no beats never patrols`);
     for (const b of bot.beats) assert.ok(slugs.includes(b), `${bot.key}: beat ${b}`);
   });
 }
