@@ -87,7 +87,7 @@ select 'relation', n, m, w from (values
   ('current_season', 'no author', 'the open season'),
   ('current_standings', 'no author', 'a character''s standing: public, never tied to a post'),
   ('effect_releases', 'no author', 'the caller''s own releases of effects'),
-  ('effect_state', 'no author', 'the saved state of a play: no character'),
+  ('effect_state', 'no author', 'play, state and saved_at, the three columns granted (0400): `saved_by`, the character that saved the state and so the post''s author, is not granted to a player, and the check by column below holds it so'),
   ('face_down', 'no author', 'the caller''s own face-down cards (row security)'),
   ('ledger', 'no author', 'the caller''s own ledger (row security)'),
   ('machine_now', 'no author', 'the machine''s grid'),
@@ -337,6 +337,84 @@ select 'function', n, m, w from (values
   ('trophy_award_failures', 'no author', 'an admin''s read of the awards a failed move left owing: characters by name')
 ) t(n, m, w);
 
+-- ---------------------------------------------------------------------------------------------------------------- the columns ----
+-- A relation judged by its name says nothing of a column that names a character (`effect_state` was marked `no author` for "no character" while it kept `saved_by`, the post's author, for every reader). So every COLUMN a signed-in
+-- player may read that can name a character is listed by name here: a uuid column with a foreign key to characters(id) (a table's), and any column of a table or a view whose name says it may (`charact`, `saved_by`, `setter`,
+-- `author`, or ending in `by`: a view carries no foreign key). `swept`: the relation is swept (probed below) and the column is read there. `no author`: the reason is true of how the column is written: the caller's own row,
+-- a public fact of the character that no post's author's presence is part of, or text that names no character. A column that could name a veiled post's author to anyone but that author's player is marked in neither way: it
+-- fails the check, and is fixed (shown as the projection shows it, or not granted) or reported as open, never listed away.
+create temp table listed_columns (rel text not null, col text not null, mark text not null check (mark in ('swept', 'no author')), why text not null, primary key (rel, col));
+insert into listed_columns (rel, col, mark, why) values
+  ('acts_public', 'character', 'swept', 'the projection: the stand-in for a veiled post and the Acts derived from it'),
+  ('alerts', 'character', 'no author', 'the character alerted: a row of the caller''s own account (policy `account = auth.uid()`)'),
+  ('bars_now', 'character', 'no author', 'the character a board bars (a conferGroup move): a public fact of the character, never of a post'),
+  ('character_post_counts', 'character', 'swept', 'counts as acts_public shows them; the stored count (character_post_counts_base) is granted to no one'),
+  ('character_profiles', 'character', 'no author', 'a debuted character''s public profile (policy: characters_public)'),
+  ('class_history', 'character', 'no author', 'the caller''s own characters'' classes (policy: owner = auth.uid())'),
+  ('class_reveals', 'character', 'no author', 'a reveal, a Turn or an unmask is the character''s own public Act, never a post or its author'),
+  ('current_standings', 'character', 'no author', 'a character''s standing: public, never tied to a post'),
+  ('gear_ledger', 'through', 'no author', 'the caller''s own gear (policy `account = auth.uid()`) and the character it was given through, theirs'),
+  ('gear_worn', 'character', 'no author', 'the outfit a public character wears (policy: characters_public)'),
+  ('ledger', 'character', 'no author', 'the caller''s own ledger (policy `account = auth.uid()`)'),
+  ('moves_log', 'ended_by', 'no author', 'text: why and by whom a Boss''s move ended (a Boss or the admin), staff and public'),
+  ('moves_log', 'kept_by', 'no author', 'text: the staff key that kept a move: staff, public'),
+  ('my_appeals', 'character', 'no author', 'the caller''s own appeals (the view filters by auth.uid())'),
+  ('my_bans', 'character', 'no author', 'the caller''s own bans (the view filters by auth.uid())'),
+  ('my_cards_ended', 'character', 'no author', 'the caller''s own plays, found through the caller''s own characters (owner rights, filtered by auth.uid(), 0400): the caller is the caster'),
+  ('my_cards_ended', 'post_author_name', 'swept', 'the name of the post''s author as the projection shows it (shown_author): the stand-in while a veil is up'),
+  ('my_cosmetic_log', 'by', 'no author', 'text: the Boss that gave an award, staff'),
+  ('my_cosmetic_log', 'character', 'no author', 'the caller''s own characters'' gear and trophies (cosmetic_log_rows reads by auth.uid())'),
+  ('my_draws', 'character', 'swept', 'the caller''s own drawings and the washes that cut them: a wash is the post''s own character''s, so it shows the stand-in while the post''s veil is up'),
+  ('my_face_down', 'ended_by', 'no author', 'text: sprung, taken back or time, of the caller''s own back'),
+  ('my_group_moves', 'character', 'no author', 'the caller''s own character a group move was made on (security invoker over characters: the caller''s own)'),
+  ('my_group_moves', 'ended_by', 'no author', 'text: how a group move ended'),
+  ('my_infractions', 'character', 'no author', 'the caller''s own infractions (the view filters by auth.uid())'),
+  ('my_ledger', 'character', 'no author', 'the caller''s own ledger'),
+  ('my_ledger_shares', 'character', 'no author', 'the caller''s own ledger shares (the ledger row is the caller''s)'),
+  ('my_posts_played_on', 'target_character', 'no author', 'the character played on, which the view''s own filter makes the caller''s (the post''s, the target''s or the thread''s opener''s owner is auth.uid())'),
+  ('my_reactions', 'character', 'no author', 'the caller''s own reactor character (reactor_account = auth.uid())'),
+  ('my_reports', 'character', 'no author', 'the reporter: the caller''s own character; the reported post is named by its id and its author is not read'),
+  ('my_reports_left', 'character', 'no author', 'how many reports each of the caller''s own characters has left'),
+  ('my_scored_as', 'character', 'no author', 'the caller''s own character a scored-as play was named for (owner = auth.uid())'),
+  ('my_veiled_posts', 'character', 'no author', 'the caller''s own rows by design: a live author veil on a post of a character the caller owns (0166-post-veils.sql: nobody else''s)'),
+  ('my_walls_drawn_on', 'character', 'no author', 'the drawer or washer of a mark on a wall on the caller''s own post: a draw is a public Act of any character, a wash is the post''s own character''s, the caller''s'),
+  ('pending_turns', 'character', 'no author', 'the caller''s own pending Turns (policy: the character''s owner is auth.uid())'),
+  ('play_reach', 'character', 'no author', 'the TARGET of a card at character reach, public as the play is; the post it was played from is the target''s own and names it, so a veil is refused there and none is played from a veiled post (0166-post-veils.sql, section 9)'),
+  ('random_events', 'character', 'no author', 'the caller''s own random events (policy `account = auth.uid()`)'),
+  ('reading', 'first_character', 'no author', 'the caller''s own character at their first read of a thread (policy `account = auth.uid()`; mark_read refuses one the caller does not play)'),
+  ('season_results', 'character', 'no author', 'a season''s result per character: public, never tied to a post'),
+  ('season_size', 'characters', 'no author', 'a count of characters in a season'),
+  ('standings', 'character', 'no author', 'standings per character: public, never tied to a post'),
+  ('thread_list', 'first_character', 'swept', 'a thread''s first poster, as the projection shows it (shown_author)'),
+  ('thread_list', 'last_character', 'swept', 'a thread''s last poster, as the projection shows it (shown_author)'),
+  ('thread_open', 'first_character', 'swept', 'a thread''s first poster, as the projection shows it (shown_author)'),
+  ('thread_open', 'last_character', 'swept', 'a thread''s last poster, as the projection shows it (shown_author)'),
+  ('turns_announced', 'character', 'no author', 'a Turn is the character''s own public Act, never a post');
+
+-- The columns a signed-in player may read that can name a character, against the list: those it lacks, and those it holds that the catalog no longer has.
+create function pg_temp.name_like(rel_kind "char", col text, col_type oid, rel oid, att smallint) returns boolean language sql as $$
+  select (rel_kind in ('r', 'p') and col_type = 'uuid'::regtype and exists (select 1 from pg_constraint k where k.conrelid = rel and k.contype = 'f' and k.confrelid = 'public.characters'::regclass and att = any (k.conkey)))
+      or col ~ 'charact|saved_by|setter|author|by$'
+$$;
+create function pg_temp.unlisted_columns() returns text language sql as $$
+  select coalesce(string_agg(x.rel || '.' || x.col, ', ' order by x.rel, x.col), '') from (
+    select c.relname::text as rel, a.attname::text as col
+    from pg_class c join pg_attribute a on a.attrelid = c.oid and a.attnum > 0 and not a.attisdropped
+    where c.relnamespace = 'public'::regnamespace and c.relkind in ('r', 'p', 'v', 'm')
+      and has_column_privilege('authenticated', c.oid, a.attnum, 'select')
+      and pg_temp.name_like(c.relkind, a.attname::text, a.atttypid, c.oid, a.attnum)
+  ) x
+  where not exists (select 1 from listed_columns l where l.rel = x.rel and l.col = x.col)
+$$;
+create function pg_temp.stale_columns() returns text language sql as $$
+  select coalesce(string_agg(l.rel || '.' || l.col, ', ' order by l.rel, l.col), '') from listed_columns l
+  where not exists (
+    select 1 from pg_class c join pg_attribute a on a.attrelid = c.oid and a.attnum > 0 and not a.attisdropped
+    where c.relnamespace = 'public'::regnamespace and c.relname = l.rel and a.attname = l.col and c.relkind in ('r', 'p', 'v', 'm')
+      and has_column_privilege('authenticated', c.oid, a.attnum, 'select')
+      and pg_temp.name_like(c.relkind, a.attname::text, a.atttypid, c.oid, a.attnum))
+$$;
+
 -- What the catalog holds that a signed-in player may read or run, against what the list holds: names the list lacks, and names it holds that the catalog no longer does.
 create function pg_temp.unlisted() returns text language sql as $$
   select coalesce(string_agg(x.kind || ' ' || x.name, ', ' order by x.kind, x.name), '') from (
@@ -394,6 +472,32 @@ begin
   got := pg_temp.unlisted();
   if got is distinct from 'function sweep_poison_fn' then raise exception 'the completeness check did not name a granted function: %', got; end if;
   drop function public.sweep_poison_fn();
+  -- BY COLUMN. Every column of that kind a player may read is listed with its mark, and the list holds none that is gone.
+  got := pg_temp.unlisted_columns();
+  if got <> '' then raise exception 'the sweep''s list lacks columns a signed-in player may read that can name a character: %. List each as swept (the relation is probed below) or as no author with the reason it is true of, or take the column from the grant.', got; end if;
+  got := pg_temp.stale_columns();
+  if got <> '' then raise exception 'the sweep''s column list holds what is no longer granted: %', got; end if;
+  if exists (select 1 from listed_columns c where c.mark = 'swept' and not exists (select 1 from listed l where l.kind = 'relation' and l.name = c.rel and l.mark = 'swept')) then
+    raise exception 'a column marked swept is of a relation the list does not mark swept: %', (select string_agg(c.rel || '.' || c.col, ', ') from listed_columns c where c.mark = 'swept' and not exists (select 1 from listed l where l.kind = 'relation' and l.name = c.rel and l.mark = 'swept'));
+  end if;
+  if exists (select 1 from listed_columns where length(btrim(why)) < 5) then raise exception 'a listed column has no reason'; end if;
+  -- Its poisons. (1) effect_state.saved_by as it was: granted to a player, and the post's author. The check must name it (the column is not granted now, so the grant is made and taken back).
+  grant select (saved_by) on effect_state to authenticated;
+  got := pg_temp.unlisted_columns();
+  revoke select (saved_by) on effect_state from authenticated;
+  if got is distinct from 'effect_state.saved_by' then raise exception 'the column check did not name effect_state.saved_by when it was granted: %', got; end if;
+  -- (2) A granted table with a uuid column that references characters(id), and a granted view with a column that says it is an author's: each named, then dropped.
+  create table public.sweep_poison_t (id uuid primary key default gen_random_uuid(), whose uuid references characters (id));
+  grant select on public.sweep_poison_t to authenticated;
+  got := pg_temp.unlisted_columns();
+  if got is distinct from 'sweep_poison_t.whose' then raise exception 'the column check did not name a granted uuid column that references characters: %', got; end if;
+  drop table public.sweep_poison_t;
+  create view public.sweep_poison_v as select id, kind as posted_by from acts;
+  grant select on public.sweep_poison_v to authenticated;
+  got := pg_temp.unlisted_columns();
+  if got is distinct from 'sweep_poison_v.posted_by' then raise exception 'the column check did not name a granted view column that says it is an author: %', got; end if;
+  drop view public.sweep_poison_v;
+  if pg_temp.unlisted_columns() <> '' then raise exception 'the column poison left something behind'; end if;
   -- The marks mean what they say: every swept name has a probe below (checked at the end of the sweep), and nothing is marked `no author` with an empty reason.
   if exists (select 1 from listed where length(btrim(why)) < 5) then raise exception 'a listed name has no reason'; end if;
 end $$;

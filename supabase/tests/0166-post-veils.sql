@@ -1025,6 +1025,61 @@ begin
   perform tests.unbecome();
 end $$;
 
+-- ---- 7b. effect_state.saved_by: who saved an effect's state is the post's author, so no player reads it ----
+-- effect_state records the character who saved a play's state (save_effect_state lets only the post's true author save), and it was granted whole to `authenticated` under a policy of `using (true)`: after a veil landed on the
+-- post, `select saved_by from effect_state where play = <a play on it>` named the post's author to anyone, a save made before the veil as much as one after, and the `effect` broadcast hands every reader the play's id to look
+-- that up with. Nothing a player reads needs it (every screen reads play, state and saved_at), so the column is no longer granted. A third player's own save is refused in the same words on a veiled post and on any other.
+select tests.unbecome();
+do $$
+declare
+  ann uuid := tests.account('vu-ann'); bob uuid := tests.account('vu-bob'); ray uuid := tests.account('vu-ray');
+  a uuid := tests.character(ann, 'Vu Ann'); b uuid := tests.character(bob, 'Vu Bob'); r uuid := tests.character(ray, 'Vu Ray');
+  t uuid := tests.thread('Vu saved');
+  stand uuid := pg_temp.stand();
+  p uuid := tests.post(a, t, 'A post with a play on it.'); p2 uuid := tests.post(a, t, 'A post nobody veils.');
+  pl uuid; pl2 uuid; vplay uuid; saved jsonb; got text; got2 text; who_sees uuid; n integer;
+begin
+  perform pg_temp.cards();
+  perform pg_temp.hand(bob, 'vlauthor'); perform pg_temp.hand(ray, 'vlmove', 'vlmove');
+  perform tests.become_service();
+  pl := (play_card(ray, 'vlmove', r, p, '{}', 0, '') ->> 'id')::uuid;
+  pl2 := (play_card(ray, 'vlmove', r, p2, '{}', 0, '') ->> 'id')::uuid;
+  -- A save made before the veil, and one after.
+  perform save_effect_state(ann, a, pl2, '{"x": 1}');
+  saved := save_effect_state(ann, a, pl, '{"x": 1}');
+  vplay := (play_card(bob, 'vlauthor', b, p, '{}', 0, '') ->> 'id')::uuid;
+  perform save_effect_state(ann, a, pl, '{"x": 2}');
+  perform tests.unbecome();
+  if not exists (select 1 from post_veils v where v.play = vplay) then raise exception 'the veil did not land'; end if;
+  -- What a save answers, and so what the broadcast of it carries, names no character.
+  if saved ? 'saved_by' or saved::text like '%' || a::text || '%' then raise exception 'a save answers who saved: %', saved; end if;
+  foreach who_sees in array array[ray, bob, ann] loop
+    perform tests.become(who_sees);
+    got := pg_temp.coded(format('select saved_by from effect_state where play = %L', pl));
+    got2 := pg_temp.coded('select * from effect_state');
+    n := (select count(*) from effect_state e where e.play in (pl, pl2));
+    perform tests.unbecome();
+    if got is null or got not like '42501%' then raise exception 'a player reads who saved an effect on a veiled post (%): %', case who_sees when ray then 'a third player' when bob then 'the caster' else 'the author' end, got; end if;
+    if got2 is null or got2 not like '42501%' then raise exception 'a player reads whole rows of effect_state: %', got2; end if;
+    if n <> 2 then raise exception 'the state itself is no longer readable: % rows', n; end if;
+  end loop;
+  -- The saved state and its time are still read, by the columns the screens ask for.
+  perform tests.become(ray);
+  if (select e.state ->> 'x' from effect_state e where e.play = pl) is distinct from '2' or (select e.saved_at from effect_state e where e.play = pl) is null then raise exception 'the saved state is not read through its columns'; end if;
+  perform tests.unbecome();
+  -- A third player's own save is refused in the same words on the veiled post and on one nobody veiled, with their own character or the author's.
+  perform tests.become_service();
+  got := pg_temp.coded(format('select save_effect_state(%L, %L, %L, %L)', ray, r, pl, '{}'));
+  got2 := pg_temp.coded(format('select save_effect_state(%L, %L, %L, %L)', ray, r, pl2, '{}'));
+  perform tests.unbecome();
+  if got is distinct from got2 or got not like '42501 only the post''s author saves what is on it' then raise exception 'a third player''s save differs on a veiled post: % / %', got, got2; end if;
+  perform tests.become_service();
+  got := pg_temp.coded(format('select save_effect_state(%L, %L, %L, %L)', ray, a, pl, '{}'));
+  got2 := pg_temp.coded(format('select save_effect_state(%L, %L, %L, %L)', ray, a, pl2, '{}'));
+  perform tests.unbecome();
+  if got is distinct from got2 then raise exception 'a save through the author''s character differs on a veiled post: % / %', got, got2; end if;
+end $$;
+
 -- ---- 8. Bounded reads: a live veil in the table does not take an index from a read ----
 select tests.unbecome();
 do $$

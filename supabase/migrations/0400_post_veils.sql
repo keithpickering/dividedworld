@@ -752,6 +752,13 @@ begin
   execute format('grant select (%s) on acts to authenticated', cols);
 end $$;
 
+-- effect_state (0006) kept `saved_by`, the character who saved a play's state, and was granted whole to `authenticated` under a policy of `using (true)`. Only a post's true author saves what is on it (save_effect_state), so
+-- `saved_by` is the post's author: after a veil, `select saved_by from effect_state where play = <a play on the post>` named it to anyone (a save made before the veil as much as one made after), and the `effect` broadcast hands every
+-- reader the play's id to look it up with. Nothing a player reads needs it: every reader of the table (the client's own select, the screens' functions and views, the play's moment) asks for play, state and saved_at, and
+-- the broadcast carries the play and its time. So the column is taken from the grant, as acts.character is, and the three others stay granted (a column added to effect_state later is granted by the migration that adds it).
+revoke select on effect_state from authenticated;
+grant select (play, state, saved_at) on effect_state to authenticated;
+
 -- The author's own rows, as my_face_down is the setter's: a live author veil on a post whose character the caller's account owns. The author's player learns that a post shown under the stand-in is theirs from here, and
 -- from nothing a reader without the account can reach. Owner rights, filtered by auth.uid() as my_reactions is (0018): the table is read by no API role.
 create view my_veiled_posts as
