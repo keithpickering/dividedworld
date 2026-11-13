@@ -2401,7 +2401,7 @@ describe('the discipline cards\' Lens', () => {
       openIt(w);
       const l = await press();
       await waitFor(() => expect(l).toHaveTextContent(/If nobody talks it down by .*, Pipewrench's warn bar gains 2 warn points and this post is marked as breaking Rule 2\./u));
-      expect(l).toHaveTextContent('Pipewrench took the fall for this post.');
+      expect(l).toHaveTextContent('Pipewrench has offered to take the fall for this post.');
       expect(l).not.toHaveTextContent("Spritey's warn bar gains");
     });
 

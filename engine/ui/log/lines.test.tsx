@@ -1510,7 +1510,7 @@ describe('the discipline cards\' lines', () => {
     expect(said(rows.find((r) => r.kind === 'onMine')!)).not.toContain('It ended');
   });
 
-  test('an infraction says what cards took off, and what is left is the points less both reliefs, never below zero', () => {
+  test('an infraction says what cards took off, and what is left is the points less both reliefs', () => {
     const [row] = rowsOf({ infractions: [inf({ relief: 1, cardRelief: 2, expiresAt: '2000-01-01T00:00:00.000Z', emptiedAt: '1999-12-31T00:00:00.000Z' })] });
     expect(said(row!)).toContain(' An appeal took 1 point off.');
     expect(said(row!)).toContain(' Cards took 2 points off.');
@@ -1519,8 +1519,8 @@ describe('the discipline cards\' lines', () => {
     const [empty_] = rowsOf({ infractions: [inf({ relief: 1, cardRelief: 3, emptiedAt: '1999-12-31T00:00:00.000Z' })] });
     expect(said(empty_!)).toContain(' Cards took 3 points off.');
     expect(said(rowsOf({ infractions: [inf({ cardRelief: 1 })] })[0]!)).toContain(' Cards took 1 point off.');
-    /* Over-relieved, as a stale read can be: no negative count, and the same words. */
-    expect(said(rowsOf({ infractions: [inf({ relief: 3, cardRelief: 3, emptiedAt: '1999-12-31T00:00:00.000Z' })] })[0]!)).toContain('so these points stopped counting then.');
+    /* Cards took everything (4 - 1 - 3 is 0): the line says so, and speaks of the points in the plural as it does for an appeal's relief that took everything. */
+    expect(said(empty_!)).toContain('so these points stopped counting then.');
     expect(said(rowsOf({ infractions: [inf({ cardRelief: 0 })] })[0]!)).not.toContain('Cards took');
   });
 
@@ -1540,6 +1540,13 @@ describe('the discipline cards\' lines', () => {
     expect(said(row!)).not.toContain('ended by itself');
     expect(said(row!)).toContain('The ban is on Spritey only; each character has its own warn bar.');
     expect(row!.appealBan).toBeUndefined();
+    /* An appeal ruled after the Unban changes nothing about how the ban first ended: a live lift is always its first end. */
+    for (const ruling of ['overturned', 'reduced', 'increased'] as const) {
+      const [r] = rowsOf({ bans: [{ ...lifted, ruling }] });
+      expect(said(r!)).toContain('The ban ended Oct 31 · 08:00 UTC, when Ultra Happy Heart was played on Spritey.');
+      expect(said(r!)).not.toContain('An appeal');
+      expect(r!.appealBan).toBeUndefined();
+    }
     /* A running ban that was not lifted is as it was, appealable. */
     const [still] = rowsOf({ bans: [ban()] });
     expect(said(still!)).toContain('The ban ends by itself Nov 2 · 12:15 UTC.');
