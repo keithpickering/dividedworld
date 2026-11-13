@@ -191,6 +191,8 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
   const cardName = (key: string) => instance.cards.find((c) => c.key === key)?.name;
   const pressed = play && onCharacter ? postOf(play, 'at', cardName, perPage) : null;
   const castFrom = play && onCharacter ? postOf(play, PLAY_FROM, cardName, perPage) : null;
+  /* The spin whose moment the box shows, or null: one value, so the head and the frame cannot disagree about "as it was spun". */
+  const spinAt = pressed && summary.firstAct ? summary.firstAct : null;
   const from = <OriginLink place={summary.origin} perPage={perPage} {...(onCharacter ? { faces: characterOf } : {})} />;
 
   /* The same node is the box's head's strip and, for a card that lifts the post (Stick Around), the strip it draws on the lifted post. */
@@ -238,7 +240,7 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
          */
         if (cardPlay.reach === 'character' && cardPlay.on !== undefined) {
           /* A card on a character: a post of that character, as it was spun where the spin names one, else as the play landed on the cast-from post. */
-          return <CharacterMoment play={cardPlay} spin={pressed && summary.firstAct ? summary.firstAct : null} nameOf={nameOf} characterOf={characterOf} />;
+          return <CharacterMoment play={cardPlay} spin={spinAt} nameOf={nameOf} characterOf={characterOf} />;
         }
         return cardPlay.reach ? null : (
           <MomentView play={cardPlay} place="origin" nameOf={nameOf} now={null}
@@ -269,8 +271,8 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
         <p className="kb-origin-head">
           {/* A play's moment is the box's content, framed by the box: the head says it is the post as the play found it, where a ring and a tag would say it again. */}
           <span className="kb-origin-head-text">
-            <b>ORIGIN</b> · Spun from {from}{cardPlay && !cardPlay.reach && <> · as it landed</>}{onCharacter && <> · {pressed ? 'as it was spun' : 'as it landed'}</>}
-            {pressed && castFrom && <span className="kb-origin-head-line">Cast from <Link to={castFrom.href}>{castFrom.words}</Link></span>}
+            <b>ORIGIN</b> · Spun from {from}{cardPlay && !cardPlay.reach && <> · as it landed</>}{onCharacter && <> · {spinAt !== null ? 'as it was spun' : 'as it landed'}</>}
+            {spinAt !== null && castFrom && <span className="kb-origin-head-line">Cast from <Link to={castFrom.href}>{castFrom.words}</Link></span>}
           </span>
           {/* The strip hangs on the box's head, as it does on a post's date row. A card play's is compared with nothing: the post it landed on is in another thread. */}
           {marks}

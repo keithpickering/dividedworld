@@ -18,6 +18,14 @@ import { Link, useNavigate } from '../router.tsx';
 import { expectOrigin, spunLoader } from './spun.ts';
 import './spin.css';
 
+/**
+ * The server's refusal of a spin whose pressed post is not under the card (spin_written, 0430_spin_at_post.sql; the fake words it the same). The same words
+ * whichever check failed, so a refusal in them with `at` sent means the card is no longer on that post.
+ */
+export const CARD_NOT_ON_POST = 'that card is not on that post';
+/** What a spin form says in its place: out of character, and what to press. */
+const NO_LONGER_ON_POST = 'That card is no longer on that post. Spin thread again to spin from the card without the post.';
+
 /** What was typed in a spin form: the title and the opening post. */
 export interface SpinDraft { readonly title: string; readonly body: string }
 
@@ -59,6 +67,10 @@ export function SpinForm({ origin, label: named, at, onClose, draft, onDraft, ap
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
   const [again, setAgain] = useState(false);
+  /* The server refused the pressed post: the next spin is sent without it (the design's section 6), with what was typed kept. */
+  const [noPost, setNoPost] = useState(false);
+  useEffect(() => { setNoPost(false); }, [at]);
+  const sentAt = noPost ? undefined : at;
   const first = useRef<HTMLInputElement>(null);
   const hud = hudCharacter?.id ?? null;
   const who = useWhoPosts(hud, title.trim() !== '' || body.trim() !== '');
@@ -107,10 +119,11 @@ export function SpinForm({ origin, label: named, at, onClose, draft, onDraft, ap
       let answer;
       try {
         answer = await (apology ? api.apologize(origin, character, title, body, ...framingArgs(body))
-          : at === undefined ? api.spin(origin, character, title, body, ...framingArgs(body)) : api.spin(origin, character, title, body, framingArgs(body)[0], at));
+          : sentAt === undefined ? api.spin(origin, character, title, body, ...framingArgs(body)) : api.spin(origin, character, title, body, framingArgs(body)[0], sentAt));
       } catch { await look(null, character); return; }
       if (answer.ok) went(answer.value.thread.id);
       else if (answer.uncertain) await look(answer.error, character);
+      else if (!apology && sentAt !== undefined && answer.error === CARD_NOT_ON_POST) { setNoPost(true); setRefusal(NO_LONGER_ON_POST); }
       else setRefusal(`${fieldWords(answer.field)}${answer.error}`);
     } finally {
       setBusy(false);
