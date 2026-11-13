@@ -235,14 +235,16 @@ interface Pic {
 }
 
 /**
- * One buffer shaded rectangles are written into before they are put on a band's canvas, shared by every band on the page: sized to the
- * grid being shaded (a band and its apron), and let go when no picture holds a grid.
+ * One buffer shaded rectangles are written into before they are put on a band's canvas, shared by every band on the page: it only grows
+ * (to the largest grid asked for, as grids differ in height by band position), and is let go when no picture holds a grid. Each
+ * call gets a view of the size it needs, over the same memory with no copy, which is what an `ImageData` takes (it must be exactly sized).
  */
-let scratch: PixelsOut | null = null;
+let scratch: Uint8ClampedArray | null = null;
 let gridsHeld = 0;
 const scratchFor = (width: number, height: number): PixelsOut => {
-  if (!scratch || scratch.width !== width || scratch.height !== height) scratch = { width, height, data: new Uint8ClampedArray(width * height * 4) };
-  return scratch;
+  const bytes = width * height * 4;
+  if (!scratch || scratch.length < bytes) scratch = new Uint8ClampedArray(bytes);
+  return { width, height, data: scratch.subarray(0, bytes) };
 };
 /** Pixels as an `ImageData` a canvas takes: wrapped where the browser can (no copy), copied where it cannot. */
 function imageOf(ctx: CanvasRenderingContext2D, px: PixelsOut): ImageData {
@@ -258,7 +260,7 @@ const holders = new Set<() => { canvas: number; grids: number }>();
 export function heldBytes(): { canvas: number; grids: number; scratch: number } {
   let canvas = 0, grids = 0;
   for (const held of holders) { const h = held(); canvas += h.canvas; grids += h.grids; }
-  return { canvas, grids, scratch: scratch ? scratch.data.byteLength : 0 };
+  return { canvas, grids, scratch: scratch ? scratch.byteLength : 0 };
 }
 
 /** What a finger is doing: waiting to be told apart, wiping, or the page's. */

@@ -2123,11 +2123,14 @@ describe('the ink field: the picture a layer is drawn from', () => {
   function heldClient(holding = true) {
     const asks = new Map<string, { input: BuildInput; onDone: (b: ReturnType<typeof buildLayer>) => void }>();
     const requested: string[] = [], cancelled: string[] = [], inputs: BuildInput[] = [];
+    /** Every ask ever made, cancelled or not: a worker can answer one that was let go after the page cancelled it. */
+    const everAsked: { key: string; input: BuildInput; onDone: (b: ReturnType<typeof buildLayer>) => void }[] = [];
     let hold = holding, tokens = 0;
     const client: BuildClient = {
       requestBuild(key, input, onDone) {
         requested.push(key);
         inputs.push(input);
+        everAsked.push({ key, input, onDone });
         if (hold) asks.set(key, { input, onDone }); else onDone(buildLayer(input));
       },
       cancel(key) { cancelled.push(key); asks.delete(key); },
@@ -2137,7 +2140,7 @@ describe('the ink field: the picture a layer is drawn from', () => {
     };
     seam.client = client;
     return {
-      requested, cancelled, inputs, asks,
+      requested, cancelled, inputs, asks, everAsked,
       release: () => act(() => { hold = false; for (const [k, a] of [...asks]) { asks.delete(k); a.onDone(buildLayer(a.input)); } }),
     };
   }
@@ -2739,7 +2742,8 @@ describe('the ink field: the picture a layer is drawn from', () => {
     for (const band of [0, 1]) {
       const { worst, changed, first } = seam(band);
       expect(changed, `band ${band} shows the stroke`).toBeGreaterThan(200);
-      expect(worst, `band ${band} at the seam: ${first}`).toBeLessThanOrEqual(4);
+      /* Not 0: the live grid starts from a build stored quantized by FIELD_SCALE and the stroke then runs on it in float, where the whole-post build holds the stroke from the first. The largest difference measured is 2; the bound is that plus one. */
+      expect(worst, `band ${band} at the seam: ${first}`).toBeLessThanOrEqual(3);
     }
     /* The rectangle put on each canvas is the stroke's rectangle on that band's own grid (a band's rows and one of apron each side) grown by one point, kept to the band's own rows: the shading reads a neighbor past it. */
     for (const band of [0, 1]) {
@@ -2751,6 +2755,66 @@ describe('the ink field: the picture a layer is drawn from', () => {
       expect([Math.min(...put.map((r) => r.sx)), Math.max(...put.map((r) => r.sx + r.sw)), Math.min(...put.map((r) => r.sy)), Math.max(...put.map((r) => r.sy + r.sh))], `band ${band}'s put rectangle`).toEqual(want);
     }
   });
+
+  test('a build that arrives for a picture already let go is ignored', () => {
+    clock();
+    const fk = fakeCanvases();
+    const eyes = sight();
+    const held = heldClient();
+    boxWidth = 390;
+    boxHeight = 1400;
+    const { root } = mount({ layers: 1 });
+    frames();
+    expect(held.asks.size, 'three bands are waiting for their builds').toBe(3);
+    const old = held.everAsked.find((a) => a.input.band.row0 === 1024)!;
+    /* Band 2 leaves (its picture is let go and its ask cancelled) and returns (asked for again). */
+    eyes.bands((i) => i < 2);
+    frames();
+    expect(held.cancelled, 'its ask was cancelled').toContain(old.key);
+    eyes.bands(() => true);
+    frames();
+    expect(held.everAsked.filter((a) => a.input.band.row0 === 1024), 'and asked for again').toHaveLength(2);
+    const canvas = inkOfBand(root, 2);
+    const putsBefore = fk.of(canvas).puts.length, pictures = root.dataset.kbPictures, bytes = heldBytes();
+    act(() => { old.onDone(buildLayer(old.input)); });
+    frames();
+    expect(fk.of(canvas).puts.length, 'the dead picture is not put on the new one\'s canvas').toBe(putsBefore);
+    expect(root.dataset.kbPictures, 'no grid is counted for it').toBe(pictures);
+    expect(heldBytes(), 'and none is held').toEqual(bytes);
+  }, 60_000);
+
+  test('a stroke across a seam allocates no scratch after its first frame', () => {
+    clock();
+    const fk = fakeCanvases();
+    /* The pixels a canvas is given, as the buffers they are written into: a new buffer is an allocation. */
+    const buffers = new Set<ArrayBufferLike>();
+    vi.stubGlobal('ImageData', class { constructor(readonly data: Uint8ClampedArray, readonly width: number, readonly height: number) { buffers.add(data.buffer); } });
+    sight();
+    heldClient(false);
+    boxWidth = 390;
+    boxHeight = 1400;
+    const { root, frame } = mount({ author: true });
+    writeInk();
+    frames();
+    buffers.clear();
+    const bands = [inkOfBand(root, 0), inkOfBand(root, 1)];
+    /* Moves either side of the seam: band 0's grid is 513 rows (one of apron), band 1's 514, so each frame shades both sizes. */
+    const line: [number, number][] = [[0.5, 504 / 1400], [0.56, 520 / 1400], [0.62, 504 / 1400], [0.68, 520 / 1400], [0.74, 504 / 1400], [0.8, 520 / 1400], [0.86, 504 / 1400], [0.92, 520 / 1400]];
+    let t = 1000;
+    at(frame, 'pointerDown', line[0]!, t);
+    const sizes: number[] = [], counts: number[] = [];
+    for (const p of line.slice(1)) {
+      at(frame, 'pointerMove', p, (t += 100));
+      frames();
+      sizes.push(heldBytes().scratch);
+      counts.push(buffers.size);
+    }
+    at(frame, 'pointerUp', line.at(-1)!, t + 1);
+    for (const band of [0, 1]) expect(fk.of(bands[band]!).puts.length, `band ${band} was shaded`).toBeGreaterThan(1);
+    expect(sizes[0], 'a scratch is held').toBeGreaterThan(0);
+    expect(new Set(sizes.slice(1)), 'its size does not change after the first frame').toEqual(new Set([sizes[0]]));
+    expect(counts.slice(1), 'and no buffer is made after the first frame').toEqual(counts.slice(1).map(() => counts[0]));
+  }, 60_000);
 
   test('a stroke open while its band leaves and returns is in the band\'s picture once, and is not lost', () => {
     clock();
