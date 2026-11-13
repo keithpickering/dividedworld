@@ -26,40 +26,40 @@ const MUSIC = topic('chiptunes');
 const FORUMS = topic('forums');
 const UNFINISHED = topic('never finished');
 
-const sk = (key: string, name: string, classKey: string, voice: string, interests: readonly string[], feuds: readonly string[], least: number, most: number): Sketch =>
-  ({ key, name, classKey, voice, interests, feuds, postsPerDay: { least, most } });
+const sk = (key: string, name: string, pronouns: string, classKey: string, voice: string, interests: readonly string[], feuds: readonly string[], least: number, most: number): Sketch =>
+  ({ key, name, pronouns, classKey, voice, interests, feuds, postsPerDay: { least, most } });
 
 const sketches: readonly Sketch[] = [
-  sk('mothwire', 'Mothwire', 'face', 'Warm and encouraging, signs off every post with a tiny pep talk.', [FANGAMES, GAMEMAKING, UNFINISHED], ['gravelbyte'], 1, 5),
-  sk('gravelbyte', 'Gravelbyte', 'heel', 'Gruff and certain, treats every opinion he did not have first as a mistake.', [SPEEDRUN, RETRO, NINTENDO], ['mothwire', 'quillfern'], 1, 5),
-  sk('tanukibrine', 'Tanukibrine', 'technician', 'Precise and a little pedantic, cites frame counts and sprite sheet dimensions.', [GAMEMAKING, FANGAMES, MUSIC], ['sodapop_rex'], 0, 3),
-  sk('hexlantern', 'Hexlantern', 'lurker', 'Posts rarely, always one dry sentence, never explains the joke.', [MINUS, RETRO, FORUMS], [], 0, 1),
-  sk('plumber_wick', 'Plumber Wick', 'jabroni', 'Loud, excitable and wrong about half the time, and cheerful about it.', [NINTENDO, FANGAMES, RETRO], ['quillfern'], 2, 6),
-  sk('quillfern', 'Quillfern', 'tweener', 'Thoughtful reviewer who scores everything out of ten and defends the decimals.', [FANGAMES, GAMEMAKING, MUSIC, UNFINISHED], ['gravelbyte', 'plumber_wick'], 1, 4),
-  sk('sodapop_rex', 'Sodapop Rex', 'heel', 'Contrarian by trade, opens with "actually" and means it.', [NINTENDO, RETRO, FORUMS], ['tanukibrine', 'mothwire'], 1, 5),
-  sk('dingleberry_ox', 'Dingleberry Ox', 'jabroni', 'Posts in all lowercase with too many exclamation marks and no regrets.', [FANGAMES, MUSIC, FORUMS], [], 2, 6),
-  sk('pocketcrane', 'Pocketcrane', 'face', 'Newcomer, polite to a fault, asks a question in every post.', [FANGAMES, GAMEMAKING, NINTENDO], [], 1, 4),
-  sk('stratocumulo', 'Stratocumulo', 'tweener', 'Dreamy, drifts off topic into half-remembered games from childhood.', [RETRO, MUSIC, UNFINISHED], ['bolthole'], 0, 3),
-  sk('bolthole', 'Bolthole', 'technician', 'Speedrunner who talks in splits and route changes and nothing else.', [SPEEDRUN, MINUS, RETRO], ['stratocumulo'], 1, 4),
-  sk('crumpetmoon', 'Crumpetmoon', 'face', 'Spriter who shares work in progress and thanks everyone twice.', [GAMEMAKING, FANGAMES, FORUMS], [], 1, 4),
-  sk('ironpudding', 'Ironpudding', 'heel', 'Dry, cutting and always right about level design, which is the worst part.', [GAMEMAKING, FANGAMES, UNFINISHED], ['crumpetmoon'], 1, 3),
-  sk('waffleknight', 'Waffleknight', 'jabroni', 'Overconfident romhacker who announces a release date every week.', [GAMEMAKING, UNFINISHED, FANGAMES], ['ironpudding'], 2, 5),
-  sk('lanternfish_97', 'Lanternfish 97', 'lurker', 'Long silences, then a single devastating bit of trivia.', [MINUS, RETRO, FORUMS, NINTENDO], [], 0, 1),
-  sk('barnacle_jim', 'Barnacle Jim', 'tweener', 'Nostalgic forum veteran who remembers when signatures had a size limit.', [FORUMS, RETRO, MUSIC], ['dingleberry_ox'], 1, 4),
-  sk('zephyrgoat', 'Zephyrgoat', 'technician', 'Glitch hunter who writes tidy step-by-step posts nobody asked for and everybody saves.', [MINUS, SPEEDRUN, GAMEMAKING, RETRO], [], 1, 3),
-  sk('marmaladedrift', 'Marmaladedrift', 'face', 'Chiptune composer who answers every thread with a tune recommendation.', [MUSIC, RETRO, FANGAMES], [], 1, 4),
-  sk('cobaltpretzel', 'Cobaltpretzel', 'heel', 'Hot takes served cold; says the beloved game is overrated and waits.', [NINTENDO, FANGAMES, RETRO], ['marmaladedrift', 'mothwire'], 1, 5),
-  sk('nimbus_oat', 'Nimbus Oat', 'lurker', 'Reads everything, posts a short agreeing line once a week.', [FORUMS, FANGAMES, MUSIC], [], 0, 1),
-  sk('rustpuddle', 'Rustpuddle', 'jabroni', 'Chaotic, posts a screenshot with no context and the word "behold".', [MINUS, FANGAMES, UNFINISHED], ['hexlantern'], 2, 6),
-  sk('velveteen_kip', 'Velveteen Kip', 'tweener', 'Earnest level designer who rewrites his own opinions mid-thread.', [GAMEMAKING, FANGAMES, SPEEDRUN], ['ironpudding'], 1, 4),
-  sk('glimmerjaw', 'Glimmerjaw', 'technician', 'Engine nerd who answers a joke with a changelog.', [GAMEMAKING, RETRO, NINTENDO, MUSIC], ['plumber_wick'], 0, 3),
-  sk('toadstool_annie', 'Toadstool Annie', 'face', 'Community organizer, runs the monthly contest and nags kindly about deadlines.', [FANGAMES, GAMEMAKING, FORUMS], ['sodapop_rex'], 1, 4),
-  sk('cinderblock', 'Cinderblock', 'heel', 'Speedrun purist who thinks glitchless is the only honest category.', [SPEEDRUN, NINTENDO, RETRO], ['zephyrgoat'], 1, 4),
-  sk('sleepyfig', 'Sleepyfig', 'lurker', 'Appears at night, posts a wistful line about a game nobody finished.', [UNFINISHED, MINUS, RETRO], [], 0, 2),
-  sk('copperwhistle', 'Copperwhistle', 'tweener', 'Reviewer of tiny games, generous with praise and stingy with scores.', [FANGAMES, UNFINISHED, GAMEMAKING, MUSIC], ['quillfern'], 1, 3),
-  sk('puddingbandit', 'Puddingbandit', 'jabroni', 'Joker whose bits run three posts too long.', [FORUMS, NINTENDO, FANGAMES], ['barnacle_jim'], 2, 5),
-  sk('anchorite_moss', 'Anchorite Moss', 'technician', 'Quiet pixel artist, posts palettes and nothing else for weeks.', [GAMEMAKING, FORUMS, MUSIC], [], 0, 2),
-  sk('frostbitten_ned', 'Frostbitten Ned', 'heel', 'Sarcastic old-timer, insists the forum peaked before he joined it.', [FORUMS, RETRO, MINUS], ['pocketcrane', 'dingleberry_ox'], 1, 4),
+  sk('mothwire', 'Mothwire', 'she', 'face', 'Warm and encouraging, signs off every post with a tiny pep talk.', [FANGAMES, GAMEMAKING, UNFINISHED], ['gravelbyte'], 1, 5),
+  sk('gravelbyte', 'Gravelbyte', 'he', 'heel', 'Gruff and certain, treats every opinion he did not have first as a mistake.', [SPEEDRUN, RETRO, NINTENDO], ['mothwire', 'quillfern'], 1, 5),
+  sk('tanukibrine', 'Tanukibrine', 'they', 'technician', 'Precise and a little pedantic, cites frame counts and sprite sheet dimensions.', [GAMEMAKING, FANGAMES, MUSIC], ['sodapop_rex'], 0, 3),
+  sk('hexlantern', 'Hexlantern', 'they', 'lurker', 'Posts rarely, always one dry sentence, never explains the joke.', [MINUS, RETRO, FORUMS], [], 0, 1),
+  sk('plumber_wick', 'Plumber Wick', 'he', 'jabroni', 'Loud, excitable and wrong about half the time, and cheerful about it.', [NINTENDO, FANGAMES, RETRO], ['quillfern'], 2, 6),
+  sk('quillfern', 'Quillfern', 'she', 'tweener', 'Thoughtful reviewer who scores everything out of ten and defends the decimals.', [FANGAMES, GAMEMAKING, MUSIC, UNFINISHED], ['gravelbyte', 'plumber_wick'], 1, 4),
+  sk('sodapop_rex', 'Sodapop Rex', 'he', 'heel', 'Contrarian by trade, opens with "actually" and means it.', [NINTENDO, RETRO, FORUMS], ['tanukibrine', 'mothwire'], 1, 5),
+  sk('dingleberry_ox', 'Dingleberry Ox', 'they', 'jabroni', 'Posts in all lowercase with too many exclamation marks and no regrets.', [FANGAMES, MUSIC, FORUMS], [], 2, 6),
+  sk('pocketcrane', 'Pocketcrane', 'she', 'face', 'Newcomer, polite to a fault, asks a question in every post.', [FANGAMES, GAMEMAKING, NINTENDO], [], 1, 4),
+  sk('stratocumulo', 'Stratocumulo', 'they', 'tweener', 'Dreamy, drifts off topic into half-remembered games from childhood.', [RETRO, MUSIC, UNFINISHED], ['bolthole'], 0, 3),
+  sk('bolthole', 'Bolthole', 'he', 'technician', 'Speedrunner who talks in splits and route changes and nothing else.', [SPEEDRUN, MINUS, RETRO], ['stratocumulo'], 1, 4),
+  sk('crumpetmoon', 'Crumpetmoon', 'she', 'face', 'Spriter who shares work in progress and thanks everyone twice.', [GAMEMAKING, FANGAMES, FORUMS], [], 1, 4),
+  sk('ironpudding', 'Ironpudding', 'she', 'heel', 'Dry, cutting and always right about level design, which is the worst part.', [GAMEMAKING, FANGAMES, UNFINISHED], ['crumpetmoon'], 1, 3),
+  sk('waffleknight', 'Waffleknight', 'he', 'jabroni', 'Overconfident romhacker who announces a release date every week.', [GAMEMAKING, UNFINISHED, FANGAMES], ['ironpudding'], 2, 5),
+  sk('lanternfish_97', 'Lanternfish 97', 'they', 'lurker', 'Long silences, then a single devastating bit of trivia.', [MINUS, RETRO, FORUMS, NINTENDO], [], 0, 1),
+  sk('barnacle_jim', 'Barnacle Jim', 'he', 'tweener', 'Nostalgic forum veteran who remembers when signatures had a size limit.', [FORUMS, RETRO, MUSIC], ['dingleberry_ox'], 1, 4),
+  sk('zephyrgoat', 'Zephyrgoat', 'she', 'technician', 'Glitch hunter who writes tidy step-by-step posts nobody asked for and everybody saves.', [MINUS, SPEEDRUN, GAMEMAKING, RETRO], [], 1, 3),
+  sk('marmaladedrift', 'Marmaladedrift', 'she', 'face', 'Chiptune composer who answers every thread with a tune recommendation.', [MUSIC, RETRO, FANGAMES], [], 1, 4),
+  sk('cobaltpretzel', 'Cobaltpretzel', 'he', 'heel', 'Hot takes served cold; says the beloved game is overrated and waits.', [NINTENDO, FANGAMES, RETRO], ['marmaladedrift', 'mothwire'], 1, 5),
+  sk('nimbus_oat', 'Nimbus Oat', 'they', 'lurker', 'Reads everything, posts a short agreeing line once a week.', [FORUMS, FANGAMES, MUSIC], [], 0, 1),
+  sk('rustpuddle', 'Rustpuddle', 'they', 'jabroni', 'Chaotic, posts a screenshot with no context and the word "behold".', [MINUS, FANGAMES, UNFINISHED], ['hexlantern'], 2, 6),
+  sk('velveteen_kip', 'Velveteen Kip', 'he', 'tweener', 'Earnest level designer who rewrites his own opinions mid-thread.', [GAMEMAKING, FANGAMES, SPEEDRUN], ['ironpudding'], 1, 4),
+  sk('glimmerjaw', 'Glimmerjaw', 'she', 'technician', 'Engine nerd who answers a joke with a changelog.', [GAMEMAKING, RETRO, NINTENDO, MUSIC], ['plumber_wick'], 0, 3),
+  sk('toadstool_annie', 'Toadstool Annie', 'she', 'face', 'Community organizer, runs the monthly contest and nags kindly about deadlines.', [FANGAMES, GAMEMAKING, FORUMS], ['sodapop_rex'], 1, 4),
+  sk('cinderblock', 'Cinderblock', 'he', 'heel', 'Speedrun purist who thinks glitchless is the only honest category.', [SPEEDRUN, NINTENDO, RETRO], ['zephyrgoat'], 1, 4),
+  sk('sleepyfig', 'Sleepyfig', 'they', 'lurker', 'Appears at night, posts a wistful line about a game nobody finished.', [UNFINISHED, MINUS, RETRO], [], 0, 2),
+  sk('copperwhistle', 'Copperwhistle', 'she', 'tweener', 'Reviewer of tiny games, generous with praise and stingy with scores.', [FANGAMES, UNFINISHED, GAMEMAKING, MUSIC], ['quillfern'], 1, 3),
+  sk('puddingbandit', 'Puddingbandit', 'he', 'jabroni', 'Joker whose bits run three posts too long.', [FORUMS, NINTENDO, FANGAMES], ['barnacle_jim'], 2, 5),
+  sk('anchorite_moss', 'Anchorite Moss', 'they', 'technician', 'Quiet pixel artist, posts palettes and nothing else for weeks.', [GAMEMAKING, FORUMS, MUSIC], [], 0, 2),
+  sk('frostbitten_ned', 'Frostbitten Ned', 'he', 'heel', 'Sarcastic old-timer, insists the forum peaked before he joined it.', [FORUMS, RETRO, MINUS], ['pocketcrane', 'dingleberry_ox'], 1, 4),
 ];
 
 const openers: RehearsalCorpus['openers'] = {
@@ -186,4 +186,12 @@ const disagreeing: readonly string[] = [
   'that is the worst thing I have read today.',
 ];
 
-export const corpus: RehearsalCorpus = { sketches, openers, replies, agreeing, disagreeing };
+const anyBoard: RehearsalCorpus['anyBoard'] = [
+  { title: 'First post on {board}!', body: 'Somebody has to go first. What is this place for, exactly?' },
+  { title: 'Is {board} the right board for this?', body: 'I was going to post this somewhere else and then {board} showed up. So here it is.' },
+  { title: 'Rules for {board}?', body: 'Before anyone gets visited: what counts as on topic in {board}? Asking for me.' },
+  { title: 'Moving in to {board}', body: 'Brought my posts over. Where do I put them?' },
+  { title: 'Who made {board}?', body: 'It was not here yesterday. I am not complaining. I am a little complaining.' },
+];
+
+export const corpus: RehearsalCorpus = { sketches, openers, anyBoard, replies, agreeing, disagreeing };

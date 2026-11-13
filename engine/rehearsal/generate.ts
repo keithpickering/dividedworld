@@ -30,6 +30,12 @@ export interface World {
   readonly dayStart: number;
   readonly reactions: readonly ReactionKind[];
   readonly characters: readonly { readonly id: string; readonly name: string; readonly player: string; readonly sketch: string }[];
+  /**
+   * The instance's boards that are not The System's own, each open or closed to new threads. The filler starts threads on every open
+   * one, so a board that appears mid-season (a created one) gets traffic though the corpus knows nothing of it (the rehearsal patch
+   * design, section 8). A board's `name` is what `{board}` fills in a line.
+   */
+  readonly boards: readonly { readonly slug: string; readonly name: string; readonly open: boolean }[];
   readonly threads: readonly { readonly id: string; readonly board: string; readonly title: string; readonly open: boolean }[];
   readonly posts: readonly { readonly act: string; readonly thread: string; readonly character: string; readonly at: number }[];
 }
@@ -102,7 +108,9 @@ export function dayActions(world: World, corpus: RehearsalCorpus, scenario: Scen
   const r = rngFor(scenario.seed, day);
   const sketchOf = new Map<string, Sketch>(corpus.sketches.map((s) => [s.key, s]));
   const charOf = new Map(world.characters.map((c) => [c.id, c]));
-  const boards = Object.keys(corpus.openers).filter((b) => (corpus.openers[b]?.length ?? 0) > 0).sort();
+  // New threads go on the open boards of the world, in slug order for the seed's sake; a board with no openers of its own takes anyBoard.
+  const boards = world.boards.filter((b) => b.open).sort((a, b) => (a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0));
+  const nameOf = new Map(world.boards.map((b) => [b.slug, b.name]));
   const out: TimedAction[] = [];
 
   const feuding = (a: string, b: string): boolean => (sketchOf.get(a)?.feuds.includes(b) ?? false) || (sketchOf.get(b)?.feuds.includes(a) ?? false);
@@ -142,9 +150,12 @@ export function dayActions(world: World, corpus: RehearsalCorpus, scenario: Scen
       const at = momentIn(r, world.dayStart);
       const interest = sk.interests.length ? pick(r, sk.interests) : '';
       if (boards.length && (openThreads.length === 0 || r() < 0.12)) {
-        const board = pick(r, boards);
-        const o = pick(r, corpus.openers[board]!);
-        out.push({ at, player: c.player, request: { action: 'startThread', board, character: c.id, title: trim(o.title, limits.title), body: trim(o.body, limits.post) } });
+        const b = pick(r, boards);
+        const own = corpus.openers[b.slug] ?? [];
+        const pool = own.length ? own : corpus.anyBoard;
+        if (!pool.length) continue;
+        const o = pick(r, pool);
+        out.push({ at, player: c.player, request: { action: 'startThread', board: b.slug, character: c.id, title: trim(fill(o.title, { board: b.name }), limits.title), body: trim(fill(o.body, { board: b.name }), limits.post) } });
         continue;
       }
       if (!openThreads.length) continue;
@@ -157,7 +168,7 @@ export function dayActions(world: World, corpus: RehearsalCorpus, scenario: Scen
       const target = foes.length ? pick(r, foes) : people.length ? pick(r, people) : pick(r, world.characters.filter((x) => x.id !== c.id));
       const lines = foes.length ? corpus.disagreeing : r() < 0.4 ? corpus.agreeing : corpus.replies;
       if (!target || !lines.length) continue;
-      const body = trim(fill(pick(r, lines), { name: target.name, interest, board: boardOf.get(thread.id) ?? '' }), limits.post);
+      const body = trim(fill(pick(r, lines), { name: target.name, interest, board: nameOf.get(boardOf.get(thread.id) ?? '') ?? '' }), limits.post);
       out.push({ at, player: c.player, request: { action: 'post', thread: thread.id, character: c.id, body } });
     }
   }

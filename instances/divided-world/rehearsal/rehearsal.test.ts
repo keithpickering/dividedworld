@@ -7,6 +7,7 @@ import { repairMemory } from '../../../engine/system/memory.ts';
 import { rehearsal } from './index.ts';
 import { castFor, interestWords } from '../../../engine/rehearsal/generate.ts';
 import { wheelhouse } from '../system/wheelhouse.ts';
+import { PRONOUN_PRESETS } from '../../../engine/rules/pronouns.ts';
 
 const { corpus, scenarios } = rehearsal;
 const classKeys = new Set(instance.classes.map((c) => c.key));
@@ -116,5 +117,30 @@ test('each scenario\'s cast fits the sketches and the instance\'s characters per
   for (const s of scenarios) {
     assert.ok(s.players * s.charactersPerPlayer.most <= corpus.sketches.length, `${s.key}: ${s.players * s.charactersPerPlayer.most} characters, ${corpus.sketches.length} sketches`);
     assert.ok(s.charactersPerPlayer.most <= defaults.charactersPerPlayer, s.key);
+  }
+});
+
+const PRONOUNS: Readonly<Record<string, readonly string[]>> = {
+  he: ['gravelbyte', 'plumber_wick', 'sodapop_rex', 'bolthole', 'waffleknight', 'barnacle_jim', 'cobaltpretzel', 'velveteen_kip', 'cinderblock', 'puddingbandit', 'frostbitten_ned'],
+  she: ['mothwire', 'quillfern', 'pocketcrane', 'crumpetmoon', 'ironpudding', 'zephyrgoat', 'marmaladedrift', 'glimmerjaw', 'toadstool_annie', 'copperwhistle'],
+  they: ['tanukibrine', 'hexlantern', 'dingleberry_ox', 'stratocumulo', 'lanternfish_97', 'nimbus_oat', 'rustpuddle', 'sleepyfig', 'anchorite_moss'],
+};
+
+test('every sketch has pronouns, a preset of the engine other than it, and they are exactly the approved table', () => {
+  for (const s of corpus.sketches) {
+    assert.ok(s.pronouns !== undefined && s.pronouns !== 'it' && s.pronouns in PRONOUN_PRESETS, `${s.key}: pronouns ${String(s.pronouns)}`);
+  }
+  for (const [p, keys] of Object.entries(PRONOUNS)) {
+    assert.deepEqual(corpus.sketches.filter((s) => s.pronouns === p).map((s) => s.key).sort(), [...keys].sort(), p);
+  }
+  assert.equal(corpus.sketches.length, 30);
+});
+
+test('anyBoard holds at least five openers, each naming {board} and fitting the limits', () => {
+  assert.ok(Array.isArray(corpus.anyBoard) && corpus.anyBoard.length >= 5, `${corpus.anyBoard.length} anyBoard openers`);
+  for (const o of corpus.anyBoard ?? []) {
+    assert.ok(o.title.includes('{board}') || o.body.includes('{board}'), o.title);
+    assert.ok(o.title.trim() !== '' && o.title.length <= defaults.titleMaxLength, o.title);
+    assert.ok(o.body.trim() !== '' && o.body.length <= defaults.postMaxLength, o.title);
   }
 });
