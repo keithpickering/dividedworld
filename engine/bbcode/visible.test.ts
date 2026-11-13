@@ -103,6 +103,14 @@ test('the excerpt is the words of the quotes of one Act, in order, joined by a s
   assert.equal(ex('no quotes'), '');
 });
 
+test('visibleWalk says where the bare addresses are, in the visible text\'s own offsets, and a [url]\'s label is not one', () => {
+  const body = 'See https://example.com/a and [url=https://b.example]label[/url] then [b]https://c.example/x[/b] end';
+  const { text, links } = visibleWalk(parse(body));
+  assert.equal(text, 'See https://example.com/a and \n then https://c.example/x end');
+  assert.deepEqual(links.map((l) => text.slice(l.start, l.end)), ['https://example.com/a', 'https://c.example/x']);
+  assert.deepEqual(visibleWalk(parse('no addresses [url=https://b.example]here[/url] at all')).links, []);
+});
+
 /* A cut: real quotes nested past the cap (docs/plans/2026-11-13-quote-cut-plan.md, Decision 4). */
 const ID = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const around = (n: number, inner: string, from = 0) => Array.from({ length: n }, (_, i) => `[quote=${ID(from + i)}]`).join('') + inner + '[/quote]'.repeat(n);
@@ -126,4 +134,11 @@ test('the excerpt of an Act quoted only past the cap is empty, and a cut takes n
   assert.equal(excerptText(parse(bold(`[quote=${deep}]secret[/quote]`)), deep), '');
   assert.equal(excerptText(parse(around(MAX_DEPTH + 1, 'secret')), ID(MAX_DEPTH)), '');
   assert.equal(excerptText(parse(`${bold(`[quote=${deep}]secret[/quote]`)}[quote=${deep}]shown[/quote]`), deep), 'shown');
+});
+
+test('a bare address after a cut keeps its offsets in the visible text', () => {
+  const bold = (inner: string) => '[b]'.repeat(MAX_DEPTH) + inner + '[/b]'.repeat(MAX_DEPTH);
+  const { text, links } = visibleWalk(parse(`go ${bold(`[quote=${ID(900)}]cats[/quote]`)} then https://d.example/z end`));
+  assert.equal(text, 'go \n then https://d.example/z end');
+  assert.deepEqual(links.map((l) => text.slice(l.start, l.end)), ['https://d.example/z']);
 });

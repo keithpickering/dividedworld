@@ -33,9 +33,3 @@
   outline: 2px solid var(--kb-focus);
   outline-offset: 1px;
 }
-/* A cue inside a link is not a button: its cursor is the link's own. */
-a .dw-lt-cue,
-a .dw-lt-cue[style*='--dw-lt-near'],
-a .dw-lt-fired {
-  cursor: inherit;
-}

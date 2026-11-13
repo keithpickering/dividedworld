@@ -2,6 +2,7 @@
  * The caption bar (Captions.tsx), look A of docs/research/2026-11-11-laugh-track-bench/01-bench.html: a slim chamfered tray of the glass's strong panel
  * with a 1px edge of its neon at 60% and a glow, and in it the words in white monospace capitals on black. Fixed and centered above the HUD's seam
  * (Hud.tsx sets --kb-hud-measured), as wide as its words and never wider than the window less a 16px gutter on each side; a long caption wraps.
+ * Over a dialog it is raised and, where it would meet the dialog's box, lifted clear of it (Captions.tsx).
  * It lets every press through. A held caption (a loop's build-up) is italic.
  *
  * The caption's own black and white are glass tokens (--kb-glass-caption-ground and --kb-glass-caption-ink), so no literal lives here.
@@ -15,7 +16,8 @@
   width: max-content;
   max-width: calc(100vw - 32px);
   padding: 7px;
-  transform: translateX(-50%);
+  /* Lifted clear of a dialog's box where Captions.tsx says (--kb-captions-lift, set only then). */
+  transform: translateX(-50%) translateY(calc(-1 * var(--kb-captions-lift, 0px)));
   /* The edge is the bar's own color, cut; the panel is its ::after, one pixel in (the glass's cut pieces are drawn so, engine/ui/glass/base.css), so the 1px edge runs along both diagonals. */
   background: color-mix(in srgb, var(--kb-glass-neon) 60%, transparent);
   isolation: isolate;
@@ -23,6 +25,11 @@
   clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
   pointer-events: none;
   animation: kb-captions-in 150ms ease-out both;
+}
+
+.kb-captions-bar[data-over-scrim='true'] {
+  /* Above a dialog's scrim (.kb-glass-overlay, 50) and below the tips and a pack opening (60). */
+  z-index: 55;
 }
 
 .kb-captions-bar::after {

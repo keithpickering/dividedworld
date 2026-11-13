@@ -42,7 +42,7 @@ export function ConfigForm({ config, onChange, post, id }: ConfigFormProps) {
     if (untouched) onChange({ steps: 0 });
   }, [untouched, onChange]);
   const body = typeof post.currentPayload?.body === 'string' ? post.currentPayload.body : '';
-  const price = youWereSaying.playPrice(settings, { reach: 'post', act: post.id, kind: 'post', length: body.length, text: body }, { steps });
+  const price = youWereSaying.playPrice(settings, { reach: 'post', act: post.id, kind: 'post', length: body.length, text: body, links: [] }, { steps });
   const words = wordsOf(youWereSaying.writes!.tokens({ steps }, settings));
   const priceWords = price === 0 ? 'free to play' : `${orbs(price)} ${orbWord(price)} more`;
   return (
