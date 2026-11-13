@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { runWrites } from './core.ts';
 import { DatabaseError, type Db } from '../_shared/rpc.ts';
-import { TransportFailure } from '../_shared/models/transport.ts';
+import { ProviderRefusal, TransportFailure } from '../_shared/models/transport.ts';
 import { instance as base } from '../_shared/instance.ts';
 import { AnswerRejected, type CompletionRequest, type Models } from '../../../engine/system/model.ts';
 import type { CardRules } from '../../../engine/rules/cards.ts';
@@ -142,6 +142,13 @@ test('a card the instance no longer has is finished unreachable without a call',
 test('a bug in the call is not finished as unreachable: the job stays claimed, and the run goes on', async () => {
   const { db, calls } = fakeDb([[job(), job({ play: P2, post: V })]]);
   const out = await run(db, fakeModels((_r, n) => (n === 1 ? new TypeError('x is undefined') : 'fine')).models);
+  assert.deepEqual(finishes(calls).map((f) => f.play), [P2]);
+  assert.equal(out.errored, 1);
+});
+
+test('a ProviderRefusal (a bad key, a wrong address: a 401) is a bug-shaped error: counted errored, the job left claimed, and the run goes on (#583)', async () => {
+  const { db, calls } = fakeDb([[job(), job({ play: P2, post: V })]]);
+  const out = await run(db, fakeModels((_r, n) => (n === 1 ? new ProviderRefusal('HTTP 401 bad key', 401) : 'fine')).models);
   assert.deepEqual(finishes(calls).map((f) => f.play), [P2]);
   assert.equal(out.errored, 1);
 });

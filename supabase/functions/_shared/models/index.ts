@@ -5,7 +5,7 @@
  *
  * "Three unrelated timeouts are not a poison pill": a transport failure (a 5xx, a 429, a fetch
  * that threw or never answered) is retried on the request itself, waiting longer each time, at
- * most three times; a 4xx other than 429 is a fact about the request and is thrown at once. The
+ * most three times; a 4xx other than 429 is thrown at once (a completions endpoint's 400, 413 and 422 as a rejection, any other as a ProviderRefusal). The
  * number of retries rides on the result.
  *
  * Every call, whatever its end, writes one ledger row (ledger.ts) in a `finally`: used (`ok`), an
@@ -50,6 +50,13 @@ export interface ModelOptions {
 
 /** At most this many retries after the first attempt. */
 export const MAX_RETRIES = 3;
+
+/**
+ * The statuses of a completions endpoint's refusal that are facts about the request: malformed (400), too long (413), unprocessable (422).
+ * A 401, a 403 or a 404 is the instance's configuration (a bad key, a wrong address) and must stay a visible `ProviderRefusal`, as the mail
+ * function treats a 401 and a 403 (issue #583).
+ */
+const REQUEST_REFUSALS: readonly number[] = [400, 413, 422];
 
 /** The ledger could not be written; the call it was for is not trusted. */
 export class LedgerWriteFailed extends Error {}
@@ -165,8 +172,8 @@ export function models(env: Env, record: RecordModelCall, options: ModelOptions)
         try {
           raw = await withRetries(call, () => completeOverHttp(request, url, env('SYSTEM_COMPLETIONS_KEY') || undefined, env('SYSTEM_COMPLETIONS_MODEL') ?? 'default', wire));
         } catch (e) {
-          // The server's own refusal (an overflow the count missed, a bad key) is a fact about the request: a rejection, ended at once. A 5xx and a 429 never get here.
-          if (e instanceof ProviderRefusal) throw new AnswerRejected(e.message, `refused:${e.status}`);
+          // A refusal about the request itself (an overflow the count missed, a malformed body) is a rejection, ended at once. Any other (a bad key, a wrong address) is thrown as the ProviderRefusal it is. A 5xx and a 429 never get here.
+          if (e instanceof ProviderRefusal && REQUEST_REFUSALS.includes(e.status)) throw new AnswerRejected(e.message, `refused:${e.status}`);
           throw e;
         }
         call.model = raw.model;

@@ -5,6 +5,7 @@ import { DatabaseError, type Db } from '../_shared/rpc.ts';
 import { instance as realInstance } from '../_shared/instance.ts';
 import { placeholderWorld } from '../../../instances/divided-world/system/fixtures/index.ts';
 import { AnswerRejected, LedgerWriteFailed, PromptTooLong, models as realModels } from '../_shared/models/index.ts';
+import { ProviderRefusal } from '../_shared/models/transport.ts';
 import { tokenCounter } from '../../../engine/system/tokens.ts';
 import type { ModelCallRow } from '../_shared/models/ledger.ts';
 import type { ChatRequest, CompletionRequest, ModelResult, Models } from '../../../engine/system/model.ts';
@@ -531,6 +532,16 @@ test('an old voice\'s pool post that the window refuses (promptTooLong, or a ser
     assert.equal(out.picks[0]!.status, 'rejected');
     assert.equal(d.count('write_staff_act'), 0);
   }
+});
+
+test('an old voice\'s pool post whose server answers 401 (a bad key stays a ProviderRefusal, #583) is a failed pick that writes nothing', async () => {
+  const d = fakeDb({ pool: { threadsWeekly: 0 }, named: [SIGH] });
+  const m = fakeModels(() => ({ words: 'chat' }), new ProviderRefusal('HTTP 401 bad key', 401));
+  const out = await run(d, m, oldSigh());
+  assert.ok(out.status === 'ok');
+  assert.equal(m.completions.length, 1, 'asked once and not again');
+  assert.equal(out.picks[0]!.status, 'failed');
+  assert.equal(d.count('write_staff_act'), 0);
 });
 
 test('an old-voice answer that hits the scrubber twice files a rejected pick and writes nothing; one hit is retried', async () => {

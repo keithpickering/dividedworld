@@ -8,6 +8,7 @@ import type { Instance as WorldInstance } from '../../../engine/rules/types.ts';
 
 const dividedWorld: WorldInstance = placeholderWorld(realInstance);
 import { AnswerRejected, LedgerWriteFailed, PromptTooLong, models as realModels } from '../_shared/models/index.ts';
+import { ProviderRefusal } from '../_shared/models/transport.ts';
 import { tokenCounter } from '../../../engine/system/tokens.ts';
 import type { ModelCallRow } from '../_shared/models/ledger.ts';
 import type { ChatRequest, CompletionRequest, ModelResult, Models } from '../../../engine/system/model.ts';
@@ -383,6 +384,16 @@ test('an old voice\'s filing that the window refuses (promptTooLong, or a server
     assert.equal(m.chats.length, 0, 'no move without a line');
     assert.deepEqual(d.of('file_visit'), [{ visit_act: V1 }], 'the stock line');
   }
+});
+
+test('an old voice\'s filing whose server answers 401 (a bad key stays a ProviderRefusal, #583) is filed with its stock line', async () => {
+  const d = fakeDb({ visits: [due(V1, P1)] });
+  const m = fakeModels(() => ({ move: move() }), new ProviderRefusal('HTTP 401 bad key', 401));
+  const out = await run(d, m, withVoice(MON, 'oldVoice'));
+  assert.ok(out.status === 'ok');
+  assert.equal(m.completions.length, 1);
+  assert.equal(m.chats.length, 0, 'no move without a line');
+  assert.deepEqual(d.of('file_visit'), [{ visit_act: V1 }], 'the stock line');
 });
 
 test('the day\'s budget counts every call: an old voice with a move is two', async () => {

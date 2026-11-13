@@ -385,3 +385,25 @@ test('a completion endpoint\'s 400 is a rejection refused:400 after one fetch, n
   assert.equal(g.calls.length, 2);
   assert.equal(r.retries, 1);
 });
+
+test('a completion endpoint\'s 413 and 422 are rejections refused:<status> with rejected rows, after one fetch each', async () => {
+  for (const status of [413, 422]) {
+    const f = fake([json({ error: 'no' }, status)]);
+    const l = ledger();
+    await assert.rejects(models(env, l.record, { fetch: f.fetch, sleep: async () => {} }).complete({ ...completion, prompt: 'x' }), (e: unknown) => e instanceof AnswerRejected && e.predicate === `refused:${status}`);
+    assert.equal(f.calls.length, 1);
+    assert.equal(l.rows[0]?.outcome, 'rejected');
+    assert.equal(l.rows[0]?.predicate, `refused:${status}`);
+  }
+});
+
+test('a completion endpoint\'s 401, 403 and 404 stay a ProviderRefusal (a bad key or a wrong address is the instance\'s configuration), one fetch, a failed row (#583)', async () => {
+  for (const status of [401, 403, 404]) {
+    const f = fake([json({ error: 'no' }, status)]);
+    const l = ledger();
+    await assert.rejects(models(env, l.record, { fetch: f.fetch, sleep: async () => {} }).complete({ ...completion, prompt: 'x' }), (e: unknown) => e instanceof ProviderRefusal && !(e instanceof AnswerRejected) && e.status === status);
+    assert.equal(f.calls.length, 1);
+    assert.equal(l.rows[0]?.outcome, 'failed');
+    assert.equal(l.rows[0]?.predicate, null);
+  }
+});
