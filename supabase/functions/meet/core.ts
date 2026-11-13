@@ -285,7 +285,7 @@ export async function runMeeting(
     const nomination = context.nomination && nominee ? { boss: nominee.key, name: nominee.name, since: context.nomination.at } : undefined;
     // A meeting within farewellWindowHours of the season's end is told to write a farewell (in character) and a handoff (out of character) and shown the facts to write it from. The window is the clock's
     // and the database's both: a database that handed over no facts (an older one, or one whose clock says otherwise) leaves the meeting outside it, and the apply holds the same line.
-    const farewell = context.handoffFacts && inFarewellWindow(context.season.endsAt, now, settings.farewellWindowHours) ? { postMaxLength: settings.postMaxLength } : undefined;
+    const farewell = context.handoffFacts && inFarewellWindow(context.season.endsAt, now, settings.farewellWindowHours) ? { postMaxLength: settings.postMaxLength, seasonEndsAt: context.season.endsAt } : undefined;
     const system = meetingSystemPrompt({
       boss,
       bossPronouns: personaSet(boss.pronouns),
@@ -416,7 +416,7 @@ export async function runMeeting(
       machine: context.machine?.slice(0, REFERENCE_MOST.machine),
       beats,
       heldBack: new Set(heldBack),
-      ...(farewell ? { farewell } : {}),
+      ...(farewell ? { farewell, seasonEndsAt: context.season.endsAt } : {}),
       trophies: { ...trophies, boss: bossList.slice(0, REFERENCE_MOST.trophies) },
     });
     if (!repaired.ok) {

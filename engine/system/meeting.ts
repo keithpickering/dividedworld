@@ -359,7 +359,7 @@ export interface PromptFacts {
   /** The kinds the Boss does not use yet (`meeting_context().arc.heldBack`): not listed. */
   readonly heldBack?: readonly string[];
   /** Present only for a meeting within the farewell window (`inFarewellWindow`): the Boss is told to write a farewell and a handoff. Absent, the prompt says nothing of either. */
-  readonly farewell?: { readonly postMaxLength: number };
+  readonly farewell?: { readonly postMaxLength: number; readonly seasonEndsAt?: number };
 }
 
 /**
@@ -455,7 +455,7 @@ export function meetingSystemPrompt(f: PromptFacts): string {
       `Your profile: up to ${PROFILE_MOST.interests} interests of at most ${PROFILE_MOST.interest} characters each, up to ${PROFILE_MOST.favorites} favorite characters (their ids), a mood (a short phrase, at most ${PROFILE_MOST.mood} characters) and a signature. It is public and in your voice. A hobby's name is at most ${MEMORY_MOST.hobbyName} characters, and a mark at most ${MEMORY_MOST.mark}.`,
     ].join('\n'),
     modsText(f),
-    ...(f.farewell ? [farewellText(f.farewell.postMaxLength)] : []),
+    ...(f.farewell ? [farewellText(f.farewell.postMaxLength, s.structuralHoldHours, f.farewell.seasonEndsAt)] : []),
     ...(f.successorAllowed
       ? [`The season is in its last week. ${f.nomination
         ? `You named ${f.nomination.name} on ${new Date(f.nomination.since).toISOString().slice(0, 10)}. That stands unless you name someone else; naming ${f.nomination.name} again changes nothing. To name someone else:`
@@ -716,6 +716,11 @@ export interface RepairContext {
   readonly heldBack?: ReadonlySet<string>;
   /** Present only where the meeting was told to write a farewell and a handoff (`PromptFacts.farewell`): a farewell or handoff from any other meeting is dropped and recorded. */
   readonly farewell?: { readonly postMaxLength: number };
+  /**
+   * The season's end (epoch ms), present only in the farewell window (the rehearsal patch design, section 6). The handover withdraws the outgoing Boss's moves still waiting, so a move whose
+   * go-live is at or after it, a composed bundle whose earliest part is, and a successor named now (which waits the structural hold) would never land: each is dropped and recorded.
+   */
+  readonly seasonEndsAt?: number;
   /** The Boss's trophies and what stands (`boss_trophies()`, `trophy_award_facts`). Omitted, no trophy is on a list, so an award is dropped. */
   readonly trophies?: TrophyFacts;
 }
@@ -1111,6 +1116,8 @@ export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
         goLive = least;
       }
     }
+    // A move that would land when the season has ended is withdrawn at the handover, so it is dropped here. A part of a bundle is judged with its bundle, below.
+    if (!inBundle && c.seasonEndsAt !== undefined && goLive >= c.seasonEndsAt) return drop(path, 'landsBeforeSeasonEnd');
     const hours = m['expires_in_hours'] as number;
     // A flash sale lasts its hours, whatever expiry was asked: the window is the move's whole life. Every machine move is held to machine.moveDaysMost besides.
     const most = machineKind ? machineExpiryMost : expiryMost;
@@ -1308,6 +1315,11 @@ export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
       }
       parts.push({ ...planned, role });
     }
+    // A bundle whose earliest part would land when the season has ended is withdrawn whole: the parts depend on one another.
+    if (c.seasonEndsAt !== undefined && parts.length > 0 && Math.min(...parts.map((p) => p.goLiveAt)) >= c.seasonEndsAt) {
+      drop('bundle', 'landsBeforeSeasonEnd');
+      parts.length = 0;
+    }
     const room = Math.max(0, affordable - moves.length);
     const paid = parts.slice(0, room);
     if (paid.length < parts.length) trims.push({ path: 'bundle.parts', predicate: 'withinBank', before: parts.length, after: paid.length });
@@ -1390,6 +1402,7 @@ export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
     else if (!c.successors.has(given.boss)) drop('successor.boss', 'rosterBoss');
     else if (c.nomination && given.boss === c.nomination.boss) drop('successor.boss', 'newNominee');
     else if (given.boss === c.boss) drop('successor.boss', 'notTheOutgoingBoss');
+    else if (c.seasonEndsAt !== undefined && c.now + s.structuralHoldHours * HOUR >= c.seasonEndsAt) drop('successor', 'landsBeforeSeasonEnd');
     else successor = given;
   }
 
@@ -1478,12 +1491,16 @@ export function predecessorText(p: { readonly note: string | null; readonly fact
   ];
 }
 
+/** A time as the prompt writes it: the date and the minute, in UTC. */
+const dateAndTime = (at: number): string => `${new Date(at).toISOString().slice(0, 16).replace('T', ' ')} UTC`;
+
 /** The system prompt's words on the farewell and the handoff, for a meeting within the window. */
-function farewellText(postMaxLength: number): string {
+function farewellText(postMaxLength: number, structuralHoldHours: number, seasonEndsAt?: number): string {
   return [
     'The season is about to end, so this is your last meeting before the handover. You may say goodbye and leave a note for whoever is next, in "farewell" and "handoff":',
     `- farewell: your last post as Boss, in character, in your own voice, at most ${postMaxLength} characters. It is posted in the announcements when the season turns over.`,
     `- handoff: a note out of character, at most ${HANDOFF_MOST} characters, plain and honest, for the next Boss: why the season went the way it did, the state of things, and what you would tell whoever takes over. Players never read it; the next Boss and the admins do.`,
     'Both are optional. Leave one out and it is simply not said.',
+    ...(seasonEndsAt === undefined ? [] : [`A move that would land after the season ends (${dateAndTime(seasonEndsAt)}) never lands: it is withdrawn when the next Boss takes the chair. A move that waits in the admin queue lands ${structuralHoldHours} hours after you make it.`]),
   ].join('\n');
 }

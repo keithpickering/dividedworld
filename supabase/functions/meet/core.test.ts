@@ -1192,3 +1192,21 @@ test('the error shown to the next call is clipped to 200 characters, the record 
   assert.equal(m.chats[1]!.messages[1]!.content, `(this part was not kept: ${'x'.repeat(200)})`);
   assert.equal(d.state.applied[0]!.payload.record.parts[0].error, long);
 });
+
+/* ---------------------------------------------------------------- a move that would land after the season ends ---- */
+
+test('in the farewell window the repair is given the season\'s end, so a structural move that would land after it is dropped and the prompt says so; outside the window nothing is dropped for it', async () => {
+  const d = fakeDb({ endsIn: 20 * H, handoffFacts: FACTS });
+  const m = fakeModels(answer([rename(0)]));
+  const out = await run(d.db, m.models, quiet, SLOT, clock, noFeeds);
+  assert.equal(out.status, 'ok');
+  assert.match(m.chats[0]!.system, /never lands/);
+  assert.equal(d.state.applied[0]!.payload.moves.length, 0, 'a structural move waits 24 hours and the season ends in 20');
+  assert.ok(out.trims.some((t: any) => t.path === 'moves[0]' && t.predicate === 'landsBeforeSeasonEnd'), JSON.stringify(out.trims));
+  // A database that handed over no facts leaves the meeting outside the window, whatever the clock says: no season end is given and the same move is kept.
+  const older = fakeDb({ endsIn: 20 * H });
+  const om = fakeModels(answer([rename(0)]));
+  await run(older.db, om.models, quiet, SLOT, clock, noFeeds);
+  assert.doesNotMatch(om.chats[0]!.system, /never lands/);
+  assert.equal(older.state.applied[0]!.payload.moves.length, 1);
+});

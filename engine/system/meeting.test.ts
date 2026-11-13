@@ -1609,3 +1609,55 @@ test('the system prompt states each bound the profile and memory are held to, wi
   assert.ok(served.includes(`up to ${PROFILE_MOST.interests} interests of at most ${PROFILE_MOST.interest} characters each`), served);
   assert.ok(served.includes(`A hobby's name is at most ${MEMORY_MOST.hobbyName} characters, and a mark at most ${MEMORY_MOST.mark}.`), served);
 });
+
+/* ---------------------------------------------------------------- a move that would land after the season ends ---- */
+// The rehearsal patch design, section 6: the handover withdraws the outgoing Boss's moves still waiting, so a farewell-window meeting does not queue a move that would only be withdrawn.
+
+const ENDS = NOW + 20 * H;
+const SEASON_MAKE = { name: 'Pirate Puns Palace', premise: 'Puns.', description: 'Arr.' };
+const seasonAnswer = () => ({
+  ...answer(null),
+  moves: [
+    lastingMove('mergeBoard', { board: BOARD, into: OTHER_BOARD }),
+    { ...lastingMove('moveThread', { thread: THREAD, board: OTHER_BOARD }), go_live_at: new Date(NOW + H).toISOString() },
+  ],
+  bundle: { name: 'Story', parts: [{ role: 'a', kind: 'createBoard', params: SEASON_MAKE, go_live_at: new Date(NOW).toISOString(), expires_in_hours: 0, why: 'Because.' }] },
+  successor: { boss: 'some-boss', why: 'Next.' },
+});
+const seasonRepair = (over: Partial<RepairContext>) => {
+  const r = repairAnswer(seasonAnswer(), { ...ctx(), bank: 50, boards: new Set([BOARD, OTHER_BOARD]), successorAllowed: true, ...over });
+  assert.ok(r.ok, JSON.stringify(r));
+  return r;
+};
+
+test('with the season ending in 20 hours and a 24 hour hold, a structural move, a composed bundle and a successor are dropped and recorded; a move that waits an hour is kept', () => {
+  const r = seasonRepair({ seasonEndsAt: ENDS });
+  assert.deepEqual(r.moves.map((m) => m.kind), ['moveThread'], JSON.stringify(r.moves));
+  assert.equal(r.moves[0]!.goLiveAt, NOW + H);
+  assert.equal(r.bundles.length, 0);
+  assert.equal(r.successor, null);
+  const gone = r.trims.filter((t) => t.predicate === 'landsBeforeSeasonEnd').map((t) => t.path).sort();
+  assert.deepEqual(gone, ['bundle', 'moves[0]', 'successor'], JSON.stringify(r.trims));
+});
+
+test('with no season end given, the structural move, the bundle, the successor and the other move are all kept', () => {
+  const r = seasonRepair({});
+  assert.deepEqual(r.moves.map((m) => m.kind), ['mergeBoard', 'moveThread']);
+  assert.equal(r.bundles.length, 1);
+  assert.deepEqual(r.successor, { boss: 'some-boss', why: 'Next.' });
+  assert.ok(!r.trims.some((t) => t.predicate === 'landsBeforeSeasonEnd'));
+});
+
+test('a move that lands before the season ends is kept in the farewell window', () => {
+  const r = seasonRepair({ seasonEndsAt: NOW + 40 * H });
+  assert.equal(r.moves.length, 2);
+  assert.equal(r.bundles.length, 1);
+  assert.notEqual(r.successor, null);
+});
+
+test('the farewell prompt says a move that would land after the season ends never lands, with the end date and the hold', () => {
+  const told = meetingSystemPrompt({ ...bossFacts, farewell: { postMaxLength: 777, seasonEndsAt: ENDS } });
+  assert.match(told, /never lands/);
+  assert.ok(told.includes('2026-11-02'), told);
+  assert.ok(told.includes(`lands ${settings.structuralHoldHours} hours after you make it`), told);
+});
