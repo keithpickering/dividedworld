@@ -32,7 +32,15 @@ const orbWord = (hundredths: number) => (hundredths === 100 ? 'orb' : 'orbs');
 
 export function ConfigForm({ config, onChange, post, id }: ConfigFormProps) {
   const kayfa = useKayfaIfAny();
-  const settings = kayfa ? withCardEconomy(kayfa.instance.settings, kayfa.settings.cardEconomy) : defaults;
+  // The window and the floor are the server's own (`screen_settings`), laid over the instance's, so the slider offers only lengths that fit the window.
+  const live = kayfa?.settings;
+  const settings = kayfa
+    ? {
+        ...withCardEconomy(kayfa.instance.settings, live?.cardEconomy),
+        ...(Number.isFinite(live?.oldVoiceWindow) ? { oldVoiceWindow: live!.oldVoiceWindow } : {}),
+        ...(Number.isFinite(live?.oldVoicePromptFloor) ? { oldVoicePromptFloor: live!.oldVoicePromptFloor } : {}),
+      }
+    : defaults;
   // validateConfig holds no settings and bounds steps by the instance's defaults (a known engine gap), so a live override that raises the
   // most must not make the form offer a step the server refuses; a live override that lowers it still wins.
   const most = Math.min(mostSteps(settings), mostSteps(defaults));
@@ -42,7 +50,7 @@ export function ConfigForm({ config, onChange, post, id }: ConfigFormProps) {
     if (untouched) onChange({ steps: 0 });
   }, [untouched, onChange]);
   const body = typeof post.currentPayload?.body === 'string' ? post.currentPayload.body : '';
-  const price = youWereSaying.playPrice(settings, { reach: 'post', act: post.id, kind: 'post', length: body.length, text: body }, { steps });
+  const price = youWereSaying.playPrice(settings, { reach: 'post', act: post.id, kind: 'post', length: body.length, text: body, links: [] }, { steps });
   const words = wordsOf(youWereSaying.writes!.tokens({ steps }, settings));
   const priceWords = price === 0 ? 'free to play' : `${orbs(price)} ${orbWord(price)} more`;
   return (

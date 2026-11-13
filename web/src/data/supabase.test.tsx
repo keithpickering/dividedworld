@@ -11,6 +11,7 @@ import { failureKind, NOT_RUN, NOT_SENT } from '../../../engine/ui/data/api.ts';
 import type { Act, KayfaApi, ScreenSettings, ThreadSummary } from '../../../engine/ui/data/api.ts';
 import { ENGINE_DEFAULT_PRONOUNS, PRONOUN_PRESETS } from '../../../engine/rules/pronouns.ts';
 import { createSupabaseApi } from './supabase.ts';
+import { fallbackSettings } from './settings.ts';
 
 /* Built in pieces on purpose: the web-reads guard refuses a path it cannot read to its end. */
 const REST = ['', 'rest', 'v1'].join('/');
@@ -34,6 +35,8 @@ const FALLBACK: ScreenSettings = {
   registrationMode: 'invite',
   settlementLength: { unit: 'day', count: 1 },
   setLasts: { unit: 'day', count: 7 },
+  oldVoiceWindow: 1024,
+  oldVoicePromptFloor: 256,
   cardSettings: { 'whoops.clean': 95 },
   presencePollSeconds: 30,
   presenceWindow: { unit: 'minute', count: 5 },
@@ -116,7 +119,7 @@ describe('what the adapter may request', () => {
     });
     const api = h.api;
     await Promise.allSettled([
-      api.settings(), api.boards(), api.board('general'), api.board(C), api.threads(C, { offset: 0, limit: 5 }), api.thread(T), api.acts(T, 1, 5), api.act(A), api.actsById([A]), api.history(A), api.spunFrom(A), api.spunFromMany([A], 10), api.cardsOn(A, 10), api.cardsOnMany([A], 10), api.effectStates([A]), api.tails([A]), api.playMoment(A), api.myReleases([A]), api.releaseEffect(A),
+      api.settings(), api.boards(), api.board('general'), api.board(C), api.threads(C, { offset: 0, limit: 5 }), api.thread(T), api.acts(T, 1, 5), api.act(A), api.actsById([A]), api.history(A), api.spunFrom(A), api.spunFromMany([A], 10), api.cardsOn(A, 10), api.cardsOnMany([A], 10), api.effectStates([A]), api.tails([A]), api.playMoment(A), api.spinMoment(A), api.myReleases([A]), api.releaseEffect(A),
       api.characters([B]), api.characterCounts(B), api.characterStats([B]), api.standingAmounts([B]), api.standingPlace(B), api.characterActs(B, ['post'], { offset: 0, limit: 5 }), api.finishedSeasons(), api.resultsPage(1, 2), api.resultPlace(1, B), api.standingsCount(), api.standingsPage(0, 5), api.tallies([A]), api.viewCounts([T]), api.season(),
       api.boardNames(), api.moveNotice(A), api.movesLog('director'), api.movesLog('director', { at: '2026-10-01T10:00:00+00:00', act: A }), api.staffProfile('director'), api.adminQueue(), api.holdMove(1), api.reverseMove(A), api.updates(), api.updates('2026-10-01T10:00:00+00:00'), api.postUpdate('T', 'B', []),
       api.lastSettledAt(), api.classReveals([B]), api.turnsAnnounced([B]), api.nextSettlementAt(), api.myCharacters(), api.wallet(),
@@ -270,18 +273,37 @@ describe('reads and their rows', () => {
     const places: [unknown, ThreadSummary['origin']][] = [
       [{ kind: 'post', thread: C, title: 'T', seq: 3 }, { kind: 'post', thread: C, title: 'T', seq: 3 }],
       [{ kind: 'update', act: A, title: 'Traps bite' }, { kind: 'update', act: A, title: 'Traps bite' }],
-      [{ kind: 'play', card: 'whoops', on: { kind: 'post', thread: C, title: 'T', seq: 3 } }, { kind: 'play', card: 'whoops', on: { kind: 'post', thread: C, title: 'T', seq: 3 } }],
-      [{ kind: 'play', card: null, on: { kind: 'update', act: A, title: 'U' } }, { kind: 'play', card: null, on: { kind: 'update', act: A, title: 'U' } }],
-      [{ kind: 'play', card: 'glint', on: { kind: 'character', id: B, name: 'Ana Face' } }, { kind: 'play', card: 'glint', on: { kind: 'character', id: B, name: 'Ana Face' } }],
-      [{ kind: 'play', card: 'glint', on: { kind: 'character', id: B, name: null } }, { kind: 'play', card: 'glint', on: { kind: 'character', id: B, name: null } }],
-      [{ kind: 'play', card: 'glint', on: { kind: 'thread', id: T, title: 'T' } }, { kind: 'play', card: 'glint', on: { kind: 'thread', id: T, title: 'T' } }],
-      [{ kind: 'play', card: 'glint', on: { kind: 'board', slug: 'general', name: 'General' } }, { kind: 'play', card: 'glint', on: { kind: 'board', slug: 'general', name: 'General' } }],
-      [{ kind: 'play', card: 'glint', on: null }, { kind: 'play', card: 'glint', on: null }],
+      [{ kind: 'play', card: 'whoops', on: { kind: 'post', thread: C, title: 'T', seq: 3 } }, { kind: 'play', card: 'whoops', on: { kind: 'post', thread: C, title: 'T', seq: 3 }, from: null, at: null }],
+      [{ kind: 'play', card: null, on: { kind: 'update', act: A, title: 'U' } }, { kind: 'play', card: null, on: { kind: 'update', act: A, title: 'U' }, from: null, at: null }],
+      [{ kind: 'play', card: 'glint', on: { kind: 'character', id: B, name: 'Ana Face' } }, { kind: 'play', card: 'glint', on: { kind: 'character', id: B, name: 'Ana Face' }, from: null, at: null }],
+      [{ kind: 'play', card: 'glint', on: { kind: 'character', id: B, name: null } }, { kind: 'play', card: 'glint', on: { kind: 'character', id: B, name: null }, from: null, at: null }],
+      [{ kind: 'play', card: 'glint', on: { kind: 'thread', id: T, title: 'T' } }, { kind: 'play', card: 'glint', on: { kind: 'thread', id: T, title: 'T' }, from: null, at: null }],
+      [{ kind: 'play', card: 'glint', on: { kind: 'board', slug: 'general', name: 'General' } }, { kind: 'play', card: 'glint', on: { kind: 'board', slug: 'general', name: 'General' }, from: null, at: null }],
+      [{ kind: 'play', card: 'glint', on: null }, { kind: 'play', card: 'glint', on: null, from: null, at: null }],
+      /* The cast-from post and the pressed post (0351), each a post place; a row from before it has neither key. */
+      [{ kind: 'play', card: 'glint', on: { kind: 'character', id: B, name: 'Ana Face' }, from: { kind: 'post', thread: C, title: 'T', seq: 3 }, at: { kind: 'post', thread: T, title: 'U', seq: 5 } },
+        { kind: 'play', card: 'glint', on: { kind: 'character', id: B, name: 'Ana Face' }, from: { kind: 'post', thread: C, title: 'T', seq: 3 }, at: { kind: 'post', thread: T, title: 'U', seq: 5 } }],
+      [{ kind: 'play', card: 'glint', on: { kind: 'character', id: B, name: 'Ana Face' }, from: { kind: 'post', thread: C, title: 'T', seq: 3 }, at: null },
+        { kind: 'play', card: 'glint', on: { kind: 'character', id: B, name: 'Ana Face' }, from: { kind: 'post', thread: C, title: 'T', seq: 3 }, at: null }],
       [null, null],
     ];
     for (const [raw, want] of places) {
       const row = await harness(() => rows([{ ...THREAD_ROW, origin_place: raw }])).api.thread(T);
       expect(row?.origin, JSON.stringify(raw)).toEqual(want);
+    }
+  });
+
+  it('reads a play\'s `from` and `at` as post places, and as null when missing or malformed, the rest of the play kept', async () => {
+    const read = async (extra: Record<string, unknown>) => (await harness(() => rows([{ ...THREAD_ROW, origin_place: { kind: 'play', card: 'glint', on: null, ...extra } }])).api.thread(T))?.origin;
+    const good = { kind: 'post', thread: C, title: 'T', seq: 3 };
+    expect(await read({})).toEqual({ kind: 'play', card: 'glint', on: null, from: null, at: null });
+    expect(await read({ from: good, at: good })).toEqual({ kind: 'play', card: 'glint', on: null, from: good, at: good });
+    for (const bad of [
+      { kind: 'update', act: A, title: 'U' }, { kind: 'character', id: B, name: null }, { kind: 'post', thread: C, title: 'T', seq: '3' }, { kind: 'post', title: 'T', seq: 3 }, { kind: 'post', thread: C, seq: 3 },
+      { kind: 'post', thread: C, title: 5, seq: 3 }, { kind: 'post', thread: C, title: 'T', seq: NaN }, 'post', 3, [],
+    ]) {
+      expect(await read({ from: bad, at: good }), JSON.stringify(bad)).toEqual({ kind: 'play', card: 'glint', on: null, from: null, at: good });
+      expect(await read({ from: good, at: bad }), JSON.stringify(bad)).toEqual({ kind: 'play', card: 'glint', on: null, from: good, at: null });
     }
   });
 
@@ -302,7 +324,7 @@ describe('reads and their rows', () => {
       { kind: 'character', name: 'N' }, { kind: 'character', id: 5, name: 'N' }, { kind: 'character', id: B, name: 5 },
       { kind: 'thread', title: 'T' }, { kind: 'thread', id: 5, title: 'T' }, { kind: 'thread', id: T }, { kind: 'thread', id: T, title: 5 },
       { kind: 'board', name: 'N' }, { kind: 'board', slug: 5, name: 'N' }, { kind: 'board', slug: 'g', name: 5 },
-    ]) expect(await read({ kind: 'play', card: 'whoops', on }), JSON.stringify(on)).toEqual({ kind: 'play', card: 'whoops', on: null });
+    ]) expect(await read({ kind: 'play', card: 'whoops', on }), JSON.stringify(on)).toEqual({ kind: 'play', card: 'whoops', on: null, from: null, at: null });
   });
 
   it('reads a page of the season\'s news, newest first, and keeps only what the shape holds', async () => {
@@ -748,6 +770,15 @@ describe('reads and their rows', () => {
     expect(await h.api.wallet()).toEqual({ balance: 0, cap: 700 });
   });
 
+  it('reads the old voice window and floor from screen_settings, and the compiled defaults when it lacks them', async () => {
+    // The compiled defaults the web lays a missing key over are Divided World's own.
+    expect(fallbackSettings).toMatchObject({ oldVoiceWindow: 1024, oldVoicePromptFloor: 256 });
+    const without = harness((r) => (r.url.pathname.endsWith('/screen_settings') ? rows([{ settings: { walletCap: 700 } }]) : rows([])));
+    expect(await without.api.settings()).toMatchObject({ oldVoiceWindow: 1024, oldVoicePromptFloor: 256 });
+    const held = harness((r) => (r.url.pathname.endsWith('/screen_settings') ? rows([{ settings: { oldVoiceWindow: 4096, oldVoicePromptFloor: 512 } }]) : rows([])));
+    expect(await held.api.settings()).toMatchObject({ oldVoiceWindow: 4096, oldVoicePromptFloor: 512 });
+  });
+
   it('maps the tilt both ways, and keeps it off when a row lacks it', async () => {
     const h = harness((r) => {
       if (r.url.pathname.endsWith('/rpc/set_preferences')) return json({ theme: 'system', postbit: 'side', motion: 'system', smoke: 'full', contrast: 'standard', text_size: 100, tilt: 'on', effects: 'bright' });
@@ -1107,6 +1138,7 @@ describe('writes through the act function', () => {
     expect(started).toEqual({ ok: true, value: { thread: { id: T, board: C, title: 'A title', originActId: null, createdAt: '2026-10-01T09:00:00+00:00', lastAt: ACT.createdAt, lastSeq: 2, firstAct: A, firstCharacter: B, lastAct: A, lastCharacter: B, replies: 0, repliesThisWeek: 0, originThread: null, origin: null }, act: ACT } });
     await h.api.startThread('general', B, 'A title', 'body', [C]);
     await h.api.spin(A, B, 'A title', 'body', [C]);
+    await h.api.spin(A, B, 'A title', 'body', undefined, C);
     expect(act(h).map((r) => r.body)).toEqual([
       { action: 'post', thread: T, character: B, body: 'hi', quote: A },
       { action: 'post', thread: T, character: B, body: 'hi' },
@@ -1116,6 +1148,7 @@ describe('writes through the act function', () => {
       { action: 'startThread', board: 'general', character: B, title: 'A title', body: 'body' },
       { action: 'startThread', board: 'general', character: B, title: 'A title', body: 'body', framing: [C] },
       { action: 'spin', origin: A, character: B, title: 'A title', body: 'body', framing: [C] },
+      { action: 'spin', origin: A, character: B, title: 'A title', body: 'body', at: C },
     ]);
     for (const r of act(h)) {
       expect(r.method).toBe('POST');
@@ -2167,6 +2200,7 @@ describe('reads by many ids', () => {
         layers: [{ act: { ...ACT_ROW, id: A, kind: 'card' }, state: null, savedAt: null }, { act: { ...ACT_ROW, id: C, kind: 'card' }, state: { washed: 0.4 }, savedAt: '2026-10-01T10:00:00+00:00' }],
         above: [{ play: T, reach: 'thread', target: T, ends_at: '2099-01-01T00:00:00+00:00', act: { ...ACT_ROW, id: T, kind: 'card' } }],
         recorded: true,
+        at: '2026-10-01T09:30:00+00:00',
       });
     });
     const m = await h.api.playMoment(A);
@@ -2176,9 +2210,46 @@ describe('reads by many ids', () => {
     expect(m?.layers.map((l) => [l.act.id, l.state])).toEqual([[A, null], [C, { state: { washed: 0.4 }, savedAt: '2026-10-01T10:00:00+00:00' }]]);
     expect(m?.above).toMatchObject([{ play: T, reach: 'thread', target: T, endsAt: '2099-01-01T00:00:00+00:00', act: { id: T } }]);
     expect(m?.recorded).toBe(true);
+    expect(m?.at).toBe('2026-10-01T09:30:00+00:00');
     expect(await h.api.playMoment(B)).toBeNull();
     expect(await h.api.playMoment('not an id')).toBeNull();
     expect(h.to('rpc/play_moment')).toHaveLength(2);
+  });
+
+  it('spinMoment asks spin_moment once, reads what playMoment reads and its time, and reads a refusal as null', async () => {
+    const h = harness((r) => {
+      if (r.url.pathname !== `${REST}/rpc/spin_moment`) return undefined;
+      if ((r.body as { spin: string }).spin === B) return json({ code: 'P0002', message: 'that spin names no post', hint: 'kayfabb.refusal' }, 400);
+      return json({
+        version: { ...ACT_ROW, current_payload: { body: 'then' } },
+        layers: [{ act: { ...ACT_ROW, id: A, kind: 'card' }, state: null, savedAt: null }],
+        above: [],
+        recorded: true,
+        at: '2026-10-01T09:30:00+00:00',
+      });
+    });
+    const m = await h.api.spinMoment(A);
+    expect(h.to('rpc/spin_moment')).toHaveLength(1);
+    expect(h.to('rpc/spin_moment')[0]!.body).toEqual({ spin: A });
+    expect(m?.version.currentPayload).toEqual({ body: 'then' });
+    expect(m?.layers.map((l) => [l.act.id, l.state])).toEqual([[A, null]]);
+    expect(m?.above).toEqual([]);
+    expect(m?.recorded).toBe(true);
+    expect(m?.at).toBe('2026-10-01T09:30:00+00:00');
+    expect(await h.api.spinMoment(B)).toBeNull();
+    expect(await h.api.spinMoment('not an id')).toBeNull();
+    expect(h.to('rpc/spin_moment')).toHaveLength(2);
+  });
+
+  it('a moment answered without `at` (a server from before 0352) reads `at` as its first layer\'s time; one with `at` reads it as given', async () => {
+    const moment = (extra: Record<string, unknown>) => ({
+      version: { ...ACT_ROW, current_payload: { body: 'then' } },
+      layers: [{ act: { ...ACT_ROW, id: A, kind: 'card', created_at: '2026-10-01T08:00:00+00:00' }, state: null, savedAt: null }],
+      above: [], recorded: true, ...extra,
+    });
+    const h = harness((r) => (r.url.pathname === `${REST}/rpc/play_moment` ? json(moment({})) : r.url.pathname === `${REST}/rpc/spin_moment` ? json(moment({ at: '2026-10-01T09:30:00+00:00' })) : undefined));
+    expect((await h.api.playMoment(A))?.at).toBe('2026-10-01T08:00:00+00:00');
+    expect((await h.api.spinMoment(A))?.at).toBe('2026-10-01T09:30:00+00:00');
   });
 
   it('pinnedThreads asks pinned_threads once for the board, and reads each row\'s thread, play and end', async () => {

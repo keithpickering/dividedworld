@@ -136,8 +136,12 @@ function Body({ act, name, spoken, person, editing, own, onEdit, onDone, marks, 
  * The links stand on the post's footer bar, drawn like its header bar (the owner: the row on a bar of its own, so no 2003 text
  * lies on an ink a player picks); the spin form and the history, which open from them, stand under the bar.
  */
-/** What the post's spin form is open for: the post itself, or a play on it (from its Lens), with what gives focus back when it closes. */
-export interface SpinOrigin { readonly id: Id; readonly label: string | null; readonly opener: HTMLElement | null }
+/**
+ * What the post's spin form is open for: the post itself, or a play on it (from its Lens), with what gives focus back when it closes.
+ * `at` is the post a spin is pressed on, set only from a card on a character's mark on that post's postbit: the spin records it
+ * (docs/plans/2026-11-12-spin-at-post-design.md). No other caller sets it.
+ */
+export interface SpinOrigin { readonly id: Id; readonly label: string | null; readonly opener: HTMLElement | null; readonly at?: Id }
 
 /**
  * Whether a post's plays stop a quote of it as of the moment this is called (`quoteStop`). `quotableAt` calls it when a selection is made, so it reads the
@@ -192,7 +196,7 @@ function Actions({ act, about, canEdit, editing, onEdit, editButton, spinOrigin,
         <div id={`spin-${act.id}`}>
           {spinOrigin && (
             <SpinForm
-              key={spinOrigin.id} origin={spinOrigin.id} label={spinOrigin.label}
+              key={spinOrigin.id} origin={spinOrigin.id} label={spinOrigin.label} {...(spinOrigin.at ? { at: spinOrigin.at } : {})}
               draft={drafts.get(spinOrigin.id)} onDraft={(d) => drafts.set(spinOrigin.id, d)}
               onClose={() => { const back = spinOrigin.opener; setSpinOrigin(null); (back?.isConnected ? back : spinButton.current)?.focus(); }}
             />
@@ -286,7 +290,7 @@ const PostArticle = memo(function PostArticle({ act, person, layout, slid, cut }
     ? <PostMarks
         post={act.character} plays={plays} compare={false} to={href} nameOf={casterName} faceOf={faceOf} tallies={tallies} mine={mine}
         reachAt={{ reach: 'character', target: act.character, name, ...(person ? { pronouns: person.character.pronouns } : {}), fromPost: act, thread, board: summary.board, title: summary.title, to: href, plays, know: know ?? (async () => {}), focusBack: () => document.getElementById(`post-${seq}`) }}
-        onSpin={(play, label, opener) => setSpinOrigin({ id: play.id, label, opener })}
+        onSpin={(play, label, opener) => setSpinOrigin({ id: play.id, label, opener, at: act.id })}
       />
     : null), [shown, act, plays, thread, seq, perPage, casterName, faceOf, tallies, mine, name, person?.character.pronouns, summary.board, summary.title, know]);
   return (

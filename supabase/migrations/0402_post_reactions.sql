@@ -118,6 +118,7 @@ declare
   sprung boolean;
   cut boolean;
   cut_own boolean;
+  pressed boolean;
   stood uuid;
   e text := local_emoji(land_refusal.config);
   lkey text;
@@ -141,6 +142,9 @@ begin
   -- The same record for the parent: where its own author cut a reply in under it, the derived veil would show that card Act under the stand-in and the reply (a post, which the derived veil never covers) under its true
   -- author, and say they are one. One probe of post_under_parent, the post's few replies, and the authors of the two posts (public, as the posts are).
   cut_own := exists (select 1 from post_under u join acts r on r.id = u.reply join acts q on q.id = u.parent where u.parent = land_refusal.post and r.character = q.character);
+  -- A spin pressed at the post (0351): the spin's thread shows the play's character and the post, and the spin went through only because the post is that character's, so the record names its author. One probe of
+  -- acts_spin_at, a post's few spins.
+  pressed := exists (select 1 from acts s where s.kind = 'spin' and s.payload ? 'at' and s.payload ->> 'at' = land_refusal.post::text);
   stood := stand_in();
   -- A reaction card's reads, whatever the card is: whether an instance kind has this emoji (by its base), and whether the post holds this key.
   lkey := local_reaction_key(e);
@@ -158,6 +162,7 @@ begin
     if sprung then return 'a card set on this post has sprung, so its author is on the record'; end if;
     if cut then return 'a card cut this post in under another, so its author is on the record'; end if;
     if cut_own then return 'its author cut a reply in under this post, so the author is on the record'; end if;
+    if pressed then return 'a spin was pressed at this post, so its author is on the record'; end if;
     if stood is null then return 'this forum has no one to stand in for an author'; end if;
   end if;
   if kind_of.adds_reaction then

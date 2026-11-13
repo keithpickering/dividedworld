@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { scrubHit, scrubbedComplete } from './scrub.ts';
+import { ClaimLost, scrubHit, scrubbedComplete } from './scrub.ts';
 import { AnswerRejected, type CompletionRequest, type ModelResult, type Models } from './model.ts';
 
 const WORDS = ['badword', 'florp', 'two words'];
@@ -139,6 +139,36 @@ test('scrubbedComplete: two hits of different kinds reject naming the second', a
   const f = fake(['you badword', 'see example.com']);
   await assert.rejects(scrubbedComplete(f.models, REQUEST, WORDS), (e: unknown) => e instanceof AnswerRejected && e.predicate === 'scrub:url');
   assert.equal(f.calls.length, 2);
+});
+
+test('scrubbedComplete: the hook is called once, between the two calls, and only on a hit', async () => {
+  const f = fake(['you badword', 'nicer words']);
+  const seen: number[] = [];
+  const out = await scrubbedComplete(f.models, REQUEST, WORDS, async () => { seen.push(f.calls.length); return true; });
+  assert.equal(out.value, 'nicer words');
+  assert.deepEqual(seen, [1], 'called once, after the first call and before the second');
+  assert.equal(f.calls.length, 2);
+  const clean = fake(['fine words']);
+  let called = 0;
+  await scrubbedComplete(clean.models, REQUEST, WORDS, async () => { called++; return true; });
+  assert.equal(called, 0, 'a clean first answer never calls it');
+  const twice = fake(['you badword', 'florp again']);
+  called = 0;
+  await assert.rejects(scrubbedComplete(twice.models, REQUEST, WORDS, async () => { called++; return true; }), AnswerRejected);
+  assert.equal(called, 1);
+});
+
+test('scrubbedComplete: a hook that says no is one call and a ClaimLost, which is not an AnswerRejected', async () => {
+  const f = fake(['you badword', 'nicer words']);
+  await assert.rejects(scrubbedComplete(f.models, REQUEST, WORDS, async () => false), (e: unknown) => e instanceof ClaimLost && !(e instanceof AnswerRejected));
+  assert.equal(f.calls.length, 1);
+});
+
+test('scrubbedComplete: an error from the hook passes through, with no second call', async () => {
+  const f = fake(['you badword', 'nicer words']);
+  const boom = new Error('boom');
+  await assert.rejects(scrubbedComplete(f.models, REQUEST, WORDS, async () => { throw boom; }), (e: unknown) => e === boom);
+  assert.equal(f.calls.length, 1);
 });
 
 test('phone: a trunk prefix before the three groups still hits', () => {

@@ -7,7 +7,9 @@ import { placeholderWorld } from '../../../instances/divided-world/system/fixtur
 import type { Instance as WorldInstance } from '../../../engine/rules/types.ts';
 
 const dividedWorld: WorldInstance = placeholderWorld(realInstance);
-import { AnswerRejected, LedgerWriteFailed, models as realModels } from '../_shared/models/index.ts';
+import { AnswerRejected, LedgerWriteFailed, PromptTooLong, models as realModels } from '../_shared/models/index.ts';
+import { ProviderRefusal } from '../_shared/models/transport.ts';
+import { tokenCounter } from '../../../engine/system/tokens.ts';
 import type { ModelCallRow } from '../_shared/models/ledger.ts';
 import type { ChatRequest, CompletionRequest, ModelResult, Models } from '../../../engine/system/model.ts';
 import type { Instance } from '../../../engine/rules/types.ts';
@@ -42,7 +44,9 @@ interface World {
   modBots?: Record<string, unknown>;
   failOn?: Record<string, number | 'always'>;
   /** Visits the tick files while the model is thinking (the race). */
-  tickFiles?: string[];  /** What `mod_group_context` answers. */
+  tickFiles?: string[];
+  /** When set, pool_thread reports this many long posts (Poster0 oldest, the inspected post last) instead of the one short one. */
+  longThread?: number;  /** What `mod_group_context` answers. */
   groups?: { conferred: { key: string; name: string; tone: string }[]; characters: { id: string; capped: boolean; held: boolean }[] };
 }
 const mod = (allowance: number, over: Partial<Standing> = {}): Standing => ({ office: 'mod', allowance, order: 'Crack down on bumping in Games.', beat: [{ id: GAMES, name: 'Games' }], ...over });
@@ -88,6 +92,7 @@ function fakeDb(w: World = {}) {
         case 'character_faces': return {} as T;
         case 'pool_thread': {
           const v = visits.find((x) => x.thread === args.in_thread)!;
+          if (w.longThread) return { title: 'Best Mario game?', posts: Array.from({ length: w.longThread }, (_, i) => ({ act: i === w.longThread! - 1 ? v.post : `x${i}`, name: `Poster${i}`, body: `post ${i} ${'the quick brown fox jumps over a lazy dog '.repeat(8)}` })) } as T;
           return { title: 'Best Mario game?', posts: [{ act: v.post, name: 'Bob', body: 'Odyssey. Odyssey.' }] } as T;
         }
         case 'apply_mod_move': {
@@ -339,6 +344,58 @@ test('an old-voice persona\'s line is a raw completion, and its move a chat call
   assert.deepEqual(dead.of('file_visit'), [{ visit_act: V1 }]);
 });
 
+test('an old voice\'s filing asks for the most the window leaves, and its frame fits what the window leaves for the prompt', async () => {
+  const room = async (settings: Partial<Instance['settings']>) => {
+    const d = fakeDb({ visits: [due(V1, P1)] });
+    const m = fakeModels(() => ({ move: move() }), 'A line.');
+    const world = { ...withVoice(MON, 'oldVoice'), settings: { ...dividedWorld.settings, ...settings } };
+    await run(d, m, world);
+    return { req: m.completions[0]!, count: tokenCounter(world.settings.oldVoiceTokenizer), window: world.settings.oldVoiceWindow };
+  };
+  assert.equal((await room({})).req.maxTokens, 160);
+  const tight = await room({ oldVoiceWindow: 400, oldVoicePromptFloor: 300 });
+  assert.equal(tight.req.maxTokens, 100, 'a window of 400 with a floor of 300 leaves 100');
+  assert.ok(tight.count(tight.req.prompt) <= tight.window - 100, 'the prompt fits the budget');
+  const bare = await room({ oldVoiceWindow: 64, oldVoicePromptFloor: 8 });
+  assert.match(bare.req.prompt, /\[Moderator action: [^\n]*\]\n[^\n]*:$/, 'the moderator-action line and the Mod\'s own line are never removed');
+});
+
+test('an old voice\'s filing drops the thread\'s oldest posts when the thread overflows the window less its line', async () => {
+  const world = { ...withVoice(MON, 'oldVoice'), settings: { ...dividedWorld.settings, oldVoiceWindow: 400, oldVoicePromptFloor: 300, digestExcerptChars: 300, pool: { ...dividedWorld.settings.pool, chatterThreadPosts: 8 } } };
+  const d = fakeDb({ visits: [due(V1, P1)], longThread: 8 });
+  const m = fakeModels(() => ({ move: move() }), 'A line.');
+  await run(d, m, world);
+  const req = m.completions[0]!;
+  const count = tokenCounter(world.settings.oldVoiceTokenizer);
+  const budget = world.settings.oldVoiceWindow - req.maxTokens!;
+  assert.equal(req.maxTokens, 100);
+  assert.ok(count(req.prompt) <= budget, `${count(req.prompt)} tokens against a budget of ${budget}`);
+  assert.ok(!req.prompt.includes('Poster0:') && req.prompt.includes('Poster7:'), 'the oldest posts went and the newest stayed');
+  assert.match(req.prompt, /\[Moderator action: [^\n]*\]\n[^\n]*:$/);
+});
+
+test('an old voice\'s filing that the window refuses (promptTooLong, or a server\'s own 4xx) is filed with its stock line', async () => {
+  for (const refusal of [new PromptTooLong(900, 600), new AnswerRejected('the server refused', 'refused:400')]) {
+    const d = fakeDb({ visits: [due(V1, P1)] });
+    const m = fakeModels(() => ({ move: move() }), refusal);
+    const out = await run(d, m, withVoice(MON, 'oldVoice'));
+    assert.ok(out.status === 'ok');
+    assert.equal(m.completions.length, 1);
+    assert.equal(m.chats.length, 0, 'no move without a line');
+    assert.deepEqual(d.of('file_visit'), [{ visit_act: V1 }], 'the stock line');
+  }
+});
+
+test('an old voice\'s filing whose server answers 401 (a bad key stays a ProviderRefusal, #583) is filed with its stock line', async () => {
+  const d = fakeDb({ visits: [due(V1, P1)] });
+  const m = fakeModels(() => ({ move: move() }), new ProviderRefusal('HTTP 401 bad key', 401));
+  const out = await run(d, m, withVoice(MON, 'oldVoice'));
+  assert.ok(out.status === 'ok');
+  assert.equal(m.completions.length, 1);
+  assert.equal(m.chats.length, 0, 'no move without a line');
+  assert.deepEqual(d.of('file_visit'), [{ visit_act: V1 }], 'the stock line');
+});
+
 test('the day\'s budget counts every call: an old voice with a move is two', async () => {
   const d = fakeDb({ visits: [due(V1, P1)], today: 59, modBots: { filingLinesPerDay: 60 } });
   const m = fakeModels(() => ({ move: move() }), 'Line.');
@@ -484,7 +541,7 @@ test('through the real model layer: each call is a ledger row naming the filing 
     return reply(JSON.stringify({ words: 'Back from a bad connection.' }));
   }) as unknown as typeof globalThis.fetch;
   const models = realModels((n) => ({ ANTHROPIC_API_KEY: 'sk-test' } as Record<string, string>)[n], async (row) => { rows.push(row); }, {
-    tiers: { strong: 'claude-opus-5-5', light: 'claude-haiku-5-5' }, fetch, sleep: async () => {},
+    tiers: { strong: 'claude-opus-5-5', light: 'claude-haiku-5-5' }, oldVoice: { window: 1024, count: (t: string) => t.length }, fetch, sleep: async () => {},
   });
   const out = await runFilings(d.db, models, dividedWorld, SLOT, clock);
   assert.ok(out.status === 'ok');

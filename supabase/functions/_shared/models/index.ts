@@ -5,8 +5,9 @@
  *
  * "Three unrelated timeouts are not a poison pill": a transport failure (a 5xx, a 429, a fetch
  * that threw or never answered) is retried on the request itself, waiting longer each time, at
- * most three times; a 4xx other than 429 is a fact about the request and is thrown at once. The
- * number of retries rides on the result.
+ * most three times; a 4xx other than 429 is thrown at once: a completions endpoint's 400, 413
+ * and 422 as a rejection, any other as a ProviderRefusal. The number of retries rides on the
+ * result.
  *
  * Every call, whatever its end, writes one ledger row (ledger.ts) in a `finally`: used (`ok`), an
  * answer that could not be used (`rejected`, with the predicate and the trims made before it), or
@@ -19,9 +20,9 @@
  * here names a model id as a default, so the setting is the one place a tier's model is chosen.
  */
 import type { CallContext, ChatRequest, CompletionRequest, ModelResult, Models, Tier, Usage } from '../../../../engine/system/model.ts';
-import { AnswerRejected, SchemaRefused } from '../../../../engine/system/model.ts';
+import { AnswerRejected, PromptTooLong, SchemaRefused } from '../../../../engine/system/model.ts';
 import { schemaProblems } from '../../../../engine/system/schema.ts';
-export { AnswerRejected, SchemaRefused };
+export { AnswerRejected, PromptTooLong, SchemaRefused };
 import { cutCompletion, repair } from '../../../../engine/system/validate.ts';
 import type { Trim } from '../../../../engine/system/validate.ts';
 import { anthropicChat } from './anthropic.ts';
@@ -29,7 +30,7 @@ import { complete as completeOverHttp } from './completions.ts';
 import { PRICES, price } from './prices.ts';
 import type { PriceTable } from './prices.ts';
 import type { ModelCallRow, RecordModelCall } from './ledger.ts';
-import { NotJson, TransportFailure } from './transport.ts';
+import { NotJson, ProviderRefusal, TransportFailure } from './transport.ts';
 import type { Wire } from './transport.ts';
 
 export type Env = (name: string) => string | undefined;
@@ -44,10 +45,19 @@ export interface ModelOptions {
   readonly now?: () => number;
   /** Price tables by provider; the shipped ones when unset. */
   readonly prices?: Readonly<Record<string, PriceTable>>;
+  /** The old voice's context window in tokens and the tokenizer that counts a prompt against it (`oldVoiceWindow`, `oldVoiceTokenizer`). */
+  readonly oldVoice: { readonly window: number; readonly count: (text: string) => number };
 }
 
 /** At most this many retries after the first attempt. */
 export const MAX_RETRIES = 3;
+
+/**
+ * The statuses of a completions endpoint's refusal that are facts about the request: malformed (400), too long (413), unprocessable (422).
+ * A 401, a 403 or a 404 is the instance's configuration (a bad key, a wrong address) and must stay a visible `ProviderRefusal`, as the mail
+ * function treats a 401 and a 403 (issue #583).
+ */
+const REQUEST_REFUSALS: readonly number[] = [400, 413, 422];
 
 /** The ledger could not be written; the call it was for is not trusted. */
 export class LedgerWriteFailed extends Error {}
@@ -96,8 +106,8 @@ export function models(env: Env, record: RecordModelCall, options: ModelOptions)
     } catch (e) {
       threw = true;
       failure = e;
-      // A refused schema was never sent: nothing was asked or paid for, so its row is `failed`, with the predicate.
-      if (e instanceof SchemaRefused) { call.outcome = 'failed'; call.predicate = e.predicate; }
+      // A refused schema, or a prompt too long for the window, was never sent: nothing was asked or paid for, so its row is `failed`, with the predicate.
+      if (e instanceof SchemaRefused || e instanceof PromptTooLong) { call.outcome = 'failed'; call.predicate = e.predicate; }
       else if (e instanceof AnswerRejected) { call.outcome = 'rejected'; call.predicate = e.predicate; }
       throw e;
     } finally {
@@ -155,7 +165,18 @@ export function models(env: Env, record: RecordModelCall, options: ModelOptions)
       return ledgered(request, { provider: 'completions', model: 'self-hosted' }, async (call) => {
         const url = env('SYSTEM_COMPLETIONS_URL');
         if (!url) throw new Error('SYSTEM_COMPLETIONS_URL is not set');
-        const raw = await withRetries(call, () => completeOverHttp(request, url, env('SYSTEM_COMPLETIONS_KEY') || undefined, env('SYSTEM_COMPLETIONS_MODEL') ?? 'default', wire));
+        // Before anything is sent: a prompt that leaves the answer no room is a fact about the request.
+        const room = options.oldVoice.window - request.maxTokens;
+        const length = options.oldVoice.count(request.prompt);
+        if (length > room) throw new PromptTooLong(length, room);
+        let raw: Awaited<ReturnType<typeof completeOverHttp>>;
+        try {
+          raw = await withRetries(call, () => completeOverHttp(request, url, env('SYSTEM_COMPLETIONS_KEY') || undefined, env('SYSTEM_COMPLETIONS_MODEL') ?? 'default', wire));
+        } catch (e) {
+          // A refusal about the request itself (an overflow the count missed, a malformed body) is a rejection, ended at once. Any other (a bad key, a wrong address) is thrown as the ProviderRefusal it is. A 5xx and a 429 never get here.
+          if (e instanceof ProviderRefusal && REQUEST_REFUSALS.includes(e.status)) throw new AnswerRejected(e.message, `refused:${e.status}`);
+          throw e;
+        }
         call.model = raw.model;
         call.usage = raw.usage;
         priced(call, 'completions');

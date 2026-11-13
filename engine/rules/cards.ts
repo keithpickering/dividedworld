@@ -11,7 +11,7 @@
 import type { ActKind, Alignment, EconomyRead, Hundredths, Quadrant, Settings, Span } from './types.ts';
 import { QUADRANTS } from './types.ts';
 import { parse, safeColor } from '../bbcode/parse.ts';
-import { visibleText } from '../bbcode/visible.ts';
+import { visibleWalk, type Stretch } from '../bbcode/visible.ts';
 import { phraseIn } from '../bbcode/phrase.ts';
 import { GRID, cellsOf, toBits, type SurfaceStroke } from './surface.ts';
 
@@ -38,6 +38,8 @@ export type CardTarget =
      * an image stands. A card that works on a post's words reads these, at the offsets the renderer's text layers use.
      */
     readonly text: string;
+    /** The stretches of `text` that are a bare address, in its offsets (engine/bbcode/visible.ts): a card that must not touch a link leaves them alone. */
+    readonly links: readonly Stretch[];
     /**
      * Which version of the post this is (card_target, 0070): its latest edit's id, or the post's own before any edit. The server
      * reads it with the post and hands it back to play_card, which refuses a play decided against an older one. A screen's
@@ -55,7 +57,8 @@ export type PostTarget = Extract<CardTarget, { reach: 'post' }>;
 /** A post as a card's rules see it, from its current body: its length in characters and its visible text, and its version where the server read one. */
 export function postTarget(act: string, kind: PostTarget['kind'], body: unknown, version?: string, under?: string): PostTarget {
   const words = typeof body === 'string' ? body : '';
-  return { reach: 'post', act, kind, length: [...words].length, text: visibleText(parse(words)), ...(version ? { version } : {}), ...(under ? { under } : {}) };
+  const { text, links } = visibleWalk(parse(words));
+  return { reach: 'post', act, kind, length: [...words].length, text, links, ...(version ? { version } : {}), ...(under ? { under } : {}) };
 }
 
 /**
@@ -190,6 +193,10 @@ export interface WriteFrameInput {
   readonly title: string;
   readonly tails: readonly string[];
   readonly settings: Settings;
+  /** The prompt's most tokens: the old voice's window less the tokens the answer may take. A frame drops its oldest material to fit it. */
+  readonly budget: number;
+  /** How many tokens a text is, by the instance's tokenizer. */
+  readonly count: (text: string) => number;
 }
 
 /**
@@ -324,9 +331,9 @@ export interface CardRules<Config = unknown> {
   /**
    * A persona's options repaired against the post before they are decided (CLAUDE.md, "A validator tighter than the schema"): a card whose
    * options a model can overshoot (a list longer than its most, an entry that is not in the post) trims what it can and names each trim.
-   * It never invents an option. A player's play is never repaired. If it throws, the persona's options are decided as given (no repair) and the call's record names the throw. Given the options unchecked and the post as the card's rules see it.
+   * It never invents an option. A player's play is never repaired. If it throws, the persona's options are decided as given (no repair) and the call's record names the throw. Given the options unchecked, the post as the card's rules see it and how the card is being played: a set's options need not be in the post it is set on, since its quote may come in another post.
    */
-  repairStaff?(config: unknown, target: PostTarget): { readonly config: unknown; readonly trims: readonly { readonly path: string; readonly predicate: string; readonly before: number; readonly after: number }[] };
+  repairStaff?(config: unknown, target: PostTarget, play: 'cast' | 'set'): { readonly config: unknown; readonly trims: readonly { readonly path: string; readonly predicate: string; readonly before: number; readonly after: number }[] };
   /**
    * A play whose layer any character may add to (a draw) and its own character may take ink off (a wash). `limitKey` is the `screenReads` key
    * holding the most the layer may cover, in whole percent of the grid's cells; `mostLive` the most live draws one play holds. The card's
@@ -348,6 +355,22 @@ export interface CardRules<Config = unknown> {
  * refused by the settings' validation and never by the database in a play.
  */
 export const WRITE_TOKENS_MOST = 2000;
+
+/**
+ * How long a thread's title is clipped to, in characters, when a frame for the old voice is over its budget and has dropped every earlier post it can
+ * (design section 3, docs/plans/2026-11-12-old-voice-window-design.md); past it the title is emptied. Every such frame clips to this one length, so none can drift.
+ */
+export const FIT_TITLE_CHARS = 40;
+
+/**
+ * The most tokens a play of a card that writes may buy in this instance: the smaller of `WRITE_TOKENS_MOST` and the old voice's window less the least
+ * prompt a play leaves room for (design section 4, docs/plans/2026-11-12-old-voice-window-design.md), and never below 1. It is computed wherever the most is
+ * read, so no pair of settings can be wrong: a window at or below the floor makes plays one token long, and no row can stop the instance, which a refusal
+ * of the pair would (the owner's answer on #582). A card's recorded tokens are capped by it too (you-were-saying.ts).
+ */
+export function writeTokensMost(settings: Settings): number {
+  return Math.max(1, Math.min(WRITE_TOKENS_MOST, settings.oldVoiceWindow - settings.oldVoicePromptFloor));
+}
 
 /** The largest whole number Postgres's integer holds, which a price is read as there (0006_cards.sql). */
 export const INT4_MAX = 2_147_483_647;

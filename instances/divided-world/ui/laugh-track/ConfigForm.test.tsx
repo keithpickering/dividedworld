@@ -3,7 +3,7 @@
  * each counted through the card's own matcher, the play's total against its cap, and the post's words to select from, a selection filling
  * the first empty cue.
  */
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import type { Act } from '../../../../engine/ui/data/api.ts';
 import { RouterProvider } from '../../../../engine/ui/router.tsx';
@@ -11,9 +11,9 @@ import { ConfigForm } from './ConfigForm.tsx';
 
 const post = (body: string) => ({ id: 'p', currentPayload: { body } }) as unknown as Act;
 const BODY = 'Mario and mario met Luigi. Luigi waved at Mario again.';
-const form = (config: Record<string, unknown> | undefined, body = BODY) => {
+const form = (config: Record<string, unknown> | undefined, body = BODY, faceDown: 'no' | 'can' | 'will' = 'will') => {
   const onChange = vi.fn();
-  return { onChange, ...render(<RouterProvider><ConfigForm config={config} onChange={onChange} post={post(body)} id="play" /></RouterProvider>) };
+  return { onChange, ...render(<RouterProvider><ConfigForm config={config} onChange={onChange} post={post(body)} id="play" faceDown={faceDown} /></RouterProvider>) };
 };
 const copy = () => screen.getByRole('group', { name: 'The post\'s words' });
 /* What the browser says to the page for a selection: the document's selection and a selectionchange. */
@@ -39,6 +39,13 @@ const total = () => screen.getByText(/places? in all/).closest('[role="status"]'
 afterEach(() => vi.restoreAllMocks());
 
 describe('Laugh Track\'s play form', () => {
+  test.each([['no', false], ['can', false], ['will', true]] as const)('the face-down note, with faceDown %s, is shown: %s', (way, shown) => {
+    form(undefined, BODY, way);
+    expect(phrase(1).getAttribute('aria-describedby')).not.toBeNull();
+    const note = screen.queryByText(/A face-down Laugh Track waits for this phrase\./);
+    expect(note !== null).toBe(shown);
+  });
+
   test('a fieldset of one cue to begin with, with labeled fields and no remove button for a lone cue', () => {
     form(undefined);
     expect(screen.getByRole('group', { name: 'Your audience\'s cues' })).toBeInTheDocument();
@@ -85,6 +92,18 @@ describe('Laugh Track\'s play form', () => {
     expect(phrase(3)).toHaveAccessibleDescription(/^\s*Not in this post's own words\s*$/);
     expect(phrase(1)).toHaveAccessibleDescription(/^\s*Cues 3 places in this post\. A face-down Laugh Track waits for this phrase\.\s*$/);
     expect(screen.getByText('5 places in all (at most 30)')).toBeInTheDocument();
+  });
+
+  test('a phrase found only inside a link says so, and the counts are the places outside links (#602)', () => {
+    const address = 'https://example.com/Luigi';
+    form({ cues: [{ phrase: address, sound: 'laugh' }, { phrase: 'Luigi', sound: 'cheer' }] }, `See ${address} and Luigi, then [noparse]${address}[/noparse].`);
+    expect(phrase(1)).toHaveAccessibleDescription(/^\s*Cues 1 place in this post\. A face-down Laugh Track waits for this phrase\.\s*$/);
+    expect(phrase(2)).toHaveAccessibleDescription(/^\s*Cues 1 place in this post\s*$/);
+    expect(screen.getByText('2 places in all (at most 30)')).toBeInTheDocument();
+    cleanup();
+    form({ cues: [{ phrase: address, sound: 'laugh' }, { phrase: 'Luigi', sound: 'cheer' }] }, `See ${address} only.`);
+    expect(phrase(1)).toHaveAccessibleDescription(/^\s*Only inside a link here, and a Laugh Track never cues a link\. A face-down Laugh Track waits for this phrase\.\s*$/);
+    expect(phrase(2)).toHaveAccessibleDescription(/^\s*Not in this post's own words\s*$/);
   });
 
   test('one place says place', () => {

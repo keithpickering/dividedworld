@@ -22,10 +22,18 @@ export const SEPARATOR = '\n';
 
 type Step = { readonly node: BbNode } | { readonly sep: true };
 
-/** The visible text, and each kept text node's offset into it (by node identity, as the tree holds it). */
-export function visibleWalk(nodes: readonly BbNode[]): { text: string; offsets: Map<BbNode, number> } {
+/** A stretch of the visible text, from its first character to just past its last. */
+export interface Stretch { readonly start: number; readonly end: number }
+
+/**
+ * The visible text, each kept text node's offset into it (by node identity, as the tree holds it), and the stretches of it that are a
+ * bare address (an `autolink` node), in the text's own offsets and in its order. A card that must not touch a link reads those; the
+ * words of a `[url]` are not in the text at all, so they are not among them.
+ */
+export function visibleWalk(nodes: readonly BbNode[]): { text: string; offsets: Map<BbNode, number>; links: Stretch[] } {
   let text = '';
   const offsets = new Map<BbNode, number>();
+  const links: Stretch[] = [];
   const stack: Step[] = [];
   const pushAll = (list: readonly Step[]) => { for (let i = list.length - 1; i >= 0; i--) stack.push(list[i]!); };
   pushAll(nodes.map((node) => ({ node })));
@@ -36,6 +44,7 @@ export function visibleWalk(nodes: readonly BbNode[]): { text: string; offsets: 
     switch (n.type) {
       case 'text': case 'noparse': case 'autolink':
         offsets.set(n, text.length);
+        if (n.type === 'autolink' && n.text.length > 0) links.push({ start: text.length, end: text.length + n.text.length });
         text += n.text;
         break;
       case 'bold': case 'italic': case 'underline': case 'strike': case 'color': case 'size': case 'counterfeit': case 'spoiler': case 'ispoiler':
@@ -57,7 +66,7 @@ export function visibleWalk(nodes: readonly BbNode[]): { text: string; offsets: 
         break;
     }
   }
-  return { text, offsets };
+  return { text, offsets, links };
 }
 
 /** The post's visible text alone. */

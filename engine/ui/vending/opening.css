@@ -181,6 +181,13 @@
   transform-style: preserve-3d;
 }
 
+/* In the row a card is the fan's size (postcard.css), and so is its flip: a sheet-sized box round a fan card stood the card in its top left corner, so the
+   entrance, which centers the box in the pack, showed the back past the pack's top left corner, and the turn swung it round a point off its own middle. */
+.kb-opening-cardbox[data-kb-size='fan'] .kb-opening-flip {
+  width: 150px;
+  height: 225px;
+}
+
 .kb-opening-side {
   position: absolute;
   inset: 0;

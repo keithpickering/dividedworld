@@ -503,76 +503,49 @@ describe('Laugh Track: one stop for a post', () => {
   });
 });
 
-/* Decisions on the effect (issues #576 and #577): a link stays a link, and selecting to quote plays nothing. */
-describe('Laugh Track: a cue inside a link is not a button (#576)', () => {
-  /* Only an autolink's words are visible text (a [url]'s words are its target's name, engine/bbcode/visible.ts), and the matcher fuses punctuation between letters, so a cue is the whole bare address. */
+/* Decisions on the effect (issues #602, which replaced #576's, and #577): a Laugh Track never cues a link, and selecting to quote plays nothing. */
+describe('Laugh Track: no cue is drawn inside a link (#602)', () => {
+  /* Only an autolink's words are visible text (a [url]'s words are its target's name, engine/bbcode/visible.ts), and the matcher fuses punctuation between letters, so a cue lands in a link only as the whole bare address. */
   const URL = 'https://example.com/Luigi';
-  const LINKED = `Visit ${URL} and Mario is great.`;
-  const LINK_CUES = [{ phrase: URL, sound: 'boo' }, { phrase: 'Mario is', sound: 'laugh' }, { phrase: 'great', sound: 'cheer' }];
-  const linkedPiece = () => document.querySelector<HTMLElement>('a .dw-lt-cue')!;
-  const plain = () => pieces().filter((p) => !p.closest('a'));
+  const LINKED = `Visit ${URL} and Luigi is great.`;
+  const LINK_CUES = [{ phrase: URL, sound: 'boo' }, { phrase: 'Luigi', sound: 'laugh' }];
+  const anchor = () => document.querySelector<HTMLAnchorElement>('a')!;
 
-  test('a linked cue\'s first piece has no role, no aria-label and no tabindex', () => {
+  test('the address is drawn as plain link text: no cue inside the link, and its words are all there', () => {
     mount({ body: LINKED, plays: [playOf(LINK_CUES)] });
-    const p = linkedPiece();
-    expect(p.textContent).toBe(URL);
-    expect(p.closest('a')).not.toBeNull();
-    for (const a of ['role', 'aria-label', 'tabindex']) expect(p).not.toHaveAttribute(a);
+    expect(anchor().textContent).toBe(URL);
+    expect(anchor().querySelector('.dw-lt-cue')).toBeNull();
+    expect(anchor().querySelector('[data-lt-place]')).toBeNull();
+    expect(pieces().map((p) => p.textContent)).toEqual(['Luigi']);
+    expect(document.body.textContent).toContain(`Visit ${URL} and Luigi is great.`);
   });
 
-  test('a click on it plays nothing and is not default-prevented', () => {
-    mount({ body: LINKED, plays: [playOf(LINK_CUES)] });
-    const notPrevented = fireEvent.click(linkedPiece());
-    expect(notPrevented).toBe(true);
-    expect(heard.play).not.toHaveBeenCalled();
-    expect(linkedPiece()).not.toHaveClass('dw-lt-fired');
-  });
-
-  test('Enter and Space on it play nothing and are not default-prevented', () => {
-    mount({ body: LINKED, plays: [playOf(LINK_CUES)] });
-    expect(fireEvent.keyDown(linkedPiece(), { key: 'Enter' })).toBe(true);
-    expect(fireEvent.keyDown(linkedPiece(), { key: ' ' })).toBe(true);
-    expect(heard.play).not.toHaveBeenCalled();
-  });
-
-  test('a mouse moving onto it plays once and marks it heard; near(0.5) still marks it; the Lens counts it', () => {
+  test('the other place is a button that plays on a click and Enter, and the Lens counts one', () => {
     const m = mount({ body: LINKED, plays: [playOf(LINK_CUES)] });
-    expect(lastView(m).state).toBe('0 of 3 cues heard');
-    act(() => { move(document.body, 1, 1); });
-    act(() => { enter(linkedPiece(), 10, 10); });
+    expect(lastView(m).state).toBe('0 of 1 places heard');
+    expect(buttons()).toHaveLength(1);
+    expect(buttons()[0]!).toHaveAttribute('tabindex', '0');
+    vi.useFakeTimers({ toFake: ['Date'] });
+    fireEvent.click(buttons()[0]!);
     expect(heard.play).toHaveBeenCalledTimes(1);
-    expect(linkedPiece()).toHaveClass('dw-lt-fired');
-    expect(lastView(m).state).toBe('1 of 3 cues heard');
-    expect(linkedPiece()).not.toHaveAttribute('role');
+    expect(lastView(m).state).toBe('1 of 1 places heard');
+    vi.setSystemTime(Date.now() + 1000);
+    fireEvent.keyDown(buttons()[0]!, { key: 'Enter' });
+    expect(heard.play).toHaveBeenCalledTimes(2);
   });
 
-  test('near(0.5) still marks a linked cue', () => {
-    mount({ body: LINKED, plays: [playOf(LINK_CUES)] });
-    act(() => { spec(0).near(0.5); });
-    expect(linkedPiece().style.getPropertyValue('--dw-lt-near')).toBe('0.5');
+  test('a phrase that starts outside the link and ends inside it draws nothing, and the words after the link still line up', () => {
+    mount({ body: LINKED, plays: [playOf([{ phrase: `Visit ${URL}`, sound: 'boo' }, { phrase: 'great', sound: 'cheer' }])] });
+    expect(pieces().map((p) => p.textContent)).toEqual(['great']);
+    expect(anchor().querySelector('.dw-lt-cue')).toBeNull();
+    expect(document.body.textContent).toContain(`Visit ${URL} and Luigi is great.`);
   });
 
-  test('with a linked cue first and a plain one second, the stop is the plain one and the keys never land on the linked one', () => {
-    mount({ body: LINKED, plays: [playOf(LINK_CUES)] });
-    const b = buttons();
-    expect(b.map((x) => x.textContent)).toEqual(['Mario is', 'great']);
-    expect(b.map((x) => x.getAttribute('tabindex'))).toEqual(['0', '-1']);
-    act(() => { b[0]!.focus(); });
-    const key = (i: number, k: string) => act(() => { fireEvent.keyDown(buttons()[i]!, { key: k }); });
-    key(0, 'ArrowLeft'); expect(document.activeElement).toBe(b[0]);
-    key(0, 'Home'); expect(document.activeElement).toBe(b[0]);
-    key(0, 'ArrowRight'); expect(document.activeElement).toBe(b[1]);
-    key(1, 'End'); expect(document.activeElement).toBe(b[1]);
-    key(1, 'ArrowLeft'); expect(document.activeElement).toBe(b[0]);
-    expect(document.activeElement).not.toBe(linkedPiece());
-    expect(plain()).toHaveLength(2);
-  });
-
-  test('a post with only linked cues has no cue with tabindex 0', () => {
-    mount({ body: 'See https://example.com/Luigi here.', plays: [playOf([{ phrase: 'https://example.com/Luigi', sound: 'boo' }])] });
-    expect(pieces()).toHaveLength(1);
-    expect(document.querySelectorAll('.dw-lt-cue[tabindex="0"]')).toHaveLength(0);
-    expect(buttons()).toHaveLength(0);
+  test('a post whose only place is in a link has no cue, no stop and says there are none', () => {
+    const m = mount({ body: `See ${URL} here.`, plays: [playOf([{ phrase: URL, sound: 'boo' }])] });
+    expect(pieces()).toHaveLength(0);
+    expect(lastView(m).state).toBe('No cues in this version');
+    expect(anchor().textContent).toBe(URL);
   });
 });
 
@@ -664,18 +637,18 @@ describe('Laugh Track: the Lens', () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     const m = mount();
     const v0 = lastView(m);
-    expect(v0).toMatchObject({ state: '0 of 5 cues heard', progress: 0, yours: false, notes: {} });
+    expect(v0).toMatchObject({ state: '0 of 5 places heard', progress: 0, yours: false, notes: {} });
     expect(v0).not.toHaveProperty('ends');
     expect(v0.controls).toHaveLength(1);
     expect(v0.controls[0]).toMatchObject({ kind: 'toggle', label: 'Game sounds', on: false });
     fireEvent.click(pieces()[0]!); fireEvent.click(pieces()[1]!);
-    expect(lastView(m)).toMatchObject({ state: '2 of 5 cues heard', progress: 0.4 });
+    expect(lastView(m)).toMatchObject({ state: '2 of 5 places heard', progress: 0.4 });
     for (const v of m.views.filter(Boolean)) expect(viewProblems(v!, { holds: false, covers: false })).toEqual([]);
   });
 
-  test('one cue at one place is "0 of 1 cues heard" and a view is cleared when the post goes', () => {
+  test('one cue at one place is "0 of 1 places heard" and a view is cleared when the post goes', () => {
     const m = mount({ plays: [playOf([{ phrase: 'Mario is', sound: 'laugh' }])] });
-    expect(lastView(m).state).toBe('0 of 1 cues heard');
+    expect(lastView(m).state).toBe('0 of 1 places heard');
     m.unmount();
     expect(m.views.at(-1)).toBeNull();
   });
@@ -699,7 +672,7 @@ describe('Laugh Track: the Lens', () => {
 });
 
 describe('Laugh Track: a play\'s moment (still)', () => {
-  test('nothing registers, plays or binds, no piece is focusable, and the Lens says how many cues with no controls', () => {
+  test('nothing registers, plays or binds, no piece is focusable, and the Lens says how many places with no controls', () => {
     const m = mount({ still: true });
     expect(hub.specs).toHaveLength(0);
     expect(hub.offs).toHaveLength(0);
@@ -713,14 +686,20 @@ describe('Laugh Track: a play\'s moment (still)', () => {
     expect(heard.loop).not.toHaveBeenCalled();
     expect(hub.quiets).toHaveLength(0);
     expect(m.met).not.toHaveBeenCalled();
-    expect(lastView(m)).toMatchObject({ state: '3 cues', controls: [], yours: false, notes: {} });
+    expect(lastView(m)).toMatchObject({ state: '5 places', controls: [], yours: false, notes: {} });
     expect(lastView(m).progress).toBeNull();
     expect(viewProblems(lastView(m), { holds: false, covers: false })).toEqual([]);
   });
 
-  test('a moment with one cue says "1 cue"', () => {
+  test('a moment with one place says "1 place"', () => {
     const m = mount({ still: true, plays: [playOf([{ phrase: 'Mario is', sound: 'laugh' }])] });
-    expect(lastView(m).state).toBe('1 cue');
+    expect(lastView(m).state).toBe('1 place');
+  });
+
+  test('a moment with no place says "No cues in this version"', () => {
+    const m = mount({ still: true, body: 'Nothing here.' });
+    expect(lastView(m).state).toBe('No cues in this version');
+    expect(lastView(m).progress).toBeNull();
   });
 
   test('the ORIGIN box behaves as the thread does', () => {

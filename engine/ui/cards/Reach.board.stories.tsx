@@ -27,7 +27,7 @@ import { usePlay } from './play.tsx';
 import type { CardUi } from './types.ts';
 import { LoadedBoard, LoadedThread } from '../loaded.tsx';
 
-type Scene = 'character' | 'still' | 'armed' | 'thread' | 'banner' | 'pinned';
+type Scene = 'character' | 'first' | 'still' | 'armed' | 'thread' | 'banner' | 'pinned';
 
 /** The engine's own board card, for the banner: legendary, a day, drawn as a plain mark in the glass's neon. */
 const RUMBLE: CardRules = {
@@ -40,24 +40,25 @@ const DAY = 86_400_000;
 
 /** Lay the scene on the fixture's thread, then say which board it is on, for a scene drawn on the board. */
 function useSeeded(thread: string | null, scene: Scene): { readonly ready: boolean; readonly board: string | null } {
-  const { api, instance } = useKayfa();
+  const { api, instance, ui } = useKayfa();
   const [state, setState] = useState<{ ready: boolean; board: string | null }>({ ready: false, board: null });
   useEffect(() => {
     if (thread === null) return;
     let live = true;
     void (async () => {
       const fake = api as Fake;
-      for (const c of instance.cards) await api.meetCard(c.key);
+      /* The first-time scene leaves every card unmet, so the character card's callout hangs from the postbit's mark. */
+      if (scene !== 'first') for (const c of instance.cards) await api.meetCard(c.key);
       const acts = await api.acts(thread, 41, 42);
       const target = acts.find((a) => a.seq === 41);
       const caster = acts.find((a) => a.seq === 42)?.character;
       if (!target?.character || !caster) throw new Error('the boards fixture has no #41 and #42 with authors');
       const summary = await api.thread(thread);
       const slug = (await api.boards()).find((b) => b.id === summary?.board)?.slug ?? null;
-      const onCharacter = instance.cards.find((c) => reachesOf(c).includes('character'));
+      const onCharacter = instance.cards.find((c) => reachesOf(c).includes('character') && (scene !== 'first' || ui.cards.find((u) => u.key === c.key)?.hint !== undefined));
       const onThread = instance.cards.find((c) => reachesOf(c).includes('thread') && (scene !== 'pinned' || c.pins));
       const ends = Date.now() + 5 * DAY;
-      if ((scene === 'character' || scene === 'still') && onCharacter) fake.seed.reach(caster, 'character', target.character, onCharacter.key, { post: target.id, ends, message: 'Shine on.' });
+      if ((scene === 'character' || scene === 'still' || scene === 'first') && onCharacter) fake.seed.reach(caster, 'character', target.character, onCharacter.key, { post: target.id, ends, message: 'Shine on.' });
       if ((scene === 'thread' || scene === 'pinned') && onThread) fake.seed.reach(caster, 'thread', thread, onThread.key, { ends: Date.now() + 20 * 3_600_000, message: 'Everyone, look.' });
       if (scene === 'banner' && summary) fake.seed.reach(caster, 'board', summary.board, RUMBLE.key, { ends: Date.now() + 20 * 3_600_000 });
       if (scene === 'armed' && onCharacter) {
@@ -67,7 +68,7 @@ function useSeeded(thread: string | null, scene: Scene): { readonly ready: boole
       if (live) setState({ ready: true, board: slug });
     })().catch((e: unknown) => { console.error('the reach story could not be seeded', e); });
     return () => { live = false; };
-  }, [api, instance, thread, scene]);
+  }, [api, instance, ui, thread, scene]);
   return state;
 }
 
@@ -156,6 +157,9 @@ export const Thread: Story = { args: { scene: 'thread' } };
 export const Banner: Story = { args: { scene: 'banner' } };
 /** A thread card that pins: the thread above page 1 of its board, with its mark. */
 export const Pinned: Story = { args: { scene: 'pinned' } };
+/** The same with nothing met: the character card's first-time callout hangs from its postbit's mark. */
+export const CharacterFirstTime: Story = { args: { scene: 'first' } };
+export const CharacterFirstTimePhone: Story = { args: { scene: 'first' }, ...phone };
 export const CharacterPhone: Story = { args: { scene: 'character' }, ...phone };
 export const CharacterStillPhone: Story = { args: { scene: 'still' }, ...phone };
 export const ArmedCharacterPhone: Story = { args: { scene: 'armed' }, ...phone };

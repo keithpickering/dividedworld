@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { RARITIES, quadrantFree, faceUpOnly, openDrive, giftSplit, wardTurnsAway, SET_PHRASE_MOST, atOrBelow, drawnInMoment, refusalTime, spanMs, decidePlay, decideSet, decideDraw, decideWash, decideUse, effectsOnTarget, landsOn, noQuoteWords, quoteStop, ok, staffConfigOf, staffDrawOf, staffOffers, fallsOn, castOnPost, postTarget, refuse, type CardEffect, type CardRules, type CardTarget } from './cards.ts';
+import { RARITIES, quadrantFree, faceUpOnly, openDrive, giftSplit, wardTurnsAway, SET_PHRASE_MOST, atOrBelow, drawnInMoment, refusalTime, spanMs, decidePlay, decideSet, decideDraw, decideWash, decideUse, effectsOnTarget, landsOn, noQuoteWords, quoteStop, ok, staffConfigOf, staffDrawOf, staffOffers, refuse, fallsOn, castOnPost, postTarget, writeTokensMost, WRITE_TOKENS_MOST, type CardEffect, type CardRules, type CardTarget } from './cards.ts';
 import type { Settings } from './types.ts';
 
 // The engine's own test cards: no instance's names (the engine/instance boundary).
@@ -20,7 +20,7 @@ const watcher: CardRules = { ...base, key: 'watcher', name: 'Test Watcher', rari
 const writer: CardRules = { ...cast('writer', 'rare'), writes: { tokens: () => 40, frame: ({ post }) => ({ prompt: post.text, stop: ['\n\n'] }) } };
 const cutter: CardRules = { ...cast('cutter', 'rare'), replies: true };
 const settings = {} as Settings;
-const post = { reach: 'post', act: 'p', kind: 'post', length: 10, text: '' } as const satisfies CardTarget;
+const post = { reach: 'post', act: 'p', kind: 'post', length: 10, text: '', links: [] } as const satisfies CardTarget;
 const soon = new Date(Date.now() + 86_400_000).toISOString();
 const gone = new Date(Date.now() - 1000).toISOString();
 const names = (key: string) => ({ shield: 'Test Shield' } as Record<string, string>)[key] ?? key;
@@ -591,11 +591,11 @@ test('a card\'s repairStaff is the persona\'s alone: a player\'s play with the s
   const fixer: CardRules = {
     ...cast('fixer', 'common'),
     validateConfig: (c) => ((c as { list?: unknown[] }).list?.length ?? 0) <= 2 ? ok(c) : refuse('a play holds at most two'),
-    repairStaff: (c, target) => ({ config: { list: (c as { list: unknown[] }).list.slice(0, 2), seen: target.text }, trims: [trimmed] }),
+    repairStaff: (c, target, play) => ({ config: { list: (c as { list: unknown[] }).list.slice(0, 2), seen: target.text, play }, trims: [trimmed] }),
   };
-  const target = { reach: 'post', act: 'p', kind: 'post', length: 3, text: 'abc' } as const satisfies CardTarget;
-  const repaired = fixer.repairStaff!({ list: [1, 2, 3] }, target);
-  assert.deepEqual(repaired, { config: { list: [1, 2], seen: 'abc' }, trims: [trimmed] });
+  const target = { reach: 'post', act: 'p', kind: 'post', length: 3, text: 'abc', links: [] } as const satisfies CardTarget;
+  const repaired = fixer.repairStaff!({ list: [1, 2, 3] }, target, 'cast');
+  assert.deepEqual(repaired, { config: { list: [1, 2], seen: 'abc', play: 'cast' }, trims: [trimmed] });
   assert.equal(decidePlay(fixer, settings, target, [], { list: [1, 2, 3] }, '').ok, false, 'decidePlay never calls it');
   assert.equal(decidePlay(fixer, settings, target, [], repaired.config, '').ok, true);
 });
@@ -707,6 +707,15 @@ test('a card is not set face down on a post with a live no-quote, and is once it
   assert.deepEqual(decideSet(watcher, settings, post, [stop], {}, [hush]), { ok: false, why }, 'a Reversal that springs on a visit too');
   assert.equal(decideSet(snare, settings, post, [{ ...stop, ends: gone }], { card: 'inky' }, [inky, hush]).ok, true);
   assert.match((decideSet(watcher, settings, post, [stop], {}, []) as { why: string }).why, /this post's hush stops quotes until/, 'the key where the card is not found');
+});
+
+test('the most a play may buy is the smaller of the card bound and the window less the floor (design section 4)', () => {
+  const held = (oldVoiceWindow: number, oldVoicePromptFloor: number) => ({ oldVoiceWindow, oldVoicePromptFloor }) as Settings;
+  assert.equal(writeTokensMost(held(1024, 256)), 768);
+  assert.equal(writeTokensMost(held(100_000, 256)), WRITE_TOKENS_MOST);
+  assert.equal(writeTokensMost(held(400, 256)), 144);
+  assert.equal(writeTokensMost(held(64, 256)), 1, 'a window under the floor still leaves one token');
+  assert.equal(writeTokensMost(held(256, 256)), 1, 'a window equal to the floor too');
 });
 
 test('a card that carries a reply lands on a plain post, and not on a reply drawn under one', () => {

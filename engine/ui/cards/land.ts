@@ -6,10 +6,11 @@
  * the play (`decidePlay`), whatever this said.
  */
 import { QUADRANTS } from '../../rules/types.ts';
-import { decidePlay, decideSet, postTarget, decideUse, effectsOnTarget, playOf as playOfRules, reachesOf, type BeyondPost, type CardEffect, type CardRules, type CardTarget, type EffectsAbove, type PostTarget, type Verdict } from '../../rules/cards.ts';
+import { decidePlay, decideSet, faceUpOnly, postTarget, decideUse, effectsOnTarget, playOf as playOfRules, reachesOf, type BeyondPost, type CardEffect, type CardRules, type CardTarget, type EffectsAbove, type PostTarget, type Verdict } from '../../rules/cards.ts';
 import type { Span } from '../../rules/types.ts';
 import type { Act } from '../data/api.ts';
 import type { CardPlay } from './types.ts';
+import { livePlays } from './plays.ts';
 
 /** A post's length in characters, as its rules count it: of its current words (an edit counts), and nothing for a body that is not text. */
 export function lengthOf(post: Act): number {
@@ -53,6 +54,22 @@ export interface LandingContext {
 export function landing(rules: Pick<CardRules, 'canApply'> & Partial<CardRules>, post: Act, plays: readonly CardPlay[], context?: LandingContext): Verdict {
   if (!context || !rules.key || !rules.rarity) return rules.canApply(targetOf(post, context?.under), plays.filter((p) => !p.caught && !p.reversed && !p.untaken).map((p) => ({ card: p.card, act: p.id })));
   return landingOn(rules as CardRules, targetOf(post, context.under), plays, context);
+}
+
+/**
+ * Which ways a card can land on a post: cast now, and set face down. The postbit's mark (GhostMark) and the play form's "How to play it"
+ * pair both read this one answer, so they cannot disagree. It keeps only the live ones of the plays it is given, and filtering is idempotent, so a caller that
+ * has already filtered (the play form) and one that has not (the mark) end with the same set. It is asked without the form's settings (landing's own lenient reading), so the answer
+ * never changes as the player types.
+ * A set is only ever the post author's own, so `own` says whether the reader's characters wrote the post. A Move is set face down only
+ * where its play is a cast, since a set card is set by its own play. A faceUpOnly card is never set: landing's lenient reading sets a
+ * needed message aside, so decideSet would not refuse it here.
+ */
+export function waysOn(rules: CardRules, post: Act, plays: readonly CardPlay[], context: { readonly cards: readonly CardRules[]; readonly own: boolean; readonly now: number; readonly under?: string }): { readonly cast: boolean; readonly set: boolean } {
+  const live = livePlays(plays, context.now);
+  const cast = landing(rules, post, live, context).ok;
+  const set = playOfRules(rules) === 'cast' && context.own && !faceUpOnly(rules) && landing(rules, post, live, { cards: context.cards, faceDown: true, ...(context.under === undefined ? {} : { under: context.under }) }).ok;
+  return { cast, set };
 }
 
 /**

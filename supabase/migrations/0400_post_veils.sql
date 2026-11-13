@@ -23,6 +23,8 @@
 --     6. the reads         thread_open, my_cards_ended (now the caller's own rows, as my_reactions is), play_moment, group_now (the stand-in has no group), card_target_reach, start_visit, open_report, thread_page (`veiled`),
 --                          my_veiled_posts (the author's own rows), my_group_moves (a security-invoker view that read `acts.character`, which the revoke broke), presence_listed, pool_named, pool_signals,
 --                          my_draws (0317; the washer of a drawing on a veiled post, who is its author, shown as the stand-in) and system_digest (the staff lists that would take the stand-in for a persona).
+--                          spin_written, spin and spin_moment (0351, a spin pressed at a post): the post pressed must be the play's character's as the projection shows it, so a spin is refused at a veiled post in the
+--                          one sentence any other post gets; spin takes the post `for share` before the character (the lock order below); and land_refusal refuses a veil on a post a spin was pressed at (acts_spin_at).
 --     7. the model        claim_card_writes names the stand-in as the author of the post a writing card lands on, so the words a model writes are written without the true author's name.
 --
 -- Masks ("A response never proves a private fact"): every read of an Act answers from the post's public play (the veil play is on the post) and never from who owns a character; the stand-in is one character for every
@@ -36,6 +38,7 @@
 -- Lock order, for the post, the visits and the character: POST, THEN visits_open, THEN CHARACTER, in every function that takes more than one (a visit's filing takes the post's row, then visits_open, then in infract the post's author's
 -- character). place_cast's character branch is the one this migration moves to it: the post a card on a character is played from is taken `for share` before the target character's row, where it was taken after (0317), so a card cast
 -- from post P onto its author and a filing on P meet at the post and never hold one row each and wait on the other (supabase/tests/0166-post-veils.sql, section 13 (d), holds a third session getting the character's row while the card waits).
+-- spin is the other: the post a spin is pressed at is taken `for share` before not_banned takes the spinner's character (section 13 (e) holds the same of it).
 
 
 -- ===================================================================================== 1. the catalog ====
@@ -601,6 +604,10 @@ create table post_veil_cards (
   author uuid not null references characters (id)
 );
 create index post_veil_cards_post on post_veil_cards (post);
+
+-- The spins pressed at a post (0351 writes the post in the spin's `at`), for land_refusal's probe: a post's few spins, as acts_spring_by (0151) holds a quote's springs. A partial index on the spins that name a post, so
+-- it grows with those spins alone.
+create index acts_spin_at on acts ((payload ->> 'at')) where kind = 'spin' and payload ? 'at';
 create trigger post_veil_cards_no_update before update or delete on post_veil_cards for each row execute function post_veils_append_only();
 create trigger post_veil_cards_no_truncate before truncate on post_veil_cards for each statement execute function post_veils_append_only();
 alter table post_veil_cards enable always trigger post_veil_cards_no_update;
@@ -782,6 +789,8 @@ grant select on my_veiled_posts to authenticated;
 --   leaves nothing to refuse.
 --   A reply cut in under another post (a Line Cutter's, 0348) is the second: the play's Act names it and its caster, so a veil is refused on it ("a card cut this post in under another"), and on a post whose own author cut one in under it.
 --   The other way round, a card that replies is refused on a veiled post, for every caster ("this post's author is hidden until ..."): see the body.
+--   A spin pressed at the post (0351's `at`) is another: the spin's thread shows the play's character and the post, and spin_written lets it through only for a post of that character, so the record names the author
+--   ("a spin was pressed at this post"); the other way round, a spin is refused at a veiled post (spin_written, below). One probe of acts_spin_at.
 --   A back of the post's own author that has sprung is the next: its card on the quote is the author's and names the spring, which targets this post ("a card set on this post has sprung"), by the post's backs (the key of face_down)
 --   and each one's spring (acts_one_spring), for every caster, a cast and a spring alike. A back that was caught, ended or taken back lays no card, and one still face down is covered by the derived veil as its set is.
 --   TASK 5 adds a reaction card's refusals here (its configuration, an emoji the forum already has, a key the post already holds), after these.
@@ -795,6 +804,7 @@ declare
   sprung boolean;
   cut boolean;
   cut_own boolean;
+  pressed boolean;
   stood uuid;
 begin
   select c.staff is not null into by_staff from acts a join characters c on c.id = a.character where a.id = land_refusal.post;
@@ -814,6 +824,9 @@ begin
   -- The same record for the parent: where its own author cut a reply in under it, the derived veil would show that card Act under the stand-in and the reply (a post, which the derived veil never covers) under its true
   -- author, and say they are one. One probe of post_under_parent, the post's few replies, and the authors of the two posts (public, as the posts are).
   cut_own := exists (select 1 from post_under u join acts r on r.id = u.reply join acts q on q.id = u.parent where u.parent = land_refusal.post and r.character = q.character);
+  -- A spin pressed at the post (0351): the spin's thread shows the play's character and the post, and the spin went through only because the post is that character's, so the record names its author. One probe of
+  -- acts_spin_at, a post's few spins.
+  pressed := exists (select 1 from acts s where s.kind = 'spin' and s.payload ? 'at' and s.payload ->> 'at' = land_refusal.post::text);
   stood := stand_in();
   if kind_of.replies and author_veiled(land_refusal.post) then
     -- The other half of it, for every caster alike: a post whose author is hidden takes no reply cut in under it (the author's own would be the leak above, and a refusal that told the author from anyone else would be one too).
@@ -827,6 +840,7 @@ begin
     if sprung then return 'a card set on this post has sprung, so its author is on the record'; end if;
     if cut then return 'a card cut this post in under another, so its author is on the record'; end if;
     if cut_own then return 'its author cut a reply in under this post, so the author is on the record'; end if;
+    if pressed then return 'a spin was pressed at this post, so its author is on the record'; end if;
     if stood is null then return 'this forum has no one to stand in for an author'; end if;
   end if;
   return null;
@@ -1692,7 +1706,7 @@ create or replace view my_cards_ended as
          pl.mine_character as character
   from plays pl;
 
--- thread_open (0152_origin_place_board_now), naming the stand-in as a thread's first and last poster where a post's author is hidden (shown_author). thread_list is select * from it and follows. Everything else as 0152 wrote it.
+-- thread_open (0351_spin_at_post, which is 0152_origin_place_board_now's with `from` and `at` in the play's origin place), naming the stand-in as a thread's first and last poster where a post's author is hidden (shown_author). thread_list is select * from it and follows. Everything else as 0351 wrote it.
 
 create or replace view thread_open as
   select t.id, t.board, t.title, t.origin_act_id, t.created_at, t.last_at, t.next_seq - 1 as last_seq, t.replies,
@@ -1718,7 +1732,9 @@ create or replace view thread_open as
                when p.kind = 'update' then jsonb_build_object('kind', 'update', 'act', p.id, 'title', p.payload ->> 'title')
                when p.seq is not null then jsonb_build_object('kind', 'post', 'thread', p.thread, 'title', pt.title, 'seq', p.seq)
                else null
-             end)
+             end,
+             'from', case when cf.seq is not null then jsonb_build_object('kind', 'post', 'thread', cf.thread, 'title', cft.title, 'seq', cf.seq) else null end,
+             'at', case when sp.seq is not null then jsonb_build_object('kind', 'post', 'thread', sp.thread, 'title', spt.title, 'seq', sp.seq) else null end)
            when o.seq is not null then jsonb_build_object('kind', 'post', 'thread', o.thread, 'title', ot.title, 'seq', o.seq)
            else null
          end as origin_place
@@ -1732,13 +1748,22 @@ create or replace view thread_open as
   left join play_reach r on r.play = o.id
   left join characters_public rc on rc.id = r.character
   left join threads rt on rt.id = r.thread
+  -- The cast-from post of a play on a character, and the post a spin was pressed at: each a probe by primary key that finds nothing for any other thread.
+  left join acts cf on cf.id = o.target_act_id and o.kind = 'card' and o.payload ->> 'reach' = 'character'
+  left join threads cft on cft.id = cf.thread
+  left join acts sp on sp.id = case when f.kind = 'spin' then (f.payload ->> 'at')::uuid end
+  left join threads spt on spt.id = sp.thread
   where t.id is distinct from (select (u.value #>> '{}')::uuid from settings u where u.key = 'updatesThread');
 
--- play_moment (0340_conduct, which is 0092's with the version a play landed on shown as acts_public shows it: `public_payload`), reading the post's author as acts_public shows it (shown_author), so a moment of a play on a post whose author
--- is hidden carries nothing at its author's reach. Everything else as 0340 wrote it.
+-- play_moment (0352_character_play_moment, which is 0340_conduct's reading a play on a character and answering `at`), reading the post's author as acts_public shows it (shown_author), so a moment of a play on a post whose author
+-- is hidden carries nothing at its author's reach. Everything else as 0352 wrote it.
 
-create or replace function play_moment(play uuid) returns jsonb
-language plpgsql stable security definer set search_path = public, pg_temp as $$
+create or replace function public.play_moment(play uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
 declare
   k acts%rowtype;
   on_post acts%rowtype;
@@ -1753,7 +1778,8 @@ declare
   bound record;
 begin
   select * into k from acts a where a.id = play_moment.play;
-  if k.id is not null and k.kind in ('card', 'set', 'spring') and k.target_act_id is not null and coalesce(k.payload ->> 'reach', 'post') = 'post' then
+  -- A play on a post, or on a character (cast from the post that is its target_act_id). A thread's and a board's play are no play on a post.
+  if k.id is not null and k.kind in ('card', 'set', 'spring') and k.target_act_id is not null and coalesce(k.payload ->> 'reach', 'post') in ('post', 'character') then
     select * into on_post from acts a where a.id = k.target_act_id;
   end if;
   if on_post.kind is distinct from 'post' then raise exception 'that is no play on a post' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
@@ -1797,11 +1823,128 @@ begin
       ) r join acts_public a on a.id = r.play
       where a.created_at < k.created_at
         and not exists (select 1 from acts e where e.kind = 'card_end' and e.target_act_id = r.play and e.created_at <= k.created_at)), '[]'::jsonb),
-    'recorded', recorded);
-end $$;
+    'recorded', recorded,
+    'at', k.created_at);
+end $function$;
 
 revoke execute on function play_moment(uuid) from public, anon, authenticated;
 grant execute on function play_moment(uuid) to authenticated;
+
+-- spin_written (0351_spin_at_post), with the post a spin is pressed at held to its author as the projection shows it (shown_author): a post whose author is hidden is by the
+-- stand-in, so a spin pressed at it is refused in the one sentence every other failed predicate gives, whoever wrote it. Were the true author read, a spin that went through
+-- would name who wrote a veiled post. A spin refused for this is made again once the name is back (the veil ends by itself), or made without the post. Everything else as 0351
+-- wrote it.
+
+create or replace function spin_written(origin uuid, through uuid, title text, body text, check_bar boolean, framing uuid[], at_post uuid default null) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  on_board uuid;
+  made uuid;
+  written uuid;
+begin
+  perform within('title', title, 'titleMaxLength');
+  perform within('body', coalesce(body, ''), 'postMaxLength', true);
+  select case when b.is_system then players_board() else b.id end into on_board
+  from acts a join threads t on t.id = a.thread join boards b on b.id = t.board where a.id = origin and a.kind <> 'edit';
+  if on_board is null then raise exception 'there is no such Act to spin from' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
+  -- The post a spin is pressed at: a post by the character a landed, live play was cast on. Public facts only; one sentence for every predicate that fails.
+  if at_post is not null then
+    if not exists (
+      select 1 from acts k join play_reach r on r.play = k.id join acts p on p.id = at_post
+      where k.id = origin and k.kind = 'card' and not (k.payload ? 'caught')
+        and r.reach = 'character' and p.kind = 'post' and shown_author(p.id, p.character) = r.character
+        and r.ends_at > now()
+        and not exists (select 1 from acts e where e.kind = 'card_end' and e.target_act_id = k.id)
+    ) then raise exception 'that card is not on that post' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
+  end if;
+  if check_bar then perform not_barred(through, on_board); end if;
+  insert into threads (board, title, origin_act_id) values (on_board, title, origin) returning id into made;
+  insert into acts (character, kind, thread, target_act_id, payload)
+  values (through, 'spin', made, origin,
+          jsonb_build_object('title', title, 'body', coalesce(body, '')) || case when at_post is not null then jsonb_build_object('at', at_post) else '{}'::jsonb end)
+  returning id into written;
+  perform write_framed(body, framing, written, auth.uid());
+  perform draw_visits(written);
+  return jsonb_build_object('thread', thread_projection(made), 'act', act_projection(written));
+end $$;
+revoke execute on function spin_written(uuid, uuid, text, text, boolean, uuid[], uuid) from public, anon, authenticated;
+
+-- spin (0351_spin_at_post), taking the post pressed `for share` before the character's row (above). Everything else as 0351 wrote it.
+
+CREATE OR REPLACE FUNCTION public.spin(origin uuid, through uuid, title text, body text DEFAULT ''::text, framing uuid[] DEFAULT '{}'::uuid[], at_post uuid DEFAULT NULL::uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+begin
+  perform acting(through);
+  -- The post pressed is held `for share` before anything else is taken (the lock order is post, then visits_open, then character): not_banned takes the character's row, and a veil cast on the post takes the post's
+  -- row `for no key update` and then checks for a spin pressed at it, as spin_written checks the post for a veil after this. So the two are laid one at a time, and whichever is first, the second is refused.
+  if at_post is not null then perform 1 from acts a where a.id = at_post for share; end if;
+  perform not_banned(through);
+  return spin_written(origin, through, title, body, true, framing, at_post);
+end $function$;
+revoke execute on function spin(uuid, uuid, text, text, uuid[], uuid) from public, anon;
+grant execute on function spin(uuid, uuid, text, text, uuid[], uuid) to authenticated;
+
+-- spin_moment (0351_spin_at_post), reading the post's author as play_moment does (shown_author), so a spin's moment of a post whose author is hidden lists nothing at its
+-- author's reach. Everything else as 0351 wrote it.
+
+create or replace function spin_moment(spin uuid) returns jsonb
+language plpgsql stable security definer set search_path = public, pg_temp as $$
+declare
+  s acts%rowtype;
+  k acts%rowtype;
+  on_post acts%rowtype;
+  v acts%rowtype;
+  on_board uuid;
+  grace interval := coalesce(span_interval((select g.value from settings g where g.key = 'editGrace')), interval '0');
+  -- As play_moment bounds the plays above: a play beyond a post that began before the spin ends at most its reach's reachLasts after it began.
+  bound record;
+begin
+  select * into s from acts a where a.id = spin_moment.spin and a.kind = 'spin' and a.payload ? 'at';
+  if s.id is null or not exists (select 1 from spin_moments m where m.spin = s.id) then
+    raise exception 'that spin names no post' using hint = 'kayfabb.refusal', errcode = 'P0002';
+  end if;
+  select * into k from acts a where a.id = s.target_act_id;
+  select * into on_post from acts a where a.id = (s.payload ->> 'at')::uuid;
+  -- The post's author as the projection shows it, as play_moment reads it: a post whose author is hidden has nothing listed at its author's reach.
+  on_post.character := shown_author(on_post.id, on_post.character);
+  select * into v from acts a where a.id = (select m.post_version from spin_moments m where m.spin = s.id);
+  select t.board into on_board from threads t where t.id = on_post.thread;
+  select coalesce(span_interval(setting('reachLasts') -> 'character'), interval '1000 months') as character,
+         coalesce(span_interval(setting('reachLasts') -> 'thread'), interval '1000 months') as thread,
+         coalesce(span_interval(setting('reachLasts') -> 'board'), interval '1000 months') as board into bound;
+  return jsonb_build_object(
+    'version', act_projection(on_post.id) || jsonb_build_object(
+      'current_payload', public_payload(v.payload, version_hidden(v.id), v.id),
+      'edited_at', case when v.kind = 'edit' then v.created_at end,
+      'shown_edited_at', case when v.kind = 'edit' and v.created_at > on_post.created_at + grace then v.created_at end),
+    'layers', jsonb_build_array(jsonb_build_object('act', act_projection(k.id), 'state', null, 'savedAt', null))
+      || coalesce((select jsonb_agg(jsonb_build_object('act', to_jsonb(a), 'state', l.state, 'savedAt', l.saved_at) order by a.created_at, a.id)
+                   from spin_moment_layers l join acts_public a on a.id = l.layer where l.spin = s.id), '[]'::jsonb)
+      || coalesce((select jsonb_agg(jsonb_build_object('act', to_jsonb(e), 'state', null, 'savedAt', null) order by e.created_at, e.id)
+                   from acts_public e
+                   where e.kind = 'card_end' and e.created_at <= s.created_at
+                     and e.target_act_id in (select k.id union all select l.layer from spin_moment_layers l where l.spin = s.id)), '[]'::jsonb),
+    'above', coalesce((
+      select jsonb_agg(jsonb_build_object('play', r.play, 'reach', r.reach, 'target', coalesce(r.character, r.thread, r.board), 'ends_at', r.ends_at, 'act', to_jsonb(a))
+                       order by a.created_at, a.id)
+      from (
+        select x.* from play_reach x where x.character = on_post.character and x.ends_at > s.created_at and x.ends_at <= s.created_at + bound.character
+        union all
+        select x.* from play_reach x where x.thread = on_post.thread and x.ends_at > s.created_at and x.ends_at <= s.created_at + bound.thread
+        union all
+        select x.* from play_reach x where x.board = on_board and x.ends_at > s.created_at and x.ends_at <= s.created_at + bound.board
+      ) r join acts_public a on a.id = r.play
+      where a.created_at < s.created_at and r.play <> k.id
+        and not exists (select 1 from acts e where e.kind = 'card_end' and e.target_act_id = r.play and e.created_at <= s.created_at)), '[]'::jsonb),
+    'recorded', true,
+    'at', s.created_at);
+end $$;
+revoke execute on function spin_moment(uuid) from public, anon, authenticated;
+grant execute on function spin_moment(uuid) to authenticated;
 
 -- card_target_reach (0055_card_reach), reading a post's author as the projection shows it: a post whose author is hidden has no `above.character`, so what is up at its author's reach is neither drawn on it
 -- nor priced into a card played on it. Everything else as 0055 wrote it.

@@ -31,8 +31,10 @@ describe('the markup: no component draws a dialog frame', () => {
     /*
      * The board's own 2003 modal (modal.tsx), the tour's tip (Spotlight) and the pack's reveal (a full-window layer over the machine with no frame at
      * all, as its boards draw it: engine/ui/vending/PackOpening.tsx, on the glass's modal layer) are not glass dialogs; the other two are the frame's.
+     * The hand's drawer (Hud.tsx) is the HUD's own sheet, a modal on both boards since the phone's hand
+     * (docs/plans/2026-11-13-phone-hand-design.md, section 3); it was a dialog on the Main board before that, behind a ternary this test could not read.
      */
-    expect(own).toEqual(['engine/ui/glass/Float.tsx', 'engine/ui/glass/Overlay.tsx', 'engine/ui/modal.tsx', 'engine/ui/tips/Spotlight.tsx', 'engine/ui/vending/PackOpening.tsx']);
+    expect(own).toEqual(['engine/ui/frame/Hud.tsx', 'engine/ui/glass/Float.tsx', 'engine/ui/glass/Overlay.tsx', 'engine/ui/modal.tsx', 'engine/ui/tips/Spotlight.tsx', 'engine/ui/vending/PackOpening.tsx']);
     for (const f of ['engine/ui/glass/Float.tsx', 'engine/ui/glass/Overlay.tsx']) expect(fs.readFileSync(path.join(root, f), 'utf8')).toContain('FRAME');
   });
 

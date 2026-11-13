@@ -10,7 +10,8 @@ import { act, fireEvent } from '@testing-library/react';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { drawnInMoment } from '../../../engine/rules/cards.ts';
 import type { CardPlay, EffectProps } from '../../../engine/ui/cards/types.ts';
-import type { Act } from '../../../engine/ui/data/api.ts';
+import { MomentEffects } from '../../../engine/ui/cards/Effects.tsx';
+import type { Act, PlayMoment } from '../../../engine/ui/data/api.ts';
 import { renderInWorld } from '../../../engine/ui/test-world.tsx';
 import { instance } from '../index.ts';
 import { instanceUi } from './index.ts';
@@ -85,4 +86,28 @@ test.each(['whodunnit', 'blind-study'])('%s, drawn still with an end behind the 
   expect(container.textContent).not.toContain('all along');
   await vi.waitFor(() => expect(shown.length).toBeGreaterThan(0));
   expect(shown.at(-1)).toBe(key === 'whodunnit' ? 'Author hidden from everyone' : 'Totals hidden from you');
+});
+
+test('Glitter Bomb drawn from a spin\'s moment is the still form: the flakes at rest, and no burst canvas sized', async () => {
+  const spunAt = '2026-11-03T12:30:00.000Z';
+  const origin: Act = {
+    id: 'g1', character: 'c2', kind: 'card', thread: 't1', targetActId: POST.id, seq: null, createdAt: '2026-11-03T12:10:00.000Z',
+    payload: { card: 'glitter-bomb', message: '', config: { seed: 7 }, layer: 1, reach: 'character', character: 'c1', ends: '2026-11-10T12:10:00.000Z' },
+    currentPayload: {}, editedAt: null, shownEditedAt: null,
+  };
+  const moment: PlayMoment = { version: POST, layers: [{ act: origin, state: null }], above: [], recorded: true, at: spunAt };
+  /* A live glitter registers with the shine loop, which asks for frames; a still one is painted once at rest and asks for none. */
+  const frames = vi.spyOn(window, 'requestAnimationFrame');
+  const { container } = renderInWorld(
+    <MomentEffects moment={moment} place="origin" nameOf={() => 'Spritey'} onWords={() => {}}><p>hi</p></MomentEffects>,
+    { instance, cards: instanceUi.cards },
+  );
+  /* The effect loads on first use: the words stand until it lands. */
+  await act(async () => { await vi.dynamicImportSettled(); await vi.advanceTimersByTimeAsync(500); });
+  const box = container.querySelector('[data-kb-glitter]') as HTMLElement;
+  expect(box).not.toBeNull();
+  expect(box.querySelectorAll('canvas')).toHaveLength(3);
+  expect((box.querySelector('canvas.dw-glitter-over') as HTMLCanvasElement).width).toBe(0);
+  expect(container.querySelectorAll('[data-kb-glitter]')).toHaveLength(1);
+  expect(frames).not.toHaveBeenCalled();
 });

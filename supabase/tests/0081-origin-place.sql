@@ -31,8 +31,9 @@ end $$;
 create function pg_temp.place(th uuid) returns jsonb language plpgsql as $$
 declare a jsonb; b jsonb;
 begin
-  select origin_place into a from thread_open where id = th;
-  select origin_place into b from thread_list where id = th;
+  -- A play's place also holds `from` and `at` (0351, tested in 0298-spin-at-post.sql); every place here is one with neither, so both are left out.
+  select origin_place - 'from' - 'at' into a from thread_open where id = th;
+  select origin_place - 'from' - 'at' into b from thread_list where id = th;
   if a is distinct from b then raise exception 'thread_open and thread_list differ: % and %', a, b; end if;
   return a;
 end $$;

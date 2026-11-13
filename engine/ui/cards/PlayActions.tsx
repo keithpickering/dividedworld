@@ -18,7 +18,7 @@ import { usePlayer } from '../player.tsx';
 import { useThread } from '../thread/context.ts';
 import { pageOf, threadHref } from '../thread/pages.ts';
 import { faceOf, withCardEconomy } from './faces.ts';
-import { landing, landingOn } from './land.ts';
+import { landingOn, waysOn } from './land.ts';
 import { playOf, reachesOf, type BeyondPost, type CardRules, type CardTarget, type Play } from '../../rules/cards.ts';
 import { useRest } from '../glass/prepared.ts';
 import { usePlay, type PlayTarget } from './play.tsx';
@@ -42,7 +42,7 @@ export function ghostName(card: string, play: Play, seq: number): string {
 export function GhostMark({ act }: { readonly act: Act }) {
   const play = usePlay();
   const { hudCharacter, actingCharacters } = usePlayer();
-  const { instance, settings, ui } = useKayfa();
+  const { api, instance, settings, ui } = useKayfa();
   const { plays, underOf } = useThread();
   const here = usePlays(plays, act.id);
   const target = useTarget(act);
@@ -58,10 +58,8 @@ export function GhostMark({ act }: { readonly act: Act }) {
   if ((how === 'set' || how === 'use') && !own) return null;
   /* A reply drawn under a post takes no card that replies: asked of the rules with the post it is under, so no ghost mark is drawn for one. */
   const under = underOf?.(act.id);
-  const context = { cards: instance.cards, ...(under === undefined ? {} : { under }) };
-  /* A Move on one's own post may also be set face down (a ward never blocks that): the mark is offered where either lands, and named for the choice the form keeps. */
-  const casts = landing(rules, act, here.plays, context).ok;
-  const sets = how === 'cast' && own && landing(rules, act, here.plays, { ...context, faceDown: true }).ok;
+  /* A Move on one's own post may also be set face down (a ward never blocks that): the mark is offered where either lands, and named for the choice the form keeps. The play form reads the same answer (waysOn). */
+  const { cast: casts, set: sets } = waysOn(rules, act, here.plays, { cards: instance.cards, own, now: api.now(), ...(under === undefined ? {} : { under }) });
   if (!casts && !sets) return null;
   const down = sets && (play.faceDown || !casts);
   const cardUi = ui.cards.find((c) => c.key === rules.key);

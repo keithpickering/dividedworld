@@ -245,6 +245,18 @@ test('an instance exported and imported into a fresh database is the same instan
         insert into post_veils (play, post, veil, author, caster_account, ends_at) values (old_ended, old_blind, 'totals', a, bob, now() - interval '1 day');
       end;
 
+      -- A spin pressed at a post (0351): a play on Bob's character cast from one post, a layer on another post by him, and Ann's spin from the play naming that post. The spin's at,
+      -- its moment and the layer it holds are carried as written; the import, a replica's write, takes none of its own.
+      insert into card_kinds (key, name, alignment, rarity, play, reaches, lasts) values ('expspinat', 'Exported Spin At', 'pepperoni', 'common', 'cast', '{character}', interval '7 days');
+      insert into card_ledger (account, card, kind, price) values (ann, 'expspinat', 'bought', 0);
+      declare spin_post uuid := tests.post(b, t, 'A post a spin is pressed at.'); spin_play uuid;
+      begin
+        insert into acts (character, kind, thread, target_act_id, payload) values (b, 'card', t, spin_post, '{"card": "sweetie", "config": {}}');
+        spin_play := (play_card(ann, 'expspinat', a, b, '{}', 0, '', 'character', spin_post) ->> 'id')::uuid;
+        perform tests.become(ann);
+        perform spin(origin => spin_play, through => a, title => 'Exported spin at a post', body => 'Carried across.', at_post => spin_post);
+        perform tests.unbecome();
+      end;
       -- A card that replies (0348): its play writes the reply, a post of its own, and the row that draws it under its parent, which the export carries with the Acts it names.
       insert into card_kinds (key, name, alignment, rarity, play, reaches, stack, replies) values ('expcut', 'Exported Cut', 'pepperoni', 'rare', 'cast', '{post}', 1, true);
       insert into card_ledger (account, card, kind, price) values (ann, 'expcut', 'bought', 0);
@@ -834,9 +846,14 @@ test('an instance exported and imported into a fresh database is the same instan
     assert.notEqual(endRow(fresh.toString()), '', 'the card_end is in the imported instance');
     assert.equal(endRow(fresh.toString()), endRow(from));
     // The moments were carried as written, and the import, a replica's write, took none of its own (0072's trigger stayed silent).
-    const moments = (url: string) => psqlOn(url, 'select (select count(*) from play_moments) || \'/\' || (select count(*) from play_moment_layers)');
+    const moments = (url: string) => psqlOn(url, 'select (select count(*) from play_moments) || \'/\' || (select count(*) from play_moment_layers) || \'/\' || (select count(*) from spin_moments) || \'/\' || (select count(*) from spin_moment_layers)');
     assert.equal(moments(fresh.toString()), moments(from));
-    assert.notEqual(moments(from), '0/0', 'the export carried a moment and a layer');
+    assert.match(moments(from), /^[1-9]\d*\/[1-9]\d*\/[1-9]\d*\/[1-9]\d*$/, 'the export carried a play\'s moment and a layer, and a spin\'s moment and a layer');
+    // A spin's moment names the same post version and holds the same layers and states in the imported instance (0351).
+    const spinMoment = (url: string) => psqlOn(url, `select coalesce(string_agg(x, ' | ' order by x), '') from (
+      select to_jsonb(m)::text x from spin_moments m union all select to_jsonb(l)::text from spin_moment_layers l
+      union all select a.payload::text from acts a where a.kind = 'spin' and a.payload ? 'at') q`);
+    assert.equal(spinMoment(fresh.toString()), spinMoment(from), 'a spin\'s moment, its layers and its at survive the round trip');
     // And every file its rows name is in the new project's Storage, byte for byte.
     assert.deepEqual(new Map(newStore.objects), new Map(Object.entries(files)));
     assert.ok(!(imported.stdout + imported.stderr).includes(STORAGE_KEY), 'the import printed the Storage key');

@@ -446,17 +446,25 @@ export interface MomentParts {
   readonly named: readonly string[];
   /** What became of the play itself as it landed, where it was not simply played: "Caught by Trappy". Null for a play that landed. */
   readonly own: string | null;
+  /**
+   * The moment's own play where its reach is a character (a spin's moment: the play the spin was made from, which is no layer on the post): its
+   * card's effect is drawn around the post, still, and it is named nowhere. Null for a play on a post.
+   */
+  readonly above: CardPlay | null;
 }
 
 /**
  * Splits a moment into what is drawn and what is named. Liveness is judged at the play's own time, never now: a Use that had ended
  * by then is left out, a play an admin had ended by then is named "ended by an admin" (its card_end is among the layers, before the moment), a caught play is named "caught by" its trap's card (the spring that caught it made that card public), and a
  * card back is named as a back, always, even once it sprang: which card it is is never read. A play above the post is named with
- * what it was on, and never drawn, since its moment isn't one post's. A card that cannot change after it lands, or that draws no
+ * what it was on, and never drawn, since its moment isn't one post's; the moment's own play, where it is on a character, is the one
+ * exception (`above`), judged at the moment's time as every other is: live then, and its card's effect drawn. A card that cannot change after it lands, or that draws no
  * effect, is named.
  */
 export function momentParts(moment: PlayMoment, rules: readonly CardRules[], ui: readonly CardUi[], nameOf: (character: Id | null) => string): MomentParts {
-  const at = Date.parse(moment.layers[0]!.act.createdAt);
+  /* The moment's own time: a play's is its own date, a spin's is the spin's, and every play is judged live or over at it. */
+  const stated = Date.parse(moment.at);
+  const at = Number.isNaN(stated) ? Date.parse(moment.layers[0]!.act.createdAt) : stated;
   const cardName = (key: string) => rules.find((c) => c.key === key)?.name ?? key;
   const springs = moment.layers.map((l) => l.act).filter((a) => a.kind === 'spring');
   /* A play an admin had ended by then: its card_end rides among the layers, and counts only when it came before the moment. */
@@ -467,10 +475,16 @@ export function momentParts(moment: PlayMoment, rules: readonly CardRules[], ui:
   /* The first layer is the play whose moment it is (play_moment, 0072): drawn where its card is, and never named beside itself. */
   const self = moment.layers[0]!.act.id;
   let own: string | null = null;
+  let above: CardPlay | null = null;
   for (const { act, state } of moment.layers) {
     if (act.kind === 'spring' || act.kind === 'card_end') continue;
     const play = playOf(act);
-    if (!play || play.reach) continue;
+    if (!play) continue;
+    if (play.reach) {
+      /* The moment's own play on a character: not a layer on the post, drawn around it where it was live and its card has an effect. */
+      if (act.id === self && play.reach === 'character' && !play.caught && !endedBy.has(play.id) && (play.ends === undefined || Date.parse(play.ends) > at) && ui.find((c) => c.key === play.card)?.Effect) above = play;
+      continue;
+    }
     if (act.id === self && (play.faceDown || play.caught !== undefined)) {
       /* A back says nothing of itself; a caught play says what caught it, as its own fate rather than as something else on the post. */
       if (play.caught !== undefined) {
@@ -512,6 +526,7 @@ export function momentParts(moment: PlayMoment, rules: readonly CardRules[], ui:
       ...moment.above.map((a) => `${cardName(typeof a.act.payload.card === 'string' ? a.act.payload.card : '')} on ${where(a)}`),
     ],
     own,
+    above,
   };
 }
 
@@ -566,15 +581,20 @@ export function MomentEffects({ moment, place, nameOf, onWords, children }: {
   const tailRows = useTails(moment.version, writingPlays.map((p) => p.id));
   const at = useMomentVersion(moment.version, writingPlays.length > 0);
   const written = useMemo(() => resolveWritten(tailRows, [], at, 'version'), [tailRows, at]);
-  const order = nestOrder([...new Set(here.plays.map((p) => p.card))].map((key) => ({ key })), ui.cards, writing);
+  /* The moment's own play on a character is ordered as PostEffects orders a post's author's (`nestOrder`): given before the post's own cards, so inside them, and inside every takeover. */
+  const wraps = [
+    ...(parts.above ? [{ key: parts.above.card, reach: 'character' as const, mine: [parts.above] }] : []),
+    ...[...new Set(here.plays.map((p) => p.card))].map((key) => ({ key, reach: 'post' as const, mine: here.plays.filter((p) => p.card === key) })),
+  ];
+  const order = nestOrder(wraps, ui.cards, writing);
   let wrapped = children;
-  for (const { key } of [...order.writing, ...order.rest, ...order.takeovers]) {
+  for (const { key, reach, mine } of [...order.writing, ...order.rest, ...order.takeovers]) {
     const Effect = ui.cards.find((c) => c.key === key)!.Effect!;
     wrapped = (
-      <StillEffect key={key} Effect={Effect} card={key} onWords={onWords}
-        post={moment.version} plays={here.plays.filter((p) => p.card === key)} states={here.states} released={NONE_RELEASED}
-        written={writtenOf(written, here.plays.filter((p) => p.card === key), writing)} {...(at !== null ? { version: at } : {})}
-        reader={{ author: false, caster: false }} place={place} reach="post" nameOf={nameOf}>
+      <StillEffect key={`${reach}:${key}`} Effect={Effect} card={key} onWords={onWords}
+        post={moment.version} plays={mine} states={reach === 'post' ? here.states : NO_STATES} released={NONE_RELEASED}
+        written={reach === 'post' ? writtenOf(written, mine, writing) : NOTHING_WRITTEN} {...(at !== null && reach === 'post' ? { version: at } : {})}
+        reader={{ author: false, caster: false }} place={place} reach={reach} nameOf={nameOf}>
         {wrapped}
       </StillEffect>
     );

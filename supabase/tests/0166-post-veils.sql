@@ -13,6 +13,7 @@
 --  7. my_veiled_posts holds the author's own rows and nobody else's; thread_page carries them.
 --  8. Bounded reads: with a live veil in the table, reads by character, by thread and seq and by id keep their indexes, and so does a count's.
 --  9. A card played from a post (at character reach) names its author: no veil lands on that post, from a cast or a spring, and none is played from a veiled one.
+-- 9b. A spin pressed at a post (0351) names its author the same way: no veil lands on that post, and no spin is pressed at a veiled one.
 -- 10. The staff lists, the pool's signals and the digest leave the stand-in out of the staff.
 -- 11. The counts: character_post_counts counts a veiled post for the stand-in while the veil is up, for every reader, and the author's own count is whole again by itself.
 -- 12. The shown group follows the shown count: group_now reads the same projection as the count a player reads, so a character at a rung's threshold drops a rung while one of its posts is veiled and both return at the end.
@@ -95,7 +96,7 @@ begin
   return coalesce((plan -> 0 -> 'Plan' ->> 'Shared Hit Blocks')::bigint, 0) + coalesce((plan -> 0 -> 'Plan' ->> 'Shared Read Blocks')::bigint, 0);
 end $$;
 
--- ---- 13. Races (first: the committed rows must not meet this file's own locks, as 0107-visits.sql has it): a veil cast, a visit opening and a card played from the post are laid one at a time on the post's row ----
+-- ---- 13. Races (first: the committed rows must not meet this file's own locks, as 0107-visits.sql has it): a veil cast, a visit opening, a card played from the post and a spin pressed at it are laid one at a time on the post's row ----
 -- A veil is refused on a post a Mod Bot has visited and on a post a card at character reach was played from, and a visit and such a card are refused or nulled on a veiled post: each check reads Acts another session may be
 -- writing, so the three take the post's row (the cast `for no key update`, the other two `for share`, which conflicts with it) before they check, and the two orders both end with one of the facts and never both. The rows the
 -- racers read are committed (tests.commit), the way 0107-visits.sql does it; the veil cards are committed under keys of their own and removed after. The first two races are real functions: the holder opens a visit (or plays
@@ -118,7 +119,8 @@ select tests.unbecome();
 do $$
 declare
   u uuid := gen_random_uuid(); u2 uuid := gen_random_uuid(); a uuid := gen_random_uuid(); a2 uuid := gen_random_uuid(); c uuid := gen_random_uuid(); m uuid := gen_random_uuid(); t uuid := gen_random_uuid();
-  p1 uuid := gen_random_uuid(); p2 uuid := gen_random_uuid(); p3 uuid := gen_random_uuid(); p4 uuid := gen_random_uuid();
+  p1 uuid := gen_random_uuid(); p2 uuid := gen_random_uuid(); p3 uuid := gen_random_uuid(); p4 uuid := gen_random_uuid(); p5 uuid := gen_random_uuid(); p6 uuid := gen_random_uuid();
+  glint uuid; spun jsonb;
   url text := current_setting('kayfabb.scratch_url');
   board uuid; charge jsonb; seen text; got text; res jsonb; vis uuid; named uuid;
 begin
@@ -131,11 +133,13 @@ begin
     insert into characters (id, name, staff, staff_kind, debuted_at) values (%5$L, 'Vv Mod', 'vv-mod', 'persona', now());
     insert into threads (id, board, title) select %6$L, b.id, 'Vv race' from boards b where b.slug = 'general';
     insert into acts (id, character, kind, thread, payload) values (%7$L, %3$L, 'post', %6$L, '{"body": "A post to visit."}'), (%8$L, %3$L, 'post', %6$L, '{"body": "A post to play from."}'),
-      (%9$L, %3$L, 'post', %6$L, '{"body": "A post a visit waits on."}'), (%10$L, %11$L, 'post', %6$L, '{"body": "A post a card waits on."}');
+      (%9$L, %3$L, 'post', %6$L, '{"body": "A post a visit waits on."}'), (%10$L, %11$L, 'post', %6$L, '{"body": "A post a card waits on."}'),
+      (%12$L, %3$L, 'post', %6$L, '{"body": "A post a spin waits on."}'), (%13$L, %3$L, 'post', %6$L, '{"body": "A post a card on the author is played from."}');
     insert into card_kinds (key, name, alignment, rarity, play, reaches, lasts, veil, stack) values
       ('vvveil', 'Vv Veil', 'salty', 'rare', 'cast', '{post}', interval '3 days', 'author', 1),
-      ('vvname', 'Vv Name', 'salty', 'uncommon', 'cast', '{character}', interval '1 day', null, 1);
-  $sql$, u, u2, a, c, m, t, p1, p2, p3, p4, a2));
+      ('vvname', 'Vv Name', 'salty', 'uncommon', 'cast', '{character}', interval '1 day', null, 1),
+      ('vvglint', 'Vv Glint', 'salty', 'uncommon', 'cast', '{character}', interval '1 day', null, 1);
+  $sql$, u, u2, a, c, m, t, p1, p2, p3, p4, a2, p5, p6));
   board := (select th.board from threads th where th.id = t);
   charge := jsonb_build_object('rule_number', null, 'board', board, 'band', 'minor', 'cause', 'rule', 'about_act', p1, 'rule', 'the premise');
   perform extensions.dblink_connect('vv_h', url);
@@ -196,9 +200,33 @@ begin
   if seen is distinct from 'waiting' then raise exception 'a card played from the post did not wait for a cast holding it (it %)', seen; end if;
   if named is null then raise exception 'the card that waited was not played once the post was free'; end if;
 
+  -- (e) The same for a spin pressed at the post (0351's `at`): a veil cast checks for one after taking the post, so the spin takes the post `for share` before it checks for a veil, and before not_banned takes the
+  -- spinner's character, so it waits on the post holding no character's row. The card on the author it spins from is committed first, from another of the author's posts.
+  select r into res from extensions.dblink('vv_h', format('select place_cast(%L, ''vvglint'', %L, ''{}'', '''', ''character'', %L, %L, 0)', c, a, p6, u2)) as x(r jsonb);
+  glint := (res ->> 'id')::uuid;
+  perform extensions.dblink_exec('vv_h', 'begin');
+  perform * from extensions.dblink('vv_h', format('select id from acts where id = %L for no key update', p5)) as x(r uuid);
+  perform extensions.dblink_exec('vv_v', 'begin');
+  perform * from extensions.dblink('vv_v', format('select tests.become(%L)', u2)) as x(r text);
+  perform extensions.dblink_send_query('vv_v', format('select /* vv_e */ spin(origin => %L, through => %L, title => ''Vv spun'', body => ''Discuss.'', at_post => %L)', glint, c, p5));
+  seen := pg_temp.parked('vv_e', 'vv_v');
+  perform extensions.dblink_connect('vv_x', url);
+  begin
+    perform * from extensions.dblink('vv_x', format('select id from characters where id = %L for no key update nowait', c)) as x(r uuid);
+    got := null;
+  exception when others then got := sqlstate || ' ' || sqlerrm; end;
+  perform extensions.dblink_disconnect('vv_x');
+  if got is not null then raise exception 'a spin pressed at a post that is held already holds its character''s row while it waits for the post: %', got; end if;
+  perform extensions.dblink_exec('vv_h', 'commit');
+  select r into spun from extensions.dblink_get_result('vv_v') as x(r jsonb);
+  perform * from extensions.dblink_get_result('vv_v') as x(r jsonb);
+  perform extensions.dblink_exec('vv_v', 'commit');
+  if seen is distinct from 'waiting' then raise exception 'a spin pressed at the post did not wait for a cast holding it (it %)', seen; end if;
+  if spun -> 'act' ->> 'id' is null then raise exception 'the spin that waited was not made once the post was free: %', spun; end if;
+
   perform extensions.dblink_disconnect('vv_h');
   perform extensions.dblink_disconnect('vv_v');
-  perform tests.commit($sql$ delete from card_kinds where key in ('vvveil', 'vvname'); delete from settings where key = 'warnBar' $sql$);
+  perform tests.commit($sql$ delete from card_kinds where key in ('vvveil', 'vvname', 'vvglint'); delete from settings where key = 'warnBar' $sql$);
 end $$;
 
 -- ---- The migration exists at all (so a missing one fails here, on an assertion, and not on a missing function below) ----
@@ -1225,6 +1253,62 @@ begin
   if got is distinct from '22023 no card is played on a stand-in' then raise exception 'a character card from a veiled post, on a third character: %', got; end if;
   perform tests.unbecome();
   if (select count(*) from acts k where k.kind = 'card' and k.target_act_id = clean) is distinct from plays then raise exception 'a refused card from a veiled post wrote something'; end if;
+end $$;
+
+-- ---- 9b. A spin pressed at a post names its author: no veil on that post, and no spin pressed at a veiled one ----
+-- A spin from a play on a character may name a post of that character (0351, `at`): the spin's thread shows the play's character and the post pressed, and the spin was let through only because the post is that
+-- character's, so the record names the post's author. A veil is refused on such a post, and the other way round a spin is refused at a veiled post, in the one sentence every other failed check of the post gives.
+select tests.unbecome();
+do $$
+declare
+  ann uuid := tests.account('s9-ann'); bob uuid := tests.account('s9-bob'); cy uuid := tests.account('s9-cy');
+  a uuid := tests.character(ann, 'Vsp Ann'); b uuid := tests.character(bob, 'Vsp Bob'); c uuid := tests.character(cy, 'Vsp Cy');
+  t uuid := tests.thread('Vsp pressed');
+  stand uuid := pg_temp.stand();
+  from_post uuid := tests.post(a, t, 'A card on me is played from here.'); pressed uuid := tests.post(a, t, 'A spin is pressed at this.');
+  hidden uuid := tests.post(a, t, 'This one is veiled first.'); others uuid := tests.post(c, t, 'Not Ann''s.');
+  play uuid; got text; spun jsonb; words text := 'that card is not on that post';
+begin
+  perform pg_temp.cards();
+  if not exists (select 1 from settings where key = 'systemAnnouncements') then
+    insert into settings (key, value) select 'systemAnnouncements', to_jsonb(tests.thread('Vsp Announcements')::text);
+  end if;
+  perform pg_temp.hand(bob, 'vlchar'); perform pg_temp.hand(cy, 'vlauthor', 'vlauthor');
+  perform tests.become_service();
+  play := (play_card(bob, 'vlchar', b, a, '{}', 0, '', 'character', from_post) ->> 'id')::uuid;
+  perform tests.unbecome();
+
+  -- Bob spins from his play on Ann at her post: it goes through, and the spin's thread names the post it was pressed at.
+  perform tests.become(bob);
+  spun := spin(origin => play, through => b, title => 'Vsp spun', body => 'Discuss.', at_post => pressed);
+  perform tests.unbecome();
+  if (spun -> 'act' -> 'payload' ->> 'at')::uuid is distinct from pressed then raise exception 'the spin did not name its post: %', spun; end if;
+
+  -- A veil on the post pressed is refused, and nothing is written for it.
+  perform tests.become_service();
+  got := pg_temp.coded(format('select play_card(%L, %L, %L, %L, %L, 0, %L)', cy, 'vlauthor', c, pressed, '{}', ''));
+  perform tests.unbecome();
+  if got is distinct from '42501 a spin was pressed at this post, so its author is on the record' then raise exception 'a veil on a post a spin was pressed at: %', got; end if;
+  if exists (select 1 from post_veils v where v.post = pressed) then raise exception 'a veil landed on a post a spin was pressed at'; end if;
+  if land_refusal((select k from card_kinds k where k.key = 'vlauthor'), pressed, '{}') is distinct from 'a spin was pressed at this post, so its author is on the record' then
+    raise exception 'land_refusal does not give the pressed post''s words'; end if;
+
+  -- A veil on another post of Ann's lands; a spin pressed at it is then refused in the words a post of another character gets, with the same code, and nothing is written.
+  perform tests.become_service();
+  got := pg_temp.coded(format('select play_card(%L, %L, %L, %L, %L, 0, %L)', cy, 'vlauthor', c, hidden, '{}', ''));
+  perform tests.unbecome();
+  if got is not null then raise exception 'the veil on Ann''s other post: %', got; end if;
+  got := pg_temp.as_(bob, format('select spin(origin => %L, through => %L, title => %L, body => %L, at_post => %L)', play, b, 'Vsp refused', 'No.', hidden));
+  if got is distinct from 'P0002 ' || words then raise exception 'a spin pressed at a veiled post: %', got; end if;
+  got := pg_temp.as_(bob, format('select spin(origin => %L, through => %L, title => %L, body => %L, at_post => %L)', play, b, 'Vsp refused', 'No.', others));
+  if got is distinct from 'P0002 ' || words then raise exception 'a spin pressed at another character''s post: %', got; end if;
+  if exists (select 1 from acts s where s.kind = 'spin' and s.payload ->> 'at' = hidden::text) then raise exception 'a spin named a veiled post'; end if;
+
+  -- land_refusal's read of the spins pressed at a post, word for word, keeps its index (sequential scans off for the look, and back on after: the file is one transaction).
+  perform set_config('enable_seqscan', 'off', true);
+  if pg_temp.plan_of(format('select 1 from acts s where s.kind = ''spin'' and s.payload ? ''at'' and s.payload ->> ''at'' = %L', pressed::text)) not like '%acts_spin_at%' then
+    raise exception 'the pressed read does not use acts_spin_at: %', pg_temp.plan_of(format('select 1 from acts s where s.kind = ''spin'' and s.payload ? ''at'' and s.payload ->> ''at'' = %L', pressed::text)); end if;
+  perform set_config('enable_seqscan', 'on', true);
 end $$;
 
 -- ---- 10. The stand-in is no persona: the lists that are of staff leave it out, and the model reads it as the plain character it is shown as ----

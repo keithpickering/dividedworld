@@ -12,6 +12,7 @@ import { chooseInstance } from '../_shared/instance.ts';
 import { environment, fromTheService, json, notTheService } from '../_shared/serve.ts';
 import { ledgerWriter } from '../_shared/models/ledger.ts';
 import { withDatabaseSettings } from '../_shared/settings.ts';
+import { tokenCounter } from '../../../engine/system/tokens.ts';
 import type { JobDeps } from '../_shared/handler.ts';
 
 /** The calls that write: not sent again after an answer that may have been lost on the way back. The ledger's own writer is one. */
@@ -28,8 +29,8 @@ export async function handle(request: Request, deps: JobDeps): Promise<Response>
     const db = deps.db(env, { safeToRepeat: (fn) => !WRITES.has(fn) });
     const instance = chooseInstance(deps.env('KAYFABB_PROFILE'));
     // The tiers are the instance's `modelTiers` setting as the database holds it now; the model adapter names no model of its own.
-    const tiers = (await withDatabaseSettings(instance, db)).settings.modelTiers;
-    const outcome = await runChatter(db, deps.models(deps.env, ledgerWriter(db), { tiers, fetch: deps.fetch }), instance, slot);
+    const { settings } = await withDatabaseSettings(instance, db);
+    const outcome = await runChatter(db, deps.models(deps.env, ledgerWriter(db), { tiers: settings.modelTiers, oldVoice: { window: settings.oldVoiceWindow, count: tokenCounter(settings.oldVoiceTokenizer) }, fetch: deps.fetch }), instance, slot);
     if (outcome.status === 'ok') {
       const unspent = outcome.picks.filter((p) => p.status === 'rejected' || p.status === 'failed');
       if (unspent.length) console.warn('chatter picks that spent nothing', slot, JSON.stringify(unspent.map((p) => ({ staff: p.staff, status: p.status, why: p.why }))));

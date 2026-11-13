@@ -195,7 +195,7 @@ test.describe('high contrast', () => {
   test('the hand, open over the board: every line stands on solid ground', async ({ page }) => {
     await prefer(page, '/b/general', { contrast: 'high' });
     await page.getByRole('region', { name: 'Game HUD' }).getByRole('button', { name: /^Hand, / }).click();
-    /* The hand is a modal dialog on the wide layout (Hud.tsx), a region on the phone's. */
+    /* The hand is a modal dialog on both layouts (Hud.tsx). */
     await expect(page.getByRole('dialog', { name: 'Your hand' })).toBeVisible();
     expect(await linesOffGround(page)).toEqual([]);
   });

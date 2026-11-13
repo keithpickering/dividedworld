@@ -69,6 +69,107 @@ describe('the caption bar', () => {
     await waitFor(() => expect(root.style.getPropertyValue('--kb-captions-measured')).toBe(''), { timeout: 2000 });
   });
 
+  describe('over a dialog', () => {
+    const rect = (r: { left: number; top: number; right: number; bottom: number }) => ({ ...r, x: r.left, y: r.top, width: r.right - r.left, height: r.bottom - r.top, toJSON: () => ({}) });
+    /* A dialog's laid-out box is its offsets in the overlay (an animation's scale and translate move its rect and no offset), so the rect the test gives it is a wrong one, as an entrance's is. */
+    const withDialog = (box: { left: number; top: number; right: number; bottom: number }, overlayTop = 0) => {
+      const scrim = document.createElement('div');
+      scrim.className = 'kb-glass kb-glass-overlay';
+      const dialog = document.createElement('div');
+      dialog.className = 'kb-glass-dialog';
+      dialog.setAttribute('role', 'dialog');
+      scrim.append(dialog);
+      document.body.append(scrim);
+      scrim.getBoundingClientRect = () => rect({ left: 0, top: overlayTop, right: 1280, bottom: 800 });
+      const at = { offsetParent: scrim, offsetLeft: box.left, offsetTop: box.top - overlayTop, offsetWidth: box.right - box.left, offsetHeight: box.bottom - box.top };
+      for (const [k, value] of Object.entries(at)) Object.defineProperty(dialog, k, { value, configurable: true });
+      dialog.getBoundingClientRect = () => rect({ left: box.left + 90, top: box.top + 90, right: box.left + 91, bottom: box.top + 91 });
+      return scrim;
+    };
+    /* The bar rests at 730 to 760, and a lift moves it as the transform would. */
+    const measure = (el: HTMLElement) => {
+      if (!el.classList.contains('kb-captions-bar')) return rect({ left: 0, top: 0, right: 0, bottom: 0 });
+      const lift = parseFloat(el.style.getPropertyValue('--kb-captions-lift') || '0');
+      return rect({ left: 540, top: 730 - lift, right: 740, bottom: 760 - lift });
+    };
+
+    afterEach(() => { document.querySelectorAll('.kb-glass-overlay').forEach((el) => el.remove()); });
+
+    test('a bar clear of the dialog is raised above its scrim, and keeps its place', async () => {
+      vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) { return measure(this); });
+      const scrim = withDialog({ left: 400, top: 100, right: 880, bottom: 600 });
+      render(<Captions store={store} />);
+      act(() => store.say({ text: 'Cheers', ms: 60_000 }));
+      await waitFor(() => expect(bar()?.getAttribute('data-over-scrim')).toBe('true'));
+      expect((bar() as HTMLElement).style.getPropertyValue('--kb-captions-lift')).toBe('0px');
+      scrim.remove();
+      await waitFor(() => expect(bar()?.getAttribute('data-over-scrim')).toBeNull());
+    });
+
+    test('a bar that meets the dialog is lifted to rest above it', async () => {
+      vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) { return measure(this); });
+      const scrim = withDialog({ left: 0, top: 400, right: 1280, bottom: 790 });
+      render(<Captions store={store} />);
+      act(() => store.say({ text: 'Cheers', ms: 60_000 }));
+      await waitFor(() => expect(bar()?.getAttribute('data-over-scrim')).toBe('true'));
+      expect((bar() as HTMLElement).style.getPropertyValue('--kb-captions-lift')).toBe('370px');
+      scrim.remove();
+    });
+
+    test('the lift property is cleared, not only the attribute, when the dialog goes', async () => {
+      vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) { return measure(this); });
+      const scrim = withDialog({ left: 0, top: 400, right: 1280, bottom: 790 });
+      render(<Captions store={store} />);
+      act(() => store.say({ text: 'Cheers', ms: 60_000 }));
+      await waitFor(() => expect((bar() as HTMLElement).style.getPropertyValue('--kb-captions-lift')).toBe('370px'));
+      scrim.remove();
+      await waitFor(() => expect(bar()?.getAttribute('data-over-scrim')).toBeNull());
+      expect((bar() as HTMLElement).style.getPropertyValue('--kb-captions-lift')).toBe('');
+    });
+
+    test('once placed, the lift is the same a few frames later: the bar does not oscillate', async () => {
+      vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) { return measure(this); });
+      const scrim = withDialog({ left: 0, top: 400, right: 1280, bottom: 790 });
+      render(<Captions store={store} />);
+      act(() => store.say({ text: 'Cheers', ms: 60_000 }));
+      await waitFor(() => expect((bar() as HTMLElement).style.getPropertyValue('--kb-captions-lift')).toBe('370px'));
+      for (let i = 0; i < 5; i++) {
+        await new Promise((r) => requestAnimationFrame(() => r(null)));
+        expect((bar() as HTMLElement).style.getPropertyValue('--kb-captions-lift')).toBe('370px');
+      }
+      scrim.remove();
+    });
+
+    test('where no room is left above the box the bar stays under the scrim, with no raise and no lift', async () => {
+      vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) { return measure(this); });
+      const scrim = withDialog({ left: 0, top: 20, right: 1280, bottom: 790 });
+      render(<Captions store={store} />);
+      act(() => store.say({ text: 'Cheers', ms: 60_000 }));
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(null))));
+      expect(bar()?.getAttribute('data-over-scrim')).toBeNull();
+      expect((bar() as HTMLElement).style.getPropertyValue('--kb-captions-lift')).toBe('');
+      scrim.remove();
+    });
+
+    test('a lift that would climb over the chrome above the overlay is no room', async () => {
+      vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) { return measure(this); });
+      /* The overlay starts at 60; the box's top, 80, leaves the lifted bar's top at 40. */
+      const scrim = withDialog({ left: 0, top: 80, right: 1280, bottom: 790 }, 60);
+      render(<Captions store={store} />);
+      act(() => store.say({ text: 'Cheers', ms: 60_000 }));
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(null))));
+      expect(bar()?.getAttribute('data-over-scrim')).toBeNull();
+      scrim.remove();
+    });
+
+    test('with no dialog the bar is not raised and carries no lift', () => {
+      render(<Captions store={store} />);
+      act(() => store.say({ text: 'Cheers', ms: 60_000 }));
+      expect(bar()?.getAttribute('data-over-scrim')).toBeNull();
+      expect((bar() as HTMLElement).style.getPropertyValue('--kb-captions-lift')).toBe('');
+    });
+  });
+
   const osReduces = () => vi.stubGlobal('matchMedia', (q: string) => ({ matches: q.includes('prefers-reduced-motion'), media: q, addEventListener: () => {}, removeEventListener: () => {} }));
   const goesAtOnce = () => {
     vi.useFakeTimers();

@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
 
 /**
  * What the browser paints for the focused element, asked of the browser (jsdom paints no focus).
@@ -60,4 +60,23 @@ export async function controlsWithoutFocusIndicator(page: Page, limit = 400): Pr
     if (!found.visible && !bare.includes(found.name)) bare.push(found.name);
   }
   throw new Error(`Tab never came round to the first stop in ${limit} presses (${stops} stops): a focus trap, or a page too long for the limit`);
+}
+
+/**
+ * Arms the card whose button's name matches `name`, in the hand's dialog, which is already open, the way a player does on either layout
+ * (docs/plans/2026-11-13-phone-hand-design.md, section 3). On the Main board a click arms it. On the phone a pointer click on a card that is
+ * not the middle one only brings it to the middle, so the card is tapped, its row item is waited on for `data-kb-middle`, and it is tapped
+ * once more: a click on the middle card arms it and closes the hand.
+ */
+export async function armCard(page: Page, name: RegExp): Promise<void> {
+  const hand = page.getByRole('dialog', { name: 'Your hand' });
+  /* The deal is over before a card is pressed: a card pressed while it eases is judged by where the row stood when the press began. */
+  await expect(hand).not.toHaveAttribute('data-kb-dealing', '', { timeout: 10_000 });
+  const card = hand.getByRole('button', { name }).first();
+  const item = card.locator('xpath=ancestor::li[1]');
+  if (await page.locator('html').getAttribute('data-kb-layout') === 'phone' && (await item.getAttribute('data-kb-middle')) === null) {
+    await card.click();
+    await expect(item).toHaveAttribute('data-kb-middle', '');
+  }
+  await card.click();
 }
