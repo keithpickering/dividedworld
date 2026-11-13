@@ -41,6 +41,19 @@
   top: var(--kb-who-lift);
 }
 
+/* A linked character: the avatar is inside the link, beside the name, with the same size, gap and lift as the unit's own avatar. */
+.kb-who > a.kb-who-link {
+  gap: 0.35em;
+}
+
+.kb-who-link > .kb-mini {
+  width: 1.27em;
+  height: 1.27em;
+  margin-right: 0;
+  position: relative;
+  top: var(--kb-who-lift);
+}
+
 .kb-mini img {
   display: block;
   width: 100%;
