@@ -667,7 +667,9 @@ begin
   -- The same words, read directly: land_refusal answers for a staff post and a visited one, null for a post that is neither, and the same reads for any card.
   if land_refusal((select k from card_kinds k where k.key = 'vlauthor'), botq, '{}') is distinct from 'a post by the staff keeps its name' then raise exception 'land_refusal for a staff post'; end if;
   if land_refusal((select k from card_kinds k where k.key = 'vlmove'), botq, '{}') is not null then raise exception 'land_refusal refuses a plain card on a staff post'; end if;
-  if land_refusal((select k from card_kinds k where k.key = 'vlauthor'), held, '{}') is not null then raise exception 'land_refusal refuses a post that is clean'; end if;
+  if land_refusal((select k from card_kinds k where k.key = 'vlauthor'), tests.post(a, t, 'A post nothing has touched.'), '{}') is not null then raise exception 'land_refusal refuses a post that is clean'; end if;
+  -- The post whose back has sprung is not clean: the card the back laid carries its setter (section 5d), so a veil on it is refused.
+  if land_refusal((select k from card_kinds k where k.key = 'vlauthor'), held, '{}') is distinct from 'a card set on this post has sprung, so its author is on the record' then raise exception 'land_refusal for a post whose back sprang'; end if;
 
   -- A post a Mod Bot visit names does not take a veil either, on the spring path: the back is set on `held3`, the post that quotes it has been visited, and spring_facts says so (land_why) and the spring does not
   -- land: nothing is written for it, and the back stays set.
@@ -811,6 +813,125 @@ begin
   plan := pg_temp.plan_of(format('select exists (select 1 from acts s where s.kind = ''spring'' and s.payload ->> ''by'' = %L and s.payload ? ''for'')', q::text));
   reset enable_seqscan;
   if plan not like '%acts_spring_by%' then raise exception 'the spring probe does not use acts_spring_by: %', plan; end if;
+end $$;
+
+-- ---- 5d. The author's own back that springs: the card it lays on the quote carries the setter, so it is shown as the post's author is, and a veil is refused on a post one of whose backs has sprung ----
+-- Only a post's author sets a card face down on it (a back). When a back springs on a quote Q, lay_sprung writes a card Act on Q whose `character` is the setter, and whose payload names the spring Act S, which targets the post P: a
+-- join (card, its `spring`, S's target) says the card's author is P's author. So, A (a back set, then P veiled, then quoted): the landed card is shown under the stand-in while the veil on P is live (acts_public, the counts, the
+-- alerts and every page that carries the card), and the true name returns by itself with the veil. B (the back sprung first, then a veil cast): the card on Q is already a public Act that ties the author to P, so
+-- land_refusal refuses the veil on a post one of whose backs has sprung, for every caster and for a cast and a spring alike, by one probe of the springs that target the post. A back that is still face down, one taken back, and one
+-- that sprang and was caught (nothing lands) name the setter on no Act the derived veil does not already cover, so they leave the post free.
+select tests.unbecome();
+do $$
+declare
+  ann uuid := tests.account('vy-ann'); bob uuid := tests.account('vy-bob'); cy uuid := tests.account('vy-cy'); ray uuid := tests.account('vy-ray'); adm uuid := tests.account('vy-admin');
+  a uuid := tests.character(ann, 'Vy Ann'); b uuid := tests.character(bob, 'Vy Bob'); c uuid := tests.character(cy, 'Vy Cy'); r uuid := tests.character(ray, 'Vy Ray');
+  t uuid := tests.thread('Vy back'); t2 uuid := tests.thread('Vy back b');
+  stand uuid := pg_temp.stand();
+  p uuid := tests.post(a, t, 'A veiled post with a back.'); p2 uuid := tests.post(a, t2, 'A post whose back sprang first.'); p3 uuid := tests.post(a, t2, 'A post with a back still face down.'); p4 uuid := tests.post(a, t2, 'A post whose back was taken back.');
+  back uuid; back2 uuid; back3 uuid; back4 uuid; vplay uuid; made jsonb; q uuid; q2 uuid; spring uuid; laid uuid; laid2 uuid; seen text; who_sees uuid; got text; plan text; words text := '42501 a card set on this post has sprung, so its author is on the record';
+  n_count integer; n_listed integer; n_stand integer; n_stand_listed integer;
+begin
+  perform pg_temp.cards();
+  perform pg_temp.hand(ann, 'vlmove', 'vlmove', 'vlmove', 'vlmove'); perform pg_temp.hand(bob, 'vlauthor', 'vlauthor', 'vlauthor', 'vlauthor'); perform pg_temp.hand(cy, 'vlauthor');
+  insert into admins (account) values (adm);
+  -- A: A's back on P (a Who of anyone), then Bob's veil on P, then Cy quotes P: the back springs and lays a card on Cy's quote.
+  perform tests.become_service();
+  back := (set_card(ann, 'vlmove', a, p, '{}', 0) ->> 'id')::uuid;
+  vplay := (play_card(bob, 'vlauthor', b, p, '{}', 0, '') ->> 'id')::uuid;
+  perform tests.unbecome();
+  if not exists (select 1 from post_veils v where v.play = vplay and v.post = p) then raise exception 'a veil on a post that holds a back did not land'; end if;
+  perform tests.become(cy);
+  made := post(t, c, 'Quoting the veiled post.', p);
+  perform tests.unbecome();
+  q := (made ->> 'id')::uuid;
+  select s.id into spring from acts s where s.kind = 'spring' and (s.payload ->> 'set') = back::text;
+  select k.id into laid from acts k where k.kind = 'card' and (k.payload ->> 'spring') = spring::text;
+  if spring is null or laid is null or (select k.character from acts k where k.id = laid) is distinct from a or (select k.target_act_id from acts k where k.id = laid) is distinct from q then
+    raise exception 'the back did not spring a card of its setter onto the quote: % %', spring, laid; end if;
+  -- Shown: the spring (the author's own Act on the post) and the card it laid on the quote are the stand-in's, for the setter's own player and for a third player; the true character is in no row of any read.
+  foreach who_sees in array array[ray, cy, ann] loop
+    perform tests.become(who_sees);
+    seen := coalesce((select jsonb_agg(to_jsonb(x))::text from acts_public x where x.thread = t), '')
+         || coalesce((select jsonb_agg(to_jsonb(x))::text from acts_public x where x.id in (p, q, spring, laid)), '')
+         || coalesce((select jsonb_agg(to_jsonb(x))::text from acts_public x where x.target_act_id in (p, q)), '')
+         || coalesce((select jsonb_agg(x.id)::text from acts_public x where x.character = a), '')
+         || coalesce((select jsonb_agg(to_jsonb(x))::text from play_reach x where x.play = laid), '')
+         || (thread_page(t, 1, null, null, null)::jsonb - 'veiled' - 'faces')::text;
+    -- The alerts and the log are the caller's own: the setter's own say who it is (the character alerted, and the plays it made), which is the setter's own fact.
+    if who_sees <> ann then seen := seen || alerts_page(null)::text || log_page(null)::text; end if;
+    perform tests.unbecome();
+    if seen like '%' || a::text || '%' or seen like '%Vy Ann%' then
+      raise exception 'a back that sprang names the veiled post''s author to %: %', case who_sees when ray then 'a third player' when cy then 'the quoter' else 'the setter' end, substring(seen from position(a::text in seen) - 200 for 500);
+    end if;
+  end loop;
+  if (select x.character from acts_public x where x.id = laid) is distinct from stand or (select x.character from acts_public x where x.id = spring) is distinct from stand then raise exception 'the card a back laid, or its spring, is not shown under the stand-in'; end if;
+  if exists (select 1 from acts_public x where x.character = a and x.id in (laid, spring)) then raise exception 'a read by character finds the card a back laid under its author'; end if;
+  if not exists (select 1 from acts_public x where x.character = stand and x.id = laid) then raise exception 'a read by character does not find the card a back laid under the stand-in'; end if;
+  -- The quoter's alert (trapStruck) leads to the laid card, shown under the stand-in as every Act is.
+  perform tests.become(cy);
+  if not exists (select 1 from alerts al where al.act = laid) then raise exception 'the quoter has no alert about the card'; end if;
+  if alerts_page(null)::text like '%' || a::text || '%' then raise exception 'the quoter''s alert names the setter'; end if;
+  perform tests.unbecome();
+  -- The counts follow what is shown: what a profile lists is what its count says, for the author and for the stand-in.
+  n_count := (select n.cards from character_post_counts n where n.character = a);
+  n_listed := (select count(*) from acts_public x where x.character = a and x.kind = 'card');
+  n_stand := (select n.cards from character_post_counts n where n.character = stand);
+  n_stand_listed := (select count(*) from acts_public x where x.character = stand and x.kind = 'card');
+  if n_count is distinct from n_listed or n_stand is distinct from n_stand_listed then raise exception 'the counts do not follow the card a back laid: author % of % listed, stand-in % of % listed', n_count, n_listed, n_stand, n_stand_listed; end if;
+  -- The true name returns by itself with the veil.
+  perform tests.become(adm); perform reverse_card(vplay); perform tests.unbecome();
+  if (select x.character from acts_public x where x.id = laid) is distinct from a or (select x.character from acts_public x where x.id = spring) is distinct from a then raise exception 'the setter is not shown again once the veil has ended'; end if;
+  if (select n.cards from character_post_counts n where n.character = a) is distinct from (select count(*) from acts_public x where x.character = a and x.kind = 'card') then raise exception 'the count does not return with the veil'; end if;
+
+  -- B: the back sprang first (a card of the author's lies on the quote), then a veil is cast on P2: refused, in the same words for any caster, and nothing is written.
+  perform tests.become_service();
+  back2 := (set_card(ann, 'vlmove', a, p2, '{}', 0) ->> 'id')::uuid;
+  perform tests.unbecome();
+  perform tests.become(cy); made := post(t2, c, 'Quoting the post that has a back.', p2); perform tests.unbecome();
+  q2 := (made ->> 'id')::uuid;
+  select k.id into laid2 from acts k where k.kind = 'card' and k.target_act_id = q2 and k.character = a;
+  if laid2 is null then raise exception 'the second back did not spring: %', made; end if;
+  perform tests.become_service();
+  got := pg_temp.coded(format('select play_card(%L, %L, %L, %L, %L, 0, %L)', bob, 'vlauthor', b, p2, '{}', ''));
+  if got is distinct from words then raise exception 'a veil on a post one of whose backs sprang: %', got; end if;
+  perform tests.unbecome();
+  perform pg_temp.hand(ann, 'vlauthor');
+  perform tests.become_service();
+  got := pg_temp.coded(format('select play_card(%L, %L, %L, %L, %L, 0, %L)', ann, 'vlauthor', a, p2, '{}', ''));
+  perform tests.unbecome();
+  if got is distinct from words then raise exception 'the author''s own veil on a post one of whose backs sprang: %', got; end if;
+  if exists (select 1 from post_veils v where v.post = p2) then raise exception 'a refused veil wrote a row'; end if;
+  if land_refusal((select k from card_kinds k where k.key = 'vlauthor'), p2, '{}') is distinct from substr(words, 7) or land_refusal((select k from card_kinds k where k.key = 'vlmove'), p2, '{}') is not null
+     or land_refusal((select k from card_kinds k where k.key = 'vltotals'), p2, '{}') is not null then raise exception 'land_refusal for a post one of whose backs sprang'; end if;
+  -- One bounded indexed read: the post's backs by the key (post, round) of face_down, and each one's spring by acts_one_spring, the unique index on the spring's `set`. Never the post's targeting Acts or the springs as a whole.
+  set local enable_seqscan = off;
+  plan := pg_temp.plan_of(format('select exists (select 1 from face_down f join acts s on s.kind = ''spring'' and s.payload ->> ''set'' = f.play::text where f.post = %L and s.payload ->> ''did'' = ''landed'')', p2));
+  reset enable_seqscan;
+  if plan !~ 'Index (Only )?Scan using face_down_post_round_key on face_down f' or plan !~ 'Index Scan using acts_one_spring on acts s' or plan ~ 'Seq Scan on (acts|face_down)\y' then raise exception 'the sprung-back probe is not a read of face_down by the post and acts_one_spring by the set: %', plan; end if;
+
+  -- A back still face down, and one taken back, leave the post free: a veil lands on each, and the set Act, the take-back and every Act they wrote name the stand-in.
+  perform tests.become_service();
+  back3 := (set_card(ann, 'vlmove', a, p3, '{}', 0) ->> 'id')::uuid;
+  got := pg_temp.coded(format('select play_card(%L, %L, %L, %L, %L, 0, %L)', bob, 'vlauthor', b, p3, '{}', ''));
+  perform tests.unbecome();
+  if got is not null then raise exception 'a veil on a post with a back still face down: %', got; end if;
+  perform tests.become(ray);
+  seen := coalesce((select jsonb_agg(to_jsonb(x))::text from acts_public x where x.target_act_id = p3 or x.id = back3), '') || coalesce((select jsonb_agg(to_jsonb(f))::text from face_down f), '');
+  perform tests.unbecome();
+  if seen like '%' || a::text || '%' then raise exception 'a back still face down names the veiled post''s author: %', seen; end if;
+  perform tests.become_service();
+  back4 := (set_card(ann, 'vlmove', a, p4, '{}', 0) ->> 'id')::uuid;
+  perform tests.unbecome();
+  perform tests.become_service();
+  perform take_back(ann, a, back4);
+  got := pg_temp.coded(format('select play_card(%L, %L, %L, %L, %L, 0, %L)', cy, 'vlauthor', c, p4, '{}', ''));
+  perform tests.unbecome();
+  if got is not null then raise exception 'a veil on a post whose back was taken back: %', got; end if;
+  perform tests.become(ray);
+  seen := coalesce((select jsonb_agg(to_jsonb(x))::text from acts_public x where x.target_act_id = p4 or x.id = back4), '');
+  perform tests.unbecome();
+  if seen like '%' || a::text || '%' or seen not like '%' || stand::text || '%' then raise exception 'a taken-back back shows the veiled post''s author: %', seen; end if;
 end $$;
 
 -- ---- 6. acts.character is no longer readable; the readers that needed it answer from the projection ----

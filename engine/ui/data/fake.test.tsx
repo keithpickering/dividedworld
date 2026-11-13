@@ -4427,6 +4427,34 @@ describe('post veils, blind totals and a post-local reaction (card notes, Part 3
     expect((await w.fake.act(w.post))!.character).toBe(w.boFace);
   });
 
+  /* A Move landing from a quote is not modeled by the fake (a quote springs nothing); the card a back laid, which names its spring, is seeded as the server writes it (0400's lay_sprung). */
+  test('the card a back of the author\'s laid on a quote is the stand-in\'s while the veil is up, and returns with it; a veil is refused on a post one of whose backs has sprung', async () => {
+    const w = veilWorld();
+    const back = w.fake.seed.set(w.boFace, w.post, 'glow');
+    const stand = await veil(w);
+    const quote = w.fake.seed.post(w.thread, w.cyFace, 'Quoting the veiled post.');
+    const spring = w.fake.seed.spring(back, { by: quote, trigger: 'quote' });
+    const laid = w.fake.seed.card(w.boFace, quote, 'overreaction', { spring });
+    for (const reader of [w.ana, w.bo, w.cy]) {
+      w.fake.signInAs(reader);
+      expect((await w.fake.act(laid))!.character).toBe(stand);
+      expect((await w.fake.act(spring))!.character).toBe(stand);
+    }
+    w.fake.clock.advance(3 * DAY + MINUTE);
+    expect((await w.fake.act(laid))!.character).toBe(w.boFace);
+    /* The other order: the back sprang first, and the veil is refused for any caster. */
+    const other = w.fake.seed.thread('general', w.boFace, 'Another', 'Another post.');
+    const back2 = w.fake.seed.set(w.boFace, other.act, 'glow');
+    w.fake.seed.spring(back2, { by: quote, trigger: 'quote' });
+    w.fake.signInAs(w.ana);
+    expect(await w.fake.playCard('whodunnit', w.anaFace, other.act, {}, '')).toEqual(refused('a card set on this post has sprung, so its author is on the record'));
+    /* A back still face down leaves the post free. */
+    const third = w.fake.seed.thread('general', w.boFace, 'Third', 'Third post.');
+    w.fake.seed.set(w.boFace, third.act, 'glow');
+    must(await w.fake.playCard('whodunnit', w.anaFace, third.act, {}, ''));
+    expect((await w.fake.act(third.act))!.character).toBe(stand);
+  });
+
   test('a profile\'s list leaves a veiled post out of its author\'s and puts it in the stand-in\'s, and the counts follow', async () => {
     const w = veilWorld();
     const before = await w.fake.profilePage(w.boFace);

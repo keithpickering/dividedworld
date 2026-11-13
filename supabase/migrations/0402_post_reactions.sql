@@ -91,7 +91,7 @@ grant execute on function reaction_quadrant(uuid, text) to kayfabb_digest;
 
 -- ===================================================================================== 4. the landing ====
 -- land_refusal_code(words): the SQLSTATE a refusal of land_refusal is raised under. The refusals of a veil are 42501 (a card is refused for what stands on the post), the words about a reaction card's configuration are
--- 22023 (a configuration that is not one), and a key the post already holds is 23505 (the stack's own code: the post already carries it). One list, here; land_refusal's words are the only keys.
+-- 22023 (a configuration that is not one), and a key the post already holds is 23505 (the stack's own code: the post already carries it). One list, here; land_refusal's words are the only keys. The record refusals, the sprung back's among them ("a card set on this post has sprung, so its author is on the record"), are the `else`.
 create function land_refusal_code(words text) returns text
 language sql immutable set search_path = public, pg_temp as $$
   select case words
@@ -115,6 +115,7 @@ declare
   visited boolean;
   played boolean;
   named boolean;
+  sprung boolean;
   cut boolean;
   cut_own boolean;
   stood uuid;
@@ -130,6 +131,10 @@ begin
   played := exists (select 1 from acts k where k.kind = 'card' and k.target_act_id = land_refusal.post and k.payload ->> 'reach' = 'character');
   -- A spring Act that carries the quoter (`for`) and names this post as the quote it sprang on (`by`): one probe of acts_spring_by.
   named := exists (select 1 from acts s where s.kind = 'spring' and s.payload ->> 'by' = land_refusal.post::text and s.payload ? 'for');
+  -- A back of the post's own author that sprang on a quote laid a card of the author's on that quote, and that card's payload names the spring, which targets this post: a public Act that ties the author to the post, and
+  -- one the derived veil cannot reach (the card is on the quote). The post's backs by the key (post, round) of face_down, and for each its spring by acts_one_spring (the unique index on the spring's `set`): a few probes of
+  -- two keys, never the post's targeting Acts or the instance's springs. `landed` is a back that laid a card: a caught or an ended one lays none.
+  sprung := exists (select 1 from face_down f join acts s on s.kind = 'spring' and s.payload ->> 'set' = f.play::text where f.post = land_refusal.post and s.payload ->> 'did' = 'landed');
   -- A reply a Line Cutter play cut in under a post (post_under, 0348): its card Act is the caster's (`character`), on the parent (its target, so no derived veil reaches it), and its payload names the reply, so the record says
   -- whose reply it is: a public Act that names the author of the post it names. One probe of the unique index on `reply`; a row stays when the play ends, as the Act does.
   cut := exists (select 1 from post_under u where u.reply = land_refusal.post);
@@ -150,6 +155,7 @@ begin
     if visited then return 'a Mod Bot has been to this post, so its author is on the record'; end if;
     if played then return 'a card played from this post names its author, so the author is on the record'; end if;
     if named then return 'a card that sprang on this post names its author, so the author is on the record'; end if;
+    if sprung then return 'a card set on this post has sprung, so its author is on the record'; end if;
     if cut then return 'a card cut this post in under another, so its author is on the record'; end if;
     if cut_own then return 'its author cut a reply in under this post, so the author is on the record'; end if;
     if stood is null then return 'this forum has no one to stand in for an author'; end if;

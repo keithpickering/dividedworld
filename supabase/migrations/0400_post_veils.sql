@@ -591,6 +591,23 @@ alter table post_veils enable always trigger post_veils_no_truncate;
 alter table post_veils enable row level security;
 revoke all on post_veils from public, anon, authenticated, service_role;
 
+-- post_veil_cards: the card a veiled post's own back laid. A back set on P by P's author springs on a quote Q and lay_sprung writes a card Act on Q whose `character` is the setter and whose payload names the spring Act, which
+-- targets P: a join (card, its `spring`, the spring's target) says the card's author is P's author, and the card is on Q and not on P, so no derived row of the veil reaches it. When a back springs while an author veil is live on
+-- its post, lay_sprung writes the card's row here (one per card: the card, the post whose author set it, that author), and acts_public shows the card under the stand-in for as long as that veil is live, as it shows the spring.
+-- A veil cast after a back has sprung is refused (land_refusal), so every card that is the author's and names a veiled post's spring is a row here. Insert-only by the same pair, read by no API role.
+create table post_veil_cards (
+  card uuid primary key references acts (id),
+  post uuid not null references acts (id),
+  author uuid not null references characters (id)
+);
+create index post_veil_cards_post on post_veil_cards (post);
+create trigger post_veil_cards_no_update before update or delete on post_veil_cards for each row execute function post_veils_append_only();
+create trigger post_veil_cards_no_truncate before truncate on post_veil_cards for each statement execute function post_veils_append_only();
+alter table post_veil_cards enable always trigger post_veil_cards_no_update;
+alter table post_veil_cards enable always trigger post_veil_cards_no_truncate;
+alter table post_veil_cards enable row level security;
+revoke all on post_veil_cards from public, anon, authenticated, service_role;
+
 -- A veil is live while its time has not passed and no admin has ended its play (a card_end, or a write that failed and was refunded: card_ended, 0149, whose two reads are written out here). One read of the two, for every
 -- reader below. It calls no function of its own: a view's tables are read with its owner's rights but its functions are run as the caller, and the readers of acts_public include roles that were granted none (the digest's,
 -- whose reviewed list of functions (0050-digest.sql) is not widened for this).
@@ -631,7 +648,8 @@ $$;
 --      apart (so that each arm has the index of its own: acts_target is partial, without edits, and acts_edits holds them), and the draws and washes by that author on a wall (0317) on that post. A wash is the post's own
 --      character's alone, so it names the author wherever it is read (surface_acts, a broadcast, my_draws' cut rows); a draw is any character's, and the author's own is hidden with the rest of what the author made on the post.
 --      The wall's play is the Act the draw targets and its target the post: found through the cards on the live veils' posts (an index read of acts_target), so a read pays for it only while an author veil is up.
--- WHAT A VEIL ON A POST COVERS. The post itself, and what its author did to it that is no content of its own: an edit, a set, a take-back, a use card, its spring (the derived Acts, which every read of an Act agrees on). It never
+-- WHAT A VEIL ON A POST COVERS. The post itself, and what its author did to it that is no content of its own: an edit, a set, a take-back, a use card, its spring (the derived Acts, which every read of an Act agrees on).
+-- And the card a back of the author's laid from that spring on a quote (post_veil_cards, written by lay_sprung while the veil is live): it is the setter's and names the spring, which targets the post, so it is shown under the stand-in too. It never
 -- covers an Act of kind `post` or `spin` that targets the post (the author's own quote of it, a spin from it): those are posts and threads of their own, listed as such by thread_open's first and last poster, indexed by
 -- post_search and counted by character_post_counts as posts and spins, and each of those reads probes the veil on the Act itself alone. They are the author's own replies elsewhere in kind (who quoted what is the game's
 -- clue, and anyone may quote the post, so a quote proves nothing), and are veiled by a veil cast on them directly and by nothing else. So an Act is in exactly one of the selects, whatever veils a post and its quotes hold: the
@@ -696,7 +714,8 @@ create or replace view acts_public as
            true as g, not exists (select 1 from post_veils_live v where v.veil = 'author' and v.post = a.id)
              and not (a.kind not in ('post', 'spin') and exists (select 1 from post_veils_live v where v.veil = 'author' and v.post = a.target_act_id and v.author = a.character))
              and not (a.kind in ('draw', 'wash') and a.target_act_id = any (array(select c.id from acts c where c.kind = 'card' and c.target_act_id = any (array(select v.post from post_veils_live v where v.veil = 'author'))))
-                      and exists (select 1 from acts c join post_veils_live v on v.veil = 'author' and v.post = c.target_act_id and v.author = a.character where c.id = a.target_act_id)) as ok
+                      and exists (select 1 from acts c join post_veils_live v on v.veil = 'author' and v.post = c.target_act_id and v.author = a.character where c.id = a.target_act_id))
+             and not (a.kind = 'card' and a.id = any (array(select c.card from post_veil_cards c join post_veils_live v on v.veil = 'author' and v.post = c.post and v.author = c.author))) as ok
     from acts a
     union all
     select a.id, (select k.id from characters k where k.staff_kind = 'anonymous') as "character", a.kind, a.thread, a.target_act_id, a.seq, a.created_at, a.payload,
@@ -704,7 +723,8 @@ create or replace view acts_public as
              or (a.kind not in ('post', 'spin', 'edit') and a.target_act_id = any (array(select v.post from post_veils_live v where v.veil = 'author')) and exists (select 1 from post_veils_live v where v.veil = 'author' and v.post = a.target_act_id and v.author = a.character))
              or (a.kind = 'edit' and a.target_act_id = any (array(select v.post from post_veils_live v where v.veil = 'author')) and exists (select 1 from post_veils_live v where v.veil = 'author' and v.post = a.target_act_id and v.author = a.character))
              or (a.kind in ('draw', 'wash') and a.target_act_id = any (array(select c.id from acts c where c.kind = 'card' and c.target_act_id = any (array(select v.post from post_veils_live v where v.veil = 'author'))))
-                 and exists (select 1 from acts c join post_veils_live v on v.veil = 'author' and v.post = c.target_act_id and v.author = a.character where c.id = a.target_act_id)) as ok
+                 and exists (select 1 from acts c join post_veils_live v on v.veil = 'author' and v.post = c.target_act_id and v.author = a.character where c.id = a.target_act_id))
+             or (a.kind = 'card' and a.id = any (array(select c.card from post_veil_cards c join post_veils_live v on v.veil = 'author' and v.post = c.post and v.author = c.author))) as ok
     from acts a
   ) u
   left join lateral (
@@ -755,6 +775,8 @@ grant select on my_veiled_posts to authenticated;
 --   leaves nothing to refuse.
 --   A reply cut in under another post (a Line Cutter's, 0348) is the second: the play's Act names it and its caster, so a veil is refused on it ("a card cut this post in under another"), and on a post whose own author cut one in under it.
 --   The other way round, a card that replies is refused on a veiled post, for every caster ("this post's author is hidden until ..."): see the body.
+--   A back of the post's own author that has sprung is the next: its card on the quote is the author's and names the spring, which targets this post ("a card set on this post has sprung"), by the post's backs (the key of face_down)
+--   and each one's spring (acts_one_spring), for every caster, a cast and a spring alike. A back that was caught, ended or taken back lays no card, and one still face down is covered by the derived veil as its set is.
 --   TASK 5 adds a reaction card's refusals here (its configuration, an emoji the forum already has, a key the post already holds), after these.
 create function land_refusal(kind_of card_kinds, post uuid, config jsonb) returns text
 language plpgsql stable security definer set search_path = public, pg_temp as $$
@@ -763,6 +785,7 @@ declare
   visited boolean;
   played boolean;
   named boolean;
+  sprung boolean;
   cut boolean;
   cut_own boolean;
   stood uuid;
@@ -774,6 +797,10 @@ begin
   played := exists (select 1 from acts k where k.kind = 'card' and k.target_act_id = land_refusal.post and k.payload ->> 'reach' = 'character');
   -- A spring Act that carries the quoter (`for`) and names this post as the quote it sprang on (`by`): one probe of acts_spring_by.
   named := exists (select 1 from acts s where s.kind = 'spring' and s.payload ->> 'by' = land_refusal.post::text and s.payload ? 'for');
+  -- A back of the post's own author that sprang on a quote laid a card of the author's on that quote, and that card's payload names the spring, which targets this post: a public Act that ties the author to the post, and
+  -- one the derived veil cannot reach (the card is on the quote). The post's backs by the key (post, round) of face_down, and for each its spring by acts_one_spring (the unique index on the spring's `set`): a few probes of
+  -- two keys, never the post's targeting Acts or the instance's springs. `landed` is a back that laid a card: a caught or an ended one lays none.
+  sprung := exists (select 1 from face_down f join acts s on s.kind = 'spring' and s.payload ->> 'set' = f.play::text where f.post = land_refusal.post and s.payload ->> 'did' = 'landed');
   -- A reply a Line Cutter play cut in under a post (post_under, 0348): its card Act is the caster's (`character`), on the parent (its target, so no derived veil reaches it), and its payload names the reply, so the record says
   -- whose reply it is: a public Act that names the author of the post it names. One probe of the unique index on `reply`; a row stays when the play ends, as the Act does.
   cut := exists (select 1 from post_under u where u.reply = land_refusal.post);
@@ -790,6 +817,7 @@ begin
     if visited then return 'a Mod Bot has been to this post, so its author is on the record'; end if;
     if played then return 'a card played from this post names its author, so the author is on the record'; end if;
     if named then return 'a card that sprang on this post names its author, so the author is on the record'; end if;
+    if sprung then return 'a card set on this post has sprung, so its author is on the record'; end if;
     if cut then return 'a card cut this post in under another, so its author is on the record'; end if;
     if cut_own then return 'its author cut a reply in under this post, so the author is on the record'; end if;
     if stood is null then return 'this forum has no one to stand in for an author'; end if;
@@ -1044,6 +1072,13 @@ begin
     || case when kind_of.scores_as then jsonb_build_object('starts', w_opens) when reach = 'post' and kind_of.lasts is not null then jsonb_build_object('ends', ends) else '{}'::jsonb end
     || case when kind_of.seeded then jsonb_build_object('seed', floor(random() * 2147483648)::bigint) else '{}'::jsonb end);
   if staff_setter then perform set_config('kayfabb.staff_writer', flag, true); end if;
+  -- The card carries its setter, and its payload names the spring, which targets the post the back was set on: while an author veil is live on that post, the card is shown under the stand-in as the spring is (post_veil_cards,
+  -- read by acts_public and the counts), and the true name returns with the veil. Written here, in the transaction of the card it describes, from the live veils of the spring's post.
+  insert into post_veil_cards (card, post, author)
+  select distinct written, v.post, v.author
+  from acts s join post_veils_live v on v.veil = 'author' and v.post = s.target_act_id and v.author = lay_sprung.setter
+  where s.id = lay_sprung.spring
+  on conflict on constraint post_veil_cards_pkey do nothing;
   -- What a landed play on a post needs beside its Act (a veil's row): the same writer place_cast calls.
   if reach = 'post' then perform land_rows(written, kind_of, target, coalesce(config, '{}'), setter); end if;
   if kind_of.surface and reach = 'post' then
@@ -1341,7 +1376,10 @@ revoke all on character_post_counts_base from public, anon, authenticated;
 -- What each live author veil takes: the veiled post, and the cards its author made on it (one row per post, whatever number of veils it holds). The stand-in is found by its index, as acts_public finds it.
 create view character_veiled_counts as
   select v.author, 1 as posts,
-         (select count(*) from acts k where k.kind = 'card' and k.target_act_id = v.post and k.character = v.author)::integer as cards
+         ((select count(*) from acts k where k.kind = 'card' and k.target_act_id = v.post and k.character = v.author)
+          + (select count(*) from post_veil_cards c join acts k on k.id = c.card
+             where c.post = v.post and c.author = v.author
+               and not exists (select 1 from post_veils_live w where w.veil = 'author' and w.post = k.target_act_id and w.author = c.author)))::integer as cards
   from (select distinct l.post, l.author from post_veils_live l where l.veil = 'author') v;
 -- And the change to each character's count: minus for the author, plus for the stand-in.
 create view character_count_moves as

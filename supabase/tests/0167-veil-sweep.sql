@@ -407,7 +407,7 @@ declare
   general uuid := (select id from boards where slug = 'general');
   t uuid := tests.thread('Sw sweep thread'); t3 uuid := tests.thread('Sw elsewhere');
   stand uuid;
-  p uuid; p2 uuid; p4 uuid; qa uuid; wall uuid; wash uuid; edit uuid; used uuid; quoted uuid; ray_card uuid; vplay uuid; spun jsonb; on_a uuid; on_p4 uuid; counts0 jsonb;
+  p uuid; p2 uuid; p4 uuid; p5 uuid; back uuid; back5 uuid; q5 uuid; q6 uuid; spring6 uuid; laid5 uuid; laid6 uuid; linked boolean; qa uuid; wall uuid; wash uuid; edit uuid; used uuid; quoted uuid; ray_card uuid; vplay uuid; spun jsonb; on_a uuid; on_p4 uuid; counts0 jsonb;
   veiled uuid[];
   probe record; res text; leaks boolean; found text[] := '{}'; missed text[] := '{}'; phase text;
 begin
@@ -416,7 +416,7 @@ begin
   insert into characters (name, staff, staff_kind, debuted_at) values ('Anonymous', 'anonymous', 'anonymous', now()) returning characters.id into stand;
   insert into character_profiles (character, title, signature) values (stand, 'Could be anyone.', '');
   insert into settings (key, value) values ('systemEnabled', 'true') on conflict (key) do update set value = 'true';
-  perform pg_temp.hand(ann, 'swuse');
+  perform pg_temp.hand(ann, 'swuse', 'swplain', 'swplain');
   perform pg_temp.hand(bob, 'swauthor', 'swauthor');
   perform pg_temp.hand(ray, 'swplain', 'swchar');
 
@@ -454,12 +454,32 @@ begin
   wash := (wash_surface(ann, a, wall, '{"strokes": [{"width": 0.02, "points": [[0.1, 0.1]]}]}', (repeat('1', 100) || repeat('0', 9900))::bit(10000)) ->> 'id')::uuid;
   perform tests.unbecome();
 
+  -- A's own backs (a card set face down, which only the post's own author may do): one on P, still face down at the cast, and one on a second post (P5) that springs now, on Bob's quote, before any cast: its card is A's
+  -- on Bob's quote, naming the spring that targets P5, a public Act that ties A to P5 (so a veil on P5 is refused below, and that card is the detector's poison for the link probe).
+  p5 := tests.post(a, t3, 'A post whose back sprang before any veil.');
+  perform tests.become_service();
+  back := (set_card(ann, 'swplain', a, p, '{}', 0) ->> 'id')::uuid;
+  back5 := (set_card(ann, 'swplain', a, p5, '{}', 0) ->> 'id')::uuid;
+  perform tests.unbecome();
+  perform tests.become(bob); q5 := (post(t3, b, 'Bob quotes the post that holds a back.', p5) ->> 'id')::uuid; perform tests.unbecome();
+  select k.id into laid5 from acts k where k.kind = 'card' and k.target_act_id = q5 and k.character = a;
+  if laid5 is null then raise exception 'the back on the second post did not spring'; end if;
+
   -- A report on P by R (real moderation: the filer's account and the version, never a character): an admin reads it with the author's account, and no probe below may find the character in it.
   perform tests.become(ray); perform report_post(p, 'mask', 'Whose words are these?'); perform tests.unbecome();
 
   perform set_config('sweep.wall', wall::text, true);
   perform set_config('sweep.a', a::text, true); perform set_config('sweep.stand', stand::text, true); perform set_config('sweep.t', t::text, true);
   perform set_config('sweep.p', p::text, true); perform set_config('sweep.used', used::text, true); perform set_config('sweep.general', general::text, true);
+
+  -- THE LINK PROBE. Whether any Act shown under A, as R reads them, carries in its payload (any string at any depth: `spring`, `set`, `by`, an id key) the id of an Act that targets the given post. A card A laid from a back
+  -- names the spring, which targets the post the back was set on: so the card under A says A is that post's author. Its poison is the card above (laid5 on P5, which no veil covers): it must find the link there.
+  create function pg_temp.link_leaks(on_post uuid) returns boolean language sql as $f$
+    select exists (
+      select 1 from acts_public x, jsonb_path_query(x.payload, 'strict $.**') v
+      where x.character = current_setting('sweep.a')::uuid and jsonb_typeof(v) = 'string'
+        and (v #>> '{}') in (select y.id::text from acts y where y.target_act_id = on_post))
+  $f$;
 
   -- The probes, as R reads them. kind: `id` leaks if A's id or name is in the answer; `absent` if any veiled Act's id is; `absent_row` if one is a row of the answer (an object with that id); `present` if the stand-in's answer lacks P; `standname` if the stand-in is named.
   -- fires: whether the detector can go red on the unveiled fixture. pending: still leaks after the cast, and is another task's to close.
@@ -555,6 +575,19 @@ begin
   perform tests.unbecome();
   if not exists (select 1 from post_veils v where v.play = vplay and v.post = p) then raise exception 'the veil did not land'; end if;
 
+  -- The link probe's detector first: before the veil took effect on anything A made, the card on P5's quote names P5's spring under A, as read by R (the probe goes red on a real link).
+  perform tests.become(ray);
+  linked := pg_temp.link_leaks(p5);
+  perform tests.unbecome();
+  if not linked then raise exception 'the link probe cannot find a card of A''s that names the spring on P5, so it proves nothing'; end if;
+  -- R quotes the veiled P: A's back on it springs, and lays a card of A's on R's quote, naming the spring that targets P. It is shown under the stand-in, and (with the spring and the set) is among the Acts that are veiled.
+  perform tests.become(ray); q6 := (post(t, r, 'Ray quotes the veiled post.', p) ->> 'id')::uuid; perform tests.unbecome();
+  select s.id into spring6 from acts s where s.kind = 'spring' and (s.payload ->> 'set') = back::text;
+  select k.id into laid6 from acts k where k.kind = 'card' and k.target_act_id = q6 and k.character = a;
+  if spring6 is null or laid6 is null then raise exception 'the back on the veiled post did not spring a card of A''s'; end if;
+  veiled := veiled || array[back, spring6, laid6];
+  perform set_config('sweep.veiled', array_to_string(veiled, ','), true);
+
   -- ---- 2. After the cast, as R, no probe leaks (the pending ones still do, until Task 3) ----
   found := '{}';
   for probe in select * from probes order by name loop
@@ -567,6 +600,20 @@ begin
     end if;
   end loop;
   if cardinality(found) > 0 then raise exception 'after the cast a third player still reads the author in: %', found; end if;
+
+  -- The reviewer's link probe: after the cast, as R, no Act shown under A names an Act that targets the veiled post (the card on R's quote is the stand-in's, with the spring and the set), while the same probe still finds
+  -- the link on P5, which no veil covers (its card is A's, as it was).
+  perform tests.become(ray);
+  linked := pg_temp.link_leaks(p);
+  perform tests.unbecome();
+  if linked then raise exception 'after the cast an Act shown under A names an Act that targets the veiled post'; end if;
+  if (select x.character from acts_public x where x.id = laid6) is distinct from stand or (select x.character from acts_public x where x.id = spring6) is distinct from stand then raise exception 'the card A''s back laid on the veiled post is not the stand-in''s'; end if;
+  if (select n.cards from character_post_counts n where n.character = a) is distinct from (select count(*) from acts_public x where x.character = a and x.kind = 'card') then raise exception 'A''s card count is not the cards shown under A'; end if;
+  -- And a veil on P5, whose back sprang before any cast, is refused in the record's words, for any caster.
+  perform tests.become_service();
+  res := pg_temp.coded(format('select play_card(%L, %L, %L, %L, %L, 0, %L)', bob, 'swauthor', b, p5, '{}', ''));
+  perform tests.unbecome();
+  if res is distinct from '42501 a card set on this post has sprung, so its author is on the record' then raise exception 'a veil on a post whose back sprang: %', res; end if;
 
   -- The counts probe's own poison: the stored count the view is made from still counts the veiled post, so a read of it that skipped the view would be caught by the same comparison.
   select jsonb_build_object('counts', (select n.posts from character_post_counts_base n where n.character = a), 'listed', (select count(*) from acts_public x where x.character = a and x.kind = 'post'),

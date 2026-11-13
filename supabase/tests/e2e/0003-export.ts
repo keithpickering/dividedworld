@@ -21,7 +21,7 @@ const root = path.resolve(import.meta.dirname, '../../..');
 const migrations = path.join(root, 'supabase/migrations');
 
 /** The tables that hold a row in the fixture, before the round trip and again after the import (an empty table would round-trip as well, and prove nothing). */
-const HELD = ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'season_results', 'apologies', 'card_texts', 'card_writes', 'card_write_refunds', 'scored_as', 'play_reach', 'post_veils', 'post_reaction_kinds', 'ledger', 'move_dependencies', 'condition_kinds', 'persona_arcs', 'arc_beat_events', 'handoffs', 'surfaces', 'surface_marks', 'surface_cuts', 'face_down_draws', 'post_under'];
+const HELD = ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'season_results', 'apologies', 'card_texts', 'card_writes', 'card_write_refunds', 'scored_as', 'play_reach', 'post_veils', 'post_veil_cards', 'post_reaction_kinds', 'ledger', 'move_dependencies', 'condition_kinds', 'persona_arcs', 'arc_beat_events', 'handoffs', 'surfaces', 'surface_marks', 'surface_cuts', 'face_down_draws', 'post_under'];
 
 const psqlOn = (url: string, text: string) =>
   execFileSync('psql', ['-v', 'ON_ERROR_STOP=1', '-qtAX', url, '-f', '-'], { input: text, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
@@ -239,6 +239,8 @@ test('an instance exported and imported into a fresh database is the same instan
         old_blind := tests.post(a, t, 'Blind, and the veil wore off.');
         insert into acts (character, kind, thread, target_act_id, payload) values (b, 'card', t, old_veil, jsonb_build_object('card', 'expveil', 'message', '', 'config', '{}'::jsonb, 'layer', 1, 'ends', to_char(now() - interval '1 day', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'))) returning id into old_ended;
         insert into post_veils (play, post, veil, author, caster_account, ends_at) values (old_ended, old_veil, 'author', a, bob, now() - interval '1 day');
+        -- The card a veiled post's own back laid on a quote (0400's post_veil_cards): the row names the card, the post whose author set the back and that author; the fixture needs one to carry.
+        insert into post_veil_cards (card, post, author) values (old_ended, old_veil, a);
         insert into acts (character, kind, thread, target_act_id, payload) values (b, 'card', t, old_blind, jsonb_build_object('card', 'expblind', 'message', '', 'config', '{}'::jsonb, 'layer', 1, 'ends', to_char(now() - interval '1 day', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'))) returning id into old_ended;
         insert into post_veils (play, post, veil, author, caster_account, ends_at) values (old_ended, old_blind, 'totals', a, bob, now() - interval '1 day');
       end;

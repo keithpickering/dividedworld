@@ -780,7 +780,13 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     /* A draw or a wash on a wall (0317): its target is the card's play and the play's the post, so the wash, which is the post's own character's alone, names the author too (acts_public's fifth select). */
     const wall = deep && (a.kind === 'draw' || a.kind === 'wash') && a.target !== null ? acts.get(a.target) : undefined;
     const walled = wall !== undefined && wall.kind === 'card' && wall.target !== null && liveVeils(wall.target, 'author').some((v) => v.author === a.character);
-    return veiled || walled ? standIn().id : a.character;
+    /* The card a back of the post's own author laid on a quote (lay_sprung, 0400): the card is the setter's and its payload names the spring, which targets the post the back was set on, so while an author veil is live on that
+       post it is shown under the stand-in as the spring is (post_veil_cards). The fake does not play a Move from a quote, so such a card is seeded (`seed.card` with `spring`, after `seed.spring`). */
+    const sprung = deep && a.kind === 'card' && typeof a.payload.spring === 'string' && (() => {
+      const spring = acts.get(a.payload.spring as string);
+      return spring !== undefined && spring.kind === 'spring' && spring.target !== null && liveVeils(spring.target, 'author').some((v) => v.author === a.character);
+    })();
+    return veiled || walled || sprung ? standIn().id : a.character;
   }
   /** my_veiled_posts (0400): the caller's own live author veils among these posts, by post, for the player of the post's own character alone. */
   const myVeiled = (posts: readonly Id[]) => [...veils].filter(([play, v]) => v.veil === 'author' && v.author !== null && posts.includes(v.post) && veilLive(play, v) && characters.get(v.author)?.owner === me()?.id)
@@ -1911,6 +1917,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     /* A reply a card that replies cut in under a post is named by that play's Act, which says whose it is; and where the post's own author cut one in under it, the derived veil would tell the author from the rest (0400). */
     const cutIn = [...underPlays.values()].some((u) => u.reply === on.id);
     const cutOwn = [...underPlays.values()].some((u) => u.parent === on.id && acts.get(u.reply)?.character === on.character);
+    /* A back of the post's own author that sprang on a quote laid a card of the author's there, which names the spring (land_refusal, 0400): a spring that landed a card, on this post. */
+    const sprungBack = [...acts.values()].some((s) => s.kind === 'spring' && s.target === on.id && s.payload.did === 'landed');
     if (rules.replies === true) {
       const hidden = liveVeils(on.id, 'author');
       if (hidden.length > 0) return refuse(`this post's author is hidden until ${refusalTime(iso(Math.max(...hidden.map((v) => v.endsAt))))}; no reply is cut in under it before then`);
@@ -1918,6 +1926,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (rules.veil === 'author') {
       if (byStaff) return refuse('a post by the staff keeps its name');
       if (visited) return refuse('a Mod Bot has been to this post, so its author is on the record');
+      if (sprungBack) return refuse('a card set on this post has sprung, so its author is on the record');
       if (cutIn) return refuse('a card cut this post in under another, so its author is on the record');
       if (cutOwn) return refuse('its author cut a reply in under this post, so the author is on the record');
     }
