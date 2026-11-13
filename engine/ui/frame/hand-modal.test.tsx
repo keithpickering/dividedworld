@@ -19,15 +19,15 @@ import { usePlay } from '../cards/play.tsx';
 import { ENGINE_DEFAULT_PRONOUNS } from '../../rules/pronouns.ts';
 
 /* jsdom has no WAAPI: Motion's `animate`, which glass/play.ts runs the cards' deal and gather with, is a stub that holds each run until a test settles it. */
-interface Run { readonly el: HTMLElement; readonly frames: Record<string, unknown[]>; settle: () => void; readonly stop: ReturnType<typeof vi.fn> }
+interface Run { readonly el: HTMLElement; readonly frames: Record<string, unknown[]>; readonly transition: { readonly duration?: number; readonly delay?: number } | undefined; settle: () => void; readonly stop: ReturnType<typeof vi.fn> }
 const runs: Run[] = [];
 vi.mock('motion/react', async (importOriginal) => ({
   ...(await importOriginal<typeof import('motion/react')>()),
-  animate: (el: HTMLElement, frames: Record<string, unknown[]>) => {
+  animate: (el: HTMLElement, frames: Record<string, unknown[]>, transition?: Run['transition']) => {
     let settle: () => void = () => {};
     const p = new Promise<void>((r) => { settle = r; });
     /* Motion's stop() commits the pose the run had reached; a mid-gather card is part way to the hand button and part way faded, and a sheet is part way blurred or cut. */
-    const run = { el, frames, settle, stop: vi.fn(() => { el.style.opacity = '0.4'; el.style.transform = 'translateX(30px) translateY(-20px) scale(0.8)'; el.style.filter = 'blur(6px)'; el.style.clipPath = 'inset(0 0 40% 0)'; }) };
+    const run = { el, frames, transition, settle, stop: vi.fn(() => { el.style.opacity = '0.4'; el.style.transform = 'translateX(30px) translateY(-20px) scale(0.8)'; el.style.filter = 'blur(6px)'; el.style.clipPath = 'inset(0 0 40% 0)'; }) };
     runs.push(run);
     return Object.assign(p, { stop: run.stop });
   },
@@ -572,6 +572,43 @@ describe('the hand on the Phone board', () => {
     const exit = runs.find((r) => r.el === drawer)!;
     await userEvent.click(hand);
     expect(exit.stop).toHaveBeenCalledTimes(1);
+    for (const p of ['opacity', 'transform', 'filter', 'clip-path']) expect(drawer.style.getPropertyValue(p), p).toBe('');
+  });
+
+  test('a close with two visible cards: the sheet\'s exit ends no sooner than the last card\'s gather, so the sheet is never back at full opacity while a card is still landing', async () => {
+    document.documentElement.setAttribute('data-kb-motion', 'full');
+    phone();
+    const at = (left: number, width: number) => ({ left, right: left + width, top: 0, bottom: 100, width, height: 100, x: left, y: 0, toJSON: () => ({}) }) as DOMRect;
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+      if (this.matches('ul.kb-hand-cards')) return at(0, 400);
+      if (this.matches('[data-kb-card="whoops"]')) return at(20, 104);
+      if (this.matches('[data-kb-card="stick-around"]')) return at(200, 104);
+      return at(0, 100);
+    });
+    setup();
+    const hand = await handButton();
+    const drawer = document.querySelector<HTMLElement>('.kb-hand-drawer')!;
+    await userEvent.click(hand);
+    await act(async () => { for (const r of runs) r.settle(); });
+    runs.length = 0;
+    await userEvent.click(hand);
+    const sheet = runs.find((r) => r.el === drawer)!;
+    const gathers = runs.filter((r) => r.el.matches('li.kb-hand-card'));
+    expect(gathers).toHaveLength(2);
+    const ends = (r: Run) => (r.transition?.delay ?? 0) + (r.transition?.duration ?? 0);
+    const lastCard = Math.max(...gathers.map(ends));
+    /* The staggered gather really is longer than one exit, or this proves nothing. */
+    expect(lastCard).toBeGreaterThan(sheet.transition?.duration ?? 0);
+    /* The sheet leaves with the last card: it holds until the cards are on their way, then ends when the last lands. */
+    expect(ends(sheet)).toBeCloseTo(lastCard, 6);
+    /* The cards land first, the sheet's exit ends with them: the drawer stays shown, inert and exiting until both are done, never as an open sheet. */
+    expect(drawer).toHaveAttribute('data-kb-exiting');
+    await act(async () => { for (const r of gathers) r.settle(); sheet.settle(); });
+    await waitFor(() => expect(drawer.hidden).toBe(true));
+    /* A reopen in the window shows the sheet normally, with nothing the stopped exit left. */
+    await userEvent.click(hand);
+    expect(drawer.hidden).toBe(false);
+    expect(drawer).not.toHaveAttribute('data-kb-exiting');
     for (const p of ['opacity', 'transform', 'filter', 'clip-path']) expect(drawer.style.getPropertyValue(p), p).toBe('');
   });
 

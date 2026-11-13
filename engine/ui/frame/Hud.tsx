@@ -447,7 +447,11 @@ export function Hud() {
     });
     if (!wide) {
       /* The sheet's own stop, like each card's, gives the committed pose back to the stylesheet. */
-      const stop = handOpen ? playIn(el, overlayPreset(feel, place())) : playOut(el, overlayPreset(feel, place()), gone);
+      /* On a close the sheet's exit is held back by the last card's gather delay, so it ends with the last card: the cards gather while the sheet is whole, the sheet leaves as the last lands, and it is never back at full opacity for the stagger's tail. */
+      const sheet = overlayPreset(feel, place());
+      const hold = delays[delays.length - 1] ?? 0;
+      const exit = sheet.exit && typeof sheet.exit !== 'string' && hold > 0 ? { ...sheet.exit, transition: { ...(sheet.exit as { transition?: object }).transition, delay: hold } } : sheet.exit;
+      const stop = handOpen ? playIn(el, sheet) : playOut(el, { ...sheet, exit } as typeof sheet, gone);
       runs.push(() => { stop(); unposeSheet(el); });
     }
     drawerRun.current = () => { for (const stop of runs) stop(); el.removeAttribute('data-kb-dealing'); };

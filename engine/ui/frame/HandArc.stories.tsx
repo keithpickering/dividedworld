@@ -6,11 +6,12 @@
  * opens the hand in its `play` function.
  */
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { userEvent, within } from 'storybook/test';
 import type { World } from '../story.tsx';
 import { useKayfa } from '../context.tsx';
 import { usePlay } from '../cards/play.tsx';
+import { usePlayer } from '../player.tsx';
 import { Frame } from './Frame.tsx';
 
 /** A signed-in player holding `kinds` of the instance's cards (all of them where `kinds` is null), one to three copies each. */
@@ -28,24 +29,22 @@ const hand = (kinds: number | null): World => (fake, instance) => {
 
 /**
  * Arms the instance's `nth` card, as pressing it in the hand does. With `open` it also opens the hand once the card is armed (the phone's hand button puts an
- * armed card back, so a player's own press cannot reach an armed phone hand open; a story can). The account's sign-in clears what was armed and opened before
- * it, so each is done again, at most three times, until it holds.
+ * armed card back, so a player's own press cannot reach an armed phone hand open; a story can). The play provider drops everything armed and opened in its
+ * cleanup for the account that is leaving, so this acts once the account is signed in (`session.account`): React runs every cleanup of a commit before any of
+ * its effects, so the arming done here in the commit that signs the account in is the one that stays.
  */
 function Arm({ nth, open = false }: { readonly nth: number | null; readonly open?: boolean }) {
   const { instance } = useKayfa();
   const play = usePlay();
+  const account = usePlayer().session.account;
   const key = nth === null ? null : instance.cards[Math.min(nth, instance.cards.length - 1)]?.key ?? null;
-  const tries = useRef(0);
   useEffect(() => {
-    if (!play || key === null || open) return;
+    if (!play || key === null || account === null) return;
     play.arm(key);
-    // Armed once, as the player's press does.
+    if (open) play.setHandOpen(true);
+    // Once for the signed-in account and its card, as a player's press does; `play` changes with every state it holds.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key]);
-  useEffect(() => {
-    if (!play || key === null || !open || tries.current >= 6) return;
-    if (play.armed !== key) { tries.current += 1; play.arm(key); } else if (!play.handOpen) { tries.current += 1; play.setHandOpen(true); }
-  });
+  }, [account, key, open]);
   return null;
 }
 

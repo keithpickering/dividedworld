@@ -399,7 +399,7 @@ describe('the hand', () => {
     width(390);
     setup();
     await userEvent.click(await screen.findByRole('button', { name: 'Hand, 3 postcards' }));
-    const sheet = screen.getByRole('region', { name: 'Your hand' });
+    const sheet = screen.getByRole('dialog', { name: 'Your hand' });
     const h = await hud();
     expect(h).not.toContainElement(sheet);
     expect(sheet.compareDocumentPosition(h) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -436,7 +436,7 @@ describe('the hand', () => {
     expect(drawer).not.toHaveAttribute('hidden');
     expect(drawer).toHaveAttribute('inert');
     expect(drawer).toHaveAttribute('aria-hidden', 'true');
-    expect(screen.queryByRole('region', { name: 'Your hand' })).toBeNull();
+    expect(screen.queryByRole('dialog', { name: 'Your hand' })).toBeNull();
     await waitFor(() => expect(drawer).toHaveAttribute('hidden'), { timeout: 3000 });
     expect(drawer).not.toHaveAttribute('inert');
     document.documentElement.setAttribute('data-kb-motion', 'reduce');
@@ -449,21 +449,23 @@ describe('the hand', () => {
     setup();
     const hand = await screen.findByRole('button', { name: 'Hand, 3 postcards' });
     await userEvent.click(hand);
-    await userEvent.click(within(screen.getByRole('region', { name: 'Your hand' })).getByRole('button', { name: 'Stick Around, Sweet, Cast, common postcard' }));
+    /* Stick Around is not the middle card: a pointer press only brings it there, so the press with no pointer (a key, a reader) arms it. */
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'Your hand' })).getByRole('button', { name: 'Stick Around, Sweet, Cast, common postcard' }), { detail: 0 });
     expect(document.querySelector('.kb-hand-drawer')).toHaveAttribute('hidden');
     /* The hand button now says the card is armed, and one press puts it back (#80), so the hand is opened again from there. */
     const armed = screen.getByRole('button', { name: 'Armed · Stick Around, press to put it back' });
     expect(armed).toHaveTextContent('Armed · Stick Around');
     await userEvent.click(armed);
     await userEvent.click(screen.getByRole('button', { name: 'Hand, 3 postcards' }));
-    expect(within(screen.getByRole('region', { name: 'Your hand' })).getAllByRole('button', { name: 'Stick Around, Sweet, Cast, common postcard' })).toHaveLength(1);
+    expect(within(screen.getByRole('dialog', { name: 'Your hand' })).getAllByRole('button', { name: 'Stick Around, Sweet, Cast, common postcard' })).toHaveLength(1);
   });
   test('on the Phone board an armed card is the hand button\'s words, one press puts it back, and the status line says to press Armed (#80)', async () => {
     width(390);
     setup();
     const hand = await screen.findByRole('button', { name: 'Hand, 3 postcards' });
     await userEvent.click(hand);
-    await userEvent.click(within(screen.getByRole('region', { name: 'Your hand' })).getByRole('button', { name: 'Stick Around, Sweet, Cast, common postcard' }));
+    /* Stick Around is not the middle card: a pointer press only brings it there, so the press with no pointer (a key, a reader) arms it. */
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'Your hand' })).getByRole('button', { name: 'Stick Around, Sweet, Cast, common postcard' }), { detail: 0 });
     expect(screen.getByRole('status', { name: 'Playing a card' })).toHaveTextContent('Stick Around is armed. Press Play Stick Around on a post, the dashed + mark beside its date, to play it there, or press Armed to put it back.');
     const armed = screen.getByRole('button', { name: 'Armed · Stick Around, press to put it back' });
     expect(armed).not.toHaveAttribute('aria-expanded');
@@ -488,7 +490,7 @@ describe('the hand', () => {
     setup();
     const hand = await screen.findByRole('button', { name: 'Hand, 3 postcards' });
     await userEvent.click(hand);
-    await userEvent.click(within(screen.getByRole('region', { name: 'Your hand' })).getByRole('button', { name: 'Close the hand' }));
+    await userEvent.click(within(screen.getByRole('dialog', { name: 'Your hand' })).getByRole('button', { name: 'Close the hand' }));
     expect(hand).toHaveAttribute('aria-expanded', 'false');
     expect(hand).toHaveFocus();
   });
@@ -715,16 +717,18 @@ describe('from the Task 1.4 reviews', () => {
       view.unmount();
     }
   });
-  test('the hand, opened from the keyboard, takes focus into its sheet; Tab reaches Close the hand', async () => {
+  test('the hand, opened from the keyboard, takes focus to its first card; Tab reaches Close the hand', async () => {
     width(390);
     setup();
     const hand = await screen.findByRole('button', { name: 'Hand, 3 postcards' });
     hand.focus();
     await userEvent.keyboard('{Enter}');
-    const drawer = screen.getByRole('region', { name: 'Your hand' });
-    expect(drawer).toHaveFocus();
-    await userEvent.tab();
-    expect(within(drawer).getByRole('button', { name: 'Close the hand' })).toHaveFocus();
+    const drawer = screen.getByRole('dialog', { name: 'Your hand' });
+    /* The dialog puts the keyboard on a card (the first), not on the sheet itself. */
+    expect(drawer.querySelector('li.kb-hand-card > button')).toHaveFocus();
+    const close = within(drawer).getByRole('button', { name: 'Close the hand' });
+    for (let i = 0; i < 8 && document.activeElement !== close; i++) await userEvent.tab();
+    expect(close).toHaveFocus();
     await userEvent.keyboard('{Enter}');
     expect(hand).toHaveAttribute('aria-expanded', 'false');
     expect(hand).toHaveFocus();
@@ -863,7 +867,7 @@ describe('the HUD\'s Alerts button and the toasts (the alerts plan, Task 10)', (
     await waitFor(() => expect(screen.queryByRole('article')).toBeNull());
     await act(async () => { alerts.account!.onAlert?.(quoted('q2')); });
     expect(screen.queryByRole('article')).toBeNull();
-    await userEvent.click(within(screen.getByRole('region', { name: 'Your hand' })).getByRole('button', { name: 'Close the hand' }));
+    await userEvent.click(within(screen.getByRole('dialog', { name: 'Your hand' })).getByRole('button', { name: 'Close the hand' }));
     expect(await screen.findAllByRole('article')).toHaveLength(2);
   });
 

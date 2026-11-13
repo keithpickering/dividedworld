@@ -3,8 +3,8 @@ import { expect, test, type Page } from '@playwright/test';
 /**
  * The hand on the phone's moment (docs/plans/2026-11-13-phone-hand-design.md, sections 3 and 4), at 390 by 844: the hand is a modal dialog that holds Tab to its
  * cards, the close button and the Vending Machine button and gives focus back to the hand button on Esc; a press above the sheet closes it and goes nowhere;
- * a tap on a side card only brings it to the middle, a tap on the middle card arms it and closes the hand; the arrow keys move the middle; under reduced motion
- * an opening with a card armed shows it in the middle on the first frame; the first card is in the window and no card is clipped at the row's bottom; and a
+ * a tap on a side card only brings it to the middle, a tap on the middle card arms it and closes the hand; the arrow keys move the middle; crossing to the phone layout
+ * under reduced motion with the hand open and a card armed shows that card in the middle, with no smooth scroll; the first card is in the window and no card is clipped at the row's bottom; and a
  * deal stopped by a close leaves no inline transform on any card.
  */
 test.use({ bypassCSP: true, viewport: { width: 390, height: 844 }, reducedMotion: 'reduce', hasTouch: true });
@@ -70,9 +70,9 @@ test('a tap above the sheet closes the hand and the address is unchanged', async
   const sheet = (await hand.boundingBox())!;
   expect(sheet.y).toBeGreaterThan(60);
   await page.mouse.click(195, sheet.y / 2);
+  /* The close is the positive effect; a link beneath would have been followed by the same click, so the address is read after it. */
   await expect(hand).toBeHidden();
-  await page.waitForTimeout(300);
-  expect(page.url()).toBe(before);
+  await expect(page).toHaveURL(before);
 });
 
 test('a tap on a side card brings it to the middle and arms nothing; a tap on the middle card arms it and closes the hand', async ({ page }) => {
@@ -85,12 +85,11 @@ test('a tap on a side card brings it to the middle and arms nothing; a tap on th
   /* A touch tap: the press, then the click on the card the finger came down on, even though focus has moved the row under it by then. */
   const at = await centerOf(page, 1);
   await page.touchscreen.tap(at.x, at.y);
-  /* Nothing is armed and the hand stays open, whether or not the card has reached the middle yet. */
-  await page.waitForTimeout(300);
+  /* The tap's positive effect first (the side card becomes the middle), so the negative checks that follow are read after the tap has acted, not after a guess at how long it takes. */
+  await expect.poll(async () => (await middle(page)).key, 'the card in the middle').toBe(sideKey);
   await expect(hand, 'the hand after a tap on a side card').toBeVisible();
   expect(await page.locator(`${CARDS}[data-armed]`).count(), 'cards armed by the side tap').toBe(0);
   await expect(page.getByRole('button', { name: /^Armed · / })).toHaveCount(0);
-  await expect.poll(async () => (await middle(page)).key, 'the card in the middle').toBe(sideKey);
   /* The same card, now in the middle, armed by a tap. */
   const now = await centerOf(page, 1);
   await page.touchscreen.tap(now.x, now.y);
@@ -109,7 +108,8 @@ test('Right Arrow moves focus to the next card, which becomes the middle', async
   await expect.poll(async () => (await middle(page)).key).toBe(keys[0]);
 });
 
-test('under reduced motion an opening with a card armed shows that card in the middle on the first frame', async ({ page }) => {
+/* What this proves: the window crossing to the phone's layout, with the hand already open and a card armed, shows that card in the middle and leaves the row where it is, under reduced motion (no smooth scroll). It reaches the state by the resize path; the opening with a card armed on the phone itself is not reachable, since its hand button puts an armed card back. */
+test('crossing to the phone layout with the hand open and a card armed shows that card in the middle, with no smooth scroll under reduced motion', async ({ page }) => {
   /* On the phone the hand button puts an armed card back, so the one way to a hand that opens with a card armed is the Main board's: arm a card in the wide hand, open the hand again, and narrow the window to the phone's. */
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto('/?fixture=boards&moment=01-main');
@@ -124,18 +124,17 @@ test('under reduced motion an opening with a card armed shows that card in the m
   await expect(hand).toBeVisible();
   const second = await page.locator(CARDS).nth(1).getAttribute('data-kb-card');
   expect(await page.locator(`${CARDS}[data-armed]`).getAttribute('data-kb-card'), 'the armed card is the second').toBe(second);
-  /* The window narrows to the phone's: the row is read on the first frame it can be, and again after the hand has rested. */
+  /* The window narrows to the phone's. The armed card becomes the middle (polled, not waited for), and then the row does not move over the next two animation frames: a smooth scroll would still be travelling. */
   await page.setViewportSize({ width: 390, height: 844 });
-  const read = () => page.evaluate(() => {
+  await expect(page.locator(`${CARDS}[data-armed]`)).toHaveAttribute('data-kb-middle', '');
+  expect(await page.locator(CARDS).nth(1).getAttribute('data-kb-middle'), 'the armed card is the middle one').not.toBeNull();
+  const frames = await page.evaluate(() => new Promise<number[]>((done) => {
     const ul = document.querySelector<HTMLElement>('ul.kb-hand-cards')!;
-    return { left: ul.scrollLeft, key: ul.querySelector('li[data-kb-middle]')?.getAttribute('data-kb-card') ?? null };
-  });
-  const first = await read();
-  await page.waitForTimeout(600);
-  const later = await read();
-  expect(later.key, 'the armed card is the middle').toBe(second);
-  expect(first.left, 'the row\'s scrollLeft on the first read is its final one').toBe(later.left);
-  expect(later.left, 'the row has moved to the second card').toBeGreaterThan(0);
+    const seen = [ul.scrollLeft];
+    requestAnimationFrame(() => { seen.push(ul.scrollLeft); requestAnimationFrame(() => { seen.push(ul.scrollLeft); done(seen); }); });
+  }));
+  expect(frames[0], 'the row has moved to the second card').toBeGreaterThan(0);
+  expect(new Set(frames).size, `scrollLeft across two frames ${frames.join(', ')}`).toBe(1);
 });
 
 test('on opening the first card is the middle and inside the window, and no visible card is clipped at the row\'s bottom', async ({ page }) => {
@@ -155,17 +154,28 @@ test('on opening the first card is the middle and inside the window, and no visi
   expect(read.clipped, 'cards past the row\'s bottom').toEqual([]);
 });
 
-test('a mouse click on a side card brings it to the middle and arms nothing', async ({ page }) => {
+/* What this proves: a fast mouse click (press and release together) on a side card brings it to the middle, leaves the hand open and arms nothing. */
+test('a fast mouse click on a side card brings it to the middle and arms nothing', async ({ page }) => {
   const { hand } = await open(page, 'full');
   const sideKey = (await page.locator(CARDS).nth(1).getAttribute('data-kb-card'))!;
   const at = await centerOf(page, 1);
   await page.mouse.move(at.x, at.y);
-  /* No delay between the press and its release: a slower click has its card eased away from under the pointer by the focus the press gave it, and the click then lands on the row and never reaches the card's own handler. */
   await page.mouse.click(at.x, at.y);
-  await page.waitForTimeout(300);
+  await expect.poll(async () => (await middle(page)).key, 'the card in the middle').toBe(sideKey);
   await expect(hand, 'the hand after a click on a side card').toBeVisible();
   expect(await page.locator(`${CARDS}[data-armed]`).count(), 'cards armed by the side click').toBe(0);
+});
+
+/* What this proves: a slow mouse press (150 ms between press and release; the press's focus can ease the card away from under the pointer first) on a side card still brings it to the middle, leaves the hand open and arms nothing. */
+test('a slow mouse click on a side card brings it to the middle, leaves the hand open and arms nothing', async ({ page }) => {
+  const { hand } = await open(page, 'full');
+  const sideKey = (await page.locator(CARDS).nth(1).getAttribute('data-kb-card'))!;
+  const at = await centerOf(page, 1);
+  await page.mouse.move(at.x, at.y);
+  await page.mouse.click(at.x, at.y, { delay: 150 });
   await expect.poll(async () => (await middle(page)).key, 'the card in the middle').toBe(sideKey);
+  await expect(hand, 'the hand after a slow click on a side card').toBeVisible();
+  expect(await page.locator(`${CARDS}[data-armed]`).count(), 'cards armed by the slow side click').toBe(0);
 });
 
 test('a deal stopped by a close leaves no inline transform on any card once things rest', async ({ page }) => {
