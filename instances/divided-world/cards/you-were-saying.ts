@@ -46,10 +46,11 @@ export const youWereSaying: CardRules<YouWereSayingConfig> = {
     { key: 'youWereSaying.typeCps', min: 5, max: 400 },
   ],
   writes: {
-    // Never above the most, even where an override puts the most below the base.
+    // Never above the most, even where an override or the window puts the most below the base (the most is at least 1, so a play is never empty).
     tokens: (config, settings) =>
       Math.min(
         economyOf(settings, 'youWereSaying.mostTokens'),
+        writeTokensMost(settings),
         economyOf(settings, 'youWereSaying.baseTokens') + Math.min(config.steps, mostSteps(settings)) * economyOf(settings, 'youWereSaying.stepTokens'),
       ),
     frame: youWereSayingFrame,

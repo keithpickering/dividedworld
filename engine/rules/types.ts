@@ -268,8 +268,8 @@ export interface Settings {
    */
   readonly oldVoiceTokenizer: 'gpt2' | 'bytes';
   /**
-   * The least prompt a play leaves room for, in tokens, so a long play never starves the post it continues. A whole number, at least 1 and below
-   * `oldVoiceWindow`. A starting point.
+   * The least prompt a play leaves room for, in tokens, so a long play never starves the post it continues. A whole number, at least 1. Keep it below
+   * `oldVoiceWindow`: a floor at or above it leaves plays one token long (`writeTokensMost`). A starting point.
    */
   readonly oldVoicePromptFloor: number;
   /**

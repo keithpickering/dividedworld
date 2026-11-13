@@ -9,7 +9,7 @@ import { HEADER, STOPS } from './you-were-saying/frame.ts';
 import { defaults as settings } from '../settings.ts';
 import { instance } from '../index.ts';
 import { instanceProblems, withOverrides } from '../../../engine/rules/instance.ts';
-import { postTarget, WRITE_TOKENS_MOST, type CardTarget } from '../../../engine/rules/cards.ts';
+import { postTarget, WRITE_TOKENS_MOST, writeTokensMost, type CardTarget } from '../../../engine/rules/cards.ts';
 import { tokenCounter } from '../../../engine/system/tokens.ts';
 import { mostSteps } from './you-were-saying.ts';
 
@@ -176,6 +176,22 @@ test('a most above what the server accepts is refused by the settings, and token
   for (const [base, step, most] of [[1, 1, WRITE_TOKENS_MOST], [5000, 1, WRITE_TOKENS_MOST], [1999, 7, WRITE_TOKENS_MOST], [25, 25, 200]] as [number, number, number][]) {
     const s = withOverrides(settings, { economy: { 'youWereSaying.baseTokens': base, 'youWereSaying.stepTokens': step, 'youWereSaying.mostTokens': most } });
     for (const steps of [0, 1, 3, 1000, 100000]) assert.ok(writes.tokens({ steps }, s) <= WRITE_TOKENS_MOST && writes.tokens({ steps }, s) >= 1);
+  }
+});
+
+test('a window that leaves less than the base records what is generated: the most, never the base (#582)', () => {
+  const tight = { ...settings, oldVoiceWindow: 270, oldVoicePromptFloor: 256 };
+  assert.equal(writeTokensMost(tight), 14);
+  assert.equal(mostSteps(tight), 0);
+  for (const steps of [0, 1, 7]) assert.equal(writes.tokens({ steps }, tight), 14, `steps ${steps}`);
+  assert.equal(rules.playPrice(tight, target('hello'), { steps: 7 }), 0, 'the one stop the slider shows costs nothing');
+  assert.equal(rules.playPrice(tight, target('hello'), undefined as never), 0);
+  // A pair that clamps to one token plays one token long.
+  for (const [window, floor] of [[64, 256], [256, 256]] as const) {
+    const gone = { ...settings, oldVoiceWindow: window, oldVoicePromptFloor: floor };
+    assert.equal(writes.tokens({ steps: 0 }, gone), 1);
+    assert.equal(writes.tokens({ steps: 7 }, gone), 1);
+    assert.equal(rules.playPrice(gone, target('hello'), { steps: 7 }), 0);
   }
 });
 

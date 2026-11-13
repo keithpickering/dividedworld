@@ -706,6 +706,8 @@ test('the most a play may buy is the smaller of the card bound and the window le
   assert.equal(writeTokensMost(held(1024, 256)), 768);
   assert.equal(writeTokensMost(held(100_000, 256)), WRITE_TOKENS_MOST);
   assert.equal(writeTokensMost(held(400, 256)), 144);
+  assert.equal(writeTokensMost(held(64, 256)), 1, 'a window under the floor still leaves one token');
+  assert.equal(writeTokensMost(held(256, 256)), 1, 'a window equal to the floor too');
 });
 
 test('a card that carries a reply lands on a plain post, and not on a reply drawn under one', () => {

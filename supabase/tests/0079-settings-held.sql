@@ -921,6 +921,7 @@ insert into goods (key, value) values
   ('cardWriteSettleSeconds', '0'),
   ('cardWriteSettleSeconds', '600'),
   ('oldVoiceWindow', '1024'),
+  ('oldVoiceWindow', '64'),
   ('oldVoiceWindow', '1000000'),
   ('oldVoiceTokenizer', '"gpt2"'),
   ('oldVoiceTokenizer', '"bytes"'),

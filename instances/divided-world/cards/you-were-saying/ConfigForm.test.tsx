@@ -86,6 +86,13 @@ describe("You Were Saying?'s play form", () => {
     expect(slider).toHaveAttribute('max', '4');
   });
 
+  test("a window at or below the floor leaves a single stop, never a broken slider", () => {
+    for (const live of [{ oldVoiceWindow: 270, oldVoicePromptFloor: 256 }, { oldVoiceWindow: 64, oldVoicePromptFloor: 256 }]) {
+      const { slider } = form({ steps: 1 }, {}, live);
+      expect(slider).toHaveAttribute('max', '0');
+    }
+  });
+
   test("a window or floor that is not a number is ignored, and the instance's own settings stand", () => {
     for (const bad of [null, '400', undefined, NaN]) {
       const { slider } = form({ steps: 1 }, {}, { oldVoiceWindow: bad as never, oldVoicePromptFloor: bad as never });

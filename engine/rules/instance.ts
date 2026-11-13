@@ -353,10 +353,8 @@ export function settingsProblems(settings: Settings): string[] {
     const why = rule(settings[key]);
     if (why) out.push(`setting "${key}" is ${JSON.stringify(settings[key])}; it must be ${why}`);
   }
-  // Only this check refuses a floor at or above the window: SQL's settings_held checks each row alone, so it cannot see the pair, and
-  // writeTokensMost computes the most from the two (design section 4). It stays silent when either side is itself invalid, which has its own sentence.
-  const { oldVoiceWindow: window, oldVoicePromptFloor: floor } = settings;
-  if (isWhole(window, 64) && isWhole(floor, 1) && floor >= window) out.push(`setting "oldVoicePromptFloor" is ${floor}; it must be below "oldVoiceWindow", which is ${window}`);
+  // No sentence relates the window to the floor: SQL's settings_held checks each row alone, and writeTokensMost computes the most from the pair, never
+  // below 1, so no pair of valid rows stops the instance (design section 4; the owner's answer on #582).
   return out;
 }
 

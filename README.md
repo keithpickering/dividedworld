@@ -221,7 +221,7 @@ Five instance settings beside `oldVoice` say what the server's model can take, w
 - `oldVoiceTokenizer` (`gpt2`): the counter the prompts are measured with (`engine/system/tokens.ts`). `gpt2` is exact
   for GPT-2, GPT-Neo and GPT-J; `bytes` counts one token for each byte, a safe bound for any other model.
 - `oldVoicePromptFloor` (256): the least prompt a play leaves room for, so the most a card that writes may buy is the
-  window less this floor. It must be below the window.
+  window less this floor. A floor at or above the window leaves plays one token long, so keep it below.
 - `cardWriteShortShare` (0.5) and `cardWriteRerolls` (3): a tail shorter than this share of the length it was asked
   for is rolled again, up to this many more times, and the longest is kept.
 
