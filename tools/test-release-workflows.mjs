@@ -17,6 +17,7 @@ const RELEASE = '.github/workflows/release.yml';
 const BUILD = '.github/workflows/build.yml';
 const SQL = '.github/workflows/sql.yml';
 const WEB = '.github/workflows/web.yml';
+const REHEARSAL = '.github/workflows/rehearsal.yml';
 const NETLIFY = 'netlify.toml';
 
 let failures = 0;
@@ -180,6 +181,50 @@ red('netlify.toml gives deploy previews their own command', {
   ...REAL,
   [NETLIFY]: `${REAL[NETLIFY]}\n[context.deploy-preview]\n  command = "npm run build"\n`,
 }, /R7.*deploy-preview/);
+
+/* ---- R8: every Postgres service names one image, by version and digest ---- */
+const pgImage = (doc, image) => {
+  for (const job of Object.values(doc.jobs)) if (job.services?.postgres) job.services.postgres.image = image;
+};
+/** R8's two complaints, told apart: an image not written by version and digest, and two images that differ. */
+const UNPINNED = /R8 job \S+ service \S+ image .* is not postgres:<version>@sha256/;
+red('sql.yml is back on the postgres:17 tag', edit(SQL, (d) => pgImage(d, 'postgres:17')), UNPINNED);
+red('rehearsal.yml names a different digest than sql.yml', edit(REHEARSAL, (d) => {
+  pgImage(d, `postgres:17.11@sha256:${'0'.repeat(64)}`);
+}), /R8 the Postgres images differ/);
+red('a postgres image with a tag and no digest', edit(SQL, (d) => pgImage(d, 'postgres:17.11')), UNPINNED);
+red('a registry-prefixed postgres image is held to the rule too', edit(SQL, (d) => pgImage(d, 'docker.io/library/postgres:17')), UNPINNED);
+quiet('another publisher\'s image named postgres is not the official one, and is not held to R8', edit(SQL, (d) => pgImage(d, 'supabase/postgres:15.1.0.147')));
+quiet('a service that is not a postgres image is not held to R8', edit(SQL, (d) => {
+  for (const job of Object.values(d.jobs)) if (job.services) job.services.cache = { image: 'redis:7' };
+}));
+
+/* ---- R9: the e2e shards are one list, and the command takes its total from it ---- */
+const E2E_RUN = 'npm run test:e2e -- --shard=${{ matrix.shard }}/${{ strategy.job-total }}';
+const list = (v) => (Array.isArray(v) ? v : []);
+const e2eJob = (d) => Object.values(d.jobs).find((j) => list(j.steps).some((s) => /npm run test:e2e/.test(String(s.run ?? ''))));
+const e2eStep = (d) => e2eJob(d).steps.find((s) => /npm run test:e2e/.test(String(s.run ?? '')));
+/** web.yml with the e2e job made conforming, then broken by `fn` (the real file is checked on its own, last). */
+const shards = (fn) => edit(WEB, (d) => {
+  e2eStep(d).run = E2E_RUN;
+  e2eJob(d).strategy.matrix = { shard: [1, 2, 3] };
+  fn(d);
+});
+quiet('a conforming e2e job passes', shards(() => {}));
+red('the shard list has a gap', shards((d) => { e2eJob(d).strategy.matrix.shard = [1, 2, 4]; }), /R9.*shard list/);
+red('the shard list has a repeat', shards((d) => { e2eJob(d).strategy.matrix.shard = [1, 2, 2]; }), /R9.*shard list/);
+red('the shard list does not start at 1', shards((d) => { e2eJob(d).strategy.matrix.shard = [2, 3, 4]; }), /R9.*shard list/);
+red('the matrix has a second key', shards((d) => { e2eJob(d).strategy.matrix.os = ['a', 'b']; }), /R9.*only key/);
+red('the matrix has an include', shards((d) => { e2eJob(d).strategy.matrix.include = [{ shard: 4 }]; }), /R9.*only key/);
+red('the command has a literal total', shards((d) => { e2eStep(d).run = 'npm run test:e2e -- --shard=${{ matrix.shard }}/3'; }), /R9.*command/);
+red('the command has no --shard', shards((d) => { e2eStep(d).run = 'npm run test:e2e'; }), /R9.*command/);
+red('the total has a suffix, so the shards run a sixtieth each', shards((d) => { e2eStep(d).run = `${E2E_RUN}0`; }), /R9.*command/);
+red('the shard flag is only in a shell comment', shards((d) => { e2eStep(d).run = `npm run test:e2e # ${E2E_RUN}`; }), /R9.*command/);
+red('the shard flag is given twice', shards((d) => { e2eStep(d).run = `${E2E_RUN} --shard=1/1`; }), /R9.*command/);
+red('the shard list is empty', shards((d) => { e2eJob(d).strategy.matrix.shard = []; }), /R9.*shard list/);
+red('the shard list is one number, not a list', shards((d) => { e2eJob(d).strategy.matrix.shard = 3; }), /R9.*shard list/);
+red('the job has no matrix', shards((d) => { delete e2eJob(d).strategy.matrix; }), /R9.*only key.*no matrix/);
+red('no job runs the e2e suite', shards((d) => { e2eStep(d).run = 'echo skipped'; }), /R9.*no job runs/);
 
 /* ---- a file that does not parse ---- */
 red('a workflow that does not parse is named', { ...REAL, [BUILD]: 'on: [unclosed\n  - : :' }, /build\.yml/);
