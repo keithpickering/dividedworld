@@ -1,4 +1,4 @@
--- The Boss's standing nomination in meeting_context (supabase/migrations/0480_standing_nomination.sql; the rehearsal patch design, section 5).
+-- The Boss's standing nomination in meeting_context (supabase/migrations/0364_standing_nomination.sql; the rehearsal patch design, section 5).
 -- meeting_context() hands the meeting the Boss's latest nameSuccessor, waiting or landed and not ended, that no admin held or refused: `{boss, at}`, `at` the
 -- meeting's started_at in epoch milliseconds. An admin's hold takes a waiting one out, a reversal takes a landed one out, and with none standing it is null.
 --
