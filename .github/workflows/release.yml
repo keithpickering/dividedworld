@@ -6,7 +6,7 @@
 # site, three jobs deploy the backend (docs/plans/2026-11-12-release-backend-design.md): schema, functions and seed,
 # in the `production` Environment, which holds the Supabase secrets. 22:13 PDT, 21:13 PST.
 # tools/check-release-workflows.mjs holds this shape.
-# Carried from currents' release.yml, cut down to the site.
+# Carried from currents' release.yml.
 name: Release
 on:
   schedule:

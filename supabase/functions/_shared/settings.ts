@@ -2,7 +2,8 @@
  * The instance as the database's settings rows have it now: the code's settings, with every row
  * an admin has tuned laid over them. So the season review retunes a vote, a class's bonus or a
  * card's price with a row, never a deploy, and the release's nightly seed keeps a row an admin
- * tuned, adding only the keys it lacks (docs/plans/2026-11-12-release-backend-design.md, D2). The economy row is the whole economy, as buy_card
+ * tuned, adding only the keys it lacks (docs/plans/2026-11-12-release-backend-design.md, D2 and
+ * D3). The economy row is the whole economy, as buy_card
  * reads it (supabase/migrations/0006_cards.sql), never the code's numbers with the row's laid
  * over them, so the settlement, the Vending Machine and the SQL read the same numbers. An
  * instance the rows would make not whole (a number a class reads missing from the row) is

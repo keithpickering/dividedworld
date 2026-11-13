@@ -1,8 +1,8 @@
 /**
  * Writes the deployed instance's vocabulary and numbers into the database (seed_instance(),
- * supabase/migrations/0004_schedule.sql). Called by hand with the kayfabb_jobs secret key, in apikey, after a deploy
- * that changes them, and at an instance's first start; safe to call again. The release calls it nightly
- * (docs/plans/2026-11-12-release-backend-design.md §3): 200 with the counts, 422 when the seed is refused or leaves the instance
+ * supabase/migrations/0004_schedule.sql). The release calls it nightly with the kayfabb_jobs secret key, in apikey
+ * (docs/plans/2026-11-12-release-backend-design.md §3), and an admin calls it by hand at an instance's first start;
+ * safe to call again: 200 with the counts, 422 when the seed is refused or leaves the instance
  * not whole (runSeed, ./core.ts), 500 only when the platform failed.
  */
 import { chooseInstance } from '../_shared/instance.ts';

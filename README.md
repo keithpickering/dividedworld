@@ -246,15 +246,17 @@ a module is not found, stop there and file what it printed.
    again, and the Release workflow runs it every night (step 9). A settings row an admin has changed by hand is marked
    as tuned (`settings.tuned_at`), and the seed keeps it: it only adds the keys the row lacks, at any depth, so a new
    card's numbers still arrive in an economy row whose prices were retuned. A row nobody has tuned gets the code's
-   value. To hand a tuned row back to the code, clear its mark, and the next seed writes the code's value:
+   value (the economy row is merged key by key, with the code's numbers winning, so a card the code no longer sells
+   keeps its numbers). To hand a tuned row back to the code, clear its mark, and the next seed writes the code's value:
 
    ```sql
    update settings set tuned_at = null where key = '<key>';
    ```
 
    The seed answers 200 only when the settings it wrote make the instance whole. A tuned row holding a value the code
-   no longer accepts is answered 422, with each problem named, and nothing is overwritten: fix the row, or hand it
-   back.
+   no longer accepts is answered 422, with each problem named. Your tuned values are untouched, since a tuned row is
+   only filled, but the rest of that seed has already been written, so the instance stays not whole until you fix
+   the row or hand it back. A seed the database refuses outright is a 422 too, and that one writes nothing.
 2. **Give the jobs their address and key.** The settlement and the meeting are called by `pg_cron` through `pg_net`
    with two secrets from Vault (`0071_jobs_key.sql`); until both exist those jobs send nothing. In **Integrations >
    Vault**, add `kayfabb_functions_url` with the value `https://<ref>.supabase.co` (no trailing slash), and
@@ -284,7 +286,8 @@ a module is not found, stop there and file what it printed.
 3. Deploy, then under **Domain management** add `dw.gripe`, point its DNS at Netlify as Netlify says (or move the
    domain's DNS to Netlify), and let Netlify issue the certificate. Turn on **Force HTTPS**.
 4. `production` is moved only by the Release workflow (`.github/workflows/release.yml`), once a night: it builds
-   `main`'s head, runs the SQL suite and the e2e flows on it, and only then fast-forwards `production`. `main` is a
+   `main`'s head, runs the SQL suite and the e2e flows on it, deploys the schema, the functions and the seed (step
+   9), and only then fast-forwards `production`. `main` is a
    branch deploy the team can see. Under **Site configuration > Build & deploy > Branches and deploy contexts**, add
    `main` as a branch deploy.
 
@@ -301,7 +304,9 @@ the first account is opened with registration briefly open.
 
 2. On https://dw.gripe, sign up with your own address and type the code from the email. Your account opens.
 3. Make that account an admin, and close registration back to invites. Opening it in step 1 marked the row as tuned,
-   so a seed keeps `open` until you write `invite` back yourself:
+   so a seed keeps `open` until you write `invite` back yourself. The row stays tuned after that. To hand it back to
+   the code, clear `tuned_at` in a statement of its own (step 6.1): a statement that changes the value marks the row
+   again.
 
    ```sql
    insert into admins (account) select id from auth.users where email = '<your address>';
@@ -323,17 +328,20 @@ the first account is opened with registration briefly open.
   1. In GitHub, under **Settings > Environments**, create an environment named `production`, limit its deployment
      branches to `main`, and add four secrets to it: `SUPABASE_ACCESS_TOKEN`, `SUPABASE_PROJECT_REF`,
      `SUPABASE_DB_URL` (the session pooler's connection string from the dashboard's **Connect** dialog) and
-     `KAYFABB_JOBS_KEY`. Until the environment exists the release goes red at `schema` and the site holds.
+     `KAYFABB_JOBS_KEY`. Until those four secrets exist the release goes red at `schema` and the site holds: GitHub
+     creates a missing environment empty on its first use, and the release's first check refuses an empty database
+     URL.
   2. Merge the change that adds the backend jobs to the release.
   3. Dispatch **Release** once and read its summary.
 - A deploy by hand is still possible, with the same commands as steps 3, 5 and 6.1 (`npx supabase` runs the version
   `package.json` pins, the one the release runs), and the next release lands on top of it. Before it pushes, the
   release checks that the database holds no migration the repository lacks, so SQL applied by hand without a
   migration file turns it red.
-- The release applies the schema before it deploys the functions. A migration that needs a new function live first
-  says so in its header under "Deploy order", with what to run afterwards. `0350_quote_cut.sql` is one: on an
-  instance that already holds a quote of a hidden post nested more than 32 deep, run
-  `select conceal_request_hidden_quoters();` in the SQL editor once, after the first release that carries it.
+- The release applies the schema before it deploys the functions. `0350_quote_cut.sql` needs the new `conceal`
+  function live first, and its header says so under "Deploy order". It matters only on an instance that already
+  holds a quote of a hidden post nested more than 32 deep, which nothing on a screen shows you, so run
+  `select conceal_request_hidden_quoters();` in the SQL editor once, after the first release that carries it. It is
+  harmless where there is no such quote.
 - Keep an export. `tools/export-instance.mjs` writes every table and every avatar to a directory only you can read,
   and `tools/import-instance.mjs` brings it back into a fresh project. Use the database's session-pooler connection
   string from the dashboard's **Connect** dialog as `--from`, and the `default` secret key in `KAYFABB_STORAGE_KEY`.
