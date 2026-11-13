@@ -74,6 +74,8 @@ export const STEPS = [
   'node tools/test-sql-refusal.mjs',
   'node tools/test-migration-versions.mjs',
   'node tools/check-migration-versions.mjs',
+  'node tools/test-edge-functions.mjs',
+  'node tools/check-edge-functions.mjs',
   'node tools/test-engine-boundary.mjs',
   'node tools/check-engine-boundary.mjs',
   'node tools/test-ui-tokens.mjs',
