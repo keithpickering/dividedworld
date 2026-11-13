@@ -1,0 +1,10 @@
+/*
+ * Whodunnit? (Effect.tsx; card notes Part 3, Task 11): the one line under a post once the veil has worn off. It is on a post, so it is in the
+ * board's world: the board's small text, in Verdana and the board's own ink, with no color of its own.
+ */
+.dw-whodunnit-wore {
+  margin: 0.6em 0 0;
+  font-family: Verdana, Geneva, 'DejaVu Sans', sans-serif;
+  font-size: var(--kb-size-small);
+  color: var(--kb-fg);
+}

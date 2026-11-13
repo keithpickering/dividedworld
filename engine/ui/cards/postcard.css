@@ -175,7 +175,8 @@ button.kb-postcard {
 
 .kb-postcard-play {
   background: var(--kb-glass-card);
-  color: var(--kb-card-color);
+  /* Eight percent toward the brightest text: the words are 11px at the fan's size, and a mid-tone card color (Pepperoni's) is 4.47:1 on the ground undiluted. */
+  color: color-mix(in srgb, var(--kb-card-color) 92%, var(--kb-glass-text-hi));
   box-shadow: inset 0 0 0 1.5px var(--kb-card-color), 0 0 0 1.5px var(--kb-glass-card);
 }
 

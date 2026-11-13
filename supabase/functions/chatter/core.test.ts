@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { runChatter } from './core.ts';
+import { CHATTER_TOKENS } from '../../../engine/system/chatter.ts';
 import { DatabaseError, type Db } from '../_shared/rpc.ts';
 import { instance as realInstance } from '../_shared/instance.ts';
 import { placeholderWorld } from '../../../instances/divided-world/system/fixtures/index.ts';
@@ -878,7 +879,7 @@ test('a persona\'s Card Collector is offered with its options and stores the car
 });
 
 test('a card that writes is not offered to the pool where the instance runs no old voice, and is where it does', async () => {
-  const typewriter = { key: 'typewriter', name: 'Test Typewriter', alignment: 'salty' as const, rarity: 'common' as const, playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }), staffConfigs: [{}], writes: { tokens: () => 40, frame: () => ({ prompt: '', stop: [] as string[] }) } };
+  const typewriter = { key: 'typewriter', name: 'Test Typewriter', alignment: 'salty' as const, rarity: 'common' as const, playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }), staffConfigs: [{}], writes: { sampling: { temperature: 0.9, topP: 0.95 }, tokens: () => 40, frame: () => ({ prompt: '', stop: [] as string[] }) } };
   const withVoice = (oldVoice: boolean): Instance => ({ ...dividedWorld, cards: [...dividedWorld.cards, typewriter], settings: { ...dividedWorld.settings, oldVoice } });
   const offered = async (oldVoice: boolean) => {
     const d = fakeDb({ pool: { threadsWeekly: 0 } });
@@ -997,4 +998,12 @@ test('at most three walls are offered, and only those of the card offered', asyn
   await run(d, m);
   const offered = m.chats.find((c) => (c.schema as any).properties.card)!;
   assert.deepEqual((offered.schema as any).properties.card.properties.wall.enum, ids.slice(0, 3));
+});
+
+test('the structured chatter call is capped at CHATTER_TOKENS', async () => {
+  const d = fakeDb({ pool: { cardRarityMost: 'uncommon' } });
+  const m = fakeModels(normal);
+  await run(d, m);
+  assert.ok(m.chats.length > 0);
+  for (const c of m.chats) assert.equal(c.maxTokens, CHATTER_TOKENS);
 });

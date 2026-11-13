@@ -53,6 +53,7 @@ import type { Career } from '../../../engine/system/career.ts';
 import {
   POOL_PREMISE,
   CHATTER_RULE,
+  CHATTER_TOKENS,
   chatterCompletion,
   chatterPrompt,
   chatterSchema,
@@ -343,7 +344,7 @@ async function onePick(r: PickRun): Promise<PickRecord> {
         });
         const out = await models.chat({
           duty: 'chatter', tier: DUTY_SPECS.chatter.tier, staff: p.staff, system: frame.system, messages: [{ role: 'user', content: frame.message }],
-          schema: chatterSchema({ askedTitle: startsThread, offered }), rules: CHATTER_RULE, maxTokens: 1_500,
+          schema: chatterSchema({ askedTitle: startsThread, offered }), rules: CHATTER_RULE, maxTokens: CHATTER_TOKENS,
         });
         raw = out.value;
       }
@@ -410,7 +411,8 @@ async function onePick(r: PickRun): Promise<PickRecord> {
             ? await db.rpc<{ id: string }>('staff_draw_on_surface', { staff_key: p.staff, play: wall, payload: { ...first.payload, pool: day }, cells: first.cells, most: first.most })
             : await db.rpc<{ id: string }>('staff_play_surface_card', {
               staff_key: p.staff, card: answer.card.key, target: p.quoting, config: {}, message: '', pool_day: day,
-              ...(rules.writes === undefined ? {} : { tokens: rules.writes.tokens({} as never, tuned.settings) }),
+              // `tokens` has no default in staff_play_surface_card, so it is always sent, null for a card that writes nothing.
+              tokens: rules.writes === undefined ? null : rules.writes.tokens({} as never, tuned.settings),
               first: first.payload, first_cells: first.cells, most: first.most, most_live: rules.surface.mostLive,
             });
           card = drawn.id;

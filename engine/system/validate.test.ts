@@ -142,3 +142,35 @@ test('under many lines the cap counts the kept leading space, and CRLF runs coll
   assert.deepEqual(capped, { ok: true, text: ` ${'x'.repeat(199)}`, trims: [{ path: '', predicate: 'maxLength(200)', before: 301, after: 200 }] });
   assert.deepEqual(cutCompletion('a\r\n\r\n\r\n\r\nb', [], 200, 'many'), { ok: true, text: 'a\n\nb', trims: [] });
 });
+
+test('a string over its bound is cut at the last space within it, where that keeps half the bound, and the trim is recorded', () => {
+  assert.deepEqual(repair('a happy little tree in a quiet field', { type: 'string', maxLength: 20 }), {
+    ok: true, value: 'a happy little tree', trims: [{ path: '', predicate: 'maxLength(20)', before: 36, after: 19 }],
+  });
+  const word = repair('x'.repeat(30), { type: 'string', maxLength: 20 });
+  assert.ok(word.ok && word.value === 'x'.repeat(20), 'no space: cut at the bound');
+  const early = repair('ab cdefghijklmnopqrstuvwxyz', { type: 'string', maxLength: 20 });
+  assert.ok(early.ok && early.value === 'ab cdefghijklmnopqrs', 'a space before half the bound is not used');
+  const comma = repair('one, two, three, four', { type: 'string', maxLength: 12 });
+  assert.ok(comma.ok && comma.value === 'one, two', 'the trailing comma is dropped');
+  const dash = repair('well - and then some more', { type: 'string', maxLength: 12 });
+  assert.ok(dash.ok && dash.value === 'well - and', JSON.stringify(dash));
+  const nl = repair('first line\nsecond line goes on', { type: 'string', maxLength: 16 });
+  assert.ok(nl.ok && nl.value === 'first line', `a newline is a place to cut: ${JSON.stringify(nl)}`);
+  const punct = repair('-- - ----', { type: 'string', maxLength: 4 });
+  assert.ok(punct.ok && String(punct.value).length > 0, `a cut that leaves only punctuation is never empty: ${JSON.stringify(punct)}`);
+});
+
+test('cutCompletion cuts at a pattern\'s first match as well as at the stops, whichever comes first', () => {
+  const pattern = /-{2,}\s*Posted by /;
+  const a = cutCompletion('a b -- Posted by X: c', [], 200, 'many', pattern);
+  assert.ok(a.ok && a.text === 'a b');
+  const b = cutCompletion('posted by my friend', [], 200, 'many', pattern);
+  assert.ok(b.ok && b.text === 'posted by my friend');
+  const stopFirst = cutCompletion('one END two -- Posted by X', ['END'], 200, 'many', pattern);
+  assert.ok(stopFirst.ok && stopFirst.text === 'one');
+  const patternFirst = cutCompletion('one -- Posted by X two END', ['END'], 200, 'many', pattern);
+  assert.ok(patternFirst.ok && patternFirst.text === 'one');
+  const none = cutCompletion('a b -- Posted by X: c', [], 200, 'many');
+  assert.ok(none.ok && none.text === 'a b -- Posted by X: c');
+});

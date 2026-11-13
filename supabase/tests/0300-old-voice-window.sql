@@ -18,14 +18,14 @@ begin
     ('oldVoicePromptFloor', '0', 'a whole number of tokens, at least 1'),
     ('oldVoicePromptFloor', '1.5', 'a whole number of tokens, at least 1'),
     ('oldVoicePromptFloor', '"256"', 'a whole number of tokens, at least 1'),
-    ('cardWriteShortShare', '-0.1', 'a number from 0 to 1'),
-    ('cardWriteShortShare', '1.1', 'a number from 0 to 1'),
-    ('cardWriteShortShare', '"0.5"', 'a number from 0 to 1'),
-    ('cardWriteShortShare', 'null', 'a number from 0 to 1'),
-    ('cardWriteRerolls', '-1', 'a whole number from 0 to 5'),
-    ('cardWriteRerolls', '6', 'a whole number from 0 to 5'),
-    ('cardWriteRerolls', '2.5', 'a whole number from 0 to 5'),
-    ('cardWriteRerolls', '"3"', 'a whole number from 0 to 5')
+    ('cardWriteFullShare', '-0.1', 'a number from 0 to 1'),
+    ('cardWriteFullShare', '1.1', 'a number from 0 to 1'),
+    ('cardWriteFullShare', '"0.5"', 'a number from 0 to 1'),
+    ('cardWriteFullShare', 'null', 'a number from 0 to 1'),
+    ('cardWriteTopUps', '-1', 'a whole number from 0 to 5'),
+    ('cardWriteTopUps', '6', 'a whole number from 0 to 5'),
+    ('cardWriteTopUps', '2.5', 'a whole number from 0 to 5'),
+    ('cardWriteTopUps', '"3"', 'a whole number from 0 to 5')
   ) as t(key, value, phrase) loop
     refused := false;
     begin
@@ -44,8 +44,8 @@ begin
     ('oldVoiceWindow', '64'), ('oldVoiceWindow', '1024'), ('oldVoiceWindow', '1000000'),
     ('oldVoiceTokenizer', '"gpt2"'), ('oldVoiceTokenizer', '"bytes"'),
     ('oldVoicePromptFloor', '1'), ('oldVoicePromptFloor', '256'),
-    ('cardWriteShortShare', '0'), ('cardWriteShortShare', '0.5'), ('cardWriteShortShare', '1'),
-    ('cardWriteRerolls', '0'), ('cardWriteRerolls', '3'), ('cardWriteRerolls', '5')
+    ('cardWriteFullShare', '0'), ('cardWriteFullShare', '0.5'), ('cardWriteFullShare', '1'),
+    ('cardWriteTopUps', '0'), ('cardWriteTopUps', '3'), ('cardWriteTopUps', '5')
   ) as t(key, value) loop
     insert into settings (key, value) values (r.key, r.value::jsonb)
       on conflict (key) do update set value = excluded.value;
@@ -67,6 +67,6 @@ begin
   select settings into got from screen_settings;
   if got -> 'oldVoiceWindow' is distinct from '2048'::jsonb then raise exception 'oldVoiceWindow is not shown: %', got -> 'oldVoiceWindow'; end if;
   if got -> 'oldVoicePromptFloor' is distinct from '300'::jsonb then raise exception 'oldVoicePromptFloor is not shown: %', got -> 'oldVoicePromptFloor'; end if;
-  if got ? 'oldVoiceTokenizer' or got ? 'cardWriteShortShare' or got ? 'cardWriteRerolls' then raise exception 'screen_settings shows a key it should not: %', got; end if;
+  if got ? 'oldVoiceTokenizer' or got ? 'cardWriteFullShare' or got ? 'cardWriteTopUps' then raise exception 'screen_settings shows a key it should not: %', got; end if;
 end $$;
 reset role;

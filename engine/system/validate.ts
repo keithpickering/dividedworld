@@ -12,7 +12,11 @@
  * predicate that failed, so the ledger says which bound cost a paid answer, and carries the trims
  * made before it.
  *
- * `cutCompletion` is the same for a raw completion: cut at the first stop sequence or newline
+ * A string over its bound is cut at a word (`cutAtWord`: the last whitespace within the bound where that keeps at least half of
+ * it, else at the bound; a trailing comma, semicolon, colon or dash dropped), so a mood or an interest is not left mid-word (the
+ * rehearsal patch design, section 7). `cutCompletion` caps at the bound as it always did.
+ *
+ * `cutCompletion` is the same for a raw completion: cut at the first stop sequence, the optional pattern's first match, or newline
  * (a slot that asks for many lines keeps its newlines), cap the length, and reject only empty output.
  *
  * Pure: the input is never changed; a repaired copy is returned.
@@ -54,6 +58,18 @@ function capLength(text: string, most: number): string {
   return cut.length > 1 ? cut.slice(0, -1) : text.slice(0, most + 1);
 }
 
+/**
+ * `text` over `most`, cut at a word: the `capLength` head, then at the last whitespace in it where that keeps at least half of
+ * `most` (no such space: the head as it is), with trailing whitespace and any of `,;:-–—` removed. Never empties a string that had text.
+ */
+export function cutAtWord(text: string, most: number): string {
+  const head = capLength(text, most);
+  const space = Math.max(head.lastIndexOf(' '), head.lastIndexOf('\n'), head.lastIndexOf('\t'));
+  const at = space >= most / 2 ? head.slice(0, space) : head;
+  const trimmed = at.replace(/[\s,;:\-–—]+$/u, '');
+  return trimmed === '' ? at : trimmed;
+}
+
 type Step = { ok: true; value: unknown } | { ok: false; path: string; predicate: string };
 
 export function repair(value: unknown, rule: Rule): Repaired {
@@ -69,7 +85,7 @@ function walk(value: unknown, rule: Rule, path: string, trims: Trim[]): Step {
       if (typeof value !== 'string') return no('isString');
       if (rule.minLength !== undefined && value.length < rule.minLength) return no(`atLeast(${rule.minLength})`);
       if (rule.maxLength !== undefined && value.length > rule.maxLength) {
-        const cut = capLength(value, rule.maxLength);
+        const cut = cutAtWord(value, rule.maxLength);
         trims.push({ path, predicate: `maxLength(${rule.maxLength})`, before: value.length, after: cut.length });
         return { ok: true, value: cut };
       }
@@ -131,7 +147,7 @@ export type Cut =
  * newlines collapse to two; the end is trimmed; and of the leading whitespace one space is kept when the answer
  * began with a space (the continuation of "i think" needs it), never a newline.
  */
-export function cutCompletion(text: string, stop: readonly string[], most: number, lines: 'one' | 'many' = 'one'): Cut {
+export function cutCompletion(text: string, stop: readonly string[], most: number, lines: 'one' | 'many' = 'one', pattern?: RegExp): Cut {
   const many = lines === 'many';
   // A raw completion often begins with a newline; leading whitespace is dropped before looking for the cut.
   const body = many ? text : text.trimStart();
@@ -139,6 +155,11 @@ export function cutCompletion(text: string, stop: readonly string[], most: numbe
   for (const s of many ? stop : [...stop, '\n']) {
     if (s === '') continue;
     const at = body.indexOf(s);
+    if (at !== -1 && at < end) end = at;
+  }
+  // The pattern's first match is one more stop, searched in the same body; a global or sticky flag is dropped so the search always starts at 0.
+  if (pattern) {
+    const at = body.search(new RegExp(pattern.source, pattern.flags.replace(/[gy]/g, '')));
     if (at !== -1 && at < end) end = at;
   }
   let cut = many ? body.slice(0, end).replace(/(?:[ \t\r]*\n){3,}/g, '\n\n').trim() : body.slice(0, end).trim();

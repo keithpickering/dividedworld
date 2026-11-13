@@ -10,7 +10,7 @@
  */
 import { Suspense, createElement, lazy } from 'react';
 import type { CardUi, ComposeProps } from '../../../engine/ui/cards/types.ts';
-import type { Settings } from '../../../engine/rules/types.ts';
+import { QUADRANTS, type Settings } from '../../../engine/rules/types.ts';
 import type { GimmickEffect } from '../../../engine/rules/cards.ts';
 import stickAroundCanvas from './cards/stick-around/art.webp?url';
 import stickAroundMark from './cards/stick-around/mark.svg?url';
@@ -64,6 +64,26 @@ import { feelinFab } from '../cards/feelin-fab.ts';
 import { belowTheFold } from '../cards/below-the-fold.ts';
 import { lineCutter } from '../cards/line-cutter.ts';
 import { feelinGlam } from '../cards/feelin-glam.ts';
+import happyHeartCanvas from './cards/happy-heart/art.webp?url';
+import happyHeartMark from './cards/happy-heart/mark.svg?url';
+import happyHeartArt from './cards/happy-heart/art.json';
+import superHappyHeartCanvas from './cards/super-happy-heart/art.webp?url';
+import superHappyHeartMark from './cards/super-happy-heart/mark.svg?url';
+import superHappyHeartArt from './cards/super-happy-heart/art.json';
+import ultraHappyHeartCanvas from './cards/ultra-happy-heart/art.webp?url';
+import ultraHappyHeartMark from './cards/ultra-happy-heart/mark.svg?url';
+import ultraHappyHeartArt from './cards/ultra-happy-heart/art.json';
+import takeTheFallCanvas from './cards/take-the-fall/art.webp?url';
+import takeTheFallMark from './cards/take-the-fall/mark.svg?url';
+import takeTheFallArt from './cards/take-the-fall/art.json';
+import tattleTaleCanvas from './cards/tattle-tale/art.webp?url';
+import tattleTaleMark from './cards/tattle-tale/mark.svg?url';
+import tattleTaleArt from './cards/tattle-tale/art.json';
+import { happyHeart } from '../cards/happy-heart.ts';
+import { superHappyHeart } from '../cards/super-happy-heart.ts';
+import { ultraHappyHeart } from '../cards/ultra-happy-heart.ts';
+import { takeTheFall } from '../cards/take-the-fall.ts';
+import { tattleTale } from '../cards/tattle-tale.ts';
 import { laughTrack } from '../cards/laugh-track.ts';
 import laughTrackCanvas from './cards/laugh-track/art.webp?url';
 import laughTrackMark from './cards/laugh-track/mark.svg?url';
@@ -76,6 +96,19 @@ import { cardCollector } from '../cards/card-collector.ts';
 import { publicityTour } from '../cards/publicity-tour.ts';
 import { heatMagnet } from '../cards/heat-magnet.ts';
 import { classClown } from '../cards/class-clown.ts';
+import whodunnitCanvas from './cards/whodunnit/art.webp?url';
+import whodunnitMark from './cards/whodunnit/mark.svg?url';
+import whodunnitArt from './cards/whodunnit/art.json';
+import blindStudyCanvas from './cards/blind-study/art.webp?url';
+import blindStudyMark from './cards/blind-study/mark.svg?url';
+import blindStudyArt from './cards/blind-study/art.json';
+import overreactionCanvas from './cards/overreaction/art.webp?url';
+import overreactionMark from './cards/overreaction/mark.svg?url';
+import overreactionArt from './cards/overreaction/art.json';
+import { OverreactionForm } from './overreaction/ConfigForm.tsx';
+import { whodunnit } from '../cards/whodunnit.ts';
+import { blindStudy } from '../cards/blind-study.ts';
+import { overreaction } from '../cards/overreaction.ts';
 import { goodVibes } from '../cards/good-vibes.ts';
 import { jimmyWails } from '../cards/jimmy-wails.ts';
 import jimmyWailsCanvas from './cards/jimmy-wails/art.webp?url';
@@ -140,6 +173,12 @@ const setMoveWords = (lands: string) => `You can also set it face down on one of
 /** A span in words: "a week", "3 days". */
 export const spanWords = (s: { readonly unit: string; readonly count: number }) => (s.unit === 'day' && s.count === 7 ? 'a week' : s.count === 1 ? `${s.unit === 'hour' ? 'an' : 'a'} ${s.unit}` : `${s.count} ${s.unit}s`);
 
+/** How heavily a watch weighs a pick, from the rules' weight and never restated: "double" only while the weight is 2. */
+function weighted(rules: { readonly discipline?: { readonly kind: string; readonly weight?: number } }): string {
+  const weight = rules.discipline?.weight ?? 1;
+  return weight === 2 ? 'double' : `${weight} times over`;
+}
+
 /** What an Earn Gimmick adds to a reaction's count, as the end of a sentence, read from the card's own rules: "20% higher", or "doubled" at exactly 1. */
 const earnWords = (c: { readonly gimmick?: GimmickEffect }) => {
   if (c.gimmick?.kind !== 'earn') throw new Error('card has no earn gimmick');
@@ -174,6 +213,12 @@ const quadrantOf = (config: Readonly<Record<string, unknown>> | undefined): stri
   return typeof q === 'string' && q in quadrantLabels ? quadrantLabels[q as keyof typeof quadrantLabels] : undefined;
 };
 
+/** The four quadrants' names in the picker's order, as a sentence's list: "Hype, Heat, Calm or Groan". */
+const quadrantNames = () => {
+  const names = QUADRANTS.map((q) => quadrantLabels[q]);
+  return `${names.slice(0, -1).join(', ')} or ${names[names.length - 1]}`;
+};
+
 /** The class a play named, with its article ("a Heel", "an Aura Farmer"); undefined where it names none the instance has. */
 const classWords = (config: Readonly<Record<string, unknown>> | undefined): string | undefined => {
   const name = classes.find((c) => c.key === config?.class)?.name;
@@ -196,6 +241,8 @@ const FeelinFabEffect = lazy(() => import('./feelin-fab/Effect.tsx').then((m) =>
 const GlitterBombEffect = lazy(() => import('./glitter-bomb/Effect.tsx').then((m) => ({ default: m.GlitterBombEffect })));
 const LaughTrackEffect = lazy(() => import('./laugh-track/Effect.tsx').then((m) => ({ default: m.LaughTrackEffect })));
 const BelowTheFoldEffect = lazy(() => import('./below-the-fold/Effect.tsx').then((m) => ({ default: m.BelowTheFoldEffect })));
+const WhodunnitEffect = lazy(() => import('./whodunnit/Effect.tsx').then((m) => ({ default: m.WhodunnitEffect })));
+const BlindStudyEffect = lazy(() => import('./blind-study/Effect.tsx').then((m) => ({ default: m.BlindStudyEffect })));
 const YouWereSayingEffect = lazy(() => import('../cards/you-were-saying/Effect.tsx').then((m) => ({ default: m.YouWereSayingEffect })));
 const JimmyWailsEffect = lazy(() => import('../cards/jimmy-wails/Effect.tsx').then((m) => ({ default: m.JimmyWailsEffect })));
 const GraffitiEffect = lazy(() => import('../cards/graffiti/Effect.tsx').then((m) => ({ default: m.Effect })));
@@ -288,12 +335,54 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
       `A Salty card, ${belowTheFold.rarity}. It folds a post behind a bar, for every reader alike: the post's words are still there, and anyone opens them with one press of the bar, which lasts until they leave the page. One fold fits on a post. ${setMoveWords('the quoting post')} It costs nothing more to play.`,
   },
   /*
+   * The veils and the local reaction (docs/plans/2026-11-11-card-notes-part-3-plan.md, Task 11): Pepperoni's color and ink, as Class Clown's face
+   * takes them. The veils' effects (ui/whodunnit, ui/blind-study) draw almost nothing: the engine withholds the author and the totals, and these
+   * say so to the Lens. Overreaction has no effect: its row and its picker entry are the engine's, and its form is the glass's.
+   */
+  {
+    key: 'whodunnit',
+    Effect: WhodunnitEffect,
+    art: { color: '#d24a2c', ink: '#0d0301', canvas: whodunnitCanvas, mark: whodunnitMark, credit: whodunnitArt.credit, tagline: 'Who wrote this?' },
+    summary: 'Hides who wrote a post from everyone, for a while.',
+    status: "Hiding this post's author",
+    hint: 'Nobody can see who wrote this post until the card ends.',
+    describe: () =>
+      `A Pepperoni card, ${whodunnit.rarity}. For ${spanWords(whodunnit.lasts!)} nobody can see who wrote the post: its name, picture and profile are replaced by a stand-in everywhere on the forum, in search and in alerts too. Anyone who read it before remembers. The author is still paid for the post and still sees that it is theirs. When the card ends the name comes back, and the post says so. It is refused on a staff post and on a post a Mod Bot has been to, and no Mod Bot visits the post while its author is hidden. One fits on a post. ${setMoveWords('the quoting post')} It costs nothing more to play.`,
+    logPlay: () => `It hides the post's author for ${spanWords(whodunnit.lasts!)}.`,
+  },
+  {
+    key: 'blind-study',
+    Effect: BlindStudyEffect,
+    art: { color: '#d24a2c', ink: '#0d0301', canvas: blindStudyCanvas, mark: blindStudyMark, credit: blindStudyArt.credit, tagline: 'React in the dark.' },
+    summary: "Hides a post's reaction totals from everyone but its author and you.",
+    status: "Hiding this post's reaction totals",
+    hint: 'You can still react. The totals show when the card ends.',
+    describe: () =>
+      `A Pepperoni card, ${blindStudy.rarity}. For ${spanWords(blindStudy.lasts!)} the post's reaction totals are shown to nobody but the post's author and whoever played the card. Everyone can still react, and sees their own reactions. Settlement counts every reaction as it always does. When the card ends the totals show. One fits on a post. ${setMoveWords('the quoting post')} It costs nothing more to play.`,
+    logPlay: () => `It hides the post's reaction totals for ${spanWords(blindStudy.lasts!)}.`,
+  },
+  {
+    key: 'overreaction',
+    art: { color: '#d24a2c', ink: '#0d0301', canvas: overreactionCanvas, mark: overreactionMark, credit: overreactionArt.credit, tagline: 'Bring your own emoji.' },
+    summary: "Adds an emoji of your choosing to one post's reactions, scored the way you say.",
+    status: (plays) => `${plays.length} of ${overreaction.stack} added`,
+    hint: 'This post has an extra reaction. Its label says how it scores.',
+    ConfigForm: OverreactionForm,
+    describe: () =>
+      `A Pepperoni card, ${overreaction.rarity}. It adds one emoji you choose to this post's reactions, and you say whether it scores as ${quadrantNames()}. Anyone can then leave it, here and nowhere else; it does not react for you. It can be any single emoji the forum does not already use. Up to three fit on a post. It does not end. ${setMoveWords('the quoting post')} It costs nothing more to play.`,
+    logPlay: (config) => {
+      const emoji = typeof config.emoji === 'string' ? config.emoji : undefined;
+      const label = quadrantOf(config);
+      return emoji === undefined || label === undefined ? undefined : `It adds ${emoji} to the post's reactions, scored as ${label}.`;
+    },
+  },
+  /*
    * Line Cutter (docs/plans/2026-11-11-card-notes-part-2-plan.md): Pepperoni's color, as Glitter Bomb's. A Move, only ever cast face up: the
    * play form's reply editor writes the reply, and the thread screen draws it under its post. It holds no face-down sentence.
    */
   {
     key: 'line-cutter',
-    art: { color: '#d24a2c', ink: '#1a0602', canvas: lineCutterCanvas, mark: lineCutterMark, credit: lineCutterArt.credit, tagline: 'Reply right under a post.' },
+    art: { color: '#d24a2c', ink: '#0d0301', canvas: lineCutterCanvas, mark: lineCutterMark, credit: lineCutterArt.credit, tagline: 'Reply right under a post.' },
     summary: 'Posts your reply right under a post, where it stays however long the thread grows.',
     status: 'A reply cut in under it',
     hint: 'A Line Cutter: the reply under this post was written later and cut in line.',
@@ -309,7 +398,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
    */
   {
     key: 'laugh-track',
-    art: { color: '#d24a2c', ink: '#1a0602', canvas: laughTrackCanvas, mark: laughTrackMark, credit: laughTrackArt.credit, tagline: 'Give a post a studio audience.' },
+    art: { color: '#d24a2c', ink: '#0d0301', canvas: laughTrackCanvas, mark: laughTrackMark, credit: laughTrackArt.credit, tagline: 'Give a post a studio audience.' },
     summary: 'Cues a studio audience to laugh, cheer or boo at the words you choose, wherever they appear in a post.',
     status: 'A studio audience on cue',
     hint: 'A Laugh Track: the audience stirs as you get close to certain words. Point at one, or tap it, to hear them react. Turn on Game sounds in Settings to hear it.',
@@ -391,7 +480,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
   },
   {
     key: 'class-clown',
-    art: { color: '#d24a2c', ink: '#1a0602', canvas: classClownCanvas, mark: classClownMark, credit: classClownArt.credit, tagline: 'Earn more from laughs and eye rolls.' },
+    art: { color: '#d24a2c', ink: '#0d0301', canvas: classClownCanvas, mark: classClownMark, credit: classClownArt.credit, tagline: 'Earn more from laughs and eye rolls.' },
     summary: `Used on your own character. For ${spanWords(classClown.lasts!)}, what it earns from 😂 and 🙄 is ${earnWords(classClown)}. A loss is never made worse.`,
     status: 'Earns more from laughs',
     describe: (settings: Settings) =>
@@ -413,7 +502,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
    */
   {
     key: 'autocorrect',
-    art: { color: '#d24a2c', ink: '#1a0602', canvas: autocorrectCanvas, mark: autocorrectMark, credit: autocorrectArt.credit, tagline: 'Tape over a word, everywhere.' },
+    art: { color: '#d24a2c', ink: '#0d0301', canvas: autocorrectCanvas, mark: autocorrectMark, credit: autocorrectArt.credit, tagline: 'Tape over a word, everywhere.' },
     summary: 'Covers a phrase everywhere it appears in a post with words of your choosing.',
     hint: 'Lift a strip by one end to read what is under it.',
     status: 'Words taped over',
@@ -444,7 +533,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
    */
   {
     key: 'you-were-saying',
-    art: { color: '#d24a2c', ink: '#1a0602', canvas: youWereSayingCanvas, mark: youWereSayingMark, credit: youWereSayingArt.credit, tagline: 'Let an old chatbot keep going.' },
+    art: { color: '#d24a2c', ink: '#0d0301', canvas: youWereSayingCanvas, mark: youWereSayingMark, credit: youWereSayingArt.credit, tagline: 'Let an old chatbot keep going.' },
     summary: 'Hands a post to a chatbot from 2021, which keeps writing after the author stops.',
     /* Up to the rules' `stack` chain on a post, each continuing the last. */
     status: (plays) => `Typing on, ${Math.min(plays.length, youWereSaying.stack!)} of ${youWereSaying.stack} chained`,
@@ -456,7 +545,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
     },
     describe: (settings: Settings) => {
       const e = settings.economy;
-      return `A Pepperoni card, ${youWereSaying.rarity}, cast on a post with words of its own. A chatbot from 2021 reads the post and keeps going after the author stops, and its words type themselves in after the post's. You choose how much it writes, from about ${e['youWereSaying.baseTokens'] ?? 0} tokens, a sentence, up to ${e['youWereSaying.mostTokens'] ?? 0}, a rant. The base length costs nothing more to play; each step longer costs ${orbs(e['youWereSaying.stepPrice'] ?? 0)} more. The author can erase it, but all at once, and an edit to the post gets a fresh take. Its words are the chatbot's, never the author's, and the post's own words are always there.`;
+      return `A Pepperoni card, ${youWereSaying.rarity}, cast on a post with words of its own. A chatbot from 2021 reads the post and keeps going after the author stops, and its words type themselves in after the post's. You choose how much it writes, from about ${e['youWereSaying.baseTokens'] ?? 0} tokens, a short paragraph, up to ${e['youWereSaying.mostTokens'] ?? 0}, a rant. The base length costs nothing more to play; each step longer costs ${orbs(e['youWereSaying.stepPrice'] ?? 0)} more. The author can erase it, but all at once, and an edit to the post gets a fresh take. Its words are the chatbot's, never the author's, and the post's own words are always there.`;
     },
     /* The caster's play line says the length the play bought, as the play recorded it (the server wrote it with the play), so it is true after any retune. */
     logPlay: (_config, { tokens }) => (tokens === undefined ? undefined : `It was played for ${tokens} ${tokens === 1 ? 'token' : 'tokens'}.`),
@@ -471,7 +560,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
   {
     key: 'glitter-bomb',
     Effect: GlitterBombEffect,
-    art: { color: '#d24a2c', ink: '#1a0602', canvas: glitterBombCanvas, mark: glitterBombMark, credit: glitterBombArt.credit, tagline: 'Make a character sparkle.' },
+    art: { color: '#d24a2c', ink: '#0d0301', canvas: glitterBombCanvas, mark: glitterBombMark, credit: glitterBombArt.credit, tagline: 'Make a character sparkle.' },
     summary: 'Cast on a character. Every post by that character sparkles for a week, and posts written in that time keep it.',
     status: 'Sparkling every post by that character',
     logPlay: () => 'Posts that character writes before it ends keep their sparkle after it ends.',
@@ -516,6 +605,59 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
       `A Sweet card, ${feelinGlam.rarity}, cast on a thread from its title. For ${spanWords(feelinGlam.lasts!)}, every post in the thread is drawn with one more level of Feelin' Fab's rainbow, up to Feelin' Fab's three: two Feelin' Fabs and a Feelin' Glam make the full prism. It takes none of a post's three Feelin' Fab places. A post written in the thread during that time keeps its extra level after it; every other post loses it when the time is up. If an admin ends the card, every post loses the level. One fits on a thread at a time. ${setMoveWords("the quoting post's thread")} It costs nothing more to play.`,
   },
   /*
+   * The discipline cards (docs/plans/2026-11-11-card-notes-part-5-plan.md, Task 9): Moves only ever cast face up, so none holds a face-down sentence, and none draws or
+   * configures anything. Sweet's cyan, and Salty's pink for Tattle-Tale. Their words are the glass's: plain and true, never in character. The warn points a Happy Heart
+   * takes are the lightest band's, the targeting cap is the settings', and "twice" is said only while the rules' weight is 2.
+   */
+  {
+    key: 'happy-heart',
+    art: { color: '#2ee6ff', ink: '#03141a', canvas: happyHeartCanvas, mark: happyHeartMark, credit: happyHeartArt.credit, tagline: 'Take a notch off a warn bar.' },
+    summary: "Cast on a character. Takes the oldest points off that character's warn bar.",
+    status: 'Took points off a warn bar',
+    hint: "A Happy Heart took warn points off a character's bar.",
+    describe: (settings: Settings) => {
+      const lightest = Math.min(...Object.values(settings.warnBar.bands));
+      return `A Sweet card, ${happyHeart.rarity}, cast from any post by the character it lands on. It takes the oldest ${lightest} warn point${lightest === 1 ? '' : 's'} off that character's warn bar at once, as many as the lightest breach lands, or as many as are left. The filings stay on the record; the card is a new entry beside them. If the bar is empty the play is refused and you keep the card. Any character can play it on any player's character, one of your own included. It is always cast face up. It costs nothing more to play.`;
+    },
+  },
+  {
+    key: 'super-happy-heart',
+    art: { color: '#2ee6ff', ink: '#03141a', canvas: superHappyHeartCanvas, mark: superHappyHeartMark, credit: superHappyHeartArt.credit, tagline: 'Empty a warn bar.' },
+    summary: "Cast on a character. Empties that character's warn bar.",
+    status: 'Emptied a warn bar',
+    hint: "A Super Happy Heart emptied a character's warn bar.",
+    describe: () =>
+      `A Sweet card, ${superHappyHeart.rarity}, cast from any post by the character it lands on. It takes every point off that character's warn bar at once. The filings stay on the record; the card is a new entry beside them. If the bar is empty the play is refused and you keep the card. Any character can play it on any player's character, one of your own included. It is always cast face up. It costs nothing more to play.`,
+  },
+  {
+    key: 'ultra-happy-heart',
+    art: { color: '#2ee6ff', ink: '#03141a', canvas: ultraHappyHeartCanvas, mark: ultraHappyHeartMark, credit: ultraHappyHeartArt.credit, tagline: 'End a ban on the spot.' },
+    summary: 'Cast on a banned character. Ends the ban at once.',
+    status: 'Ended a ban',
+    hint: "An Ultra Happy Heart ended a character's ban.",
+    describe: () =>
+      `A Sweet card, ${ultraHappyHeart.rarity}, cast from any post by a banned character. It ends that character's ban at once: the character can post, react and play cards again from that moment. The ban stays on the record and still counts toward how long that character's next ban is this season, and the warn bar is not touched. If the character is not banned the play is refused and you keep the card. A banned character cannot play cards, so another character plays it: anyone's, one of your own included. It is always cast face up. It costs nothing more to play.`,
+  },
+  {
+    key: 'take-the-fall',
+    art: { color: '#2ee6ff', ink: '#03141a', canvas: takeTheFallCanvas, mark: takeTheFallMark, credit: takeTheFallArt.credit, tagline: 'Take the blame for a post.' },
+    summary: "Cast on another character's post. The next Mod Bot filing on it lands on your character instead.",
+    /* A fall waits as a live play; once a filing spends it the play is no longer live, and the Lens heads the mark with what it did. */
+    status: (plays) => (plays.length > 0 ? 'Waiting to take the fall' : 'Took the fall'),
+    hint: 'Someone has offered to take the fall for this post.',
+    describe: () =>
+      `A Sweet card, ${takeTheFall.rarity}, cast face up on a post by another character. The next time a Mod Bot's visit to that post files, its warn points land on the character that played this card instead of the post's author, and a ban they bring is that character's too. Only the points and the ban move: the post keeps its notice. One fits on a post. It waits until a visit files, the first filing uses it up, and it can be played while a visit is open. The character that took the fall can appeal the filing. It costs nothing more to play.`,
+  },
+  {
+    key: 'tattle-tale',
+    art: { color: '#ff3d7f', ink: '#14030a', canvas: tattleTaleCanvas, mark: tattleTaleMark, credit: tattleTaleArt.credit, tagline: 'Point the Mod Bots at someone.' },
+    summary: `Cast on a character. For ${spanWords(tattleTale.lasts!)}, Mod Bot patrols weigh that character's posts ${weighted(tattleTale)} when picking what to look at.`,
+    status: 'Told on to the Mod Bots',
+    hint: `A Tattle-Tale: Mod Bot patrols weigh this character's posts ${weighted(tattleTale)}.`,
+    describe: (settings: Settings) =>
+      `A Salty card, ${tattleTale.rarity}, cast from any post by the character it lands on. For ${spanWords(tattleTale.lasts!)}, when a Mod Bot's patrol picks which recent posts to look at, that character's posts count ${weighted(tattleTale)} in the draw, so they are more likely to be picked. It makes a look likelier, never a ruling: the Mod Bot still judges each post against the rules, and a patrol still drops a finding against a character staff has already punished ${settings.modBots.cap.punishments} times in the last ${settings.modBots.cap.days} days. One fits on a character at a time, and it ends by itself. It is always cast face up. It costs nothing more to play.`,
+  },
+  /*
    * Hall Pass (docs/plans/2026-11-07-face-down-moves-design.md, section 4): Sweet's cyan, as Force Field is. A Gimmick, set face down
    * like Card Collector; what it springs on is a Mod Bot's visit, so it names no card.
    */
@@ -549,7 +691,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
   },
   {
     key: 'toll',
-    art: { color: '#d24a2c', ink: '#1a0602', canvas: tollCanvas, mark: tollMark, credit: tollArt.credit, tagline: 'Get paid when a Move lands here.' },
+    art: { color: '#d24a2c', ink: '#0d0301', canvas: tollCanvas, mark: tollMark, credit: tollArt.credit, tagline: 'Get paid when a Move lands here.' },
     summary: `Used on your post. For ${spanWords(toll.lasts!)}, every reaction to a Move another player casts there pays you too.`,
     status: 'Charging a toll on Moves',
     hint: 'A Toll pays this post\'s author when a Move cast here draws reactions.',
@@ -571,7 +713,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
     logDraw: GRAFFITI_LOG_DRAW,
     logWash: GRAFFITI_LOG_WASH,
     beneath: true,
-    art: { color: '#d24a2c', ink: '#1a0602', canvas: graffitiCanvas, mark: graffitiMark, credit: graffitiArt.credit, tagline: 'Turn a post into a wall.' },
+    art: { color: '#d24a2c', ink: '#0d0301', canvas: graffitiCanvas, mark: graffitiMark, credit: graffitiArt.credit, tagline: 'Turn a post into a wall.' },
     summary: 'Turn a post into a wall anyone can tag. The author can wash it off; anyone can tag it again.',
     status: 'A wall anyone can tag',
     hint: 'Press Draw to tag this wall. Scrub it away on your screen any time.',

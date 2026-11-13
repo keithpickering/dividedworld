@@ -57,6 +57,7 @@ declare
   base timestamptz := '2031-01-01T00:00:00Z';
   t uuid := tests.thread('Scale log thread');
   me uuid;
+  own bigint;
 begin
   insert into card_kinds (key, name, alignment, rarity, play, stack, writes) values ('cw-scribe', 'Scribe', 'salty', 'uncommon', 'cast', 3, true);
   create temp table so on commit drop as select g, tests.account('cws owner ' || g) as id from generate_series(0, 399) g;
@@ -84,9 +85,10 @@ begin
 
   -- The owner of characters 1, 401, 801, 1201 and 1601: 100 posts, each with a play, so 100 rows.
   me := (select id from so where g = 1);
+  -- The caller's own posts are counted as the table's owner: `acts.character` is not granted to a player (0357), and the view under test answers with owner rights.
+  own := (select count(*) from acts p join characters c on c.id = p.character where c.owner = me and p.kind = 'post');
   perform tests.become(me);
-  perform pg_temp.check_scale_plan('stale', (select count(*) from my_posts_written_on),
-    (select count(*) from acts p join characters c on c.id = p.character where c.owner = auth.uid() and p.kind = 'post'));
+  perform pg_temp.check_scale_plan('stale', (select count(*) from my_posts_written_on), own);
   perform tests.unbecome();
 
   analyze characters;
@@ -94,7 +96,6 @@ begin
   analyze card_texts;
   analyze card_write_refunds;
   perform tests.become(me);
-  perform pg_temp.check_scale_plan('analyzed', (select count(*) from my_posts_written_on),
-    (select count(*) from acts p join characters c on c.id = p.character where c.owner = auth.uid() and p.kind = 'post'));
+  perform pg_temp.check_scale_plan('analyzed', (select count(*) from my_posts_written_on), own);
   perform tests.unbecome();
 end $$;

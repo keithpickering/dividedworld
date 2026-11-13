@@ -39,6 +39,9 @@ test('each action is decided into the SQL function that writes it, with that fun
     { ok: true, rpc: 'apologize', args: { in_move: other, through: id, title: 'Sorry', body: 'I was wrong.' } });
   assert.deepEqual(decide({ action: 'react', act: other, character: id, kind: 'fire' }, instance),
     { ok: true, rpc: 'react', args: { target: other, through: id, reaction: 'fire' } });
+  // A post-local kind (a card added it to one post) is a well-formed `x-` key: the database, which holds the post's kinds, decides whether this post has it.
+  assert.deepEqual(decide({ action: 'react', act: other, character: id, kind: 'x-1f480' }, instance),
+    { ok: true, rpc: 'react', args: { target: other, through: id, reaction: 'x-1f480' } });
 });
 
 test('a card that carries a reply sends the reply and its framing with the play; any other card sends neither', () => {
@@ -130,6 +133,8 @@ test('an apology names a move, and has a title and words of its own, bounded lik
 
 test('a reaction the instance does not have is refused', () => {
   assert.match(refusal({ action: 'react', act: other, character: id, kind: 'shrug' }) ?? '', /^kind:.*shrug/);
+  assert.match(refusal({ action: 'react', act: other, character: id, kind: 'x-zz' }) ?? '', /^kind:.*x-zz/);
+  assert.match(refusal({ action: 'react', act: other, character: id, kind: 'x-d83d-de00' }) ?? '', /^kind:/);
 });
 
 test('a card is bought from a slot at the price the screen showed, by the service, for the caller', () => {
@@ -153,7 +158,7 @@ test('a play names the card, the character, the post and the caster\'s configura
     { ok: true, rpc: 'play_card', args: { card: 'splat', through: id, target: other, config: { color: 'red' }, message: '' }, asService: true, needsTarget: true, play: 'cast' });
   assert.equal((decide({ action: 'playCard', card: 'splat', character: id, target: other, message: 'Take that.' }, instance) as unknown as { args: { message: unknown } }).args.message, 'Take that.', 'the caster\'s message travels to the card\'s rules');
   assert.match(refusal({ action: 'playCard', card: 'nothing', character: id, target: other }) ?? '', /^card:/);
-  const writing = { ...splat, key: 'typewriter', name: 'Typewriter', writes: { tokens: () => 40, frame: () => ({ prompt: '', stop: [] as string[] }) } };
+  const writing = { ...splat, key: 'typewriter', name: 'Typewriter', writes: { sampling: { temperature: 0.9, topP: 0.95 }, tokens: () => 40, frame: () => ({ prompt: '', stop: [] as string[] }) } };
   const where = (oldVoice: boolean): Instance => ({ ...instance, cards: [...instance.cards, writing], settings: { ...instance.settings, oldVoice } });
   assert.equal(decide({ action: 'playCard', card: 'typewriter', character: id, target: other }, where(true)).ok, true, 'a card that writes is played where the old voice runs');
   assert.equal(decide({ action: 'playCard', card: 'typewriter', character: id, target: other }, where(false)).ok, false, 'and refused where it does not');

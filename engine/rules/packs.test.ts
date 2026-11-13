@@ -51,7 +51,7 @@ test('rollPack refuses a pull with no card to give', () => {
 });
 
 test('a card that writes is not among the leaves where the instance runs no old voice, in the odds or the roll, and is where it does', () => {
-  const writer = { key: 'w', rarity: 'rare', writes: { tokens: () => 1, frame: () => ({ prompt: '', stop: [] }) } } as unknown as CardRules;
+  const writer = { key: 'w', rarity: 'rare', writes: { sampling: { temperature: 0.9, topP: 0.95 }, tokens: () => 1, frame: () => ({ prompt: '', stop: [] }) } } as unknown as CardRules;
   const all = [...cards, writer];
   const keys = (settings: { oldVoice: boolean }) => packOdds(pack, all, settings).flat().flatMap((r) => r.cards.map((c) => c.card));
   assert.ok(keys({ oldVoice: true }).includes('w'));

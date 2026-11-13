@@ -14,6 +14,7 @@
  */
 import type { Instance } from './types.ts';
 import { normalizePronouns, pronounProblems, type PronounSet } from './pronouns.ts';
+import { emojiOfKey } from './emoji.ts';
 import { OLD_VOICE_OFF, REACHES, casterMessage, listed, reachesOf, withheld, type Play, type Reach, type SetConditions } from './cards.ts';
 
 /**
@@ -250,7 +251,8 @@ const ACTIONS: Record<string, (r: Fields, instance: Instance) => Decided> = {
   }),
   react: (r, { reactions }) => {
     const kind = r.kind;
-    if (typeof kind !== 'string' || !reactions.some((k) => k.key === kind)) throw new Refused('kind', `there is no reaction ${JSON.stringify(kind)}`);
+    // An instance's kind, or a well-formed post-local key (`x-` and an emoji's code points, emoji.ts): which post-local kinds a post holds is the database's to say (react).
+    if (typeof kind !== 'string' || !(reactions.some((k) => k.key === kind) || emojiOfKey(kind) !== null)) throw new Refused('kind', `there is no reaction ${JSON.stringify(kind)}`);
     return { rpc: 'react', args: { target: id(r, 'act'), through: id(r, 'character'), reaction: kind } };
   },
   turn: (r, instance) => {

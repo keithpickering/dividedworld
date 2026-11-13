@@ -79,8 +79,10 @@ export const ALLOWED_READS = Object.freeze([
   'account_preferences', 'effect_releases',
   // The player's own cards set face down and plays a trap caught (0054_card_plays.sql), and the card plays an admin ended (0092_card_end.sql): each filtered to the caller's own characters on the server.
   'my_face_down', 'my_caught', 'my_cards_ended',
+  // The player's own veiled posts (0357_post_veils.sql): the live author veils on posts of the caller's own characters, filtered on the server; thread_page reads it for its `veiled`, and the author's player learns a post is theirs from it alone.
+  'my_veiled_posts',
   // The player's own punishments, reports and appeals for the log (0111_mod_screens.sql): each filtered to the caller's own characters on the server.
-  'my_infractions', 'my_bans', 'my_group_moves', 'my_cosmetic_log', 'my_reports', 'my_appeals', 'my_reports_left',
+  'my_infractions', 'my_bans', 'my_falls_taken', 'my_group_moves', 'my_cosmetic_log', 'my_reports', 'my_appeals', 'my_reports_left',
 ]);
 
 /**
@@ -105,9 +107,9 @@ export const ALLOWED_COUNTS = Object.freeze(/** @type {readonly { table: string,
 export const ALLOWED_RPCS = Object.freeze(['whoami', 'spin_moment', 'my_bar', 'conduct_accepted', 'accept_conduct', 'is_admin', 'next_settlement_at', 'mark_read', 'set_preferences', 'meet_card', 'see_welcome', 'see_tip', 'skip_tips', 'restore_tips', 'resume_tips', 'replay_tour', 'my_account_opened', 'see_alerts', 'see_settlement', 'follow_thread', 'following_thread', 'my_alerts', 'my_alerts_unread', 'my_settlement_moved', 'set_profile', 'release_effect', 'card_target', 'standing_place', 'standings_page', 'admin_queue', 'hold_move', 'reverse_move', 'replace_successor', 'replace_queued_description', 'describe_board', 'move_progress', 'here', 'presence_box', 'screen_refusal', 'boot', 'index_page', 'board_page', 'thread_page', 'intercept', 'profile_page', 'record_page', 'set_presence_hidden', 'effects_above', 'pinned_threads', 'post_tails', 'play_moment', 'updates', 'season_news', 'finished_seasons', 'results_page', 'result_place', 'post_update', 'staff_career', 'boss_roster_names', 'dismiss_handover_todo', 'admin_contact', 'set_admin_contact', 'visit_quiz', 'beat_mod_name', 'my_apologies', 'my_characters_page', 'season_page', 'alerts_page', 'updates_page', 'queue_page', 'admin_reports', 'admin_failed_mail', 'decide_report', 'decide', 'report_post', 'my_open_reports', 'my_hidden_version', 'my_conduct_log', 'log_page', 'search_posts', 'search_threads', 'search_suggest', 'admin_machine', 'set_slot', 'move_slot', 'save_machine', 'my_wardrobe', 'trophies_of', 'belt_lineage', 'grant_gear', 'award_trophy', 'reverse_award', 'make_trophy', 'trophy_award_failures', 'give_failed_award', 'admin_awards', 'admin_character_named', 'drive_gifts', 'drive_gifts_page', 'move_thread_names', 'surface_acts']);
 /**
  * The functions a screen function may depend on without the web calling them (supabase/tests/e2e/0016-screen-reads.ts reads each screen function's recorded dependencies against
- * ALLOWED_RPCS and this list): the search reads' helpers (0117), stable, security invoker but the two definers, each a public fact about its arguments; and board_stubs and board_closed_to (0326), definers that board_page reads a board's stubs and where a closed board's threads went through. A call to one from a screen is a fault.
+ * ALLOWED_RPCS and this list): the search reads' helpers (0117), stable, security invoker but the two definers, each a public fact about its arguments; and board_stubs and board_closed_to (0326), definers that board_page reads a board's stubs and where a closed board's threads went through; and fall_spent (0361), a stable definer that thread_page asks whether an infraction names a fall play (one probe of acts_fall_spent; an infraction is a public Act that no version hiding conceals, the same answer for every caller). A call to one from a screen is a fault.
  */
-export const SCREEN_HELPERS = Object.freeze(['search_matches', 'search_walk', 'search_cursor_ok', 'search_post_cards', 'search_thread_matches', 'search_suggest_threads', 'suggest_characters', 'search_lang', 'fold_text', 'bbcode_plain', 'profile_cosmetics', 'cosmetic_log_rows', 'board_stubs', 'board_closed_to', 'card_ended']);
+export const SCREEN_HELPERS = Object.freeze(['search_matches', 'search_walk', 'search_cursor_ok', 'search_post_cards', 'search_thread_matches', 'search_suggest_threads', 'suggest_characters', 'search_lang', 'fold_text', 'bbcode_plain', 'profile_cosmetics', 'cosmetic_log_rows', 'board_stubs', 'board_closed_to', 'card_ended', 'fall_spent']);
 
 const WRITES = new Set(['insert', 'upsert', 'update', 'delete']);
 const NOT_A_CLIENT = new Set(['Array', 'Buffer', 'Object', 'Uint8Array', 'Set', 'Map']);

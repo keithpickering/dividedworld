@@ -22,7 +22,7 @@ import type { CardUi, EffectProps, Written } from './types.ts';
 
 const base = { alignment: 'salty' as const, rarity: 'common' as const, playPrice: () => 0, validateConfig: (c: unknown) => ok(c) };
 const rule = (key: string, extra: Partial<CardRules> = {}): CardRules => ({ ...base, key, name: key, canApply: (t, e, _config, now) => landsOn({ key }, t, e, now), ...extra });
-const wrote = rule('wrote', { stack: 3, validateState: (s) => ok(s), writes: { tokens: () => 10, frame: () => ({ prompt: '', stop: [] }) } });
+const wrote = rule('wrote', { stack: 3, validateState: (s) => ok(s), writes: { sampling: { temperature: 0.9, topP: 0.95 }, tokens: () => 10, frame: () => ({ prompt: '', stop: [] }) } });
 const plain = rule('plain');
 const instance: Instance = { ...testInstance, cards: [wrote, plain] };
 

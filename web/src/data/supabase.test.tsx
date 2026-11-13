@@ -1873,6 +1873,10 @@ describe('live', () => {
 
 export type { KayfaApi };
 
+/* A filing that landed on a character that took the fall for a post of the player's (my_falls_taken, 0361), as the view names its columns and as the log reads it. */
+const FALL_ROW = { infraction: 'f1', character: B, at: '2026-10-29T20:35:00+00:00', post: A, post_seq: 41, thread: T, rule: 'Rule 2: No double posting', points: 2, mod_name: 'The Clerk', taker_name: 'Sock Puppet' };
+const FALL = { infraction: 'f1', character: B, at: '2026-10-29T20:35:00+00:00', post: A, postSeq: 41, thread: T, rule: 'Rule 2: No double posting', points: 2, mod: 'The Clerk', takerName: 'Sock Puppet' };
+
 describe('the log', () => {
   const S1 = '2026-10-30T08:17:00+00:00';
   const LEDGER = [
@@ -1920,8 +1924,9 @@ describe('the log', () => {
       }
       if (name === 'my_caught') return rows([{ play: C, card: 'whoops', post: A, trap: 'snare', spring: SPRING, price: 25, at: '2026-10-29T19:00:00+00:00' }]);
       if (name === 'my_cards_ended') return rows([{ card_end: 'e1', play: C, card: 'whoops', at: '2026-10-29T22:00:00+00:00', side: 'onMine', reach: 'post', target_name: null, post_author_name: 'Pipewrench', caster_name: 'Spritey', character: B }]);
-      if (name === 'my_infractions') return rows([{ infraction: 'i1', character: B, at: '2026-10-29T20:30:00+00:00', band: 'minor', points: 2, rule_number: 2, rule: 'Rule 2: No double posting', mod_name: 'The Clerk', post: A, post_seq: 41, thread: T, expires_at: '2026-11-12T20:30:00+00:00', relief: 0, emptied_at: null }]);
-      if (name === 'my_bans') return rows([{ ban: 'b1', character: B, at: '2026-10-29T20:31:00+00:00', days: 1, until: '2026-10-30T20:31:00+00:00', infraction: 'i1', rule: 'Rule 2: No double posting', thread: T, ruling: 'reduced', own_until: '2026-10-31T20:31:00+00:00' }]);
+      if (name === 'my_infractions') return rows([{ infraction: 'i1', character: B, at: '2026-10-29T20:30:00+00:00', band: 'minor', points: 2, rule_number: 2, rule: 'Rule 2: No double posting', mod_name: 'The Clerk', post: A, post_seq: 41, thread: T, expires_at: '2026-11-12T20:30:00+00:00', relief: 0, emptied_at: null, card_relief: 1, fall_play: C }]);
+      if (name === 'my_falls_taken') return rows([FALL_ROW]);
+      if (name === 'my_bans') return rows([{ ban: 'b1', character: B, at: '2026-10-29T20:31:00+00:00', days: 1, until: '2026-10-30T20:31:00+00:00', infraction: 'i1', rule: 'Rule 2: No double posting', thread: T, ruling: 'reduced', own_until: '2026-10-31T20:31:00+00:00', lifted_at: '2026-10-30T09:00:00+00:00', lifted_card: 'ultra-happy-heart' }]);
       if (name === 'my_group_moves') return rows([{ move: 'g1', character: B, at: '2026-10-29T20:32:00+00:00', thread: T, seq: 7, group: 'trialMembers', board: A, board_name: 'General', expires_at: '2026-11-05T20:32:00+00:00', landed_until: '2026-11-04T20:32:00+00:00', check_at: null, demand: 'apologyAccepted', office: 'boss', ended_why: 'met', ended_by: 'demand', ended_at: '2026-10-30T10:00:00+00:00', ruling: 'reduced', ruled_at: '2026-10-29T22:00:00+00:00', ruled_until: '2026-11-05T20:32:00+00:00', ruled_office: 'boss' }]);
       if (name === 'my_cosmetic_log') return rows([{ kind: 'lost', id: 'l1', at: '2026-10-29T19:30:00+00:00', character: B, outcome: null, item: null, text: null, copies: null, trophy: 'belt', name: 'The Belt', by: 'boss', by_name: 'Sighbot', season: null, place: null, line: null, to_name: 'Sock Puppet' }]);
       if (name === 'my_reports') return rows([{ report: 'r1', character: B, at: '2026-10-29T17:00:00+00:00', post: A, post_seq: 41, thread: T, verdict: 'dismissed', verdict_at: '2026-10-29T17:00:03+00:00', mod_name: 'The Clerk', refund: null }]);
@@ -1957,8 +1962,9 @@ describe('the log', () => {
       setEnds: [{ play: SET, card: 'dud', post: A, spring: null, endedAt: '2026-10-29T20:00:00+00:00', endedBy: 'taken back' }],
       caught: [{ play: C, card: 'whoops', post: A, trap: 'snare', spring: SPRING, price: 25, at: '2026-10-29T19:00:00+00:00' }],
       ended: [{ cardEnd: 'e1', play: C, card: 'whoops', at: '2026-10-29T22:00:00+00:00', side: 'onMine', reach: 'post', targetName: null, postAuthorName: 'Pipewrench', casterName: 'Spritey', character: B }],
-      infractions: [{ infraction: 'i1', character: B, at: '2026-10-29T20:30:00+00:00', band: 'minor', points: 2, ruleNumber: 2, rule: 'Rule 2: No double posting', mod: 'The Clerk', post: A, postSeq: 41, thread: T, expiresAt: '2026-11-12T20:30:00+00:00', relief: 0, emptiedAt: null }],
-      bans: [{ ban: 'b1', character: B, at: '2026-10-29T20:31:00+00:00', days: 1, until: '2026-10-30T20:31:00+00:00', infraction: 'i1', rule: 'Rule 2: No double posting', thread: T, ruling: 'reduced', ownUntil: '2026-10-31T20:31:00+00:00' }],
+      infractions: [{ infraction: 'i1', character: B, at: '2026-10-29T20:30:00+00:00', band: 'minor', points: 2, ruleNumber: 2, rule: 'Rule 2: No double posting', mod: 'The Clerk', post: A, postSeq: 41, thread: T, expiresAt: '2026-11-12T20:30:00+00:00', relief: 0, emptiedAt: null, cardRelief: 1, fallPlay: C }],
+      bans: [{ ban: 'b1', character: B, at: '2026-10-29T20:31:00+00:00', days: 1, until: '2026-10-30T20:31:00+00:00', infraction: 'i1', rule: 'Rule 2: No double posting', thread: T, ruling: 'reduced', ownUntil: '2026-10-31T20:31:00+00:00', liftedAt: '2026-10-30T09:00:00+00:00', liftedCard: 'ultra-happy-heart' }],
+      falls: [FALL],
       groupMoves: [{ move: 'g1', character: B, at: '2026-10-29T20:32:00+00:00', thread: T, seq: 7, group: 'trialMembers', board: A, boardName: 'General', expiresAt: '2026-11-05T20:32:00+00:00', landedUntil: '2026-11-04T20:32:00+00:00', checkAt: null, demand: 'apologyAccepted', office: 'boss', endedWhy: 'met', endedBy: 'demand', endedAt: '2026-10-30T10:00:00+00:00', ruling: 'reduced', ruledAt: '2026-10-29T22:00:00+00:00', ruledUntil: '2026-11-05T20:32:00+00:00', ruledOffice: 'boss' }],
       reports: [{ report: 'r1', character: B, at: '2026-10-29T17:00:00+00:00', post: A, postSeq: 41, thread: T, verdict: 'dismissed', verdictAt: '2026-10-29T17:00:03+00:00', mod: 'The Clerk', refund: null }],
       appeals: [{ appeal: 'a1', character: B, at: '2026-10-29T21:00:00+00:00', punishment: 'i1', punishmentKind: 'infraction', postSeq: 41, thread: T, verdict: 'reduced', ruledAt: '2026-10-29T21:00:04+00:00', pointsDelta: -1, hearer: 'The Clerk', refund: null },
@@ -1995,7 +2001,7 @@ describe('the log', () => {
     const [ended] = h.to('my_cards_ended');
     expect([ended?.url.searchParams.get('order'), ended?.url.searchParams.get('limit')]).toEqual(['at.desc', '200']);
     /* The Mod Bots' four views (0111): each newest first and a page long, and every one the caller's own on the server. */
-    for (const name of ['my_infractions', 'my_bans', 'my_group_moves', 'my_reports', 'my_appeals', 'my_cosmetic_log']) {
+    for (const name of ['my_infractions', 'my_bans', 'my_falls_taken', 'my_group_moves', 'my_reports', 'my_appeals', 'my_cosmetic_log']) {
       const [req] = h.to(name);
       expect([name, req?.url.searchParams.get('order'), req?.url.searchParams.get('limit')]).toEqual([name, 'at.desc', '200']);
     }
@@ -2018,7 +2024,7 @@ describe('the log', () => {
     for (const name of ['my_draws', 'my_walls_drawn_on']) expect(h.to(name)[0]?.url.searchParams.get('at')).toBe(`lte.${before}`);
     expect(h.to('my_caught')[0]?.url.searchParams.get('at')).toBe(`lte.${before}`);
     expect(h.to('my_cards_ended')[0]?.url.searchParams.get('at')).toBe(`lte.${before}`);
-    for (const name of ['my_infractions', 'my_bans', 'my_group_moves', 'my_reports', 'my_appeals', 'my_cosmetic_log']) expect(h.to(name)[0]?.url.searchParams.get('at')).toBe(`lte.${before}`);
+    for (const name of ['my_infractions', 'my_bans', 'my_falls_taken', 'my_group_moves', 'my_reports', 'my_appeals', 'my_cosmetic_log']) expect(h.to(name)[0]?.url.searchParams.get('at')).toBe(`lte.${before}`);
   });
 
   /* #89 F2: a settlement made before its shares were kept says so, and the log says it plainly rather than "no post". */
@@ -2663,6 +2669,19 @@ describe('Updates', () => {
     });
     expect((await h.api.characters([B]))[0]).toMatchObject({ name: 'Gabe', staff: 'developer', office: 'developer' });
   });
+
+  it('knows the anonymous stand-in as an office of its own', async () => {
+    const h = harness((r) => {
+      if (r.url.pathname.endsWith('/characters_public')) return rows([{ id: B, name: 'Anonymous', joined: '2026-10-01', staff: 'anonymous', office: 'anonymous' }], 1);
+      return rows([], 0);
+    });
+    expect((await h.api.characters([B]))[0]).toMatchObject({ name: 'Anonymous', staff: 'anonymous', office: 'anonymous' });
+  });
+
+  it('answers a reaction to a blind post with no tally', async () => {
+    const h = harness((r) => (r.url.pathname === '/functions/v1/act' ? json({ act: A, thread: T, tally: null }) : undefined));
+    expect(await h.api.react(A, B, 'x-1f480')).toEqual({ ok: true, value: { act: A, tally: null } });
+  });
 });
 
 
@@ -2821,7 +2840,7 @@ describe('a screen in one call', () => {
 
   it('thread_page: sends the thread, page or seq and per page by name, and maps the document', async () => {
     const answer = {
-      summary: THREAD_ROW, page: 3, acts: [ACT_ROW], plays: [PLAY_ROW], above: [ABOVE_ROW], faces: [{ play: SET, card: 'splat' }],
+      summary: THREAD_ROW, page: 3, acts: [ACT_ROW], plays: [PLAY_ROW], above: [ABOVE_ROW], faces: [{ play: SET, card: 'splat' }], veiled: [{ post: A, character: B, play: SET, ends_at: '2026-10-04T10:00:00+00:00' }],
       states: [{ play: SET, state: { n: 1 }, saved_at: '2026-10-01T11:00:00+00:00' }], releases: [SET], tallies: [{ act: A, kind: 'fire', count: 1 }],
       mine: [{ act: A, kind: 'fire', character: B }], spun: [{ ...THREAD_ROW, id: C }], reading: 2, board: BOARD_ROW, following: true, presence: PRESENCE, unread: 4,
       people: [{ character: CHAR, profile: PROFILE, posts: 12, standing: 340, reveals: [{ act: A, character: B, class: 'face', at: '2026-10-01T10:00:00+00:00', via: 'act', thread: T }], turns: [{ act: C, character: B, at: '2026-10-02T10:00:00+00:00', was: null }] }],
@@ -2840,8 +2859,12 @@ describe('a screen in one call', () => {
     expect(page?.plays[0]).toMatchObject({ id: SET, targetActId: A });
     expect(page?.above[0]).toMatchObject({ play: SPRING, target: T });
     expect(page?.faces).toEqual({ [SET]: 'splat' });
+    expect(page?.veiled).toEqual([{ post: A, character: B, play: SET, endsAt: '2026-10-04T10:00:00+00:00' }]);
     expect(page?.states).toEqual({ [SET]: { state: { n: 1 }, savedAt: '2026-10-01T11:00:00+00:00' } });
     expect(page?.releases).toEqual([SET]);
+    /* The falls a filing has spent (0361): a document from before them reads none, and one that names a play reads it. */
+    expect(page?.spent).toEqual([]);
+    expect((await once('thread_page', { ...answer, spent: [SET, 7] }).api.threadPage(T, { page: 1 }, 20, []))?.spent).toEqual([SET]);
     expect(page?.tallies).toEqual({ [A]: { fire: 1 }, [SET]: {}, [SPRING]: {} });
     expect(page?.mine).toEqual([{ act: A, kind: 'fire', character: B }]);
     expect(page?.spun[0]).toMatchObject({ id: C });
@@ -3016,7 +3039,7 @@ describe('a screen in one call', () => {
 
   describe('log_page', () => {
     const SRC = (over: Record<string, unknown[]> = {}) => ({
-      ledger: [], wallet: [], cards: [], playsOnMine: [], saves: [], setEnds: [], caught: [], ended: [], infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], ...over,
+      ledger: [], wallet: [], cards: [], playsOnMine: [], saves: [], setEnds: [], caught: [], ended: [], infractions: [], bans: [], falls: [], groupMoves: [], reports: [], appeals: [], ...over,
     });
     const LEDGER_ROW = { settlement: 9, starts_at: '2026-10-29T08:17:00+00:00', ends_at: '2026-10-30T08:17:00+00:00', character: B, reason: 'heel.drewHeat', amount: 20, shares_kept: true, params: { n: 2 } };
     const doc = (sources: unknown, rest: Record<string, unknown> = {}) => ({
@@ -3043,6 +3066,7 @@ describe('a screen in one call', () => {
         ledger: [LEDGER_ROW], wallet: [{ settlement: 9, kind: 'settlement', change: 15, overflow: 0, floored: 0, balance_after: 472, ref: null, at: '2026-10-30T08:17:02+00:00' }],
         saves: [{ play: C, post: A, saved_at: '2026-10-29T23:00:00+00:00' }],
         writes: [{ play: C, post: A, version: A, failed: true, opening: true, over: true, at: '2026-10-29T22:30:00+00:00' }],
+        falls: [FALL_ROW],
         groupMoves: [{ move: 'g1', character: B, at: '2026-10-29T20:32:00+00:00', thread: T, seq: 7, group: 'trialMembers', board: A, board_name: 'General', expires_at: '2026-11-05T20:32:00+00:00', landed_until: '2026-11-04T20:32:00+00:00', check_at: null, demand: 'apologyAccepted', office: 'boss', ended_why: 'met', ended_by: 'demand', ended_at: '2026-10-30T10:00:00+00:00', ruling: 'reduced', ruled_at: '2026-10-29T22:00:00+00:00', ruled_until: '2026-11-05T20:32:00+00:00', ruled_office: 'boss' }],
         draws: [{ act: SET, kind: 'cut', play: C, post: A, character: B, mine: A, at: '2026-10-29T22:40:00+00:00', cells: 300 }],
         wallsDrawn: [{ act: SPRING, kind: 'wash', play: C, post: A, character: B, mine: B, at: '2026-10-29T22:50:00+00:00', cells: 450 }],
@@ -3064,6 +3088,9 @@ describe('a screen in one call', () => {
       /* The surface's two sources (log_page, 0317), mapped as log() maps my_draws and my_walls_drawn_on. */
       expect(page.log.draws).toEqual([{ act: SET, kind: 'cut', play: C, post: A, character: B, mine: A, at: '2026-10-29T22:40:00+00:00', cells: 300 }]);
       expect(page.log.wallsDrawn).toEqual([{ act: SPRING, kind: 'wash', play: C, post: A, character: B, mine: B, at: '2026-10-29T22:50:00+00:00', cells: 450 }]);
+      /* The falls (log_page, 0361), mapped as log() maps my_falls_taken; a payload without them reads none. */
+      expect(page.log.falls).toEqual([FALL]);
+      expect((await once('log_page', doc(SRC({ ledger: [LEDGER_ROW] }))).api.logPage(null)).log.falls).toEqual([]);
       /* The group moves (log_page, 0134), mapped as log() maps my_group_moves. */
       expect(page.log.groupMoves).toEqual([{ move: 'g1', character: B, at: '2026-10-29T20:32:00+00:00', thread: T, seq: 7, group: 'trialMembers', board: A, boardName: 'General', expiresAt: '2026-11-05T20:32:00+00:00', landedUntil: '2026-11-04T20:32:00+00:00', checkAt: null, demand: 'apologyAccepted', office: 'boss', endedWhy: 'met', endedBy: 'demand', endedAt: '2026-10-30T10:00:00+00:00', ruling: 'reduced', ruledAt: '2026-10-29T22:00:00+00:00', ruledUntil: '2026-11-05T20:32:00+00:00', ruledOffice: 'boss' }]);
       expect(page.log.before).toBeNull();

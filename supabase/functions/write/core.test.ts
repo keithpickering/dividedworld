@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { runWrites } from './core.ts';
+import { tokenId } from '../../../engine/system/tokens.ts';
 import { DatabaseError, type Db } from '../_shared/rpc.ts';
 import { ProviderRefusal, TransportFailure } from '../_shared/models/transport.ts';
 import { instance as base } from '../_shared/instance.ts';
@@ -20,6 +21,7 @@ const frames: unknown[] = [];
 const card = {
   key: 'echo', name: 'Echo',
   writes: {
+    sampling: { temperature: 0.9, topP: 0.95 },
     tokens: (config: { steps: number }) => 100 + config.steps * 50,
     frame: (input: unknown) => { frames.push(input); return { prompt: 'PROMPT', stop: ['\n\n'] }; },
   },
@@ -58,7 +60,7 @@ const run = (db: Db, models: Models, onlyPost?: string) => runWrites(db, models,
 
 test('a job is finished with its text, and the request carries the play, the duty, many lines and the tokens for its config', async () => {
   const { db, calls } = fakeDb([[job()]]);
-  /* Long enough not to be short (a tail under half the tokens asked for is rolled again), so the one call is the whole of it. */
+  /* Long enough not to be short (a tail under the full share of the tokens asked for is topped up), so the one call is the whole of it. */
   const said = 'and so it went on '.repeat(40);
   const { models, requests } = fakeModels(() => said);
   const out = await run(db, models);
@@ -307,38 +309,59 @@ test('a play that bought less than the cap is asked for what it bought, and fram
   assert.equal((frames[0] as { budget: number }).budget, 1024 - 100);
 });
 
-/* Re-rolling a short tail (docs/plans/2026-11-12-old-voice-window-design.md, section 5). The bytes tokenizer counts a character each, so a text's length is its own. */
-const bytes = { ...instance.settings, oldVoiceTokenizer: 'bytes' as const, cardWriteShortShare: 0.5, cardWriteRerolls: 3 };
+/* Topping up a short tail (docs/plans/2026-11-13-you-were-saying-voice-design.md, section 3). The bytes tokenizer counts a character each, so a text's length is its own. */
+const bytes = { ...instance.settings, oldVoiceTokenizer: 'bytes' as const, cardWriteFullShare: 0.5, cardWriteTopUps: 3 };
 const scripted = (answers: (string | Error)[]) => fakeModels((_r, n) => answers[n - 1] ?? 'z'.repeat(500));
 const x = (n: number) => 'x'.repeat(n);
+/* A frame that writes the tail so far and the break into the prompt, as the card's own does. */
+const writing = { ...card, writes: { ...card.writes, frame: (input: { sofar: string; budget: number }) => { frames.push(input); return { prompt: `P|${input.sofar === '' ? '' : `${input.sofar}\n\n`}`, stop: ['\n\n'] }; } } } as unknown as CardRules;
+const writingInstance: Instance = { ...instance, cards: [...base.cards, writing] };
 
-test('a short first try is rolled again, and the longer second one is finished: two calls', async () => {
-  const { db, calls } = fakeDb([[job({ tokens: 200 })]]);
-  const { models, requests } = scripted(['?', x(150)]);
-  await runWrites(db, models, instance, bytes, 8);
-  assert.equal(requests.length, 2);
-  assert.deepEqual(finishes(calls), [{ play: P1, version: V, text: x(150), failed: null }]);
-});
-
-test('four short answers: four calls, and the longest is kept, the earliest on a tie', async () => {
-  const { db, calls } = fakeDb([[job({ tokens: 200 })]]);
-  const first = 'a'.repeat(40); const second = 'b'.repeat(40);
-  const { models, requests } = scripted([x(3), first, x(12), second]);
-  await runWrites(db, models, instance, bytes, 8);
-  assert.equal(requests.length, 4);
-  assert.deepEqual(finishes(calls), [{ play: P1, version: V, text: first, failed: null }]);
-});
-
-test('a first answer that is long enough is the only call', async () => {
+test('a first answer at the full length is the only call, and its frame is asked with nothing so far', async () => {
+  frames.length = 0;
   const { db, calls } = fakeDb([[job({ tokens: 200 })]]);
   const { models, requests } = scripted([x(100)]);
   await runWrites(db, models, instance, bytes, 8);
   assert.equal(requests.length, 1);
+  assert.equal((frames[0] as { sofar: string }).sofar, '');
   assert.deepEqual(finishes(calls), [{ play: P1, version: V, text: x(100), failed: null }]);
 });
 
-test('no re-rolls, or a short share of zero, is one call whatever the length', async () => {
-  for (const over of [{ cardWriteRerolls: 0 }, { cardWriteShortShare: 0 }]) {
+test('a short first answer then a long one: two calls, the second continues the first after a break, asks for the tokens owed, and the two are stored joined by a break', async () => {
+  frames.length = 0;
+  const { db, calls } = fakeDb([[job({ tokens: 200 })]]);
+  // The top-up's own leading space is dropped: it opens a paragraph, after the break.
+  const { models, requests } = scripted([' ab', ` ${x(150)}`]);
+  await runWrites(db, models, writingInstance, bytes, 8);
+  assert.equal(requests.length, 2);
+  assert.equal(requests[1]!.prompt, 'P| ab\n\n');
+  assert.equal(requests[1]!.maxTokens, 200 - 3);
+  assert.equal(requests[1]!.maxChars, Math.min((200 - 3) * 6, 4000 - 3 - 2));
+  const second = frames[1] as { sofar: string; budget: number };
+  assert.equal(second.sofar, ' ab');
+  assert.equal(second.budget, bytes.oldVoiceWindow - 197);
+  assert.deepEqual(finishes(calls), [{ play: P1, version: V, text: ` ab\n\n${x(150)}`, failed: null }]);
+});
+
+test('a top-up rejected as empty ends the loop: the first answer is stored, nothing is refunded', async () => {
+  const { db, calls } = fakeDb([[job({ tokens: 200 })]]);
+  const { models, requests } = scripted(['?', new AnswerRejected('the completion is empty', 'nonEmpty')]);
+  await runWrites(db, models, instance, bytes, 8);
+  assert.equal(requests.length, 2);
+  assert.deepEqual(finishes(calls), [{ play: P1, version: V, text: '?', failed: null }]);
+});
+
+test('four short answers: the first call and three top-ups, joined by breaks, each owed what is left', async () => {
+  const { db, calls } = fakeDb([[job({ tokens: 200 })]]);
+  const { models, requests } = scripted([x(3), x(4), x(5), x(6), x(7)]);
+  await runWrites(db, models, instance, bytes, 8);
+  assert.equal(requests.length, 4);
+  assert.deepEqual(requests.map((r) => r.maxTokens), [200, 197, 191, 184]);
+  assert.deepEqual(finishes(calls), [{ play: P1, version: V, text: [x(3), x(4), x(5), x(6)].join('\n\n'), failed: null }]);
+});
+
+test('no top-ups, or a full share of zero, is one call whatever the length', async () => {
+  for (const over of [{ cardWriteTopUps: 0 }, { cardWriteFullShare: 0 }]) {
     const { db, calls } = fakeDb([[job({ tokens: 200 })]]);
     const { models, requests } = scripted(['?']);
     await runWrites(db, models, instance, { ...bytes, ...over }, 8);
@@ -347,7 +370,50 @@ test('no re-rolls, or a short share of zero, is one call whatever the length', a
   }
 });
 
-test('a short first try then a scrub rejection: the short text is finished, not the rejection', async () => {
+test('the request carries the card\'s sampling, the ban as token ids, ignoreEos and the frame\'s stop pattern; a bytes tokenizer has no ids, so no ban', async () => {
+  const pattern = /-{2,}[ \t]*Posted by /;
+  const sampled = { ...card,
+    writes: { ...card.writes, sampling: { temperature: 0.7, topP: 0.8, topK: 40, minP: 0.05, repeatPenalty: 1.6, repeatLastN: 64, ban: ['Posted', ' Quote', 'no such token \u0000'] }, frame: () => ({ prompt: 'PROMPT', stop: ['\n\n'], stopPattern: pattern }) } } as unknown as CardRules;
+  const inst: Instance = { ...instance, cards: [...base.cards, sampled] };
+  const long = x(2000);
+  const gpt2 = fakeDb([[job()]]); const a = scripted([long]);
+  await runWrites(gpt2.db, a.models, inst, { ...inst.settings, oldVoiceTokenizer: 'gpt2' }, 8);
+  const r = a.requests[0]!;
+  assert.equal(r.temperature, 0.7); assert.equal(r.topP, 0.8); assert.equal(r.topK, 40); assert.equal(r.minP, 0.05);
+  assert.equal(r.repeatPenalty, 1.6); assert.equal(r.repeatLastN, 64); assert.equal(r.ignoreEos, true);
+  assert.equal(r.stopPattern, pattern);
+  assert.deepEqual(r.ban, [tokenId('gpt2', 'Posted'), tokenId('gpt2', ' Quote')]);
+  assert.ok(r.ban!.every((id) => Number.isInteger(id)) && r.ban!.length === 2);
+  const none = fakeDb([[job()]]); const b = scripted([long]);
+  await runWrites(none.db, b.models, inst, { ...inst.settings, oldVoiceTokenizer: 'bytes' }, 8);
+  assert.ok(!('ban' in b.requests[0]!), 'no ids, no ban key');
+});
+
+test('a card that gives only temperature and top-p sends no other sampling number, and still ignores end-of-text', async () => {
+  const { db } = fakeDb([[job()]]);
+  const { models, requests } = scripted([x(2000)]);
+  await runWrites(db, models, instance, bytes, 8);
+  const r = requests[0]!;
+  for (const k of ['topK', 'minP', 'repeatPenalty', 'repeatLastN', 'ban', 'stopPattern']) assert.ok(!(k in r) || (r as unknown as Record<string, unknown>)[k] === undefined, k);
+  assert.equal(r.ignoreEos, true);
+});
+
+test('a top-up asks under the room left: with no room under the limit the loop ends and the tail stands', async () => {
+  /* GPT-2 counts about four characters a token, so a 4,000-character tail is far under the 1,800 tokens that 2,000 bought. */
+  const settings = { ...instance.settings, oldVoiceTokenizer: 'gpt2' as const, oldVoiceWindow: 20_000, cardWriteFullShare: 0.9, cardWriteTopUps: 3 };
+  const prose = 'the quick brown fox '.repeat(200);
+  const { db, calls } = fakeDb([[job({ tokens: 2000 })]]);
+  const { models, requests } = scripted([prose.slice(0, 3998), 'more']);
+  await runWrites(db, models, instance, settings, 8);
+  assert.equal(requests.length, 1);
+  assert.deepEqual(finishes(calls), [{ play: P1, version: V, text: prose.slice(0, 3998), failed: null }]);
+  const near = fakeDb([[job({ tokens: 2000 })]]);
+  const more = scripted([prose.slice(0, 3990), 'more', 'again']);
+  await runWrites(near.db, more.models, instance, settings, 8);
+  assert.equal(more.requests[1]!.maxChars, 4000 - 3990 - 2);
+});
+
+test('a short first answer then a scrub rejection: the short text is finished, not the rejection', async () => {
   const { db, calls } = fakeDb([[job({ tokens: 200 })]]);
   const { models, requests } = scripted(['?', 'a badword', 'a badword']);
   await runWrites(db, models, instance, bytes, 8);
@@ -355,7 +421,7 @@ test('a short first try then a scrub rejection: the short text is finished, not 
   assert.deepEqual(finishes(calls), [{ play: P1, version: V, text: '?', failed: null }]);
 });
 
-test('a short first try then a transport failure: the short text is finished', async () => {
+test('a short first answer then a transport failure: the short text is finished', async () => {
   const { db, calls } = fakeDb([[job({ tokens: 200 })]]);
   const { models, requests } = scripted(['?', new TransportFailure('timed out')]);
   await runWrites(db, models, instance, bytes, 8);
@@ -363,12 +429,18 @@ test('a short first try then a transport failure: the short text is finished', a
   assert.deepEqual(finishes(calls), [{ play: P1, version: V, text: '?', failed: null }]);
 });
 
-test('a database error on a later try stops the run', async () => {
+test('a failed first call still finishes the job as a failure', async () => {
+  const { db, calls } = fakeDb([[job({ tokens: 200 })]]);
+  await runWrites(db, scripted([new AnswerRejected('the completion is empty', 'nonEmpty')]).models, instance, bytes, 8);
+  assert.deepEqual(finishes(calls), [{ play: P1, version: V, text: null, failed: 'nonEmpty' }]);
+});
+
+test('a database error on a top-up stops the run', async () => {
   const { db } = fakeDb([[job({ tokens: 200 })]]);
   await assert.rejects(runWrites(db, scripted(['?', new DatabaseError('boom', '57014', 500)]).models, instance, bytes, 8), DatabaseError);
 });
 
-test('no try starts once the deadline has passed since the first call: one call, the short text finished', async () => {
+test('no top-up starts once the deadline has passed since the first call: one call, the short text finished', async () => {
   const { db, calls } = fakeDb([[job({ tokens: 200 })]]);
   let t = 0;
   const requests: CompletionRequest[] = [];
@@ -378,39 +450,40 @@ test('no try starts once the deadline has passed since the first call: one call,
   assert.deepEqual(finishes(calls), [{ play: P1, version: V, text: '?', failed: null }]);
 });
 
-test('a regeneration after an edit, and a play whose tokens come from the play, re-roll the same way, at the length the play recorded', async () => {
+test('a regeneration after an edit tops up the same way, at the length the play recorded', async () => {
   for (const over of [{ tokens: 300, earlier: [{ play: P2, text: 'old tail' }] }, { tokens: 300, attempts: 2 }]) {
     const { db, calls } = fakeDb([[job(over)]]);
     const { models, requests } = scripted(['?', x(200)]);
     await runWrites(db, models, instance, bytes, 8);
     assert.equal(requests.length, 2);
-    assert.equal(requests[1]!.maxTokens, 300);
-    assert.deepEqual(finishes(calls), [{ play: P1, version: V, text: x(200), failed: null }]);
+    assert.equal(requests[0]!.maxTokens, 300);
+    assert.equal(requests[1]!.maxTokens, 299);
+    assert.deepEqual(finishes(calls), [{ play: P1, version: V, text: `?\n\n${x(200)}`, failed: null }]);
   }
 });
 
-test('a share of 0.07 of a 100-token play is 7 tokens, not 8: a 7-token answer is not short, one call', async () => {
+test('a share of 0.07 of a 100-token play is 7 tokens, not 8: a 7-token answer is full, one call', async () => {
   const { db, calls } = fakeDb([[job({ tokens: 100 })]]);
   const { models, requests } = scripted([x(7)]);
-  await runWrites(db, models, instance, { ...bytes, cardWriteShortShare: 0.07 }, 8);
+  await runWrites(db, models, instance, { ...bytes, cardWriteFullShare: 0.07 }, 8);
   assert.equal(requests.length, 1);
   assert.deepEqual(finishes(calls), [{ play: P1, version: V, text: x(7), failed: null }]);
 });
 
-test('a try that would start just under the deadline still runs: a second call is made', async () => {
+test('a top-up that would start just under the deadline still runs: a second call is made', async () => {
   const { db, calls } = fakeDb([[job({ tokens: 200 })]]);
   let t = 0;
   const requests: CompletionRequest[] = [];
   const models = { complete: async (r: CompletionRequest) => { requests.push(r); t = 119_999; return { value: requests.length === 1 ? '?' : x(150), usage: {}, provider: 'p', model: 'm', trims: [], retries: 0, costMicrodollars: 0 }; } } as unknown as Models;
   await runWrites(db, models, instance, bytes, 8, undefined, { now: () => t, budgetMs: 10_000_000 });
   assert.equal(requests.length, 2);
-  assert.deepEqual(finishes(calls), [{ play: P1, version: V, text: x(150), failed: null }]);
+  assert.deepEqual(finishes(calls), [{ play: P1, version: V, text: `?\n\n${x(150)}`, failed: null }]);
 });
 
-/* The claim is renewed before each re-roll (issue #584; supabase/migrations/0354_card_write_claim_renewal.sql). */
+/* The claim is renewed before each top-up (issue #584; supabase/migrations/0354_card_write_claim_renewal.sql). */
 const renewals = (calls: { fn: string; args: Record<string, unknown> }[]) => calls.filter((c) => c.fn === 'renew_card_write');
 
-test('a short first try then a second: the claim is renewed once, before the second call, and not before the first', async () => {
+test('a short first answer then a top-up: the claim is renewed once, before the second call, and not before the first', async () => {
   const { db, calls } = fakeDb([[job({ tokens: 200 })]]);
   const order: string[] = [];
   const inner = db.rpc;
@@ -422,7 +495,7 @@ test('a short first try then a second: the claim is renewed once, before the sec
   assert.deepEqual(order, ['claim_card_writes', 'call', 'renew_card_write', 'call', 'finish_card_write', 'claim_card_writes']);
 });
 
-test('four short tries renew three times', async () => {
+test('four short answers renew three times', async () => {
   const { db, calls } = fakeDb([[job({ tokens: 200 })]]);
   const { models, requests } = scripted([x(3), x(4), x(5), x(6)]);
   await runWrites(db, models, instance, bytes, 8);
@@ -430,13 +503,13 @@ test('four short tries renew three times', async () => {
   assert.equal(renewals(calls).length, 3);
 });
 
-test('a long first try never renews', async () => {
+test('a full first answer never renews', async () => {
   const { db, calls } = fakeDb([[job({ tokens: 200 })]]);
   await runWrites(db, scripted([x(100)]).models, instance, bytes, 8);
   assert.equal(renewals(calls).length, 0);
 });
 
-test('a renewal that says the claim is no longer this run\'s ends the job quietly: no second call, no finish', async () => {
+test('a renewal that says the claim is no longer this run\'s ends the job quietly: no top-up, no finish', async () => {
   const { db, calls } = fakeDb([[job({ tokens: 200 })]], { renew: false });
   const { models, requests } = scripted(['?', x(150)]);
   const out = await runWrites(db, models, instance, bytes, 8);
@@ -454,7 +527,7 @@ test('a database error from the renewal stops the run', async () => {
   assert.deepEqual(finishes(calls), []);
 });
 
-test('a scrubbed first answer renews the claim once, before the regeneration', async () => {
+test('a scrubbed first answer renews the claim once, before the second call', async () => {
   const { db, calls } = fakeDb([[job({ tokens: 200 })]]);
   const order: string[] = [];
   const inner = db.rpc;

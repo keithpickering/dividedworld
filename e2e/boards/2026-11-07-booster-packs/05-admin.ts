@@ -30,6 +30,11 @@
  *    with Laugh Track's row above it, the hidden Main Event's cell and note stand 715px lower in all (it is above Graffiti's row, so it is not moved by it), and Save changes and its note 880px lower in all.
  *  - Line Cutter and Feelin' Glam (card notes Part 2) were then added as the last two slots, both hidden (after Graffiti), so no slot above them moves; the list has two more hidden rows (55px each)
  *    under Graffiti's: the hidden Main Event's cell and note stay 715px lower in all, and Save changes and its note stand 110px lower again (990 in all).
+ *  - Overreaction and Blind Study (card notes Part 3) were then added after Laugh Track's slot, the end of the on-sale slots (before the hidden Main Event), and the hidden Whodunnit? after Feelin' Glam, the last slot, so no slot above them moves and Glitter Bomb's tag stays 272px lower;
+ *    the list has two more on-sale rows (55px each), so the hidden Main Event's cell and note stand 110px lower again (825 in all), and one more hidden row under Feelin' Glam's, so Save changes and its note stand 165px lower again (1155 in all).
+ *  - Happy Heart and Take the Fall (card notes Part 5) were then added after Blind Study, the end of the on-sale slots (before the hidden Main Event), and the hidden Super Happy Heart, Tattle-Tale and Ultra Happy Heart
+ *    as the last three slots (after Whodunnit?), so no slot above them moves and Glitter Bomb's tag stays 272px lower; the list has two more on-sale rows (55px each) and three more hidden rows:
+ *    the hidden Main Event's cell and note stand 110px lower again (935 in all), and Save changes and its note stand 110px and 165px lower again (1430 in all).
  *  - The build's controls are the glass's own measure, so a button is compared by its place and not its size, and a field's type is the glass's.
  *  - A control's accessible name in the build says whose it is ("Whoops!: move up"), where the board's arrows are named "Move up" alone.
  *  - The note beside Save changes says what a price is held to (between 0.01 and 1,000,000.00) where the board's note says a Boss move reads the new price; the
@@ -63,10 +68,10 @@ const manifest: BoardManifest = {
     at('tag-pull', 'text', 'PULLED BY THE BOSS · TO NOV 9', { origin: 'head-slot', originEdge: 'bottom' }),
     at('code-e1', 'cell', 'E1', { origin: 'head-slot', originEdge: 'bottom' }),
     at('tag-markup', 'text', 'MARKED UP ×1.5 · 2.25 TO NOV 8', { buildName: 'Marked up ×1.5 · 2.25 · to Nov 8', buildShift: { y: 272 }, origin: 'head-slot', originEdge: 'bottom' }),
-    at('code-none', 'cell', '–', { buildShift: { y: 715 }, origin: 'head-slot', originEdge: 'bottom' }),
-    at('hidden-note', 'text', 'Only in packs. The Boss may flash-sale it.', { buildShift: { y: 715 }, origin: 'head-slot', originEdge: 'bottom' }),
-    at('save', 'button', 'SAVE CHANGES', { buildName: 'Save changes', buildShift: { y: 990 }, origin: 'head-slot', originEdge: 'bottom' }),
-    at('save-note', 'text', 'Players see a saved price at once. A Boss move in force reads the new price.', { buildName: 'A price is between 0.01 and 1,000,000.00. Players see a saved price at once.', origin: 'head-slot', originEdge: 'bottom', buildShift: { x: -12, y: 990 } }),
+    at('code-none', 'cell', '–', { buildShift: { y: 935 }, origin: 'head-slot', originEdge: 'bottom' }),
+    at('hidden-note', 'text', 'Only in packs. The Boss may flash-sale it.', { buildShift: { y: 935 }, origin: 'head-slot', originEdge: 'bottom' }),
+    at('save', 'button', 'SAVE CHANGES', { buildName: 'Save changes', buildShift: { y: 1430 }, origin: 'head-slot', originEdge: 'bottom' }),
+    at('save-note', 'text', 'Players see a saved price at once. A Boss move in force reads the new price.', { buildName: 'A price is between 0.01 and 1,000,000.00. Players see a saved price at once.', origin: 'head-slot', originEdge: 'bottom', buildShift: { x: -12, y: 1430 } }),
   ],
 };
 export default manifest;

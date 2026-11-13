@@ -143,12 +143,14 @@ export async function readWorld(conn: Connection, instance: Instance, corpus: Re
       "where a.kind = 'post' and c.staff is null and c.owner is not null and a.created_at >= to_timestamp($1 / 1000.0) order by a.created_at, a.id",
     [since],
   );
+  const boards = await conn.sql("select slug, name, closed from boards_now where not is_system order by slug");
   const known = new Set(characters.map((c) => c.id));
   const inThreads = new Set(threads.map((t) => String(t.id)));
   return {
     dayStart,
     reactions: instance.reactions,
     characters,
+    boards: boards.map((b) => ({ slug: String(b.slug), name: String(b.name), open: b.closed !== true })),
     // Open to a post or a reaction: no thread on a System board is, and no other thread here is closed to anyone (nothing in the
     // SQL locks a thread or restricts a board against posting; rules act on words, never on who may post).
     threads: threads.map((t) => ({ id: String(t.id), board: String(t.board), title: String(t.title), open: t.is_system !== true })),

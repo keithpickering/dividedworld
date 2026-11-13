@@ -31,7 +31,7 @@
  * and even then it is that player's own rows at that instant, never more than their whole history.
  */
 import { lineKey } from '../../rules/settle.ts';
-import type { CardEnded, CardEvent, CaughtPlay, EffectSaved, FaceDownEnd, Log, LogAppeal, LogBan, LogCosmetic, LogGroupMove, LogInfraction, LogLine, LogReport, LogSettlement, LogShare, PackEvent, PlayOnMine, ScoredAs, SurfaceLogRow, WalletEvent, WrittenOnMine } from './api.ts';
+import type { CardEnded, CardEvent, CaughtPlay, EffectSaved, FaceDownEnd, Log, LogAppeal, LogBan, LogCosmetic, LogFall, LogGroupMove, LogInfraction, LogLine, LogReport, LogSettlement, LogShare, PackEvent, PlayOnMine, ScoredAs, SurfaceLogRow, WalletEvent, WrittenOnMine } from './api.ts';
 
 /** The most rows a page reads from each source. */
 export const LOG_ROWS = 200;
@@ -77,6 +77,8 @@ export interface LogRead {
   readonly ended: readonly CardEnded[];
   readonly infractions: readonly LogInfraction[];
   readonly bans: readonly LogBan[];
+  /** The filings that landed on a character that took the fall for the caller's posts (`my_falls_taken`); a backend or an older payload that has none leaves it out. */
+  readonly falls?: readonly LogFall[];
   readonly groupMoves: readonly LogGroupMove[];
   readonly reports: readonly LogReport[];
   readonly appeals: readonly LogAppeal[];
@@ -112,6 +114,7 @@ export function cutLog(read: LogRead, limit: number = LOG_ROWS): Log {
     ...reached(read.ended, () => read.ended[read.ended.length - 1]!.at),
     ...reached(read.infractions, () => read.infractions[read.infractions.length - 1]!.at),
     ...reached(read.bans, () => read.bans[read.bans.length - 1]!.at),
+    ...reached(read.falls ?? [], () => read.falls![read.falls!.length - 1]!.at),
     ...reached(read.groupMoves, () => read.groupMoves[read.groupMoves.length - 1]!.at),
     ...reached(read.reports, () => read.reports[read.reports.length - 1]!.at),
     ...reached(read.appeals, () => read.appeals[read.appeals.length - 1]!.at),
@@ -160,6 +163,7 @@ export function cutLog(read: LogRead, limit: number = LOG_ROWS): Log {
     ended: read.ended.filter((e) => keep(e.at)),
     infractions: read.infractions.filter((e) => keep(e.at)),
     bans: read.bans.filter((e) => keep(e.at)),
+    falls: (read.falls ?? []).filter((e) => keep(e.at)),
     groupMoves: read.groupMoves.filter((e) => keep(e.at)),
     reports: read.reports.filter((e) => keep(e.at)),
     appeals: read.appeals.filter((e) => keep(e.at)),

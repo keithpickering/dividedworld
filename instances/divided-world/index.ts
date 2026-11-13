@@ -50,13 +50,15 @@ const ranks = deepFreeze([
  * ui/avatars (InstanceUi.avatars). The voice is the admins' to write: it is never a model's, and what it says is always true.
  */
 const developer = deepFreeze({ name: 'Gabe', tagline: 'Made this. Sorry.', avatar: 'gabe', pronouns: PRONOUN_PRESETS.he });
+/** The character that signs a post whose author a veil withholds (Whodunnit?): no picture of its own until the owner gives one. */
+const anonymous = deepFreeze({ name: 'Anonymous', tagline: 'Could be anyone.' });
 
 /** The pips a postbit draws beside a rank: the default for now; more come with the gacha and trophies. */
 const pipStyles = deepFreeze([
   { key: 'default', name: 'Default', full: 'pips/default-full.svg', empty: 'pips/default-empty.svg' },
 ]);
 
-export const instance: Instance = Object.freeze({ key: 'divided-world', name: 'Divided World', copy, classes, cards, reactions, settings: defaults, boards, ranks, pipStyles, system, developer, groups, packs, machine, gear, trophies, events });
+export const instance: Instance = Object.freeze({ key: 'divided-world', name: 'Divided World', copy, classes, cards, reactions, settings: defaults, boards, ranks, pipStyles, system, developer, anonymous, groups, packs, machine, gear, trophies, events });
 
 /** The same instance on the playtest's shorter season and Turn cooldown. */
 export const playtestInstance: Instance = Object.freeze({ ...instance, settings: playtest });

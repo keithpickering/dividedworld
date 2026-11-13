@@ -13,12 +13,13 @@ import { GRID, cellsOf, count, type Cells } from '../../../engine/rules/surface.
 import { cards } from './index.ts';
 import { instance } from '../index.ts';
 import { publicityTour } from './publicity-tour.ts';
-import { atOrBelow, castOnPost, giftSplit, openDrive, staffOffers, staffConfigOf, decidePlay, decideSet, decideUse, postTarget, type CardRules } from '../../../engine/rules/cards.ts';
+import { atOrBelow, castOnPost, giftSplit, instant, wardTurnsAway, openDrive, staffOffers, staffConfigOf, decidePlay, decideSet, decideUse, postTarget, type CardRules } from '../../../engine/rules/cards.ts';
 import { PEELS, autocorrect } from './autocorrect.ts';
 import { CUES, PLACES, laughTrack, placesOf, type Cue } from './laugh-track.ts';
 import { decide } from '../../../engine/rules/actions.ts';
 import { instanceProblems, withOverrides } from '../../../engine/rules/instance.ts';
 import { defaults as settings } from '../settings.ts';
+import { reactions } from '../reactions.ts';
 import { QUADRANTS } from '../../../engine/rules/types.ts';
 import type { CardTarget } from '../../../engine/rules/cards.ts';
 
@@ -28,7 +29,7 @@ const priceOf = (key: string): number => instance.machine.find((m) => 'card' in 
 const post = (length: number): CardTarget => ({ reach: 'post', act: 'p1', kind: 'post', length, text: '', links: [] });
 
 test('the instance sells its cards at their prices', () => {
-  assert.deepEqual(cards.map((c) => [c.key, c.alignment, priceOf(c.key)]), [['stick-around', 'sweet', 100], ['whoops', 'salty', 100], ['card-collector', 'salty', 150], ['hall-pass', 'sweet', 150], ['force-field', 'sweet', 150], ['publicity-tour', 'sweet', 150], ['heat-magnet', 'salty', 150], ['class-clown', 'pepperoni', 150], ['good-vibes', 'sweet', 150], ['glitter-bomb', 'pepperoni', 150], ['main-event', 'sweet', 300], ['feelin-fab', 'sweet', 20], ['autocorrect', 'pepperoni', 100], ['you-were-saying', 'pepperoni', 100], ['below-the-fold', 'salty', 100], ['mooch', 'salty', 150], ['toll', 'pepperoni', 150], ['4d-chess', 'salty', 150], ['off-day', 'salty', 500], ['jimmy-wails', 'sweet', 200], ['sugar-coat', 'sweet', 300], ['hype-up', 'sweet', 150], ['last-word', 'salty', 150], ['laugh-track', 'pepperoni', 150], ['graffiti', 'pepperoni', 300], ['line-cutter', 'pepperoni', 300], ['feelin-glam', 'sweet', 300]]);
+  assert.deepEqual(cards.map((c) => [c.key, c.alignment, priceOf(c.key)]), [['stick-around', 'sweet', 100], ['whoops', 'salty', 100], ['card-collector', 'salty', 150], ['hall-pass', 'sweet', 150], ['force-field', 'sweet', 150], ['publicity-tour', 'sweet', 150], ['heat-magnet', 'salty', 150], ['class-clown', 'pepperoni', 150], ['good-vibes', 'sweet', 150], ['glitter-bomb', 'pepperoni', 150], ['main-event', 'sweet', 300], ['feelin-fab', 'sweet', 20], ['autocorrect', 'pepperoni', 100], ['you-were-saying', 'pepperoni', 100], ['below-the-fold', 'salty', 100], ['mooch', 'salty', 150], ['toll', 'pepperoni', 150], ['4d-chess', 'salty', 150], ['off-day', 'salty', 500], ['jimmy-wails', 'sweet', 200], ['sugar-coat', 'sweet', 300], ['hype-up', 'sweet', 150], ['last-word', 'salty', 150], ['laugh-track', 'pepperoni', 150], ['graffiti', 'pepperoni', 300], ['line-cutter', 'pepperoni', 300], ['feelin-glam', 'sweet', 300], ['whodunnit', 'pepperoni', 300], ['blind-study', 'pepperoni', 150], ['overreaction', 'pepperoni', 100], ['happy-heart', 'sweet', 150], ['super-happy-heart', 'sweet', 300], ['ultra-happy-heart', 'sweet', 600], ['take-the-fall', 'sweet', 150], ['tattle-tale', 'salty', 300]]);
   assert.deepEqual(instanceProblems(instance), []);
   assert.deepEqual(instance.cards, cards);
 });
@@ -322,6 +323,55 @@ test('Below the Fold lands on a post with no fold, and a second is refused in pl
   assert.deepEqual(belowTheFold.canApply({ reach: 'character', character: 'c1' }, []), { ok: false, why: 'this card lands on a post' });
 });
 
+/* Card notes, Part 3 (docs/plans/2026-11-11-card-notes-part-3-plan.md, Task 9): Whodunnit?, Blind Study and Overreaction. */
+test('Whodunnit? and Blind Study are Pepperoni Moves on a post for three days, that veil the author and the totals', async () => {
+  const { whodunnit } = await import('./whodunnit.ts');
+  const { blindStudy } = await import('./blind-study.ts');
+  assert.deepEqual([whodunnit.key, whodunnit.name, whodunnit.alignment, whodunnit.rarity, whodunnit.play ?? 'cast', whodunnit.reaches, whodunnit.stack, whodunnit.lasts, whodunnit.veil], ['whodunnit', 'Whodunnit?', 'pepperoni', 'rare', 'cast', undefined, undefined, { unit: 'day', count: 3 }, 'author']);
+  assert.deepEqual([blindStudy.key, blindStudy.name, blindStudy.alignment, blindStudy.rarity, blindStudy.play ?? 'cast', blindStudy.reaches, blindStudy.stack, blindStudy.lasts, blindStudy.veil], ['blind-study', 'Blind Study', 'pepperoni', 'uncommon', 'cast', undefined, undefined, { unit: 'day', count: 3 }, 'totals']);
+  assert.deepEqual([priceOf('blind-study'), priceOf('overreaction')], [150, 100]);
+  const whodunnitSlot = instance.machine.find((m) => 'card' in m.item && m.item.card === 'whodunnit')!;
+  assert.deepEqual([whodunnitSlot.availability, whodunnitSlot.price], ['hidden', 300]);
+  for (const c of [whodunnit, blindStudy]) {
+    assert.equal(c.playPrice(settings, post(6000), {}), 0);
+    assert.equal(c.playPrice(settings, post(10), {}), 0);
+    assert.deepEqual(c.validateConfig({ anything: 1 }), { ok: true, value: {} });
+    assert.equal(c.canApply(post(10), []).ok, true);
+    assert.deepEqual(c.canApply(post(10), [{ card: c.key, act: 'v1', reach: 'post' as const }]), { ok: false, why: 'this post already carries that card' });
+    assert.deepEqual(c.canApply({ reach: 'character', character: 'c1' }, []), { ok: false, why: 'this card lands on a post' });
+    const listed = cards.find((l) => l.key === c.key);
+    assert.ok(listed, 'it is in the instance\'s cards');
+    assert.ok(castOnPost(listed), 'a Cast on a post');
+  }
+  const named = cards.find((c) => c.key === 'card-collector')!.staffOptions!.schema as { properties: { card: { enum: string[] } } };
+  assert.ok(named.properties.card.enum.includes('blind-study') && !named.properties.card.enum.includes('whodunnit'), 'Card Collector may name the uncommon, not the rare');
+  assert.ok(named.properties.card.enum.includes('overreaction'), 'Card Collector may name the common');
+  // New slots end their run, so the Vending Machine's rows above them never move: the on-sale ones after Last Word, the hidden one after Part 2's two (and card notes Part 5's after it, in the same way).
+  const slotCards = instance.machine.map((m) => ('card' in m.item ? m.item.card : 'pack'));
+  assert.deepEqual(slotCards.slice(slotCards.indexOf('last-word')), ['last-word', 'laugh-track', 'overreaction', 'blind-study', 'happy-heart', 'take-the-fall', 'main-event', 'off-day', 'sugar-coat', 'graffiti', 'line-cutter', 'feelin-glam', 'whodunnit', 'super-happy-heart', 'tattle-tale', 'ultra-happy-heart']);
+});
+
+test('Overreaction is a common Pepperoni Move on a post, three to a post, that adds a reaction of its own and does not end', async () => {
+  const { overreaction } = await import('./overreaction.ts');
+  assert.deepEqual([overreaction.key, overreaction.name, overreaction.alignment, overreaction.rarity, overreaction.play ?? 'cast', overreaction.reaches, overreaction.stack, overreaction.lasts, overreaction.reaction, overreaction.veil], ['overreaction', 'Overreaction', 'pepperoni', 'common', 'cast', undefined, 3, undefined, true, undefined]);
+  assert.equal(overreaction.playPrice(settings, post(6000), { emoji: '🦀', quadrant: 'calmPositive' }), 0);
+  const up = (n: number) => Array.from({ length: n }, (_, i) => ({ card: 'overreaction', act: `o${i}`, reach: 'post' as const }));
+  assert.equal(overreaction.canApply(post(10), up(2)).ok, true);
+  assert.deepEqual(overreaction.canApply(post(10), up(3)), { ok: false, why: 'this post already carries 3 of that card, the most it takes' });
+  assert.deepEqual(overreaction.canApply({ reach: 'thread', thread: 't1' }, []), { ok: false, why: 'this card lands on a post' });
+  assert.ok(castOnPost(cards.find((c) => c.key === 'overreaction')!), 'a Cast on a post');
+  assert.deepEqual(overreaction.validateConfig({ emoji: '🦀', quadrant: 'calmPositive', extra: 1 }), { ok: true, value: { emoji: '🦀', quadrant: 'calmPositive' } });
+  assert.deepEqual(overreaction.validateConfig({ emoji: '🦀', quadrant: 'sideways' }), { ok: false, why: 'choose the quadrant it scores in' });
+  assert.deepEqual(overreaction.validateConfig({ emoji: 'crab', quadrant: 'calmPositive' }), { ok: false, why: 'choose one emoji' });
+  assert.deepEqual(overreaction.validateConfig({ emoji: '🦀🐙', quadrant: 'calmPositive' }), { ok: false, why: 'that is more than one emoji' });
+  assert.equal(reactions.length, 16);
+  for (const r of reactions) assert.deepEqual(overreaction.validateConfig({ emoji: r.emoji, quadrant: r.quadrant }), { ok: false, why: 'this forum already has that reaction' }, r.key);
+});
+
+test('the anonymous poster stands in for a withheld author, with no picture of its own yet', () => {
+  assert.deepEqual(instance.anonymous, { name: 'Anonymous', tagline: 'Could be anyone.' });
+});
+
 /* ---- Autocorrect (docs/plans/2026-11-03-autocorrect-plan.md, Task 5) ---- */
 const on = (body: string): CardTarget => postTarget('p1', 'post', body);
 const config = (phrase: unknown, replacement: unknown = 'Luigi') => autocorrect.validateConfig({ phrase, replacement });
@@ -559,19 +609,23 @@ test('the Booster\'s hit pull gives uncommon 74, rare 24 and legendary 2, shared
   assert.deepEqual(booster.pulls.at(-1)!.weights, { uncommon: 74, rare: 24, legendary: 2 });
   const hit = packOdds(booster, cards, instance.settings).at(-1)!;
   const chance = new Map(hit.flatMap((r) => r.cards.map((c) => [c.card, c.chance] as const)));
-  // The Gimmicks, Part 6, Jimmy Wails, Part 4 and Laugh Track joined the Booster by their rarity, as a new card does, with nothing listed in packs.ts: fifteen uncommons share the 74 (You Were Saying? and Below the Fold are commons, and the hit pull takes none).
-  // Sugar Coat, Graffiti, Line Cutter and Feelin' Glam are the rares that share the 24 with Main Event: five, at 0.048 each.
-  assert.equal(cards.length, 27);
-  assert.ok(Math.abs(chance.get('main-event')! - 0.048) < 1e-9, `Main Event at ${chance.get('main-event')}`);
-  assert.ok(Math.abs(chance.get('sugar-coat')! - 0.048) < 1e-9, `Sugar Coat at ${chance.get('sugar-coat')}`);
-  assert.ok(Math.abs(chance.get('graffiti')! - 0.048) < 1e-9, `Graffiti at ${chance.get('graffiti')}`);
-  assert.ok(Math.abs(chance.get('line-cutter')! - 0.048) < 1e-9, `Line Cutter at ${chance.get('line-cutter')}`);
-  assert.ok(Math.abs(chance.get('feelin-glam')! - 0.048) < 1e-9, `Feelin' Glam at ${chance.get('feelin-glam')}`);
-  assert.ok(Math.abs(chance.get('off-day')! - 0.02) < 1e-9, `Off Day at ${chance.get('off-day')}`);
+  // The Gimmicks, Part 6, Jimmy Wails, Part 4, Laugh Track, card notes Part 2 and card notes Part 3 joined the Booster by their rarity, as a new card does, with nothing listed in packs.ts (You Were Saying?, Below the Fold and Overreaction are commons, and the hit pull takes none).
+  // Card notes Part 5 added Happy Heart and Take the Fall (uncommon), Super Happy Heart and Tattle-Tale (rare) and Ultra Happy Heart (legendary), again with nothing listed in packs.ts.
+  // Eighteen uncommons share the 74. Sugar Coat, Graffiti, Line Cutter, Feelin' Glam, Whodunnit?, Super Happy Heart and Tattle-Tale are the rares that share the 24 with Main Event: eight, at 0.03 each.
+  // Off Day and Ultra Happy Heart are the legendaries that share the 2: two, at 0.01 each, so Ultra Happy Heart can be pulled.
+  assert.equal(cards.length, 35);
+  const rares = cards.filter((c) => c.rarity === 'rare');
+  assert.deepEqual(rares.map((c) => c.key).sort(), ['feelin-glam', 'graffiti', 'line-cutter', 'main-event', 'sugar-coat', 'super-happy-heart', 'tattle-tale', 'whodunnit']);
+  for (const c of rares) assert.ok(Math.abs(chance.get(c.key)! - 0.03) < 1e-9, `${c.name} at ${chance.get(c.key)}`);
+  const legendaries = cards.filter((c) => c.rarity === 'legendary');
+  assert.deepEqual(legendaries.map((c) => c.key).sort(), ['off-day', 'ultra-happy-heart']);
+  for (const c of legendaries) assert.ok(Math.abs(chance.get(c.key)! - 0.01) < 1e-9, `${c.name} at ${chance.get(c.key)}`);
+  assert.ok(chance.get('ultra-happy-heart')! > 0, 'Ultra Happy Heart can be pulled');
+  assert.ok(Math.abs([...chance.values()].reduce((a, b) => a + b, 0) - 1) < 1e-9, 'the hit pull\'s odds sum to 1');
   const uncommons = cards.filter((c) => c.rarity === 'uncommon');
-  assert.equal(uncommons.length, 15);
-  for (const c of uncommons) assert.ok(Math.abs(chance.get(c.key)! - 0.74 / 15) < 1e-9, `${c.key} at ${chance.get(c.key)}`);
-  assert.equal(chance.size, uncommons.length + 6);
+  assert.equal(uncommons.length, 18);
+  for (const c of uncommons) assert.ok(Math.abs(chance.get(c.key)! - 0.74 / 18) < 1e-9, `${c.key} at ${chance.get(c.key)}`);
+  assert.equal(chance.size, uncommons.length + rares.length + legendaries.length);
 });
 
 /* Card notes, Part 6 (docs/plans/2026-11-11-card-notes-part-6-plan.md, Task 7): Mooch, Toll, 4D Chess and Off Day. */
@@ -1014,8 +1068,9 @@ test("Line Cutter and Feelin' Glam are rares in the instance, hidden at 300 afte
     ['feelin-glam', 'rare', 'cast', 'sweet', ['thread'], 1, 'hidden', 300],
   ]);
   assert.deepEqual([by('line-cutter').replies, by('line-cutter').lasts, by('feelin-glam').keeps, by('feelin-glam').lasts], [true, undefined, true, { unit: 'day', count: 7 }]);
-  // The boards hold slots by place: a hidden slot is never among the on-sale run, and these two are the machine's last.
-  assert.deepEqual([at('line-cutter'), at('feelin-glam')], [instance.machine.length - 2, instance.machine.length - 1]);
+  // The boards hold slots by place: a hidden slot is never among the on-sale run, and these three were the machine's last (Whodunnit?, card notes Part 3, after the other two) until card notes Part 5 stocked three more hidden slots after them.
+  assert.deepEqual([at('line-cutter'), at('feelin-glam'), at('whodunnit')], [instance.machine.length - 6, instance.machine.length - 5, instance.machine.length - 4]);
+  assert.deepEqual(instance.machine.slice(at('line-cutter')).map((m) => m.availability), ['hidden', 'hidden', 'hidden', 'hidden', 'hidden', 'hidden']);
   assert.deepEqual(settings.reachLasts.thread, { unit: 'day', count: 7 }, "a thread's effect lasts at most a week, Feelin' Glam's");
   assert.deepEqual(instanceProblems(instance), []);
 });
@@ -1051,4 +1106,105 @@ test("Feelin' Glam lands on a thread, one at a time, and costs nothing more", ()
   assert.deepEqual(glam.canApply(thread, [{ card: 'feelin-glam', act: 'k1', reach: 'thread', ends: live }]), { ok: false, why: 'this thread already carries that card' });
   assert.equal(glam.canApply(thread, [{ card: 'feelin-glam', act: 'k1', reach: 'thread', ends: new Date(Date.now() - 1000).toISOString() }]).ok, true, 'one that has worn off is no longer in the way');
   assert.equal(glam.playPrice(settings, thread, {}), 0);
+});
+
+/* Card notes, Part 5 (docs/plans/2026-11-11-card-notes-part-5-plan.md, Task 9): the three Happy Hearts, Take the Fall and Tattle-Tale. */
+const FIVE = ['happy-heart', 'super-happy-heart', 'ultra-happy-heart', 'take-the-fall', 'tattle-tale'] as const;
+const maybe = (key: string): CardRules | undefined => cards.find((c) => c.key === key);
+const postBy = (author: string): CardTarget => ({ reach: 'post', act: 'p1', kind: 'post', length: 10, text: '', links: [], author });
+const slotOf = (k: string) => instance.machine.findIndex((m) => 'card' in m.item && m.item.card === k);
+
+test('the three Happy Hearts, Take the Fall and Tattle-Tale are in the instance, with the plan\'s flavor, rarity, reach, effect and lasting, and the instance stays whole', () => {
+  assert.deepEqual(FIVE.map((k) => [k, maybe(k)?.alignment, maybe(k)?.rarity, maybe(k)?.play ?? 'cast', maybe(k)?.reaches ?? ['post'], maybe(k)?.discipline, maybe(k)?.lasts, maybe(k)?.stack ?? 1]), [
+    ['happy-heart', 'sweet', 'uncommon', 'cast', ['character'], { kind: 'relief', points: 'lightestBand' }, undefined, 1],
+    ['super-happy-heart', 'sweet', 'rare', 'cast', ['character'], { kind: 'relief', points: 'all' }, undefined, 1],
+    ['ultra-happy-heart', 'sweet', 'legendary', 'cast', ['character'], { kind: 'unban' }, undefined, 1],
+    ['take-the-fall', 'sweet', 'uncommon', 'cast', ['post'], { kind: 'fall' }, undefined, 1],
+    ['tattle-tale', 'salty', 'rare', 'cast', ['character'], { kind: 'watch', weight: 2 }, { unit: 'day', count: 7 }, 1],
+  ]);
+  assert.deepEqual(FIVE.map((k) => [maybe(k)?.name, maybe(k)?.gimmick, maybe(k)?.trap, maybe(k)?.writes, maybe(k)?.replies]), [
+    ['Happy Heart', undefined, undefined, undefined, undefined], ['Super Happy Heart', undefined, undefined, undefined, undefined], ['Ultra Happy Heart', undefined, undefined, undefined, undefined],
+    ['Take the Fall', undefined, undefined, undefined, undefined], ['Tattle-Tale', undefined, undefined, undefined, undefined],
+  ]);
+  assert.deepEqual(FIVE.map((k) => maybe(k) !== undefined && instant(maybe(k)!)), [true, true, true, false, false], 'the hearts are over when they land, a fall waits and a watch lasts a week');
+  assert.deepEqual(instanceProblems(instance), []);
+});
+
+test('the five are sold as the plan says: the two uncommons on sale at the end of the on-sale run, the three hidden slots last of all', () => {
+  const row = (k: string) => [k, instance.machine[slotOf(k)]?.availability, instance.machine[slotOf(k)]?.price];
+  assert.deepEqual(FIVE.map(row), [['happy-heart', 'onSale', 150], ['super-happy-heart', 'hidden', 300], ['ultra-happy-heart', 'hidden', 600], ['take-the-fall', 'onSale', 150], ['tattle-tale', 'hidden', 300]]);
+  const onSale = instance.machine.map((m, i) => [m, i] as const).filter(([m]) => m.availability === 'onSale').map(([, i]) => i);
+  assert.deepEqual(onSale.at(-3), slotOf('blind-study'), 'Blind Study (card notes Part 3) was the last on-sale slot, and the two follow it');
+  assert.deepEqual([slotOf('happy-heart'), slotOf('take-the-fall')], onSale.slice(-2), 'the two on sale end the on-sale run');
+  assert.ok(slotOf('take-the-fall') < slotOf('main-event'), 'so no hidden slot moves down the run\'s end, and the two come before the hidden ones');
+  assert.deepEqual(['super-happy-heart', 'tattle-tale', 'ultra-happy-heart'].map(slotOf), [instance.machine.length - 3, instance.machine.length - 2, instance.machine.length - 1], 'the three hidden are the machine\'s last');
+  assert.deepEqual(instance.machine.slice(slotOf('main-event')).map((m) => m.availability), instance.machine.slice(slotOf('main-event')).map(() => 'hidden'), 'every slot from Main Event on is hidden');
+});
+
+test('no one of the five is ever set face down, a persona never plays one, and only Take the Fall is cast on a post', () => {
+  for (const k of FIVE) {
+    const card = maybe(k);
+    const target: CardTarget = card?.reaches?.[0] === 'character' ? { reach: 'character', character: 'c1' } : post(10);
+    assert.deepEqual(card && decideSet(card, settings, target, [], {}, cards), { ok: false, why: `${card?.name} acts the moment it lands, so it is cast face up and never set face down` }, k);
+    assert.equal(card !== undefined && staffOffers(card), false, `${k}: a persona does not play on its own office's rulings`);
+  }
+  assert.deepEqual(FIVE.map((k) => maybe(k) !== undefined && castOnPost(maybe(k)!)), [false, false, false, true, false]);
+});
+
+test('the hearts land on a character and are refused on an empty bar or a mask that is not banned; Take the Fall lands on another character\'s post, once; Tattle-Tale on a character, one at a time', () => {
+  const chara = (more: { warnPoints?: number; bannedUntil?: string | null } = {}): CardTarget => ({ reach: 'character', character: 'c1', ...more });
+  const context = { caster: 'mine', nameOf: (key: string) => cards.find((c) => c.key === key)!.name };
+  const later = new Date(Date.now() + 86_400_000).toISOString();
+  for (const k of ['happy-heart', 'super-happy-heart']) {
+    assert.equal(maybe(k)?.canApply(chara(), []).ok, true, k);
+    assert.deepEqual(maybe(k)?.canApply(post(10), []), { ok: false, why: 'this card lands on a character' }, k);
+    assert.deepEqual(maybe(k) && decidePlay(maybe(k)!, settings, chara({ warnPoints: 0 }), [], {}, '', context), { ok: false, why: "this character's warn bar is empty" }, k);
+    assert.equal(maybe(k) && decidePlay(maybe(k)!, settings, chara({ warnPoints: 3 }), [], {}, '', context).ok, true, k);
+    assert.equal(maybe(k)?.playPrice(settings, chara(), {}), 0, k);
+  }
+  const ultra = maybe('ultra-happy-heart');
+  assert.deepEqual(ultra && decidePlay(ultra, settings, chara({ bannedUntil: null }), [], {}, '', context), { ok: false, why: 'this character is not banned' });
+  assert.equal(ultra && decidePlay(ultra, settings, chara({ bannedUntil: later }), [], {}, '', context).ok, true);
+  const fall = maybe('take-the-fall');
+  assert.equal(fall?.canApply(post(10), []).ok, true);
+  assert.deepEqual(fall?.canApply(chara(), []), { ok: false, why: 'this card lands on a post' });
+  assert.deepEqual(fall?.canApply(post(10), [{ card: 'take-the-fall', act: 'f1' }]), { ok: false, why: 'this post already carries that card' }, 'one per post, waiting until a filing spends it');
+  assert.deepEqual(fall && decidePlay(fall, settings, postBy('mine'), [], {}, '', context), { ok: false, why: "Take the Fall is played on another character's post" });
+  assert.equal(fall && decidePlay(fall, settings, postBy('theirs'), [], {}, '', context).ok, true);
+  const tale = maybe('tattle-tale');
+  assert.equal(tale?.canApply(chara(), []).ok, true);
+  assert.deepEqual(tale?.canApply(chara(), [{ card: 'tattle-tale', act: 't1', reach: 'character', ends: later }]), { ok: false, why: 'this character already carries that card' });
+  assert.equal(tale?.canApply(chara(), [{ card: 'tattle-tale', act: 't1', reach: 'character', ends: new Date(Date.now() - 1000).toISOString() }]).ok, true, 'one that has worn off is no longer in the way');
+  for (const k of FIVE) assert.equal(maybe(k)?.validateConfig(null).ok, true, `${k} takes no configuration`);
+});
+
+/*
+ * How the five meet the two wards (Force Field: turns away cards up to uncommon; Sugar Coat: turns away Salty and Pepperoni cards). A ward is a Gimmick used on
+ * a post, so it is a ward of the post's reach, and `decidePlay` weighs a ward only against a card cast at its own reach (a character-reach card never meets a post's ward).
+ * Neither real ward reaches a character. So in play: Force Field turns away Take the Fall (the one of the five cast on a post, and uncommon); Sugar Coat turns away none of
+ * them, since Take the Fall is Sweet and Tattle-Tale, the one Salty card, is cast on a character. The rules alone (`wardTurnsAway`) say what each ward would do to each
+ * card were it ever put at the card's own reach: Force Field would turn away both uncommons and neither rare nor the legendary, Sugar Coat Tattle-Tale alone.
+ */
+test('Force Field and Sugar Coat are post wards, and what each does to each of the five', () => {
+  const field = by('force-field');
+  const coat = by('sugar-coat');
+  assert.deepEqual([field.reaches ?? ['post'], coat.reaches ?? ['post'], field.play, coat.play], [['post'], ['post'], 'use', 'use']);
+  // What the ward's rules alone say of each card.
+  const turns = (ward: CardRules) => FIVE.map((k) => maybe(k) !== undefined && wardTurnsAway(ward.gimmick as never, maybe(k)!));
+  assert.deepEqual(turns(field), [true, false, false, true, false], 'Force Field: both uncommons, not the rare or the legendary');
+  assert.deepEqual(turns(coat), [false, false, false, false, true], 'Sugar Coat: only Salty Tattle-Tale; the Sweet four pass');
+  // What happens in play, at the reach each card is cast on.
+  const live = new Date(Date.now() + 86_400_000).toISOString();
+  const context = { nameOf: (key: string) => cards.find((c) => c.key === key)!.name };
+  const wardOn = (key: string, reach: 'post' | 'character') => [{ card: key, act: 'w1', gimmick: by(key).gimmick, ends: live, ...(reach === 'post' ? {} : { reach }) }];
+  const target = (k: string): CardTarget => (maybe(k)?.reaches?.[0] === 'character' ? { reach: 'character', character: 'c1', warnPoints: 3, bannedUntil: live } : postBy('theirs'));
+  const meets = (k: string, ward: string, reach: 'post' | 'character') => {
+    const verdict = maybe(k) && decidePlay(maybe(k)!, settings, target(k), wardOn(ward, reach), {}, '', { ...context, caster: 'mine' });
+    return verdict?.ok === true ? 'lands' : verdict?.why;
+  };
+  assert.deepEqual(FIVE.map((k) => meets(k, 'force-field', 'post')), ['lands', 'lands', 'lands', "this post's Force Field turns away cards up to uncommon", 'lands'], 'a post\'s Force Field turns away only the card cast on a post');
+  assert.deepEqual(FIVE.map((k) => meets(k, 'sugar-coat', 'post')), ['lands', 'lands', 'lands', 'lands', 'lands'], 'a post\'s Sugar Coat turns away none of the five: Take the Fall is Sweet, and Tattle-Tale is cast on a character');
+  // The same wards put at a character's reach, which no card in the instance does: the rules alone decide.
+  assert.deepEqual(FIVE.map((k) => meets(k, 'force-field', 'character')), ["this character's Force Field turns away cards up to uncommon", 'lands', 'lands', 'lands', 'lands']);
+  assert.deepEqual(FIVE.map((k) => meets(k, 'sugar-coat', 'character')), ['lands', 'lands', 'lands', 'lands', "this character's Sugar Coat turns away Salty cards"]);
 });

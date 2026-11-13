@@ -304,7 +304,7 @@ export function PostMarks({ post, plays, to, nameOf, faceOf, tallies, mine, ghos
     <span className="kb-marks-anchor" ref={anchor}>
       <MarkStrip post={post} plays={plays} tallies={tallies} ghost={ghost} reachAt={reachAt} where={where} postAt={postAt} compare={compare} open={open?.card ?? null} onOpen={onOpen} nameOf={nameOf} visit={current ? { visit: current, mod: nameOf(current.mod), pronouns: modPronouns } : undefined} />
       <Layers>
-      {open && <Lens open={open} store={store} post={post} plays={plays} tallies={tallies} mine={mine} compare={compare} to={to} nameOf={nameOf} faceOf={faceOf} modPronouns={modPronouns} strip={strip} onSpin={onSpin} where={where} postAt={postAt} moments={moments} visit={current && thread ? { visit: current, thread, author, onSpinAct, onEnded: setSeen } : undefined} form={form} reportTo={reportTo} />}
+      {open && <Lens open={open} store={store} post={post} plays={plays} tallies={tallies} mine={mine} compare={compare} to={to} nameOf={nameOf} author={author} faceOf={faceOf} modPronouns={modPronouns} strip={strip} onSpin={onSpin} where={where} postAt={postAt} moments={moments} visit={current && thread ? { visit: current, thread, author, onSpinAct, onEnded: setSeen } : undefined} form={form} reportTo={reportTo} />}
       </Layers>
     </span>
   );

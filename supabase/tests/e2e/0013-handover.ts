@@ -8,7 +8,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { firstMessageOf, partOf, partAnswer } from './meeting-fake.ts';
-import { psqlDb, sql, scratchSeed } from './psql-db.ts';
+import { psqlDb, sql, scratchSeed, openSeasonAhead } from './psql-db.ts';
 import { runMeeting } from '../../functions/meet/core.ts';
 import { instance as realInstance } from '../../functions/_shared/instance.ts';
 import { placeholderWorld } from '../../../instances/divided-world/system/fixtures/index.ts';
@@ -33,7 +33,7 @@ const makeDue = (where: string) => sql(`
   update queued_moves set go_live_at = now() - interval '1 minute' where landed_act is null and held_at is null and ${where};
   alter table queued_moves enable trigger queued_moves_guard;`);
 
-test('the outgoing Boss names a successor, the season rolls over, and the new Boss keeps the old rename and makes its own', async () => {
+test('the outgoing Boss names a successor, the season rolls over, and the new Boss keeps the old rename and makes its own', async (t) => {
   assert.notEqual(NOMINEE, ROTATION, 'the roster must let a nomination differ from the rotation');
   const db = psqlDb();
   await db.rpc('seed_instance', { payload: scratchSeed(instance) });
@@ -62,9 +62,10 @@ test('the outgoing Boss names a successor, the season rolls over, and the new Bo
   const real = models(env, ledgerWriter(db), { tiers, oldVoice: { window: 1024, count: (t: string) => t.length }, fetch: fake });
   const memory = { hobby: { name: 'tag team matches', since: 'today', from: 'a board' }, opinions: [], grudges: [], wheelhouse: [], realWorld: [], marks: [] };
   const profile = { interests: ['tag teams'], favorites: [], mood: 'smug', signature: 'It is decided.' };
-  /* The first meeting is held a day before the open season's end, whatever the seasons other files left, so it is the meltdown's last week. */
+  /* The first meeting is held thirty hours before the open season's end, whatever the seasons other files left, so it is the meltdown's last week. */
   const endsAt = Number(sql(`select (extract(epoch from starts_at + span_interval(setting('seasonLength'))) * 1000)::bigint from seasons where ends_at is null`));
-  const lastWeek = () => endsAt - 86_400_000;
+  // Thirty hours before the end: inside the farewell window, with the structural hold (a day) still landing a rename and a nomination before the season ends.
+  const lastWeek = () => endsAt - 30 * 3_600_000;
   const rename = (name: string, at: number) => ({
     kind: 'renameBoard',
     params: { board, name, premise: 'A premise.' },
@@ -113,6 +114,8 @@ test('the outgoing Boss names a successor, the season rolls over, and the new Bo
   assert.equal(said(OLD), 1, 'the outgoing Boss says farewell once');
   assert.equal(said(NOMINEE), 1, 'the new Boss arrives once');
 
+  // The new season started where the old one ended, long ago, so its end is put ahead: a rename the new Boss makes now would land after a season long over, and be dropped.
+  t.after(openSeasonAhead());
   // The new Boss's first meeting is shown the old rename, in plain words, keeps it, and makes a rename of its own.
   sql(`update move_bank set balance = 2, as_of = now() where staff = '${NOMINEE}'`);
   answer = { memory, profile, moves: [rename('Toast Tuesday Tavern', Date.now())], inherited: [{ move_act: oldRename, decision: 'keep' }] };

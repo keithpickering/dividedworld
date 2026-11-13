@@ -24,6 +24,8 @@ export interface Sketch {
 export interface RehearsalCorpus {
   readonly sketches: readonly Sketch[];
   readonly openers: Readonly<Record<string, readonly { readonly title: string; readonly body: string }[]>>;
+  /** Openers for a board that has none of its own, a title or body may hold `{board}`, the board's name. */
+  readonly anyBoard: readonly { readonly title: string; readonly body: string }[];
   readonly replies: readonly string[];
   readonly agreeing: readonly string[];
   readonly disagreeing: readonly string[];

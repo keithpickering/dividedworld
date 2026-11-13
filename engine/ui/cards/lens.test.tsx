@@ -5,11 +5,13 @@
  * page, and closes by Esc, its ×, its mark, another post's Lens or leaving the page, giving focus back to the mark.
  */
 import { PRONOUN_PRESETS } from '../../rules/pronouns.ts';
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useEffect } from 'react';
 import { afterEach, beforeEach, describe, expect, onTestFinished, test, vi } from 'vitest';
 import { landsOn, ok, refuse, type CardRules } from '../../rules/cards.ts';
+import { dayAndTime } from '../characters/format.ts';
+import { viewProblems, wordsProblems } from './lens-words.ts';
 import type { Id } from '../data/api.ts';
 import type { Fake } from '../data/fake.ts';
 import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
@@ -1931,7 +1933,7 @@ describe('the buttons', () => {
 
 /* A play whose first generation failed was refunded and is over (0149): the Lens says so in plain words and offers an admin no End this card, since there is nothing to end. */
 describe('a play that did not take', () => {
-  const writing = { ...instance.cards[1]!, key: 'kw', name: 'Card W', stack: 3, writes: { tokens: () => 40, frame: () => ({ prompt: '', stop: [] as string[] }) } };
+  const writing = { ...instance.cards[1]!, key: 'kw', name: 'Card W', stack: 3, writes: { sampling: { temperature: 0.9, topP: 0.95 }, tokens: () => 40, frame: () => ({ prompt: '', stop: [] as string[] }) } };
   const own = { ...instance, cards: [...instance.cards, writing] };
   const ui = [...cards, cardUi('kw')];
   function writingWorld() {
@@ -2167,5 +2169,317 @@ describe('a surface play\'s tab', () => {
     const box = await openSlab(await wall());
     await waitFor(() => expect(draws(box)).toHaveLength(3));
     expect(draws(box).map(said).join(' ')).not.toMatch(/heel|face|owner|player|Pipewrench/u);
+  });
+});
+
+/*
+ * The discipline cards' Lens (card notes, part 5, Task 7): what a heart took off, what an Unban ended, a fall waiting and a fall spent, and a watch, in the engine's own plain
+ * words under the card's status heading. The cards are the engine's own test cards, found by their rules; the heading is the card's own (`status`), given the live plays.
+ */
+describe('the discipline cards\' Lens', () => {
+  const DAY = 86_400_000;
+  const mk = (key: string, name: string, reaches: ('post' | 'character')[], discipline: NonNullable<CardRules['discipline']>, extra: Partial<CardRules> = {}): CardRules => ({
+    key, name, alignment: 'sweet', rarity: 'uncommon', reaches, discipline, ...extra,
+    playPrice: () => 0, validateConfig: (c: unknown) => ok(c ?? {}),
+    canApply: (t, e, _config, now) => landsOn({ key, reaches, discipline }, t, e, now),
+  });
+  const shop = {
+    ...instance,
+    cards: [
+      mk('t-heart', 'T Heart', ['character'], { kind: 'relief', points: 'lightestBand' }),
+      mk('t-super', 'T Super', ['character'], { kind: 'relief', points: 'all' }),
+      mk('t-ultra', 'T Ultra', ['character'], { kind: 'unban' }),
+      mk('t-fall', 'T Fall', ['post'], { kind: 'fall' }),
+      mk('t-watch', 'T Watch', ['character'], { kind: 'watch', weight: 2 }, { lasts: { unit: 'day', count: 7 } }),
+      mk('t-watch3', 'T Watch Three', ['character'], { kind: 'watch', weight: 3 }, { lasts: { unit: 'day', count: 7 } }),
+    ],
+  };
+  /* The headings the Divided World faces give, as the instance's: the fall's is a function of the live plays on the post. */
+  const faces: CardUi[] = [
+    cardUi('t-heart', { status: 'Took points off' }), cardUi('t-super', { status: 'Emptied a warn bar' }), cardUi('t-ultra', { status: 'Ended a ban' }),
+    cardUi('t-fall', { status: (plays) => (plays.length > 0 ? 'Waiting to take the fall' : 'Took the fall') }),
+    cardUi('t-watch', { status: 'Told on' }), cardUi('t-watch3', { status: 'Told on a lot' }),
+  ];
+  function disciplined() {
+    const fake = buildWorld(undefined, shop);
+    const me = fake.seed.account('me');
+    const other = fake.seed.account('other');
+    const third = fake.seed.account('third');
+    const boss = fake.seed.account('boss', { admin: true });
+    const pipe = fake.seed.character(me, 'Pipewrench', 'heel');
+    const spritey = fake.seed.character(other, 'Spritey', 'face');
+    const gloomba = fake.seed.character(third, 'Gloomba', 'heel');
+    const clerk = fake.seed.staff('clerk', 'The Clerk', 'mod', { pronouns: PRONOUN_PRESETS.they });
+    const { thread } = fake.seed.thread('general', spritey, 'A thread', 'post 1');
+    const second = fake.seed.post(thread, spritey, 'post 2');
+    fake.seed.wallet(third, 500);
+    fake.seed.wallet(me, 500);
+    fake.seed.cards(third, { 't-heart': 3, 't-super': 3, 't-ultra': 3, 't-fall': 3, 't-watch': 3, 't-watch3': 3 });
+    fake.seed.cards(me, { 't-fall': 3 });
+    /* A filing on Spritey's post 2, `ago` ago, as the tick writes it (the Clerk's visit, then its infraction); a fall waiting on the post takes it. */
+    const filed = (points: number, ago: number, post = second) => fake.seed.infraction(fake.seed.visit(clerk, post, { at: fake.clock.now() - ago }), { points, at: fake.clock.now() - ago });
+    const as = async <T,>(account: Id, run: () => Promise<T>): Promise<T> => { fake.signInAs(account); const out = await run(); fake.signInAs(me); return out; };
+    const play = async (account: Id, card: string, by: Id, target: Id, on: 'post' | 'character' = 'character') => {
+      fake.clock.advance(60_000);
+      const answer = await as(account, () => (on === 'post' ? fake.playCard(card, by, target, {}, '') : fake.playCard(card, by, target, {}, '', 'character', second)));
+      if (!answer.ok) throw new Error(`the play was refused: ${answer.error}`);
+      return answer.value;
+    };
+    fake.signInAs(me);
+    return { fake, me, other, third, boss, pipe, spritey, gloomba, clerk, thread, second, filed, as, play };
+  }
+  type W = ReturnType<typeof disciplined>;
+  const openIt = (w: W) => renderIn(w.fake, <LoadedThread thread={w.thread} />, { path: `/t/${w.thread}`, instance: shop, cards: faces, copy: { modRole: 'A Moderator' } });
+  const markNamed = async (seq: number, name: string) => within(await article(seq)).findByRole('button', { name: new RegExp(`^${name}, \\d plays?`, 'u') });
+  /** Opens the card's Lens and unfolds Who; the row's words are the play's. */
+  const here = () => screen.getByRole('dialog', { name: /^(Visit and cards|Cards) on this (post|character)$/u });
+  /** Unfolds Who if it is folded (it stays as it is when the tab changes). */
+  const unfold = async () => {
+    const who = within(here()).getByRole('button', { name: /^\d+ plays? · / });
+    if (who.getAttribute('aria-expanded') !== 'true') await userEvent.click(who);
+    return here();
+  };
+  const lensOf = async (seq: number, name: string) => {
+    await userEvent.click(await markNamed(seq, name));
+    return unfold();
+  };
+  const heading = () => here().querySelector('.kb-lens-line')!.textContent;
+
+  test('a heart is a mark on the post it was played from, and its row says what it took off and when, with the singular and the plural', async () => {
+    width(false);
+    const w = disciplined();
+    w.filed(1, 3 * DAY);
+    const one = await w.play(w.third, 't-heart', w.gloomba, w.spritey);
+    w.filed(4, 2 * DAY);
+    const two = await w.play(w.third, 't-heart', w.gloomba, w.spritey);
+    expect(one.payload.took).toBe(1);
+    expect(two.payload.took).toBe(2);
+    openIt(w);
+    const l = await lensOf(2, 'T Heart');
+    expect(heading()).toBe('Took points off');
+    expect([...l.querySelectorAll<HTMLElement>('[data-kb-play]')].map((r) => r.getAttribute('data-kb-play'))).toEqual([two.id, one.id]);
+    expect(l).toHaveTextContent(`Took 1 warn point off Spritey's warn bar on ${dayAndTime(one.createdAt)}.`);
+    expect(l).toHaveTextContent(`Took 2 warn points off Spritey's warn bar on ${dayAndTime(two.createdAt)}.`);
+    /* It is a play like any: reacted to and spun from, and it names the caster. */
+    expect(within(l).getAllByRole('button', { name: 'Spin thread' })).toHaveLength(2);
+    expect(l).toHaveTextContent('Gloomba · played');
+  });
+
+  test('a Super Happy Heart says all it took, and an Unban says it ended the ban and when', async () => {
+    width(false);
+    const w = disciplined();
+    w.filed(4, 3 * DAY);
+    w.filed(3, 2 * DAY);
+    const sup = await w.play(w.third, 't-super', w.gloomba, w.spritey);
+    expect(sup.payload.took).toBe(7);
+    w.fake.seed.ban(w.spritey, w.fake.clock.now() + 3 * DAY, { days: 3 });
+    const ultra = await w.play(w.third, 't-ultra', w.gloomba, w.spritey);
+    openIt(w);
+    let l = await lensOf(2, 'T Super');
+    expect(l).toHaveTextContent(`Took 7 warn points off Spritey's warn bar on ${dayAndTime(sup.createdAt)}.`);
+    await userEvent.click(await markNamed(2, 'T Ultra'));
+    l = await unfold();
+    expect(heading()).toBe('Ended a ban');
+    expect(l).toHaveTextContent(`Ended Spritey's ban on ${dayAndTime(ultra.createdAt)}.`);
+  });
+
+  test('a fall waiting names whom the points land on, whom they do not, and how it ends; its heading is the card\'s own while a live play is passed', async () => {
+    width(false);
+    const w = disciplined();
+    await w.play(w.me, 't-fall', w.pipe, w.second, 'post');
+    openIt(w);
+    const l = await lensOf(2, 'T Fall');
+    expect(heading()).toBe('Waiting to take the fall');
+    expect(l).toHaveTextContent('Ends when a visit to this post files, or when an admin ends it.');
+    expect(l).toHaveTextContent("If a Mod Bot's visit to this post files, its warn points land on Pipewrench, not on Spritey. The post keeps its notice.");
+    expect(l).not.toHaveTextContent('A visit to this post filed');
+    expect(l).not.toHaveTextContent('Took the fall');
+    /* The mark's own words say it too. */
+    expect(await markNamed(2, 'T Fall')).toHaveAccessibleName(/Waiting to take the fall/u);
+  });
+
+  test('a fall a filing spent stays a mark and says so: "Took the fall", where the points landed, and no end to wait for', async () => {
+    width(false);
+    const w = disciplined();
+    await w.play(w.me, 't-fall', w.pipe, w.second, 'post');
+    w.filed(2, 1000);
+    openIt(w);
+    const l = await lensOf(2, 'T Fall');
+    expect(heading()).toBe('Took the fall');
+    expect(l).toHaveTextContent('A visit to this post filed, and its warn points landed on Pipewrench.');
+    expect(l).not.toHaveTextContent("If a Mod Bot's visit");
+    expect(l.querySelector('.kb-lens-ends')).toBeNull();
+    expect(await markNamed(2, 'T Fall')).toHaveAccessibleName(/Took the fall/u);
+  });
+
+  test('a fall an admin ended is simply ended, never "Took the fall", and says nothing of a filing', async () => {
+    width(false);
+    const w = disciplined();
+    const fall = await w.play(w.me, 't-fall', w.pipe, w.second, 'post');
+    await w.as(w.boss, async () => { await w.fake.reverseCard(fall.id); });
+    openIt(w);
+    const l = await lensOf(2, 'T Fall');
+    expect(heading()).toBe('Ended by an admin');
+    expect(l).not.toHaveTextContent(/took the fall|visit to this post filed/iu);
+    expect(l).toHaveTextContent('Ended by an admin');
+  });
+
+  test('a watch is a play on its character with a time up: double, or N times over, and the date it ends', async () => {
+    width(false);
+    const w = disciplined();
+    const two = await w.play(w.third, 't-watch', w.gloomba, w.spritey);
+    const three = await w.play(w.third, 't-watch3', w.gloomba, w.spritey);
+    openIt(w);
+    await article(2);
+    const bit = within(document.getElementById('post-2')!.querySelector('.kb-postbit') as HTMLElement);
+    await userEvent.click(await bit.findByRole('button', { name: /^T Watch, 1 play\b/u }));
+    const l = await unfold();
+    expect(l).toHaveAccessibleName('Cards on this character');
+    expect(heading()).toBe('Told on');
+    expect(l).toHaveTextContent(`Mod Bot patrols weigh Spritey's posts double until ${dayAndTime(two.payload.ends as string)}. A patrol still judges each post against the rules.`);
+    await userEvent.click(within(l).getByRole('tab', { name: 'T Watch Three' }));
+    await unfold();
+    expect(l).toHaveTextContent(`Mod Bot patrols weigh Spritey's posts 3 times over until ${dayAndTime(three.payload.ends as string)}.`);
+  });
+
+  test('every heading and view passes the Lens\'s own checks, and no sentence names an owner or a class', async () => {
+    width(false);
+    const w = disciplined();
+    w.filed(4, 2 * DAY);
+    await w.play(w.third, 't-heart', w.gloomba, w.spritey);
+    await w.play(w.me, 't-fall', w.pipe, w.second, 'post');
+    openIt(w);
+    for (const [seq, name] of [[2, 'T Heart'], [2, 'T Fall']] as const) {
+      await userEvent.click(await markNamed(seq, name));
+      const l = await unfold();
+      expect(wordsProblems('state', heading()!)).toEqual([]);
+      expect(viewProblems({ progress: null, state: heading()!, ends: l.querySelector('.kb-lens-ends')?.textContent ?? 'never', yours: false, controls: [], notes: {} }, { holds: false, covers: false })).toEqual([]);
+      expect(l).not.toHaveTextContent(/\b(account|owner|owned|heel|face)\b/iu);
+      await userEvent.click(await markNamed(seq, name));
+    }
+  });
+
+  test.each(['heart', 'fall waiting', 'fall spent', 'watch'] as const)('axe passes on the Lens with the %s row open', async (which) => {
+    width(false);
+    const w = disciplined();
+    if (which === 'heart') { w.filed(4, 2 * DAY); await w.play(w.third, 't-heart', w.gloomba, w.spritey); }
+    if (which === 'fall waiting' || which === 'fall spent') await w.play(w.me, 't-fall', w.pipe, w.second, 'post');
+    if (which === 'fall spent') w.filed(2, 1000);
+    if (which === 'watch') await w.play(w.third, 't-watch', w.gloomba, w.spritey);
+    openIt(w);
+    const name = which === 'heart' ? 'T Heart' : which === 'watch' ? 'T Watch' : 'T Fall';
+    await article(2);
+    const scope = which === 'watch' ? within(document.getElementById('post-2')!.querySelector('.kb-postbit') as HTMLElement) : within(await article(2));
+    await userEvent.click(await scope.findByRole('button', { name: new RegExp(`^${name}, \\d plays?`, 'u') }));
+    await unfold();
+    const v = await axeViolations(here());
+    expect(v, describeViolations(v)).toEqual([]);
+  });
+
+  describe('the visit\'s panel with a fall on the post', () => {
+    /** A visit on Spritey's post 2, with Pipewrench's fall waiting on it (or no fall at all). */
+    async function visitedWithFall(o: { fall?: boolean } = {}) {
+      const w = disciplined();
+      if (o.fall !== false) await w.play(w.me, 't-fall', w.pipe, w.second, 'post');
+      const visit = w.fake.seed.visit(w.clerk, w.second, { at: w.fake.clock.now(), endsInMs: 161 * 60_000, line: 'Routine inspection.' });
+      return { ...w, visit };
+    }
+    const press = async () => {
+      await userEvent.click(await within(await article(2)).findByRole('button', { name: /Opens the visit\.$/u }));
+      const l = screen.getByRole('dialog', { name: /^Visit/u });
+      await waitFor(() => expect(l.querySelector('.kb-visit')).not.toHaveAttribute('aria-busy'));
+      return l;
+    };
+    const file = (w: Awaited<ReturnType<typeof visitedWithFall>>) => {
+      w.fake.seed.visitEnd(w.visit, { outcome: 'filed', line: 'Filed.' });
+      return w.fake.seed.infraction(w.visit, { points: 2 });
+    };
+
+    test('open, it names the fall\'s caster where it names the author, and says the caster has offered to take it', async () => {
+      width(false);
+      const w = await visitedWithFall();
+      openIt(w);
+      const l = await press();
+      await waitFor(() => expect(l).toHaveTextContent(/If nobody talks it down by .*, Pipewrench's warn bar gains 2 warn points and this post is marked as breaking Rule 2\./u));
+      expect(l).toHaveTextContent('Pipewrench has offered to take the fall for this post.');
+      expect(l).not.toHaveTextContent("Spritey's warn bar gains");
+    });
+
+    test('open with no fall, it says what it said before', async () => {
+      width(false);
+      const w = await visitedWithFall({ fall: false });
+      openIt(w);
+      const l = await press();
+      await waitFor(() => expect(l).toHaveTextContent("Spritey's warn bar gains 2 warn points"));
+      expect(l).not.toHaveTextContent('took the fall');
+    });
+
+    test('filed, it names the infraction\'s own character, and says who took the fall for whom', async () => {
+      width(false);
+      const w = await visitedWithFall();
+      file(w);
+      openIt(w);
+      const l = await press();
+      await waitFor(() => expect(l).toHaveTextContent(/Rule 2: No double posting: a minor breach\. Pipewrench's warn bar gained 2 points; they drop off on [A-Z][a-z]{2} \d{1,2}\./u));
+      expect(l).toHaveTextContent('Pipewrench took the fall for Spritey.');
+      expect(l).not.toHaveTextContent("Spritey's warn bar gained");
+    });
+
+    test('Appeal is offered to the fall\'s caster, who owns the infraction, and not to the author it was spared from', async () => {
+      width(false);
+      const w = await visitedWithFall();
+      file(w);
+      openIt(w);
+      let l = await press();
+      await within(l).findByRole('button', { name: 'Appeal · 0.50 Aura' });
+      /* The author's own mask reads the same story and is offered nothing. */
+      cleanup();
+      w.fake.signInAs(w.other);
+      renderIn(w.fake, <LoadedThread thread={w.thread} />, { path: `/t/${w.thread}`, instance: shop, cards: faces });
+      l = await press();
+      await within(l).findByText(/took the fall for Spritey/u);
+      expect(within(l).queryByRole('button', { name: /^Appeal/u })).toBeNull();
+    });
+
+    test('a visit read as filed, on a page read before it filed, marks the waiting fall spent at once, so it stops saying it waits', async () => {
+      width(false);
+      const w = await visitedWithFall();
+      openIt(w);
+      await article(2);
+      /* The page was read with the visit open; the tick files it before the tab is pressed. */
+      file(w);
+      const l = await press();
+      await within(l).findByText(/Pipewrench took the fall for Spritey\./u);
+      await userEvent.keyboard('{Escape}');
+      const fall = await lensOf(2, 'T Fall');
+      expect(heading()).toBe('Took the fall');
+      expect(fall).toHaveTextContent('A visit to this post filed, and its warn points landed on Pipewrench.');
+      expect(fall).not.toHaveTextContent('If a Mod Bot');
+    });
+
+    test('a visit talked down leaves the fall waiting', async () => {
+      width(false);
+      const w = await visitedWithFall();
+      openIt(w);
+      await article(2);
+      w.fake.seed.visitEnd(w.visit, { outcome: 'intercepted', line: 'Talked down.' });
+      const l = await press();
+      await within(l).findByText(/Nothing landed on Spritey/u);
+      await userEvent.keyboard('{Escape}');
+      const fall = await lensOf(2, 'T Fall');
+      expect(heading()).toBe('Waiting to take the fall');
+      expect(fall).toHaveTextContent("If a Mod Bot's visit to this post files");
+    });
+
+    test('axe passes on the filed tab of a fall', async () => {
+      width(false);
+      const w = await visitedWithFall();
+      file(w);
+      openIt(w);
+      const l = await press();
+      await within(l).findByRole('button', { name: /^Appeal/u });
+      const v = await axeViolations(l);
+      expect(v, describeViolations(v)).toEqual([]);
+    });
   });
 });

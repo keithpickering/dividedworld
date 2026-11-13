@@ -24,8 +24,8 @@ export const system: SystemContent = Object.freeze({
   roster: deepFreeze([fangame, ontopic, qualityControl]),
   firstBoss: fangame.key,
   offices,
-  announcementsTitle: 'Announcements From The System',
-  firstStaff: Object.freeze([ontopic.key, qualityControl.key]),
+  announcementsTitle: 'Official Announcements',
+  firstStaff: Object.freeze([placeholderMonitor.key]),
   // The Boss's own duties stay the season's Boss's; a visit's filing, a report's verdict and a patrol's finding are the Mod on the board's beat, and an appeal is
   // the Mod that filed (the Mod Bots plan, Task 7).
   duties: Object.freeze({ meeting: 'boss', standingOrderLine: 'boss', microEvent: 'boss', renameJudge: 'boss', appeal: 'filer', chatter: 'boss', filing: 'beat', reportJudge: 'beat', patrolJudge: 'beat', apologyJudge: 'filer' } as const),

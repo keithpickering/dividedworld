@@ -120,7 +120,8 @@ const BROADCASTS: Record<string, (answer: Row, args: Row) => Broadcast[]> = {
   // A Turn waits for the settlement, whose tally is sent from there (settle/core.ts).
   turn: () => [],
   withdraw_turn: () => [],
-  react: (a) => withSprung(a, a.thread ? [{ topic: `thread:${a.thread}`, event: 'tally', payload: { act: a.act, tally: a.tally } }] : []),
+  // A null tally is a post whose totals are hidden (a blind study): there is none to send.
+  react: (a) => withSprung(a, a.thread && a.tally !== null ? [{ topic: `thread:${a.thread}`, event: 'tally', payload: { act: a.act, tally: a.tally } }] : []),
   save_effect_state: (a) => (a.thread ? [{ topic: `thread:${a.thread}`, event: 'effect', payload: { play: a.play, saved_at: a.saved_at } }] : []),
   // A gift is an Act of the drive's thread, heard as a play is. The answer also holds the giver's own balance, which is the giver's alone and is never sent on.
   donate: (a) => act(a.gift),
@@ -192,9 +193,9 @@ export async function runAction(dbs: { player: Db; service: Db }, instance: Inst
       if (!read) return refused('target', `there is no such ${reach}`);
       const { effects: own, above = {}, ...said } = read;
       // A post is given to its card's rules with its visible words, read from its current body, and the version that body is.
-      const post = said as { act: string; kind: PostTarget['kind']; body?: unknown; version?: string; under?: string };
+      const post = said as { act: string; kind: PostTarget['kind']; body?: unknown; version?: string; under?: string; author?: string };
       // `under` is the post this one is drawn under, where it is a reply a play in force carried (card_target): a card that replies is refused there.
-      const target = reach === 'post' ? postTarget(post.act, post.kind, post.body, post.version, post.under) : { ...said, reach } as CardTarget;
+      const target = reach === 'post' ? postTarget(post.act, post.kind, post.body, post.version, post.under, post.author) : { ...said, reach } as CardTarget;
       const effects = effectsOnTarget(target, own ?? [], above);
       const rules = instance.cards.find((c) => c.key === decision.args.card)!;
       // A surface card's first draw is the card's own to read; what it refuses is said on the drawing (`first`), not on the configuration.
@@ -215,7 +216,7 @@ export async function runAction(dbs: { player: Db; service: Db }, instance: Inst
         const nameOf = (key: string) => instance.cards.find((c) => c.key === key)?.name ?? key;
         const play = decision.play === 'use'
           ? decideUse(rules, tuned.settings, target, effects, decision.args.config, said.value)
-          : decidePlay(rules, tuned.settings, target, effects, decision.args.config, said.value, { nameOf, first: decision.args.first });
+          : decidePlay(rules, tuned.settings, target, effects, decision.args.config, said.value, { nameOf, first: decision.args.first, caster: decision.args.through as string });
         // A card that needs a caster message refuses a blank one on the message field, as the screens show it there.
         if (!play.ok) return refused(play.why === rules.needsMessage ? 'message' : 'config', play.why);
         args = { ...args, config: play.value.config, message: play.value.message, price: play.value.price };
@@ -224,7 +225,8 @@ export async function runAction(dbs: { player: Db; service: Db }, instance: Inst
         // A surface card's first draw goes with the play, in one transaction (play_surface_card): its payload, its cells, the wall's limit from the settings rows and the card's most live draws.
         if (play.value.draw) {
           rpc = 'play_surface_card';
-          args = { ...args, first: play.value.draw.payload, first_cells: play.value.draw.cells, most: play.value.draw.most, most_live: rules.surface!.mostLive };
+          // `tokens` has no default in play_surface_card, so it is always sent: a card that writes nothing sends null (PostgREST finds no function otherwise).
+          args = { ...args, tokens: play.value.tokens ?? null, first: play.value.draw.payload, first_cells: play.value.draw.cells, most: play.value.draw.most, most_live: rules.surface!.mostLive };
         }
         // The version the play was decided against goes back with it; play_card refuses it once the post has another (0070).
         if (target.reach === 'post' && target.version) args = { ...args, reach: 'post', from_post: null, version: target.version };

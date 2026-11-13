@@ -12,7 +12,7 @@
  * - **The keyboard** is the same peel with no hand: after the pick it asks for exactly `pace` and so never lags and never tears.
  *   It takes the end that has a roll, else the start of the first unfinished piece, and goes on to the next piece while held.
  * - **A reader's peek** (sections 7 and 8) lifts the carrier piece and then, on the same pull, the pieces `under` it, in turn
- *   (`liftsOf`). Letting go holds it for `peekStayMs`, then it lays down at `peekSettle` px a second (`settle`), or at once under
+ *   (`liftsOf`). A key's peek goes on from there to the strip's later lines, each with the pieces under it, since a key cannot press them. Letting go holds it for `peekStayMs`, then it lays down at `peekSettle` px a second (`settle`), or at once under
  *   reduced motion. Pressing any piece of a chain still up picks the pull up where it is. A held key lifts a piece's width every 0.45
  *   seconds. A peek changes no stuck model, so nothing a reader does is ever reported as a change.
  * - **Shares.** `sharesOf` gives a strip's stuck model back as the card's saved stretches (`fromPieces`), clamped, rounded to four
@@ -86,7 +86,8 @@ interface Piece { spec: PieceSpec; stuck: Stretch[]; rev: number; cache: { rev: 
 interface Hand { readonly pointer: number | string; readonly piece: string; x: number; readonly x0: number; readonly carrier: string | null }
 /** A peel in hand: `pick` is the ms held so far, or null once the pick is up. */
 interface Work { readonly piece: string; readonly k: number; readonly side: Side; pick: number | null; rolled: number; strain: number }
-interface Peek { readonly carrier: string; readonly side: Side; pull: number; base: number; since: number | null; key: boolean; dirty: boolean }
+/** `along` is a key's peek: its chain goes on past the carrier's line to the strip's later lines, so the keyboard can reach them. */
+interface Peek { readonly carrier: string; readonly side: Side; pull: number; base: number; since: number | null; key: boolean; dirty: boolean; along?: boolean }
 
 /** Peeling this close to the end of a stretch finishes it, as the bench does. */
 const FINISHED = 1.5;
@@ -215,8 +216,14 @@ export class Hands {
 
   private chainOf(carrier: string): string[] {
     const p = this.pieces.get(carrier);
+    if (!p) return [];
     /* A lower piece already peeled off is not in the chain: a pull is never spent lifting tape that is not there. */
-    return p ? [carrier, ...p.spec.under.filter((id) => (this.pieces.get(id)?.stuck.length ?? 0) > 0)] : [];
+    const stuck = (id: string) => (this.pieces.get(id)?.stuck.length ?? 0) > 0;
+    const own = [carrier, ...p.spec.under.filter(stuck)];
+    if (!this.peeks.get(carrier)?.along) return own;
+    /* A key has no pointer to press the next line of a wrapped strip, so its pull goes on to each later line in turn, each after what lies under the one before. */
+    const later = [...this.pieces.values()].filter((q) => q.spec.strip === p.spec.strip && q.spec.index > p.spec.index && q.stuck.length > 0).sort((a, b) => a.spec.index - b.spec.index);
+    return [...own, ...later.flatMap((q) => [q.spec.id, ...q.spec.under.filter(stuck)])];
   }
 
   private pressPeek(p: Piece, x: number, pointer: number | string): 'covered' | 'peeking' {
@@ -279,6 +286,7 @@ export class Hands {
       pk.since = null;
       pk.base = pk.pull;
       pk.key = true;
+      pk.along = true;
       this.peeks.set(pk.carrier, pk);
       this.key = strip;
       return true;

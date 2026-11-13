@@ -64,6 +64,14 @@ export interface ChatterAnswer {
   readonly note?: string;
 }
 
+/**
+ * The most characters a chatter post is asked for and cut to, and the structured call's output cap in tokens. They are written
+ * side by side because chatter.test.ts holds their relation: the cap holds the stated words (at two characters a token), the note
+ * and the title, with the JSON around them.
+ */
+export const CHATTER_WORDS_MOST = 2000;
+export const CHATTER_TOKENS = 1500;
+
 /* ---------------------------------------------------------------------------------------------------- the rule ---- */
 
 /**
@@ -174,9 +182,10 @@ export function repairChatter(raw: unknown, f: RepairFacts): RepairedChatter {
   if (typeof given['words'] !== 'string') return no('words', 'isString');
   let words = given['words'].trim();
   if (words === '') return no('words', 'nonEmpty');
-  if (words.length > f.postMaxLength) {
-    const cut = cutAtSentence(words, f.postMaxLength);
-    trim('words', `maxLength(${f.postMaxLength})`, words.length, cut.length);
+  const wordsMost = Math.min(f.postMaxLength, CHATTER_WORDS_MOST);
+  if (words.length > wordsMost) {
+    const cut = cutAtSentence(words, wordsMost);
+    trim('words', `maxLength(${wordsMost})`, words.length, cut.length);
     words = cut;
   }
 
@@ -354,7 +363,7 @@ export function chatterPrompt(i: ChatterInput): { readonly system: string; reado
     i.premise,
     [
       `Why you are posting: ${REASONS[i.trigger]}.`,
-      'Your words are a post on the board, in your own voice, at most ' + `${l.postMaxLength} characters.`,
+      'Your words are a post on the board, in your own voice, at most ' + `${Math.min(l.postMaxLength, CHATTER_WORDS_MOST)} characters.`,
       'You cannot know who is behind any character; do not guess aloud at who owns a mask.',
       ...(i.startThread ? [`You are starting a thread. Give it a title, one line of at most ${l.titleMaxLength} characters.`] : ['This is a reply; give no title.']),
       `You may also leave a note to yourself, a thought for the next time you write, at most ${noteMost} characters. It is yours alone; the board never shows it.`,

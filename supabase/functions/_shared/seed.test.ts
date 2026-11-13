@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { instanceSeed } from './seed.ts';
+import { DEFAULT_ANONYMOUS } from '../../../engine/rules/instance.ts';
 import { chooseInstance, conduct, instance } from './instance.ts';
 import { MOVE_KINDS } from '../../../engine/system/moves.ts';
 import { BBCODE_TAGS } from '../../../engine/bbcode/parse.ts';
@@ -26,14 +27,14 @@ test('the seed carries every setting, class, reaction, card and board of the ins
   const readKeys = (c: (typeof instance.cards)[number]) => (c.reads ?? []).map((r) => (typeof r === 'string' ? r : r.key));
   assert.deepEqual(seed.cards, instance.cards.map((c) => ({
     key: c.key, name: c.name, alignment: c.alignment, stack: c.stack ?? 1, seeded: c.seeded === true, reads: readKeys(c),
-    rarity: c.rarity, play: c.play ?? 'cast', trap: c.trap, gimmick: c.gimmick, lasts: c.lasts, skim: c.skim, scoresAs: c.scoresAs, reaches: c.reaches ?? ['post'], pins: c.pins === true, writes: c.writes !== undefined, replies: c.replies === true, keeps: c.keeps === true,
-    draws: c.draws, drive: c.drive, needsMessage: c.needsMessage, surface: c.surface !== undefined,
+    rarity: c.rarity, play: c.play ?? 'cast', trap: c.trap, gimmick: c.gimmick, discipline: c.discipline, lasts: c.lasts, skim: c.skim, scoresAs: c.scoresAs, reaches: c.reaches ?? ['post'], pins: c.pins === true, writes: c.writes !== undefined, replies: c.replies === true, keeps: c.keeps === true,
+    draws: c.draws, drive: c.drive, needsMessage: c.needsMessage, veil: c.veil, addsReaction: c.reaction === true, surface: c.surface !== undefined,
   })));
   assert.deepEqual(seed.cards.filter((c) => c.surface).map((c) => c.key), instance.cards.filter((c) => c.surface !== undefined).map((c) => c.key), 'the SQL knows which cards hold a wall by this flag alone');
   assert.ok(seed.cards.some((c) => c.surface), 'a surface card is flagged');
   assert.deepEqual(seed.cards.find((c) => c.key === 'whoops'), {
     key: 'whoops', name: 'Whoops!', alignment: 'salty', stack: 3, seeded: true, reads: ['whoops.perLength', 'whoops.lengthStep', 'whoops.mostAdded'],
-    rarity: 'common', play: 'cast', trap: undefined, gimmick: undefined, lasts: undefined, skim: undefined, scoresAs: undefined, reaches: ['post'], pins: false, writes: false, replies: false, keeps: false, draws: undefined, drive: undefined, needsMessage: undefined, surface: false,
+    rarity: 'common', play: 'cast', trap: undefined, gimmick: undefined, discipline: undefined, lasts: undefined, skim: undefined, scoresAs: undefined, reaches: ['post'], pins: false, writes: false, replies: false, keeps: false, draws: undefined, drive: undefined, needsMessage: undefined, veil: undefined, addsReaction: false, surface: false,
   }, 'the stack, the seed, the economy numbers its rules read, its rarity and its play reach the SQL (0039, screen_settings\'s cardEconomy; 0054)');
   // A card that replies and a card that keeps (0348): the SQL knows only these two flags, never which card. A card of each the instance may not hold is seeded here too.
   assert.deepEqual(seed.cards.filter((c) => c.replies).map((c) => c.key), instance.cards.filter((c) => c.replies === true).map((c) => c.key), 'the SQL knows which cards carry a reply by this flag alone');
@@ -43,6 +44,10 @@ test('the seed carries every setting, class, reaction, card and board of the ins
   assert.deepEqual(flagged.filter((c) => c.keeps).map((c) => c.key).slice(-1), ['keeping'], 'a card that keeps carries the flag');
   assert.equal(flagged.find((c) => c.key === 'replying')!.keeps, false);
   assert.equal(flagged.find((c) => c.key === 'keeping')!.replies, false);
+  // A discipline effect travels as the card wrote it (card_kinds.discipline); a card without one travels with none.
+  const disciplined = instanceSeed({ ...instance, cards: [...instance.cards, { ...instance.cards[0]!, key: 'disciplined', discipline: { kind: 'watch', weight: 2 } }] }, conduct).cards;
+  assert.deepEqual(disciplined.find((c) => c.key === 'disciplined')!.discipline, { kind: 'watch', weight: 2 }, 'the seed carries the discipline');
+  assert.deepEqual(disciplined.filter((c) => c.discipline !== undefined).map((c) => c.key), [...instance.cards.filter((c) => c.discipline !== undefined).map((c) => c.key), 'disciplined'], 'a card without one travels with none');
   // The packs and the machine's slots (0139): the pulls as the instance writes them, a slot's item flattened to `card` or `pack`, in grid order.
   assert.deepEqual(seed.packs.map((p) => [p.key, p.pulls.length, p.leaves]), instance.packs.map((p) => [p.key, p.pulls.length, [...(p.leaves ?? [])]]));
   assert.deepEqual(seed.packs[0]!.pulls[4], { weights: { uncommon: 74, rare: 24, legendary: 2 } }, 'the hit pull reaches the SQL as written');
@@ -171,6 +176,22 @@ test('the seed carries the developer persona: the instance\'s, or the engine\'s 
   assert.deepEqual(instanceSeed({ ...instance, developer: { name: 'Dev', tagline: 'Hi.' } }, conduct).developer, { name: 'Dev', title: 'Hi.' });
   assert.ok(!instanceSeed(instance, conduct).system.staff.some((s) => s.key === 'developer'), 'the developer is not in the roster a model is handed');
   assert.ok(!('developer' in instanceSeed(instance, conduct).system), 'nothing under `system`, which is all the Director reads, names the developer');
+});
+
+test('a card\'s veil and its reaction flag travel in the seed (0357), and an absent veil is absent in the JSON', () => {
+  const veil = { ...instance.cards[0]!, key: 'test-veil', veil: 'author' as const, lasts: { unit: 'day' as const, count: 3 } };
+  const react = { ...instance.cards[0]!, key: 'test-react', reaction: true as const };
+  const sent = JSON.parse(JSON.stringify(instanceSeed({ ...instance, cards: [veil, react] }, conduct).cards));
+  assert.deepEqual([sent[0].veil, sent[0].addsReaction], ['author', false], 'a veil reaches the SQL as its word, and a card that adds no reaction says so');
+  assert.deepEqual(['veil' in sent[1], sent[1].addsReaction], [false, true], 'a reaction card sends the flag and no veil');
+});
+
+test('the seed carries the anonymous poster: the instance\'s, or the engine\'s plain default, and no prompt (a model never writes it)', () => {
+  assert.deepEqual(instanceSeed({ ...instance, anonymous: undefined }, conduct).anonymous, { name: DEFAULT_ANONYMOUS.name, title: DEFAULT_ANONYMOUS.tagline }, 'an instance that names none gets the engine\'s plain one');
+  assert.deepEqual(instanceSeed({ ...instance, anonymous: { name: 'Nobody', tagline: 'Could be anyone.', avatar: 'nobody' } }, conduct).anonymous, { name: 'Nobody', title: 'Could be anyone.', avatar: 'nobody' }, 'the tagline is its profile title and the avatar a key');
+  assert.deepEqual(instanceSeed({ ...instance, anonymous: { name: 'Nobody', tagline: 'Hi.', pronouns: PRONOUN_PRESETS.they } }, conduct).anonymous, { name: 'Nobody', title: 'Hi.', pronouns: PRONOUN_PRESETS.they }, 'pronouns travel only when named');
+  assert.ok(!instanceSeed(instance, conduct).system.staff.some((s) => s.key === 'anonymous'), 'the anonymous poster is not in the roster a model is handed');
+  assert.ok(!('anonymous' in instanceSeed(instance, conduct).system), 'nothing under `system`, which is all the Director reads, names the anonymous poster');
 });
 
 test('the seed carries the conditions and each persona\'s arc as SQL checks it: keys, conditions, due points, held-back kinds and phase days, never a brief or a template (0332)', () => {

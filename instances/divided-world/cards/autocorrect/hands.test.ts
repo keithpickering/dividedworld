@@ -289,6 +289,45 @@ test('a reader\'s held key lifts one piece\'s width every 0.45 seconds', () => {
   assert.equal(h.view('a:0').lift, null);
 });
 
+/** A strip that wraps onto two lines, with a lower strip's piece under its first line. */
+const wrapped = (under: string[] = []) => [
+  piece({ id: 's:0:0', strip: 's:0', index: 0, w: 100, stuck: [[0, 100, 0]], under }),
+  piece({ id: 's:0:1', strip: 's:0', index: 1, w: 100, stuck: [[0, 100, 0]] }),
+];
+
+test('a reader\'s held key goes on from a wrapped strip\'s first line to its second, and lays both down on letting go', () => {
+  const h = make(wrapped(), false);
+  assert.equal(h.keyDown('s:0'), true);
+  run(h, 450);
+  assert.ok(Math.abs(h.view('s:0:0').lift!.lift - 100) < 4, 'the first line is up');
+  assert.ok((h.view('s:0:1').lift?.lift ?? 0) < 1, 'the second waits for the first');
+  run(h, 450);
+  assert.ok(h.view('s:0:1').lift!.lift > 70, `the second line lifts on the same hold (${h.view('s:0:1').lift?.lift})`);
+  h.keyUp();
+  run(h, 5000);
+  assert.equal(h.view('s:0:0').lift, null);
+  assert.equal(h.view('s:0:1').lift, null);
+});
+
+test('a reader\'s held key lifts what lies under a wrapped strip\'s first line before its second line', () => {
+  const h = make([...wrapped(['b:0']), piece({ id: 'b:0', strip: 'b', w: 80, open: false, stuck: [[0, 80, 0]] })], false);
+  h.keyDown('s:0');
+  run(h, 810);
+  assert.ok(h.view('b:0').lift!.lift > 70, 'the strip under the first line is up');
+  assert.ok((h.view('s:0:1').lift?.lift ?? 0) < 1, 'the second line waits for it');
+  run(h, 450);
+  assert.ok(h.view('s:0:1').lift!.lift > 70);
+});
+
+test('a reader\'s pointer peek on one line of a wrapped strip lifts only that line', () => {
+  const h = make(wrapped(), false);
+  h.press('s:0:0', 0, 1);
+  h.move(1, 190);
+  run(h, 16);
+  assert.equal(h.view('s:0:0').lift!.lift, 100);
+  assert.equal(h.view('s:0:1').lift, null);
+});
+
 test('shares go back through fromPieces: clamped, rounded to four places, and a cut edge kind 0 away from the ends becomes a peel line', () => {
   const h = make([piece({ id: 's:0:0', w: 100, stuck: [[0, 100, 0]] }), piece({ id: 's:0:1', index: 1, w: 100, stuck: [[0, 100, 0]] })]);
   assert.deepEqual(h.sharesOf('s:0'), [[0, 1, 0]]);

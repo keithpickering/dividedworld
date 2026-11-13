@@ -25,10 +25,10 @@ import { instance } from '../../functions/_shared/instance.ts';
 import { models } from '../../functions/_shared/models/index.ts';
 import { ledgerWriter } from '../../functions/_shared/models/ledger.ts';
 
-// Long enough that the write job does not count a tail short and roll it again under the instance's own settings (cardWriteShortShare of the
-// 75 tokens two steps buy, counted as GPT-2 counts), so each generation is one call.
-const FIRST_TAIL = ' and that is why the pineapple stays on the pizza, on the plate, in the fridge, and in the hearts of every honest person who has ever dared to take a second slice, whatever the cheese people say.';
-const SECOND_TAIL = ' that is the whole truth, friends, and nobody in this room can say otherwise, not the cheese people, not the sauce people, and certainly not the ones who bring a fork to a pizza party, so there.';
+// Long enough that the write job does not count a tail short and top it up under the instance's own settings (cardWriteFullShare of the
+// 150 tokens two steps buy, counted as GPT-2 counts: at least 135), so each generation is one call.
+const FIRST_TAIL = ' and that is why the pineapple stays on the pizza, on the plate, in the fridge, and in the hearts of every honest person who has ever dared to take a second slice, whatever the cheese people say, and whatever the pizza critics write in their little columns about the proper order of toppings, which is the business of the oven alone, and the oven has never once complained, not in the summer heat, not in the long cold nights of the winter, not when the cheese ran over the edge and burned black on the floor of it, and not when the whole family stood around it at midnight waiting for one more slice of the only pizza that ever mattered to any of them.';
+const SECOND_TAIL = ' that is the whole truth, friends, and nobody in this room can say otherwise, not the cheese people, not the sauce people, and certainly not the ones who bring a fork to a pizza party, so there, and I will say it again to anyone who asks, at any hour, in any kitchen, on any night of the week, until the last of the crust is gone and the plates are washed and stacked and the chairs are pushed back under the table, and even then I will keep saying it to the empty room, because the truth does not stop being true just because everybody else has gone home to bed and turned out the lights and gone quietly to sleep.';
 
 const json = <T = Record<string, any>>(text: string): T => JSON.parse(text) as T;
 const rows = (query: string) => json<Record<string, any>[]>(sql(`select coalesce(jsonb_agg(to_jsonb(x)), '[]') from (${query}) x`));
@@ -155,8 +155,8 @@ test('a cast is written, edited into a second tail, cleared by its author; a fai
 
   // ---- 5. What the endpoint was asked for is what each play's Act recorded. ----
   const recorded = (id: string) => Number(sql(`select payload ->> 'tokens' from acts where id = '${id}'`));
-  assert.equal(recorded(play), 75, 'two steps: the base 25 and two of 25');
-  assert.equal(recorded(play2), 50);
+  assert.equal(recorded(play), 150, 'two steps: the base 50 and two of 50');
+  assert.equal(recorded(play2), 100);
   assert.deepEqual(asked.map((r) => r.max_tokens), [recorded(play), recorded(play), ...downRequests.map(() => recorded(play2))],
     'the first play\'s two generations and the second\'s tries were each asked for their play\'s recorded length');
   // Every call landed in the ledger against its play, the failures too.

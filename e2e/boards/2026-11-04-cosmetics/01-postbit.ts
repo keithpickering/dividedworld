@@ -8,10 +8,10 @@
  * posts, which the board does not draw (it draws a black bar where the build has the crumb, the title and the table's head), is never compared.
  *
  * Departures by decision:
- *  - The postbit's order is the house theme's (the board look, docs/plans/2026-11-06-board-look-design.md section on the postbit, which keeps the badges
- *    "under the rank"): name, group bar, title, rank and pips, the trophies, then the avatar and the counts, where this board, drawn before it, puts
- *    the avatar between the title and the rank. So the title, rank, trophies and counts stand at the shifts the first run measured (`SIDE`), and the
- *    post's own height differs, so the second post's author stands lower.
+ *  - The postbit's order is the owner's, 2026-11-13 (PR #660): the rank above the avatar, then the avatar, then the group bar under it, then the title,
+ *    the trophies and the counts. This board, drawn before it, puts the avatar between the title and the rank, and the house theme's group bar above the
+ *    title. So the rank, title and trophies stand at the shifts measured from the build's order (the group bar's 26.5px moved off the top, the rank's
+ *    line 1.25px smaller), and the post's own height differs, so the second post's author stands lower.
  *  - The house theme's page is not the board's: its posts have no 24px page padding and no 10px cell padding, so each x is 21.4px smaller; the
  *    glass's type scale (1.25 times) sets the names at 15px where the board draws 12, and every badge em-sized at 24px where the board draws 20,
  *    so each stands further along its row. The title, rank and counts are the house theme's quieter text in regular weight, so their type is not compared.
@@ -38,18 +38,18 @@ const manifest: BoardManifest = {
   build: { story: 'boards-01-postbit-gear--gear-and-trophies' },
   landmarks: [
     { id: 'a1', role: 'link', name: 'Pipewrench', nth: 0, buildNth: 0, box: 'position', buildSize: NAME_SIZE, buildShift: { x: LEFT, y: -20.5 } },
-    part('a1-title', 'a1', 'text', 'Professional Wrench', 32.4, { nth: 0, buildNth: 0 }),
-    part('a1-rank', 'a1', 'text', 'Main Eventer', -208.6, { nth: 0, buildNth: 0 }),
+    part('a1-title', 'a1', 'text', 'Professional Wrench', 5.86, { nth: 0, buildNth: 0 }),
+    part('a1-rank', 'a1', 'text', 'Main Eventer', -235.1, { nth: 0, buildNth: 0 }),
     part('a1-counts', 'a1', 'text', 'Posts: 212Joined Oct 2026', 70.2, { buildName: 'Joined Oct 2026' }),
-    part('t1', 'a1', 'img', 'Season 1 Champion', -182.7, { buildName: 'Season Champion' }),
-    part('t2', 'a1', 'img', "Boss's Pet (Sighbot, Oct)", -182.7, { buildName: "Boss's Pet", buildShift: { x: 4.8, y: -182.7 } }),
-    part('t3', 'a1', 'img', 'Sprite Contest 2026', -182.7, { buildName: 'Employee of the Month', buildShift: { x: 9.5, y: -182.7 } }),
-    part('t4', 'a1', 'img', 'Holds the Hardcore Belt since Nov 2', -182.7, { buildName: 'The Hardcore Belt', nth: 0, buildNth: 0, buildShift: { x: 14.3, y: -182.7 } }),
+    part('t1', 'a1', 'img', 'Season 1 Champion', -212.6, { buildName: 'Season Champion' }),
+    part('t2', 'a1', 'img', "Boss's Pet (Sighbot, Oct)", -212.6, { buildName: "Boss's Pet", buildShift: { x: 4.8, y: -212.6 } }),
+    part('t3', 'a1', 'img', 'Sprite Contest 2026', -212.6, { buildName: 'Employee of the Month', buildShift: { x: 9.5, y: -212.6 } }),
+    part('t4', 'a1', 'img', 'Holds the Hardcore Belt since Nov 2', -212.6, { buildName: 'The Hardcore Belt', nth: 0, buildNth: 0, buildShift: { x: 14.3, y: -212.6 } }),
     { id: 'a2', role: 'link', name: 'Dr. Bones', box: 'position', buildSize: NAME_SIZE, buildShift: { x: LEFT, y: 41.9 } },
-    part('a2-title', 'a2', 'text', 'no relation', 32.4),
-    part('a2-rank', 'a2', 'text', 'Jobber', -136.6),
+    part('a2-title', 'a2', 'text', 'no relation', 5.86),
+    part('a2-rank', 'a2', 'text', 'Jobber', -163.1),
     part('a2-counts', 'a2', 'text', 'Posts: 31Joined Nov 2026', 75.9, { buildName: 'Joined Nov 2026' }),
-    part('t5', 'a2', 'img', "Met the Boss's demand: 12 characters post in Tomato Talk", -110.7, { buildName: "Met the Boss's Demand" }),
+    part('t5', 'a2', 'img', "Met the Boss's demand: 12 characters post in Tomato Talk", -140.6, { buildName: "Met the Boss's Demand" }),
     { id: 'band-name', role: 'link', name: 'Pipewrench', nth: 1, buildNth: 1, box: 'position', buildSize: NAME_SIZE, buildShift: { x: -42, y: 180.5 } },
     { id: 'band-belt', role: 'img', name: 'Holds the Hardcore Belt', buildName: 'The Hardcore Belt', nth: 0, buildNth: 1, box: 'position', type: false, buildShift: { x: -20.1, y: 185.7 } },
   ],

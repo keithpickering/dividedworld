@@ -11,6 +11,9 @@
  * words name no mask.
  */
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { blindPlaysOf, createPlays, localKindsOf, useAt, usePlays, type LocalKind, type Plays } from '../cards/plays.ts';
+import { dayAndTime } from '../characters/format.ts';
+import { emojiOfKey } from '../../rules/emoji.ts';
 import { useKayfa } from '../context.tsx';
 import type { Id } from '../data/api.ts';
 import { usePlayer } from '../player.tsx';
@@ -30,6 +33,12 @@ export const readable = (key: string): string => {
   return words.charAt(0).toUpperCase() + words.slice(1);
 };
 
+/** A local kind's name for a reader and a screen reader: the emoji (which a screen reader speaks by its own name), the quadrant's label where a play says it, then that a card added it. */
+export const localName = (emoji: string, label: string | null): string => `${emoji}${label === null ? '' : `, ${label}`}, added by a card`;
+
+/** Nobody's plays: a row drawn outside a thread has no card on its post to read. */
+const NO_PLAYS = createPlays();
+
 interface Props {
   readonly act: Id;
   /** Who wrote the Act; null for The System. */
@@ -40,6 +49,11 @@ interface Props {
   readonly mine: Mine;
   /** What is reacted to, as the picker is named ("React to Mrs. Hooligan's Whoops!"); the author's post where none is given. */
   readonly subject?: string;
+  /**
+   * The thread's plays, for the cards that change this post's row: the reactions a `reaction` card added to it (a chip for each, and a place in the picker),
+   * and a `totals` veil that hides its counts. None outside a thread.
+   */
+  readonly plays?: Plays;
   /** What the picker stands by: the whole row (the default), or the React tile, for a row that takes no box of its own (the Lens's grid of actions). */
   readonly pickerAt?: 'row' | 'button';
 }
@@ -58,8 +72,11 @@ const stagedSend = (act: Id, tallies: Tallies, mine: Mine, cap: number) => async
 /** The tab stop of the React tile; a kind's is its key. */
 const REACT_STOP = ' react'; /* a space: no reaction key has one */
 
-export function Reactions({ act, author, authorName = 'this character', tallies, mine, subject, pickerAt = 'row' }: Props) {
-  const { instance, settings } = useKayfa();
+/** One chip of the row: the kind's key, its words, its emoji, its count (none where the totals are hidden from the reader), and whether a press can still count. */
+interface Chip { readonly key: string; readonly name: string; readonly emoji: string; readonly count: number | null; readonly open: boolean }
+
+export function Reactions({ act, author, authorName = 'this character', tallies, mine, subject, pickerAt = 'row', plays = NO_PLAYS }: Props) {
+  const { instance, ui, settings } = useKayfa();
   const player = usePlayer();
   const tally = useTally(tallies, act);
   const own = useMine(mine, act);
@@ -70,9 +87,38 @@ export function Reactions({ act, author, authorName = 'this character', tallies,
   const [stop, setStop] = useState<string | null>(null);
   const button = useRef<HTMLButtonElement>(null);
   const row = useRef<HTMLDivElement>(null);
-  const shown = instance.reactions.filter((r) => (tally[r.key] ?? 0) > 0);
   const staged = useStaged();
   const theirs = author !== null && player.characters.some((c) => c.id === author);
+  /* The cards on this post that change its row (card notes, Part 3): the kinds a card added, and the totals a card hides until a time. */
+  const here = usePlays(plays, act).plays;
+  const kinds0 = localKindsOf(here, instance.cards);
+  const ends = here.filter((p) => p.ends !== undefined).map((p) => Date.parse(p.ends!));
+  const now = useAt(ends);
+  const blind = blindPlaysOf(here, instance.cards, now);
+  const blindUntil = blind.length === 0 ? null : blind.reduce((latest, b) => (Date.parse(b.ends) > Date.parse(latest) ? b.ends : latest), blind[0]!.ends);
+  /* Who the reader is to the card is their own screen's fact, from their own characters; the totals came for the author's player and the caster alone. */
+  const isAuthor = theirs;
+  const caster = blind.some((b) => b.caster !== null && player.characters.some((c) => c.id === b.caster));
+  const sees = blindUntil !== null && (isAuthor || caster);
+  const hidden = blindUntil !== null && !sees;
+  const label = (k: LocalKind | undefined) => (k === undefined ? null : ui.quadrantLabels[k.quadrant]);
+  const kindOf = (key: string) => kinds0.find((k) => k.key === key);
+  const ownKinds = [...new Set(own.map((o) => o.kind))];
+  /* What is drawn: for a reader the totals are hidden from, only their own kinds and no count; else every kind the tally holds, the instance's first and then the kinds a card added. */
+  const chipOf = (key: string, count: number | null): Chip | null => {
+    const known = instance.reactions.find((r) => r.key === key);
+    if (known) return { key, name: readable(key), emoji: known.emoji, count, open: true };
+    const emoji = emojiOfKey(key);
+    if (emoji === null) return null;
+    const kind = kindOf(key);
+    return { key, name: localName(emoji, label(kind)), emoji, count, open: kind?.ended !== true };
+  };
+  const counted = Object.keys(tally).filter((k) => (tally[k] ?? 0) > 0);
+  const shownKeys = hidden ? ownKinds : [...instance.reactions.map((r) => r.key).filter((k) => counted.includes(k)), ...counted.filter((k) => !instance.reactions.some((r) => r.key === k)).sort()];
+  const shown = shownKeys.flatMap((k) => { const c = chipOf(k, hidden ? null : tally[k] ?? 0); return c ? [c] : []; });
+  const line = blindUntil === null ? null : sees
+    ? `Only you${isAuthor && caster ? '' : ` and the ${isAuthor ? 'caster' : 'author'}`} can see these until ${dayAndTime(blindUntil)}.`
+    : `Reaction totals are hidden on this post until ${dayAndTime(blindUntil)}.`;
   const as = staged ? null : player.hudCharacter;
   const canReact = !theirs && (staged || as !== null);
   /* One send for the row and its picker: one lock for the Act (send.ts). A staged page's is answered here, and sends nothing. */
@@ -84,12 +130,12 @@ export function Reactions({ act, author, authorName = 'this character', tallies,
   /* What an answer that comes back late is checked against: the HUD character and whether a press is possible now. */
   const live = useRef({ asId, canReact });
   live.current = { asId, canReact };
-  if (shown.length === 0 && !canReact) return null;
+  if (shown.length === 0 && !canReact && line === null) return null;
 
   const kinds = new Set(own.map((o) => o.kind));
   const cap = settings.reactionCap;
   const left = Math.max(0, cap - kinds.size);
-  const stops = [...(canReact ? shown.map((r) => r.key) : []), ...(canReact ? [REACT_STOP] : [])];
+  const stops = [...(canReact ? shown.filter((r) => r.open).map((r) => r.key) : []), ...(canReact ? [REACT_STOP] : [])];
   const current = stop !== null && stops.includes(stop) ? stop : (stops.includes(REACT_STOP) ? REACT_STOP : stops[0]);
 
   const press = async (key: string) => {
@@ -130,25 +176,28 @@ export function Reactions({ act, author, authorName = 'this character', tallies,
       {shown.length > 0 && (
         <ul className="kb-reaction-list" aria-label="Reactions">
           {shown.map((r) => {
-            const n = tally[r.key];
+            const n = r.count;
             const yours = kinds.has(r.key);
             const face = (
-              <span className="kb-meta-tile-in" aria-hidden="true"><span className="kb-reaction-emoji">{r.emoji}</span> {n}</span>
+              <span className="kb-meta-tile-in" aria-hidden="true"><span className="kb-reaction-emoji">{r.emoji}</span>{n === null ? '' : ` ${n}`}</span>
             );
             const common = { 'data-kb-reaction': r.key, 'data-kb-own': yours ? '' : undefined } as const;
-            if (!canReact) {
+            /* Where the totals are hidden the chip is the reader's own kind with no number; its name says so, as an own kind's does. */
+            const said = n === null ? `${r.name}, yours` : `${r.name}, ${n}${yours ? ', including yours' : ''}`;
+            if (!canReact || !r.open) {
               return (
                 <li key={r.key}>
                   <span className="kb-meta-tile kb-reaction" {...common}>
-                    <span className="kb-visually-hidden">{readable(r.key)}, {n}{yours ? ', including yours' : ''}</span>
+                    <span className="kb-visually-hidden">{said}</span>
                     {face}
                   </span>
                 </li>
               );
             }
-            const name = yours ? `${readable(r.key)}, ${n}, including yours`
-              : left === 0 ? `${readable(r.key)}, ${n}. You have left all ${cap} of your reactions on this post`
-                : `${readable(r.key)}, ${n}. React${as ? ` as ${as.name}` : ''}`;
+            const name = n === null ? `${r.name}, yours`
+              : yours ? `${r.name}, ${n}, including yours`
+                : left === 0 ? `${r.name}, ${n}. You have left all ${cap} of your reactions on this post`
+                  : `${r.name}, ${n}. React${as ? ` as ${as.name}` : ''}`;
             return (
               <li key={r.key}>
                 <button
@@ -170,11 +219,12 @@ export function Reactions({ act, author, authorName = 'this character', tallies,
           <span className="kb-meta-tile-in"><span aria-hidden="true">+ </span>React</span>
         </button>
       )}
+      {line !== null && <p className="kb-reactions-line kb-small">{line}</p>}
       {canReact && <span role="status" className="kb-visually-hidden">{said}</span>}
       <Layers>
       {open && canReact && (
         <Picker
-          subject={subject ?? `${authorName}'s post`} as={as} own={own} send={send} busy={busy} refusal={refusal} anchor={pickerAt === 'button' ? button : row}
+          subject={subject ?? `${authorName}'s post`} as={as} own={own} local={kinds0} send={send} busy={busy} refusal={refusal} anchor={pickerAt === 'button' ? button : row}
           onClose={(refocus) => { setOpen(false); if (refocus) button.current?.focus(); }}
         />
       )}

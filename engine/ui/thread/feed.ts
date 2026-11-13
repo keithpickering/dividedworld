@@ -26,6 +26,8 @@
  * what came and leads to it, not to pages the reader had simply not reached; reading on past it,
  * or opening a page that holds it, lets it go.
  */
+import type { CardRules } from '../../rules/cards.ts';
+import type { Plays } from '../cards/plays.ts';
 import type { Act, Id, ThreadSummary } from '../data/api.ts';
 import type { ThreadReturn } from '../glass/back.ts';
 
@@ -227,4 +229,39 @@ export function waitingPosts(f: Feed): { readonly count: number; readonly first:
   const held = ordered(f.held);
   if (held.length === 0) return null;
   return { count: held.length, first: held[0]!.seq!, last: held.at(-1)!.seq! };
+}
+
+/*
+ * A veil (`CardRules.veil`, card notes Part 3) changes what every read of a post says: while an author veil is up the page's author is the stand-in, and
+ * while it is over the author is back. Nothing on the channel says so, so the page is read again, quietly and with nothing sent, when a veil's play arrives
+ * on a post of the page and at the end of the soonest veil still up, which is the page's one timer.
+ */
+
+/** The keys of the cards whose plays veil a post's author or its totals. */
+export const veilCards = (cards: readonly Pick<CardRules, 'key' | 'veil'>[]): ReadonlySet<string> => new Set(cards.filter((c) => c.veil !== undefined).map((c) => c.key));
+
+/** Whether a live Act is a play of a veil card. */
+export const isVeilPlay = (a: Act, veils: ReadonlySet<string>): boolean => a.kind === 'card' && typeof a.payload.card === 'string' && veils.has(a.payload.card);
+
+/** After the end of a veil's play is heard from the server (an admin's `card_end`): whether the play it names is a veil's, among these posts' plays. */
+export function endsVeil(plays: Plays, posts: Iterable<Id>, veils: ReadonlySet<string>, end: Act): boolean {
+  if (end.kind !== 'card_end' || end.targetActId === null) return false;
+  for (const post of posts) if (plays.get(post).plays.some((p) => p.id === end.targetActId && veils.has(p.card))) return true;
+  return false;
+}
+
+/** How long past its end the page waits to read again: the server's clock is the one that ends the veil, and it may run a little behind this screen's. */
+export const VEIL_READ_GRACE_MS = 1_000;
+
+/** The soonest end still ahead among the live plays of veil cards on these posts, as an epoch, or null: when the page must be read again by itself. */
+export function nextVeilEnd(plays: Plays, posts: Iterable<Id>, veils: ReadonlySet<string>, now: number): number | null {
+  let soonest: number | null = null;
+  for (const post of posts) {
+    for (const p of plays.get(post).plays) {
+      if (!veils.has(p.card) || p.reversed || p.untaken || p.caught || p.faceDown || p.reach || p.ends === undefined) continue;
+      const at = Date.parse(p.ends);
+      if (at > now && (soonest === null || at < soonest)) soonest = at;
+    }
+  }
+  return soonest;
 }

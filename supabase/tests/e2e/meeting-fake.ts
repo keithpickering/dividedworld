@@ -19,6 +19,8 @@ const lastMessageOf = (body: Body): string => textOf(body.messages?.[(body.messa
 /** Which meeting part a request asks for, or null when it is not a meeting call. */
 export function partOf(body: Body): MeetingPartKey | null {
   const last = lastMessageOf(body).trimEnd();
+  /* The first part's ask names only the fields the meeting offers (movesAsk), so it is read by its stem; the others are fixed text. */
+  if (/Hold your meeting\. This first turn is your moves: answer moves[a-z, ]*\.$/.test(last)) return 'moves';
   return MEETING_PARTS.find((p) => last.endsWith(p.ask))?.key ?? null;
 }
 

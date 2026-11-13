@@ -67,14 +67,17 @@ begin
   end loop;
 end $$;
 
--- A back that appears while a quote waits for the character and board rows is not sprung by that quote. lock_for_quote sees one live back on the quoted post and waits for the poster's
--- character row (step 2b); meanwhile that back springs and another is set on the post; the quote then finds the new back at step 3 with no 2b locks taken for it, so it does not hold it: it stays set.
+-- A back cannot appear while a quote waits for the character and board rows. lock_for_quote sees one live back on the quoted post and takes the post `for share` before it waits for the poster's
+-- character row (step 2b; 0357_post_veils: post, then face_down, then characters, so a veil cast on the post and a back springing on it are laid one at a time). The back it saw may still spring
+-- meanwhile (another quote's spring takes the back's face_down row, which this quote has not reached yet), but a second back set on the post (set_card takes the post's row first) waits for the quote:
+-- the quote finds no live back at step 3 and holds none, and the second back is set once it is done. Before 0357 the second back could be set in that window, and the quote found it at step 3 with no 2b
+-- locks taken and left it set; that window is now closed.
 do $$
 declare
   setter uuid := gen_random_uuid(); quoter uuid := gen_random_uuid();
   s uuid := gen_random_uuid(); q uuid := gen_random_uuid(); q2 uuid := gen_random_uuid();
   t uuid := gen_random_uuid(); x uuid := gen_random_uuid(); waiting uuid := gen_random_uuid(); springing uuid := gen_random_uuid();
-  held text; tries integer := 0;
+  held text; tries integer := 0; set_waited boolean := false;
 begin
   perform tests.commit(format($sql$
     insert into auth.users (id, email) values (%1$L, 'sp-win-setter@test.invalid'), (%2$L, 'sp-win-quoter@test.invalid');
@@ -83,40 +86,57 @@ begin
     insert into class_history (character, class_key, started_at) values (%3$L, 'alpha', now()), (%4$L, 'alpha', now()), (%5$L, 'alpha', now());
     insert into threads (id, board, title) select %6$L, b.id, 'Window' from boards b where b.slug = 'general';
     insert into card_ledger (account, card, kind, price) select %1$L, 'spxwhoops', 'bought', 0 from generate_series(1, 3);
-    insert into acts (id, character, kind, thread, payload) values (%7$L, %3$L, 'post', %6$L, '{"body": "Backed twice, in turn."}'), (%8$L, %4$L, 'post', %6$L, '{"body": "The quote that waits."}'), (%9$L, %5$L, 'post', %6$L, '{"body": "The quote that springs the first."}');
+    insert into acts (id, character, kind, thread, payload) values (%7$L, %3$L, 'post', %6$L, '{"body": "Backed twice, in turn."}'), (%8$L, %4$L, 'post', %6$L, '{"body": "The quote that waits."}'), (%9$L, %5$L, 'post', %6$L, '{"body": "The quote that springs."}');
     do $d$ begin perform set_card(%1$L, 'spxwhoops', %3$L, %7$L, '{}', 0); end $d$;
   $sql$, setter, quoter, s, q, q2, t, x, waiting, springing));
   perform extensions.dblink_connect('win_h', current_setting('kayfabb.scratch_url'));
   perform extensions.dblink_connect('win_q', current_setting('kayfabb.scratch_url'));
+  perform extensions.dblink_connect('win_s', current_setting('kayfabb.scratch_url'));
   begin
     perform extensions.dblink_exec('win_h', 'begin');
     perform extensions.dblink_exec('win_h', format('do $h$ begin perform 1 from characters where id = %L for no key update; end $h$', q));
-    perform extensions.dblink_send_query('win_q', format('select lock_for_quote(%L, %L, %L)::text', q, t, x));
+    perform extensions.dblink_send_query('win_q', format('select /* win_q */ lock_for_quote(%L, %L, %L)::text', q, t, x));
     loop
-      exit when exists (select 1 from pg_stat_activity where wait_event_type = 'Lock' and datname = current_database() and pid <> pg_backend_pid());
+      perform pg_stat_clear_snapshot();
+      exit when exists (select 1 from pg_stat_activity where wait_event_type = 'Lock' and query like '%/* win_q */%' and pid <> pg_backend_pid());
       tries := tries + 1;
       if tries > 400 then raise exception 'lock_for_quote never waited for the character row'; end if;
       perform pg_sleep(0.025);
     end loop;
-    -- While it waits: the first back springs (another character's quote), and a second back is set on the same post.
-    perform tests.commit(format($sql$
-      do $d$ begin
-        perform spring_traps('quote', %1$L, %2$L);
-        perform set_card(%3$L, 'spxwhoops', %4$L, %1$L, '{}', 0);
-      end $d$;
-    $sql$, x, springing, setter, s));
+    -- While it waits: the first back springs (another character's quote, committed on its own: it takes the back's face_down row, which the quote has not reached), then a second back is set on the
+    -- same post, which waits for the quote (set_card takes the post's row first, as place_set does; the quote holds it `for share`).
+    perform tests.commit(format($sql$ do $d$ begin perform spring_traps('quote', %1$L, %2$L); end $d$; $sql$, x, springing));
+    perform extensions.dblink_send_query('win_s', format($sql$
+      do $d$ begin /* win_s */
+        perform set_card(%1$L, 'spxwhoops', %2$L, %3$L, '{}', 0);
+      end $d$
+    $sql$, setter, s, x));
+    tries := 0;
+    loop
+      perform pg_stat_clear_snapshot();
+      if exists (select 1 from pg_stat_activity where wait_event_type = 'Lock' and query like '%/* win_s */%' and pid <> pg_backend_pid()) then set_waited := true; exit; end if;
+      exit when extensions.dblink_is_busy('win_s') = 0;
+      tries := tries + 1;
+      exit when tries > 400;
+      perform pg_sleep(0.025);
+    end loop;
     perform extensions.dblink_exec('win_h', 'rollback');
     select r into held from extensions.dblink_get_result('win_q') as v(r text);
     perform * from extensions.dblink_get_result('win_q') as v(r text);
+    perform * from extensions.dblink_get_result('win_s') as v(r text);
+    perform * from extensions.dblink_get_result('win_s') as v(r text);
   exception when others then
     perform extensions.dblink_disconnect('win_h');
     perform extensions.dblink_disconnect('win_q');
+    perform extensions.dblink_disconnect('win_s');
     raise;
   end;
   perform extensions.dblink_disconnect('win_h');
   perform extensions.dblink_disconnect('win_q');
-  if (select count(*) from face_down f where f.post = x) is distinct from 2::bigint then raise exception 'the second back was not set while the quote waited'; end if;
-  if held is distinct from '{}' then raise exception 'a quote held a back it had not seen when it took its rows: %', held; end if;
+  perform extensions.dblink_disconnect('win_s');
+  if not set_waited then raise exception 'a second back on the post did not wait for a quote holding it'; end if;
+  if held is distinct from '{}' then raise exception 'a quote held a back that sprang while it waited, or one set after it: %', held; end if;
+  if (select count(*) from face_down f where f.post = x) is distinct from 2::bigint then raise exception 'the second back was not set once the quote was done'; end if;
 end $$;
 
 -- A quote that lands a Move on its own character, and a cast of the same card on that character at once: the character carries one, the quote is never refused, and nothing deadlocks.
@@ -955,6 +975,11 @@ begin
   if (select count(distinct r) from unnest(facts_reads) r) is distinct from 1::bigint then raise exception 'the backs make different reads before a quote''s decision: Idle, Trap Card, phrase, Bomb, retired, springing = %', facts_reads; end if;
   if (select count(distinct r) from unnest(cast_reads) r) is distinct from 1::bigint then raise exception 'the backs make different reads before a cast''s decision: %', cast_reads; end if;
   if (select sum(v) from unnest(facts_reads[1]::bigint[]) v) < 8 then raise exception 'the reads were not counted (%)', facts_reads[1]; end if;
+  -- The announcements thread is found by its key (setting_thread, migration 0360): `threads` (the seventh relation in name order) is read by one probe of its key however many threads an instance holds,
+  -- where the text comparison it replaced read a whole index of it, and the entries that read moved with every dead one.
+  if (facts_reads[1]::bigint[])[7] > 8 or (cast_reads[1]::bigint[])[7] > 8 then
+    raise exception 'a back''s decision reads % and % entries of threads, a whole index and not a key', (facts_reads[1]::bigint[])[7], (cast_reads[1]::bigint[])[7];
+  end if;
   -- The phrase's pattern is one fixed length for every back and its own for each (built around the back's id), a back with no phrase included.
   foreach one in array backs loop
     select * into fd from face_down f where f.post = one;

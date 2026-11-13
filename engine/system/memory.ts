@@ -72,16 +72,19 @@ export interface Memory {
 
 const text = (maxLength: number): Rule => ({ type: 'string', maxLength, minLength: 1 });
 
+/** The bounds the meeting's prompt states and `MEMORY_RULE` holds: a hobby's name and a mark, in characters. */
+export const MEMORY_MOST = { hobbyName: 80, mark: 120 } as const;
+
 /** The rule `models()` repairs a memory answer with. The score's range is held by `repairMemory`. */
 export const MEMORY_RULE: Rule = {
   type: 'object',
   fields: {
-    hobby: { type: 'object', fields: { name: text(80), since: text(40), from: text(120) } },
+    hobby: { type: 'object', fields: { name: text(MEMORY_MOST.hobbyName), since: text(40), from: text(120) } },
     opinions: { type: 'list', of: { type: 'object', fields: { character: text(64), score: { type: 'number' }, note: { type: 'string', maxLength: 300 } } } },
     grudges: { type: 'list', of: { type: 'object', fields: { character: text(64), note: { type: 'string', maxLength: 300 } } } },
     wheelhouse: { type: 'list', of: text(120) },
     realWorld: { type: 'list', of: text(120) },
-    marks: { type: 'list', of: text(120), optional: true },
+    marks: { type: 'list', of: text(MEMORY_MOST.mark), optional: true },
   },
 };
 
