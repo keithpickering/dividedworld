@@ -79,6 +79,8 @@ begin
   -- lay_sprung of a board card does too.
   laid := lay_sprung(a, 'stquake', '{}', b2, 'board', gen_random_uuid(), null);
   if (select x.thread from acts x where x.id = laid) is distinct from ann then raise exception 'a sprung board card was not written in the announcements thread'; end if;
+  -- spring_facts, read before every face-down back's decision, finds it too (a back with nothing in it reads the same statement every back reads).
+  if (spring_facts(null::face_down, 'quote', null, null)).announce_thread is distinct from ann then raise exception 'spring_facts did not find the announcements thread'; end if;
   -- seed_instance run again on a seeded instance makes no second announcements or updates thread, and moves neither setting.
   threads_before := (select count(*) from threads t where t.board = system_board());
   settings_before := (select jsonb_object_agg(s.key, s.value) from settings s where s.key in ('systemAnnouncements', 'updatesThread'));
