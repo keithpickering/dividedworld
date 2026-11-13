@@ -309,8 +309,6 @@ export interface CardArt {
  */
 export interface ComposeProps {
   readonly post: Act;
-  /** Cast now, or set face down on the player's own post. */
-  readonly mode: 'cast' | 'set';
   /** The box of the post's words (`under`) as the slot measures it, in client px, with no layer's chrome in it; null before it is measured. A card whose drawing must match its effect's box (shares of the post body, which can be far taller than a one-line post's words) measures the post body itself (`under.closest('.kb-act-main')`) and takes this only as a fallback. */
   readonly box: { readonly w: number; readonly h: number } | null;
   /**
@@ -330,6 +328,12 @@ export interface ComposeProps {
    * ("Leave without tagging? Your drawing isn't saved."), or null when nothing is held. While one is held the browser asks too before the page is left.
    */
   hold(ask: string | null): void;
+  /**
+   * Say the card's screen is on the page: whatever it sets over the window's edges (a dock) is mounted and has set the root's scroll padding. The engine then brings the
+   * post's body clear of it (clear.ts). A card whose screen is mounted in the commit that opens it need not call this, the engine measures once after that commit; one
+   * that loads late (a lazy chunk) must, or the post is measured before anything covers it and left behind the dock. Calling it again is harmless.
+   */
+  ready(): void;
   readonly children: ReactNode;
 }
 

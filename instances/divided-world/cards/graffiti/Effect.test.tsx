@@ -369,6 +369,42 @@ describe('the Draw tile', () => {
   });
 });
 
+describe('opening draw mode brings the post clear of the dock', () => {
+  const frameOf = () => act(async () => { await new Promise((done) => requestAnimationFrame(() => done(null))); });
+  const box = (el: HTMLElement, top: number, height: number) => { el.getBoundingClientRect = () => ({ top, bottom: top + height, left: 0, right: 600, width: 600, height, x: 0, y: top, toJSON: () => ({}) }); };
+  beforeEach(() => {
+    vi.stubGlobal('innerHeight', 800);
+    document.documentElement.style.scrollPaddingTop = '60px';
+    document.documentElement.style.scrollPaddingBottom = '400px';
+  });
+  afterEach(() => {
+    document.documentElement.style.removeProperty('scroll-padding-top');
+    document.documentElement.style.removeProperty('scroll-padding-bottom');
+  });
+
+  test('a post behind where the dock lands is scrolled to the top of the clear area, after the dock has mounted', async () => {
+    const { cell } = mount();
+    const scroll = vi.fn();
+    cell.scrollIntoView = scroll;
+    box(cell, 300, 400);
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Draw' })); });
+    await frameOf();
+    expect(scroll).toHaveBeenCalledTimes(1);
+    expect(scroll).toHaveBeenCalledWith({ block: 'start', behavior: 'smooth' });
+  });
+
+  test('a post wholly in the clear area is not scrolled, and nothing scrolls before draw mode opens', async () => {
+    const { cell } = mount();
+    const scroll = vi.fn();
+    cell.scrollIntoView = scroll;
+    box(cell, 100, 200);
+    await frameOf();
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Draw' })); });
+    await frameOf();
+    expect(scroll).not.toHaveBeenCalled();
+  });
+});
+
 describe('draw mode on a wall that is there', () => {
   const open = () => { act(() => { fireEvent.click(screen.getByRole('button', { name: 'Draw' })); }); };
   const frameOf = () => act(async () => { await new Promise((done) => requestAnimationFrame(() => done(null))); });

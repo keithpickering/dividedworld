@@ -171,7 +171,7 @@ export function Hud() {
   /* Whether the hand is open and which card is armed are the Frame's (cards/play.tsx): a post's own buttons read them too. */
   const play = usePlay();
   if (!play) throw new Error('the HUD is drawn inside the Frame');
-  const { handOpen, setHandOpen, armed } = play;
+  const { handOpen, setHandOpen, armed, playing } = play;
   const signedIn = player.session.signedIn;
   const boot = useBoot();
   /* The count comes from the shown page's document when its route loads one, else from boot, then from a read on each move (useAlertFeed). */
@@ -448,7 +448,7 @@ export function Hud() {
   const peeked = wide && !handOpen && armed !== null ? faces.find((f) => f.key === armed) ?? null : null;
   const modal = wide && handOpen;
   const armedName = !wide && armed !== null ? instance.cards.find((c) => c.key === armed)?.name ?? armed : null;
-  const handName = armedName !== null ? `Armed · ${armedName}, press to put it back` : `Hand, ${held} ${held === 1 ? 'postcard' : 'postcards'}${handOpen ? ', open' : ''}`;
+  const handName = armedName !== null ? `${playing ? 'Playing' : 'Armed'} · ${armedName}, press to put it back` : `Hand, ${held} ${held === 1 ? 'postcard' : 'postcards'}${handOpen ? ', open' : ''}`;
   const className = hud ? instance.classes.find((c) => c.key === hud.class)?.name ?? hud.class : null;
   const tabVars = tab ? { '--tab-a': `${tab[0]}px`, '--tab-b': `${tab[1]}px`, '--tab-c': `${tab[2]}px`, '--tab-d': `${tab[3]}px` } as CSSProperties : undefined;
   const seam = tab ? `0,${TAB + 6} ${tab[0]},${TAB + 6} ${tab[1]},6 ${tab[2]},6 ${tab[3]},${TAB + 6} 10000,${TAB + 6}` : `0,${TAB + 6} 10000,${TAB + 6}`;
@@ -462,6 +462,7 @@ export function Hud() {
             <Hand
               held={player.cards} faces={faces} vendingHref={GLASS_NAV.vending}
               armed={armed}
+              playing={playing}
               onPick={hud ? pick : undefined}
               onClose={() => { setHandOpen(false); handButton.current?.focus(); }}
             />
@@ -472,7 +473,7 @@ export function Hud() {
         <div className="kb-hand-peek" aria-hidden="true" style={{ '--kb-fan-z': 1 } as CSSProperties}>
           <div className="kb-hand-peek-card">
             <Postcard face={peeked} size="fan" armed />
-            <span className="kb-hand-armed kb-glass-skew-tag"><span className="kb-glass-upright">Armed · pick a post</span></span>
+            <span className="kb-hand-armed kb-glass-skew-tag"><span className="kb-glass-upright">{playing ? `Playing · post #${playing.seq}` : 'Armed · pick a post'}</span></span>
           </div>
         </div>
       )}
@@ -652,7 +653,7 @@ export function Hud() {
                       onClick={() => (armedName !== null ? play.arm(null) : setHandOpen(!handOpen))}
                     >
                       {armedName !== null
-                        ? <span className="kb-hud-hand-armed kb-glass-upright">Armed · {armedName}</span>
+                        ? <span className="kb-hud-hand-armed kb-glass-upright">{playing ? 'Playing' : 'Armed'} · {armedName}</span>
                         : <><span className="kb-glass-upright">Hand</span> <span className="kb-hud-hand-count kb-glass-upright kb-num">{held}</span></>}
                     </button>
                   </div>
