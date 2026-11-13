@@ -189,9 +189,55 @@ begin
   if pg_temp.kept_plays(doc) is distinct from array[on_thread::text, on_b::text] then raise exception 'B''s post: the thread play and B''s play, not A''s: %', doc -> 'kept'; end if;
 end $$;
 
--- ---- The cost guard: play_reach_character serves a per-author range probe of this shape ----
--- This explains a replica of kept_reach's character probe, not thread_page itself, so it cannot catch a change to thread_page; it guards cost only: that the index
--- play_reach_character (character, ends_at) serves a range probe for one author with 520 plays, and that it is not a sequential scan.
+-- ---- Rows read do not grow with history (docs/plans/2026-11-13-glitter-keeps-bound-plan.md, Task 2) ----
+-- One post long ago by author A, the one play that holds it, then N later worn-off plays of a keeping kind on A; one real thread_page call, one post a page, counted: the tuples
+-- the transaction read of play_reach and of each of its indexes (pg_stat_get_xact_tuples_returned, summed before and after the call; the transaction's own counts, so the harness's
+-- begin/rollback and the role the call is made as do not change them). enable_seqscan is off around the call: on a toy table the planner seq-scans play_reach for `spun` whatever `kept` does,
+-- which would hide the difference. A btree counts only the entries that pass its index conditions, so this cannot see a walk; the plan block below holds the index's name.
+-- Measured before the range predicate and the GiST index (the read bounded below by the page's earliest post and not above): 14 rows read at N = 5 and 501 at N = 500 (the plan's scratch
+-- database: 14 and 509); after, 10 and 2.
+create function pg_temp.reach_rows() returns bigint language sql as $$
+  select (pg_stat_get_xact_tuples_returned('play_reach'::regclass)
+          + coalesce((select sum(pg_stat_get_xact_tuples_returned(i.indexrelid)) from pg_index i where i.indrelid = 'play_reach'::regclass), 0))::bigint
+$$;
+
+do $$
+declare
+  ann uuid := tests.account('rh-ann'); c uuid := tests.character(ann, 'Rh Caster');
+  n integer; a uuid; t uuid; p uuid; w uuid; held uuid; doc jsonb; before_n bigint; reads bigint[] := '{}'; ts uuid[] := '{}'; hs uuid[] := '{}';
+begin
+  foreach n in array array[5, 500] loop
+    a := tests.character(ann, 'Rh A ' || n); t := tests.thread('Rh history ' || n); ts := ts || t;
+    p := tests.post(a, t, 'A, long ago.', now() - interval '3000 days');
+    held := tests.act(c, 'card', t, '{"card": "tgkeep", "reach": "character"}', p, now() - interval '3010 days');
+    insert into play_reach (play, reach, character, ends_at) values (held, 'character', a, now() - interval '2995 days');
+    hs := hs || held;
+    -- N later worn-off plays of the keeping kind on A, one every four days, each lasting two.
+    for i in 1..n loop
+      w := tests.act(c, 'card', t, '{"card": "tgkeep", "reach": "character"}', p, now() - interval '2900 days' + make_interval(days => 4 * i));
+      insert into play_reach (play, reach, character, ends_at) values (w, 'character', a, now() - interval '2900 days' + make_interval(days => 4 * i + 2));
+    end loop;
+  end loop;
+  -- Every fixture is analyzed before the first call: a function's plan is made once for the loop's calls, and a plan made over the first, small table would price the two indexes alike.
+  analyze play_reach;
+  foreach n in array array[5, 500] loop
+    t := ts[array_position(array[5, 500], n)]; held := hs[array_position(array[5, 500], n)];
+    set local enable_seqscan = off;
+    perform tests.become(ann);
+    before_n := pg_temp.reach_rows();
+    doc := thread_page(t, 1, null, 1, '{}');
+    reads := reads || (pg_temp.reach_rows() - before_n);
+    perform tests.unbecome();
+    set local enable_seqscan = on;
+    if pg_temp.kept_plays(doc) is distinct from array[held::text] then raise exception 'the old page keeps the one play that holds its post, at N = %: %', n, doc -> 'kept'; end if;
+  end loop;
+  if reads[2] > reads[1] + 5 then
+    raise exception 'rows read of play_reach grow with history: % at N = 5, % at N = 500', reads[1], reads[2]; end if;
+end $$;
+
+-- ---- The cost guard: play_reach_character_window serves a per-author window probe of this shape ----
+-- This explains a replica of kept_reach's character probe, not thread_page itself, so it cannot catch a change to thread_page; it guards cost only: that the GiST index
+-- play_reach_character_window (character, tstzrange(started_at, ends_at)) serves the probe for one author with 520 plays, bounded at both ends, and that it is not a sequential scan.
 do $$
 declare
   ann uuid := tests.account('te-ann'); a uuid := tests.character(ann, 'Te A'); c uuid := tests.character(ann, 'Te Caster');
@@ -206,11 +252,13 @@ begin
   analyze play_reach;
   set local enable_seqscan = off;
   for ln in execute format($q$explain select x.play from (select distinct p.character from acts p where p.id = %L) au
-      cross join lateral (select r.play from play_reach r where r.character = au.character and r.ends_at <= now() and r.ends_at > %L) x$q$, p, now() - interval '30 days') loop
+      cross join (select %L::timestamptz as lo, %L::timestamptz as hi) s
+      cross join lateral (select r.play from play_reach r where r.character = au.character and tstzrange(r.started_at, r.ends_at) && tstzrange(s.lo, s.hi, '[]') and r.ends_at <= now()) x$q$,
+      p, now() - interval '30 days', now() - interval '29 days') loop
     plan := plan || E'\n' || ln."QUERY PLAN";
   end loop;
   set local enable_seqscan = on;
-  if plan not like '%play_reach_character%' then raise exception 'a character''s kept read is not from play_reach_character: %', plan; end if;
+  if plan not like '%play_reach_character_window%' then raise exception 'a character''s kept read is not from play_reach_character_window: %', plan; end if;
   if plan like '%Seq Scan on play_reach%' then raise exception 'a character''s kept read scans play_reach: %', plan; end if;
 end $$;
 

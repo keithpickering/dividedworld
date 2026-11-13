@@ -4,9 +4,11 @@
 -- keeps takes no reach), and the test proves an admin ends a worn-off character play of a kind that keeps.
 --
 -- thread_page
---   kept_reach   gains a second select beside the thread's: for each distinct author among the page's `posts` (at most one scan for each, at most the page size), the plays in play_reach with
---                that character, ended by time (`ends_at <= now()`) and after the page's earliest post, a lateral range of play_reach_character (character, ends_at). Thread and character rows
---                share kept_window, kept and the rest: the Act through acts_public, then the kind (`keeps`), `not card_ended` (the one rule for an admin's end), at most 100, oldest first.
+--   kept_reach   gains a second select beside the thread's: for each distinct author among the page's `posts` (at most one probe for each, at most the page size), the plays in play_reach with
+--                that character, ended by time (`ends_at <= now()`) whose window (the play's start to its end, `tstzrange(started_at, ends_at)`) overlaps the page's span (its earliest post to its
+--                latest, `tstzrange(s.lo, s.hi, '[]')`: exactly `started_at <= hi and ends_at > lo`), a lateral probe of play_reach_character_window. The thread's select asks the same of
+--                play_reach_thread_window (0349 bounded it below only). Thread and character rows share kept_window, kept and the rest: the Act through acts_public, then the kind (`keeps`),
+--                `not card_ended` (the one rule for an admin's end), at most 100, oldest first.
 --   kept_window  holds a character row only by a post of its target: `p.character = r.target` beside the window test. A thread row is held by any post of the page, as before. A character play
 --                therefore falls only on posts by that character, never on another author's post in the same window on the same page.
 --   The document keeps its keys and shapes ('kept' is { play, reach, target, ends_at, act }, the shape of 'above'); the casters of the character rows join `who` and their ids join `ids`
@@ -16,21 +18,27 @@
 --
 -- Ways out: an admin's end of the play (reverse_card, after its week as before it) takes it off every post; otherwise a kept play is a layer over words that stay readable, and it falls on no post
 -- written after its week. Nothing is written for a post, at the week's end or ever.
--- Cost: one range scan of play_reach_character for each distinct author on the page (at most the page size, at most 100), bounded below by the page's earliest post and not above, because
--- play_reach holds no start date. A page of an old thread therefore reads, for each of its authors, every worn-off character play on that author from that date to now (of any kind; the
--- kind is read only after the Act), each with a primary-key read of its Act, before the window filter and the cap of 100. 0349's thread branch has the same shape for one thread. Bounding
--- it above needs the play's start in play_reach, which is not added here (raised with the owner as issue #634). The read returns at most 100.
+-- Cost: one GiST probe of play_reach_character_window for each distinct author on the page (at most the page size, at most 100) and one of play_reach_thread_window for the thread, each
+-- returning only the plays whose window overlaps the page's span, at any age of the page: the Act is read by primary key only for those, and the kind only after the Act. 0349's thread
+-- branch (and this file's authors') had been bounded below only, so an old page read every worn-off play on each author, and on the thread, from its date to now (issue #634). Measured on a
+-- scratch database of 20 characters and 20 threads, each with 470 weekly week-long plays over nine years (9,400 a side), beside 200,000 other Acts, a page two days wide at the old end:
+-- 20 authors read 9,360 rows (8,807 buffers) before and 20 index entries with 22 Acts (about 100 buffers) after; one author read 1 entry and 3 Acts at the old end, the middle and the
+-- recent end alike. The cost moves to writes: one more index entry for each play beyond a post, and the GiST is larger (1,336 kB against the btree's 392 kB for 9,400 rows). The read
+-- returns at most 100.
 -- Masks: every piece is read from play_reach, public Acts and the posts' public dates and authors (the author a row is matched on is the post's character, which every reader sees); nothing
 -- reads who owns a character, a hand or a reaction, so the document is the same for every caller. Grants are as they were (create or replace keeps them).
 --
--- play_reach.started_at (docs/plans/2026-11-13-glitter-keeps-bound-plan.md, Task 1; the read that uses it is bounded by a later change in this file)
+-- play_reach.started_at (docs/plans/2026-11-13-glitter-keeps-bound-plan.md, Tasks 1 and 2)
 --   What: the play's start, `timestamptz not null`, the play Act's `created_at`, so a play's window is [started_at, ends_at), which kept_window already tests post by post. It copies a fact the Act already
 --         holds and never changes. `play_reach_start` is a before-insert trigger that sets it from `acts.created_at` for `new.play`, whatever the writer passed, and refuses a row whose Act is not there
 --         (23503, "a play beyond a post is written after its Act"): place_cast and lay_sprung (0317, which play_card writes through) insert the Act first and the row after it in one transaction, so
 --         no writer is rewritten. It is an ordinary trigger, not `always`: an import writes as a replica (tools/import-instance.mjs), where it does not fire, so an exported row is carried as written, as
 --         0336's beat guard carries an export. Its execute is revoked from public, anon and authenticated, as every trigger function's is. `play_reach_starts_before_end` says a play cannot end before it starts
 --         (every writer ends a play after its Act; a range over the two could not hold such a row). An instance holding one fails this migration by that name and rolls back.
---   Why:  a play's end alone bounds a page's read of the worn-off plays below and not above; the start bounds it above.
+--   Why:  a play's end alone bounds a page's read of the worn-off plays below and not above; the start bounds it above. `play_reach_character_window` and `play_reach_thread_window` are GiST indexes
+--         over the window (`tstzrange(started_at, ends_at)`, with the character or the thread beside it, btree_gist taken as 0117 takes btree_gin) so one probe reads only the plays whose window
+--         overlaps the page; a btree over (character, started_at, ends_at) bounds one side only and walks the other. play_reach_character and play_reach_thread stay: effects_above's live plays
+--         (`ends_at > now()`), play_moment's range and the onMine branches (0092) read them, and 0060 holds the live probe to play_reach_character.
 --   Append-only: this is the schema's own change, never a player or The System editing a row. The backfill runs inside this file's own transaction, as 0030's counters do, so no other session writes while the
 --         guard is off; it disables only `play_reach_no_update`, sets each row's start from the Act it already points at (no Act is touched, nothing an Act says changes) and enables the guard `always` again before
 --         the commit. The truncate guard is never disabled.
@@ -57,6 +65,11 @@ update play_reach r set started_at = a.created_at from acts a where a.id = r.pla
 alter table play_reach enable always trigger play_reach_no_update;
 alter table play_reach alter column started_at set not null;
 alter table play_reach add constraint play_reach_starts_before_end check (started_at <= ends_at);
+
+-- btree_gist is a contrib extension that ships with Postgres (and with Supabase): it lets a GiST index hold a plain column (uuid) beside a range.
+create extension if not exists btree_gist with schema extensions;
+create index play_reach_character_window on play_reach using gist (character, tstzrange(started_at, ends_at)) where character is not null;
+create index play_reach_thread_window on play_reach using gist (thread, tstzrange(started_at, ends_at)) where thread is not null;
 
 commit;
 
@@ -134,21 +147,20 @@ begin atomic
     from effects_above(array(select distinct p.character from posts p where p.character is not null), (select rng.id from rng), (select rng.board from rng)) x
   ),
   -- The plays of a kind that keeps, at thread reach on this thread, that wore off by time (not one an admin ended), whose window (the play's date to its end) holds the date of one of
-  -- the page's posts: they still count on those posts, so the page carries them beside `above`, in its shape. The range of play_reach_thread (ended, and ended after the
-  -- page's earliest post), the Act by primary key through acts_public (dated no later than the page's latest post, then the window), and only for what survives that the kind (`keeps`). At most 100, oldest first.
+  -- the page's posts: they still count on those posts, so the page carries them beside `above`, in its shape. The window probe of play_reach_thread_window (the window overlaps the page's span,
+  -- ended by time), the Act by primary key through acts_public (the window again, post by post), and only for what survives that the kind (`keeps`). At most 100, oldest first.
   kept_span as materialized (select min(p.created_at) as lo, max(p.created_at) as hi from posts p),
-  -- The reach-specific part: the thread's rows (play_reach_thread) and, for each distinct author among the page's posts, the plays at that character's reach (play_reach_character,
-  -- (character, ends_at)): one range scan for each author, ended by time and ended after the page's earliest post. A character carries one play
-  -- of a kind at a time, but nothing bounds a scan above (play_reach holds no start date), so it meets every worn-off play on that author since the page's earliest post, of any kind, each
--- with a primary-key read of its Act. Whether the author's own post falls in the window is kept_window's.
+  -- The reach-specific part: the thread's rows (play_reach_thread_window) and, for each distinct author among the page's posts, the plays at that character's reach
+  -- (play_reach_character_window, (character, window)): one probe for each author, the plays ended by time whose window overlaps the page's span (`started_at <= hi and ends_at > lo`), so it
+  -- meets only the plays that can hold a post of the page, at any age of the page. Whether the author's own post falls in the window is kept_window's.
   kept_reach as materialized (
     select x.play, x.reach, coalesce(x.character, x.thread, x.board) as target, x.ends_at
     from play_reach x, kept_span s
-    where x.thread = (select rng.id from rng) and x.ends_at <= now() and x.ends_at > s.lo
+    where x.thread = (select rng.id from rng) and tstzrange(x.started_at, x.ends_at) && tstzrange(s.lo, s.hi, '[]') and x.ends_at <= now()
     union all
     select x.play, x.reach, x.character as target, x.ends_at
     from (select distinct p.character from posts p where p.character is not null) au cross join kept_span s
-    cross join lateral (select r.play, r.reach, r.character, r.ends_at from play_reach r where r.character = au.character and r.ends_at <= now() and r.ends_at > s.lo) x
+    cross join lateral (select r.play, r.reach, r.character, r.ends_at from play_reach r where r.character = au.character and tstzrange(r.started_at, r.ends_at) && tstzrange(s.lo, s.hi, '[]') and r.ends_at <= now()) x
   ),
   -- A thread row is held by any post of the page inside its window; a character row only by a post of its own target (`p.character = r.target`), never another author's post in the same
   -- window on the same page.

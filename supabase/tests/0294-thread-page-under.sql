@@ -29,7 +29,7 @@ do $$
 declare
   ann uuid := tests.account('tu-ann'); bob uuid := tests.account('tu-bob'); admin_acc uuid := tests.account('tu-admin');
   a1 uuid := tests.character(ann, 'Tu One'); a2 uuid := tests.character(ann, 'Tu Two'); cutter uuid := tests.character(bob, 'Tu Cutter');
-  t uuid := tests.thread('Tu forty-five'); posts uuid[] := '{}'; played jsonb; pl uuid; reply uuid; reply_card uuid;
+  t uuid := tests.thread('Tu forty-five'); posts uuid[] := '{}'; hs uuid[] := '{}'; played jsonb; pl uuid; reply uuid; reply_card uuid;
   doc jsonb; doc3 jsonb; doc_bob jsonb; why text;
 begin
   insert into admins (account) values (admin_acc);
@@ -181,7 +181,7 @@ end $$;
 do $$
 declare
   ann uuid := tests.account('to-ann'); admin_acc uuid := tests.account('to-admin'); a1 uuid := tests.character(ann, 'To One');
-  t uuid := tests.thread('To own page'); posts uuid[] := '{}'; made uuid[]; doc jsonb;
+  t uuid := tests.thread('To own page'); posts uuid[] := '{}'; hs uuid[] := '{}'; made uuid[]; doc jsonb;
 begin
   insert into admins (account) values (admin_acc);
   for i in 1..5 loop posts := posts || tests.post(a1, t, 'Post ' || i); end loop;
@@ -202,7 +202,7 @@ end $$;
 do $$
 declare
   ann uuid := tests.account('te-ann'); a1 uuid := tests.character(ann, 'Te One');
-  t uuid := tests.thread('Te all cut'); posts uuid[] := '{}'; doc jsonb;
+  t uuid := tests.thread('Te all cut'); posts uuid[] := '{}'; hs uuid[] := '{}'; doc jsonb;
 begin
   for i in 1..3 loop posts := posts || tests.post(a1, t, 'Post ' || i); end loop;
   perform pg_temp.drawn_under(posts[1], a1, 'Under one.');
@@ -220,7 +220,7 @@ end $$;
 do $$
 declare
   ann uuid := tests.account('th-ann'); admin_acc uuid := tests.account('th-admin'); a1 uuid := tests.character(ann, 'Th One');
-  t uuid := tests.thread('Th hidden'); posts uuid[] := '{}'; secret uuid[]; open_reply uuid[]; doc jsonb; own jsonb; under_act jsonb;
+  t uuid := tests.thread('Th hidden'); posts uuid[] := '{}'; hs uuid[] := '{}'; secret uuid[]; open_reply uuid[]; doc jsonb; own jsonb; under_act jsonb;
 begin
   insert into admins (account) values (admin_acc);
   for i in 1..4 loop posts := posts || tests.post(a1, t, case i when 4 then 'Sekrit page words.' else 'Post ' || i end); end loop;
@@ -266,6 +266,51 @@ begin
   if (select array_agg(x ->> 'play') from jsonb_array_elements(doc -> 'kept') x) is distinct from array[worn::text] then raise exception 'the worn-off play is in kept, the live one is not: %', doc -> 'kept'; end if;
 end $$;
 
+-- ---- Rows read do not grow with history (docs/plans/2026-11-13-glitter-keeps-bound-plan.md, Task 2): the thread's plays, as 0480's test holds the authors' ----
+-- One post long ago, the one play that holds it, then N later worn-off thread plays of a keeping kind; one real thread_page call, one post a page, counted: the tuples the transaction read of
+-- play_reach and of each of its indexes (pg_stat_get_xact_tuples_returned, summed before and after the call). enable_seqscan is off around the call, as a toy table would otherwise be
+-- seq-scanned for `spun` whatever `kept` does. A btree counts only the entries that pass its index conditions, so the plan block below holds the index's name.
+-- Measured before the range predicate and the GiST index: 14 rows read at N = 5 and 501 at N = 500 (the plan's scratch database: 14 and 509); after, 9 and 1.
+create function pg_temp.reach_rows() returns bigint language sql as $$
+  select (pg_stat_get_xact_tuples_returned('play_reach'::regclass)
+          + coalesce((select sum(pg_stat_get_xact_tuples_returned(i.indexrelid)) from pg_index i where i.indrelid = 'play_reach'::regclass), 0))::bigint
+$$;
+
+do $$
+declare
+  ann uuid := tests.account('rh-ann'); a1 uuid := tests.character(ann, 'Rh One');
+  n integer; t uuid; p uuid; w uuid; held uuid; doc jsonb; before_n bigint; reads bigint[] := '{}'; ts uuid[] := '{}'; hs uuid[] := '{}';
+begin
+  foreach n in array array[5, 500] loop
+    t := tests.thread('Rh history ' || n); ts := ts || t;
+    p := tests.post(a1, t, 'Long ago.', now() - interval '3000 days');
+    held := tests.act(a1, 'card', t, '{"card": "tukeep", "reach": "thread"}', p, now() - interval '3010 days');
+    insert into play_reach (play, reach, thread, ends_at) values (held, 'thread', t, now() - interval '2995 days');
+    hs := hs || held;
+    -- N later worn-off thread plays of the keeping kind, one every four days, each lasting two.
+    for i in 1..n loop
+      w := tests.act(a1, 'card', t, '{"card": "tukeep", "reach": "thread"}', p, now() - interval '2900 days' + make_interval(days => 4 * i));
+      insert into play_reach (play, reach, thread, ends_at) values (w, 'thread', t, now() - interval '2900 days' + make_interval(days => 4 * i + 2));
+    end loop;
+  end loop;
+  -- Every fixture is analyzed before the first call: a function's plan is made once for the loop's calls, and a plan made over the first, small table would price the two indexes alike.
+  analyze play_reach;
+  foreach n in array array[5, 500] loop
+    t := ts[array_position(array[5, 500], n)]; held := hs[array_position(array[5, 500], n)];
+    set local enable_seqscan = off;
+    perform tests.become(ann);
+    before_n := pg_temp.reach_rows();
+    doc := thread_page(t, 1, null, 1, '{}');
+    reads := reads || (pg_temp.reach_rows() - before_n);
+    perform tests.unbecome();
+    set local enable_seqscan = on;
+    if (select array_agg(x ->> 'play') from jsonb_array_elements(doc -> 'kept') x) is distinct from array[held::text] then
+      raise exception 'the old page keeps the one thread play that holds its post, at N = %: %', n, doc -> 'kept'; end if;
+  end loop;
+  if reads[2] > reads[1] + 5 then
+    raise exception 'rows read of play_reach grow with history: % at N = 5, % at N = 500', reads[1], reads[2]; end if;
+end $$;
+
 -- ---- The probes are index-backed (read line by line, as 0034's are) ----
 do $$
 declare
@@ -286,7 +331,10 @@ begin
   for ln in execute format('explain select x.reply from acts p cross join lateral (select y.reply from post_under y where y.parent = p.id) x where p.thread = %L and p.seq <= 20', u) loop plan := plan || E'\n' || ln."QUERY PLAN"; end loop;
   if plan not like '%post_under_parent%' then raise exception 'the nested read is not a lateral probe of post_under_parent: %', plan; end if;
   plan := '';
-  for ln in execute format('explain select x.play from play_reach x where x.thread = %L and x.ends_at <= now() and x.ends_at > %L', t, now() - interval '30 days') loop plan := plan || E'\n' || ln."QUERY PLAN"; end loop;
-  if plan not like '%play_reach_thread%' then raise exception 'the kept read is not from play_reach_thread: %', plan; end if;
+  -- The kept read is bounded at both ends: a replica of kept_reach's thread probe, the plays whose window can hold a post of the page (`tstzrange(started_at, ends_at) && [lo, hi]`).
+  for ln in execute format($q$explain select x.play from play_reach x where x.thread = %L and tstzrange(x.started_at, x.ends_at) && tstzrange(%L::timestamptz, %L::timestamptz, '[]') and x.ends_at <= now()$q$,
+                           t, now() - interval '30 days', now() - interval '29 days') loop plan := plan || E'\n' || ln."QUERY PLAN"; end loop;
+  if plan not like '%play_reach_thread_window%' then raise exception 'the kept read is not from play_reach_thread_window: %', plan; end if;
+  if plan like '%Seq Scan on play_reach%' then raise exception 'the kept read scans play_reach: %', plan; end if;
   set local enable_seqscan = on;
 end $$;
