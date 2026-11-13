@@ -3,9 +3,9 @@
 Record, written 2026-11-12. A CI fix built straight from its fault, dispatched by the session that watches and merges
 PRs because the fault blocks every open PR; no design session. Built in one PR from `main`.
 
-No `check-*.mjs` is added and no test is shortened, skipped or reordered. No migration. No deployed database, bucket or
-connector is touched. CLAUDE.md is not changed, and neither is `tools/build.mjs` or `tools/test-sql.mjs`; of the
-workflows only the `sql` job's time limit (Task 1).
+No `check-*.mjs` is added (Task 3 adds a rule to an existing one) and no test is shortened, skipped or reordered. No
+migration. No deployed database, bucket or connector is touched. CLAUDE.md is not changed, and neither is `tools/build.mjs` or `tools/test-sql.mjs`; of the
+workflows only the `sql` job's time limit (Task 1) and the Postgres image's name (Task 3).
 
 ## The problem
 
@@ -93,7 +93,38 @@ leaves the design to the owner. It names what bears on it: "Two lists that must 
 answer on splitting `test:ui` in #515; #579, which stands in the way of running a file alone or files on different
 runners; the twelve files that are 55% of the step; and the eight end-to-end files that create and drop databases.
 
+### Task 3: the Postgres image, named by digest
+
+Model: sonnet
+
+Added 2026-11-13, at the owner's word on #596 as the merging session relayed it: name the image by 17.11's digest in
+this PR, so that CI runs the same Postgres until a PR moves it, and a new Postgres arrives as one red PR and not as
+every PR going red at once. #596 stays open for making the suite hold on 17.12.
+
+**The fault.** Both workflows that start a Postgres (`.github/workflows/sql.yml` and
+`.github/workflows/rehearsal.yml`) say `image: postgres:17`, a tag that moves. Between 21:38 and 22:15 UTC on
+2026-11-12 it moved from 17.11 to 17.12, and every `sql` job since has failed: three on this PR (jobs 131531867021,
+131538686788, 131549085404) and one on `main` alone (job 131560473402), on `0058-progress-scale.sql` (a statement that
+runs to the 300s `statement_timeout`), `0146-card-writes.sql` and `0166-surface-log.sql`. The twelve runs read on
+17.11 passed those files. Those four jobs are the red runs of the pin; its green run is this PR's `sql` job.
+
+**The change.** In both workflows:
+`image: postgres:17.11@sha256:ff87138949ad9a46f32ff23bd6852b52ce024a13dffe9b4087be98292cdd3b4f`, the digest every
+passing run pulled. Docker pulls by the digest; the tag beside it only says which version the digest is. A comment in
+`sql.yml` says why, and how to move it: a PR of its own that changes the one string in both files, whose `sql` and
+`rehearsal` jobs then run on the new image.
+
+**The check.** Two files that must name the same image are two lists that must agree, and a workflow file cannot read
+another's. So `tools/check-release-workflows.mjs` gains a rule, R8: every `services` entry in any workflow whose image
+is a Postgres names it as `postgres:<version>@sha256:<64 hex>`, and all of them are the same string. Test first, in
+`tools/test-release-workflows.mjs`, each driven red before the rule exists and by the rule's message after:
+`sql.yml` back on `postgres:17`; `rehearsal.yml` on a digest that differs from `sql.yml`'s; a tag with no digest
+(`postgres:17.11`). The real files pass.
+
+The setup script's note (`scripts/setup-container.sh`) says "CI runs Postgres 17" and stays true.
+
 ## Review focus
 
 - The comment in the workflow says only what the logs show.
 - Nothing in the suite, its order or its files changes.
+- The image string is identical in both workflows and is the digest the passing runs pulled.
