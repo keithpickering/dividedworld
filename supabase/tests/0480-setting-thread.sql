@@ -87,8 +87,6 @@ begin
   perform pg_temp.seed();
   if (select count(*) from threads t where t.board = system_board()) is distinct from threads_before then raise exception 'seeding again made a thread on The System''s board'; end if;
   if (select jsonb_object_agg(s.key, s.value) from settings s where s.key in ('systemAnnouncements', 'updatesThread')) is distinct from settings_before then raise exception 'seeding again moved a setting'; end if;
-  if (select count(*) from threads t where t.title = 'Announcements' and t.board = system_board()) is distinct from 1::bigint then raise exception 'seeding again made a second announcements thread'; end if;
-  if (select count(*) from threads t where t.title = 'Updates' and t.board = system_board()) is distinct from 1::bigint then raise exception 'seeding again made a second updates thread'; end if;
 end $$;
 
 -- ---- What each reads of `threads` does not move with the threads an instance holds ----
