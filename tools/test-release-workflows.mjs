@@ -17,6 +17,7 @@ const RELEASE = '.github/workflows/release.yml';
 const BUILD = '.github/workflows/build.yml';
 const SQL = '.github/workflows/sql.yml';
 const WEB = '.github/workflows/web.yml';
+const REHEARSAL = '.github/workflows/rehearsal.yml';
 const NETLIFY = 'netlify.toml';
 
 let failures = 0;
@@ -180,6 +181,20 @@ red('netlify.toml gives deploy previews their own command', {
   ...REAL,
   [NETLIFY]: `${REAL[NETLIFY]}\n[context.deploy-preview]\n  command = "npm run build"\n`,
 }, /R7.*deploy-preview/);
+
+/* ---- R8: every Postgres service names one image, by version and digest ---- */
+const pgImage = (doc, image) => {
+  for (const job of Object.values(doc.jobs)) if (job.services?.postgres) job.services.postgres.image = image;
+};
+red('sql.yml is back on the postgres:17 tag', edit(SQL, (d) => pgImage(d, 'postgres:17')), /R8/);
+red('rehearsal.yml names a different digest than sql.yml', edit(REHEARSAL, (d) => {
+  pgImage(d, `postgres:17.11@sha256:${'0'.repeat(64)}`);
+}), /R8/);
+red('a postgres image with a tag and no digest', edit(SQL, (d) => pgImage(d, 'postgres:17.11')), /R8/);
+red('a registry-prefixed postgres image is held to the rule too', edit(SQL, (d) => pgImage(d, 'docker.io/library/postgres:17')), /R8/);
+quiet('a service that is not a postgres image is not held to R8', edit(SQL, (d) => {
+  for (const job of Object.values(d.jobs)) if (job.services) job.services.cache = { image: 'redis:7' };
+}));
 
 /* ---- a file that does not parse ---- */
 red('a workflow that does not parse is named', { ...REAL, [BUILD]: 'on: [unclosed\n  - : :' }, /build\.yml/);

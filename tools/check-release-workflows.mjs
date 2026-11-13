@@ -10,7 +10,11 @@
  * down to three called workflows and a push that must never force, and a quiet edit to any one
  * of them (a dropped job, a `--force`, a second workflow that also pushes, a production-only
  * build command) leaves the site deploying something the tests never saw. This check fails the
- * build on each; its rules R1 to R7 are the design's section 4.
+ * build on each; its rules R1 to R7 are the design's section 4. R8 is not the release's: the
+ * Postgres every workflow's service starts is named by version and digest, and is one string
+ * across all of them. The `postgres:17` tag moved from 17.11 to 17.12 on 2026-11-12 and every
+ * SQL run failed (issue #596), and two workflows that must name one image are two lists that
+ * must agree, which a workflow file cannot check of another.
  *
  * Carried from currents' check of the same name, cut down: its state paths, ignore script,
  * alive check and cockpit reference stay behind.
@@ -34,6 +38,11 @@ const REF = '${{ inputs.ref }}';
  * never a word later in another command's arguments (`git commit -m "fix push"`).
  */
 const GIT_PUSH = /\bgit(?:\s+(?:-[Cc]\s+\S+|--?[\w-]+(?:=\S+)?))*\s+push\b/;
+
+/** A Postgres image: repository name `postgres` under any registry or namespace. */
+const POSTGRES_IMAGE = /^(?:[^/\s]+\/)*postgres(?:[:@]|$)/;
+/** The one accepted spelling: a version tag and the digest Docker actually pulls by. */
+const PINNED_POSTGRES = /^(?:[^/\s]+\/)*postgres:[0-9][\w.-]*@sha256:[0-9a-f]{64}$/;
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const list = (v) => (v === undefined || v === null ? [] : Array.isArray(v) ? v : [v]);
@@ -181,6 +190,27 @@ export function problems(files) {
       else if (/^context\./.test(table) && /^\s*command\s*=/.test(line)) ctx.add(`[${table}]`);
     }
     if (ctx.size) out.push(`netlify.toml: R7 ${[...ctx].join(', ')} sets its own command; production must build what a branch deploy builds`);
+  }
+
+  // R8: every Postgres service image is `postgres:<version>@sha256:<digest>`, one string in all.
+  // A Postgres image is any whose repository name is `postgres`, with or without a registry or
+  // namespace in front (`postgres`, `library/postgres`, `docker.io/library/postgres`), and with
+  // any tag or digest after it. Other images (redis, supabase/postgres) are not held to it.
+  const pinned = new Map();
+  for (const [path, doc] of Object.entries(docs)) {
+    for (const [jobName, job] of Object.entries(isObj(doc.jobs) ? doc.jobs : {})) {
+      for (const [svc, def] of Object.entries(isObj(job?.services) ? job.services : {})) {
+        const image = String(def?.image ?? '');
+        if (!POSTGRES_IMAGE.test(image)) continue;
+        const where = `${path}: R8 job ${jobName} service ${svc}`;
+        if (!PINNED_POSTGRES.test(image)) out.push(`${where} image ${JSON.stringify(image)} is not postgres:<version>@sha256:<64 hex>`);
+        else pinned.set(`${path} job ${jobName} service ${svc}`, image);
+      }
+    }
+  }
+  if (new Set(pinned.values()).size > 1) {
+    const by = [...pinned].map(([where, image]) => `${where} is ${image}`);
+    out.push(`${WORKFLOWS}: R8 the Postgres images differ: ${by.join('; ')}`);
   }
   return out;
 }

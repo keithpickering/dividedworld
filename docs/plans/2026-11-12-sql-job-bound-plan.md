@@ -4,8 +4,9 @@ Record, written 2026-11-12. A CI fix built straight from its fault, dispatched b
 PRs because the fault blocks every open PR; no design session. Built in one PR from `main`.
 
 No `check-*.mjs` is added (Task 3 adds a rule to an existing one) and no test is shortened, skipped or reordered. No
-migration. No deployed database, bucket or connector is touched. CLAUDE.md is not changed, and neither is `tools/build.mjs` or `tools/test-sql.mjs`; of the
-workflows only the `sql` job's time limit (Task 1) and the Postgres image's name (Task 3).
+migration. No deployed database, bucket or connector is touched. CLAUDE.md is not changed, and neither is
+`tools/build.mjs` or `tools/test-sql.mjs`; of the workflows only the `sql` job's time limit (Task 1) and the Postgres
+image's name (Task 3).
 
 ## The problem
 
