@@ -173,7 +173,8 @@ begin
        is distinct from (select array_agg(to_jsonb(y::text) order by to_jsonb(y::text)) from unnest(array[blot_one, blot_two, end_one]) y) then
       raise exception 'then the snapshot''s layers and the ends at or before the spin; a later layer and a later end are not: %', got -> 'layers';
     end if;
-    if got -> 'layers' -> 1 ->> 'state' is null and got -> 'layers' -> 2 ->> 'state' is null and got -> 'layers' -> 3 ->> 'state' is null then
+    if (select l -> 'state' from jsonb_array_elements(got -> 'layers') l where l -> 'act' ->> 'id' = blot_one::text) is distinct from saved
+       or (select l -> 'state' from jsonb_array_elements(got -> 'layers') l where l -> 'act' ->> 'id' = blot_two::text) is distinct from 'null'::jsonb then
       raise exception 'a layer carries the state it had saved: %', got -> 'layers';
     end if;
     if got::text like '%' || late_blot::text || '%' then raise exception 'a layer made after the spin is in its moment'; end if;

@@ -7,7 +7,7 @@
 --   spin, spin_written   take `at_post uuid default null`, last. A spin that names a post writes it on its own Act (`at` in the payload, with the title and the body), and
 --                        is taken only where the origin is a play on a character that landed (not caught) and is up (its time not run out, no admin's end), and the post is
 --                        a post by that character. Otherwise `that card is not on that post`, one sentence and one code whichever check failed. apologize is as 0130 wrote it:
---                        it calls spin_written with five arguments, so `at_post` is null for it.
+--                        it calls spin_written without it, so `at_post` is null for it.
 --   spin_moments         one row per spin that names a post: the post's latest edit then, or the post itself where it has none.
 --   spin_moment_layers   one row per layer on that post then (acts_layers' own predicate), with a copy of the state it had saved and when.
 --                        Both as play_moments and play_moment_layers are (0072): append-only, truncate guarded always, written by a trigger on the Act's insert (an
@@ -110,7 +110,7 @@ create trigger acts_take_spin_moment after insert on acts for each row
 -- ---------------------------------------------------------------------------------------------------- the spin ----
 
 -- spin_written (0130), with `at_post`: after the origin's board is found and before the thread is made, a spin that names a post is held to the check below. Everything else
--- is as 0130 wrote it. The new parameter is last and defaults to null, so apologize's call of five arguments is unchanged.
+-- is as 0130 wrote it. The new parameter is last and defaults to null, so apologize's call, which does not pass it, is unchanged.
 drop function spin_written(uuid, uuid, text, text, boolean, uuid[]);
 create function spin_written(origin uuid, through uuid, title text, body text, check_bar boolean, framing uuid[], at_post uuid default null) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
