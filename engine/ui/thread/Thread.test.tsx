@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, onTestFinished, test, vi } fro
 import type { CardUi } from '../cards/types.ts';
 import type { Act, Id, ThreadListener } from '../data/api.ts';
 import type { Fake } from '../data/fake.ts';
-import { buildWorld, holdReads, renderIn, testInstance } from '../test-world.tsx';
+import { buildWorld, holdReads, renderIn, tapThread, testInstance } from '../test-world.tsx';
 import { landsOn, ok, refuse, type CardRules } from '../../rules/cards.ts';
 import type { Instance } from '../../rules/types.ts';
 import { pageOf, pageRange, threadHref } from './pages.ts';
@@ -117,25 +117,6 @@ function world(acts: number, settings: Parameters<typeof buildWorld>[0] = undefi
 const open = (w: { fake: Fake; thread: Id }, hash = '', query = '') =>
   renderIn(w.fake, <LoadedThread thread={w.thread} />, { path: `/t/${w.thread}${query}${hash}` });
 
-/** Capture the thread's live listener so a test can deliver events as the server would, twice or out of order. */
-function tap(fake: Fake) {
-  let listener: ThreadListener | undefined;
-  /* The screen subscribes after its first render (in a passive effect), so an event asked for earlier waits for it. */
-  const waiting: ((l: ThreadListener) => void)[] = [];
-  const real = fake.subscribeThread.bind(fake);
-  fake.subscribeThread = (t, l) => {
-    listener = l;
-    const off = real(t, l);
-    for (const call of waiting.splice(0)) call(l);
-    return off;
-  };
-  const proxy: ThreadListener = {
-    onAct: (a) => (listener ? listener.onAct?.(a) : void waiting.push((l) => l.onAct?.(a))),
-    onTally: (act, t) => (listener ? listener.onTally?.(act, t) : void waiting.push((l) => l.onTally?.(act, t))),
-    onEffect: (p, at) => (listener ? listener.onEffect?.(p, at) : void waiting.push((l) => l.onEffect?.(p, at))),
-  };
-  return () => proxy;
-}
 let counter = 0;
 const live = (thread: Id, seq: number, character: Id | null, over: Partial<Act> = {}): Act => ({
   id: `99999999-0000-4000-8000-${String(++counter).padStart(12, '0')}`, character, kind: 'post', thread, targetActId: null, seq,
@@ -416,7 +397,7 @@ describe('the postbit in a thread', () => {
 describe('Acts that are not posts', () => {
   test('a card play is a mark on its post, naming the card, and never a line of its own', async () => {
     const w = world(3);
-    const tapped = tap(w.fake);
+    const tapped = tapThread(w.fake);
     open(w);
     await screen.findByRole('article', { name: /^Post 3 /u });
     see(sentinel(), true);
@@ -562,7 +543,7 @@ describe('the plays on a post: their tallies, own reactions and spins, read with
 
   test('a live reaction that makes a later play the most drawn leaves the order as it was, and a reread of the page reorders it', async () => {
     const w = played(25);
-    const tapped = tap(w.fake);
+    const tapped = tapThread(w.fake);
     const page = vi.spyOn(w.fake, 'threadPage');
     open(w);
     await waitFor(() => expect(billed(2)).toHaveLength(2));
@@ -606,7 +587,7 @@ describe('the plays on a post: their tallies, own reactions and spins, read with
 
   test('a play of a new card that arrives live is billed last, however new it is', async () => {
     const w = played();
-    const tapped = tap(w.fake);
+    const tapped = tapThread(w.fake);
     open(w);
     await waitFor(() => expect(billed(2)).toHaveLength(2));
     expect(billed(2)).toEqual(['whoops:2', 'stick-around:1']);
@@ -762,7 +743,7 @@ describe('mark_read', () => {
 describe('live updates', () => {
   test('on the last page and at the bottom, a new post slides in at the bottom', async () => {
     const w = world(5);
-    const tapped = tap(w.fake);
+    const tapped = tapThread(w.fake);
     open(w);
     await screen.findByRole('article', { name: /^Post 5 /u });
     see(sentinel(), true);
@@ -777,7 +758,7 @@ describe('live updates', () => {
   test('reduced motion inserts it without sliding', async () => {
     document.documentElement.setAttribute('data-kb-motion', 'reduce');
     const w = world(5);
-    const tapped = tap(w.fake);
+    const tapped = tapThread(w.fake);
     open(w);
     await screen.findByRole('article', { name: /^Post 5 /u });
     see(sentinel(), true);
@@ -788,7 +769,7 @@ describe('live updates', () => {
 
   test('reading higher up, a bar above the HUD counts the new posts and nothing moves; clicking shows them and scrolls to the first', async () => {
     const w = world(5);
-    const tapped = tap(w.fake);
+    const tapped = tapThread(w.fake);
     open(w);
     await screen.findByRole('article', { name: /^Post 5 /u });
     see(sentinel(), false);
@@ -804,7 +785,7 @@ describe('live updates', () => {
 
   test('one new post says "1 new post"', async () => {
     const w = world(5);
-    const tapped = tap(w.fake);
+    const tapped = tapThread(w.fake);
     open(w);
     await screen.findByRole('article', { name: /^Post 5 /u });
     see(sentinel(), false);
@@ -814,7 +795,7 @@ describe('live updates', () => {
 
   test('reading on, to the bottom, shows them without a click', async () => {
     const w = world(5);
-    const tapped = tap(w.fake);
+    const tapped = tapThread(w.fake);
     open(w);
     await screen.findByRole('article', { name: /^Post 5 /u });
     see(sentinel(), false);
@@ -827,7 +808,7 @@ describe('live updates', () => {
 
   test('on an earlier page the bar says which page, and leads there', async () => {
     const w = world(45);
-    const tapped = tap(w.fake);
+    const tapped = tapThread(w.fake);
     open(w, '', '?page=1');
     await screen.findByRole('article', { name: /^Post 20 /u });
     deliver(() => tapped().onAct?.(live(w.thread, 46, w.spritey)));
@@ -842,7 +823,7 @@ describe('live updates', () => {
 
   test('out of order, and twice, each post appears once and in order', async () => {
     const w = world(5);
-    const tapped = tap(w.fake);
+    const tapped = tapThread(w.fake);
     open(w);
     await screen.findByRole('article', { name: /^Post 5 /u });
     see(sentinel(), true);
@@ -877,7 +858,7 @@ describe('live updates', () => {
   test('a post that follows a legacy numbered card at the tail is shown at the bottom as any next post is', async () => {
     const w = world(4);
     withoutSeq(w, 4);
-    const tapped = tap(w.fake);
+    const tapped = tapThread(w.fake);
     open(w);
     await screen.findByRole('article', { name: /^Post 3 /u });
     see(sentinel(), true);
@@ -889,7 +870,7 @@ describe('live updates', () => {
 
   test('a gap that never fills is read from the server', async () => {
     const w = world(5);
-    const tapped = tap(w.fake);
+    const tapped = tapThread(w.fake);
     open(w);
     await screen.findByRole('article', { name: /^Post 5 /u });
     see(sentinel(), true);
@@ -904,7 +885,7 @@ describe('live updates', () => {
 
   test('an edit arrives again under its own id and updates in place, as "Last edited", and is not announced', async () => {
     const w = world(5);
-    const tapped = tap(w.fake);
+    const tapped = tapThread(w.fake);
     open(w);
     await screen.findByRole('article', { name: /^Post 3 /u });
     const before = within(announcer()).queryAllByText(/./u).length;
@@ -936,7 +917,7 @@ describe('live updates', () => {
 
   test('a tally updates its post in place and only grows', async () => {
     const w = world(5);
-    const tapped = tap(w.fake);
+    const tapped = tapThread(w.fake);
     open(w);
     await screen.findByRole('article', { name: /^Post 3 /u });
     deliver(() => tapped().onTally?.(w.ids[2]!, { fire: 2 }));
@@ -949,7 +930,7 @@ describe('live updates', () => {
 
   test('a tally that lands on one of the player\'s own Acts asks for the estimate, and on anyone else\'s does not', async () => {
     const w = world(5);
-    const tapped = tap(w.fake);
+    const tapped = tapThread(w.fake);
     open(w);
     await screen.findByRole('article', { name: /^Post 4 /u });
     await pause(80);
@@ -966,7 +947,7 @@ describe('live updates', () => {
 
   test('and so does one on an Act of the player\'s own that is on another page', async () => {
     const w = world(45);
-    const tapped = tap(w.fake);
+    const tapped = tapThread(w.fake);
     open(w, '', '?page=1');
     await screen.findByRole('article', { name: /^Post 20 /u });
     landed.mockClear();
@@ -1212,7 +1193,7 @@ describe('a card\'s effect on a post', () => {
 
   test('a play that arrives live gets its mark and its effect on a post already on screen', async () => {
     const w = world(3);
-    const tapped = tap(w.fake);
+    const tapped = tapThread(w.fake);
     openWith(w, [fx('whoops')]);
     await screen.findByRole('article', { name: /^Post 3 /u });
     expect(within(post(2)).queryByTestId('fx-whoops')).toBeNull();
@@ -1226,7 +1207,7 @@ describe('a card\'s effect on a post', () => {
 describe('the announcer', () => {
   test('says each new post once, however many times it arrives, and no reaction or edit', async () => {
     const w = world(5);
-    const tapped = tap(w.fake);
+    const tapped = tapThread(w.fake);
     open(w);
     await screen.findByRole('article', { name: /^Post 5 /u });
     const region = announcer();
@@ -1245,7 +1226,7 @@ describe('the announcer', () => {
 
   test('stays silent for a card, an unmask and a tally: the card is a mark, the others still appear', async () => {
     const w = world(5);
-    const tapped = tap(w.fake);
+    const tapped = tapThread(w.fake);
     open(w);
     await screen.findByRole('article', { name: /^Post 5 /u });
     see(sentinel(), true);
@@ -1262,7 +1243,7 @@ describe('the announcer', () => {
 
   test('names the staff in lower case mid-sentence: "New post by the staff"', async () => {
     const w = world(5);
-    const tapped = tap(w.fake);
+    const tapped = tapThread(w.fake);
     open(w);
     await screen.findByRole('article', { name: /^Post 5 /u });
     deliver(() => tapped().onAct?.(live(w.thread, 6, null)));
@@ -1272,7 +1253,7 @@ describe('the announcer', () => {
 
   test('says it for a post held back by the bar too, since the reader cannot see it', async () => {
     const w = world(5);
-    const tapped = tap(w.fake);
+    const tapped = tapThread(w.fake);
     open(w);
     await screen.findByRole('article', { name: /^Post 5 /u });
     see(sentinel(), false);
@@ -1321,7 +1302,7 @@ const UNKNOWN = '00000000-0000-4000-8000-00000000ffff';
 describe('a gap in the live Acts', () => {
   test('an Act every 500 ms past a gap does not keep the gap from being read', async () => {
     const w = world(5);
-    const tapped = tap(w.fake);
+    const tapped = tapThread(w.fake);
     clock();
     open(w);
     await screen.findByRole('article', { name: /^Post 5 /u });
@@ -1345,7 +1326,7 @@ describe('a gap in the live Acts', () => {
 
   test('when the gap cannot be read, the bar offers the held posts, and clicking shows them', async () => {
     const w = world(5);
-    const tapped = tap(w.fake);
+    const tapped = tapThread(w.fake);
     clock();
     open(w);
     await screen.findByRole('article', { name: /^Post 5 /u });
@@ -1366,7 +1347,7 @@ describe('a gap in the live Acts', () => {
 
   test('a gap read that failed is tried again, with longer waits, until it fills', async () => {
     const w = world(5);
-    const tapped = tap(w.fake);
+    const tapped = tapThread(w.fake);
     clock();
     open(w);
     await screen.findByRole('article', { name: /^Post 5 /u });
@@ -1394,7 +1375,7 @@ describe('an Act read while its author is read', () => {
   test('an edited version is not overwritten by the original arriving late', async () => {
     const w = world(5);
     const stranger = w.fake.seed.character(w.fake.seed.account('stranger'), 'Newcomer', 'face');
-    const tapped = tap(w.fake);
+    const tapped = tapThread(w.fake);
     open(w);
     await screen.findByRole('article', { name: /^Post 5 /u });
     see(sentinel(), true);
@@ -1464,7 +1445,7 @@ describe('quotes and tallies off the page', () => {
 
   test('tallies on Acts of other pages are one read for the author of each, in one call', async () => {
     const w = world(45);
-    const tapped = tap(w.fake);
+    const tapped = tapThread(w.fake);
     open(w, '', '?page=1');
     await screen.findByRole('article', { name: /^Post 20 /u });
     const many = vi.spyOn(w.fake, 'actsById');
@@ -1498,7 +1479,7 @@ describe('quotes and tallies off the page', () => {
 describe('what a tally storm and a long post cost', () => {
   test('a storm of tallies re-renders the post it lands on and no other post body', async () => {
     const w = world(5);
-    const tapped = tap(w.fake);
+    const tapped = tapThread(w.fake);
     open(w);
     await screen.findByRole('article', { name: /^Post 5 /u });
     see(sentinel(), false);
@@ -1521,7 +1502,7 @@ describe('what a tally storm and a long post cost', () => {
     const long = `${'word '.repeat(3999)}end`;
     expect(long.length).toBeGreaterThan(19_000);
     w.fake.seed.post(w.thread, w.pipe, long);
-    const tapped = tap(w.fake);
+    const tapped = tapThread(w.fake);
     open(w);
     const article = await screen.findByRole('article', { name: /^Post 3 /u });
     see(sentinel(), false);
@@ -1591,7 +1572,7 @@ describe('reading when it cannot be sent', () => {
 describe('the observers', () => {
   test('a thread has one observer for what is read and one for the bottom, however many posts, and leaving lets go of both', async () => {
     const w = world(20);
-    const tapped = tap(w.fake);
+    const tapped = tapThread(w.fake);
     const { unmount } = open(w);
     await screen.findByRole('article', { name: /^Post 20 /u });
     await watched(post(20));
@@ -1747,7 +1728,7 @@ describe('a thread drawn from its document (the forum-load plan, Task 13)', () =
 
   test('the live channel starts after the first render and a gap is read from the document\'s last seq, with one threadPage read', async () => {
     const w = world(45);
-    const listener = tap(w.fake);
+    const listener = tapThread(w.fake);
     const page = vi.spyOn(w.fake, 'threadPage');
     clock();
     const { doc, read } = await landed(w, { page: 3 }, ['acts']);
@@ -2308,7 +2289,7 @@ describe('where glitter lands in a thread', () => {
 
   test('a post that comes live is registered, and the one before it keeps its registration', async () => {
     const w = world(2);
-    const tapped = tap(w.fake);
+    const tapped = tapThread(w.fake);
     open(w);
     await screen.findByRole('article', { name: /^Post 2 /u });
     await waitFor(() => expect(landing.posts.size).toBe(2));
