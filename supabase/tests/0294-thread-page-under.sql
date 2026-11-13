@@ -29,7 +29,7 @@ do $$
 declare
   ann uuid := tests.account('tu-ann'); bob uuid := tests.account('tu-bob'); admin_acc uuid := tests.account('tu-admin');
   a1 uuid := tests.character(ann, 'Tu One'); a2 uuid := tests.character(ann, 'Tu Two'); cutter uuid := tests.character(bob, 'Tu Cutter');
-  t uuid := tests.thread('Tu forty-five'); posts uuid[] := '{}'; hs uuid[] := '{}'; played jsonb; pl uuid; reply uuid; reply_card uuid;
+  t uuid := tests.thread('Tu forty-five'); posts uuid[] := '{}'; played jsonb; pl uuid; reply uuid; reply_card uuid;
   doc jsonb; doc3 jsonb; doc_bob jsonb; why text;
 begin
   insert into admins (account) values (admin_acc);
@@ -181,7 +181,7 @@ end $$;
 do $$
 declare
   ann uuid := tests.account('to-ann'); admin_acc uuid := tests.account('to-admin'); a1 uuid := tests.character(ann, 'To One');
-  t uuid := tests.thread('To own page'); posts uuid[] := '{}'; hs uuid[] := '{}'; made uuid[]; doc jsonb;
+  t uuid := tests.thread('To own page'); posts uuid[] := '{}'; made uuid[]; doc jsonb;
 begin
   insert into admins (account) values (admin_acc);
   for i in 1..5 loop posts := posts || tests.post(a1, t, 'Post ' || i); end loop;
@@ -202,7 +202,7 @@ end $$;
 do $$
 declare
   ann uuid := tests.account('te-ann'); a1 uuid := tests.character(ann, 'Te One');
-  t uuid := tests.thread('Te all cut'); posts uuid[] := '{}'; hs uuid[] := '{}'; doc jsonb;
+  t uuid := tests.thread('Te all cut'); posts uuid[] := '{}'; doc jsonb;
 begin
   for i in 1..3 loop posts := posts || tests.post(a1, t, 'Post ' || i); end loop;
   perform pg_temp.drawn_under(posts[1], a1, 'Under one.');
@@ -220,7 +220,7 @@ end $$;
 do $$
 declare
   ann uuid := tests.account('th-ann'); admin_acc uuid := tests.account('th-admin'); a1 uuid := tests.character(ann, 'Th One');
-  t uuid := tests.thread('Th hidden'); posts uuid[] := '{}'; hs uuid[] := '{}'; secret uuid[]; open_reply uuid[]; doc jsonb; own jsonb; under_act jsonb;
+  t uuid := tests.thread('Th hidden'); posts uuid[] := '{}'; secret uuid[]; open_reply uuid[]; doc jsonb; own jsonb; under_act jsonb;
 begin
   insert into admins (account) values (admin_acc);
   for i in 1..4 loop posts := posts || tests.post(a1, t, case i when 4 then 'Sekrit page words.' else 'Post ' || i end); end loop;
@@ -309,6 +309,38 @@ begin
   end loop;
   if reads[2] > reads[1] + 5 then
     raise exception 'rows read of play_reach grow with history: % at N = 5, % at N = 500', reads[1], reads[2]; end if;
+end $$;
+
+-- A page with no posts (every number of its range drawn under a post elsewhere, as 'Te all cut' has) has no span to bound the read by, so it reads no play at all: not the thread's, at any history.
+-- Counted as above: a post, a reply drawn under it (so page 2 at one a page holds only a number drawn elsewhere), then N worn-off thread plays of a keeping kind.
+do $$
+declare
+  ann uuid := tests.account('re-ann'); a1 uuid := tests.character(ann, 'Re One');
+  n integer; t uuid; p uuid; w uuid; doc jsonb; before_n bigint; reads bigint[] := '{}'; ts uuid[] := '{}';
+begin
+  foreach n in array array[5, 500] loop
+    t := tests.thread('Re empty page ' || n); ts := ts || t;
+    p := tests.post(a1, t, 'The parent.', now() - interval '3000 days');
+    perform pg_temp.drawn_under(p, a1, 'Drawn under it.');
+    for i in 1..n loop
+      w := tests.act(a1, 'card', t, '{"card": "tukeep", "reach": "thread"}', p, now() - interval '2900 days' + make_interval(days => 4 * i));
+      insert into play_reach (play, reach, thread, ends_at) values (w, 'thread', t, now() - interval '2900 days' + make_interval(days => 4 * i + 2));
+    end loop;
+  end loop;
+  analyze play_reach;
+  foreach n in array array[5, 500] loop
+    t := ts[array_position(array[5, 500], n)];
+    set local enable_seqscan = off;
+    perform tests.become(ann);
+    before_n := pg_temp.reach_rows();
+    doc := thread_page(t, 2, null, 1, '{}');
+    reads := reads || (pg_temp.reach_rows() - before_n);
+    perform tests.unbecome();
+    set local enable_seqscan = on;
+    if doc -> 'acts' is distinct from '[]'::jsonb or doc -> 'kept' is distinct from '[]'::jsonb then raise exception 'page 2 holds no post and keeps nothing, at N = %: %', n, doc; end if;
+  end loop;
+  if reads[2] > reads[1] + 5 then
+    raise exception 'a page with no posts reads rows of play_reach that grow with history: % at N = 5, % at N = 500', reads[1], reads[2]; end if;
 end $$;
 
 -- ---- The probes are index-backed (read line by line, as 0034's are) ----

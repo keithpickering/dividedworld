@@ -152,11 +152,11 @@ begin atomic
   kept_span as materialized (select min(p.created_at) as lo, max(p.created_at) as hi from posts p),
   -- The reach-specific part: the thread's rows (play_reach_thread_window) and, for each distinct author among the page's posts, the plays at that character's reach
   -- (play_reach_character_window, (character, window)): one probe for each author, the plays ended by time whose window overlaps the page's span (`started_at <= hi and ends_at > lo`), so it
-  -- meets only the plays that can hold a post of the page, at any age of the page. Whether the author's own post falls in the window is kept_window's.
+  -- meets only the plays that can hold a post of the page, at any age of the page. A page with no posts has no span (lo is null, and a range with no bounds meets every play): the thread's select reads none then (`s.lo is not null`), and the authors' has no author to probe for. Whether the author's own post falls in the window is kept_window's.
   kept_reach as materialized (
     select x.play, x.reach, coalesce(x.character, x.thread, x.board) as target, x.ends_at
     from play_reach x, kept_span s
-    where x.thread = (select rng.id from rng) and tstzrange(x.started_at, x.ends_at) && tstzrange(s.lo, s.hi, '[]') and x.ends_at <= now()
+    where s.lo is not null and x.thread = (select rng.id from rng) and tstzrange(x.started_at, x.ends_at) && tstzrange(s.lo, s.hi, '[]') and x.ends_at <= now()
     union all
     select x.play, x.reach, x.character as target, x.ends_at
     from (select distinct p.character from posts p where p.character is not null) au cross join kept_span s

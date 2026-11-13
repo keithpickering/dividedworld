@@ -142,12 +142,12 @@ declare
 begin
   perform pg_temp.cards();
   ed := tests.act(b, 'edit', t, '{"body": "Before the play."}', p, now() - interval '3 hours');
-  -- Written as an import writes a row, so the trigger takes no moment, as a play made before this migration has none.
+  -- Written as an import writes a row, so the trigger takes no moment, as a play made before this migration has none; its `started_at` is named, as the play_reach trigger of 0480 does not fire here: the Act's date.
   set local session_replication_role = replica;
   insert into acts (id, character, kind, thread, target_act_id, payload, created_at) values
     (k, a, 'card', t, p, jsonb_build_object('card', 'glint', 'reach', 'character', 'character', b), now() - interval '2 hours'),
     (k_plain, a, 'card', t, q, jsonb_build_object('card', 'glint', 'reach', 'character', 'character', b), now() - interval '2 hours');
-  insert into play_reach (play, reach, character, ends_at) values (k, 'character', b, now() + interval '1 day'), (k_plain, 'character', b, now() + interval '1 day');
+  insert into play_reach (play, reach, character, started_at, ends_at) values (k, 'character', b, now() - interval '2 hours', now() + interval '1 day'), (k_plain, 'character', b, now() - interval '2 hours', now() + interval '1 day');
   set local session_replication_role = origin;
   perform tests.act(b, 'edit', t, '{"body": "After the play."}', p, now() - interval '1 hour');
   if exists (select 1 from play_moments where play in (k, k_plain)) then raise exception 'the old plays have no snapshot'; end if;
