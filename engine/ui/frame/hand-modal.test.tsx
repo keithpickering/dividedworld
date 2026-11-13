@@ -270,6 +270,79 @@ describe('the hand on the Main board, reopened while it gathers', () => {
   });
 });
 
+describe('the hand on the Main board opens calmly (the phone-hand design, section 1)', () => {
+  /* A pointer move on the window at a client point, as the browser's pointermove carries it. */
+  const moveTo = (x: number, y: number) => act(() => { window.dispatchEvent(new MouseEvent('pointermove', { clientX: x, clientY: y, bubbles: true })); });
+
+  test('the drawer waits for the pointer to move more than 4px from the press that opened the hand', async () => {
+    setup();
+    const hand = await handButton();
+    fireEvent.pointerDown(hand, { button: 0, clientX: 100, clientY: 100 });
+    fireEvent.click(hand);
+    const drawer = document.querySelector<HTMLElement>('.kb-hand-drawer')!;
+    await waitFor(() => expect(hand).toHaveAttribute('aria-expanded', 'true'));
+    expect(drawer).toHaveAttribute('data-kb-hover-waits');
+    await moveTo(102, 100);
+    expect(drawer).toHaveAttribute('data-kb-hover-waits');
+    await moveTo(120, 100);
+    expect(drawer).not.toHaveAttribute('data-kb-hover-waits');
+  });
+
+  test('a hand opened with no press (a key) loses the wait at the first pointer move, and a close and reopen waits again', async () => {
+    setup();
+    const hand = await handButton();
+    fireEvent.click(hand);
+    const drawer = document.querySelector<HTMLElement>('.kb-hand-drawer')!;
+    await waitFor(() => expect(drawer).toHaveAttribute('data-kb-hover-waits'));
+    await moveTo(1, 1);
+    expect(drawer).not.toHaveAttribute('data-kb-hover-waits');
+    fireEvent.click(hand);
+    fireEvent.click(hand);
+    await waitFor(() => expect(drawer).toHaveAttribute('data-kb-hover-waits'));
+  });
+
+  test('under a feel the drawer carries data-kb-dealing until the last deal ends, and again until the last gather ends', async () => {
+    document.documentElement.setAttribute('data-kb-motion', 'full');
+    setup();
+    const hand = await handButton();
+    const drawer = document.querySelector<HTMLElement>('.kb-hand-drawer')!;
+    await userEvent.click(hand);
+    expect(runs).toHaveLength(2);
+    expect(drawer).toHaveAttribute('data-kb-dealing');
+    await act(async () => { runs[0]!.settle(); });
+    expect(drawer).toHaveAttribute('data-kb-dealing');
+    await act(async () => { runs[1]!.settle(); });
+    await waitFor(() => expect(drawer).not.toHaveAttribute('data-kb-dealing'));
+    runs.length = 0;
+    await userEvent.click(hand);
+    expect(runs).toHaveLength(2);
+    expect(drawer).toHaveAttribute('data-kb-dealing');
+    await act(async () => { for (const r of runs) r.settle(); });
+    await waitFor(() => expect(drawer).not.toHaveAttribute('data-kb-dealing'));
+  });
+
+  test('a deal that is stopped by a close does not leave the drawer dealing once the gather ends', async () => {
+    document.documentElement.setAttribute('data-kb-motion', 'full');
+    setup();
+    const hand = await handButton();
+    const drawer = document.querySelector<HTMLElement>('.kb-hand-drawer')!;
+    await userEvent.click(hand);
+    await userEvent.click(hand);
+    await act(async () => { for (const r of runs) r.settle(); });
+    await waitFor(() => expect(drawer).not.toHaveAttribute('data-kb-dealing'));
+  });
+
+  test('under Off the drawer never carries data-kb-dealing', async () => {
+    setup();
+    const hand = await handButton();
+    const drawer = document.querySelector<HTMLElement>('.kb-hand-drawer')!;
+    await userEvent.click(hand);
+    expect(drawer).not.toHaveAttribute('data-kb-dealing');
+    await userEvent.click(hand);
+    expect(drawer).not.toHaveAttribute('data-kb-dealing');
+  });
+});
+
 describe('the hand on the Main board, a gather stopped by switching motion Off', () => {
   test('the stopped gather gives each card its stylesheet transition back', async () => {
     document.documentElement.setAttribute('data-kb-motion', 'full');

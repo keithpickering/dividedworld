@@ -1198,13 +1198,19 @@ button.kb-hud-secret:focus-visible {
 }
 
 /*
- * The card under the pointer or the focus, and the armed card, stand upright, 110px higher and a quarter larger, above
+ * The card under the pointer, the card a keyboard has focused, and the armed card, stand upright, 110px higher and a quarter larger, above
  * every card (the z indexes run from 1 up, so 100 more is above them all), so a card under its neighbors can be read.
  * With motion it eases over the feel's enter time (the HUD sets --kb-hand-lift-ms and --kb-hand-lift-ease on the
  * drawer); under Off the lift is instant, as the sheet's entrance is (base.css .kb-sheet).
+ *
+ * The hand opens calmly (the phone-hand design, section 1). Focus lifts a card only where the browser shows a focus ring, :focus-visible on the card's
+ * button: opening the hand gives the first card focus by script, and after a mouse press that focus must not lift it (:focus-within would). A card that
+ * lands under a still pointer must not lift either, so hover lifts nothing from the opening until the pointer moves (the drawer carries
+ * data-kb-hover-waits, Hud.tsx), and neither hover nor focus lifts while the cards deal or gather (data-kb-dealing), or the lift would play as a second
+ * movement when the deal's own transition is given back. The armed card stands lifted when the hand opens and is never held back.
  */
-:where(:root:not([data-kb-layout='phone'])) .kb-hand-card:hover,
-:where(:root:not([data-kb-layout='phone'])) .kb-hand-card:focus-within,
+:where(:root:not([data-kb-layout='phone'])) .kb-hand-drawer:not([data-kb-dealing]) .kb-hand-card:has(> button:focus-visible),
+:where(:root:not([data-kb-layout='phone'])) .kb-hand-drawer:not([data-kb-dealing], [data-kb-hover-waits]) .kb-hand-card:hover,
 :where(:root:not([data-kb-layout='phone'])) .kb-hand-card[data-armed] {
   z-index: calc(var(--kb-fan-z) + 100);
   transform: translateY(-110px) rotate(0deg) scale(1.25);
@@ -1217,9 +1223,9 @@ button.kb-hud-secret:focus-visible {
  * less the growth of the card's foot, with room to spare). A hover on the pad is a hover on the card.
  *
  * The pad stays on the li, so it is the card's and not a layer of its own, and it sits above the neighbors. A press on it, the
- * space the lifted card left, does nothing; moving off it drops the lift.
+ * space the lifted card left, does nothing; moving off it drops the lift. It stands only where the hover lifts: not while the deal or the wait for the pointer holds the lift back.
  */
-:where(:root:not([data-kb-layout='phone'])) .kb-hand-card:hover::after {
+:where(:root:not([data-kb-layout='phone'])) .kb-hand-drawer:not([data-kb-dealing], [data-kb-hover-waits]) .kb-hand-card:hover::after {
   content: '';
   position: absolute;
   left: 0;

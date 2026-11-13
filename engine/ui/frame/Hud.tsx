@@ -45,6 +45,11 @@
  * the HUD above the hand button (the peek: its top 90px and its tag above the seam), so the player can see what is in hand while they pick a post; pressing
  * the armed card in the hand puts it back and leaves the hand open.
  *
+ * The hand opens calmly (the phone-hand design, section 1): a card lifts for a keyboard's focus, a hover or the arming, and never for the focus the
+ * script gives the first card after a mouse press (frame.css, the lift). Hover lifts nothing from the opening until the pointer moves more than 4px
+ * from the press that opened the hand (the drawer carries data-kb-hover-waits), since the last card lands under that pointer; and nothing lifts while
+ * the cards deal or gather (data-kb-dealing), so the end of the deal is not followed by a second movement. The armed card stands lifted throughout.
+ *
  * The swap is named "Swap mask" on the Main board's layout and "Posting as" on the Phone board's.
  * Which layout it is comes from useBoard (engine/ui/glass/useBoard.ts): the Main board's from the
  * width worked out from the instance's sizes (engine/ui/glass/board.ts), drawn
@@ -295,7 +300,7 @@ export function Hud() {
     return () => watch.disconnect();
   }, [wide, hudName, board, scale, size]);
 
-  /* The opened hand takes focus, so the keyboard is in it at once: on the Main board the armed card's button, else the first card's; on the phone, or with no card, the sheet. */
+  /* The opened hand takes focus, so the keyboard is in it at once (a focus after a mouse press does not lift the card: the lift follows :focus-visible, frame.css): on the Main board the armed card's button, else the first card's; on the phone, or with no card, the sheet. */
   useEffect(() => {
     if (!handOpen) return;
     const at = wide ? drawer.current?.querySelector<HTMLElement>('li.kb-hand-card[data-armed] > button') ?? drawer.current?.querySelector<HTMLElement>('li.kb-hand-card > button') : null;
@@ -349,12 +354,33 @@ export function Hud() {
   /* The drawer's running play: the next run, and the unmount, stop it, so a superseded exit never clears the entrance that replaced it. */
   const drawerRun = useRef<Stop | null>(null);
   useLayoutEffect(() => () => { drawerRun.current?.(); drawerRun.current = null; }, []);
+  /*
+   * Hover waits for the pointer. On every open the drawer carries data-kb-hover-waits (frame.css holds the hover's lift back while it does), removed by the
+   * first pointermove on the window more than 4px from the press that opened the hand (the hand button's pointerdown point), or by the first pointermove at all
+   * when no press opened it (a key). The press belongs to one change of the hand alone: it is read and forgotten there.
+   */
+  const pressedAt = useRef<{ x: number; y: number } | null>(null);
+  useLayoutEffect(() => {
+    const from = pressedAt.current;
+    pressedAt.current = null;
+    const el = drawer.current;
+    if (!handOpen || !el) return undefined;
+    el.setAttribute('data-kb-hover-waits', '');
+    const move = (e: PointerEvent) => {
+      if (from && Math.hypot(e.clientX - from.x, e.clientY - from.y) <= 4) return;
+      el.removeAttribute('data-kb-hover-waits');
+      window.removeEventListener('pointermove', move);
+    };
+    window.addEventListener('pointermove', move);
+    return () => { window.removeEventListener('pointermove', move); el.removeAttribute('data-kb-hover-waits'); };
+  }, [handOpen]);
   useLayoutEffect(() => {
     if (drawerWas.current === handOpen) return;
     drawerWas.current = handOpen;
     drawerRun.current?.();
     drawerRun.current = null;
     const el = drawer.current;
+    el?.removeAttribute('data-kb-dealing');
     if (!el || !feel) { setDrawerLeaving(false); return; }
     const a = handButton.current?.getBoundingClientRect();
     const place = () => {
@@ -371,6 +397,9 @@ export function Hud() {
       let left = cards.length;
       if (handOpen) setDrawerLeaving(false);
       else if (left === 0) { setDrawerLeaving(false); return; }
+      /* While the cards deal or gather nothing lifts (frame.css): the mark is on until the last play ends, or the run is stopped. */
+      if (left > 0) el.setAttribute('data-kb-dealing', '');
+      const landed = () => { if (--left === 0) el.removeAttribute('data-kb-dealing'); };
       cards.forEach((li, i) => {
         const b = li.getBoundingClientRect();
         const from = a && b.width > 0 ? { x: a.left + a.width / 2 - (b.left + b.width / 2), y: a.top + a.height / 2 - (b.top + b.height / 2) } : { x: 0, y: 0 };
@@ -381,14 +410,14 @@ export function Hud() {
         const rest = () => li.style.removeProperty('transition');
         if (handOpen) {
           /* When the card lands the play removes its inline transform, and the stylesheet's ease for the lift comes back. */
-          const stop = playIn(li, p, rest);
+          const stop = playIn(li, p, () => { rest(); landed(); });
           runs.push(() => { stop(); rest(); });
           return;
         }
-        const stop = playOut(li, p, () => { rest(); if (--left === 0) setDrawerLeaving(false); });
+        const stop = playOut(li, p, () => { rest(); landed(); if (left === 0) setDrawerLeaving(false); });
         runs.push(() => { stop(); rest(); });
       });
-      drawerRun.current = () => { for (const stop of runs) stop(); };
+      drawerRun.current = () => { for (const stop of runs) stop(); el.removeAttribute('data-kb-dealing'); };
       return;
     }
     if (handOpen) { setDrawerLeaving(false); drawerRun.current = playIn(el, overlayPreset(feel, place())); return; }
@@ -650,7 +679,8 @@ export function Hud() {
                       {...(armedName === null ? { 'aria-expanded': handOpen, 'aria-controls': drawerId } : {})}
                       aria-label={handName}
                       data-kb-armed={armedName !== null ? 'true' : undefined}
-                      onClick={() => (armedName !== null ? play.arm(null) : setHandOpen(!handOpen))}
+                      onPointerDown={(e) => { pressedAt.current = { x: e.clientX, y: e.clientY }; }}
+                      onClick={() => { if (armedName !== null) { pressedAt.current = null; play.arm(null); } else setHandOpen(!handOpen); }}
                     >
                       {armedName !== null
                         ? <span className="kb-hud-hand-armed kb-glass-upright">{playing ? 'Playing' : 'Armed'} · {armedName}</span>
