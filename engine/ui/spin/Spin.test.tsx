@@ -665,7 +665,7 @@ describe('the ORIGIN box of a play-spun thread', () => {
     expect(read).toHaveBeenCalledTimes(2);
   });
 
-  test('a thread spun from a play on a thread keeps today\'s box: the mark alone, with no moment read or drawn and no second head line', async () => {
+  test('a thread spun from a play on a thread keeps today\'s box: no mark, with no moment read or drawn and no second head line', async () => {
     const w = threadWorld(3);
     const glint = w.fake.seed.reach(w.spritey, 'thread', w.thread, 'whoops', { ends: Date.now() + 86_400_000 });
     const read = vi.spyOn(w.fake, 'playMoment');
@@ -676,6 +676,8 @@ describe('the ORIGIN box of a play-spun thread', () => {
     await waitFor(() => expect(box.querySelector('[aria-busy="true"]')).toBeNull());
     expect(within(box).queryByRole('group', { name: /^As it landed/u })).toBeNull();
     expect(within(box).queryByText(/Cast from/u)).toBeNull();
+    /* As on main: a thread's play draws no mark of its own in the box. */
+    expect(marks(box)).toEqual([]);
     expect(box.querySelector('.kb-origin-head-text')!.textContent).not.toMatch(/as it (landed|was spun)/u);
     expect(read).not.toHaveBeenCalled();
   });
@@ -886,6 +888,8 @@ describe('a thread spun from a card on a character', () => {
     expect(box.querySelectorAll('a.kb-who-link .kb-mini')).toHaveLength(2);
     expect(box.querySelector('p time')).toBeInTheDocument();
     expect(within(box).queryByText(/As it landed/u)).toBeNull();
+    /* The card's mark is drawn, with its Go to post. */
+    expect(marks(box)).toEqual(['glint:1']);
   });
 
   test('an edit made to the pressed post afterwards leaves the box as it was', async () => {

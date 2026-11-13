@@ -16,7 +16,7 @@
  * current then, and says what else was on the post was not recorded), and the head says "as it landed" on one line: never an error
  * or an empty box. In both the character's name and avatar are one link to its profile, the box has a byline (that link and the
  * version's date) above the words, the card's effect is drawn still on the words, and the mark's Go to post leads to the pressed
- * post where there is one, else the cast-from post. A thread's play and a board's play draw the mark alone: they have no post.
+ * post where there is one, else the cast-from post. A thread's play and a board's play draw no mark of their own in the box today (the mark is keyed by a post they have not): the box is the head and nothing under it.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { BbCode } from '../bbcode/render.tsx';
@@ -196,7 +196,7 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
   /* The same node is the box's head's strip and, for a card that lifts the post (Stick Around), the strip it draws on the lifted post. */
   const marks = act && (act.kind === 'card' ? cardPlay !== null : holdsEffects(act.kind)) ? (
     <PostMarks
-      post={cardPlay ? homeOf(cardPlay) : originId} where={cardPlay?.reach ?? 'post'} compare={cardPlay === null} moments={cardPlay === null} plays={plays}
+      post={cardPlay ? (onCharacter ? homeOf(cardPlay) : cardPlay.post) : originId} {...(onCharacter ? { where: 'character' } : {})} compare={cardPlay === null} moments={cardPlay === null} plays={plays}
       to={cardPlay ? (pressed?.href ?? castFrom?.href ?? (target ? threadHref(target.thread, pageOf(target.seq, perPage), target.seq) : null)) : backHref}
       nameOf={nameOf} faceOf={faceOf} tallies={tallies} mine={mine}
       onSpin={(play, name, opener) => setSpinOrigin({ id: play.id, label: name, opener })}
