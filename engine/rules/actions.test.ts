@@ -34,7 +34,7 @@ test('each action is decided into the SQL function that writes it, with that fun
   assert.deepEqual(decide({ action: 'edit', post: other, character: id, body: 'Fixed.' }, instance),
     { ok: true, rpc: 'edit_post', args: { target: other, through: id, body: 'Fixed.' } });
   assert.deepEqual(decide({ action: 'spin', origin: other, character: id, title: 'Spun', body: '' }, instance),
-    { ok: true, rpc: 'spin', args: { origin: other, through: id, title: 'Spun', body: '' } });
+    { ok: true, rpc: 'spin', args: { origin: other, through: id, title: 'Spun', body: '', at_post: null } });
   assert.deepEqual(decide({ action: 'apologize', move: other, character: id, title: 'Sorry', body: 'I was wrong.' }, instance),
     { ok: true, rpc: 'apologize', args: { in_move: other, through: id, title: 'Sorry', body: 'I was wrong.' } });
   assert.deepEqual(decide({ action: 'react', act: other, character: id, kind: 'fire' }, instance),
@@ -48,7 +48,7 @@ test('framing passes through on a post, a thread start, a spin and an apology: t
   assert.deepEqual(decide({ action: 'startThread', board: 'general', character: id, title: 'T', body: 'B', framing: six }, instance),
     { ok: true, rpc: 'start_thread', args: { board_slug: 'general', through: id, title: 'T', body: 'B', framing: six.slice(0, 5) } });
   assert.deepEqual(decide({ action: 'spin', origin: other, character: id, title: 'S', body: '', framing: [id] }, instance),
-    { ok: true, rpc: 'spin', args: { origin: other, through: id, title: 'S', body: '', framing: [id] } });
+    { ok: true, rpc: 'spin', args: { origin: other, through: id, title: 'S', body: '', at_post: null, framing: [id] } });
   assert.deepEqual(decide({ action: 'apologize', move: other, character: id, title: 'Sorry', body: 'B', framing: [id, id] }, instance),
     { ok: true, rpc: 'apologize', args: { in_move: other, through: id, title: 'Sorry', body: 'B', framing: [id] } });
   assert.deepEqual(decide({ action: 'post', thread: other, character: id, body: 'R.', framing: [] }, instance),
@@ -90,6 +90,14 @@ test('a title is something, and no longer than the instance allows', () => {
 test('a spin\'s own words may be empty, and are bounded like a post\'s', () => {
   assert.equal(refusal({ action: 'spin', origin: other, character: id, title: 'Spun' }), null);
   assert.match(refusal({ action: 'spin', origin: other, character: id, title: 'Spun', body: 'x'.repeat(51) }) ?? '', /^body:/);
+});
+
+// The post a spin was pressed on (docs/plans/2026-11-12-spin-at-post-design.md, section 1): an id or nothing, as a post's quote is.
+test('a spin may name the post it was pressed on', () => {
+  const at = (request: object) => { const d = decide({ action: 'spin', origin: other, character: id, title: 'Spun', ...request }, instance); return d.ok ? (d.args as { at_post?: unknown }).at_post : `${d.field}: ${d.why}`; };
+  assert.equal(at({ at: id }), id);
+  assert.equal(at({}), null);
+  assert.match(String(at({ at: 'nope' })), /^at:/);
 });
 
 test('an apology names a move, and has a title and words of its own, bounded like a spin\'s', () => {
