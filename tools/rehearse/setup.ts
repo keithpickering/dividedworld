@@ -10,6 +10,7 @@ import { castFor, DAY_MS, MINUTE } from "../../engine/rehearsal/generate.ts";
 import { PRONOUN_PRESETS } from "../../engine/rules/pronouns.ts";
 import { seededRng } from "../../engine/system/pool.ts";
 import { instanceSeed } from "../../supabase/functions/_shared/seed.ts";
+import { conduct } from "../../instances/divided-world/ui/conduct.ts";
 import { runAction } from "../../supabase/functions/act/core.ts";
 import { connect, type Connection } from "./db.ts";
 import type { Cluster } from "./cluster.ts";
@@ -121,7 +122,7 @@ async function build(cluster: Cluster, admin: Connection, instance: Instance, co
   for (const file of await sqlFiles()) await conn.sql(readFileSync(file, "utf8"));
   hold();
 
-  await service.rpc("seed_instance", { payload: instanceSeed(instance) });
+  await service.rpc("seed_instance", { payload: instanceSeed(instance, conduct) });
 
   // The vault stand-in's secrets the jobs read (supabase/tests/0009-schedule.sql writes them the same way), with a key per run.
   const keys = { jobs: `sb_secret_${hex(16)}`, secret: `sb_secret_${hex(16)}`, publishable: `sb_publishable_${hex(16)}` };

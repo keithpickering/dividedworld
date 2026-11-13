@@ -1320,6 +1320,42 @@ describe('the payout cards\' lines', () => {
   });
 });
 
+describe('the conduct lines: what an admin did to the player\'s posts (the conduct plan, Task 2)', () => {
+  const p = char('p', 'Pipewrench', 'heel');
+  const other = char('q', 'Quill', 'face');
+  const at = '2026-10-30T08:17:00.000Z';
+  const act = (id: string, character: string): Act => ({ id, kind: 'post', character, thread: 't1', at, payload: {} } as unknown as Act);
+  const row = (outcome: 'hide' | 'hideUntilEdited' | 'unhide' | 'approve', decision = 1, version = 'v1') => ({ decision, outcome, versionAct: version, post: 'post1', thread: 't1', at });
+  const lines = (conduct: ReturnType<typeof row>[], tab: string | null = null) =>
+    logRows(data({ mine: [p, other], conduct, acts: new Map([['v1', act('v1', 'p')], ['v2', act('v2', 'q')]]), titles: new Map([['t1', 'The Boiler Room']]) }), words, 100, tab).filter((r) => r.kind === 'conduct');
+
+  test('says plainly what happened, each outcome in its words, with the thread linked and no word of who reported', () => {
+    const [hide] = lines([row('hide')]);
+    expect(hide!.what).toBe('An admin hid your post');
+    expect(hide!.details).toEqual(['An admin hid your post in ', { text: 'The Boiler Room', href: '/t/t1?page=1' }, ' (code of conduct). An admin may have emailed you the details.']);
+    expect(lines([row('hideUntilEdited')])[0]!.details).toEqual(['An admin hid your post in ', { text: 'The Boiler Room', href: '/t/t1?page=1' }, ' (code of conduct) until you edit it. An admin may have emailed you the details.']);
+    expect(lines([row('unhide')])[0]!.details).toEqual(['An admin brought back your post in ', { text: 'The Boiler Room', href: '/t/t1?page=1' }, '.']);
+    expect(lines([row('approve')])[0]!.details).toEqual(['An admin approved your edit in ', { text: 'The Boiler Room', href: '/t/t1?page=1' }, '.']);
+    expect(JSON.stringify(lines([row('hide')])).toLowerCase()).not.toMatch(/report/u);
+  });
+
+  test('is in order by time with the other lines, moves no Aura, and sits in the tab of the character whose post it was', () => {
+    const early = { ...row('hide', 1), at: '2026-10-29T00:00:00.000Z' };
+    const late = { ...row('unhide', 2), at: '2026-10-31T00:00:00.000Z' };
+    const all = logRows(data({ mine: [p, other], conduct: [early, late], acts: new Map([['v1', act('v1', 'p')]]), titles: new Map() }), words, 100, null);
+    expect(all.map((r) => r.key)).toEqual(['conduct:2', 'conduct:1']);
+    expect(all.every((r) => r.aura === 0 && r.wallet === null)).toBe(true);
+    expect(lines([row('hide')], 'p')).toHaveLength(1);
+    expect(lines([row('hide')], 'q')).toHaveLength(0);
+    expect(lines([row('hide', 3, 'v2')], 'q')).toHaveLength(1);
+  });
+
+  test('names a thread it could not read as "a thread", never a blank', () => {
+    const bare = logRows(data({ mine: [p], conduct: [row('hide')], acts: new Map(), titles: new Map() }), words, 100, null).filter((r) => r.kind === 'conduct');
+    expect(bare[0]!.details).toEqual(['An admin hid your post in a thread (code of conduct). An admin may have emailed you the details.']);
+  });
+});
+
 /**
  * A surface in the log (docs/plans/2026-11-11-graffiti-design.md, sections 3 and 11): what the drawer's own draws, the washes that cut them, the post's author's walls and washes are in plain words, from
  * public Acts, in the words the card gives and the engine's own where it gives none. None names an owner or a class, and a third character's log holds none of them.

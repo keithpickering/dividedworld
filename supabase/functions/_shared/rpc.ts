@@ -57,6 +57,14 @@ export function sessionRefused(e: unknown): boolean {
   return true;
 }
 
+/** The hint a SQL function raises with when the account is barred (0236_conduct.sql, refuse_if_barred), so the client reads its session again. */
+export const BARRED_HINT = 'kayfabb.barred';
+
+/** The answer for a barred account's refusal, in its plain words and the hint the client recognizes; null for any other error. */
+export function barredAnswer(e: unknown): { readonly status: 403; readonly body: { readonly error: string; readonly hint: typeof BARRED_HINT } } | null {
+  return e instanceof DatabaseError && e.hint === BARRED_HINT ? { status: 403, body: { error: e.reason, hint: BARRED_HINT } } : null;
+}
+
 export interface Db {
   rpc<T>(fn: string, args: Record<string, unknown>): Promise<T>;
 }

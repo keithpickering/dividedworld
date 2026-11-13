@@ -9,6 +9,9 @@
  * board draws it (`UP`); and the buttons are GlassButtons, 48px tall where the board's are 54 (so what follows a button stands 6px higher still),
  * at the glass's own width, so a button is compared by its y and height and its type, not its width. Back, in a bar that holds it alone, is the
  * glass's own width, so it is compared by its y and height too.
+ *
+ * Register's second check, "I've read and agree to the code of conduct" (the conduct plan, Task 5), is a row the board does not draw under the 18+ check's note:
+ * Send a code stands 74px lower under it, on the desktop (15-register.ts) and on the phone (the Register screen of board 18, below).
  */
 import type { BoardManifest, Landmark } from '../../board-match.ts';
 
@@ -108,7 +111,7 @@ export const phone: BoardManifest = {
         /* The invite's note is one line on one machine and two on another (its words fill the 358px column), so what follows it is held from where it ends. */
         at('invite-note', 'text', 'Your invite link filled this in.', {}, { buildName: 'Registration is by invite for now. Your invite link filled this in.', box: 'none' }),
         at('ack', 'text', 'I am 18 or older.', { y: 12 }, { origin: 'invite-note', originEdge: 'bottom' }),
-        at('send', 'button', 'SEND A CODE', { y: 51.5 }, { nth: 1, buildNth: 0, origin: 'invite-note', originEdge: 'bottom' }),
+        at('send', 'button', 'SEND A CODE', { y: 125.5 }, { nth: 1, buildNth: 0, origin: 'invite-note', originEdge: 'bottom' }),
       ],
     },
     {

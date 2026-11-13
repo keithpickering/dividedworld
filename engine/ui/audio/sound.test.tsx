@@ -141,7 +141,17 @@ describe('the page sound', () => {
     expect(fetchBytes).toHaveBeenCalledTimes(1);
     expect(gains[0]!.gain.value).toBe(0.5);
     setSoundPreference({ gameSound: 'off', gameVolume: 50, interfaceSound: 'off', interfaceVolume: 100 });
-    expect(gains[0]!.gain.value).toBe(0);
+    expect((gains[0]!.gain.setTargetAtTime as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[0]).toBe(0);
+  });
+
+  test('play(key, { group, fadeMs, tailMs }) hands the tail to the mixer: the voice holds its level until the last tailMs of the file', async () => {
+    on('game');
+    const { result } = renderHook(() => useSound(), { wrapper: wrap });
+    await gesture();
+    await act(async () => { await result.current.play('boo', { group: 'g', fadeMs: 100, tailMs: 500 }); });
+    const voice = gains[1]!.gain;
+    expect(voice.setValueAtTime).toHaveBeenCalledWith(1, 1);
+    expect(voice.linearRampToValueAtTime).toHaveBeenLastCalledWith(0, 1.5);
   });
 
   test('a loop holds its caption while the gain is above HELD_FROM and releases it below', async () => {
@@ -210,7 +220,8 @@ describe('the page sound', () => {
     on('game');
     await gesture();
     const handle = await loopLoaded(result.current, 'build', { id: 'meter' });
-    expect(gains[1]!.gain.value).toBe(0);
+    expect(gains[1]!.gain.setValueAtTime).toHaveBeenCalledWith(0, 0);
+    expect(gains[1]!.gain.linearRampToValueAtTime).not.toHaveBeenCalled();
     act(() => handle.setGain(0.6));
     expect(gains[1]!.gain.setTargetAtTime).toHaveBeenLastCalledWith(0.6, 0, 0.05);
   });

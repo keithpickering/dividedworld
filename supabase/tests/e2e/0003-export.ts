@@ -227,7 +227,16 @@ test('an instance exported and imported into a fresh database is the same instan
         perform draw_on_surface(bob, b, wall_play, '{"strokes": [{"width": 0.01, "points": [[0.1, 0.1]]}]}', (repeat('1', 300) || repeat('0', 9700))::bit(10000), 4000);
         perform wash_surface(ann, a, wall_play, '{"strokes": [{"width": 0.02, "points": [[0.1, 0.1]]}]}', (repeat('1', 100) || repeat('0', 9900))::bit(10000));
         wall_set := tests.post(a, t, 'A wall, set face down.');
-        perform set_surface_card(ann, 'expwall', a, wall_set, '{}', 0, null, null, null, null, null, '{"strokes": [{"width": 0.01, "points": [[0.2, 0.2]]}]}', (repeat('0', 500) || repeat('1', 50) || repeat('0', 9450))::bit(10000), 4000, 48);
+        -- A surface card is cast face up now (0343) and face_down_never_writes refuses its back, so the rows set_surface_card wrote are written directly with that trigger off for the insert:
+        -- they stand for a back set before 0343, whose private draft an export still carries.
+        declare wall_back uuid;
+        begin
+          insert into acts (character, kind, thread, target_act_id, payload) values (a, 'set', t, wall_set, '{}') returning id into wall_back;
+          alter table face_down disable trigger face_down_never_writes;
+          insert into face_down (play, account, card, config, post, thread, round, ends_at) values (wall_back, ann, 'expwall', '{}', wall_set, t, 1, now() + interval '1 day');
+          alter table face_down enable trigger face_down_never_writes;
+          insert into face_down_draws (play, payload, cells, most, most_live) values (wall_back, '{"strokes": [{"width": 0.01, "points": [[0.2, 0.2]]}]}', (repeat('0', 500) || repeat('1', 50) || repeat('0', 9450))::bit(10000), 4000, 48);
+        end;
       end;
       -- The card notes, Part 4 (0316): a cast Earn on a character alone, with a group and a time up, played on Bob's character; and a No quote on a post, played after Bob
       -- quotes that post. The quote is written first, since a quote of a post under a live No quote is refused (acts_quote_guard); the import writes it as a replica.
@@ -276,6 +285,18 @@ test('an instance exported and imported into a fresh database is the same instan
       -- An original 0025 handed to the sweep: a row the export carries, naming a file it does not.
       insert into avatar_orphans (key) values ('exp-src.webp');
       insert into admins (account) values (ann);
+      -- Conduct (0340): an acceptance of the code, a report to admins on Ann's post and the decision that closes it, so each of the three tables has a row to carry across.
+      insert into conduct_acceptances (account, version) values (bob, 1);
+      insert into conduct_reports (reporter, version_act, section, note) values (bob, p, 'mask', 'Carried across, too.');
+      insert into conduct_decisions (report, version_act, admin, outcome, note) select r.id, p, ann, 'none', 'Read, and nothing to do.' from conduct_reports r;
+      -- Moderation mail (0341): one outbox row and its attempt, so both tables have a row to carry across.
+      insert into mail_outbox (account, template, facts, decision) select bob, 'reportRead', '{}', d.id from conduct_decisions d limit 1;
+      insert into mail_attempts (outbox, kind, provider_id, error) select o.id, 'sent', 'export-prov-1', null from mail_outbox o limit 1;
+      -- A quote of that post (0340): the reference the trigger records, a request for the quoting post's layer and the layer itself, so each of the four tables that conceal quotes has a row to carry across (the answer names the request and the layer).
+      perform tests.post(b, t, format('[quote=%s]Carried.[/quote] across', p), now());
+      insert into conceal_requests (act) select r.act from quote_refs r where r.quoted = p limit 1;
+      insert into quote_layers (act, hidden, body, upto) select r.act, array[p], format('[quote=%s][/quote] across', p), (select max(id) from conceal_requests) from quote_refs r where r.quoted = p limit 1;
+      insert into conceal_answers (request, layer) select (select max(id) from conceal_requests), (select max(id) from quote_layers);
       -- An admin ends that card with reverse_card, as ann, the admin (0092); the play's id is the one planted above.
       perform tests.become(ann);
       perform reverse_card('${endedPlay}');
@@ -802,7 +823,7 @@ test('an instance exported and imported into a fresh database is the same instan
 
     // The jobs that run the instance are there, each scheduled from the imported settings: the
     // settlement's, the view count's, the Boss's meeting and the pool's chatter.
-    assert.equal(psqlOn(fresh.toString(), `select string_agg(jobname, ',' order by jobname) from cron.job where jobname like 'kayfabb-%'`), 'kayfabb-chatter,kayfabb-meet,kayfabb-search-rebuild,kayfabb-settle,kayfabb-staff,kayfabb-system-tick,kayfabb-view-counts,kayfabb-write');
+    assert.equal(psqlOn(fresh.toString(), `select string_agg(jobname, ',' order by jobname) from cron.job where jobname like 'kayfabb-%'`), 'kayfabb-chatter,kayfabb-conceal,kayfabb-mail,kayfabb-meet,kayfabb-search-rebuild,kayfabb-settle,kayfabb-staff,kayfabb-system-tick,kayfabb-view-counts,kayfabb-write');
 
     // And a second import onto what is no longer a fresh instance is refused, naming why.
     const twice = await run('import-instance.mjs', ['--from', dir, '--to', fresh.toString(), '--storage', newStore.url]);

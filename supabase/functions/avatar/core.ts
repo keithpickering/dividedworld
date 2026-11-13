@@ -26,7 +26,7 @@
  * bounds below are what bounds anything a hand-made file could hide inside one; what is stored is
  * exactly what the player's browser made, never stripped by this.
  */
-import { DatabaseError, TransportError, sessionRefused, type Db } from '../_shared/rpc.ts';
+import { DatabaseError, TransportError, barredAnswer, sessionRefused, type Db } from '../_shared/rpc.ts';
 import type { Storage } from '../_shared/storage.ts';
 import { readWebp, type Verdict } from '../_shared/webp.ts';
 
@@ -127,6 +127,8 @@ export async function runAvatar(dbs: { player: Db; service: Db }, storage: Stora
     // since a file nobody names is harmless and a name with no file is a broken avatar.
     if (e instanceof TransportError) return { status: 503, body: { error: 'no answer came back, so this may have gone through: look before you try again' } };
     await storage.remove(stored).catch((x) => console.error('avatar: could not remove files a failed write stored', x));
+    const barred = barredAnswer(e);
+    if (barred) return barred;
     if (e instanceof DatabaseError && e.hint === REFUSAL_HINT) return { status: e.status >= 400 && e.status < 500 ? e.status : 400, body: { error: e.reason } };
     console.error('avatar failed', e);
     return { status: 500, body: { error: 'the avatar could not be saved; try again' } };

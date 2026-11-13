@@ -15,10 +15,14 @@ import { Editor } from './Editor.tsx';
 
 const plural = (n: number, unit: string) => `${n} ${unit}${n === 1 ? '' : 's'}`;
 
-export function EditPost({ act, seq, onDone, onSaved }: { readonly act: Act; readonly seq: number; readonly onDone: () => void; readonly onSaved: (act: Act) => void }) {
+export function EditPost({ act, seq, onDone, onSaved, start }: {
+  readonly act: Act; readonly seq: number; readonly onDone: () => void; readonly onSaved: (act: Act) => void;
+  /** The words the editor starts from where the post's current ones are not the reader's to read from the Act: its author's own words, of a version hidden from everyone else. */
+  readonly start?: string;
+}) {
   const { api, settings } = useKayfa();
   const { characters } = usePlayer();
-  const was = textOf(act.currentPayload.body);
+  const was = start ?? textOf(act.currentPayload.body);
   const [text, setText] = useState(was);
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
@@ -39,7 +43,10 @@ export function EditPost({ act, seq, onDone, onSaved }: { readonly act: Act; rea
     try {
       const versions = await api.history(act.id);
       const last = versions.at(-1);
-      found = last !== undefined && last.kind === 'edit' && last.character === character && textOf(last.payload.body) === text;
+      if (last !== undefined && last.kind === 'edit' && last.character === character) {
+        /* A version hidden from everyone has no words in the History, so the author's own read of them says whether it is theirs (my_hidden_version, theirs alone). */
+        found = typeof last.payload.body === 'string' ? last.payload.body === text : (await Promise.resolve(api.myHiddenVersion(act.id)).catch(() => null))?.words === text;
+      }
     } catch { looked = false; }
     if (found) { await landed(); return; }
     setAgain(true);

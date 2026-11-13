@@ -21,7 +21,7 @@ import type { CardPlay } from '../cards/types.ts';
 import { quoteStop } from '../../rules/cards.ts';
 import type { Instance } from '../../rules/types.ts';
 import { EditPost } from '../composer/EditPost.tsx';
-import type { Act, Id, Visit } from '../data/api.ts';
+import type { Act, Id, MyHiddenVersion, Visit } from '../data/api.ts';
 import { useNarrow } from '../media.ts';
 import { landPost } from '../shine/landing.ts';
 import { usePlayer } from '../player.tsx';
@@ -37,7 +37,8 @@ import { useKayfa } from '../context.tsx';
 import { ThreadCtx, useThread, type ThreadContext } from './context.ts';
 import { moveOffice } from '../board/move-words.ts';
 import { GroupMoveLine, RulingTag, rulingOf } from './GroupMove.tsx';
-import { AnnounceLine, LastEdited, MoveEndLine, MoveKeepLine, SystemPost, UnmaskLine, quoteHead, text, useHistory, when } from './lines.tsx';
+import { ConcealingNote, HiddenNote, HiddenOwn, useMyHidden } from '../conduct/Hidden.tsx';
+import { AnnounceLine, LastEdited, MoveEndLine, MoveKeepLine, SystemPost, UnmaskLine, quoteHead, text, useHistory, when, type PostAbout } from './lines.tsx';
 import { pageOf, threadHref } from './pages.ts';
 
 export { ThreadCtx, type ThreadContext };
@@ -52,8 +53,12 @@ interface Props {
 /** A post's name for a reader and a screen reader: the character's, the staff's (`UiCopy.staffWord`, for an Act with no character), or "A character" where it cannot be shown. */
 const nameOf = (act: Act, person: PostbitPerson | undefined, staff: string) => (act.character === null ? staff : person?.character.name ?? 'A character');
 
-function Body({ act, name, spoken, person, editing, onDone, marks, visit }: { readonly marks: ReactNode; readonly visit: Visit | undefined; readonly act: Act; readonly name: string; readonly spoken: string; readonly person: PostbitPerson | undefined; readonly editing: boolean; readonly onDone: () => void }) {
+function Body({ act, name, spoken, person, editing, own, onEdit, onDone, marks, visit }: {
+  /** What the post's own player may read of it while hidden: undefined while it is read, null for nothing more than the note. */
+  readonly own: MyHiddenVersion | null | undefined; readonly marks: ReactNode; readonly visit: Visit | undefined; readonly act: Act; readonly name: string; readonly spoken: string; readonly person: PostbitPerson | undefined; readonly editing: boolean; readonly onEdit: () => void; readonly onDone: () => void }) {
   const { summary, tallies, mine, changed, plays, nameOf: casterName } = useThread();
+  /* A hidden post's words are never drawn from the Act: the note stands in their place. Its own player, and only that, reads their words back (Hidden.tsx, read by the article). */
+  const hidden = act.hidden === true;
   switch (act.kind) {
     case 'unmask': return <UnmaskLine act={act} name={name} />;
     case 'announce':
@@ -99,8 +104,17 @@ function Body({ act, name, spoken, person, editing, onDone, marks, visit }: { re
           {origin && <Origin summary={summary} />}
           {!editing && <ViolationNotice visit={visit} />}
           {editing
-            ? <EditPost act={act} seq={act.seq!} onDone={onDone} onSaved={changed} />
-            : <PostEffects plays={plays} post={act} place="thread" marks={marks} nameOf={casterName} bodyOf={(version) => <BbCode text={text(version.currentPayload.body)} quoteHead={quoteHead} />}><BbCode text={text(act.currentPayload.body)} quoteHead={quoteHead} /></PostEffects>}
+            ? <EditPost key={own?.words ?? ''} act={act} seq={act.seq!} onDone={onDone} onSaved={changed} {...(own ? { start: own.words } : {})} />
+            : act.concealing === true && !hidden
+              ? <ConcealingNote />
+              : hidden
+              ? (
+                <>
+                  <HiddenNote />
+                  {own && <HiddenOwn own={own} onEdit={onEdit}><BbCode text={own.words} quoteHead={quoteHead} /></HiddenOwn>}
+                </>
+              )
+              : <PostEffects plays={plays} post={act} place="thread" marks={marks} nameOf={casterName} bodyOf={(version) => <BbCode text={text(version.currentPayload.body)} quoteHead={quoteHead} />}><BbCode text={text(act.currentPayload.body)} quoteHead={quoteHead} /></PostEffects>}
           <LastEdited act={act} />
           <Reactions act={act.id} author={act.character} authorName={spoken} tallies={tallies} mine={mine} />
           {person && <Signature text={person.character.signature} />}
@@ -128,7 +142,11 @@ export function quoteStopped(plays: readonly CardPlay[], instance: Pick<Instance
   return quoteStop(effectsOf(plays, instance.cards)) !== undefined;
 }
 
-function Actions({ act, editing, onEdit, editButton, spinOrigin, setSpinOrigin, onReport }: {
+function Actions({ act, about, canEdit, editing, onEdit, editButton, spinOrigin, setSpinOrigin, onReport }: {
+  /** What names the post when a version of it is reported from its History. */
+  readonly about: PostAbout;
+  /** Whether the post may be edited from here: not a hidden one whose author's words are not (yet) read, which would open a blank editor. */
+  readonly canEdit: boolean;
   /** Opens the post's report form; absent where the post cannot be reported by this reader (a staff post, the current mask's own, no mask to report through). */
   readonly onReport: ((opener: HTMLElement) => void) | null;
   readonly act: Act; readonly editing: boolean; readonly onEdit: () => void; readonly editButton: React.RefObject<HTMLButtonElement | null>;
@@ -140,7 +158,7 @@ function Actions({ act, editing, onEdit, editButton, spinOrigin, setSpinOrigin, 
   const spinButton = useRef<HTMLButtonElement>(null);
   /* One draft per origin: the form is keyed by its origin, so a switch between the post and a play would otherwise lose what was typed (#100). */
   const drafts = useSpinDrafts();
-  const history = useHistory(act.id);
+  const history = useHistory(act.id, about);
   const stopped = quoteStopped(usePlays(plays, act.id).plays, instance);
   /* A post under a no-quote has no Quote link: left out, not disabled, since its mark and Lens say why. */
   const quotable = (act.kind === 'post' || act.kind === 'spin') && quote !== null && !stopped;
@@ -156,7 +174,7 @@ function Actions({ act, editing, onEdit, editButton, spinOrigin, setSpinOrigin, 
             ref={spinButton} type="button" className="kb-button" data-kb-size="small" aria-expanded={spinning} aria-controls={`spin-${act.id}`}
             onClick={() => setSpinOrigin(spinning ? null : { id: act.id, label: act.seq === null ? null : `post ${act.seq}`, opener: spinButton.current })}
           >Spin thread</button>
-          {mine && !editing && <button ref={editButton} type="button" className="kb-button" data-kb-size="small" onClick={onEdit}>Edit</button>}
+          {mine && canEdit && !editing && <button ref={editButton} type="button" className="kb-button" data-kb-size="small" onClick={onEdit}>Edit</button>}
           {act.kind === 'post' && history.button}
           {onReport && <button type="button" className="kb-button" data-kb-size="small" aria-haspopup="dialog" onClick={(e) => onReport(e.currentTarget)}>Report</button>}
         </div>
@@ -198,6 +216,9 @@ export const ActArticle = memo(function ActArticle({ act, person, layout, slid }
   /* The name as it reads inside a sentence: the staff's word is set for a name slot ("The staff"), so it is lowered here ("Post 3 by the staff"). */
   const spoken = act.character === null ? lowerFirst(name) : name;
   const [editing, setEditing] = useState(false);
+  const { actingCharacters: acting } = usePlayer();
+  const own = useMyHidden(act.id, act.character !== null && acting.some((c) => c.id === act.character), act.hidden === true);
+  const canEdit = act.hidden !== true || own != null;
   const editButton = useRef<HTMLButtonElement>(null);
   /* After an edit is saved or cancelled, focus goes back to the Edit button. */
   const wasEditing = useRef(false);
@@ -216,11 +237,14 @@ export const ActArticle = memo(function ActArticle({ act, person, layout, slid }
   /* "Report" is on a player's post that is not the current mask's own; never on a staff post (the server refuses one) or where the post's author is not known to be a player. */
   const reportable = (act.kind === 'post' || act.kind === 'spin') && act.character !== null && person !== undefined && !person.character.staff && hudCharacter !== null && hudCharacter.id !== act.character;
   const askReport = useCallback((opener: HTMLElement) => setAsk({ n: ++asks.current, form: { kind: 'report', post: act.id, seq }, opener }), [act.id, seq]);
+  /* "Report to admins" at the foot of the post's Lens: for a post (a spin's first Act is no version the server takes) whose current version is not hidden, whoever wrote it. Its current version is the post itself until it is edited, and read when the dialog opens after. */
+  const reportTo = act.kind === 'post' && act.hidden !== true ? { post: act.id, version: act.editedAt === null ? act.id : null, kicker: `Post #${seq} by ${spoken}, current version` } : undefined;
   /* The strip is drawn on the date row, and again by a card that lifts the post out of its thread (Stick Around): the same node, each with its own Lens owner. */
   const marks = act.kind === 'post'
     ? <PostMarks
         post={act.id} ghost={act} plays={plays} to={threadHref(thread, pageOf(seq, perPage), seq)} nameOf={casterName} faceOf={faceOf} tallies={tallies} mine={mine} onSpin={(play, name, opener) => setSpinOrigin({ id: play.id, label: name, opener })}
         visit={visit} modPronouns={visit ? pronounsOf(visit.mod) : undefined} author={act.character} thread={thread} onSpinAct={(id, label, opener) => setSpinOrigin({ id, label, opener })} ask={ask}
+        {...(reportTo ? { reportTo } : {})}
       />
     : null;
   /* The character's own live plays, on its postbit, and the armed character card's ghost there (the card mechanic's design, section 7). */
@@ -259,10 +283,10 @@ export const ActArticle = memo(function ActArticle({ act, person, layout, slid }
         <Link className="kb-act-number" to={threadHref(thread, pageOf(seq, perPage), seq)} aria-label={`Permalink to post #${seq}`}>#{seq}</Link>
       </header>
       <div className="kb-act-main" data-kb-cell="words">
-        <Body act={act} name={name} spoken={spoken} person={person} editing={editing} onDone={() => setEditing(false)} marks={marks} visit={visit} />
+        <Body act={act} name={name} spoken={spoken} person={person} editing={editing} own={own} onEdit={() => setEditing(true)} onDone={() => setEditing(false)} marks={marks} visit={visit} />
         <SpunInto act={act.id} />
       </div>
-      <Actions act={act} editing={editing} onEdit={() => setEditing(true)} editButton={editButton} spinOrigin={spinOrigin} setSpinOrigin={setSpinOrigin} onReport={reportable ? askReport : null} />
+      <Actions act={act} about={{ seq, name: spoken }} canEdit={canEdit} editing={editing} onEdit={() => setEditing(true)} editButton={editButton} spinOrigin={spinOrigin} setSpinOrigin={setSpinOrigin} onReport={reportable ? askReport : null} />
     </article>
     </AppealCtx.Provider>
   );

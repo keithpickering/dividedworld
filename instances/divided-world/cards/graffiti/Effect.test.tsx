@@ -95,7 +95,7 @@ const scrubbed = (root: HTMLElement) => Number(root.dataset.kbScrubbed);
 function drag(el: HTMLElement, points: readonly (readonly [number, number])[]) {
   const [first, ...rest] = points.map(([x, y]) => px(x, y));
   act(() => { fireEvent.pointerDown(el, { clientX: first![0], clientY: first![1], pointerId: 1, button: 0, pointerType: 'mouse' }); });
-  for (const [x, y] of rest) act(() => { fireEvent.pointerMove(el, { clientX: x, clientY: y, pointerId: 1, pointerType: 'mouse' }); });
+  for (const [x, y] of rest) act(() => { fireEvent.pointerMove(el, { clientX: x, clientY: y, pointerId: 1, pointerType: 'mouse', buttons: 1 }); });
   const [lx, ly] = rest[rest.length - 1] ?? first!;
   act(() => { fireEvent.pointerUp(el, { clientX: lx, clientY: ly, pointerId: 1, pointerType: 'mouse' }); });
 }
@@ -296,7 +296,11 @@ describe('a wall under a splat', () => {
     const [x, y] = spot();
     /* The wall has a stripe where the splat is: put one through the spot's row too. */
     expect(spray.hitAt([draw('t', y)], BOX, x * BOX.w, y * BOX.h)).toBe(true);
-    drag(cell, [[x, y], [x + 0.05, y], [x + 0.1, y]]);
+    /* A wash takes some of the splat's ink each pass (docs/plans/2026-11-12-whoops-ink-field-design.md, section 2), so
+       its core opens only after several. Press until the first hole opens and no further: each of those presses starts
+       on the splat's ink, so none reaches the wall (a press that starts where the splat is washed away would). */
+    const washed = () => Number(whoops.dataset.kbWashed!.split(' ')[0]);
+    for (let pass = 0; pass < 14 && washed() === 0; pass++) drag(cell, [[x, y], [x + 0.05, y], [x + 0.1, y]]);
     expect(Number(whoops.dataset.kbWashed!.split(' ')[0])).toBeGreaterThan(0);
     expect(scrubbed(root)).toBe(0);
   });
@@ -362,6 +366,42 @@ describe('the Draw tile', () => {
     expect(scrubbed(root)).toBe(0);
     drag(frame, [[0.5, 0.5], [0.55, 0.5]]);
     expect(scrubbed(root)).toBe(1);
+  });
+});
+
+describe('opening draw mode brings the post clear of the dock', () => {
+  const frameOf = () => act(async () => { await new Promise((done) => requestAnimationFrame(() => done(null))); });
+  const box = (el: HTMLElement, top: number, height: number) => { el.getBoundingClientRect = () => ({ top, bottom: top + height, left: 0, right: 600, width: 600, height, x: 0, y: top, toJSON: () => ({}) }); };
+  beforeEach(() => {
+    vi.stubGlobal('innerHeight', 800);
+    document.documentElement.style.scrollPaddingTop = '60px';
+    document.documentElement.style.scrollPaddingBottom = '400px';
+  });
+  afterEach(() => {
+    document.documentElement.style.removeProperty('scroll-padding-top');
+    document.documentElement.style.removeProperty('scroll-padding-bottom');
+  });
+
+  test('a post behind where the dock lands is scrolled to the top of the clear area, after the dock has mounted', async () => {
+    const { cell } = mount();
+    const scroll = vi.fn();
+    cell.scrollIntoView = scroll;
+    box(cell, 300, 400);
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Draw' })); });
+    await frameOf();
+    expect(scroll).toHaveBeenCalledTimes(1);
+    expect(scroll).toHaveBeenCalledWith({ block: 'start', behavior: 'smooth' });
+  });
+
+  test('a post wholly in the clear area is not scrolled, and nothing scrolls before draw mode opens', async () => {
+    const { cell } = mount();
+    const scroll = vi.fn();
+    cell.scrollIntoView = scroll;
+    box(cell, 100, 200);
+    await frameOf();
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Draw' })); });
+    await frameOf();
+    expect(scroll).not.toHaveBeenCalled();
   });
 });
 

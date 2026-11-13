@@ -132,9 +132,14 @@ export const defaults: Settings = deepFreeze<Settings>({
    */
   apology: { apologyEveryHours: 24, apologyJudgeBatch: 10, apologyRulingMaxWords: 80 },
   /**
+   * The code of conduct's numbers (the conduct design, sections 5 and 7): an account holds at most three reports to admins open at once. The admin
+   * address, where replies to a moderation email go so an appeal reaches a person, is the owner's to set when the instance deploys: null until then.
+   */
+  conduct: { openReportsMost: 3, adminAddress: null },
+  /**
    * The cosmetics (the cosmetics design): a character wears up to twelve pieces, each reaching up to 0.4 of the portrait's width past an
    * edge; a postbit shows three trophies; a Random Event gets one chance per character in a 15-minute window and at most four in a rolling
-   * day, and is mostly a line, sometimes a found piece of gear, rarely a found card. Starting points the season review replaces.
+   * day, and is mostly a line, sometimes a found piece of gear, rarely a found card (about one event in thirty). Starting points the season review replaces.
    */
   cosmetics: {
     gear: { wornMost: 12, reach: 0.4 },
@@ -142,7 +147,7 @@ export const defaults: Settings = deepFreeze<Settings>({
     events: {
       windowMinutes: 15,
       dayMost: 4,
-      outcomes: { line: 70, gear: 20, card: 10 },
+      outcomes: { line: 70, gear: 20, card: 3 },
       gearRarity: { common: 80, uncommon: 17, rare: 3 },
       cardRarity: { common: 80, uncommon: 17, rare: 3 },
     },
@@ -188,7 +193,7 @@ export const defaults: Settings = deepFreeze<Settings>({
    * Laugh Track's audience: `line` is where a reader's line sits in the viewport (percent from the top), `dwellMs` how long a cued place must stay on it,
    * `reachRem` how far a cue reaches from the line, `murmurMost` how much of a hit a murmur is (percent) and `fadeMs` how long a sound fades.
    */
-  cardSettings: { 'whoops.clean': 95, 'autocorrect.pace': 90, 'autocorrect.pickMs': 450, 'autocorrect.give': 34, 'autocorrect.peekStayMs': 300, 'autocorrect.peekSettle': 300, 'laughTrack.line': 40, 'laughTrack.dwellMs': 400, 'laughTrack.reachRem': 12, 'laughTrack.murmurMost': 35, 'laughTrack.fadeMs': 250, 'youWereSaying.eraseCps': 6, 'youWereSaying.retypeMs': 2000, 'youWereSaying.typeCps': 40, 'graffiti.limit': 40 },
+  cardSettings: { 'whoops.clean': 95, 'autocorrect.pace': 90, 'autocorrect.pickMs': 450, 'autocorrect.give': 34, 'autocorrect.peekStayMs': 300, 'autocorrect.peekSettle': 300, 'laughTrack.line': 40, 'laughTrack.dwellMs': 400, 'laughTrack.reachRem': 12, 'laughTrack.murmurMost': 35, 'laughTrack.fadeMs': 250, 'laughTrack.band': 34, 'laughTrack.airMs': 1200, 'laughTrack.holdMs': 18000, 'youWereSaying.eraseCps': 6, 'youWereSaying.retypeMs': 2000, 'youWereSaying.typeCps': 40, 'graffiti.limit': 40 },
   /** The classes' and cards' own numbers from the same table, each named for what reads it. */
   economy: {
     /** "Early" is among this many first players to react to a post. */

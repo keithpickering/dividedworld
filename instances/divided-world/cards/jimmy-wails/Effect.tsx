@@ -5,7 +5,8 @@
  *
  * **The carousel** shows one banner at a time, all stacked so one fades into the next. It advances every 8 seconds and pauses while the pointer is over
  * it, while focus is in it and from its pause button. Under reduced motion it never advances by itself and swaps with no fade, and previous and next
- * move it either way. Previous, next, a dot for each banner and "1 of 3" say where it stands. A drive with one banner is the banner alone.
+ * move it either way. Previous, next, a dot for each banner and "1 of 3" say where it stands. The photograph's credit is drawn once, under the slides, for
+ * the banner on view. A drive with one banner is the banner alone.
  *
  * **Where it shows.** In a thread the drive has its buttons; in the ORIGIN box of a thread spun from the post, and in a play's moment (`still`: nothing
  * in a moment takes input or advances), the banners and the totals show and the buttons do not.
@@ -19,7 +20,7 @@ import type { CardPlay, Drive as DriveOf, EffectProps } from '../../../../engine
 import { economyOf } from '../../../../engine/rules/cards.ts';
 import { withCardEconomy } from '../../../../engine/ui/cards/faces.ts';
 import { useKayfa } from '../../../../engine/ui/context.tsx';
-import { Banner } from './Banner.tsx';
+import { Banner, Credit } from './Banner.tsx';
 import { Drive, raisedWords } from './Drive.tsx';
 import './jimmy-wails.css';
 
@@ -67,10 +68,11 @@ export function Carousel({ plays, nameOf, still = false }: CarouselProps) {
             key={play.id} className="dw-jw-slide" role="group" aria-roledescription="slide" aria-label={`${i + 1} of ${n}`}
             data-active={i === at ? 'true' : 'false'} aria-hidden={i === at ? undefined : true} inert={i === at ? undefined : true}
           >
-            <Banner play={play} caster={nameOf(play.caster)} />
+            <Banner play={play} caster={nameOf(play.caster)} credited={false} />
           </div>
         ))}
       </div>
+      <Credit play={plays[at]!} />
       <div className="dw-jw-controls">
         <button type="button" className="dw-jw-step" aria-label="Previous appeal" onClick={() => step(-1)}>&lsaquo;</button>
         <span className="dw-jw-dots">

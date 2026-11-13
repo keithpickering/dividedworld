@@ -1,16 +1,32 @@
 /**
- * Laugh Track's settings in the play form (docs/plans/2026-11-11-laugh-track-design.md, section 6): up to five cue rows, each a phrase
- * and a sound, bounded as the card's rules bound them (cards/laugh-track.ts). Under each row a live line counts its places in this post's
- * own words through the rules' own `placesOf`, so the form and the server agree; under them the play's total against its cap. The count
- * is a preview; the server decides again. Above the rows a read-only copy of the post's words to select from: a selection fills the
- * phrase of the row that last had focus, trimmed to whole words by the same matcher; the selection is read on `selectionchange` and only
- * when it lies wholly inside the copy. A row out of the rules' bounds says so in the rules' own refusal words (`validateConfig` on that one cue). Typing a phrase stays a full path for a keyboard.
+ * Laugh Track's settings in the play form (docs/plans/2026-11-12-laugh-track-band-design.md, section 5): up to five cues, each a phrase and a
+ * sound, bounded as the card's rules bound them (cards/laugh-track.ts), drawn in the glass's own pieces (engine/ui/cards/config). A cue's hint
+ * counts its places in this post's own words through the rules' own `placesOf`, so the form and the server agree; the count is a preview and
+ * the server decides again. A phrase out of the rules' bounds is refused in the rules' own words (`validateConfig` on that one cue). Under the
+ * cues sit the play's total against its cap and "Add a cue".
+ *
+ * The post's words are shown to select from. A selection never overwrites: it fills the first cue whose phrase is empty (trimmed to whole
+ * words by the same matcher), else adds a cue while there are fewer than five, else changes nothing and the total's live region says all five
+ * are filled, until a cue is cleared or removed. Typing a phrase stays a full path for a keyboard.
+ *
+ * One selection gesture (a pointer drag, a touch handle, Shift+arrow) reports many selections, each growing or shrinking the last ("Luigi", then
+ * "Luigi waved"). Only PostWords can see where a gesture begins, so it hands each report a gesture number (engine/ui/cards/config/PostWords.tsx),
+ * and a selection of the same gesture as the one that wrote a cue rewrites that cue while it still holds exactly what that selection wrote,
+ * whatever the new phrase is; any other selection fills as above, even one that contains or is contained in the last, because it is a cue the
+ * player chose. A selection of a phrase another cue already holds (in any case, as the matcher reads it) changes nothing. Typing in, adding,
+ * removing or clearing a cue ends the gesture's hold, and the next selection fills as above. A selection the full form refuses is said again
+ * each time, by putting the words into the live region afresh.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { occurrences } from '../../../../engine/bbcode/phrase.ts';
 import { parse } from '../../../../engine/bbcode/parse.ts';
 import { visibleText } from '../../../../engine/bbcode/visible.ts';
+import { ConfigChoice } from '../../../../engine/ui/cards/config/ConfigChoice.tsx';
+import { ConfigField } from '../../../../engine/ui/cards/config/ConfigField.tsx';
+import { ConfigHint } from '../../../../engine/ui/cards/config/ConfigHint.tsx';
+import { PostWords } from '../../../../engine/ui/cards/config/PostWords.tsx';
 import type { ConfigFormProps } from '../../../../engine/ui/cards/types.ts';
+import { GlassButton } from '../../../../engine/ui/glass/Button.tsx';
 import { PHRASE } from '../../cards/autocorrect.ts';
 import { CUES, PLACES, laughTrack, placesOf, type Cue, type Sound } from '../../cards/laugh-track.ts';
 import './laugh-track.css';
@@ -52,47 +68,37 @@ function wholeWords(selected: string, text: string): string {
   return '';
 }
 
+type Row = { key: number; cue: Cue };
+
 export function ConfigForm({ config, onChange, post, id }: ConfigFormProps) {
   const serial = useRef(0);
   const nextKey = () => serial.current++;
-  const [rows, setRows] = useState<{ key: number; cue: Cue }[]>(() => cuesOf(config).map((cue) => ({ key: nextKey(), cue })));
+  const [rows, setRows] = useState<Row[]>(() => cuesOf(config).map((cue) => ({ key: nextKey(), cue })));
+  const [full, setFull] = useState(false);
+  /* Each refusal gets its own number, so the live words are drawn as a new node and a reader hears a repeated refusal. */
+  const [refusals, setRefusals] = useState(0);
+  const refusedGesture = useRef<number | null>(null);
   const cues = useMemo(() => rows.map((r) => r.cue), [rows]);
-  const lastFocused = useRef(0);
   const refocus = useRef<number | null>(null);
-  const copy = useRef<HTMLQuoteElement>(null);
   const form = useRef<HTMLFieldSetElement>(null);
   const body = typeof post.currentPayload?.body === 'string' ? post.currentPayload.body : '';
   const text = useMemo(() => visibleText(parse(body)), [body]);
   const all = useMemo(() => placesOf(text, cues), [text, cues]);
   const counts = useMemo(() => cues.map((_, i) => all.filter((p) => p.cue === i).length), [all, cues]);
 
-  const set = (next: { key: number; cue: Cue }[]) => {
+  /* The rows as the last change left them, so two selections before a draw each see the other's work. */
+  const current = useRef(rows);
+  /* The cue the last selection filled, the phrase it wrote there and the gesture it came in; typing in, adding, removing or clearing a cue forgets it. */
+  const lastFilled = useRef<{ key: number; phrase: string; gesture: number } | null>(null);
+  const set = (next: Row[]) => {
+    current.current = next;
     setRows(next);
+    setFull(false);
     onChange({ cues: next.map((r) => r.cue) });
   };
-  const edit = (i: number, patch: Partial<Cue>) => set(rows.map((r, j) => (j === i ? { ...r, cue: { ...r.cue, ...patch } } : r)));
-  const latest = useRef({ text, rows, edit });
-  latest.current = { text, rows, edit };
+  const edit = (i: number, patch: Partial<Cue>) => set(current.current.map((r, j) => (j === i ? { ...r, cue: { ...r.cue, ...patch } } : r)));
 
-  /* A selection wholly inside the copy fills the row that last had focus; one made elsewhere, or running past the copy's edges, fills nothing. */
-  useEffect(() => {
-    const read = () => {
-      const el = copy.current;
-      const sel = window.getSelection();
-      if (!el || !sel || sel.rangeCount === 0 || sel.isCollapsed) return;
-      /* Some browsers leave the document selection on the copy while the player types in a row: a stale one must not refill it. */
-      const active = document.activeElement;
-      if (active && active !== el && form.current?.contains(active) && active.matches('input, select, button')) return;
-      const range = sel.getRangeAt(0);
-      if (!el.contains(range.commonAncestorContainer)) return;
-      const phrase = wholeWords(range.toString(), latest.current.text);
-      if (phrase) latest.current.edit(Math.min(lastFocused.current, latest.current.rows.length - 1), { phrase });
-    };
-    document.addEventListener('selectionchange', read);
-    return () => document.removeEventListener('selectionchange', read);
-  }, []);
-
-  /* After a removal the clicked button is gone: focus goes to the Phrase of the row now at that place, once it is drawn. */
+  /* After a removal the clicked button is gone, and after an add the new cue wants the cursor: focus goes to the Phrase of the cue now at that place, once it is drawn. */
   useEffect(() => {
     const at = refocus.current;
     if (at === null) return;
@@ -102,57 +108,101 @@ export function ConfigForm({ config, onChange, post, id }: ConfigFormProps) {
   });
 
   const remove = (i: number) => {
-    const next = rows.filter((_, j) => j !== i);
-    if (lastFocused.current > i) lastFocused.current -= 1;
-    lastFocused.current = Math.min(lastFocused.current, next.length - 1);
+    lastFilled.current = null;
+    const next = current.current.filter((_, j) => j !== i);
     refocus.current = Math.min(i, next.length - 1);
     set(next);
   };
+  const add = () => {
+    lastFilled.current = null;
+    const next = [...current.current, { key: nextKey(), cue: BLANK }];
+    refocus.current = next.length - 1;
+    set(next);
+  };
+
+  /* A selection fills the first cue with an empty phrase, else adds a cue, else (five filled) changes nothing and says so. */
+  const fill = (selected: string, gesture: number) => {
+    const phrase = wholeWords(selected, text);
+    if (!phrase) return;
+    const rs = current.current;
+    /* The same gesture as the one that wrote a cue, while that cue still holds what it wrote, is the same selection grown or shrunk. */
+    const last = lastFilled.current;
+    const same = last && last.gesture === gesture ? rs.findIndex((r) => r.key === last.key && r.cue.phrase === last.phrase) : -1;
+    /* A phrase another cue holds is already a cue: the matcher reads phrases in any case. */
+    const kept = (p: string) => p.trim().toLowerCase();
+    if (last && same >= 0) {
+      if (phrase === last.phrase) return;
+      /* A rewrite into another cue's phrase leaves the cue as it is, still the gesture's, so growing again rewrites it. */
+      if (rs.some((r, j) => j !== same && kept(r.cue.phrase) === kept(phrase))) return;
+      lastFilled.current = { key: last.key, phrase, gesture };
+      edit(same, { phrase });
+      return;
+    }
+    if (rs.some((r) => kept(r.cue.phrase) === kept(phrase))) return;
+    const empty = rs.findIndex((r) => r.cue.phrase.trim() === '');
+    if (empty >= 0) {
+      lastFilled.current = { key: rs[empty]!.key, phrase, gesture };
+      edit(empty, { phrase });
+    } else if (rs.length < CUES.most) {
+      const key = nextKey();
+      set([...rs, { key, cue: { ...BLANK, phrase } }]);
+      lastFilled.current = { key, phrase, gesture };
+    } else {
+      setFull(true);
+      /* Said once per gesture: the reports of one blocked gesture do not repeat it. */
+      if (refusedGesture.current !== gesture) {
+        refusedGesture.current = gesture;
+        setRefusals((n) => n + 1);
+      }
+    }
+  };
 
   return (
-    <fieldset ref={form} className="dw-lt-form">
-      <legend className="dw-lt-form-legend">Your audience&apos;s cues</legend>
-      <blockquote ref={copy} className="dw-lt-form-copy" aria-label="The post's words, to select from" tabIndex={0}>
-        {text}
-      </blockquote>
+    <fieldset ref={form} className="kb-play-config-group">
+      <legend className="kb-play-label">Your audience&apos;s cues</legend>
+      <div>
+        <ConfigHint>Select words in the post below with a pointer or by touch, or type them. A selection fills the first empty cue.</ConfigHint>
+        <PostWords words={text} within={form} onSelect={fill} />
+      </div>
       {rows.map(({ key, cue }, i) => {
         const bound = cue.phrase.trim() ? boundOf(cue.phrase) : undefined;
+        const line = !cue.phrase.trim() ? `At least ${PHRASE.least} letters or digits, matched as whole words in any case`
+          : bound ? undefined : counts[i] ? `Cues ${places(counts[i]!)} in this post` : 'Not in this post\'s own words';
+        const hint = i === 0
+          ? `${line === undefined ? '' : `${line}. `}A face-down Laugh Track waits for this phrase.`
+          : line;
         return (
-          <div key={key} className="dw-lt-form-row">
-            <div className="dw-lt-form-fields">
-              <label htmlFor={`${id}-phrase-${key}`} className="dw-lt-form-label">
-                Phrase<span className="kb-visually-hidden"> for cue {i + 1}</span>
-              </label>
-              <input
-                id={`${id}-phrase-${key}`} type="text" value={cue.phrase} maxLength={PHRASE.most} autoComplete="off" spellCheck={false}
-                aria-describedby={`${id}-places-${key}`} onFocus={() => { lastFocused.current = i; }}
-                onChange={(e) => edit(i, { phrase: e.target.value })}
-              />
-              <label htmlFor={`${id}-sound-${key}`} className="dw-lt-form-label">
-                Sound<span className="kb-visually-hidden"> for cue {i + 1}</span>
-              </label>
-              <select
-                id={`${id}-sound-${key}`} value={cue.sound} onFocus={() => { lastFocused.current = i; }}
-                onChange={(e) => edit(i, { sound: e.target.value as Sound })}
-              >
-                {SOUNDS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
-              {rows.length > 1 && (
-                <button type="button" className="dw-lt-form-remove" aria-label={`Remove cue ${i + 1}`} onClick={() => remove(i)}>Remove</button>
-              )}
-            </div>
-            <p id={`${id}-places-${key}`} className="dw-lt-form-places">
-              {!cue.phrase.trim() ? `At least ${PHRASE.least} letters or digits, matched as whole words in any case`
-                : bound ?? (counts[i] ? `Cues ${places(counts[i]!)} in this post` : 'Not in this post\'s own words')}
-            </p>
-            {i === 0 && <p className="dw-lt-form-note">A face-down Laugh Track waits for this phrase</p>}
+          <div key={key} className="kb-play-config-cue">
+            <ConfigField
+              id={`${id}-phrase-${key}`}
+              label={`Cue ${i + 1}`}
+              value={cue.phrase}
+              maxLength={PHRASE.most}
+              onChange={(phrase) => { lastFilled.current = null; edit(i, { phrase }); }}
+              describedBy={hint ? `${id}-phrase-${key}-line` : undefined}
+              why={bound}
+              action={rows.length > 1 ? (
+                <GlassButton kind="quiet" size="s" aria-label={`Remove cue ${i + 1}`} onClick={() => remove(i)}>Remove</GlassButton>
+              ) : undefined}
+            />
+            <ConfigChoice
+              name={`${id}-sound-${key}`}
+              label={`Sound for cue ${i + 1}`}
+              hideLegend
+              options={SOUNDS}
+              value={cue.sound}
+              onChoose={(sound) => edit(i, { sound })}
+            />
+            {hint && <ConfigHint id={`${id}-phrase-${key}-line`}>{hint}</ConfigHint>}
           </div>
         );
       })}
-      {rows.length < CUES.most && (
-        <button type="button" className="dw-lt-form-add" onClick={() => set([...rows, { key: nextKey(), cue: BLANK }])}>Add a cue</button>
-      )}
-      <p role="status" className="dw-lt-form-total">{places(all.length)} in all (at most {PLACES.most})</p>
+      <div className="kb-play-config-actions">
+        {rows.length < CUES.most && <GlassButton kind="secondary" size="s" onClick={add}>Add a cue</GlassButton>}
+        <ConfigHint live>
+          {places(all.length)} in all (at most {PLACES.most}){full && <span key={refusals}>. All five cues are filled. Clear one to pick another phrase.</span>}
+        </ConfigHint>
+      </div>
     </fieldset>
   );
 }

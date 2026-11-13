@@ -91,6 +91,8 @@ const inked = (page: Page) => page.evaluate((n) => {
 
 /** A stroke with the mouse across the drawing surface at `y` (a share of its height), from `x0` to `x1`. */
 async function stroke(page: Page, y: number, x0 = 0.1, x1 = 0.9): Promise<void> {
+  /* The dock is fixed over the foot of the window, so the surface is brought to the top, clear of it, as a player scrolls to draw. */
+  await surface(page).evaluate((el) => el.scrollIntoView({ block: 'start' }));
   const box = (await surface(page).boundingBox())!;
   await page.mouse.move(box.x + box.width * x0, box.y + box.height * y);
   await page.mouse.down();
@@ -331,3 +333,302 @@ test.describe('on a Pixel 7', () => {
     await expect(dock(page).getByRole('button', { name: 'Tag it' })).toHaveAttribute('aria-disabled', 'true');
   });
 });
+
+/*
+ * Playing the card face up (docs/plans/2026-11-12-graffiti-face-up-design.md, sections 2 and 3): one ghost on one's own post, and pressing it opens draw mode with the
+ * toolbar's dock fixed in the window above the HUD however tall the post is. The hand's tag says which post is being played, the other ghosts hide, and Esc brings
+ * them back. The demo's posts are short, so the post under play is made taller than the window.
+ */
+/** The hand's peek tag, the copies on screen only (the hand's own and the HUD's keep one each, one of them hidden). */
+const peek = (page: Page, text: string) => page.getByText(text, { exact: true }).locator('visible=true');
+const ghosts = (page: Page) => page.getByRole('button', { name: /^Play Graffiti on post \d+$/ });
+
+/** Arms Graffiti from the hand's dialog on the thread, the way a player does. */
+async function arm(page: Page): Promise<void> {
+  /* The hand is a modal dialog on the wide layout and a region on the phone's (Hud.tsx), where it may already be open. */
+  const hand = page.getByRole('dialog', { name: 'Your hand' }).or(page.getByRole('region', { name: 'Your hand' }));
+  if (!(await hand.isVisible())) await page.getByRole('button', { name: /^Hand, \d+ postcards?$/ }).click();
+  await hand.getByRole('button', { name: /^Graffiti, / }).first().click();
+}
+
+async function playingFlow(page: Page): Promise<void> {
+  await world(page);
+  await openThread(page);
+  /* The page's CSP forbids a style tag, not a style set through the CSSOM. */
+  await page.evaluate((n) => { document.querySelector<HTMLElement>(`#post-${n} .kb-act-main`)!.style.minHeight = '1500px'; }, POST);
+  const viewport = page.viewportSize()!;
+  expect((await post(page).boundingBox())!.height, 'the post is taller than the window').toBeGreaterThan(viewport.height);
+  await arm(page);
+  const own = post(page).getByRole('button', { name: /^Play Graffiti on post \d+$/ });
+  await expect(own, 'one ghost on the player\'s own post').toHaveCount(1);
+  await expect(own).toHaveAccessibleName(`Play Graffiti on post ${POST}`);
+  /* The player's other masks wrote other posts, which carry their ghosts until the card is playing: more than one ghost on the page, one to a post. */
+  const everywhere = await ghosts(page).count();
+  expect(everywhere, 'another post of the player\'s has its ghost too').toBeGreaterThan(1);
+  await expect(peek(page, 'Armed · pick a post').first()).toBeVisible();
+  await own.click();
+  await expect(dock(page)).toBeVisible();
+  /* The dock is in the window and clears the HUD, wherever the post's own toolbar slot is on the page. */
+  const box = (await dock(page).boundingBox())!;
+  const hud = (await page.getByRole('region', { name: 'Game HUD' }).boundingBox())!;
+  expect(box.x, 'dock left in the window').toBeGreaterThanOrEqual(0);
+  expect(box.y, 'dock top in the window').toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width, 'dock right in the window').toBeLessThanOrEqual(viewport.width + 0.5);
+  expect(box.y + box.height, 'dock above the HUD').toBeLessThanOrEqual(hud.y + 1);
+  /* Over the posts that follow the one under play the dock still takes the pointer: with the next post scrolled to the top, it lies beneath the dock, and the point at the middle of each of its controls is the control's. */
+  await page.evaluate(() => document.querySelector('#post-3')!.scrollIntoView({ block: 'start' }));
+  const buried = await dock(page).evaluate((el) => [...el.querySelectorAll<HTMLElement>('button')].filter((b) => {
+    const r = b.getBoundingClientRect();
+    return r.height > 0 && !b.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2));
+  }).map((b) => b.getAttribute('aria-label') ?? b.textContent));
+  expect(buried, 'controls of the dock with another post painted over them').toEqual([]);
+  /* Wide, the hand's peek tag names the post; on the phone's layout the HUD's hand button says what is armed (Hud.tsx), without a post number. */
+  const wide = viewport.width >= 1024;
+  const hand = page.getByRole('region', { name: 'Game HUD' }).getByRole('button', { name: /^(Armed|Playing) · Graffiti/ });
+  if (wide) {
+    await expect(peek(page, `Playing · post #${POST}`).first()).toBeVisible();
+    await expect(peek(page, 'Armed · pick a post')).toHaveCount(0);
+  } else {
+    await expect(hand).toHaveAccessibleName('Playing · Graffiti, press to put it back');
+  }
+  /* The other posts' ghosts hide; the one on the post under play stays (it is the post the dock is for). */
+  await expect(ghosts(page), 'no other post shows a ghost while playing').toHaveCount(1);
+  await expect(own).toHaveCount(1);
+  await page.keyboard.press('Escape');
+  await expect(dock(page)).toBeHidden();
+  if (wide) await expect(peek(page, 'Armed · pick a post').first()).toBeVisible();
+  else await expect(hand).toHaveAccessibleName('Armed · Graffiti, press to put it back');
+  await expect(own).toHaveCount(1);
+  await expect(ghosts(page), 'the other posts\' ghosts are back').toHaveCount(everywhere);
+}
+
+test.describe('playing Graffiti, wide', () => {
+  test.use({ viewport: { width: 1280, height: 800 }, reducedMotion: 'reduce' });
+  test('one ghost, the dock in the window above the HUD, and Esc brings the ghost back', async ({ page }) => { await playingFlow(page); });
+});
+
+test.describe('playing Graffiti, on a phone', () => {
+  const { defaultBrowserType: _browser, ...pixel } = devices['Pixel 7'];
+  test.use({ ...pixel });
+  test('one ghost, the dock in the window above the HUD, and Esc brings the ghost back', async ({ page }) => { await playingFlow(page); });
+});
+
+/*
+ * Focus is not obscured by the dock (WCAG 2.4.11): with draw mode open, Tab through the page's controls from the top, and every control of a post that takes focus is in
+ * the window clear of the dock, which lies over the foot of the window. The post under play is taller than the window, so its low controls (Quote, Edit, History, Report,
+ * Permalink, React) start below the dock's top and the browser must scroll them clear.
+ */
+test.describe('focus under the dock, wide', () => {
+  test.use({ viewport: { width: 1280, height: 800 }, reducedMotion: 'reduce' });
+  test('a post control reached by Tab is scrolled clear of the dock', async ({ page }) => {
+    await world(page);
+    await openThread(page);
+    await page.evaluate((n) => { document.querySelector<HTMLElement>(`#post-${n} .kb-act-main`)!.style.minHeight = '1500px'; }, POST);
+    await arm(page);
+    await post(page).getByRole('button', { name: /^Play Graffiti on post \d+$/ }).click();
+    await expect(dock(page)).toBeVisible();
+    await page.evaluate(() => { window.scrollTo(0, 0); (document.activeElement as HTMLElement | null)?.blur(); });
+    const seen: string[] = [];
+    const hidden: string[] = [];
+    for (let i = 0; i < 60; i++) {
+      await page.keyboard.press('Tab');
+      const r = await page.evaluate(() => {
+        const el = document.activeElement as HTMLElement | null;
+        const d = document.querySelector('.kb-graffiti-dock');
+        if (!el || !d || d.contains(el) || !el.closest('[id^="post-"]')) return null;
+        const b = el.getBoundingClientRect();
+        return { name: el.getAttribute('aria-label') ?? (el.textContent ?? '').trim().slice(0, 30), bottom: b.bottom, dockTop: d.getBoundingClientRect().top };
+      });
+      if (!r) continue;
+      seen.push(r.name);
+      if (r.bottom > r.dockTop + 0.5) hidden.push(`${r.name} (bottom ${Math.round(r.bottom)} > dock top ${Math.round(r.dockTop)})`);
+    }
+    expect(seen.length, 'Tab reached controls of posts').toBeGreaterThan(3);
+    expect(hidden, 'post controls left behind the dock').toEqual([]);
+  });
+});
+
+/*
+ * The dock is short on a wide screen and folds to its header at every width (Toolbar.tsx, graffiti.css): the same controls take the width there is, and "Hide tools"
+ * leaves the meter, Cancel and Tag it. Measured, with room to spare: the expanded dock is 162px at 1280px wide (Spray tab) and the bound below is 180.
+ */
+const WIDE_DOCK_MAX = 180;
+async function dockOpen(page: Page): Promise<void> {
+  await world(page);
+  await openThread(page);
+  await arm(page);
+  await post(page).getByRole('button', { name: /^Play Graffiti on post \d+$/ }).click();
+  await expect(dock(page)).toBeVisible();
+}
+const height = async (page: Page) => (await dock(page).boundingBox())!.height;
+async function inWindow(page: Page, name: string): Promise<void> {
+  const box = (await dock(page).getByRole('button', { name }).boundingBox())!;
+  const view = page.viewportSize()!;
+  expect(box.y, `${name} in the window`).toBeGreaterThanOrEqual(0);
+  expect(box.y + box.height, `${name} in the window`).toBeLessThanOrEqual(view.height);
+  expect(box.x + box.width, `${name} in the window`).toBeLessThanOrEqual(view.width + 0.5);
+}
+
+test.describe('the dock folds, wide', () => {
+  test.use({ viewport: { width: 1280, height: 800 }, reducedMotion: 'reduce' });
+  test('at most 180px tall expanded, shorter folded, with Cancel and Tag it in the window', async ({ page }) => {
+    await dockOpen(page);
+    const open = await height(page);
+    expect(open, 'expanded dock height').toBeLessThanOrEqual(WIDE_DOCK_MAX);
+    const fold = dock(page).getByRole('button', { name: 'Hide tools' });
+    await expect(fold).toHaveAttribute('aria-expanded', 'true');
+    for (const name of ['Cancel', 'Tag it']) expect((await dock(page).getByRole('button', { name }).boundingBox())!.height).toBeGreaterThanOrEqual(44);
+    await fold.click();
+    await expect(dock(page).getByRole('tab')).toHaveCount(0);
+    const shut = await height(page);
+    expect(shut, 'folded dock height').toBeLessThan(open - 40);
+    await inWindow(page, 'Cancel');
+    await inWindow(page, 'Tag it');
+    /* The page's foot follows the dock: the root's measured height is the dock's. */
+    expect(await page.evaluate(() => document.documentElement.style.getPropertyValue('--kb-graffiti-dock-h'))).toBe(`${Math.round(shut)}px`);
+    await dock(page).getByRole('button', { name: 'Show tools' }).click();
+    await expect(dock(page).getByRole('tab', { name: 'Spray' })).toBeVisible();
+    expect(await height(page)).toBeCloseTo(open, 0);
+  });
+});
+
+test.describe('the dock folds, on a phone', () => {
+  const { defaultBrowserType: _browser, ...pixel } = devices['Pixel 7'];
+  test.use({ ...pixel });
+  test('folded is shorter than expanded, with Cancel and Tag it in the window', async ({ page }) => {
+    await dockOpen(page);
+    const open = await height(page);
+    await dock(page).getByRole('button', { name: 'Hide tools' }).click();
+    const shut = await height(page);
+    expect(shut).toBeLessThan(open - 100);
+    await inWindow(page, 'Cancel');
+    await inWindow(page, 'Tag it');
+  });
+});
+
+/*
+ * Draw mode opens with the post clear of the dock, and no dock control is under the HUD's peek. The post's body is read a second after the press, when a smooth
+ * scroll has long finished; the post starts low in the window, where the dock is about to cover it.
+ */
+const body = (page: Page) => page.locator(`#post-${POST} .kb-act-main`);
+const clear = (page: Page) => page.evaluate((n) => {
+  const b = document.querySelector(`#post-${n} .kb-act-main`)!.getBoundingClientRect();
+  const top = parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop) || 0;
+  const d = document.querySelector('.kb-graffiti-dock')!.getBoundingClientRect();
+  return { top: b.top, bottom: b.bottom, clearTop: top, dockTop: d.top };
+}, POST);
+/** The post is clear and has stopped moving: two polls in a row read the same top, so a smooth scroll still on its way is not taken for its end. */
+async function settledClear(page: Page): Promise<void> {
+  let last: number | null = null;
+  await expect.poll(async () => {
+    const r = await clear(page);
+    const still = last !== null && Math.abs(r.top - last) < 0.5;
+    last = r.top;
+    try { expectClear(r, 'settling'); } catch { return false; }
+    return still;
+  }, { message: 'the post comes to rest clear of the dock', timeout: 10_000 }).toBe(true);
+}
+function expectClear(r: { top: number; bottom: number; clearTop: number; dockTop: number }, how: string): void {
+  if (r.bottom - r.top > r.dockTop - r.clearTop) expect(Math.abs(r.top - r.clearTop), `${how}: a tall body's top at the clear top`).toBeLessThanOrEqual(2);
+  else {
+    expect(r.top, `${how}: body top below the menu bar`).toBeGreaterThanOrEqual(r.clearTop - 1);
+    expect(r.bottom, `${how}: body bottom above the dock`).toBeLessThanOrEqual(r.dockTop + 1);
+  }
+}
+/** The post scrolled so its top lies at `share` of the window's height, below where the dock will be, then the card armed and the ghost pressed. */
+async function lowThenPress(page: Page, share: number, tile: boolean): Promise<void> {
+  await world(page, tile ? SOME : null);
+  await openThread(page);
+  await page.evaluate(([n, s]) => {
+    const r = document.querySelector(`#post-${n} .kb-act-main`)!.getBoundingClientRect();
+    window.scrollBy({ top: r.top - window.innerHeight * s, behavior: 'instant' });
+  }, [POST, share] as const);
+  if (tile) await post(page).getByRole('button', { name: 'Draw' }).click();
+  else {
+    await arm(page);
+    await post(page).getByRole('button', { name: /^Play Graffiti on post \d+$/ }).click();
+  }
+  await expect(dock(page)).toBeVisible();
+  await settledClear(page);
+}
+
+for (const [name, reduced] of [['smooth', 'no-preference'], ['reduced motion', 'reduce']] as const) {
+  test.describe(`the post is brought clear of the dock, wide, ${name}`, () => {
+    test.use({ viewport: { width: 1280, height: 800 }, reducedMotion: reduced });
+    test('pressing the ghost on a post low in the window', async ({ page }) => {
+      await lowThenPress(page, 0.75, false);
+      expectClear(await clear(page), 'ghost');
+    });
+    test('the Draw tile on a wall', async ({ page }) => {
+      await lowThenPress(page, 0.75, true);
+      expectClear(await clear(page), 'Draw tile');
+    });
+  });
+}
+
+test.describe('the post is brought clear of the dock, on a phone', () => {
+  const { defaultBrowserType: _browser, ...pixel } = devices['Pixel 7'];
+  test.use({ ...pixel });
+  test('pressing the ghost on a post low in the window', async ({ page }) => {
+    await lowThenPress(page, 0.7, false);
+    expectClear(await clear(page), 'ghost');
+  });
+  test('the Draw tile', async ({ page }) => {
+    await lowThenPress(page, 0.7, true);
+    expectClear(await clear(page), 'Draw tile');
+  });
+  test('reduced motion', async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await lowThenPress(page, 0.7, false);
+    expectClear(await clear(page), 'ghost, reduced');
+  });
+});
+
+/*
+ * The HUD's peek (the "Playing · post #N" tag and the hand's card) hangs up over the dock's right edge on the wide layout, and takes no pointer, so elementFromPoint cannot
+ * see it: no dock button's box may meet the box of the tag or of the card, expanded or folded. (Below the wide layout there is no peek, and there is nothing to meet.)
+ */
+for (const width of [1024, 1280, 1600]) {
+  test.describe(`the HUD's peek covers no dock control, ${width}px`, () => {
+    test.use({ viewport: { width, height: 800 }, reducedMotion: 'reduce' });
+    /** The peek's visible boxes against every dock button's: what meets, and how many peek boxes there were to meet. */
+    const met = (page: Page) => page.evaluate(() => {
+      const dock = document.querySelector('.kb-graffiti-dock')!;
+      const peeks = [...document.querySelectorAll('.kb-hand-armed, .kb-hand-peek-card')].map((e) => ({ name: e.className, r: e.getBoundingClientRect() })).filter((p) => p.r.width > 0);
+      const meets = [...dock.querySelectorAll<HTMLElement>('button, [role="tab"]')].flatMap((b) => {
+        const r = b.getBoundingClientRect();
+        if (r.height === 0) return [];
+        return peeks.filter(({ r: p }) => r.left + 2 < p.right && r.right - 2 > p.left && r.top + 2 < p.bottom && r.bottom - 2 > p.top).map((p) => `${b.getAttribute('aria-label') ?? b.textContent?.trim()} meets ${p.name}`);
+      });
+      return { meets, peeks: peeks.length };
+    });
+    /** Wide enough, the peek is on screen and clear of every button; narrower, there is none, and the check says so rather than pass on nothing. */
+    async function clearOfPeek(page: Page, how: string): Promise<void> {
+      const peeking = width >= 1280;
+      if (peeking) await expect(peek(page, `Playing · post #${POST}`).first()).toBeVisible();
+      await expect.poll(async () => (await met(page)).peeks > 0, { message: `${how}: ${peeking ? 'the peek is shown' : 'no peek is shown at this width'}` }).toBe(peeking);
+      expect((await met(page)).meets, `${how}: controls under the peek`).toEqual([]);
+    }
+    test('expanded and folded', async ({ page }) => {
+      await dockOpen(page);
+      await clearOfPeek(page, 'expanded');
+      await dock(page).getByRole('button', { name: 'Hide tools' }).click();
+      await expect(dock(page).getByRole('tab')).toHaveCount(0);
+      await clearOfPeek(page, 'folded');
+    });
+    if (width === 1280) {
+      test('the hand opened and put away again over the open dock', async ({ page }) => {
+        await dockOpen(page);
+        await clearOfPeek(page, 'before');
+        const hand = page.getByRole('dialog', { name: 'Your hand' });
+        await page.getByRole('button', { name: /^Hand, \d+ postcards?/ }).click();
+        await expect(hand).toBeVisible();
+        /* The hand's own close control is not offered while a card is playing; the HUD's Hand button, which reads "open", puts it away. */
+        await page.getByRole('button', { name: /^Hand, \d+ postcards?, open$/ }).click();
+        await expect(hand).toBeHidden();
+        await expect(dock(page)).toBeVisible();
+        await clearOfPeek(page, 'after the hand closed');
+      });
+    }
+  });
+}

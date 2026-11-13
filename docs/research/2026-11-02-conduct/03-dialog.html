@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The report dialog</title>
+<!-- Board 3 of the conduct design session: the report dialog over the thread, form state: the seven sections of instances/divided-world/ui/conduct.ts as radios, one selected, a note typed with its live count. A centered modal at 1440, a sheet on the phone. Written by mock.mjs; a reference for the look, not code to copy. -->
+<link rel="stylesheet" href="../../../engine/ui/base.css">
+<link rel="stylesheet" href="../../../instances/divided-world/ui/theme.css">
+<link rel="stylesheet" href="../../../engine/ui/glass/tokens.css">
+<link rel="stylesheet" href="glass-tokens.css">
+<link rel="stylesheet" href="../../../engine/ui/glass/base.css">
+<link rel="stylesheet" href="../../../engine/ui/glass/calm.css">
+<link rel="stylesheet" href="../../../engine/ui/glass/parts.css">
+<link rel="stylesheet" href="../../../engine/ui/glass/shell.css">
+<link rel="stylesheet" href="../../../engine/ui/thread/thread.css">
+<link rel="stylesheet" href="../../../engine/ui/postbit/postbit.css">
+<link rel="stylesheet" href="../../../engine/ui/bbcode/bbcode.css">
+<link rel="stylesheet" href="../../../engine/ui/cards/lens.css">
+<link rel="stylesheet" href="../../../engine/ui/cards/visit.css">
+<link rel="stylesheet" href="../../../engine/ui/cards/forms.css">
+<link rel="stylesheet" href="../../../engine/ui/account/account.css">
+<link rel="stylesheet" href="board.css">
+</head>
+<body>
+<style>:root{--h-main:1180px}:root[data-kb-layout='phone']{--h-main:1700px}</style><div class="stage" style="--stage-h:var(--h-main)"><div class="kb-page">
+<p class="kb-crumb"><a href="#">Index</a> › <a href="#">Promos &amp; Callouts</a> › Who keeps reacting Salty to my Promos?</p>
+<div class="kb-thread">
+<div class="kb-thread-head"><h1 class="kb-heading kb-thread-title">Who keeps reacting Salty to my Promos?</h1><nav class="kb-pager kb-small" aria-label="Pages"><span class="kb-pager-where">Page 1 of 1</span></nav></div>
+
+<div class="kb-acts"><div class="kb-acts-head" aria-hidden="true"><span>Author</span><span>Message</span></div>
+<article class="kb-act" id="post-1" data-kb-seq="1" data-kb-parity="odd" data-kb-kind="post" data-kb-postbit="side" aria-label="Post 1 by Pickle Baron">
+<div class="kb-postbit" role="group" aria-label="About Pickle Baron" data-kb-postbit="side"><span class="kb-postbit-avatar" data-kb-slot="square" aria-hidden="true"><span class="kb-postbit-none">P</span></span><div class="kb-postbit-text"><span class="kb-postbit-name"><a href="#">Pickle Baron</a></span><span class="kb-postbit-title kb-small kb-muted">Promo Cutter</span><span class="kb-postbit-counts kb-small kb-muted"><span>Posts: 212</span><span>Joined Mar 2026</span></span></div></div>
+<header class="kb-act-meta" data-kb-cell="line"><time>Nov 9, 2026, 1:02 PM</time><a class="kb-act-number" href="#post-1">#1</a></header>
+<div class="kb-act-main" data-kb-cell="words"><div class="kb-bb">Three promos this week. Three Salty reactions each. I want names, I want receipts, and I want one of you to admit the pun about my cape was good.</div></div>
+<footer class="kb-act-foot" data-kb-cell="actions"><div class="kb-act-links kb-small"><button type="button" class="kb-button" data-kb-size="small">Quote</button><button type="button" class="kb-button" data-kb-size="small">Spin thread</button><button type="button" class="kb-button" data-kb-size="small">History</button></div></footer>
+<div class="kb-act-panels"></div>
+</article><article class="kb-act" id="post-2" data-kb-seq="2" data-kb-parity="even" data-kb-kind="post" data-kb-postbit="side" aria-label="Post 2 by Gravy Knight">
+<div class="kb-postbit" role="group" aria-label="About Gravy Knight" data-kb-postbit="side"><span class="kb-postbit-avatar" data-kb-slot="square" aria-hidden="true"><span class="kb-postbit-none">G</span></span><div class="kb-postbit-text"><span class="kb-postbit-name"><a href="#">Gravy Knight</a></span><span class="kb-postbit-title kb-small kb-muted">Heel in Training</span><span class="kb-postbit-counts kb-small kb-muted"><span>Posts: 148</span><span>Joined Apr 2026</span></span></div></div>
+<header class="kb-act-meta" data-kb-cell="line"><time>Nov 9, 2026, 2:14 PM</time><a class="kb-act-number" href="#post-2">#2</a></header>
+<div class="kb-act-main" data-kb-cell="words"><div class="kb-bb">Receipts: the cape pun landed about as well as your last title shot. You rehearsed the pause, the pause was loud, and the pause was all anyone remembered.</div></div>
+<footer class="kb-act-foot" data-kb-cell="actions"><div class="kb-act-links kb-small"><button type="button" class="kb-button" data-kb-size="small">Quote</button><button type="button" class="kb-button" data-kb-size="small">Spin thread</button><button type="button" class="kb-button" data-kb-size="small">History</button></div></footer>
+<div class="kb-act-panels"></div>
+</article>
+</div>
+</div>
+</div><div class="only-main"><div class="kb-glass kb-glass-overlay"><div style="display:contents"><div class="kb-glass-dialog kb-glass-cut-dialog kb-report" role="dialog" aria-modal="true" aria-labelledby="r-t" aria-describedby="r-lead">
+<div class="kb-glass-dialog-bar"><div class="kb-glass-dialog-titles"><p class="kb-glass-dialog-kicker">Post #2 by Gravy Knight, current version</p><h2 id="r-t" class="kb-glass-dialog-head kb-glass-display" tabindex="-1">Report to admins</h2></div><button type="button" class="kb-glass-dialog-close"><span class="kb-visually-hidden">Close</span></button></div>
+<div class="kb-glass-dialog-body kb-report-body">
+<p id="r-lead" class="kb-acct-text">This reaches a person, not the game. An admin reads every report, and the player is never told who sent it.</p>
+
+<form onsubmit="return false">
+<fieldset class="kb-report-sections"><legend class="kb-visually-hidden">Which part of the code of conduct</legend>
+<div class="kb-report-section"><label><input type="radio" name="section" value="person" checked><span>The mask is fair game; the person isn't.</span></label><a href="conduct.html#person" aria-label="Read: The mask is fair game; the person isn't.">Read</a></div>
+<div class="kb-report-section"><label><input type="radio" name="section" value="hate"><span>No hate.</span></label><a href="conduct.html#hate" aria-label="Read: No hate.">Read</a></div>
+<div class="kb-report-section"><label><input type="radio" name="section" value="harassment"><span>No sexual harassment.</span></label><a href="conduct.html#harassment" aria-label="Read: No sexual harassment.">Read</a></div>
+<div class="kb-report-section"><label><input type="radio" name="section" value="stop"><span>Stop when asked.</span></label><a href="conduct.html#stop" aria-label="Read: Stop when asked.">Read</a></div>
+<div class="kb-report-section"><label><input type="radio" name="section" value="onBoard"><span>Keep it on the board.</span></label><a href="conduct.html#onBoard" aria-label="Read: Keep it on the board.">Read</a></div>
+<div class="kb-report-section"><label><input type="radio" name="section" value="reportAbuse"><span>Don't report play as abuse to win.</span></label><a href="conduct.html#reportAbuse" aria-label="Read: Don't report play as abuse to win.">Read</a></div>
+<div class="kb-report-section"><label><input type="radio" name="section" value="outing"><span>Don't out a mask with outside knowledge.</span></label><a href="conduct.html#outing" aria-label="Read: Don't out a mask with outside knowledge.">Read</a></div>
+</fieldset>
+<div style="margin-top:24px"><label class="kb-report-label" for="r-note">Anything an admin should know (optional)</label>
+<textarea id="r-note" class="kb-mod-textarea" rows="4" aria-describedby="r-count">The last line goes after their real job, not their character. The rest is just roasting and I would leave it.</textarea>
+<p id="r-count" class="kb-glass-field-count"><span class="kb-glass-field-hint"></span> <span class="kb-glass-field-tally">109 of 1000</span></p></div>
+<div class="kb-glass-form-foot"><div class="kb-button-row" data-kb-align="end"><button type="button" class="kb-glass-button kb-glass-skew" data-kb-kind="quiet" data-kb-size="m"><span class="kb-glass-upright"><span class="kb-glass-label">Cancel</span></span></button><button type="button" class="kb-glass-button kb-glass-skew" data-kb-kind="secondary" data-kb-size="m"><span class="kb-glass-upright"><span class="kb-glass-label">Send to admins</span></span></button></div></div>
+</form>
+</div>
+</div></div></div></div><div class="only-phone"><div class="kb-glass kb-glass-overlay" data-kb-sheet><div class="kb-glass-dialog kb-glass-cut-dialog kb-report" role="dialog" aria-modal="true" aria-labelledby="r-t" aria-describedby="r-lead" data-kb-place="sheet">
+<div class="kb-glass-dialog-bar"><div class="kb-glass-dialog-titles"><p class="kb-glass-dialog-kicker">Post #2 by Gravy Knight, current version</p><h2 id="r-t" class="kb-glass-dialog-head kb-glass-display" tabindex="-1">Report to admins</h2></div><button type="button" class="kb-glass-dialog-close"><span class="kb-visually-hidden">Close</span></button></div>
+<div class="kb-glass-dialog-body kb-report-body">
+<p id="r-lead" class="kb-acct-text">This reaches a person, not the game. An admin reads every report, and the player is never told who sent it.</p>
+
+<form onsubmit="return false">
+<fieldset class="kb-report-sections"><legend class="kb-visually-hidden">Which part of the code of conduct</legend>
+<div class="kb-report-section"><label><input type="radio" name="section" value="person" checked><span>The mask is fair game; the person isn't.</span></label><a href="conduct.html#person" aria-label="Read: The mask is fair game; the person isn't.">Read</a></div>
+<div class="kb-report-section"><label><input type="radio" name="section" value="hate"><span>No hate.</span></label><a href="conduct.html#hate" aria-label="Read: No hate.">Read</a></div>
+<div class="kb-report-section"><label><input type="radio" name="section" value="harassment"><span>No sexual harassment.</span></label><a href="conduct.html#harassment" aria-label="Read: No sexual harassment.">Read</a></div>
+<div class="kb-report-section"><label><input type="radio" name="section" value="stop"><span>Stop when asked.</span></label><a href="conduct.html#stop" aria-label="Read: Stop when asked.">Read</a></div>
+<div class="kb-report-section"><label><input type="radio" name="section" value="onBoard"><span>Keep it on the board.</span></label><a href="conduct.html#onBoard" aria-label="Read: Keep it on the board.">Read</a></div>
+<div class="kb-report-section"><label><input type="radio" name="section" value="reportAbuse"><span>Don't report play as abuse to win.</span></label><a href="conduct.html#reportAbuse" aria-label="Read: Don't report play as abuse to win.">Read</a></div>
+<div class="kb-report-section"><label><input type="radio" name="section" value="outing"><span>Don't out a mask with outside knowledge.</span></label><a href="conduct.html#outing" aria-label="Read: Don't out a mask with outside knowledge.">Read</a></div>
+</fieldset>
+<div style="margin-top:24px"><label class="kb-report-label" for="r-note">Anything an admin should know (optional)</label>
+<textarea id="r-note" class="kb-mod-textarea" rows="4" aria-describedby="r-count">The last line goes after their real job, not their character. The rest is just roasting and I would leave it.</textarea>
+<p id="r-count" class="kb-glass-field-count"><span class="kb-glass-field-hint"></span> <span class="kb-glass-field-tally">109 of 1000</span></p></div>
+<div class="kb-glass-form-foot"><div class="kb-button-row" data-kb-align="end"><button type="button" class="kb-glass-button kb-glass-skew" data-kb-kind="quiet" data-kb-size="m"><span class="kb-glass-upright"><span class="kb-glass-label">Cancel</span></span></button><button type="button" class="kb-glass-button kb-glass-skew" data-kb-kind="secondary" data-kb-size="m"><span class="kb-glass-upright"><span class="kb-glass-label">Send to admins</span></span></button></div></div>
+</form>
+</div>
+</div></div></div></div>
+<script>
+/* What the app's JS decides from the window's width: the Phone board's glass layout below 1152px (engine/ui/glass/board.ts), the stacked postbit at 40em. */
+(function () {
+  var w = window.innerWidth, r = document.documentElement;
+  if (w < 1152) r.setAttribute('data-kb-layout', 'phone');
+  if (w <= 640) document.querySelectorAll('[data-kb-postbit]').forEach(function (e) { e.setAttribute('data-kb-postbit', 'stacked'); });
+  if (w <= 640) document.querySelectorAll('.kb-acts-head').forEach(function (e) { e.remove(); });
+})();
+</script>
+</body>
+</html>

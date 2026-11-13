@@ -4,9 +4,9 @@
  *   node tools/check-sounds.mjs [--root <directory>]     (default: the repository)
  *
  * The design is docs/plans/2026-11-11-laugh-track-plan.md (Task 6). An instance keeps its sounds in
- * `ui/sounds/`: `.mp3` files and `sounds.json`, a list of `{ file, source, license, maker }`, every
- * field a non-empty string, `file` a name in the same folder. Every such folder, of every instance,
- * must pass:
+ * `ui/sounds/`: `.mp3` files and `sounds.json`, a list of `{ file, source, license, maker, lufs,
+ * peak, sha256 }`: the first four non-empty strings, `file` a name in the same folder, and the last three
+ * its measurement. Every such folder, of every instance, must pass:
  *
  * 1. every `.mp3` has a manifest entry;
  * 2. every entry names a file that is in the folder;
@@ -24,6 +24,7 @@
  * `soundsFaults` is exported and reads only the root it is handed, so tools/test-sounds.mjs drives it
  * red over scratch folders. No instance is named here.
  */
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -85,6 +86,14 @@ function folderFaults(dir) {
     seen.add(file);
     if (!files.includes(file)) at(file, 'names no file in the folder');
     for (const f of FIELDS) if (typeof e[f] !== 'string' || !e[f].trim()) at(file, `${f} is blank or missing`);
+    for (const f of ['lufs', 'peak']) {
+      if (typeof e[f] !== 'number' || !Number.isFinite(e[f])) at(file, `${f} is not a finite number (run node tools/measure-sounds.mjs)`);
+    }
+    if (typeof e.lufs === 'number' && Number.isFinite(e.lufs) && e.lufs > 0) at(file, 'lufs is above 0 (run node tools/measure-sounds.mjs)');
+    if (typeof e.sha256 !== 'string' || !e.sha256) at(file, 'sha256 is missing (run node tools/measure-sounds.mjs)');
+    else if (files.includes(file) && e.sha256 !== crypto.createHash('sha256').update(fs.readFileSync(path.join(dir, file))).digest('hex')) {
+      at(file, "sha256 is not the file's (the file was replaced; run node tools/measure-sounds.mjs)");
+    }
   }
 
   for (const name of files) {
@@ -123,7 +132,7 @@ function main() {
     for (const f of faults) console.error(`    ${rel(f)}`);
     process.exit(1);
   }
-  console.log(`  sounds: ${soundFolders(root).length} sound folder(s) list every file, credit it, and hold only MP3s under 300 KB`);
+  console.log(`  sounds: ${soundFolders(root).length} sound folder(s) list every file, credit it, measure it, and hold only MP3s under 300 KB`);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

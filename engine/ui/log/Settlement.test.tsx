@@ -63,6 +63,13 @@ async function openSummary(fake: Fake, me: string, hud: string) {
   return renderIn(fake, <><LoadedLog /><Where /></>, { path: '/log/settlement', ...((await fake.session()).signedIn ? { boot: await fake.boot() } : {}) });
 }
 
+/*
+ * The page's Esc listener is attached in an effect, and a find* resolves on the DOM the render committed, which under load can be before
+ * that effect has run: a key pressed then reaches no listener and is never retried (the one flake in CI's 4320 UI tests). Flush the pending
+ * effects before pressing a key.
+ */
+const settled = () => act(async () => {});
+
 afterEach(() => { vi.restoreAllMocks(); localStorage.clear(); });
 
 describe('the settlement\'s summary', () => {
@@ -186,6 +193,7 @@ describe('the settlement\'s summary', () => {
     window.history.replaceState(null, '', '/');
     await openSummary(fake, me, pipe);
     await screen.findByRole('heading', { level: 1, name: 'While you were away' });
+    await settled();
     fireEvent.keyDown(document, { key: 'Escape' });
     await waitFor(() => expect(where.path).toBe('/'));
   });
@@ -300,6 +308,7 @@ describe('every state of the summary\'s page has Back to the board', () => {
     fake.signInAs(me);
     await openSummary(fake, me, pipe);
     await screen.findByText('Nothing has settled for you yet.');
+    await settled();
     fireEvent.keyDown(document, { key: 'Escape' });
     await waitFor(() => expect(where.path).toBe('/'));
   });
