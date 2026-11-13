@@ -696,6 +696,12 @@ describe('Laugh Track: a play\'s moment (still)', () => {
     expect(lastView(m).state).toBe('1 place');
   });
 
+  test('a moment with no place says "No cues in this version"', () => {
+    const m = mount({ still: true, body: 'Nothing here.' });
+    expect(lastView(m).state).toBe('No cues in this version');
+    expect(lastView(m).progress).toBeNull();
+  });
+
   test('the ORIGIN box behaves as the thread does', () => {
     mount({ place: 'origin' });
     expect(live()).toHaveLength(5);

@@ -33,7 +33,7 @@
  * phrase has no place drawn and the underline never shows through the tape; the rest of the cue's places are drawn as usual.
  *
  * `still` (a play's moment in history) is a component of its own that draws the places unmarked and uses no sound, no watcher and no
- * handler; its Lens says how many cues the play holds.
+ * handler; its Lens says how many places the play's cues have in this version's words.
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { parse } from '../../../../engine/bbcode/parse.ts';
