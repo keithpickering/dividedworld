@@ -23,7 +23,8 @@
 -- branch (and this file's authors') had been bounded below only, so an old page read every worn-off play on each author, and on the thread, from its date to now (issue #634). Measured on a
 -- scratch database of 20 characters and 20 threads, each with 470 weekly week-long plays over nine years (9,400 a side), beside 200,000 other Acts, a page two days wide at the old end:
 -- 20 authors read 9,360 rows (8,807 buffers) before and 20 index entries with 22 Acts (about 100 buffers) after; one author read 1 entry and 3 Acts at the old end, the middle and the
--- recent end alike. The cost moves to writes: one more index entry for each play beyond a post, and the GiST is larger (1,336 kB against the btree's 392 kB for 9,400 rows). The read
+-- recent end alike. `ends_at <= now()` is a filter after the index, not a term of it: for a recent page, the plays still live that overlap its span are read from the index and set aside, so that
+-- read is bounded by the live plays on the author or the thread, never by history. The cost moves to writes: one more index entry for each play beyond a post, and the GiST is larger (1,336 kB against the btree's 392 kB for 9,400 rows). The read
 -- returns at most 100.
 -- Masks: every piece is read from play_reach, public Acts and the posts' public dates and authors (the author a row is matched on is the post's character, which every reader sees); nothing
 -- reads who owns a character, a hand or a reaction, so the document is the same for every caller. Grants are as they were (create or replace keeps them).

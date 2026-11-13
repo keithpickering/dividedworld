@@ -238,6 +238,8 @@ end $$;
 -- ---- The cost guard: play_reach_character_window serves a per-author window probe of this shape ----
 -- This explains a replica of kept_reach's character probe, not thread_page itself, so it cannot catch a change to thread_page; it guards cost only: that the GiST index
 -- play_reach_character_window (character, tstzrange(started_at, ends_at)) serves the probe for one author with 520 plays, bounded at both ends, and that it is not a sequential scan.
+-- The line naming the index must be followed by an Index Cond that carries the key column (`"character" =`, as explain prints it): a probe whose Index Cond had only the range would still
+-- name the index and still avoid a Seq Scan, but would walk the whole GiST while pg_stat_get_xact_tuples_returned counts only the matches, so the counted tests above would not see it.
 do $$
 declare
   ann uuid := tests.account('te-ann'); a uuid := tests.character(ann, 'Te A'); c uuid := tests.character(ann, 'Te Caster');
@@ -260,6 +262,7 @@ begin
   set local enable_seqscan = on;
   if plan not like '%play_reach_character_window%' then raise exception 'a character''s kept read is not from play_reach_character_window: %', plan; end if;
   if plan like '%Seq Scan on play_reach%' then raise exception 'a character''s kept read scans play_reach: %', plan; end if;
+  if plan !~ E'play_reach_character_window on [^\\n]*\\n +Index Cond: \\(+"?character"? = ' then raise exception 'a character''s kept read does not probe play_reach_character_window on the character: %', plan; end if;
 end $$;
 
 -- ---- A play's row carries its Act's date: the start of its window, filled by the trigger whatever a writer passes ----
