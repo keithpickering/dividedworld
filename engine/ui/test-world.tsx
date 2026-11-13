@@ -64,6 +64,8 @@ export const testInstance: Instance = {
 export const testCutter: CardRules = { key: 'cutter', name: 'Cutter', alignment: 'pepperoni', rarity: 'rare', replies: true, playPrice: () => 0, validateConfig: (c) => ok(c ?? {}), canApply: (t, e, _c, now) => landsOn(testCutter, t, e, now) };
 /** A card that keeps (`CardRules.keeps`): one play on a thread for a week, which stays on every post written in the thread while it was up. Its key names no instance's. */
 export const testKeeper: CardRules = { key: 'keeper', name: 'Keeper', alignment: 'sweet', rarity: 'rare', reaches: ['thread'], lasts: { unit: 'day', count: 7 }, keeps: true, playPrice: () => 0, validateConfig: (c) => ok(c ?? {}), canApply: (t, e, _c, now) => landsOn(testKeeper, t, e, now) };
+/** A card that keeps and reaches a character (`CardRules.keeps`): one play on a character for a week, which stays on every post that character writes while it was up. Its key names no instance's. */
+export const testKeeperMask: CardRules = { key: 'keepermask', name: 'Keeper Mask', alignment: 'sweet', rarity: 'rare', reaches: ['character'], lasts: { unit: 'day', count: 7 }, keeps: true, playPrice: () => 0, validateConfig: (c) => ok(c ?? {}), canApply: (t, e, _c, now) => landsOn(testKeeperMask, t, e, now) };
 
 /**
  * A glass with one plain recipe for every surface, so a screen that draws smoke (the HUD, a glass

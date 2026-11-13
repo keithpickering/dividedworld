@@ -2138,7 +2138,7 @@ end $$;
 revoke execute on function open_report(uuid, uuid, text) from public, anon;
 grant execute on function open_report(uuid, uuid, text) to authenticated, service_role;
 
--- thread_page (0349_thread_page_under, which is 0340_conduct's text with the nested replies, `under`, `cut` and `kept`), also answering `veiled`: the caller's own veiled posts among the page's, its nested replies included (my_veiled_posts), beside `faces`. Everything else as 0349 wrote it.
+-- thread_page (0356_kept_character, which is 0349_thread_page_under's with `kept` holding a character-reach play by its window; 0349 is 0340_conduct's text with the nested replies, `under`, `cut` and `kept`), also answering `veiled`: the caller's own veiled posts among the page's, its nested replies included (my_veiled_posts), beside `faces`. Everything else as 0349 wrote it.
 
 create or replace function thread_page(in_thread uuid, in_page integer, in_seq integer, per_page integer, effect_cards text[]) returns jsonb
 language sql stable security invoker set search_path = public, pg_temp
@@ -2213,21 +2213,28 @@ begin atomic
     from effects_above(array(select distinct p.character from posts p where p.character is not null), (select rng.id from rng), (select rng.board from rng)) x
   ),
   -- The plays of a kind that keeps, at thread reach on this thread, that wore off by time (not one an admin ended), whose window (the play's date to its end) holds the date of one of
-  -- the page's posts: they still count on those posts, so the page carries them beside `above`, in its shape. The range of play_reach_thread (ended, and ended after the
-  -- page's earliest post), the Act by primary key through acts_public (dated no later than the page's latest post, then the window), and only for what survives that the kind (`keeps`). At most 100, oldest first.
+  -- the page's posts: they still count on those posts, so the page carries them beside `above`, in its shape. The window probe of play_reach_thread_window (the window overlaps the page's span,
+  -- ended by time), the Act by primary key through acts_public (the window again, post by post), and only for what survives that the kind (`keeps`). At most 100, oldest first.
   kept_span as materialized (select min(p.created_at) as lo, max(p.created_at) as hi from posts p),
-  -- The reach-specific part, and the one place a later reach adds to: a character reach's rows (play_reach_character) join here with a `union all` of a second select of this shape;
-  -- everything below reads whatever rows it gives.
+  -- The reach-specific part: the thread's rows (play_reach_thread_window) and, for each distinct author among the page's posts, the plays at that character's reach
+  -- (play_reach_character_window, (character, window)): one probe for each author, the plays ended by time whose window overlaps the page's span (`started_at <= hi and ends_at > lo`), so it
+  -- meets only the plays that can hold a post of the page, at any age of the page. A page with no posts has no span (lo is null, and a range with no bounds meets every play): the thread's select reads none then (`s.lo is not null`), and the authors' has no author to probe for. Whether the author's own post falls in the window is kept_window's.
   kept_reach as materialized (
     select x.play, x.reach, coalesce(x.character, x.thread, x.board) as target, x.ends_at
     from play_reach x, kept_span s
-    where x.thread = (select rng.id from rng) and x.ends_at <= now() and x.ends_at > s.lo
+    where s.lo is not null and x.thread = (select rng.id from rng) and tstzrange(x.started_at, x.ends_at) && tstzrange(s.lo, s.hi, '[]') and x.ends_at <= now()
+    union all
+    select x.play, x.reach, x.character as target, x.ends_at
+    from (select distinct p.character from posts p where p.character is not null) au cross join kept_span s
+    cross join lateral (select r.play, r.reach, r.character, r.ends_at from play_reach r where r.character = au.character and tstzrange(r.started_at, r.ends_at) && tstzrange(s.lo, s.hi, '[]') and r.ends_at <= now()) x
   ),
+  -- A thread row is held by any post of the page inside its window; a character row only by a post of its own target (`p.character = r.target`), never another author's post in the same
+  -- window on the same page.
   kept_window as materialized (
     select r.play, r.reach, r.target, r.ends_at, a.created_at as started, to_jsonb(a) as act, a.payload ->> 'card' as card
     from kept_reach r join acts_public a on a.id = r.play, kept_span s
     where a.created_at <= s.hi
-      and exists (select 1 from posts p where a.created_at <= p.created_at and p.created_at < r.ends_at)
+      and exists (select 1 from posts p where a.created_at <= p.created_at and p.created_at < r.ends_at and (r.reach <> 'character' or p.character = r.target))
   ),
   kept as materialized (
     select w.play, w.reach, w.target, w.ends_at, w.act

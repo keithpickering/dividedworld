@@ -104,10 +104,11 @@ export function livePlays(plays: readonly CardPlay[], now: number): readonly Car
  * The plays the marks and the Lens draw: `livePlays`, but a play on a post that an admin ended, or that did not take, is kept, as a caught
  * play is, so its mark and its Lens row can say "Ended by an admin" or "Didn't take". Its layer is off all the same (`livePlays`,
  * `effectsOf`, the post's effects); the marks do not count it. A play beyond a post whose time is up is dropped too, unless its card keeps (`keeps`: the keys of
- * the cards whose rules `keeps`) and it was not ended by an admin: it stays on the pages that hold a post it falls on, the only ended plays a page is given.
+ * the cards whose rules `keeps`) and it was not ended by an admin: it stays on the pages that hold a post it falls on, the only ended plays a page is given. A kept play at character reach
+ * is drawn on every postbit of the character, so a strip on a post's own postbit gives that post's date (`postAt`) and an ended one is kept only where the post was written while it was up (`fallsOn`).
  */
-export function markedPlays(plays: readonly CardPlay[], now: number, keeps: ReadonlySet<string> = NO_KEYS): readonly CardPlay[] {
-  const marked = plays.filter((p) => !(p.reach && (p.reversed || (p.ends !== undefined && Date.parse(p.ends) <= now && !keeps.has(p.card)))));
+export function markedPlays(plays: readonly CardPlay[], now: number, keeps: ReadonlySet<string> = NO_KEYS, postAt?: string): readonly CardPlay[] {
+  const marked = plays.filter((p) => !(p.reach && (p.reversed || (p.ends !== undefined && Date.parse(p.ends) <= now && (!keeps.has(p.card) || (p.reach === 'character' && postAt !== undefined && !fallsOn({ at: p.playedAt, ends: p.ends }, { at: postAt }, true, new Date(now))))))));
   return marked.length === plays.length ? plays : marked;
 }
 

@@ -267,6 +267,9 @@ test('Glitter Bomb is an uncommon Pepperoni Cast on a character, for a week; Mai
   assert.equal(mainEvent.canApply({ reach: 'thread', thread: 't1' }, []).ok, true);
   assert.deepEqual(mainEvent.canApply(post(10), []), { ok: false, why: 'this card lands on a thread' });
   assert.equal(glitterBomb.playPrice(settings, character, {}), 0);
+  /* The posts written in its week keep it (docs/plans/2026-11-12-glitter-keeps-design.md); the whole instance still passes the rules' checks. */
+  assert.equal(glitterBomb.keeps, true);
+  assert.deepEqual(instanceProblems(instance), []);
   assert.equal(mainEvent.playPrice(settings, { reach: 'thread', thread: 't1' }, {}), 0);
   assert.ok(cards.some((c) => c.key === 'glitter-bomb') && cards.some((c) => c.key === 'main-event'));
 });

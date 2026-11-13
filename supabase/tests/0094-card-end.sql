@@ -92,7 +92,7 @@ declare
   t uuid := (select thread from acts where id = p);
   caught uuid := tests.act(caster, 'card', t, jsonb_build_object('card', 'splat', 'caught', gen_random_uuid()), p);
   worn uuid := tests.act(caster, 'card', t, jsonb_build_object('card', 'selfie', 'ends', now() - interval '1 hour'), p);
-  worn_reach uuid := tests.act(caster, 'card', t, '{"card": "selfie", "reach": "character"}', p);
+  worn_reach uuid := tests.act(caster, 'card', t, '{"card": "selfie", "reach": "character"}', p, now() - interval '2 hours');
   face_down uuid := tests.act(author, 'set', t, '{}', p);
   why text;
 begin
@@ -715,7 +715,7 @@ begin
   caught := tests.act(bot, 'card', t, '{"card": "ce-wh", "layer": 2, "caught": "x"}', p);
   old := tests.act(bot, 'card', t, '{"card": "ce-wh", "layer": 3}', p, now() - interval '40 days');
   live := tests.act(bot, 'card', t, jsonb_build_object('card', 'ce-wd', 'layer', 2, 'ends', now() + interval '1 day'), p);
-  reach_gone := tests.act(bot, 'card', t, '{"card": "ce-ch", "reach": "character"}', p);
+  reach_gone := tests.act(bot, 'card', t, '{"card": "ce-ch", "reach": "character"}', p, now() - interval '2 hours');
   perform set_config('kayfabb.staff_writer', '', true);
   insert into play_reach (play, reach, character, ends_at) values (reach_gone, 'character', author, now() - interval '1 minute');
   q := pg_temp.queue();

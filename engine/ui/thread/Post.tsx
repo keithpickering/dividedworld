@@ -288,7 +288,7 @@ const PostArticle = memo(function PostArticle({ act, person, layout, slid, cut }
   const shown = useReachShown(plays, act.kind === 'post' && !standIn ? act.character : null, 'character');
   const characterMarks = useMemo(() => (shown && act.kind === 'post' && act.character !== null
     ? <PostMarks
-        post={act.character} plays={plays} compare={false} to={href} nameOf={casterName} faceOf={faceOf} tallies={tallies} mine={mine}
+        post={act.character} postAt={act.createdAt} plays={plays} compare={false} to={href} nameOf={casterName} faceOf={faceOf} tallies={tallies} mine={mine}
         reachAt={{ reach: 'character', target: act.character, name, ...(person ? { pronouns: person.character.pronouns } : {}), fromPost: act, thread, board: summary.board, title: summary.title, to: href, plays, know: know ?? (async () => {}), focusBack: () => document.getElementById(`post-${seq}`) }}
         onSpin={(play, label, opener) => setSpinOrigin({ id: play.id, label, opener, at: act.id })}
       />

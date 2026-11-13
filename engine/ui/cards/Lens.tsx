@@ -185,7 +185,7 @@ export function useLensFor(store: LensStore, owner: string): LensOpen | null {
  * and when it ends, the same for every card face down, and on the setter's own screen which card it is; a ward says what it turns
  * away and until when; a caught play's note says what caught it.
  */
-export function useResolvedView(store: Plays, post: Id, kind: string, nameOf?: (character: Id | null) => string): CardView {
+export function useResolvedView(store: Plays, post: Id, kind: string, nameOf?: (character: Id | null) => string, postAt?: string): CardView {
   const { api, instance, settings, ui } = useKayfa();
   const given = useCardView(store, post, kind);
   /*
@@ -193,9 +193,15 @@ export function useResolvedView(store: Plays, post: Id, kind: string, nameOf?: (
    * the setter's own faces among them. A change elsewhere on the post leaves it equal, so a mark of another kind is not drawn again.
    */
   const subscribe = useCallback((l: () => void) => store.subscribe(post, l), [store, post]);
+  /* The one clock, as it stands when a play of the kind ends (`useUntil`): the words that say when it ends say it ended, with no reopening. */
+  const now = useUntil(store.get(post).plays.filter((p) => p.card === kind));
+  const keeping = useMemo(() => keepingKeys(instance.cards), [instance.cards]);
   const signature = useSyncExternalStore(subscribe, () => {
     const h = store.get(post);
-    return JSON.stringify(h.plays.filter((p) => p.card === kind).map((p) => [p.id, p.caster, p.playedAt, p.caught ?? null, p.ends ?? null, p.revealed ?? null, h.faces[p.id] ?? null,
+    /* A play the strip and the tabs leave out for this post (an ended keeping play, written outside its window) is no part of what the words describe. */
+    const marked = new Set(markedPlays(shownPlays(h.billed, now), now, keeping, postAt).map((p) => p.id));
+    const dropped = new Set(shownPlays(h.billed, now).filter((p) => !marked.has(p.id)).map((p) => p.id));
+    return JSON.stringify(h.plays.filter((p) => p.card === kind && !dropped.has(p.id)).map((p) => [p.id, p.caster, p.playedAt, p.caught ?? null, p.ends ?? null, p.revealed ?? null, h.faces[p.id] ?? null,
       p.caught ? h.plays.find((b) => b.id === p.caught)?.revealed?.card ?? null : null, p.reversed ?? null, p.untaken ?? null, p.takenBack ?? null, p.config, p.starts ?? null, p.endsAt ?? null]));
   });
   const here = useMemo(() => {
@@ -207,8 +213,6 @@ export function useResolvedView(store: Plays, post: Id, kind: string, nameOf?: (
     };
   }, [signature, kind, post]);
   const economy = useMemo(() => withCardEconomy(instance.settings, settings.cardEconomy), [instance.settings, settings.cardEconomy]);
-  /* The one clock, as it stands when a play of the kind ends (`useUntil`): the words that say when it ends say it ended, with no reopening. */
-  const now = useUntil(store.get(post).plays.filter((p) => p.card === kind));
   const fallback = useMemo(() => {
     const cardName = (key: string) => instance.cards.find((c) => c.key === key)?.name ?? key;
     const ofKind = here.plays.filter((p) => p.card === kind);
@@ -623,6 +627,8 @@ export interface LensProps {
   readonly open: LensOpen;
   /** What the marks are on, as the Lens is named for it: a post, or a character, a thread or a board. */
   readonly where?: string;
+  /** When the post the marks are on was written, where it is a character's postbit: the plays listed are the ones its strip marks there (`markedPlays`). */
+  readonly postAt?: string;
   readonly store: LensStore;
   /** The post the marks are on (the id its plays are kept under). */
   readonly post: Id;
@@ -668,14 +674,14 @@ const PreparedTab = forwardRef<HTMLButtonElement, {
   );
 });
 
-export function Lens({ open, store, post, plays, tallies, mine, compare, to, nameOf, faceOf, strip, onSpin, where = 'post', moments = true, visit, modPronouns = ENGINE_DEFAULT_PRONOUNS, form, reportTo }: LensProps) {
+export function Lens({ open, store, post, plays, tallies, mine, compare, to, nameOf, faceOf, strip, onSpin, where = 'post', postAt, moments = true, visit, modPronouns = ENGINE_DEFAULT_PRONOUNS, form, reportTo }: LensProps) {
   const { api, instance, ui } = useKayfa();
   const here = usePlays(plays, post);
   const narrow = useSheet();
   const onInk = useOnInk();
   const host = useLensHost();
   const now = useUntil(here.billed);
-  const billed = markedPlays(shownPlays(here.billed, api.now()), now, keepingKeys(instance.cards));
+  const billed = markedPlays(shownPlays(here.billed, api.now()), now, keepingKeys(instance.cards), postAt);
   const admin = useLensAdmin();
   const cardKinds = kindsOf(billed);
   /* A form is the panel's one tab while it is open; a visit's tab is ahead of the cards'. */
@@ -710,7 +716,7 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
   const waiting = onForm ? formP : onVisit ? visitP : null;
   /* The kind's plays are gone (a read of the page moved them): there is nothing to show. */
   useEffect(() => { if (card === null) store.close(); }, [card, store]);
-  const view = useResolvedView(plays, post, open.card, nameOf);
+  const view = useResolvedView(plays, post, open.card, nameOf, postAt);
   const ids = useId();
   const tabs = useRef(new Map<string, HTMLButtonElement>());
   /*

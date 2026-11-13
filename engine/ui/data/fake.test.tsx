@@ -5284,5 +5284,69 @@ describe('a card that replies, and a play that keeps (0348_post_under.sql and th
       expect(kept).toHaveLength(100);
       expect(kept[0]!.play).toBe(w.play);
     });
+
+    describe('at character reach', () => {
+      /** Ana's and Bo's posts dated by `ana` and `bo` days ago, a play cast on Ana's character from `window[0]` to `window[1]` days ago. */
+      function charWorld(ana: readonly number[], bo: readonly number[], window: readonly [number, number], card = 'feelin-glam') {
+        const fake = createFake({ instance: replying });
+        const anaAcc = fake.seed.account('ana');
+        const boAcc = fake.seed.account('bo');
+        const root = fake.seed.account('root');
+        fake.seed.admin(root);
+        const anaFace = fake.seed.character(anaAcc, 'Ana Face', 'face');
+        const boFace = fake.seed.character(boAcc, 'Bo Face', 'face');
+        const now = fake.clock.now();
+        const opened = fake.seed.thread('general', anaFace, 'Dated', 'first', { at: now - 30 * day });
+        ana.forEach((d, i) => fake.seed.post(opened.thread, anaFace, `a${i}`, { at: now - d * day }));
+        bo.forEach((d, i) => fake.seed.post(opened.thread, boFace, `b${i}`, { at: now - d * day }));
+        const play = fake.seed.reach(boFace, 'character', anaFace, card, { at: now - window[0] * day, ends: now - window[1] * day, post: opened.act });
+        fake.signInAs(anaAcc);
+        return { fake, root, anaFace, boFace, thread: opened.thread, play, now };
+      }
+      const wholePage = async (w: ReturnType<typeof charWorld>) => (await w.fake.threadPage(w.thread, { page: 1 }, 100, []))!;
+
+      test('is listed when the page holds a post by that character written inside the window, and not for posts before it or after its end', async () => {
+        const w = charWorld([5], [], [10, 3]);
+        const page = await wholePage(w);
+        expect(page.kept).toEqual([{ play: w.play, reach: 'character', target: w.anaFace, endsAt: new Date(w.now - 3 * day).toISOString(), act: (await w.fake.act(w.play))! }]);
+        expect(Object.keys(page.tallies)).toContain(w.play);
+        expect(page.people.map((p) => p.character.id)).toContain(w.boFace);
+        expect((await wholePage(charWorld([12], [], [10, 3]))).kept).toEqual([]);
+        expect((await wholePage(charWorld([1], [], [10, 3]))).kept).toEqual([]);
+      });
+
+      test('another character\'s post inside the window does not bring it in', async () => {
+        const w = charWorld([12], [5], [10, 3]);
+        expect((await wholePage(w)).kept).toEqual([]);
+      });
+
+      test('a live play is above and not kept; one an admin ended, during its time or after it, is in neither; a card that does not keep is in neither', async () => {
+        const up = charWorld([5], [], [1, -1]);
+        const live = await wholePage(up);
+        expect(live.above.map((a) => [a.play, a.reach])).toEqual([[up.play, 'character']]);
+        expect(live.kept).toEqual([]);
+        // Ended by an admin during its time, then after it: neither leaves anything.
+        up.fake.signInAs(up.root);
+        must(await up.fake.reverseCard(up.play));
+        const cut = await wholePage(up);
+        expect(cut.above).toEqual([]);
+        expect(cut.kept).toEqual([]);
+        const ended = charWorld([5], [], [10, 3]);
+        ended.fake.signInAs(ended.root);
+        must(await ended.fake.reverseCard(ended.play));
+        const after = await wholePage(ended);
+        expect(after.above).toEqual([]);
+        expect(after.kept).toEqual([]);
+        expect((await wholePage(charWorld([5], [], [10, 3], 'glint'))).kept).toEqual([]);
+      });
+
+      test('a thread row and a character row come back together, oldest first', async () => {
+        const w = charWorld([5], [], [8, 3]);
+        const thread = w.fake.seed.reach(w.boFace, 'thread', w.thread, 'feelin-glam', { at: w.now - 9 * day, ends: w.now - 3 * day });
+        const later = w.fake.seed.reach(w.boFace, 'thread', w.thread, 'feelin-glam', { at: w.now - 7 * day, ends: w.now - 3 * day });
+        const page = await wholePage(w);
+        expect(page.kept.map((k) => [k.play, k.reach])).toEqual([[thread, 'thread'], [w.play, 'character'], [later, 'thread']]);
+      });
+    });
   });
 });
