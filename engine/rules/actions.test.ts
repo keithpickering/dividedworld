@@ -39,6 +39,9 @@ test('each action is decided into the SQL function that writes it, with that fun
     { ok: true, rpc: 'apologize', args: { in_move: other, through: id, title: 'Sorry', body: 'I was wrong.' } });
   assert.deepEqual(decide({ action: 'react', act: other, character: id, kind: 'fire' }, instance),
     { ok: true, rpc: 'react', args: { target: other, through: id, reaction: 'fire' } });
+  // A post-local kind (a card added it to one post) is a well-formed `x-` key: the database, which holds the post's kinds, decides whether this post has it.
+  assert.deepEqual(decide({ action: 'react', act: other, character: id, kind: 'x-1f480' }, instance),
+    { ok: true, rpc: 'react', args: { target: other, through: id, reaction: 'x-1f480' } });
 });
 
 test('a card that carries a reply sends the reply and its framing with the play; any other card sends neither', () => {
@@ -130,6 +133,8 @@ test('an apology names a move, and has a title and words of its own, bounded lik
 
 test('a reaction the instance does not have is refused', () => {
   assert.match(refusal({ action: 'react', act: other, character: id, kind: 'shrug' }) ?? '', /^kind:.*shrug/);
+  assert.match(refusal({ action: 'react', act: other, character: id, kind: 'x-zz' }) ?? '', /^kind:.*x-zz/);
+  assert.match(refusal({ action: 'react', act: other, character: id, kind: 'x-d83d-de00' }) ?? '', /^kind:/);
 });
 
 test('a card is bought from a slot at the price the screen showed, by the service, for the caller', () => {

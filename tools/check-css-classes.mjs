@@ -96,6 +96,7 @@ export const ALLOWED_HOOKS = new Set([
   named so a theme can restyle it alone. */
   'kb-profile-name',
   'kb-profile-pronouns',
+  'kb-profile-stand-in',
   'kb-postbit-title',
   'kb-postbit-rank-name',
   'kb-career',

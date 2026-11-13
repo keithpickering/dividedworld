@@ -423,7 +423,7 @@ const CAUSES: readonly VisitCharge['cause'][] = ['rule', 'patrol', 'report', 'ta
 const OUTCOMES: readonly VisitOutcome[] = ['filed', 'intercepted', 'trapped', 'reversed', 'dropped'];
 const VERDICTS: readonly ReportVerdict[] = ['visit', 'dismissed', 'backfire'];
 const RULINGS: readonly AppealVerdict[] = ['overturned', 'upheld', 'reduced', 'increased'];
-const OFFICES: readonly Office[] = ['boss', 'mod', 'member', 'benched', 'waiting', 'developer'];
+const OFFICES: readonly Office[] = ['boss', 'mod', 'member', 'benched', 'waiting', 'developer', 'anonymous'];
 const MOVE_END_WHYS: readonly GroupMoveEndWhy[] = ['met', 'expired', 'reversed', 'unmet', 'overturned', 'superseded', 'spent'];
 
 /** A charge as a visit's Act carries it: a band it does not name is the lightest, a cause it does not name the rule's. */
@@ -962,7 +962,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
   /* ---------------------------------------------------------------- characters ---- */
 
   /** The office characters_public shows a staff character; anything else it might say is no office. */
-  const toOffice = (o: unknown): Office | undefined => (o === 'boss' || o === 'mod' || o === 'member' || o === 'benched' || o === 'waiting' || o === 'developer' ? o : undefined);
+  const toOffice = (o: unknown): Office | undefined => (o === 'boss' || o === 'mod' || o === 'member' || o === 'benched' || o === 'waiting' || o === 'developer' || o === 'anonymous' ? o : undefined);
 
   /** A piece worn as gear_worn or a profile's `outfit` has it, in layer order. */
   const toPieces = (v: unknown): Piece[] => rowsOf(v).map((w): Piece => ({ gear: w['gear'], x: num(w['x']), y: num(w['y']), w: num(w['w']), turn: num(w['turn']), layer: num(w['layer']) })).sort((a, b) => a.layer - b.layer);
@@ -1826,8 +1826,8 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
           reveals: rowsOf(p['reveals']).map(toClassReveal), turns: rowsOf(p['turns']).map(toTurn),
         })),
         visits: rowsOf(d['visits']).map(toVisit),
-        plays, above, under, cut, kept, faces: Object.fromEntries(rowsOf(d['faces']).map((f) => [f['play'], f['card']])), states: toStates(rowsOf(d['states'])),
-        surfaces: toSurfaces(d['surfaces']),
+        plays, surfaces: toSurfaces(d['surfaces']), above, under, cut, kept, faces: Object.fromEntries(rowsOf(d['faces']).map((f) => [f['play'], f['card']])),
+        veiled: rowsOf(d['veiled']).map((v) => ({ post: v['post'] as Id, character: v['character'] as Id, play: v['play'] as Id, endsAt: String(v['ends_at']) })), states: toStates(rowsOf(d['states'])),
         releases: (Array.isArray(d['releases']) ? d['releases'] : []).filter((x): x is Id => typeof x === 'string'),
         tallies: toTallies(asked, rowsOf(d['tallies'])), mine: rowsOf(d['mine']).map(toMyReaction), spun: rowsOf(d['spun']).map(toThread), reading,
         board: isObject(d['board']) ? toBoard(d['board']) : null, following: d['following'] === true,
@@ -2209,7 +2209,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     edit: (post, character, body) => act({ action: 'edit', post, character, body }, toAct),
     spin: (origin, character, title, body, framing, at) => act({ action: 'spin', origin, character, title, body, ...framed(framing), ...(at ? { at } : {}) }, withThread),
     apologize: (move, character, title, body, framing) => act({ action: 'apologize', move, character, title, body, ...framed(framing) }, withThread),
-    react: (target, character, kind) => act({ action: 'react', act: target, character, kind }, (r) => ({ act: r['act'], tally: (r['tally'] ?? {}) as Tally })),
+    react: (target, character, kind) => act({ action: 'react', act: target, character, kind }, (r) => ({ act: r['act'], tally: isObject(r['tally']) ? r['tally'] as Tally : null })),
     turn: (character, to, loudness, showFrom, showTo) =>
       act({ action: 'turn', character, class: to, loudness, showFrom, showTo }, (r): TurnAsked => ({ class: r['class'], loudness: r['loudness'], showFrom: r['show_from'] === true, showTo: r['show_to'] === true, takesEffectAt: r['takes_effect_at'] ?? null })),
     withdrawTurn: (character) => act({ action: 'withdrawTurn', character }, () => ({ withdrawn: true as const })),

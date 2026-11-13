@@ -6,7 +6,8 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { Act, ThreadSummary } from '../data/api.ts';
-import { emptyFeed, feedReducer, shownEnd, waitingPosts, type Feed, type FeedAction } from './feed.ts';
+import { createPlays } from '../cards/plays.ts';
+import { emptyFeed, endsVeil, feedReducer, isVeilPlay, nextVeilEnd, shownEnd, veilCards, waitingPosts, type Feed, type FeedAction } from './feed.ts';
 
 const act = (seq: number, over: Partial<Act> = {}): Act => ({
   id: `act-${seq}`, character: 'c', kind: 'post', thread: 't', targetActId: null, seq,
@@ -116,6 +117,42 @@ describe('a legacy numbered card at the thread\'s tail', () => {
     expect(shownEnd(f)).toBe(4);
     const live = feedReducer(f, { type: 'live', act: act(5) });
     expect(seqs(feedReducer(live, { type: 'release', slide: false, force: false }).shown)).toEqual([1, 2, 3, 5]);
+  });
+});
+
+describe('when a veil\'s play arrives and ends (card notes, Part 3)', () => {
+  const veils = veilCards([{ key: 'whodunnit', veil: 'author' }, { key: 'blind-study', veil: 'totals' }, { key: 'whoops' }]);
+  const play = (id: string, card: string, post: string, payload: Record<string, unknown> = {}): Act =>
+    act(0, { id, kind: 'card', seq: null, targetActId: post, payload: { card, layer: 1, message: '', config: {}, ...payload } });
+  const NOW = Date.parse('2026-10-29T12:00:00Z');
+
+  it('knows the cards that veil by their rules\' flag, and a play of one by its card', () => {
+    expect([...veils].sort()).toEqual(['blind-study', 'whodunnit']);
+    expect(isVeilPlay(play('p1', 'whodunnit', 'a'), veils)).toBe(true);
+    expect(isVeilPlay(play('p2', 'whoops', 'a'), veils)).toBe(false);
+    expect(isVeilPlay(act(1), veils)).toBe(false);
+  });
+
+  it('waits for the soonest veil still ahead on the posts given, and for nothing else', () => {
+    const plays = createPlays();
+    plays.add([
+      play('p1', 'whodunnit', 'a', { ends: '2026-10-29T14:00:00Z' }), play('p2', 'blind-study', 'b', { ends: '2026-10-29T13:00:00Z' }),
+      play('p3', 'whodunnit', 'c', { ends: '2026-10-29T11:00:00Z' }), play('p4', 'whoops', 'a', { ends: '2026-10-29T12:30:00Z' }),
+    ]);
+    expect(nextVeilEnd(plays, ['a', 'b', 'c'], veils, NOW)).toBe(Date.parse('2026-10-29T13:00:00Z'));
+    expect(nextVeilEnd(plays, ['a'], veils, NOW)).toBe(Date.parse('2026-10-29T14:00:00Z'));
+    expect(nextVeilEnd(plays, ['c'], veils, NOW)).toBeNull();
+    plays.add([act(0, { id: 'e1', kind: 'card_end', seq: null, targetActId: 'p2' })]);
+    expect(nextVeilEnd(plays, ['a', 'b'], veils, NOW)).toBe(Date.parse('2026-10-29T14:00:00Z'));
+  });
+
+  it('knows an admin\'s end is a veil\'s from the play it names', () => {
+    const plays = createPlays();
+    plays.add([play('p1', 'whodunnit', 'a', { ends: '2026-10-29T14:00:00Z' }), play('p4', 'whoops', 'a')]);
+    expect(endsVeil(plays, ['a'], veils, act(0, { kind: 'card_end', seq: null, targetActId: 'p1' }))).toBe(true);
+    expect(endsVeil(plays, ['a'], veils, act(0, { kind: 'card_end', seq: null, targetActId: 'p4' }))).toBe(false);
+    expect(endsVeil(plays, ['b'], veils, act(0, { kind: 'card_end', seq: null, targetActId: 'p1' }))).toBe(false);
+    expect(endsVeil(plays, ['a'], veils, act(0, { kind: 'post', seq: 1, targetActId: 'p1' }))).toBe(false);
   });
 });
 

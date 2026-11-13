@@ -336,6 +336,8 @@ begin
       select max(id), 'il-boss', 'moveThread', '{"thread": "7ace0000-0190-4000-8000-000000000d01", "board": "7ace0000-0190-4000-8000-0000000000c3"}', 'because', now() - interval '3 minutes', false from meetings;
     do $d$ begin perform system_tick(); end $d$;
     create function public.il_gate() returns trigger language plpgsql as $f$ begin perform pg_advisory_xact_lock(hashtext('il.gate')); return new; end $f$;
+    -- A trigger's function needs no grant, and this one outlives the file (it cannot be dropped here, below): no API role may run it, so the suite's later files meet no function a player could call.
+    revoke execute on function public.il_gate() from public, anon, authenticated;
     create trigger zz_il_gate before insert on acts for each row when (new.kind = 'move' and new.payload ->> 'kind' = 'ilWait') execute function public.il_gate();
     -- Due now, in this order: the move that is not lasting, then the merge.
     insert into queued_moves (meeting, staff, kind, params, why, go_live_at, structural)
@@ -466,7 +468,7 @@ begin
     alter table thread_departures disable trigger thread_departures_fixed;
     delete from thread_departures where thread in (select id from threads where title like 'Il %');
     alter table thread_departures enable trigger thread_departures_fixed;
-    delete from character_post_counts where character in ('7ace0000-0190-4000-8000-0000000000b1', '7ace0000-0190-4000-8000-0000000000b2', '7ace0000-0190-4000-8000-0000000000f1');
+    delete from character_post_counts_base where character in ('7ace0000-0190-4000-8000-0000000000b1', '7ace0000-0190-4000-8000-0000000000b2', '7ace0000-0190-4000-8000-0000000000f1');
     delete from open_moves where move_act in (select a.id from acts a where a.thread in (select id from threads where title like 'Il %') and a.kind = 'move');
     delete from move_dependencies where act in (select a.id from acts a where a.thread in (select id from threads where title like 'Il %'));
     alter table acts disable trigger acts_no_update;

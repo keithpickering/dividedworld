@@ -2,8 +2,8 @@
  * Divided World's Vending Machine, slot by slot in grid order (docs/plans/2026-11-04-booster-packs-design.md): a price in
  * hundredths of an orb and whether it is on sale. Starting numbers the season review replaces. Main Event starts hidden:
  * the Boss's moves bring it out. Off Day, the legendary, and Sugar Coat, the second rare, start hidden too and follow it, and Graffiti, the third rare, after them.
- * Line Cutter and Feelin' Glam (card notes, Part 2), the fourth and fifth rares, are hidden and last of all, so no slot before them moves.
- * Jimmy Wails was the last on-sale slot; Hype-Up and Last Word (card notes, Part 4) follow it, so no drawn slot moves.
+ * Line Cutter and Feelin' Glam (card notes, Part 2), the fourth and fifth rares, are hidden too, and Whodunnit? (card notes, Part 3), the sixth rare, is hidden and last of all, so no slot before them moves.
+ * Jimmy Wails was the last on-sale slot; Hype-Up and Last Word (card notes, Part 4) follow it, so no drawn slot moves; Laugh Track follows those, then Overreaction and Blind Study (card notes, Part 3).
  */
 import { deepFreeze } from '../../engine/rules/instance.ts';
 import type { SlotSeed } from '../../engine/rules/packs.ts';
@@ -31,10 +31,13 @@ export const machine: readonly SlotSeed[] = deepFreeze<SlotSeed[]>([
   { item: { card: 'hype-up' }, availability: 'onSale', price: 150 },
   { item: { card: 'last-word' }, availability: 'onSale', price: 150 },
   { item: { card: 'laugh-track' }, availability: 'onSale', price: 150 },
+  { item: { card: 'overreaction' }, availability: 'onSale', price: 100 },
+  { item: { card: 'blind-study' }, availability: 'onSale', price: 150 },
   { item: { card: 'main-event' }, availability: 'hidden', price: 300 },
   { item: { card: 'off-day' }, availability: 'hidden', price: 500 },
   { item: { card: 'sugar-coat' }, availability: 'hidden', price: 300 },
   { item: { card: 'graffiti' }, availability: 'hidden', price: 300 },
   { item: { card: 'line-cutter' }, availability: 'hidden', price: 300 },
   { item: { card: 'feelin-glam' }, availability: 'hidden', price: 300 },
+  { item: { card: 'whodunnit' }, availability: 'hidden', price: 300 },
 ]);

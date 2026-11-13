@@ -191,7 +191,7 @@ begin
     raise exception 'character_post_counts shows more than a character and its counters';
   end if;
   -- The backfill is the migration's own statement, kept in a function: counters lost are counted again from the Acts.
-  delete from character_post_counts;
+  delete from character_post_counts_base;
   perform backfill_character_post_counts();
   if (select posts from character_post_counts where character = a) is distinct from 2 or (select posts from character_post_counts where character = b) is distinct from 1
      or (select spins from character_post_counts where character = a) is distinct from 1 or (select cards from character_post_counts where character = b) is distinct from 1 then
@@ -199,12 +199,15 @@ begin
   end if;
   -- A character still waiting to debut is in no public list, and its count is no more readable than it is: the policy follows characters_public.
   insert into characters (owner, name) values (bob, 'Pc Waiting') returning id into waiting;
-  insert into character_post_counts (character, posts) values (waiting, 7);
+  insert into character_post_counts_base (character, posts) values (waiting, 7);
   -- A signed-in player reads it; a visitor does not, and nobody writes it.
   perform tests.become(bob);
   if (select posts from character_post_counts where character = a) is distinct from 2 then raise exception 'a player reads the counts'; end if;
   if exists (select 1 from character_post_counts where character = waiting) then raise exception 'a player read the count of a character that has not debuted'; end if;
+  -- (The view cannot be written at all, and the stored table is granted to no player.)
   begin update character_post_counts set posts = 99; raise exception 'a player wrote a count';
+  exception when insufficient_privilege or object_not_in_prerequisite_state then null; end;
+  begin update character_post_counts_base set posts = 99; raise exception 'a player wrote a stored count';
   exception when insufficient_privilege then null; end;
   perform tests.unbecome();
   perform tests.become_anon();

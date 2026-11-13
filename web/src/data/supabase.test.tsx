@@ -2663,6 +2663,19 @@ describe('Updates', () => {
     });
     expect((await h.api.characters([B]))[0]).toMatchObject({ name: 'Gabe', staff: 'developer', office: 'developer' });
   });
+
+  it('knows the anonymous stand-in as an office of its own', async () => {
+    const h = harness((r) => {
+      if (r.url.pathname.endsWith('/characters_public')) return rows([{ id: B, name: 'Anonymous', joined: '2026-10-01', staff: 'anonymous', office: 'anonymous' }], 1);
+      return rows([], 0);
+    });
+    expect((await h.api.characters([B]))[0]).toMatchObject({ name: 'Anonymous', staff: 'anonymous', office: 'anonymous' });
+  });
+
+  it('answers a reaction to a blind post with no tally', async () => {
+    const h = harness((r) => (r.url.pathname === '/functions/v1/act' ? json({ act: A, thread: T, tally: null }) : undefined));
+    expect(await h.api.react(A, B, 'x-1f480')).toEqual({ ok: true, value: { act: A, tally: null } });
+  });
 });
 
 
@@ -2821,7 +2834,7 @@ describe('a screen in one call', () => {
 
   it('thread_page: sends the thread, page or seq and per page by name, and maps the document', async () => {
     const answer = {
-      summary: THREAD_ROW, page: 3, acts: [ACT_ROW], plays: [PLAY_ROW], above: [ABOVE_ROW], faces: [{ play: SET, card: 'splat' }],
+      summary: THREAD_ROW, page: 3, acts: [ACT_ROW], plays: [PLAY_ROW], above: [ABOVE_ROW], faces: [{ play: SET, card: 'splat' }], veiled: [{ post: A, character: B, play: SET, ends_at: '2026-10-04T10:00:00+00:00' }],
       states: [{ play: SET, state: { n: 1 }, saved_at: '2026-10-01T11:00:00+00:00' }], releases: [SET], tallies: [{ act: A, kind: 'fire', count: 1 }],
       mine: [{ act: A, kind: 'fire', character: B }], spun: [{ ...THREAD_ROW, id: C }], reading: 2, board: BOARD_ROW, following: true, presence: PRESENCE, unread: 4,
       people: [{ character: CHAR, profile: PROFILE, posts: 12, standing: 340, reveals: [{ act: A, character: B, class: 'face', at: '2026-10-01T10:00:00+00:00', via: 'act', thread: T }], turns: [{ act: C, character: B, at: '2026-10-02T10:00:00+00:00', was: null }] }],
@@ -2840,6 +2853,7 @@ describe('a screen in one call', () => {
     expect(page?.plays[0]).toMatchObject({ id: SET, targetActId: A });
     expect(page?.above[0]).toMatchObject({ play: SPRING, target: T });
     expect(page?.faces).toEqual({ [SET]: 'splat' });
+    expect(page?.veiled).toEqual([{ post: A, character: B, play: SET, endsAt: '2026-10-04T10:00:00+00:00' }]);
     expect(page?.states).toEqual({ [SET]: { state: { n: 1 }, savedAt: '2026-10-01T11:00:00+00:00' } });
     expect(page?.releases).toEqual([SET]);
     expect(page?.tallies).toEqual({ [A]: { fire: 1 }, [SET]: {}, [SPRING]: {} });

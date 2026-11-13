@@ -39,7 +39,7 @@ describe('the card it waits for', () => {
     expect(radios.map((r, i) => r.closest('label')!.textContent)).toEqual(castable.map((f) => expect.stringContaining(f.name)));
     expect(names).toEqual(cards.filter((c) => castOnPost(c) && atOrBelow(c.rarity, cardCollector.rarity)).map((c) => c.name));
     expect(names).toEqual(expect.arrayContaining(['Whoops!', 'Stick Around', 'Autocorrect', "Feelin' Fab"]));
-    for (const not of ['Force Field', 'Card Collector', 'Hall Pass', 'Publicity Tour', 'Glitter Bomb', 'Main Event', 'Graffiti']) expect(names).not.toContain(not);
+    for (const not of ['Force Field', 'Card Collector', 'Hall Pass', 'Publicity Tour', 'Glitter Bomb', 'Main Event', 'Graffiti', 'Whodunnit?']) expect(names).not.toContain(not);
   });
 
   test('leaves out a card rarer than Card Collector itself, read from its rules', () => {

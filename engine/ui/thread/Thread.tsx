@@ -34,7 +34,7 @@ import { lowerFirst } from '../copy-words.ts';
 import { billPost, drawnOf } from '../cards/billing.ts';
 import { CalloutProvider } from '../cards/Callout.tsx';
 import { LensProvider } from '../cards/Lens.tsx';
-import { createPlays, effectCards, hydrate, readEffects, readSurface, rereadSurfaces, usePlays } from '../cards/plays.ts';
+import { createPlays, effectCards, hydrate, readEffects, readSurface, rereadSurfaces, TIMER_MOST, usePlays } from '../cards/plays.ts';
 import { Composer, SystemBoardNote, type ComposerHandle } from '../composer/Composer.tsx';
 import { useKayfa } from '../context.tsx';
 import { ENGINE_DEFAULT_PRONOUNS } from '../../rules/pronouns.ts';
@@ -52,13 +52,13 @@ import type { PostbitLayout, PostbitPerson } from '../postbit/Postbit.tsx';
 import { reveals } from '../postbit/reveals.ts';
 import { Link, useLocation, useNavigate, useNavigation } from '../router.tsx';
 import { returnOf, type ThreadReturn } from '../glass/back.ts';
-import { emptyFeed, feedReducer, newer, ordered, shownEnd, waitingPosts, type Feed, type FeedAction } from './feed.ts';
+import { emptyFeed, endsVeil, feedReducer, isVeilPlay, newer, nextVeilEnd, ordered, shownEnd, veilCards, VEIL_READ_GRACE_MS, waitingPosts, type Feed, type FeedAction } from './feed.ts';
 import { ActIndex, actLoader, type Located } from './locate.tsx';
 import { pageEndsThread, pageOf, pageRange, seqOfHash, threadHref } from './pages.ts';
 import { FollowControl } from './Follow.tsx';
 import { ActArticle, quoteStopped, ThreadHead } from './Post.tsx';
 import { SelectionQuote } from './SelectionQuote.tsx';
-import { ThreadCtx, type ThreadContext, type Under } from './context.ts';
+import { ThreadCtx, type ThreadContext, type Under, type Veiled } from './context.ts';
 import { text } from './lines.tsx';
 import { createMine } from '../reactions/mine.ts';
 import { spunCount, spunLoader, type Spun } from '../spin/spun.ts';
@@ -120,6 +120,13 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
   const plays = useMemo(() => createPlays(), []);
   const effects = useMemo(() => effectCards(ui), [ui]);
   const effectList = useMemo(() => [...effects], [effects]);
+  /* The cards whose plays veil a post's author or totals: a play of one arriving, or ending, means the page is read again (feed.ts). */
+  const veils = useMemo(() => veilCards(instance.cards), [instance.cards]);
+  /* The reader's own veiled posts on the pages shown, as the pages read carried them (`ThreadPage.veiled`); one that moved redraws the posts. */
+  const veiledHeld = useRef(new Map<Id, Veiled>());
+  const [veilTick, setVeilTick] = useState(0);
+  /* Wakes the veil's timer when plays that end it are added. */
+  const [veilClock, setVeilClock] = useState(0);
   /* Whether this is a thread of The System's board, where replies are spins and there is no reply box. */
   const [systemBoard, setSystemBoard] = useState<boolean | null>(() => (doc.board ? doc.board.isSystem : null));
   /* The boards could not be read, so which kind of board this is is unknown: neither the reply box nor the System's note is shown. */
@@ -203,6 +210,7 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
 
   /* A character's name as the thread knows it: read before the posts that name it are drawn. */
   const nameOf = useCallback((id: Id | null) => (id === null ? ui.copy.staffWord : people.current.get(id)?.character.name ?? 'A character'), [ui.copy.staffWord]);
+  const standIn = useCallback((id: Id | null) => (id === null ? false : people.current.get(id)?.character.office === 'anonymous'), []);
   const faceOf = useCallback((id: Id | null) => (id === null ? null : people.current.get(id)?.character.avatarSquare ?? null), []);
   const pronounsOf = useCallback((id: Id | null) => (id === null ? ENGINE_DEFAULT_PRONOUNS : people.current.get(id)?.character.pronouns ?? ENGINE_DEFAULT_PRONOUNS), []);
 
@@ -293,6 +301,20 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
       visitsHeld.current.set(v.post, v);
     }
     if (moved && mounted.current) setVisitTick((n) => n + 1);
+    /* The page says which of its posts are the reader's own under a veil; what it says of the posts it holds replaces what was held of them. */
+    let veilMoved = false;
+    const own = new Map<Id, Veiled>(page.veiled.map((v) => [v.post, { character: v.character, play: v.play, endsAt: v.endsAt }]));
+    for (const id of new Set([...page.acts.map((a) => a.id), ...own.keys()])) {
+      const was = veiledHeld.current.get(id);
+      const now = own.get(id);
+      if (was?.character === now?.character && was?.play === now?.play && was?.endsAt === now?.endsAt) continue;
+      veilMoved = true;
+      if (now) veiledHeld.current.set(id, now); else veiledHeld.current.delete(id);
+    }
+    if (mounted.current && (veilMoved || page.plays.some((a) => isVeilPlay(a, veils)))) {
+      if (veilMoved) setVeilTick((n) => n + 1);
+      setVeilClock((n) => n + 1);
+    }
     /* What this read says of the numbers the page leaves empty, less what an end heard since it was asked has undone: a number whose reply's play ended is not left empty, and the reply's Act
        takes it (from what was heard, or from the page's own `under` for a play the screen holds no reply for). The caller draws the page returned. */
     const nestedPlays = new Set([...nested.current.values()].map((x) => x.play));
@@ -302,7 +324,7 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
     if (back.size === 0) return page;
     const acts = [...page.acts, ...[...back.values()].filter((a) => !onPage.has(a.id))].sort((x, y) => (x.seq ?? 0) - (y.seq ?? 0));
     return { ...page, acts, cut: page.cut.filter((c) => !back.has(c.seq)) };
-  }, [api, tallies, mine, plays, putNested, dropNested]);
+  }, [api, tallies, mine, plays, veils, putNested, dropNested]);
 
   /* The first page: from the document, before the first render, so the first frame is whole. */
   /* What the thread showed and knew of when the reader left for the glass, when Back brought them here; the first page only. */
@@ -659,12 +681,19 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
         if (a.kind === 'draw' || a.kind === 'wash') return;
         /* A card play is a tag on its post, never a place in the thread: it is added to the post it names, wherever that post is, once its caster is known. */
         if (a.kind === 'card') {
-          void ensurePeople([a.character]).then(() => { plays.add([a]); return readEffects(api, plays, [a], effects); }).catch(quietly);
+          void ensurePeople([a.character]).then(() => {
+            plays.add([a]);
+            /* A veil on a post of this screen changes who wrote it (or what its row shows) for every reader: the page is read again, and the end is waited for. */
+            const f = feedRef.current;
+            if (isVeilPlay(a, veils) && a.targetActId !== null && (f.shown.has(a.targetActId) || f.held.has(a.targetActId))) { askCatchUp.current(); setVeilClock((n) => n + 1); }
+            return readEffects(api, plays, [a], effects);
+          }).catch(quietly);
           return;
         }
-        /* An admin's end of a play is no tag: it marks its play reversed in the store, wherever the play is (or waits for it). */
+        /* An admin's end of a play is no tag: it marks its play reversed in the store, wherever the play is (or waits for it). The end of a veil changes the page the same way. */
         if (a.kind === 'card_end') {
           plays.add([a]);
+          if (endsVeil(plays, feedRef.current.shown.keys(), veils, a)) askCatchUp.current();
           /* The end of a play that drew a reply under a post sets the reply on its number: the feed takes it where its number is shown. */
           const ended = typeof a.targetActId === 'string' ? dropNested(a.targetActId) : undefined;
           if (typeof a.targetActId === 'string') heard(a.targetActId, ended?.act.seq ?? null, ended?.act);
@@ -734,7 +763,7 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
     };
     const off = api.subscribeThread(thread, listener);
     return () => { off(); joined.current.thread = false; };
-  }, [api, thread, ensurePeople, tallies, plays, effects, ui.copy.staffWord, joinedAt, nestedBy, putNested, dropNested, heard]);
+  }, [api, thread, ensurePeople, tallies, plays, effects, veils, ui.copy.staffWord, joinedAt, nestedBy, putNested, dropNested, heard]);
 
   /* A play beyond a post is announced on `reach`, which every signed-in page hears, since it is played from a post in some other thread
      as often as this one (a character's) and on The System's announcements thread (a board's). This page keeps the plays whose target it
@@ -757,6 +786,15 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
     });
     return () => { off(); joined.current.reach = false; };
   }, [api, thread, ensurePeople, plays, effects, joinedAt]);
+
+  /* The page's one timer for veils: when the soonest veil still up ends, the page is read again, since nothing says so on the channel. Re-armed as plays come and go. */
+  useEffect(() => {
+    if (veils.size === 0) return undefined;
+    const next = nextVeilEnd(plays, feed.shown.keys(), veils, api.now());
+    if (next === null) return undefined;
+    const timer = setTimeout(() => { askCatchUp.current(); setVeilClock((n) => n + 1); }, Math.min(TIMER_MOST, Math.max(0, next - api.now()) + VEIL_READ_GRACE_MS));
+    return () => clearTimeout(timer);
+  }, [api, veils, plays, feed.shown, veilClock]);
 
   /* At the bottom of the last page, held Acts come in, sliding. */
   useEffect(() => {
@@ -829,9 +867,10 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
   /* The HUD's Reveal starts on this thread, except on The System's board (and until the board is known), where a meta act is not made. It is cleared when the screen goes. */
   useShowOpenThread(systemBoard === false && feed.summary ? { id: thread, title: feed.summary.title, board: feed.summary.board } : null);
   const visits = useMemo<ReadonlyMap<Id, Visit>>(() => new Map(visitsHeld.current), [visitTick]); // eslint-disable-line react-hooks/exhaustive-deps
+  const veiled = useMemo<ReadonlyMap<Id, Veiled>>(() => new Map(veiledHeld.current), [veilTick]); // eslint-disable-line react-hooks/exhaustive-deps
   const context = useMemo<ThreadContext | null>(
-    () => (feed.summary ? { thread, perPage: P, summary: feed.summary, tallies, mine, plays, visits, underOf, nameOf, faceOf, pronounsOf, know: ensurePeople, reread, observer, quote: canReply ? quote : null, changed } : null),
-    [thread, P, feed.summary, tallies, mine, plays, visits, underOf, nameOf, faceOf, pronounsOf, ensurePeople, reread, observer, canReply, quote, changed],
+    () => (feed.summary ? { thread, perPage: P, summary: feed.summary, tallies, mine, plays, visits, veiled, underOf, nameOf, standIn, faceOf, pronounsOf, know: ensurePeople, reread, observer, quote: canReply ? quote : null, changed } : null),
+    [thread, P, feed.summary, tallies, mine, plays, visits, veiled, underOf, nameOf, standIn, faceOf, pronounsOf, ensurePeople, reread, observer, canReply, quote, changed],
   );
   const shown = useMemo(() => ordered(feed.shown), [feed.shown]);
   const quotableAt = useCallback((seq: number) => {
