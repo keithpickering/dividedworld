@@ -1085,7 +1085,7 @@ describe('what a list row shows', () => {
       expect(row).toEqual(one);
       return [one, (await fake.boards()).find((b) => b.id === general.id)?.name];
     };
-    const on = (name: string) => [{ kind: 'play', card: 'glint', on: { kind: 'board', slug: 'general', name } }, name];
+    const on = (name: string) => [{ kind: 'play', card: 'glint', on: { kind: 'board', slug: 'general', name }, from: null, at: null }, name];
     expect(await names()).toEqual(on('General'));
     fake.seed.staff('boss', 'The Boss', 'boss');
     const first = fake.seed.move('boss', { board: 'general', name: 'Toast Palace' });
@@ -1104,7 +1104,7 @@ describe('what a list row shows', () => {
     expect(spun.thread.origin).toEqual({ kind: 'update', act: update, title: 'Traps bite' });
     const played = fake.seed.card(anaFace, update, 'whoops');
     const fromPlay = must(await fake.spin(played, anaFace, 'About the play', 'b'));
-    expect(fromPlay.thread.origin).toEqual({ kind: 'play', card: 'whoops', on: { kind: 'update', act: update, title: 'Traps bite' } });
+    expect(fromPlay.thread.origin).toEqual({ kind: 'play', card: 'whoops', on: { kind: 'update', act: update, title: 'Traps bite' }, from: null, at: null });
   });
 
   test('spunFromMany reads the threads spun from any of several Acts at once, and cardsOn the card plays on one', async () => {
@@ -1263,9 +1263,9 @@ describe('what a list row shows', () => {
   test('a moment is a play on a post\'s alone, and a play the fake was given no snapshot for answers from its time, by itself', async () => {
     const { fake, anaFace, boFace, thread, opener } = world();
     const mine = must(await fake.post(thread, anaFace, 'old words', null));
-    const onBo = fake.seed.reach(anaFace, 'character', boFace, 'glint', { post: opener });
+    const onThread = fake.seed.reach(anaFace, 'thread', thread, 'glint');
     expect(await fake.playMoment(mine.id)).toBeNull();
-    expect(await fake.playMoment(onBo)).toBeNull();
+    expect(await fake.playMoment(onThread)).toBeNull();
     expect(await fake.playMoment('nothing')).toBeNull();
     const under = fake.seed.card(boFace, mine.id, 'whoops', { layer: 1 });
     const old = fake.seed.card(boFace, mine.id, 'whoops', { layer: 2, unrecorded: true });
@@ -1338,7 +1338,6 @@ describe('what a list row shows', () => {
       const mine = must(await fake.post(thread, anaFace, 'The post pressed.', null));
       const theirs = opener;
       const play = fake.seed.reach(boFace, 'character', anaFace, 'glint', { post: mine.id });
-      const before = (await fake.thread(thread))!;
       const refusedAt = async (origin: string, at: string, through = anaFace) => fake.spin(origin, through, 'Refused', 'b', undefined, at);
       /* A post by another character; an Act that is no post; a play on a post; a thread's play; a board's play; an Act that is nothing. */
       expect(await refusedAt(play, theirs)).toEqual(refused(NOT_THERE));
@@ -1354,7 +1353,7 @@ describe('what a list row shows', () => {
       expect(must(await fake.spin(lapsed, anaFace, 'Still live', 'b', undefined, mine.id)).act.payload.at).toBe(mine.id);
       fake.clock.advance(120_000);
       expect(await fake.spin(lapsed, anaFace, 'Over', 'b', undefined, mine.id)).toEqual(refused(NOT_THERE));
-      expect((await fake.thread(thread))!.lastSeq).toBe(before.lastSeq);
+      expect(await fake.spunFrom(play)).toEqual([]);
     });
 
     test('a play an admin ended is refused', async () => {
@@ -1388,8 +1387,8 @@ describe('what a list row shows', () => {
       const mine = fake.seed.post(thread, anaFace, 'Mine.');
       const pressedAt = fake.seed.post(thread, anaFace, 'Pressed.');
       const play = fake.seed.reach(boFace, 'character', anaFace, 'glint', { post: mine });
-      const from = { kind: 'post', thread, title: 'Hello', seq: 3 };
-      const at = { kind: 'post', thread, title: 'Hello', seq: 4 };
+      const from = { kind: 'post', thread, title: 'Hello', seq: 2 };
+      const at = { kind: 'post', thread, title: 'Hello', seq: 3 };
       const place = async (args: Parameters<typeof fake.spin>) => (await fake.thread(must(await fake.spin(...args)).thread.id))?.origin;
       // The spin may name any post of the character the play is on, not only the one it was cast from.
       expect(await place([play, anaFace, 'At', 'b', undefined, pressedAt])).toEqual({ kind: 'play', card: 'glint', on: { kind: 'character', id: anaFace, name: 'Ana Face' }, from, at });

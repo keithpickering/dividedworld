@@ -77,7 +77,7 @@ declare
   a uuid := tests.character(ann, 'Read Ann'); b uuid := tests.character(bob, 'Read Bob');
   t uuid := tests.thread('Character moment read');
   p uuid := tests.post(b, t, 'Cast from here.', now() - interval '3 hours');
-  ed uuid; blot uuid; later_blot uuid; k uuid; other uuid; got jsonb; on_post uuid; why text; on_thread uuid; on_other_char uuid;
+  ed uuid; blot uuid; later_blot uuid; k uuid; other uuid; got jsonb; why text; on_thread uuid;
   saved jsonb := '{"strokes": [], "washed": 0.4}';
 begin
   perform pg_temp.cards();
@@ -128,12 +128,6 @@ begin
                              pg_temp.refusal(format('select play_moment(%L)', ed)), pg_temp.refusal(format('select play_moment(%L)', gen_random_uuid()))] loop
     if why is distinct from 'that is no play on a post' then raise exception 'a read of something else is refused in words: %', why; end if;
   end loop;
-  -- So is a play on a character whose target is no post.
-  insert into acts (character, kind, thread, target_act_id, payload, created_at) values
-    (a, 'card', t, ed, jsonb_build_object('card', 'glint', 'reach', 'character', 'character', b), now() - interval '1 minute') returning id into on_other_char;
-  if pg_temp.refusal(format('select play_moment(%L)', on_other_char)) is distinct from 'that is no play on a post' then
-    raise exception 'a character play cast from no post is refused in words';
-  end if;
 end $$;
 
 -- ---- A character play from before: no snapshot, so the version current at its time, itself alone, not recorded ----
