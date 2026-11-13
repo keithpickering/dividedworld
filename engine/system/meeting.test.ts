@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { systemSettings, testSystem } from '../rules/test-system.ts';
 import { DEMAND_KINDS } from './demands.ts';
-import { DEMAND_ID_ROLES, HANDOFF_MOST, MEETING_FIELDS, MEETING_PARTS, MEETING_RULE, handoffFactsText, inFarewellWindow, inheritedText, meetingSystemPrompt, PROFILE_MOST, namedCharacters, partRule, partSchema, predecessorText, referenceText, repairAnswer, ruleSchema, type HandoffFacts, type InheritedMove, type MachineSlotFacts, type RepairContext } from './meeting.ts';
+import { DEMAND_ID_ROLES, HANDOFF_MOST, MEETING_FIELDS, MEETING_PARTS, MEETING_RULE, handoffFactsText, inFarewellWindow, inheritedText, meetingSystemPrompt, movesAsk, PROFILE_MOST, namedCharacters, partRule, partSchema, predecessorText, referenceText, repairAnswer, ruleSchema, type HandoffFacts, type InheritedMove, type MachineSlotFacts, type RepairContext } from './meeting.ts';
 import { MEMORY_MOST, noteMost } from './memory.ts';
 import type { TrophyFacts } from './moves.ts';
 import { schemaProblems } from './schema.ts';
@@ -1366,6 +1366,38 @@ test('every field of the answer is in exactly one part, and MEETING_RULE is buil
     assert.match(p.ask, /\S/);
   }
   assert.ok(MEETING_PARTS[0]!.ask.includes('Hold your meeting.'));
+});
+
+test('the first turn asks only for what the meeting offers: moves always, inherited when moves were inherited, successor when one may be named', () => {
+  assert.equal(movesAsk({ inherited: false, successor: false }), 'Hold your meeting. This first turn is your moves: answer moves.');
+  assert.equal(movesAsk({ inherited: true, successor: false }), 'Hold your meeting. This first turn is your moves: answer moves and inherited.');
+  assert.equal(movesAsk({ inherited: false, successor: true }), 'Hold your meeting. This first turn is your moves: answer moves and successor.');
+  assert.equal(movesAsk({ inherited: true, successor: true }), 'Hold your meeting. This first turn is your moves: answer moves, inherited and successor.');
+});
+
+test('a standing nomination is told to the Boss in place of the invitation to name one; the roster line stays', () => {
+  const facts = { boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.she, system: testSystem, settings, phase: ctx().phase, bank: 2, successorAllowed: true, roster: [{ key: 'quality-control', name: 'QC-1000', pronouns: PRONOUN_PRESETS.it }], notes: [], career: { led: [], offices: [] }, characterName: () => 'someone', mods: [] };
+  const since = Date.parse('2026-10-30T09:00:00Z');
+  const named = meetingSystemPrompt({ ...facts, nomination: { boss: 'quality-control', name: 'QC-1000', since } });
+  assert.ok(named.includes('You named QC-1000 on 2026-10-30. That stands unless you name someone else; naming QC-1000 again changes nothing.'), 'the standing nomination');
+  assert.ok(!named.includes('If you want, name your successor'), 'no invitation while one stands');
+  assert.ok(named.includes('quality-control (QC-1000, it/its)'), 'the roster line stays');
+  const none = meetingSystemPrompt(facts);
+  assert.ok(none.includes('If you want, name your successor'));
+  assert.ok(!none.includes('You named'));
+});
+
+test('a successor naming the Boss\'s standing nominee is dropped as no new nominee, and one naming another key stands', () => {
+  const c = { ...ctx(), successorAllowed: true, successors: new Set(['quality-control', 'other-boss']), nomination: { boss: 'quality-control', name: 'QC-1000', since: NOW - 24 * H } };
+  const same = repairAnswer({ ...answer(undefined), moves: [], successor: { boss: 'quality-control', why: 'Again.' } }, c);
+  assert.ok(same.ok, JSON.stringify(same));
+  assert.equal(same.successor, null);
+  assert.deepEqual(same.trims.filter((t: any) => t.path === 'successor.boss').map((t: any) => t.predicate), ['newNominee']);
+  const other = repairAnswer({ ...answer(undefined), moves: [], successor: { boss: 'other-boss', why: 'Changed my mind.' } }, c);
+  assert.ok(other.ok, JSON.stringify(other));
+  assert.deepEqual(other.successor, { boss: 'other-boss', why: 'Changed my mind.' });
+  const unnamed = repairAnswer({ ...answer(undefined), moves: [], successor: { boss: 'quality-control', why: 'First.' } }, { ...c, nomination: undefined });
+  assert.ok(unnamed.ok && unnamed.successor !== null, 'with none standing, naming it stands');
 });
 
 // The moves part is 40 of the provider's 40, the fangame split's three kinds and awardTrophy's trophy param included: properties: the fangame split's kinds added their params (into, fallback, a thread's board) to the loose object every move carries, so a field added to any kind's params now needs a part of its own.

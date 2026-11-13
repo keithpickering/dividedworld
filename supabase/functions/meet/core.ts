@@ -36,6 +36,7 @@ import { feedTitles } from '../../../engine/system/feed.ts';
 import type { Memory } from '../../../engine/system/memory.ts';
 import {
   MEETING_PARTS,
+  movesAsk,
   REFERENCE_MOST,
   SUCCESSOR_WINDOW_MS,
   farewellFactsText,
@@ -102,6 +103,8 @@ interface Context {
   readonly successors?: readonly string[];
   /** The moves of an earlier Boss, still in force and shaping a board, that this Boss has neither kept nor ended (0051); absent from an older database. */
   readonly inheritanceDue?: readonly InheritedMove[];
+  /** The Boss's standing nomination (0357): its latest nameSuccessor, waiting or landed and not ended or held, and when its meeting began (epoch ms). Null or absent when none stands, and from an older database. */
+  readonly nomination?: { readonly boss: string; readonly at: number } | null;
   /** The Mod Bots on staff (0103): each one's latest order, and the allowance it has not spent (which returns to the Boss's bank before the meeting counts it). Absent from an older database. */
   readonly mods?: readonly { readonly key: string; readonly allowance: number; readonly granted: number | null; readonly boards: readonly string[]; readonly order: string | null }[];
   /** The rules in force (0103), so a rule that would leave no compliant post is dropped here; absent from an older database. */
@@ -277,6 +280,9 @@ export async function runMeeting(
     const heldBack = context.arc?.heldBack ?? [];
     const due = context.inheritanceDue ?? [];
     const successorAllowed = phase.phase === 'meltdown' && now >= context.season.endsAt - SUCCESSOR_WINDOW_MS;
+    // The standing nomination, named from the roster; one naming a key the roster does not hold is not told, and drops nothing.
+    const nominee = context.nomination ? tuned.system.roster.find((b) => b.key === context.nomination!.boss) : undefined;
+    const nomination = context.nomination && nominee ? { boss: nominee.key, name: nominee.name, since: context.nomination.at } : undefined;
     // A meeting within farewellWindowHours of the season's end is told to write a farewell (in character) and a handoff (out of character) and shown the facts to write it from. The window is the clock's
     // and the database's both: a database that handed over no facts (an older one, or one whose clock says otherwise) leaves the meeting outside it, and the apply holds the same line.
     const farewell = context.handoffFacts && inFarewellWindow(context.season.endsAt, now, settings.farewellWindowHours) ? { postMaxLength: settings.postMaxLength } : undefined;
@@ -291,6 +297,7 @@ export async function runMeeting(
       // A name for a character a memory mentions: the digest's own names, and 'someone' for any other.
       characterName: (id) => { const c = digest.characters.find((x) => x.id === id); return c ? taggedName(c.name.slice(0, 60), c.pronouns) : 'someone'; },
       successorAllowed,
+      ...(nomination ? { nomination } : {}),
       groups: { conferred: context.groups?.conferred ?? [] },
       beats,
       heldBack,
@@ -324,8 +331,8 @@ export async function runMeeting(
         trophies: { boss: bossList, barred: new Set(), given: new Set() },
       }, heldBack),
       '',
-      // The first part's ask closes the message, so the message is the same in every call.
-      MEETING_PARTS[0].ask,
+      // The first part's ask closes the message, and names only what this meeting offers. Both facts are known before the first call and fixed for the meeting, so the message is the same in every call.
+      movesAsk({ inherited: due.length > 0, successor: successorAllowed }),
     ].join('\n');
 
     // One call for each part, in order, each shown the earlier answers as prior turns; a part that fails is recorded and the next still runs, shown that it was not kept.
@@ -402,6 +409,7 @@ export async function runMeeting(
       threads: new Set(digest.threads.slice(0, REFERENCE_MOST.threads).map((t) => t.thread)),
       isPublic: (id) => publicNow.has(id),
       successorAllowed,
+      ...(nomination ? { nomination } : {}),
       successors,
       inheritable: context.inheritanceDue ? new Set(due.map((m) => m.act.toLowerCase())) : undefined,
       // Only the slots the model was shown (the reference list is bounded) can be named, as with the threads.

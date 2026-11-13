@@ -243,6 +243,18 @@ export const MEETING_PARTS = [
   { key: 'self', fields: ['memory', 'profile', 'beats', 'farewell', 'handoff'], ask: 'Your moves, bundle and staff stand as you answered them. This last turn is yourself: answer memory and profile, and beats, farewell and handoff if you were given beats to play or told to write a farewell.' },
 ] as const satisfies readonly { readonly key: string; readonly fields: readonly string[]; readonly ask: string }[];
 
+/**
+ * The first turn's ask, which ends the first message: it names only what the meeting offers. `MEETING_PARTS[0].ask` names all three fields and stays as the
+ * record of the part. A field the ask names is a field the model fills, so a meeting with no inherited moves is not asked for `inherited`, nor one in which
+ * no successor may be named for `successor` (the rehearsal patch design, section 5). It is built from the part's own fields, `moves` always. The meeting's facts
+ * are known before its first call and do not change within it, so the message it ends is the same in all four calls.
+ */
+export function movesAsk(o: { readonly inherited: boolean; readonly successor: boolean }): string {
+  const offered = MEETING_PARTS[0].fields.filter((f) => f === 'moves' || (f === 'inherited' && o.inherited) || (f === 'successor' && o.successor));
+  const list = offered.length > 1 ? `${offered.slice(0, -1).join(', ')} and ${offered[offered.length - 1]}` : offered[0];
+  return `Hold your meeting. This first turn is your moves: answer ${list}.`;
+}
+
 /** The number of turns, in words, for the prompt. */
 const TURNS: Readonly<Record<number, string>> = { 2: 'two', 3: 'three', 4: 'four', 5: 'five', 6: 'six' };
 
@@ -333,6 +345,8 @@ export interface PromptFacts {
   readonly bank: number;
   /** Whether this is the meltdown's last week, in which a successor may be named. */
   readonly successorAllowed: boolean;
+  /** The Boss's standing nomination (`meeting_context().nomination`), named from the roster, with when it was made (epoch ms); absent when none stands. */
+  readonly nomination?: { readonly boss: string; readonly name: string; readonly since: number };
   readonly roster: readonly { readonly key: string; readonly name: string; readonly pronouns: PronounSet }[];
   /** The Boss's own career, from the database (`staff_career`): facts the persona cannot have remembered. */
   readonly career: Career;
@@ -443,7 +457,9 @@ export function meetingSystemPrompt(f: PromptFacts): string {
     modsText(f),
     ...(f.farewell ? [farewellText(f.farewell.postMaxLength)] : []),
     ...(f.successorAllowed
-      ? [`The season is in its last week. If you want, name your successor: successor {boss, why}, where boss is one of these keys and not your own: ${f.roster.map((r) => `${r.key} (${r.name}, ${pronounLabel(r.pronouns)})`).join('; ')}. An admin can hold or replace it.`]
+      ? [`The season is in its last week. ${f.nomination
+        ? `You named ${f.nomination.name} on ${new Date(f.nomination.since).toISOString().slice(0, 10)}. That stands unless you name someone else; naming ${f.nomination.name} again changes nothing. To name someone else:`
+        : 'If you want, name your successor:'} successor {boss, why}, where boss is one of these keys and not your own: ${f.roster.map((r) => `${r.key} (${r.name}, ${pronounLabel(r.pronouns)})`).join('; ')}. An admin can hold or replace it.`]
       : ['Do not answer with a successor.']),
     [
       `How you answer. The meeting is answered in ${TURNS[MEETING_PARTS.length]} turns, and in each turn you answer one part and nothing else: ${MEETING_PARTS.map((p, i) => `${i === 0 ? 'first' : 'then'} the "${p.key}" part (${p.fields.filter((x) => (x !== 'farewell' && x !== 'handoff' ? true : f.farewell !== undefined) && (x !== 'beats' || (f.beats ?? []).length > 0)).join(', ')})`).join(', ')}. What you answered in an earlier turn stands.`,
@@ -676,6 +692,8 @@ export interface RepairContext {
   /** Whether a character is debuted and public now, from `public_characters`. */
   readonly isPublic: (character: string) => boolean;
   readonly successorAllowed: boolean;
+  /** The Boss's standing nomination (`meeting_context().nomination`): naming the same Boss again is dropped, since it changes nothing. Absent when none stands. */
+  readonly nomination?: { readonly boss: string; readonly name: string; readonly since: number };
   /** The keys a nomination may name now, as `meeting_context().successors` lists them (0082): any persona that is not retired or benched, waiting ones included, and not the Boss. */
   readonly successors: ReadonlySet<string>;
   /**
@@ -1370,6 +1388,7 @@ export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
     const given = a['successor'] as { boss: string; why: string };
     if (!c.successorAllowed) drop('successor', 'inMeltdownLastWeek');
     else if (!c.successors.has(given.boss)) drop('successor.boss', 'rosterBoss');
+    else if (c.nomination && given.boss === c.nomination.boss) drop('successor.boss', 'newNominee');
     else if (given.boss === c.boss) drop('successor.boss', 'notTheOutgoingBoss');
     else successor = given;
   }
