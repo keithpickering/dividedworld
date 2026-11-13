@@ -1542,7 +1542,13 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       return { gifts: toDriveGifts(d['gifts']), more: d['more'] === true };
     },
     /* A card that replies sends its reply as `body` and `framing`, as a post does; the function names them for the play. */
-    playCard: (card, character, target, config, message, reach, fromPost, first, reply) => act({ action: 'playCard', card, character, target, config, message, ...beyond(reach, fromPost), ...(first === undefined ? {} : { first }), ...(reply === undefined ? {} : { body: reply.body, ...framed(reply.framing) }) }, toAct),
+    /* The answer of a play that carried a reply names it too (`under`, as the broadcast does): it is handed to the thread's listeners here, as the broadcast would, so the caster's own screen nests it
+       even where the broadcast is slow or lost; a screen that hears both ignores the second. */
+    playCard: (card, character, target, config, message, reach, fromPost, first, reply) => act({ action: 'playCard', card, character, target, config, message, ...beyond(reach, fromPost), ...(first === undefined ? {} : { first }), ...(reply === undefined ? {} : { body: reply.body, ...framed(reply.framing) }) }, (row) => {
+      const { under, ...card } = row;
+      if (isObject(under) && typeof card['thread'] === 'string') for (const l of [...(topics.get(`thread:${card['thread']}`)?.listeners ?? [])]) l('under', under);
+      return toAct(card);
+    }),
     setCard: (card, character, target, config, when) => act({ action: 'setCard', card, character, target, config, ...(when ? { when } : {}) }, toAct),
     takeBack: (character, set) => act({ action: 'takeBack', character, set }, toAct),
     useCard: (card, character, target, config, message, reach, fromPost) => act({ action: 'useCard', card, character, target, config, message, ...beyond(reach, fromPost) }, toAct),

@@ -217,17 +217,20 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
      saw the play as it was, and must not undo what the event said (un-nest a reply, or put it back after its play ended). */
   const heardPlay = useRef(new Map<Id, number>());
   const heardSeq = useRef(new Map<number, number>());
-  const heard = useCallback((play: Id, seq: number | null) => {
+  /* The reply Acts whose plays were heard to end, by number: a read asked before the end that left their numbers empty gets them back (`absorb` returns the page so). */
+  const endedBy = useRef(new Map<number, Act>());
+  const heard = useCallback((play: Id, seq: number | null, ended?: Act) => {
     const at = ++tickets.current;
     heardPlay.current.set(play, at);
     if (seq !== null) heardSeq.current.set(seq, at);
+    if (ended && ended.seq !== null) endedBy.current.set(ended.seq, ended);
   }, []);
   /*
    * A page document taken into the stores: its authors, the plays on its posts and above them with their saved states, the player's releases
    * and card backs, the tallies, the player's own reactions and the threads spun from them, all ready to show, and each post's plays billed
    * (cards/billing.ts), once for this page: a live count moves no tag. No read: the document holds what a page used to read in a dozen.
    */
-  const absorb = useCallback((page: ThreadPage, ticket: number) => {
+  const absorb = useCallback((page: ThreadPage, ticket: number): ThreadPage => {
     const said = reveals(page.people.flatMap((p) => p.reveals), page.people.flatMap((p) => p.turns));
     for (const p of page.people) {
       const statement = said.get(p.character.id);
@@ -290,6 +293,15 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
       visitsHeld.current.set(v.post, v);
     }
     if (moved && mounted.current) setVisitTick((n) => n + 1);
+    /* What this read says of the numbers the page leaves empty, less what an end heard since it was asked has undone: a number whose reply's play ended is not left empty, and the reply's Act
+       takes it (from what was heard, or from the page's own `under` for a play the screen holds no reply for). The caller draws the page returned. */
+    const nestedPlays = new Set([...nested.current.values()].map((x) => x.play));
+    const back = new Map<number, Act>();
+    for (const c of page.cut) if (stale(null, c.seq)) { const a = endedBy.current.get(c.seq); if (a) back.set(c.seq, a); }
+    for (const u of page.under) if (u.act.seq !== null && stale(u.play, u.act.seq) && !nestedPlays.has(u.play) && (heardPlay.current.get(u.play) ?? 0) > ticket && !feedRef.current.shown.has(u.act.id)) back.set(u.act.seq, u.act);
+    if (back.size === 0) return page;
+    const acts = [...page.acts, ...[...back.values()].filter((a) => !onPage.has(a.id))].sort((x, y) => (x.seq ?? 0) - (y.seq ?? 0));
+    return { ...page, acts, cut: page.cut.filter((c) => !back.has(c.seq)) };
   }, [api, tallies, mine, plays, putNested, dropNested]);
 
   /* The first page: from the document, before the first render, so the first frame is whole. */
@@ -313,12 +325,12 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
     const noted = joins.current;
     const page = await track(api.threadPage(thread, at, P, effectList));
     if (!page) throw new Error('the thread could not be read');
-    absorb(page, ticket);
+    const taken = absorb(page, ticket);
     /* A read the server answered before a join and that landed after it may have run after that join's catch-up finished, so its page was read
        before the channel heard anything and no run reads it again: ask for one more, through the same one-at-a-time path. A read with no join
        between its asking and its answer, or answered before the first join, asks for nothing. */
     if (joins.current !== noted) setLateRead((n) => n + 1);
-    return page;
+    return taken;
   }, [api, thread, P, effectList, track, absorb]);
 
   /* ----------------------------------------------------------------- where to scroll ---- */
@@ -576,9 +588,9 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
     let lastSeq = start.serverLast;
     for (let page = start.firstPage; page <= start.lastPage; page++) {
       let ticket = 0;
-      const read = await tried(() => { ticket = ++tickets.current; return api.threadPage(thread, { page }, P, effectList); });
-      if (!read || !mounted.current) return;
-      absorb(read, ticket);
+      const got = await tried(() => { ticket = ++tickets.current; return api.threadPage(thread, { page }, P, effectList); });
+      if (!got || !mounted.current) return;
+      const read = absorb(got, ticket);
       if (moved()) return;
       lastSeq = Math.max(lastSeq, read.thread.lastSeq);
       const fresh: Act[] = [];
@@ -655,7 +667,7 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
           plays.add([a]);
           /* The end of a play that drew a reply under a post sets the reply on its number: the feed takes it where its number is shown. */
           const ended = typeof a.targetActId === 'string' ? dropNested(a.targetActId) : undefined;
-          if (typeof a.targetActId === 'string') heard(a.targetActId, ended?.act.seq ?? null);
+          if (typeof a.targetActId === 'string') heard(a.targetActId, ended?.act.seq ?? null, ended?.act);
           if (ended) dispatch({ type: 'uncut', act: ended.act });
           return;
         }
@@ -800,6 +812,13 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
   const quote = useCallback((a: Act) => composer.current?.quote(a.id, text(a.currentPayload.body)), []);
   /* Highlight-to-quote: a selection's words go in as typed, and the post is found by the number its article carries. */
   const quoteSelected = useCallback((a: Act, words: string) => composer.current?.quote(a.id, words, true), []);
+  /* The page holding a post, read again and taken in as any read is (`absorb` nests what a play in force drew under its posts): the play form's, after a play found landed on a lost answer. */
+  const reread = useCallback(async (post: Id) => {
+    const f = feedRef.current;
+    const at = f.shown.get(post) ?? f.held.get(post);
+    if (!at || at.seq === null) return;
+    await readPage({ page: pageOf(at.seq, P) });
+  }, [P, readPage]);
   const changed = useCallback((a: Act) => {
     const under = nestedBy(a.id);
     if (under) putNested(under.parent, under.under.play, a);
@@ -811,8 +830,8 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
   useShowOpenThread(systemBoard === false && feed.summary ? { id: thread, title: feed.summary.title, board: feed.summary.board } : null);
   const visits = useMemo<ReadonlyMap<Id, Visit>>(() => new Map(visitsHeld.current), [visitTick]); // eslint-disable-line react-hooks/exhaustive-deps
   const context = useMemo<ThreadContext | null>(
-    () => (feed.summary ? { thread, perPage: P, summary: feed.summary, tallies, mine, plays, visits, underOf, nameOf, faceOf, pronounsOf, know: ensurePeople, observer, quote: canReply ? quote : null, changed } : null),
-    [thread, P, feed.summary, tallies, mine, plays, visits, underOf, nameOf, faceOf, pronounsOf, ensurePeople, observer, canReply, quote, changed],
+    () => (feed.summary ? { thread, perPage: P, summary: feed.summary, tallies, mine, plays, visits, underOf, nameOf, faceOf, pronounsOf, know: ensurePeople, reread, observer, quote: canReply ? quote : null, changed } : null),
+    [thread, P, feed.summary, tallies, mine, plays, visits, underOf, nameOf, faceOf, pronounsOf, ensurePeople, reread, observer, canReply, quote, changed],
   );
   const shown = useMemo(() => ordered(feed.shown), [feed.shown]);
   const quotableAt = useCallback((seq: number) => {

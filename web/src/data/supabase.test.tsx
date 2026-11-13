@@ -1562,7 +1562,7 @@ describe('the avatar', () => {
 });
 
 describe('live', () => {
-  function stub() {
+  function stub(fetch?: typeof globalThis.fetch) {
     const channels: { topic: string; opts: unknown; handlers: Map<string, (m: { payload: unknown }) => void>; subscribed: boolean; status?: ((s: string) => void) | undefined }[] = [];
     const removed: string[] = [];
     const order: string[] = [];
@@ -1581,7 +1581,7 @@ describe('live', () => {
       },
       removeChannel: vi.fn(async (c: unknown) => { removed.push(String((c as { topic?: string }).topic ?? 'x')); return 'ok'; }),
     };
-    const api = createSupabaseApi({ url: URL_, publishableKey: PUBLISHABLE, settingsFallback: FALLBACK, client: client as never });
+    const api = createSupabaseApi({ url: URL_, publishableKey: PUBLISHABLE, settingsFallback: FALLBACK, client: client as never, ...(fetch ? { fetch } : {}) });
     return { api, channels, client, order, removed };
   }
   const settle = () => new Promise((r) => setTimeout(r, 0));
@@ -1622,6 +1622,42 @@ describe('live', () => {
     quiet.api.subscribeThread(T, { onAct });
     await settle();
     expect(() => quiet.channels[0]?.handlers.get('under')?.({ payload: { parent: C, play: SET, act: ACT_ROW } })).not.toThrow();
+  });
+
+  it('hands the reply a play\'s answer carries to that thread\'s listeners itself, so the caster sees it without the broadcast; heard twice, the screen gets it twice and ignores the second', async () => {
+    const UNDER = { parent: C, play: SET, act: ACT_ROW };
+    const answer = async () => new Response(JSON.stringify({ ...ACT_ROW, id: SET, kind: 'card', under: UNDER }), { status: 200, headers: { 'content-type': 'application/json' } });
+    const s = stub(answer as typeof fetch);
+    const onAct = vi.fn();
+    const onUnder = vi.fn();
+    const elsewhere = vi.fn();
+    s.api.subscribeThread(T, { onAct, onUnder });
+    s.api.subscribeThread(C, { onUnder: elsewhere });
+    await settle();
+    const played = await s.api.playCard('line-cutter', B, C, {}, '', undefined, undefined, undefined, { body: 'Excuse me.' });
+    /* The card's Act still comes back, with no `under` in it, and the reply was handed to the thread's listener once, with no broadcast heard. */
+    expect(played.ok && played.value.id).toBe(SET);
+    expect(played.ok && Object.keys(played.value.payload)).not.toContain('under');
+    expect(onUnder).toHaveBeenCalledTimes(1);
+    expect(onUnder).toHaveBeenCalledWith(C, SET, ACT);
+    expect(elsewhere).not.toHaveBeenCalled();
+    expect(onAct).not.toHaveBeenCalled();
+    /* The broadcast arrives too: the listener is told again, as the screen's own idempotence expects. */
+    s.channels[0]?.handlers.get('under')?.({ payload: UNDER });
+    expect(onUnder).toHaveBeenCalledTimes(2);
+  });
+
+  it('hands nothing to the listeners where the play\'s answer carries no reply, or is a refusal', async () => {
+    const plain = stub((async () => new Response(JSON.stringify({ ...ACT_ROW, kind: 'card' }), { status: 200, headers: { 'content-type': 'application/json' } })) as typeof fetch);
+    const onUnder = vi.fn();
+    plain.api.subscribeThread(T, { onUnder });
+    await settle();
+    await plain.api.playCard('whoops', B, C, {}, '');
+    const refused = stub((async () => new Response(JSON.stringify({ error: 'no' }), { status: 400, headers: { 'content-type': 'application/json' } })) as typeof fetch);
+    refused.api.subscribeThread(T, { onUnder });
+    await settle();
+    await refused.api.playCard('whoops', B, C, {}, '');
+    expect(onUnder).not.toHaveBeenCalled();
   });
 
   it('shares a channel between listeners on one topic and removes it with the last', async () => {

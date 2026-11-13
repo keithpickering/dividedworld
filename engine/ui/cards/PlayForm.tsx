@@ -59,12 +59,14 @@ export interface PlayFormProps {
   readonly faceDown?: boolean;
   /** The player picked Play it now (false) or Set face down (true). */
   readonly onChoose?: (faceDown: boolean) => void;
+  /** The play is over but the form stays (a cast a trap caught, whose reply is still in the editor): what `onPlayed` does for the screen, short of closing. */
+  readonly onSpent?: () => void;
 }
 
 /** Where the message's counter starts to speak: its last stretch before the limit. */
 const MESSAGE_NEAR = MESSAGE_MOST - 20;
 
-export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown = false, onChoose }: PlayFormProps) {
+export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown = false, onChoose, onSpent }: PlayFormProps) {
   const { api, instance, settings: screen, ui } = useKayfa();
   /* Priced as the server will charge (withCardEconomy): a surcharge an admin has tuned is the one shown. */
   const priced = useMemo(() => withCardEconomy(instance.settings, screen.cardEconomy), [instance.settings, screen.cardEconomy]);
@@ -78,6 +80,9 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
   const [reply, setReply] = useState('');
   /* A cast the trap caught said so: the form stays, with the reply in it, since it was not posted. */
   const [caught, setCaught] = useState(false);
+  /* The caught play spent its card: the form is not played again until the reply is changed (the player's own choice to try with another card), and not at all with none left. */
+  const [spent, setSpent] = useState(false);
+  const [wasCaught, setWasCaught] = useState(false);
   /**
    * What the counter last said aloud: only on crossing into its last stretch, or on reaching the limit (#89 P2-2). `n` counts what was
    * said, so the same words said again are a change a screen reader hears (a trailing no-break space on every other one).
@@ -220,7 +225,8 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
   /* The reply is a post: a letter or a digit in it, and no longer than a post may be. */
   const replyMost = screen.postMaxLength;
   const unwritten = replying && (!/[\p{L}\p{N}]/u.test(reply) || [...reply].length > replyMost);
-  const blocked = unwritten || busy || !setter || (!setting && !wallet) || short || !lands.ok || unsettled || flawed;
+  const out = wasCaught && player.loaded && (player.cards.find((c) => c.card === card)?.held ?? 0) === 0;
+  const blocked = spent || out || unwritten || busy || !setter || (!setting && !wallet) || short || !lands.ok || unsettled || flawed;
   const nameOf = (who: string) => draft.who.find((c) => c.id === who)?.name ?? 'someone';
   /* What the Set does, in the form's one sentence: the conditions read back where there are any (a locked phrase is the card's Says), the card's plain sentence where there are none. */
   const springs = when || lockedSays ? `Springs ${conditionWords({ ...when, ...(lockedSays ? { says: lockedSays } : {}) }, nameOf)}, and lands on ${landsWords(rules)}.` : springWords(rules);
@@ -250,7 +256,7 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
     await player.refresh();
     if (accountNow.current !== account) return;
     /* A cast a trap caught wrote no reply: the form stays to say so, with the words still in the editor, and Close is its way out. */
-    if (replying && typeof act.payload.caught === 'string') { setCaught(true); return; }
+    if (replying && typeof act.payload.caught === 'string') { setCaught(true); setWasCaught(true); setSpent(true); onSpent?.(); return; }
     onPlayed();
   };
   /* No answer came back: read what the play would have changed before offering it again. */
@@ -270,7 +276,12 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
     if (accountNow.current !== account) return;
     /* A Set comes back as a card back, which names no card: the new back by this character is it. */
     const found = target.plays.get(home).plays.find((p) => !before.has(p.id) && (setting ? p.faceDown === true : p.card === card) && p.caster === character);
-    if (found) { onPlayed(); return; }
+    if (found) {
+      /* A card that replies drew its reply with the play, and the answer that would have carried it was lost: the thread reads the post's page again so the reply is drawn under it. */
+      if (replying && !setting && post) { try { await target.reread?.(post.id); } catch { /* the thread's own next read draws it */ } }
+      if (accountNow.current !== account) return;
+      onPlayed(); return;
+    }
     setAgain(true);
     setRefusal(`${words === null ? 'No answer came back.' : plainRefusal(words)} ${looked ? `Your play is not on the ${beyond?.reach ?? 'post'} yet.` : `The ${beyond?.reach ?? 'post'} could not be checked for it.`} Press “${verb} again anyway” to ${verb.toLowerCase()} it again.`);
   };
@@ -285,6 +296,7 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
     setRefusal(null);
     setPlaced(null);
     setCaught(false);
+    setSpent(false);
     try {
       let answer;
       try {
@@ -365,10 +377,10 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
               <label htmlFor={`${id}-reply`} className="kb-play-label">Your reply</label>
               <Editor
                 label="Your reply" id={`${id}-reply`} value={reply} max={replyMost} describedBy={`${id}-reply-note`} submitVerb="plays the card"
-                onChange={(next) => { setReply(next); setCaught(false); if (again) { setAgain(false); setRefusal(null); } }} onSubmit={() => void submit()}
+                onChange={(next) => { setReply(next); setCaught(false); setSpent(false); if (again) { setAgain(false); setRefusal(null); } }} onSubmit={() => void submit()}
               />
               <p className="kb-play-fine" id={`${id}-reply-note`}>Posted with the card, right under that post.</p>
-              <p className="kb-play-fine" role="status" aria-label="What came of the play">{caught ? `${caughtWords(null)} Your reply was not posted.` : ''}</p>
+              <p className="kb-play-fine" role="status" aria-label="What came of the play">{caught ? `${caughtWords(null)} Your reply was not posted.` : out ? 'You hold no more of this card, so it cannot be played again.' : ''}</p>
             </div>
           )}
           {!setting && <div className="kb-play-message">

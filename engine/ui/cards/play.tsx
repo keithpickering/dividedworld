@@ -64,6 +64,8 @@ export interface PlayTarget {
   readonly plays: Plays;
   /** Have the thread read these characters, so a tag naming one is drawn with the name. */
   readonly know: (characters: readonly (Id | null)[]) => Promise<void>;
+  /** Read the thread's page that holds the post again, for what a play drew under it (a reply): asked when a lost answer's play is found landed. Absent where the screen draws no replies. */
+  readonly reread?: (post: Id) => Promise<void>;
 }
 
 export interface PlayControls {
@@ -381,6 +383,7 @@ export function PlayProvider({ children }: { readonly children: ReactNode }) {
           seen={form.read}
           faceDown={faceDown && armed === form.card}
           onChoose={choose}
+          onSpent={() => { if (accountNow.current !== form.for) return; prepared.cancel(); setArmed(null); }}
           onClose={() => { setFormHeld(null); prepared.cancel(); }}
           onPlayed={() => {
             if (accountNow.current !== form.for) return;

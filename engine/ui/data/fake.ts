@@ -402,6 +402,11 @@ export interface Fake extends KayfaApi {
     join(): number;
     /** Tell every joined thread and reach listener `onJoined` again, as a channel that dropped and rejoined does. */
     rejoin(): void;
+    /**
+     * Whether the answer of a play that carried a reply hands that reply to the thread's listeners itself (the adapter does, from the act function's `under`), apart from the broadcast: on
+     * by default. A test of the broadcast's own order turns it off.
+     */
+    echoAnswers(on: boolean): void;
   };
   readonly seed: Seed;
   /** Always `KAYFA_FAKE_BACKEND`: what the bundle guard finds if the fake ever reaches a production build. */
@@ -1253,6 +1258,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return c;
   }
   /* The next write whose answer is lost (see `Seed.loseNextAnswer`). */
+  /** The delivery of the reply the last play's answer carries (read and cleared by `playCard`'s export), and whether an answer hands it on at all (`broadcast.echoAnswers`). */
+  let answeredUnder: (() => void) | null = null;
+  let echoing = true;
   let losing: { readonly went: boolean } | null = null;
   const lossy = <A extends unknown[], R>(run: (...a: A) => Answer<R>) => (...a: A): Answer<R> => {
     const lose = losing;
@@ -1913,7 +1921,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     /* The reply is heard as `under`, after its card, and never as an act of its own: no screen draws it at the thread's tail first. */
     if (replied) {
       const shown = publicAct(replied);
-      send(`thread:${on.thread}`, 'under', () => { for (const l of [...(threadListeners.get(on.thread) ?? [])]) l.onUnder?.(target, written.id, shown); });
+      const hear = () => { for (const l of [...(threadListeners.get(on.thread) ?? [])]) l.onUnder?.(target, written.id, shown); };
+      send(`thread:${on.thread}`, 'under', hear);
+      /* The answer carries the reply too (the act function's `under`): handed to the thread's listeners when the answer reaches the caller, held or muted broadcast or not. */
+      answeredUnder = hear;
       writeFramed(reply!.body, reply!.framing, replied);
     }
     /* A surface card's play opens its wall with the caster's first draw (play_surface_card: play_card, then draw_on_surface as the caster); a caught play opens none. */
@@ -3602,7 +3613,15 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       [grid[at]!.position, other.position] = [other.position, grid[at]!.position];
       return ok({ slot, moved: true });
     },
-    playCard: lossy(playCard),
+    playCard: (...a: Parameters<typeof playCard>) => {
+      answeredUnder = null;
+      const answer = lossy(playCard)(...a);
+      const hear = answeredUnder as (() => void) | null;
+      answeredUnder = null;
+      /* Only an answer that came back hands the reply on: a lost one leaves it to the broadcast and the form's own look. */
+      if (answer.ok && hear && echoing) queueMicrotask(hear);
+      return answer;
+    },
     donate: lossy(donate),
     driveGifts: (drives) => drives.slice(0, 100).map((id): DriveGifts => {
       const all = giftsOf(id);
@@ -5102,6 +5121,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         for (const l of [...threadListeners.values()].flatMap((set) => [...set])) l.onJoined?.();
         for (const l of [...reachListeners]) l.onJoined?.();
       },
+      echoAnswers(on: boolean) { echoing = on; },
       hold() { held ??= []; },
       flush(o: { reverse?: boolean; twice?: boolean } = {}) {
         const batch = held ?? [];

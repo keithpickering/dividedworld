@@ -38,17 +38,20 @@ const ended = (play: string): Act => ({ id: `end-${play}`, character: null, kind
 
 const wrap = (key: string) => ({ children }: EffectProps): ReactNode => <div data-kb-wrap={key}>{children}</div>;
 /** An effect that says what it was given: its plays' ids and each one's reach (a post's own plays carry none). */
-const spy = ({ plays, children }: EffectProps): ReactNode => <div data-kb-wrap="fab" data-plays={plays.map((p) => p.id).join(',')} data-reaches={plays.map((p) => p.reach ?? 'post').join(',')}>{children}</div>;
+const spy = ({ plays, states, released, children }: EffectProps): ReactNode => (
+  <div data-kb-wrap="fab" data-plays={plays.map((p) => p.id).join(',')} data-reaches={plays.map((p) => p.reach ?? 'post').join(',')} data-states={Object.keys(states).sort().join(',')} data-released={[...released].sort().join(',')}>{children}</div>
+);
 const art = { color: '#ffd23f', ink: '#1a1300', canvas: '', mark: '', credit: 'Test' };
 const look = (key: string, extra: Partial<CardUi> = {}): CardUi => ({ key, art, describe: () => `${key}.`, ...extra });
 
 /** The posts drawn with these plays, `late` after the backend's clock has run on that long. */
-function setup(cards: CardUi[], acts: Act[], posts: Act[], late = 0) {
+function setup(cards: CardUi[], acts: Act[], posts: Act[], late = 0, more?: (store: ReturnType<typeof createPlays>) => void) {
   const fake = buildWorld({}, instance);
   if (late > 0) fake.clock.advance(late);
   const kayfa = { api: fake, instance, ui: { cards, glass: {} }, settings: {} } as unknown as Kayfa;
   const store = createPlays();
   store.add(acts);
+  more?.(store);
   const tree = (list: Act[]) => (
     <KayfaProvider value={kayfa}><PlayerProvider api={fake}>
       {list.map((p) => <div key={p.id} data-post={p.id}><PostEffects plays={store} post={p} place="thread" nameOf={() => 'x'}><span>{p.id}</span></PostEffects></div>)}
@@ -88,6 +91,11 @@ describe('a thread play of a card that keeps', () => {
     expect(w.wrapped('keeper')).toEqual([]);
   });
 
+  test('an admin\'s end of a worn-off play takes the level off every post at once, the one written inside its window too', () => {
+    const w = setup(cards(), [keeperPlay(), ended('glam')], [BEFORE, INSIDE, AFTER], 8 * DAY);
+    expect(w.wrapped('keeper')).toEqual([]);
+  });
+
   test('a card that does not keep wraps nothing once its time is over', () => {
     const plain = { ...keeperPlay(), payload: { ...keeperPlay().payload, card: 'fab' } };
     const w = setup([look('fab', { Effect: wrap('fab') })], [plain], [INSIDE], 8 * DAY);
@@ -112,6 +120,29 @@ describe('a card drawn by another', () => {
     expect(wraps).toHaveLength(1);
     expect(wraps[0]!.getAttribute('data-plays')).toBe('glam');
     expect(wraps[0]!.getAttribute('data-reaches')).toBe('thread');
+  });
+
+  test('the play order is the post\'s own plays first, the lent after, whether or not the post has its own, so what an effect seeds from its first play does not move when one joins', () => {
+    const lentOnly = setup(cards(), [keeperPlay()], [INSIDE]);
+    expect(lentOnly.container.querySelector('[data-kb-wrap]')!.getAttribute('data-plays')).toBe('glam');
+    const both = setup(cards(), [keeperPlay(), fabPlay('f1', 'inside', 1)], [INSIDE]);
+    expect(both.container.querySelector('[data-kb-wrap]')!.getAttribute('data-plays')).toBe('f1,glam');
+    const other = setup(cards(), [fabPlay('f1', 'inside', 1), keeperPlay(), fabPlay('f2', 'inside', 2)], [INSIDE]);
+    expect(other.container.querySelector('[data-kb-wrap]')!.getAttribute('data-plays')).toBe('f1,f2,glam');
+  });
+
+  test('a lent play keeps its saved state and its release: the effect is given them with its own plays\'', () => {
+    const saved = { state: { level: 3 }, savedAt: '2026-10-30T12:00:00.000Z' };
+    const w = setup(cards(), [keeperPlay(), fabPlay('f1', 'inside', 1)], [INSIDE], 0, (store) => {
+      store.setStates({ glam: saved, f1: saved });
+      store.setReleased(['glam']);
+    });
+    const wrap = w.container.querySelector('[data-kb-wrap]')!;
+    expect(wrap.getAttribute('data-states')).toBe('f1,glam');
+    expect(wrap.getAttribute('data-released')).toBe('glam');
+    /* With none of its own, the lent play's state is still given. */
+    const alone = setup(cards(), [keeperPlay()], [INSIDE], 0, (store) => store.setStates({ glam: saved }));
+    expect(alone.container.querySelector('[data-kb-wrap]')!.getAttribute('data-states')).toBe('glam');
   });
 
   test('nothing is mounted for the lending card itself, and a post the play does not fall on is drawn untouched', () => {

@@ -263,6 +263,15 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
 /** One card's effect on a post, as `PostEffects` draws it: the layer it is drawn for, the card, and the plays it is given (its own, then any another card lends it). */
 interface Wrap { readonly reach: Reach; readonly key: string; readonly mine: readonly CardPlay[]; readonly of: PostPlays }
 
+/** A store entry with the saved states and releases of the lent plays added to it: the stores are keyed by play, so what each lender holds for its own plays is a union, never a clash. */
+function joined(own: PostPlays, lender: PostPlays, lent: readonly CardPlay[]): PostPlays {
+  const ids = new Set(lent.map((p) => p.id));
+  const states = Object.entries(lender.states).filter(([id]) => ids.has(id));
+  const released = [...lender.released].filter((id) => ids.has(id));
+  if (states.length === 0 && released.length === 0) return own;
+  return { ...own, states: { ...own.states, ...Object.fromEntries(states) }, released: new Set([...own.released, ...released]) };
+}
+
 /**
  * Takes each wrap of a card drawn by another (`CardUi.drawnBy`) out and appends its plays to the post layer's wrap of the card it names, after that card's own plays, each
  * play still carrying its own `reach`. Where the post has no wrap of the named card, one is made with no plays of its own in the post layer's first place (where the first
@@ -276,10 +285,10 @@ export function handedOn(wraps: readonly Wrap[], post: PostPlays, cards: readonl
     const named = lender(w.key);
     if (named === undefined) continue;
     const at = out.findIndex((o) => o.reach === 'post' && o.key === named);
-    if (at >= 0) out[at] = { ...out[at]!, mine: [...out[at]!.mine, ...w.mine] };
+    if (at >= 0) out[at] = { ...out[at]!, mine: [...out[at]!.mine, ...w.mine], of: joined(out[at]!.of, w.of, w.mine) };
     else {
       const first = out.findIndex((o) => o.reach === 'post');
-      out.splice(first < 0 ? out.length : first, 0, { reach: 'post', key: named, mine: w.mine, of: post });
+      out.splice(first < 0 ? out.length : first, 0, { reach: 'post', key: named, mine: w.mine, of: joined(post, w.of, w.mine) });
     }
   }
   return out;

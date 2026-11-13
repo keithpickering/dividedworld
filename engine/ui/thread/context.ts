@@ -34,6 +34,8 @@ export interface ThreadContext {
    * without it (a story) knows its names already.
    */
   readonly know?: (characters: readonly (Id | null)[]) => Promise<void>;
+  /** Read the page that holds this post again and take what it says (the replies a play drew under its posts too): what a play form asks after a play it found landed on a lost answer, so a reply the answer should have carried is drawn. */
+  readonly reread?: (post: Id) => Promise<void>;
   /** Reports which posts are in view, for mark_read. */
   readonly observer: IntersectionObserver | null;
   /** Put a quote of this Act in the reply box; null where the thread has no reply box (The System's board). */

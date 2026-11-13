@@ -91,11 +91,12 @@ function world(server: Instance = instance) {
   return { fake, thread, ids: [p1, p2, p3, p4], pipe, me, other, hooligan, gloomba };
 }
 
-async function open(w: ReturnType<typeof world>, ui: CardUi[] = cards, on: Instance = instance) {
+/** `hand` is how many postcards the world's player holds: three (two Whoops! and a Stick Around) unless the test dealt more. */
+async function open(w: ReturnType<typeof world>, ui: CardUi[] = cards, on: Instance = instance, hand = 3) {
   /* The screens on the compiled instance, given the settings the backend reads, as the app gives them (web/src/App.tsx). */
   renderIn(w.fake, <Frame><LoadedThread thread={w.thread} /></Frame>, { path: `/t/${w.thread}`, instance: on, cards: ui, settings: { postMaxLength: 1000, cardEconomy: (await w.fake.settings()).cardEconomy } });
   await screen.findByRole('article', { name: /^Post 4 /u });
-  await screen.findByRole('button', { name: /^Hand, \d postcards/u });
+  await screen.findByRole('button', { name: new RegExp(`^Hand, ${hand} postcards`, 'u') });
 }
 const post = (seq: number) => document.getElementById(`post-${seq}`)!;
 const handButton = () => screen.getByRole('button', { name: /^Hand, \d postcards?/u });
@@ -1372,7 +1373,7 @@ describe('the play form of a card that replies', () => {
   async function setup() {
     const w = world(replying);
     w.fake.seed.cards(w.me, { whoops: 2, 'stick-around': 1, cutter: 2 });
-    await open(w, ui, replying);
+    await open(w, ui, replying, 5);
     return w;
   }
   const armCutter = async (user: ReturnType<typeof userEvent.setup>, seq: number) => {
@@ -1416,6 +1417,33 @@ describe('the play form of a card that replies', () => {
     await user.clear(editor);
     await user.type(editor, 'a1');
     expect(play(form)).toBeEnabled();
+  });
+
+  test('a reply longer than a post may be keeps Play disabled until it is cut back', async () => {
+    const user = userEvent.setup();
+    await setup();
+    const form = await armCutter(user, 2);
+    const editor = within(form).getByRole('textbox', { name: 'Your reply' });
+    await user.click(editor);
+    await user.paste('a'.repeat(1001));
+    expect(play(form)).toBeDisabled();
+    await user.keyboard('{Backspace}');
+    expect(play(form)).toBeEnabled();
+  });
+
+  test('Ctrl+Enter in the editor plays only where Play is enabled: not on an empty reply, not on one that is too long', async () => {
+    const user = userEvent.setup();
+    const w = await setup();
+    const sent = vi.spyOn(w.fake, 'playCard');
+    const form = await armCutter(user, 2);
+    const editor = within(form).getByRole('textbox', { name: 'Your reply' });
+    await user.click(editor);
+    await user.keyboard('{Control>}{Enter}{/Control}');
+    await user.paste('a'.repeat(1001));
+    await user.keyboard('{Control>}{Enter}{/Control}');
+    expect(sent).not.toHaveBeenCalled();
+    await user.keyboard('{Backspace}{Control>}{Enter}{/Control}');
+    await waitFor(() => expect(sent).toHaveBeenCalledTimes(1));
   });
 
   test('the fake backend is given the words of the reply with the play, and the post is played on', async () => {
@@ -1463,6 +1491,77 @@ describe('the play form of a card that replies', () => {
     await user.click(within(post(3)).getByRole('button', { name: 'Play Whoops! on post 3' }));
     const asked = await screen.findByRole('dialog', { name: 'Whoops!' });
     expect(within(asked).getByRole('radio', { name: 'Set face down' })).toBeInTheDocument();
+  });
+
+  test('an answer lost after the play went through: the look finds the play, the form closes, and the thread draws the reply under its post though no broadcast came', async () => {
+    const user = userEvent.setup();
+    const w = await setup();
+    const form = await armCutter(user, 2);
+    await user.type(within(form).getByRole('textbox', { name: 'Your reply' }), REPLY);
+    w.fake.seed.loseNextAnswer(true);
+    w.fake.broadcast.hold();
+    await user.click(play(form));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Cutter' })).toBeNull());
+    const reply = await screen.findByRole('article', { name: /^Post 5 by Pipewrench, cut in under post 2$/u });
+    expect(post(2).nextElementSibling).toBe(reply);
+  });
+
+  /** The next cast comes back caught: the play's Act as the server writes it, naming the set that caught it, with no reply made. */
+  const caughtOnce = (w: Awaited<ReturnType<typeof setup>>) => {
+    /* The fake wrote an ordinary play: its broadcast is held, so the screen hears only the caught Act it was answered with. */
+    w.fake.broadcast.hold();
+    const real = w.fake.playCard.bind(w.fake);
+    return vi.spyOn(w.fake, 'playCard').mockImplementationOnce(async (...args) => {
+      const answer = await real(...args);
+      return answer.ok ? { ok: true, value: { ...answer.value, payload: { ...answer.value.payload, caught: 'a-set' } } } : answer;
+    });
+  };
+
+  test('after a caught cast the play is finished: Play stays disabled and the notice stays until the reply is changed, so a second press cannot spend another card', async () => {
+    const user = userEvent.setup();
+    const w = await setup();
+    const sent = caughtOnce(w);
+    const form = await armCutter(user, 2);
+    const editor = within(form).getByRole('textbox', { name: 'Your reply' });
+    await user.type(editor, REPLY);
+    await user.click(play(form));
+    const notice = await within(form).findByRole('status', { name: 'What came of the play' });
+    expect(notice).toHaveTextContent('Your reply was not posted.');
+    expect(play(form)).toBeDisabled();
+    await user.keyboard('{Control>}{Enter}{/Control}');
+    expect(sent).toHaveBeenCalledTimes(1);
+    expect(notice).toHaveTextContent('Your reply was not posted.');
+    /* The player's own choice to try again, with another card: a change to the reply. */
+    await user.type(editor, '!');
+    expect(play(form)).toBeEnabled();
+  });
+
+  test('a caught cast tells the screen the play is over without closing the form: the card is no longer armed, and the post offers no play of it', async () => {
+    const user = userEvent.setup();
+    const w = await setup();
+    caughtOnce(w);
+    const form = await armCutter(user, 2);
+    expect(within(post(1)).getByRole('button', { name: 'Play Cutter on post 1' })).toBeInTheDocument();
+    await user.type(within(form).getByRole('textbox', { name: 'Your reply' }), REPLY);
+    await user.click(play(form));
+    await within(form).findByRole('status', { name: 'What came of the play' });
+    await waitFor(() => expect(within(post(1)).queryByRole('button', { name: 'Play Cutter on post 1' })).toBeNull());
+    expect(screen.getByRole('dialog', { name: 'Cutter' })).toBeInTheDocument();
+  });
+
+  test('a caught cast that spent the last card of its kind keeps Play disabled even after the reply is changed, and says so', async () => {
+    const user = userEvent.setup();
+    const w = await setup();
+    w.fake.seed.cards(w.me, { cutter: 1 });
+    caughtOnce(w);
+    const form = await armCutter(user, 2);
+    const editor = within(form).getByRole('textbox', { name: 'Your reply' });
+    await user.type(editor, REPLY);
+    await user.click(play(form));
+    await within(form).findByRole('status', { name: 'What came of the play' });
+    await user.type(editor, '!');
+    expect(play(form)).toBeDisabled();
+    expect(within(form).getByRole('status', { name: 'What came of the play' })).toHaveTextContent('You hold no more of this card, so it cannot be played again.');
   });
 
   test('a refusal says so in plain words and the reply is still in the editor', async () => {

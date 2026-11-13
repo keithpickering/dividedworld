@@ -166,7 +166,7 @@ export interface EffectProps {
   /**
    * This card's plays on the post, ordered by layer, then by when they were played: one for most cards, up to the card's stack for the rest. A card named by another's
    * `CardUi.drawnBy` is also given that card's plays that fall on the post: they follow the card's own, and each carries its `reach` (a post's own plays carry none), which is how
-   * an effect tells a lent play from its own.
+   * an effect tells a lent play from its own. Its saved state and its release are in `states` and `released` with the card's own plays'.
    */
   readonly plays: readonly CardPlay[];
   /** What each play's effect has saved, by play: the post author's version, which every reader loads. A play that has saved none is absent. */

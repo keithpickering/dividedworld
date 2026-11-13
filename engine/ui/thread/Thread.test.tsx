@@ -2617,6 +2617,8 @@ describe('a reply cut in under its post', () => {
   function underTap(fake: Fake) {
     let listener: ThreadListener | undefined;
     let holding = false;
+    /* The tap is of the broadcast's own order: the answer's echo of the reply (the adapter's) would deliver it first. */
+    fake.broadcast.echoAnswers(false);
     const kept: Parameters<NonNullable<ThreadListener['onUnder']>>[] = [];
     const real = fake.subscribeThread.bind(fake);
     fake.subscribeThread = (t, l) => {
@@ -2726,6 +2728,37 @@ describe('a reply cut in under its post', () => {
     expect(screen.queryByRole('button', { name: /new post/u })).toBeNull();
   });
 
+  test('a "Continue" read asked while the play was in force and answered after its end draws the reply at its number, not missing', async () => {
+    const w = await cutWorld(45, 'Excuse me.');
+    /* The reader is the admin who ends the play, so the screen is not reloaded for another account. */
+    w.fake.signInAs(w.root);
+    openCut(w);
+    await screen.findByRole('article', { name: 'Post 46 by Pipewrench, cut in under post 3' });
+    await userEvent.click(screen.getAllByRole('link', { name: 'Continue to page 2' })[0]!);
+    await screen.findByRole('article', { name: /^Post 40 /u });
+    /* The read of page 3 is answered with the page as it stood while the play was in force: number 46 empty, the reply under post 3. */
+    const real = w.fake.threadPage.bind(w.fake);
+    let gate: (() => void) | undefined;
+    const asked = vi.fn();
+    w.fake.threadPage = async (...a: Parameters<Fake['threadPage']>) => {
+      /* Only this one read is held, and no other read answers: what it does is what stays. */
+      w.fake.threadPage = () => new Promise(() => {});
+      const snapshot = await real(...a);
+      asked();
+      await new Promise<void>((resolve) => { gate = resolve; });
+      return snapshot;
+    };
+    await userEvent.click(screen.getAllByRole('link', { name: 'Continue to page 3' })[0]!);
+    await waitFor(() => expect(asked).toHaveBeenCalled());
+    await act(async () => { must(await w.fake.reverseCard(w.play!.id)); await pause(20); });
+    await act(async () => { gate!(); await pause(50); });
+    await screen.findByRole('article', { name: /^Post 45 /u });
+    const reply = post(46);
+    expect(reply).not.toBeNull();
+    expect(reply).not.toHaveAttribute('data-kb-under');
+    expect(reply.previousElementSibling).toBe(post(45));
+  });
+
   test('an under event heard before the post\'s page is loaded nests the reply once when that page is', async () => {
     const w = await cutWorld(45, null);
     const heard = underTap(w.fake);
@@ -2738,6 +2771,22 @@ describe('a reply cut in under its post', () => {
     await screen.findByRole('article', { name: 'Post 46 by Pipewrench, cut in under post 3' });
     expect(document.querySelectorAll('#post-46')).toHaveLength(1);
     expect(post(3).nextElementSibling).toBe(post(46));
+  });
+
+  test('the caster\'s own reply nests from the play\'s answer alone, with the broadcast held back: under its post, never at the tail', async () => {
+    const w = await cutWorld(10, null);
+    openCut(w);
+    await screen.findByRole('article', { name: /^Post 10 /u });
+    w.fake.broadcast.hold();
+    await act(async () => { must(await w.cast(w.ids[2]!, 'Cut in.')); await pause(20); });
+    await screen.findByRole('article', { name: 'Post 11 by Pipewrench, cut in under post 3' });
+    expect(post(3).nextElementSibling).toBe(post(11));
+    expect(order().at(-1)).toBe('post-10');
+    /* The held broadcast comes late and changes nothing. */
+    await act(async () => { w.fake.broadcast.flush(); await pause(20); });
+    expect(order().filter((id) => id === 'post-11')).toHaveLength(1);
+    expect(post(3).nextElementSibling).toBe(post(11));
+    expect(order().at(-1)).toBe('post-10');
   });
 
   test('an under event heard twice nests the reply once', async () => {

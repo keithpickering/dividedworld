@@ -4404,8 +4404,9 @@ describe('a card that replies, and a play that keeps (0410_post_under.sql and th
     const held = async () => (await w.fake.myCards()).find((c) => c.card === 'line-cutter')?.held;
     const before = { last: (await w.fake.thread(w.thread))!.lastSeq, held: await held(), wallet: await w.fake.wallet() };
     const play = (body: string | undefined, card = 'line-cutter', target = w.ids[2]!) => w.fake.playCard(card, w.anaFace, target, {}, '', undefined, undefined, undefined, body === undefined ? undefined : { body });
-    expect(await w.fake.playCard('line-cutter', w.anaFace, w.ids[2]!, {}, '')).toEqual(refused('is not text', 'body'));
-    expect(await play('   ')).toEqual(refused('is empty', 'body'));
+    /* A play with no reply is refused in the card's own words (e8cb9431). */
+    expect(await w.fake.playCard('line-cutter', w.anaFace, w.ids[2]!, {}, '')).toEqual(refused('write the reply this card carries', 'body'));
+    expect(await play('   ')).toEqual(refused('write the reply this card carries', 'body'));
     expect(await play('!!!')).toEqual(refused('write the reply this card carries', 'body'));
     expect(await play('x'.repeat(51))).toEqual(refused('is longer than 50 characters', 'body'));
     expect(await play('Hi.', 'plain')).toEqual(refused('only a card that carries a reply takes one', 'body'));
@@ -4435,8 +4436,9 @@ describe('a card that replies, and a play that keeps (0410_post_under.sql and th
     const banned = refused(`this character is banned until ${new Date(until).toISOString()}; the ban ends by itself then`);
     const play = (body: string) => w.fake.playCard('line-cutter', w.anaFace, w.ids[2]!, {}, '', undefined, undefined, undefined, { body });
     /* A body that is not text, empty or too long is the act function's, before any database check. */
-    expect(await w.fake.playCard('line-cutter', w.anaFace, w.ids[2]!, {}, '')).toEqual(refused('is not text', 'body'));
-    expect(await play('   ')).toEqual(refused('is empty', 'body'));
+    /* A play with no reply is refused in the card's own words (e8cb9431). */
+    expect(await w.fake.playCard('line-cutter', w.anaFace, w.ids[2]!, {}, '')).toEqual(refused('write the reply this card carries', 'body'));
+    expect(await play('   ')).toEqual(refused('write the reply this card carries', 'body'));
     expect(await play('x'.repeat(51))).toEqual(refused('is longer than 50 characters', 'body'));
     /* A body with no letter or digit is the database's, after the ban: the ban wins. */
     expect(await play('!!!')).toEqual(banned);
@@ -4449,6 +4451,8 @@ describe('a card that replies, and a play that keeps (0410_post_under.sql and th
     must(await w.fake.setCard('rider', w.boFace, w.ids[0]!, { quadrant: 'excitedPositive' }));
     w.fake.signInAs(w.ana);
     const heard: string[] = [];
+    /* The broadcast's own delivery is what is counted here; the answer's echo has its own test. */
+    w.fake.broadcast.echoAnswers(false);
     w.fake.subscribeThread(w.thread, { onUnder: (parent, play) => heard.push(`under ${parent === w.ids[0]} ${play}`) });
     const played = must(await w.reply(w.ids[0]!));
     await flush();
@@ -4487,6 +4491,7 @@ describe('a card that replies, and a play that keeps (0410_post_under.sql and th
     const w = replyWorld();
     const heard: string[] = [];
     let under: [string, string, Act] | null = null;
+    w.fake.broadcast.echoAnswers(false);
     w.fake.subscribeThread(w.thread, {
       onAct: (a) => heard.push(`act ${a.kind} ${a.seq}`),
       onUnder: (parent, play, act) => { heard.push('under'); under = [parent, play, act]; },
@@ -4498,6 +4503,27 @@ describe('a card that replies, and a play that keeps (0410_post_under.sql and th
     expect(under).toEqual([w.ids[2], played.id, reply]);
     /* The card's alert goes to its owner on their own channel; the thread hears the card, then the reply as `under`, and no act of the reply. */
     expect(w.fake.broadcast.log.filter((e) => e.topic.startsWith('thread:'))).toEqual([{ topic: `thread:${w.thread}`, event: 'act' }, { topic: `thread:${w.thread}`, event: 'under' }]);
+  });
+
+  test('the answer of a play that replied hands the reply to the thread\'s listeners itself: with the broadcast held it is still heard, once, and a lost answer hands nothing', async () => {
+    const w = replyWorld();
+    const heard: string[] = [];
+    w.fake.subscribeThread(w.thread, { onUnder: (parent, play) => heard.push(`${parent === w.ids[2]} ${play}`) });
+    w.fake.broadcast.hold();
+    const played = must(await w.reply(w.ids[2]!, 'Excuse me.', []));
+    await flush();
+    expect(heard).toEqual([`true ${played.id}`]);
+    /* The held broadcast then comes: the same reply again, which a screen ignores. */
+    w.fake.broadcast.flush();
+    await flush();
+    expect(heard).toEqual([`true ${played.id}`, `true ${played.id}`]);
+    heard.length = 0;
+    w.fake.broadcast.hold();
+    w.fake.seed.loseNextAnswer(true);
+    const lost = await w.reply(w.ids[3]!, 'Excuse me again.', []);
+    expect(lost.ok).toBe(false);
+    await flush();
+    expect(heard).toEqual([]);
   });
 
   describe('a play that keeps its level', () => {

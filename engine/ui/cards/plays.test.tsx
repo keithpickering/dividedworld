@@ -652,6 +652,9 @@ describe('a play of a card that keeps, once its time is up', () => {
     expect(ids(before, [kept], AFTER)).toEqual([]);
     expect(ids(late, [kept], AFTER)).toEqual([]);
     expect(ids(inside, [{ ...kept, reversed: true as const }, { ...plain, untaken: true as const }], live)).toEqual([]);
+    /* An admin's end of a worn-off keeping play takes its level off the post written inside its window at once. */
+    expect(ids(inside, [kept], AFTER)).toEqual(['k1']);
+    expect(ids(inside, [{ ...kept, reversed: true as const }], AFTER)).toEqual([]);
   });
 
   test('the Lens says how an ended keeping play ends, in the words of a live one\'s end', () => {

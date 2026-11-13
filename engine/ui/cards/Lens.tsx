@@ -207,6 +207,8 @@ export function useResolvedView(store: Plays, post: Id, kind: string, nameOf?: (
     };
   }, [signature, kind, post]);
   const economy = useMemo(() => withCardEconomy(instance.settings, settings.cardEconomy), [instance.settings, settings.cardEconomy]);
+  /* The one clock, as it stands when a play of the kind ends (`useUntil`): the words that say when it ends say it ended, with no reopening. */
+  const now = useUntil(store.get(post).plays.filter((p) => p.card === kind));
   const fallback = useMemo(() => {
     const cardName = (key: string) => instance.cards.find((c) => c.key === key)?.name ?? key;
     const ofKind = here.plays.filter((p) => p.card === kind);
@@ -242,7 +244,7 @@ export function useResolvedView(store: Plays, post: Id, kind: string, nameOf?: (
       return { ...base, state: gimmick.state, ...(gimmick.ends ? { ends: gimmick.ends } : {}), ...(gimmick.report ? { report: gimmick.report } : {}), notes: caught };
     }
     return Object.keys(caught).length > 0 ? { ...base, notes: caught } : base;
-  }, [api, instance.cards, ui.cards, kind, economy, here, nameOf]);
+  }, [api, instance.cards, ui.cards, kind, economy, here, nameOf, now]);
   /* Every play of the kind over (ended by an admin, or it did not take): its effect draws nothing, so whatever view it last gave is stale. */
   const allEnded = here.plays.length > 0 && here.plays.every((p) => p.reversed || p.untaken);
   if (!given || allEnded) return fallback;
@@ -470,9 +472,9 @@ function TakeBack({ play, store }: { readonly play: CardPlay; readonly store: Pl
   );
 }
 
-/** Whether a play is face up and still in force, so an admin can end it: not a back (`faceDown` is set for exactly the card backs, sprung or not), not caught, not ended by an admin, not over because it did not take, not worn off. */
-const endable = (play: CardPlay, now: number): boolean =>
-  !play.faceDown && play.caught === undefined && !play.reversed && !play.untaken && !(play.ends !== undefined && Date.parse(play.ends) <= now);
+/** Whether a play is face up and still in force, so an admin can end it: not a back (`faceDown` is set for exactly the card backs, sprung or not), not caught, not ended by an admin, not over because it did not take, not worn off, unless its card keeps (`keeps`): the level it left stays on posts until an admin ends the play, which takes it off every post. */
+const endable = (play: CardPlay, now: number, keeps: boolean): boolean =>
+  !play.faceDown && play.caught === undefined && !play.reversed && !play.untaken && (keeps || !(play.ends !== undefined && Date.parse(play.ends) <= now));
 
 function PlayRow({ play, caster, face, ink, card, view, tallies, mine, compare, to, moments, onSpin, store, admin, now }: RowProps) {
   const { characters } = usePlayer();
@@ -530,7 +532,7 @@ function PlayRow({ play, caster, face, ink, card, view, tallies, mine, compare, 
             : <button type="button" className="kb-kit-tile kb-lens-action" onClick={() => onSpin(play, name)}><span className="kb-kit-tile-label">Spin thread</span></button>}
           {moments && !play.reach && <AsItLanded play={play.id} />}
           {backTakeable && <TakeBack play={play} store={store} />}
-          {admin && endable(play, now) && <EndCard play={play.id} card={card} caster={caster} store={store} />}
+          {admin && endable(play, now, instance.cards.find((c) => c.key === play.card)?.keeps === true) && <EndCard play={play.id} card={card} caster={caster} store={store} />}
           {to && <Link className="kb-kit-tile kb-lens-action" to={to}><span className="kb-kit-tile-label">Go to post</span></Link>}
         </div>
       </div>
