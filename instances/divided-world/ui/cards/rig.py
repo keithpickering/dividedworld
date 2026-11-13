@@ -87,12 +87,18 @@ def area(name, loc, size, energy, rgb=(1, 1, 1), look_at=(0, 0, 0), size_y=None,
     o.visible_glossy = glossy          # off: it lights the scene and never shows as a glare in a shiny floor
     return o
 
-def render(path):
+def render(path, alpha=False):
+    """Render the scene to `path`. With `alpha`, the film is transparent and the picture keeps its alpha: a pack's
+    picture, which stands on no ground."""
     sc = bpy.context.scene
+    mode = 'RGBA' if alpha else 'RGB'
+    if alpha:
+        sc.render.film_transparent = True
     if path.lower().endswith('.webp'):                     # a card's art: WebP, at the quality the art README names
-        sc.render.image_settings.file_format = 'WEBP'; sc.render.image_settings.quality = 90; sc.render.image_settings.color_mode = 'RGB'
+        sc.render.image_settings.file_format = 'WEBP'; sc.render.image_settings.quality = 90; sc.render.image_settings.color_mode = mode
     else:
         sc.render.image_settings.file_format = 'PNG'
+        if alpha: sc.render.image_settings.color_mode = mode
     sc.render.filepath = path
     bpy.ops.render.render(write_still=True)
     blend = os.environ.get('ART_BLEND')

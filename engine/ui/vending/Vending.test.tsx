@@ -751,6 +751,14 @@ describe('the machine\'s slots, from the machine', () => {
 });
 
 describe('a pack in the machine', () => {
+  test('a pack whose art has a picture draws it in the slot, and not the crimped foil', async () => {
+    const pictured = { booster: { name: 'Booster', art: { color: '#ffd93d', ink: '#1a1403', picture: '/booster.webp', mark: '', credit: 'Test' } } };
+    renderIn(stockedWorld(562), <Vending />, { instance: stocked, cards: stockedFaces, packs: pictured, path: '/vending' });
+    const slot = await screen.findByRole('button', { name: BOOSTER });
+    expect(slot.querySelector('img.kb-pack-picture')).toHaveAttribute('src', '/booster.webp');
+    expect(slot.querySelector('.kb-pack-seal')).toBeNull();
+  });
+
   test('its info lists its odds plainly: each pull\'s table, and each card\'s chance in the hit pull', async () => {
     openStocked(stockedWorld(562));
     fireEvent.click(await screen.findByRole('button', { name: 'About Booster' }));
