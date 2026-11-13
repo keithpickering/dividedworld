@@ -8,23 +8,24 @@ import { afterEach, beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { probe, puff, register, unregister, wash } from './suds.ts';
 
-interface Drawn { x: number; y: number; w: number }
-interface Canvas { width: number; height: number; draws: number; clears: number; throwOnDraw: boolean; tf: number[]; drawn: Drawn[]; getContext(kind: string): unknown }
+interface Drawn { x: number; y: number; w: number; h: number }
+interface Canvas { width: number; height: number; draws: number; clears: number; throwOnDraw: boolean; tf: number[]; drawn: Drawn[]; moves: Array<{ x: number; y: number }>; getContext(kind: string): unknown }
 const canvas = (w = 400, h = 300): Canvas => {
   const cv: Canvas = {
-    width: w, height: h, draws: 0, clears: 0, throwOnDraw: false, tf: [1, 0, 0, 1, 0, 0], drawn: [],
+    width: w, height: h, draws: 0, clears: 0, throwOnDraw: false, tf: [1, 0, 0, 1, 0, 0], drawn: [], moves: [],
     getContext() {
       const grad = { addColorStop() {} };
       return new Proxy({}, {
         get: (_t, name) => {
           if (name === 'drawImage') {
-            return (_img: unknown, x: number, y: number, w: number) => {
+            return (_img: unknown, x: number, y: number, w: number, h: number) => {
               if (cv.throwOnDraw) throw new Error('draw');
               cv.draws++;
               /* Where it lands on the canvas, in canvas px: the transform set last applied to the destination's corner. */
-              cv.drawn.push({ x: cv.tf[4]! + cv.tf[0]! * x, y: cv.tf[5]! + cv.tf[3]! * y, w });
+              cv.drawn.push({ x: cv.tf[4]! + cv.tf[0]! * x, y: cv.tf[5]! + cv.tf[3]! * y, w, h });
             };
           }
+          if (name === 'moveTo') return (x: number, y: number) => { cv.moves.push({ x: cv.tf[4]! + cv.tf[0]! * x, y: cv.tf[5]! + cv.tf[3]! * y }); };
           if (name === 'setTransform') return (...a: number[]) => { cv.tf = a; };
           if (name === 'clearRect') return () => { cv.clears++; };
           if (name === 'createRadialGradient' || name === 'createLinearGradient' || name === 'createConicGradient') return () => grad;
@@ -80,7 +81,7 @@ afterEach(() => {
 });
 
 const BOX = { w: 400, h: 300 };
-const mount = () => { const host = {}, cv = canvas(); register(host, asCanvas(cv), BOX, 2, '#cc2222'); return { host, cv }; };
+const mount = () => { const host = {}, cv = canvas(BOX.w * 2, BOX.h * 2); register(host, asCanvas(cv), BOX, 2, '#cc2222'); return { host, cv }; };
 const A = { x: 20, y: 100 };
 const B = { x: 180, y: 100 };
 
@@ -350,4 +351,76 @@ test('a drip is drawn when any of its run is in the span, and not when all of it
     assert.equal(dripAt(lo - 100, 700), 0, 'wholly above the span');
     assert.equal(dripAt(hi + 100, 700), 0, 'wholly below the span, though inside the canvas height in canvas px');
   } finally { Math.random = realRandom; }
+});
+
+/** The sheen's mark: where its canvas was moved to, in that canvas's px. */
+const markOf = (c: Canvas) => c.moves[0]!;
+
+test('the sheen is sized to the span, never the post: a 390x2048 span of a 390x20,000 box holds 780x4096 px at density 2', () => {
+  const { host } = spanned();
+  wash(host, { x: 100, y: 1800 }, { x: 200, y: 1800 }, true);
+  const [sheen] = sheens();
+  assert.ok(sheen, 'a sheen canvas was made');
+  assert.equal(sheen.width * sheen.height, 780 * 4096, `${sheen.width}x${sheen.height}`);
+  assert.ok(sheen.width * sheen.height * 1.2 < 4_000_000, 'far under what the whole box would take');
+  void host;
+});
+
+test('the wet mark is at the wash point\'s box position less the span\'s top, at the sheen\'s scale', () => {
+  const { host } = spanned();
+  wash(host, { x: 100, y: 1800 }, { x: 200, y: 1800 }, true);
+  const [sheen] = sheens();
+  const m = markOf(sheen!);
+  assert.equal(m.x, 100 * 2);
+  assert.equal(m.y, (1800 - TOP) * 2);
+  void host;
+});
+
+test('a wash outside the span makes no sheen mark and throws nothing', () => {
+  const errors: unknown[] = [];
+  const realError = console.error;
+  console.error = (...a: unknown[]) => { errors.push(a); };
+  try {
+    const { host } = spanned();
+    wash(host, { x: 100, y: 100 }, { x: 200, y: 100 }, true);
+    wash(host, { x: 100, y: 9000 }, { x: 200, y: 9000 }, true);
+    tick(16);
+    assert.equal(probe.sheens(), 0, 'no sheen canvas');
+    assert.equal(sheens().length, 0);
+    assert.deepEqual(errors, []);
+  } finally { console.error = realError; }
+});
+
+test('a span that moves while a sheen is held carries the sheen across at its page position, unstretched', () => {
+  const { host, cv } = spanned();
+  wash(host, { x: 100, y: 2300 }, { x: 200, y: 2300 }, true);
+  const old = sheens()[0]!;
+  const mark = markOf(old);
+  register(host, asCanvas(cv), { w: 390, h: 20000 }, 2, '#cc2222', TOP + 512);
+  assert.equal(probe.sheens(), 1, 'the sheen is kept');
+  const fresh = sheens().at(-1)!;
+  assert.notEqual(fresh, old, 'remade for the new span');
+  assert.equal(fresh.width, old.width);
+  assert.equal(fresh.height, old.height);
+  const carry = fresh.drawn[0]!;
+  assert.ok(carry, 'the old pixels were drawn across');
+  assert.equal(carry.w, old.width, 'not stretched');
+  assert.equal(carry.h, old.height, 'not stretched');
+  assert.equal(carry.x, 0);
+  /* The page position is the same: the mark's canvas y moved by exactly the span's shift (512 CSS px, 1024 canvas px up). */
+  assert.equal(mark.y + carry.y, (2300 - (TOP + 512)) * 2);
+});
+
+test('a host whose span is its whole box (Graffiti) holds the sheen it always did', () => {
+  const { host, cv } = mount();
+  wash(host, A, B, true);
+  const [sheen] = sheens();
+  assert.equal(sheen!.width, BOX.w * 2);
+  assert.equal(sheen!.height, BOX.h * 2);
+  assert.deepEqual(markOf(sheen!), { x: A.x * 2, y: A.y * 2 });
+  tick(16);
+  const whole = cv.drawn.find((d) => d.w === BOX.w)!;
+  assert.deepEqual([whole.x, whole.y, whole.h], [0, 0, BOX.h]);
+  register(host, asCanvas(cv), BOX, 2, '#cc2222', 0);
+  assert.equal(probe.sheens(), 1, 'the same span keeps it');
 });
