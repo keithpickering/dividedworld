@@ -2,7 +2,7 @@
 --
 -- 1. apply_meeting writes the answer's patrols (kept on the meeting record, Task 4) into the `patrols` table: a Mod not on staff and a time that is no time are skipped, a time is
 --    moved into today (now to a day on), and past `patrolsPerDay` they are cut from the end. A retried meeting ("already applied") writes nothing twice.
--- 2. patrol_sample(boards, most): the newest posts on the Mod's beat boards by players, not under a visit (open or ended), bounded by `most` per thread and per board. It reads
+-- 2. patrol_sample(boards, most, pool, seed): a weighted draw of `most` from the newest `pool` posts on the Mod's beat boards by players, not under a visit (open or ended), bounded by `most` per thread and `pool` per board; the pool no larger than the sample reads the newest, the whole pool (0921-patrol-weights.sql holds the draw). It reads
 --    public play only (the digest role owns it) and answers no owner, class or reactor.
 -- 3. claim_patrol: a patrol that is due is claimed once (two sessions at once claim it once); one not yet due, or already claimed, is not.
 -- 4. patrol_record and record_patrol_call keep what a patrol sampled, dropped and spent, once per call; a patrol has no Act, so its call's record is keyed by the patrol.
@@ -111,7 +111,7 @@ begin
   seed := jsonb_build_object(
     'settings', jsonb_build_object('systemEnabled', true, 'structuralHoldHours', 24,
       'warnBar', jsonb_build_object('size', 10, 'bands', jsonb_build_object('minor', 1, 'moderate', 4, 'severe', 7), 'decay', jsonb_build_object('unit', 'day', 'count', 14), 'banDays', jsonb_build_array(1, 3, 7)),
-      'modBots', jsonb_build_object('allowanceMost', 3, 'ruleDaysMost', 7, 'visitHours', jsonb_build_object('least', 3, 'most', 5), 'patrolsPerDay', 3, 'patrolSample', 5,
+      'modBots', jsonb_build_object('allowanceMost', 3, 'ruleDaysMost', 7, 'visitHours', jsonb_build_object('least', 3, 'most', 5), 'patrolsPerDay', 3, 'patrolSample', 5, 'patrolPool', 20,
         'reportPrice', 25, 'reportsPerDay', 3, 'judgmentsPerDay', 60, 'filingLinesPerDay', 60, 'appealPrice', 50, 'tailHours', 24,
         'cap', jsonb_build_object('punishments', 3, 'days', 7), 'filingCron', '*/5 * * * *', 'filingGraceMinutes', 10),
       'systemLines', jsonb_build_object('visitArrived', jsonb_build_array('{mod} is looking at this post under {rule}.'), 'visitFiled', jsonb_build_array('{mod} filed this post under {rule}.')),
@@ -205,7 +205,7 @@ begin
   perform start_visit(p_open, 'pt-m1', pg_temp.charge('rule', p_open));
   perform pg_temp.filed('rule', p_filed);
 
-  got := patrol_sample(array[general], 10);
+  got := patrol_sample(array[general], 10, 10, 1);
   if jsonb_typeof(got) is distinct from 'array' then raise exception 'the sample is no list: %', got; end if;
   if (select array_agg((x ->> 'act')::uuid order by ord) from jsonb_array_elements(got) with ordinality t(x, ord)) is distinct from array[p3, p2, p1, p_old] then
     raise exception 'the sample is not the beat''s player posts, newest first, free of visits and staff: %', got;
@@ -215,18 +215,18 @@ begin
      or (got -> 0 ->> 'thread') is distinct from t2::text or (got -> 0 ->> 'board') is distinct from general::text then raise exception 'a sampled post is wrongly described: %', got -> 0;
   end if;
   -- Bounded: `most` posts however many there are.
-  if jsonb_array_length(patrol_sample(array[general], 2)) is distinct from 2 then raise exception 'the sample is not cut to most'; end if;
-  if (patrol_sample(array[general], 2) -> 0 ->> 'act')::uuid is distinct from p3 then raise exception 'the cut sample is not the newest'; end if;
+  if jsonb_array_length(patrol_sample(array[general], 2, 2, 1)) is distinct from 2 then raise exception 'the sample is not cut to most'; end if;
+  if (patrol_sample(array[general], 2, 2, 1) -> 0 ->> 'act')::uuid is distinct from p3 then raise exception 'the cut sample is not the newest'; end if;
   -- Two boards: the other board's post joins, newest first overall.
-  if (patrol_sample(array[general, other], 1) -> 0 ->> 'act')::uuid is distinct from p_other then raise exception 'the sample did not span the beat''s boards'; end if;
+  if (patrol_sample(array[general, other], 1, 1, 1) -> 0 ->> 'act')::uuid is distinct from p_other then raise exception 'the sample did not span the beat''s boards'; end if;
   -- The boards of a sample, named, with the premise as the players see it now.
   if board_premises(array[general, other]) is distinct from (select jsonb_agg(jsonb_build_object('id', b.id, 'name', b.name, 'premise', b.premise) order by b.name, b.id) from boards_now b where b.id in (general, other)) then
     raise exception 'board_premises did not name the boards: %', board_premises(array[general, other]);
   end if;
   if board_premises('{}') is distinct from '[]'::jsonb then raise exception 'no boards gave premises'; end if;
   -- No boards, no sample; a board of no beat is not read.
-  if patrol_sample('{}'::uuid[], 5) is distinct from '[]'::jsonb then raise exception 'no boards gave a sample'; end if;
-  if patrol_sample(array[gen_random_uuid()], 5) is distinct from '[]'::jsonb then raise exception 'an unknown board gave a sample'; end if;
+  if patrol_sample('{}'::uuid[], 5, 5, 1) is distinct from '[]'::jsonb then raise exception 'no boards gave a sample'; end if;
+  if patrol_sample(array[gen_random_uuid()], 5, 5, 1) is distinct from '[]'::jsonb then raise exception 'an unknown board gave a sample'; end if;
   -- Masks: no owner, class or reactor in anything it says.
   if got::text ~* (select string_agg(owner::text, '|') from characters where owner is not null) then raise exception 'the sample names an owner'; end if;
   if got::text ~* 'owner|class|reactor' then raise exception 'the sample speaks of a private fact: %', got; end if;
@@ -381,11 +381,11 @@ do $$
 declare
   fn text;
 begin
-  foreach fn in array array['claim_patrol()', 'patrol_record(bigint, uuid[], jsonb)', 'record_patrol_call(bigint, text, jsonb)', 'staff_punishments(uuid, integer)', 'patrol_sample(uuid[], integer)', 'board_premises(uuid[])'] loop
+  foreach fn in array array['claim_patrol()', 'patrol_record(bigint, uuid[], jsonb)', 'record_patrol_call(bigint, text, jsonb)', 'staff_punishments(uuid, integer)', 'patrol_sample(uuid[], integer, integer, bigint)', 'board_premises(uuid[])'] loop
     if has_function_privilege('anon', fn, 'execute') or has_function_privilege('authenticated', fn, 'execute') then raise exception '% is a client''s', fn; end if;
     if not has_function_privilege('service_role', fn, 'execute') then raise exception '% is not the service''s', fn; end if;
   end loop;
   if has_table_privilege('anon', 'patrols', 'select') or has_table_privilege('authenticated', 'patrols', 'select,insert,update,delete') then raise exception 'a client reaches the patrols'; end if;
   if not (select relrowsecurity from pg_class where oid = 'patrols'::regclass) then raise exception 'patrols has no row-level security'; end if;
-  if (select r.rolname from pg_proc p join pg_roles r on r.oid = p.proowner where p.oid = 'patrol_sample(uuid[], integer)'::regprocedure) is distinct from 'kayfabb_digest' then raise exception 'patrol_sample is not owned by the digest role'; end if;
+  if (select r.rolname from pg_proc p join pg_roles r on r.oid = p.proowner where p.oid = 'patrol_sample(uuid[], integer, integer, bigint)'::regprocedure) is distinct from 'kayfabb_digest' then raise exception 'patrol_sample is not owned by the digest role'; end if;
 end $$;

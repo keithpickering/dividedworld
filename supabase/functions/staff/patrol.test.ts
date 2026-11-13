@@ -121,7 +121,7 @@ test('a due patrol is judged once on the patrolJudge duty, light tier, as the Mo
   assert.equal(c.tier, 'light');
   assert.equal(c.staff, MON);
   assert.ok(c.rules);
-  assert.deepEqual(d.of('patrol_sample'), [{ boards: [GAMES], most: dividedWorld.settings.modBots.patrolSample }]);
+  assert.deepEqual(d.of('patrol_sample'), [{ boards: [GAMES], most: dividedWorld.settings.modBots.patrolSample, pool: dividedWorld.settings.modBots.patrolPool, seed: 1 }], 'the call carries the pool and the claimed patrol\'s id, so a retry of the patrol draws the same sample');
   assert.match(c.system, /Crack down on bumping in Games\./, 'the Boss\'s order');
   assert.match(c.messages[0]!.content, /Talk about games\./);
   assert.match(c.messages[0]!.content, new RegExp(P1));
