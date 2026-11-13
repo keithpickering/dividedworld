@@ -166,3 +166,35 @@ begin
     raise exception 'an unedited cast-from post is its own version, unrecorded: %', got;
   end if;
 end $$;
+
+-- ---- A version hidden after the play reads as acts_public shows it ----
+do $$
+declare
+  ann uuid := tests.account('cmh-ann'); bob uuid := tests.account('cmh-bob');
+  a uuid := tests.character(ann, 'Hide Ann'); b uuid := tests.character(bob, 'Hide Bob');
+  t uuid := tests.thread('Character moment hidden');
+  hide_original uuid := tests.post(b, t, 'Words to be hidden.', now() - interval '2 hours');
+  hide_edit uuid := tests.post(b, t, 'Fine words.', now() - interval '2 hours');
+  the_edit uuid; k_original uuid; k_edit uuid; got jsonb;
+begin
+  perform pg_temp.cards();
+  perform pg_temp.hand(ann, 'glint', 'glimmer');
+  the_edit := tests.act(b, 'edit', t, '{"body": "Edited words to be hidden."}', hide_edit, now() - interval '1 hour');
+  k_original := (play_card(ann, 'glint', a, b, '{}', 0, '', 'character', hide_original) ->> 'id')::uuid;
+  k_edit := (play_card(ann, 'glimmer', a, b, '{}', 0, '', 'character', hide_edit) ->> 'id')::uuid;
+  got := pg_temp.moment(k_original);
+  if got -> 'version' -> 'current_payload' is distinct from '{"body": "Words to be hidden."}'::jsonb then raise exception 'before it is hidden the words are served: %', got -> 'version'; end if;
+  if got -> 'layers' -> 0 -> 'act' ->> 'id' is distinct from k_original::text then raise exception 'a recorded character play is layers[0]: %', got -> 'layers'; end if;
+  insert into admins (account) values (ann);
+  insert into conduct_decisions (post, version_act, admin, outcome) values (hide_original, hide_original, ann, 'hide'), (hide_edit, the_edit, ann, 'hide');
+  got := pg_temp.moment(k_original);
+  if got -> 'version' -> 'current_payload' is distinct from (select payload from acts_public where id = hide_original)
+     or got -> 'version' -> 'current_payload' ->> 'body' = 'Words to be hidden.' then
+    raise exception 'a hidden original leaves the moment, as acts_public shows it: %', got -> 'version' -> 'current_payload';
+  end if;
+  got := pg_temp.moment(k_edit);
+  if got -> 'version' -> 'current_payload' is distinct from (select payload from acts_public where id = the_edit)
+     or got -> 'version' -> 'current_payload' ->> 'body' = 'Edited words to be hidden.' then
+    raise exception 'a hidden edit leaves the moment, as acts_public shows it: %', got -> 'version' -> 'current_payload';
+  end if;
+end $$;
