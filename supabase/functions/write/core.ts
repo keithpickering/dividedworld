@@ -127,6 +127,7 @@ export async function runWrites(db: Db, models: Models, instance: Instance, sett
         settings,
         budget: settings.oldVoiceWindow - maxTokens,
         count,
+        sofar: '',
       });
       const request = {
         duty: 'cardText' as const, play: job.play, lines: 'many' as const, maxTokens, maxChars: Math.min(MOST_CHARS, maxTokens * CHARS_A_TOKEN),

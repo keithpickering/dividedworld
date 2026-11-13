@@ -894,7 +894,7 @@ test('a request that names no account schedules nothing after: a body refused be
 const kicking = {
   ...instance,
   settings: { ...instance.settings, oldVoice: true },
-  cards: instance.cards.map((c) => (c.key === 'whoops' ? { ...c, writes: { tokens: () => 10, frame: () => ({ prompt: 'p', stop: [] }) } } : c)),
+  cards: instance.cards.map((c) => (c.key === 'whoops' ? { ...c, writes: { sampling: { temperature: 0.9, topP: 0.95 }, tokens: () => 10, frame: () => ({ prompt: 'p', stop: [] }) } } : c)),
 } as typeof instance;
 async function kickedBy(body: unknown, answers: Record<string, unknown>, who: typeof instance = kicking) {
   const { dbs } = pair({ whoami, card_target_reach: { reach: 'post', act: target, kind: 'post', length: 10, body: 'x'.repeat(10), effects: [] }, ...answers });
@@ -912,7 +912,7 @@ test('the kick: a play of a card that writes kicks the writer for its post, afte
 });
 
 test('a play of a card that writes hands play_card the tokens its rules decided, and a play of any other card hands it none', async () => {
-  const writing = { ...kicking, cards: kicking.cards.map((c) => (c.key === 'whoops' ? { ...c, writes: { tokens: () => 37, frame: () => ({ prompt: 'p', stop: [] }) } } : c)) } as typeof instance;
+  const writing = { ...kicking, cards: kicking.cards.map((c) => (c.key === 'whoops' ? { ...c, writes: { sampling: { temperature: 0.9, topP: 0.95 }, tokens: () => 37, frame: () => ({ prompt: 'p', stop: [] }) } } : c)) } as typeof instance;
   const run = async (who: typeof instance) => {
     const { dbs, calls } = pair({ whoami, card_target_reach: { reach: 'post', act: target, kind: 'post', length: 10, body: 'x'.repeat(10), effects: [] }, play_card: { id: 'k', kind: 'card' } });
     await runAction(dbs, who, { action: 'playCard', card: 'whoops', character: id, target, config: { color: 'red', tokens: 5000 } });
@@ -923,7 +923,7 @@ test('a play of a card that writes hands play_card the tokens its rules decided,
 });
 
 test('a top-level tokens field of the request is ignored: the play records what the server decided, and a card that does not write gets none', async () => {
-  const writing = { ...kicking, cards: kicking.cards.map((c) => (c.key === 'whoops' ? { ...c, writes: { tokens: () => 37, frame: () => ({ prompt: 'p', stop: [] }) } } : c)) } as typeof instance;
+  const writing = { ...kicking, cards: kicking.cards.map((c) => (c.key === 'whoops' ? { ...c, writes: { sampling: { temperature: 0.9, topP: 0.95 }, tokens: () => 37, frame: () => ({ prompt: 'p', stop: [] }) } } : c)) } as typeof instance;
   const run = async (who: typeof instance) => {
     const { dbs, calls } = pair({ whoami, card_target_reach: { reach: 'post', act: target, kind: 'post', length: 10, body: 'x'.repeat(10), effects: [] }, play_card: { id: 'k', kind: 'card' } });
     await runAction(dbs, who, { action: 'playCard', card: 'whoops', character: id, target, config: { color: 'red' }, tokens: 5000 });

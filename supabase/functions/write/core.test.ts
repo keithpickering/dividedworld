@@ -19,6 +19,7 @@ const V = '44444444-4444-4444-8444-444444444444';
 const frames: unknown[] = [];
 const card = {
   key: 'echo', name: 'Echo',
+    sampling: { temperature: 0.9, topP: 0.95 },
   writes: {
     tokens: (config: { steps: number }) => 100 + config.steps * 50,
     frame: (input: unknown) => { frames.push(input); return { prompt: 'PROMPT', stop: ['\n\n'] }; },

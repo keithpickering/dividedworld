@@ -1931,7 +1931,7 @@ describe('the buttons', () => {
 
 /* A play whose first generation failed was refunded and is over (0149): the Lens says so in plain words and offers an admin no End this card, since there is nothing to end. */
 describe('a play that did not take', () => {
-  const writing = { ...instance.cards[1]!, key: 'kw', name: 'Card W', stack: 3, writes: { tokens: () => 40, frame: () => ({ prompt: '', stop: [] as string[] }) } };
+  const writing = { ...instance.cards[1]!, key: 'kw', name: 'Card W', stack: 3, writes: { sampling: { temperature: 0.9, topP: 0.95 }, tokens: () => 40, frame: () => ({ prompt: '', stop: [] as string[] }) } };
   const own = { ...instance, cards: [...instance.cards, writing] };
   const ui = [...cards, cardUi('kw')];
   function writingWorld() {

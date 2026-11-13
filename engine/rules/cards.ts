@@ -197,6 +197,26 @@ export interface WriteFrameInput {
   readonly budget: number;
   /** How many tokens a text is, by the instance's tokenizer. */
   readonly count: (text: string) => number;
+  /**
+   * The text this play has written so far (`docs/plans/2026-11-13-you-were-saying-voice-design.md`, section 3): `''` on a play's first call. A frame
+   * continues after it, and where it is not empty, after a paragraph break the frame writes.
+   */
+  readonly sofar: string;
+}
+
+/**
+ * How a card's voice is sampled (`docs/plans/2026-11-13-you-were-saying-voice-design.md`, sections 1 and 3). The card owns these numbers, the engine
+ * only carries them to the completion. `temperature` and `topP` are always sent; the rest are sent where the card gives them.
+ */
+export interface WriteSampling {
+  readonly temperature: number;
+  readonly topP: number;
+  readonly topK?: number;
+  readonly minP?: number;
+  readonly repeatPenalty?: number;
+  readonly repeatLastN?: number;
+  /** Texts the voice may never produce, each one token of the instance's tokenizer (design section 1); the engine maps them to token ids. */
+  readonly ban?: readonly string[];
 }
 
 /**
@@ -209,7 +229,10 @@ export interface WriteFrameInput {
  */
 export interface Writes<Config = unknown> {
   tokens(config: Config, settings: Settings): number;
-  frame(input: WriteFrameInput): { readonly prompt: string; readonly stop: readonly string[] };
+  /** How the voice is sampled (design sections 1 and 3). */
+  readonly sampling: WriteSampling;
+  /** `stopPattern` ends a completion where it matches, beside `stop` (design section 3). */
+  frame(input: WriteFrameInput): { readonly prompt: string; readonly stop: readonly string[]; readonly stopPattern?: RegExp };
 }
 
 export const OLD_VOICE_OFF = "The old voice isn't running on this forum, so this card can't be played.";

@@ -46,6 +46,7 @@ export const youWereSaying: CardRules<YouWereSayingConfig> = {
     { key: 'youWereSaying.typeCps', min: 5, max: 400 },
   ],
   writes: {
+    sampling: { temperature: 0.9, topP: 0.95 },
     // Never above the most, even where an override or the window puts the most below the base (the most is at least 1, so a play is never empty).
     tokens: (config, settings) =>
       Math.min(

@@ -25,7 +25,7 @@ const post = (key: string): CardRules => ({
   key, name: key, alignment: 'sweet', rarity: 'common', reaches: ['post'], stack: 3, playPrice: () => 0, validateConfig: (c: unknown) => ok(c),
   canApply: (t, e, _config, now) => landsOn({ key, reaches: ['post'] }, t, e, now),
 });
-const WRITES: CardRules['writes'] = { tokens: () => 40, frame: () => ({ prompt: '', stop: [] }) };
+const WRITES: CardRules['writes'] = { sampling: { temperature: 0.9, topP: 0.95 }, tokens: () => 40, frame: () => ({ prompt: '', stop: [] }) };
 const glow: CardRules = { ...post('glow'), reaches: ['character'], canApply: (t, e, _c, now) => landsOn({ key: 'glow', reaches: ['character'] }, t, e, now) };
 const instance: Instance = { ...testInstance, cards: [post('fab'), testKeeper, testKeeperMask, glow, post('one'), { ...post('scribe'), writes: WRITES }] };
 const DAY = 24 * 60 * 60 * 1000;

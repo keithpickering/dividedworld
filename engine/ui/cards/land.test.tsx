@@ -84,13 +84,13 @@ describe('wards, backs and catches, as a screen offers a card', () => {
   });
 
   test('a card that writes lands on a post, as a screen offers it: the screens hold no settings, so the old voice does not withhold it', () => {
-    const writer: CardRules = { ...blot, key: 'writer', name: 'Writer', writes: { tokens: () => 40, frame: () => ({ prompt: '', stop: [] }) } };
+    const writer: CardRules = { ...blot, key: 'writer', name: 'Writer', writes: { sampling: { temperature: 0.9, topP: 0.95 }, tokens: () => 40, frame: () => ({ prompt: '', stop: [] }) } };
     expect(landing(writer, post('hi'), [], { cards: [...cards, writer] }).ok).toBe(true);
     expect(landingOn(writer, { reach: 'post', act: 'p1', kind: 'post', length: 2, text: 'hi', links: [] }, [], { cards: [...cards, writer] }).ok).toBe(true);
   });
 
   test('a card whose length is read from the economy lands on a post too: the screens hold no settings, so where it lands never asks what it buys', () => {
-    const writer: CardRules = { ...blot, key: 'writer', name: 'Writer', writes: { tokens: (_config, settings) => economyOf(settings, 'writer.tokens'), frame: () => ({ prompt: '', stop: [] }) } };
+    const writer: CardRules = { ...blot, key: 'writer', name: 'Writer', writes: { sampling: { temperature: 0.9, topP: 0.95 }, tokens: (_config, settings) => economyOf(settings, 'writer.tokens'), frame: () => ({ prompt: '', stop: [] }) } };
     expect(landing(writer, post('hi'), [], { cards: [...cards, writer] }).ok).toBe(true);
     expect(landingOn(writer, { reach: 'post', act: 'p1', kind: 'post', length: 2, text: 'hi', links: [] }, [], { cards: [...cards, writer] }).ok).toBe(true);
   });
@@ -203,7 +203,7 @@ describe('the ways a card lands on a post', () => {
   const base: CardRules = { key: 'base', name: 'Base', alignment: 'salty', rarity: 'common', playPrice: () => 0, validateConfig: (c) => ({ ok: true, value: c }), canApply: (t, e, _config, now) => landsOn({ key: 'base' }, t, e, now) };
   const blot: CardRules = { ...base, key: 'blot', name: 'Blot' };
   const spark: CardRules = { ...base, key: 'spark', name: 'Spark', reaches: ['character'], canApply: (t, e, _config, now) => landsOn({ key: 'spark', reaches: ['character'] }, t, e, now) };
-  const scribe: CardRules = { ...base, key: 'scribe', name: 'Scribe', writes: { tokens: () => 40, frame: () => ({ prompt: '', stop: [] }) } };
+  const scribe: CardRules = { ...base, key: 'scribe', name: 'Scribe', writes: { sampling: { temperature: 0.9, topP: 0.95 }, tokens: () => 40, frame: () => ({ prompt: '', stop: [] }) } };
   const plea: CardRules = { ...base, key: 'plea', name: 'Plea', needsMessage: 'say why' };
   const cards = [blot, spark, scribe, plea];
 

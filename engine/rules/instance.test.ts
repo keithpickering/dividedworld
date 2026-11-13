@@ -858,7 +858,7 @@ test('a skim is a cast card that reaches a post alone, lasts, and does not write
   assert.match(instanceProblems(withCards({ skim })).join('\n'), /card "splat" has a skim with no time up \(lasts\)/);
   assert.match(bad({ reaches: ['thread'], rarity: 'rare' }), /card "splat" has a skim, and a card with a skim reaches a post alone/);
   assert.match(bad({ reaches: ['post', 'thread'], rarity: 'rare' }), /card "splat" has a skim, and a card with a skim reaches a post alone/);
-  assert.match(bad({ writes: { tokens: () => 1, frame: () => ({ prompt: '', stop: [] }) } }), /card "splat" has a skim and writes; a card with a skim does not write/);
+  assert.match(bad({ writes: { sampling: { temperature: 0.9, topP: 0.95 }, tokens: () => 1, frame: () => ({ prompt: '', stop: [] }) } }), /card "splat" has a skim and writes; a card with a skim does not write/);
 });
 
 test('scoresAs is true or left out, on a cast card that reaches a character alone', () => {
