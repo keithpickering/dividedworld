@@ -28,22 +28,21 @@
  *
  * What the hand holds is the cards' (engine/ui/cards/Hand.tsx): a sheet above the bar on the Phone
  * board's layout, and on the Main board's the cards themselves, on the arc through the seam over the
- * hand button. The two are opened alike and kept apart in what they do to the rest of the page.
+ * hand button. The two are opened alike and kept apart only in how they look and where the cards deal.
  *
- * On the Phone board the hand is a region that takes focus when it opens, so a keyboard is in it at
- * once; its Close the hand button, or Esc, closes it and returns focus to the hand button. The HUD
- * stays live under it, and arming a card puts the sheet away, since it covers the posts to pick.
- *
- * On the Main board it is a modal dialog, "Your hand" (the hand-arc design, sections 3 and 4): while
+ * On both layouts the hand is a modal dialog, "Your hand" (the hand-arc design, sections 3 and 4; the phone-hand design, section 3): while
  * it is open the plate, the aura, Alerts and Menu are inert and fade to 40% (frame.css; the HUD root
  * carries data-kb-hand-open), and the hand button stays live as the way to close it. Opening puts
  * focus on the armed card, else the first. A press anywhere else lands on the backdrop, a
- * transparent div between the board and the cards, or on the HUD's own faded parts, which are inert and sit above it: either closes the hand on the press, and the click
+ * transparent div between the board and the cards (on the phone, the sheet), or on the HUD's own faded parts, which are inert and sit above it: either closes the hand on the press, and the click
  * that ends the press is swallowed, since by then the backdrop is gone and the click would land on
  * whatever lay beneath it, a link or a post's button the player only meant to dismiss the hand from.
- * Arming a card closes the hand, as on the phone, and leaves the armed card's postcard peeking from behind
- * the HUD above the hand button (the peek: its top 90px and its tag above the seam), so the player can see what is in hand while they pick a post; pressing
- * the armed card in the hand puts it back and leaves the hand open.
+ * Every close (that press, Esc, the Close the hand button, the hand button, arming a card) returns focus to the hand button. On the phone Tab and Shift+Tab
+ * wrap inside the dialog (the cards, the Close button and the Vending Machine button), since the Hand leaves Tab alone there.
+ * Arming a card closes the hand and, on the Main board, leaves the armed card's postcard peeking from behind
+ * the HUD above the hand button (the peek: its top 90px and its tag above the seam), so the player can see what is in hand while they pick a post; the phone
+ * draws no peek, since a post's + mark stands there, and its hand button carries the armed card's name instead. Pressing
+ * the armed card in the hand puts it back and leaves the hand open, on both.
  *
  * The hand opens calmly (the phone-hand design, section 1): a card lifts for a keyboard's focus, a hover or the arming, and never for the focus the
  * script gives the first card after a mouse press (frame.css, the lift). Hover lifts nothing from the opening until the pointer moves more than 4px
@@ -56,7 +55,7 @@
  * at the window's scale below 1440px, and the Phone board's below that width. The glass pages
  * switch at the same width.
  */
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import type { Character } from '../data/api.ts';
 import { useKayfa } from '../context.tsx';
 import { playIn, playOut, type Stop } from '../glass/play.ts';
@@ -300,11 +299,11 @@ export function Hud() {
     return () => watch.disconnect();
   }, [wide, hudName, board, scale, size]);
 
-  /* The opened hand takes focus, so the keyboard is in it at once (a focus after a mouse press does not lift the card: the lift follows :focus-visible, frame.css): on the Main board the armed card's button, else the first card's; on the phone, or with no card, the sheet. */
+  /* The opened hand takes focus, so the keyboard is in it at once (a focus after a mouse press does not lift the card: the lift follows :focus-visible, frame.css): the armed card's button, else the first card's; with no card, the sheet. On the phone the card's focus brings it to the middle (Hand), and the page is not scrolled for it. */
   useEffect(() => {
     if (!handOpen) return;
-    const at = wide ? drawer.current?.querySelector<HTMLElement>('li.kb-hand-card[data-armed] > button') ?? drawer.current?.querySelector<HTMLElement>('li.kb-hand-card > button') : null;
-    (at ?? drawer.current)?.focus();
+    const at = drawer.current?.querySelector<HTMLElement>('li.kb-hand-card[data-armed] > button') ?? drawer.current?.querySelector<HTMLElement>('li.kb-hand-card > button');
+    (at ?? drawer.current)?.focus({ preventScroll: true });
   // Only the opening moves focus: arming a card closes the hand, and a card put back leaves it where it is.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [handOpen]);
@@ -337,6 +336,17 @@ export function Hud() {
     handButton.current?.focus();
   };
   const ignoreAside = (e: { preventDefault: () => void }) => e.preventDefault();
+  /* On the phone Tab and Shift+Tab wrap inside the dialog: the Hand leaves Tab to it, and the page behind is inert. The Main board's cards wrap themselves (Hand). */
+  const trapTab = (e: ReactKeyboardEvent) => {
+    if (wide || e.key !== 'Tab' || e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey) return;
+    const live = [...(drawer.current?.querySelectorAll<HTMLElement>('button:not([disabled]), a[href]') ?? [])];
+    const first = live[0];
+    const last = live[live.length - 1];
+    if (!first || !last) return;
+    const on = document.activeElement;
+    if (!e.shiftKey && on === last) { e.preventDefault(); first.focus({ preventScroll: true }); }
+    else if (e.shiftKey && (on === first || on === drawer.current)) { e.preventDefault(); last.focus({ preventScroll: true }); }
+  };
 
   /*
    * The hand drawer opens from the hand button and its close plays out (glass/play.ts, motion.ts `overlay`). It stays on the page, so on a close it is
@@ -387,43 +397,51 @@ export function Hud() {
       const b = el.getBoundingClientRect();
       return a && b.width > 0 ? { x: a.left + a.width / 2 - b.left, y: a.top + a.height / 2 - b.top } : undefined;
     };
-    if (wide) {
-      /* The Main board's cards deal from the hand button and gather back into it (motion.ts `fanDeal`), each on its own `li`; the drawer's box plays nothing. */
-      const cards = [...el.querySelectorAll<HTMLElement>('li.kb-hand-card')];
-      /* A run that was just stopped (a reopen during the gather, or the reverse) leaves the pose it had reached written on the card, and a stopped run clears nothing: put each card back on its slot's stylesheet before measuring from it. */
-      for (const li of cards) { li.style.transition = 'none'; li.style.removeProperty('transform'); li.style.removeProperty('opacity'); }
-      const delays = stagger(feel, cards.length);
-      const runs: Stop[] = [];
-      let left = cards.length;
-      if (handOpen) setDrawerLeaving(false);
-      else if (left === 0) { setDrawerLeaving(false); return; }
-      /* While the cards deal or gather nothing lifts (frame.css): the mark is on until the last play ends, or the run is stopped. */
-      if (left > 0) el.setAttribute('data-kb-dealing', '');
-      const landed = () => { if (--left === 0) el.removeAttribute('data-kb-dealing'); };
-      cards.forEach((li, i) => {
-        const b = li.getBoundingClientRect();
-        const from = a && b.width > 0 ? { x: a.left + a.width / 2 - (b.left + b.width / 2), y: a.top + a.height / 2 - (b.top + b.height / 2) } : { x: 0, y: 0 };
-        const turn = parseFloat(li.style.getPropertyValue('--kb-fan-turn')) || 0;
-        const p = fanDeal(feel, i, delays, from, turn);
-        /* The stylesheet eases the card's transform for its lift; a running play writes the transform itself, frame by frame, so the ease is off for the run. */
-        li.style.transition = 'none';
-        const rest = () => li.style.removeProperty('transition');
-        if (handOpen) {
-          /* When the card lands the play removes its inline transform, and the stylesheet's ease for the lift comes back. */
-          const stop = playIn(li, p, () => { rest(); landed(); });
-          runs.push(() => { stop(); rest(); });
-          return;
-        }
-        const stop = playOut(li, p, () => { rest(); landed(); if (left === 0) setDrawerLeaving(false); });
-        runs.push(() => { stop(); rest(); });
-      });
-      drawerRun.current = () => { for (const stop of runs) stop(); el.removeAttribute('data-kb-dealing'); };
-      return;
+    /* A run that was just stopped (a reopen during the gather, or the reverse) leaves the pose it had reached written on the card, and a stopped run clears nothing: put each card back on its slot's stylesheet before measuring from it. Only `transform` and `opacity` are the deal's: the phone's pose is in `translate`, `rotate` and `scale`, which stay. */
+    const all = [...el.querySelectorAll<HTMLElement>('li.kb-hand-card')];
+    for (const li of all) { li.style.transition = 'none'; li.style.removeProperty('transform'); li.style.removeProperty('opacity'); }
+    if (!wide) { el.style.removeProperty('transform'); el.style.removeProperty('opacity'); }
+    /* The Main board's cards all deal. The phone's row is as long as the kinds held, so only the cards within its visible width deal and the rest stay at rest: a long row deals as fast as a short one. */
+    const row = !wide ? el.querySelector<HTMLElement>('ul.kb-hand-cards')?.getBoundingClientRect() : undefined;
+    const cards = row && row.width > 0 ? all.filter((li) => { const r = li.getBoundingClientRect(); return r.right > row.left && r.left < row.right; }) : all;
+    for (const li of all) if (!cards.includes(li)) li.style.removeProperty('transition');
+    /* Each card deals from the hand button and gathers back into it (motion.ts `fanDeal`), on its own `li`. On the Main board the drawer's box plays nothing; on the phone it plays the sheet's `overlay` around them. */
+    const delays = stagger(feel, cards.length);
+    const runs: Stop[] = [];
+    let left = cards.length;
+    /* The close is done when the last card's gather and, on the phone, the sheet's exit have ended. */
+    let pending = left + (wide ? 0 : 1);
+    const gone = () => { if (--pending === 0) setDrawerLeaving(false); };
+    if (handOpen) setDrawerLeaving(false);
+    else if (pending === 0) { setDrawerLeaving(false); return; }
+    /* While the cards deal or gather nothing lifts (frame.css): the mark is on until the last play ends, or the run is stopped. */
+    if (left > 0) el.setAttribute('data-kb-dealing', '');
+    const landed = () => { if (--left === 0) el.removeAttribute('data-kb-dealing'); };
+    cards.forEach((li, i) => {
+      const b = li.getBoundingClientRect();
+      const from = a && b.width > 0 ? { x: a.left + a.width / 2 - (b.left + b.width / 2), y: a.top + a.height / 2 - (b.top + b.height / 2) } : { x: 0, y: 0 };
+      /* The Main board's slot turns the card by --kb-fan-turn; the phone's pose turns it by `rotate`, so its deal adds none. */
+      const turn = wide ? parseFloat(li.style.getPropertyValue('--kb-fan-turn')) || 0 : 0;
+      const p = fanDeal(feel, i, delays, from, turn);
+      /* The stylesheet eases the card's transform for its lift; a running play writes the transform itself, frame by frame, so the ease is off for the run. */
+      li.style.transition = 'none';
+      /* A stopped run commits the pose it had reached: none of it is left on the card, whose stylesheet draws it. */
+      const rest = () => li.style.removeProperty('transition');
+      const unpose = () => { li.style.removeProperty('transform'); li.style.removeProperty('opacity'); };
+      if (handOpen) {
+        /* When the card lands the play removes its inline transform, and the stylesheet's ease for the lift comes back. */
+        const stop = playIn(li, p, () => { rest(); landed(); });
+        runs.push(() => { stop(); rest(); unpose(); });
+        return;
+      }
+      const stop = playOut(li, p, () => { rest(); landed(); gone(); });
+      runs.push(() => { stop(); rest(); unpose(); });
+    });
+    if (!wide) {
+      if (handOpen) runs.push(playIn(el, overlayPreset(feel, place())));
+      else runs.push(playOut(el, overlayPreset(feel, place()), gone));
     }
-    if (handOpen) { setDrawerLeaving(false); drawerRun.current = playIn(el, overlayPreset(feel, place())); return; }
-    let over = false;
-    const end = () => { if (!over) { over = true; setDrawerLeaving(false); } };
-    drawerRun.current = playOut(el, overlayPreset(feel, place()), end);
+    drawerRun.current = () => { for (const stop of runs) stop(); el.removeAttribute('data-kb-dealing'); };
   }, [handOpen, feel]);
 
   /* Esc on the board: the hand's when it is open, else the menu's. */
@@ -459,10 +477,10 @@ export function Hud() {
   const pick = (face: { readonly key: string }) => {
     const putBack = armed === face.key;
     play.arm(putBack ? null : face.key);
-    /* The Phone board's sheet covers the foot of the page, where the posts to pick are: it is put away, and the armed card waits in the hand. The Main board's arc is put away when a card is armed, for its backdrop and its fade, and stays open when the card is put back. */
-    if (!wide || !putBack) {
+    /* The hand covers the foot of the page, where the posts to pick are: it is put away when a card is armed, and the armed card waits in the hand. It stays open when the card is put back. */
+    if (!putBack) {
       setHandOpen(false);
-      /* The sheet held the keyboard's place and is hidden now: it goes to the hand button, which is the armed card's words. */
+      /* The hand held the keyboard's place and is hidden now: it goes to the hand button, which on the phone is the armed card's words. */
       handButton.current?.focus();
     }
   };
@@ -475,7 +493,7 @@ export function Hud() {
    * The Main board keeps the fan open with the armed card and its tag, and Esc.
    */
   const peeked = wide && !handOpen && armed !== null ? faces.find((f) => f.key === armed) ?? null : null;
-  const modal = wide && handOpen;
+  const modal = handOpen;
   const armedName = !wide && armed !== null ? instance.cards.find((c) => c.key === armed)?.name ?? armed : null;
   const handName = armedName !== null ? `${playing ? 'Playing' : 'Armed'} · ${armedName}, press to put it back` : `Hand, ${held} ${held === 1 ? 'postcard' : 'postcards'}${handOpen ? ', open' : ''}`;
   const className = hud ? instance.classes.find((c) => c.key === hud.class)?.name ?? hud.class : null;
@@ -486,12 +504,14 @@ export function Hud() {
     <>
       {signedIn && modal && <div className="kb-hand-backdrop" aria-hidden="true" onPointerDown={dismiss} onContextMenu={ignoreAside} onAuxClick={ignoreAside} />}
       {signedIn && (
-        <div ref={drawer} id={drawerId} className="kb-glass kb-hand-drawer" role={wide ? 'dialog' : 'region'} {...(modal ? { 'aria-modal': true } : {})} aria-label="Your hand" tabIndex={-1} hidden={!handOpen && !drawerLeaving} {...(drawerLeaving && !handOpen ? { inert: true, 'aria-hidden': true, 'data-kb-exiting': '' } : {})} style={{ ...handCalm, '--kb-hand-lift-ms': feel ? `${feel.enter}ms` : '0ms', '--kb-hand-lift-ease': feel?.ease ?? 'ease' } as CSSProperties}>
+        <div ref={drawer} id={drawerId} className="kb-glass kb-hand-drawer" role="dialog" {...(modal ? { 'aria-modal': true } : {})} aria-label="Your hand" tabIndex={-1} onKeyDown={trapTab} hidden={!handOpen && !drawerLeaving} {...(drawerLeaving && !handOpen ? { inert: true, 'aria-hidden': true, 'data-kb-exiting': '' } : {})} style={{ ...handCalm, '--kb-hand-lift-ms': feel ? `${feel.enter}ms` : '0ms', '--kb-hand-lift-ease': feel?.ease ?? 'ease' } as CSSProperties}>
           <Smoke surface="hand">
             <Hand
               held={player.cards} faces={faces} vendingHref={GLASS_NAV.vending}
               armed={armed}
               playing={playing}
+              instant={!feel}
+              opening={armed}
               onPick={hud ? pick : undefined}
               onClose={() => { setHandOpen(false); handButton.current?.focus(); }}
             />

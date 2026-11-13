@@ -362,23 +362,139 @@ describe('the hand on the Main board, a gather stopped by switching motion Off',
   });
 });
 
+/* Arms a card and opens the hand with it armed, as a keyboard's Esc-less return can: the phone's hand button puts an armed card back, so no press reaches the open hand with a card armed. */
+function ArmAndOpen({ card: key }: { readonly card: string }) {
+  const play = usePlay()!;
+  return <button type="button" onClick={() => { play.arm(key); play.setHandOpen(true); }}>Arm and open</button>;
+}
+
 describe('the hand on the Phone board', () => {
-  test('stays a region, with nothing inert and no backdrop', async () => {
+  const dialog = () => screen.getByRole('dialog', { name: 'Your hand' });
+  const handCard = (name: RegExp) => within(dialog()).getByRole('button', { name });
+  const WHOOPS = /^Whoops!, /u;
+  /* A press with no pointer, as a keyboard or a reader makes it: it acts on the card whether or not it is in the middle. */
+  const activate = (el: HTMLElement) => fireEvent.click(el, { detail: 0 });
+
+  test('is a modal: a dialog with the HUD marked, the plate, the aura, Alerts and Menu inert, the hand button not, and the backdrop there', async () => {
     phone();
     setup();
     await userEvent.click(await handButton());
-    const sheet = screen.getByRole('region', { name: 'Your hand' });
-    expect(sheet).not.toHaveAttribute('aria-modal');
-    expect(document.querySelector('.kb-hud')).not.toHaveAttribute('data-kb-hand-open');
-    expect(document.querySelector('[inert]')).toBeNull();
+    expect(dialog()).toHaveAttribute('aria-modal', 'true');
+    const hud = document.querySelector('.kb-hud')!;
+    expect(hud).toHaveAttribute('data-kb-hand-open');
+    for (const sel of ['.kb-hud-plate', '.kb-hud-aura', '.kb-hud-menu', '.kb-hud-alerts']) expect(hud.querySelector(sel), sel).toHaveAttribute('inert');
+    expect(hud.querySelector('.kb-hud-hand')).not.toHaveAttribute('inert');
+    expect(document.querySelector('.kb-hand-backdrop')).not.toBeNull();
+  });
+
+  test('a pointer press on the backdrop closes the hand and focuses the hand button, and nothing stays inert', async () => {
+    phone();
+    setup();
+    const hand = await handButton();
+    await userEvent.click(hand);
+    fireEvent.pointerDown(document.querySelector('.kb-hand-backdrop')!, { button: 0 });
+    expect(hand).toHaveAttribute('aria-expanded', 'false');
+    expect(hand).toHaveFocus();
     expect(document.querySelector('.kb-hand-backdrop')).toBeNull();
+    expect(document.querySelector('[inert]')).toBeNull();
+    expect(document.querySelector('.kb-hud')).not.toHaveAttribute('data-kb-hand-open');
+  });
+
+  test('Esc closes it and focuses the hand button', async () => {
+    phone();
+    setup();
+    const hand = await handButton();
+    await userEvent.click(hand);
+    await userEvent.keyboard('{Escape}');
+    expect(hand).toHaveAttribute('aria-expanded', 'false');
+    expect(hand).toHaveFocus();
+    expect(document.querySelector('[inert]')).toBeNull();
+  });
+
+  test('opening takes focus to the first card, and with Whoops! armed to the Whoops! card', async () => {
+    phone();
+    setup();
+    const hand = await handButton();
+    await userEvent.click(hand);
+    expect(document.activeElement).toBe(dialog().querySelector('li.kb-hand-card > button'));
+    await userEvent.click(within(dialog()).getByRole('button', { name: 'Close the hand' }));
+    cleanup();
+    setup(<ArmAndOpen card="stick-around" />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Arm and open' }));
+    expect(document.activeElement).toBe(handCard(/^Stick Around, /u));
+    cleanup();
+    setup(<ArmAndOpen card="whoops" />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Arm and open' }));
+    expect(document.activeElement).toBe(handCard(WHOOPS));
+  });
+
+  test('pressing the armed card puts it back and leaves the dialog open; pressing another card arms it, closes the dialog and the hand button says Armed', async () => {
+    phone();
+    setup(<ArmAndOpen card="whoops" />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Arm and open' }));
+    activate(handCard(WHOOPS));
+    expect(dialog()).toBeVisible();
+    expect(handCard(WHOOPS)).toHaveAttribute('aria-pressed', 'false');
+    activate(handCard(STICK));
+    expect(screen.queryByRole('dialog', { name: 'Your hand' })).toBeNull();
+    const hand = screen.getByRole('button', { name: 'Armed · Stick Around, press to put it back' });
+    expect(hand).toHaveTextContent('Armed · Stick Around');
+    expect(hand).toHaveFocus();
+    expect(document.querySelector('[inert]')).toBeNull();
+    expect(document.querySelector('.kb-hand-peek')).toBeNull();
+  });
+
+  test('Tab wraps inside the dialog: from the Vending Machine button to the first part, and Shift+Tab back', async () => {
+    phone();
+    setup();
+    await userEvent.click(await handButton());
+    const close = within(dialog()).getByRole('button', { name: 'Close the hand' });
+    const vending = within(dialog()).getByRole('link', { name: 'Vending Machine' });
+    vending.focus();
+    await userEvent.tab();
+    expect(document.activeElement).toBe(close);
+    await userEvent.tab({ shift: true });
+    expect(document.activeElement).toBe(vending);
+  });
+
+  test('under a feel the sheet plays and only the cards in the row\'s width are dealt; a stopped deal leaves no inline transform', async () => {
+    document.documentElement.setAttribute('data-kb-motion', 'full');
+    phone();
+    /* jsdom lays nothing out: the row is 300px wide, the Whoops! card stands in it and the Stick Around card beyond it. */
+    const at = (left: number, width: number) => ({ left, right: left + width, top: 0, bottom: 100, width, height: 100, x: left, y: 0, toJSON: () => ({}) }) as DOMRect;
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+      if (this.matches('ul.kb-hand-cards')) return at(0, 300);
+      if (this.matches('[data-kb-card="whoops"]')) return at(100, 104);
+      if (this.matches('[data-kb-card="stick-around"]')) return at(500, 104);
+      return at(0, 100);
+    });
+    setup();
+    const hand = await handButton();
+    await userEvent.click(hand);
+    const drawer = document.querySelector<HTMLElement>('.kb-hand-drawer')!;
+    const cards = runs.filter((r) => r.el.matches('li.kb-hand-card'));
+    expect(cards.map((r) => r.el.dataset.kbCard)).toEqual(['whoops']);
+    expect(runs.some((r) => r.el === drawer)).toBe(true);
+    /* The deal's turn is 0: the pose's rotation is the card's own `rotate`. */
+    expect(cards[0]!.frames.rotate).toEqual([0, 0]);
+    expect(drawer).toHaveAttribute('data-kb-dealing');
+    /* Motion goes Off mid-deal: the run is stopped, its committed pose is not left on any card, and the mark is gone. */
+    await act(async () => { document.documentElement.setAttribute('data-kb-motion', 'reduce'); });
+    await userEvent.click(hand);
+    for (const li of drawer.querySelectorAll<HTMLElement>('li.kb-hand-card')) {
+      expect(li.style.transform).toBe('');
+      expect(li.style.opacity).toBe('');
+    }
+    expect(drawer).not.toHaveAttribute('data-kb-dealing');
+    expect(drawer.hidden).toBe(true);
   });
 
   test('while a compose is open the hand button says Playing, and pressing it puts the card back', async () => {
     phone();
     setup(<OpenCompose />);
     await userEvent.click(await handButton());
-    await userEvent.click(within(screen.getByRole('region', { name: 'Your hand' })).getByRole('button', { name: STICK }));
+    /* A pointer press on a card that is not in the middle only brings it there; the press with no pointer acts on it. */
+    activate(handCard(STICK));
     expect(screen.getByRole('button', { name: 'Armed · Stick Around, press to put it back' })).toHaveTextContent('Armed · Stick Around');
     await userEvent.click(screen.getByRole('button', { name: 'Open compose' }));
     const playing = screen.getByRole('button', { name: 'Playing · Stick Around, press to put it back' });
