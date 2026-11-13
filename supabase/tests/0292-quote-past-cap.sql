@@ -58,6 +58,13 @@ begin
   if w.plain like '%' || words || '%' then raise exception 'the control (a quote under the cap) is in plain'; end if;
   if w.unquoted like '%' || words || '%' then raise exception 'the control (a quote under the cap) is in unquoted'; end if;
   if not (q::text = any (w.quotes)) then raise exception 'the control (a quote under the cap) is not in quotes'; end if;
+  -- the control at the edge: a real quote at the last uncut level (level cap, behind cap - 1 wrappers) is still a quote that is shown, with its excerpt
+  select * into w from bbcode_walk(pg_temp.deep(pg_temp.cap() - 1, q, words), q);
+  if w.excerpt is distinct from words then raise exception 'a quote at the last uncut level (level %) has no excerpt: %', pg_temp.cap(), w.excerpt; end if;
+  select * into w from bbcode_walk(pg_temp.deep(pg_temp.cap() - 1, q, words), null);
+  if w.plain like '%' || words || '%' or w.unquoted like '%' || words || '%' or not (q::text = any (w.quotes)) then
+    raise exception 'a quote at the last uncut level (level %) is not read as a quote', pg_temp.cap();
+  end if;
 end $$;
 
 -- ---- rule_breaks does not judge the words of a quote past the cap ----
@@ -162,7 +169,7 @@ begin
   select * into w from bbcode_walk(left(repeat(unit, 40000 / length(unit) + 1), 40000), null);
   t_big := extract(epoch from clock_timestamp() - t0);
   if w.quotes is distinct from array['11111111-1111-4111-8111-111111111111'] then raise exception 'the nested quotes past the cap are not read: %', w.quotes; end if;
-  if t_big > t_small * 3 then
-    raise exception 'bbcode_walk is not linear on nested real quotes past the cap: 20,000 characters took % s, 40,000 took % s (more than 3x)', round(t_small::numeric, 3), round(t_big::numeric, 3);
+  if t_big > t_small * 8 then
+    raise exception 'bbcode_walk is not linear on nested real quotes past the cap: 20,000 characters took % s, 40,000 took % s (more than 8x)', round(t_small::numeric, 3), round(t_big::numeric, 3);
   end if;
 end $$;

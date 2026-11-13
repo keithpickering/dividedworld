@@ -58,4 +58,23 @@ begin
   perform record_layer(stale, array[hid], format('[quote=%s][/quote] stale', hid));
   perform tests.unbecome();
   if pg_temp.due(stale) then raise exception 'the post is still due after the job recorded its new layer'; end if;
+  -- the new body is the layer served: a layer for the same hidden set whose body differs is a new layer (the old one, which holds the words, stays beside it), and a non-author reads the new body
+  if (select l.body from quote_layers l where l.act = stale order by l.id desc limit 1) like '%zqxhidden%' then
+    raise exception 'record_layer dropped the new body of a re-requested layer: the latest layer still holds the hidden words';
+  end if;
+  if (select l.body from quote_layers l where l.act = stale order by l.id desc limit 1) is distinct from format('[quote=%s][/quote] stale', hid) then
+    raise exception 'the latest layer is not the body the job recorded last';
+  end if;
+  perform tests.become(au);
+  if (select p.current_payload ->> 'body' from acts_public p where p.id = stale) is distinct from format('[quote=%s][/quote] stale', hid) then
+    perform tests.unbecome();
+    raise exception 'a non-author is not served the new layer of the re-requested post';
+  end if;
+  perform tests.unbecome();
+  -- the job run again with the same body writes nothing: the layer is reused
+  select count(*) into made from quote_layers l where l.act = stale;
+  perform tests.become_service();
+  perform record_layer(stale, array[hid], format('[quote=%s][/quote] stale', hid));
+  perform tests.unbecome();
+  if (select count(*) from quote_layers l where l.act = stale) is distinct from made then raise exception 'record_layer with the same hidden set and the same body wrote another layer'; end if;
 end $$;

@@ -12,8 +12,19 @@
 -- conceal_request_hidden_quoters(): a layer already stored may hold hidden words quoted past the old cap, so a layer is asked for again for every post that quotes a post hidden from quoting now.
 -- It is one set-based insert, never a loop over the hidden posts: the distinct hidden posts are found once (decisions' own index, quote_hidden for each distinct post, not for each quoter), and each
 -- one's quoters are an index range of quote_refs (quoted, act), one request per quoting Act. At a busy instance with H hidden posts and Q quoters of them the cost is H probes and Q requests;
--- conceal_due hands the job its limit of them a minute, oldest first, and record_layer writes no new layer where the latest is already for the set of now. The migration calls it once.
--- DEPLOY ORDER: the new `conceal` Edge Function (engine/bbcode/conceal.ts at the new cap) must be deployed BEFORE this migration is applied; the job would otherwise answer these requests by remaking the old layer.
+-- conceal_due hands the job its limit of them a minute, oldest first. The migration calls it once.
+--
+-- record_layer (0340) wrote no new layer when the Act's latest layer was already for the hidden set of now, so the answer to such a request, which has the same set and a new body, was dropped and the old
+-- layer, with the hidden words, stayed the one served. It now reuses the latest layer for the same set only when no request is open or the body is the one recorded; a different body answering an open request is a new layer beside the old (append-only, as
+-- before), and a job that runs again (same body, or nothing open) still writes nothing, which supabase/tests/0168-conduct-concealing.sql pins. Everything else in it (the per-Act lock, the stale-set refusal, `upto`, the answers, grants) is as 0340 wrote it.
+--
+-- search_reindex_quoters(): post_search.words is written from a post's raw body by the insert and edit triggers (0117), so a row written before this migration holds the words of a hidden post quoted past the old
+-- cap, and a player who is not the author finds the post by them. The function rewrites the row of every post whose current body holds `[quote` to what the triggers write now: search_words of the current
+-- version's raw body (the latest edit's, else the post's own) and the thread's title for a first post. It does not read through acts_public, whose payload for a quoter is its layer (stale until the job
+-- re-runs) or null while a layer is awaited. A post whose current version is hidden is left as conduct leaves it (conduct_decisions_search, 0340: title only), and a row already current is not written (words is
+-- GIN-indexed, no update is HOT). Only bodies holding `[quote` are walked: a body without one reads the same under every cap. Cost: one walk of each such body (about 6 ms per 20,000 characters, linear), once.
+-- Locks: as 0118's search_reindex it takes SHARE ROW EXCLUSIVE on acts and post_search, so posting and editing wait for the commit while readers do not, and a post written by the old walk before the commit is
+-- not missed. At a busy instance that is the one transaction this migration is. The migration calls it once; no client may.
 -- Ways out: a post waiting on its layer shows the plain note and the job ends it by itself within a minute (0340). Security: definer, search_path ending in pg_temp, no grant to a client role.
 -- Privacy: nothing here reads who owns a character; the requests are internal and no client reads them.
 
@@ -374,6 +385,36 @@ $$;
 revoke execute on function bbcode_walk(text, uuid) from public, anon;
 grant execute on function bbcode_walk(text, uuid) to authenticated, service_role;
 
+-- The job's answer for an Act (0340's definition; the one change is marked): the body with the contents of its quotes of the posts in `hidden` emptied (null when none). It is refused when `hidden` is not the
+-- set of now, so a job that read the state before a decision cannot store, and then serve, a layer that shows what is hidden. It answers the requests it read, and no others. When the Act's latest layer is already
+-- for this set no new layer is written (the requests are answered with it), unless a request is open and the body differs from the latest layer's: then it is a new layer. An empty set with no layer at all needs none. Service role only.
+create or replace function record_layer(act uuid, hidden uuid[], body text) returns bigint
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  mine uuid[] := coalesce((select array_agg(distinct x order by x) from unnest(record_layer.hidden) x), '{}'::uuid[]);
+  asked bigint[];
+  seen bigint;
+  latest quote_layers;
+  id bigint;
+begin
+  perform pg_advisory_xact_lock(hashtextextended('conceal:' || record_layer.act::text, 0));
+  select coalesce(array_agg(r.id), '{}'::bigint[]), coalesce(max(r.id), 0) into asked, seen
+  from conceal_requests r where r.act = record_layer.act and not exists (select 1 from conceal_answers n where n.request = r.id);
+  if mine is distinct from hidden_refs(record_layer.act) then
+    raise exception 'the hidden set changed since it was read; read it again' using hint = 'kayfabb.conceal_stale', errcode = 'P0001';
+  end if;
+  select * into latest from quote_layers x where x.act = record_layer.act order by x.id desc limit 1;
+  -- the change: with a request open, the latest layer is reused only for the same set AND the same body (an empty set's body is null, whatever the job sent); with none open, for the same set, as before
+  if found and latest.hidden = mine and (cardinality(asked) = 0 or latest.body is not distinct from (select case when cardinality(mine) = 0 then null else record_layer.body end)) then
+    id := latest.id;
+  elsif found or cardinality(mine) > 0 then
+    insert into quote_layers (act, hidden, body, upto) values (record_layer.act, mine, case when cardinality(mine) = 0 then null else record_layer.body end, seen)
+    returning quote_layers.id into id;
+  end if;
+  insert into conceal_answers (request, layer) select q, id from unnest(asked) q on conflict do nothing;
+  return id;
+end $$;
+
 create function conceal_request_hidden_quoters() returns integer
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare n integer;
@@ -388,4 +429,29 @@ begin
 end $$;
 revoke execute on function conceal_request_hidden_quoters() from public, anon, authenticated;
 
+create function search_reindex_quoters() returns bigint
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare n bigint;
+begin
+  lock table acts, post_search in share row exclusive mode;
+  update post_search p set words = w.new_words
+  from (
+    select a.id as act, search_words(cur.body, case when a.seq = 1 then t.title end, search_lang()) as new_words
+    from post_search s
+    join acts a on a.id = s.act
+    join threads t on t.id = a.thread
+    left join lateral (
+      select x.id, x.payload from acts x where x.kind = 'edit' and x.target_act_id = a.id and a.kind = 'post' order by x.created_at desc, x.id desc limit 1
+    ) e on true
+    cross join lateral (select coalesce(e.payload, a.payload) ->> 'body' as body) cur
+    where cur.body ilike '%[quote%'
+      and not (case when e.id is null then a.kind = 'post' and version_hidden(a.id, a.id) else version_hidden(e.id, a.id) end)
+  ) w
+  where p.act = w.act and p.words is distinct from w.new_words;
+  get diagnostics n = row_count;
+  return n;
+end $$;
+revoke execute on function search_reindex_quoters() from public, anon, authenticated;
+
 select conceal_request_hidden_quoters();
+select search_reindex_quoters();
