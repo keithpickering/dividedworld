@@ -1,4 +1,4 @@
--- The old voice's window, tokenizer, floor, short-tail share and re-rolls (supabase/migrations/0343_old_voice_window.sql), as
+-- The old voice's window, tokenizer, floor, short-tail share and re-rolls (supabase/migrations/0344_old_voice_window.sql), as
 -- docs/plans/2026-11-12-old-voice-window-design.md §4 settles them. Each new key's out-of-bounds values are refused with 23514 and the
 -- phrase Task 1 gave settingsProblems (engine/rules/instance.ts); one in bounds is held; screen_settings shows the window and the floor
 -- to anon. The floor below the window is not checked here: each row is held alone, and the most a play may buy is computed.

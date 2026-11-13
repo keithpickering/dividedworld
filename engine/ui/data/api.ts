@@ -211,9 +211,9 @@ export interface ScreenSettings {
   readonly settlementLength: Span;
   /** How long a card set face down lasts from when it is set (`setLasts`, in `screen_settings` from 0156): the line for a card about to be set says when it would end. A back already set ends when its own `endsAt` says. */
   readonly setLasts: Span;
-  /** The old voice's window in tokens (`oldVoiceWindow`, in `screen_settings` from 0343): the most a play may buy is the smaller of its own most and the window less `oldVoicePromptFloor`, so the length slider offers only lengths that fit. */
+  /** The old voice's window in tokens (`oldVoiceWindow`, in `screen_settings` from 0344): the most a play may buy is the smaller of its own most and the window less `oldVoicePromptFloor`, so the length slider offers only lengths that fit. */
   readonly oldVoiceWindow: number;
-  /** The least prompt, in tokens, a play leaves room for (`oldVoicePromptFloor`, in `screen_settings` from 0343). */
+  /** The least prompt, in tokens, a play leaves room for (`oldVoicePromptFloor`, in `screen_settings` from 0344). */
   readonly oldVoicePromptFloor: number;
   /** How often a page polls who is browsing it, in seconds; each poll is also the viewer's heartbeat. */
   readonly presencePollSeconds: number;
@@ -2835,9 +2835,9 @@ export interface KayfaApi {
   /**
    * Set a card the player holds face down on a post of the character's own (the card mechanic's design, section 3): its Act, a card
    * back, comes back naming no card. A trap that strikes carries the struck card's settings (`config`), which that card's rules check.
-   * A Move may be set with `when`, its conditions (quote-conditions design, section 1): sent only when one is set, and never for a set card. A surface card is set with its first draw (`first`).
+   * A Move may be set with `when`, its conditions (quote-conditions design, section 1): sent only when one is set, and never for a set card. A surface card is never set (faceUpOnly), so a set carries no drawing.
    */
-  setCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, when?: SetConditions, first?: unknown): Promise<Answer<Act>>;
+  setCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, when?: SetConditions): Promise<Answer<Act>>;
   /**
    * Take a card the player set face down back into the hand, before it springs and before its time ends (`take_back`): the setter's own back on a post
    * of the character's, free, and its Act (a take-back, naming the set) comes back. A back that is not the player's, or that has ended, is refused in the same words.

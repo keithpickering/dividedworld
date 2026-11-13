@@ -517,5 +517,5 @@ async function decideOptions(db: Db, tuned: Instance, rules: Instance['cards'][n
   const decided = on === 'own'
     ? decideSet(rules, tuned.settings, t, effects, repaired.config, tuned.cards)
     : decidePlay(rules, tuned.settings, t, effects, repaired.config, '', { nameOf: (key) => tuned.cards.find((c) => c.key === key)?.name ?? key, first });
-  return decided.ok ? { ok: true, config: decided.value.config, ...(decided.value.draw === undefined ? {} : { draw: decided.value.draw }), trims } : { ok: false, why: decided.why, trims };
+  return decided.ok ? { ok: true, config: decided.value.config, ...('draw' in decided.value && decided.value.draw !== undefined ? { draw: decided.value.draw } : {}), trims } : { ok: false, why: decided.why, trims };
 }

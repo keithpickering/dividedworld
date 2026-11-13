@@ -632,9 +632,11 @@ test('a surface card is played with its first draw, and refused without it; othe
   assert.deepEqual(decidePlay(wall, walled, post, [], {}, '', { first: 'scribble' }), { ok: false, why: 'draw some strokes' });
   const plainPlay = decidePlay(plain, settings, post, [], {}, '');
   assert.equal(plainPlay.ok && plainPlay.value.draw, undefined);
-  assert.deepEqual(decideSet(wall, walled, post, [], {}, [plain]), { ok: false, why: 'draw your tag first' });
-  const set = decideSet(wall, walled, post, [], {}, [plain], { first: dab });
-  assert.equal(set.ok && set.value.draw?.cells.indexOf('1'), 5050);
+});
+
+test('a surface card is cast face up only: decideSet refuses it in the sentence the other face-up cards get', () => {
+  assert.equal(faceUpOnly(wall), true);
+  assert.deepEqual(decideSet(wall, walled, post, [], {}, [plain]), { ok: false, why: `${wall.name} is cast face up and never set face down` });
 });
 
 test('a second play of a surface card is refused as a wall, in the words the database uses; other cards keep the stack\'s words', () => {
