@@ -17,6 +17,14 @@
  * 4. The keyboard: every place's first piece is a button, named by its own visible words and then "Play the audience's reaction", or once heard "Replay: the
  * audience boos" (WCAG 2.5.3, Label in Name). One of a post's places is its tab stop; the arrows, Home and End move among them, and the focused place
  * is the stop. Focus pins the place's nearness at 1 (the mark shows in full and its chitter plays) and plays nothing; Enter or Space plays the reaction.
+ * 5. A link stays a link (#576): a place any of whose pieces is drawn inside an `<a>` (a bare address is the one way a cue lands there) is not a button. It has no
+ * role, no label, no tabindex and no focus pin, it is not the post's stop (the stop is the first place not in a link, and a post whose every place is in a link has none), and the
+ * arrows, Home and End skip it. A click or a tap on it plays nothing and is not default-prevented, so the link is followed; Enter and Space are not handled. The mouse rule, the
+ * mark, the chitter, the Lens count and `dw-lt-fired` all still apply, and its cursor is the link's own. Link ancestry is known only from the DOM, so `findFirsts` (which finds
+ * each place's first piece, in a layout effect before the first paint and again after a redraw) also finds the places in a link and leaves them out of `first`, which is what
+ * gives a button its role, so none is ever drawn as a button inside a link on first paint.
+ * 6. A click plays only when the selection is collapsed (#577): a click that ends a text selection (selecting to quote) plays nothing and marks nothing. Enter, Space and the mouse
+ * rule are unchanged.
  *
  * This effect registers each unheard place with the watcher and hands it the way to make a kind's loop. A take is picked from the play, its seed and the place
  * (`seeded`), so every screen picks the same, and it is one of three.
@@ -135,6 +143,10 @@ function Live({ post, plays, show, met, children }: EffectProps) {
   /* The places that have been heard this visit, and the first piece drawn of each place (its button): this screen's own state, never saved or sent. */
   const [fired, setFired] = useState<ReadonlySet<string>>(() => new Set());
   const [first, setFirst] = useState<Readonly<Record<string, string>>>({});
+  /* The places any of whose pieces is drawn inside a link (an `<a>`): known only from the DOM, so `findFirsts` finds them, in the layout effect before the first paint. */
+  const [linked, setLinked] = useState<ReadonlySet<string>>(() => new Set());
+  const linkedNow = useRef(linked);
+  linkedNow.current = linked;
   /* The post's one tab stop: the place last focused, or the first place when that one is gone. */
   const [stop, setStop] = useState<string | null>(null);
   const firedNow = useRef(fired);
@@ -231,16 +243,20 @@ function Live({ post, plays, show, met, children }: EffectProps) {
     return was.x !== e.clientX || was.y !== e.clientY;
   };
 
-  /* The first piece drawn of each place is its button. */
+  /* The first piece drawn of each place is its button, unless the place is in a link: a link stays a link, so such a place has no button and no stop. */
   const findFirsts = useCallback(() => {
     const el = root.current;
     if (!el) return;
     const found: Record<string, string> = {};
+    const inLink = new Set<string>();
     for (const e of el.querySelectorAll('[data-lt-place]')) {
       const place = e.getAttribute('data-lt-place')!;
+      if (e.closest('a')) inLink.add(place);
       if (!(place in found)) found[place] = e.getAttribute('data-lt-piece')!;
     }
+    for (const place of inLink) delete found[place];
     setFirst((was) => (JSON.stringify(was) === JSON.stringify(found) ? was : found));
+    setLinked((was) => (was.size === inLink.size && [...inLink].every((k) => was.has(k)) ? was : inLink));
   }, []);
   useLayoutEffect(() => { findFirsts(); }, [fired, spotsKey, findFirsts]);
   const firstNow = useRef(first);
@@ -271,6 +287,7 @@ function Live({ post, plays, show, met, children }: EffectProps) {
       render: ({ text, key }) => {
         const isFirst = first[spot.key] === key;
         const press = (e: KeyboardEvent) => {
+          if (linkedNow.current.has(spot.key)) return;
           if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fire(spot); }
           else if (isFirst && ['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp', 'Home', 'End'].includes(e.key)) { e.preventDefault(); goTo(spot.key, e.key); }
         };
@@ -283,7 +300,11 @@ function Live({ post, plays, show, met, children }: EffectProps) {
             if (into instanceof Element && into.closest(`[data-lt-place="${spot.key}"]`)) return;
             over.current.delete(spot.key);
           },
-          onClick: () => { fire(spot); },
+          /* A click or tap in a link follows the link and plays nothing; a click that ends a text selection (selecting to quote) plays nothing either. */
+          onClick: () => {
+            if (linkedNow.current.has(spot.key) || window.getSelection()?.isCollapsed === false) return;
+            fire(spot);
+          },
           onKeyDown: press,
           ...(isFirst ? {
             role: 'button',
@@ -295,7 +316,7 @@ function Live({ post, plays, show, met, children }: EffectProps) {
         });
       },
     };
-  }), [spots, fired, first, stopKey, fire, goTo]);
+  }), [spots, fired, first, linked, stopKey, fire, goTo]);
 
   /* The Lens's words: how many cues have been heard on this visit, and the toggle for Game sounds. */
   const heard = spots.filter((s) => fired.has(s.key)).length;

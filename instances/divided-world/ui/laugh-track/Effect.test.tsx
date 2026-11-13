@@ -503,6 +503,120 @@ describe('Laugh Track: one stop for a post', () => {
   });
 });
 
+/* Decisions on the effect (issues #576 and #577): a link stays a link, and selecting to quote plays nothing. */
+describe('Laugh Track: a cue inside a link is not a button (#576)', () => {
+  /* Only an autolink's words are visible text (a [url]'s words are its target's name, engine/bbcode/visible.ts), and the matcher fuses punctuation between letters, so a cue is the whole bare address. */
+  const URL = 'https://example.com/Luigi';
+  const LINKED = `Visit ${URL} and Mario is great.`;
+  const LINK_CUES = [{ phrase: URL, sound: 'boo' }, { phrase: 'Mario is', sound: 'laugh' }, { phrase: 'great', sound: 'cheer' }];
+  const linkedPiece = () => document.querySelector<HTMLElement>('a .dw-lt-cue')!;
+  const plain = () => pieces().filter((p) => !p.closest('a'));
+
+  test('a linked cue\'s first piece has no role, no aria-label and no tabindex', () => {
+    mount({ body: LINKED, plays: [playOf(LINK_CUES)] });
+    const p = linkedPiece();
+    expect(p.textContent).toBe(URL);
+    expect(p.closest('a')).not.toBeNull();
+    for (const a of ['role', 'aria-label', 'tabindex']) expect(p).not.toHaveAttribute(a);
+  });
+
+  test('a click on it plays nothing and is not default-prevented', () => {
+    mount({ body: LINKED, plays: [playOf(LINK_CUES)] });
+    const notPrevented = fireEvent.click(linkedPiece());
+    expect(notPrevented).toBe(true);
+    expect(heard.play).not.toHaveBeenCalled();
+    expect(linkedPiece()).not.toHaveClass('dw-lt-fired');
+  });
+
+  test('Enter and Space on it play nothing and are not default-prevented', () => {
+    mount({ body: LINKED, plays: [playOf(LINK_CUES)] });
+    expect(fireEvent.keyDown(linkedPiece(), { key: 'Enter' })).toBe(true);
+    expect(fireEvent.keyDown(linkedPiece(), { key: ' ' })).toBe(true);
+    expect(heard.play).not.toHaveBeenCalled();
+  });
+
+  test('a mouse moving onto it plays once and marks it heard; near(0.5) still marks it; the Lens counts it', () => {
+    const m = mount({ body: LINKED, plays: [playOf(LINK_CUES)] });
+    expect(lastView(m).state).toBe('0 of 3 cues heard');
+    act(() => { move(document.body, 1, 1); });
+    act(() => { enter(linkedPiece(), 10, 10); });
+    expect(heard.play).toHaveBeenCalledTimes(1);
+    expect(linkedPiece()).toHaveClass('dw-lt-fired');
+    expect(lastView(m).state).toBe('1 of 3 cues heard');
+    expect(linkedPiece()).not.toHaveAttribute('role');
+  });
+
+  test('near(0.5) still marks a linked cue', () => {
+    mount({ body: LINKED, plays: [playOf(LINK_CUES)] });
+    act(() => { spec(0).near(0.5); });
+    expect(linkedPiece().style.getPropertyValue('--dw-lt-near')).toBe('0.5');
+  });
+
+  test('with a linked cue first and a plain one second, the stop is the plain one and the keys never land on the linked one', () => {
+    mount({ body: LINKED, plays: [playOf(LINK_CUES)] });
+    const b = buttons();
+    expect(b.map((x) => x.textContent)).toEqual(['Mario is', 'great']);
+    expect(b.map((x) => x.getAttribute('tabindex'))).toEqual(['0', '-1']);
+    act(() => { b[0]!.focus(); });
+    const key = (i: number, k: string) => act(() => { fireEvent.keyDown(buttons()[i]!, { key: k }); });
+    key(0, 'ArrowLeft'); expect(document.activeElement).toBe(b[0]);
+    key(0, 'Home'); expect(document.activeElement).toBe(b[0]);
+    key(0, 'ArrowRight'); expect(document.activeElement).toBe(b[1]);
+    key(1, 'End'); expect(document.activeElement).toBe(b[1]);
+    key(1, 'ArrowLeft'); expect(document.activeElement).toBe(b[0]);
+    expect(document.activeElement).not.toBe(linkedPiece());
+    expect(plain()).toHaveLength(2);
+  });
+
+  test('a post with only linked cues has no cue with tabindex 0', () => {
+    mount({ body: 'See https://example.com/Luigi here.', plays: [playOf([{ phrase: 'https://example.com/Luigi', sound: 'boo' }])] });
+    expect(pieces()).toHaveLength(1);
+    expect(document.querySelectorAll('.dw-lt-cue[tabindex="0"]')).toHaveLength(0);
+    expect(buttons()).toHaveLength(0);
+  });
+});
+
+describe('Laugh Track: a click plays only when the selection is collapsed (#577)', () => {
+  test('a click that ends a text selection plays nothing and marks nothing', () => {
+    mount();
+    vi.stubGlobal('getSelection', () => ({ isCollapsed: false }));
+    fireEvent.click(pieces()[0]!);
+    expect(heard.play).not.toHaveBeenCalled();
+    expect(pieces()[0]).not.toHaveClass('dw-lt-fired');
+  });
+
+  test('a real non-collapsed range over a cue\'s text also stops the click', () => {
+    mount();
+    const range = document.createRange();
+    range.selectNodeContents(pieces()[0]!);
+    window.getSelection()!.removeAllRanges();
+    window.getSelection()!.addRange(range);
+    fireEvent.click(pieces()[0]!);
+    expect(heard.play).not.toHaveBeenCalled();
+    window.getSelection()!.removeAllRanges();
+  });
+
+  test('a collapsed or absent selection plays as before', () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    mount();
+    vi.stubGlobal('getSelection', () => ({ isCollapsed: true }));
+    fireEvent.click(pieces()[0]!);
+    expect(heard.play).toHaveBeenCalledTimes(1);
+    vi.setSystemTime(Date.now() + 1000);
+    vi.stubGlobal('getSelection', () => null);
+    fireEvent.click(pieces()[1]!);
+    expect(heard.play).toHaveBeenCalledTimes(2);
+  });
+
+  test('Enter and Space play with a selection present', () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    mount();
+    vi.stubGlobal('getSelection', () => ({ isCollapsed: false }));
+    fireEvent.keyDown(buttons()[0]!, { key: 'Enter' });
+    expect(heard.play).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('Laugh Track: focus pins', () => {
   test('focus on an unheard place pins it and blur lets it go, and focus plays no take', () => {
     mount();
