@@ -79,6 +79,8 @@ describe('a hidden post', () => {
     await article(2);
     const original = (await w.fake.acts(w.thread, 2, 2))[0]!;
     const leaked: Act = { ...original, hidden: true, payload: { body: WORDS }, currentPayload: { body: WORDS } };
+    /* The page subscribes in an effect after its first posts are drawn: wait for the listener before speaking to it. */
+    await waitFor(() => expect(tapped()).toBeDefined());
     act(() => { tapped().onAct?.(leaked); });
     await waitFor(() => expect(within(document.getElementById('post-2')!).getByRole('note')).toHaveTextContent(NOTE));
     expect(document.getElementById('post-2')).not.toHaveTextContent(WORDS);
@@ -232,6 +234,8 @@ describe('a post that quotes a hidden post, before the conceal job has written i
     await article(2);
     const original = (await w.fake.acts(w.thread, 2, 2))[0]!;
     const leaked: Act = { ...original, concealing: true, payload: { body: WORDS }, currentPayload: { body: WORDS } };
+    /* The page subscribes in an effect after its first posts are drawn: wait for the listener before speaking to it. */
+    await waitFor(() => expect(tapped()).toBeDefined());
     act(() => { tapped().onAct?.(leaked); });
     await waitFor(() => expect(within(document.getElementById('post-2')!).getByRole('note')).toHaveTextContent(CONCEALING));
     expect(document.getElementById('post-2')).not.toHaveTextContent(WORDS);
