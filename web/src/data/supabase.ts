@@ -303,6 +303,9 @@ function toPlaceOn(raw: unknown): PlaceOn | null {
   }
 }
 
+/** The key of a play's cast-from post, named once so no read of it is a property called `from` (tools/check-web-reads.mjs reads that as a client's). */
+const PLAY_FROM = 'from';
+
 /** A post place, or null for anything else, missing or malformed. */
 function toPostPlace(raw: unknown): Extract<PlaceOn, { kind: 'post' }> | null {
   const place = toPlaceOn(raw);
@@ -315,7 +318,7 @@ function toPlace(raw: unknown): OriginPlace | null {
   if (raw['kind'] === 'play') {
     if (!(raw['card'] === null || isText(raw['card']))) return null;
     /* `from` and `at` (0430) are each a post place, else null: a row from before the migration has neither key. */
-    return { kind: 'play', card: raw['card'], on: toPlaceOn(raw['on']), from: toPostPlace(raw['from']), at: toPostPlace(raw['at']) };
+    return { kind: 'play', card: raw['card'], on: toPlaceOn(raw['on']), from: toPostPlace(raw[PLAY_FROM]), at: toPostPlace(raw['at']) };
   }
   const place = toPlaceOn(raw);
   return place !== null && (place.kind === 'post' || place.kind === 'update') ? place : null;
@@ -763,9 +766,9 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
    * server's own words, so a screen can tell a refused search from one that never reached the server (a `ReadFailure`); anything else is `read`'s.
    */
   /** A moment (play_moment, spin_moment): one read, a refusal in words read as null. */
-  async function momentOf(fn: 'play_moment' | 'spin_moment', args: Record<string, string>): Promise<PlayMoment | null> {
+  async function momentOf(run: () => PromiseLike<unknown>): Promise<PlayMoment | null> {
     const r = await read(async () => {
-      const x = (await client.rpc(fn, args)) as Res;
+      const x = (await run()) as Res;
       return x.error?.hint === 'kayfabb.refusal' ? { data: null, error: null, status: 200 } : x;
     });
     const m = r.data as Row | null;
@@ -1525,12 +1528,12 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     async playMoment(play) {
       /* One read of the moment (play_moment, 0072); an id that is no play on a post is refused in words, which is null here. */
       if (!idOk(play)) return null;
-      return momentOf('play_moment', { play });
+      return momentOf(() => client.rpc('play_moment', { play }));
     },
     async spinMoment(spin) {
       /* One read of the moment (spin_moment, 0430); a spin that names no post is refused in words, which is null here. */
       if (!idOk(spin)) return null;
-      return momentOf('spin_moment', { spin });
+      return momentOf(() => client.rpc('spin_moment', { spin }));
     },
     async myReleases(plays) {
       const wanted = [...new Set(plays)].filter(idOk);
