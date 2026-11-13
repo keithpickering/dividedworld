@@ -78,7 +78,7 @@ const byline = (page: Page) => page.evaluate(() => {
   const cell = by.closest('td')!.getBoundingClientRect();
   const partsOf = () => [by.querySelector('.kb-board-sep'), by.querySelector('.kb-who'), by.querySelector('a:not(.kb-who a)')].map((e) => e!.getBoundingClientRect());
   /* The name may be wider than the row and wrap in its box: the "·" shares the line of the name's first line, whatever the name's box (its last line is where the date may stand). */
-  const nameFirstLine = () => { const range = document.createRange(); range.selectNodeContents(by.querySelector('.kb-who a')!); return range.getClientRects()[0]!; };
+  const nameFirstLine = () => { const range = document.createRange(); range.selectNodeContents(by.querySelector('.kb-who-name')!); return range.getClientRects()[0]!; };
   /* The title is cut to the words that leave the unit's line no room for the whole of it, but room for its "·": the unit must move whole, where an inline one would break after the "·". */
   const unit = partsOf().reduce((sum, r) => sum + r.width, 0);
   title.textContent = 'w';
@@ -92,7 +92,7 @@ const byline = (page: Page) => page.evaluate(() => {
 });
 
 const DESK = { width: 1440, height: 1000 };
-const THREAD_PARTS = ['.kb-thread-title b', '.kb-thread-replies > .kb-num', '.kb-thread-views > .kb-num', '.kb-thread-last .kb-who a'] as const;
+const THREAD_PARTS = ['.kb-thread-title b', '.kb-thread-replies > .kb-num', '.kb-thread-views > .kb-num', '.kb-thread-last .kb-who-name'] as const;
 const BOARD_PARTS = ['.kb-board-link b', '.kb-board-threads > .kb-num', '.kb-board-last-title'] as const;
 
 test('1: a thread row\'s title, replies, views and last post share a baseline at 1440', async ({ page }) => {
@@ -392,7 +392,7 @@ const dotFaults = (page: Page): Promise<string[]> => page.evaluate(() => {
   for (const unit of document.querySelectorAll('.kb-board-last-by')) {
     const dot = unit.querySelector('.kb-board-last-who > .kb-board-sep');
     const alone = unit.querySelector('.kb-board-sep');
-    const link = unit.querySelector('.kb-who a');
+    const link = unit.querySelector('.kb-who-name');
     if (!alone || alone.textContent!.trim() !== '·' || alone.getClientRects().length === 0) continue;
     const range = document.createRange();
     range.selectNodeContents(link!);

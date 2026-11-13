@@ -32,6 +32,22 @@ export function Who({ character, name, children }: { readonly character: Charact
 }
 
 /**
+ * A character's name and avatar as one link to its profile, in a `kb-who` box so the two never part across a line. The avatar is
+ * decoration (`Mini` hides it), so the link's accessible name is the character's name alone. `avatar` false draws the name link alone.
+ * This is the one piece every screen draws a linked character with.
+ */
+export function CharacterLink({ id, character, name, avatar = true }: { readonly id: string; readonly character: Character | undefined; readonly name: string; readonly avatar?: boolean }) {
+  return (
+    <span className="kb-who">
+      <Link to={`/c/${encodeURIComponent(id)}`} className="kb-who-link">
+        {avatar && <Mini character={character} name={name} />}
+        <span className="kb-who-name">{name}</span>
+      </Link>
+    </span>
+  );
+}
+
+/**
  * The head of a post-like row, a media object: the avatar and the name, one `Who` unit. `id` is the character's id,
  * which is given apart from `character` because the character may not be loaded yet while its id is known; it is
  * required, and null is the staff (the instance's `staffWord`). `link` draws the name as the profile link, false as
@@ -45,9 +61,10 @@ export function Byline({ character, name, link, id, avatar = true }: { readonly 
     return avatar ? <Who character={undefined} name="S">{staff}</Who> : staff;
   }
   const shown = name ?? character?.name ?? 'A character';
+  if (link) return <CharacterLink id={id} character={character} name={shown} />;
   return (
     <Who character={character} name={name ?? character?.name ?? 'A'}>
-      {link ? <Link to={`/c/${encodeURIComponent(id)}`}>{shown}</Link> : <span className="kb-byline-name">{shown}</span>}
+      <span className="kb-byline-name">{shown}</span>
     </Who>
   );
 }

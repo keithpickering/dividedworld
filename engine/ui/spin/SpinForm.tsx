@@ -18,6 +18,14 @@ import { Link, useNavigate } from '../router.tsx';
 import { expectOrigin, spunLoader } from './spun.ts';
 import './spin.css';
 
+/**
+ * The server's refusal of a spin whose pressed post is not under the card (spin_written, 0351_spin_at_post.sql; the fake words it the same). The same words
+ * whichever check failed, so a refusal in them with `at` sent means the card is no longer on that post.
+ */
+export const CARD_NOT_ON_POST = 'that card is not on that post';
+/** What a spin form says in its place: out of character, and what to press. */
+const NO_LONGER_ON_POST = 'That card is no longer on that post. Spin thread again to spin from the card without the post.';
+
 /** What was typed in a spin form: the title and the opening post. */
 export interface SpinDraft { readonly title: string; readonly body: string }
 
@@ -37,8 +45,10 @@ export function useSpinDrafts(): { readonly get: (origin: Id) => SpinDraft | und
  * `label` names the origin as the form says it: "post 41" for a post, "Mrs. Hooligan's Whoops!" for a card play
  * (the plays-on-a-post design, section 3); null for an Act with no such name ("this Act").
  */
-export function SpinForm({ origin, label: named, onClose, draft, onDraft, apology }: {
+export function SpinForm({ origin, label: named, at, onClose, draft, onDraft, apology }: {
   readonly origin: Id; readonly label: string | null; readonly onClose: () => void;
+  /** The post this was pressed on (a card on a character's mark on its postbit): sent with the spin, which records it. Absent, the spin names no post. */
+  readonly at?: Id;
   /**
    * Set, the form writes an apology: the origin is the move that bars the character, and sending goes through `apologize` (the spin of that move, with the bar the one
    * thing skipped) instead of `spin`. `to` names whom it is written to as the form says it ("the Boss", "a Mod").
@@ -57,6 +67,10 @@ export function SpinForm({ origin, label: named, onClose, draft, onDraft, apolog
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
   const [again, setAgain] = useState(false);
+  /* The server refused the pressed post: the next spin is sent without it (the design's section 6), with what was typed kept. */
+  const [noPost, setNoPost] = useState(false);
+  useEffect(() => { setNoPost(false); }, [at]);
+  const sentAt = noPost ? undefined : at;
   const first = useRef<HTMLInputElement>(null);
   const hud = hudCharacter?.id ?? null;
   const who = useWhoPosts(hud, title.trim() !== '' || body.trim() !== '');
@@ -103,9 +117,13 @@ export function SpinForm({ origin, label: named, onClose, draft, onDraft, apolog
     setRefusal(null);
     try {
       let answer;
-      try { answer = await (apology ? api.apologize(origin, character, title, body, ...framingArgs(body)) : api.spin(origin, character, title, body, ...framingArgs(body))); } catch { await look(null, character); return; }
+      try {
+        answer = await (apology ? api.apologize(origin, character, title, body, ...framingArgs(body))
+          : sentAt === undefined ? api.spin(origin, character, title, body, ...framingArgs(body)) : api.spin(origin, character, title, body, framingArgs(body)[0], sentAt));
+      } catch { await look(null, character); return; }
       if (answer.ok) went(answer.value.thread.id);
       else if (answer.uncertain) await look(answer.error, character);
+      else if (!apology && sentAt !== undefined && answer.error === CARD_NOT_ON_POST) { setNoPost(true); setRefusal(NO_LONGER_ON_POST); }
       else setRefusal(`${fieldWords(answer.field)}${answer.error}`);
     } finally {
       setBusy(false);
