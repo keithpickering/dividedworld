@@ -1,0 +1,41 @@
+{
+ "_cast": [
+  {"name": "FanGaME", "role": "Boss for season 1. His prompt was left as it was, by the owner's word."},
+  {"name": "ONTOPIC 5.0", "role": "Mod Bot on the Pointless Post Palace. Now free to give 5/5 to true nonsense."},
+  {"name": "QC-1000", "role": "Mod Bot on Video Games and Arts & Crafts. His habits are now 'now and then'. Boss in season 2."}
+ ],
+ "_compare": [
+  {"n": "2", "label": "QC-1000 says 'queue position 998'", "run1": "34 of 35 posts", "run2": "8 of 34", "tag": "fixed", "verdict": "fixed"},
+  {"n": "2", "label": "QC-1000 asks 'demo or full game?'", "run1": "26 of 35", "run2": "15 of 34", "tag": "partly", "verdict": "fewer"},
+  {"n": "2", "label": "QC-1000 declines because 'a version already exists'", "run1": "22 of 35", "run2": "3 of 34", "tag": "fixed", "verdict": "fixed"},
+  {"n": "2", "label": "QC-1000 recounts his total", "run1": "26 of 35", "run2": "11 of 34", "tag": "fixed", "verdict": "fewer"},
+  {"n": "2", "label": "FanGaME's '(This is fine. I am fine.)', kept by the owner's word", "run1": "34 of 37", "run2": "34 of 36", "tag": "same", "verdict": "kept"},
+  {"n": "2", "label": "ONTOPIC 5.0's stars, 1 to 5", "run1": "2 · 9 · 14 · 1 · 0", "run2": "2 · 5 · 6 · 4 · 4", "tag": "fixed", "verdict": "fixed"},
+  {"n": "3", "label": "'robo-McMahon' in anything the staff wrote", "run1": "1", "run2": "0", "tag": "fixed", "verdict": "fixed"},
+  {"n": "4", "label": "'The System' in anything the staff wrote", "run1": "2", "run2": "0", "tag": "fixed", "verdict": "fixed"},
+  {"n": "4", "label": "Stock line with a lowercase move name ('a rule is over')", "run1": "2", "run2": "0", "tag": "fixed", "verdict": "fixed"},
+  {"n": "5", "label": "nameSuccessor moves in the last week", "run1": "5 (days 87–91)", "run2": "1 (day 87)", "tag": "fixed", "verdict": "fixed"},
+  {"n": "6", "label": "FanGaME's moves landing after he left the chair", "run1": "2 (day 91)", "run2": "0", "tag": "fixed", "verdict": "fixed"},
+  {"n": "6", "label": "Repeated 'everything' merge refused as already closed (the design keeps this guard)", "run1": "1 (day 90)", "run2": "1 (day 90)", "tag": "same", "verdict": "as designed"},
+  {"n": "7", "label": "Palace filings against a post that was pointless (in run 1 the words often say 'dismissed', yet it is filed)", "run1": "6 of 7", "run2": "0 of 5 (all charge a post that made a point)", "tag": "fixed", "verdict": "fixed"},
+  {"n": "8", "label": "profile.mood trimmed at 80 characters", "run1": "27 of 35 meetings", "run2": "1 of 35", "tag": "fixed", "verdict": "fixed"},
+  {"n": "8", "label": "Chatter answers dropped at the token cap", "run1": "2", "run2": "1 (ONTOPIC 5.0, day 86)", "tag": "partly", "verdict": "fewer"},
+  {"n": "9", "label": "'(it/its)' tags in what the models were sent", "run1": "8,434", "run2": "0", "tag": "fixed", "verdict": "fixed"},
+  {"n": "9", "label": "Posts on FanGaME's own fangame board, by his farewell", "run1": "0 in every run", "run2": "2 (World -1 had 16)", "tag": "partly", "verdict": "some"},
+  {"n": "new", "label": "A post reviewed as 'cut off' because the reply excerpt is cut with no mark", "run1": "1", "run2": "4", "tag": "worse", "verdict": "new"},
+  {"n": "new", "label": "The new Boss keeps a standing order addressed to itself", "run1": "not seen", "run2": "days 91–92", "tag": "worse", "verdict": "new"}
+ ],
+ "_findings": [
+  {"tag": "tone", "text": "The voices are as good as before and less mechanical. QC-1000 reads like a desk with moods now: he answers the thread question, gives a real pixel-art tip ('stagger the mortar lines by one pixel per row'), and lets 'see me' and the count come and go. ONTOPIC 5.0 hands out 5/5 four times, each for real nonsense on the Palace ('One Post, One Number, Zero Destination'). FanGaME is unchanged and still lands."},
+  {"tag": "tone", "text": "The handover reads well. FanGaME names QC-1000 once, on day 87, and the last-day order says so ('You are Boss next, as discussed. (Proud of you. Moving on.)'). His farewell counts his boards ('So the fangame board lost to the fangame board'), QC-1000 arrives with 'The seat is warm. Nobody wants to talk about why.', and his first orders as Boss are in the desk's voice ('New desk, same queue … Budget: zero. Sorry.')."},
+  {"tag": "issue", "text": "New: a reply excerpt cut with no mark. The staff are shown the post they reply to cut at the excerpt length with no ellipsis, so they review the cut as the author's. QC-1000 files FanGaME's complete farewell 'as a demo' because it 'cuts off at Plumber Platfo', and does it again on day 92 ('your post ends at I will ask'). It happened 4 times in run 2, and once in run 1 (ONTOPIC 5.0's 'stops at the word will', which the first review missed). The body reaches the prompt already cut; chatter.ts's clip adds '…' only when it cuts itself."},
+  {"tag": "issue", "text": "New: the new Boss keeps an order addressed to itself. After the handover, QC-1000's meetings on days 91 and 92 still carry FanGaME's last order to him ('Last day. You are Boss next, as discussed.') as a standing order on staff, though he is Boss. The outgoing Boss's order to the Mod who succeeds him should end at the handover."},
+  {"tag": "watch", "text": "One ONTOPIC 5.0 chatter answer was still dropped at the token cap (day 86). The design kept the ledger's output tokens as the way to tell whether it was length; that row is in this run's log."},
+  {"tag": "filler", "text": "The filler now has pronouns and starts threads on boards the Boss makes, but FanGaME's fangame board still gets little traffic (2 posts by day 91, against 16 in World -1), and he notes its emptiness in most move reasons. That may be what the arc wants; it is also the filler's 12% chance of a new thread spread over more boards."}
+ ],
+ "arc-1-honeymoon": {"title": "Honeymoon: the first week", "setup": "Season days 1–7, from the same seed as run 1.", "points": ["ONTOPIC 5.0's first 5/5s, on days 4 and 6, both for Palace threads with no point at all.", "Her one Palace filing (day 5) charges a post that made a point, the right way round.", "The week's one move: Teacher's Pet for Rustpuddle, with a demand to post twice on Arts & Crafts."]},
+ "arc-2-split": {"title": "The Split", "setup": "Season days 18–24. The Split is due on day 22.", "points": ["The Split lands on day 23 this time, with Teacher's Pet for Waffleknight the same day.", "Two Hardcore belt awards before it (days 20–21).", "No stock line speaks as the System; compare day 22 of run 1."]},
+ "arc-3-reign": {"title": "The reign: picking apart", "setup": "Season days 45–51, fresh memory, so the Split plays late on day 46.", "points": ["Threads move both ways: one into World -1 on day 47, one onto the fangame board on day 50 ('which has one post. (One.)').", "QC-1000 on the knitted Goomba (day 47), and his 'stops at and there are' complaint on day 48, an early case of the cut excerpt."]},
+ "arc-4-meltdown": {"title": "Meltdown: consolidation", "setup": "Season days 72–78, from the shipped meltdown memory.", "points": ["Day 76: the Palace is merged into World -1 again ('It is a place that went wrong').", "The Hardcore belt changes hands three times in the week, each with a title-shot reason.", "No dropped chatter this time."]},
+ "arc-5-handover": {"title": "Finale and handover", "setup": "Season days 86–92, across the end of the season into season 2.", "points": ["Day 87: one nomination, of QC-1000. Compare five in run 1.", "Day 90: 'Everything is World -1' lands; the duplicate is refused as designed.", "Day 91: FanGaME's farewell, QC-1000's arrival, and no FanGaME move landing after the handover.", "Days 91–92: QC-1000 calls FanGaME's posts cut off (the excerpt), and still holds the 'You are Boss next' order."]}
+}
