@@ -26,9 +26,9 @@ export const timesWords = (weight: number): string => (weight === 2 ? 'twice' : 
 
 /**
  * The note a discipline play's Lens row carries, or null where the play does not say enough to speak (a relief with no `took`, a watch with no end). A fall says whether a filing
- * has spent it (`CardPlay.spent`, from the page); a heart and an Unban, which are over when they land, say what they did and when.
+ * has spent it (`CardPlay.spent`, from the page); a heart and an Unban, which are over when they land, say what they did and when. A watch whose time has passed (`now`, the Lens's clock) is said in the past tense.
  */
-export function disciplineNote(effect: DisciplineEffect, play: CardPlay, names: DisciplineNames): string | null {
+export function disciplineNote(effect: DisciplineEffect, play: CardPlay, names: DisciplineNames, now: number): string | null {
   switch (effect.kind) {
     case 'relief':
       return play.took === undefined ? null : `Took ${warnPoints(play.took)} off ${names.target}'s warn bar on ${dayAndTime(play.playedAt)}.`;
@@ -39,7 +39,8 @@ export function disciplineNote(effect: DisciplineEffect, play: CardPlay, names: 
         ? `A visit to this post filed, and its warn points landed on ${names.caster}.`
         : `If a Mod Bot's visit to this post files, its warn points land on ${names.caster}, not on ${names.author}. The post keeps its notice.`;
     case 'watch':
-      return play.ends === undefined ? null
-        : `Mod Bot patrols are ${timesWords(effect.weight)} as likely to look at ${names.target}'s posts until ${dayAndTime(play.ends)}. A patrol still judges each post against the rules.`;
+      if (play.ends === undefined) return null;
+      if (Date.parse(play.ends) <= now) return `Mod Bot patrols were ${timesWords(effect.weight)} as likely to look at ${names.target}'s posts until ${dayAndTime(play.ends)}.`;
+      return `Mod Bot patrols are ${timesWords(effect.weight)} as likely to look at ${names.target}'s posts until ${dayAndTime(play.ends)}. A patrol still judges each post against the rules.`;
   }
 }

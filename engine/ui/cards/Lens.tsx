@@ -796,7 +796,7 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
   /* A discipline card's plays say what each did, in the engine's words: a play an admin ended, one that did not take and one a trap caught are said as any is (the view's notes win). */
   const effect = rules?.discipline;
   const said = effect === undefined ? null : Object.fromEntries(ofKind.filter((p) => !p.caught && !p.reversed && !p.untaken).flatMap((p): [Id, string][] => {
-    const note = disciplineNote(effect, p, { target: p.targetName ?? (p.on ? nameOf(p.on) : 'this character'), caster: nameOf(p.caster), author: author === null ? 'the author' : nameOf(author) });
+    const note = disciplineNote(effect, p, { target: p.targetName ?? (p.on ? nameOf(p.on) : 'this character'), caster: nameOf(p.caster), author: author === null ? 'the author' : nameOf(author) }, now);
     return note === null ? [] : [[p.id, note]];
   }));
   const shownView = said === null || Object.keys(said).length === 0 ? view : { ...view, notes: { ...said, ...view.notes } };
