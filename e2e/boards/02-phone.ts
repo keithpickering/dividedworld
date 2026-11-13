@@ -5,6 +5,9 @@
  * Game HUD's swap, Menu and hand button. The hand is open on the board because the player pressed
  * the HUD's hand button, so the build is pressed the same way before it is read.
  *
+ * DEPARTURE (the phone hand's design, docs/plans/2026-11-13-phone-hand-design.md, section 6): the sheet is a dialog named "Your hand" where the board draws a
+ * region (`buildRole`), and it holds one face per kind on a swipe arc, so the board's third face (the second Whoops!) is dropped and the cards' boxes are not compared (they
+ * stand on the arc). The build's Whoops! is one card with "x2", named ", 2 in hand".
  * The hand is the cards part's (the glass build plan, Part 3): its heading with the count, the three
  * cards, and the Vending Machine link. Left out until the play does (cards Task 3): the armed card
  * (the board's second, named "Whoops!, Salty postcard, armed"; the build's second Whoops! is not armed,
@@ -34,13 +37,12 @@ const manifest: BoardManifest = {
     /* The banner stands 18px lower (its top margin, the board look's Task 3) and 1px more for its frame. */
     /* DEPARTURE (the board look's Task 4): the Boards button is a Chrome button now (bold, tracked, in the button's own ink), which this board, a record, draws plain, so its type is not compared (docs/research/2026-11-06-board-look/03-phone.html, the batch-1 phone board, draws it as built) and its box is 10px wider again, held to the right edge 10.9px further left. */
     { id: 'boards', role: 'button', name: 'Boards', type: false, buildShift: { x: -29.1, y: 19, width: 20.8 } },
-    /* The sheet's box, its heading with the count, and its close button. */
-    { id: 'hand', role: 'region', name: 'Your hand', type: false },
-    { id: 'hand-head', role: 'heading', name: 'Hand · 3', within: 'hand' },
-    { id: 'hand-close', role: 'button', name: 'Close the hand', within: 'hand' },
+    /* The sheet's box, its heading with the count, and its close button. DEPARTURE (the phone hand's design, section 3, "Its size"): the sheet is as tall as its parts, the row with room for the lifted card and the arc, the line with room for three lines, and the button, so it stands 89.5px taller than the board draws it, held to the bottom of the window: its top, and the heading and the close button in it, stand that far higher. */
+    { id: 'hand', role: 'region', buildRole: 'dialog', name: 'Your hand', type: false, buildShift: { y: -89.5, height: 89.5 } },
+    { id: 'hand-head', role: 'heading', name: 'Hand · 3', within: 'hand', buildShift: { y: -88.5 } },
+    { id: 'hand-close', role: 'button', name: 'Close the hand', within: 'hand', buildShift: { y: -89.5 } },
     /* The cards, each a button by its name. A card's parts are pictures and words said once by its name, so its box is compared and not its type. */
-    { id: 'card-stick', role: 'button', name: 'Stick Around, Sweet postcard', buildName: 'Stick Around, Sweet, Move, common postcard', within: 'hand', type: false },
-    { id: 'card-whoops', role: 'button', name: 'Whoops!, Salty postcard', buildName: 'Whoops!, Salty, Move, common postcard', within: 'hand', buildNth: 1, type: false },
+    { id: 'card-stick', role: 'button', name: 'Stick Around, Sweet postcard', buildName: 'Stick Around, Sweet, Move, common postcard', within: 'hand', box: 'none', type: false },
     /* (Each card's name says its play and rarity in the build, a departure the card mechanic makes: docs/plans/2026-11-01-card-plays-plan.md, Task 7.) */
     /* The link's place follows the line above it, whose words are the armed card's (cards Task 3), so only where it starts is compared. */
     /* A GlassButton in a centered ButtonRow (the glass polish, design section 2), in the parts' secondary colors, where the board draws a salty-yellow link at the sheet's left: not compared (the layout check holds it). */

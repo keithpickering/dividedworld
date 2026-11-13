@@ -6,7 +6,7 @@
  * opens the hand in its `play` function.
  */
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { userEvent, within } from 'storybook/test';
 import type { World } from '../story.tsx';
 import { useKayfa } from '../context.tsx';
@@ -26,32 +26,46 @@ const hand = (kinds: number | null): World => (fake, instance) => {
   fake.signInAs(me);
 };
 
-/** Arms the instance's `nth` card, as pressing it in the hand does. */
-function Arm({ nth }: { readonly nth: number | null }) {
+/**
+ * Arms the instance's `nth` card, as pressing it in the hand does. With `open` it also opens the hand once the card is armed (the phone's hand button puts an
+ * armed card back, so a player's own press cannot reach an armed phone hand open; a story can). The account's sign-in clears what was armed and opened before
+ * it, so each is done again, at most three times, until it holds.
+ */
+function Arm({ nth, open = false }: { readonly nth: number | null; readonly open?: boolean }) {
   const { instance } = useKayfa();
   const play = usePlay();
   const key = nth === null ? null : instance.cards[Math.min(nth, instance.cards.length - 1)]?.key ?? null;
+  const tries = useRef(0);
   useEffect(() => {
-    if (!play || key === null) return;
+    if (!play || key === null || open) return;
     play.arm(key);
     // Armed once, as the player's press does.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
+  useEffect(() => {
+    if (!play || key === null || !open || tries.current >= 6) return;
+    if (play.armed !== key) { tries.current += 1; play.arm(key); } else if (!play.handOpen) { tries.current += 1; play.setHandOpen(true); }
+  });
   return null;
 }
 
-function HandArc({ armed }: { readonly armed: number | null }) {
-  return <Frame><Arm nth={armed} /><p /></Frame>;
+function HandArc({ armed, opened = false }: { readonly armed: number | null; readonly opened?: boolean }) {
+  return <Frame><Arm nth={armed} open={opened} /><p /></Frame>;
 }
 
 const open = async ({ canvasElement }: { canvasElement: HTMLElement }) => {
   await userEvent.click(await within(canvasElement).findByRole('button', { name: /^Hand, \d+ postcards?/ }));
 };
 
+/** The phone's armed hand opens itself (`Arm`'s `open`): the hand button reads "Armed · X" there and puts the card back. The play waits for the sheet. */
+const armedPhone = async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+  await within(canvasElement).findByRole('dialog', { name: 'Your hand' });
+};
+
 const meta: Meta<typeof HandArc> = {
   title: 'Frame/Hand arc',
   component: HandArc,
-  args: { armed: null },
+  args: { armed: null, opened: false },
   parameters: { path: '/b/general', layout: 'fullscreen' },
   globals: { viewport: { value: 'glassMain1440', isRotated: false } },
   play: open,
@@ -68,3 +82,17 @@ export const EveryKind: Story = { parameters: { world: hand(null) } };
 export const ThreeKindsArmed: Story = { args: { armed: 1 }, parameters: { world: hand(3) } };
 /** Every kind with one armed: the arc open again, the armed card standing lifted. */
 export const EveryKindArmed: Story = { args: { armed: 1 }, parameters: { world: hand(null) } };
+
+/**
+ * The phone's hand (docs/plans/2026-11-13-phone-hand-design.md): the sheet over the board at 390 by 844, the cards in one swiped row on an arc, the middle one
+ * upright and lifted. The same three hands as above. The armed one has a card armed and the sheet open at once, which a player's own press cannot reach on a phone (the hand button
+ * puts an armed card back), so the story's Arm sets both.
+ */
+const phone = { globals: { viewport: { value: 'glassPhone390', isRotated: false } }, play: open } as const;
+
+/** The phone: three kinds, one to three copies each, the hand open on the first card. */
+export const PhoneThreeKinds: Story = { ...phone, parameters: { world: hand(3) } };
+/** The phone: every kind the instance has, the hand open on the first card. */
+export const PhoneEveryKind: Story = { ...phone, parameters: { world: hand(null) } };
+/** The phone: every kind with the second armed, the hand open on the armed card. */
+export const PhoneEveryKindArmed: Story = { ...phone, play: armedPhone, args: { armed: 1, opened: true }, parameters: { world: hand(null) } };
