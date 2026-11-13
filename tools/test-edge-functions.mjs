@@ -6,17 +6,20 @@
  * Every case starts from the real config.toml, functions and migrations read from disk and breaks
  * exactly one thing, because a guard proved against a synthetic fixture proves only that it can
  * read the fixture. The cases that break something start from the real files with a
- * `[functions.conceal]` table added in memory, so each complaint they expect is the one they
- * planted and not the one the real files carried while conceal had no table (issue #646). The last
- * case asserts the untouched real files pass, so a `problems()` that has gone quiet fails here
- * rather than reading as green.
+ * `[functions.conceal]` table added in memory where the real config.toml has none, so each
+ * complaint they expect is the one they planted and not the one the real files carried while
+ * conceal had no table (issue #646); once it has one, they start from the real files as they are.
+ * The last case asserts the untouched real files pass, so a `problems()` that has gone quiet fails
+ * here rather than reading as green.
  */
 import { problems, readFiles } from './check-edge-functions.mjs';
 
 const REAL = readFiles();
 const CONFIG = 'supabase/config.toml';
 /** The real files with conceal's table present, so a case's own complaint is the only one. */
-const BASE = { ...REAL, [CONFIG]: `${REAL[CONFIG]}\n[functions.conceal]\nverify_jwt = false\n` };
+const BASE = /^\s*\[functions\.conceal\]/m.test(REAL[CONFIG] ?? '')
+  ? REAL
+  : { ...REAL, [CONFIG]: `${REAL[CONFIG]}\n[functions.conceal]\nverify_jwt = false\n` };
 
 let failures = 0;
 
