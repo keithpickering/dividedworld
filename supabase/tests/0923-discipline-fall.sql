@@ -23,6 +23,49 @@ exception when others then
   return sqlstate || ': ' || sqlerrm;
 end $$;
 
+-- Two statements sent to two sessions in a fixed order while a third holds the post's row: each is seen waiting on it before the next is sent, then the holder lets go. Returns what each said (null for none).
+create function pg_temp.ordered(on_post uuid, first_stmt text, second_stmt text) returns text[] language plpgsql as $$
+declare
+  url text := current_setting('kayfabb.scratch_url');
+  out text[] := array[null, null]::text[]; tries integer; conn text; n integer := 0;
+begin
+  perform extensions.dblink_connect('df_h', url);
+  perform extensions.dblink_connect('df_1', url);
+  perform extensions.dblink_connect('df_2', url);
+  begin
+    perform extensions.dblink_exec('df_h', 'begin');
+    perform extensions.dblink_exec('df_h', format('do $h$ begin perform 1 from acts where id = %L for no key update; end $h$', on_post));
+    foreach conn in array array['df_1', 'df_2'] loop
+      n := n + 1;
+      perform extensions.dblink_exec(conn, 'set lock_timeout = ''20s''');
+      perform extensions.dblink_send_query(conn, format('/* df_wait_%s */ %s', n, case when n = 1 then first_stmt else second_stmt end));
+      tries := 0;
+      loop
+        -- The activity view is read once in a transaction unless the snapshot is cleared.
+        perform pg_stat_clear_snapshot();
+        exit when exists (select 1 from pg_stat_activity a where a.query like '%/* df_wait_' || n || ' */%' and a.pid <> pg_backend_pid() and a.wait_event_type = 'Lock');
+        tries := tries + 1;
+        if tries > 400 then raise exception 'statement % never waited on the post''s row', n; end if;
+        perform pg_sleep(0.025);
+      end loop;
+    end loop;
+    perform extensions.dblink_exec('df_h', 'commit');
+  exception when others then
+    perform extensions.dblink_disconnect('df_h'); perform extensions.dblink_disconnect('df_1'); perform extensions.dblink_disconnect('df_2');
+    raise;
+  end;
+  foreach conn in array array['df_1', 'df_2'] loop
+    begin
+      perform * from extensions.dblink_get_result(conn) as x(r jsonb);
+    exception when others then
+      out[case when conn = 'df_1' then 1 else 2 end] := sqlerrm;
+    end;
+    begin perform * from extensions.dblink_get_result(conn) as x(r jsonb); exception when others then null; end;
+  end loop;
+  perform extensions.dblink_disconnect('df_h'); perform extensions.dblink_disconnect('df_1'); perform extensions.dblink_disconnect('df_2');
+  return out;
+end $$;
+
 -- ---- 0. The locks and the race ----
 -- A post, its open visit, an author and a taker, all committed (a second session must read them). Another session holds the post's row, as place_cast does for a cast on it: a filing and a fall cast
 -- each wait on it (55P03 is the lock timeout) and change nothing; then the two race for it, eight times, and the one that goes second sees the first.
@@ -74,12 +117,20 @@ begin
       if said[2] is null or said[2] not like '55P03:%' then raise exception 'a fall cast waits on the post''s row lock, said %', said[2]; end if;
       if exists (select 1 from acts where kind in ('visit_end', 'infraction') and (target_act_id = v or payload ->> 'visit_act' = v::text)) then raise exception 'a refused filing wrote something'; end if;
     end if;
-    said := tests.race_service(format('select file_visit(%L, ''Filed.'')', v), format('select play_card(%L, %L, %L, %L, %L, 0, %L, %L)', ut, 't-fall', ct, p, '{}', '', 'post'));
+    if i <= 6 then
+      -- Both orders, deterministically: another session holds the post's row, the first statement is sent and seen waiting on it, then the second, and the holder lets go. The lock queue is first come, first
+      -- served, so the first statement lands first and the second reads what it left. Odd: the filing first (the cast then lands on a post whose visit is over: unspent); even: the cast first (the filing takes it).
+      said := pg_temp.ordered(p, case when i % 2 = 1 then format('select file_visit(%L, ''Filed.'')', v) else format('select play_card(%L, %L, %L, %L, %L, 0, %L, %L)', ut, 't-fall', ct, p, '{}', '', 'post') end, case when i % 2 = 1 then format('select play_card(%L, %L, %L, %L, %L, 0, %L, %L)', ut, 't-fall', ct, p, '{}', '', 'post') else format('select file_visit(%L, ''Filed.'')', v) end);
+    else
+      -- And two sessions at once, whichever goes first.
+      said := tests.race_service(format('select file_visit(%L, ''Filed.'')', v), format('select play_card(%L, %L, %L, %L, %L, 0, %L, %L)', ut, 't-fall', ct, p, '{}', '', 'post'));
+    end if;
     if said[1] is not null or said[2] is not null then raise exception 'a fall cast racing a filing: both land, said %', said; end if;
     select count(*), count(*) filter (where payload ? 'fall_play') into infs, spent from acts where kind = 'infraction' and payload ->> 'visit_act' = v::text;
     bar_a := warn_points(ca); bar_t := warn_points(ct);
     play := (select k.id from acts k where k.kind = 'card' and k.target_act_id = p and k.character = ct);
     if infs is distinct from 1 or play is null then raise exception 'one filing, one cast: % infractions, play %', infs, play; end if;
+    if i <= 6 and (spent = 1) is distinct from (i % 2 = 0) then raise exception 'race % went the wrong way for its order: % infractions name the play', i, spent; end if;
     if spent = 1 then
       falls := falls + 1;
       if bar_t is distinct from 4 or bar_a is distinct from 0 or (select payload ->> 'fall_play' from acts where kind = 'infraction' and payload ->> 'visit_act' = v::text) is distinct from play::text or (select payload ->> 'character' from acts where kind = 'infraction' and payload ->> 'visit_act' = v::text) is distinct from ct::text
@@ -91,7 +142,7 @@ begin
       end if;
     end if;
   end loop;
-  raise notice 'the race went %, % times to the fall and % times to the author', 8, falls, elses;
+  raise notice 'the eight races: % went to the fall and % to the author', falls, elses;
 end $$;
 
 -- ---- The world: a Boss, a Mod on staff, the settings, players ----
@@ -313,7 +364,7 @@ begin
   v := pg_temp.visit(q, 'minor');
   perform end_visit(v, 'intercepted', null, 'Talked down.');
   if exists (select 1 from acts i where i.kind = 'infraction' and i.payload ->> 'fall_play' = play::text) then raise exception 'a visit talked down spends nothing'; end if;
-  v2 := pg_temp.visit(q, 'moderate');
+  v2 := pg_temp.visit(q, 'minor');
   perform file_visit(v2, 'Filed.');
   if (pg_temp.filed(v2)).payload ->> 'character' is distinct from taker::text or (pg_temp.filed(v2)).payload ->> 'fall_play' is distinct from play::text then raise exception 'the filing after a talk-down lands on the caster'; end if;
 
@@ -324,7 +375,7 @@ begin
   v := pg_temp.visit(r, 'minor');
   if not exists (select 1 from acts e where e.kind = 'visit_end' and e.target_act_id = v and e.payload ->> 'outcome' = 'trapped') then raise exception 'the visit was trapped as it began'; end if;
   if exists (select 1 from acts i where i.kind = 'infraction' and i.payload ->> 'fall_play' = play::text) then raise exception 'a visit trapped spends nothing'; end if;
-  v2 := pg_temp.visit(r, 'moderate');
+  v2 := pg_temp.visit(r, 'minor');
   perform file_visit(v2, 'Filed.');
   if (pg_temp.filed(v2)).payload ->> 'fall_play' is distinct from play::text then raise exception 'the filing after a trap lands on the caster'; end if;
 
@@ -342,7 +393,7 @@ declare
   admin_acc uuid := tests.account('df-admin');
   author uuid := pg_temp.player('f4-author'); taker uuid := pg_temp.player('f4-taker');
   p uuid := pg_temp.say(author, t, 'Before.'); q uuid := pg_temp.say(author, t, 'After.'); c uuid := pg_temp.say(author, t, 'Under a catcher.');
-  play uuid; v uuid; before_bar integer; sprung jsonb; cast jsonb;
+  play uuid; v uuid; before_bar integer; sprung jsonb; cst jsonb;
 begin
   insert into admins (account) values (admin_acc);
   perform pg_temp.hand(taker, 't-fall', 4);
@@ -360,8 +411,8 @@ begin
   -- A fall that a back caught is no fall: it is written `caught`, holds no place, and the filing lands on the author.
   perform pg_temp.hand(author, 't-tcatch', 1);
   perform set_card(pg_temp.owner(author), 't-tcatch', author, c, '{"card": "t-fall"}', 0, 't-fall');
-  cast := pg_temp.fall(taker, c);
-  if cast -> 'sprung' is null or not (cast -> 'payload' ? 'caught') then raise exception 'the back caught the fall: %', cast; end if;
+  cst := pg_temp.fall(taker, c);
+  if cst -> 'sprung' is null or not (cst -> 'payload' ? 'caught') then raise exception 'the back caught the fall: %', cst; end if;
   v := pg_temp.visit(c, 'minor'); perform file_visit(v, 'Filed.');
   if (pg_temp.filed(v)).payload ->> 'character' is distinct from author::text or (pg_temp.filed(v)).payload ? 'fall_play' then raise exception 'a caught fall is no fall: %', (pg_temp.filed(v)).payload; end if;
 end $$;
@@ -433,7 +484,7 @@ begin
   said_other := pg_temp.refusal(format('select pg_temp.fall(%L, %L, 50)', b1, pstaff));
   if said_own is distinct from '42501: Test Fall is played on another character''s post' then raise exception 'an own post is refused, said %', said_own; end if;
   if said_staff is distinct from '22023: Test Fall is played on a player''s post' or said_other is distinct from said_staff then raise exception 'a staff post is refused in the same words for everyone, said %, %', said_staff, said_other; end if;
-  if pg_temp.wallet(a1) is distinct from w0 or card_held(ann, 't-fall') is distinct from 3 then raise exception 'a refused fall spent something'; end if;
+  if pg_temp.wallet(a1) is distinct from w0 or card_held(ann, 't-fall') is distinct from 4 then raise exception 'a refused fall spent something'; end if;
   -- "Own post" compares characters: a second mask of the author's account takes the fall, and the filing goes to that mask.
   play := (pg_temp.fall(a2, pa1) ->> 'id')::uuid;
   v := pg_temp.visit(pa1, 'moderate'); perform file_visit(v, 'Filed.');
@@ -463,7 +514,7 @@ begin
   if pg_temp.wallet(taker) is distinct from w0 or card_held(pg_temp.owner(taker), 't-fall') is distinct from 1 or pg_temp.fall_of(p) is not null then raise exception 'a warded fall did nothing and cost nothing'; end if;
   -- A taker that has since joined the staff: infract refuses a staff character (there is no player character to warn), so the filing lands on the author as if there were no fall, and the fall stays unspent.
   perform pg_temp.fall(gone, q);
-  update characters set staff = 'df-gone', staff_kind = 'persona' where id = gone;
+  update characters set owner = null, staff = 'df-gone', staff_kind = 'persona' where id = gone;
   v := pg_temp.visit(q, 'moderate');
   hit := file_visit(v, 'Filed.');
   if (hit ->> 'filed')::boolean is distinct from true or (pg_temp.filed(v)).payload ->> 'character' is distinct from author::text or (pg_temp.filed(v)).payload ? 'fall_play' or pg_temp.bar(author) is distinct from 4 then
@@ -503,9 +554,15 @@ begin
   why := pg_temp.refusal(format($s$insert into acts (character, kind, thread, payload) values (null, 'infraction', %L, jsonb_build_object('character', %L::uuid, 'band', 'minor', 'points', 2, 'rule_number', null, 'board', %L::uuid, 'about_act', %L::uuid, 'visit_act', null, 'staff', 'df-m1', 'expires_at', now() + interval '1 day', 'fall_play', %L::uuid))$s$, t, taker, board, p, play));
   if why is not null then raise exception 'the guard takes the caster''s own play on its post: %', why; end if;
   perform set_config('kayfabb.warn_writer', '', true);
-  -- fall_play is a uuid and nothing else.
+  -- fall_play is a uuid and nothing else: the constraint says so (triggers off, so the guard does not answer first), and so does the guard.
+  perform set_config('session_replication_role', 'replica', true);
+  why := pg_temp.refusal(format($s$insert into acts (character, kind, thread, payload) values (null, 'infraction', %L, jsonb_build_object('character', %L::uuid, 'band', 'minor', 'points', 2, 'rule_number', null, 'board', %L::uuid, 'about_act', %L::uuid, 'visit_act', null, 'staff', 'df-m1', 'expires_at', now() + interval '1 day', 'fall_play', 'not a uuid'))$s$, t, taker, board, p));
+  if why is null or why not like '23514:%acts_infraction_payload%' then raise exception 'fall_play is a uuid, said %', why; end if;
+  why := pg_temp.refusal(format($s$insert into acts (character, kind, thread, payload) values (null, 'infraction', %L, jsonb_build_object('character', %L::uuid, 'band', 'minor', 'points', 2, 'rule_number', null, 'board', %L::uuid, 'about_act', %L::uuid, 'visit_act', null, 'staff', 'df-m1', 'expires_at', now() + interval '1 day', 'fall_play', %L::uuid, 'extra', 1))$s$, t, taker, board, p, play));
+  if why is null or why not like '23514:%acts_infraction_payload%' then raise exception 'an infraction holds no other key, said %', why; end if;
+  perform set_config('session_replication_role', 'origin', true);
   perform set_config('kayfabb.warn_writer', 'on', true);
   why := pg_temp.refusal(format($s$insert into acts (character, kind, thread, payload) values (null, 'infraction', %L, jsonb_build_object('character', %L::uuid, 'band', 'minor', 'points', 2, 'rule_number', null, 'board', %L::uuid, 'about_act', %L::uuid, 'visit_act', null, 'staff', 'df-m1', 'expires_at', now() + interval '1 day', 'fall_play', 'not a uuid'))$s$, t, taker, board, p));
-  if why is null or why not like '23514:%' then raise exception 'fall_play is a uuid: %', why; end if;
+  if why is null then raise exception 'the guard refuses a fall_play that is no uuid'; end if;
   perform set_config('kayfabb.warn_writer', '', true);
 end $$;

@@ -29,7 +29,7 @@ declare
                            'post_under',
                            'alerts', 'thread_follows', 'my_followed_threads', 'thread_open',
                            -- The log's lines for the Mod Bots (0111): each the caller's own characters' rows.
-                           'my_infractions', 'my_bans', 'my_reports', 'my_appeals', 'my_reports_left', 'my_group_moves',
+                           'my_infractions', 'my_bans', 'my_falls_taken', 'my_reports', 'my_appeals', 'my_reports_left', 'my_group_moves',
                            -- The log of the cosmetics (0213): the caller's own characters' rows, drawn by a function no API role may call.
                            'my_cosmetic_log',
                            -- The search index (0117): one row per post or spin, readable as the Acts are; the table is no client's to write.
