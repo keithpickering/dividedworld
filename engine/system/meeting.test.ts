@@ -1573,7 +1573,7 @@ test('the system prompt states each bound the profile and memory are held to, wi
   };
   const served = meetingSystemPrompt(facts);
   assert.ok(served.includes(`a mood (a short phrase, at most ${PROFILE_MOST.mood} characters)`), served);
-  assert.ok(served.includes('at most 80 characters'), 'the mood, as 80');
+  assert.ok(served.includes('a mood (a short phrase, at most 80 characters)'), 'the mood, as 80');
   assert.ok(served.includes(`up to ${PROFILE_MOST.interests} interests of at most ${PROFILE_MOST.interest} characters each`), served);
   assert.ok(served.includes(`A hobby's name is at most ${MEMORY_MOST.hobbyName} characters, and a mark at most ${MEMORY_MOST.mark}.`), served);
 });
