@@ -215,14 +215,14 @@ test('an instance exported and imported into a fresh database is the same instan
             'starts', to_char(now() + interval '1 day', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'), 'ends', to_char(now() + interval '2 days', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'))) returning id into score_play;
         insert into play_reach (play, reach, character, ends_at) values (score_play, 'character', b, now() + interval '2 days');
       end;
-      -- A spin pressed at a post (0430): a play on Bob's character cast from one post, a layer on another post by him, and Ann's spin from the play naming that post. The spin's `at`,
+      -- A spin pressed at a post (0430): a play on Bob's character cast from one post, a layer on another post by him, and Ann's spin from the play naming that post. The spin's at,
       -- its moment and the layer it holds are carried as written; the import, a replica's write, takes none of its own.
       insert into card_kinds (key, name, alignment, rarity, play, reaches, lasts) values ('expspinat', 'Exported Spin At', 'pepperoni', 'common', 'cast', '{character}', interval '7 days');
       insert into card_ledger (account, card, kind, price) values (ann, 'expspinat', 'bought', 0);
       declare spin_post uuid := tests.post(b, t, 'A post a spin is pressed at.'); spin_play uuid;
       begin
         insert into acts (character, kind, thread, target_act_id, payload) values (b, 'card', t, spin_post, '{"card": "sweetie", "config": {}}');
-        spin_play := (play_card(ann, 'expspinat', a, b, '{}', 0, '', 'character', p) ->> 'id')::uuid;
+        spin_play := (play_card(ann, 'expspinat', a, b, '{}', 0, '', 'character', spin_post) ->> 'id')::uuid;
         perform tests.become(ann);
         perform spin(origin => spin_play, through => a, title => 'Exported spin at a post', body => 'Carried across.', at_post => spin_post);
         perform tests.unbecome();

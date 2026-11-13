@@ -6,6 +6,7 @@ create function pg_temp.cards() returns void language plpgsql as $$
 begin
   insert into card_kinds (key, name, alignment, rarity, play, trap, reaches, lasts) values
     ('glint', 'Glint', 'pepperoni', 'uncommon', 'cast', null, '{character}', interval '7 days'),
+    ('glimmer', 'Glimmer', 'pepperoni', 'uncommon', 'cast', null, '{character}', interval '7 days'),
     ('marquee', 'Marquee', 'sweet', 'rare', 'cast', null, '{thread}', interval '1 day')
   on conflict (key) do nothing;
   if not exists (select 1 from settings where key = 'systemAnnouncements') then
@@ -16,6 +17,16 @@ end $$;
 create function pg_temp.hand(who uuid, variadic keys text[]) returns void language sql as $$
   insert into card_ledger (account, card, kind, price) select who, k, 'bought', 0 from unnest(keys) k
 $$;
+
+-- An admin's end of a play, as reverse_card writes it (0092): a card_end Act of no character, under the writer flag.
+create function pg_temp.end_play(play uuid, in_thread uuid, at timestamptz default now()) returns uuid language plpgsql as $$
+declare written uuid;
+begin
+  perform set_config('kayfabb.card_end_writer', 'on', true);
+  insert into acts (character, kind, thread, target_act_id, payload, created_at) values (null, 'card_end', in_thread, play, '{"why": "reversed", "by": "admin"}', at) returning id into written;
+  perform set_config('kayfabb.card_end_writer', '', true);
+  return written;
+end $$;
 
 -- A spin as `who`, through `through`, from `origin`, at `at_post` (null for none); the Act's id.
 create function pg_temp.spun_at(who uuid, through uuid, origin uuid, at_post uuid) returns uuid language plpgsql as $$
@@ -49,9 +60,9 @@ exception when others then
   return sqlerrm;
 end $$;
 
--- The origin place of a thread, as thread_open and thread_list both give it.
-create function pg_temp.place(th uuid) returns jsonb language plpgsql as $$
-declare a jsonb; b jsonb;
+-- The origin place of the thread a spin Act opened, as thread_open and thread_list both give it.
+create function pg_temp.place(spin_act uuid) returns jsonb language plpgsql as $$
+declare a jsonb; b jsonb; th uuid := (select thread from acts where id = spin_act);
 begin
   select origin_place into a from thread_open where id = th;
   select origin_place into b from thread_list where id = th;
@@ -73,14 +84,14 @@ declare
   why text;
 begin
   perform pg_temp.cards();
-  perform pg_temp.hand(ann, 'glint', 'glint', 'blot', 'blot', 'blot', 'marquee');
+  perform pg_temp.hand(ann, 'glint', 'glimmer', 'blot', 'blot', 'blot', 'sweetie', 'marquee');
   k := (play_card(ann, 'glint', a, b, '{}', 0, '', 'character', p_old) ->> 'id')::uuid;
   ed := tests.act(b, 'edit', t, '{"body": "Edited before the spin."}', p, now() - interval '30 minutes');
   blot_one := (play_card(ann, 'blot', a, p, '{"color": "yellow"}', 0, '') ->> 'id')::uuid;
   blot_two := (play_card(ann, 'blot', a, p, '{"color": "green"}', 0, '') ->> 'id')::uuid;
   perform save_effect_state(bob, b, blot_one, saved);
   -- One layer ended before the spin; the other ends after it.
-  end_one := tests.act(a, 'card_end', t, '{"why": "reversed", "by": "admin"}', blot_one, now() - interval '5 minutes');
+  end_one := pg_temp.end_play(blot_one, t, now() - interval '5 minutes');
 
   s1 := pg_temp.spun_at(cat, c, k, p);
   if (select payload from acts where id = s1) is distinct from jsonb_build_object('title', (select payload ->> 'title' from acts where id = s1), 'body', 'Discuss.', 'at', p) then
@@ -111,9 +122,8 @@ begin
   end if;
 
   -- The refusals: one sentence, one code, whichever check failed.
-  perform pg_temp.hand(ann, 'glint');
   declare
-    on_post uuid := (play_card(ann, 'blot', a, p, '{}', 0, '') ->> 'id')::uuid;
+    on_post uuid := (play_card(ann, 'blot', a, q, '{}', 0, '') ->> 'id')::uuid;
     on_thread uuid := (play_card(ann, 'marquee', a, t, '{}', 0, '', 'thread') ->> 'id')::uuid;
     caught uuid; spent uuid; ended uuid;
     refused text[];
@@ -127,8 +137,8 @@ begin
     insert into acts (character, kind, thread, target_act_id, payload, created_at)
     values (a, 'card', t, p_old, jsonb_build_object('card', 'glint', 'reach', 'character', 'character', b), now() - interval '2 days') returning id into spent;
     insert into play_reach (play, reach, character, ends_at) values (spent, 'character', b, now() - interval '1 second');
-    ended := (play_card(ann, 'glint', a, b, '{}', 0, '', 'character', p_old) ->> 'id')::uuid;
-    perform tests.act(a, 'card_end', t, '{"why": "reversed", "by": "admin"}', ended);
+    ended := (play_card(ann, 'glimmer', a, b, '{}', 0, '', 'character', p_old) ->> 'id')::uuid;
+    perform pg_temp.end_play(ended, t);
     refused := array[
       pg_temp.spin_refusal(cat, c, k, q), pg_temp.spin_refusal(cat, c, k, ed), pg_temp.spin_refusal(cat, c, k, k), pg_temp.spin_refusal(cat, c, k, gen_random_uuid()),
       pg_temp.spin_refusal(cat, c, on_post, p), pg_temp.spin_refusal(cat, c, on_thread, p), pg_temp.spin_refusal(cat, c, caught, p),
@@ -145,9 +155,9 @@ begin
   end;
 
   -- The moment: the edit's words as of the spin, frozen against a later edit; a later layer is not in it; a layer's end after the spin is not in it.
-  late_blot := (play_card(ann, 'blot', a, p, '{"color": "red"}', 0, '') ->> 'id')::uuid;
+  late_blot := (play_card(ann, 'sweetie', a, p, '{}', 0, '') ->> 'id')::uuid;
   perform tests.act(b, 'edit', t, '{"body": "Edited after the spin."}', p, now() + interval '1 minute');
-  perform tests.act(a, 'card_end', t, '{"why": "reversed", "by": "admin"}', blot_two, now() + interval '1 minute');
+  perform pg_temp.end_play(blot_two, t, now() + interval '1 minute');
   perform tests.become(dan);
   declare got jsonb := spin_moment(s1);
   begin
@@ -208,7 +218,7 @@ begin
   insert into acts (character, kind, thread, target_act_id, payload, created_at)
   values (a, 'card', t, p_old, jsonb_build_object('card', 'glint', 'reach', 'character', 'character', b), now() - interval '2 hours') returning id into other_ended;
   insert into play_reach (play, reach, character, ends_at) values (other_ended, 'character', b, now() + interval '1 day');
-  perform tests.act(a, 'card_end', t, '{"why": "reversed", "by": "admin"}', other_ended, now() - interval '1 hour');
+  perform pg_temp.end_play(other_ended, t, now() - interval '1 hour');
   s := pg_temp.spun_at(cat, c, origin, p);
   perform tests.become(cat);
   got := spin_moment(s);
@@ -244,6 +254,7 @@ begin
   got := spin_moment(s_original);
   perform tests.unbecome();
   if got -> 'version' -> 'current_payload' is distinct from '{"body": "Words to be hidden."}'::jsonb then raise exception 'before it is hidden the words are served: %', got -> 'version'; end if;
+  insert into admins (account) values (ann);
   insert into conduct_decisions (post, version_act, admin, outcome) values (hide_original, hide_original, ann, 'hide'), (hide_edit, the_edit, ann, 'hide');
   perform tests.become(cat);
   got := spin_moment(s_original);
@@ -317,7 +328,7 @@ begin
   blot := (play_card(ann, 'blot', a, p, '{}', 0, '') ->> 'id')::uuid;
   s := pg_temp.spun_at(cat, c, k, p);
   foreach why in array array[
-    pg_temp.refusal(format('update spin_moments set taken_at = now() where spin = %L', s)),
+    pg_temp.refusal(format('update spin_moments set post_version = post_version where spin = %L', s)),
     pg_temp.refusal(format('delete from spin_moments where spin = %L', s)),
     pg_temp.refusal('truncate spin_moments, spin_moment_layers'),
     pg_temp.refusal(format('update spin_moment_layers set state = %L where spin = %L', '{}', s)),
@@ -342,37 +353,41 @@ begin
 end $$;
 
 -- ---- The cost: a deep board page whose skipped rows are half spun from a character play with a post ----
--- 5,000 threads in one board, every other one spun from a play on a character at a post, the rest from a post. The page is the one the board reads
--- (thread_list, by board, newest first), at offset 2000, timed with EXPLAIN ANALYZE as 0152's header measures it. The figures are written in
--- the migration's header; this guard fails only a read that grows far past them, since a timing varies between machines and runs.
+-- Two boards of 5,000 threads each: one spun from posts alone, one with every other thread spun from a play on a character at a post. The page is the one the board
+-- reads (thread_list, by board, newest first), at offset 2000, as 0152's header measures it. The figures are written in the migration's header, measured on committed
+-- rows after a VACUUM ANALYZE, which this transaction cannot be: its plan is slower than an instance's whatever the view says. So this guard is a ratio, between the two
+-- boards in the same transaction under the same plan, and it fails a read of the new joins that grows past a small multiple of the plain page.
 do $$
 declare
   ann uuid := tests.account('spc-ann'); a uuid := tests.character(ann, 'Cost Ann'); b uuid := tests.character(ann, 'Cost Bob');
-  t uuid := tests.thread('Cost'); brd uuid := (select id from boards where slug = 'general');
+  t uuid := tests.thread('Cost'); plain uuid; spun uuid;
   p uuid := tests.post(b, t, 'Cost post.', now() - interval '2 days'); p_old uuid := tests.post(b, t, 'Cast from.', now() - interval '2 days');
-  k uuid; plan jsonb; ms numeric; best numeric := 1e9;
+  k uuid; plan jsonb; ms numeric; best_plain numeric := 1e9; best_spun numeric := 1e9;
 begin
+  insert into boards (slug, name) values ('spc-plain', 'Cost plain') returning id into plain;
+  insert into boards (slug, name) values ('spc-spun', 'Cost spun') returning id into spun;
   insert into acts (character, kind, thread, target_act_id, payload, created_at)
   values (a, 'card', t, p_old, jsonb_build_object('card', 'sweetie', 'reach', 'character', 'character', b), now() - interval '2 days') returning id into k;
   insert into play_reach (play, reach, character, ends_at) values (k, 'character', b, now() + interval '1 day');
   set local session_replication_role = replica;
   with made as (
-    insert into threads (board, title, origin_act_id, created_at, last_at, next_seq)
-    select brd, 'Cost ' || i, case when i % 2 = 0 then k else p end, now() - make_interval(secs => i), now() - make_interval(secs => i), 2 from generate_series(1, 5000) i
+    insert into threads (board, title, origin_act_id, created_at, last_at, next_seq, origin_board)
+    select bd, 'Cost ' || i, case when bd = spun and i % 2 = 0 then k else p end, now() - make_interval(secs => i), now() - make_interval(secs => i), 2, bd
+    from generate_series(1, 5000) i cross join (values (plain), (spun)) v(bd)
     returning id, origin_act_id)
   insert into acts (character, kind, thread, target_act_id, payload, seq, created_at)
   select a, 'spin', m.id, m.origin_act_id, case when m.origin_act_id = k then jsonb_build_object('title', 'x', 'body', '', 'at', p) else jsonb_build_object('title', 'x', 'body', '') end, 1, now() from made m;
   set local session_replication_role = origin;
   analyze threads; analyze acts; analyze play_reach;
-  for i in 1..5 loop
-    execute format('explain (analyze, format json) select * from thread_list where board = %L order by last_at desc offset 2000 limit 20', brd) into plan;
-    ms := (plan -> 0 ->> 'Execution Time')::numeric;
-    best := least(best, ms);
+  for i in 1..3 loop
+    execute format('explain (analyze, format json) select * from thread_list where board = %L order by last_at desc offset 2000 limit 20', plain) into plan;
+    best_plain := least(best_plain, (plan -> 0 ->> 'Execution Time')::numeric);
+    execute format('explain (analyze, format json) select * from thread_list where board = %L order by last_at desc offset 2000 limit 20', spun) into plan;
+    best_spun := least(best_spun, (plan -> 0 ->> 'Execution Time')::numeric);
   end loop;
-  raise notice 'the deep page (offset 2000 of 5,000 threads, half spun from a character play at a post) ran in % ms (best of five)', best;
-  if best > 1500 then raise exception 'the deep page took % ms; thread_open''s joins grew past a probe per skipped row', best; end if;
-  -- And the planner reaches the two posts by primary key.
-  if (select count(*) from thread_list where title like 'Cost %' and origin_place -> 'at' is not null and origin_place -> 'at' <> 'null'::jsonb) is distinct from 2500::bigint then
+  raise notice 'the deep page (offset 2000 of 5,000 threads) ran in % ms with every thread spun from a post and % ms with half spun from a character play at a post (best of three, in a transaction)', best_plain, best_spun;
+  if best_spun > 3 * best_plain + 250 then raise exception 'the deep page took % ms against % ms for a board of plain spins; thread_open''s joins grew past a probe per skipped row', best_spun, best_plain; end if;
+  if (select count(*) from thread_list where board = spun and origin_place -> 'at' is not null and origin_place -> 'at' <> 'null'::jsonb) is distinct from 2500::bigint then
     raise exception 'half the threads name the post they were pressed at';
   end if;
 end $$;
