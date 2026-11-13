@@ -78,7 +78,7 @@ test('the premise holds the design\'s hard facts: it cannot know who is behind a
   assert.match(BOSS_PREMISE, /never acted on/);
 });
 
-const FRAME_LEAK = /\bthe system\b|robo-?mcmahon|toybox/i;
+const FRAME_LEAK = /\bthe system\b|robo[- ]?mcmahon|toy[- ]?box/i;
 const staffTexts = (): [string, string][] => {
   const out: [string, string][] = [
     ['BOSS_PREMISE', BOSS_PREMISE], ['MOD_BOT_PREMISE', MOD_BOT_PREMISE], ['MEMBER_PREMISE', MEMBER_PREMISE],
@@ -95,11 +95,13 @@ test('nothing the staff are told or say names the System, robo-McMahon or a toyb
 test('the frame guard is red on a planted leak', () => {
   assert.match('It is done. The System has spoken.', FRAME_LEAK);
   assert.match('You are robo-McMahon.', FRAME_LEAK);
+  assert.match('You are robo McMahon.', FRAME_LEAK);
+  assert.match('a toy box', FRAME_LEAK);
 });
 
 /** The tokens that fill in lowercase, by key: `{move}` everywhere ("a rule"), and a visit's `{rule}` ("the premise of Help"). `ruleSet`'s `{rule}` is "Rule 3: ..." and may open one. */
 const LOWER_TOKENS = (key: string): string[] => ['move', ...(key === 'visitArrived' || key === 'visitFiled' ? ['rule'] : [])];
-const opensSentence = (line: string, token: string): boolean => new RegExp(`(^|[.!?]["')\\]]*\\s+)\\{${token}\\}`).test(line);
+const opensSentence = (line: string, token: string): boolean => new RegExp(`(^|[.!?…]["'”’)\\]]*\\s+)["'“‘(\\[]*\\{${token}\\}`).test(line);
 test('a token that fills in lowercase never opens a sentence', () => {
   for (const [k, lines] of Object.entries(system.stockLines)) for (const line of lines) for (const t of LOWER_TOKENS(k)) assert.ok(!opensSentence(line, t), `${k}: ${line}`);
 });
@@ -107,6 +109,9 @@ test('the sentence-start guard is red on planted lines', () => {
   assert.ok(opensSentence('You did it. {move} is over.', 'move'));
   assert.ok(opensSentence('{move} has expired.', 'move'));
   assert.ok(opensSentence('Nobody panic. {mod} is breathing. {rule}.', 'rule'));
+  assert.ok(opensSentence('Done. "{move} is over."', 'move'));
+  assert.ok(opensSentence('Done. ({move} is over.)', 'move'));
+  assert.ok(opensSentence('Done.” {move} ok', 'move'));
   assert.ok(!opensSentence('It is done: {move}.', 'move'));
 });
 
