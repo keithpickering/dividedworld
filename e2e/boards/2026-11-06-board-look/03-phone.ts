@@ -8,7 +8,7 @@
  *    the board draws 30px, is centered in that banner (2px from where the board draws it), and everything under the banner is held at +13 and the button's growth (title +16.8, the board's row +15.8).
  *  - A board's last post holds its name link and time link each at the 24px target (WCAG 2.5.8), so the row stands 12px lower than the board's line draws
  *    it, the time at +9.6; the rest is the build's own spacing (Who is online at +6, the footer +10.3).
- *  - A linked name is one link holding the avatar and the name, so it starts at the avatar, 22.8px (the avatar, 1.27em, and the gap, 0.35em) left of the name: the name's link is held at 22.8px less than the thread link's shift.
+ *  - A linked name is one link holding the avatar and the name, so it starts at the avatar, 1.62em (the avatar, 1.27em, and the gap, 0.35em: 22.3px at this row's 13.75px text) left of the name, which stands where it stood: the name's link is held at 22.77px less than the thread link's shift, the figure the index's manifest holds it to.
  *  - A board's last post also names its thread, ahead of the poster's name and on the same wrapping line, which the board does not draw: the name stands
  *    104px to the right of where the board draws it, the time wraps to a line of its own at the left (-237px, +22.5px more than before), and Who is online and
  *    the footer stand about 20.6px lower again.
