@@ -27,7 +27,7 @@ import { MomentView, useMomentRead } from '../cards/Moment.tsx';
 import { createPlays, effectCards, holdsEffects, homeOf, playOf, readEffects, usePlays, type Plays } from '../cards/plays.ts';
 import type { CardPlay } from '../cards/types.ts';
 import { useKayfa } from '../context.tsx';
-import type { Act, Character, Id, OriginPlace, ThreadSummary } from '../data/api.ts';
+import { PLAY_FROM, type Act, type Character, type Id, type OriginPlace, type ThreadSummary } from '../data/api.ts';
 import { CharacterLink } from '../mini.tsx';
 import { Link } from '../router.tsx';
 import { newer } from '../thread/feed.ts';
@@ -156,7 +156,7 @@ function CharacterMoment({ play, spin, nameOf, characterOf }: {
 }
 
 /** The post a part of a play's place names, as its words and its address: `at` (the pressed post) or, with `at` left out, `from` (the cast-from post). */
-function postOf(place: Extract<OriginPlace, { kind: 'play' }>, which: 'at' | 'from', cardName: (key: string) => string | undefined, perPage: number): { readonly words: string; readonly href: string } | null {
+function postOf(place: Extract<OriginPlace, { kind: 'play' }>, which: 'at' | typeof PLAY_FROM, cardName: (key: string) => string | undefined, perPage: number): { readonly words: string; readonly href: string } | null {
   if (place[which] === null) return null;
   const part = placeParts(which === 'at' ? place : { ...place, at: null }, cardName, perPage).at(-1);
   return part && part.href !== null ? { words: part.words, href: part.href } : null;
@@ -190,7 +190,7 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
   const play = summary.origin?.kind === 'play' ? summary.origin : null;
   const cardName = (key: string) => instance.cards.find((c) => c.key === key)?.name;
   const pressed = play && onCharacter ? postOf(play, 'at', cardName, perPage) : null;
-  const castFrom = play && onCharacter ? postOf(play, 'from', cardName, perPage) : null;
+  const castFrom = play && onCharacter ? postOf(play, PLAY_FROM, cardName, perPage) : null;
   const from = <OriginLink place={summary.origin} perPage={perPage} {...(onCharacter ? { faces: characterOf } : {})} />;
 
   /* The same node is the box's head's strip and, for a card that lifts the post (Stick Around), the strip it draws on the lifted post. */
