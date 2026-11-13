@@ -170,8 +170,8 @@ export function ConfigForm({ config, onChange, post, id, faceDown }: ConfigFormP
         const bound = cue.phrase.trim() ? boundOf(cue.phrase) : undefined;
         const line = !cue.phrase.trim() ? `At least ${PHRASE.least} letters or digits, matched as whole words in any case`
           : bound ? undefined : counts[i] ? `Cues ${places(counts[i]!)} in this post` : onlyInLink[i] ? 'Only inside a link here, and a Laugh Track never cues a link' : 'Not in this post\'s own words';
-        /* The note about a back is said only where a back can happen (the host says `no` where this post cannot hold one). */
-        const hint = i === 0 && faceDown !== 'no'
+        /* The note about a back is said only once the play is a set: when the host says `will` ("Set face down" is selected, or the play can only be a set). Not while "Play it now" is selected (`can`) and not where this post cannot hold a back (`no`). */
+        const hint = i === 0 && faceDown === 'will'
           ? `${line === undefined ? '' : `${line}. `}A face-down Laugh Track waits for this phrase.`
           : line;
         return (

@@ -11,9 +11,9 @@ import { ConfigForm } from './ConfigForm.tsx';
 
 const post = (body: string) => ({ id: 'p', currentPayload: { body } }) as unknown as Act;
 const BODY = 'Mario and mario met Luigi. Luigi waved at Mario again.';
-const form = (config: Record<string, unknown> | undefined, body = BODY, faceDown?: 'no' | 'can' | 'will') => {
+const form = (config: Record<string, unknown> | undefined, body = BODY, faceDown: 'no' | 'can' | 'will' = 'will') => {
   const onChange = vi.fn();
-  return { onChange, ...render(<RouterProvider><ConfigForm config={config} onChange={onChange} post={post(body)} id="play" {...(faceDown ? { faceDown } : {})} /></RouterProvider>) };
+  return { onChange, ...render(<RouterProvider><ConfigForm config={config} onChange={onChange} post={post(body)} id="play" faceDown={faceDown} /></RouterProvider>) };
 };
 const copy = () => screen.getByRole('group', { name: 'The post\'s words' });
 /* What the browser says to the page for a selection: the document's selection and a selectionchange. */
@@ -39,7 +39,7 @@ const total = () => screen.getByText(/places? in all/).closest('[role="status"]'
 afterEach(() => vi.restoreAllMocks());
 
 describe('Laugh Track\'s play form', () => {
-  test.each([['no', false], ['can', true], ['will', true]] as const)('the face-down note, with faceDown %s, is shown: %s', (way, shown) => {
+  test.each([['no', false], ['can', false], ['will', true]] as const)('the face-down note, with faceDown %s, is shown: %s', (way, shown) => {
     form(undefined, BODY, way);
     expect(phrase(1).getAttribute('aria-describedby')).not.toBeNull();
     const note = screen.queryByText(/A face-down Laugh Track waits for this phrase\./);
