@@ -1403,7 +1403,8 @@ describe('what a list row shows', () => {
       const original = must(await fake.post(thread, anaFace, 'Words to be hidden.', null));
       const edited = must(await fake.post(thread, anaFace, 'Fine words.', null));
       fake.clock.advance(1000);
-      const edit = must(await fake.edit(edited.id, anaFace, 'Edited words to be hidden.'));
+      must(await fake.edit(edited.id, anaFace, 'Edited words to be hidden.'));
+      const edit = (await fake.history(edited.id)).at(-1)!;
       fake.clock.advance(1000);
       const k1 = fake.seed.reach(boFace, 'character', anaFace, 'glint', { post: original.id });
       const k2 = fake.seed.reach(boFace, 'character', anaFace, 'glint', { post: edited.id });
@@ -1422,7 +1423,7 @@ describe('what a list row shows', () => {
       expect(a.body).not.toBe('Words to be hidden.');
       const b = (await fake.spinMoment(s2))!.version.currentPayload;
       expect(b.body).not.toBe('Edited words to be hidden.');
-      expect(b).toEqual((await fake.history(edit.targetActId!)).find((v) => v.id === edit.id)!.payload);
+      expect(b).toEqual(edit.payload);
     });
     test('a character play\'s moment: the same', async () => {
       const { fake, original, edit, k1, k2 } = await hidden();
@@ -1435,9 +1436,8 @@ describe('what a list row shows', () => {
       expect((await fake.playMoment(k2))!.version.currentPayload.body).not.toBe('Edited words to be hidden.');
     });
     test('a spin\'s moment holds the end of a layer at or before the spin and not a later one, and lists no play above that ended before it', async () => {
-      const { fake, anaFace, boFace, thread } = world();
+      const { fake, ana, anaFace, boFace, thread } = world();
       const boss = fake.seed.account('boss', { admin: true });
-      const ana = (await fake.session()).account!.id;
       const mine = must(await fake.post(thread, anaFace, 'The post pressed.', null));
       const early = fake.seed.card(boFace, mine.id, 'whoops', { layer: 1 });
       const late = fake.seed.card(boFace, mine.id, 'whoops', { layer: 2 });

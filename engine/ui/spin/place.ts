@@ -36,29 +36,30 @@ const cardWords = (card: string | null, cardName: (key: string) => string | unde
 /**
  * The phrase after "spun from", in the stretches that are links. A play on a character reads "Glitter Bomb on", the character (its
  * profile), then ", at #31 in ..." (the pressed post) or, with none, ", cast from #12 in ..." (the cast-from post); a server that
- * answers neither leaves the name alone. Every other place is the one part `placeWords` and `placeHref` give.
+ * answers neither leaves the name alone. Every other place is one part. A face-down set and a key the instance lacks never name a
+ * card. This is the one place the words are worked out: `placeWords` and `placeHref` read it.
  */
 export function placeParts(place: OriginPlace, cardName: (key: string) => string | undefined, perPage: number): readonly PlacePart[] {
-  if (place.kind !== 'play' || place.on === null || place.on.kind !== 'character') return [{ words: placeWords(place, cardName), href: placeHref(place, perPage) }];
+  if (place.kind !== 'play') return [{ words: onWords(place), href: onHref(place, perPage) }];
+  const card = cardWords(place.card, cardName);
+  if (place.on === null) return [{ words: card, href: null }];
+  if (place.on.kind !== 'character') return [{ words: `${card} on ${onWords(place.on)}`, href: onHref(place.on, perPage) }];
   const who = place.on;
   const parts: PlacePart[] = [
-    { words: `${cardWords(place.card, cardName)} on `, href: null },
-    { words: who.name ?? 'a character', href: onHref(who, perPage), character: who.id },
+    { words: `${card} on `, href: null },
+    { words: onWords(who), href: onHref(who, perPage), character: who.id },
   ];
   const [lead, post] = place.at !== null ? [', at ', place.at] as const : place.from !== null ? [', cast from ', place.from] as const : [null, null];
   if (lead !== null) parts.push({ words: lead, href: null }, { words: postWords(post), href: onHref(post, perPage) });
   return parts;
 }
 
-/** The phrase after "spun from": a place, or a play and where it landed. A face-down set and a key the instance lacks never name a card. */
+/** The whole phrase after "spun from", as plain words. */
 export function placeWords(place: OriginPlace, cardName: (key: string) => string | undefined): string {
-  if (place.kind !== 'play') return onWords(place);
-  const card = place.card === null ? 'a face-down card' : cardName(place.card) ?? 'a card';
-  return place.on === null ? card : `${card} on ${onWords(place.on)}`;
+  return placeParts(place, cardName, 1).map(part => part.words).join('');
 }
 
-/** Where the phrase goes, or null where there is nowhere (a play whose target cannot be placed). */
+/** Where the phrase goes first (a play on a character: the profile), or null where there is nowhere (a play whose target cannot be placed). */
 export function placeHref(place: OriginPlace, perPage: number): string | null {
-  if (place.kind !== 'play') return onHref(place, perPage);
-  return place.on === null ? null : onHref(place.on, perPage);
+  return placeParts(place, () => undefined, perPage).find(part => part.href !== null)?.href ?? null;
 }

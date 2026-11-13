@@ -1483,7 +1483,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const endedBy = (p: Id) => [...acts.values()].some((a) => a.kind === 'card_end' && a.target === p && a.at <= time);
     return {
       version: {
-        ...publicAct(post), currentPayload: version.payload, editedAt: edited ? iso(edited.at) : null,
+        ...publicAct(post), currentPayload: publicPayload(version.payload, hiddenVersions.has(version.id), version.id), editedAt: edited ? iso(edited.at) : null,
         shownEditedAt: edited && edited.at > post.at + span(settings.editGrace) ? iso(edited.at) : null,
       },
       layers: [

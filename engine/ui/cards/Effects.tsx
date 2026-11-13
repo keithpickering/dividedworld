@@ -501,7 +501,6 @@ const stillSurface = (most: number): NonNullable<EffectProps['surface']> => ({
 });
 const nothing = () => {};
 const NONE_RELEASED: ReadonlySet<Id> = new Set();
-const NO_STATES: Readonly<Record<Id, EffectState>> = {};
 
 /**
  * A play's moment, drawn: `children` (the moment's version of the post, as the caller draws a post's words) wrapped in the effects of
