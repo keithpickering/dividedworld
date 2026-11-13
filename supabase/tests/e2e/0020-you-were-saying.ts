@@ -25,6 +25,11 @@ import { instance } from '../../functions/_shared/instance.ts';
 import { models } from '../../functions/_shared/models/index.ts';
 import { ledgerWriter } from '../../functions/_shared/models/ledger.ts';
 
+// Long enough that the write job does not count a tail short and roll it again under the instance's own settings (cardWriteShortShare of the
+// 75 tokens two steps buy, counted as GPT-2 counts), so each generation is one call.
+const FIRST_TAIL = ' and that is why the pineapple stays on the pizza, on the plate, in the fridge, and in the hearts of every honest person who has ever dared to take a second slice, whatever the cheese people say.';
+const SECOND_TAIL = ' that is the whole truth, friends, and nobody in this room can say otherwise, not the cheese people, not the sauce people, and certainly not the ones who bring a fork to a pizza party, so there.';
+
 const json = <T = Record<string, any>>(text: string): T => JSON.parse(text) as T;
 const rows = (query: string) => json<Record<string, any>[]>(sql(`select coalesce(jsonb_agg(to_jsonb(x)), '[]') from (${query}) x`));
 
@@ -49,7 +54,7 @@ test('a cast is written, edited into a second tail, cleared by its author; a fai
 
   // ---- The fake endpoint: every request is kept; the mode says how it answers. ----
   const asked: { max_tokens: number; prompt: string }[] = [];
-  const endpoint: { mode: 'answer' | 'down'; says: string } = { mode: 'answer', says: ' and that is why the pineapple stays.' };
+  const endpoint: { mode: 'answer' | 'down'; says: string } = { mode: 'answer', says: FIRST_TAIL };
   const fake = (async (url: string, init?: RequestInit) => {
     assert.ok(String(url).startsWith('http://localhost:9/v1/completions'), `the card's call goes to the instance's completion endpoint: ${url}`);
     const body = JSON.parse(String(init?.body));
@@ -58,7 +63,7 @@ test('a cast is written, edited into a second tail, cleared by its author; a fai
     return new Response(JSON.stringify({ choices: [{ text: endpoint.says }], usage: { prompt_tokens: 40, completion_tokens: 8 } }), { status: 200, headers: { 'content-type': 'application/json' } });
   }) as typeof globalThis.fetch;
   const env = (name: string) => ({ SYSTEM_COMPLETIONS_URL: 'http://localhost:9' } as Record<string, string>)[name];
-  const completions = models(env, ledgerWriter(service), { tiers: { strong: 'claude-opus-5-5', light: 'claude-haiku-5-5' }, fetch: fake, sleep: async () => {} });
+  const completions = models(env, ledgerWriter(service), { tiers: { strong: 'claude-opus-5-5', light: 'claude-haiku-5-5' }, oldVoice: { window: 1024, count: (t: string) => t.length }, fetch: fake, sleep: async () => {} });
   const tuned = { ...instance.settings, oldVoice: true };
   const ledgerBefore = Number(sql(`select coalesce(max(id), 0) from model_calls`));
 
@@ -87,13 +92,13 @@ test('a cast is written, edited into a second tail, cleared by its author; a fai
   assert.equal(held(), 1);
   const tails = () => rows(`select * from post_tails(array['${post}'::uuid])`);
   assert.deepEqual(tails().map((t) => ({ play: t.play, version: t.version, text: t.text, failed: t.failed, waiting: t.waiting })),
-    [{ play, version: post, text: ' and that is why the pineapple stays.', failed: false, waiting: false }], 'post_tails returns the tail, beside the post\'s own version');
+    [{ play, version: post, text: FIRST_TAIL, failed: false, waiting: false }], 'post_tails returns the tail, beside the post\'s own version');
   const told = rows(`select topic, event, payload from broadcasts_due where topic = 'thread:${thread.id}' and event = 'card_text' order by id`);
   assert.deepEqual(told, [{ topic: `thread:${thread.id}`, event: 'card_text', payload: { play, version: post } }], 'the thread is told in words of the play and the version alone');
   assert.equal(sql(`select count(*) from card_writes where play = '${play}'`), '0', 'the job is done');
 
   // ---- 2. An edit: a new tail for the new version, and History holds both, each beside its own version. ----
-  endpoint.says = ' that is the whole truth, friends.';
+  endpoint.says = SECOND_TAIL;
   const edited = await act(bob, { action: 'edit', post, character: bob.character, body: 'Pineapple on pizza is, frankly, a crime' });
   assert.equal(edited.status, 200, JSON.stringify(edited));
   const history = rows(`select id, kind, created_at from acts_public where id = '${post}' or (kind = 'edit' and target_act_id = '${post}') order by created_at`);
@@ -101,7 +106,7 @@ test('a cast is written, edited into a second tail, cleared by its author; a fai
   const [original, mended] = history.map((v) => v.id as string);
   assert.equal(original, post);
   const beside = new Map(tails().map((t) => [t.version as string, t.text as string]));
-  assert.deepEqual([...beside.entries()], [[original, ' and that is why the pineapple stays.'], [mended, ' that is the whole truth, friends.']],
+  assert.deepEqual([...beside.entries()], [[original, FIRST_TAIL], [mended, SECOND_TAIL]],
     'both tails are held, each beside the version it continues');
   assert.equal(asked.length, 2);
   assert.ok(asked[1]!.prompt.includes('frankly'), 'the regeneration continued the edited words');

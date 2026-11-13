@@ -213,6 +213,21 @@ the tail is written in the background, so speed matters little. On Ubuntu 24.04,
 8. Set `SYSTEM_COMPLETIONS_URL` and `SYSTEM_COMPLETIONS_KEY` as above, copying the key from `/etc/llama-server.env`
    straight into the dashboard. A cast of You Were Saying? then shows a call in `model_calls` with the outcome `ok`.
 
+Five instance settings beside `oldVoice` say what the server's model can take, with Divided World's defaults in
+`instances/divided-world/settings.ts` (`docs/plans/2026-11-12-old-voice-window-design.md`):
+
+- `oldVoiceWindow` (1024): the model's context window in tokens, prompt and output together. Every old-voice prompt
+  is fitted to it, and one that still cannot fit is refused before it is sent.
+- `oldVoiceTokenizer` (`gpt2`): the counter the prompts are measured with (`engine/system/tokens.ts`). `gpt2` is exact
+  for GPT-2, GPT-Neo and GPT-J; `bytes` counts one token for each byte, a safe bound for any other model.
+- `oldVoicePromptFloor` (256): the least prompt a play leaves room for, so the most a card that writes may buy is the
+  window less this floor. A floor at or above the window leaves plays one token long, so keep it below.
+- `cardWriteShortShare` (0.5) and `cardWriteRerolls` (3): a tail shorter than this share of the length it was asked
+  for is rolled again, up to this many more times, and the longest is kept.
+
+The window and the tokenizer change with the model: an instance that swaps GPT-2 XL for another model sets both, and
+the server's own context (`-c` above) to match.
+
 Then deploy them all:
 
 ```bash
