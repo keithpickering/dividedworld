@@ -22,6 +22,44 @@
 -- it above needs the play's start in play_reach, which is not added here (raised with the owner as issue #634). The read returns at most 100.
 -- Masks: every piece is read from play_reach, public Acts and the posts' public dates and authors (the author a row is matched on is the post's character, which every reader sees); nothing
 -- reads who owns a character, a hand or a reaction, so the document is the same for every caller. Grants are as they were (create or replace keeps them).
+--
+-- play_reach.started_at (docs/plans/2026-11-13-glitter-keeps-bound-plan.md, Task 1; the read that uses it is bounded by a later change in this file)
+--   What: the play's start, `timestamptz not null`, the play Act's `created_at`, so a play's window is [started_at, ends_at), which kept_window already tests post by post. It copies a fact the Act already
+--         holds and never changes. `play_reach_start` is a before-insert trigger that sets it from `acts.created_at` for `new.play`, whatever the writer passed, and refuses a row whose Act is not there
+--         (23503, "a play beyond a post is written after its Act"): place_cast and lay_sprung (0317, which play_card writes through) insert the Act first and the row after it in one transaction, so
+--         no writer is rewritten. It is an ordinary trigger, not `always`: an import writes as a replica (tools/import-instance.mjs), where it does not fire, so an exported row is carried as written, as
+--         0336's beat guard carries an export. Its execute is revoked from public, anon and authenticated, as every trigger function's is. `play_reach_starts_before_end` says a play cannot end before it starts
+--         (every writer ends a play after its Act; a range over the two could not hold such a row). An instance holding one fails this migration by that name and rolls back.
+--   Why:  a play's end alone bounds a page's read of the worn-off plays below and not above; the start bounds it above.
+--   Append-only: this is the schema's own change, never a player or The System editing a row. The backfill runs inside this file's own transaction, as 0030's counters do, so no other session writes while the
+--         guard is off; it disables only `play_reach_no_update`, sets each row's start from the Act it already points at (no Act is touched, nothing an Act says changes) and enables the guard `always` again before
+--         the commit. The truncate guard is never disabled.
+--   Masks: the start is the play Act's `created_at`, which acts_public shows every reader beside the play; the row already carries the play and its end. Nothing reads who owns a character.
+--   Ways out: no state is added; a play ends as before (its time, an admin's reverse_card). A row the trigger refuses is a writer's bug, never a player's state.
+
+begin;
+
+alter table play_reach add column started_at timestamptz;
+
+create function play_reach_start() returns trigger
+language plpgsql set search_path = public, pg_temp as $$
+begin
+  select a.created_at into new.started_at from acts a where a.id = new.play;
+  if not found then raise exception 'a play beyond a post is written after its Act' using errcode = '23503'; end if;
+  return new;
+end $$;
+revoke execute on function play_reach_start() from public, anon, authenticated;
+create trigger play_reach_start before insert on play_reach for each row execute function play_reach_start();
+
+-- The rows an instance already holds: each one's start is its Act's date. Only the update guard is off, and only here.
+alter table play_reach disable trigger play_reach_no_update;
+update play_reach r set started_at = a.created_at from acts a where a.id = r.play;
+alter table play_reach enable always trigger play_reach_no_update;
+alter table play_reach alter column started_at set not null;
+alter table play_reach add constraint play_reach_starts_before_end check (started_at <= ends_at);
+
+commit;
+
 
 create or replace function thread_page(in_thread uuid, in_page integer, in_seq integer, per_page integer, effect_cards text[]) returns jsonb
 language sql stable security invoker set search_path = public, pg_temp

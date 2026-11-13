@@ -367,7 +367,7 @@ begin
     insert into acts (character, kind, thread, target_act_id, payload, created_at)
     select a, 'card', t, lone, jsonb_build_object('card', 'glint', 'reach', 'character', 'character', b), now() + make_interval(secs => i)
     from generate_series(1, 2000) i returning id, created_at)
-  insert into play_reach (play, reach, character, ends_at) select id, 'character', b, created_at + interval '7 days' from later;
+  insert into play_reach (play, reach, character, started_at, ends_at) select id, 'character', b, created_at, created_at + interval '7 days' from later;
   set local session_replication_role = origin;
   analyze play_reach;
   analyze acts;

@@ -213,3 +213,63 @@ begin
   if plan not like '%play_reach_character%' then raise exception 'a character''s kept read is not from play_reach_character: %', plan; end if;
   if plan like '%Seq Scan on play_reach%' then raise exception 'a character''s kept read scans play_reach: %', plan; end if;
 end $$;
+
+-- ---- A play's row carries its Act's date: the start of its window, filled by the trigger whatever a writer passes ----
+-- play_card (through place_cast and lay_sprung) writes the Act, then the row; a direct insert is covered too. The check refuses a row that ends before it starts, and the row is still append-only.
+do $$
+declare
+  ann uuid := tests.account('sb-ann'); bob uuid := tests.account('sb-bob');
+  c uuid := tests.character(ann, 'Sb Caster'); target uuid := tests.character(bob, 'Sb Target');
+  t uuid := tests.thread('Sb start'); p uuid; q uuid;
+  ch jsonb; th jsonb; bd jsonb; own uuid; early uuid; ghost uuid := gen_random_uuid(); backwards uuid;
+  general uuid := (select id from boards where slug = 'general');
+  ann_thread uuid; why text;
+begin
+  insert into card_kinds (key, name, alignment, rarity, play, reaches, lasts) values
+    ('sbchar', 'Sb Char', 'sweet', 'rare', 'cast', '{character}', interval '2 days'),
+    ('sbthread', 'Sb Thread', 'sweet', 'rare', 'cast', '{thread}', interval '2 days'),
+    ('sbboard', 'Sb Board', 'sweet', 'rare', 'cast', '{board}', interval '2 days');
+  insert into card_ledger (account, card, kind, price) values (ann, 'sbchar', 'bought', 0), (ann, 'sbthread', 'bought', 0), (ann, 'sbboard', 'bought', 0);
+  select (value #>> '{}')::uuid into ann_thread from settings where key = 'systemAnnouncements';
+  if ann_thread is null then
+    insert into threads (board, title) select id, 'Announcements' from boards where slug = 'the-system' returning id into ann_thread;
+    insert into settings (key, value) values ('systemAnnouncements', to_jsonb(ann_thread::text));
+  end if;
+  p := tests.post(target, t, 'The first.');
+  q := tests.post(target, t, 'The second.');
+
+  -- Every writer: a cast at character, thread and board reach.
+  ch := play_card(ann, 'sbchar', c, target, '{}', 0, '', 'character', q);
+  th := play_card(ann, 'sbthread', c, t, '{}', 0, '', 'thread');
+  bd := play_card(ann, 'sbboard', c, general, '{}', 0, '', 'board');
+  if (select count(*) from play_reach r join acts a on a.id = r.play where r.play in ((ch ->> 'id')::uuid, (th ->> 'id')::uuid, (bd ->> 'id')::uuid)
+        and r.started_at is not distinct from a.created_at) is distinct from 3 then
+    raise exception 'a cast at character, thread and board reach carries its Act''s date as its start: %', (select jsonb_agg(to_jsonb(r)) from play_reach r where r.play in ((ch ->> 'id')::uuid, (th ->> 'id')::uuid, (bd ->> 'id')::uuid));
+  end if;
+
+  -- A direct insert naming another start gets the Act's.
+  early := tests.act(c, 'card', t, '{"card": "sbchar", "reach": "character"}', p, now() - interval '3 days');
+  insert into play_reach (play, reach, character, started_at, ends_at) values (early, 'character', target, now() - interval '30 days', now() + interval '1 day');
+  if (select r.started_at from play_reach r where r.play = early) is distinct from now() - interval '3 days' then
+    raise exception 'a row naming another start gets its Act''s date: %', (select started_at from play_reach where play = early);
+  end if;
+
+  -- A row for an id with no Act is refused with the trigger's words, not a null.
+  why := pg_temp.coded(format($s$insert into play_reach (play, reach, character, ends_at) values (%L, 'character', %L, now() + interval '1 day')$s$, ghost, target));
+  if why is distinct from '23503 a play beyond a post is written after its Act' then raise exception 'a row with no Act is refused in the trigger''s words, said %', why; end if;
+
+  -- A row ending before its Act's date is refused by the check, by name.
+  backwards := tests.act(c, 'card', t, '{"card": "sbchar", "reach": "character"}', p);
+  why := pg_temp.coded(format($s$insert into play_reach (play, reach, character, ends_at) values (%L, 'character', %L, now() - interval '1 hour')$s$, backwards, target));
+  if why is null or why not like '23514 %play_reach_starts_before_end%' then raise exception 'a row ending before its Act is refused by play_reach_starts_before_end, said %', why; end if;
+
+  -- Still append-only.
+  why := pg_temp.coded(format('update play_reach set ends_at = ends_at + interval ''1 day'' where play = %L', early));
+  if why is null or why not like '55000 a play beyond a post is never edited%' then raise exception 'play_reach refuses an update, said %', why; end if;
+  why := pg_temp.coded(format('update play_reach set started_at = now() where play = %L', early));
+  if why is null or why not like '55000 a play beyond a post is never edited%' then raise exception 'play_reach refuses an update of its start, said %', why; end if;
+  why := pg_temp.coded(format('delete from play_reach where play = %L', early));
+  if why is null or why not like '55000 a play beyond a post is never edited%' then raise exception 'play_reach refuses a delete, said %', why; end if;
+  why := pg_temp.coded('truncate play_reach');
+  if why is null or why not like '55000 a play beyond a post is never edited%' then raise exception 'play_reach refuses a truncate, said %', why; end if;
+end $$;
