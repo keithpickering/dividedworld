@@ -101,7 +101,7 @@ export function Captions({ store = captions }: { readonly store?: Store }) {
 
     /* Over a dialog: measured from the bar's resting place (what the lift moved it from is added back), against every open dialog's laid-out box. */
     let lift = 0;
-    const boxes = () => [...document.querySelectorAll<HTMLElement>('.kb-glass-overlay .kb-glass-dialog[role="dialog"]')];
+    const boxes = () => [...document.querySelectorAll<HTMLElement>('.kb-glass-overlay .kb-glass-dialog')];
     const sees = new ResizeObserverOf(() => place());
     const place = () => {
       const open = boxes();
