@@ -129,6 +129,14 @@ describe('instanceUiProblems', () => {
     const withCards = (list: unknown[]) => ({ ...ui(good), cards: [{ key: 'whoops', status: 'Ink on this post' }, ...list] as unknown as readonly CardUi[] });
     assert.deepEqual(instanceUiProblems(withCards([{ key: 'feelin-fab', summary: 'Gives a post a rainbow. Up to three.' }]), rules), ['the card "feelin-fab" has no status, so its Lens heading would be a sentence']);
   });
+  test('refuses a card that folds the row and has no Effect, or is a takeover (CardUi.foldsRow)', () => {
+    const Effect = () => null;
+    const withCards = (list: unknown[]) => ({ ...ui(good), cards: [{ key: 'whoops', status: 'Ink on this post' }, ...list] as unknown as readonly CardUi[] });
+    const folds = { key: 'below', status: 'Folded', foldsRow: true as const };
+    assert.deepEqual(instanceUiProblems(withCards([{ ...folds, Effect }]), rules), [], 'a well-formed folding card');
+    assert.deepEqual(instanceUiProblems(withCards([folds]), rules), ['the card "below" folds the row and has no Effect to draw the fold where a post has no row']);
+    assert.deepEqual(instanceUiProblems(withCards([{ ...folds, Effect, takeover: true }]), rules), ['the card "below" folds the row and is a takeover, which lifts the post out of the row the fold hides']);
+  });
   test('refuses a card drawn by another that names no card with an Effect, has an Effect itself, or names a card that is itself drawn by another (CardUi.drawnBy)', () => {
     const Effect = () => null;
     const withCards = (list: unknown[]) => ({ ...ui(good), cards: [{ key: 'whoops', status: 'Ink on this post' }, ...list] as unknown as readonly CardUi[] });
