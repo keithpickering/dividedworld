@@ -181,6 +181,8 @@ export interface VisitPanelProps {
   readonly onEnded: (end: VisitEnd) => void;
   /** The story the tab read before it showed (`readVisit`). */
   readonly first: VisitStory;
+  /** A fall waiting on the post (a live play of a card whose rules are a `fall`, no filing has spent): its caster, whose warn bar the visit's filing lands on in place of the author's. Null with none. */
+  readonly fall?: { readonly caster: Id } | null;
 }
 
 /** What the tab says is "a try": a quiz's answers, a bribe's price or a distraction's word, and the result in a status region. */
@@ -227,7 +229,7 @@ function Challenge({ visit, mod, mask, spent: tried, picked, onTry, busy }: {
   );
 }
 
-export function VisitPanel({ visit, thread, author, nameOf, modPronouns, tallies, mine, onSpin, onEnded, first }: VisitPanelProps) {
+export function VisitPanel({ visit, thread, author, nameOf, modPronouns, tallies, mine, onSpin, onEnded, first, fall = null }: VisitPanelProps) {
   const { api, instance, ui } = useKayfa();
   const player = usePlayer();
   const know = useContext(ThreadCtx)?.know;
@@ -250,12 +252,12 @@ export function VisitPanel({ visit, thread, author, nameOf, modPronouns, tallies
 
   /* What follows a read of the story: the names it brings are read and drawn, and the visit's end is told to the strip. */
   const settle = useCallback((s: VisitStory) => {
-    const people = [visit.mod, s.report?.character ?? null, s.appeal?.character ?? null, ...s.attempts.map((a) => a.character), s.ruling?.character ?? null].filter((c): c is Id => c !== null);
+    const people = [visit.mod, fall?.caster ?? null, s.infraction?.character ?? null, s.report?.character ?? null, s.appeal?.character ?? null, ...s.attempts.map((a) => a.character), s.ruling?.character ?? null].filter((c): c is Id => c !== null);
     /* A name the thread did not know is read and then drawn: the characters in these Acts may not have a post on the page. */
     if (know) void know(people).then(() => { if (live.current) setNames((n) => n + 1); }).catch(() => undefined);
     /* Told once: a visit that already carries its end has told the strip. */
     if (s.end && !visit.end) ended.current(s.end);
-  }, [visit.mod, visit.end, know]);
+  }, [visit.mod, visit.end, know, fall?.caster]);
   useEffect(() => { settle(first); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* The reread after a try. */
@@ -274,6 +276,8 @@ export function VisitPanel({ visit, thread, author, nameOf, modPronouns, tallies
   const name = useCallback((c: Id | null) => nameOf(c), [nameOf, names]); // eslint-disable-line react-hooks/exhaustive-deps
   const mod = name(visit.mod);
   const authorName = author === null ? 'The author' : name(author);
+  /* Whose warn bar a filing lands on: the fall's caster while one waits and the visit is open, and once filed, the infraction's own character, which is the author's unless a fall took it. */
+  const liableName = fall === null ? authorName : name(fall.caster);
   const role = modRole(ui.copy);
   const bands = instance.settings.warnBar.bands;
   const end = story?.end ?? visit.end ?? localEnd;
@@ -339,14 +343,15 @@ export function VisitPanel({ visit, thread, author, nameOf, modPronouns, tallies
           <p className="kb-visit-facts">
             {visit.charges.length === 1 ? 'Charge' : 'Charges'}: {charges}.{' '}
             {timeIsUp
-              ? `The time is up, so it files at the next check unless it is talked down first. If it files, ${authorName}'s warn bar gains ${pointsWords(topPoints)} and this post is marked as breaking ${marked}.`
-              : `If nobody talks it down by ${dayAndTime(visit.endsAt)}, ${authorName}'s warn bar gains ${pointsWords(topPoints)} and this post is marked as breaking ${marked}.`}
+              ? `The time is up, so it files at the next check unless it is talked down first. If it files, ${liableName}'s warn bar gains ${pointsWords(topPoints)} and this post is marked as breaking ${marked}.`
+              : `If nobody talks it down by ${dayAndTime(visit.endsAt)}, ${liableName}'s warn bar gains ${pointsWords(topPoints)} and this post is marked as breaking ${marked}.`}
+            {fall !== null && ` ${liableName} took the fall for this post.`}
           </p>
         )}
         {state === 'filed' && (
           <p className="kb-visit-facts">
             {inf
-              ? `${top ? `${top.rule ?? marked}: a ${inf.band} breach. ` : ''}${authorName}'s warn bar gained ${pointsPlain(inf.points)}; ${stillCounts(inf, now) ? 'they drop off on' : 'they dropped off on'} ${shortDate(inf.expiresAt)}.${stillCounts(inf, now) && story?.warnPoints != null ? ` The bar now stands at ${story.warnPoints} of ${instance.settings.warnBar.size}.` : ''} The post keeps its words under the notice.`
+              ? `${top ? `${top.rule ?? marked}: a ${inf.band} breach. ` : ''}${name(inf.character)}'s warn bar gained ${pointsPlain(inf.points)}; ${stillCounts(inf, now) ? 'they drop off on' : 'they dropped off on'} ${shortDate(inf.expiresAt)}.${stillCounts(inf, now) && story?.warnPoints != null ? ` The bar now stands at ${story.warnPoints} of ${instance.settings.warnBar.size}.` : ''} The post keeps its words under the notice.${author !== null && inf.character !== author ? ` ${name(inf.character)} took the fall for ${authorName}.` : ''}`
               : 'The visit filed.'}
           </p>
         )}

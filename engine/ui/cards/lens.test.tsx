@@ -2232,12 +2232,18 @@ describe('the discipline cards\' Lens', () => {
   const openIt = (w: W) => renderIn(w.fake, <LoadedThread thread={w.thread} />, { path: `/t/${w.thread}`, instance: shop, cards: faces, copy: { modRole: 'A Moderator' } });
   const markNamed = async (seq: number, name: string) => within(await article(seq)).findByRole('button', { name: new RegExp(`^${name}, \\d plays?`, 'u') });
   /** Opens the card's Lens and unfolds Who; the row's words are the play's. */
+  const here = () => screen.getByRole('dialog', { name: /^(Visit and cards|Cards) on this (post|character)$/u });
+  /** Unfolds Who if it is folded (it stays as it is when the tab changes). */
+  const unfold = async () => {
+    const who = within(here()).getByRole('button', { name: /^\d+ plays? · / });
+    if (who.getAttribute('aria-expanded') !== 'true') await userEvent.click(who);
+    return here();
+  };
   const lensOf = async (seq: number, name: string) => {
     await userEvent.click(await markNamed(seq, name));
-    await userEvent.click(whoButton());
-    return lens();
+    return unfold();
   };
-  const heading = () => within(lens()).getByRole('tab', { selected: true }).closest('[role="dialog"]')!.querySelector('.kb-lens-line')!.textContent;
+  const heading = () => here().querySelector('.kb-lens-line')!.textContent;
 
   test('a heart is a mark on the post it was played from, and its row says what it took off and when, with the singular and the plural', async () => {
     width(false);
@@ -2251,7 +2257,7 @@ describe('the discipline cards\' Lens', () => {
     openIt(w);
     const l = await lensOf(2, 'T Heart');
     expect(heading()).toBe('Took points off');
-    expect(rows()).toEqual([one.id, two.id]);
+    expect([...l.querySelectorAll<HTMLElement>('[data-kb-play]')].map((r) => r.getAttribute('data-kb-play'))).toEqual([two.id, one.id]);
     expect(l).toHaveTextContent(`Took 1 warn point off Spritey's warn bar on ${dayAndTime(one.createdAt)}.`);
     expect(l).toHaveTextContent(`Took 2 warn points off Spritey's warn bar on ${dayAndTime(two.createdAt)}.`);
     /* It is a play like any: reacted to and spun from, and it names the caster. */
@@ -2272,8 +2278,7 @@ describe('the discipline cards\' Lens', () => {
     let l = await lensOf(2, 'T Super');
     expect(l).toHaveTextContent(`Took 7 warn points off Spritey's warn bar on ${dayAndTime(sup.createdAt)}.`);
     await userEvent.click(await markNamed(2, 'T Ultra'));
-    await userEvent.click(whoButton());
-    l = lens();
+    l = await unfold();
     expect(heading()).toBe('Ended a ban');
     expect(l).toHaveTextContent(`Ended Spritey's ban on ${dayAndTime(ultra.createdAt)}.`);
   });
@@ -2328,12 +2333,12 @@ describe('the discipline cards\' Lens', () => {
     await article(2);
     const bit = within(document.getElementById('post-2')!.querySelector('.kb-postbit') as HTMLElement);
     await userEvent.click(await bit.findByRole('button', { name: /^T Watch, 1 play\b/u }));
-    await userEvent.click(whoButton());
-    const l = screen.getByRole('dialog', { name: 'Cards on this character' });
+    const l = await unfold();
+    expect(l).toHaveAccessibleName('Cards on this character');
     expect(heading()).toBe('Told on');
     expect(l).toHaveTextContent(`Mod Bot patrols are twice as likely to look at Spritey's posts until ${dayAndTime(two.payload.ends as string)}. A patrol still judges each post against the rules.`);
     await userEvent.click(within(l).getByRole('tab', { name: 'T Watch Three' }));
-    await userEvent.click(within(l).getByRole('button', { name: /^\d+ plays? · / }));
+    await unfold();
     expect(l).toHaveTextContent(`Mod Bot patrols are 3 times as likely to look at Spritey's posts until ${dayAndTime(three.payload.ends as string)}.`);
   });
 
@@ -2346,8 +2351,7 @@ describe('the discipline cards\' Lens', () => {
     openIt(w);
     for (const [seq, name] of [[2, 'T Heart'], [2, 'T Fall']] as const) {
       await userEvent.click(await markNamed(seq, name));
-      await userEvent.click(whoButton());
-      const l = lens();
+      const l = await unfold();
       expect(wordsProblems('state', heading()!)).toEqual([]);
       expect(viewProblems({ progress: null, state: heading()!, ends: l.querySelector('.kb-lens-ends')?.textContent ?? 'never', yours: false, controls: [], notes: {} }, { holds: false, covers: false })).toEqual([]);
       expect(l).not.toHaveTextContent(/\b(account|owner|owned|heel|face)\b/iu);
@@ -2367,8 +2371,8 @@ describe('the discipline cards\' Lens', () => {
     await article(2);
     const scope = which === 'watch' ? within(document.getElementById('post-2')!.querySelector('.kb-postbit') as HTMLElement) : within(await article(2));
     await userEvent.click(await scope.findByRole('button', { name: new RegExp(`^${name}, \\d plays?`, 'u') }));
-    await userEvent.click(whoButton());
-    const v = await axeViolations(screen.getByRole('dialog'));
+    await unfold();
+    const v = await axeViolations(here());
     expect(v, describeViolations(v)).toEqual([]);
   });
 

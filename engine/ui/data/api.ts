@@ -1774,9 +1774,9 @@ export interface LogInfraction {
   /** When a ban emptied the bar, so these points stopped counting before their time; null where none did. */
   readonly emptiedAt: string | null;
   /** The points Happy Hearts took off (`my_infractions.card_relief`, 0420); 0 or absent where no card did (a payload older than 0420 has none). Counted beside `relief`, which is an appeal's. */
-  readonly cardRelief?: number;
+  readonly cardRelief: number;
   /** The Act of the Take the Fall play this infraction landed through, on the character that took the fall (`my_infractions.fall_play`); null for an ordinary filing. */
-  readonly fallPlay?: Id | null;
+  readonly fallPlay: Id | null;
 }
 
 /**
@@ -1817,9 +1817,9 @@ export interface LogBan {
   /** When the ban ends by its own Act, before any ruling. */
   readonly ownUntil: string;
   /** When an Ultra Happy Heart lifted it (`my_bans.lifted_at`, 0420); null where none did. A lift ends the ban at that time, so `until` reads the same. */
-  readonly liftedAt?: string | null;
+  readonly liftedAt: string | null;
   /** The key of the card whose play lifted it; null where none did. */
-  readonly liftedCard?: string | null;
+  readonly liftedCard: string | null;
 }
 
 /** A ban running on one of the player's characters: its Act (what an appeal names), when it ends, how long it was and the rule that filled the bar. */
@@ -1913,7 +1913,7 @@ export interface Log {
   /** The bans laid on the player's characters, by when each began (`my_bans`). */
   readonly bans: readonly LogBan[];
   /** The filings that landed on a character that took the fall for one of the player's posts, by when each landed (`my_falls_taken`). Absent from a payload older than the card; read it as none. */
-  readonly falls?: readonly LogFall[];
+  readonly falls: readonly LogFall[];
   /** The staff moves of the player's characters into groups, by when each landed (`my_group_moves`). */
   readonly groupMoves: readonly LogGroupMove[];
   /** The reports the player's characters made, by when each was made (`my_reports`). */

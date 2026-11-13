@@ -163,7 +163,7 @@ export function cutLog(read: LogRead, limit: number = LOG_ROWS): Log {
     ended: read.ended.filter((e) => keep(e.at)),
     infractions: read.infractions.filter((e) => keep(e.at)),
     bans: read.bans.filter((e) => keep(e.at)),
-    ...(read.falls === undefined ? {} : { falls: read.falls.filter((e) => keep(e.at)) }),
+    falls: (read.falls ?? []).filter((e) => keep(e.at)),
     groupMoves: read.groupMoves.filter((e) => keep(e.at)),
     reports: read.reports.filter((e) => keep(e.at)),
     appeals: read.appeals.filter((e) => keep(e.at)),

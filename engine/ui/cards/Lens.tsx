@@ -50,6 +50,7 @@ import { plainRefusal, withCardEconomy } from './faces.ts';
 import { Kit } from './Kit.tsx';
 import { olderWords, surfaceShare, surfaceWords } from './lens-words.ts';
 import { backWords, CAUGHT_STATE, caughtWords, endedWords, gimmickWords, kindsOf, OVER_STATE, playsPhrase, sumOf, UNTAKEN_STATE, untakenWords } from './marks.ts';
+import { disciplineNote, FALL_ENDS } from './discipline.ts';
 import { backOver, defaultView, inPlayOrder, isBack, keepingKeys, markedPlays, shownPlays, useCardView, usePlays, type Plays } from './plays.ts';
 import type { CardPlay, CardView } from './types.ts';
 import { VisitPanel, readVisit } from './Visit.tsx';
@@ -196,12 +197,12 @@ export function useResolvedView(store: Plays, post: Id, kind: string, nameOf?: (
   const signature = useSyncExternalStore(subscribe, () => {
     const h = store.get(post);
     return JSON.stringify(h.plays.filter((p) => p.card === kind).map((p) => [p.id, p.caster, p.playedAt, p.caught ?? null, p.ends ?? null, p.revealed ?? null, h.faces[p.id] ?? null,
-      p.caught ? h.plays.find((b) => b.id === p.caught)?.revealed?.card ?? null : null, p.reversed ?? null, p.untaken ?? null, p.takenBack ?? null, p.config, p.starts ?? null, p.endsAt ?? null]));
+      p.caught ? h.plays.find((b) => b.id === p.caught)?.revealed?.card ?? null : null, p.reversed ?? null, p.untaken ?? null, p.takenBack ?? null, p.config, p.starts ?? null, p.endsAt ?? null, p.spent ?? null]));
   });
   const here = useMemo(() => {
-    const rows = JSON.parse(signature) as [Id, Id | null, string, Id | null, string | null, CardPlay['revealed'] | null, string | null, string | null, true | null, true | null, CardPlay['takenBack'] | null, CardPlay['config'], string | null, string | null][];
+    const rows = JSON.parse(signature) as [Id, Id | null, string, Id | null, string | null, CardPlay['revealed'] | null, string | null, string | null, true | null, true | null, CardPlay['takenBack'] | null, CardPlay['config'], string | null, string | null, true | null][];
     return {
-      plays: rows.map(([id, caster, playedAt, caught, ends, revealed, , , reversed, untaken, takenBack, config, starts, endsAt]): CardPlay => ({ id, card: kind, layer: 1, caster, message: '', config, playedAt, post, ...(starts ? { starts } : {}), ...(isBack(kind) ? { faceDown: true as const } : {}), ...(caught ? { caught } : {}), ...(ends ? { ends } : {}), ...(revealed ? { revealed } : {}), ...(reversed ? { reversed: true as const } : {}), ...(untaken ? { untaken: true as const } : {}), ...(takenBack ? { takenBack } : {}), ...(endsAt ? { endsAt } : {}) })),
+      plays: rows.map(([id, caster, playedAt, caught, ends, revealed, , , reversed, untaken, takenBack, config, starts, endsAt, spent]): CardPlay => ({ id, card: kind, layer: 1, caster, message: '', config, playedAt, post, ...(starts ? { starts } : {}), ...(isBack(kind) ? { faceDown: true as const } : {}), ...(caught ? { caught } : {}), ...(ends ? { ends } : {}), ...(revealed ? { revealed } : {}), ...(reversed ? { reversed: true as const } : {}), ...(untaken ? { untaken: true as const } : {}), ...(takenBack ? { takenBack } : {}), ...(endsAt ? { endsAt } : {}), ...(spent ? { spent: true as const } : {}) })),
       faces: Object.fromEntries(rows.filter((r) => r[6] !== null).map((r) => [r[0], r[6]!])) as Record<Id, string>,
       traps: Object.fromEntries(rows.filter((r) => r[7] !== null).map((r) => [r[0], r[7]!])) as Record<Id, string>,
     };
@@ -221,7 +222,14 @@ export function useResolvedView(store: Plays, post: Id, kind: string, nameOf?: (
     const rules = instance.cards.find((c) => c.key === kind);
     /* A play beyond a post ends on its timer: the view's way out says when, the latest of the kind's (each is drawn until its own). */
     const latestEnd = ofKind.filter((p) => !p.caught && !p.reversed && !p.untaken && p.ends !== undefined).map((p) => p.ends!).sort((a, b) => Date.parse(b) - Date.parse(a))[0];
-    const base = defaultView({ name: rules?.name ?? kind, ...(rules?.keeps ? { keeps: true as const } : {}) }, ui.cards.find((c) => c.key === kind), economy, latestEnd, ofKind.filter((p) => !p.caught && !p.reversed && !p.untaken), api.now());
+    /* The plays the card's status is given are the live ones that no filing has spent: a status that is a function of them (a fall's) reads "waiting" from a live play and "took it" from none, and a play an admin ended
+       never reaches it (it is simply ended, below), so "took it" is said only of a fall a filing spent (`CardPlay.spent`, from the page). */
+    const waiting = ofKind.filter((p) => !p.caught && !p.reversed && !p.untaken && !p.spent);
+    const base = {
+      ...defaultView({ name: rules?.name ?? kind, ...(rules?.keeps ? { keeps: true as const } : {}) }, ui.cards.find((c) => c.key === kind), economy, latestEnd, waiting, api.now()),
+      /* A fall waiting has no time up: its way out is a filing or an admin. */
+      ...(rules?.discipline?.kind === 'fall' && waiting.length > 0 ? { ends: FALL_ENDS } : {}),
+    };
     const caught = Object.fromEntries(ofKind.filter((p) => p.caught).map((p) => {
       const trap = here.traps[p.id];
       return [p.id, caughtWords(trap ? cardName(trap) : null)];
@@ -632,6 +640,8 @@ export interface LensProps {
   readonly compare: boolean;
   readonly to: string | null;
   readonly nameOf: (character: Id | null) => string;
+  /** The author of the post the marks are on, for the words of a card that says whom it spares (a fall); absent for a character, a thread or a board. */
+  readonly author?: Id | null | undefined;
   /** A character's picture URL, or null for none. */
   readonly faceOf: (character: Id | null) => string | null;
   /** The strip of marks the Lens opened from: where the mark of its kind (or the "+N" that hides it) is found again if the mark that opened it has left the page. */
@@ -668,7 +678,7 @@ const PreparedTab = forwardRef<HTMLButtonElement, {
   );
 });
 
-export function Lens({ open, store, post, plays, tallies, mine, compare, to, nameOf, faceOf, strip, onSpin, where = 'post', moments = true, visit, modPronouns = ENGINE_DEFAULT_PRONOUNS, form, reportTo }: LensProps) {
+export function Lens({ open, store, post, plays, tallies, mine, compare, to, nameOf, author = null, faceOf, strip, onSpin, where = 'post', moments = true, visit, modPronouns = ENGINE_DEFAULT_PRONOUNS, form, reportTo }: LensProps) {
   const { api, instance, ui } = useKayfa();
   const here = usePlays(plays, post);
   const narrow = useSheet();
@@ -783,6 +793,15 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
   const rowPlays = (rules?.stack ?? 1) > 1 ? [...ofKind].sort(inPlayOrder).reverse() : ofKind;
   const tabId = (kind: string) => `${ids}-tab-${kind}`;
   const panelId = `${ids}-panel`;
+  /* A discipline card's plays say what each did, in the engine's words: a play an admin ended, one that did not take and one a trap caught are said as any is (the view's notes win). */
+  const effect = rules?.discipline;
+  const said = effect === undefined ? null : Object.fromEntries(ofKind.filter((p) => !p.caught && !p.reversed && !p.untaken).flatMap((p): [Id, string][] => {
+    const note = disciplineNote(effect, p, { target: p.targetName ?? (p.on ? nameOf(p.on) : 'this character'), caster: nameOf(p.caster), author: author === null ? 'the author' : nameOf(author) });
+    return note === null ? [] : [[p.id, note]];
+  }));
+  const shownView = said === null || Object.keys(said).length === 0 ? view : { ...view, notes: { ...said, ...view.notes } };
+  /* A fall waiting on the post, for the visit's panel: its caster is who a filing lands on. */
+  const fall = billed.find((p) => instance.cards.find((c) => c.key === p.card)?.discipline?.kind === 'fall' && !p.caught && !p.reversed && !p.untaken && !p.spent && p.caster !== null) ?? null;
 
   const move = (e: KeyboardEvent<HTMLDivElement>) => {
     const at = kinds.indexOf(card);
@@ -852,7 +871,7 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
         {onForm && form.kind === APPEAL_KIND && appealP.data && <AppealForm infraction={form.infraction} visit={form.visit} nameOf={nameOf} modPronouns={modPronouns} facts={appealP.data} />}
         {onVisit && visitP.data && (
           <VisitPanel first={visitP.data}
-            visit={visit.visit} thread={visit.thread} author={visit.author} nameOf={nameOf} modPronouns={modPronouns} tallies={tallies} mine={mine} onEnded={visit.onEnded}
+            visit={visit.visit} thread={visit.thread} author={visit.author} nameOf={nameOf} modPronouns={modPronouns} tallies={tallies} mine={mine} onEnded={visit.onEnded} fall={fall === null ? null : { caster: fall.caster! }}
             onSpin={(act, label) => { store.close(); visit.onSpinAct?.(act, label, open.opener); }}
           />
         )}
@@ -865,7 +884,7 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
           <div className="kb-lens-section kb-lens-act"><Kit card={name} controls={view.controls} ink={ink} /></div>
         )}
         {!onVisit && !onForm && <Who
-          plays={rowPlays} inkOfPlay={(p) => inkOf(ui, p, [...ofKind].sort(inPlayOrder), onInk)} unfolded={unfolded} onToggle={() => setUnfolded((u) => !u)} nameOf={nameOf} faceOf={faceOf} card={name} view={view} tallies={tallies} mine={mine} compare={compare} to={to} moments={moments} store={plays} admin={admin} now={now}
+          plays={rowPlays} inkOfPlay={(p) => inkOf(ui, p, [...ofKind].sort(inPlayOrder), onInk)} unfolded={unfolded} onToggle={() => setUnfolded((u) => !u)} nameOf={nameOf} faceOf={faceOf} card={name} view={shownView} tallies={tallies} mine={mine} compare={compare} to={to} moments={moments} store={plays} admin={admin} now={now}
           onSpin={(play, spinName) => { store.close(); onSpin(play, spinName, open.opener); }}
         />}
         {reportTo && <p className="kb-report-foot"><ReportLink post={reportTo.post} version={reportTo.version} kicker={reportTo.kicker} className="kb-report-link" /></p>}
