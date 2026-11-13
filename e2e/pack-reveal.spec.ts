@@ -91,6 +91,42 @@ for (const feel of ['smooth', 'snappy'] as const) {
   });
 }
 
+/*
+ * E3 at frame grain, on the 1440 and on a phone: on the first frame the five are drawn (the top tearing), each back stands inside the pack's body, so the pack
+ * hides them until they rise out of it. A card in the row is drawn at the fan's size inside a box that was the sheet's (the flip was 276 by 414 whatever the
+ * card's size), and the entrance centers the box in the pack: the back stood up and to the left of the pack's middle and showed past its top left corner.
+ */
+for (const [layout, viewport] of [['1440', { width: 1440, height: 1080 }], ['phone', { width: 360, height: 700 }]] as const) {
+  test(`${layout}: when the top tears, every card's back stands inside the pack`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await page.goto('/?fixture=boards&story=boards-booster-packs--machine');
+    await page.evaluate(() => { document.documentElement.setAttribute('data-kb-motion', 'full'); document.documentElement.setAttribute('data-kb-motion-feel', 'smooth'); });
+    await page.getByRole('button', { name: /^Buy Booster, 3\.00 orbs/ }).click();
+    const buy = page.getByRole('button', { name: 'Buy Booster · 3.00' });
+    await buy.scrollIntoViewIfNeeded();
+    await page.evaluate(() => {
+      type Box = { left: number; top: number; right: number; bottom: number };
+      const at = (r: DOMRect): Box => ({ left: r.left, top: r.top, right: r.right, bottom: r.bottom });
+      const w = window as unknown as { kbTear?: { pack: Box; backs: Box[] } };
+      const sample = () => {
+        const pack = document.querySelector('.kb-opening-pack');
+        const boxes = Array.from(document.querySelectorAll<HTMLElement>('.kb-opening-row .kb-opening-cardbox'));
+        if (pack && boxes.length > 0 && boxes.some((b) => Number(getComputedStyle(b).opacity) > 0)) {
+          w.kbTear = { pack: at(pack.getBoundingClientRect()), backs: boxes.map((b) => at(b.querySelector('.kb-opening-side')!.firstElementChild!.getBoundingClientRect())) };
+          return;
+        }
+        requestAnimationFrame(() => setTimeout(sample, 0));
+      };
+      requestAnimationFrame(() => setTimeout(sample, 0));
+    });
+    await buy.click();
+    await expect.poll(() => page.evaluate(() => Boolean((window as unknown as { kbTear?: unknown }).kbTear)), { timeout: 10_000 }).toBe(true);
+    const { pack, backs } = await page.evaluate(() => (window as unknown as { kbTear: { pack: { left: number; top: number; right: number; bottom: number }; backs: { left: number; top: number; right: number; bottom: number }[] } }).kbTear);
+    const outside = backs.filter((b) => b.left < pack.left - 1 || b.top < pack.top - 1 || b.right > pack.right + 1 || b.bottom > pack.bottom + 1);
+    expect(outside, `backs past the pack (${JSON.stringify(pack)}) on the frame the five are first drawn`).toEqual([]);
+  });
+}
+
 test('a Space in the middle of the entrance finishes it and turns the first card; Done in the middle of the turn leaves at once', async ({ page }) => {
   const slot = await buyTheBooster(page, 'smooth');
   await page.keyboard.press('Space');
