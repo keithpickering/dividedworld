@@ -1,4 +1,4 @@
--- The two card-write settings renamed (supabase/migrations/0360_card_write_top_ups.sql; docs/plans/2026-11-13-you-were-saying-voice-design.md §3).
+-- The two card-write settings renamed (supabase/migrations/0470_card_write_top_ups.sql; docs/plans/2026-11-13-you-were-saying-voice-design.md §3).
 -- A stored cardWriteRerolls row becomes a cardWriteTopUps row with its value and tuned_at kept, and a stored cardWriteShortShare row (its meaning changed) is removed.
 -- A test file runs after every migration, so it cannot replay a migration against a state from before it: the old rows are set up here (settings_held lets an unnamed
 -- key through) and the migration's two statements are run below, the same text as the migration's.
