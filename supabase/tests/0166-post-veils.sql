@@ -1050,6 +1050,51 @@ begin
   if seen like '%' || a::text || '%' or seen not like '%' || stand::text || '%' then raise exception 'a taken-back back shows the veiled post''s author: %', seen; end if;
 end $$;
 
+-- ---- 5e. An admin ends the card a veiled post's back laid on someone else's quote: the quote's owner is told who the caster was as the card is shown, the stand-in, until the veil ends ----
+-- my_cards_ended names the caster of a card laid on the caller's post (side 'onMine'), and log_page carries it ("An admin ended <caster>'s ... on your post"). The card the back laid is shown under the stand-in (acts_public,
+-- post_veil_cards) while the veil is live, so the name in the owner's log is the shown one, and the true name returns with the veil. The caller's own plays (side 'cast') are the caller's own fact and keep their own character.
+select tests.unbecome();
+do $$
+declare
+  ann uuid := tests.account('ve-ann'); bob uuid := tests.account('ve-bob'); cy uuid := tests.account('ve-cy');
+  a uuid := tests.character(ann, 'Ve Ann'); b uuid := tests.character(bob, 'Ve Bob'); c uuid := tests.character(cy, 'Ve Cy');
+  t uuid := tests.thread('Ve back');
+  stand uuid := pg_temp.stand();
+  p uuid := tests.post(a, t, 'A veiled post whose back lands.');
+  back uuid; vplay uuid; made jsonb; q uuid; laid uuid; ended jsonb; seen text; adm uuid := tests.account('ve-admin');
+begin
+  perform pg_temp.cards();
+  perform pg_temp.hand(ann, 'vlmove'); perform pg_temp.hand(bob, 'vlauthor');
+  insert into admins (account) values (adm);
+  perform tests.become_service();
+  back := (set_card(ann, 'vlmove', a, p, '{}', 0) ->> 'id')::uuid;
+  vplay := (play_card(bob, 'vlauthor', b, p, '{}', 0, '') ->> 'id')::uuid;
+  perform tests.unbecome();
+  perform tests.become(cy);
+  made := post(t, c, 'Quoting the veiled post, to spring its back.', p);
+  perform tests.unbecome();
+  q := (made ->> 'id')::uuid;
+  select k.id into laid from acts k where k.kind = 'card' and k.target_act_id = q and k.character = a;
+  if laid is null then raise exception 'the back did not lay a card of its setter on the quote: %', made; end if;
+  perform set_config('kayfabb.card_end_writer', 'on', true);
+  insert into acts (character, kind, thread, target_act_id, payload) values (null, 'card_end', t, laid, '{"why": "reversed", "by": "admin"}');
+  perform set_config('kayfabb.card_end_writer', '', true);
+  -- While the veil is live: the quote's owner reads the stand-in, in the view and in the log, and nothing of the setter.
+  perform tests.become(cy);
+  select jsonb_agg(to_jsonb(e)) into ended from my_cards_ended e where e.side = 'onMine' and e.play = laid;
+  seen := coalesce(ended::text, '') || log_page(null)::text;
+  perform tests.unbecome();
+  if ended is null or jsonb_array_length(ended) is distinct from 1 then raise exception 'my_cards_ended for the quote''s owner: %', ended; end if;
+  if seen like '%' || a::text || '%' or seen like '%Ve Ann%' then raise exception 'the ended card names the veiled post''s author to the quote''s owner: %', substring(seen from position('Ve Ann' in seen) - 200 for 500); end if;
+  if ended -> 0 ->> 'caster_name' is distinct from (select cp.name from characters_public cp where cp.id = stand) then raise exception 'the ended card is not named as the stand-in: %', ended; end if;
+  -- The veil's end brings the true name back.
+  perform tests.become(adm); perform reverse_card(vplay); perform tests.unbecome();
+  perform tests.become(cy);
+  select jsonb_agg(to_jsonb(e)) into ended from my_cards_ended e where e.side = 'onMine' and e.play = laid;
+  perform tests.unbecome();
+  if ended -> 0 ->> 'caster_name' is distinct from 'Ve Ann' then raise exception 'the true name did not return with the veil: %', ended; end if;
+end $$;
+
 -- ---- 6. acts.character is no longer readable; the readers that needed it answer from the projection ----
 select tests.unbecome();
 do $$

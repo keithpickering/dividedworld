@@ -1662,7 +1662,7 @@ end;
 -- Each is copied from its latest definition, named above it, changing only what is named there.
 
 -- my_cards_ended (0340_conduct) was a security-invoker view reading acts_public as the caller (0340 moved it there from `acts`, whose `payload` a player is no longer granted), and its `k.character = mine.id` is then the shown character, which a veil changes; so it is now the caller's own rows with owner rights over `acts` as 0092 wrote them. It is now the caller's own rows with owner rights, as my_reactions is: every branch starts
--- at the caller's own characters (`mine`, filtered by auth.uid()), so it reads what it read before; the post's author is named as the read shows it (what shown_author says, written out: a view's functions are run as its reader). Everything else as 0092 wrote it (0340's only change was the source it read, which owner rights make unneeded), columns in the
+-- at the caller's own characters (`mine`, filtered by auth.uid()), so it reads what it read before; the post's author is named as the read shows it (what shown_author says, written out: a view's functions are run as its reader), and so is the caster of a card laid on the caller's post, read from acts_public by the play's id (a veiled post's own back lays a card that is shown under the stand-in while the veil is live, post_veil_cards; the caller's own `cast` rows keep the caller's own character). Everything else as 0092 wrote it (0340's only change was the source it read, which owner rights make unneeded), columns in the
 -- same order; the grant is the same.
 alter view my_cards_ended set (security_invoker = false);
 create or replace view my_cards_ended as
@@ -1707,7 +1707,8 @@ create or replace view my_cards_ended as
            when 'board' then coalesce(pl.named, (select bd.name from boards bd where bd.id = pl.reach_board))
          end as target_name,
          case when pl.reach = 'post' then (select cp.name from acts pa join characters_public cp on cp.id = case when exists (select 1 from post_veils_live sv where sv.post = pa.id and sv.veil = 'author') then (select sk.id from characters sk where sk.staff_kind = 'anonymous') else pa.character end where pa.id = pl.target_act_id) end as post_author_name,
-         (select cp.name from characters_public cp where cp.id = pl.caster) as caster_name,
+         case when pl.side = 'cast' then (select cp.name from characters_public cp where cp.id = pl.caster)
+              else (select cp.name from acts_public ap join characters_public cp on cp.id = ap."character" where ap.id = pl.play) end as caster_name,
          pl.mine_character as character
   from plays pl;
 

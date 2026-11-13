@@ -394,10 +394,66 @@ insert into listed_columns (rel, col, mark, why) values
   ('thread_open', 'last_character', 'swept', 'a thread''s last poster, as the projection shows it (shown_author)'),
   ('turns_announced', 'character', 'no author', 'a Turn is the character''s own public Act, never a post');
 
+-- The columns of a view that reads characters.name, characters.id or acts.character (itself or through another view: pg_temp.reads_character), each judged one by one, grouped by what is true of them all. The view's rule is
+-- what the catalog can say of a column's source, so each text or uuid column of such a view is named here, and a column added to one is a column to judge: it reads the sweep red until it is. `swept`: the relation is probed below.
+-- A group's reason says what the columns are; a column that reads a character's name or id by a path of its own has its own row (my_cards_ended.caster_name, which a signed-in player read as the true name of a veiled post's author).
+insert into listed_columns (rel, col, mark, why)
+select g.rel, c, g.mark, g.why
+from (values
+  ('acts_public', array['id', 'kind', 'target_act_id', 'thread'], 'swept', 'the Act''s own id, kind, target and thread: public, the same for every reader (only `character` is the projection''s)'),
+  ('characters_public', array['id', 'name', 'group', 'office', 'staff'], 'no author', 'a debuted character''s public face (policy: characters_public): its id, name, group, office and staff key; the stand-in is one of them, and no post''s author is in a name or an id'),
+  ('class_reveals', array['act', 'class', 'thread', 'via'], 'no author', 'a reveal is the character''s own public Act: its id, the class revealed, its thread and how (reveal, Turn or unmask)'),
+  ('moves_log', array['bundle', 'ended_why', 'id', 'kind', 'role', 'staff', 'thread'], 'no author', 'a Boss''s move, staff and public: the move''s id, kind, role, staff key, thread, bundle and the reason it ended'),
+  ('my_appeals', array['appeal', 'punishment', 'punishment_kind', 'refund', 'thread', 'verdict'], 'no author', 'the caller''s own appeal (the view filters by auth.uid()): ids, the punishment''s kind, the refund and the verdict'),
+  ('my_appeals', array['hearer_name'], 'no author', 'the name of the Mod Bot that heard the appeal: a staff persona, public as it signs its rulings'),
+  ('my_bans', array['ban', 'infraction', 'rule', 'ruling', 'thread'], 'no author', 'the caller''s own ban (the view filters by auth.uid()): ids, the rule and the ruling'),
+  ('my_cards_ended', array['card', 'card_end', 'play', 'reach', 'side'], 'no author', 'the caller''s own plays and the plays on the caller''s own posts: ids, the card''s key, its reach and which side of the play the caller is; no character'),
+  ('my_cards_ended', array['target_name'], 'no author', 'the name of what a play was aimed at: the character a card at character reach named (public as the play is, play_reach), or a thread or a board; never a post''s author'),
+  ('my_cards_ended', array['caster_name'], 'swept', 'the caster of a play as the projection shows it: the caller''s own character on a play the caller made, and on a play on the caller''s own post the name acts_public shows for the play (the stand-in for a card a veiled post''s own back laid, while the veil is up)'),
+  ('my_characters', array['id', 'name', 'group', 'class', 'debut_loudness', 'pending_class', 'pending_loudness'], 'no author', 'the caller''s own characters (the view filters by owner = auth.uid())'),
+  ('my_draws', array['act', 'kind', 'mine', 'play', 'post'], 'swept', 'the caller''s own drawings and the washes that cut them: the Act''s id and kind, the wall''s play and post, and whether the drawing is the caller''s; never a name'),
+  ('my_followed_threads', array['board', 'thread', 'title'], 'swept', 'a followed thread''s id, its board and its title'),
+  ('my_group_moves', array['board', 'board_name', 'demand', 'ended_why', 'group', 'move', 'office', 'ruled_office', 'ruling', 'thread'], 'no author', 'the caller''s own group moves: ids, the board, the demand, the group and office and how the move ended'),
+  ('my_infractions', array['band', 'infraction', 'post', 'rule', 'thread'], 'no author', 'the caller''s own infractions (the view filters by auth.uid()): ids, the rule and its band'),
+  ('my_infractions', array['mod_name'], 'no author', 'the name of the Mod Bot that ruled: a staff persona, public as it signs its rulings'),
+  ('my_posts_played_on', array['play', 'post', 'reach'], 'no author', 'a play on the caller''s own post: the play''s id, the post''s id and the reach'),
+  ('my_posts_played_on', array['target_name'], 'no author', 'the name of the character played on, which the view''s own filter makes the caller''s'),
+  ('my_posts_written_on', array['play', 'post', 'version'], 'no author', 'a text written on the caller''s own post: ids'),
+  ('my_reports', array['post', 'refund', 'report', 'thread', 'verdict'], 'no author', 'the caller''s own report: the report, the reported post''s id (not its author), the verdict and the refund'),
+  ('my_reports', array['mod_name'], 'no author', 'the name of the Mod Bot that ruled: a staff persona, public as it signs its rulings'),
+  ('my_scored_as', array['card', 'named_class', 'play'], 'no author', 'the caller''s own scored-as play: the card''s key, the class the caller named and the play''s id'),
+  ('my_veiled_posts', array['play', 'post'], 'no author', 'the caller''s own veil: the play and the post, by id (a live author veil on a post of a character the caller owns, nobody else''s)'),
+  ('my_walls_drawn_on', array['act', 'kind', 'mine', 'play', 'post'], 'no author', 'the wall on the caller''s own post: the Act''s id and kind, the play and the post, and whether the drawing is the caller''s'),
+  ('thread_list', array['board', 'first_act', 'id', 'last_act', 'origin_act_id', 'origin_thread', 'title'], 'swept', 'a thread''s id, board, title and the ids of its opening, first and last Acts: public, the same for every reader (the first and last poster are listed above)'),
+  ('thread_open', array['board', 'first_act', 'id', 'last_act', 'origin_act_id', 'origin_thread', 'title'], 'swept', 'a thread''s id, board, title and the ids of its opening, first and last Acts: public, the same for every reader (the first and last poster are listed above)'),
+  ('turns_announced', array['act', 'was'], 'no author', 'a Turn is the character''s own public Act: its id and the class the character was')
+) g(rel, cols, mark, why), unnest(g.cols) c;
+
 -- The columns a signed-in player may read that can name a character, against the list: those it lacks, and those it holds that the catalog no longer has.
+-- Whether a view's rule reads characters.name, characters.id or acts.character, itself or through the views it is built over (the catalog's own record of which table columns a rule references: pg_depend, with the column in
+-- refobjsubid). It is the view's, not each output column's: a rule's dependencies are not kept per output column, so every text or uuid column of such a view is judged (name_like). A column's own source is not derived
+-- from the catalog, because a column read through a CTE or a subquery has no dependency of its own to find (my_cards_ended.caster_name was one, and passed for want of a name that says it).
+create function pg_temp.reads_character(rel oid) returns boolean language sql as $$
+  with recursive seen(v) as (
+    select rel
+    union
+    select d.refobjid from seen s
+    join pg_rewrite r on r.ev_class = s.v
+    join pg_depend d on d.classid = 'pg_rewrite'::regclass and d.objid = r.oid and d.refclassid = 'pg_class'::regclass and d.refobjid <> s.v
+    join pg_class c on c.oid = d.refobjid and c.relkind = 'v'
+  )
+  select exists (
+    select 1 from seen s
+    join pg_rewrite r on r.ev_class = s.v
+    join pg_depend d on d.classid = 'pg_rewrite'::regclass and d.objid = r.oid and d.refclassid = 'pg_class'::regclass
+    join pg_class c on c.oid = d.refobjid
+    join pg_attribute a on a.attrelid = c.oid and a.attnum = d.refobjsubid
+    where c.relnamespace = 'public'::regnamespace and ((c.relname = 'characters' and a.attname in ('name', 'id')) or (c.relname = 'acts' and a.attname = 'character')))
+$$;
 create function pg_temp.name_like(rel_kind "char", col text, col_type oid, rel oid, att smallint) returns boolean language sql as $$
   select (rel_kind in ('r', 'p') and col_type = 'uuid'::regtype and exists (select 1 from pg_constraint k where k.conrelid = rel and k.contype = 'f' and k.confrelid = 'public.characters'::regclass and att = any (k.conkey)))
       or col ~ 'charact|saved_by|setter|author|by$'
+      or (rel_kind = 'v' and col_type in ('text'::regtype, 'uuid'::regtype, 'character varying'::regtype) and pg_temp.reads_character(rel))
 $$;
 create function pg_temp.unlisted_columns() returns text language sql as $$
   select coalesce(string_agg(x.rel || '.' || x.col, ', ' order by x.rel, x.col), '') from (
@@ -500,6 +556,15 @@ begin
   got := pg_temp.unlisted_columns();
   if got is distinct from 'sweep_poison_v.posted_by' then raise exception 'the column check did not name a granted view column that says it is an author: %', got; end if;
   drop view public.sweep_poison_v;
+  -- (3) A granted view whose columns carry a character by what they read and not by what they are called (my_cards_ended.caster_name was `(select cp.name from characters_public ...)` and passed for want of a name that says it): the
+  -- column that is read from characters.name and its id are named, so is one that reads them through another view, and a view that reads neither acts.character nor characters is left alone.
+  create view public.sweep_poison_w as select a.id, (select c.name from characters c where c.id = a.character) as shown from acts a;
+  create view public.sweep_poison_x as select shown as again from sweep_poison_w;
+  create view public.sweep_poison_y as select id, kind as what from acts;
+  grant select on public.sweep_poison_w, public.sweep_poison_x, public.sweep_poison_y to authenticated;
+  got := pg_temp.unlisted_columns();
+  drop view public.sweep_poison_x; drop view public.sweep_poison_y; drop view public.sweep_poison_w;
+  if got is distinct from 'sweep_poison_w.id, sweep_poison_w.shown, sweep_poison_x.again' then raise exception 'the column check did not name the columns a view reads from characters.name, characters.id or acts.character: %', got; end if;
   if pg_temp.unlisted_columns() <> '' then raise exception 'the column poison left something behind'; end if;
   -- The marks mean what they say: every swept name has a probe below (checked at the end of the sweep), and nothing is marked `no author` with an empty reason.
   if exists (select 1 from listed where length(btrim(why)) < 5) then raise exception 'a listed name has no reason'; end if;
@@ -693,6 +758,10 @@ begin
   select k.id into laid6 from acts k where k.kind = 'card' and k.target_act_id = q6 and k.character = a;
   if spring6 is null or laid6 is null then raise exception 'the back on the veiled post did not spring a card of A''s'; end if;
   veiled := veiled || array[back, spring6, laid6];
+  -- An admin ends that card while the veil is up: R, whose quote it lies on, is told by my_cards_ended and the log who laid it, which must be the stand-in as the card is shown (the `my_cards_ended` probe reads it as R).
+  perform set_config('kayfabb.card_end_writer', 'on', true);
+  insert into acts (character, kind, thread, target_act_id, payload) values (null, 'card_end', t, laid6, '{"why": "reversed", "by": "admin"}');
+  perform set_config('kayfabb.card_end_writer', '', true);
   perform set_config('sweep.veiled', array_to_string(veiled, ','), true);
 
   -- ---- 2. After the cast, as R, no probe leaks (the pending ones still do, until Task 3) ----
