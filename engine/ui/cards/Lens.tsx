@@ -623,6 +623,8 @@ export interface LensProps {
   readonly open: LensOpen;
   /** What the marks are on, as the Lens is named for it: a post, or a character, a thread or a board. */
   readonly where?: string;
+  /** When the post the marks are on was written, where it is a character's postbit: the plays listed are the ones its strip marks there (`markedPlays`). */
+  readonly postAt?: string;
   readonly store: LensStore;
   /** The post the marks are on (the id its plays are kept under). */
   readonly post: Id;
@@ -668,14 +670,14 @@ const PreparedTab = forwardRef<HTMLButtonElement, {
   );
 });
 
-export function Lens({ open, store, post, plays, tallies, mine, compare, to, nameOf, faceOf, strip, onSpin, where = 'post', moments = true, visit, modPronouns = ENGINE_DEFAULT_PRONOUNS, form, reportTo }: LensProps) {
+export function Lens({ open, store, post, plays, tallies, mine, compare, to, nameOf, faceOf, strip, onSpin, where = 'post', postAt, moments = true, visit, modPronouns = ENGINE_DEFAULT_PRONOUNS, form, reportTo }: LensProps) {
   const { api, instance, ui } = useKayfa();
   const here = usePlays(plays, post);
   const narrow = useSheet();
   const onInk = useOnInk();
   const host = useLensHost();
   const now = useUntil(here.billed);
-  const billed = markedPlays(shownPlays(here.billed, api.now()), now, keepingKeys(instance.cards));
+  const billed = markedPlays(shownPlays(here.billed, api.now()), now, keepingKeys(instance.cards), postAt);
   const admin = useLensAdmin();
   const cardKinds = kindsOf(billed);
   /* A form is the panel's one tab while it is open; a visit's tab is ahead of the cards'. */

@@ -3,7 +3,8 @@
  * while it was up once its time is over, none once an admin ended it; and a card drawn by another (`CardUi.drawnBy`), whose plays join the named card's effect on the
  * post as one wrap. The cards are the engine's own test cards, never an instance's.
  */
-import { act, render } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { landsOn, ok, type CardRules } from '../../rules/cards.ts';
@@ -11,9 +12,13 @@ import type { Instance } from '../../rules/types.ts';
 import { KayfaProvider, type Kayfa } from '../context.tsx';
 import type { Act } from '../data/api.ts';
 import { PlayerProvider } from '../player.tsx';
-import { buildWorld, testInstance, testKeeper, testKeeperMask } from '../test-world.tsx';
+import { buildWorld, renderIn, testInstance, testKeeper, testKeeperMask } from '../test-world.tsx';
 import { PostEffects } from './Effects.tsx';
+import { PostMarks } from './Marks.tsx';
+import type { ReachAt } from './PlayActions.tsx';
 import { createPlays } from './plays.ts';
+import { createTallies } from '../thread/tallies.ts';
+import { createMine } from '../reactions/mine.ts';
 import type { CardUi, EffectProps } from './types.ts';
 
 const post = (key: string): CardRules => ({
@@ -21,7 +26,8 @@ const post = (key: string): CardRules => ({
   canApply: (t, e, _config, now) => landsOn({ key, reaches: ['post'] }, t, e, now),
 });
 const WRITES: CardRules['writes'] = { tokens: () => 40, frame: () => ({ prompt: '', stop: [] }) };
-const instance: Instance = { ...testInstance, cards: [post('fab'), testKeeper, testKeeperMask, post('one'), { ...post('scribe'), writes: WRITES }] };
+const glow: CardRules = { ...post('glow'), reaches: ['character'], canApply: (t, e, _c, now) => landsOn({ key: 'glow', reaches: ['character'] }, t, e, now) };
+const instance: Instance = { ...testInstance, cards: [post('fab'), testKeeper, testKeeperMask, glow, post('one'), { ...post('scribe'), writes: WRITES }] };
 const DAY = 24 * 60 * 60 * 1000;
 /** The play's time, the fake backend's first (`START`), and its end a week on. */
 const PLAYED = '2026-10-29T12:00:00.000Z';
@@ -217,5 +223,32 @@ describe('a card drawn by another', () => {
     expect(words.nextElementSibling).toBe(tails[0]);
     expect(words.closest('[data-kb-wrap="one"]')).not.toBeNull();
     expect(tails[0]!.closest('[data-kb-wrap="one"]')).not.toBeNull();
+  });
+});
+
+/* The Lens a character's postbit opens lists the plays its strip marks there (the Glitter Bomb keeps plan, Task 4): an ended kept play only for a post written while it was up. */
+describe('the Lens on a character\'s postbit', () => {
+  const maskPlay: Act = { id: 'mask', character: 'c9', kind: 'card', thread: THREAD, targetActId: null, seq: null, createdAt: PLAYED, payload: { card: 'keepermask', layer: 1, message: '', config: {}, reach: 'character', character: 'c1', ends: ENDS }, currentPayload: {}, editedAt: null, shownEditedAt: null };
+  const glowPlay: Act = { ...maskPlay, id: 'glow', createdAt: '2026-10-29T12:00:01.000Z', payload: { ...maskPlay.payload, card: 'glow', ends: '2026-12-01T12:00:00.000Z' } };
+  const cards = [look('keepermask'), look('glow')];
+  const tabsAt = async (postAt: string) => {
+    const fake = buildWorld({}, instance);
+    fake.clock.advance(8 * DAY);
+    const store = createPlays();
+    store.add([maskPlay, glowPlay]);
+    const reachAt = { reach: 'character', target: 'c1', name: 'C1', fromPost: BEFORE, thread: THREAD, board: 'general', title: 'T', to: '/t', plays: store, know: async () => {}, focusBack: () => null } as unknown as ReachAt;
+    renderIn(fake, <PostMarks post="c1" postAt={postAt} plays={store} compare={false} to="/t" nameOf={() => 'x'} faceOf={() => null} tallies={createTallies()} mine={createMine()} reachAt={reachAt} onSpin={() => {}} />, { instance, cards });
+    await userEvent.click(await screen.findByRole('button', { name: /^glow, 1 play/u }));
+    const lens = await screen.findByRole('dialog', { name: 'Cards on this character' });
+    return { tabs: within(lens).getAllByRole('tab').map((t) => t.textContent), text: lens.textContent ?? '' };
+  };
+
+  test('lists only the live play on a post written outside the ended kept play\'s window', async () => {
+    expect((await tabsAt('2026-11-06T12:00:00.000Z')).tabs).toEqual(['glow']);
+  });
+
+  test('lists the ended kept play too on a post written while it was up', async () => {
+    const { tabs } = await tabsAt('2026-11-01T12:00:00.000Z');
+    expect(tabs).toEqual(['Keeper Mask', 'glow']);
   });
 });
