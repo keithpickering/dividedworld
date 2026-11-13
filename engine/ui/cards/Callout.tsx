@@ -164,6 +164,45 @@ export function useCallout(kind: string, hint: string | undefined, el: RefObject
 }
 
 /**
+ * On a phone (marks.css's `max-width: 40em`, the post's own stacked layout) a callout on a post's date row takes its own room between that row and
+ * the words, so it covers none of what a card makes tappable and the engine learns nothing of any card. It stays where it is in the DOM, after its
+ * mark, so reading and focus order do not change; what moves is its box. Here it is only measured: the row's width and the callout's place from
+ * its strip (`--kb-callout-left`, `--kb-callout-top`, `--kb-callout-width` on the callout) and the height the row gives up under itself
+ * (`--kb-callout-room` on the row, marked `data-kb-callout-row`), which marks.css uses below the breakpoint alone, so a wider screen is as before.
+ * A callout on anything but a `header` row (a thread's head, a postbit's corner) is not measured and keeps its hung place.
+ */
+function useRoomOnAPhone(box: RefObject<HTMLElement | null>): void {
+  useLayoutEffect(() => {
+    const el = box.current;
+    const strip = el?.parentElement;
+    const row = strip?.closest('.kb-marks-anchor')?.parentElement;
+    if (!el || !strip || !row || row.tagName !== 'HEADER') return;
+    el.dataset.kbCalloutFlow = '';
+    row.dataset.kbCalloutRow = '';
+    const fit = () => {
+      const at = strip.getBoundingClientRect();
+      const r = row.getBoundingClientRect();
+      const set = (to: HTMLElement, name: string, px: number) => { const v = `${Math.round(px * 100) / 100}px`; if (to.style.getPropertyValue(name) !== v) to.style.setProperty(name, v); };
+      set(el, '--kb-callout-left', r.left - at.left);
+      set(el, '--kb-callout-top', r.bottom - at.top + 4);
+      set(el, '--kb-callout-width', r.width);
+      set(row, '--kb-callout-room', el.offsetHeight + 8);
+    };
+    fit();
+    const watch = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(fit);
+    watch?.observe(el);
+    watch?.observe(row);
+    window.addEventListener('resize', fit);
+    return () => {
+      watch?.disconnect();
+      window.removeEventListener('resize', fit);
+      row.style.removeProperty('--kb-callout-room');
+      delete row.dataset.kbCalloutRow;
+    };
+  }, [box]);
+}
+
+/**
  * The bubble: out of the page's flow, a sibling of the mark and never inside its button. `id` is the hint's, which the mark
  * is described by. Its outer box carries the glow, since a clip-path would cut it off the chamfered panel inside.
  */
@@ -176,6 +215,7 @@ export function Callout({ id, kind, name, hint }: { readonly id: string; readonl
   useEffect(() => { if (first) tips.note('first-card'); }, [first, tips]);
   const extra = first ? ui.onboarding.tips['first-card'].line : null;
   const box = useRef<HTMLDivElement>(null);
+  useRoomOnAPhone(box);
   const got = () => {
     /* The bubble goes with the press, so focus goes back to the mark it hung from (the sibling before it). */
     const mark = box.current?.previousElementSibling;

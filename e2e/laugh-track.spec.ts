@@ -360,10 +360,19 @@ test.describe('a reader', () => {
       expect(await page.evaluate(() => window.scrollY), 'the touch scroll moved the page').toBeGreaterThan(500);
       await page.waitForTimeout(1000);
       expect(await heardPlaces(page), 'a scroll by touch').toEqual([]);
-      /* The card's first-time callout hangs off the post's mark and, at a phone's width, lies over the words: "Got it" puts it away, as a reader would. */
-      const gotIt = page.getByRole('button', { name: 'Got it' });
-      /* The callout may arrive late: give it a moment to show, and put it away if it does. */
-      if (await gotIt.waitFor({ state: 'visible', timeout: 2000 }).then(() => true, () => false)) await gotIt.click();
+      /* The card's first-time callout takes its own room between the post's date row and its words at a phone's width: it is left up, and it covers no cue and none of the post's body. */
+      const panel = page.locator('.kb-callout .kb-callout-panel');
+      await expect(panel).toBeVisible({ timeout: 4000 });
+      await panel.scrollIntoViewIfNeeded();
+      const meets = await page.evaluate(() => {
+        const r = document.querySelector('.kb-callout .kb-callout-panel')!.getBoundingClientRect();
+        const hit = (b: DOMRect) => r.left < b.right && b.left < r.right && r.top < b.bottom && b.top < r.bottom;
+        const cues = Array.from(document.querySelectorAll('.dw-lt-cue')).flatMap((e) => Array.from(e.getClientRects())).filter(hit).length;
+        const body = document.querySelector('.kb-callout')!.closest('.kb-act')!.querySelector('.kb-act-main')!.getBoundingClientRect();
+        return { cues, body: hit(body) };
+      });
+      expect(meets.cues, 'the callout meets no cue').toBe(0);
+      expect(meets.body, 'the callout meets none of the post\'s body').toBe(false);
       const at = await placeCenter(page, 0);
       await expect.poll(() => page.evaluate((a) => document.elementFromPoint(a.x, a.y)?.closest('.dw-lt-cue') !== null, at), { timeout: 4000, message: 'the cue is what stands at the tap' }).toBe(true);
       await page.touchscreen.tap(at.x, at.y);
