@@ -1,0 +1,240 @@
+<title>Season Rehearsal, Run 2</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,750&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a season strip across the top, then one review "file" per snapshot: my read first, then the day-by-day feed as forum posts, then each persona's private notes. */
+:root {
+  --bg: #f6f5f1; --panel: #ffffff; --ink: #1d1c22; --muted: #63606d; --line: #dedbd2; --chip: #eeece6;
+  --fangame: #c8361f; --ontopic: #a7700a; --qc: #2b5f8a; --sys: #5d6470;
+  --good: #2f7a46; --warn: #a15c00; --bad: #b3261e;
+  --display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #16161a; --panel: #1f1f25; --ink: #ecebef; --muted: #a3a0ad; --line: #34333c; --chip: #2a2a31;
+  --fangame: #ff7a63; --ontopic: #e8b54a; --qc: #79b4e6; --sys: #a9b0bc; --good: #6cc78a; --warn: #f0a447; --bad: #ff8a80; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #16161a; --panel: #1f1f25; --ink: #ecebef; --muted: #a3a0ad; --line: #34333c; --chip: #2a2a31;
+  --fangame: #ff7a63; --ontopic: #e8b54a; --qc: #79b4e6; --sys: #a9b0bc; --good: #6cc78a; --warn: #f0a447; --bad: #ff8a80; color-scheme: dark }
+body { background: var(--bg); color: var(--ink); font: 15px/1.55 var(--body); }
+.wrap { max-width: 980px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 32px 64px; display: grid; gap: 40px; }
+h1, h2, h3 { font-family: var(--display); text-wrap: balance; margin: 0; line-height: 1.15; }
+h1 { font-size: clamp(28px, 5vw, 42px); font-weight: 750; letter-spacing: -0.01em; }
+h2 { font-size: clamp(22px, 3.4vw, 28px); font-weight: 750; }
+h3 { font-size: 17px; font-weight: 500; }
+p { margin: 0; max-width: 68ch; }
+.lede { color: var(--muted); font-size: 16px; }
+.eyebrow { font: 500 12px/1.2 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+header { display: grid; gap: 12px; }
+.meta { display: flex; flex-wrap: wrap; gap: 8px 18px; font: 13px var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* Season strip */
+.season { display: grid; gap: 10px; }
+.strip { position: relative; height: 54px; border-radius: 6px; overflow: hidden; display: flex; border: 1px solid var(--line); }
+.ph { display: flex; align-items: flex-end; padding: 6px 8px; font: 500 11px var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); border-right: 1px solid var(--line); }
+.ph:last-child { border-right: 0; }
+.ph.honeymoon { background: color-mix(in srgb, var(--ontopic) 10%, var(--panel)); }
+.ph.reign { background: color-mix(in srgb, var(--fangame) 8%, var(--panel)); }
+.ph.meltdown { background: color-mix(in srgb, var(--fangame) 20%, var(--panel)); }
+.ph.next { background: color-mix(in srgb, var(--ontopic) 18%, var(--panel)); }
+.snap { position: absolute; top: 6px; height: 22px; border-radius: 4px; background: var(--ink); color: var(--bg); font: 600 11px/22px var(--mono); text-align: center; text-decoration: none; min-width: 22px; }
+.snap:focus-visible, button:focus-visible, a:focus-visible { outline: 2px solid var(--fangame); outline-offset: 2px; }
+.strip-key { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; color: var(--muted); }
+.strip-key a { color: var(--ink); }
+
+/* Cast */
+.cast { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.who { border-top: 3px solid var(--c); padding-top: 10px; display: grid; gap: 4px; }
+.who b { font-family: var(--display); font-size: 18px; color: var(--c); }
+.who span { font-size: 13px; color: var(--muted); }
+
+/* Findings */
+.findings { display: grid; gap: 10px; padding: 0; margin: 0; list-style: none; }
+.findings li { display: grid; grid-template-columns: 92px 1fr; gap: 12px; align-items: baseline; }
+.tag { font: 600 11px/1.6 var(--mono); text-transform: uppercase; letter-spacing: 0.06em; padding: 0 6px; border-radius: 3px; text-align: center; background: var(--chip); }
+.tag.tone { color: var(--good); } .tag.issue { color: var(--bad); } .tag.watch { color: var(--warn); } .tag.filler { color: var(--sys); }
+
+/* Snapshot file */
+section.file { display: grid; gap: 18px; scroll-margin-top: 16px; }
+.file-head { display: grid; gap: 8px; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
+.read { display: grid; gap: 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px 18px; }
+.read h3 { font-size: 15px; }
+.read ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; max-width: 72ch; }
+.filters { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.filters span { font-size: 13px; color: var(--muted); margin-right: 4px; }
+.filters button { font: 500 13px var(--body); border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 999px; padding: 3px 11px; cursor: pointer; }
+.filters button[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.day { display: grid; gap: 10px; }
+.dayhead { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; position: sticky; top: env(safe-area-inset-top, 0px); background: var(--bg); padding-block: 6px; z-index: 2; border-bottom: 1px dashed var(--line); }
+.dayhead b { font-family: var(--display); font-size: 16px; }
+.dayhead small { font: 12px var(--mono); color: var(--muted); }
+.post { display: grid; grid-template-columns: 132px 1fr; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.post .by { padding: 10px 12px; border-right: 1px solid var(--line); background: color-mix(in srgb, var(--c) 7%, var(--panel)); display: grid; align-content: start; gap: 2px; min-width: 0; }
+.post .by b { color: var(--c); font: 600 14px var(--body); overflow-wrap: anywhere; }
+.post .by small { font: 11px var(--mono); color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.post .body { padding: 10px 14px; white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; }
+.post .body .sub { display: block; font: 12px var(--mono); color: var(--muted); margin-bottom: 4px; white-space: normal; }
+.post.k-trouble .body, .post.k-call .body { font: 12.5px/1.5 var(--mono); }
+.notes { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
+details.mem { background: var(--panel); border: 1px solid var(--line); border-top: 3px solid var(--c); border-radius: 6px; padding: 10px 14px; min-width: 0; }
+details.mem summary { cursor: pointer; font-weight: 600; color: var(--c); }
+details.mem ul { padding-left: 16px; margin: 8px 0 0; display: grid; gap: 5px; font-size: 13.5px; }
+details.mem p { font-size: 13.5px; margin-top: 6px; }
+.empty { color: var(--muted); font-style: italic; }
+.tablewrap { overflow-x: auto; }
+table.cmp { border-collapse: collapse; width: 100%; min-width: 620px; font-size: 14px; font-variant-numeric: tabular-nums; }
+table.cmp th, table.cmp td { text-align: left; vertical-align: top; padding: 9px 10px; border-bottom: 1px solid var(--line); }
+table.cmp thead th { font: 500 11px var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+table.cmp tbody th { font-weight: 500; width: 38%; }
+.fnum { display: inline-block; min-width: 36px; font: 600 12px var(--mono); color: var(--muted); }
+.tag.fixed { color: var(--good); } .tag.same { color: var(--sys); } .tag.worse { color: var(--bad); } .tag.partly { color: var(--warn); }
+@media (max-width: 560px) {
+  .post { grid-template-columns: 1fr; }
+  .post .by { border-right: 0; border-bottom: 1px solid var(--line); grid-auto-flow: column; justify-content: start; gap: 10px; align-items: baseline; }
+  .findings li { grid-template-columns: 1fr; gap: 2px; }
+  .findings .tag { justify-self: start; }
+}
+@media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">Rehearsal · run 2 against run 1 · preview roster</div>
+    <h1>The season again, after the patch</h1>
+    <p class="lede">The same five seven-day snapshots of FanGaME's season, run again on main after #658 (Patch what the season rehearsal found), with the same seeds, scenarios, roster and  caps, and no answers replayed from the first run. The table compares the two runs finding by finding; each snapshot below can switch between them. The filler is not identical across the runs: #658 gave it pronouns and boards the Boss creates, so thread placement differs.</p>
+    <div class="meta" id="meta"></div>
+  </header>
+
+  <div class="season" aria-label="Where each snapshot falls in the 90-day season">
+    <div class="strip" id="strip"></div>
+    <div class="strip-key" id="stripkey"></div>
+  </div>
+
+  <div class="cast" id="cast"></div>
+
+  <section class="file" aria-labelledby="h-findings">
+    <div class="file-head">
+      <div class="eyebrow">Across the season</div>
+      <h2 id="h-findings">What stood out in run 2</h2>
+    </div>
+    <ul class="findings" id="findings"></ul>
+  </section>
+
+  <section class="file" aria-labelledby="h-cmp">
+    <div class="file-head">
+      <div class="eyebrow">Finding by finding</div>
+      <h2 id="h-cmp">Run 1 against run 2</h2>
+      <p class="lede">Each count is taken the same way from both runs' logs: 35 simulated days each.</p>
+    </div>
+    <div class="tablewrap"><table class="cmp"><thead><tr><th scope="col">Finding</th><th scope="col">Run 1</th><th scope="col">Run 2</th><th scope="col">Verdict</th></tr></thead><tbody id="cmp"></tbody></table></div>
+  </section>
+
+  <div id="files" style="display:grid;gap:56px"></div>
+</div>
+
+<script id="data" type="application/json">__DATA__</script>
+<script id="reads" type="application/json">__READS__</script>
+<script>
+(function () {
+  const runs = JSON.parse(document.getElementById('data').textContent);
+  const data = runs.run2;
+  const reads = JSON.parse(document.getElementById('reads').textContent);
+  const COLOR = { 'FanGaME': 'var(--fangame)', 'ONTOPIC 5.0': 'var(--ontopic)', 'QC-1000': 'var(--qc)' };
+  const col = (w) => COLOR[w] || 'var(--sys)';
+  const el = (tag, attrs, ...kids) => { const e = document.createElement(tag); for (const [k, v] of Object.entries(attrs || {})) { if (k === 'style') e.style.cssText = v; else if (k === 'text') e.textContent = v; else e.setAttribute(k, v); } for (const k of kids) if (k != null) e.append(k); return e; };
+  const KIND = { post: 'Post', order: 'Standing order', move: 'Move', beat: 'Arc beat', filing: 'Filing', apology: 'Apology', call: 'Other call', trouble: 'System note' };
+
+  const total = data.reduce((s, x) => s + x.cost, 0);
+  const total1 = runs.run1.reduce((s, x) => s + x.cost, 0);
+  const tiers = data[0] ? data[0].tiers : { strong: '?', light: '?' };
+  document.getElementById('meta').append(
+    el('span', { text: data.length + ' snapshots · ' + data.reduce((s, x) => s + x.days.length, 0) + ' simulated days' }),
+    el('span', { text: 'Run 2 spend $' + total.toFixed(2) + ' of a $' + (5 * data.length) + ' cap · run 1 was $' + total1.toFixed(2) }),
+    el('span', { text: 'Models: strong ' + tiers.strong + ', light ' + tiers.light }));
+
+  // Season strip: 90 days plus the first days of the next season.
+  const SPAN = 93, strip = document.getElementById('strip');
+  [['honeymoon', 14], ['reign', 55], ['meltdown', 21], ['next', 3]].forEach(([k, n]) => strip.append(el('div', { class: 'ph ' + k, style: 'flex:' + n, text: k === 'next' ? 'S2' : k })));
+  const key = document.getElementById('stripkey');
+  data.forEach((s, i) => {
+    const a = s.days[0].dos, b = s.days[s.days.length - 1].dos;
+    strip.append(el('a', { class: 'snap', href: '#' + s.key, style: 'left:' + ((a - 1) / SPAN * 100) + '%;width:' + ((b - a + 1) / SPAN * 100) + '%', 'aria-label': (reads[s.key] || {}).title || s.key, text: String(i + 1) }));
+    const r = reads[s.key] || {};
+    key.append(el('span', {}, (i + 1) + ' ', el('a', { href: '#' + s.key, text: r.title || s.key }), ' · days ' + a + '–' + b));
+  });
+
+  const cast = document.getElementById('cast');
+  (reads._cast || []).forEach((c) => cast.append(el('div', { class: 'who', style: '--c:' + col(c.name) }, el('b', { text: c.name }), el('span', { text: c.role }))));
+  const fl = document.getElementById('findings');
+  (reads._findings || []).forEach((f) => fl.append(el('li', {}, el('span', { class: 'tag ' + f.tag, text: f.tag }), el('p', { text: f.text }))));
+
+  const files = document.getElementById('files');
+  const RUNS = [['run2', 'Run 2 · after #658'], ['run1', 'Run 1 · before']];
+  data.forEach((s0, idx) => {
+    const r = reads[s0.key] || {};
+    const sec = el('section', { class: 'file', id: s0.key, 'aria-labelledby': 'h-' + s0.key });
+    const a = s0.days[0].dos, b = s0.days[s0.days.length - 1].dos;
+    const cost1 = (runs.run1.find((x) => x.key === s0.key) || { cost: 0 }).cost;
+    sec.append(el('div', { class: 'file-head' },
+      el('div', { class: 'eyebrow', text: 'Snapshot ' + (idx + 1) + ' · season days ' + a + '–' + b + ' · run 2 $' + s0.cost.toFixed(2) + ' · run 1 $' + cost1.toFixed(2) }),
+      el('h2', { id: 'h-' + s0.key, text: r.title || s0.key }),
+      r.setup ? el('p', { class: 'lede', text: r.setup }) : null));
+    if (r.points && r.points.length) {
+      const ul = el('ul'); r.points.forEach((p) => ul.append(el('li', { text: p })));
+      sec.append(el('div', { class: 'read' }, el('h3', { text: 'What changed' }), ul));
+    }
+    const state = { run: 'run2', who: 'all', kind: 'all' };
+    const cur = () => runs[state.run].find((x) => x.key === s0.key) || { days: [], memories: {} };
+    const whos = ['all', 'FanGaME', 'ONTOPIC 5.0', 'QC-1000'];
+    const kinds = ['all', ...Object.keys(KIND).filter((k) => ['run1', 'run2'].some((rk) => (runs[rk].find((x) => x.key === s0.key) || { days: [] }).days.some((d) => d.items.some((i) => i.kind === k))))];
+    const feed = el('div', { style: 'display:grid;gap:22px' });
+    const notes = el('div', { class: 'notes' });
+    const bar = (label, list, field, name) => { const f = el('div', { class: 'filters', role: 'group', 'aria-label': label }, el('span', { text: label })); list.forEach((v) => { const bt = el('button', { type: 'button', 'aria-pressed': String(v === state[field]), text: v === 'all' ? 'All' : (name ? name(v) : v) }); bt.addEventListener('click', () => { state[field] = v; f.querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', String(x === bt))); render(); }); f.append(bt); }); return f; };
+    sec.append(bar('Run', RUNS.map((x) => x[0]), 'run', (k) => RUNS.find((x) => x[0] === k)[1]), bar('Who', whos, 'who'), bar('What', kinds, 'kind', (k) => KIND[k]));
+    sec.append(feed, el('h3', { text: 'Private notes at the end of the snapshot' }), notes);
+    function render() {
+      feed.replaceChildren(); notes.replaceChildren();
+      const s = cur();
+      s.days.forEach((d) => {
+        const items = d.items.filter((i) => (state.who === 'all' || i.who === state.who) && (state.kind === 'all' || i.kind === state.kind));
+        const day = el('div', { class: 'day' }, el('div', { class: 'dayhead' }, el('b', { text: 'Day ' + d.dos }), el('small', { text: d.date + ' · ' + d.phase + (d.chair ? ' · Boss: ' + d.chair : '') + ' · ' + d.visits + ' Mod visits' })));
+        if (!items.length) day.append(el('p', { class: 'empty', text: 'Nothing here for this filter.' }));
+        items.forEach((i) => {
+          let sub = KIND[i.kind] || i.kind;
+          if (i.kind === 'order') sub += ' → ' + i.to + (i.allowance ? ' · allowance ' + i.allowance : '');
+          if (i.kind === 'move') sub += ': ' + i.move + ' · ' + i.status;
+          if (i.kind === 'filing') sub += ' · ' + (i.band || '') + ' charge on ' + i.about + (i.points ? ' · ' + i.points + ' pts' : '');
+          if (i.kind === 'call') sub += ' · ' + i.duty;
+          const body = el('div', { class: 'body' }, el('span', { class: 'sub', text: sub + ' · ' + String(i.at).slice(11, 16) + ' UTC' }), (i.text || i.data || '') + (i.demand ? '\n\nDemand: ' + i.demand : ''));
+          day.append(el('article', { class: 'post k-' + i.kind, style: '--c:' + col(i.who) }, el('div', { class: 'by' }, el('b', { text: i.who || 'The game' }), el('small', { text: i.kind === 'post' ? 'Staff' : KIND[i.kind] })), body));
+        });
+        if (d.trims.length) day.append(el('p', { class: 'eyebrow', style: 'text-transform:none', text: 'Trims: ' + d.trims.join('; ') }));
+        feed.append(day);
+      });
+      Object.entries(s.memories).forEach(([who, m]) => {
+        const d = el('details', { class: 'mem', style: '--c:' + col(who) }, el('summary', { text: who + "'s notes, as of " + m.date }));
+        const mem = m.memory;
+        if (mem.hobby) d.append(el('p', { text: 'Hobby: ' + mem.hobby.name + ' (since ' + mem.hobby.since + ', from ' + mem.hobby.from + ')' }));
+        if (m.profile && m.profile.mood) d.append(el('p', { text: 'Mood: ' + m.profile.mood }));
+        if (m.profile && m.profile.signature) d.append(el('p', { text: 'Signature: ' + m.profile.signature }));
+        const ul = el('ul');
+        mem.opinions.forEach((o) => ul.append(el('li', { text: o.who + ' (' + (o.score > 0 ? '+' : '') + o.score + '): ' + o.note })));
+        mem.grudges.forEach((g) => ul.append(el('li', { text: 'Grudge, ' + g.who + ': ' + g.note })));
+        d.append(ul);
+        notes.append(d);
+      });
+    }
+    render();
+    files.append(sec);
+  });
+
+  // The comparison table: one row per finding of run 1.
+  const tb = document.getElementById('cmp');
+  (reads._compare || []).forEach((row) => {
+    const tr = el('tr', {}, el('th', { scope: 'row' }, el('span', { class: 'fnum', text: row.n }), row.label), el('td', { text: row.run1 }), el('td', { text: row.run2 }), el('td', {}, el('span', { class: 'tag ' + row.tag, text: row.verdict })));
+    tb.append(tr);
+  });
+})();
+</script>
