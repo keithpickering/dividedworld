@@ -268,6 +268,9 @@ const paintedCommas = async (page: Page): Promise<string[]> => {
       return { x: Math.floor(b.left), y: Math.floor(b.top), width: Math.ceil(b.right) - Math.floor(b.left), height: Math.ceil(b.bottom) - Math.floor(b.top) };
     });
     const clip = { x: Math.max(0, strip.x), y: strip.y, width: strip.width + Math.min(0, strip.x), height: strip.height };
+    /* A strip with no size, or below the window, would be shot the same twice and pass for the wrong reason. */
+    const view = page.viewportSize()!;
+    if (clip.width <= 0 || clip.height <= 0 || clip.y < 0 || clip.y + clip.height > view.height || clip.x + clip.width > view.width) { out.push(`${r.title}: the comma's strip is not in the window (${JSON.stringify(clip)})`); continue; }
     const shown = await page.screenshot({ clip });
     await row.locator('.kb-thread-last .kb-thread-sep').evaluate((e) => { (e as HTMLElement).style.visibility = 'hidden'; });
     const hidden = await page.screenshot({ clip });
