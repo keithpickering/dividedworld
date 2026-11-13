@@ -24,7 +24,7 @@
  * first try finishes the job as an error; on a later one it ends the loop and the best so far is finished as the text. A database error or an
  * unwritten ledger row stops the run on any try. No try starts after `REROLL_DEADLINE_MS`. No reader sees a try: the text is stored once.
  * Before every model call after the job's first (each re-roll, and the second call a scrub hit makes inside a try) the job's claim is renewed
- * (`renew_card_write`, 0471; issue #584), so each of those calls starts on a fresh five minutes. A renewal that says the claim is no longer this run's (it ran
+ * (`renew_card_write`, 0354; issue #584), so each of those calls starts on a fresh five minutes. A renewal that says the claim is no longer this run's (it ran
  * out and the job was claimed again, or an edit queued it afresh) ends this run's work on the job without a finish or a count: the claim that holds it finishes
  * it, and `finish_card_write` keeps the first finish either way, so nothing is lost and nothing is written twice. A database error from a renewal stops the
  * run, as any does. The longest span between renewals is one `models.complete`: up to four attempts of 60 seconds (about 242 s) inside a 300 s claim, so

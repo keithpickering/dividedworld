@@ -407,7 +407,7 @@ test('a try that would start just under the deadline still runs: a second call i
   assert.deepEqual(finishes(calls), [{ play: P1, version: V, text: x(150), failed: null }]);
 });
 
-/* The claim is renewed before each re-roll (issue #584; supabase/migrations/0471_card_write_claim_renewal.sql). */
+/* The claim is renewed before each re-roll (issue #584; supabase/migrations/0354_card_write_claim_renewal.sql). */
 const renewals = (calls: { fn: string; args: Record<string, unknown> }[]) => calls.filter((c) => c.fn === 'renew_card_write');
 
 test('a short first try then a second: the claim is renewed once, before the second call, and not before the first', async () => {
