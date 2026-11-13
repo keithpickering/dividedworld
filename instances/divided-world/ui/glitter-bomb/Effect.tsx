@@ -18,7 +18,11 @@
  * again from its seed when the post returns, at ~4,200 flakes a post this is the memory of a long scroll), and so is the cling
  * registration. The surface is `sticky` for cling (a mouse passing over picks glitter up, which lands loose on a post, the reader's own
  * and never saved or sent; the pointer is over it as the body it covers, since it takes none itself), and unmounting unregisters it and drops the loose glitter. A play's moment (`still`) draws every flake
- * landed, at rest, once: no burst, no cling, nothing registered that moves.
+ * landed, at rest, once: no burst, no cling, nothing registered that moves. A kept post (`kept`, docs/plans/2026-11-12-glitter-keeps-design.md,
+ * section 4: written while the play was up, loaded after it wore off) starts as a post that has already fired: no burst point is
+ * watched and the flakes are built landed, while the loop, the glints, cling and the shake run as for any live post. `kept` is read once, at
+ * mount, and is no dependency of the effect: a post on screen when the week ends gets `kept` from the engine mid-life and must not be
+ * built again (its glitter would jump to a new load's seed), so it keeps what it shows and the next load draws it settled.
  *
  * The seed is `${play.id}:${post.id}`, both public, then a draw made for this mount (`loadSeed`), so each load's burst goes off
  * from its own spot and leaves its own glitter, and two posts of one character differ; the mount keeps it, so a post that
@@ -82,7 +86,7 @@ const loadSeed = (): string => {
   return Math.floor(Math.random() * 2 ** 32).toString(36);
 };
 
-export function GlitterBombEffect({ post, plays, place, still, children }: EffectProps) {
+export function GlitterBombEffect({ post, plays, place, still, kept, children }: EffectProps) {
   const host = useRef<HTMLDivElement>(null);
   const surface = useRef<HTMLDivElement>(null);
   const under = useRef<HTMLCanvasElement>(null);
@@ -91,6 +95,10 @@ export function GlitterBombEffect({ post, plays, place, still, children }: Effec
   const mark = useRef<HTMLDivElement>(null);
   const play = plays[0]!;
   const seed = `${play.id}:${post.id}`;
+  /* `kept` is read at mount through a ref and is never a dependency: it flips from absent to true while a post is on screen when its
+     play's week ends, and that post keeps the glitter it has (the effect is not built again, so its seed does not change); the next load
+     draws it settled. */
+  const keptAtMount = useRef(kept === true);
 
   useEffect(() => {
     const el = host.current, face = surface.current, below = under.current, lit = flash.current, above = over.current, spot = mark.current;
@@ -101,7 +109,7 @@ export function GlitterBombEffect({ post, plays, place, still, children }: Effec
     let unclung: (() => void) | null = null;
     /* Whether this mount's burst has fired; whether the burst point is in the middle of the view, and since when by the loop's
        clock (null until a draw sees it there): all outlive a flakes object. */
-    let fired = still;
+    let fired = still || keptAtMount.current;
     let aimed = false;
     let aimedAt: number | null = null;
     /* The size painted (what the loop and the drawing are handed) and where it stands from the host (the layer's placement). */
