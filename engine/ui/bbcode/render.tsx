@@ -18,6 +18,7 @@ import { colorHex, FONTS, parse, type BbNode } from '../../bbcode/parse.ts';
 import { visibleWalk } from '../../bbcode/visible.ts';
 import { stretchesOf, useTextLayers, type Stretch } from './layers.tsx';
 import { inkOn as bestInk } from '../contrast.ts';
+import { CutNote } from './CutNote.tsx';
 import { HiddenNote } from '../conduct/Hidden.tsx';
 import { useKayfaIfAny } from '../context.tsx';
 import { actLoader } from '../thread/locate.tsx';
@@ -183,7 +184,14 @@ function node(n: BbNode, key: number, quoteHead: BbCodeProps['quoteHead'], layer
           <div className="kb-quote-body">{concealed(n.children) ? <EmptyQuote act={n.act} /> : nodes(n.children, quoteHead)}</div>
         </blockquote>
       );
-    case 'cut': return null; // Task 4 of docs/plans/2026-11-13-quote-cut-plan.md draws the note; until then a cut draws nothing
+    case 'cut':
+      /* The head of the first Act cut, as any real quote's; nothing else is asked of the Act loader, so a cut never depends on whether the quoted post is hidden. */
+      return (
+        <blockquote key={key} className="kb-quote" data-kb-cut="">
+          <cite className="kb-quote-from">{(quoteHead ?? defaultHead)({ kind: 'real', act: n.acts[0]! })}</cite>
+          <div className="kb-quote-body"><CutNote /></div>
+        </blockquote>
+      );
     case 'counterfeit':
       return (
         <blockquote key={key} className="kb-quote" data-kb-counterfeit="">

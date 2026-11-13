@@ -15,7 +15,7 @@
  * On The System's board there is no reply box; a plain note says replies there are spins. A mask barred from the thread's board (a group move, `bars_now`) has the barred box in its place
  * (BarredNote.tsx), with the way out; the box is per acting character, so swapping masks swaps it away.
  */
-import { useCallback, useEffect, useImperativeHandle, useRef, useState, type FormEvent, type Ref } from 'react';
+import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type FormEvent, type Ref } from 'react';
 import { parse } from '../../bbcode/parse.ts';
 import { useKayfa } from '../context.tsx';
 import type { Act, Id } from '../data/api.ts';
@@ -28,7 +28,7 @@ import { BarredNote, useBar } from './BarredNote.tsx';
 import { useBannedUntil } from './ban.ts';
 import { draftKey, readDraft, useWhoPosts, writeDraft } from './draft.ts';
 import { Editor, type EditorHandle } from './Editor.tsx';
-import { framingArgs, quoteText } from './text.ts';
+import { framingArgs, hasCut, quoteText } from './text.ts';
 
 export interface ComposerHandle {
   /** Append a quote of an Act to the draft and move focus to the box. `selected`: `body` is a stretch of the post's shown words, kept as typed. */
@@ -110,6 +110,7 @@ function ComposerBody({ thread, board, latest, since, onPosted, ref, account }: 
   }, [max]);
   useImperativeHandle(ref, () => ({ quote }), [quote]);
 
+  const cut = useMemo(() => hasCut(parse(text)), [text]);
   const over = [...text].length > max;
   useEffect(() => { if (!over) setQuoted(false); }, [over]);
 
@@ -198,6 +199,9 @@ function ComposerBody({ thread, board, latest, since, onPosted, ref, account }: 
           {who.changed ? `Confirm posting as ${hudCharacter.name}` : again ? 'Send again anyway' : 'Send'}
         </button>
       </Editor>
+      <div role="status">
+        {cut && <p className="kb-notice">Some quotes in this post are nested too deep to show. A note will take their place.</p>}
+      </div>
       {refusal && <p role="alert" className="kb-notice" data-kb-tone="refusal">{refusal}</p>}
     </form>
   );
