@@ -16,6 +16,7 @@
 -- 10. The staff lists, the pool's signals and the digest leave the stand-in out of the staff.
 -- 11. The counts: character_post_counts counts a veiled post for the stand-in while the veil is up, for every reader, and the author's own count is whole again by itself.
 -- 12. The shown group follows the shown count: group_now reads the same projection as the count a player reads, so a character at a rung's threshold drops a rung while one of its posts is veiled and both return at the end.
+-- 15. The model is handed the stand-in for a veiled post's author: claim_card_writes names it, and the table of every road a model reads a post's author by says which reads the stand-in and which cannot reach a veiled post.
 --  0. The seed makes the stand-in once, and office says so (first, since the sections after it make the stand-in themselves).
 
 create function pg_temp.coded(stmt text) returns text language plpgsql as $$
@@ -1257,4 +1258,91 @@ begin
     raise exception 'the stand-in has a group: %, %', group_now(stand), (profile_page(stand) -> 'character' ->> 'group'); end if;
   perform tests.unbecome();
   if n is distinct from 3 then raise exception 'the rows whose character differs are % and should be the three: the post, its edit and the quoter (the veil cards are Bob''s, whose character no veil changes)', n; end if;
+end $$;
+
+-- ---- 15. The model is handed the stand-in for a veiled post's author ----
+-- The words a model writes are posted, so a model handed a veiled post's true author can write that name into them ("The model reads the stand-in too, since its words are posted", the plan's decisions). claim_card_writes (0149, 0340)
+-- handed the model `'author', ch.name` of the post's own character; it hands the name acts_public shows now (shown_author), and nothing else about the author (a job carries a name and no id, pronouns, class or group).
+-- THE ROADS A MODEL READS A POST'S AUTHOR BY (every function a model's role may run, or an Edge Function feeds to a prompt, read at its latest definition; settlement and the other code-only scoring read the truth and are not here):
+--   claim_card_writes (write)         HANDED THE TRUE AUTHOR ('author', ch.name) before 0400; now shown_author's character, probed below. Its `before` posts read acts_public and characters_public: the stand-in, probed below.
+--   pool_thread (chatter, staff: the visit, report and appeal judges, the thread a Mod Bot answers)
+--                                     reads acts_public joined to characters_public: the stand-in; probed below.
+--   patrol_sample (the patrol)        reads acts_public and keeps `characters_public.staff is null`: the stand-in is staff, so a veiled post is never sampled; probed below.
+--   system_digest (the meeting)       every read is acts_public / characters_public / thread_list: the stand-in (section 10 probes its `characters`, and below its excerpts).
+--   pool_signals, pool_named          acts_public and thread_open (first and last poster by shown author): the stand-in, and the stand-in is not staff (section 10).
+--   card_target, card_target_reach    the post's words through acts_public (no author), the effects above it on shown_author's character (0400).
+--   start_visit, file_visit, filings_due, open_report
+--                                     a post under a live author veil is never visited and never reported (0400, section 4 of this file), so nothing about it reaches a judge.
+--   open_appeal, close_appeal         the appellant is the caller's own character, appealing a punishment (an infraction or a ban, written only through a visit; a visited post takes no veil, section 4; or a move on a character).
+--   pending_apologies                 an apology is the punished character's own spin, no veiled post.
+--   conceal_due                       the engine's parser, no model: the words of an Act, no author.
+--   character_faces, public_characters, character_groups, trophy_award_facts, boss_trophies, mod_*, meeting_context, staff_*
+--                                     ids the staff's own memory holds (written from what a model was shown) or no post at all: characters_public names, never a post's author.
+do $$
+declare
+  ann uuid := tests.account('vx-ann'); bob uuid := tests.account('vx-bob'); cas uuid := tests.account('vx-cas'); ray uuid := tests.account('vx-ray');
+  a uuid := tests.character(ann, 'Vx Ann'); b uuid := tests.character(bob, 'Vx Bob'); c uuid := tests.character(cas, 'Vx Cas'); r uuid := tests.character(ray, 'Vx Ray');
+  stand uuid := pg_temp.stand();
+  stand_name text := (select k.name from characters k where k.id = pg_temp.stand());
+  long_ago timestamptz := now() - interval '400 days';
+  bd uuid; t uuid; before_post uuid; veiled_before uuid; p uuid;
+  veil uuid; got jsonb; job jsonb; read jsonb; sample jsonb; dig jsonb;
+begin
+  -- A board of its own, so the patrol's sample (the newest threads of the boards it is given) reads this file's posts alone.
+  insert into boards (slug, name) values ('vx-model', 'Vx Model') returning id into bd;
+  insert into threads (board, title) values (bd, 'Vx model') returning id into t;
+  before_post := tests.post(r, t, 'A plain post before, vxneighbor.', long_ago + interval '1 minute');
+  veiled_before := tests.post(a, t, 'A veiled post before, vxveiledbefore.', long_ago + interval '2 minutes');
+  p := tests.post(a, t, 'The words a model will write on, vxtarget.', long_ago + interval '3 minutes');
+  perform pg_temp.cards();
+  insert into settings (key, value) values ('oldVoice', 'true') on conflict (key) do update set value = excluded.value;
+  insert into settings (key, value) values ('cardWriteSettleSeconds', '0') on conflict (key) do update set value = excluded.value;
+  insert into settings (key, value) values ('digestThreads', '3'), ('digestExcerpts', '20'), ('digestExcerptChars', '280') on conflict (key) do update set value = excluded.value;
+  insert into card_kinds (key, name, alignment, rarity, play, stack, writes) values ('vx-scribe', 'Vx Scribe', 'salty', 'uncommon', 'cast', 3, true) on conflict do nothing;
+  insert into admins (account) values (ray) on conflict do nothing;
+  perform pg_temp.hand(bob, 'vlauthor', 'vlauthor');
+  perform tests.become_service();
+  veil := (play_card(bob, 'vlauthor', b, p, '{}', 0, '') ->> 'id')::uuid;
+  perform play_card(bob, 'vlauthor', b, veiled_before, '{}', 0, '');
+  perform tests.unbecome();
+  perform tests.act(c, 'card', t, jsonb_build_object('card', 'vx-scribe', 'message', '', 'config', '{}'::jsonb, 'layer', 1), p, now());
+
+  -- claim_card_writes: the model's job names the post's author as every reader sees it, the stand-in; its true name is nowhere in the job, `before` included (the neighbor that is veiled too).
+  perform tests.become_service();
+  got := claim_card_writes(5, p);
+  perform tests.unbecome();
+  job := got -> 0;
+  if jsonb_array_length(got) is distinct from 1 or job ->> 'body' is distinct from 'The words a model will write on, vxtarget.' then raise exception 'the claim carries no job for the veiled post, so the test proves nothing: %', got; end if;
+  if job ->> 'author' is distinct from stand_name then raise exception 'claim_card_writes hands the model % as the author of a veiled post, and the stand-in is %: %', job ->> 'author', stand_name, job; end if;
+  if got::text like '%Vx Ann%' or got::text like '%' || a::text || '%' then raise exception 'claim_card_writes hands the model the true author of a veiled post: %', got; end if;
+  if exists (select 1 from jsonb_each(job) e where e.key in ('id', 'character', 'pronouns', 'class', 'group', 'owner', 'account')) then raise exception 'a claimed job carries a field about the author beyond its name: %', job; end if;
+  if (select string_agg(x ->> 'name', ',' order by ord) from jsonb_array_elements(job -> 'before') with ordinality as b(x, ord)) is distinct from 'Vx Ray,' || stand_name then
+    raise exception 'the posts shown before a veiled post name the wrong authors: %', job -> 'before'; end if;
+  -- pool_thread: the thread a Mod Bot's model is shown names the stand-in for the veiled post before.
+  perform tests.become_service();
+  read := pool_thread(t, 10, 200, null);
+  perform tests.unbecome();
+  if read::text like '%Vx Ann%' or (select x ->> 'name' from jsonb_array_elements(read -> 'posts') x where x ->> 'act' = veiled_before::text) is distinct from stand_name then
+    raise exception 'pool_thread names the true author of a veiled post: %', read; end if;
+  -- patrol_sample: a veiled post is not sampled (the stand-in is staff), and nothing names its author.
+  perform tests.become_service();
+  sample := patrol_sample(array[bd], 20);
+  perform tests.unbecome();
+  if sample::text like '%Vx Ann%' or exists (select 1 from jsonb_array_elements(sample) x where x ->> 'act' = veiled_before::text) then raise exception 'patrol_sample reaches a veiled post: %', sample; end if;
+  if not exists (select 1 from jsonb_array_elements(sample) x where x ->> 'act' = before_post::text) then raise exception 'patrol_sample reads nothing of the thread, so the test proves nothing: %', sample; end if;
+  -- system_digest (over a window a long time ago, where this section's posts are the only ones): the excerpts name the stand-in for the veiled post before, never its author.
+  perform tests.become_service();
+  dig := system_digest(long_ago - interval '1 hour', long_ago + interval '1 hour');
+  perform tests.unbecome();
+  if not exists (select 1 from jsonb_array_elements(dig -> 'excerpts') x where x ->> 'act' = veiled_before::text) or exists (select 1 from jsonb_array_elements(dig -> 'excerpts') x where x ->> 'act' in (veiled_before::text, p::text) and x ->> 'character' is distinct from stand::text) then
+    raise exception 'the digest names the author of a veiled post: %', dig -> 'excerpts'; end if;
+  -- The same read when no veil is up: the true author again (the veil ends by an admin here; it ends by itself at its time as well, section 3).
+  perform tests.become(ray);
+  perform reverse_card(veil);
+  perform tests.unbecome();
+  update card_writes set claimed_until = null where post = p;
+  perform tests.become_service();
+  got := claim_card_writes(5, p);
+  perform tests.unbecome();
+  if got -> 0 ->> 'author' is distinct from 'Vx Ann' then raise exception 'claim_card_writes does not name the author again once the veil has ended: %', got; end if;
 end $$;

@@ -23,6 +23,7 @@
 --     6. the reads         thread_open, my_cards_ended (now the caller's own rows, as my_reactions is), play_moment, group_now (the stand-in has no group), card_target_reach, start_visit, open_report, thread_page (`veiled`),
 --                          my_veiled_posts (the author's own rows), my_group_moves (a security-invoker view that read `acts.character`, which the revoke broke), presence_listed, pool_named, pool_signals,
 --                          my_draws (0317; the washer of a drawing on a veiled post, who is its author, shown as the stand-in) and system_digest (the staff lists that would take the stand-in for a persona).
+--     7. the model        claim_card_writes names the stand-in as the author of the post a writing card lands on, so the words a model writes are written without the true author's name.
 --
 -- Masks ("A response never proves a private fact"): every read of an Act answers from the post's public play (the veil play is on the post) and never from who owns a character; the stand-in is one character for every
 -- veiled post on the instance; every refusal reads public Acts (a staff post, a visit) and is the same for every caster. The author's own fact comes only from my_veiled_posts, the caller's own rows, as a setter's
@@ -2664,6 +2665,62 @@ language sql stable security definer set search_path = public, pg_temp as $$
       and (not coalesce($6, false) or exists (select 1 from acts_public f where f.id = p2.act and f.seq = 1))
     limit 101) z
 $$;
+
+
+-- ===================================================================================== 7. the model ====
+-- claim_card_writes (0340_conduct, which is 0149's with the post's words read in their public form), naming the post's author as acts_public shows it (shown_author): the stand-in while an author veil is up on the post, else the character.
+-- The model is handed the author's name for the post a writing card lands on, and what it writes is posted, so a model handed a veiled post's true author could write that name into words everyone reads ("The model reads the stand-in too,
+-- since its words are posted", the plan's decisions). The job carries a name and nothing else of the author (no id, pronouns, class, group or owner), and the posts shown before it come from acts_public and characters_public, which
+-- already name the stand-in. The inner join is safe: a veil is only ever cast while the stand-in exists (land_refusal). Everything else as 0340 wrote it; its grants (service role alone, 0149) are kept by the replacement.
+-- Every other road a model reads a post's author by was read at its latest definition and says so in supabase/tests/0166-post-veils.sql, section 15: pool_thread, patrol_sample, system_digest, pool_signals and card_target_reach read
+-- acts_public (the stand-in), a veiled post is never visited, reported or sampled, and the rest name characters and no post's author.
+
+create or replace function claim_card_writes(most integer, only_post uuid default null) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  nearby integer := coalesce((((select s.value from settings s where s.key = 'pool') ->> 'chatterThreadPosts'))::integer, 8);
+  claimed jsonb;
+begin
+  delete from card_writes w where w.play in (
+    select x.play from card_writes x where card_ended(x.play) and (claim_card_writes.only_post is null or x.post = claim_card_writes.only_post) for update skip locked);
+  with picked as materialized (
+    select c.play from card_writes c join acts a on a.id = c.play
+    where (c.claimed_until is null or c.claimed_until < clock_timestamp()) and c.not_before <= clock_timestamp() and not card_ended(c.play)
+      and (claim_card_writes.only_post is null or c.post = claim_card_writes.only_post)
+      and not exists (select 1 from card_writes e join acts ea on ea.id = e.play
+                      where e.post = c.post and e.play <> c.play and not card_ended(e.play) and (ea.created_at, ea.id) < (a.created_at, a.id))
+    order by c.queued_at, c.play limit greatest(claim_card_writes.most, 0) for update of c skip locked
+  ), taken as (
+    update card_writes w set claimed_until = clock_timestamp() + interval '5 minutes', attempts = w.attempts + 1, version = post_version(w.post)
+    from picked where w.play = picked.play
+    returning w.play, w.post, w.version, w.attempts, w.queued_at
+  )
+  select coalesce(jsonb_agg(jsonb_build_object(
+      'play', t.play, 'version', t.version, 'post', t.post, 'thread', pa.thread, 'attempts', t.attempts,
+      'card', pl.payload ->> 'card', 'config', coalesce(pl.payload -> 'config', '{}'::jsonb), 'tokens', (pl.payload ->> 'tokens')::integer,
+      'author', ch.name, 'body', own_words(case when version_hidden(v.id, pa.id) then null else v.payload ->> 'body' end), 'title', th.title,
+      'before', (select coalesce(jsonb_agg(jsonb_build_object('name', x.name, 'body', x.body) order by x.seq), '[]'::jsonb)
+                 from (select n.seq, cn.name,
+                              own_words(case when n.hidden then null else coalesce((select e.payload ->> 'body' from acts e where e.kind = 'edit' and e.target_act_id = n.id order by e.created_at desc, e.id desc limit 1), na.payload ->> 'body') end) as body
+                       from acts_public n join acts na on na.id = n.id join characters_public cn on cn.id = n.character
+                       where n.thread = pa.thread and n.kind = 'post' and n.seq < pa.seq
+                       order by n.seq desc limit greatest(nearby, 0)) x),
+      'earlier', (select coalesce(jsonb_agg(jsonb_build_object('play', q.id, 'text', q.text) order by q.created_at, q.id), '[]'::jsonb)
+                  from (select ea.id, ea.created_at,
+                          coalesce((select x.text from card_texts x where x.play = ea.id and x.version = t.version and x.text is not null),
+                                   (select x.text from card_texts x where x.play = ea.id and x.text is not null order by x.created_at desc, x.id desc limit 1)) as text
+                        from live_writing_plays(t.post) lp join acts ea on ea.id = lp
+                        where (ea.created_at, ea.id) < (pl.created_at, pl.id)) q
+                  where q.text is not null)
+    ) order by t.queued_at, t.play), '[]'::jsonb) into claimed
+  from taken t
+  join acts pl on pl.id = t.play
+  join acts pa on pa.id = t.post
+  join characters ch on ch.id = shown_author(pa.id, pa.character)
+  join threads th on th.id = pa.thread
+  join acts v on v.id = t.version;
+  return claimed;
+end $$;
 
 
 -- ===================================================================================== grants ====
