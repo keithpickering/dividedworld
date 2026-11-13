@@ -61,6 +61,8 @@ export const ALLOWED_READS = Object.freeze([
   'boards', 'boards_now', 'moves_log', 'staff_profile_now', 'threads', 'thread_list', 'thread_open', 'acts_public', 'characters_public', 'character_profiles', 'gear_worn', 'class_kinds', 'reaction_kinds', 'card_kinds', 'machine_now',
   // A surface's derived row (0317): the covered cells, the owners and the live list of a play whose layer any character may add to, all public facts of public Acts. The web reads it only through thread_page and surface_acts.
   'surfaces',
+  // The reply a play carried and where a play beyond a post reaches (0348, 0055): ids and dates of public Acts, every column public. The web reads them only through thread_page (0349: `under`, `cut`, `kept`).
+  'post_under', 'play_reach',
   'reaction_tallies', 'effect_state', 'pip_styles', 'thread_view_counts', 'settlements',
   'class_reveals', 'turns_announced', 'post_search', 'screen_settings', 'character_post_counts', 'season_size', 'board_counts',
   // Public: a finished season's frozen results; who plays whom is in none of it (supabase/migrations/0099_season_results.sql). The web reads them only
@@ -105,7 +107,7 @@ export const ALLOWED_RPCS = Object.freeze(['whoami', 'my_bar', 'conduct_accepted
  * The functions a screen function may depend on without the web calling them (supabase/tests/e2e/0016-screen-reads.ts reads each screen function's recorded dependencies against
  * ALLOWED_RPCS and this list): the search reads' helpers (0117), stable, security invoker but the two definers, each a public fact about its arguments; and board_stubs and board_closed_to (0326), definers that board_page reads a board's stubs and where a closed board's threads went through. A call to one from a screen is a fault.
  */
-export const SCREEN_HELPERS = Object.freeze(['search_matches', 'search_walk', 'search_cursor_ok', 'search_post_cards', 'search_thread_matches', 'search_suggest_threads', 'suggest_characters', 'search_lang', 'fold_text', 'bbcode_plain', 'profile_cosmetics', 'cosmetic_log_rows', 'board_stubs', 'board_closed_to']);
+export const SCREEN_HELPERS = Object.freeze(['search_matches', 'search_walk', 'search_cursor_ok', 'search_post_cards', 'search_thread_matches', 'search_suggest_threads', 'suggest_characters', 'search_lang', 'fold_text', 'bbcode_plain', 'profile_cosmetics', 'cosmetic_log_rows', 'board_stubs', 'board_closed_to', 'card_ended']);
 
 const WRITES = new Set(['insert', 'upsert', 'update', 'delete']);
 const NOT_A_CLIENT = new Set(['Array', 'Buffer', 'Object', 'Uint8Array', 'Set', 'Map']);

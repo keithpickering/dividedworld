@@ -42,6 +42,12 @@ import hallPassArt from './cards/hall-pass/art.json';
 import belowTheFoldCanvas from './cards/below-the-fold/art.webp?url';
 import belowTheFoldMark from './cards/below-the-fold/mark.svg?url';
 import belowTheFoldArt from './cards/below-the-fold/art.json';
+import lineCutterCanvas from './cards/line-cutter/art.webp?url';
+import lineCutterMark from './cards/line-cutter/mark.svg?url';
+import lineCutterArt from './cards/line-cutter/art.json';
+import feelinGlamCanvas from './cards/feelin-glam/art.webp?url';
+import feelinGlamMark from './cards/feelin-glam/mark.svg?url';
+import feelinGlamArt from './cards/feelin-glam/art.json';
 import graffitiCanvas from './cards/graffiti/art.webp?url';
 import graffitiMark from './cards/graffiti/mark.svg?url';
 import graffitiArt from './cards/graffiti/art.json';
@@ -56,6 +62,8 @@ import { mainEvent } from '../cards/main-event.ts';
 import { forceField } from '../cards/force-field.ts';
 import { feelinFab } from '../cards/feelin-fab.ts';
 import { belowTheFold } from '../cards/below-the-fold.ts';
+import { lineCutter } from '../cards/line-cutter.ts';
+import { feelinGlam } from '../cards/feelin-glam.ts';
 import { laughTrack } from '../cards/laugh-track.ts';
 import laughTrackCanvas from './cards/laugh-track/art.webp?url';
 import laughTrackMark from './cards/laugh-track/mark.svg?url';
@@ -280,6 +288,20 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
       `A Salty card, ${belowTheFold.rarity}. It folds a post behind a bar, for every reader alike: the post's words are still there, and anyone opens them with one press of the bar, which lasts until they leave the page. One fold fits on a post. ${setMoveWords('the quoting post')} It costs nothing more to play.`,
   },
   /*
+   * Line Cutter (docs/plans/2026-11-11-card-notes-part-2-plan.md): Pepperoni's color, as Glitter Bomb's. A Move, only ever cast face up: the
+   * play form's reply editor writes the reply, and the thread screen draws it under its post. It holds no face-down sentence.
+   */
+  {
+    key: 'line-cutter',
+    art: { color: '#d24a2c', ink: '#1a0602', canvas: lineCutterCanvas, mark: lineCutterMark, credit: lineCutterArt.credit, tagline: 'Reply right under a post.' },
+    summary: 'Posts your reply right under a post, where it stays however long the thread grows.',
+    status: 'A reply cut in under it',
+    hint: 'A Line Cutter: the reply under this post was written later and cut in line.',
+    describe: () =>
+      `A Pepperoni card, ${lineCutter.rarity}. You write a reply with it, and the reply is drawn right under the post you play it on, on that post's page, however many replies come after. It is a post like any other: it keeps its own number, and it can be quoted, reacted to and played on. One fits under a post, and a reply that cut in takes none under it. It is only ever cast face up. If an admin ends the card, the reply drops back to its own place in the thread. It costs nothing more to play.`,
+    logPlay: () => 'It put a reply right under the post.',
+  },
+  /*
    * Laugh Track (docs/plans/2026-11-11-laugh-track-design.md): Pepperoni's color. Its effect is the audience, heard and captioned as a
    * reader points at, taps or presses Enter on each cued phrase (ui/laugh-track/Effect.tsx); the form picks the cues
    * (ui/laugh-track/ConfigForm.tsx).
@@ -476,6 +498,20 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
     summary: 'Gives a post a rainbow behind its words. Up to three can stack, and each makes it grander.',
     describe: (settings: Settings) =>
       `A Sweet card, common. It gives a post a rainbow behind its words, which stay as readable as ever. One makes the whole post's background drift slowly through the rainbow; two make it an animated rainbow band; three make it an animated radial rainbow, with the colors spreading out from the middle. A few twinkles come with it. Up to three can be on one post, and it stays as long as the post does. ${setMoveWords('the quoting post')} It costs nothing more to play.`,
+  },
+  /*
+   * Feelin' Glam (docs/plans/2026-11-11-card-notes-part-2-plan.md): Sweet's cyan. A Move on a thread whose plays are handed to Feelin' Fab's
+   * effect (`drawnBy`), so it draws nothing of its own; a post from its week keeps the level after the week ends.
+   */
+  {
+    key: 'feelin-glam',
+    drawnBy: 'feelin-fab',
+    art: { color: '#2ee6ff', ink: '#03141a', canvas: feelinGlamCanvas, mark: feelinGlamMark, credit: feelinGlamArt.credit, tagline: 'Give a whole thread a rainbow.' },
+    summary: `Cast on a thread. Every post there gets one more level of Feelin' Fab's rainbow for ${spanWords(feelinGlam.lasts!)}, and posts written in that time keep it.`,
+    status: (plays) => (plays.length > 0 ? 'One more rainbow level here' : 'Kept by posts from its week'),
+    hint: "A Feelin' Glam: every post in this thread glows one level more.",
+    describe: () =>
+      `A Sweet card, ${feelinGlam.rarity}, cast on a thread from its title. For ${spanWords(feelinGlam.lasts!)}, every post in the thread is drawn with one more level of Feelin' Fab's rainbow, up to Feelin' Fab's three: two Feelin' Fabs and a Feelin' Glam make the full prism. It takes none of a post's three Feelin' Fab places. A post written in the thread during that time keeps its extra level after it; every other post loses it when the time is up. If an admin ends the card, every post loses the level. One fits on a thread at a time. ${setMoveWords("the quoting post's thread")} It costs nothing more to play.`,
   },
   /*
    * Hall Pass (docs/plans/2026-11-07-face-down-moves-design.md, section 4): Sweet's cyan, as Force Field is. A Gimmick, set face down

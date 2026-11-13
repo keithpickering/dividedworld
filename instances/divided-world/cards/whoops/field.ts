@@ -1,11 +1,21 @@
 /**
- * Whoops!'s ink field operations, pure (ink-field design, sections 1 to 3). A splat is a field of balls; a pen line
+ * Whoops!'s ink field operations, pure (docs/plans/2026-11-12-whoops-ink-field-design.md, sections 1 to 3, and
+ * docs/plans/2026-11-12-whoops-followups-design.md, sections 1, 3 and 5). A splat is a field of balls; a pen line
  * adds to that field and a wash takes from it, each in the order it was made, and what is ink is wherever the field
  * reaches `THRESHOLD`. No DOM and no canvas: the painter shades a dense grid of this field, `LayerInk` holds a grid of
  * cells and asks single points, and all three run the operations below, so they cannot disagree.
  *
  * A grid is `cols x rows` sample points `step` CSS px apart, the first at (step / 2, step / 2) in the box (or at an
  * `origin`, for a single point). Values are Float32, like `fieldGrid`'s.
+ *
+ * A grid may hold only a run of the rows of a post's one lattice (a band): `row0` is the lattice row its row 0 is, and
+ * every row's position is `oy + (row0 + j) * step`, the same arithmetic the whole grid does, so a band's value at a
+ * lattice point equals the whole grid's bit for bit. `rowY` is the one place a row's position is worked out. A held
+ * band's grid also has one apron row each side (build.ts), and the operations take the whole box, so a point's value
+ * never depends on which band holds it.
+ *
+ * A wash that is a dab is topped up at its end (`DAB_FADE_ENDS`), and `COVER_OVER` is the field value at which washed ink
+ * has thinned to `READ_THROUGH` opacity, below which a point no longer covers the words under it.
  *
  * A brush is kept as a stroke keeps it: `width` a share of the box's width, `aspect` the drawer's box's proportions. It
  * is round in the space (x px, y px / k) with k = aspect * box.h / box.w (scrub.ts, paint.ts `trace`), and every
@@ -30,6 +40,19 @@ export const END_BULB = 1.35;
 export const DROPS_MOST = 3;
 /** The most a field value is held to when it is stored. */
 export const FIELD_MOST = 16;
+/**
+ * A wash line shorter than this many radii (R = 2r) of path is topped up at its end as a dab is, fading to nothing
+ * at the far end: a drag just past R must not clean far less than one just short of it.
+ */
+export const DAB_FADE_ENDS = 1.5;
+
+/** Washed ink is thinned: its opacity is `THIN_FLOOR` at the threshold and reaches full `THIN_SPAN` field units above it. */
+export const THIN_FLOOR = 0.35;
+export const THIN_SPAN = 1.2;
+/** How much of a stroke's ink a washed point must keep for the eye to read the words through it. */
+export const READ_THROUGH = 0.75;
+/** The field value at which a washed point's opacity has thinned to `READ_THROUGH`: a point at or below it reads through. */
+export const COVER_OVER = (THIN_SPAN * (READ_THROUGH - THIN_FLOOR)) / (1 - THIN_FLOOR);
 
 /** The falloff (1 - s^2/R^2)^3 summed across a line through its center, in units of R. */
 const PASS_INTEGRAL = 32 / 35;
@@ -53,6 +76,8 @@ export interface Grid {
   /** The CSS px position of point (0, 0). */
   readonly ox: number;
   readonly oy: number;
+  /** The row of the post's lattice that this grid's row 0 is (0 for a whole grid; a band's may be -1 or past the end). */
+  readonly row0: number;
   readonly values: Float32Array;
   /** 1 where a wash has lowered the point's value. */
   readonly washed: Uint8Array;
@@ -64,16 +89,23 @@ export interface Grid {
   work?: { visits: number };
 }
 
-export function makeGrid(cols: number, rows: number, step: number, origin?: { readonly x: number; readonly y: number }): Grid {
+export function makeGrid(cols: number, rows: number, step: number, origin?: { readonly x: number; readonly y: number }, row0 = 0): Grid {
   return {
     cols, rows, step,
-    ox: origin ? origin.x : step / 2, oy: origin ? origin.y : step / 2,
+    ox: origin ? origin.x : step / 2, oy: origin ? origin.y : step / 2, row0,
     values: new Float32Array(cols * rows), washed: new Uint8Array(cols * rows), scope: null, penOpen: false,
   };
 }
 /** The painter's grid: points at pixel centers of a canvas at `density` pixels per CSS px (as `fieldGrid`). */
 export function denseGrid(box: Box, density: number): Grid {
   return makeGrid(Math.ceil(box.w * density), Math.ceil(box.h * density), 1 / density);
+}
+/**
+ * `rows` rows of `denseGrid(box, density)`'s lattice, starting at lattice row `row0`, which may be -1 or run one past
+ * the end (the caller clips the apron to the lattice). Its points are the whole grid's, to the bit.
+ */
+export function bandGrid(box: Box, density: number, row0: number, rows: number): Grid {
+  return makeGrid(Math.ceil(box.w * density), rows, 1 / density, undefined, row0);
 }
 /** A layer's cells: `step` px apart across the box. */
 export function cellGrid(box: Box, step: number): Grid {
@@ -100,11 +132,16 @@ export function radiusOf(brush: Brush, box: Box): number {
   return (brush.width * box.w) / 2;
 }
 
+/** The CSS px position down of the grid's row `j`: the lattice row `row0 + j`. */
+function rowY(g: Grid, j: number): number {
+  return g.oy + (g.row0 + j) * g.step;
+}
+
 /** The grid points (as a half-open rectangle) whose px positions lie within [x0, x1] across and [y0, y1] down. */
 function rectOf(g: Grid, x0: number, x1: number, y0: number, y1: number): Rect {
   return {
     x0: Math.max(0, Math.floor((x0 - g.ox) / g.step)), x1: Math.min(g.cols, Math.ceil((x1 - g.ox) / g.step) + 1),
-    y0: Math.max(0, Math.floor((y0 - g.oy) / g.step)), y1: Math.min(g.rows, Math.ceil((y1 - g.oy) / g.step) + 1),
+    y0: Math.max(0, Math.floor((y0 - g.oy) / g.step) - g.row0), y1: Math.min(g.rows, Math.ceil((y1 - g.oy) / g.step) + 1 - g.row0),
   };
 }
 
@@ -132,7 +169,7 @@ function discInto(g: Grid, cx: number, cy: number, R: number, k: number, f: (v: 
   const rect = rectOf(g, cx - R, cx + R, (cy - R) * k, (cy + R) * k);
   const R2 = R * R;
   for (let j = rect.y0; j < rect.y1; j++) {
-    const dy = (g.oy + j * g.step) / k - cy, dy2 = dy * dy, row = j * g.cols;
+    const dy = rowY(g, j) / k - cy, dy2 = dy * dy, row = j * g.cols;
     if (dy2 >= R2) continue;
     const half = Math.sqrt(R2 - dy2), [i0, i1] = colsIn(g, rect, cx - half, cx + half);
     if (g.work) g.work.visits += Math.max(0, i1 - i0);
@@ -256,7 +293,7 @@ export function beginPen(grid: Grid, box: Box, brush: Brush): Line {
     const rect = rectOf(grid, Math.min(ax, bx) - R, Math.max(ax, bx) + R, (Math.min(ay, by) - R) * k, (Math.max(ay, by) + R) * k);
     const sx = bx - ax, sy = by - ay, L2 = sx * sx + sy * sy, inv = L2 > 0 ? 1 / L2 : 0;
     for (let j = rect.y0; j < rect.y1; j++) {
-      const y = (grid.oy + j * grid.step) / k, py = y - ay, row = j * grid.cols;
+      const y = rowY(grid, j) / k, py = y - ay, row = j * grid.cols;
       /* The part of the segment within R of this row (down), and so the columns its capsule can reach here. */
       let t0 = 0, t1 = 1;
       if (sy !== 0) {
@@ -303,20 +340,21 @@ export function beginPen(grid: Grid, box: Box, brush: Brush): Line {
 
 /**
  * Begin a wash line: a disc every max(1, r / 3) px along the path, each taking a share of `WASH_TAKES`. A line whose
- * whole path is shorter than R = 2r is a dab, a tap or a short drag: at `end` it is topped up at its last point so the
- * center there has taken `WASH_TAKES`, as a one-point line's does.
+ * whole path is shorter than `DAB_FADE_ENDS` R (1.5 R, R = 2r) is a dab, a tap or a short drag: at `end` it is topped
+ * up at its last point so the center there has taken `WASH_TAKES`, as a one-point line's does, in full while the path
+ * is no longer than R and fading in a straight line to nothing at 1.5 R. A path of 1.5 R or more is a pass, not topped up.
  */
 export function beginWash(grid: Grid, box: Box, brush: Brush): Line {
   const k = kOf(brush, box), r = radiusOf(brush, box), R = 2 * r, h = Math.max(1, r / 3);
   const w = (WASH_TAKES * h) / (PASS_INTEGRAL * R);
   let at: [number, number] | null = null, carry = 0, ended = false, length = 0;
-  /* The discs pressed while the path is still short of R, so the top-up knows what its last point already took. */
+  /* The discs pressed while the path is still short of 1.5 R (where the top-up has faded out), so the top-up knows what its last point already took. */
   const dabs: [number, number][] = [];
   /* One disc: every point with ink under it is lowered by take * falloff, never below zero, and marked washed. */
   const press = (cx: number, cy: number, take: number): Rect => {
     const rect = rectOf(grid, cx - R, cx + R, (cy - R) * k, (cy + R) * k), R2 = R * R;
     for (let j = rect.y0; j < rect.y1; j++) {
-      const dy = (grid.oy + j * grid.step) / k - cy, dy2 = dy * dy, row = j * grid.cols;
+      const dy = rowY(grid, j) / k - cy, dy2 = dy * dy, row = j * grid.cols;
       if (dy2 >= R2) continue;
       const half = Math.sqrt(R2 - dy2), [i0, i1] = colsIn(grid, rect, cx - half, cx + half);
       if (grid.work) grid.work.visits += Math.max(0, i1 - i0);
@@ -345,7 +383,7 @@ export function beginWash(grid: Grid, box: Box, brush: Brush): Line {
       let touched = empty(), d = h - carry;
       for (; d <= len; d += h) {
         const cx = a[0] + ((b[0] - a[0]) * d) / len, cy = a[1] + ((b[1] - a[1]) * d) / len;
-        if (length < R) dabs.push([cx, cy]);
+        if (length < DAB_FADE_ENDS * R) dabs.push([cx, cy]);
         touched = unionRect(touched, press(cx, cy, w));
       }
       carry = len - (d - h);
@@ -354,11 +392,16 @@ export function beginWash(grid: Grid, box: Box, brush: Brush): Line {
     end() {
       if (ended) return empty();
       ended = true;
-      if (!at || length >= R) return empty();
-      /* A dab: what its discs gave the last point (the falloff of each, round space) is topped up to a whole pass. */
+      if (!at || length >= DAB_FADE_ENDS * R) return empty();
+      /*
+       * A dab: what its discs gave the last point (the falloff of each, round space) is topped up to a whole pass. The
+       * top-up is whole up to R and fades to nothing at DAB_FADE_ENDS * R, so no length of drag cleans less than a
+       * slightly longer one (a step at R would).
+       */
       let given = 0;
       for (const [x, y] of dabs) { const q = 1 - ((x - at[0]) ** 2 + (y - at[1]) ** 2) / (R * R); given += w * q * q * q; }
-      return press(at[0], at[1], WASH_TAKES - given);
+      const fade = length <= R ? 1 : (DAB_FADE_ENDS * R - length) / ((DAB_FADE_ENDS - 1) * R);
+      return press(at[0], at[1], Math.max(0, WASH_TAKES - given) * fade);
     },
   };
 }

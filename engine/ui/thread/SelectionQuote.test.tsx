@@ -35,6 +35,12 @@ describe('what a selection reads as (readRange)', () => {
     expect(readRange(range(t, 6, t, 11))).toMatchObject({ seq: 1, text: 'brave', body: one });
   });
 
+  test('a selection inside a reply drawn under a post is that reply\'s words, by the number it carries as its own', () => {
+    document.body.innerHTML = '<article class="kb-act" data-kb-seq="3"><div class="kb-bb">parent words</div></article><article class="kb-act" data-kb-under="" data-kb-cut-seq="46"><div class="kb-bb">excuse me please</div></article>';
+    const t = document.querySelectorAll('.kb-bb')[1]!.firstChild!;
+    expect(readRange(range(t, 0, t, 6))).toMatchObject({ seq: 46, text: 'excuse' });
+  });
+
   test('a selection across two posts, or outside a body, reads as nothing', () => {
     const [one, two] = page('first words', 'second words');
     expect(readRange(range(one!.firstChild!, 2, two!.firstChild!, 4))).toBeNull();

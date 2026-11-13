@@ -1,7 +1,8 @@
 /**
- * Whoops!'s scrubbing, the pure half of its drawing (refinements design sections 3 and 4): what a layer's ink is
+ * Whoops!'s scrubbing, the pure half of its drawing (docs/plans/2026-11-06-whoops-refinements-design.md, sections 3 and 4;
+ * docs/plans/2026-11-12-whoops-followups-design.md, sections 4 and 5): what a layer's ink is
  * after the strokes on it, which layer a stroke scrubs, the bounds a saved stroke keeps to, the accessible sweep's
- * pace, and which lines of text lie under ink. No DOM and no canvas: `Effect.tsx` draws what this decides, and
+ * pace (`SWEEP_PX_S`, a hand's px a second on any box), and which lines of text lie under ink (not those whose ink is washed thin enough to read through, `READ_THROUGH`). No DOM and no canvas: `Effect.tsx` draws what this decides, and
  * every rule here is testable in Node.
  *
  * Everything is in shares of the post body's box on this screen: a point is across 0 to 1 and down 0 to 1, so a
@@ -17,12 +18,12 @@
  * wherever the field reaches THRESHOLD. There is one implementation of those operations, in field.ts, shared with the
  * painter (paint.ts shades the same field over a denser grid), so what is counted here and what is drawn cannot
  * disagree. "Does this point still have ink" is that field's value, never a read of pixels, so it costs no canvas.
- * A stroke's points are kept packed when saved (points.ts), and a layer too heavy to build on the page is built in a
- * worker (build.ts) with a stand-in drawn meanwhile; this model never waits for either. Each screen's model is its
+ * A stroke's points are kept packed when saved (points.ts), and a band of a layer too heavy to build on the page is built in a
+ * worker (build.ts) with a stand-in drawn meanwhile; this model is the whole post's, never a band's, and never waits for either. Each screen's model is its
  * own; for the same strokes the shares are close, not equal.
  */
 import { STROKES } from '../whoops.ts';
-import { addBall, beginLine, penAt, cellGrid, endsOf, kOf, linesOf, pointGrid, radiusOf, splatInto, type Ball, type Grid, type Rect } from './field.ts';
+import { COVER_OVER, addBall, beginLine, penAt, cellGrid, endsOf, kOf, linesOf, pointGrid, radiusOf, splatInto, type Ball, type Grid, type Rect } from './field.ts';
 import { THRESHOLD, type Box, type Splat } from './splat.ts';
 
 /** The wash's brush and the author's pen, in px: a hand-sized brush on the board's 15px type, the pen about half of it. */
@@ -32,8 +33,8 @@ export const PEN_PX = 16;
 export const ROW_PX = 22.5;
 /** The sweep's brush, in rows: a little over its band, so the bands leave no sliver between them. */
 export const SWEEP_BRUSH_ROWS = 1.15;
-/** The accessible sweep's pace, in shares of the box's width a second: a line a little under two seconds, as a hand takes. */
-export const SWEEP_SPEED = 0.55;
+/** The accessible sweep's pace, px a second: a hand's drag across the board (a 988px line takes about two and a half seconds), on any box. */
+export const SWEEP_PX_S = 400;
 /** The spacing of the points a layer's remaining ink is counted at, px (under half the brush). */
 export const CELL_PX = 12.5;
 /** The side of the squares `has` files a stroke's segments under, px (a few cells, a little over a brush). */
@@ -237,7 +238,7 @@ export class LayerInk {
   /** The lines (by index, in order) whose reach overlaps each bucket of the plane. */
   private readonly buckets = new Map<number, number[]>();
   /** The splat's field at a point as asked, and the last answer for the point with the version of its bucket it was made at. */
-  private readonly memo = new Map<number, Map<number, { splat: number; ver: number; value: number }>>();
+  private readonly memo = new Map<number, Map<number, { splat: number; ver: number; value: number; washed: number }>>();
   /** Each bucket's version: a fresh number whenever a segment within reach of it is filed or a line that reaches it is ended. */
   private readonly versions = new Map<number, number>();
   private tick = 0;
@@ -376,6 +377,7 @@ export class LayerInk {
     if (base.ver === ver) return base.value;
     this.stats.replays++;
     base.value = this.replay(x, y, base.splat, near);
+    base.washed = (this.scratch as Grid).washed[0]!;
     base.ver = ver;
     return base.value;
   }
@@ -417,16 +419,28 @@ export class LayerInk {
   }
 
   /**
+   * Whether the point's ink hides the words: it has ink, and where a wash has lowered it the ink is still thick
+   * enough (`COVER_OVER` past the threshold) that the eye cannot read through it (field.ts `READ_THROUGH`). Ink
+   * no wash reached covers at the threshold, as it is drawn; `has` and the share washed still read the threshold.
+   */
+  covers(x: number, y: number): boolean {
+    const v = this.valueAt(x, y);
+    if (v < THRESHOLD) return false;
+    /* `valueAt` has just kept the point's answer with its washed mark; a point no line reaches was not washed. */
+    return v >= THRESHOLD + COVER_OVER || this.splatValue(x, y).washed === 0;
+  }
+
+  /**
    * The splat's own field at a point, with the entry the point's last answer is kept in. The splat's never changes, and the lines under ink are
    * asked about the same points again at each refresh of a sweep, so an answer is kept (by the point, exactly). The memory is
    * bounded: it never holds more than `MEMO_MOST` points, and starts over when it would.
    */
-  private splatValue(x: number, y: number): { splat: number; ver: number; value: number } {
+  private splatValue(x: number, y: number): { splat: number; ver: number; value: number; washed: number } {
     const held = this.memo.get(x)?.get(y);
     if (held) return held;
     const g = pointGrid(x * this.box.w, y * this.box.h);
     splatInto(g, this.splat, this.box);
-    const entry = { splat: g.values[0]!, ver: -1, value: 0 };
+    const entry = { splat: g.values[0]!, ver: -1, value: 0, washed: 0 };
     if (this.memoed >= MEMO_MOST) {
       this.memo.clear();
       this.memoed = 0;
@@ -490,19 +504,20 @@ export function bandsOf(box: Box): number[] {
 export interface Sweep { readonly row: number; readonly x: number }
 
 /**
- * The sweep after `dt` seconds: it moves across its band at `SWEEP_SPEED`, then on to the start of the next, and
+ * The sweep after `dt` seconds: it moves across its band at `speed` (shares of the box's width a second; the caller
+ * passes `SWEEP_PX_S` over the box's width, so a hand's pace is the same px on any box), then on to the start of the next, and
  * round to the first after the last. It never crosses more than a line's width in a step of any size a frame
  * is, so the post is never cleared at once. `span`, when given, says where a band's ink lies: a band with none is
  * passed over and the sweep starts and ends each band at its ink, so it does not wait out a line with nothing
  * to wash. `idle` is true when no band has ink at all.
  */
 export function sweepStep(
-  rows: readonly number[], at: Sweep, dt: number, span?: (row: number) => readonly [number, number] | null,
+  rows: readonly number[], at: Sweep, dt: number, speed: number, span?: (row: number) => readonly [number, number] | null,
 ): { readonly sweep: Sweep; readonly point: Pt; readonly idle: boolean } {
   let { row, x } = at;
   /* A resize can leave a saved row past the box's last: the sweep resumes on the last. */
   row = Math.min(Math.max(0, row), Math.max(0, rows.length - 1));
-  x += dt * SWEEP_SPEED;
+  x += dt * speed;
   let hops = 0;
   for (;;) {
     const s = span?.(row);
@@ -529,7 +544,8 @@ const ACROSS = 51;
 
 /**
  * Which lines of text lie under ink: a screen reader is given a line once it is not, as the eye is. Lines are
- * sampled along their middle; a layer that is washed clean is null and covers nothing.
+ * sampled along their middle, where `covers` says the ink hides the words (a washed point thinned to where the eye reads
+ * through it does not); a layer that is washed clean is null and covers nothing.
  */
 export function coveredLines(lines: readonly TextLine[], inks: readonly (LayerInk | null)[]): boolean[] {
   const live = inks.filter((i): i is LayerInk => i !== null);
@@ -539,7 +555,7 @@ export function coveredLines(lines: readonly TextLine[], inks: readonly (LayerIn
     let under = 0;
     for (let k = 0; k < ACROSS; k++) {
       const x = k / (ACROSS - 1);
-      if (live.some((i) => i.has(x, y))) under++;
+      if (live.some((i) => i.covers(x, y))) under++;
     }
     return under / ACROSS >= COVERED;
   });

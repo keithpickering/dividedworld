@@ -1,5 +1,12 @@
-/* The quick reply, the edit form, and the box they share. */
-.kb-composer {
+/*
+ * The quick reply, the edit form, and the box they share.
+ *
+ * Order-proof: this sheet reaches the page in a lazy chunk the HTML links before base.css, so a rule here that only ties base.css's
+ * (.kb-box, .kb-notice, .kb-button) on one element would lose to it. Each rule that must beat one of those is written one class
+ * heavier than it, so the cascade never depends on which sheet comes last.
+ */
+.kb-composer,
+.kb-box.kb-composer {
   margin: 1em 0;
 }
 
@@ -7,7 +14,8 @@
   margin: 0 0 10px;
 }
 
-.kb-composer-now {
+.kb-composer-now,
+.kb-notice.kb-composer-now {
   margin: 0.4em 0;
   border-style: dashed;
 }
@@ -65,12 +73,14 @@
   padding: 0.4em 2%;
 }
 
-.kb-composer-note {
+.kb-composer-note,
+.kb-notice.kb-composer-note {
   margin: 1em 0;
 }
 
 /* The reply box and New thread: a table's look in a form. A light band over the box (the same one a section's heading wears), the body on the row ground, the text boxes inset. */
-.kb-form {
+.kb-form,
+.kb-box.kb-form {
   padding: 12px 14px;
   border: 1px solid var(--kb-frame);
   background: var(--kb-row-1);
@@ -131,7 +141,7 @@
     gap: 3px;
   }
 
-  .kb-toolbar .kb-toolbar-button {
+  .kb-toolbar .kb-button.kb-toolbar-button {
     min-width: 0;
     flex: 0 0 auto;
     padding-inline: 5px;
@@ -149,7 +159,8 @@
 }
 
 /* The box a barred mask's composer holds in place of the reply box (BarredNote.tsx; the member groups mockup's last panel): a framed box on the row ground, its heading plain and bold. */
-.kb-barred {
+.kb-barred,
+.kb-box.kb-barred {
   padding: 12px 14px;
   border: 1px solid var(--kb-frame);
   background: var(--kb-row-2);
@@ -172,7 +183,8 @@
 }
 
 /* In New thread the section already frames it. */
-.kb-form > .kb-barred {
+.kb-form > .kb-barred,
+.kb-form > .kb-box.kb-barred {
   margin: 0;
   padding: 0;
   border: 0;

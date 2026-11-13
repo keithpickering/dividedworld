@@ -6,6 +6,7 @@
  */
 import { render } from '@testing-library/react';
 import type { ReactElement } from 'react';
+import { landsOn, ok, type CardRules } from '../rules/cards.ts';
 import type { Instance, Settings } from '../rules/types.ts';
 import { KayfaProvider, type Kayfa } from './context.tsx';
 import { createFake, type Fake } from './data/fake.ts';
@@ -58,6 +59,11 @@ export const testInstance: Instance = {
   pipStyles: [{ key: 'default', name: 'Default', full: 'f.svg', empty: 'e.svg' }],
   groups: testGroups,
 };
+
+/** A card that carries a reply (`CardRules.replies`): cast on a post, face up, with the words of a post written under it. Its key names no instance's. */
+export const testCutter: CardRules = { key: 'cutter', name: 'Cutter', alignment: 'pepperoni', rarity: 'rare', replies: true, playPrice: () => 0, validateConfig: (c) => ok(c ?? {}), canApply: (t, e, _c, now) => landsOn(testCutter, t, e, now) };
+/** A card that keeps (`CardRules.keeps`): one play on a thread for a week, which stays on every post written in the thread while it was up. Its key names no instance's. */
+export const testKeeper: CardRules = { key: 'keeper', name: 'Keeper', alignment: 'sweet', rarity: 'rare', reaches: ['thread'], lasts: { unit: 'day', count: 7 }, keeps: true, playPrice: () => 0, validateConfig: (c) => ok(c ?? {}), canApply: (t, e, _c, now) => landsOn(testKeeper, t, e, now) };
 
 /**
  * A glass with one plain recipe for every surface, so a screen that draws smoke (the HUD, a glass
@@ -188,6 +194,7 @@ export function tapThread(fake: Fake): () => ThreadListener {
     onAct: (a) => (listener ? listener.onAct?.(a) : void waiting.push((l) => l.onAct?.(a))),
     onTally: (act, t) => (listener ? listener.onTally?.(act, t) : void waiting.push((l) => l.onTally?.(act, t))),
     onEffect: (p, at) => (listener ? listener.onEffect?.(p, at) : void waiting.push((l) => l.onEffect?.(p, at))),
+    onUnder: (parent, play, a) => (listener ? listener.onUnder?.(parent, play, a) : void waiting.push((l) => l.onUnder?.(parent, play, a))),
   };
   return () => proxy;
 }

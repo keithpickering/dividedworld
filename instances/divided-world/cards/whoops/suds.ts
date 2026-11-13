@@ -11,8 +11,10 @@
  * is the Effect's and is untouched.
  *
  * Coordinates: `from`, `to` and `at` are CSS px in the host's box (`box.w` by `box.h`, origin at its top left),
- * the same px the splat and the ink grid use. `density` is canvas px per CSS px. The module draws on the canvas
- * it is given and never sizes it.
+ * the same px the splat and the ink grid use. `density` is canvas px per CSS px. The canvas is the span of the box
+ * the host's near bands cover (docs/plans/2026-11-12-whoops-followups-design.md, section 1; `register`'s `top` is where it starts), so a particle is drawn at its box position
+ * less `top` and one outside the span is skipped. The module draws on the canvas it is given and never sizes it. The wet sheen is held
+ * over the same span (its box width by the span's height, capped at `WET_PX`), so nothing here is sized to the post.
  */
 import { motionReduced } from '../../../../engine/ui/appearance.ts';
 import { rgbOf, type Box } from './splat.ts';
@@ -29,6 +31,8 @@ const WET_MS = 3500;
 const WET_PX = 4_000_000;
 const MAX_DIST = 400;
 const TINTS = 16;
+/** How far, in CSS px, a sprite reaches past its anchor: a particle this far outside the canvas's span is not drawn. */
+const SPAN_PAD = 48;
 const DEFAULT_INK = '#1a1a1a';
 
 type Kind = 'bubble' | 'foam' | 'run' | 'ring' | 'spray';
@@ -38,7 +42,7 @@ interface Part {
   vx?: number; vy?: number; r?: number; hue?: number; pop?: boolean; ph?: number;
   y0?: number; v?: number; acc?: number; cells?: Cell[]; ink?: boolean;
 }
-interface Reg { canvas: HTMLCanvasElement; box: Box; density: number; ink: string; wet: HTMLCanvasElement | null; wetUntil: number; clear: boolean }
+interface Reg { canvas: HTMLCanvasElement; box: Box; density: number; top: number; ink: string; wet: HTMLCanvasElement | null; wetUntil: number; clear: boolean }
 interface Tinted { foam: HTMLCanvasElement; drop: HTMLCanvasElement; rgb: [number, number, number] }
 
 const parts: Part[] = [];
@@ -49,8 +53,15 @@ let bubbleFrames: HTMLCanvasElement[] | null = null;
 let plainFoam: HTMLCanvasElement | null = null;
 const tinted = new Map<string, Tinted>();
 
-/** Canvas px per CSS px for a host's sheen: the screen's density, less where that would pass `WET_PX` on a tall box. */
-const wetScale = (box: Box, density: number) => Math.min(density, Math.sqrt(WET_PX / Math.max(1, box.w * box.h)));
+/** Canvas px per CSS px for a host's sheen over a span `w` by `h` CSS px: the screen's density, less where that would pass `WET_PX`. */
+const wetScale = (w: number, h: number, density: number) => Math.min(density, Math.sqrt(WET_PX / Math.max(1, w * h)));
+/** The span of the box a host's canvas holds, in CSS px: from `reg.top` for this tall. */
+const spanH = (reg: { canvas: HTMLCanvasElement; density: number }) => reg.canvas.height / reg.density;
+/** A sheen canvas for a span `w` by `h` CSS px, and the scale it is at. */
+const makeWet = (w: number, h: number, density: number) => {
+  const sc = wetScale(w, h, density);
+  return { cv: make(Math.max(1, Math.floor(w * sc)), Math.max(1, Math.floor(h * sc))), sc };
+};
 
 const now = () => performance.now();
 const rnd = () => Math.random();
@@ -133,14 +144,28 @@ function add(p: Part): void {
   parts.push(p);
 }
 
-/** Registers (or re-registers) a host's suds canvas. `density` is canvas px per CSS px; `ink` tints the lather and the dirty water. */
-export function register(host: object, canvas: HTMLCanvasElement, box: Box, density: number, ink: string = DEFAULT_INK): void {
+/**
+ * Registers (or re-registers) a host's suds canvas. `density` is canvas px per CSS px; `ink` tints the lather and the dirty water.
+ * The canvas holds the span of the box from `top` CSS px down for `canvas.height / density` px (the whole box when `top` is 0 and the
+ * canvas is the box's size): a particle is drawn at its box position less `top`, and one outside the span is not drawn. A re-register,
+ * for a new box, span or ink, keeps the particles in the air.
+ */
+export function register(host: object, canvas: HTMLCanvasElement, box: Box, density: number, ink: string = DEFAULT_INK, top = 0): void {
   let tone = ink;
   try { rgbOf(ink); } catch { tone = DEFAULT_INK; }
   const old = hosts.get(host);
-  /* A sheen drawn for another box or density would be clipped or stretched on this one. */
+  /* A sheen drawn for another box width or density would be clipped or stretched on this one. */
   const same = old !== undefined && old.box.w === box.w && old.box.h === box.h && old.density === density;
-  hosts.set(host, { canvas, box, density, ink: tone, wet: same ? old.wet : null, wetUntil: old?.wetUntil ?? 0, clear: old ? old.clear && old.canvas === canvas : false });
+  let wet = same ? old.wet : null;
+  const h = canvas.height / density;
+  if (same && wet && (old.top !== top || spanH(old) !== h)) {
+    /* The span moved or changed size under a held sheen: it is made again for the new span and the old pixels are carried across at
+       their page position (the old span's offset less the new one's), at the ratio of the two scales, so it neither jumps nor stretches. */
+    const oh = spanH(old), osc = wetScale(box.w, oh, density), { cv, sc } = makeWet(box.w, h, density);
+    cv.getContext('2d')!.drawImage(wet, 0, (old.top - top) * sc, (wet.width / osc) * sc, (wet.height / osc) * sc);
+    wet = cv;
+  }
+  hosts.set(host, { canvas, box, density, top, ink: tone, wet, wetUntil: old?.wetUntil ?? 0, clear: old ? old.clear && old.canvas === canvas : false });
 }
 
 /** Drops the host's particles and never draws its canvas again. */
@@ -172,13 +197,17 @@ export function wash(host: object, from: Pt, to: Pt, overInk: boolean): void {
   }
   /* The wet sheen: the path just washed holds a film of dirty water that dries. */
   const [dr, dg, db] = sprites(reg.ink).tint.rgb;
-  const sc = wetScale(reg.box, reg.density);
-  reg.wet ??= make(Math.max(1, Math.floor(reg.box.w * sc)), Math.max(1, Math.floor(reg.box.h * sc)));
-  const w = reg.wet.getContext('2d')!;
-  w.setTransform(sc, 0, 0, sc, 0, 0);
-  w.strokeStyle = `rgb(${dr},${dg},${db})`; w.lineCap = 'round'; w.lineWidth = BRUSH_PX * 0.92;
-  w.beginPath(); w.moveTo(from.x, from.y); w.lineTo(to.x + 0.01, to.y); w.stroke();
-  reg.wetUntil = t + WET_MS;
+  /* The sheen is the span's: a mark is made at its box position less `top`, and one wholly outside the span (past the pad) makes nothing. */
+  const sh = spanH(reg), lo = reg.top - SPAN_PAD, hi = reg.top + sh + SPAN_PAD;
+  if (!((from.y < lo && to.y < lo) || (from.y > hi && to.y > hi))) {
+    const sc = wetScale(reg.box.w, sh, reg.density);
+    reg.wet ??= makeWet(reg.box.w, sh, reg.density).cv;
+    const w = reg.wet.getContext('2d')!;
+    w.setTransform(sc, 0, 0, sc, 0, -reg.top * sc);
+    w.strokeStyle = `rgb(${dr},${dg},${db})`; w.lineCap = 'round'; w.lineWidth = BRUSH_PX * 0.92;
+    w.beginPath(); w.moveTo(from.x, from.y); w.lineTo(to.x + 0.01, to.y); w.stroke();
+    reg.wetUntil = t + WET_MS;
+  }
   start();
 }
 
@@ -209,7 +238,9 @@ function drawHost(host: object, reg: Reg, mine: Part[], t: number, dt: number): 
   const s = sprites(reg.ink);
   g.setTransform(1, 0, 0, 1, 0, 0);
   g.clearRect(0, 0, canvas.width, canvas.height);
-  g.setTransform(reg.density, 0, 0, reg.density, 0, 0);
+  g.setTransform(reg.density, 0, 0, reg.density, 0, -reg.top * reg.density);
+  /* The span in box px, and a margin for what a sprite reaches past its anchor. */
+  const lo = reg.top - SPAN_PAD, hi = reg.top + spanH(reg) + SPAN_PAD;
   if (wet) {
     const w = reg.wet!.getContext('2d')!;
     w.setTransform(1, 0, 0, 1, 0, 0);
@@ -217,10 +248,11 @@ function drawHost(host: object, reg: Reg, mine: Part[], t: number, dt: number): 
     w.fillStyle = `rgba(0,0,0,${1 - Math.exp(-dt / 0.6)})`;
     w.fillRect(0, 0, reg.wet!.width, reg.wet!.height);
     w.globalCompositeOperation = 'source-over';
-    g.globalAlpha = 0.3; g.drawImage(reg.wet!, 0, 0, reg.box.w, reg.box.h); g.globalAlpha = 1;
+    g.globalAlpha = 0.3; g.drawImage(reg.wet!, 0, reg.top, reg.box.w, spanH(reg)); g.globalAlpha = 1;
   }
   const [dr, dg, db] = s.tint.rgb;
   for (const p of mine) {
+    if (p.kind !== 'run' && (p.y < lo || p.y > hi)) continue;
     const age = Math.max(0, (t - p.born) / 1000), k = age / p.life;
     if (p.kind === 'foam') {
       const spr = p.ink ? s.tint.foam : s.foam, sag = age * 3;
@@ -232,6 +264,8 @@ function drawHost(host: object, reg: Reg, mine: Part[], t: number, dt: number): 
       }
     } else if (p.kind === 'run') {
       const y = p.y0! + p.v! * age + 0.5 * p.acc! * age * age, fade = 1 - Math.max(0, (k - 0.7) / 0.3);
+      /* A drip runs from its start down to `y`: it is drawn when any of that is in the span. */
+      if (y < lo || p.y0! > hi) continue;
       if (y - p.y0! > 0.5) {
         const grd = g.createLinearGradient(0, p.y0!, 0, y);
         grd.addColorStop(0, `rgba(${dr},${dg},${db},0)`); grd.addColorStop(1, `rgba(${dr},${dg},${db},${0.35 * fade})`);

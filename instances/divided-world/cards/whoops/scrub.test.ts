@@ -6,10 +6,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  BRUSH_PX, CELL_PX, LayerInk, MIN_STEP_PX, PEN_PX, ROW_PX, SWEEP_BRUSH_ROWS, SWEEP_SPEED,
+  BRUSH_PX, CELL_PX, LayerInk, MIN_STEP_PX, PEN_PX, ROW_PX, SWEEP_BRUSH_ROWS, SWEEP_PX_S,
   bandsOf, brushOf, coveredLines, fits, fitStroke, minStepOf, sweepStep, topLayer, type Drops, type LiveLine, type Pt, type Stroke, type Sweep,
 } from './scrub.ts';
-import { WASH_TAKES, cellGrid, fieldAtPoint, splatInto, strokesInto } from './field.ts';
+import { COVER_OVER, WASH_TAKES, cellGrid, fieldAtPoint, splatInto, strokesInto } from './field.ts';
 import { encodePoints } from './points.ts';
 import { THRESHOLD, covers, makeSplat, mulberry32, type Box, type Splat } from './splat.ts';
 import { whoops, STROKES } from '../whoops.ts';
@@ -73,7 +73,7 @@ function randomStrokes(splat: Splat, box: Box, n: number, seed: number): Stroke[
 const heart = (seed: number): Pt => { const { cx, cy } = splatOf(seed).placement; return [cx / 1.25, cy]; };
 
 test('the measures are the board\'s own, in px', () => {
-  assert.deepEqual([BRUSH_PX, PEN_PX, ROW_PX, SWEEP_BRUSH_ROWS, CELL_PX, MIN_STEP_PX, SWEEP_SPEED], [30, 16, 22.5, 1.15, 12.5, 5, 0.55]);
+  assert.deepEqual([BRUSH_PX, PEN_PX, ROW_PX, SWEEP_BRUSH_ROWS, CELL_PX, MIN_STEP_PX, SWEEP_PX_S], [30, 16, 22.5, 1.15, 12.5, 5, 400]);
   const b = brushOf(30, DESK);
   assert.ok(Math.abs(b.width - 30 / 988) < 1e-12 && Math.abs(b.aspect - 988 / 330) < 1e-12);
 });
@@ -241,7 +241,7 @@ test('the sweep makes as many passes as the ink needs, and is idle only once the
   let s: Sweep = { row: 0, x: 0 }, line: LiveLine | null = null, lineRow = -1, idle = false, t = 0, last = 0;
   const entries = rows.map(() => 0);
   for (; t < 600; t += dt) {
-    const step = sweepStep(rows, s, dt, (row) => ink.inkSpan(rows[row]!, half));
+    const step = sweepStep(rows, s, dt, 0.55, (row) => ink.inkSpan(rows[row]!, half));
     if (step.idle) { idle = true; break; }
     if (!line || step.sweep.row !== lineRow) {
       line?.end();
@@ -275,7 +275,7 @@ test('the sweep\'s pace is a hand\'s: one pass takes WASH_TAKES under its center
   const ink = new LayerInk(splat, [], box);
   let s: Sweep = { row, x: 0 }, line: LiveLine | null = null;
   for (let n = 0; n < 5000; n++) {
-    const step = sweepStep(rows, s, 1 / 30, (r) => ink.inkSpan(rows[r]!, half));
+    const step = sweepStep(rows, s, 1 / 30, 0.55, (r) => ink.inkSpan(rows[r]!, half));
     if (step.idle || step.sweep.row !== row) break;
     line ??= ink.begin({ tool: 'wash', ...brush, points: [] });
     line.to(step.point);
@@ -350,7 +350,7 @@ test('a layer\'s strokes fit while they are within the card\'s counts, and not p
   assert.equal(fits(Array.from({ length: 81 }, () => stroke(STROKES.points))), false, 'more points in all than the card keeps');
 });
 
-test('the sweep goes line by line at 0.55 of the box a second, a line at a time and never all at once', () => {
+test('the sweep goes line by line at the pace it is given, a line at a time and never all at once', () => {
   const box: Box = { w: 988, h: 330 };
   const rows = bandsOf(box);
   assert.equal(rows.length, Math.floor(330 / ROW_PX));
@@ -359,12 +359,12 @@ test('the sweep goes line by line at 0.55 of the box a second, a line at a time 
   let s: Sweep = { row: 0, x: 0 };
   const dt = 1 / 60;
   let t = 0;
-  while (s.row === 0 && t < 5) { ({ sweep: s } = sweepStep(rows, s, dt)); t += dt; }
-  assert.ok(Math.abs(t - 1 / SWEEP_SPEED) < 0.05, `a line takes ${t}s`);
+  while (s.row === 0 && t < 5) { ({ sweep: s } = sweepStep(rows, s, dt, 0.55)); t += dt; }
+  assert.ok(Math.abs(t - 1 / 0.55) < 0.05, `a line takes ${t}s`);
   assert.equal(s.row, 1);
   assert.ok(s.x < 0.05, 'the next line starts at its left');
   let last: Sweep = { row: rows.length - 1, x: 0.99 };
-  ({ sweep: last } = sweepStep(rows, last, 0.1));
+  ({ sweep: last } = sweepStep(rows, last, 0.1, 0.55));
   assert.equal(last.row, 0);
 });
 
@@ -381,6 +381,47 @@ test('a line of text is covered when the ink over it is most of its length, and 
   assert.deepEqual(coveredLines(lines, [ink]), [false, false], 'washed, the line is read');
   assert.deepEqual(coveredLines(lines, [null, null]), [false, false], 'clean layers cover nothing');
   assert.deepEqual(coveredLines([{ top: 0.9, bottom: 0.95, text: 'under a pen' }], [new LayerInk(splatOf(41), [penIn(DESK, [[0, 0.925], [0.5, 0.925]])], DESK)]), [true], 'half its length under ink is covered');
+});
+
+test('a line under ink thinned past reading is not covered', () => {
+  const { cy } = splatOf(41).placement, y = cy;
+  const ink = new LayerInk(splatOf(41), [], DESK);
+  const line = [{ top: y - 0.001, bottom: y + 0.001, text: 'across the core' }];
+  const b = brushOf(BRUSH_PX, DESK);
+  /* A pass 20px below the line takes less of it than one along it: it thins the ink there and clears it slowly. */
+  const pass = () => scrub(ink, [[0, y + 20 / DESK.h], [1, y + 20 / DESK.h]], b);
+  const along = (at: (v: number) => boolean) => Array.from({ length: 51 }, (_, k) => ink.valueAt(k / 50, y)).filter(at).length;
+  pass();
+  assert.ok(along((v) => v >= THRESHOLD + COVER_OVER) >= 26, 'one pass leaves most of the line thick');
+  assert.deepEqual(coveredLines(line, [ink]), [true], 'thick ink covers it');
+  pass();
+  assert.ok(along((v) => v >= THRESHOLD + COVER_OVER) < 26, 'a second thins it past reading over most of its length');
+  assert.ok(along((v) => v >= THRESHOLD) >= 26, 'there is still ink over most of it');
+  assert.ok(ink.has(0.5, y), 'ink is still there at its middle');
+  assert.ok(ink.washed < 0.95, `the layer is not clean (${ink.washed})`);
+  assert.deepEqual(coveredLines(line, [ink]), [false], 'a line the eye reads through thinned ink is not covered');
+});
+
+test('unwashed thin ink still covers', () => {
+  const ink = new LayerInk(splatOf(12), [], DESK);
+  /* A line whose ink is mostly the splat's thin arm: over half its length has ink, and under half of it is thick. */
+  let at = -1;
+  for (let y = 0; y < DESK.h && at < 0; y += 2.5) {
+    const vs = Array.from({ length: 51 }, (_, k) => ink.valueAt(k / 50, y / DESK.h));
+    const thick = vs.filter((v) => v >= THRESHOLD + COVER_OVER).length;
+    if (vs.filter((v) => v >= THRESHOLD).length >= 26 && thick < 26) at = y / DESK.h;
+  }
+  assert.ok(at >= 0, 'the splat has a line of thin ink');
+  assert.deepEqual(coveredLines([{ top: at - 0.001, bottom: at + 0.001, text: 'under an arm' }], [ink]), [true]);
+});
+
+test('the sweep crosses 400px a second on any box', () => {
+  for (const w of [358, 760]) {
+    const box: Box = { w, h: 6 * ROW_PX }, rows = bandsOf(box);
+    let s: Sweep = { row: 0, x: 0 };
+    for (let k = 0; k < 1000; k++) ({ sweep: s } = sweepStep(rows, s, 1 / 1000, SWEEP_PX_S / box.w));
+    near((s.row + s.x) * w, SWEEP_PX_S, 1, `${w}px box`);
+  }
 });
 
 test('a drawing keeps its place: a stroke\'s points land at the same shares on two boxes, and its washed cells on each match the shares it passed', () => {
@@ -491,7 +532,7 @@ test('a stroke always ends on its last point, even one under a step from the las
 
 test('a sweep saved on a row past a shrunken box is clamped to its last row', () => {
   const rows = bandsOf({ w: 400, h: 100 });
-  const { sweep, point } = sweepStep(rows, { row: rows.length + 5, x: 0.2 }, 1 / 60);
+  const { sweep, point } = sweepStep(rows, { row: rows.length + 5, x: 0.2 }, 1 / 60, 0.55);
   assert.ok(sweep.row < rows.length);
   assert.ok(Number.isFinite(point[0]) && Number.isFinite(point[1]));
 });
