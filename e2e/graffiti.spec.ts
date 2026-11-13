@@ -535,25 +535,35 @@ function expectClear(r: { top: number; bottom: number; clearTop: number; dockTop
     expect(r.bottom, `${how}: body bottom above the dock`).toBeLessThanOrEqual(r.dockTop + 1);
   }
 }
-const FRAMES = 40;
-/** The body's top on each of the next FRAMES animation frames of the page itself, started before the press so the first frame of the scroll is not missed. */
-const startRecording = (page: Page) => page.evaluate(([n, frames]) => {
-  const w = window as unknown as { __tops: number[]; __done: boolean };
-  w.__tops = [];
-  w.__done = false;
+const AFTER_MOVE_FRAMES = 30;
+const NEVER_MOVED_FRAMES = 240;
+/**
+ * The body's top on every animation frame of the page itself from now: until it has changed by more than half a pixel, then AFTER_MOVE_FRAMES more. Started before
+ * the press, so the first frame of the scroll is not missed, and not on a fixed budget, so a scroll that begins late is still seen; NEVER_MOVED_FRAMES without a
+ * change ends it as "never moved", which the caller fails on.
+ */
+const startRecording = (page: Page) => page.evaluate(([n, after, cap]) => {
+  const w = window as unknown as { __rec: { tops: number[]; moved: boolean; done: boolean } };
+  const rec = { tops: [] as number[], moved: false, done: false };
+  w.__rec = rec;
+  let left = after;
   const tick = () => {
-    w.__tops.push(document.querySelector(`#post-${n} .kb-act-main`)!.getBoundingClientRect().top);
-    if (w.__tops.length < frames) requestAnimationFrame(tick);
-    else w.__done = true;
+    const top = document.querySelector(`#post-${n} .kb-act-main`)!.getBoundingClientRect().top;
+    const prev = rec.tops[rec.tops.length - 1];
+    rec.tops.push(top);
+    if (prev !== undefined && Math.abs(top - prev) > 0.5) rec.moved = true;
+    if (rec.moved) left--;
+    if (left <= 0 || rec.tops.length >= cap) rec.done = true;
+    else requestAnimationFrame(tick);
   };
   requestAnimationFrame(tick);
-}, [POST, FRAMES] as const);
-const recorded = async (page: Page): Promise<number[]> => {
-  await page.waitForFunction(() => (window as unknown as { __done: boolean }).__done);
-  return page.evaluate(() => (window as unknown as { __tops: number[] }).__tops);
+}, [POST, AFTER_MOVE_FRAMES, NEVER_MOVED_FRAMES] as const);
+const recorded = async (page: Page) => {
+  await page.waitForFunction(() => (window as unknown as { __rec: { done: boolean } }).__rec.done);
+  return page.evaluate(() => (window as unknown as { __rec: { tops: number[]; moved: boolean } }).__rec);
 };
-/** The post scrolled so its top lies at `share` of the window's height, below where the dock will be, then the card armed and the ghost pressed. With `watch`, the body's top is recorded from just before the press and the frames are returned in place of waiting for it to settle. */
-async function lowThenPress(page: Page, share: number, tile: boolean, watch = false): Promise<number[]> {
+/** The post scrolled so its top lies at `share` of the window's height, below where the dock will be, then the card armed (the ghost) ready to press. */
+async function placeLow(page: Page, share: number, tile: boolean): Promise<void> {
   await world(page, tile ? SOME : null);
   await openThread(page);
   await page.evaluate(([n, s]) => {
@@ -561,19 +571,28 @@ async function lowThenPress(page: Page, share: number, tile: boolean, watch = fa
     window.scrollBy({ top: r.top - window.innerHeight * s, behavior: 'instant' });
   }, [POST, share] as const);
   if (!tile) await arm(page);
-  if (watch) await startRecording(page);
+}
+async function press(page: Page, tile: boolean): Promise<void> {
   if (tile) await post(page).getByRole('button', { name: 'Draw' }).click();
   else await post(page).getByRole('button', { name: /^Play Graffiti on post \d+$/ }).click();
   await expect(dock(page)).toBeVisible();
-  if (watch) return recorded(page);
-  await settledClear(page);
-  return [];
 }
-/** The post jumps clear and stays: over the frames from the press its top changes by more than half a pixel at most once, and it rests clear of the dock. */
-async function expectJump(page: Page, tops: number[], how: string): Promise<void> {
+/** The post placed low, the press made, and the post waited for until it rests clear of the dock. */
+async function lowThenPress(page: Page, share: number, tile: boolean): Promise<void> {
+  await placeLow(page, share, tile);
+  await press(page, tile);
+  await settledClear(page);
+}
+/** The post jumps clear and stays: it starts outside the clear area, so its top must change, and it changes (by more than half a pixel) exactly once, then rests clear of the dock. */
+async function expectJump(page: Page, share: number, tile: boolean, how: string): Promise<void> {
+  await placeLow(page, share, tile);
+  await startRecording(page);
+  await press(page, tile);
+  const { tops, moved } = await recorded(page);
+  expect(moved, `${how}: the post never moved over ${tops.length} frames`).toBe(true);
   let moves = 0;
-  for (let i = 1; i < tops.length; i++) if (Math.abs(tops[i] - tops[i - 1]) > 0.5) moves++;
-  expect(moves, `${how}: the body's top moved more than once over ${tops.length} frames (${tops.map(Math.round).join(', ')})`).toBeLessThanOrEqual(1);
+  for (let i = 1; i < tops.length; i++) if (Math.abs(tops[i]! - tops[i - 1]!) > 0.5) moves++;
+  expect(moves, `${how}: the body's top changed ${moves} times (once is a jump): ${tops.map(Math.round).join(', ')}`).toBe(1);
   await settledClear(page);
   expectClear(await clear(page), how);
 }
@@ -592,17 +611,17 @@ for (const [name, reduced] of [['motion not reduced', 'no-preference'], ['reduce
   });
 }
 
-/* Motion is not reduced, so a smooth scroll would show: the page does not glide, which a press a moment after opening would miss the post by. */
+/* Motion is not reduced, so a smooth scroll would show. The page must not glide to the post: a press made while it moves lands on whatever is under the pointer then. */
 for (const [where, viewport] of [['wide', { width: 1280, height: 800 }], ['on a phone', null]] as const) {
   test.describe(`the post jumps clear of the dock at once, ${where}`, () => {
     const { defaultBrowserType: _browser, ...pixel } = devices['Pixel 7'];
     test.use(viewport ? { viewport, reducedMotion: 'no-preference' } : { ...pixel, reducedMotion: 'no-preference' });
     const share = viewport ? 0.75 : 0.7;
     test('pressing the ghost on a post low in the window', async ({ page }) => {
-      await expectJump(page, await lowThenPress(page, share, false, true), 'ghost');
+      await expectJump(page, share, false, 'ghost');
     });
     test('the Draw tile on a wall', async ({ page }) => {
-      await expectJump(page, await lowThenPress(page, share, true, true), 'Draw tile');
+      await expectJump(page, share, true, 'Draw tile');
     });
   });
 }
