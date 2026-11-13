@@ -927,9 +927,12 @@ begin
   -- The quoting character already carries a Bomb, so the Bomb back cannot land; the retired setter cannot act.
   perform tests.act(bomber, 'card', t, jsonb_build_object('card', 'spxbomb', 'message', '', 'config', '{}', 'reach', 'character', 'character', q, 'ends', now() + interval '3 days', 'targetName', 'Even Quoter'), quoting);
   insert into play_reach (play, reach, character, ends_at) select a.id, 'character', q, now() + interval '3 days' from acts a where a.kind = 'card' and a.payload ->> 'card' = 'spxbomb' and a.payload ->> 'character' = q::text;
-  update characters set retired_at = now() where id = retiree;
-  -- Every setter's row has been rewritten once, as the retiree's was (a rewritten row is a longer chain to read, which says nothing of the statement).
-  update characters set debuted_at = debuted_at where id in (idler, trapper, phrasey, bomber, springer);
+  -- Every setter's row is rewritten once, as the retiree's is, and each rewrite is made not a HOT update on purpose, by moving created_at (the key of characters_waiting, which
+  -- spring_facts does not read) by a microsecond. Whether an update is HOT depends on the free space left on the row's page, which earlier files and vacuums decide, and a non-HOT one
+  -- leaves a second characters_pkey entry that one more read of the setter's row finds: with the rewrites left to chance, the backs whose rows sat on a full page read one more than
+  -- the rest, which says nothing of the statement. Forced off their pages, every setter's rewrite leaves the same entries.
+  update characters set retired_at = now(), created_at = created_at - interval '1 microsecond' where id = retiree;
+  update characters set created_at = created_at - interval '1 microsecond' where id in (idler, trapper, phrasey, bomber, springer);
   -- The quoting post is warded too: a Ward is read for every back, and the Whoops back (common) is turned away by it as a cast would be.
   perform tests.act(q, 'card', t, jsonb_build_object('card', 'spxward', 'layer', 1, 'message', '', 'config', '{}'::jsonb, 'ends', now() + interval '7 days'), quoting);
 

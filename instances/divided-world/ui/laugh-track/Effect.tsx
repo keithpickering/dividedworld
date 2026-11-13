@@ -1,19 +1,35 @@
 /**
- * Laugh Track's effect on a post (docs/plans/2026-11-11-laugh-track-design.md, sections 6 and 8; plan Task 13; when a place fires and how it
- * sounds are docs/plans/2026-11-12-laugh-track-band-design.md, sections 1 to 3). The audience is heard
- * and captioned as a reader reads each cued phrase, which is to say once a place has rested in the reading band; the words stay where they were, and what the reader reads is never sent or saved.
+ * Laugh Track's effect on a post (docs/plans/2026-11-11-laugh-track-design.md, sections 6 and 8; plan Task 13; when a place fires, what marks it and how
+ * the keyboard reaches it are docs/plans/2026-11-12-laugh-track-point-design.md, sections 1 to 4, and the plan's Task 4). The audience is heard and captioned
+ * when a reader points at a cued phrase; the words stay where they were, and what the reader reads is never sent or saved.
  *
  * Each place (a cue's phrase found by `placesOf`, the engine's one matcher, over the post's visible text) is a `wrap` run of a `TextLayer`,
- * drawn as `span.dw-lt-cue`. Before its place fires nothing marks it, so the joke is not telegraphed. Once it fires the piece carries the
- * class `dw-lt-fired`, a dotted underline in its flavor ink (a `text-decoration`, so no word moves), and its first piece is a button, named by its own visible words and then "Replay: the audience boos" (WCAG 2.5.3, Label in Name), that
- * replays the take (hover with a mouse, focus, a press, Enter or Space).
+ * drawn as `span.dw-lt-cue`. 1. Only a gesture fires a place: a mouse that moves onto it, a tap or click, Enter or Space. Scrolling never does,
+ * and neither does a place that scrolls under a mouse at rest: a `pointerenter` at the position the mouse last was (one position for the page, shared by every post, and kept by the
+ * one document `pointermove` listener) is not a gesture, and neither is an enter or a move when no position is known yet: it records where it was. The next `pointermove` over
+ * the place, at a new position, is a gesture. A touch that only brushes a place does nothing. The reaction plays at once and fades in over
+ * one already sounding (the mixer's `audience` group); a second gesture on a place inside 300 ms is the same gesture and plays nothing.
+ * 2. Nearness marks the place before it is heard: the watcher (watch.ts) tells each unheard place how near the reader is, 0 to 1, and this effect writes
+ * that, times `laughTrack.markMost`, to the place's pieces as `--dw-lt-near`, which the CSS reads as the dotted underline's opacity in the sound's ink.
+ * Nothing is kept in state for it and nothing draws again. 3. A place that has been heard carries `dw-lt-fired`: the mark at full for the visit, no
+ * longer registered with the watcher, so it no longer chitters. Pointing at it again replays it. Each reaction (first or replay) tells the watcher
+ * (`quiet`) with the play's own answer, so the page's chitter waits for the reaction and returns over its tail.
+ * 4. The keyboard: every place's first piece is a button, named by its own visible words and then "Play the audience's reaction", or once heard "Replay: the
+ * audience boos" (WCAG 2.5.3, Label in Name). One of a post's places is its tab stop; the arrows, Home and End move among them, and the focused place
+ * is the stop. Focus pins the place's nearness at 1 (the mark shows in full and its chitter plays) and plays nothing; Enter or Space plays the reaction.
+ * 5. A link stays a link (#576): a place any of whose pieces is drawn inside an `<a>` (a bare address is the one way a cue lands there) is not a button. It has no
+ * role, no label, no tabindex and no focus pin, it is not the post's stop (the stop is the first place not in a link, and a post whose every place is in a link has none), and the
+ * arrows, Home and End skip it. A click or a tap on it plays nothing and is not default-prevented, so the link is followed; Enter and Space are not handled. The mouse rule, the
+ * mark, the chitter, the Lens count and `dw-lt-fired` all still apply, and its cursor is the link's own. Link ancestry is known only from the DOM, so `findFirsts` (which finds
+ * each place's first piece, in a layout effect before the first paint and again after a redraw) also finds the places in a link and leaves them out of `first`, which is what
+ * gives a button its role, so none is ever drawn as a button inside a link on first paint.
+ * 6. A click plays only when the selection is collapsed (#577): a click that ends a text selection (selecting to quote) plays nothing and marks nothing. Enter, Space and the mouse
+ * rule are unchanged.
  *
- * The page's watcher (watch.ts) says when a place fires: a place fires once it has been in the reading band for the dwell, one at a time in the
- * page's order with airtime between (a place that leaves the band keeps its turn for a while), never because a pointer is over it. It holds the page's audience, its murmurs: this effect only registers each place
- * with it, hands it the way to make a kind's loop, and plays the place's take, answering the watcher with the play's own answer (the take's length). A take is picked from the play, its seed and the place
+ * This effect registers each unheard place with the watcher and hands it the way to make a kind's loop. A take is picked from the play, its seed and the place
  * (`seeded`), so every screen picks the same, and it is one of three.
  *
- * Fired places are this visit's own state: nothing is saved or sent, and nothing here reads who wrote the post or who cast the card
+ * Heard places are this visit's own state: nothing is saved or sent, and nothing here reads who wrote the post or who cast the card
  * (`reader.author` and `reader.caster` are never read), so no sound, caption or timing depends on who owns anything.
  *
  * Under another card's words: the runs are `wrap` runs at z -1, a level under every other card's wrap run at 0 and every replace run. Where
@@ -33,11 +49,21 @@ import type { CardPlay, CardView, EffectProps } from '../../../../engine/ui/card
 import { useKayfa } from '../../../../engine/ui/context.tsx';
 import { placesOf, type Cue, type Sound } from '../../cards/laugh-track.ts';
 import { seeded } from '../seeded.ts';
-import { DEFAULT_AIR_MS, DEFAULT_HOLD_MS, forgetVoice, register, type Screen, type Unregister } from './watch.ts';
+import { forgetVoice, quiet, register, type Screen, type Unregister } from './watch.ts';
 import './laugh-track.css';
 
+/* Where the mouse last moved on this page, and how many effects are listening: one document `pointermove` listener serves every post, so a post mounted
+   later (a navigation, a lazy mount) already knows where the mouse was, and forty posts are not forty listeners. */
+let lastPointer: { x: number; y: number } | null = null;
+let listeners = 0;
+const onDocumentMove = (e: PointerEvent) => { if (e.pointerType === 'mouse') lastPointer = { x: e.clientX, y: e.clientY }; };
+const listen = () => { if (listeners++ === 0) document.addEventListener('pointermove', onDocumentMove); };
+const unlisten = () => { if (--listeners === 0) document.removeEventListener('pointermove', onDocumentMove); };
+/** For tests: forget where the mouse was. */
+export const __resetPointer = () => { lastPointer = null; };
+
 /** The numbers the screens read from the card's settings when the instance has not set them (laugh-track.ts `screenReads`). */
-export const DEFAULTS = { line: 40, dwellMs: 400, reachRem: 12, murmurMost: 35, fadeMs: 250, band: 34, airMs: DEFAULT_AIR_MS, holdMs: DEFAULT_HOLD_MS } as const;
+export const DEFAULTS = { line: 40, reachRem: 12, murmurMost: 35, fadeMs: 250, markMost: 100 } as const;
 /** The loop that builds before each kind of hit, by sound. */
 const LOOPS: Readonly<Record<Sound, string>> = { laugh: 'laugh-track.titter', cheer: 'laugh-track.ooh', boo: 'laugh-track.grumble' };
 const VERBS: Readonly<Record<Sound, string>> = { laugh: 'laughs', cheer: 'cheers', boo: 'boos' };
@@ -110,47 +136,63 @@ function Live({ post, plays, show, met, children }: EffectProps) {
   const root = useRef<HTMLDivElement>(null);
   const cards = settings.cardSettings;
   const screen = useMemo<Screen>(() => ({
-    line: cards['laughTrack.line'] ?? DEFAULTS.line, dwellMs: cards['laughTrack.dwellMs'] ?? DEFAULTS.dwellMs, reachRem: cards['laughTrack.reachRem'] ?? DEFAULTS.reachRem,
+    line: cards['laughTrack.line'] ?? DEFAULTS.line, reachRem: cards['laughTrack.reachRem'] ?? DEFAULTS.reachRem,
     murmurMost: cards['laughTrack.murmurMost'] ?? DEFAULTS.murmurMost, fadeMs: cards['laughTrack.fadeMs'] ?? DEFAULTS.fadeMs,
-    band: cards['laughTrack.band'] ?? DEFAULTS.band, airMs: cards['laughTrack.airMs'] ?? DEFAULTS.airMs, holdMs: cards['laughTrack.holdMs'] ?? DEFAULTS.holdMs,
   }), [cards]);
-  /* The places that have fired this visit, and the first piece drawn of each (its button): this screen's own state, never saved or sent. */
+  const markMost = cards['laughTrack.markMost'] ?? DEFAULTS.markMost;
+  /* The places that have been heard this visit, and the first piece drawn of each place (its button): this screen's own state, never saved or sent. */
   const [fired, setFired] = useState<ReadonlySet<string>>(() => new Set());
   const [first, setFirst] = useState<Readonly<Record<string, string>>>({});
+  /* The places any of whose pieces is drawn inside a link (an `<a>`): known only from the DOM, so `findFirsts` finds them, in the layout effect before the first paint. */
+  const [linked, setLinked] = useState<ReadonlySet<string>>(() => new Set());
+  const linkedNow = useRef(linked);
+  linkedNow.current = linked;
+  /* The post's one tab stop: the place last focused, or the first place when that one is gone. */
+  const [stop, setStop] = useState<string | null>(null);
   const firedNow = useRef(fired);
   firedNow.current = fired;
 
   /* What the callbacks below read, so a registration lives as long as its place does and not as long as a render. */
-  const now = useRef({ sound, show, met, screen, spots });
-  now.current = { sound, show, met, screen, spots };
+  const now = useRef({ sound, show, met, screen, spots, markMost });
+  now.current = { sound, show, met, screen, spots, markMost };
   const metOnce = useRef(false);
   const lastPlay = useRef<Record<string, number>>({});
 
-  /* A first fire and a replay play alike: the take fades in over the one before it and tails off over its last `fadeMs`. The answer is the play's own, which the watcher reads for the take's length. */
-  const replay = useCallback((spot: Spot) => {
+  /* A gesture on a place: it is marked heard, and its take fades in over the one before it and tails off over its last `fadeMs`. The watcher is told, with the play's own answer (the take's length), so the chitter waits. */
+  const fire = useCallback((spot: Spot) => {
     const at = Date.now();
-    if (at - (lastPlay.current[spot.key] ?? -Infinity) < SAME_GESTURE_MS) return undefined;
+    if (at - (lastPlay.current[spot.key] ?? -Infinity) < SAME_GESTURE_MS) return;
     lastPlay.current[spot.key] = at;
+    if (!firedNow.current.has(spot.key)) {
+      firedNow.current = new Set(firedNow.current).add(spot.key);
+      setFired(firedNow.current);
+    }
     const { fadeMs } = now.current.screen;
-    return now.current.sound.play(spot.take, { group: 'audience', fadeMs, tailMs: fadeMs });
+    quiet(now.current.sound.play(spot.take, { group: 'audience', fadeMs, tailMs: fadeMs }), fadeMs);
+    if (!metOnce.current) { metOnce.current = true; now.current.met(); }
   }, []);
 
-  const fire = useCallback((spot: Spot) => {
-    if (firedNow.current.has(spot.key)) return undefined;
-    firedNow.current = new Set(firedNow.current).add(spot.key);
-    setFired(firedNow.current);
-    const played = replay(spot);
-    if (!metOnce.current) { metOnce.current = true; now.current.met(); }
-    return played;
-  }, [replay]);
+  /* A place's nearness becomes the mark's opacity, written to its pieces as they are now: no state, no render. */
+  const mark = useCallback((key: string, n: number) => {
+    const value = Math.round(n * now.current.markMost) / 100;
+    /* A zero is no property at all (the CSS falls back to 0), so the pointer cursor, which follows the property, follows only a showing mark. */
+    for (const e of root.current?.querySelectorAll<HTMLElement>(`[data-lt-place="${key}"]`) ?? []) {
+      if (value === 0) e.style.removeProperty('--dw-lt-near');
+      else e.style.setProperty('--dw-lt-near', String(value));
+    }
+  }, []);
 
-  /* The page's watcher holds a registration for each place drawn and not yet fired. */
+  /* The page's watcher holds a registration for each place drawn and not yet heard. */
+  /* The places the mouse is over and has fired or been refused, until it leaves them. */
+  const over = useRef(new Set<string>());
   const registered = useRef(new Map<string, Unregister>());
   const sync = useCallback(() => {
     const el = root.current;
     if (!el) return;
     const drawn = new Set<string>();
     for (const e of el.querySelectorAll('[data-lt-place]')) drawn.add(e.getAttribute('data-lt-place')!);
+    /* A place whose pieces are gone has no `pointerleave` coming: the mouse is no longer over it. */
+    for (const key of over.current) if (!drawn.has(key)) over.current.delete(key);
     const mine = new Map(now.current.spots.map((s) => [s.key, s]));
     for (const [key, off] of registered.current) {
       if (!drawn.has(key) || !mine.has(key) || firedNow.current.has(key)) { off(); registered.current.delete(key); } else off.refresh();
@@ -162,10 +204,10 @@ function Live({ post, plays, show, met, children }: EffectProps) {
         kind: spot.sound,
         screen: now.current.screen,
         voice: (kind) => now.current.sound.loop(LOOPS[kind as Sound], { group: 'audience-build', id: `laugh-track:${kind}` }),
-        fire: () => fire(spot),
+        near: (n) => mark(spot.key, n),
       }));
     }
-  }, [fire]);
+  }, [mark]);
   const spotsKey = spots.map((s) => `${s.key}@${s.start}-${s.end}`).join(',');
   useEffect(() => { sync(); }, [spotsKey, screen, fired, sync]);
   /* A card over this one (a tape peeled, a play ended) draws the words again without drawing this effect: its places are looked for again. */
@@ -190,34 +232,91 @@ function Live({ post, plays, show, met, children }: EffectProps) {
     registered.current.clear();
   }, []);
 
-  /* The first piece drawn of each fired place is its button. */
+  useEffect(() => { listen(); return unlisten; }, []);
+  /* The mouse's position is the page's: a place that mounts or scrolls under a mouse at rest is entered at that position, and that is not a gesture. An enter or
+     a move with no position known yet only records where it was (a browser may send either to a place drawn under a still mouse); either way the position is kept, so
+     the same-position `pointermove` a browser sends after an enter does not fire. The document's listener is a bubble listener, so it records after these handlers compare. */
+  const moved = (e: { clientX: number; clientY: number }) => {
+    const was = lastPointer;
+    lastPointer = { x: e.clientX, y: e.clientY };
+    if (was === null) return false;
+    return was.x !== e.clientX || was.y !== e.clientY;
+  };
+
+  /* The first piece drawn of each place is its button, unless the place is in a link: a link stays a link, so such a place has no button and no stop. */
   const findFirsts = useCallback(() => {
     const el = root.current;
     if (!el) return;
     const found: Record<string, string> = {};
+    const inLink = new Set<string>();
     for (const e of el.querySelectorAll('[data-lt-place]')) {
       const place = e.getAttribute('data-lt-place')!;
-      if (firedNow.current.has(place) && !(place in found)) found[place] = e.getAttribute('data-lt-piece')!;
+      if (e.closest('a')) inLink.add(place);
+      if (!(place in found)) found[place] = e.getAttribute('data-lt-piece')!;
     }
+    for (const place of inLink) delete found[place];
     setFirst((was) => (JSON.stringify(was) === JSON.stringify(found) ? was : found));
+    setLinked((was) => (was.size === inLink.size && [...inLink].every((k) => was.has(k)) ? was : inLink));
   }, []);
   useLayoutEffect(() => { findFirsts(); }, [fired, spotsKey, findFirsts]);
+  const firstNow = useRef(first);
+  firstNow.current = first;
+  const order = Object.keys(first);
+  const stopKey = stop !== null && stop in first ? stop : order[0];
+
+  /* The arrows, Home and End among the post's places: the focus goes to the first piece of the place wanted. */
+  const goTo = useCallback((from: string, key: string) => {
+    const at = Object.keys(firstNow.current);
+    const i = at.indexOf(from);
+    const to = key === 'Home' ? 0 : key === 'End' ? at.length - 1 : key === 'ArrowRight' || key === 'ArrowDown' ? i + 1 : i - 1;
+    const place = at[to];
+    if (place === undefined || place === from) return;
+    root.current?.querySelector<HTMLElement>(`[data-lt-piece="${firstNow.current[place]}"]`)?.focus();
+  }, []);
 
   const runs = useMemo<TextRun[]>(() => spots.map((spot) => {
     const done = fired.has(spot.key);
-    const press = (e: KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); void replay(spot); } };
+    /* A mouse that has moved onto the place fires it once, until it leaves. */
+    const gesture = (e: { clientX: number; clientY: number; pointerType: string }) => {
+      if (e.pointerType !== 'mouse' || over.current.has(spot.key) || !moved(e)) return;
+      over.current.add(spot.key);
+      fire(spot);
+    };
     return {
       start: spot.start, end: spot.end, key: `lt:${spot.key}`, z: Z, mode: 'wrap',
-      render: ({ text, key }) => !done ? pieceOf(spot, key, text) : pieceOf(spot, key, text, {
-        className: 'dw-lt-cue dw-lt-fired',
-        onPointerEnter: (e: { pointerType: string }) => { if (e.pointerType === 'mouse') void replay(spot); },
-        onFocus: () => { void replay(spot); },
-        onClick: () => { void replay(spot); },
-        onKeyDown: press,
-        ...(first[spot.key] === key ? { tabIndex: 0, role: 'button', 'aria-label': `${text}. Replay: the audience ${VERBS[spot.sound]}` } : null),
-      }),
+      render: ({ text, key }) => {
+        const isFirst = first[spot.key] === key;
+        const press = (e: KeyboardEvent) => {
+          if (linkedNow.current.has(spot.key)) return;
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fire(spot); }
+          else if (isFirst && ['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp', 'Home', 'End'].includes(e.key)) { e.preventDefault(); goTo(spot.key, e.key); }
+        };
+        return pieceOf(spot, key, text, {
+          className: done ? 'dw-lt-cue dw-lt-fired' : 'dw-lt-cue',
+          onPointerEnter: gesture,
+          onPointerMove: gesture,
+          onPointerLeave: (e: PointerEvent) => {
+            const into = e.relatedTarget;
+            if (into instanceof Element && into.closest(`[data-lt-place="${spot.key}"]`)) return;
+            over.current.delete(spot.key);
+          },
+          /* A click or tap in a link follows the link and plays nothing; a click that ends a text selection (selecting to quote) plays nothing either. */
+          onClick: () => {
+            if (linkedNow.current.has(spot.key) || window.getSelection()?.isCollapsed === false) return;
+            fire(spot);
+          },
+          onKeyDown: press,
+          ...(isFirst ? {
+            role: 'button',
+            tabIndex: stopKey === spot.key ? 0 : -1,
+            'aria-label': done ? `${text}. Replay: the audience ${VERBS[spot.sound]}` : `${text}. Play the audience's reaction`,
+            onFocus: () => { setStop(spot.key); registered.current.get(spot.key)?.pin(true); },
+            onBlur: () => { registered.current.get(spot.key)?.pin(false); },
+          } : null),
+        });
+      },
     };
-  }), [spots, fired, first, replay]);
+  }), [spots, fired, first, linked, stopKey, fire, goTo]);
 
   /* The Lens's words: how many cues have been heard on this visit, and the toggle for Game sounds. */
   const heard = spots.filter((s) => fired.has(s.key)).length;

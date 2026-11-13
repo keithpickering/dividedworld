@@ -1,6 +1,7 @@
 /**
  * Laugh Track (Pepperoni, uncommon): the caster picks one to five cues, each a phrase in the post and the sound of an audience (a laugh,
- * a cheer or a boo), and a reader who reaches a cued place hears it (docs/plans/2026-11-11-laugh-track-design.md, section 5).
+ * a cheer or a boo), and a reader who points at a cued place hears it (docs/plans/2026-11-11-laugh-track-design.md, section 5;
+ * docs/plans/2026-11-12-laugh-track-point-design.md, section 1).
  *
  * Its rules here are its bounds, where it lands and its price; the sounds and the caption are the screens'. Both find a phrase with the
  * engine's one matcher (engine/bbcode/phrase.ts) over the post's visible text, so the places a screen cues are the ones the server priced.
@@ -129,16 +130,13 @@ export const laughTrack: CardRules<LaughTrackConfig> = {
   rarity: 'uncommon',
   seeded: true,
   setPhrase: (config) => config.cues[0]!.phrase,
-  /** What the screens read: where a reader's line is in the viewport (percent from the top), how long it must dwell on a place (ms), how far a cue reaches from the line (rem), the share of a hit a murmur is (percent), the fade (ms), how tall the reading band is (percent of the reading space), the airtime between one fire and the next (ms) and how long a place that left the band keeps its turn (ms). */
+  /** What the screens read: where a reader's line is in the viewport (percent from the top), how far a cue reaches from the line (rem), the share of a hit a murmur is (percent), the fade (ms) and how much of its underline a place shows at its nearest (percent). */
   screenReads: [
     { key: 'laughTrack.line', whole: true, min: 10, max: 90 },
-    { key: 'laughTrack.dwellMs', whole: true, min: 0, max: 2000 },
     { key: 'laughTrack.reachRem', whole: true, min: 2, max: 40 },
     { key: 'laughTrack.murmurMost', whole: true, min: 0, max: 100 },
     { key: 'laughTrack.fadeMs', whole: true, min: 0, max: 2000 },
-    { key: 'laughTrack.band', whole: true, min: 5, max: 90 },
-    { key: 'laughTrack.airMs', whole: true, min: 0, max: 5000 },
-    { key: 'laughTrack.holdMs', whole: true, min: 0, max: 20000 },
+    { key: 'laughTrack.markMost', whole: true, min: 0, max: 100 },
   ],
   reads: [{ key: 'laughTrack.perPlace', whole: true, min: 0 }, { key: 'laughTrack.freePlaces', whole: true, min: 0 }, { key: 'laughTrack.mostAdded', whole: true, min: 1 }],
   playPrice: (settings, target, config) => {
@@ -168,7 +166,7 @@ export const laughTrack: CardRules<LaughTrackConfig> = {
     return lands;
   },
   staffOptions: {
-    prompt: "Choose up to five cues: each a phrase copied exactly from the post you are replying to (whole words, on one line, at least 4 letters or digits) and the audience's sound when a reader reaches it: laugh, cheer or boo.",
+    prompt: "Choose up to five cues: each a phrase copied exactly from the post you are replying to (whole words, on one line, at least 4 letters or digits) and the audience's sound when a reader points at it: laugh, cheer or boo.",
     schema: {
       type: 'object',
       properties: { cues: { type: 'array', items: { type: 'object', properties: { phrase: { type: 'string' }, sound: { type: 'string', enum: ['laugh', 'cheer', 'boo'] } }, required: ['phrase', 'sound'], additionalProperties: false } } },

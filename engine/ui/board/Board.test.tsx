@@ -973,4 +973,20 @@ describe('a thread row\'s units and lines (list-rows plan, Task 1)', () => {
     await screen.findByRole('link', { name: 'Thread 001' });
     expect(rowOf('Thread 001').querySelector('.kb-thread-last')!.textContent!.startsWith('last: ')).toBe(true);
   });
+
+  test('the last post is one unit: the name, the comma and the date inside one .kb-thread-last-by, the comma and the date inside one .kb-thread-last-when', async () => {
+    renderInWorld(<LoadedBoard slug="general" />, { seed: (f) => world(f) });
+    await screen.findByRole('link', { name: 'Thread 001' });
+    const cell = rowOf('Thread 001').querySelector('.kb-thread-last')!;
+    const units = cell.querySelectorAll('.kb-thread-last-by');
+    expect(units).toHaveLength(1);
+    const unit = units[0]!;
+    expect(unit.textContent).not.toContain('last: ');
+    expect(unit.querySelector('.kb-who a')).not.toBeNull();
+    const whens = unit.querySelectorAll('.kb-thread-last-when');
+    expect(whens).toHaveLength(1);
+    expect(whens[0]!.querySelector('.kb-thread-sep')).not.toBeNull();
+    expect(whens[0]!.querySelector('a.kb-thread-last-link')).not.toBeNull();
+    expect(unit.querySelector('.kb-who')!.closest('.kb-thread-last-when')).toBeNull();
+  });
 });
