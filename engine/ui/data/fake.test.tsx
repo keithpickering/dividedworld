@@ -4845,6 +4845,21 @@ describe('post veils, blind totals and a post-local reaction (card notes, Part 3
     expect((await w.fake.myCards()).find((c) => c.card === 'glow')?.held).toBe(glows);
   });
 
+  test('a board\'s demand counts a veiled post under the stand-in, a staff character, so it drops out while the veil is up and counts again at its end (demand_progress, 0402)', async () => {
+    const w = veilWorld();
+    w.fake.seed.staff('director', 'The Director', 'boss');
+    const move = w.fake.seed.move('director', { board: 'general', name: 'Counted Hall', demand: { kind: 'postsOnBoard', params: { board: 'general', count: 5 } } });
+    w.fake.clock.advance(MINUTE);
+    const mine = w.fake.seed.post(w.thread, w.boFace, 'Bo\'s post after the move');
+    w.fake.seed.post(w.thread, w.cyFace, 'Cy\'s post after the move');
+    const done = async () => (await w.fake.moveNotice(move))?.progress?.done;
+    expect(await done()).toBe(2);
+    must(await w.fake.playCard('whodunnit', w.anaFace, mine, {}, ''));
+    expect(await done()).toBe(1);
+    w.fake.clock.advance(3 * DAY + MINUTE);
+    expect(await done()).toBe(2);
+  });
+
   test('a spin pressed at a post names its author: no veil on that post, and no spin pressed at a veiled one, in the words any other post gets (0400, land_refusal and spin_written)', async () => {
     const w = veilWorld();
     const glint = w.fake.seed.reach(w.cyFace, 'character', w.boFace, 'glint', { post: w.post });

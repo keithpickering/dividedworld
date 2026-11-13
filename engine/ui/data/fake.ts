@@ -1033,7 +1033,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const demand = toDemand(move.payload['demand']);
     if (!demand) return { done: 0, of: 0, met: false };
     const p = demand.params;
-    const after = [...acts.values()].filter((a) => a.kind === 'post' && a.at > move.at && a.character !== null && !characters.get(a.character)?.staff);
+    /* By the character a post is shown under, as demand_progress reads acts_public: a post under a live author veil is the stand-in's, which holds the anonymous staff office, so it drops out of the count while the veil is up (0402). */
+    const after = [...acts.values()].filter((a) => {
+      const shown = a.kind === 'post' && a.at > move.at ? shownAuthor(a, false) : null;
+      return shown !== null && shown !== standInRec?.id && !characters.get(shown)?.staff;
+    });
     const onBoard = (a: ActRec) => threads.get(a.thread)?.board === p['board'];
     const count = (n: number) => Math.max(1, Math.trunc(Number(n)));
     switch (demand.kind) {
