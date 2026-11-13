@@ -862,8 +862,8 @@ function cardRows(data: LogData, words: Words): LogRow[] {
     if (ends && Date.parse(ends) <= words.now && !instance.cards.find((c) => c.key === e.card)?.scoresAs) {
       rows.push({
         key: `gimmickEnded:${e.act}`, kind: 'gimmickEnded', at: ends, what: `${cardName(e.card)}${place ? ` on ${place}` : ''} ended`,
-        /* A card that keeps (`CardRules.keeps`) says what it left: the posts written while it was up keep it. */
-        details: [`${cardName(e.card)} on `, link ?? 'your post', instance.cards.find((c) => c.key === e.card)?.keeps === true ? ' ended. Posts written while it was up keep it.' : ' ended.'],
+        /* A card that keeps (`CardRules.keeps`) says what it left: the posts written while it was up keep it. Not a play an admin ended (its `ended` entry, `my_cards_ended`): no post keeps that. */
+        details: [`${cardName(e.card)} on `, link ?? 'your post', instance.cards.find((c) => c.key === e.card)?.keeps === true && !data.log.ended.some((x) => x.play === e.act) ? ' ended. Posts written while it was up keep it.' : ' ended.'],
         aura: 0, wallet: null, characters: caster ? [caster] : [],
       });
     }

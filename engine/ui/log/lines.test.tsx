@@ -480,15 +480,25 @@ describe('a use card\'s end, every kind of it, names the card and never the kind
 describe('a timed end of a card that keeps', () => {
   const post: Act = { id: 'post3', kind: 'post', character: 'p', thread: 'th', targetActId: null, seq: 3, createdAt: '2026-10-30T10:00:00.000Z', payload: {}, currentPayload: {}, editedAt: null, shownEditedAt: null };
   const text = (r: { details: readonly unknown[] }) => r.details.map((d) => (typeof d === 'string' ? d : (d as { text: string }).text)).join('');
-  const endedLine = (keeps: boolean) => {
+  /* `adminEnd`: when an admin ended the play (my_cards_ended's `cast` entry for it), null for a play nobody ended. */
+  const endedLine = (keeps: boolean, adminEnd: string | null = null) => {
     const w: Words = { ...words, instance: { ...testInstance, cards: [...testInstance.cards, { ...testInstance.cards[0]!, key: 'gm', name: 'Some Card', reaches: ['character' as const], lasts: { unit: 'day' as const, count: 7 }, ...(keeps ? { keeps: true } : {}) }] } };
     const played: Act = { ...post, id: 'u1', kind: 'card', seq: null, targetActId: null, payload: { card: 'gm', reach: 'character', character: 'p', ends: '2026-10-31T10:00:00.000Z' }, currentPayload: {} };
-    const log = { ...empty, cards: [{ card: 'gm', kind: 'played' as const, act: 'u1', price: 0, at: '2026-10-24T10:00:00.000Z' }] };
+    const ended = adminEnd === null ? [] : [{ cardEnd: 'e1', play: 'u1', card: 'gm', at: adminEnd, side: 'cast' as const, reach: 'character' as const, targetName: 'Pipewrench', postAuthorName: null, casterName: 'Pipewrench', character: 'p' }];
+    const log = { ...empty, ended, cards: [{ card: 'gm', kind: 'played' as const, act: 'u1', price: 0, at: '2026-10-24T10:00:00.000Z' }] };
     return logRows(data({ log, mine: [char('p', 'Pipewrench', 'heel')], acts: new Map([post, played].map((a) => [a.id, a])) }), w, 600, null).find((r) => r.kind === 'gimmickEnded')!;
   };
 
   test('an ended play of a card that keeps says the posts written while it was up keep it', () => {
     expect(text(endedLine(true)).endsWith(' ended. Posts written while it was up keep it.')).toBe(true);
+  });
+
+  test('a play an admin ended during its time says no post keeps it', () => {
+    expect(text(endedLine(true, '2026-10-26T10:00:00.000Z'))).not.toMatch(/keep it/u);
+  });
+
+  test('a play an admin ended after its time says no post keeps it', () => {
+    expect(text(endedLine(true, '2026-11-02T10:00:00.000Z'))).not.toMatch(/keep it/u);
   });
 
   test('an ended play of another card says the line as it was', () => {

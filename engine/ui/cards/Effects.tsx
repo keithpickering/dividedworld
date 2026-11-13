@@ -236,11 +236,13 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
       const card = ui.cards.find((c) => c.key === key);
       if (!card?.Effect) continue;
       const Effect = card.Effect;
+      /* Every play here is beyond the post and over: the effect draws what the post keeps of it (`kept`), not a live effect. */
+      const kept = mine.length > 0 && mine.every((p) => p.reach !== undefined && p.ends !== undefined && Date.parse(p.ends) <= now);
       wrapped = (
         <BoundEffect
           key={`${reach}:${key}`} Effect={Effect} store={plays} reach={reach} cardKey={key}
           post={post} plays={mine} states={of.states} released={of.released} place={place} marks={card.takeover ? marks : null}
-          {...(mine.length > 0 && mine.every((p) => p.reach !== undefined && p.ends !== undefined && Date.parse(p.ends) <= now) ? { kept: true as const } : {})} written={writtenOf(written, mine, writing)} {...(drawn !== null && reach === 'post' ? { version: drawn } : {})}
+          {...(kept ? { kept: true as const } : {})} written={writtenOf(written, mine, writing)} {...(drawn !== null && reach === 'post' ? { version: drawn } : {})}
           save={reach === 'post' ? save : beyondSave} release={release} nameOf={nameOf}
           give={give} moreGifts={moreGifts} wallet={wallet}
           {...(reach === 'post' && driving.has(key) ? { drives: drivesOf(played, key, gifts, at) } : {})}

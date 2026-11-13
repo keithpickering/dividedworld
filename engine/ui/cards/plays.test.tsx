@@ -671,6 +671,12 @@ describe('a play of a card that keeps, once its time is up', () => {
     expect(markedPlays([thread('k1', 'keeper')], AFTER, keeps, outside[0]).map((p) => p.id)).toEqual(['k1']);
   });
 
+  test('markedPlays marks a post dated exactly at the play\'s date, and not one dated exactly at its end', () => {
+    const kept = { ...playOf(act('m1', 'card', { card: 'keeper', reach: 'character', character: 'c1', ends: ENDS }, null))!, playedAt: '2026-11-01T12:00:00.000Z' };
+    expect(markedPlays([kept], AFTER, keeps, kept.playedAt).map((p) => p.id)).toEqual(['m1']);
+    expect(markedPlays([kept], AFTER, keeps, ENDS)).toEqual([]);
+  });
+
   test('the Lens says how an ended keeping play ends, in the words of a live one\'s end', () => {
     const live = defaultView({ name: 'Keeper', keeps: true }, undefined, undefined, ENDS).ends!;
     expect(live).toMatch(/^Ends /u);
