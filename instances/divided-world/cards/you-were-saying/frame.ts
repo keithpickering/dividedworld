@@ -3,7 +3,9 @@
  * ends exactly where the post's words end, so the model continues the post mid-line. The prompt holds the header line, the thread's
  * title, then each post as a rule line (`---`), a header line this file makes (`Posted by Name:`) and the post's text on the next line,
  * the last post being the one the model continues, with the tails already chained on it. Nothing follows: no newline and no space is
- * added at the end.
+ * added at the end, except where the play has written text already (`sofar`, the voice's words so far in this play): it is flattened like a tail,
+ * follows the tails, and the prompt then ends with a paragraph break (`\n\n`) that only this file writes, so the model starts a new paragraph.
+ * The answer carries `stopPattern` (`HEADER_IN_LINE`) beside the stops, for a header the model begins mid-line.
  *
  * The frame's own caps, whatever the caller sends: the post's text is clipped from its START to its last 2,000 characters (the prompt
  * must end where the post ends), at a code-point boundary; at most the last 8 earlier posts are shown; lone surrogates are stripped
@@ -27,6 +29,24 @@ const QUOTE = 'Quote:';
 
 /** Where the model has left the post: a rule, a post header, a quote, or the page's own header again. A newline starts each, so it is a line's start. */
 export const STOPS: readonly string[] = Object.freeze([`\n${RULE}`, `\n${POSTED_BY}`, `\n${QUOTE}`, `\n${HEADER}`]);
+
+const dashes = (n: number): string => '-'.repeat(n);
+/**
+ * Texts the voice may never produce, each one GPT-2 token (docs/plans/2026-11-13-you-were-saying-voice-design.md, section 3): the dash runs a
+ * model opens a fake post header with (2 to 16, 20, 24, 32, 48, 56 and 64 dashes, and 2 to 9, 16, 20, 32 and 64 with a leading space, the
+ * lengths GPT-2 has a token for), and `Posted` and `Quote`, with and without a leading space. The engine maps them to token ids.
+ */
+export const BAN: readonly string[] = Object.freeze([
+  ...[2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 20, 24, 32, 48, 56, 64].map(dashes),
+  'Posted',
+  'Quote',
+  ...[2, 3, 4, 5, 6, 7, 8, 9, 16, 20, 32, 64].map((n) => ` ${dashes(n)}`),
+  ' Posted',
+  ' Quote',
+]);
+
+/** A post header the model starts in the middle of a line (a rule of two or more dashes, then `Posted by `): the completion ends where it matches. */
+export const HEADER_IN_LINE = /-{2,}[ \t]*Posted by /;
 
 const NAME_MOST = 60;
 const TITLE_MOST = 200;
@@ -54,8 +74,8 @@ const safeStart = (s: string): string => (s.startsWith(RULE) || s.startsWith(POS
  * The prompt and its stops, fitted to `input.budget` tokens by `input.count` (docs/plans/2026-11-12-old-voice-window-design.md, section 3).
  * Under budget nothing changes. Over it, the frame gives up material in this order, each step only when the one before did not fit: the
  * earlier posts, oldest first, one at a time; the thread's title, clipped to 40 characters and then to none (`Thread:` and nothing after
- * it); the post's own text, clipped from its start; last, the text of the tails chained on it, clipped from its start, since its end is
- * where the model continues. A clip finds the most characters that fit by bisection (about a dozen counts for 2,000 characters), at a
+ * it); the post's own text, clipped from its start; last, the text of the tails chained on it together with `sofar`, clipped from their start, since their end is
+ * where the model continues; the break after `sofar` is never clipped. A clip finds the most characters that fit by bisection (about a dozen counts for 2,000 characters), at a
  * code-point boundary. The page header, the post's author line and the end of the post's text with its tails (at least a character of
  * each that has any) are never removed; a budget even those cannot meet gets that smallest prompt, and the frame never throws (the
  * interface's `promptTooLong` refuses it before anything is sent).
@@ -63,11 +83,13 @@ const safeStart = (s: string): string => (s.startsWith(RULE) || s.startsWith(POS
  * The post's words lose only their leading space and their trailing space (a model's first token carries its own), and each tail keeps its
  * own edges, as the model wrote them, so the chain reads as one run; only a tail's line breaks become spaces.
  */
-export function youWereSayingFrame(input: WriteFrameInput): { readonly prompt: string; readonly stop: readonly string[] } {
+export function youWereSayingFrame(input: WriteFrameInput): { readonly prompt: string; readonly stop: readonly string[]; readonly stopPattern: RegExp } {
   const earlier = input.before.slice(-BEFORE_POSTS).map((p) => ({ name: p.name, text: clip(p.text, BEFORE_MOST) }));
   const title = clip(input.title, TITLE_MOST);
   const postChars = [...lastChars(oneLine(input.post.text), POST_MOST)];
-  const tailChars = [...input.tails.map(flat).join('')];
+  const sofarFlat = flat(input.sofar);
+  const tailChars = [...[...input.tails.map(flat), sofarFlat].join('')];
+  const gap = sofarFlat === '' ? '' : '\n\n';
   const build = (dropped: number, titleText: string | null, postKept: number, tailKept: number): string => {
     const lines = [HEADER, titleText === null ? 'Thread:' : `Thread: ${titleText}`, ''];
     const post = (name: string, text: string): void => void lines.push(RULE, `${POSTED_BY}${clip(name, NAME_MOST)}:`, safeStart(text));
@@ -75,10 +97,10 @@ export function youWereSayingFrame(input: WriteFrameInput): { readonly prompt: s
     const kept = postKept === postChars.length ? postChars : postChars.slice(-postKept);
     // A clipped post loses its start the way an over-long one does: the first character is not a space.
     const text = (postKept === postChars.length ? kept.join('') : kept.join('').trimStart()) + (tailKept === tailChars.length ? tailChars : tailChars.slice(-tailKept)).join('');
-    post(input.post.name, text);
+    post(input.post.name, text + gap);
     return lines.join('\n');
   };
-  const done = (prompt: string) => ({ prompt, stop: STOPS });
+  const done = (prompt: string) => ({ prompt, stop: STOPS, stopPattern: HEADER_IN_LINE });
   const fits = (prompt: string): boolean => input.count(prompt) <= input.budget;
   const postAll = postChars.length;
   const tailAll = tailChars.length;

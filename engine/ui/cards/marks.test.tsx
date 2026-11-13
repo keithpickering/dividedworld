@@ -459,7 +459,7 @@ describe('a visit\'s mark', () => {
 
 /* A play whose first generation failed was refunded and is over (0149): the mark counts the plays that took, and says plainly when none did. */
 describe('a play that did not take', () => {
-  const writing = { ...testInstance.cards[0]!, key: 'kw', name: 'Card W', stack: 3, writes: { tokens: () => 40, frame: () => ({ prompt: '', stop: [] as string[] }) } };
+  const writing = { ...testInstance.cards[0]!, key: 'kw', name: 'Card W', stack: 3, writes: { sampling: { temperature: 0.9, topP: 0.95 }, tokens: () => 40, frame: () => ({ prompt: '', stop: [] as string[] }) } };
   const own = { ...testInstance, cards: [writing] };
   function writingWorld() {
     const fake = buildWorld(undefined, own);

@@ -160,3 +160,17 @@ test('a string over its bound is cut at the last space within it, where that kee
   const punct = repair('-- - ----', { type: 'string', maxLength: 4 });
   assert.ok(punct.ok && String(punct.value).length > 0, `a cut that leaves only punctuation is never empty: ${JSON.stringify(punct)}`);
 });
+
+test('cutCompletion cuts at a pattern\'s first match as well as at the stops, whichever comes first', () => {
+  const pattern = /-{2,}\s*Posted by /;
+  const a = cutCompletion('a b -- Posted by X: c', [], 200, 'many', pattern);
+  assert.ok(a.ok && a.text === 'a b');
+  const b = cutCompletion('posted by my friend', [], 200, 'many', pattern);
+  assert.ok(b.ok && b.text === 'posted by my friend');
+  const stopFirst = cutCompletion('one END two -- Posted by X', ['END'], 200, 'many', pattern);
+  assert.ok(stopFirst.ok && stopFirst.text === 'one');
+  const patternFirst = cutCompletion('one -- Posted by X two END', ['END'], 200, 'many', pattern);
+  assert.ok(patternFirst.ok && patternFirst.text === 'one');
+  const none = cutCompletion('a b -- Posted by X: c', [], 200, 'many');
+  assert.ok(none.ok && none.text === 'a b -- Posted by X: c');
+});

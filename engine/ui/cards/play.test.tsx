@@ -651,7 +651,7 @@ describe('from the Task 3 quality review', () => {
 
   describe('a play that did not take (0149)', () => {
     /* A card that writes: its play whose first generation failed was refunded and is over, so it is no layer on the post. */
-    const writing = { ...whoopsRules, writes: { tokens: () => 40, frame: () => ({ prompt: '', stop: [] as string[] }) } };
+    const writing = { ...whoopsRules, writes: { sampling: { temperature: 0.9, topP: 0.95 }, tokens: () => 40, frame: () => ({ prompt: '', stop: [] as string[] }) } };
     const server: Instance = { ...instance, cards: [writing, stickRules] };
     const three = (w: ReturnType<typeof world>) => [1, 2, 3].map((layer) => w.fake.seed.card(w.gloomba, w.ids[1]!, 'whoops', { message: `layer ${layer}`, layer, config: { color: '#ff2bd6' } }));
 

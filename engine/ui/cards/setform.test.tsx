@@ -25,7 +25,7 @@ const pass: CardRules = { ...base, key: 'pass', name: 'Pass', alignment: 'sweet'
 const dud: CardRules = { ...base, key: 'dud', name: 'Dud', alignment: 'pepperoni', rarity: 'common', play: 'set', trap: { trigger: { on: 'visit' } }, canApply: () => ok(undefined) };
 const shield: CardRules = { ...base, key: 'shield', name: 'Shield', alignment: 'sweet', rarity: 'common', play: 'use', canApply: () => ok(undefined) };
 /** Moves that can only be cast now and face up (faceUpOnly): one that writes, one that needs a message, one that draws, one with a drive. */
-const scribe: CardRules = { ...blot, key: 'scribe', name: 'Scribe', writes: { tokens: () => 40, frame: () => ({ prompt: '', stop: [] }) } };
+const scribe: CardRules = { ...blot, key: 'scribe', name: 'Scribe', writes: { sampling: { temperature: 0.9, topP: 0.95 }, tokens: () => 40, frame: () => ({ prompt: '', stop: [] }) } };
 const plea: CardRules = { ...blot, key: 'plea', name: 'Plea', needsMessage: 'say why' };
 const dealer: CardRules = { ...blot, key: 'dealer', name: 'Dealer', draws: ['a', 'b'] };
 const appeal: CardRules = { ...blot, key: 'appeal', name: 'Appeal', drive: { lasts: { unit: 'day', count: 7 }, gifts: ['x.price'], overhead: 'x.price' } };
@@ -111,7 +111,7 @@ async function armAndOpen(user: ReturnType<typeof userEvent.setup>, card: string
 }
 
 describe('a card that writes, where the instance runs no old voice', () => {
-  const typewriter: CardRules = { ...blot, key: 'typewriter', name: 'Typewriter', writes: { tokens: () => 40, frame: () => ({ prompt: '', stop: [] }) } };
+  const typewriter: CardRules = { ...blot, key: 'typewriter', name: 'Typewriter', writes: { sampling: { temperature: 0.9, topP: 0.95 }, tokens: () => 40, frame: () => ({ prompt: '', stop: [] }) } };
   const castable = async (oldVoice: boolean) => {
     const user = userEvent.setup();
     const played: Instance = { ...instance, cards: [...instance.cards, typewriter], settings: { ...instance.settings, oldVoice } };

@@ -879,7 +879,7 @@ test('a persona\'s Card Collector is offered with its options and stores the car
 });
 
 test('a card that writes is not offered to the pool where the instance runs no old voice, and is where it does', async () => {
-  const typewriter = { key: 'typewriter', name: 'Test Typewriter', alignment: 'salty' as const, rarity: 'common' as const, playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }), staffConfigs: [{}], writes: { tokens: () => 40, frame: () => ({ prompt: '', stop: [] as string[] }) } };
+  const typewriter = { key: 'typewriter', name: 'Test Typewriter', alignment: 'salty' as const, rarity: 'common' as const, playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }), staffConfigs: [{}], writes: { sampling: { temperature: 0.9, topP: 0.95 }, tokens: () => 40, frame: () => ({ prompt: '', stop: [] as string[] }) } };
   const withVoice = (oldVoice: boolean): Instance => ({ ...dividedWorld, cards: [...dividedWorld.cards, typewriter], settings: { ...dividedWorld.settings, oldVoice } });
   const offered = async (oldVoice: boolean) => {
     const d = fakeDb({ pool: { threadsWeekly: 0 } });

@@ -1681,7 +1681,7 @@ describe('the Vending Machine and a card play, refused as the server refuses the
   });
 
   test('a card that writes is not sold where the instance runs no old voice, and is where it does', async () => {
-    const typewriter = { ...splat, key: 'typewriter', name: 'Typewriter', writes: { tokens: () => 40, frame: () => ({ prompt: '', stop: [] as string[] }) } };
+    const typewriter = { ...splat, key: 'typewriter', name: 'Typewriter', writes: { sampling: { temperature: 0.9, topP: 0.95 }, tokens: () => 40, frame: () => ({ prompt: '', stop: [] as string[] }) } };
     const sells = (oldVoice: boolean) => {
       const own: Instance = { ...shop, cards: [splat, typewriter], settings: { ...shop.settings, oldVoice }, machine: [...shop.machine, { item: { card: 'typewriter' }, availability: 'onSale' as const, price: 100 }] };
       const fake = createFake({ instance: own });
@@ -1697,7 +1697,7 @@ describe('the Vending Machine and a card play, refused as the server refuses the
   });
 
   test('a card the instance withholds is in no open pack, as roll_pack leaves it out: a Pull of it ends when another pack goes off sale, where it would stay with the old voice', async () => {
-    const typewriter = { ...splat, key: 'typewriter', name: 'Typewriter', writes: { tokens: () => 40, frame: () => ({ prompt: '', stop: [] as string[] }) } };
+    const typewriter = { ...splat, key: 'typewriter', name: 'Typewriter', writes: { sampling: { temperature: 0.9, topP: 0.95 }, tokens: () => 40, frame: () => ({ prompt: '', stop: [] as string[] }) } };
     const pull = { kind: 'pullSlot' as const, act: 'no-such-act', ends: '2026-11-09T12:00:00Z', demand: null, progress: null, was: 100, percent: null, hours: null };
     const ended = async (oldVoice: boolean) => {
       const own: Instance = {
@@ -3541,7 +3541,7 @@ describe('a card that writes: its tails, as post_tails and the worker leave them
   const typewriter = {
     key: 'typewriter', name: 'Typewriter', alignment: 'salty' as const, rarity: 'common' as const, stack: 3, playPrice: () => 0,
     canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c ?? {} }),
-    writes: { tokens: () => 40, frame: () => ({ prompt: '', stop: [] as string[] }) },
+    writes: { sampling: { temperature: 0.9, topP: 0.95 }, tokens: () => 40, frame: () => ({ prompt: '', stop: [] as string[] }) },
   };
   const plain = { ...typewriter, key: 'plain', name: 'Plain', writes: undefined };
   const own: Instance = { ...instance, cards: [typewriter, plain] };

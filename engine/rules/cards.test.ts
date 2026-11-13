@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { RARITIES, quadrantFree, faceUpOnly, instant, DISCIPLINE_KINDS, openDrive, giftSplit, wardTurnsAway, SET_PHRASE_MOST, atOrBelow, drawnInMoment, refusalTime, spanMs, decidePlay, decideSet, decideDraw, decideWash, decideUse, effectsOnTarget, landsOn, noQuoteWords, quoteStop, ok, staffConfigOf, staffDrawOf, staffOffers, fallsOn, castOnPost, postTarget, refuse, writeTokensMost, WRITE_TOKENS_MOST, type CardEffect, type CardRules, type CardTarget } from './cards.ts';
+import { RARITIES, quadrantFree, faceUpOnly, instant, DISCIPLINE_KINDS, openDrive, giftSplit, wardTurnsAway, SET_PHRASE_MOST, atOrBelow, drawnInMoment, refusalTime, spanMs, decidePlay, decideSet, decideDraw, decideWash, decideUse, effectsOnTarget, landsOn, noQuoteWords, quoteStop, ok, staffConfigOf, staffDrawOf, staffOffers, fallsOn, castOnPost, postTarget, refuse, writeTokensMost, WRITE_TOKENS_MOST, type Writes, type CardEffect, type CardRules, type CardTarget } from './cards.ts';
 import type { Settings } from './types.ts';
 
 // The engine's own test cards: no instance's names (the engine/instance boundary).
@@ -17,7 +17,7 @@ const glue: CardRules = { ...base, key: 'glue', name: 'Test Glue', rarity: 'comm
 const ground: CardRules = { ...cast('ground', 'common'), reaches: ['thread'], lasts: { unit: 'day', count: 1 } };
 const watcher: CardRules = { ...base, key: 'watcher', name: 'Test Watcher', rarity: 'common', play: 'set', trap: { trigger: { on: 'visit' } }, canApply: () => ok(undefined) };
 
-const writer: CardRules = { ...cast('writer', 'rare'), writes: { tokens: () => 40, frame: ({ post }) => ({ prompt: post.text, stop: ['\n\n'] }) } };
+const writer: CardRules = { ...cast('writer', 'rare'), writes: { sampling: { temperature: 0.9, topP: 0.95 }, tokens: () => 40, frame: ({ post }) => ({ prompt: post.text, stop: ['\n\n'] }) } };
 const cutter: CardRules = { ...cast('cutter', 'rare'), replies: true };
 const settings = {} as Settings;
 const post = { reach: 'post', act: 'p', kind: 'post', length: 10, text: '', links: [] } as const satisfies CardTarget;
@@ -756,6 +756,12 @@ test('fallsOn: a live play falls on any post, a kept one on the posts written wh
   assert.equal(fallsOn({ at: 'nope', ends: play.ends }, at('2026-11-04T00:00:00.000Z'), true, after), false);
   assert.equal(fallsOn({ at: play.at, ends: 'never' }, at('2026-11-04T00:00:00.000Z'), true, after), false, 'an end that is no time is neither up nor kept');
   assert.equal(fallsOn({ at: play.at, ends: 'never' }, at('2026-11-04T00:00:00.000Z'), false, after), false);
+});
+
+test('a card that writes must name its sampling: a Writes without it does not compile (you-were-saying voice design, section 1)', () => {
+  // @ts-expect-error `sampling` is required on Writes
+  const unsampled: Writes = { tokens: () => 40, frame: () => ({ prompt: '', stop: [] }) };
+  assert.equal(unsampled.tokens({}, settings), 40);
 });
 
 // The discipline effects (card notes, Part 5): the engine's own test cards, in test-world words. A heart does its work at once, so it leaves no effect and takes no place.

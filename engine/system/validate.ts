@@ -16,7 +16,7 @@
  * it, else at the bound; a trailing comma, semicolon, colon or dash dropped), so a mood or an interest is not left mid-word (the
  * rehearsal patch design, section 7). `cutCompletion` caps at the bound as it always did.
  *
- * `cutCompletion` is the same for a raw completion: cut at the first stop sequence or newline
+ * `cutCompletion` is the same for a raw completion: cut at the first stop sequence, the optional pattern's first match, or newline
  * (a slot that asks for many lines keeps its newlines), cap the length, and reject only empty output.
  *
  * Pure: the input is never changed; a repaired copy is returned.
@@ -147,7 +147,7 @@ export type Cut =
  * newlines collapse to two; the end is trimmed; and of the leading whitespace one space is kept when the answer
  * began with a space (the continuation of "i think" needs it), never a newline.
  */
-export function cutCompletion(text: string, stop: readonly string[], most: number, lines: 'one' | 'many' = 'one'): Cut {
+export function cutCompletion(text: string, stop: readonly string[], most: number, lines: 'one' | 'many' = 'one', pattern?: RegExp): Cut {
   const many = lines === 'many';
   // A raw completion often begins with a newline; leading whitespace is dropped before looking for the cut.
   const body = many ? text : text.trimStart();
@@ -155,6 +155,11 @@ export function cutCompletion(text: string, stop: readonly string[], most: numbe
   for (const s of many ? stop : [...stop, '\n']) {
     if (s === '') continue;
     const at = body.indexOf(s);
+    if (at !== -1 && at < end) end = at;
+  }
+  // The pattern's first match is one more stop, searched in the same body; a global or sticky flag is dropped so the search always starts at 0.
+  if (pattern) {
+    const at = body.search(new RegExp(pattern.source, pattern.flags.replace(/[gy]/g, '')));
     if (at !== -1 && at < end) end = at;
   }
   let cut = many ? body.slice(0, end).replace(/(?:[ \t\r]*\n){3,}/g, '\n\n').trim() : body.slice(0, end).trim();
