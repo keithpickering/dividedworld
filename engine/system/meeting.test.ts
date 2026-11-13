@@ -1658,6 +1658,31 @@ test('a move that lands before the season ends is kept in the farewell window', 
 test('the farewell prompt says a move that would land after the season ends never lands, with the end date and the hold', () => {
   const told = meetingSystemPrompt({ ...bossFacts, farewell: { postMaxLength: 777, seasonEndsAt: ENDS } });
   assert.match(told, /never lands/);
-  assert.ok(told.includes('2026-11-02'), told);
+  assert.ok(told.includes('2026-11-02 08:00 UTC'), told);
   assert.ok(told.includes(`lands ${settings.structuralHoldHours} hours after you make it`), told);
+});
+
+// The boundary is exact: a move that lands the very moment the season ends is withdrawn at the handover too, and one a millisecond earlier is not.
+test('a structural move, a composed bundle and a successor that land exactly when the season ends are dropped', () => {
+  const r = seasonRepair({ seasonEndsAt: NOW + settings.structuralHoldHours * H });
+  assert.deepEqual(r.moves.map((m) => m.kind), ['moveThread'], JSON.stringify(r.moves));
+  assert.equal(r.bundles.length, 0);
+  assert.equal(r.successor, null);
+  const gone = r.trims.filter((t) => t.predicate === 'landsBeforeSeasonEnd').map((t) => t.path).sort();
+  assert.deepEqual(gone, ['bundle', 'moves[0]', 'successor'], JSON.stringify(r.trims));
+});
+
+test('the same three, landing one millisecond before the season ends, are kept', () => {
+  const r = seasonRepair({ seasonEndsAt: NOW + settings.structuralHoldHours * H + 1 });
+  assert.deepEqual(r.moves.map((m) => m.kind), ['mergeBoard', 'moveThread']);
+  assert.equal(r.bundles.length, 1);
+  assert.deepEqual(r.successor, { boss: 'some-boss', why: 'Next.' });
+  assert.ok(!r.trims.some((t) => t.predicate === 'landsBeforeSeasonEnd'), JSON.stringify(r.trims));
+});
+
+test('a move that waits an hour is dropped when the season ends at that very moment and kept a millisecond before', () => {
+  const at = seasonRepair({ seasonEndsAt: NOW + H });
+  assert.ok(!at.moves.some((m) => m.kind === 'moveThread'), JSON.stringify(at.moves));
+  const before = seasonRepair({ seasonEndsAt: NOW + H + 1 });
+  assert.ok(before.moves.some((m) => m.kind === 'moveThread'), JSON.stringify(before.moves));
 });
