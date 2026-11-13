@@ -36,6 +36,97 @@ for (const feel of ['smooth', 'snappy'] as const) {
   });
 }
 
+/*
+ * E2 at frame grain: the rise is sampled after every paint from the click on Buy (a timeout queued in a frame runs once that frame is drawn), so a pose that lasts
+ * one frame is seen. The pack is drawn when the layer and its body are both above zero opacity; the dim fades in on the same frames as the rise, so the first frame
+ * drawn is already a step into it, and how far depends on the machine's frame rate. Every frame drawn before the tear stands between the slot and the middle, give
+ * or take the landing's overshoot (Snappy's spring passes the middle by about 8px); the parked place the bug started from is about 300px above the slot.
+ * A start pose put on the pack by an instant `animate` lands on Motion's next frame, after the rise has already read where the pack stood (parked, past the
+ * top edge): the pack came down from above the window, and its slot's pose flashed for a frame or never showed.
+ */
+/** How far past the way from the slot to the middle a frame may stand, px: the landing's overshoot, with room. */
+const OVERSHOOT = 24;
+type Drawn = { x: number; y: number; seen: boolean; torn: boolean; cards: number };
+for (const feel of ['smooth', 'snappy'] as const) {
+  test(`${feel}: the pack rises from its slot to the middle, and no card is drawn before its top tears`, async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 1080 });
+    await page.goto('/?fixture=boards&story=boards-booster-packs--machine');
+    await page.evaluate((name) => { document.documentElement.setAttribute('data-kb-motion', 'full'); document.documentElement.setAttribute('data-kb-motion-feel', name); }, feel);
+    const slot = page.getByRole('button', { name: /^Buy Booster, 3\.00 orbs/ });
+    await slot.click();
+    const s = (await slot.boundingBox())!;
+    await page.evaluate(() => {
+      const frames: Drawn[] = [];
+      (window as unknown as { kbFrames: Drawn[] }).kbFrames = frames;
+      const opacity = (el: Element) => Number(getComputedStyle(el).opacity);
+      const sample = () => {
+        const layer = document.querySelector('.kb-opening-layer');
+        const pack = document.querySelector('.kb-opening-pack');
+        const packIn = document.querySelector('.kb-opening-pack-in');
+        const top = document.querySelector('.kb-opening-pack-top');
+        if (layer && pack && packIn && top) {
+          const r = pack.getBoundingClientRect();
+          const moved = getComputedStyle(top).transform;
+          frames.push({
+            x: r.x + r.width / 2, y: r.y + r.height / 2, seen: opacity(layer) > 0 && opacity(packIn) > 0, torn: moved !== 'none' && moved !== 'matrix(1, 0, 0, 1, 0, 0)',
+            cards: Math.max(0, ...Array.from(document.querySelectorAll('.kb-opening-cardbox'), opacity)),
+          });
+        }
+        if (frames.length < 120) requestAnimationFrame(() => setTimeout(sample, 0));
+      };
+      requestAnimationFrame(() => setTimeout(sample, 0));
+    });
+    await page.getByRole('button', { name: 'Buy Booster · 3.00' }).click();
+    await expect.poll(() => page.evaluate(() => (window as unknown as { kbFrames: Drawn[] }).kbFrames.length), { timeout: 10_000 }).toBeGreaterThanOrEqual(120);
+    const frames = await page.evaluate(() => (window as unknown as { kbFrames: Drawn[] }).kbFrames);
+    const tear = frames.findIndex((f) => f.torn);
+    expect(tear, 'a frame with the top torn').toBeGreaterThan(0);
+    const rising = frames.slice(0, tear).filter((f) => f.seen);
+    expect(rising.length, 'frames drawn before the tear').toBeGreaterThan(1);
+    const from = { x: s.x + s.width / 2, y: s.y + s.height / 2 };
+    const to = rising[rising.length - 1]!;
+    const between = (v: number, a: number, b: number) => v >= Math.min(a, b) - OVERSHOOT && v <= Math.max(a, b) + OVERSHOOT;
+    expect(rising.filter((f) => !between(f.x, from.x, to.x) || !between(f.y, from.y, to.y)), 'frames drawn outside the way from the slot to the middle').toEqual([]);
+    expect(frames.slice(0, tear).filter((f) => f.cards > 0), 'frames before the tear with a card drawn').toEqual([]);
+  });
+}
+
+/*
+ * E3 at frame grain, on the 1440 and on a phone: on the first frame the five are drawn (the top tearing), each back stands inside the pack's body, so the pack
+ * hides them until they rise out of it. A card in the row is drawn at the fan's size inside a box that was the sheet's (the flip was 276 by 414 whatever the
+ * card's size), and the entrance centers the box in the pack: the back stood up and to the left of the pack's middle and showed past its top left corner.
+ */
+for (const [layout, viewport] of [['1440', { width: 1440, height: 1080 }], ['phone', { width: 360, height: 700 }]] as const) {
+  test(`${layout}: when the top tears, every card's back stands inside the pack`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await page.goto('/?fixture=boards&story=boards-booster-packs--machine');
+    await page.evaluate(() => { document.documentElement.setAttribute('data-kb-motion', 'full'); document.documentElement.setAttribute('data-kb-motion-feel', 'smooth'); });
+    await page.getByRole('button', { name: /^Buy Booster, 3\.00 orbs/ }).click();
+    const buy = page.getByRole('button', { name: 'Buy Booster · 3.00' });
+    await buy.scrollIntoViewIfNeeded();
+    await page.evaluate(() => {
+      type Box = { left: number; top: number; right: number; bottom: number };
+      const at = (r: DOMRect): Box => ({ left: r.left, top: r.top, right: r.right, bottom: r.bottom });
+      const w = window as unknown as { kbTear?: { pack: Box; backs: Box[] } };
+      const sample = () => {
+        const pack = document.querySelector('.kb-opening-pack');
+        const boxes = Array.from(document.querySelectorAll<HTMLElement>('.kb-opening-row .kb-opening-cardbox'));
+        if (pack && boxes.length > 0 && boxes.some((b) => Number(getComputedStyle(b).opacity) > 0)) {
+          w.kbTear = { pack: at(pack.getBoundingClientRect()), backs: boxes.map((b) => at(b.querySelector('.kb-opening-side')!.firstElementChild!.getBoundingClientRect())) };
+          return;
+        }
+        requestAnimationFrame(() => setTimeout(sample, 0));
+      };
+      requestAnimationFrame(() => setTimeout(sample, 0));
+    });
+    await buy.click();
+    await expect.poll(() => page.evaluate(() => Boolean((window as unknown as { kbTear?: unknown }).kbTear)), { timeout: 10_000 }).toBe(true);
+    const { pack, backs } = await page.evaluate(() => (window as unknown as { kbTear: { pack: { left: number; top: number; right: number; bottom: number }; backs: { left: number; top: number; right: number; bottom: number }[] } }).kbTear);
+    const outside = backs.filter((b) => b.left < pack.left - 1 || b.top < pack.top - 1 || b.right > pack.right + 1 || b.bottom > pack.bottom + 1);
+    expect(outside, `backs past the pack (${JSON.stringify(pack)}) on the frame the five are first drawn`).toEqual([]);
+  });
+}
+
 test('a Space in the middle of the entrance finishes it and turns the first card; Done in the middle of the turn leaves at once', async ({ page }) => {
   const slot = await buyTheBooster(page, 'smooth');
   await page.keyboard.press('Space');

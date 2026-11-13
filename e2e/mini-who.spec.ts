@@ -16,7 +16,7 @@ async function offCenter(page: import('@playwright/test').Page): Promise<number>
     const unit = document.querySelector('.kb-board-last .kb-who')!;
     const mini = unit.querySelector('.kb-mini')!.getBoundingClientRect();
     const link = unit.querySelector('a')!;
-    const text = link.firstChild!;
+    const text = (link.querySelector('.kb-who-name') ?? link).firstChild!;
     const range = document.createRange();
     range.selectNodeContents(text);
     const content = range.getBoundingClientRect();
@@ -45,6 +45,6 @@ test('poison: an avatar that is not lifted is named off-center', async ({ page }
   await page.goto('/?fixture=boards&story=boards-01-index--index');
   await expect(page.locator('.kb-board-last .kb-who a')).toBeVisible();
   await loadFaces(page);
-  await page.addStyleTag({ content: '.kb-who > .kb-mini { top: 0 !important }' });
+  await page.addStyleTag({ content: '.kb-who > .kb-mini, .kb-who-link > .kb-mini { top: 0 !important }' });
   expect(Math.abs(await offCenter(page))).toBeGreaterThan(1);
 });

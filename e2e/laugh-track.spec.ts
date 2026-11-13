@@ -167,23 +167,49 @@ async function barIsOnTop(page: Page) {
 
 const say = (page: Page) => page.evaluate(() => (globalThis as unknown as { __kbCaptions: { say(w: { text: string; ms: number }): void } }).__kbCaptions.say({ text: 'Crowd laughs', ms: 60_000 }));
 
-/* Whether a caption should show above a modal's scrim is a design question, in the PR's Design questions. */
-test('a caption said with a dialog open on a board stands clear of the dialog', async ({ page }) => {
-  await page.setViewportSize(MAIN);
-  await page.goto('/b/general');
-  await page.getByRole('link', { name: 'Who keeps reacting with a thumbs up?', exact: true }).click();
-  const react = page.locator('#post-3').getByRole('button', { name: 'React' });
-  await expect(react).toBeVisible();
-  await react.click();
-  const picker = page.getByRole('dialog', { name: /^React to / });
-  await expect(picker).toBeVisible();
-  await say(page);
-  await expect(page.locator('.kb-captions-bar')).toBeVisible();
-  const [bar, dialog] = [await page.locator('.kb-captions-bar').boundingBox(), await picker.boundingBox()];
-  if (!bar || !dialog) throw new Error('no box');
-  const apart = bar.y >= dialog.y + dialog.height || bar.y + bar.height <= dialog.y || bar.x >= dialog.x + dialog.width || bar.x + bar.width <= dialog.x;
-  expect(apart).toBe(true);
-});
+/* A caption shows above a dialog's scrim and never over the dialog's own box (the owner's answer on #518; Captions.tsx). The bar lets every press through, and
+   `elementsFromPoint` skips what does, and what is `inert` (the page under an open dialog), so the test makes the bar take presses and lifts the inert mark: the list at
+   the bar's center then runs from the top of the stack down, and the bar must come before the dialog's scrim in it. */
+for (const [size, name] of [[MAIN, 'the main window'], [PHONE, 'a phone']] as const) {
+  test(`a caption said with a dialog open on a board stands above the scrim and clear of the dialog, on ${name}`, async ({ page }) => {
+    await page.setViewportSize(size);
+    await page.goto('/b/general');
+    await page.getByRole('link', { name: 'Who keeps reacting with a thumbs up?', exact: true }).click();
+    const react = page.locator('#post-3').getByRole('button', { name: 'React' });
+    await expect(react).toBeVisible();
+    await react.click();
+    const picker = page.getByRole('dialog', { name: /^React to / });
+    await expect(picker).toBeVisible();
+    await say(page);
+    await expect(page.locator('.kb-captions-bar')).toBeVisible();
+    await page.addStyleTag({ content: '.kb-captions-bar { pointer-events: auto !important; }' });
+    /* The dialog's entrance is an animation, so its rect is read only once it and the bar have each stood still across two reads a frame apart; the bar's place is from the dialog's laid-out box, so it is where it will stay from the first frame. */
+    const boxes = async () => {
+      const [bar, dialog] = [await page.locator('.kb-captions-bar').boundingBox(), await picker.boundingBox()];
+      if (!bar || !dialog) throw new Error('no box');
+      return { bar, dialog };
+    };
+    let last = JSON.stringify(await boxes());
+    await expect.poll(async () => {
+      await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => r(null))));
+      const now = JSON.stringify(await boxes());
+      const stood = now === last;
+      last = now;
+      return stood;
+    }, { message: 'the dialog and the bar have stopped moving' }).toBe(true);
+    const { bar, dialog } = await boxes();
+    expect(bar.y >= dialog.y + dialog.height || bar.y + bar.height <= dialog.y || bar.x >= dialog.x + dialog.width || bar.x + bar.width <= dialog.x, 'the bar stands clear of the dialog\'s box').toBe(true);
+    expect(bar.y).toBeGreaterThanOrEqual(0);
+    expect(bar.y + bar.height).toBeLessThanOrEqual(size.height);
+    const stack = await page.evaluate(({ x, y }) => {
+      /* The page under an open dialog is `inert`, which hides the bar from a hit test whatever its layer; the test lifts that, as it lifts the bar's pass-through, to read the layers. */
+      document.querySelectorAll('[inert]').forEach((el) => el.removeAttribute('inert'));
+      return document.elementsFromPoint(x, y).map((el) => (el.closest('.kb-captions-bar') ? 'bar' : el.classList.contains('kb-glass-overlay') ? 'scrim' : ''));
+    }, { x: bar.x + bar.width / 2, y: bar.y + bar.height / 2 });
+    expect(stack.indexOf('bar')).toBeGreaterThanOrEqual(0);
+    expect(stack.indexOf('scrim')).toBeGreaterThan(stack.indexOf('bar'));
+  });
+}
 
 test('a caption said on the sound settings page is visible and not covered', async ({ page }) => {
   await page.setViewportSize(MAIN);
@@ -209,7 +235,7 @@ const READER_PLACES = READER_PARAGRAPHS.join('\n\n').match(/fan game|forums|Mari
 const PLACES: readonly string[] = READER_PARAGRAPHS.join('\n\n').match(/fan game|forums|Mario/gu) ?? [];
 const NAME_UNHEARD = (words: string) => `${words}. Play the audience's reaction`;
 
-async function openReader(page: Page, size: { width: number; height: number }) {
+async function openReader(page: Page, size: { width: number; height: number }, paragraphs: readonly string[] = READER_PARAGRAPHS, cues: readonly { phrase: string; sound: string }[] = READER_CUES) {
   await page.setViewportSize(size);
   await page.addInitScript(() => { try { sessionStorage.setItem('kb-demo-preferences', JSON.stringify({ gameSound: 'off' })); } catch { /* not kept */ } });
   await page.goto('/b/general');
@@ -222,14 +248,14 @@ async function openReader(page: Page, size: { width: number; height: number }) {
     const last = w.__kbFake.seed.post(made.thread, characters.hooligan, paragraphs.join('\n\n'));
     w.__kbFake.seed.card(characters.spritey, last, 'laugh-track', { layer: 1, live: true, config: { cues, seed: 7 }, message: 'Laugh Track' });
     return made.thread;
-  }, { paragraphs: READER_PARAGRAPHS, cues: READER_CUES });
+  }, { paragraphs, cues });
   await page.evaluate((t) => { history.pushState(null, '', `/t/${t}`); window.dispatchEvent(new PopStateEvent('popstate')); }, thread);
   await expect(page.locator('.dw-lt-cue').first()).toBeAttached();
   await page.evaluate(() => document.fonts.ready);
 }
 
-/** The Lens's line, as the post's mark names it (the Lens itself is closed): "Laugh Track, 1 play, N of M cues heard. Opens the cards on this post." */
-const lens = (page: Page, heard: number) => page.getByRole('button', { name: new RegExp(`, ${heard} of ${READER_PLACES} cues heard`, 'u') });
+/** The Lens's line, as the post's mark names it (the Lens itself is closed): "Laugh Track, 1 play, N of M places heard. Opens the cards on this post." */
+const lens = (page: Page, heard: number) => page.getByRole('button', { name: new RegExp(`, ${heard} of ${READER_PLACES} places heard`, 'u') });
 const heardPlaces = (page: Page) => page.evaluate(() => Array.from(new Set(Array.from(document.querySelectorAll('.dw-lt-fired')).map((e) => e.getAttribute('data-lt-place')))));
 /** A cue's first piece's center in the window, by its index among the page's cued places (the order of the text). The piece is brought a quarter of the way down the
     window: the toasts stand over the window's foot and would take a press made there. */
@@ -342,10 +368,19 @@ test.describe('a reader', () => {
       expect(await page.evaluate(() => window.scrollY), 'the touch scroll moved the page').toBeGreaterThan(500);
       await page.waitForTimeout(1000);
       expect(await heardPlaces(page), 'a scroll by touch').toEqual([]);
-      /* The card's first-time callout hangs off the post's mark and, at a phone's width, lies over the words: "Got it" puts it away, as a reader would. */
-      const gotIt = page.getByRole('button', { name: 'Got it' });
-      /* The callout may arrive late: give it a moment to show, and put it away if it does. */
-      if (await gotIt.waitFor({ state: 'visible', timeout: 2000 }).then(() => true, () => false)) await gotIt.click();
+      /* The card's first-time callout takes its own room between the post's date row and its words at a phone's width: it is left up, and it covers no cue and none of the post's body. */
+      const panel = page.locator('.kb-callout .kb-callout-panel');
+      await expect(panel).toBeVisible({ timeout: 4000 });
+      await panel.scrollIntoViewIfNeeded();
+      const meets = await page.evaluate(() => {
+        const r = document.querySelector('.kb-callout .kb-callout-panel')!.getBoundingClientRect();
+        const hit = (b: DOMRect) => r.left < b.right && b.left < r.right && r.top < b.bottom && b.top < r.bottom;
+        const cues = Array.from(document.querySelectorAll('.dw-lt-cue')).flatMap((e) => Array.from(e.getClientRects())).filter(hit).length;
+        const body = document.querySelector('.kb-callout')!.closest('.kb-act')!.querySelector('.kb-act-main')!.getBoundingClientRect();
+        return { cues, body: hit(body) };
+      });
+      expect(meets.cues, 'the callout meets no cue').toBe(0);
+      expect(meets.body, 'the callout meets none of the post\'s body').toBe(false);
       const at = await placeCenter(page, 0);
       await expect.poll(() => page.evaluate((a) => document.elementFromPoint(a.x, a.y)?.closest('.dw-lt-cue') !== null, at), { timeout: 4000, message: 'the cue is what stands at the tap' }).toBe(true);
       await page.touchscreen.tap(at.x, at.y);
@@ -372,5 +407,29 @@ test.describe('a reader', () => {
     expect(await page.evaluate(() => document.activeElement?.classList.contains('dw-lt-fired'))).toBe(true);
     await page.keyboard.press('Tab');
     expect(await page.evaluate(() => document.activeElement?.classList.contains('dw-lt-cue'))).toBe(false);
+  });
+
+  test('a cue phrase in a bare address and in plain words: the link holds no cue, and the keyboard reaches every place there is (#602)', async ({ page }) => {
+    const address = 'https://example.com/Mario';
+    await openReader(page, MAIN, [`Visit ${address} and Mario is a plumber. A fan game is great.`], [{ phrase: address, sound: 'boo' }, { phrase: 'Mario', sound: 'cheer' }, { phrase: 'fan game', sound: 'laugh' }]);
+    const link = page.locator('a', { hasText: address });
+    await expect(link).toHaveCount(1);
+    await expect(link.locator('.dw-lt-cue')).toHaveCount(0);
+    await expect(page.locator('.dw-lt-cue[role="button"]')).toHaveCount(2);
+    await page.evaluate(() => {
+      const cue = document.querySelector('.dw-lt-cue')!;
+      const before = Array.from(document.querySelectorAll<HTMLElement>('a[href], button, input, select, textarea, [tabindex]'))
+        .filter((e) => e.tabIndex >= 0 && !e.classList.contains('dw-lt-cue') && (cue.compareDocumentPosition(e) & Node.DOCUMENT_POSITION_PRECEDING) !== 0 && !e.contains(cue));
+      before.at(-1)!.focus();
+    });
+    const label = () => page.evaluate(() => document.activeElement?.getAttribute('aria-label') ?? '');
+    await page.keyboard.press('Tab');
+    expect(await label()).toBe(NAME_UNHEARD('Mario'));
+    await page.keyboard.press('Enter');
+    await page.keyboard.press('ArrowRight');
+    expect(await label()).toBe(NAME_UNHEARD('fan game'));
+    await page.keyboard.press('Enter');
+    expect(await heardPlaces(page)).toHaveLength(2);
+    await expect(page.getByRole('button', { name: /, 2 of 2 places heard/u })).toBeVisible();
   });
 });

@@ -1198,13 +1198,19 @@ button.kb-hud-secret:focus-visible {
 }
 
 /*
- * The card under the pointer or the focus, and the armed card, stand upright, 110px higher and a quarter larger, above
+ * The card under the pointer, the card a keyboard has focused, and the armed card, stand upright, 110px higher and a quarter larger, above
  * every card (the z indexes run from 1 up, so 100 more is above them all), so a card under its neighbors can be read.
  * With motion it eases over the feel's enter time (the HUD sets --kb-hand-lift-ms and --kb-hand-lift-ease on the
  * drawer); under Off the lift is instant, as the sheet's entrance is (base.css .kb-sheet).
+ *
+ * The hand opens calmly (the phone-hand design, section 1). Focus lifts a card only where the browser shows a focus ring, :focus-visible on the card's
+ * button: opening the hand gives the first card focus by script, and after a mouse press that focus must not lift it (:focus-within would). A card that
+ * lands under a still pointer must not lift either, so hover lifts nothing from the opening until the pointer moves (the drawer carries
+ * data-kb-hover-waits, Hud.tsx), and neither hover nor focus lifts while the cards deal or gather (data-kb-dealing), or the lift would play as a second
+ * movement when the deal's own transition is given back. The armed card stands lifted when the hand opens and is never held back.
  */
-:where(:root:not([data-kb-layout='phone'])) .kb-hand-card:hover,
-:where(:root:not([data-kb-layout='phone'])) .kb-hand-card:focus-within,
+:where(:root:not([data-kb-layout='phone'])) .kb-hand-drawer:not([data-kb-dealing]) .kb-hand-card:has(> button:focus-visible),
+:where(:root:not([data-kb-layout='phone'])) .kb-hand-drawer:not([data-kb-dealing], [data-kb-hover-waits]) .kb-hand-card:hover,
 :where(:root:not([data-kb-layout='phone'])) .kb-hand-card[data-armed] {
   z-index: calc(var(--kb-fan-z) + 100);
   transform: translateY(-110px) rotate(0deg) scale(1.25);
@@ -1217,9 +1223,9 @@ button.kb-hud-secret:focus-visible {
  * less the growth of the card's foot, with room to spare). A hover on the pad is a hover on the card.
  *
  * The pad stays on the li, so it is the card's and not a layer of its own, and it sits above the neighbors. A press on it, the
- * space the lifted card left, does nothing; moving off it drops the lift.
+ * space the lifted card left, does nothing; moving off it drops the lift. It stands only where the hover lifts: not while the deal or the wait for the pointer holds the lift back.
  */
-:where(:root:not([data-kb-layout='phone'])) .kb-hand-card:hover::after {
+:where(:root:not([data-kb-layout='phone'])) .kb-hand-drawer:not([data-kb-dealing], [data-kb-hover-waits]) .kb-hand-card:hover::after {
   content: '';
   position: absolute;
   left: 0;
@@ -1239,27 +1245,28 @@ button.kb-hud-secret:focus-visible {
 }
 
 /*
- * The hand is a modal on the Main board (Hud.tsx): while it is open (the HUD root carries data-kb-hand-open) the plate, the
+ * The hand is a modal on both boards (Hud.tsx): while it is open (the HUD root carries data-kb-hand-open) the plate, the
  * aura, Alerts and Menu, which are inert, fade to 40%; the hand button stays at full strength. The fade eases over the feel's
  * exit (the HUD sets --kb-hand-fade-ms and --kb-hand-fade-ease), and under Off it is at once, as the lift above is.
  */
-:where(:root:not([data-kb-layout='phone'])) .kb-hud[data-kb-hand-open] :is(.kb-hud-plate, .kb-hud-aura, .kb-hud-menu, .kb-hud-alerts) {
+.kb-hud[data-kb-hand-open] :is(.kb-hud-plate, .kb-hud-aura, .kb-hud-menu, .kb-hud-alerts) {
   opacity: 0.4;
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  :where(:root:not([data-kb-layout='phone'], [data-kb-motion='reduce'])) .kb-hud :is(.kb-hud-plate, .kb-hud-aura, .kb-hud-menu, .kb-hud-alerts) {
+  :where(:root:not([data-kb-motion='reduce'])) .kb-hud :is(.kb-hud-plate, .kb-hud-aura, .kb-hud-menu, .kb-hud-alerts) {
     transition: opacity var(--kb-hand-fade-ms, 0ms) var(--kb-hand-fade-ease, ease);
   }
 }
 
-:where(:root[data-kb-motion='full']:not([data-kb-layout='phone'])) .kb-hud :is(.kb-hud-plate, .kb-hud-aura, .kb-hud-menu, .kb-hud-alerts) {
+:where(:root[data-kb-motion='full']) .kb-hud :is(.kb-hud-plate, .kb-hud-aura, .kb-hud-menu, .kb-hud-alerts) {
   transition: opacity var(--kb-hand-fade-ms, 0ms) var(--kb-hand-fade-ease, ease);
 }
 
 /*
- * The backdrop catches a press outside the cards while the hand is open: the whole window, transparent, above the board and
- * under the HUD (30) and the cards (31), so the hand button stays live. Hud.tsx closes the hand on its pointerdown.
+ * The backdrop catches a press outside the cards while the hand is open, on both boards: the whole window, transparent, above the board and
+ * under the HUD (30) and the cards or the phone's sheet (31), so the hand button stays live and the page above the sheet is covered.
+ * Hud.tsx closes the hand on its pointerdown.
  */
 .kb-hand-backdrop {
   position: fixed;
@@ -1361,7 +1368,9 @@ button.kb-hud-secret:focus-visible {
   z-index: 31;
   isolation: isolate;
   box-sizing: content-box;
-  height: 364px;
+  /* As tall as its parts, never taller than the room above the HUD (less 48px); past that, as at large text, it scrolls. */
+  height: auto;
+  max-height: calc(100dvh - var(--kb-hud-measured, 124px) - 48px);
   overflow: auto;
   border-top: 1.5px solid var(--kb-glass-pale);
   box-shadow: 0 -2px 18px color-mix(in srgb, var(--kb-glass-neon) 60%, transparent);
@@ -1418,23 +1427,44 @@ button.kb-hud-secret:focus-visible {
   position: relative;
   /* Above the says line's calm, whose feather lies over the cards. */
   z-index: 1;
+  /* One row, swiped sideways, with the card nearest the middle snapped there (Hand.tsx writes each card's pose). */
   display: flex;
-  /* Every card stays in reach: a hand wider than the phone wraps onto another row, never off the screen's edge (impeccable's audit of the cards, P1-2). */
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 12px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  /* A horizontal swipe is the row's; a vertical drag is the sheet's. */
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
   list-style: none;
   margin: 0;
-  padding: 14px 16px 0;
+  /* Half the row's width less half a card (104 / 2), so the first and the last card can stand in the middle; the top holds the lifted card: 14px and the 18% growth of 156px, rounded up. */
+  padding: 43px calc(50% - 52px) 56px;
+  /* The bottom holds the arc: a card drops up to 40px (SWIPE_DROP_MAX) and turns 18deg (SWIPE_TURN_MAX), and a 104 by 156px card turned that far reaches 78 cos 18 + 52 sin 18 = 90.3px below its center, 12.3px past its own edge; 40 + 12.3 is 52.3, rounded up to 56, so overflow-y can stay hidden and no card is cut. */
+}
+
+:where(:root[data-kb-layout='phone']) .kb-hand-cards::-webkit-scrollbar {
+  display: none;
 }
 
 :where(:root[data-kb-layout='phone']) .kb-hand-card {
   position: relative;
+  flex: none;
+  z-index: var(--kb-fan-z);
+  scroll-snap-align: center;
+  /* The pose Hand.tsx writes on each card, drawn with the individual properties so the deal's `transform` composes with it. */
+  translate: 0 var(--kb-swipe-y, 40px);
+  rotate: var(--kb-swipe-turn, 0deg);
+  scale: var(--kb-swipe-scale, 1);
 }
 
-/* The armed card stands 10px higher in the row. */
-:where(:root[data-kb-layout='phone']) .kb-hand-card[data-armed] {
-  top: -10px;
+/* The cards stand 66px apart (a 104px card, so 38px of overlap), and half a step more where a group changes. */
+:where(:root[data-kb-layout='phone']) .kb-hand-card + .kb-hand-card {
+  margin-left: -38px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-hand-card[data-kb-group-start] {
+  margin-left: -5px;
 }
 
 :where(:root[data-kb-layout='phone']) .kb-hand-armed {
@@ -1446,6 +1476,16 @@ button.kb-hud-secret:focus-visible {
 
 :where(:root[data-kb-layout='phone']) .kb-hand-times {
   font-size: var(--kb-glass-size-phone-small);
+  /* Under the corner's gem (the Postcard's rarity diamond, drawn over a 104px card's top 20px at its right) and the alignment tags (to 17px at its left), which stand over the art in the card's color: the count's plate is as dark as ink and stands clear of both. */
+  top: 26px;
+  /* A card turns as far as 18deg, and a turned line's box reaches past the plate's top and foot by half its width times sin 18 (3px for a two-digit count): the plate stands that far taller than the line, so the line's box lies on it whole. */
+  padding-block: 4px;
+}
+
+/* The next card is above this one's right part (38px of it, the overlap) where this card is left of the middle, and the middle card above its own left part where it is right of it: the count stands on the side that is never covered. */
+:where(:root[data-kb-layout='phone']) .kb-hand-card[data-kb-side='left'] > .kb-hand-times {
+  right: auto;
+  left: 8px;
 }
 
 :where(:root[data-kb-layout='phone']) .kb-hand-empty {
@@ -1458,6 +1498,8 @@ button.kb-hud-secret:focus-visible {
 :where(:root[data-kb-layout='phone']) .kb-hand-says {
   position: relative;
   margin: 12px 16px 0;
+  /* Three lines at the line height, so the sheet does not jump as the row moves. */
+  min-height: 4.5em;
   font-size: var(--kb-glass-size-phone-body);
   font-weight: 600;
   line-height: 1.5;

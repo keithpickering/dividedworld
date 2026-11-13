@@ -218,6 +218,28 @@
   filter: drop-shadow(0 0 8px color-mix(in srgb, var(--kb-glass-sweet) 55%, transparent));
 }
 
+/*
+ * On a phone (the post's own breakpoint, thread.css) a callout on a date row takes its own room, full width, between the row and the
+ * words, and one on a postbit's mark between the postbit and the date row: Callout.tsx measures where that is and how tall, the row
+ * (or the postbit) gives up that height under itself, and the callout is drawn in it. It stays after its mark in the DOM, so nothing
+ * in reading or focus order moves, and it covers nothing a card makes tappable. Wider than the breakpoint none of this applies and
+ * the bubble hangs as above. The breakpoint is also `PHONE_QUERY` in Callout.tsx, which measures only while it holds; change the two
+ * together.
+ */
+@media (max-width: 40em) {
+  header[data-kb-callout-row],
+  .kb-act > .kb-postbit[data-kb-callout-row] {
+    margin-bottom: calc(1px + var(--kb-callout-room, 0px));
+  }
+
+  .kb-marks .kb-callout[data-kb-callout-flow] {
+    top: var(--kb-callout-top);
+    right: auto;
+    left: var(--kb-callout-left);
+    width: var(--kb-callout-width);
+  }
+}
+
 .kb-callout .kb-callout-panel {
   --kb-cut: var(--kb-glass-chamfer-1);
   padding: 0.55rem 1rem 0.65rem;

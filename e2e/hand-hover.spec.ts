@@ -21,7 +21,7 @@ test('a pointer resting 20px above the bottom of a card\'s resting box keeps the
   const found = await page.evaluate(() => {
     const cards = [...document.querySelectorAll<HTMLElement>('li.kb-hand-card')];
     for (const li of cards) {
-      /* Opening focuses the first card, which lifts it by its focus; a card at rest is the one to find. */
+      /* Opening focuses the first card; opened with a mouse it stays in its slot (a script's focus after a press does not lift it), but it holds the keyboard's place, so a card at rest is the one to find. */
       if (li.contains(document.activeElement)) continue;
       const r = li.getBoundingClientRect();
       const x = r.left + r.width / 2, y = r.bottom - 20;

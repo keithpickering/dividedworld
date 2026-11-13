@@ -303,7 +303,8 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
   },
   /*
    * Laugh Track (docs/plans/2026-11-11-laugh-track-design.md): Pepperoni's color. Its effect is the audience, heard and captioned as a
-   * reader points at, taps or presses Enter on each cued phrase (ui/laugh-track/Effect.tsx); the form picks the cues
+   * reader points at, taps or presses Enter on each cued phrase, never one inside a link: a bare address is left out of the places
+   * (#602), so every place drawn is a button (ui/laugh-track/Effect.tsx); the form picks the cues
    * (ui/laugh-track/ConfigForm.tsx).
    */
   {

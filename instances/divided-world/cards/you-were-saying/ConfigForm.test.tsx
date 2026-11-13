@@ -46,7 +46,7 @@ describe("You Were Saying?'s play form", () => {
 
   test("the price shown is playPrice of the step, free at the base and said plainly", () => {
     for (const steps of [0, 3, 7]) {
-      const price = youWereSaying.playPrice(defaults, { reach: 'post', act: 'p', kind: 'post', length: 16, text: 'Once upon a time' }, { steps });
+      const price = youWereSaying.playPrice(defaults, { reach: 'post', act: 'p', kind: 'post', length: 16, text: 'Once upon a time', links: [] }, { steps });
       const { slider } = form({ steps });
       expect(slider.getAttribute('aria-valuetext')).toContain(steps === 0 ? 'free to play' : `${(price / 100).toFixed(2)} orbs more`);
     }

@@ -18,7 +18,7 @@ import type { CardUi, ConfigFormProps } from './types.ts';
 
 const base = { priceKey: 'x.price', playPrice: () => 0, validateConfig: (c: unknown) => ok(c ?? {}) };
 const blot: CardRules = { ...base, key: 'blot', name: 'Blot', alignment: 'salty', rarity: 'common', canApply: (t, e, _config, now) => landsOn({ key: 'blot' }, t, e, now) };
-const spark: CardRules = { ...base, key: 'spark', name: 'Spark', alignment: 'sweet', rarity: 'common', reaches: ['character'], canApply: () => ok(undefined) };
+const spark: CardRules = { ...base, key: 'spark', name: 'Spark', alignment: 'sweet', rarity: 'common', reaches: ['character'], canApply: (t, e, _config, now) => landsOn({ key: 'spark', reaches: ['character'] }, t, e, now) };
 const snare: CardRules = { ...base, key: 'snare', name: 'Snare', alignment: 'salty', rarity: 'uncommon', play: 'set', trap: { trigger: { on: 'cast' } }, catches: (c) => (c as { card?: string }).card ?? '', canApply: () => ok(undefined),
   validateConfig: (c) => (typeof (c as { card?: unknown } | undefined)?.card === 'string' ? ok(c) : refuse('the card is the key of the card to catch')) };
 const pass: CardRules = { ...base, key: 'pass', name: 'Pass', alignment: 'sweet', rarity: 'uncommon', play: 'set', trap: { trigger: { on: 'visit' } }, canApply: () => ok(undefined) };
@@ -202,13 +202,13 @@ describe('a Move on one\'s own post', () => {
     expect(setCard).not.toHaveBeenCalled();
   });
 
-  test('says where it lands by the card\'s first reach, and Set on another mask\'s post is sent as that mask', async () => {
+  test('says where it lands by the card\'s first reach, and Set on another mask\'s post is sent as that mask (a card that reaches a character is only ever set here, so no choice is asked)', async () => {
     const user = userEvent.setup();
     const w = world();
     const setCard = vi.spyOn(w.fake, 'setCard');
     await open(w);
-    const dialog = await armAndOpen(user, 'Spark', 'Play Spark on post 4', 4);
-    await user.click(within(dialog).getByRole('radio', { name: 'Set face down' }));
+    const dialog = await armAndOpen(user, 'Spark', 'Set Spark face down on post 4', 4);
+    expect(within(dialog).queryByRole('group', { name: 'How to play it' })).toBeNull();
     expect(dialog.querySelector('[data-kb-sets]')).toHaveTextContent("Springs when someone quotes this post, and lands on the quoting post's writer.");
     await user.click(within(dialog).getByRole('button', { name: 'Set face down as Mrs. Hooligan' }));
     await waitFor(() => expect(setCard).toHaveBeenCalledWith('spark', w.hooligan, expect.any(String), {}));
@@ -225,6 +225,48 @@ describe('a Move on one\'s own post', () => {
     expect(within(post(2)).getByRole('button', { name: 'Play Blot on post 2' })).toBeInTheDocument();
     await user.click(mark);
     expect(within(await screen.findByRole('dialog')).getByRole('radio', { name: 'Set face down' })).toBeChecked();
+  });
+});
+
+describe('the choice is asked only where both ways can happen', () => {
+  test('a card that reaches a character, on one\'s own post, offers no pair and submits a set', async () => {
+    const user = userEvent.setup();
+    const w = world();
+    const setCard = vi.spyOn(w.fake, 'setCard');
+    const playCard = vi.spyOn(w.fake, 'playCard');
+    await open(w);
+    const dialog = await armAndOpen(user, 'Spark', 'Set Spark face down on post 3', 3);
+    expect(within(dialog).queryByRole('group', { name: 'How to play it' })).toBeNull();
+    expect(within(dialog).queryByRole('radio', { name: /^(Play it now|Set face down)$/u })).toBeNull();
+    await user.click(within(dialog).getByRole('button', { name: 'Set face down as Pipewrench' }));
+    await waitFor(() => expect(setCard).toHaveBeenCalledWith('spark', w.pipe, expect.any(String), {}));
+    expect(playCard).not.toHaveBeenCalled();
+  });
+
+  test('a card that reaches a post still offers the pair on one\'s own post', async () => {
+    const user = userEvent.setup();
+    const w = world();
+    await open(w);
+    const dialog = await armAndOpen(user, 'Blot', 'Play Blot on post 3', 3);
+    expect(within(dialog).getByRole('group', { name: 'How to play it' })).toBeInTheDocument();
+  });
+
+  test('the card\'s own form is told: it can be set while the choice stands at Play it now, and will be once Set face down is chosen', async () => {
+    const user = userEvent.setup();
+    const seen: string[] = [];
+    const Spy = (p: ConfigFormProps) => { seen.push(String(p.faceDown)); return null; };
+    const w = world();
+    renderIn(w.fake, <Frame><LoadedThread thread={w.thread} /></Frame>, { path: `/t/${w.thread}`, instance, cards: cards.map((c) => (c.key === 'blot' ? { ...c, ConfigForm: Spy } : c)), settings: { postMaxLength: 1000 } });
+    await screen.findByRole('article', { name: /^Post 4 /u });
+    await screen.findByRole('button', { name: /^Hand, \d+ postcards?/u });
+    const dialog = await armAndOpen(user, 'Blot', 'Play Blot on post 3', 3);
+    expect(seen.at(-1)).toBe('can');
+    await user.click(within(dialog).getByRole('radio', { name: 'Set face down' }));
+    expect(seen.at(-1)).toBe('will');
+    await user.keyboard('{Escape}');
+    await user.click(await within(post(2)).findByRole('button', { name: 'Play Blot on post 2' }));
+    await screen.findByRole('dialog');
+    expect(seen.at(-1)).toBe('no');
   });
 });
 

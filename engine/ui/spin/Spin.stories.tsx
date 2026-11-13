@@ -42,6 +42,18 @@ function PlaySpunThread() {
   return spun ? <LoadedThread thread={spun.id} /> : <div aria-busy="true" />;
 }
 
+/** The thread spun from the mark of a card on a character, on a post by that character, opened on its ORIGIN box. */
+function PressedSpunThread() {
+  const spun = useThread('Spun at the shine');
+  return spun ? <LoadedThread thread={spun.id} /> : <div aria-busy="true" />;
+}
+
+/** The thread spun from the same card with no post pressed (as every such spin was made before), opened on its ORIGIN box. */
+function LandedSpunThread() {
+  const spun = useThread('Spun from the shine');
+  return spun ? <LoadedThread thread={spun.id} /> : <div aria-busy="true" />;
+}
+
 /** The first post's spin form, open under it. */
 function OpenForm() {
   const first = useThread(TITLE);
@@ -65,6 +77,26 @@ const world: World = (fake, instance) => {
   void fake.spin(play, mine, 'Spun from the play', 'About that card.');
 };
 
+/**
+ * A card that reaches a character (the instance's own: the engine names none) cast from the first post of one thread, and two threads
+ * spun from it: one pressed on a later post by that character, one with no post pressed. With no such card in the instance, nothing is spun.
+ */
+const reachWorld: World = (fake, instance) => {
+  const me = fake.seed.account('story-player');
+  const mine = fake.seed.character(me, 'Pipewrench', instance.classes[0]!.key);
+  const other = fake.seed.character(fake.seed.account('story-other'), 'Spritey', (instance.classes[1] ?? instance.classes[0]!).key);
+  const general = instance.boards.find((b) => !b.system)!.slug;
+  const card = instance.cards.find((c) => c.reaches?.includes('character'));
+  const cast = fake.seed.thread(general, other, 'Where the card was cast', 'The post the card was cast from.');
+  const shiny = fake.seed.thread(general, mine, 'Why are my posts shiny', 'A post of mine.');
+  const pressed = fake.seed.post(shiny.thread, other, 'The post it was pressed on.');
+  fake.signInAs(me);
+  if (!card) return;
+  const play = fake.seed.reach(mine, 'character', other, card.key, { post: cast.act });
+  void fake.spin(play, mine, 'Spun at the shine', 'About that post.', undefined, pressed);
+  void fake.spin(play, mine, 'Spun from the shine', 'About that card.');
+};
+
 /** The small form under a post that starts a thread from it. */
 export const SpinFormOpen: StoryObj = { render: () => <OpenForm />, parameters: { world } };
 
@@ -73,3 +105,9 @@ export const OriginBox: StoryObj = { render: () => <SpunThread />, parameters: {
 
 /** A thread spun from a card play on a post: its head names the card and the post it landed on, linked. */
 export const OriginBoxFromPlay: StoryObj = { render: () => <PlaySpunThread />, parameters: { world } };
+
+/** A thread spun from a card on a character, pressed on one of its posts: the post as it was spun, the card's effect still, and a head that links the post and the one the card was cast from. */
+export const OriginBoxFromCharacterAtPost: StoryObj = { render: () => <PressedSpunThread />, parameters: { world: reachWorld } };
+
+/** A thread spun from a card on a character with no post pressed: the cast-from post as it landed, on one line. */
+export const OriginBoxFromCharacterLanded: StoryObj = { render: () => <LandedSpunThread />, parameters: { world: reachWorld } };

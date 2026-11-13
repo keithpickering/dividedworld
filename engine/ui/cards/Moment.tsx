@@ -33,19 +33,24 @@ export type MomentRead =
   | { readonly status: 'failed'; readonly retry: () => void }
   | { readonly status: 'read'; readonly moment: PlayMoment | null };
 
-/** The moment of `play`, read once for the page (the Lens store keeps it) and not again however often it is shown. */
-export function useMomentRead(play: Id): MomentRead {
-  const { api } = useKayfa();
+/**
+ * A moment, read once for the page (the Lens store keeps it under `key`: a play's id for a play's moment, a spin's for a spin's) by `load`,
+ * and not again however often it is shown.
+ */
+export function useMomentRead(key: Id, load: () => Promise<PlayMoment | null>): MomentRead {
   const store = useLensStore();
-  const kept = useSyncExternalStore(store.subscribe, () => store.kept(play));
+  const kept = useSyncExternalStore(store.subscribe, () => store.kept(key));
   const [failed, setFailed] = useState(0);
   const [asked, setAsked] = useState(0);
+  /* The reader is the caller's closure, new each render; the read is of `key`, so it is asked for the key and not for each new closure. */
+  const loader = useRef(load);
+  loader.current = load;
   useEffect(() => {
     if (kept !== undefined) return;
     let gone = false;
-    store.readMoment(play, () => api.playMoment(play)).catch(() => { if (!gone) setFailed((n) => n + 1); });
+    store.readMoment(key, () => loader.current()).catch(() => { if (!gone) setFailed((n) => n + 1); });
     return () => { gone = true; };
-  }, [api, store, play, kept, asked]);
+  }, [store, key, kept, asked]);
   const retry = useCallback(() => setAsked((n) => n + 1), []);
   if (kept !== undefined) return { status: 'read', moment: kept };
   return failed > asked ? { status: 'failed', retry } : { status: 'loading' };
@@ -56,10 +61,14 @@ export function useMomentRead(play: Id): MomentRead {
  * is the box's: no ring, no tag); `own` (what became of the play itself), `named` and `words` are what the frame says under the post;
  * `unrecorded` says what else was on the post then wasn't recorded.
  */
-export function MomentFrame({ play, place, at, read, back, own = null, named, words, unrecorded, frame, children }: {
+export function MomentFrame({ play, place, at, read, back, label = 'As it landed', own = null, named, words, unrecorded, frame, children }: {
   /** `none`: the read answered that the play is no play on a post, which a play on a post never is. */
-  readonly play: CardPlay; readonly place: EffectPlace; readonly at: string; readonly read: MomentRead['status'] | 'none';
+  readonly play: CardPlay; readonly place: EffectPlace; readonly read: MomentRead['status'] | 'none';
   readonly back?: (() => void) | undefined;
+  /** What the frame calls the moment: "As it landed" for a play's, "As it was spun" for a spin's. */
+  readonly label?: string;
+  /** The moment's time; none while it is not known (a spin's moment before it is read), and then the frame names none. */
+  readonly at?: string | undefined;
   readonly own?: string | null; readonly named: readonly string[]; readonly words: readonly string[]; readonly unrecorded: boolean;
   /** The frame's element, for a control inside it to give focus to (Try again's answer). */
   readonly frame?: RefObject<HTMLDivElement | null>;
@@ -76,13 +85,13 @@ export function MomentFrame({ play, place, at, read, back, own = null, named, wo
   const status = read === 'read' ? null : read === 'loading' ? 'Loading the moment…' : read === 'failed' ? 'The moment did not load.' : 'This play has no moment to show.';
   const said = content && status !== null;
   return (
-    <div ref={(el) => { ring.host.current = el; if (frame) frame.current = el; }} tabIndex={-1} className="kb-moment" role="group" aria-label={`As it landed, ${when(at)}`} data-kb-alignment={rules?.alignment} data-kb-content={content ? '' : undefined} style={ink ? ({ '--kb-moment-ink': ink } as CSSProperties) : undefined}>
+    <div ref={(el) => { ring.host.current = el; if (frame) frame.current = el; }} tabIndex={-1} className="kb-moment" role="group" aria-label={at === undefined ? label : `${label}, ${when(at)}`} data-kb-alignment={rules?.alignment} data-kb-content={content ? '' : undefined} style={ink ? ({ '--kb-moment-ink': ink } as CSSProperties) : undefined}>
       {said && <p className="kb-moment-status kb-small kb-muted">{status}</p>}
       <div className="kb-moment-body" data-kb-quotable="hidden">{children}</div>
       {!content && <div ref={ring.ring} className="kb-moment-ring" aria-hidden="true" />}
       {!content && (
         <p ref={ring.tag} className="kb-moment-tag">
-          <span>As it landed</span>
+          <span>{label}</span>
           {/* The time the play landed is the frame's label and the Lens's (the owner, 2026-11-06: "the date is in the Lens already"); the tag says only what is not. */}
           {status !== null && read !== 'loading' && <><span aria-hidden="true"> · </span><span>{status}</span></>}
           {back && <><span aria-hidden="true"> · </span><button type="button" className="kb-moment-back" onClick={(e) => backToNow(e.currentTarget, play, back)}>Back to now</button></>}
@@ -188,15 +197,19 @@ function backToNow(button: HTMLElement, play: CardPlay, back: () => void) {
  * While it loads, or where it failed, the frame holds the post's words as they are now (`now`), so the post never empties, with the
  * tag saying so and Try again under it.
  */
-export function MomentView({ play, place, nameOf, bodyOf, back, now }: {
+export function MomentView({ play, place, nameOf, bodyOf, back, now, source }: {
   readonly play: CardPlay; readonly place: EffectPlace;
+  /** A spin's moment in place of the play's own: the pressed post as it was when the spin was written, labeled "As it was spun". */
+  readonly source?: { readonly spin: Id };
   readonly nameOf: (character: Id | null) => string;
   readonly bodyOf: (version: Act) => ReactNode;
   readonly back?: () => void;
   readonly now: ReactNode;
 }) {
-  const { instance, ui } = useKayfa();
-  const read = useMomentRead(play.id);
+  const { api, instance, ui } = useKayfa();
+  const key = source ? source.spin : play.id;
+  const read = useMomentRead(key, () => (source ? api.spinMoment(source.spin) : api.playMoment(play.id)));
+  const label = source ? 'As it was spun' : 'As it landed';
   const frame = useRef<HTMLDivElement>(null);
   const [said, setSaid] = useState<Readonly<Record<string, string>>>({});
   const onWords = useCallback((card: string, words: string | null) => {
@@ -209,7 +222,7 @@ export function MomentView({ play, place, nameOf, bodyOf, back, now }: {
   }, []);
   if (read.status !== 'read' || read.moment === null) {
     return (
-      <MomentFrame frame={frame} play={play} place={place} at={play.playedAt} read={read.status === 'read' ? 'none' : read.status} back={back} named={[]} words={[]} unrecorded={false}>
+      <MomentFrame frame={frame} play={play} place={place} at={source ? undefined : play.playedAt} label={label} read={read.status === 'read' ? 'none' : read.status} back={back} named={[]} words={[]} unrecorded={false}>
         {now}
         {read.status === 'failed' && <button type="button" className="kb-moment-retry" onClick={() => { frame.current?.focus(); read.retry(); }}>Try again</button>}
       </MomentFrame>
@@ -220,7 +233,7 @@ export function MomentView({ play, place, nameOf, bodyOf, back, now }: {
   const name = (key: string) => instance.cards.find((c) => c.key === key)?.name ?? key;
   const words = Object.keys(said).sort().map((k) => `${name(k)}: ${said[k]}`);
   return (
-    <MomentFrame frame={frame} play={play} place={place} at={play.playedAt} read="read" back={back} own={parts.own} named={parts.named} words={words} unrecorded={!moment.recorded}>
+    <MomentFrame frame={frame} play={play} place={place} at={moment.at} label={label} read="read" back={back} own={parts.own} named={parts.named} words={words} unrecorded={!moment.recorded}>
       <MomentEffects moment={moment} place={place} nameOf={nameOf} onWords={onWords}>{bodyOf(moment.version)}</MomentEffects>
     </MomentFrame>
   );

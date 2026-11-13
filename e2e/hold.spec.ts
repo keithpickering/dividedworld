@@ -388,3 +388,37 @@ test('a mark in the hold opens the Lens unclipped, beside the dialog\'s box', as
   await expect(lens).toBeHidden();
   await expect(view(page)).toBeVisible();
 });
+
+/* On a phone the held mark's first-time callout takes room under the post's line inside the view: it covers none of the held post's words and not Break free. */
+test('on a phone the held mark\'s callout takes its own room, over neither the held post\'s words nor Break free', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  /* Stick Around gives no hint of its own, so the held post's callout is its other card's: Whoops!'s ink under the hold, in the story that plays one. */
+  await page.goto('/?fixture=boards&story=boards-08-hold--live-inked-first-time');
+  await ready(page);
+  await expect(page.locator('.kb-mark[data-kb-card="whoops"]').first()).toBeAttached();
+  await page.mouse.move(195, 500);
+  await page.mouse.wheel(0, 500);
+  await expect(view(page)).toBeVisible({ timeout: 10_000 });
+  const panel = view(page).locator('.kb-callout .kb-callout-panel');
+  await expect(panel).toBeVisible({ timeout: 6000 });
+  await settled(page, { loops: true });
+  const read = await page.evaluate(() => {
+    const dlg = document.querySelector('.kb-hold-view')!;
+    const r = dlg.querySelector('.kb-callout .kb-callout-panel')!.getBoundingClientRect();
+    const hit = (b: DOMRect) => r.left < b.right && b.left < r.right && r.top < b.bottom && b.top < r.bottom;
+    const line = dlg.querySelector('.kb-hold-post-line')!.getBoundingClientRect();
+    const scroll = dlg.querySelector('.kb-hold-scroll')!.getBoundingClientRect();
+    return {
+      body: hit(dlg.querySelector('.kb-hold-post-body')!.getBoundingClientRect()),
+      foot: hit(dlg.querySelector('.kb-hold-foot')!.getBoundingClientRect()),
+      line: hit(line),
+      below: r.top >= line.bottom - 1,
+      inScroller: r.left >= scroll.left - 1 && r.right <= scroll.right + 1,
+    };
+  });
+  expect(read.body, 'the callout meets the held post\'s words').toBe(false);
+  expect(read.foot, 'the callout meets Break free').toBe(false);
+  expect(read.line, 'the callout meets the post\'s line').toBe(false);
+  expect(read.below, 'the callout is under the line').toBe(true);
+  expect(read.inScroller, 'the callout is inside the post\'s width').toBe(true);
+});

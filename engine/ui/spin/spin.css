@@ -73,3 +73,9 @@
   margin: 0.6em 0 0;
   padding-top: 0.3em;
 }
+
+/* The second line of the head of a box spun from a card on a character: the post the card was cast from, under the one the spin was pressed on. */
+.kb-origin-head-line {
+  display: block;
+  font-weight: normal;
+}

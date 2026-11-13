@@ -1,6 +1,7 @@
 import { expect, test, devices, type Locator, type Page } from '@playwright/test';
 import type { Fake } from '../engine/ui/data/fake.ts';
 import type { Demo } from '../web/src/demo.ts';
+import { armCard } from './focus.ts';
 
 /**
  * Graffiti in a real browser, which jsdom cannot draw (docs/plans/2026-11-11-graffiti-plan.md, Task 12), against the fake data: a card played on a
@@ -345,10 +346,10 @@ const ghosts = (page: Page) => page.getByRole('button', { name: /^Play Graffiti 
 
 /** Arms Graffiti from the hand's dialog on the thread, the way a player does. */
 async function arm(page: Page): Promise<void> {
-  /* The hand is a modal dialog on the wide layout and a region on the phone's (Hud.tsx), where it may already be open. */
-  const hand = page.getByRole('dialog', { name: 'Your hand' }).or(page.getByRole('region', { name: 'Your hand' }));
+  /* The hand is a modal dialog on both layouts (Hud.tsx), where it may already be open; on the phone a card is brought to the middle, then armed. */
+  const hand = page.getByRole('dialog', { name: 'Your hand' });
   if (!(await hand.isVisible())) await page.getByRole('button', { name: /^Hand, \d+ postcards?$/ }).click();
-  await hand.getByRole('button', { name: /^Graffiti, / }).first().click();
+  await armCard(page, /^Graffiti, /);
 }
 
 async function playingFlow(page: Page): Promise<void> {
