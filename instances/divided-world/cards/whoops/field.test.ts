@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  DROPS_MOST, END_BULB, FIELD_MOST, WASH_TAKES, beginPen, beginWash, cellGrid, denseGrid, addBall, endsOf, fieldAtPoint, kOf, linesOf,
+  COVER_OVER, DROPS_MOST, END_BULB, FIELD_MOST, READ_THROUGH, THIN_FLOOR, THIN_SPAN, WASH_TAKES, bandGrid, beginPen, beginWash, cellGrid, denseGrid, addBall, endsOf, fieldAtPoint, kOf, linesOf,
   penAt, penLine, pointGrid, beginLine, radiusOf, splatInto, strokesInto, washLine, type FieldStroke, type Grid,
 } from './field.ts';
 import { THRESHOLD, fieldGrid, makeSplat, mulberry32, type Box, type Splat } from './splat.ts';
@@ -200,10 +200,10 @@ test('a short drag is a dab: a line under 2r long takes WASH_TAKES under its end
     line.end();
     near(at(g, 250.5 + drag, 219.5), 3 - WASH_TAKES, 0.05, `a ${drag}px drag`);
   }
-  /* A line of 2r or more is a pass, not a dab: nothing is added at its end. */
+  /* A line of 1.5 * 2r or more (DAB_FADE_ENDS) is a pass, not a dab: nothing is added at its end. */
   const g = denseGrid(MID, 1), h = denseGrid(MID, 1);
   fill(g, 3); fill(h, 3);
-  const long = (grid: Grid, end: boolean) => { const l = beginWash(grid, MID, brush); l.to([250.5 / MID.w, 219.5 / MID.h]); l.to([(250.5 + 40) / MID.w, 219.5 / MID.h]); if (end) l.end(); };
+  const long = (grid: Grid, end: boolean) => { const l = beginWash(grid, MID, brush); l.to([250.5 / MID.w, 219.5 / MID.h]); l.to([(250.5 + 60) / MID.w, 219.5 / MID.h]); if (end) l.end(); };
   long(g, true); long(h, false);
   assert.deepEqual(g.values, h.values);
 });
@@ -341,4 +341,113 @@ test('penAt: a pen line at a point, plus its end balls, is penLine on that point
       }
     }
   }
+});
+
+/** Strokes for a lattice test: a mixed list of `n` pens and washes spread over the whole box, some joined, as a post's would be. */
+function mixedStrokes(box: Box, n: number, seed: number): FieldStroke[] {
+  const rnd = mulberry32(seed), strokes: FieldStroke[] = [];
+  for (let s = 0; s < n; s++) {
+    const brush = brushOf(8 + rnd() * 36, box), len = 2 + Math.floor(rnd() * 30);
+    let x = rnd(), y = rnd();
+    const pts: Pt[] = [];
+    for (let i = 0; i < len; i++) { pts.push([Math.min(1, Math.max(0, x)), Math.min(1, Math.max(0, y))]); x += (rnd() - 0.5) * 0.04; y += (rnd() - 0.5) * 0.02; }
+    const tool = rnd() < 0.5 ? 'ink' : 'wash';
+    const prev = strokes[strokes.length - 1];
+    const joined = prev && prev.tool === tool && rnd() < 0.25;
+    const extra = tool === 'ink' ? { drops: Math.floor(rnd() * 4) } : {};
+    strokes.push(joined ? { ...(tool === 'ink' ? pen(pts, prev, extra) : wash(pts, prev, extra)), continues: true } : tool === 'ink' ? pen(pts, brush, extra) : wash(pts, brush, extra));
+  }
+  return strokes;
+}
+
+test('bands equal the whole: a lattice cut into bands of 512 rows with an apron has the whole grid\'s values and washed marks, bit for bit', () => {
+  const box: Box = { w: 390, h: 1400 }, splat = makeSplat(20261112), strokes = mixedStrokes(box, 40, 99);
+  for (const density of [1, 0.73]) {
+    const whole = denseGrid(box, density);
+    splatInto(whole, splat, box);
+    strokesInto(whole, box, strokes);
+    let ink = 0, washed = 0;
+    for (let i = 0; i < whole.values.length; i++) { if (whole.values[i]! > 0) ink++; if (whole.washed[i]) washed++; }
+    assert.ok(ink > 1000 && washed > 100, `the lists leave ink and washed marks (${ink}, ${washed})`);
+    let compared = 0;
+    for (let row0 = 0; row0 < whole.rows; row0 += 512) {
+      /* One row of apron above and below, which may lie outside the lattice (-1, or one past the end). */
+      const band = bandGrid(box, density, row0 - 1, Math.min(512, whole.rows - row0) + 2);
+      assert.equal(band.cols, whole.cols);
+      assert.equal(band.row0, row0 - 1);
+      splatInto(band, splat, box);
+      strokesInto(band, box, strokes);
+      for (let j = 0; j < band.rows; j++) {
+        const lattice = band.row0 + j;
+        if (lattice < 0 || lattice >= whole.rows) continue;
+        for (let i = 0; i < band.cols; i++) {
+          const m = j * band.cols + i, w = lattice * whole.cols + i;
+          assert.ok(Object.is(band.values[m], whole.values[w]), `density ${density}, lattice (${i}, ${lattice}): ${band.values[m]} vs ${whole.values[w]}`);
+          assert.equal(band.washed[m], whole.washed[w], `washed at (${i}, ${lattice})`);
+          compared++;
+        }
+      }
+    }
+    assert.ok(compared >= whole.values.length, 'every lattice point was compared');
+  }
+});
+
+test('a band far from a stroke visits nothing', () => {
+  const box: Box = { w: 390, h: 4000 }, brush = brushOf(30, box);
+  const band = bandGrid(box, 1, 3000, 512);
+  band.work = { visits: 0 };
+  /* Pen and wash, 2,000px above the band's first row, with the pen's bulb and drops. */
+  strokesInto(band, box, [
+    pen([[0.2, 500 / box.h], [0.7, 520 / box.h]], brush, { drops: 3 }),
+    wash([[0.2, 540 / box.h], [0.7, 560 / box.h]], brush),
+  ]);
+  assert.equal(band.work.visits, 0);
+  strokesInto(band, box, [pen([[0.2, 3200 / box.h], [0.7, 3220 / box.h]], brush)]);
+  assert.ok(band.work.visits > 0, 'a stroke in the band does visit');
+});
+
+/*
+ * The plan asked that the take under the end point "never rises with length" and "changes by under 0.1 between
+ * neighbors 0.05R apart" from R to 1.6R. The disc spacing (h = r / 3, 5px for this brush) rules both out: the end
+ * point is reached by a half line of discs, so what the discs alone give it is a sawtooth with a period of h that rises
+ * by up to about 0.22 where the last disc's phase wraps, and the fade has to fall about 0.75 across 0.5R besides. What
+ * the fade is for (design section 3) is that the step at R is gone, so this holds that: no neighbor, starting from
+ * just under R, falls by more than FALL_MOST (the step it replaces is 0.61; the finished code's largest fall is
+ * 0.19), the top-up never takes less than none, and the rises are the discs' own. FALL_MOST is the owner's to confirm
+ * (the PR's Design questions).
+ */
+test('a drag never cleans less than a shorter one: the step at R is gone, and what rises is the disc spacing\'s', () => {
+  const FALL_MOST = 0.22;
+  const brush = brushOf(30, MID), R = 2 * radiusOf(brush, MID), x0 = 150.5, y = 219.5;
+  /* The take under the end point of a straight wash `length` long; `topUp` false never ends the line, which is the discs alone. */
+  const takeAt = (length: number, topUp = true): number => {
+    const g = denseGrid(MID, 1);
+    fill(g, 3);
+    const line = beginWash(g, MID, brush);
+    line.to([x0 / MID.w, y / MID.h]);
+    if (length > 0) line.to([(x0 + length) / MID.w, y / MID.h]);
+    if (topUp) line.end();
+    return 3 - at(g, x0 + length, y);
+  };
+  for (const f of [0, 0.5, 1]) near(takeAt(f * R), WASH_TAKES, 0.02, `a drag of ${f}R`);
+  const fs: number[] = [];
+  for (let f = 0.95; f <= 1.6001; f += 0.05) fs.push(f);
+  const withUp = fs.map((f) => takeAt(f * R)), bare = fs.map((f) => takeAt(f * R, false));
+  let bareRise = 0;
+  for (let i = 1; i < fs.length; i++) bareRise = Math.max(bareRise, bare[i]! - bare[i - 1]!);
+  assert.ok(bareRise > 0.1, `the discs alone rise by ${bareRise}: the sawtooth is real`);
+  for (let i = 0; i < fs.length; i++) {
+    assert.ok(withUp[i]! >= bare[i]! - 1e-6, `the top-up took ground at ${fs[i]!.toFixed(2)}R: ${withUp[i]} vs ${bare[i]}`);
+    if (i === 0) continue;
+    const d = withUp[i]! - withUp[i - 1]!;
+    assert.ok(-d <= FALL_MOST, `a step of ${(-d).toFixed(3)} down at ${fs[i]!.toFixed(2)}R`);
+    assert.ok(d <= bareRise + 0.02, `a rise of ${d.toFixed(3)} at ${fs[i]!.toFixed(2)}R, more than the discs' ${bareRise.toFixed(3)}`);
+  }
+  for (const f of [1.1, 1.25, 1.5, 2]) assert.ok(takeAt(f * R) <= WASH_TAKES + 0.02, `a drag of ${f}R`);
+});
+
+test('COVER_OVER is the field at which a washed point reads through at READ_THROUGH', () => {
+  assert.equal(READ_THROUGH, 0.75);
+  near(COVER_OVER, 0.738, 0.001, 'COVER_OVER');
+  near(THIN_FLOOR + ((1 - THIN_FLOOR) * COVER_OVER) / THIN_SPAN, READ_THROUGH, 1e-9, 'the thinning at COVER_OVER');
 });

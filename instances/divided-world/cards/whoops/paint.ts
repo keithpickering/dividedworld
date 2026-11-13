@@ -23,7 +23,7 @@
  */
 import { rgbOf, luminance, THRESHOLD, type Box, type Splat } from './splat.ts';
 import { type Stroke } from './scrub.ts';
-import { denseGrid, splatInto, type Grid, type Rect } from './field.ts';
+import { THIN_FLOOR, THIN_SPAN, denseGrid, splatInto, type Grid, type Rect } from './field.ts';
 
 /** The pixel density a splat is drawn at: past two the extra pixels show nothing on soft ink and cost a quarter more memory each step. */
 export const MAX_DPR = 2;
@@ -57,9 +57,8 @@ export interface PixelsOut {
   readonly data: Uint8ClampedArray;
 }
 
-/** Washed ink is thinned: its opacity is `THIN_FLOOR` at the threshold and reaches full `THIN_SPAN` field units above it. */
-export const THIN_FLOOR = 0.35;
-export const THIN_SPAN = 1.2;
+/* `THIN_FLOOR` and `THIN_SPAN` (washed ink's opacity ramp) live in field.ts, which the model reads; re-exported here. */
+export { THIN_FLOOR, THIN_SPAN };
 
 /** The light, and the glint's half vector, as the bench approved. */
 const LIGHT = (() => { const n = Math.hypot(-0.45, -0.65, 0.62); return [-0.45 / n, -0.65 / n, 0.62 / n] as const; })();
