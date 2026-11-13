@@ -310,3 +310,44 @@ test('what is in the air survives a re-register with another offset, and is draw
   assert.ok(got.length > 0);
   for (const d of got) assert.ok(d.y > (252 - 60) * 2 && d.y < (252 + 60) * 2, `drawn at canvas y ${d.y}`);
 });
+
+/** A span of 2048 CSS px from box y 1536 at density 2, in a very tall box; the cull's margin is a little under 60px. */
+const TOP = 1536, SPAN = 2048;
+const spanned = () => { const host = {}, cv = canvas(390 * 2, SPAN * 2); register(host, asCanvas(cv), { w: 390, h: 20000 }, 2, '#cc2222', TOP); return { host, cv }; };
+const washAt = (y: number, ms = 16) => {
+  const { host, cv } = spanned();
+  wash(host, { x: 100, y }, { x: 200, y }, true);
+  tick(ms);
+  return sprites(cv).length;
+};
+
+test('a wash a little outside the span, above or below it, is still drawn, and one well outside is not', () => {
+  assert.ok(washAt(TOP - 30) > 0, 'just above the span (inside the margin)');
+  assert.ok(washAt(TOP + SPAN + 30) > 0, 'just below the span (inside the margin, at density 2)');
+  assert.equal(washAt(TOP - 100), 0, 'well above the span');
+  assert.equal(washAt(TOP + SPAN + 100), 0, 'well below the span: its canvas px would still be inside the canvas height');
+});
+
+test('a drip is drawn when any of its run is in the span, and not when all of it is outside', () => {
+  /* Math.random at 0 makes one drip (start `to.y + 5.25`, speed 8, pull 10) and, over a move this short, no lather or bubble. */
+  const realRandom = Math.random;
+  Math.random = () => 0;
+  try {
+    const y0 = (y: number) => y - 15 * 0.35;
+    const dripAt = (start: number, ms: number) => {
+      const { host, cv } = spanned();
+      wash(host, { x: 100, y: y0(start) }, { x: 100, y: y0(start) }, true);
+      assert.equal(probe.count('run'), 1, 'one drip');
+      tick(ms);
+      const n = sprites(cv).length;
+      probe.reset();
+      return n;
+    };
+    const lo = TOP - 48, hi = TOP + SPAN + 48;
+    /* y0 + 8*0.7 + 5*0.49 = y0 + 8.05 */
+    assert.ok(dripAt(lo - 6, 700) > 0, 'starts above the margin and runs into it');
+    assert.ok(dripAt(hi - 2, 700) > 0, 'starts inside the span and runs out of it');
+    assert.equal(dripAt(lo - 100, 700), 0, 'wholly above the span');
+    assert.equal(dripAt(hi + 100, 700), 0, 'wholly below the span, though inside the canvas height in canvas px');
+  } finally { Math.random = realRandom; }
+});
