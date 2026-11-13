@@ -3,8 +3,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { systemSettings, testSystem } from '../rules/test-system.ts';
 import { DEMAND_KINDS } from './demands.ts';
-import { DEMAND_ID_ROLES, HANDOFF_MOST, MEETING_FIELDS, MEETING_PARTS, MEETING_RULE, handoffFactsText, inFarewellWindow, inheritedText, meetingSystemPrompt, namedCharacters, partRule, partSchema, predecessorText, referenceText, repairAnswer, ruleSchema, type HandoffFacts, type InheritedMove, type MachineSlotFacts, type RepairContext } from './meeting.ts';
-import { noteMost } from './memory.ts';
+import { DEMAND_ID_ROLES, HANDOFF_MOST, MEETING_FIELDS, MEETING_PARTS, MEETING_RULE, handoffFactsText, inFarewellWindow, inheritedText, meetingSystemPrompt, PROFILE_MOST, namedCharacters, partRule, partSchema, predecessorText, referenceText, repairAnswer, ruleSchema, type HandoffFacts, type InheritedMove, type MachineSlotFacts, type RepairContext } from './meeting.ts';
+import { MEMORY_MOST, noteMost } from './memory.ts';
 import type { TrophyFacts } from './moves.ts';
 import { schemaProblems } from './schema.ts';
 import { repair, type Rule } from './validate.ts';
@@ -1565,4 +1565,15 @@ test('each part\'s own rule accepts its own schema\'s shape: a rule with every f
     for (const f of p.fields) assert.equal(rule.fields[f]!.optional, true, `${p.key}.${f}`);
     assert.ok(repair({}, partRule(p.key)).ok, p.key);
   }
+});
+
+test('the system prompt states each bound the profile and memory are held to, with the number from the rules', () => {
+  const facts = {
+    boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.she, system: testSystem, settings, phase: ctx().phase, bank: 2, mods: [], characterName: () => 'someone', successorAllowed: false, roster: [], notes: [], career: { led: [], offices: [] },
+  };
+  const served = meetingSystemPrompt(facts);
+  assert.ok(served.includes(`a mood (a short phrase, at most ${PROFILE_MOST.mood} characters)`), served);
+  assert.ok(served.includes('at most 80 characters'), 'the mood, as 80');
+  assert.ok(served.includes(`up to ${PROFILE_MOST.interests} interests of at most ${PROFILE_MOST.interest} characters each`), served);
+  assert.ok(served.includes(`A hobby's name is at most ${MEMORY_MOST.hobbyName} characters, and a mark at most ${MEMORY_MOST.mark}.`), served);
 });

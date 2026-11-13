@@ -30,7 +30,7 @@ import type { Persona, Settings, SystemContent } from '../rules/types.ts';
 import { personaPrompt } from './prompt.ts';
 import { careerText, type Career } from './career.ts';
 import { MEETING_DEMAND_KINDS, demandKind, demandProblems } from './demands.ts';
-import { MEMORY_RULE, noteMost, recentNotes, repairMemory, type Memory } from './memory.ts';
+import { MEMORY_MOST, MEMORY_RULE, noteMost, recentNotes, repairMemory, type Memory } from './memory.ts';
 import { PREDICATES, readParam, ruleConflict, type RuleInForce } from '../rules/predicates.ts';
 import { ASKABLE_MOVE_KINDS, ROLE, UUID, isRoleRef, machineLimits, moveKind, moveParamsProblems, type MachineLimits, type TrophyFacts } from './moves.ts';
 import { BEAT_WHY, BUNDLE_WORDS, DUE_WHY, beatsText, dependencyOrder, fillBundle, ownRoles, type PlannedBundle, type PlannedPart, type ShownBeat } from './beats.ts';
@@ -438,7 +438,7 @@ export function meetingSystemPrompt(f: PromptFacts): string {
     [
       'Your memory. The memory you answer in the self part is your whole new memory: what you leave out of it is forgotten. Order every list most important first.',
       `You keep at most ${s.memoryOpinions} opinions, ${s.memoryGrudges} grudges, ${s.memoryWheelhouse} wheelhouse subjects and ${s.memoryRealWorld} real-world subjects; the rest are cut from the end. Opinions and grudges name characters by the ids you are given, scored -5 to 5. Leave alone these subjects, and add to them: ${f.system.realWorld.join('; ')}.`,
-      `Your profile: up to ${PROFILE_MOST.interests} interests, up to ${PROFILE_MOST.favorites} favorite characters (their ids), a mood and a signature. It is public and in your voice.`,
+      `Your profile: up to ${PROFILE_MOST.interests} interests of at most ${PROFILE_MOST.interest} characters each, up to ${PROFILE_MOST.favorites} favorite characters (their ids), a mood (a short phrase, at most ${PROFILE_MOST.mood} characters) and a signature. It is public and in your voice. A hobby's name is at most ${MEMORY_MOST.hobbyName} characters, and a mark at most ${MEMORY_MOST.mark}.`,
     ].join('\n'),
     modsText(f),
     ...(f.farewell ? [farewellText(f.farewell.postMaxLength)] : []),

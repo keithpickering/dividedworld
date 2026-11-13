@@ -142,3 +142,17 @@ test('under many lines the cap counts the kept leading space, and CRLF runs coll
   assert.deepEqual(capped, { ok: true, text: ` ${'x'.repeat(199)}`, trims: [{ path: '', predicate: 'maxLength(200)', before: 301, after: 200 }] });
   assert.deepEqual(cutCompletion('a\r\n\r\n\r\n\r\nb', [], 200, 'many'), { ok: true, text: 'a\n\nb', trims: [] });
 });
+
+test('a string over its bound is cut at the last space within it, where that keeps half the bound, and the trim is recorded', () => {
+  assert.deepEqual(repair('a happy little tree in a quiet field', { type: 'string', maxLength: 20 }), {
+    ok: true, value: 'a happy little tree', trims: [{ path: '', predicate: 'maxLength(20)', before: 36, after: 19 }],
+  });
+  const word = repair('x'.repeat(30), { type: 'string', maxLength: 20 });
+  assert.ok(word.ok && word.value === 'x'.repeat(20), 'no space: cut at the bound');
+  const early = repair('ab cdefghijklmnopqrstuvwxyz', { type: 'string', maxLength: 20 });
+  assert.ok(early.ok && early.value === 'ab cdefghijklmnopqrs', 'a space before half the bound is not used');
+  const comma = repair('one, two, three, four', { type: 'string', maxLength: 12 });
+  assert.ok(comma.ok && comma.value === 'one, two', 'the trailing comma is dropped');
+  const dash = repair('well - and then some more', { type: 'string', maxLength: 12 });
+  assert.ok(dash.ok && dash.value === 'well - and', JSON.stringify(dash));
+});
