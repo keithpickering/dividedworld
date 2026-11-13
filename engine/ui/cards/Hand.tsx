@@ -233,10 +233,10 @@ export function Hand({ held, faces, armed = null, playing = null, onPick, onClos
             const isArmed = armed === face.key;
             const says = `${idBase}-${face.key}`;
             const isMiddle = !main && i === middleAt;
-            const style = (main
-              ? { '--kb-fan-x': `${slot.x}px`, '--kb-fan-y': `${slot.y}px`, '--kb-fan-turn': `${slot.deg}deg`, '--kb-fan-z': stack.get(face.key) }
+            const style = main
+              ? ({ '--kb-fan-x': `${slot.x}px`, '--kb-fan-y': `${slot.y}px`, '--kb-fan-turn': `${slot.deg}deg`, '--kb-fan-z': stack.get(face.key) } as CSSProperties)
               /* The middle card above every other, the rest lower the further they stand from it. */
-              : { '--kb-fan-z': isMiddle ? arc.length + 1 : arc.length - Math.abs(i - middleAt) }) as CSSProperties;
+              : ({ '--kb-fan-z': isMiddle ? arc.length + 1 : arc.length - Math.abs(i - middleAt) } as CSSProperties);
             return (
               <li
                 key={face.key}
