@@ -1954,6 +1954,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     /* A reply a card that replies cut in under a post is named by that play's Act, which says whose it is; and where the post's own author cut one in under it, the derived veil would tell the author from the rest (0400). */
     const cutIn = [...underPlays.values()].some((u) => u.reply === on.id);
     const cutOwn = [...underPlays.values()].some((u) => u.parent === on.id && acts.get(u.reply)?.character === on.character);
+    /* A card at character reach is stored with its Act on the post it was played from, and its payload names that post's author: a public Act that names the author (land_refusal's `played`, 0400). */
+    const played = [...acts.values()].some((k) => k.kind === 'card' && k.target === on.id && k.payload.reach === 'character');
     /* A back of the post's own author that sprang on a quote laid a card of the author's there, which names the spring (land_refusal, 0400): a spring that landed a card, on this post. */
     const sprungBack = [...acts.values()].some((s) => s.kind === 'spring' && s.target === on.id && s.payload.did === 'landed');
     /* A spin pressed at the post (0351's `at`): its thread shows the play's character and the post, which spin_written let through only for a post of that character (0400). */
@@ -1965,6 +1967,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (rules.veil === 'author') {
       if (byStaff) return refuse('a post by the staff keeps its name');
       if (visited) return refuse('a Mod Bot has been to this post, so its author is on the record');
+      if (played) return refuse('a card played from this post names its author, so the author is on the record');
       if (sprungBack) return refuse('a card set on this post has sprung, so its author is on the record');
       if (cutIn) return refuse('a card cut this post in under another, so its author is on the record');
       if (cutOwn) return refuse('its author cut a reply in under this post, so the author is on the record');
@@ -2224,7 +2227,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (standInRec !== null && target === standInRec.id) return refuse('no card is played on a stand-in');
       if (!characters.has(target)) return refuse('there is no such character', 'target');
       const from = fromPost ? acts.get(fromPost) : undefined;
-      if (!from || from.kind !== 'post' || from.character !== target) return refuse('a card on a character is played from one of its posts');
+      /* The post is read as it is shown (acts_public): a post under a live author veil is the stand-in's, so a card on its real author is a card on the stand-in, in the same words (place_cast, 0402). */
+      const shown = from?.kind === 'post' ? shownAuthor(from, false) : null;
+      if (standInRec !== null && shown === standInRec.id) return refuse('no card is played on a stand-in');
+      if (!from || from.kind !== 'post' || shown !== target) return refuse('a card on a character is played from one of its posts');
       thread = from.thread;
       on = from.id;
       above = { thread: reachEffects('thread', thread), board: reachEffects('board', boardOf(thread)) };

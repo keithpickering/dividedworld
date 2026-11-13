@@ -4798,7 +4798,9 @@ describe('post veils, blind totals and a post-local reaction (card notes, Part 3
 
   test('a veiled post\'s moment lists no play on the real author\'s character', async () => {
     const w = veilWorld();
-    must(await w.fake.playCard('glow', w.anaFace, w.boFace, {}, '', 'character', w.post));
+    /* A card played from this post would name its author, and a veil is refused on such a post (land_refusal); so the glow is played from another of Bo's. */
+    const elsewhere = w.fake.seed.thread('general', w.boFace, 'Elsewhere', 'Another post of Bo\'s.').act;
+    must(await w.fake.playCard('glow', w.anaFace, w.boFace, {}, '', 'character', elsewhere));
     w.fake.clock.advance(MINUTE);
     const play = must(await w.fake.playCard('whodunnit', w.anaFace, w.post, {}, ''));
     expect((await w.fake.playMoment(play.id))!.above).toEqual([]);
@@ -4827,6 +4829,20 @@ describe('post veils, blind totals and a post-local reaction (card notes, Part 3
     const stand = await veil(w);
     expect(await w.fake.playCard('glow', w.anaFace, stand, {}, '', 'character', w.post)).toEqual(refused('no card is played on a stand-in'));
     expect(await w.fake.myCards().then((h) => h.find((c) => c.card === 'glow')?.held)).toBe(2);
+  });
+
+  test('a card played from a post names its author: no veil on that post (land_refusal), and no card on the author\'s character is played from a veiled one, which the stand-in is shown for (place_cast, 0402)', async () => {
+    const w = veilWorld();
+    const played = w.fake.seed.thread('general', w.boFace, 'Played from', 'A post a card is played from.').act;
+    must(await w.fake.playCard('glow', w.anaFace, w.boFace, {}, '', 'character', played));
+    const held = (await w.fake.myCards()).find((c) => c.card === 'whodunnit')?.held;
+    expect(await w.fake.playCard('whodunnit', w.anaFace, played, {}, '')).toEqual(refused('a card played from this post names its author, so the author is on the record'));
+    expect((await w.fake.myCards()).find((c) => c.card === 'whodunnit')?.held).toBe(held);
+    /* The other order: the post is veiled first, so it is shown under the stand-in, and a card on its real author is a card on the stand-in however it is named. */
+    await veil(w);
+    const glows = (await w.fake.myCards()).find((c) => c.card === 'glow')?.held;
+    expect(await w.fake.playCard('glow', w.anaFace, w.boFace, {}, '', 'character', w.post)).toEqual(refused('no card is played on a stand-in'));
+    expect((await w.fake.myCards()).find((c) => c.card === 'glow')?.held).toBe(glows);
   });
 
   test('a spin pressed at a post names its author: no veil on that post, and no spin pressed at a veiled one, in the words any other post gets (0400, land_refusal and spin_written)', async () => {
