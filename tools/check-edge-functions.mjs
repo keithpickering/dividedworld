@@ -98,15 +98,18 @@ export function jobsOf(files) {
     const events = [];
     for (const m of sql.matchAll(/cron\.schedule\(\s*'([^']+)'/gi)) {
       const rest = sql.slice(m.index + m[0].length);
-      // A command in any `$tag$` dollar quote runs to the matching tag, so an inner `);` does not end it.
-      const quoted = rest.match(/^\s*,\s*'[^']*'\s*,\s*(\$\w*\$)/);
+      // A command in any `$tag$` dollar quote runs to the matching tag, so an inner `);` does not end it. The
+      // quote is the first one that opens before the call's first `);`, whatever the schedule before it is
+      // (a plain string, or `setting('x') #>> '{}'` as settle, meet, chatter and staff have it); with none
+      // there, the command is a plain string and the call ends at that `);`.
+      const close = rest.indexOf(');');
+      const open = rest.match(/\$\w*\$/);
       let command;
-      if (quoted) {
-        const start = quoted[0].length;
-        const end = rest.indexOf(quoted[1], start);
+      if (open && open.index !== undefined && (close < 0 || open.index < close)) {
+        const start = open.index + open[0].length;
+        const end = rest.indexOf(open[0], start);
         command = rest.slice(start, end < 0 ? undefined : end);
       } else {
-        const close = rest.indexOf(');');
         command = rest.slice(0, close < 0 ? undefined : close);
       }
       events.push({ at: m.index, job: m[1], command });

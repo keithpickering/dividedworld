@@ -91,6 +91,12 @@ red('a job whose body is in another dollar tag, with an inner );', {
   ...BASE,
   [LATER]: `select cron.schedule('kayfabb-ghost', '* * * * *', $body$ select foo(1); select net.http_post(url := s.base || '/functions/v1/ghost', headers := jsonb_build_object('apikey', s.secret)) $body$);\n`,
 }, /E3.*ghost/);
+red('a job whose schedule is an expression and whose body is in another dollar tag, with an inner );', {
+  ...BASE,
+  // The form settle, meet, chatter and staff have: the schedule read from a setting, never a plain string.
+  [LATER]: `select cron.schedule('kayfabb-ghost', setting('ghostCron') #>> '{}', $body$ select foo(1); select net.http_post(url := s.base || '/functions/v1/ghost', headers := jsonb_build_object('apikey', s.secret)) $body$);\n`,
+}, /E3.*ghost/);
+quiet('a job unscheduled in upper case is no job', { ...BASE, [LATER]: `${schedule('kayfabb-ghost', 'ghost')}\nselect CRON.UNSCHEDULE('kayfabb-ghost');` });
 red('a job scheduled in upper case', { ...BASE, [LATER]: schedule('kayfabb-ghost', 'ghost').replace('cron.schedule', 'CRON.SCHEDULE') }, /E3.*ghost/);
 red('a job whose one command posts to two functions', {
   ...BASE,
