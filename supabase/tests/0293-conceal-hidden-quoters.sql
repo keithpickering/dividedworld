@@ -1,4 +1,4 @@
--- conceal_request_hidden_quoters() (supabase/migrations/0344_quote_cut.sql; docs/plans/2026-11-13-quote-cut-plan.md, Decision 7): a layer stored before the parser's cap changed may hold hidden words quoted past
+-- conceal_request_hidden_quoters() (supabase/migrations/0346_quote_cut.sql; docs/plans/2026-11-13-quote-cut-plan.md, Decision 7): a layer stored before the parser's cap changed may hold hidden words quoted past
 -- the old cap, so a layer is asked for again for every post that quotes a post hidden from quoting now, even when its layer was recorded and answered. A post that quotes nothing hidden gets no request.
 
 create function pg_temp.due(a uuid) returns boolean language plpgsql as $$

@@ -1,4 +1,4 @@
--- search_reindex_past_cap() (supabase/migrations/0344_quote_cut.sql; docs/plans/2026-11-13-quote-cut-plan.md, Decision 7): bbcode_walk reads a real quote past the cap, so the words of a hidden post quoted that deep
+-- search_reindex_past_cap() (supabase/migrations/0346_quote_cut.sql; docs/plans/2026-11-13-quote-cut-plan.md, Decision 7): bbcode_walk reads a real quote past the cap, so the words of a hidden post quoted that deep
 -- are no longer in the words the insert and edit triggers write. A post_search row written before the change holds them, and a player who is not the author finds the post by them. The rewrite gives every row
 -- that can read differently under the cap (it quotes, or holds more than 16 open brackets) what the triggers would write today: from the post's current raw body, a hidden version's row left as conduct leaves it, an edited post from its latest edit. The old rows are written by hand here,
 -- from text that includes the marker word, the way an instance holds them.
