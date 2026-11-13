@@ -980,6 +980,11 @@ test('other tags past the cap are text beside a cut, and code, noparse and a bad
   assert.equal(spans.filter((s) => s.act === b).length, 1);
   const inCode = parse(`${deep}[code]x[/code]${'[/quote]'.repeat(MAX_DEPTH + 1)}`);
   assert.deepEqual(spine(inCode).end, [cutOf(a)]);
+  // a [b] at the cap, beside the cut, is text in the tree: neither a real bold nor dropped
+  const beside = parse(`${deep}x[/quote][b]hi[/b]${'[/quote]'.repeat(MAX_DEPTH)}`);
+  const end = spine(beside).end;
+  assert.deepEqual(end.map((n) => n.type), ['cut', 'text']);
+  assert.equal(allText(end), '[b]hi[/b]');
 });
 
 test('10,000 nested real quotes parse in time that grows with their length alone, and the tree is no deeper than a pyramid of the cap', () => {

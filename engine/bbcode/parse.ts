@@ -104,7 +104,7 @@ export const DEFAULT_SPOILER_TITLE = 'Spoiler';
 
 /**
  * Deepest nesting of tags, one number for every tag; past it a tag is text, except a real quote, which is cut (a `cut` node, its words not kept). Deep enough
- * for quotes of quotes, shallow enough to render by recursion (and for a phone's column: at 16 the innermost quote is still 144px wide at a 360px viewport).
+ * for quotes of quotes, shallow enough to render by recursion (and for a phone's column: 144px for the innermost quote at 16 on a 360px viewport, measured in the plan, docs/plans/2026-11-13-quote-cut-plan.md).
  * The parse costs the same at any value (a tag past the cap is still a token and a frame); `bbcode_walk` in SQL carries the same number.
  */
 export const MAX_DEPTH = 16;
@@ -241,8 +241,7 @@ interface Frame {
   /** For a real quote: the Act it names, and where its contents begin in the input (the first character after its opener). */
   quoteAct?: string;
   contentFrom?: number;
-  /** For a cut frame: the outermost cut frame it is inside (itself when it is the outermost), which holds the Acts of them all and puts the one node in the tree. */
-  cutRoot?: Frame;
+  /** For a cut frame: the Acts of every cut in the outermost cut, one array shared by reference; the outermost puts the one node in the tree. */
   acts?: string[];
   ordered?: boolean;
   items?: Out[];
@@ -469,7 +468,7 @@ export function parse(input: string, spans?: QuoteSpan[]): BbNode[] {
     if (spans && f.quoteAct !== undefined && f.contentFrom !== undefined) spans.push({ act: f.quoteAct, from: f.contentFrom, to: tagAt });
     if (f.kind === 'cut') {
       /* Only the outermost cut puts a node in the tree; a cut inside one has told it its Act when it opened. */
-      if (f.cutRoot === f) into.push({ type: 'cut', acts: f.acts ?? [] });
+      if (f.parent?.kind !== 'cut') into.push({ type: 'cut', acts: f.acts ?? [] });
     } else if (f.kind === 'simple' && f.build) {
       into.push(f.build(f.out));
     } else if (f.kind === 'list') {
@@ -519,21 +518,17 @@ export function parse(input: string, spans?: QuoteSpan[]): BbNode[] {
     const home = top().home;
     const f: Frame = { kind: 'cut', name: 'quote', raw, home: null as never, parent: home, depth: home.depth + 1, out: [], quoteAct: act, contentFrom };
     f.home = f;
-    if (home.kind === 'cut') {
-      const root = home.cutRoot as Frame;
-      f.cutRoot = root;
-      (root.acts as string[]).push(act);
-    } else {
-      f.cutRoot = f;
-      f.acts = [act];
-    }
+    f.acts = home.kind === 'cut' ? home.acts : [];
+    f.acts?.push(act);
     push(f);
   };
 
   const openReal = (name: string, raw: string, kind: Frame['kind'], extra: Partial<Frame>): void => {
     const home = top().home;
     if (home.depth >= MAX_DEPTH) {
-      literalOpen(name, raw);
+      /* Past the cap a real quote is cut and every other tag is text. */
+      if (extra.quoteAct !== undefined && extra.contentFrom !== undefined) openCut(raw, extra.quoteAct, extra.contentFrom);
+      else literalOpen(name, raw);
       return;
     }
     const f: Frame = { kind, name, raw, home: null as never, parent: home, depth: home.depth + 1, out: [], ...extra };
@@ -715,8 +710,7 @@ export function parse(input: string, spans?: QuoteSpan[]): BbNode[] {
       if (head === null) literalOpen(name, raw);
       else if (head.kind === 'real') {
         const act = head.act;
-        if (top().home.depth >= MAX_DEPTH) openCut(raw, act, close + 1);
-        else openReal(name, raw, 'simple', { build: (children) => ({ type: 'quote', act, children }), quoteAct: act, contentFrom: close + 1 });
+        openReal(name, raw, 'simple', { build: (children) => ({ type: 'quote', act, children }), quoteAct: act, contentFrom: close + 1 });
       } else {
         const { name: typed, user } = head;
         openReal(name, raw, 'simple', { build: (children) => ({ type: 'counterfeit', name: typed, user, children }) });

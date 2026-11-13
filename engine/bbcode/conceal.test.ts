@@ -141,7 +141,7 @@ test('property: a body of a hidden quote of 40,000 characters is read in time th
 
 /*
  * A hidden post's words are absent at any depth ("A quote past the cap is cut, never text", docs/plans/2026-11-13-quote-cut-plan.md, Task 1). Every depth is written from MAX_DEPTH, never as a
- * number, so these follow the cap. Where a body's quote of the hidden post is nested past the cap, the parser's tree has no quote there (today it is text), so the words stay in the layer.
+ * number, so these follow the cap. A real quote of the hidden post past the cap is a `cut`: the parser still reports its span, and its words are emptied at any depth.
  */
 const WORDS = 'zqxjkvdeepwords';
 const levels = (n: number, id: string) => Array.from({ length: n }, (_, i) => `[quote=${id.replace(/.$/u, String(i % 10))}]`);
@@ -197,10 +197,10 @@ test('property: a hidden quote\'s words never survive in a quote of the hidden p
       close = w[1] + close;
     }
     const body = `${open}[quote=${HIDDEN}]${inner}[/quote]${close}`;
-    const out = concealQuotes(body, HIDE);
     if (exempt) continue; // the words are the post's own there, and stay or not as the parser reads them
+    const out = concealQuotes(body, HIDE);
     counted++;
-    if (n > MAX_DEPTH) deep++;
+    if (n >= MAX_DEPTH) deep++; // the hidden quote is level n + 1
     assert.equal(out.includes(inner), false, `leak at depth ${n}: ${JSON.stringify(body).slice(0, 300)}`);
   }
   assert.ok(counted > 1000 && deep > 400, `${counted} counted, ${deep} deep`);

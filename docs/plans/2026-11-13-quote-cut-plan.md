@@ -141,7 +141,7 @@ Model: sonnet
 - `visible.ts`: `visibleText` gives a cut the separator a real quote gives; `quotedActs` includes a cut's `acts`;
   `excerptText` takes nothing from a cut.
 - Tests first, each red before the change: a pyramid of `MAX_DEPTH + 5` real quotes is `MAX_DEPTH` quotes and one
-  `cut` with five Acts, and six spans past the cap; the tree is never deeper than now; 10,000 nested real quotes parse
+  `cut` with five Acts, and five spans past the cap; the tree is never deeper than now; 10,000 nested real quotes parse
   in time that grows with length alone (the existing megabyte shapes, with real quotes); counterfeits past the cap are
   text, and a real quote inside them is cut; the conceal property `parse(concealed)` equals the emptied tree still
   holds. `engine/bbcode/plain.fixtures.ts` "a real quote past MAX_DEPTH" now expects no quoted words and the id in
