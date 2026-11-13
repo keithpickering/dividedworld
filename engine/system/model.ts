@@ -53,6 +53,20 @@ export interface CompletionRequest extends CallContext {
   readonly maxChars?: number;
   /** `'many'` keeps the answer's newlines (a text continued over several lines); `'one'`, cut at the first, when unset. */
   readonly lines?: 'one' | 'many';
+  /** Sample only from the `topK` likeliest tokens (llama.cpp `top_k`); not sent when unset. */
+  readonly topK?: number;
+  /** Drop tokens less likely than `minP` times the likeliest one's (llama.cpp `min_p`); not sent when unset. */
+  readonly minP?: number;
+  /** Penalize a token already in the last `repeatLastN` (llama.cpp `repeat_penalty`); not sent when unset. */
+  readonly repeatPenalty?: number;
+  /** How many of the latest tokens `repeatPenalty` looks back over (llama.cpp `repeat_last_n`); not sent when unset. */
+  readonly repeatLastN?: number;
+  /** Never let the model end the answer by choice, so the length bought is the length written (llama.cpp `ignore_eos`); not sent when unset. */
+  readonly ignoreEos?: boolean;
+  /** Token ids the answer may never contain, sent as llama.cpp's `logit_bias` array form; not sent when empty or unset. */
+  readonly ban?: readonly number[];
+  /** A pattern the answer is also cut at, applied where the answer is cut (`cutCompletion`) and never sent; for a stop a plain string cannot say. */
+  readonly stopPattern?: RegExp;
 }
 
 /** What a provider reported, each field as it reported it; a field it did not report is absent. */

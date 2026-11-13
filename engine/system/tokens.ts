@@ -181,3 +181,16 @@ function byteCount(text: string): number {
 export function tokenCounter(kind: Settings['oldVoiceTokenizer']): (text: string) => number {
   return kind === 'gpt2' ? gpt2Count : byteCount;
 }
+
+/**
+ * The id of `text` when it is exactly one token of the instance's tokenizer, else null: the id a request's
+ * `ban` names (`CompletionRequest.ban`). `gpt2` reads `encoder` in the vendored vocabulary through the
+ * bytes-to-unicode table, so `' ---'` is the entry `Ġ---`; a text the vocabulary holds no single entry for
+ * (two tokens, or none) is null. `bytes` has no ids, so it is always null and an instance on it sends no ban.
+ */
+export function tokenId(kind: Settings['oldVoiceTokenizer'], text: string): number | null {
+  if (kind !== 'gpt2' || text === '') return null;
+  const key = Array.from(encoder.encode(text), (b) => BYTE_CHAR[b]!).join('');
+  const id = (bpe.encoder as Record<string, number>)[key];
+  return id === undefined ? null : id;
+}

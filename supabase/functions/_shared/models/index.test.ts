@@ -407,3 +407,23 @@ test('a completion endpoint\'s 401, 403 and 404 stay a ProviderRefusal (a bad ke
     assert.equal(l.rows[0]?.predicate, null);
   }
 });
+
+test('a completion sends the sampling fields it sets, a ban as llama.cpp\'s logit_bias, and cuts at its stop pattern; one that sets none sends today\'s keys', async () => {
+  const sampled = fake([json({ choices: [{ text: 'fine -- Posted by Z: no' }], usage: { prompt_tokens: 1, completion_tokens: 1 } })]);
+  const r = await models(env, noRecord, { fetch: sampled.fetch, sleep: async () => {}, now: () => 0 }).complete({
+    duty: 'cardText', prompt: 'x', temperature: 1, topP: 1, stop: [], maxTokens: 40, lines: 'many',
+    topK: 40, minP: 0.05, repeatPenalty: 1.1, repeatLastN: 256, ignoreEos: true, ban: [6329, 11420], stopPattern: /-{2,}\s*Posted by /,
+  });
+  const body = JSON.parse(String(sampled.calls[0]?.init.body));
+  assert.equal(body.top_k, 40);
+  assert.equal(body.min_p, 0.05);
+  assert.equal(body.repeat_penalty, 1.1);
+  assert.equal(body.repeat_last_n, 256);
+  assert.equal(body.ignore_eos, true);
+  assert.deepEqual(body.logit_bias, [[6329, false], [11420, false]]);
+  assert.equal('stopPattern' in body || 'stop_pattern' in body, false);
+  assert.equal(r.value, 'fine');
+  const plain = fake([json({ choices: [{ text: 'ok' }] })]);
+  await models(env, noRecord, { fetch: plain.fetch, sleep: async () => {}, now: () => 0 }).complete({ duty: 'standingOrderLine', prompt: 'x', temperature: 1, topP: 1, stop: [], maxTokens: 4, ban: [] });
+  assert.deepEqual(Object.keys(JSON.parse(String(plain.calls[0]?.init.body))), ['model', 'prompt', 'temperature', 'top_p', 'stop', 'max_tokens']);
+});
